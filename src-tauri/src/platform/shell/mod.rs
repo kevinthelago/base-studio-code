@@ -261,7 +261,12 @@ pub(crate) fn resolve_interactive_shell() -> ResolvedShell {
 /// and startup-prompt baking are bash-only, so under PowerShell/cmd we cd into the
 /// project, clear the screen, and print a VISIBLE notice that those helpers are
 /// unavailable in this session (explicit degradation, never silent), optionally
-/// launching `claude` so the session is still usable. Pure (no I/O) for testing.
+/// launching `claude` so the session is still usable. When the configured cwd is
+/// MISSING (#2438) the launch is suppressed — starting the agent in the fallback
+/// ancestor would run it ungated outside its project (for a fleet worktree, the
+/// parent of EVERY worktree; `ensure_session_settings` wrote into the missing
+/// configured path) — and the red warning prints AFTER the clear (`Clear-Host` /
+/// `cls`) so the clear can't wipe it. Pure (no I/O) for testing.
 pub(crate) fn non_bash_init(
     kind: ShellKind,
     cwd: &str,
@@ -291,17 +296,17 @@ pub(crate) fn non_bash_init(
                 // Single-quote-escape for PowerShell literal strings (' -> '').
                 s.push_str(&format!("Set-Location -LiteralPath '{}'; ", dir.replace('\'', "''")));
             }
-            if cwd_missing {
-                s.push_str(&format!(
-                    "Write-Host '[bsc] WARNING: configured directory {} does not exist; this session did NOT start in its project directory.' -ForegroundColor Red; ",
-                    cwd.replace('\'', "''"),
-                ));
-            }
             s.push_str("Clear-Host; ");
             s.push_str(&format!(
                 "Write-Host '[bsc] Running under PowerShell -- {NOTICE}.' -ForegroundColor Yellow; "
             ));
-            if launch_claude {
+            if cwd_missing {
+                // Post-clear so the warning survives; launch suppressed (#2438).
+                s.push_str(&format!(
+                    "Write-Host '[bsc] WARNING: configured directory {} does not exist; this session did NOT start in its project directory and the agent was NOT started. Relaunch the fleet to recreate the worktree, or remove this pane.' -ForegroundColor Red; ",
+                    cwd.replace('\'', "''"),
+                ));
+            } else if launch_claude {
                 s.push_str(&format!("claude{model_arg}; "));
             }
             s.push('\n');
@@ -312,14 +317,14 @@ pub(crate) fn non_bash_init(
             if !dir.is_empty() {
                 s.push_str(&format!("cd /d \"{dir}\" & "));
             }
-            if cwd_missing {
-                s.push_str(&format!(
-                    "echo [bsc] WARNING: configured directory {cwd} does not exist; this session did NOT start in its project directory. & "
-                ));
-            }
             s.push_str("cls & ");
             s.push_str(&format!("echo [bsc] Running under cmd.exe -- {NOTICE}. & "));
-            if launch_claude {
+            if cwd_missing {
+                // Post-clear so the warning survives; launch suppressed (#2438).
+                s.push_str(&format!(
+                    "echo [bsc] WARNING: configured directory {cwd} does not exist; this session did NOT start in its project directory and the agent was NOT started. Relaunch the fleet to recreate the worktree, or remove this pane. & "
+                ));
+            } else if launch_claude {
                 s.push_str(&format!("claude{model_arg} & "));
             }
             s.push_str("echo.\n");
@@ -465,11 +470,33 @@ mod tests {
     #[test]
     fn non_bash_init_warns_loudly_when_cwd_is_missing() {
         use super::{non_bash_init, ShellKind};
-        let ps = non_bash_init(ShellKind::PowerShell, "C:/gone", true, "C:/", false, None);
+        // launch_claude = true on purpose: a missing cwd must suppress the launch anyway (#2438).
+        let ps = non_bash_init(ShellKind::PowerShell, "C:/gone", true, "C:/", true, None);
         // Lands in the existing ancestor, not the missing dir, and shouts about it.
         assert!(ps.contains("Set-Location -LiteralPath 'C:/'"));
         assert!(ps.contains("does not exist"));
         assert!(ps.contains("-ForegroundColor Red"));
+        assert!(ps.contains("the agent was NOT started"), "warning states the launch suppression: {ps}");
+        // The agent is NOT started in the fallback ancestor (it would run ungated there).
+        assert!(!ps.contains("claude"), "no claude launch when the cwd is missing: {ps}");
+        // The warning prints AFTER Clear-Host, so the clear can't wipe it off screen.
+        let clear = ps.find("Clear-Host").expect("clears the screen");
+        let warn = ps.find("WARNING").expect("warns");
+        assert!(warn > clear, "warning must print after the clear: {ps}");
+    }
+
+    #[test]
+    fn non_bash_init_cmd_suppresses_launch_and_warns_after_cls_when_cwd_is_missing() {
+        use super::{non_bash_init, ShellKind};
+        // Same #2438 contract for the cmd.exe branch.
+        let cmd = non_bash_init(ShellKind::Cmd, r"C:\gone", true, r"C:\projects", true, Some("opus"));
+        assert!(cmd.contains("cd /d \"C:\\projects\""), "cd's into the nearest ancestor: {cmd}");
+        assert!(cmd.contains("does not exist"));
+        assert!(cmd.contains("the agent was NOT started"), "warning states the launch suppression: {cmd}");
+        assert!(!cmd.contains("claude"), "no claude launch when the cwd is missing: {cmd}");
+        let clear = cmd.find("cls").expect("clears the screen");
+        let warn = cmd.find("WARNING").expect("warns");
+        assert!(warn > clear, "warning must print after the clear: {cmd}");
     }
 
     #[test]
