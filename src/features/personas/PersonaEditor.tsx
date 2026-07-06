@@ -15,7 +15,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
-import { TextField, SelectField } from "@/shared/ui/controls/Field";
+import { TextField, TextArea, SelectField } from "@/shared/ui/controls/Field";
 import { Checkbox } from "@/shared/ui/controls/Checkbox";
 import type { Persona } from "./lib/persona";
 
@@ -82,17 +82,13 @@ export function PersonaEditor({ persona, compact = false }: { persona: Persona; 
           </Row>
         )}
         {showPrompt && (
-          <Box className="field">
-            {!compact && <label>Start prompt</label>}
-            {/* eslint-disable-next-line no-restricted-syntax -- bespoke multi-line prompt editor; TextField is single-line */}
-            <textarea
-              className="input"
-              value={persona.startPrompt}
-              onChange={(e) => updatePersona(persona.id, { startPrompt: e.target.value })}
-              placeholder="The protocol/prose injected at launch. Empty falls back to the role's own kickoff."
-              style={{ width: "100%", minHeight: compact ? 110 : 150, resize: "vertical", fontFamily: "var(--mono)", fontSize: 12, lineHeight: 1.55 }}
-            />
-          </Box>
+          <TextArea
+            label={compact ? undefined : "Start prompt"}
+            value={persona.startPrompt}
+            onChange={(v) => updatePersona(persona.id, { startPrompt: v })}
+            placeholder="The protocol/prose injected at launch. Empty falls back to the role's own kickoff."
+            style={{ width: "100%", minHeight: compact ? 110 : 150, resize: "vertical", fontFamily: "var(--mono)", fontSize: 12, lineHeight: 1.55 }}
+          />
         )}
       </Box>
 

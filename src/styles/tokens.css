@@ -310,6 +310,9 @@ html, body {
   color:var(--field-fg); font-family:var(--mono); font-size:11px; width:100%;
 }
 .input:focus{ outline:none; border-color:var(--field-focus-border); }
+/* the multiline form of .input (<TextArea>, #2417): relax the single-line height, pad both axes,
+   and keep user-resize vertical so a drag can't break the surrounding layout */
+textarea.input{ height:auto; min-height:64px; padding:8px 10px; resize:vertical; line-height:1.5; }
 
 .field{ display:flex; flex-direction:column; gap:6px; }
 .field label{ font-family:var(--mono); font-size:10.5px; color:var(--fg-muted); letter-spacing:.04em; text-transform:uppercase; }

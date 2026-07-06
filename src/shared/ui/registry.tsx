@@ -24,7 +24,7 @@ import { IconButton } from "./controls/IconButton";
 import { Checkbox } from "./controls/Checkbox";
 import { Toggle } from "./controls/Toggle";
 import { SegmentedControl } from "./controls/SegmentedControl";
-import { TextField, SelectField } from "./controls/Field";
+import { TextField, TextArea, SelectField } from "./controls/Field";
 import { BackButton } from "./controls/BackButton";
 import { ColorSwatch } from "./controls/ColorSwatch";
 import { ConfirmButton } from "./controls/ConfirmButton";
@@ -54,7 +54,7 @@ type AnyComponent = ComponentType<any>;
 export const UI_COMPONENTS: Record<PrimitiveName, AnyComponent> = {
   Box, Stack, Row, Spacer, Grid, SectionHeader, SectionLabel, Dialog, ModalScrim,
   Text,
-  Button, IconButton, Checkbox, Toggle, SegmentedControl, TextField, SelectField,
+  Button, IconButton, Checkbox, Toggle, SegmentedControl, TextField, TextArea, SelectField,
   BackButton, ColorSwatch, ConfirmButton,
   Card, Chip, StatTile, FillBar, Code,
   Avatar, IconBox, CardListRow, DataTableRow,
