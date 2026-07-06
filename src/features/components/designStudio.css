@@ -1,7 +1,8 @@
 /* Design Studio (#2308) — the full-page component workbench. An IDE-style shell: toolbar · resizable
- * kits→components rail · center (Library preview/tabs/design-bar ⇄ composition Graph) · resizable
- * inspector. Distinct from the condensed planner `ComponentLibraryPane` (the Kickoff design). Tokens
- * come from tokens.css; only the layout-specific rules live here. */
+ * kits→components rail · the composition Graph center (#2453 — the only center view) · resizable
+ * inspector (preview/tabs/design-bar, absorbed from the removed Library view). Distinct from the
+ * condensed planner `ComponentLibraryPane` (the Kickoff design). Tokens come from tokens.css; only
+ * the layout-specific rules live here. */
 
 .ds-root { display: flex; flex-direction: column; height: 100%; width: 100%; min-height: 0; background: var(--bg-canvas, var(--bg)); color: var(--fg); font-size: 13px; }
 
@@ -22,7 +23,7 @@
 .ds-body { flex: 1; min-height: 0; display: flex; position: relative; }
 .ds-col { display: flex; flex-direction: column; min-height: 0; }
 .ds-rail { flex: none; min-width: 200px; border-right: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
-.ds-insp { flex: none; min-width: 240px; border-left: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
+.ds-insp { flex: none; min-width: 300px; border-left: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
 .ds-center { flex: 1; min-width: 0; background: var(--bg-canvas, var(--bg)); }
 .ds-handle { width: 5px; flex: none; cursor: col-resize; z-index: 4; position: relative; }
 .ds-handle:hover { background: var(--accent-soft); }
@@ -39,8 +40,9 @@
 .ds-comprow:hover { background: var(--bg-soft); }
 .ds-comprow.on { background: var(--accent-soft); color: var(--fg); box-shadow: inset 2px 0 0 var(--accent); }
 
-/* ── preview ── */
-.ds-preview { flex: none; height: 46%; min-height: 240px; display: flex; flex-direction: column; border-bottom: 1px solid var(--border); }
+/* ── preview (lives in the inspector, #2453) ── */
+.ds-preview { flex: none; height: 34%; min-height: 200px; display: flex; flex-direction: column; border-top: 1px solid var(--border-soft, var(--border)); border-bottom: 1px solid var(--border); }
+.ds-prevctl { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--border-soft, var(--border)); }
 .ds-surface { flex: 1; min-height: 0; position: relative; overflow: hidden; background: repeating-conic-gradient(var(--bg-soft) 0% 25%, var(--bg-canvas, var(--bg)) 0% 50%) 50% / 20px 20px; }
 .ds-frame { position: absolute; inset: 0; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .ds-vplabel { position: absolute; left: 12px; bottom: 10px; font-family: var(--mono); font-size: 9.5px; color: var(--fg-dim); background: color-mix(in srgb, var(--bg) 70%, transparent); padding: 2px 7px; border-radius: 5px; border: 1px solid var(--border-soft, var(--border)); }
@@ -49,13 +51,13 @@
 @keyframes ds-spin { to { transform: rotate(360deg); } }
 @keyframes ds-pulse { 0%,100% { opacity: .35; } 50% { opacity: .9; } }
 
-/* ── tabs + panels ── */
+/* ── tabs + panels (inspector detail, #2453) ── */
 .ds-tabs { height: 36px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--border-soft, var(--border)); }
 .ds-tab { height: 26px; padding: 0 12px; border: none; background: none; cursor: pointer; font-size: 12.5px; color: var(--fg-muted); border-bottom: 2px solid transparent; border-radius: 0; }
 .ds-tab.on { color: var(--fg); font-weight: 600; border-bottom-color: var(--accent); }
 .ds-panel { flex: 1; min-height: 0; overflow: auto; }
 
-/* ── design bar ── */
+/* ── design bar (inspector footer, #2453) ── */
 .ds-designbar { flex: none; border-top: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
 .ds-designrow { display: flex; align-items: center; gap: 10px; padding: 11px 14px; }
 .ds-designrow input { flex: 1; height: 36px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 9px; padding: 0 13px; color: var(--fg); font-size: 12.5px; font-family: inherit; }
