@@ -10,6 +10,7 @@
 import { neighborSpotlight } from "@/shared/lib/graph/spotlight";
 import { mutualPairs } from "@/shared/lib/graph/cycles";
 import { layerDag } from "@/shared/lib/graph/layers";
+import { orderLayers } from "@/shared/lib/graph/order";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 
 export type GRole = "infra" | "service" | "data" | "client";
@@ -153,32 +154,20 @@ export function buildGraph(rawNodes: GRawNode[], rawEdges: GRawEdge[]): GraphMod
   const layer = layerDag(nodes.map((n) => n.id), reversed, cycleEdge);
   nodes.forEach((n) => (n.layer = layer[n.id]));
 
-  // Group by layer + barycenter ordering to cut crossings.
-  const byLayer: Record<number, GNode[]> = {};
-  nodes.forEach((n) => (byLayer[n.layer] = byLayer[n.layer] || []).push(n));
-  const orderIdx: Record<string, number> = {};
-  Object.values(byLayer).forEach((arr) => arr.forEach((n, i) => (orderIdx[n.id] = i)));
-  for (let pass = 0; pass < 6; pass++) {
-    const bary: Record<string, number> = {};
-    nodes.forEach((n) => {
-      const nb: number[] = [];
-      edges.forEach((e) => { if (e.from === n.id) nb.push(orderIdx[e.to]); if (e.to === n.id) nb.push(orderIdx[e.from]); });
-      bary[n.id] = nb.length ? nb.reduce((a, b) => a + b, 0) / nb.length : orderIdx[n.id];
-    });
-    Object.values(byLayer).forEach((arr) => {
-      arr.sort((a, b) => (bary[a.id] - bary[b.id]) || (orderIdx[a.id] - orderIdx[b.id]));
-      arr.forEach((n, i) => (orderIdx[n.id] = i));
+  // Crossing reduction via the shared barycenter orderer (#2418) with glance's tunables: every edge
+  // endpoint pulls (both directions, cycle edges included), 6 snapshot sweeps.
+  const nb = new Map<string, string[]>(nodes.map((n) => [n.id, []]));
+  edges.forEach((e) => { nb.get(e.from)!.push(e.to); nb.get(e.to)!.push(e.from); });
+  const order = orderLayers(nodes.map((n) => n.id), (id) => layer[id], (id) => nb.get(id)!, { passes: 6, sweep: "snapshot" });
+
+  const maxCount = Math.max(1, ...[...order.values()].map((a) => a.length));
+  const Cy = 70 + (maxCount - 1) * ROWGAP / 2;
+  for (const [L, arr] of order) {
+    arr.forEach((id, i) => {
+      byId[id].x = 70 + L * COLGAP;
+      byId[id].y = Cy + (i - (arr.length - 1) / 2) * ROWGAP;
     });
   }
-
-  const maxCount = Math.max(1, ...Object.values(byLayer).map((a) => a.length));
-  const Cy = 70 + (maxCount - 1) * ROWGAP / 2;
-  Object.entries(byLayer).forEach(([L, arr]) => {
-    arr.forEach((n, i) => {
-      n.x = 70 + Number(L) * COLGAP;
-      n.y = Cy + (i - (arr.length - 1) / 2) * ROWGAP;
-    });
-  });
 
   let maxX = 0, maxY = 0;
   nodes.forEach((n) => { maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y); });

@@ -1,0 +1,24 @@
+{
+  "id": "demo-northwind-fleet",
+  "name": "Northwind fleet",
+  "blurb": "The agent org that builds and operates the Northwind platform.",
+  "positions": [
+    { "nodeId": "director", "kind": "agent",    "personaId": "demo-fleet-director",    "x": 480, "y": 90 },
+    { "nodeId": "payments", "kind": "agent",    "personaId": "demo-payments-eng",      "x": 250, "y": 300 },
+    { "nodeId": "ledger",   "kind": "agent",    "personaId": "demo-ledger-architect",  "x": 480, "y": 300 },
+    { "nodeId": "security", "kind": "agent",    "personaId": "demo-security-reviewer", "x": 710, "y": 300 },
+    { "nodeId": "docs",     "kind": "agent",    "personaId": "demo-docs-scribe",       "x": 710, "y": 470 },
+    { "nodeId": "commons",  "kind": "resource", "label": "Shared contracts",           "x": 250, "y": 470 },
+    { "nodeId": "github",   "kind": "external", "label": "GitHub",                     "x": 480, "y": 470 }
+  ],
+  "relationships": [
+    { "id": "r-dir-pay",  "archetype": "manages",  "from": "director", "to": "payments" },
+    { "id": "r-dir-led",  "archetype": "manages",  "from": "director", "to": "ledger" },
+    { "id": "r-dir-doc",  "archetype": "manages",  "from": "director", "to": "docs" },
+    { "id": "r-sec-pay",  "archetype": "oversees", "from": "security", "to": "payments" },
+    { "id": "r-sec-led",  "archetype": "oversees", "from": "security", "to": "ledger" },
+    { "id": "r-pay-led",  "archetype": "consults", "from": "payments", "to": "ledger" },
+    { "id": "r-doc-com",  "archetype": "stewards", "from": "docs",     "to": "commons" },
+    { "id": "r-dir-gh",   "archetype": "stewards", "from": "director", "to": "github" }
+  ]
+}

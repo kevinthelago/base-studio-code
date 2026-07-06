@@ -1,5 +1,7 @@
 // Terminal tuning shared across console panes.
 
+import { clamp } from "@/shared/lib/core/math";
+
 /**
  * Scrollback line budget for one pane, scaled down as the total mounted-pane
  * count across ALL tabs grows.
@@ -52,7 +54,7 @@ export const TERMINAL_FONT_STEP = 1;
  */
 export function clampFontSize(size: number): number {
   if (!Number.isFinite(size)) return DEFAULT_TERMINAL_FONT_SIZE;
-  return Math.min(MAX_TERMINAL_FONT_SIZE, Math.max(MIN_TERMINAL_FONT_SIZE, Math.round(size)));
+  return clamp(Math.round(size), MIN_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE);
 }
 
 /**
