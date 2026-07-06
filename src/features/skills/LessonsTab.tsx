@@ -13,6 +13,7 @@ import { Grid } from "@/shared/ui/layout/Grid";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
+import { TextField } from "@/shared/ui/controls/Field";
 import { useAppStore } from "@/store";
 import {
   loadPendingLessons, confirmLesson, discardLesson, lessonToSkill, type Lesson,
@@ -56,10 +57,8 @@ function LessonCard({ lesson, projectKey, onResolved }: { lesson: Lesson; projec
     <Grid gap={8} style={{ border: "1px solid var(--border-soft)", borderRadius: 6, padding: "10px 12px", background: "var(--bg-elev)" }}>
       {editing ? (
         <>
-          {/* eslint-disable-next-line no-restricted-syntax -- label-less inline edit inputs as direct Grid rows; TextField's .field wrapper would alter the grid layout */}
-          <input className="input" value={mistake} onChange={(e) => setMistake(e.target.value)} placeholder="what went wrong" style={{ fontSize: 12 }} />
-          {/* eslint-disable-next-line no-restricted-syntax -- label-less inline edit inputs as direct Grid rows; TextField's .field wrapper would alter the grid layout */}
-          <input className="input" value={rule} onChange={(e) => setRule(e.target.value)} placeholder="the corrective rule" style={{ fontSize: 12 }} />
+          <TextField value={mistake} onChange={setMistake} placeholder="what went wrong" style={{ fontSize: 12 }} />
+          <TextField value={rule} onChange={setRule} placeholder="the corrective rule" style={{ fontSize: 12 }} />
         </>
       ) : (
         <Grid gap={3}>

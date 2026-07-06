@@ -1,19 +1,24 @@
 // Blueprint Author — 1 · PURPOSE. Identity, description, audience, catalog tags,
 // and a live catalog-card preview.
 
+import authorOptionsEmbedded from "@data/planner/blueprint-author-options.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
 import { Ic } from "@/features/planner/blueprints/blueprintIcons";
 import { Chip } from "@/shared/ui/data/Chip";
 import { hue, tint, stageKind } from "@/features/planner/blueprints/blueprintCatalog";
 import { IconBox } from "@/shared/ui/data/IconBox";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
+import { TextArea } from "@/shared/ui/controls/Field";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import type { Blueprint } from "@/features/planner/stages/blueprints";
 import { gateCount, Lbl, type AuthorViewProps } from "./shared";
 
-const HUE_CHOICES = [195, 25, 70, 145, 230, 295, 350];
-const TAGS = ["backend", "frontend", "realtime", "api", "data", "ml", "mobile", "infra", "lean"];
+// Catalog-tag + accent-hue choices — from `@data/planner/blueprint-author-options.json` (#2419,
+// beside blueprint-meta.json); the config-dir copy (#2047) overlays the embedded default.
+const { tags: TAGS, hueChoices: HUE_CHOICES } =
+  overlayFile("planner/blueprint-author-options.json", authorOptionsEmbedded);
 
 export function PurposeView({ bp, onChange }: AuthorViewProps) {
   const set = (patch: Partial<Blueprint>) => onChange({ ...bp, ...patch });
@@ -50,10 +55,9 @@ export function PurposeView({ bp, onChange }: AuthorViewProps) {
 
       <Box>
         <Lbl hint="what it's for & why">Description</Lbl>
-        {/* eslint-disable-next-line no-restricted-syntax -- <textarea> has no shared primitive */}
-        <textarea className="input" value={bp.desc ?? ""} style={{ minHeight: 78 }}
+        <TextArea value={bp.desc ?? ""} style={{ minHeight: 78 }}
           placeholder="Describe the kind of project this blueprint plans…"
-          onChange={(e) => set({ desc: e.target.value })} />
+          onChange={(v) => set({ desc: v })} />
       </Box>
 
       <Box>

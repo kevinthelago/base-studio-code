@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { timeAgoShort } from "@/shared/lib/core/format";
 import { IconButton } from "@/shared/ui/controls/IconButton";
+import { TextArea } from "@/shared/ui/controls/Field";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Avatar } from "@/shared/ui/data/Avatar";
 import { LabelChip } from "@/shared/ui/data/LabelChip";
@@ -12,6 +14,7 @@ import { Button } from "@/shared/ui/controls/Button";
 import type { FlatIssue } from "./issuesModel";
 
 export function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () => void }) {
+  const [ask, setAsk] = useState("");
   return (
     <aside style={{
       position: "absolute", top: 0, right: 0, bottom: 0, width: 600,
@@ -95,11 +98,12 @@ export function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () 
             <Button variant="ghost" style={{ height: 22, padding: "0 8px", fontSize: 10 }}>✦ break down</Button>
             <Button variant="ghost" style={{ height: 22, padding: "0 8px", fontSize: 10 }}>open in pane</Button>
           </Row>
-          {/* eslint-disable-next-line no-restricted-syntax -- multiline comment composer; the UI-kit has no textarea primitive */}
-          <textarea
-            className="input mono"
+          <TextArea
+            className="mono"
+            value={ask}
+            onChange={setAsk}
             placeholder="ask claude about this issue…"
-            style={{ width: "100%", height: 54, padding: "8px 10px", fontSize: 11, boxSizing: "border-box" }}
+            style={{ width: "100%", minHeight: 54, padding: "8px 10px", fontSize: 11, boxSizing: "border-box" }}
           />
         </Box>
       </Box>
