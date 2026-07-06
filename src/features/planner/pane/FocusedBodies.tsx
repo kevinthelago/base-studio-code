@@ -109,6 +109,7 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
     case "purpose":
     case "bp_stages":
     case "bp_capabilities":
+    case "bp_team":
     case "bp_review":
       return <AuthoringBody bp={data?.authoredBlueprint} stageKey={stage.key} wiring={authoring} />;
     default:
