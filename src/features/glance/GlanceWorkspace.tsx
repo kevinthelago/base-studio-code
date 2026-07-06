@@ -15,6 +15,8 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Button } from "@/shared/ui/controls/Button";
+import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Screen } from "@/app/chrome/Screen";
 import { type TabItem } from "@/app/chrome/TabBar";
@@ -189,6 +191,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       vp={vp}
       world={{ w: model.worldW, h: model.worldH }}
       canvasBackground="radial-gradient(120% 120% at 30% 0%, var(--bg-elev) 0%, var(--bg) 100%)"
+      // The infinite viewport grid (#2418, the same graph paper org uses) — 28px tiles; the color
+      // matches the old in-world grid (12% fg dots at 0.6 layer opacity ⇒ ~7.2% fg).
+      grid gridSize={28} gridColor="color-mix(in oklch, var(--fg) 7.2%, transparent)"
       overlays={<GlanceOverlays />}
       railResizable railWidth={266} railMin={200} railMax={420}
       inspectorResizable inspectorWidth={340} inspectorMin={280} inspectorMax={520}
@@ -207,14 +212,14 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           {/* connect-mode palette (#2253) — pick a kind, then click source → target to draw a project link */}
           {!drill && (
             <Row gap={8} align="center" style={{ minWidth: 0 }}>
-              <Text as="span" className="ulabel" tone="dim" size={9.5} style={{ flex: "none" }}>{connect ? (connect.from ? "pick a target" : "pick a source") : "connect"}</Text>
+              <SectionLabel size={9.5} style={{ flex: "none" }}>{connect ? (connect.from ? "pick a target" : "pick a source") : "connect"}</SectionLabel>
               <Row gap={6}>
                 {(["api", "data", "events"] as GEdgeKind[]).map((k) => (
                   <Box as="button" key={k} onClick={() => setConnect(connect?.kind === k ? null : { kind: k, from: null })}
                     style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 500,
                       color: "var(--fg-muted)", background: connect?.kind === k ? "color-mix(in oklch, var(--accent) 16%, transparent)" : "var(--bg-soft)",
                       border: `1px solid ${connect?.kind === k ? "var(--accent)" : "var(--border)"}`, padding: "3px 9px 3px 7px", borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap" }}>
-                    <Box style={{ width: 8, height: 8, borderRadius: "50%", background: EDGE_META[k].color, flex: "none" }} />{EDGE_META[k].label}
+                    <StatusDot color={EDGE_META[k].color} size={8} />{EDGE_META[k].label}
                   </Box>
                 ))}
               </Row>
@@ -251,7 +256,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
               return (
                 <Row key={n.id} gap={9} align="center" onClick={() => onNodeClick(n.id)} onMouseEnter={() => setHoverNode(n.id)} onMouseLeave={() => setHoverNode(null)}
                   style={{ padding: "8px 9px", borderRadius: 7, cursor: "pointer", background: on ? "var(--bg-soft)" : "transparent", border: `1px solid ${on ? "var(--border)" : "transparent"}` }}>
-                  <Box style={{ width: 7, height: 7, borderRadius: "50%", background: st.color, flex: "none", boxShadow: st.pulse ? `0 0 7px ${st.color}` : "none" }} />
+                  <StatusDot color={st.color} size={7} style={{ boxShadow: st.pulse ? `0 0 7px ${st.color}` : "none" }} />
                   <Text as="span" mono size={12} style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
                   {(n.faults ?? 0) > 0 && (
                     <Text as="span" mono size={9.5} weight={700} title={`${n.faults} unresolved runtime faults`}
@@ -288,8 +293,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         // Open the real PTY stream (#2369) — only for a drilled, LIVE agent node.
         onOpenStream={sel.type === "node" && isLiveAgent(sel.id) ? (id) => setChatNode(id) : undefined} /> : undefined}
     >
-      {/* keyed so drilling in/out remounts + replays the transition animation (glance.css) */}
-      <Box key={drill ?? "network"} className="glance-drill-anim" style={{ position: "absolute", inset: 0 }}>
+      {/* keyed so drilling in/out remounts + replays the shared transition (graphCanvas.css, #2418) */}
+      <Box key={drill ?? "network"} className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>
         <GlanceCanvas
           model={model} dragMoved={vp.dragMoved}
           focus={focus} selNodeId={selNodeId} selEdgeId={selEdgeId}

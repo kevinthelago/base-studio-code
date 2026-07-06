@@ -3,12 +3,12 @@
 // agent. This is the step that lets the console page retire (#2205 direction): the graph, not a tab
 // grid, hosts the terminal.
 //
-// Reuse-first + zero reinvention: the "Stream" tab is the SAME <TerminalView> the console renders,
-// keyed by the agent's identity pane id (`<project>:<stream>`), so it inherits everything — the
-// scrollback bounding (scrollbackForPaneCount), the capped hidden-buffer (PendingPtyData), and
-// reconnect-not-respawn (pty_create returns isNew=false for the already-live PTY). Only one mount is
-// ever VISIBLE (the console's copy is display:none while you're in Glance), so the two mounts never
-// fight over PTY sizing. The "Logs" tab is the shared sessionLog surface.
+// Reuse-first + zero reinvention: the "Stream" tab drops a <TerminalSlot> for the agent's identity pane
+// id (`<project>:<stream>`). Since #2378 there is exactly ONE terminal per agent — owned by the app-level
+// TerminalHost — and the slot RE-PARENTS it into the dock while it's open (parked back to the console cell
+// on close), so the dock inherits everything the console has (scrollback bounding, the capped
+// hidden-buffer, reconnect-not-respawn) with NO second xterm and no PTY-sizing coordination hack. The
+// "Logs" tab is the shared sessionLog surface.
 import { useState } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
@@ -17,7 +17,7 @@ import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { TextField } from "@/shared/ui/controls/Field";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
-import { TerminalView } from "@/app/console/panes/views/TerminalView";
+import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 import { GlanceSessionLog } from "./GlanceSessionLog";
 
 type DockTab = "stream" | "logs";
@@ -74,7 +74,9 @@ export function GlanceChatDock({
           {/* The live PTY stream = the chat history. Not auto-focused, so the chat input below is the
               default target; click into the terminal to interact with its TUI directly. */}
           <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-            <TerminalView paneId={paneId} visible={tab === "stream"} focused={false} />
+            {/* Viewer slot (not primary): the host re-parents the agent's single terminal here while the
+                dock is open. `visible` gates its render/fit exactly like a background console pane. */}
+            <TerminalSlot paneId={paneId} visible={tab === "stream"} focused={false} />
           </Box>
           <Row gap="sm" align="center" style={{ padding: "8px 10px", borderTop: "1px solid var(--border)", flex: "none" }}>
             <Box style={{ flex: 1, minWidth: 0 }}>

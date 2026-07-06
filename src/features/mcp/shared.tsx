@@ -11,7 +11,7 @@ import { Chip } from "@/shared/ui/data/Chip";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { Banner } from "@/shared/ui/feedback/Banner";
 import { Button } from "@/shared/ui/controls/Button";
-import { TextField } from "@/shared/ui/controls/Field";
+import { Field, TextField } from "@/shared/ui/controls/Field";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
@@ -108,8 +108,7 @@ export function ProjectAssignment({ item, projects, onSet }: {
     onSet(next);
   };
   return (
-    <Box className="field">
-      <label>project assignment</label>
+    <Field label="project assignment">
       <Banner tone="success" style={isGlobal ? undefined : { opacity: 0.6 }} lead={<Box as="span" bg="var(--success)" style={{ width: 7, height: 7, borderRadius: "50%"}} />}>
         <Text weight={600} tone={isGlobal ? "success" : "muted"}>Global (all projects)</Text>
         <Spacer />
@@ -152,7 +151,7 @@ export function ProjectAssignment({ item, projects, onSet }: {
         </>
       )}
       <Box className="hint" style={{ marginTop: 6 }}>Global applies to every project; otherwise only the projects you pick.</Box>
-    </Box>
+    </Field>
   );
 }
 
@@ -218,7 +217,7 @@ export function CatalogCard({ item, action }: { item: CatalogItem; action: React
 /** The env-var key/value editor drawer field (shared by servers + hooks). */
 export function EnvEditor({ env, onChange }: { env: Array<[string, string]>; onChange: (env: Array<[string, string]>) => void }) {
   return (
-    <Box className="field"><label>environment</label>
+    <Field label="environment">
       <Box className="kv-list">
         {env.map(([k, v], i) => (
           <Box className="kv-row" key={i}>
@@ -243,7 +242,7 @@ export function EnvEditor({ env, onChange }: { env: Array<[string, string]>; onC
           onClick={() => onChange([...env, ["", ""]])}
         >+ env var</Button>
       </Box>
-    </Box>
+    </Field>
   );
 }
 

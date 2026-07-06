@@ -2,8 +2,10 @@
 // from the user's projects; the TOPOLOGY (roles · edge kinds · dependencies · status) is clearly-marked
 // SAMPLE until a real cross-project dependency model exists (epic #2205, slice 4). Isolated here so
 // wiring real edges later is a drop-in — the page + graph core never change.
+import sampleGraphEmbedded from "@data/glance/sample-graph.json";
 import type { GRawNode, GRawEdge, GRole, GStatus } from "./glanceGraph";
 import type { ProjectLink } from "./projectLinks";
+import { hashAbs } from "./hash";
 
 export interface GlanceData { rawNodes: GRawNode[]; rawEdges: GRawEdge[]; sample: boolean }
 
@@ -13,56 +15,16 @@ export interface ProjectLite { id: string; name: string; role?: GRole; status?: 
 
 const ROLES: GRole[] = ["infra", "service", "data", "client"];
 
-/** Stable small hash of a string → non-negative int (deterministic role/status assignment). */
-function hash(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
-
-/** The packaged SAMPLE project network — the spec's example (roles · edge kinds · a dependency CYCLE ·
- *  hazards). No longer an auto-fallback for an empty app (#2272 — an unseeded Glance shows a REAL empty
- *  state, not the mock); kept as the seed of the curated app-state DEMO (#2272 slice 4). Marked `sample`. */
+/** The packaged SAMPLE project network — the spec's example (roles · edge kinds · a dependency CYCLE:
+ *  reporting → analytics → reporting · hazards). No longer an auto-fallback for an empty app (#2272 — an
+ *  unseeded Glance shows a REAL empty state, not the mock); kept as the seed of the curated app-state
+ *  DEMO (#2272 slice 4). Marked `sample`. The nodes/edges live in `@data/glance/sample-graph.json`
+ *  (#2419) — a plain embedded import, NOT config-dir-overlaid, because the demo snapshot is built on
+ *  this spine and must stay byte-deterministic (stable gist bytes). */
 export const SAMPLE_GRAPH: GlanceData = {
   sample: true,
-  rawNodes: [
-    { id: "auth-core", role: "infra", status: "done" },
-    { id: "events-bus", role: "infra", status: "done" },
-    { id: "identity-svc", role: "service", status: "building" },
-    { id: "ledger", role: "data", status: "review" },
-    { id: "notifications", role: "service", status: "idle" },
-    { id: "analytics", role: "data", status: "blocked" },
-    { id: "user-api", role: "service", status: "building" },
-    { id: "billing-svc", role: "service", status: "planning" },
-    { id: "reporting", role: "data", status: "blocked" },
-    { id: "search-svc", role: "service", status: "idle" },
-    { id: "payments-gw", role: "service", status: "review" },
-    { id: "mobile-app", role: "client", status: "planning" },
-    { id: "admin-console", role: "client", status: "idle" },
-    { id: "web-app", role: "client", status: "building" },
-  ],
-  rawEdges: [
-    { from: "identity-svc", to: "auth-core", kind: "api" },
-    { from: "user-api", to: "identity-svc", kind: "api" },
-    { from: "billing-svc", to: "identity-svc", kind: "api" },
-    { from: "billing-svc", to: "ledger", kind: "data" },
-    { from: "payments-gw", to: "billing-svc", kind: "api" },
-    { from: "ledger", to: "events-bus", kind: "events" },
-    { from: "notifications", to: "events-bus", kind: "events" },
-    { from: "analytics", to: "events-bus", kind: "events" },
-    { from: "web-app", to: "user-api", kind: "api" },
-    { from: "web-app", to: "billing-svc", kind: "api" },
-    { from: "web-app", to: "search-svc", kind: "api" },
-    { from: "mobile-app", to: "user-api", kind: "api" },
-    { from: "mobile-app", to: "notifications", kind: "api" },
-    { from: "search-svc", to: "user-api", kind: "api" },
-    { from: "reporting", to: "ledger", kind: "data" },
-    { from: "reporting", to: "analytics", kind: "data" },
-    { from: "analytics", to: "reporting", kind: "data" }, // closes a cycle with the previous edge
-    { from: "admin-console", to: "user-api", kind: "api" },
-    { from: "admin-console", to: "billing-svc", kind: "api" },
-    { from: "admin-console", to: "reporting", kind: "data" },
-  ],
+  rawNodes: sampleGraphEmbedded.rawNodes as GRawNode[],
+  rawEdges: sampleGraphEmbedded.rawEdges as GRawEdge[],
 };
 
 /** Build the Glance graph from the REAL project list: every project a node (its resolved role/status, or
@@ -73,7 +35,7 @@ export function buildGlanceData(projects: ProjectLite[], links: ProjectLink[] = 
   const rawNodes: GRawNode[] = projects.map((p) => ({
     id: p.id,
     slug: p.name || p.id,
-    role: p.role ?? ROLES[hash(p.id) % ROLES.length],
+    role: p.role ?? ROLES[hashAbs(p.id) % ROLES.length],
     status: p.status ?? "idle",
     faults: p.faults, // #2265: unresolved runtime-fault count → node fault badge
   }));
