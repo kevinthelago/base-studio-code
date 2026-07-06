@@ -58,14 +58,21 @@ async fn gh_request(
     body: &serde_json::Value,
     log_ctx: &str,
 ) -> Result<serde_json::Value, String> {
+    // Rate-limit gate (#2448): mutations short-circuit too — a gated POST would just 403.
+    if let Some(err) = rate_limit_gate() {
+        return Err(err);
+    }
     let url = format!("https://api.github.com/{}", path);
-    let (status, json) = crate::platform::http::send_json(
+    let (status, headers, json) = crate::platform::http::send_json_full(
         gh_std_headers(crate::platform::http::client().request(method, url), token).json(body),
         |e| format!("Request failed: {}", e),
         |e| format!("Failed to parse response: {}", e),
     )
     .await?;
     if !status.is_success() {
+        if let Some(err) = note_rate_limit(status, &headers) {
+            return Err(err);
+        }
         return Err(gh_status_error(status, &json, log_ctx));
     }
     Ok(json)
@@ -117,17 +124,22 @@ pub(crate) async fn github_graphql(
     if !force {
         let cache = github_cache().lock().unwrap();
         if let Some(entry) = cache.get(&cache_key) {
-            if cache_is_fresh(entry.fetched_at.elapsed(), max_age_secs, false) {
+            if cache_is_fresh(entry.age(), max_age_secs, false) {
                 return Ok(entry.body.clone());
             }
         }
+    }
+
+    // Rate-limit gate (#2448): don't spend a request while the quota is exhausted.
+    if let Some(err) = rate_limit_gate() {
+        return Err(err);
     }
 
     let mut body = serde_json::json!({ "query": query });
     if let Some(vars) = variables {
         body["variables"] = vars;
     }
-    let (status, json) = crate::platform::http::send_json(
+    let (status, headers, json) = crate::platform::http::send_json_full(
         crate::platform::http::client()
             .post("https://api.github.com/graphql")
             .header("Authorization", format!("Bearer {}", token))
@@ -139,6 +151,9 @@ pub(crate) async fn github_graphql(
     )
     .await?;
     if !status.is_success() {
+        if let Some(err) = note_rate_limit(status, &headers) {
+            return Err(err);
+        }
         return Err(gh_status_error(status, &json, "github_graphql"));
     }
     if let Some(errors) = json.get("errors") {
@@ -149,10 +164,10 @@ pub(crate) async fn github_graphql(
         }
     }
     let data = json["data"].clone();
-    github_cache().lock().unwrap().insert(
-        cache_key,
-        CachedGet { etag: None, body: data.clone(), fetched_at: std::time::Instant::now() },
-    );
+    github_cache()
+        .lock()
+        .unwrap()
+        .insert(cache_key, CachedGet { etag: None, body: data.clone(), fetched_at: now_epoch() });
     Ok(data)
 }
 
@@ -223,31 +238,204 @@ pub(crate) async fn github_delete(token: String, path: String) -> Result<(), Str
     Err(format!("GitHub API error ({status}): {msg}"))
 }
 
-// ── GitHub response cache (ETag-validated, in-memory) ──────────────────────────
+// ── GitHub response cache (ETag-validated, persisted for REST) ────────────────
 //
 // REST GETs are cached by endpoint path. On the next request we send the stored
 // ETag as `If-None-Match`; GitHub answers `304 Not Modified` (cheap — it doesn't
 // count against the primary rate limit) when nothing changed, and we serve the
 // cached body. This makes the frontend's refetch-on-view nearly free while staying
-// current. (GraphQL has no ETags — a separate TTL/version-probe pass covers it.)
+// current. (GraphQL has no ETags — the frontend's updatedAt version probe covers
+// it, `shared/lib/github/githubProbe.ts`, #2448.)
+//
+// The REST subset (entries carrying an ETag) is PERSISTED to
+// `~/.base-studio-code/github-http-cache.json` (#2448) so the free 304
+// revalidation works cold across restarts: loaded lazily on first cache access,
+// saved after each successful GET, capped at [`PERSIST_CAP`] newest entries.
+// GraphQL entries are deliberately not persisted — with no ETag a cold entry
+// can't be revalidated cheaply, only served blind.
 
 struct CachedGet {
     etag: Option<String>,
     body: serde_json::Value,
-    fetched_at: std::time::Instant,
+    /// Seconds since the Unix epoch (not `Instant`, so entries survive persistence).
+    fetched_at: u64,
+}
+
+impl CachedGet {
+    /// Age of this entry (now − fetched_at; a backwards clock jump reads as zero).
+    fn age(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(now_epoch().saturating_sub(self.fetched_at))
+    }
+}
+
+/// Seconds since the Unix epoch (0 on a pre-1970 clock, which never happens in practice).
+fn now_epoch() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 fn github_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, CachedGet>> {
     static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, CachedGet>>> =
         std::sync::OnceLock::new();
-    CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+    // Lazily seed from the persisted REST entries (#2448): stale by TTL, but each carries an ETag,
+    // so the first request per path revalidates with If-None-Match → a free 304 instead of a full
+    // response. A missing/corrupt file just starts empty.
+    CACHE.get_or_init(|| {
+        std::sync::Mutex::new(load_persisted_cache(&crate::platform::paths::github_http_cache_file()))
+    })
 }
 
-/// Drop every cached GitHub response. Called when the token changes (connect /
-/// disconnect / re-auth) so a new account never sees the previous one's bodies.
+/// Drop every cached GitHub response — in memory AND the persisted file. Called when the token
+/// changes (connect / disconnect / re-auth) so a new account never sees the previous one's bodies.
 #[tauri::command]
 pub(crate) fn github_cache_clear() {
     github_cache().lock().unwrap().clear();
+    let _ = std::fs::remove_file(crate::platform::paths::github_http_cache_file());
+}
+
+/// Cap on persisted entries: newest-first by `fetched_at`, the oldest beyond this are evicted at
+/// write time (the in-memory map itself is unbounded, as before).
+const PERSIST_CAP: usize = 50;
+
+/// One persisted REST cache entry — the on-disk twin of a `CachedGet` whose `etag` is present.
+#[derive(serde::Deserialize)]
+struct PersistedGet {
+    etag: String,
+    body: serde_json::Value,
+    fetched_at: u64,
+}
+
+/// Borrowing serializer twin of [`PersistedGet`] so a snapshot never clones response bodies.
+#[derive(serde::Serialize)]
+struct PersistedGetRef<'a> {
+    etag: &'a str,
+    body: &'a serde_json::Value,
+    fetched_at: u64,
+}
+
+/// Serialize the persistable subset of the cache: entries with an ETag (REST GETs) only, the
+/// newest [`PERSIST_CAP`] kept. `None` only when serialization itself fails (never expected).
+fn persist_snapshot(cache: &std::collections::HashMap<String, CachedGet>) -> Option<String> {
+    let mut entries: Vec<(&str, PersistedGetRef)> = cache
+        .iter()
+        .filter_map(|(path, e)| {
+            e.etag.as_deref().map(|etag| {
+                (path.as_str(), PersistedGetRef { etag, body: &e.body, fetched_at: e.fetched_at })
+            })
+        })
+        .collect();
+    entries.sort_by_key(|e| std::cmp::Reverse(e.1.fetched_at));
+    entries.truncate(PERSIST_CAP);
+    let map: std::collections::BTreeMap<&str, PersistedGetRef> = entries.into_iter().collect();
+    serde_json::to_string(&map).ok()
+}
+
+/// Load the persisted REST entries. Missing file ⇒ empty (first run); corrupt/poisoned file ⇒
+/// empty with a warning — the cache is an optimization, never worth failing a request over.
+fn load_persisted_cache(path: &std::path::Path) -> std::collections::HashMap<String, CachedGet> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return std::collections::HashMap::new();
+    };
+    let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, PersistedGet>>(&text) else {
+        log::warn!("github http cache at {} is corrupt; starting empty", path.display());
+        return std::collections::HashMap::new();
+    };
+    map.into_iter()
+        .map(|(path, p)| {
+            (path, CachedGet { etag: Some(p.etag), body: p.body, fetched_at: p.fetched_at })
+        })
+        .collect()
+}
+
+/// Persist the cache's REST subset to disk (#2448). Snapshots (serializes) under the lock, writes
+/// outside it. Best-effort: an IO failure only logs — the in-memory cache stays authoritative.
+fn save_github_cache() {
+    let Some(text) = persist_snapshot(&github_cache().lock().unwrap()) else { return };
+    let path = crate::platform::paths::github_http_cache_file();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(e) = std::fs::write(&path, text) {
+        log::warn!("failed to persist github http cache to {}: {e}", path.display());
+    }
+}
+
+// ── Rate-limit awareness (#2448) ───────────────────────────────────────────────
+//
+// GitHub signals its primary quota via `X-RateLimit-Remaining`/`X-RateLimit-Reset` and its
+// secondary (abuse) limits via `Retry-After`. When a 403/429 says the quota is exhausted, an
+// in-memory gate arms until the reset: further requests short-circuit with a TYPED error —
+// `github rate-limited until <epoch secs>` — that the frontend distinguishes from real failures
+// (a quiet "retrying after HH:MM" note instead of a red banner) while its persisted overlays
+// (#2446) keep rendering the last-known data.
+
+/// Epoch second the gate lifts; 0 = not rate-limited.
+static RATE_LIMITED_UNTIL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The one typed error string; the frontend matches its prefix (`rateLimitedUntil` in github.ts).
+fn rate_limited_error(until: u64) -> String {
+    format!("github rate-limited until {until}")
+}
+
+/// If the gate is armed and unexpired, the typed error to short-circuit with; an expired gate
+/// disarms and lets the request through.
+fn rate_limit_gate() -> Option<String> {
+    use std::sync::atomic::Ordering;
+    let until = RATE_LIMITED_UNTIL.load(Ordering::Relaxed);
+    if until == 0 {
+        return None;
+    }
+    if now_epoch() >= until {
+        RATE_LIMITED_UNTIL.store(0, Ordering::Relaxed);
+        return None;
+    }
+    Some(rate_limited_error(until))
+}
+
+/// Decide the rate-limit horizon from a response (pure, so it's directly testable). Returns the
+/// epoch second the limit resets when `status` is 403/429 AND the headers say the quota is gone:
+/// `Retry-After` (secondary limits) wins, else `X-RateLimit-Remaining: 0` (+ `X-RateLimit-Reset`,
+/// defaulting to a 60s backoff when absent/garbled). A plain 403 (permissions) has remaining > 0
+/// and stays `None`, so it keeps surfacing as the normal GitHub API error.
+fn rate_limit_until_from(
+    status: u16,
+    remaining: Option<&str>,
+    reset: Option<&str>,
+    retry_after: Option<&str>,
+    now: u64,
+) -> Option<u64> {
+    if status != 403 && status != 429 {
+        return None;
+    }
+    if let Some(secs) = retry_after.and_then(|s| s.trim().parse::<u64>().ok()) {
+        return Some(now + secs.max(1));
+    }
+    if remaining.and_then(|s| s.trim().parse::<u64>().ok()) == Some(0) {
+        let until = reset.and_then(|s| s.trim().parse::<u64>().ok()).unwrap_or(now + 60);
+        return Some(until.max(now + 1)); // a reset in the past still gates ≥ 1s
+    }
+    None
+}
+
+/// Inspect a response's rate-limit headers; on an exhausted 403/429, arm the gate and return the
+/// typed error to report. `None` for every non-rate-limit response (including other failures).
+fn note_rate_limit(
+    status: reqwest::StatusCode,
+    headers: &reqwest::header::HeaderMap,
+) -> Option<String> {
+    let h = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
+    let until = rate_limit_until_from(
+        status.as_u16(),
+        h("x-ratelimit-remaining"),
+        h("x-ratelimit-reset"),
+        h("retry-after"),
+        now_epoch(),
+    )?;
+    RATE_LIMITED_UNTIL.store(until, std::sync::atomic::Ordering::Relaxed);
+    log::warn!("github rate limit exhausted (HTTP {status}); gating requests until epoch {until}");
+    Some(rate_limited_error(until))
 }
 
 /// Whether a cached entry of the given age can be served without even revalidating.
@@ -276,14 +464,11 @@ fn apply_github_response(
 ) -> Option<serde_json::Value> {
     if not_modified {
         let entry = cache.get_mut(path)?;
-        entry.fetched_at = std::time::Instant::now();
+        entry.fetched_at = now_epoch();
         return Some(entry.body.clone());
     }
     let b = body?;
-    cache.insert(
-        path.to_string(),
-        CachedGet { etag, body: b.clone(), fetched_at: std::time::Instant::now() },
-    );
+    cache.insert(path.to_string(), CachedGet { etag, body: b.clone(), fetched_at: now_epoch() });
     Some(b)
 }
 
@@ -303,13 +488,19 @@ pub(crate) async fn github_request(
     let cached_etag = {
         let cache = github_cache().lock().unwrap();
         match cache.get(&path) {
-            Some(entry) if cache_is_fresh(entry.fetched_at.elapsed(), max_age_secs, force) => {
+            Some(entry) if cache_is_fresh(entry.age(), max_age_secs, force) => {
                 return Ok(entry.body.clone());
             }
             Some(entry) if !force => entry.etag.clone(),
             _ => None,
         }
     };
+
+    // Rate-limit gate (#2448): while the quota is exhausted, don't spend the request — the
+    // frontend distinguishes the typed error and keeps its cached/persisted view.
+    if let Some(err) = rate_limit_gate() {
+        return Err(err);
+    }
 
     let url = format!("https://api.github.com/{}", path);
     let mut req = gh_std_headers(crate::platform::http::client().get(&url), &token);
@@ -329,10 +520,19 @@ pub(crate) async fn github_request(
     };
     let status = response.status();
 
+    // Exhausted rate limit (#2448): arm the gate and surface the typed error.
+    if let Some(err) = note_rate_limit(status, response.headers()) {
+        return Err(err);
+    }
+
     // 304 Not Modified → the cached body is still current.
     if status == reqwest::StatusCode::NOT_MODIFIED {
-        let mut cache = github_cache().lock().unwrap();
-        return apply_github_response(&mut cache, &path, true, None, None)
+        let body = {
+            let mut cache = github_cache().lock().unwrap();
+            apply_github_response(&mut cache, &path, true, None, None)
+        };
+        save_github_cache(); // the refreshed fetched_at drives TTL freshness + persist eviction
+        return body
             .ok_or_else(|| "GitHub returned 304 but no cached body is available".to_string());
     }
 
@@ -349,8 +549,11 @@ pub(crate) async fn github_request(
     if !status.is_success() {
         return Err(gh_status_error(status, &json, &format!("github_request {path}")));
     }
-    let mut cache = github_cache().lock().unwrap();
-    apply_github_response(&mut cache, &path, false, etag, Some(json.clone()));
+    {
+        let mut cache = github_cache().lock().unwrap();
+        apply_github_response(&mut cache, &path, false, etag, Some(json.clone()));
+    }
+    save_github_cache();
     Ok(json)
 }
 
@@ -424,8 +627,9 @@ pub(crate) async fn gist_update(
 #[cfg(test)]
 mod tests {
     use super::{
-        cache_is_fresh, apply_github_response, gh_error_message, gh_status_error, require_token,
-        CachedGet,
+        apply_github_response, cache_is_fresh, gh_error_message, gh_status_error,
+        load_persisted_cache, now_epoch, persist_snapshot, rate_limit_gate, rate_limit_until_from,
+        rate_limited_error, require_token, CachedGet, PERSIST_CAP, RATE_LIMITED_UNTIL,
     };
     use std::collections::HashMap;
 
@@ -494,6 +698,122 @@ mod tests {
 
         // 304 with no cached entry → None (caller errors).
         assert_eq!(apply_github_response(&mut cache, "repos/missing", true, None, None), None);
+    }
+
+    /// A `CachedGet` for the persistence tests: `etag: None` models a GraphQL entry.
+    fn entry(etag: Option<&str>, n: u64, fetched_at: u64) -> CachedGet {
+        CachedGet { etag: etag.map(str::to_string), body: serde_json::json!({ "n": n }), fetched_at }
+    }
+
+    #[test]
+    fn persisted_cache_round_trips_rest_entries_and_skips_graphql() {
+        let mut cache: HashMap<String, CachedGet> = HashMap::new();
+        cache.insert("repos/a".into(), entry(Some("etag-a"), 1, 100));
+        cache.insert("user/repos".into(), entry(Some("etag-b"), 2, 200));
+        // GraphQL entries carry no ETag — they must NOT be persisted (cold, they can't be
+        // revalidated cheaply; the frontend's updatedAt probe covers them).
+        cache.insert("graphql:query{...}|".into(), entry(None, 3, 300));
+
+        let text = persist_snapshot(&cache).expect("snapshot serializes");
+        let path = crate::testutil::unique_dir("bsc-ghcache", "roundtrip").join("github-http-cache.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, text).unwrap();
+
+        let loaded = load_persisted_cache(&path);
+        assert_eq!(loaded.len(), 2, "only the two REST entries persist");
+        let a = loaded.get("repos/a").expect("repos/a survives the round trip");
+        assert_eq!(a.etag.as_deref(), Some("etag-a"));
+        assert_eq!(a.body, serde_json::json!({ "n": 1 }));
+        assert_eq!(a.fetched_at, 100);
+        assert!(!loaded.contains_key("graphql:query{...}|"));
+
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn persisted_cache_caps_entries_evicting_the_oldest() {
+        let mut cache: HashMap<String, CachedGet> = HashMap::new();
+        for i in 0..(PERSIST_CAP as u64 + 10) {
+            cache.insert(format!("repos/p{i}"), entry(Some("e"), i, i));
+        }
+        let text = persist_snapshot(&cache).unwrap();
+        let map: HashMap<String, serde_json::Value> = serde_json::from_str(&text).unwrap();
+        assert_eq!(map.len(), PERSIST_CAP, "capped at PERSIST_CAP");
+        // Newest kept, oldest evicted (fetched_at ordering).
+        assert!(map.contains_key(&format!("repos/p{}", PERSIST_CAP + 9)));
+        assert!(!map.contains_key("repos/p0"));
+        assert!(!map.contains_key("repos/p9"));
+        assert!(map.contains_key("repos/p10"));
+    }
+
+    #[test]
+    fn load_persisted_cache_tolerates_missing_and_corrupt_files() {
+        let dir = crate::testutil::unique_dir("bsc-ghcache", "corrupt");
+        // Missing file (first run) → empty, no error.
+        assert!(load_persisted_cache(&dir.join("nope.json")).is_empty());
+        // Corrupt file → empty (start over), never a panic/failure.
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("github-http-cache.json");
+        std::fs::write(&path, "not json {{{").unwrap();
+        assert!(load_persisted_cache(&path).is_empty());
+        // Valid JSON of the wrong shape → also empty.
+        std::fs::write(&path, r#"{"repos/a": {"unexpected": true}}"#).unwrap();
+        assert!(load_persisted_cache(&path).is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn rate_limit_until_from_detects_only_exhausted_quotas() {
+        let now = 1_700_000_000;
+        // Primary limit: 403 + remaining 0 → the reset epoch.
+        assert_eq!(
+            rate_limit_until_from(403, Some("0"), Some("1700000123"), None, now),
+            Some(1_700_000_123),
+        );
+        // A reset in the past still gates for ≥ 1s (never a 0-length gate loop).
+        assert_eq!(rate_limit_until_from(403, Some("0"), Some("100"), None, now), Some(now + 1));
+        // Missing/garbled reset → the 60s fallback backoff.
+        assert_eq!(rate_limit_until_from(403, Some("0"), None, None, now), Some(now + 60));
+        assert_eq!(rate_limit_until_from(403, Some("0"), Some("soon"), None, now), Some(now + 60));
+        // Secondary limit: Retry-After wins over the primary headers.
+        assert_eq!(rate_limit_until_from(429, None, None, Some("30"), now), Some(now + 30));
+        assert_eq!(
+            rate_limit_until_from(403, Some("0"), Some("1700009999"), Some("15"), now),
+            Some(now + 15),
+        );
+        // A plain permissions 403 (remaining > 0, no Retry-After) is NOT a rate limit.
+        assert_eq!(rate_limit_until_from(403, Some("4999"), Some("1700000123"), None, now), None);
+        assert_eq!(rate_limit_until_from(403, None, None, None, now), None);
+        // Non-403/429 statuses never arm the gate, whatever the headers say.
+        assert_eq!(rate_limit_until_from(500, Some("0"), Some("1700000123"), None, now), None);
+        assert_eq!(rate_limit_until_from(200, Some("0"), None, Some("30"), now), None);
+    }
+
+    #[test]
+    fn rate_limit_gate_blocks_until_reset_then_disarms() {
+        use std::sync::atomic::Ordering;
+        // One test fn for all gate states — the static is shared, so interleaving cases across
+        // parallel test fns would race.
+        RATE_LIMITED_UNTIL.store(0, Ordering::Relaxed);
+        assert_eq!(rate_limit_gate(), None, "unarmed gate lets requests through");
+
+        let until = now_epoch() + 120;
+        RATE_LIMITED_UNTIL.store(until, Ordering::Relaxed);
+        assert_eq!(
+            rate_limit_gate(),
+            Some(format!("github rate-limited until {until}")),
+            "armed + unexpired → the typed error (the exact string the frontend parses)",
+        );
+
+        RATE_LIMITED_UNTIL.store(now_epoch().saturating_sub(5), Ordering::Relaxed);
+        assert_eq!(rate_limit_gate(), None, "expired gate lets the request through…");
+        assert_eq!(RATE_LIMITED_UNTIL.load(Ordering::Relaxed), 0, "…and disarms");
+    }
+
+    #[test]
+    fn rate_limited_error_is_the_typed_prefix_the_frontend_parses() {
+        // Pinned: `rateLimitedUntil` in shared/lib/github/github.ts matches this exact wording.
+        assert_eq!(rate_limited_error(1_700_000_123), "github rate-limited until 1700000123");
     }
 }
 
