@@ -1,6 +1,8 @@
 // Blueprint Author — 1 · PURPOSE. Identity, description, audience, catalog tags,
 // and a live catalog-card preview.
 
+import authorOptionsEmbedded from "@data/planner/blueprint-author-options.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
 import { Ic } from "@/features/planner/blueprints/blueprintIcons";
 import { Chip } from "@/shared/ui/data/Chip";
 import { hue, tint, stageKind } from "@/features/planner/blueprints/blueprintCatalog";
@@ -12,8 +14,10 @@ import { Text } from "@/shared/ui/typography/Text";
 import type { Blueprint } from "@/features/planner/stages/blueprints";
 import { gateCount, Lbl, type AuthorViewProps } from "./shared";
 
-const HUE_CHOICES = [195, 25, 70, 145, 230, 295, 350];
-const TAGS = ["backend", "frontend", "realtime", "api", "data", "ml", "mobile", "infra", "lean"];
+// Catalog-tag + accent-hue choices — from `@data/planner/blueprint-author-options.json` (#2419,
+// beside blueprint-meta.json); the config-dir copy (#2047) overlays the embedded default.
+const { tags: TAGS, hueChoices: HUE_CHOICES } =
+  overlayFile("planner/blueprint-author-options.json", authorOptionsEmbedded);
 
 export function PurposeView({ bp, onChange }: AuthorViewProps) {
   const set = (patch: Partial<Blueprint>) => onChange({ ...bp, ...patch });
