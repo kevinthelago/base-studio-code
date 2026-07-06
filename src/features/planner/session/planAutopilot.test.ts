@@ -56,6 +56,25 @@ describe("buildUserSimPrompt (#682)", () => {
     expect(user).toContain("Build a settlement webhooks API");
     expect(user).toContain("What's the primary goal?");
   });
+
+  // #2416: the sim-user prose moved to `@data/planner/autopilot-sim.json` — pin the rendered
+  // output byte-identical to the previous TS-authored strings.
+  it("renders byte-identical to the pre-@data TS strings (#2416)", () => {
+    const { system, user } = buildUserSimPrompt("  Build a settlement webhooks API \n", " What's the primary goal? ");
+    expect(system).toBe(
+      "You are simulating a PRODUCT OWNER being interviewed by an AI project planner. " +
+      "Answer the planner's latest message concretely and decisively in 1–3 sentences, as the " +
+      "person who pitched the project. Make reasonable, consistent decisions; never ask " +
+      "questions back; don't hedge or stall. When asked to choose or confirm, do so. Stay true " +
+      "to the pitch and to your earlier answers.",
+    );
+    // pitch + planner output are trimmed, exactly as before
+    expect(user).toBe(
+      "PROJECT PITCH:\nBuild a settlement webhooks API\n\n" +
+      "THE PLANNER JUST SAID:\nWhat's the primary goal?\n\n" +
+      "Your reply, as the product owner:",
+    );
+  });
 });
 
 describe("staticReply (#682 strategies)", () => {
@@ -65,6 +84,19 @@ describe("staticReply (#682 strategies)", () => {
     expect(typeof staticReply("scripted", 0)).toBe("string");
     expect(typeof staticReply("random", 3)).toBe("string");
     expect(staticReply("random", 3)).toBe(staticReply("random", 3)); // deterministic by seed
+  });
+
+  // #2416: the canned replies moved to `@data/planner/autopilot-sim.json` — pin the previous corpus.
+  it("scripted + random replies are byte-identical to the pre-@data TS strings (#2416)", () => {
+    expect(staticReply("scripted", 0)).toBe("Looks good — proceed.");
+    const corpus = [
+      "sure, whatever you think is best",
+      "yes", "no", "skip that one", "use the defaults",
+      "I'm not sure, you decide", "keep it simple", "next",
+    ];
+    for (let seed = 0; seed < corpus.length; seed++) {
+      expect(staticReply("random", seed)).toBe(corpus[seed % corpus.length]);
+    }
   });
 });
 
