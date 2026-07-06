@@ -11,6 +11,7 @@ import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { useCoordinator } from "./useCoordinator";
 import { useDirectorPump } from "./useDirectorPump";
 import { useFaultTriage } from "./useFaultTriage";
+import { useKitDispatch } from "./useKitDispatch";
 import { useIdleReaper } from "@/app/console/lib/useIdleReaper";
 import { useCiWatcher } from "@/shared/lib/github/useCiWatcher";
 import { Stack } from "@/shared/ui/layout/Stack";
@@ -32,6 +33,7 @@ export function ConsoleWorkspace({ tabIdxOverride }: { tabIdxOverride?: number }
   // Mounted here because ConsoleWorkspace stays mounted across every screen (#187).
   useCoordinator();
   useFaultTriage(); // #2265 — poll runtime faults; route a deduped, rate-limited fix per the auto-triage toggle
+  useKitDispatch(); // #2277 — drain queued kit-change dispatches to the rails per the kit auto-dispatch toggle
   useIdleReaper(); // #849 — reap idle background PTYs to bound memory
   // #1181: per-pane token/cost rollup (actual running model + Telemetry view), polled from
   // the transcripts the `bsc-tokens` hook records. Empty until an agent takes a turn.

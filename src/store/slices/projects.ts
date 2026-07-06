@@ -35,7 +35,7 @@ import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 import { bscJson } from "@/shared/lib/core/bsc";
 
 type ProjectsSlice = Pick<AppStore,
-  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "autoTriage" | "setAutoTriage" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
+  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "autoTriage" | "setAutoTriage" | "autoKitDispatch" | "setAutoKitDispatch" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
 >;
 
 export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> = (set, get) => ({
@@ -88,6 +88,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             skills:                 (s.skills ?? []).map((sk) => ({ ...sk, projects: (sk.projects ?? []).filter((p) => !keySet.has(p)) })),
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
             autoTriage:             byKey(s.autoTriage),
+            autoKitDispatch:        byKey(s.autoKitDispatch),
             projectLocalRepos:      byKey(s.projectLocalRepos),
         localDraftProjects:     byKey(s.localDraftProjects),
             repoStartupPromptDoc:   byRepoKey(s.repoStartupPromptDoc),
@@ -102,7 +103,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           planStages: {}, planConfirmedStages: {}, planAuthoredBlueprint: {}, planSkippedStages: {}, planDeployConfig: {},
           planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stageRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {},
-          projectKeyAlias: {}, issueLinks: {}, autoTriage: {}, projectStartupPromptDoc: {},
+          projectKeyAlias: {}, issueLinks: {}, autoTriage: {}, autoKitDispatch: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
           activeProjectId: null, activeProjectName: "", activeProjectRepo: "",
           activeProjectNumber: 0, activeProjectRepos: [],
@@ -121,6 +122,11 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
       autoTriage: {},
       setAutoTriage: (projectKey, on) =>
         set((s) => ({ autoTriage: on ? { ...s.autoTriage, [projectKey]: true } : deleteMapEntry(s.autoTriage, projectKey) })),
+      // Per-project kit auto-dispatch toggle (#2277) — default OFF (notify-only). `false` drops the entry
+      // so the map stays sparse (absent ⇒ off), like autoTriage.
+      autoKitDispatch: {},
+      setAutoKitDispatch: (projectKey, on) =>
+        set((s) => ({ autoKitDispatch: on ? { ...s.autoKitDispatch, [projectKey]: true } : deleteMapEntry(s.autoKitDispatch, projectKey) })),
       repoStartupPromptDoc: {},
       setRepoStartupPromptDoc: (projectId, repo, doc) =>
         set((s) => ({ repoStartupPromptDoc: setMapEntry(s.repoStartupPromptDoc, repoPromptKey(projectId, repo), doc) })),
