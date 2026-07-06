@@ -43,11 +43,22 @@ describe("useHotkeys — Console-only listener (#1218)", () => {
     expect(ev.defaultPrevented).toBe(false);
   });
 
-  it("does not navigate screens from off-Console (F1–F6 are Console-only now)", () => {
+  it("navigates screens from off-Console via the always-on F-key listener (#2403)", () => {
+    // #1218 accidentally made F-key screen nav Console-only; the global listener restores it everywhere.
     useAppStore.setState({ activeWorkspace: "settings" });
     renderHook(() => useHotkeys());
 
-    const ev = pressKey({ code: "F1" }); // screen-console hotkey
+    const ev = pressKey({ code: "F6" }); // screen-github
+
+    expect(useAppStore.getState().activeWorkspace).toBe("github");
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it("F1 no longer navigates — the console screen hotkey was removed (#2403)", () => {
+    useAppStore.setState({ activeWorkspace: "settings" });
+    renderHook(() => useHotkeys());
+
+    const ev = pressKey({ code: "F1" });
 
     expect(useAppStore.getState().activeWorkspace).toBe("settings");
     expect(ev.defaultPrevented).toBe(false);
