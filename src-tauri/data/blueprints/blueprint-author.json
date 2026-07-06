@@ -21,6 +21,10 @@
       "optional": true
     },
     {
+      "key": "bp_team",
+      "optional": true
+    },
+    {
       "key": "bp_review"
     }
   ]

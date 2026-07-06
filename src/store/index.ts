@@ -76,6 +76,7 @@ export const useAppStore = create<AppStore>()(
         endedPanes:      s.endedPanes,   // #920: a finished worker's resting state survives restart
         githubConnected: s.githubConnected,
         githubToken:     s.githubToken,
+        githubState:     s.githubState,   // #2446: last-known GitHub board state (stale overlay after restart)
         repoGithubTokens: s.repoGithubTokens,
         githubUser:      s.githubUser,
         githubRepos:     s.githubRepos,

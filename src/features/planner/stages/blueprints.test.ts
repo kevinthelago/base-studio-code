@@ -76,15 +76,16 @@ describe("blueprints — seed library", () => {
     expect(greenfield.indexOf("complete")).toBe(greenfield.indexOf("default") + 1);
   });
 
-  it("includes a 'blueprint-author' authoring blueprint: deliverable=blueprint, 4 stages, no fleet/triage (#923)", () => {
+  it("includes a 'blueprint-author' authoring blueprint: deliverable=blueprint, 5 stages, no fleet/triage (#923/#2450)", () => {
     const bp = makeBlueprints().find((b) => b.id === "blueprint-author");
     expect(bp).toBeTruthy();
     expect(isAuthoringBlueprint(bp)).toBe(true);
     expect(bp!.deliverable).toBe("blueprint");
     const keys = bp!.sections.map((s) => s.key);
-    expect(keys).toEqual(["purpose", "bp_stages", "bp_capabilities", "bp_review"]);
-    // capabilities is the only optional stage; it has no repos/structure/permissions (no execution).
+    expect(keys).toEqual(["purpose", "bp_stages", "bp_capabilities", "bp_team", "bp_review"]);
+    // capabilities + team (#2450) are the optional stages; no repos/structure/permissions (no execution).
     expect(bp!.sections.find((s) => s.key === "bp_capabilities")!.optional).toBe(true);
+    expect(bp!.sections.find((s) => s.key === "bp_team")!.optional).toBe(true);
     expect(keys).not.toContain("structure");
     expect(keys).not.toContain("permissions");
     // a normal blueprint is NOT an authoring one
