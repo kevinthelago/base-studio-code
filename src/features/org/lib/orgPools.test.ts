@@ -31,19 +31,32 @@ describe("detectPools (#2199)", () => {
   it("collapses a homogeneous swarm into one pool", () => {
     const pools = detectPools(swarm, personas);
     expect(pools).toHaveLength(1);
-    expect(pools[0]).toMatchObject({ nodeId: "pool:p-worker", personaId: "p-worker", count: 3 });
+    expect(pools[0]).toMatchObject({ nodeId: "pool:p-worker", personaId: "p-worker", count: 3, homogeneous: true });
     expect(pools[0].memberNodeIds.sort()).toEqual(["w1", "w2", "w3"]);
   });
 
-  it("does NOT collapse when members have different external relationships (homogeneous-only)", () => {
-    // w1 overseen by a reviewer, w2/w3 not → heterogeneous external signatures, so they stay distinct
-    // (this is the Fleet-Alpha case: Engineer A→reviewer, Engineer B→auditor).
+  it("STILL collapses when members have different external relationships, flagged mixed (#2436)", () => {
+    // w1 overseen by a reviewer, w2/w3 not — the Fleet-Alpha case (Engineer A→reviewer, B→auditor).
+    // Pre-#2436 this blocked the stack, so real orgs' engineers never collapsed; now the engineers
+    // stack anyway (the org view is the scaffold + the engineer slot) with `homogeneous:false` — the
+    // drill-in shows who has which edge.
     const hetero: Org = {
       ...swarm,
       positions: [...swarm.positions, { nodeId: "reviewer", kind: "agent", personaId: "p-reviewer", x: 0, y: 0 }],
       relationships: [...swarm.relationships, { id: "ov", archetype: "oversees", from: "reviewer", to: "w1" }],
     };
-    expect(detectPools(hetero, personas)).toHaveLength(0);
+    const pools = detectPools(hetero, personas);
+    expect(pools).toHaveLength(1);
+    expect(pools[0]).toMatchObject({ nodeId: "pool:p-worker", count: 3, homogeneous: false });
+  });
+
+  it("stacks a worker-role persona BY DEFAULT — no `pooled` flag needed (#2436)", () => {
+    // A user-authored engineer persona (role worker, `pooled` unset) stacks: the engineer slot is
+    // the scalable one; the planner owns how many engineers exist (#2388).
+    const custom = personas.map((p) => (p.id === "p-worker" ? { ...p, pooled: undefined } : p));
+    const pools = detectPools(swarm, custom);
+    expect(pools).toHaveLength(1);
+    expect(pools[0]).toMatchObject({ nodeId: "pool:p-worker", count: 3 });
   });
 
   it("falls back to the packaged pooled flag when the store copy predates the field", () => {
@@ -68,12 +81,26 @@ describe("detectPools (#2199)", () => {
     expect(detectPools(org, stale)).toHaveLength(1);
   });
 
-  it("ignores a non-pooled persona and single-member groups", () => {
+  it("respects an explicit un-pool (`pooled:false` beats the worker-role default) and single members", () => {
     const notPooled = personas.map((p) => (p.id === "p-worker" ? { ...p, pooled: false } : p));
     expect(detectPools(swarm, notPooled)).toHaveLength(0);
     // one worker only → no pool even when pooled
     const single: Org = { ...swarm, positions: swarm.positions.slice(0, 2), relationships: [swarm.relationships[0]] };
     expect(detectPools(single, personas)).toHaveLength(0);
+  });
+
+  it("never stacks the scaffold: a non-worker persona placed twice stays two singletons", () => {
+    // Two reviewer positions (not pooled, not worker-role) — leadership/quality roles are the
+    // scaffold and must stay individually visible.
+    const org: Org = {
+      id: "s", name: "s",
+      positions: [
+        { nodeId: "r1", kind: "agent", personaId: "p-reviewer" },
+        { nodeId: "r2", kind: "agent", personaId: "p-reviewer" },
+      ],
+      relationships: [],
+    };
+    expect(detectPools(org, personas)).toHaveLength(0);
   });
 });
 
