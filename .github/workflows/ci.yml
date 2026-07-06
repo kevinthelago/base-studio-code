@@ -190,7 +190,9 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --workspace
+        # --no-fail-fast: report EVERY failing crate in one run — the default aborts at the
+        # first failing test target, which peels multi-crate rot one 12-minute round at a time.
+        run: cargo test --workspace --no-fail-fast
 
   # Single always-run check to require on branch protection. The frontend/rust jobs
   # are conditional (skipped when their paths don't change), and a *skipped* required
