@@ -4,8 +4,8 @@
 // project's node id, plus the same error banner. Extracted here so the four screens share one
 // source.
 import type { CSSProperties } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
+import { githubGraphql } from "@/shared/lib/github/github";
 import { useGithubQuery, type GithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
@@ -32,8 +32,11 @@ export function useActiveProjectGithub<T = { node: Record<string, unknown> }>(
 ): { project: ActiveProjectInfo } & GithubQuery<T> {
   const project = useActiveProject();
   const activeProjectId = useAppStore((s) => s.activeProjectId);
+  // githubGraphql (not a raw invoke) so the board reads hit the backend TTL cache (#2447):
+  // switching between Board / Issues / Insights within the window re-serves the cached result
+  // instead of re-POSTing the heavy `items(first:100)` scan on every navigation.
   const state = useGithubQuery<T>(
-    (token) => invoke("github_graphql", { token, query, variables: { id: activeProjectId } }),
+    () => githubGraphql<T>(query, { id: activeProjectId }),
     [activeProjectId],
     !!activeProjectId,
   );
