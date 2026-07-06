@@ -9,6 +9,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
 import { Text } from "@/shared/ui/typography/Text";
+import { truncate } from "@/shared/lib/core/format";
 
 interface GhCommit {
   sha: string;
@@ -159,7 +160,7 @@ export function BranchGraph({ repo }: { repo: GithubRepo }) {
                 <line x1={X_LEFT - 4} y1={LANE_Y[i]} x2={X_RIGHT + 10} y2={LANE_Y[i]}
                   stroke="var(--border-soft)" strokeWidth="1" strokeDasharray="2 4" />
                 <text x={X_LEFT - 8} y={LANE_Y[i] + 4} textAnchor="end" fontFamily="var(--mono)" fontSize="9.5" fill={laneColors[i]}>
-                  {name.length > 20 ? name.slice(0, 18) + "…" : name}
+                  {truncate(name, 20, 18)}
                 </text>
               </g>
             ))}

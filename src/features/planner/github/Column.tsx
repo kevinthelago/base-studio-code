@@ -3,6 +3,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Text } from "@/shared/ui/typography/Text";
 import { Box } from "@/shared/ui/layout/Box";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { IssueCard } from "./IssueCard";
 import type { BoardColumn, BoardIssue } from "./projectBoard.types";
 
@@ -20,7 +21,7 @@ export function Column({
         background: "var(--bg-elev)",
         fontSize: 11,
       }}>
-        <Box as="span" bg={col.color} style={{ width: 7, height: 7, borderRadius: "50%"}} />
+        <StatusDot color={col.color} size={7} />
         <Text as="span" style={{ color: "var(--fg)" }}>{col.name}</Text>
         <Text tone="dim">{issues.length}</Text>
         <Spacer />

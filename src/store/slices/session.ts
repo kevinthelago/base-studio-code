@@ -3,6 +3,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import { DEFAULT_AUTO_FOCUS_MODE } from "@/app/console/lib/focusQueue";
+import { DEFAULT_MODEL_ID } from "@/app/console/lib/models";
 import { setMapEntry } from "../updateHelpers";
 
 // NOTE: skills moved to the Skills feature slice (@/features/skills/store) and MCP servers + hooks
@@ -63,7 +64,7 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       coordAutoWake: false,
       setCoordAutoWake: (v) => set({ coordAutoWake: v }),
 
-      defaultModel: "sonnet-4.5",
+      defaultModel: DEFAULT_MODEL_ID,
       setDefaultModel: (m) => set({ defaultModel: m }),
       fleetHarness: "claude",
       setFleetHarness: (h) => set({ fleetHarness: h }),

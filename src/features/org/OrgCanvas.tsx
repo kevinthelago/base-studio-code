@@ -8,6 +8,7 @@ import { useRef, useState } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
+import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { RELATIONSHIP_ARCHETYPES, archetypeById, type Org } from "./lib/org";
 import { CANVAS_W, CANVAS_H, nodeBox, edgeGeometry, styleDash } from "./lib/orgLayout";
 import { positionDisplay, hueColor, type PositionDisplay } from "./lib/orgView";
@@ -267,7 +268,7 @@ export function OrgLegend() {
     <Box style={{ position: "absolute", left: 16, bottom: 16, background: "color-mix(in oklch, var(--bg-elev) 92%, transparent)",
       backdropFilter: "blur(8px)", border: "1px solid var(--border-soft)", borderRadius: 11, padding: "11px 13px",
       display: "flex", flexDirection: "column", gap: 7, boxShadow: "0 8px 24px rgba(0,0,0,.4)" }}>
-      <Text as="span" className="ulabel" tone="dim" size={9} style={{ marginBottom: 2 }}>Relationships</Text>
+      <SectionLabel size={9} style={{ marginBottom: 2 }}>Relationships</SectionLabel>
       {RELATIONSHIP_ARCHETYPES.map((a) => (
         <Row key={a.id} gap={9} align="center">
           <svg width={30} height={8} style={{ flex: "none", overflow: "visible" }}>
