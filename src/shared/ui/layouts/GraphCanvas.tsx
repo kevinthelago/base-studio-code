@@ -16,6 +16,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import type { GraphViewport } from "./useGraphViewport";
+import "./graphCanvas.css"; // the shared .graph-drill-anim drill transition (#2418)
 
 export interface GraphCanvasProps {
   /** The viewport created by the page's useGraphViewport(). */
