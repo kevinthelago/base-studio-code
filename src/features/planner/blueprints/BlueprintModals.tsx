@@ -2,12 +2,11 @@
 // Faithful UI; the side-effecting flows (publish / import) take async callbacks so the
 // page shell can wire them to the real gist client (gist.ts) while these stay testable.
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import "../../../styles/blueprints.css";
-import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
+import { ModalCard } from "@/shared/ui/overlay/ModalCard";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Ic } from "./blueprintIcons";
-import { IconButton } from "@/shared/ui/controls/IconButton";
 import { Button } from "@/shared/ui/controls/Button";
 import { TextField } from "@/shared/ui/controls/Field";
 import { IconBox } from "@/shared/ui/data/IconBox";
@@ -33,26 +32,8 @@ export interface PreviewBlueprint {
   bundled?: SkillPayload[];
 }
 
-function Modal({ icon, iconBg, iconColor, title, sub, onClose, children, foot, lg }: {
-  icon: ReactNode; iconBg?: string; iconColor?: string; title: string; sub?: string;
-  onClose: () => void; children: ReactNode; foot?: ReactNode; lg?: boolean;
-}) {
-  return (
-    <Box className="bp-page" style={{ position: "fixed", inset: 0 }}>
-      <ModalScrim onDismiss={onClose} blur style={{ padding: 30 }}>
-        <Box className="modal" bg="var(--bg-panel)" border radius="lg" style={{ width: lg ? 720 : 540, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}>
-          <Row gap={11} className="modal-head" style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
-            <IconBox size={30} radius={7} fontSize={13} background={iconBg ?? "color-mix(in oklch, var(--accent), transparent 84%)"} color={iconColor ?? "var(--accent)"}>{icon}</IconBox>
-            <Box><Text as="h2" mono size="lg" weight={600} style={{ margin: 0 }}>{title}</Text>{sub && <Text as="div" size={10.5} tone="dim" style={{ marginTop: 1 }}>{sub}</Text>}</Box>
-            <IconButton aria-label="close" style={{ marginLeft: "auto" }} onClick={onClose} />
-          </Row>
-          <Box className="modal-body" pad={20} style={{ overflowY: "auto" }}>{children}</Box>
-          {foot && <Row gap={9} className="modal-foot" style={{ padding: "14px 20px", borderTop: "1px solid var(--border-soft)" }}>{foot}</Row>}
-        </Box>
-      </ModalScrim>
-    </Box>
-  );
-}
+// The titled head/body/foot chrome is the shared <ModalCard> (#2420); the `.bp-page` wrapper stays —
+// it scopes the blueprint component CSS (`.hint`, `.mono.dim`, …) the modal bodies/foots rely on.
 
 export function StageSummary({ sections }: { sections: BlueprintStage[] }) {
   return (
@@ -64,7 +45,7 @@ export function StageSummary({ sections }: { sections: BlueprintStage[] }) {
           <Stack key={s.uid ?? i} gap={4} style={{ padding: "5px 0" }}>
             <Row gap={9}>
               <Box as="span" className="mono dim" style={{ fontSize: 9.5, width: 16 }}>{String(i + 1).padStart(2, "0")}</Box>
-              <Box as="span" bg={tint(k.h, 0.16)} radius={5} style={{ width: 22, height: 22, flex: "0 0 22px", color: hue(k.h), display: "flex", alignItems: "center", justifyContent: "center" }}><Ic n={k.glyph} size={13} /></Box>
+              <IconBox size={22} radius={5} background={tint(k.h, 0.16)} color={hue(k.h)}><Ic n={k.glyph} size={13} /></IconBox>
               <Text as="span" size={11.5} className="mono" style={{ color: "var(--fg)" }}>{s.name}</Text>
               <Box as="span" style={{ flex: 1 }} />
               {caps > 0 && <Text as="span" className="hint mono">{caps} attached</Text>}
@@ -103,7 +84,8 @@ export function ImportModal({ onClose, onResolve, onImport }: {
   }
 
   return (
-    <Modal icon={<Ic n="cloud_download" size={15} />} title="Import from gist" sub="Pull a blueprint someone shared with you" onClose={onClose}
+    <Box className="bp-page" style={{ position: "fixed", inset: 0 }}>
+    <ModalCard icon={<Ic n="cloud_download" size={15} />} title="Import from gist" sub="Pull a blueprint someone shared with you" onClose={onClose}
       foot={phase === "preview" && preview
         ? <><Text as="span" className="hint">Imports as a linked copy — you can sync upstream later</Text><Box as="span" style={{ flex: 1 }} /><Button variant="ghost" onClick={() => setPhase("input")}>Back</Button><Button variant="primary" onClick={() => onImport(preview)}>Import to library</Button></>
         : <><Box as="span" style={{ flex: 1 }} /><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!val.trim() || phase === "loading"} onClick={resolve}>{phase === "loading" ? "Resolving…" : "Resolve gist"}</Button></>}>
@@ -124,6 +106,7 @@ export function ImportModal({ onClose, onResolve, onImport }: {
           {phase === "error" && <Box className="mono" style={{ color: "var(--danger)", fontSize: 11, marginTop: 10 }}>Couldn't resolve: {err}</Box>}
         </>
       )}
-    </Modal>
+    </ModalCard>
+    </Box>
   );
 }
