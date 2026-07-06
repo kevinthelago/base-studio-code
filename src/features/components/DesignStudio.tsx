@@ -24,7 +24,11 @@ import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { layerDag } from "@/shared/lib/graph/layers";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 import type { GraphEdge } from "@/shared/lib/graph/types";
-import { ROLE_COLOR, matchesQuery, resolveComposes, resolveUsedBy, type ComponentRecord } from "./lib/model";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { RoleDot, KitChip } from "./kitChrome";
+import { matchesQuery, resolveComposes, resolveUsedBy, NO_COMPONENTS_TITLE, type ComponentRecord } from "./lib/model";
 import { renderSpecimen, type PreviewTheme } from "./specimens";
 import "./designStudio.css";
 
@@ -41,10 +45,7 @@ const GEN_MS = 1600;
 /** Graph node box + column/row spacing (world coords). */
 const NODE_W = 170, NODE_H = 54, COL_GAP = 230, ROW_GAP = 96, PAD = 60;
 
-const roleDot = (role: ComponentRecord["role"], size = 8) => (
-  <Box as="span" style={{ width: size, height: size, borderRadius: "50%", background: ROLE_COLOR[role], flex: "none" }} />
-);
-const glow = (hex: string) => `color-mix(in srgb, ${hex} 22%, transparent)`;
+// The role dot + kit chip live in kitChrome.tsx (#2420) — shared with the Planner Components pane.
 
 export function DesignStudio() {
   const components = useAppStore((s) => s.components);
@@ -161,10 +162,9 @@ export function DesignStudio() {
         <Box style={{ display: "flex", alignItems: "center", gap: 6, flex: "none" }}>
           <Text mono size="xxs" tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase", marginRight: 2 }}>Kit</Text>
           {kits.map((k) => (
-            <Box as="button" key={k.id} className={`ds-kitchip${k.id === kitId ? " on" : ""}`} title={k.stack} onClick={() => selectKit(k.id)}>
-              <Box as="span" style={{ width: 6, height: 6, borderRadius: 2, background: k.dot }} />{k.name}
+            <KitChip key={k.id} kit={k} on={k.id === kitId} className="ds-kitchip" title={k.stack} onClick={() => selectKit(k.id)}>
               <Text mono size="xxs" style={{ opacity: .7 }}>{components.filter((c) => c.kitId === k.id).length}</Text>
-            </Box>
+            </KitChip>
           ))}
         </Box>
         <Box style={{ flex: 1, display: "flex", justifyContent: "center", minWidth: 80 }}>
@@ -214,7 +214,7 @@ export function DesignStudio() {
                 <Box key={k.id} style={{ marginBottom: 4 }}>
                   <Box as="button" className={`ds-kithead${k.id === kitId ? " active" : ""}`} onClick={() => setExpanded((e) => ({ ...e, [k.id]: !e[k.id] }))}>
                     <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
-                    <Box as="span" style={{ width: 7, height: 7, borderRadius: 2, background: k.dot }} />
+                    <ColorSwatch color={k.dot} size={7} />
                     <Text as="span" weight={500} style={{ flex: 1, textAlign: "left" }}>{k.name}</Text>
                     <Text mono size="xxs" tone="dim">{inKit.length}</Text>
                   </Box>
@@ -222,7 +222,7 @@ export function DesignStudio() {
                     <Box style={{ margin: "2px 0 6px", paddingLeft: 6 }}>
                       {rows.map((c) => (
                         <Box as="button" key={c.id} className={`ds-comprow${c.id === compId && k.id === kitId ? " on" : ""}`} onClick={() => selectComp(c)}>
-                          <Box as="span" style={{ width: 7, height: 7, borderRadius: "50%", background: ROLE_COLOR[c.role], flex: "none", boxShadow: `0 0 0 3px ${glow(ROLE_COLOR[c.role])}` }} />
+                          <RoleDot role={c.role} size={7} glow={3} />
                           <Text as="span" style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</Text>
                           <Text mono size="xxs" tone="dim" style={{ padding: "1px 5px", background: "var(--bg-soft)", borderRadius: 4 }}>×{c.used}</Text>
                         </Box>
@@ -300,7 +300,7 @@ function LibraryView(p: LibProps) {
             <Box className="ds-overlay" style={{ padding: 24 }}>
               <Box style={{ maxWidth: 400, width: "100%", background: "var(--bg-elev, var(--bg-soft))", border: "1px solid color-mix(in srgb, var(--danger) 40%, var(--border))", borderRadius: 12, overflow: "hidden" }}>
                 <Box style={{ height: 30, display: "flex", alignItems: "center", gap: 8, padding: "0 12px", background: "color-mix(in srgb, var(--danger) 12%, transparent)", borderBottom: "1px solid color-mix(in srgb, var(--danger) 30%, transparent)" }}>
-                  <Box as="span" style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--danger)" }} />
+                  <StatusDot color="var(--danger)" size={8} />
                   <Text mono size="xxs" tone="danger" style={{ letterSpacing: ".05em", textTransform: "uppercase" }}>Preview failed to render</Text>
                 </Box>
                 <Box style={{ padding: "14px 16px" }}>
@@ -464,7 +464,7 @@ function GraphView({ graph, comps, selId, kitName, gvp, onSelect }: GraphProps) 
         return (
           <Box key={c.id} data-node onClick={() => onSelect(c)} className={`ds-node${c.id === selId ? " on" : ""}`} style={{ left: pos.x, top: pos.y, width: NODE_W }}>
             <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-              {roleDot(c.role)}<Text weight={600} size={13}>{c.name}</Text>
+              <RoleDot role={c.role} /><Text weight={600} size={13}>{c.name}</Text>
             </Box>
             <Box style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <Text size={10} tone="dim">{c.role}</Text><Text mono size="xxs" tone="muted">×{c.used}</Text>
@@ -486,7 +486,7 @@ function Inspector({ width, sel, kitName, activeVariant, allVariants, composes, 
     <Box className="ds-col ds-insp" style={{ width, flexBasis: width }}>
       <Box className="ds-colhead">
         <Text className="ds-eyebrow" as="span">Inspector</Text>
-        <Text size={10} tone="dim" style={{ display: "flex", alignItems: "center", gap: 5 }}><Box as="span" style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)" }} />editable</Text>
+        <Text size={10} tone="dim" style={{ display: "flex", alignItems: "center", gap: 5 }}><StatusDot color="var(--success)" size={6} />editable</Text>
       </Box>
       {!sel ? (
         <Box style={{ padding: 16 }}><Text size={12} tone="dim">Select a component to inspect it.</Text></Box>
@@ -494,7 +494,7 @@ function Inspector({ width, sel, kitName, activeVariant, allVariants, composes, 
         <Box className="ds-scroll" style={{ flex: 1, padding: "16px 14px" }}>
           {/* title */}
           <Box style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14 }}>
-            <Box as="span" style={{ width: 9, height: 9, marginTop: 5, borderRadius: "50%", background: ROLE_COLOR[sel.role], flex: "none", boxShadow: `0 0 0 4px ${glow(ROLE_COLOR[sel.role])}` }} />
+            <RoleDot role={sel.role} size={9} glow={4} style={{ marginTop: 5 }} />
             <Box style={{ flex: 1, minWidth: 0 }}>
               <Text weight={600} size={16} style={{ letterSpacing: "-.01em" }}>{sel.name}</Text>
               <Text size={11.5} tone="muted" as="div" style={{ marginTop: 2 }}>{sel.role} · {kitName}</Text>
@@ -537,7 +537,7 @@ function Inspector({ width, sel, kitName, activeVariant, allVariants, composes, 
                 <Box style={{ display: "flex", flexDirection: "column", gap: 6, paddingLeft: 12, borderLeft: "1px dashed var(--border)" }}>
                   {composes.map(({ name, comp }) => (
                     <Box as={comp ? "button" : "span"} key={name} className="ds-rel" onClick={comp ? () => onSelect(comp) : undefined} aria-disabled={!comp} style={comp ? undefined : { opacity: .55, cursor: "default" }}>
-                      <Text as="span" tone="dim" size={11}>└</Text>{roleDot(comp?.role ?? "primitive", 6)}<Text as="span" size={11.5} tone="accent">{name}</Text>
+                      <Text as="span" tone="dim" size={11}>└</Text><RoleDot role={comp?.role ?? "primitive"} size={6} /><Text as="span" size={11.5} tone="accent">{name}</Text>
                     </Box>
                   ))}
                 </Box>
@@ -565,12 +565,11 @@ function Inspector({ width, sel, kitName, activeVariant, allVariants, composes, 
 // ── Empty state ──────────────────────────────────────────────────────────────
 function StudioEmpty({ inline }: { inline?: boolean } = {}) {
   return (
-    <Box style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 40, height: inline ? undefined : "100%" }}>
-      <Box style={{ maxWidth: 460, textAlign: "center" }}>
-        <Box style={{ width: 64, height: 64, borderRadius: 16, margin: "0 auto 22px", background: "var(--bg-soft)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, color: "var(--fg-dim)" }}>⬡</Box>
-        <Text weight={600} size={18} as="div" style={{ marginBottom: 8 }}>No components yet</Text>
-        <Text size={13} tone="muted" as="div" style={{ lineHeight: 1.6 }}>A <b style={{ color: "var(--fg)" }}>kit</b> is a technology-scoped namespace of proven components. Seed one from the UI already living in your repo, or start an empty kit.</Text>
-      </Box>
-    </Box>
+    <EmptyState
+      icon="⬡" iconVariant="dashed"
+      title={NO_COMPONENTS_TITLE}
+      description={<>A <b style={{ color: "var(--fg)" }}>kit</b> is a technology-scoped namespace of proven components. Seed one from the UI already living in your repo, or start an empty kit.</>}
+      style={{ height: inline ? undefined : "100%" }}
+    />
   );
 }
