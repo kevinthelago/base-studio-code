@@ -238,6 +238,7 @@ pub fn run() {
             project::hub::delete_project_dir,
             project::hub::mark_published,
             project::hub::set_project_title,
+            project::hub::relink_project_hub,
             project::plan_files::clear_all_plan_files,
             project::plan_files::clear_project_plan_files,
             project::hub::list_local_projects,
