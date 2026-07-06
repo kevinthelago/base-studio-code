@@ -1,70 +1,190 @@
 {
   "order": 1,
-  "kit": { "id": "examples", "name": "examples", "stack": "demo · multi-stack", "dot": "var(--state-wait)", "builtin": true },
+  "kit": { "id": "examples", "name": "examples", "stack": "React · demo", "dot": "var(--state-wait)", "builtin": true },
   "components": [
     {
-      "id": "personaspanel", "name": "PersonasPanel", "kitId": "examples", "role": "page", "version": "0.7.0", "used": 3,
-      "tags": ["screen", "library"], "variants": ["default"], "composes": ["Card", "Chip", "Button", "TextField", "SegmentedControl"],
-      "props": [],
-      "whenUse": ["The full CRUD surface for the persona library.", "Mounted as a planner-workspace tab or pane."],
-      "whenNot": ["Picking a persona inline — use a compact dropdown.", "Read-only display — pass a lighter view."],
-      "src": "features/personas/PersonasPanel.tsx",
-      "srcText": "export function PersonasPanel() {\n  const personas = useAppStore((s) => s.personas);\n  const [id, setId] = useState(personas[0]?.id);\n  // list rail + editor — reads/writes the GLOBAL store via the bsc bridge\n  return <Row><List .../><Editor .../></Row>;\n}",
+      "id": "personaspanel", "name": "PersonasPanel", "kitId": "examples", "role": "page", "version": "1.0.0", "used": 1,
+      "tags": ["screen", "library", "crud"], "variants": ["default"], "composes": ["PersonaShell", "PersonaList", "PersonaForm", "PersonaStore"],
+      "props": [
+        { "name": "initialId", "type": "string", "req": false, "desc": "Persona to preselect; defaults to the first in the store." },
+        { "name": "onClose", "type": "() => void", "req": false, "desc": "Called when the page is dismissed from a host shell." }
+      ],
+      "whenUse": ["The full CRUD surface for the persona library.", "Mounted as a workspace tab — it owns list + editor state."],
+      "whenNot": ["Picking a persona inline — use PersonaList alone.", "Read-only display — render PersonaRow without the form."],
+      "src": "pages/PersonasPanel.tsx",
+      "srcText": "export function PersonasPanel({ initialId }: Props) {\n  const { personas, save, remove } = PersonaStore.usePersonas();\n  const [id, setId] = useState(initialId ?? personas[0]?.id);\n  return (\n    <PersonaShell title=\"Personas\" rail={<PersonaList personas={personas} activeId={id} onPick={setId} />}>\n      <PersonaForm value={personas.find((p) => p.id === id)} onSave={save} onDelete={remove} />\n    </PersonaShell>\n  );\n}",
       "builtin": true
     },
     {
-      "id": "personaservice", "name": "PersonaService", "kitId": "examples", "role": "service", "version": "1.1.0", "used": 12,
-      "tags": ["store", "bridge", "kotlin"], "variants": ["default"], "composes": [],
+      "id": "agentsboard", "name": "AgentsBoard", "kitId": "examples", "role": "page", "version": "0.4.0", "used": 1,
+      "tags": ["screen", "fleet", "overview"], "variants": ["default"], "composes": ["PersonaShell", "AgentTile"],
       "props": [
-        { "name": "list()", "type": "List<Persona>", "req": true, "desc": "All personas from the global store." },
-        { "name": "set(p)", "type": "Persona", "req": true, "desc": "Upsert; written verbatim (no schema)." },
-        { "name": "remove(id)", "type": "Unit", "req": true, "desc": "Delete a user persona." }
+        { "name": "agents", "type": "Agent[]", "req": true, "desc": "The running agents to tile, one AgentTile each." },
+        { "name": "onOpen", "type": "(id: string) => void", "req": false, "desc": "Drill into an agent's session." }
       ],
-      "whenUse": ["Reading/writing the shared persona store.", "Behind the `bsc persona` CLI verbs."],
-      "whenNot": ["Per-project data — services here are global.", "UI state — that belongs in the store slice."],
-      "src": "store/PersonaService.kt",
-      "srcText": "@Service\nclass PersonaService(private val store: JsonStore) {\n  fun list(): List<Persona> = store.readAll(\"personas\")\n  fun set(p: Persona) = store.write(\"personas/${p.id}\", p)\n  fun remove(id: String) = store.delete(\"personas/$id\")\n}",
+      "whenUse": ["An at-a-glance grid of every agent built from a persona.", "The read-only fleet overview next to the Personas page."],
+      "whenNot": ["Editing a persona — that is PersonasPanel's job.", "A single agent's detail — render one AgentTile expanded."],
+      "src": "pages/AgentsBoard.tsx",
+      "srcText": "export function AgentsBoard({ agents, onOpen }: Props) {\n  return (\n    <PersonaShell title=\"Agents\">\n      <div className=\"board-grid\">\n        {agents.map((a) => <AgentTile key={a.id} agent={a} onOpen={onOpen} />)}\n      </div>\n    </PersonaShell>\n  );\n}",
       "builtin": true
     },
     {
-      "id": "bscbridge", "name": "BscBridge", "kitId": "examples", "role": "service", "version": "2.0.0", "used": 51,
-      "tags": ["cli", "bridge", "kotlin"], "variants": ["default"], "composes": [],
+      "id": "personashell", "name": "PersonaShell", "kitId": "examples", "role": "layout", "version": "1.2.0", "used": 2,
+      "tags": ["shell", "two-column"], "variants": ["default"], "composes": ["DemoHeading"],
       "props": [
-        { "name": "run(argv)", "type": "String", "req": true, "desc": "Invoke a `bsc` subcommand, capture stdout." },
-        { "name": "write(argv, body)", "type": "Unit", "req": true, "desc": "Invoke with a JSON body on stdin." },
-        { "name": "projectKey", "type": "String?", "req": false, "desc": "null = a global store (personas, components)." }
+        { "name": "title", "type": "string", "req": true, "desc": "Page title, rendered as the DemoHeading." },
+        { "name": "children", "type": "ReactNode", "req": true, "desc": "The main detail column." },
+        { "name": "rail", "type": "ReactNode", "req": false, "desc": "Optional left rail (list/navigation); omitted → single column." }
       ],
-      "whenUse": ["The single choke-point for every `bsc …` call.", "Global stores (projectKey = null)."],
-      "whenNot": ["Direct Tauri commands — everything goes via bsc.", "Streaming output — this captures once."],
-      "src": "core/BscBridge.kt",
-      "srcText": "@Service\nclass BscBridge {\n  fun run(argv: List<String>, projectKey: String? = null): String =\n    exec(listOf(\"bsc\") + keyArgs(projectKey) + argv).stdout\n  fun write(argv: List<String>, body: Any) =\n    exec(listOf(\"bsc\") + argv, stdin = json(body))\n}",
+      "whenUse": ["The one page frame both demo pages mount — header + optional rail + detail.", "Any new page in this app, so chrome stays identical."],
+      "whenNot": ["Inside another PersonaShell — the shell never nests.", "A modal or overlay — this is the page-level frame only."],
+      "src": "layouts/PersonaShell.tsx",
+      "srcText": "export function PersonaShell({ title, rail, children }: Props) {\n  return (\n    <div className=\"shell\">\n      <DemoHeading>{title}</DemoHeading>\n      <div className=\"shell-cols\">\n        {rail && <aside className=\"shell-rail\">{rail}</aside>}\n        <main className=\"shell-main\">{children}</main>\n      </div>\n    </div>\n  );\n}",
       "builtin": true
     },
     {
-      "id": "commandrouter", "name": "CommandRouter", "kitId": "examples", "role": "service", "version": "1.4.0", "used": 33,
-      "tags": ["ipc", "rust"], "variants": ["default"], "composes": [],
+      "id": "personalist", "name": "PersonaList", "kitId": "examples", "role": "composite", "version": "1.1.0", "used": 2,
+      "tags": ["list", "rail", "search"], "variants": ["default"], "composes": ["DemoField", "PersonaRow"],
       "props": [
-        { "name": "register(name, h)", "type": "()", "req": true, "desc": "Bind an IPC command to a handler." },
-        { "name": "dispatch(msg)", "type": "Result<Value>", "req": true, "desc": "Route a frontend invoke to its handler." }
+        { "name": "personas", "type": "Persona[]", "req": true, "desc": "The personas to list, one PersonaRow each." },
+        { "name": "onPick", "type": "(id: string) => void", "req": true, "desc": "Row click → selection." },
+        { "name": "activeId", "type": "string", "req": false, "desc": "The highlighted row." }
       ],
-      "whenUse": ["Wiring frontend invoke() calls to Rust handlers.", "One registry for all IPC commands."],
-      "whenNot": ["Global store access — that goes through bsc.", "Long-running streams — use an event channel."],
-      "src": "src-tauri/src/router.rs",
-      "srcText": "pub struct CommandRouter { handlers: HashMap<String, Handler> }\nimpl CommandRouter {\n  pub fn register(&mut self, name: &str, h: Handler) {\n    self.handlers.insert(name.into(), h);\n  }\n}",
+      "whenUse": ["The selectable persona rail — search field over PersonaRows.", "Anywhere a persona must be picked from the library."],
+      "whenNot": ["A read-only mention of one persona — use PersonaRow.", "Editing — pair it with PersonaForm via PersonasPanel."],
+      "src": "components/PersonaList.tsx",
+      "srcText": "export function PersonaList({ personas, activeId, onPick }: Props) {\n  const [q, setQ] = useState(\"\");\n  const hits = personas.filter((p) => p.name.toLowerCase().includes(q.toLowerCase()));\n  return (\n    <div className=\"plist\">\n      <DemoField label=\"Search\" value={q} onChange={setQ} />\n      {hits.map((p) => <PersonaRow key={p.id} persona={p} active={p.id === activeId} onClick={() => onPick(p.id)} />)}\n    </div>\n  );\n}",
       "builtin": true
     },
     {
-      "id": "fswatcher", "name": "FsWatcher", "kitId": "examples", "role": "service", "version": "0.6.0", "used": 8,
-      "tags": ["fs", "events", "rust"], "variants": ["default"], "composes": [],
+      "id": "personarow", "name": "PersonaRow", "kitId": "examples", "role": "composite", "version": "1.3.0", "used": 3,
+      "tags": ["row", "list-item"], "variants": ["default"], "composes": ["PersonaBadge", "RoleTag"],
       "props": [
-        { "name": "watch(path)", "type": "()", "req": true, "desc": "Start watching a path recursively." },
-        { "name": "on_change", "type": "Fn(Event)", "req": true, "desc": "Debounced change callback." },
-        { "name": "stop()", "type": "()", "req": false, "desc": "Tear down the watcher." }
+        { "name": "persona", "type": "Persona", "req": true, "desc": "The persona to render — badge, name, role tag." },
+        { "name": "onClick", "type": "() => void", "req": true, "desc": "Select this row." },
+        { "name": "active", "type": "boolean", "req": false, "desc": "Highlight as the current selection." }
       ],
-      "whenUse": ["Reacting to on-disk changes (store / repo).", "Emitting debounced fs events to the frontend."],
-      "whenNot": ["Polling on an interval — prefer native events.", "One-shot reads — just read the file."],
-      "src": "src-tauri/src/fs_watcher.rs",
-      "srcText": "pub fn watch(path: &Path, on_change: impl Fn(Event)) -> Result<()> {\n  let mut w = notify::recommended_watcher(move |ev| on_change(ev))?;\n  w.watch(path, RecursiveMode::Recursive)?;\n  Ok(())\n}",
+      "whenUse": ["One persona in any list — the ONLY persona row in the app.", "Compact mentions that must stay visually consistent."],
+      "whenNot": ["The full editable record — that is PersonaForm.", "A dense table — use a plain text cell, not a row card."],
+      "src": "components/PersonaRow.tsx",
+      "srcText": "export function PersonaRow({ persona, active, onClick }: Props) {\n  return (\n    <button className={active ? \"prow active\" : \"prow\"} onClick={onClick}>\n      <PersonaBadge name={persona.name} />\n      <span className=\"prow-name\">{persona.name}</span>\n      <RoleTag role={persona.role} />\n    </button>\n  );\n}",
+      "builtin": true
+    },
+    {
+      "id": "personaform", "name": "PersonaForm", "kitId": "examples", "role": "composite", "version": "1.0.0", "used": 2,
+      "tags": ["form", "editor"], "variants": ["default"], "composes": ["DemoField", "DemoButton"],
+      "props": [
+        { "name": "value", "type": "Persona", "req": true, "desc": "The persona being edited (a draft copy)." },
+        { "name": "onSave", "type": "(p: Persona) => void", "req": true, "desc": "Commit the draft to the store." },
+        { "name": "onDelete", "type": "(id: string) => void", "req": false, "desc": "Remove the persona; omitted → no danger button." }
+      ],
+      "whenUse": ["The persona editor — name/prompt fields plus save/delete.", "The detail column of PersonasPanel."],
+      "whenNot": ["Displaying a persona — use PersonaRow or AgentTile.", "Bulk edits — drive PersonaStore directly instead."],
+      "src": "components/PersonaForm.tsx",
+      "srcText": "export function PersonaForm({ value, onSave, onDelete }: Props) {\n  const [draft, setDraft] = useState(value);\n  return (\n    <form className=\"pform\" onSubmit={() => onSave(draft)}>\n      <DemoField label=\"Name\" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />\n      <DemoField label=\"Start prompt\" value={draft.prompt} onChange={(prompt) => setDraft({ ...draft, prompt })} />\n      <DemoButton variant=\"primary\" type=\"submit\">Save</DemoButton>\n      {onDelete && <DemoButton variant=\"danger\" onClick={() => onDelete(draft.id)}>Delete</DemoButton>}\n    </form>\n  );\n}",
+      "builtin": true
+    },
+    {
+      "id": "agenttile", "name": "AgentTile", "kitId": "examples", "role": "composite", "version": "0.9.0", "used": 4,
+      "tags": ["card", "fleet"], "variants": ["default"], "composes": ["PersonaBadge", "RoleTag"],
+      "props": [
+        { "name": "agent", "type": "Agent", "req": true, "desc": "The agent — persona identity plus live status." },
+        { "name": "onOpen", "type": "(id: string) => void", "req": false, "desc": "Click-through to the agent's session." }
+      ],
+      "whenUse": ["One agent on the AgentsBoard grid — identity + status.", "A compact live card wherever an agent is summarized."],
+      "whenNot": ["Editing the underlying persona — go to PersonasPanel.", "Long-form logs — this card shows status, not output."],
+      "src": "components/AgentTile.tsx",
+      "srcText": "export function AgentTile({ agent, onOpen }: Props) {\n  return (\n    <article className=\"atile\" onClick={() => onOpen?.(agent.id)}>\n      <PersonaBadge name={agent.persona.name} />\n      <h3>{agent.persona.name}</h3>\n      <RoleTag role={agent.persona.role} />\n      <span className={`atile-dot ${agent.status}`} />\n    </article>\n  );\n}",
+      "builtin": true
+    },
+    {
+      "id": "demobutton", "name": "DemoButton", "kitId": "examples", "role": "primitive", "version": "2.1.0", "used": 24,
+      "tags": ["control", "action"], "variants": ["primary", "ghost", "danger"], "composes": [],
+      "wraps": "button",
+      "props": [
+        { "name": "children", "type": "ReactNode", "req": true, "desc": "The button label." },
+        { "name": "variant", "type": "\"primary\" | \"ghost\" | \"danger\"", "req": false, "desc": "Visual weight; defaults to ghost." },
+        { "name": "onClick", "type": "() => void", "req": false, "desc": "Click handler (omit for type=submit)." },
+        { "name": "disabled", "type": "boolean", "req": false, "desc": "Blocks interaction and dims the button." }
+      ],
+      "whenUse": ["EVERY clickable action in the app — the one button.", "primary = the single main action; danger = destructive."],
+      "whenNot": ["Navigation — use a link, not a button.", "A raw <button> — forbidden by this kit's lint rule."],
+      "src": "primitives/DemoButton.tsx",
+      "srcText": "export function DemoButton({ variant = \"ghost\", ...rest }: Props) {\n  return <button className={`btn btn-${variant}`} {...rest} />;\n}",
+      "builtin": true
+    },
+    {
+      "id": "demofield", "name": "DemoField", "kitId": "examples", "role": "primitive", "version": "1.4.0", "used": 11,
+      "tags": ["control", "input", "form"], "variants": ["default"], "composes": [],
+      "wraps": "input",
+      "props": [
+        { "name": "label", "type": "string", "req": true, "desc": "Uppercase field label above the input." },
+        { "name": "value", "type": "string", "req": true, "desc": "Controlled value." },
+        { "name": "onChange", "type": "(v: string) => void", "req": true, "desc": "Change handler (already unwrapped from the event)." },
+        { "name": "error", "type": "string", "req": false, "desc": "Validation message; tints the border red." }
+      ],
+      "whenUse": ["Every single-line text input — label + input + error slot.", "Search boxes and form fields alike, so spacing matches."],
+      "whenNot": ["Multi-line text — this wraps a single <input> only.", "A raw <input> — forbidden by this kit's lint rule."],
+      "src": "primitives/DemoField.tsx",
+      "srcText": "export function DemoField({ label, value, onChange, error }: Props) {\n  return (\n    <label className=\"field\">\n      <span className=\"field-label\">{label}</span>\n      <input value={value} onChange={(e) => onChange(e.target.value)} aria-invalid={!!error} />\n      {error && <span className=\"field-error\">{error}</span>}\n    </label>\n  );\n}",
+      "builtin": true
+    },
+    {
+      "id": "roletag", "name": "RoleTag", "kitId": "examples", "role": "primitive", "version": "1.0.0", "used": 9,
+      "tags": ["tag", "status"], "variants": ["planner", "worker", "director"], "composes": [],
+      "props": [
+        { "name": "role", "type": "\"planner\" | \"worker\" | \"director\"", "req": true, "desc": "The persona role — picks the tag's tone." },
+        { "name": "compact", "type": "boolean", "req": false, "desc": "Dot-only rendering for tight rows." }
+      ],
+      "whenUse": ["Labelling a persona/agent with its role, everywhere.", "One tone per role, so the color IS the meaning."],
+      "whenNot": ["Free-form tags — this is the closed role set only.", "Status (running/paused) — that is the tile's status dot."],
+      "src": "primitives/RoleTag.tsx",
+      "srcText": "const TONE = { planner: \"violet\", worker: \"green\", director: \"blue\" } as const;\nexport function RoleTag({ role, compact }: Props) {\n  return <span className={`tag tag-${TONE[role]}`}>{compact ? \"\" : role}</span>;\n}",
+      "builtin": true
+    },
+    {
+      "id": "personabadge", "name": "PersonaBadge", "kitId": "examples", "role": "primitive", "version": "1.1.0", "used": 7,
+      "tags": ["avatar", "identity"], "variants": ["default"], "composes": [],
+      "rules": [
+        { "id": "examples:forbid-avatar-libs", "kind": "forbid-import", "target": "react-avatar", "use": "PersonaBadge", "componentId": "personabadge", "message": "Render identities with the kit's <PersonaBadge>, not an avatar library — one identity mark, zero dependencies. If truly required, add `// eslint-disable-next-line no-restricted-imports -- <reason>`." }
+      ],
+      "props": [
+        { "name": "name", "type": "string", "req": true, "desc": "Persona name — the badge derives its initials + hue." },
+        { "name": "size", "type": "number", "req": false, "desc": "Diameter in px; defaults to 28." }
+      ],
+      "whenUse": ["The identity mark for a persona or agent, everywhere.", "Deterministic initials + hue — no image assets needed."],
+      "whenNot": ["Human users with real photos — this is persona-only.", "Pulling in an avatar library — forbidden by the kit rule."],
+      "src": "primitives/PersonaBadge.tsx",
+      "srcText": "export function PersonaBadge({ name, size = 28 }: Props) {\n  const initials = name.split(/\\s+/).map((w) => w[0]).slice(0, 2).join(\"\");\n  const hue = [...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 0);\n  return <span className=\"badge\" style={{ width: size, height: size, background: `oklch(0.35 0.09 ${hue})` }}>{initials}</span>;\n}",
+      "builtin": true
+    },
+    {
+      "id": "demoheading", "name": "DemoHeading", "kitId": "examples", "role": "primitive", "version": "1.0.0", "used": 6,
+      "tags": ["typography", "header"], "variants": ["default"], "composes": [],
+      "wraps": "h2",
+      "props": [
+        { "name": "children", "type": "ReactNode", "req": true, "desc": "The heading text." },
+        { "name": "hint", "type": "string", "req": false, "desc": "Dim secondary text after the title." }
+      ],
+      "whenUse": ["Every page/section title — one type scale for the app.", "Composed by PersonaShell so page headers never drift."],
+      "whenNot": ["Body copy or labels — plain text elements are fine.", "A raw <h2> — forbidden by this kit's lint rule."],
+      "src": "primitives/DemoHeading.tsx",
+      "srcText": "export function DemoHeading({ children, hint }: Props) {\n  return (\n    <h2 className=\"heading\">\n      {children}\n      {hint && <span className=\"heading-hint\">{hint}</span>}\n    </h2>\n  );\n}",
+      "builtin": true
+    },
+    {
+      "id": "personastore", "name": "PersonaStore", "kitId": "examples", "role": "service", "version": "1.2.0", "used": 5,
+      "tags": ["store", "hook", "bridge"], "variants": ["default"], "composes": [],
+      "props": [
+        { "name": "usePersonas()", "type": "{ personas, save, remove }", "req": true, "desc": "The React hook every consumer mounts — live list + writers." },
+        { "name": "save(p)", "type": "Promise<void>", "req": true, "desc": "Upsert one persona through the `bsc persona` bridge." },
+        { "name": "remove(id)", "type": "Promise<void>", "req": true, "desc": "Delete a persona from the global store." },
+        { "name": "subscribe(fn)", "type": "() => void", "req": false, "desc": "Out-of-React change feed; returns the unsubscribe." }
+      ],
+      "whenUse": ["ALL persona reads/writes — the one data service, mounted by the page (PersonasPanel), never by leaves.", "Composed like any component: the page passes its data down."],
+      "whenNot": ["UI state (selection, drafts) — that stays in the page.", "Calling the CLI directly from a component — always via this."],
+      "src": "store/personaStore.ts",
+      "srcText": "export const PersonaStore = {\n  usePersonas() {\n    const [personas, setPersonas] = useState<Persona[]>([]);\n    useEffect(() => PersonaStore.subscribe(setPersonas), []);\n    return { personas, save: PersonaStore.save, remove: PersonaStore.remove };\n  },\n  save: (p: Persona) => bridge(\"persona set\", p),\n  remove: (id: string) => bridge(\"persona remove\", { id }),\n};",
       "builtin": true
     }
   ]
