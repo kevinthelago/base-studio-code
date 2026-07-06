@@ -1,5 +1,6 @@
 import { useAppStore } from "@/store";
 import { StatTile } from "@/shared/ui/data/StatTile";
+import { SelectField } from "@/shared/ui/controls/Field";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
@@ -76,11 +77,10 @@ export function HistoryTab({ status, setStatus, sched, setSched }: HistoryProps)
           {chip("fail", "fail", fail)}
         </Box>
         <Box as="span" className="lbl" style={{ marginLeft: 14 }}>automation</Box>
-        {/* eslint-disable-next-line no-restricted-syntax -- inline toolbar select beside a .lbl; SelectField's .field stack would change the toolbar layout */}
-        <select className="input" style={{ width: 240 }} value={sched} onChange={e => setSched(e.target.value)}>
+        <SelectField style={{ width: 240 }} value={sched} onChange={setSched}>
           <option value="all">all automations</option>
           {automations.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
+        </SelectField>
         <Box className="spacer" />
       </Box>
 

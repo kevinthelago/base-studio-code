@@ -3,6 +3,7 @@
 // reference one list instead of duplicating it. Each id maps to a Claude CLI tier alias at launch
 // (`opus-4.5` → `claude --model opus`), so a tier tracks the latest model in that family.
 import modelsEmbedded from "@data/console/models.json";
+import modelDefaultsEmbedded from "@data/console/model-defaults.json";
 import { overlayFile } from "@/shared/lib/core/configOverrides";
 
 /** A selectable model tier. The trailing version is cosmetic — the harness maps it to a CLI tier
@@ -24,6 +25,13 @@ export interface ModelOption {
 export const MODELS: ModelOption[] = overlayFile("console/models.json", modelsEmbedded as ModelOption[]);
 
 export const MODEL_IDS: ModelId[] = MODELS.map((m) => m.id);
+
+/** The default per-pane tier (the store's `defaultModel` seed + PaneShell's fallback), sourced from
+ *  `@data/console/model-defaults.json` (#2416) — ONE default instead of scattered `"sonnet-4.5"`
+ *  literals. Falls back to the catalog's middle tier if a config-dir edit names an unknown tier. */
+export const DEFAULT_MODEL_ID: ModelId =
+  MODEL_IDS.find((id) => id === overlayFile("console/model-defaults.json", modelDefaultsEmbedded).defaultTier) ??
+  MODEL_IDS[Math.floor(MODEL_IDS.length / 2)];
 
 /** The bare tier name a ModelId maps to ("opus-4.5" → "opus") — also the CLI alias. */
 export function modelTier(id: ModelId): string {

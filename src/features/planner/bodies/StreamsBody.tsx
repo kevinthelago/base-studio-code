@@ -12,9 +12,9 @@ import { StreamFocusCards } from "./StreamFocusCards";
 import { PlanBody } from "./FocusedPlanBody";
 import { CoordinationControls } from "./FocusedPermissionsBody";
 import { CollapsibleCard } from "./collapsibleCard";
-import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import type { FleetHandlers } from "./focusedHandlers";
 
 export function StreamsBody({ data, fleet, ...handlers }: FleetHandlers & {
@@ -33,10 +33,9 @@ export function StreamsBody({ data, fleet, ...handlers }: FleetHandlers & {
       <PlanBody data={data} focus={focus} onFocus={setFocus} />
 
       {fleet && (agents.length === 0 ? (
-        <Box className="empty-state" style={{ marginTop: 18 }}>
-          <Box as="span" className="empty-icon">◎</Box>
-          <Box as="span">No fleet yet — plan the work streams first</Box>
-        </Box>
+        <EmptyState size="sm" icon="◎" iconVariant="dashed"
+          title="No fleet yet — plan the work streams first"
+          style={{ flex: "none", marginTop: 18 }} />
       ) : focusedAgent ? (
         // The focused stream (1:1 with its worker) as a collapsible-card stack — persona · kickoff ·
         // scope · shared deps · model & flow.
