@@ -1,20 +1,25 @@
-// Org pools (#2199) — consolidating a swarm of INTERCHANGEABLE agents into ONE stacked node so large
-// graphs stay readable. A POOL is ≥2 positions on the same `pooled` persona (see Persona.pooled) that are
-// HOMOGENEOUS: every member has the identical EXTERNAL relationship signature (same archetype+direction
-// to the same outside counterparts). Edges among members (a peer mesh) are internal and don't break
-// homogeneity — they show on drill-in. So Fleet Alpha's Engineer A + Engineer B do NOT collapse (A is
-// overseen by the reviewer, B by the juror/auditor — different signatures); a director + N identical
-// build workers (Build Swarm) DOES. Pure model (React-free) so it's unit-testable, canvas stays thin.
+// Org pools (#2199, #2436) — consolidating a swarm of agents into ONE stacked node so large graphs
+// stay readable. A POOL is ≥2 positions on the same STACKABLE persona: `pooled`, or worker-role by
+// default (explicit `pooled:false` opts out) — the org graph is the SCAFFOLD (director · reviewer ·
+// auditor · intake · anchors) plus a stacked engineer slot per worker persona; the planner owns how
+// many engineers exist (#2388), so per-engineer wiring detail belongs in the DRILL-IN, not the top
+// view. Heterogeneous external wiring no longer prevents stacking (#2436 — it kept Fleet Alpha's own
+// engineers from ever collapsing): the collapse UNIONS external edges onto the stack, and the pool's
+// `homogeneous` flag records whether members are truly interchangeable (identical external relationship
+// signatures) so the UI can mark mixed-wiring stacks. Edges among members (a peer mesh) are internal —
+// they show on drill-in. Pure model (React-free) so it's unit-testable, canvas stays thin.
 import type { Org, Position, Relationship } from "./org";
 import { BUILTIN_PERSONAS, type Persona } from "@/features/personas";
 
-/** Whether a persona runs as a pool. Uses its (hydrated) `pooled` when set; falls back to the PACKAGED
- *  built-in when the store copy predates the field (an older-seeded built-in whose `pooled` hasn't been
- *  re-derived yet — reconcile #2220 fixes it on the next boot, this makes the pool show WITHOUT a
- *  restart). An explicit store `pooled:false` (a user who un-pooled a built-in) is respected. */
+/** Whether a persona's positions stack. An explicit (hydrated) `pooled` always wins — a user who
+ *  un-pooled a persona is respected. Otherwise: the PACKAGED built-in's flag (covers a store copy
+ *  seeded before the field existed — reconcile #2220 fixes it on next boot, this shows the pool
+ *  WITHOUT a restart), and worker-role personas stack BY DEFAULT (#2436 — the engineer slot; the
+ *  scaffold roles stay singletons). */
 const BUILTIN_POOLED = new Map(BUILTIN_PERSONAS.map((p) => [p.id, !!p.pooled]));
-function isPooled(p: Persona): boolean {
-  return p.pooled !== undefined ? p.pooled : BUILTIN_POOLED.get(p.id) ?? false;
+function isStackable(p: Persona): boolean {
+  if (p.pooled !== undefined) return p.pooled;
+  return (BUILTIN_POOLED.get(p.id) ?? false) || p.role === "worker";
 }
 
 export interface Pool {
@@ -26,6 +31,9 @@ export interface Pool {
   memberNodeIds: string[];
   /** How many instances (= memberNodeIds.length). */
   count: number;
+  /** True when every member has the identical external relationship signature (truly interchangeable);
+   *  false = mixed wiring, unioned onto the stack — the drill-in shows who has what. */
+  homogeneous: boolean;
 }
 
 /** The external relationship signature of a position: every edge to a node OUTSIDE `memberSet`, as a
@@ -40,15 +48,16 @@ function externalSignature(org: Org, nodeId: string, memberSet: Set<string>): st
   return parts.sort().join("~");
 }
 
-/** Detect the HOMOGENEOUS pools: for each `pooled` persona placed ≥2×, collapse ONLY when every member
- *  shares the same external relationship signature (truly interchangeable). Heterogeneous same-persona
- *  positions — e.g. Fleet Alpha's two engineers, overseen by different reviewers — stay distinct.
+/** Detect the pools: every STACKABLE persona (pooled, or worker-role — the engineer stack, #2436)
+ *  placed ≥2× collapses. Mixed external wiring doesn't block the stack; it only clears `homogeneous`
+ *  (e.g. Fleet Alpha's engineers — one overseen by the reviewer, one by the auditor — now stack, with
+ *  both oversee edges unioned onto the stack node). Non-worker singletons (the scaffold) never stack.
  *  Deterministic (positions in author order). */
 export function detectPools(org: Org, personas: Persona[]): Pool[] {
-  const pooled = new Set(personas.filter(isPooled).map((p) => p.id));
+  const stackable = new Set(personas.filter(isStackable).map((p) => p.id));
   const byPersona = new Map<string, Position[]>();
   for (const p of org.positions) {
-    if (p.kind === "agent" && p.personaId && pooled.has(p.personaId)) {
+    if (p.kind === "agent" && p.personaId && stackable.has(p.personaId)) {
       (byPersona.get(p.personaId) ?? byPersona.set(p.personaId, []).get(p.personaId)!).push(p);
     }
   }
@@ -57,8 +66,8 @@ export function detectPools(org: Org, personas: Persona[]): Pool[] {
     if (members.length < 2) continue;
     const memberSet = new Set(members.map((m) => m.nodeId));
     const sig0 = externalSignature(org, members[0].nodeId, memberSet);
-    if (!members.every((m) => externalSignature(org, m.nodeId, memberSet) === sig0)) continue; // heterogeneous
-    pools.push({ nodeId: `pool:${personaId}`, personaId, memberNodeIds: members.map((m) => m.nodeId), count: members.length });
+    const homogeneous = members.every((m) => externalSignature(org, m.nodeId, memberSet) === sig0);
+    pools.push({ nodeId: `pool:${personaId}`, personaId, memberNodeIds: members.map((m) => m.nodeId), count: members.length, homogeneous });
   }
   return pools;
 }
