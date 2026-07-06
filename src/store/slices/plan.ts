@@ -337,7 +337,12 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         set((s) => {
           const src = s.blueprints.find((b) => b.id === id);
           if (!src) return {};
-          const copy: Blueprint = { ...src, id: nid, name: `${src.name} copy`, sections: cloneStages(src.sections) };
+          // Deep-copy the composed sub-models (sections; team #2450) so the duplicate never shares
+          // mutable graph objects with its source — the same fork isolation as forkTeamFromOrg.
+          const copy: Blueprint = {
+            ...src, id: nid, name: `${src.name} copy`, sections: cloneStages(src.sections),
+            ...(src.team ? { team: structuredClone(src.team) } : {}),
+          };
           const i = s.blueprints.findIndex((b) => b.id === id);
           const blueprints = [...s.blueprints];
           blueprints.splice(i + 1, 0, copy);
@@ -366,7 +371,12 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       },
       importBlueprint: (bp) => {
         const id = `bp-${Date.now().toString(36)}`;
-        const created: Blueprint = { ...bp, id, sections: cloneStages(bp.sections) };
+        // Deep-copy the team (#2450) so the imported/library copy never shares graph objects with
+        // the caller's blueprint (e.g. the in-progress authored one it was published from).
+        const created: Blueprint = {
+          ...bp, id, sections: cloneStages(bp.sections),
+          ...(bp.team ? { team: structuredClone(bp.team) } : {}),
+        };
         set((s) => ({ blueprints: [...s.blueprints, created] }));
         syncBlueprintFile(created);
         return id;
