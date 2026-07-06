@@ -10,24 +10,16 @@
 // never runs in tests, and the pure helpers below stay importable.
 import type * as Esbuild from "esbuild-wasm";
 import wasmURL from "esbuild-wasm/esbuild.wasm?url";
+import importmapEmbedded from "@data/ui/preview-importmap.json";
 
-/** Bare specifiers left external — resolved in the iframe by the import-map. */
-export const PREVIEW_EXTERNALS = [
-  "react", "react-dom", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime",
-  "three", "@react-three/fiber", "@react-three/drei",
-];
+/** esm.sh import-map for the externals (pinned; `deps` params keep React deduped) — the pins live in
+ *  `@data/ui/preview-importmap.json` (#2419; ONE source, also read by streamingRuntime.ts), a plain
+ *  embedded import like its `@data/ui/*` neighbors. */
+export const DEFAULT_IMPORTMAP: Record<string, string> = importmapEmbedded;
 
-/** esm.sh import-map for the externals (pinned; `deps` params keep React deduped). */
-export const DEFAULT_IMPORTMAP: Record<string, string> = {
-  "react": "https://esm.sh/react@18.3.1",
-  "react-dom": "https://esm.sh/react-dom@18.3.1",
-  "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
-  "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
-  "react/jsx-dev-runtime": "https://esm.sh/react@18.3.1/jsx-dev-runtime",
-  "three": "https://esm.sh/three@0.169.0",
-  "@react-three/fiber": "https://esm.sh/@react-three/fiber@8?deps=react@18.3.1,react-dom@18.3.1",
-  "@react-three/drei": "https://esm.sh/@react-three/drei@9?deps=react@18.3.1,three@0.169.0",
-};
+/** Bare specifiers left external — resolved in the iframe by the import-map (derived from its keys
+ *  so the two can never drift). */
+export const PREVIEW_EXTERNALS = Object.keys(DEFAULT_IMPORTMAP);
 
 const BOOTSTRAP_ENTRY = "__preview_bootstrap__.jsx";
 

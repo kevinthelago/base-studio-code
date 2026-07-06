@@ -4,7 +4,7 @@ import { Pane } from "@/shared/ui/overlay/Pane";
 import { Banner } from "@/shared/ui/feedback/Banner";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
-import { TextField } from "@/shared/ui/controls/Field";
+import { Field, TextField, TextArea } from "@/shared/ui/controls/Field";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
@@ -44,27 +44,23 @@ export function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, on
             <Row inline gap={8}><Box as="span" className="hint">enabled</Box><Toggle size="sm" on={s.enabled} onClick={() => onPatch({ enabled: !s.enabled })} /></Row>
             <Row inline gap={8}><Box as="span" className="hint">pinned</Box><Text as="span" size={14} onClick={() => onPatch({ pinned: !s.pinned })} style={{ color: s.pinned ? "var(--accent)" : "var(--fg-dim)", cursor: "pointer" }}>★</Text></Row>
           </Row>
-          <Box className="field"><label>kind</label><SegmentedControl options={KIND_KEYS.map((k) => ({ label: KIND[k].label, on: s.kind === k, onClick: () => onPatch({ kind: k }) }))} /></Box>
-          <Box className="field"><label>source</label><SegmentedControl options={SOURCE_KEYS.map((src) => ({ label: src, on: s.source === src, onClick: () => onPatch({ source: src }) }))} /></Box>
+          <Field label="kind"><SegmentedControl options={KIND_KEYS.map((k) => ({ label: KIND[k].label, on: s.kind === k, onClick: () => onPatch({ kind: k }) }))} /></Field>
+          <Field label="source"><SegmentedControl options={SOURCE_KEYS.map((src) => ({ label: src, on: s.source === src, onClick: () => onPatch({ source: src }) }))} /></Field>
           <TextField label="description" value={s.desc} placeholder="One line — SKILL.md frontmatter" onChange={(v) => onPatch({ desc: v })} />
-          <Box className="field"><label>procedure — SKILL.md body</label>
-            {/* eslint-disable-next-line no-restricted-syntax -- multiline procedure body; the UI-kit has no textarea primitive */}
-            <textarea className="ta" value={s.prompt} placeholder="The steps the agent follows…" onChange={(e) => onPatch({ prompt: e.target.value })} /></Box>
+          <TextArea label="procedure — SKILL.md body" className="ta" value={s.prompt} placeholder="The steps the agent follows…" onChange={(v) => onPatch({ prompt: v })} />
           <TextField label="bundled tools (comma-separated)" value={s.tools.join(", ")} placeholder="create_pr, git_diff" onChange={(v) => onPatch({ tools: v.split(",").map((t) => t.trim()).filter(Boolean) })} />
-          <Box className="field"><label>allowed profiles</label><SegmentedControl options={PROFILE_KEYS.map((p) => ({ label: p, on: s.profiles.includes(p), onClick: () => onPatch({ profiles: s.profiles.includes(p) ? s.profiles.filter((x) => x !== p) : [...s.profiles, p] }) }))} /></Box>
+          <Field label="allowed profiles"><SegmentedControl options={PROFILE_KEYS.map((p) => ({ label: p, on: s.profiles.includes(p), onClick: () => onPatch({ profiles: s.profiles.includes(p) ? s.profiles.filter((x) => x !== p) : [...s.profiles, p] }) }))} /></Field>
           {/* Task groups */}
-          <Box className="field">
-            <label>task groups</label>
+          <Field label="task groups">
             <Row align="stretch" gap={6} wrap>
               {groups.length === 0 && <Box as="span" className="hint">No groups yet — create one from the Task groups bar.</Box>}
               {groups.map((g) => { const member = g.skillIds.includes(s.id); return (
                 <Box as="span" key={g.id} onClick={() => onToggleGroup(g.id)} style={{ ...pill(g.hue, !member), cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5, opacity: member ? 1 : 0.6 }}>⬡ {g.name} {member ? "✓" : "＋"}</Box>
               ); })}
             </Row>
-          </Box>
+          </Field>
           {/* Project assignment */}
-          <Box className="field">
-            <label>project assignment</label>
+          <Field label="project assignment">
             <Banner tone="success" style={isGlobal ? undefined : { opacity: 0.6 }} lead={<Box as="span" bg="var(--success)" style={{ width: 7, height: 7, borderRadius: "50%"}} />}>
               <b style={{ color: isGlobal ? "var(--success)" : "var(--fg-muted)", fontWeight: 600 }}>Global (all projects)</b><Spacer />
               <Toggle size="sm" on={isGlobal} onClick={() => onPatch({ projects: isGlobal ? (projects[0] ? [String(projects[0].number)] : ["scoped"]) : [] })} />
@@ -74,7 +70,7 @@ export function SkillDrawer({ s, isDraft, projects, groups, onPatch, onClose, on
               : <Box className="proj-multi" style={{ marginTop: 6 }}>{projects.map((p) => { const sel = s.projects.includes(String(p.number)); return (
                   <Box key={p.id} className={"pm-row" + (sel ? " on" : "")} onClick={() => onPatch({ projects: sel ? s.projects.filter((x) => x !== String(p.number)) : [...s.projects, String(p.number)] })}><Box className="check">{sel ? "✓" : ""}</Box><Box className="pname">{p.title} <Box as="span" className="hint">#{p.number}</Box></Box></Box>
                 ); })}</Box>)}
-          </Box>
+          </Field>
     </Pane>
   );
 }

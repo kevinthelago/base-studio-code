@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { timed, formatPerfSummary } from "./perf";
+import { log } from "./log";
 import { useAppStore } from "@/store";
 import type { PerfConfig } from "@/store";
 
@@ -68,13 +69,13 @@ describe("timed", () => {
   });
 
   it("does not warn when the operation is under the threshold", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
     await timed("fast", async () => "x", 1000);
     expect(warn).not.toHaveBeenCalled();
   });
 
   it("warns with the label when the operation exceeds the threshold", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
     // threshold 0 → any measurable duration triggers the warning
     await timed("slow-op", async () => "x", 0);
     expect(warn).toHaveBeenCalledTimes(1);
@@ -82,7 +83,7 @@ describe("timed", () => {
   });
 
   it("still times (and rethrows) when the operation throws", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(log, "warn").mockImplementation(() => {});
     await expect(timed("boom", async () => { throw new Error("nope"); }, 0)).rejects.toThrow("nope");
     expect(warn).toHaveBeenCalledTimes(1);
   });
