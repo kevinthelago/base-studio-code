@@ -1,0 +1,7 @@
+/* GraphCanvas (#2208) — the shared drill transition (#2418; the org + glance copies unified). A graph
+   page keys its world content on the drill target, so entering/leaving a sub-graph remounts it and
+   this replays: the new graph fades and settles in. Transform stays subtle (a small rise) so it
+   composes cleanly with the world's pan/zoom transform. Honors reduced-motion. */
+.graph-drill-anim { animation: graph-drill-in 0.26s ease both; transform-origin: center; }
+@keyframes graph-drill-in { from { opacity: 0; transform: translateY(10px) scale(0.992); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .graph-drill-anim { animation: none; } }

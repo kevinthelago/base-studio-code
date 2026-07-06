@@ -8,6 +8,15 @@
 // tick, what the user/app should do next given the planning state.
 
 import type { Stage } from "../stages/focusedPlan";
+import autopilotSimEmbedded from "@data/planner/autopilot-sim.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
+import { fillTemplate } from "@/shared/lib/core/template";
+
+// The simulated-user PROSE (system prompt, user-turn template, canned replies) is externalized to
+// `@data/planner/autopilot-sim.json` (#2416) — editable without touching code + part of the exportable
+// config bundle; the config-dir copy (#2047) overlays the embedded default via `overlayFile`. This
+// module keeps only the interpolation (`{{PITCH}}` / `{{PLANNER_OUTPUT}}`) and the strategy logic.
+const SIM_PROSE = overlayFile("planner/autopilot-sim.json", autopilotSimEmbedded);
 
 /** How the simulated user answers the planner. Phase 1 wires `llm`; the rest are Phase 2. */
 export type AutopilotStrategy = "llm" | "scripted" | "random" | "none";
@@ -74,25 +83,17 @@ export function decideAutopilotAction(ctx: AutopilotContext): AutopilotAction {
  * interviewed by the planner. Decisive, concrete, consistent with the pitch, no questions back.
  */
 export function buildUserSimPrompt(pitch: string, plannerOutput: string): { system: string; user: string } {
-  const system =
-    "You are simulating a PRODUCT OWNER being interviewed by an AI project planner. " +
-    "Answer the planner's latest message concretely and decisively in 1–3 sentences, as the " +
-    "person who pitched the project. Make reasonable, consistent decisions; never ask " +
-    "questions back; don't hedge or stall. When asked to choose or confirm, do so. Stay true " +
-    "to the pitch and to your earlier answers.";
-  const user =
-    `PROJECT PITCH:\n${pitch.trim()}\n\n` +
-    `THE PLANNER JUST SAID:\n${plannerOutput.trim()}\n\n` +
-    `Your reply, as the product owner:`;
-  return { system, user };
+  return {
+    system: SIM_PROSE.system,
+    user: fillTemplate(SIM_PROSE.userTemplate, {
+      PITCH: pitch.trim(),
+      PLANNER_OUTPUT: plannerOutput.trim(),
+    }),
+  };
 }
 
 /** Canned fuzz replies for the `random` strategy (Phase 2) — deliberately noisy/terse. */
-const RANDOM_REPLIES = [
-  "sure, whatever you think is best",
-  "yes", "no", "skip that one", "use the defaults",
-  "I'm not sure, you decide", "keep it simple", "next",
-];
+const RANDOM_REPLIES: string[] = SIM_PROSE.randomReplies;
 
 /**
  * A non-LLM simulated-user reply (Phase 2 strategies). `none` sends nothing (stall test);
@@ -103,7 +104,7 @@ export function staticReply(strategy: AutopilotStrategy, seed: number): string |
   switch (strategy) {
     case "none": return null;
     case "random": return RANDOM_REPLIES[Math.abs(Math.trunc(seed)) % RANDOM_REPLIES.length];
-    case "scripted": return "Looks good — proceed.";
+    case "scripted": return SIM_PROSE.scriptedReply;
     case "llm": return null;
   }
 }

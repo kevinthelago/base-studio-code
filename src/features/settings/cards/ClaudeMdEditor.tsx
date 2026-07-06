@@ -6,6 +6,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { TextArea } from "@/shared/ui/controls/Field";
 
 export function ClaudeMdEditor({
   instructions, setInstructions, setActiveProfileId, reading, targetLabel,
@@ -31,15 +32,15 @@ export function ClaudeMdEditor({
           <Spacer />
           <Text as="span" tone="dim">{targetLabel}</Text>
         </Row>
-        {/* eslint-disable-next-line no-restricted-syntax -- no shared <textarea> primitive */}
-        <textarea
+        <TextArea
           className="mono"
           value={instructions}
-          onChange={(e) => { setInstructions(e.target.value); setActiveProfileId(null); }}
+          onChange={(v) => { setInstructions(v); setActiveProfileId(null); }}
           placeholder="# Instructions&#10;&#10;Write system-level instructions for Claude in this scope…"
           style={{
             width: "100%", minHeight: 260,
             background: "var(--bg-canvas)", border: "none", outline: "none",
+            borderRadius: 0, // full-bleed inside the framed card — keep the square corners
             padding: "14px 16px",
             fontSize: 11.5, color: "var(--fg)",
             resize: "vertical", lineHeight: 1.65,
