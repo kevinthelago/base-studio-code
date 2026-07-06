@@ -1,0 +1,7 @@
+[
+  { "id": "warehouse",    "name": "Data warehouse",  "targetHint": "bigquery://project.dataset / snowflake://…", "glyph": "▤" },
+  { "id": "database",     "name": "Database",        "targetHint": "postgres://host/db",                          "glyph": "⛁" },
+  { "id": "object-store", "name": "Object store",    "targetHint": "s3://bucket/prefix / gcs://bucket",           "glyph": "⬢" },
+  { "id": "file",         "name": "File drop",       "targetHint": "/exports or sftp://host/path",                "glyph": "⎙" },
+  { "id": "api",          "name": "Outbound API / webhook", "targetHint": "https://api.example.com/ingest",       "glyph": "↗" }
+]

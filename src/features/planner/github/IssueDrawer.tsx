@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { Chip } from "@/shared/ui/data/Chip";
+import { TextArea } from "@/shared/ui/controls/Field";
 import { Avatar } from "@/shared/ui/data/Avatar";
 import { LabelChip } from "@/shared/ui/data/LabelChip";
 import { Stack } from "@/shared/ui/layout/Stack";
@@ -9,10 +11,12 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Box } from "@/shared/ui/layout/Box";
 import { Button } from "@/shared/ui/controls/Button";
 import type { BoardIssue } from "./projectBoard.types";
+import { truncate } from "@/shared/lib/core/format";
 
 // ── Issue drawer ──────────────────────────────────────────────────────────────
 
 export function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: () => void }) {
+  const [comment, setComment] = useState("");
   return (
     <aside style={{
       position: "absolute", top: 0, right: 0, bottom: 0, width: 680,
@@ -51,7 +55,7 @@ export function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: ()
           <Text as="div" mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>description</Text>
           {issue.body ? (
             <Text as="div" size={12.5} tone="muted" style={{ fontFamily: "var(--sans)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
-              {issue.body.slice(0, 600)}{issue.body.length > 600 ? "…" : ""}
+              {truncate(issue.body, 600)}
             </Text>
           ) : (
             <Text as="div" mono size={11} tone="dim" style={{ fontStyle: "italic" }}>No description.</Text>
@@ -92,11 +96,12 @@ export function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: ()
 
         {/* Composer */}
         <Stack gap={8} style={{ padding: "14px 20px", background: "var(--bg-elev)" }}>
-          {/* eslint-disable-next-line no-restricted-syntax -- multiline comment composer; the UI-kit has no textarea primitive */}
-          <textarea
-            className="input mono"
+          <TextArea
+            className="mono"
+            value={comment}
+            onChange={setComment}
             placeholder="leave a comment, or /assign, /label, /close, /ai breakdown…"
-            style={{ height: 60, padding: "8px 10px", fontSize: 11 }}
+            style={{ minHeight: 60, padding: "8px 10px", fontSize: 11 }}
           />
           <Row gap={8}>
             <Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>✦ ask claude…</Button>

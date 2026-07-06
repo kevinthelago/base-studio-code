@@ -10,6 +10,7 @@ import {
 } from "@/features/planner/blueprints/blueprintEdit";
 import { Card } from "@/shared/ui/data/Card";
 import { Button } from "@/shared/ui/controls/Button";
+import { TextArea } from "@/shared/ui/controls/Field";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -78,10 +79,9 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
                 <Box className="d-kind" style={{ paddingLeft: 0, marginBottom: 11 }}>{k.title} · {k.blurb}</Box>
 
                 <Lbl hint="what Claude is told in this stage">Prompt module</Lbl>
-                {/* eslint-disable-next-line no-restricted-syntax -- <textarea> has no shared primitive */}
-                <textarea className="input" value={s.prompt} style={{ minHeight: 70, marginBottom: 13 }}
+                <TextArea value={s.prompt} style={{ minHeight: 70, marginBottom: 13 }}
                   placeholder="Instructions for the planning agent during this stage…"
-                  onChange={(e) => setSections(setStageField(stages, s.uid, { prompt: e.target.value }))} />
+                  onChange={(v) => setSections(setStageField(stages, s.uid, { prompt: v }))} />
 
                 <Lbl hint="stays locked until these complete">Dependencies</Lbl>
                 {depCandidates(stages, s.uid).length === 0 ? (
