@@ -16,23 +16,20 @@ export function sanitizeProjectKey(s: string): string {
 }
 
 /**
- * Mint a stable, opaque project id at project creation (#1741).
+ * The canonical project key — a **readable slug of the project NAME** (#2409). This is the project's
+ * single identity: it names the on-disk hub (`projects/<key>/`), plan.db, the DuckDB store, fleet
+ * worktrees, the session skill group, the pane ids (`<key>:<stream>`), every app-state map key, and —
+ * 1:1 — the GitHub project (`projectSlug(github.name)`). Frozen at creation, so recovery DERIVES every
+ * path from the name instead of a lookup table (retiring the opaque minted id + the alias bridge, #1741).
  *
- * This becomes the project's workspace key — and every on-disk location keyed off it (the
- * `projects/<key>/` hub, plan.db, the DuckDB Data Model store, fleet worktrees, the session
- * skill group). Crucially it is **NOT derived from the title**, so:
- *   - renaming a project changes only its display name, never the key or any path;
- *   - two projects that happen to share a title still get distinct keys (no collision).
- *
- * Shape: `p-<base36 epoch ms>-<base36 random>` — only `[a-z0-9-]`, so it passes
- * {@link sanitizeProjectKey} unchanged (the backend treats the key as fully opaque) and stays
- * well under the 80-char cap. The timestamp keeps ids loosely sortable; the random suffix makes
- * two ids minted in the same millisecond distinct.
+ * Lowercase `[a-z0-9-]`, non-alnum runs → one `-`, edges trimmed, capped at 60 chars; an empty result
+ * (emoji-only / non-latin names) falls back to `"project"`. Already slug-safe, so the backend
+ * `sanitize_project_key` is a no-op on it. Two different names that slug to the SAME key collide — that's
+ * resolved at creation by a modal, so keys stay unique by construction (no opaque disambiguator needed).
  */
-export function mintProjectId(): string {
-  const ts = Date.now().toString(36);
-  const rand = Math.random().toString(36).slice(2, 8).padEnd(6, "0");
-  return `p-${ts}-${rand}`;
+export function projectSlug(name: string): string {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+  return slug || "project";
 }
 
 /** The repo's short name — the segment after the last `/` in `owner/name`. */
