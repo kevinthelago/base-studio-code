@@ -4,10 +4,14 @@
 // surface · description. Read-only view over the graph model.
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
+import { Grid } from "@/shared/ui/layout/Grid";
 import { Text } from "@/shared/ui/typography/Text";
+import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { Toggle } from "@/shared/ui/controls/Toggle";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { StatTile } from "@/shared/ui/data/StatTile";
 import { ROLE_COLOR, STATUS_META, EDGE_META, type GraphModel, type GNode } from "./lib/glanceGraph";
 
 const FAULT_COLOR = "#f2555f";
@@ -15,7 +19,8 @@ const FAULT_COLOR = "#f2555f";
 // Fills its (drag-resizable) wrapper column in GraphCanvas — the width is owned by the layout, not here.
 const PANEL: React.CSSProperties = { flex: 1, minWidth: 0, background: "var(--bg-elev)", borderLeft: "1px solid var(--border)", display: "flex", flexDirection: "column", zIndex: 15 };
 const CARD: React.CSSProperties = { flex: 1, background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px" };
-const LABEL = (t: string) => <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", margin: "20px 0 9px" }}>{t}</Text>;
+// The section micro-label, on the shared SectionLabel (#2420) with this inspector's tracking/rhythm.
+const LABEL = (t: string) => <SectionLabel size={9.5} style={{ letterSpacing: "1px", margin: "20px 0 9px" }}>{t}</SectionLabel>;
 const CYCLE_BG = "rgba(242,85,95,.08)", CYCLE_BD = "rgba(242,85,95,.28)";
 
 interface InspectorProps {
@@ -40,7 +45,7 @@ interface InspectorProps {
 function DepRow({ node, kind, color, onClick }: { node: GNode; kind: string; color: string; onClick: () => void }) {
   return (
     <Row gap={9} align="center" onClick={onClick} style={{ padding: "8px 10px", borderRadius: 7, cursor: "pointer", background: "var(--bg)", border: "1px solid var(--border)", marginBottom: 5 }}>
-      <Box style={{ width: 8, height: 8, borderRadius: "50%", background: ROLE_COLOR[node.role], flex: "none" }} />
+      <StatusDot color={ROLE_COLOR[node.role]} size={8} />
       <Text as="span" mono size={12} style={{ flex: 1 }}>{node.slug}</Text>
       <Text as="span" mono size={9.5} style={{ textTransform: "uppercase", letterSpacing: ".5px", color }}>{kind}</Text>
     </Row>
@@ -74,19 +79,18 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
         <Box style={{ flex: 1, overflowY: "auto", padding: "18px 16px" }}>
           <Text as="div" mono size={19} weight={700} style={{ letterSpacing: "-.4px" }}>{n.slug}</Text>
 
-          <Row gap={8} style={{ marginTop: 16 }}>
-            <Box style={CARD}>
-              <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: ".8px", marginBottom: 6 }}>STATUS</Text>
+          {/* STATUS / ROLE as the shared metric tile (#2420) — custom value nodes keep the dot + pill. */}
+          <Grid cols={2} gap={8} style={{ marginTop: 16 }}>
+            <StatTile k="STATUS" v={
               <Row gap={7} align="center">
-                <Box style={{ width: 9, height: 9, borderRadius: "50%", background: st.color, boxShadow: st.pulse ? `0 0 8px ${st.color}` : "none" }} />
+                <StatusDot color={st.color} size={9} style={{ boxShadow: st.pulse ? `0 0 8px ${st.color}` : "none" }} />
                 <Text as="span" mono size={12.5} weight={500} style={{ color: st.color }}>{st.label}</Text>
               </Row>
-            </Box>
-            <Box style={CARD}>
-              <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: ".8px", marginBottom: 6 }}>ROLE</Text>
+            } />
+            <StatTile k="ROLE" v={
               <Text as="span" mono size={11} style={{ color: ROLE_COLOR[n.role], background: `color-mix(in oklch, ${ROLE_COLOR[n.role]} 12%, transparent)`, border: `1px solid color-mix(in oklch, ${ROLE_COLOR[n.role]} 30%, transparent)`, borderRadius: 5, padding: "3px 8px" }}>{n.roleLabel ?? n.role}</Text>
-            </Box>
-          </Row>
+            } />
+          </Grid>
 
           {inCycle && (
             <Row gap={9} align="start" style={{ marginTop: 14, background: CYCLE_BG, border: `1px solid ${CYCLE_BD}`, borderRadius: 8, padding: "10px 12px" }}>
@@ -164,12 +168,12 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
           <Row gap={12} align="center" style={{ marginTop: 20 }}>
             <Box onClick={() => onSelectNode(e.from)} style={{ ...CARD, cursor: "pointer" }}>
               <Text as="div" mono size={9} tone="dim" style={{ letterSpacing: ".8px", marginBottom: 6 }}>CONSUMER</Text>
-              <Row gap={7} align="center"><Box style={{ width: 8, height: 8, borderRadius: "50%", background: ROLE_COLOR[from.role] }} /><Text as="span" mono size={12}>{from.slug}</Text></Row>
+              <Row gap={7} align="center"><StatusDot color={ROLE_COLOR[from.role]} size={8} /><Text as="span" mono size={12}>{from.slug}</Text></Row>
             </Box>
             <Text as="span" tone="dim">→</Text>
             <Box onClick={() => onSelectNode(e.to)} style={{ ...CARD, cursor: "pointer" }}>
               <Text as="div" mono size={9} tone="dim" style={{ letterSpacing: ".8px", marginBottom: 6 }}>PROVIDER</Text>
-              <Row gap={7} align="center"><Box style={{ width: 8, height: 8, borderRadius: "50%", background: ROLE_COLOR[to.role] }} /><Text as="span" mono size={12}>{to.slug}</Text></Row>
+              <Row gap={7} align="center"><StatusDot color={ROLE_COLOR[to.role]} size={8} /><Text as="span" mono size={12}>{to.slug}</Text></Row>
             </Box>
           </Row>
 

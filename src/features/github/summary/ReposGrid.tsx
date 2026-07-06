@@ -5,6 +5,7 @@ import { timeAgo } from "@/shared/lib/core/format";
 import { langColor, type RepoCardData } from "../lib/githubSummary";
 import { Spark } from "@/shared/ui/charts";
 import { Skeleton } from "@/shared/ui/feedback/Skeleton";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { CardEmpty } from "./cardStates";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Row } from "@/shared/ui/layout/Row";
@@ -39,7 +40,7 @@ export function ReposGrid({ repos, loading }: {
         {repos.map(r => (
           <Card key={r.full_name} interactive onClick={() => setGithubPageMode("repos")}>
             <Row align="baseline" gap={8} style={{ marginBottom: 4 }}>
-              <Box as="span" bg={r.language ? langColor(r.language) : "var(--fg-dim)"} style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, display: "inline-block" }} />
+              <StatusDot color={r.language ? langColor(r.language) : "var(--fg-dim)"} size={8} />
               <Box as="span" className="mono-value">{r.full_name}</Box>
               <Spacer />
               <Text as="span" mono size={9.5} tone="dim">{timeAgo(r.lastPush)}</Text>

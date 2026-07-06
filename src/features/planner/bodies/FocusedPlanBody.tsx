@@ -11,6 +11,7 @@ import {
 } from "@/features/planner/relationship/relationshipGraph";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
+import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
@@ -60,8 +61,7 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
       {relGraph && (
         <Box>
           {/* STREAMS — gate pill on the right (#1429 reskin) */}
-          <Row className="ulabel" justify="between" gap={8} style={{ paddingBottom: 9 }}>
-            <Text as="span">streams</Text>
+          <SectionLabel size={9.5} style={{ paddingBottom: 9 }} right={
             <Box as="span" data-testid="relationship-gate" className="mono" pad={[3, 8]} bg={`color-mix(in oklch, ${gatePass ? "var(--success)" : "var(--danger)"}, transparent 87%)`} radius={20} style={{
               display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 600, fontSize: 9.5, textTransform: "none",
               color: gatePass ? "var(--success)" : "var(--danger)",
@@ -70,7 +70,7 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
             }}>
               {gatePass ? "✓ no dependency cycles" : `⨯ gate blocked · ${cycleN} edge${cycleN === 1 ? "" : "s"} in a cycle`}
             </Box>
-          </Row>
+          }>streams</SectionLabel>
           {/* graph card + legend */}
           <Box bg="var(--bg-elev)" border radius={9} style={{ padding: "8px 8px 4px" }}>
             <RelationshipGraphView
@@ -100,7 +100,7 @@ export function PlanBody({ data, focus: focusProp, onFocus }: {
           </Row>
 
           {/* INSPECTOR */}
-          <Box className="ulabel" style={{ padding: "13px 0 9px" }}>inspector</Box>
+          <SectionLabel size={9.5} style={{ padding: "13px 0 9px" }}>inspector</SectionLabel>
           <Box pad={[12, 13]} bg="var(--bg-elev)" border radius={9}>
             <RelationshipInspector
               graph={relGraph}

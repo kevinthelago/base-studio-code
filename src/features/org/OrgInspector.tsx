@@ -9,12 +9,21 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Chip } from "@/shared/ui/data/Chip";
 import { SelectField, TextField } from "@/shared/ui/controls/Field";
 import { ConfirmButton } from "@/shared/ui/controls/ConfirmButton";
+import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
+import { IconBox } from "@/shared/ui/data/IconBox";
+import { SectionLabel, type SectionLabelProps } from "@/shared/ui/layout/SectionLabel";
 import { PersonaEditor } from "@/features/personas";
 import type { Persona } from "@/features/personas";
 import { RELATIONSHIP_ARCHETYPES, archetypeById, formById, type Org } from "./lib/org";
 import { positionDisplay, positionComms, hueColor } from "./lib/orgView";
-import { FormChip, SectionLabel, FormLane } from "./components";
+import { FormChip, FormLane } from "./components";
 import type { Selection } from "./OrgCanvas";
+
+/** The inspector's block header — the shared SectionLabel (`right` slot, #2420) at the org
+ *  designer's `.ulabel` size, with the block's standard 9px bottom gap baked in. */
+function BlockLabel(props: Omit<SectionLabelProps, "size" | "style">) {
+  return <SectionLabel size={9.5} style={{ marginBottom: 9 }} {...props} />;
+}
 
 interface InspectorProps {
   org: Org;
@@ -53,8 +62,7 @@ export function OrgInspector({ org, orgs, personas, sel, onSelectNode, onChangeA
         {/* header */}
         <Box style={{ ...BLOCK, padding: "16px 17px 14px" }}>
           <Row gap={11} align="center">
-            <Box style={{ width: 40, height: 40, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 18, color: "#fff", background: "var(--accent)", flex: "none" }}>{d.glyph}</Box>
+            <IconBox size={40} radius={11} fontSize={18} color="#fff" background="var(--accent)">{d.glyph}</IconBox>
             <Box style={{ flex: 1, minWidth: 0 }}>
               <Text as="div" weight={600} size={16}>{d.name}</Text>
               <Row gap={7} align="center" style={{ marginTop: 3 }}>
@@ -68,7 +76,7 @@ export function OrgInspector({ org, orgs, personas, sel, onSelectNode, onChangeA
         {/* identity — a persona (agent) or a label (resource/external) */}
         {pos.kind === "agent" ? (
           <Box style={BLOCK}>
-            <SectionLabel right={persona && uses > 1 ? <Text as="span" mono size={9} tone="dim">shared · used in {uses}</Text> : undefined}>Persona</SectionLabel>
+            <BlockLabel right={persona && uses > 1 ? <Text as="span" mono size={9} tone="dim">shared · used in {uses}</Text> : undefined}>Persona</BlockLabel>
             <SelectField label="" value={pos.personaId ?? ""} onChange={(v) => onChangePersona(pos.nodeId, v)}>
               {!pos.personaId && <option value="">— pick a persona —</option>}
               {personas.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -82,14 +90,14 @@ export function OrgInspector({ org, orgs, personas, sel, onSelectNode, onChangeA
           </Box>
         ) : (
           <Box style={BLOCK}>
-            <SectionLabel>{pos.kind === "resource" ? "Resource" : "External actor"}</SectionLabel>
+            <BlockLabel>{pos.kind === "resource" ? "Resource" : "External actor"}</BlockLabel>
             <TextField label="Label" value={pos.label ?? ""} onChange={(v) => onChangeLabel(pos.nodeId, v)} placeholder="Name" />
           </Box>
         )}
 
         {/* communication (derived) */}
         <Box style={{ padding: "15px 17px 24px" }}>
-          <SectionLabel right={<Text as="span" mono size={9} tone="dim">auto · from relationships</Text>}>Communication</SectionLabel>
+          <BlockLabel right={<Text as="span" mono size={9} tone="dim">auto · from relationships</Text>}>Communication</BlockLabel>
           {comms.length === 0 ? (
             <Text as="div" size={11} tone="dim">No relationships yet — connect this position on the canvas.</Text>
           ) : (
@@ -98,7 +106,7 @@ export function OrgInspector({ org, orgs, personas, sel, onSelectNode, onChangeA
                 <Box key={cm.counterpartNode + cm.archetype} onClick={() => onSelectNode(cm.counterpartNode)}
                   style={{ padding: "8px 9px", borderRadius: 8, background: "var(--bg-soft)", border: "1px solid var(--border-soft)", cursor: "pointer" }}>
                   <Row gap={7} align="center">
-                    <Box style={{ width: 7, height: 7, borderRadius: 2, background: hueColor(cm.hue), flex: "none" }} />
+                    <ColorSwatch color={hueColor(cm.hue)} size={7} />
                     <Text as="span" size={12} weight={500}>{cm.archetypeLabel} · {cm.counterpartName}</Text>
                   </Row>
                   <Row gap={5} wrap style={{ marginTop: 6 }}>
@@ -135,7 +143,7 @@ export function OrgInspector({ org, orgs, personas, sel, onSelectNode, onChangeA
   return (
     <Box style={PANEL}>
       <Box style={{ ...BLOCK, padding: "16px 17px 15px" }}>
-        <SectionLabel>Relationship</SectionLabel>
+        <BlockLabel>Relationship</BlockLabel>
         <SelectField label="" value={rel.archetype} onChange={(v) => onChangeArchetype(rel.id, v)}>
           {RELATIONSHIP_ARCHETYPES.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
         </SelectField>
@@ -150,7 +158,7 @@ export function OrgInspector({ org, orgs, personas, sel, onSelectNode, onChangeA
       </Box>
 
       <Stack gap={10} style={{ padding: "15px 17px 24px" }}>
-        <SectionLabel>Communication forms</SectionLabel>
+        <BlockLabel>Communication forms</BlockLabel>
         <FormLane from={aLabel} to={bLabel} forms={fwd} hue={arch?.hue ?? 0} />
         <FormLane from={bLabel} to={aLabel} forms={back} hue={arch?.hue ?? 0} />
       </Stack>

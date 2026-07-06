@@ -8,6 +8,7 @@ import { Card } from "@/shared/ui/data/Card";
 import { SkeletonChart } from "@/shared/ui/feedback/Skeleton";
 import { heatFill } from "../heatFill";
 import { formatHeatDate } from "../lib/githubSummary";
+import { clamp } from "@/shared/lib/core/math";
 
 export function ActivityHeatmap({
   cells, rawCounts, rawDates, totalContribs, totalMerged, loading,
@@ -38,7 +39,7 @@ export function ActivityHeatmap({
     const tipW = 152, tipH = 16;
     const cellCx = 30 + c * (cell + gap) + cell / 2;
     const cellTop = r * (cell + gap) + 4;
-    const tipX = Math.max(0, Math.min(svgW - tipW, cellCx - tipW / 2));
+    const tipX = clamp(cellCx - tipW / 2, 0, svgW - tipW);
     const above = r >= 2;
     const tipY = above ? cellTop - tipH - 4 : cellTop + cell + 4;
     return { label, tipX, tipY, tipW, tipH };
