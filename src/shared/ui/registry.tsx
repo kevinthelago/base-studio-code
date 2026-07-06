@@ -46,6 +46,11 @@ import { InlineError } from "./feedback/InlineError";
 import { EmptyState } from "./feedback/EmptyState";
 import { StatusDot } from "./feedback/StatusDot";
 import { Skeleton } from "./feedback/Skeleton";
+// #2421 gap-fill
+import { LabelChip } from "./data/LabelChip";
+import { ActivityFeed } from "./data/ActivityFeed";
+import { Pane } from "./overlay/Pane";
+import { TelemetryPanel, ItemBars, SplitBar } from "./charts/telemetry";
 
 // Heterogeneous prop shapes — a render-map is intentionally prop-agnostic.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -62,6 +67,7 @@ export const UI_COMPONENTS: Record<PrimitiveName, AnyComponent> = {
   Avatar, IconBox, CardListRow, DataTableRow, RoleTierChips,
   StatCard, LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars,
   Banner, InlineError, EmptyState, StatusDot, Skeleton,
+  LabelChip, ActivityFeed, Pane, TelemetryPanel, ItemBars, SplitBar,
 };
 
 /** Resolve a primitive name to its component (undefined for an unknown name). */

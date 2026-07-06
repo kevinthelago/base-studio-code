@@ -5,6 +5,7 @@
 import sampleGraphEmbedded from "@data/glance/sample-graph.json";
 import type { GRawNode, GRawEdge, GRole, GStatus } from "./glanceGraph";
 import type { ProjectLink } from "./projectLinks";
+import { hashAbs } from "./hash";
 
 export interface GlanceData { rawNodes: GRawNode[]; rawEdges: GRawEdge[]; sample: boolean }
 
@@ -13,13 +14,6 @@ export interface GlanceData { rawNodes: GRawNode[]; rawEdges: GRawEdge[]; sample
 export interface ProjectLite { id: string; name: string; role?: GRole; status?: GStatus; faults?: number }
 
 const ROLES: GRole[] = ["infra", "service", "data", "client"];
-
-/** Stable small hash of a string → non-negative int (deterministic role/status assignment). */
-function hash(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
 
 /** The packaged SAMPLE project network — the spec's example (roles · edge kinds · a dependency CYCLE:
  *  reporting → analytics → reporting · hazards). No longer an auto-fallback for an empty app (#2272 — an
@@ -41,7 +35,7 @@ export function buildGlanceData(projects: ProjectLite[], links: ProjectLink[] = 
   const rawNodes: GRawNode[] = projects.map((p) => ({
     id: p.id,
     slug: p.name || p.id,
-    role: p.role ?? ROLES[hash(p.id) % ROLES.length],
+    role: p.role ?? ROLES[hashAbs(p.id) % ROLES.length],
     status: p.status ?? "idle",
     faults: p.faults, // #2265: unresolved runtime-fault count → node fault badge
   }));

@@ -2919,6 +2919,395 @@
       "src": "shared/ui/feedback/Skeleton.tsx",
       "srcText": "import { Skeleton } from \"@/shared/ui/feedback/Skeleton\";\n\n<Skeleton />",
       "builtin": true
+    },
+    {
+      "id": "labelchip",
+      "name": "LabelChip",
+      "kitId": "react-ui",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "badge",
+        "github"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "Chip"
+      ],
+      "props": [
+        {
+          "name": "label",
+          "type": "object",
+          "req": true,
+          "desc": "The GitHub label — { name, color } (6-hex, no leading #)."
+        }
+      ],
+      "whenUse": [
+        "A GitHub issue/PR label with its dynamic 6-hex color.",
+        "Label rows in issue drawers / project boards."
+      ],
+      "whenNot": [
+        "A semantic status tag — use Chip with a tone.",
+        "A clickable filter — use SegmentedControl."
+      ],
+      "src": "shared/ui/data/LabelChip.tsx",
+      "srcText": "import { LabelChip } from \"@/shared/ui/data/LabelChip\";\n\n<LabelChip label={…} />",
+      "builtin": true
+    },
+    {
+      "id": "activityfeed",
+      "name": "ActivityFeed",
+      "kitId": "react-ui",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "data",
+        "feed"
+      ],
+      "variants": [
+        "default",
+        "loading"
+      ],
+      "composes": [
+        "Avatar",
+        "EmptyState",
+        "Skeleton"
+      ],
+      "props": [
+        {
+          "name": "items",
+          "type": "T[]",
+          "req": true,
+          "desc": "ActivityItem[] — { login, action, target, repo, createdAt }."
+        },
+        {
+          "name": "hint",
+          "type": "string",
+          "req": true,
+          "desc": "Dimmed hint after the card title."
+        },
+        {
+          "name": "loading",
+          "type": "boolean",
+          "req": true,
+          "desc": "Shimmer rows while the feed's source loads (only when items is empty)."
+        },
+        {
+          "name": "tone",
+          "type": "object",
+          "req": true,
+          "desc": "action → color map — each caller keeps its own EVENT_TONE."
+        },
+        {
+          "name": "right",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Optional header control on the right (e.g. a filter select)."
+        },
+        {
+          "name": "actionWidth",
+          "type": "number",
+          "req": false,
+          "desc": "Action column width in px (github uses 70, planner 80)."
+        }
+      ],
+      "whenUse": [
+        "A \"Recent activity\" card of actor · action · target rows.",
+        "Cross-repo / cross-project event feeds sharing one striped layout."
+      ],
+      "whenNot": [
+        "A dense column-aligned table — use DataTableRow.",
+        "A single event notice — use Banner."
+      ],
+      "src": "shared/ui/data/ActivityFeed.tsx",
+      "srcText": "import { ActivityFeed } from \"@/shared/ui/data/ActivityFeed\";\n\n<ActivityFeed items={…} hint={…} loading={…} tone={…} />",
+      "builtin": true
+    },
+    {
+      "id": "pane",
+      "name": "Pane",
+      "kitId": "react-ui",
+      "role": "layout",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "overlay",
+        "editor"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "IconButton"
+      ],
+      "props": [
+        {
+          "name": "mode",
+          "type": "\"drawer\" | \"inline\"",
+          "req": false,
+          "desc": "Slide-over (scrim + slide-in) vs fills-its-container."
+        },
+        {
+          "name": "open",
+          "type": "boolean",
+          "req": false,
+          "desc": "Drawer mode: drives the scrim/slide state and gates the body render."
+        },
+        {
+          "name": "header",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Top-zone content (drawer mode auto-appends a close button)."
+        },
+        {
+          "name": "body",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Body content — pass via body or as children."
+        },
+        {
+          "name": "children",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Body content (alias of body)."
+        },
+        {
+          "name": "footer",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Custom footer; omitted in drawer mode → the standard draft/remove bar."
+        },
+        {
+          "name": "onClose",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Close (scrim click / ✕ / cancel / done) handler."
+        },
+        {
+          "name": "onRemove",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Standard-footer remove handler for an existing item."
+        },
+        {
+          "name": "isDraft",
+          "type": "boolean",
+          "req": false,
+          "desc": "Standard footer: drafting (cancel/done) vs existing (remove/done)."
+        },
+        {
+          "name": "onCommit",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Standard-footer draft done handler."
+        },
+        {
+          "name": "commitDisabled",
+          "type": "boolean",
+          "req": false,
+          "desc": "Disable the draft done button (e.g. a required field is empty)."
+        },
+        {
+          "name": "flush",
+          "type": "boolean",
+          "req": false,
+          "desc": "Drop the body's default padding (sections supply their own)."
+        },
+        {
+          "name": "bare",
+          "type": "boolean",
+          "req": false,
+          "desc": "Inline mode only: bare flex-column frame with no styled zone wrappers."
+        },
+        {
+          "name": "className",
+          "type": "string",
+          "req": false,
+          "desc": "Extra class on the frame element."
+        }
+      ],
+      "whenUse": [
+        "A select-an-item → edit-its-fields surface: slide-over drawer or inline master-detail pane.",
+        "Editors needing the standard draft/remove footer."
+      ],
+      "whenNot": [
+        "A blocking decision or short form — use Dialog.",
+        "Static grouped content — use Card."
+      ],
+      "src": "shared/ui/overlay/Pane.tsx",
+      "srcText": "import { Pane } from \"@/shared/ui/overlay/Pane\";\n\n<Pane>…</Pane>",
+      "builtin": true
+    },
+    {
+      "id": "telemetrypanel",
+      "name": "TelemetryPanel",
+      "kitId": "react-ui",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "chart",
+        "data-viz"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [],
+      "props": [
+        {
+          "name": "title",
+          "type": "string",
+          "req": true,
+          "desc": "Panel title (mono h3)."
+        },
+        {
+          "name": "hint",
+          "type": "string",
+          "req": false,
+          "desc": "Dimmed hint after the title."
+        },
+        {
+          "name": "right",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Right-aligned header content (a legend, a filter, a count)."
+        },
+        {
+          "name": "children",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "Content."
+        }
+      ],
+      "whenUse": [
+        "The framed panel around an analytics chart (title · hint · right slot).",
+        "Analytics tabs sharing the telemetry card chrome."
+      ],
+      "whenNot": [
+        "A KPI number — use StatCard.",
+        "General grouped content — use Card."
+      ],
+      "src": "shared/ui/charts/telemetry.tsx",
+      "srcText": "import { TelemetryPanel } from \"@/shared/ui/charts/telemetry\";\n\n<TelemetryPanel title={…}>…</TelemetryPanel>",
+      "builtin": true
+    },
+    {
+      "id": "itembars",
+      "name": "ItemBars",
+      "kitId": "react-ui",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "chart",
+        "data-viz"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "FillBar"
+      ],
+      "props": [
+        {
+          "name": "rows",
+          "type": "T[]",
+          "req": true,
+          "desc": "ItemBarRow[] — { key, label, meta?, value, fraction (0–1), color? }."
+        },
+        {
+          "name": "empty",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Rendered when rows is empty; defaults to a \"No data recorded yet.\" hint."
+        }
+      ],
+      "whenUse": [
+        "A labelled per-item meter list (calls per server, fires per hook).",
+        "Ranked fractions where each row carries a label + value."
+      ],
+      "whenNot": [
+        "An SVG ranked bar chart with a shared axis — use HBars.",
+        "One fraction — use FillBar."
+      ],
+      "src": "shared/ui/charts/telemetry.tsx",
+      "srcText": "import { ItemBars } from \"@/shared/ui/charts/telemetry\";\n\n<ItemBars rows={…} />",
+      "builtin": true
+    },
+    {
+      "id": "splitbar",
+      "name": "SplitBar",
+      "kitId": "react-ui",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "chart",
+        "data-viz"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [],
+      "props": [
+        {
+          "name": "label",
+          "type": "string",
+          "req": true,
+          "desc": "Row label."
+        },
+        {
+          "name": "a",
+          "type": "number",
+          "req": true,
+          "desc": "First-segment count."
+        },
+        {
+          "name": "b",
+          "type": "number",
+          "req": true,
+          "desc": "Second-segment count."
+        },
+        {
+          "name": "aLabel",
+          "type": "string",
+          "req": true,
+          "desc": "First-segment legend label (e.g. ok)."
+        },
+        {
+          "name": "bLabel",
+          "type": "string",
+          "req": true,
+          "desc": "Second-segment legend label (e.g. err)."
+        },
+        {
+          "name": "aColor",
+          "type": "Color",
+          "req": false,
+          "desc": "First-segment color."
+        },
+        {
+          "name": "bColor",
+          "type": "Color",
+          "req": false,
+          "desc": "Second-segment color."
+        }
+      ],
+      "whenUse": [
+        "A two-way proportion with its counts (ok/err, allow/block).",
+        "Per-item health rows in an analytics panel."
+      ],
+      "whenNot": [
+        "More than two segments — use Donut / Bars.",
+        "A single fill fraction — use FillBar."
+      ],
+      "src": "shared/ui/charts/telemetry.tsx",
+      "srcText": "import { SplitBar } from \"@/shared/ui/charts/telemetry\";\n\n<SplitBar label={…} a={…} b={…} aLabel={…} bLabel={…} />",
+      "builtin": true
     }
   ]
 }
