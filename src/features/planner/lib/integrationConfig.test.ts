@@ -17,6 +17,18 @@ describe("integrationConfig — destination", () => {
     expect(destinationMeta("").name).toBe("—");         // empty ⇒ placeholder
   });
 
+  // Guard for the externalized catalog (@data/integration/destinations.json, #2419).
+  it("the destination catalog covers every DestinationType once, with complete display meta", () => {
+    expect(DESTINATIONS.map((d) => d.id).sort()).toEqual(
+      ["api", "database", "file", "object-store", "warehouse"],
+    );
+    for (const d of DESTINATIONS) {
+      expect(d.name.trim().length).toBeGreaterThan(0);
+      expect(d.targetHint.trim().length).toBeGreaterThan(0);
+      expect(d.glyph.trim().length).toBeGreaterThan(0);
+    }
+  });
+
   it("destinationDefined needs type + target + write mode", () => {
     expect(destinationDefined(defaultIntegrationConfig())).toBe(false);
     expect(destinationDefined(cfg({ type: "warehouse" }))).toBe(false);          // no target/write
