@@ -54,7 +54,9 @@ describe("toHookTelemetryFrame (#937)", () => {
 describe("useTunnelHookTelemetry (#937)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(bscJson).mockResolvedValue([line("bsc-deny", "PreToolUse", "block")]);
+    // The hook aggregates with `new Date()` (a real-time 14-day window), so the fixture line must be
+    // RECENT — a hardcoded past date rots out of the window over time and the frame reads all-zeros.
+    vi.mocked(bscJson).mockResolvedValue([line("bsc-deny", "PreToolUse", "block", Date.now() - 3_600_000)]);
     useAppStore.setState({ tunnelRunning: true });
   });
 
