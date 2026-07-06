@@ -2,7 +2,8 @@
 // from Planning.tsx. Owns the `restarting` flag and the four lifecycle operations:
 //   • regenerateWorkspace — rewrite CLAUDE.md + the context baseline for the CURRENT blueprint
 //     version WITHOUT touching plan section files (shared by restart + "keep files").
-//   • handleRestart       — kill the PTY, regenerate, and re-spawn `claude` with a fresh intro (#1240).
+//   • handleRestart       — kill the PTY, regenerate, and re-spawn `claude`. Resume-capable by
+//     default (#2396); the destructive ops pass `fresh: true` for a brand-new session (#1240).
 //   • keepPlanFiles       — adopt the new blueprint/template version on disk, clearing the staleness
 //     WITHOUT wiping plan files or restarting into a destructive reconciliation (#827).
 //   • doClearPlan         — delete on-disk plan files FIRST (awaited), wipe the store, unlink repos,
@@ -47,7 +48,7 @@ export interface PlanningSessionDeps {
 
 export interface PlanningSession {
   restarting: boolean;
-  handleRestart: () => Promise<void>;
+  handleRestart: (opts?: { fresh?: boolean }) => Promise<void>;
   keepPlanFiles: () => Promise<void>;
   doClearPlan: () => Promise<void>;
   doSwitchBlueprint: (targetId: string) => Promise<void>;
@@ -95,7 +96,14 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
     return paths;
   }
 
-  async function handleRestart() {
+  // Relaunch the planner session (#2396). RESUME-CAPABLE by default — the launch mirrors the mount
+  // path exactly (`claude --continue || claude` + the fresh-only intro guard + a resume request), so
+  // a non-destructive relaunch (sandbox-toggle flip, reopening a project) continues the prior
+  // conversation instead of starting over. The destructive ops (clear-plan / switch-blueprint) pass
+  // `fresh: true` to launch a genuinely NEW session — plain `claude`, re-greeted with the intro even
+  // though history exists (#1240), since the plan that conversation referred to was just wiped.
+  async function handleRestart(opts?: { fresh?: boolean }) {
+    const fresh = opts?.fresh === true;
     const term = termRef.current;
     if (!term || restarting) return;
     setRestarting(true);
@@ -105,16 +113,15 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
     const paths = await regenerateWorkspace();
     const token = useAppStore.getState().githubToken;
     const ghEnv: Record<string, string> = token ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {};
-    // A deliberate restart launches a brand-new session — re-greet with the intro (#1240). No
-    // fresh-only guard here: the user explicitly restarted, so fire it even though history exists.
+    // The intro rides along on every restart: a `fresh` restart always fires it (#1240 — the user
+    // wiped the plan, so re-greet even though history exists); the default resume restart keeps the
+    // fresh-only guard, so a returning user with history resumes quietly instead of being re-greeted.
     const introMode = plannerIntroMode({ isAuthoring, isExisting: treatAsExisting });
     const introText = await safeInvoke<string>("planner_intro_prompt", { mode: introMode }, "",
       (e: unknown) => console.error("planner intro prompt failed:", e));
     // Relaunch on the selected harness (Claude Code or bsc-agent for any LLM, incl. a forced
     // local/ollama provider), carrying the plan-only role gate + provider/model/MCP via BSC_AGENT_*
     // env so a restarted local-model planner keeps the same context, prompt, state, and permissions.
-    // A restart is a deliberate brand-new session (#1240) — re-greet with the intro and DON'T request
-    // resume (no `continueSession`), so clear-plan / switch-blueprint start genuinely fresh.
     const launch = plannerLaunchConfig(useAppStore.getState(), ghEnv);
     // bsc-agent (one-shot) never gets stage 1's directive via runtime injection — bake it into the
     // intro so a weak local model begins the stage instead of waiting to be advanced (#qwen).
@@ -138,8 +145,13 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
       cols: term.cols,
       rows: term.rows,
       cwd: sandbox.cwd,
-      initCmd: launch.providerId === "bsc-agent" ? launch.initCmd : "claude",
+      // Default (resume): the harness's own launch — for Claude the `--continue || claude` chain —
+      // with the fresh-only intro guard + resume request, exactly like the mount path (#2396).
+      // Destructive (`fresh`): plain `claude` + an always-firing intro, so the session starts over.
+      initCmd: fresh && launch.providerId !== "bsc-agent" ? "claude" : launch.initCmd,
       startupPrompt,
+      startupPromptFreshOnly: fresh ? false : launch.startupPromptFreshOnly,
+      continueSession: fresh ? false : launch.continueSession,
       env: launch.env,
       providerId: launch.providerId,
       wslDistro: sandbox.wslDistro,
@@ -166,7 +178,7 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
     store.clearPlan(effectiveProjectId);
     store.setActiveProjectRepos([]);
     store.setPlanningContext(planningPitch, "");
-    void handleRestart();
+    void handleRestart({ fresh: true }); // destructive — the plan is gone, start a NEW session (#2396)
   }
 
   // Switch the project to another blueprint (#1281 — any → any other project blueprint, confirmed via
@@ -181,7 +193,7 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
     await safeInvoke("clear_project_plan_files", { projectKey: effectiveProjectId }, undefined, console.error);
     store.setActiveProjectRepos([]);
     store.setPlanningContext(planningPitch, "");
-    void handleRestart();
+    void handleRestart({ fresh: true }); // destructive — new blueprint, start a NEW session (#2396)
   }
 
   return { restarting, handleRestart, keepPlanFiles, doClearPlan, doSwitchBlueprint };

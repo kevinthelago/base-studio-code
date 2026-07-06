@@ -390,13 +390,24 @@ pub(crate) fn pty_create(
     // The session harness (#1078 P0): ClaudeCodeAdapter is the only impl today; it reproduces the
     // exact launch behavior this block had inline. bsc-agent becomes a second adapter (P2).
     let has_history = harness.detect_history(&cwd);
-    let launch = match plan_launch(
+    let plan = plan_launch(
         startup_prompt.as_deref(),
         init_cmd.as_deref(),
         has_history,
         continue_session.unwrap_or(false),
         startup_prompt_fresh_only.unwrap_or(false),
-    ) {
+    );
+    // #2396: make the resume decision visible — an "always fresh" regression (a caller dropping the
+    // resume init/flag) shows up in the logs as `resumed=false` right next to `has_history=true`.
+    // An Init launch resumes when its command carries `--continue` AND there's history to continue
+    // (the `claude --continue || claude` chain falls back to fresh on its own otherwise).
+    let resumed = match &plan {
+        LaunchPlan::Prompt { resume } => *resume,
+        LaunchPlan::Init(s) => s.contains("--continue") && has_history,
+        LaunchPlan::None => false,
+    };
+    log::info!("pty[{pane_id}] launch decision · has_history={has_history} · resumed={resumed}");
+    let launch = match plan {
         LaunchPlan::Prompt { resume } => Some(harness.launch_command(startup_prompt.as_deref().unwrap_or(""), resume)),
         LaunchPlan::Init(s) => Some(s),
         LaunchPlan::None => None,

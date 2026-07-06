@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { MutableRefObject } from "react";
-import { renderHook } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Terminal } from "@xterm/xterm";
 import { useAppStore } from "@/store";
@@ -78,5 +78,62 @@ describe("usePlanningSession", () => {
 
     expect(deps.setSwitchOpen).toHaveBeenCalledWith(false);
     expect(invokeMock).not.toHaveBeenCalledWith("clear_project_plan_files", expect.anything());
+  });
+
+  // #2396: reopening a project used to start a FRESH planner chat — the restart path hardcoded a
+  // plain `claude` launch. These pin the resume-by-default launch config (the mount path's trio)
+  // and the explicit plain-fresh escape hatch the destructive ops use.
+  describe("handleRestart resume config (#2396)", () => {
+    // A live-ish terminal so handleRestart runs through to pty_create.
+    const term = () =>
+      ({ current: { clear: vi.fn(), cols: 80, rows: 24 } as unknown as Terminal }) as MutableRefObject<Terminal | null>;
+
+    const ptyCreateArgs = () => {
+      const call = invokeMock.mock.calls.find(([cmd]) => cmd === "pty_create");
+      expect(call).toBeDefined();
+      return call![1] as Record<string, unknown>;
+    };
+
+    beforeEach(() => {
+      // The default Claude harness; per-command returns so the intro composes and the launch fires.
+      useAppStore.setState({ llmProvider: "anthropic", fleetHarness: "claude" });
+      invokeMock.mockImplementation(async (cmd: string) => {
+        if (cmd === "planner_intro_prompt") return "hello, I am the planner";
+        if (cmd === "setup_workspaces") return { planning_dir: "/hub/proj" };
+        return null;
+      });
+    });
+
+    it("resumes by default: --continue init chain + fresh-only intro + resume request", async () => {
+      const { result } = renderHook(() => usePlanningSession(makeDeps({ termRef: term() })));
+
+      await act(() => result.current.handleRestart());
+
+      const args = ptyCreateArgs();
+      expect(args.initCmd).toBe("claude --continue 2>/dev/null || claude");
+      expect(args.startupPromptFreshOnly).toBe(true);
+      expect(args.continueSession).toBe(true);
+    });
+
+    it("launches plain-fresh when passed fresh: true (the destructive ops)", async () => {
+      const { result } = renderHook(() => usePlanningSession(makeDeps({ termRef: term() })));
+
+      await act(() => result.current.handleRestart({ fresh: true }));
+
+      const args = ptyCreateArgs();
+      expect(args.initCmd).toBe("claude");
+      expect(args.startupPromptFreshOnly).toBe(false);
+      expect(args.continueSession).toBe(false);
+    });
+
+    it("doClearPlan restarts through the plain-fresh path", async () => {
+      const { result } = renderHook(() => usePlanningSession(makeDeps({ termRef: term() })));
+
+      await act(() => result.current.doClearPlan());
+
+      // handleRestart is fired void from doClearPlan — wait for the relaunch to land.
+      await waitFor(() => expect(ptyCreateArgs().initCmd).toBe("claude"));
+      expect(ptyCreateArgs().continueSession).toBe(false);
+    });
   });
 });
