@@ -8,6 +8,8 @@
 // outward and continuously. Source extraction is read-only and reuses the connector machinery; this
 // config only describes the sink + cadence.
 
+import destinationsEmbedded from "@data/integration/destinations.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
 import type { ReadinessCheck } from "./readiness";
 
 /** Kind of destination the extracted data lands in. */
@@ -21,14 +23,10 @@ export interface DestinationOption {
   glyph: string;
 }
 
-/** The destination catalog the pane offers. */
-export const DESTINATIONS: DestinationOption[] = [
-  { id: "warehouse",    name: "Data warehouse",  targetHint: "bigquery://project.dataset / snowflake://…", glyph: "▤" },
-  { id: "database",     name: "Database",        targetHint: "postgres://host/db",                          glyph: "⛁" },
-  { id: "object-store", name: "Object store",    targetHint: "s3://bucket/prefix / gcs://bucket",           glyph: "⬢" },
-  { id: "file",         name: "File drop",       targetHint: "/exports or sftp://host/path",                glyph: "⎙" },
-  { id: "api",          name: "Outbound API / webhook", targetHint: "https://api.example.com/ingest",       glyph: "↗" },
-];
+/** The destination catalog the pane offers — from `@data/integration/destinations.json` (#2419,
+ *  mirroring `@data/deploy/taxonomy.json`); the config-dir copy (#2047) overlays the embedded default. */
+export const DESTINATIONS: DestinationOption[] =
+  overlayFile("integration/destinations.json", destinationsEmbedded as DestinationOption[]);
 export function destinationMeta(id: string): DestinationOption {
   return DESTINATIONS.find((d) => d.id === id) ?? { id: id as DestinationType, name: id || "—", targetHint: "", glyph: "■" };
 }
