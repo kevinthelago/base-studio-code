@@ -6,6 +6,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import type { GhMilestone } from "@/shared/lib/github/types";
 import { computeUpcomingMilestones } from "@/features/planner/list/projectsSummaryDerive";
+import { clamp } from "@/shared/lib/core/math";
 
 // ── Upcoming milestones ───────────────────────────────────────────────────────
 
@@ -57,7 +58,7 @@ export function UpcomingMilestones({ repoMilestones, loading }: {
           </Grid>
           <Stack gap={6}>
             {upcoming.map((m, idx) => {
-              const barEnd = Math.max(0.01, Math.min(8, m.weeksFromNow));
+              const barEnd = clamp(m.weeksFromNow, 0.01, 8);
               const barStart = Math.max(0, barEnd - 0.7);
               const c = m.overdue ? "var(--danger)" : "var(--accent)";
               const bgC = m.overdue ? "oklch(0.65 0.15 10)" : "oklch(0.78 0.14 70)";

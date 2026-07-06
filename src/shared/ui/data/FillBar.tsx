@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { Skeleton } from "@/shared/ui/feedback/Skeleton";
+import { clamp } from "@/shared/lib/core/math";
 
 export interface FillBarProps {
   /** Fill fraction 0..1 (clamped). */
@@ -23,7 +24,7 @@ export interface FillBarProps {
  *  across the analytics tabs, contributor lists, and planner deploy/scan views (#1838). Compose
  *  several side-by-side for a multi-segment bar. */
 export function FillBar({ value, loading, color = "var(--accent)", track = "var(--bg-elev2)", height = 8, rounded = true, className, style }: FillBarProps) {
-  const pct = Math.max(0, Math.min(1, value)) * 100;
+  const pct = clamp(value, 0, 1) * 100;
   const radius = rounded ? 99 : 0;
   if (loading) return <Skeleton w="100%" h={height} radius={radius} style={{ ...style }} />;
   return (

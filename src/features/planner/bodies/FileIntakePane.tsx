@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
+import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { invoke } from "@tauri-apps/api/core";
@@ -154,7 +155,7 @@ export function FileIntakePane({ projectKey, onClose }: StageScreenProps) {
         {/* Staged files */}
         {entries.length > 0 && (
           <Stack gap={5}>
-            <Text as="div" className="ulabel" tone="dim">staged · {entries.length}</Text>
+            <SectionLabel size={9.5}>staged · {entries.length}</SectionLabel>
             {entries.map((e) => (
               <Row key={e.name} gap={8} style={{ padding: "5px 8px", borderRadius: 5, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)" }}>
                 <Chip style={{ color: KIND_COLOR[e.kind], borderColor: "color-mix(in oklch," + KIND_COLOR[e.kind] + ",transparent 70%)" }}>{e.kind}</Chip>

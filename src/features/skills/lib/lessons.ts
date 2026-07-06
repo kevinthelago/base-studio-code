@@ -8,6 +8,7 @@
 // does the rendering. Mirrors how skillBridge.ts isolates the skilldb bridge.
 
 import { bscJson, bscRun } from "@/shared/lib/core/bsc";
+import { truncate } from "@/shared/lib/core/format";
 import { blankSkill, skillSlug, type SkillDef } from "./skills";
 
 /** A captured lesson candidate — mirrors the Rust `plandb::Lesson` (camelCase). */
@@ -52,7 +53,7 @@ export async function discardLesson(projectKey: string, id: string): Promise<voi
  *  capped so it slugs to a sane skill directory name. */
 export function lessonTitle(lesson: Pick<Lesson, "mistake" | "rule">): string {
   const base = (lesson.rule.trim() || lesson.mistake.trim()).replace(/\s+/g, " ");
-  return base.length > 64 ? `${base.slice(0, 61)}…` : base;
+  return truncate(base, 64, 61);
 }
 
 /**
