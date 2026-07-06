@@ -24,7 +24,7 @@ import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { Fleet } from "@/features/planner/fleet/Fleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
-import { GlanceChatDock } from "./GlanceChatDock";
+import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";
 import { buildGraph, focusSets, STATUS_META, ROLE_COLOR, EDGE_META, type GEdgeKind } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
@@ -126,8 +126,11 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   const pickNode = (id: string) => { setSel({ type: "node", id }); setShowCycle(false); };
   const pickEdge = (id: string) => { setSel({ type: "edge", id }); setShowCycle(false); };
+  // A node is LIVE — its real PTY openable — iff its identity pane id (`<project>:<stream>`) is in the
+  // launched fleet. Only a drilled, live agent has a session to check in on.
+  const isLiveAgent = (nodeId: string) => !!drill && !!fleetPaneStreams[fleetPaneId(drill, nodeId)];
   // On the L0 network: connect-mode wires two projects; otherwise a click drills into the fleet. Inside a
-  // fleet a click selects an agent.
+  // fleet a click checks in on a LIVE agent (morph → terminal, #2401) or selects a non-live one.
   const onNodeClick = (id: string) => {
     if (!drill && connect) {
       if (!connect.from) { setConnect({ ...connect, from: id }); return; }
@@ -135,13 +138,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       setConnect(null);
       return;
     }
-    if (drill) pickNode(id); else { setDrill(id); setSel(null); setShowCycle(false); }
+    // Inside a fleet: opening a LIVE agent morphs its node into the live terminal; a non-live agent has
+    // no session to open, so it just selects → inspector.
+    if (drill) { if (isLiveAgent(id)) setChatNode(id); else pickNode(id); }
+    else { setDrill(id); setSel(null); setShowCycle(false); }
   };
   const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); setChatNode(null); };
 
-  // The agent stream dock (#2369). A node is LIVE — its real PTY openable — iff its identity pane id
-  // (`<project>:<stream>`) is in the launched fleet. The dock only opens for a drilled, live agent.
-  const isLiveAgent = (nodeId: string) => !!drill && !!fleetPaneStreams[fleetPaneId(drill, nodeId)];
   // The dock shows ONLY while the open node is still a live agent in the CURRENT fleet — so drilling
   // out (or a nav-history back/forward that swaps `drill`) closes it by derivation, no reset effect.
   const chatPaneId = drill && chatNode && isLiveAgent(chatNode) ? fleetPaneId(drill, chatNode) : null;
@@ -295,8 +298,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       </Box>
     </GraphCanvas>
       </Box>
-      {chatPaneId && (
-        <GlanceChatDock
+      {chatPaneId && chatNode && (
+        <GlanceStreamMorph
+          nodeId={chatNode}
           paneId={chatPaneId}
           name={chatMeta?.slug ?? "agent"}
           role={chatMeta?.roleLabel}
