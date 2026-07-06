@@ -186,6 +186,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       vp={vp}
       world={{ w: model.worldW, h: model.worldH }}
       canvasBackground="radial-gradient(120% 120% at 30% 0%, var(--bg-elev) 0%, var(--bg) 100%)"
+      // The infinite viewport grid (#2418, the same graph paper org uses) — 28px tiles; the color
+      // matches the old in-world grid (12% fg dots at 0.6 layer opacity ⇒ ~7.2% fg).
+      grid gridSize={28} gridColor="color-mix(in oklch, var(--fg) 7.2%, transparent)"
       overlays={<GlanceOverlays />}
       railResizable railWidth={266} railMin={200} railMax={420}
       inspectorResizable inspectorWidth={340} inspectorMin={280} inspectorMax={520}
@@ -285,8 +288,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         // Open the real PTY stream (#2369) — only for a drilled, LIVE agent node.
         onOpenStream={sel.type === "node" && isLiveAgent(sel.id) ? (id) => setChatNode(id) : undefined} /> : undefined}
     >
-      {/* keyed so drilling in/out remounts + replays the transition animation (glance.css) */}
-      <Box key={drill ?? "network"} className="glance-drill-anim" style={{ position: "absolute", inset: 0 }}>
+      {/* keyed so drilling in/out remounts + replays the shared transition (graphCanvas.css, #2418) */}
+      <Box key={drill ?? "network"} className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>
         <GlanceCanvas
           model={model} dragMoved={vp.dragMoved}
           focus={focus} selNodeId={selNodeId} selEdgeId={selEdgeId}

@@ -9,7 +9,10 @@ export {
   positionDisplay, positionComms, tierChips, formColor, formArrow, hueColor, ROLE_META,
   type PositionDisplay, type CommSummary,
 } from "./lib/orgView";
-export { nodeBox, edgeGeometry, anchor, autoLayout, clampZoom, NODE_SIZE, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
+export { nodeBox, edgeGeometry, autoLayout, NODE_SIZE, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
+// `anchor` lives in the shared graph core since #2418 (org's copy was byte-identical); `clampZoom`
+// was dead vs useGraphViewport's clamping and was dropped.
+export { anchor } from "@/shared/lib/graph/edgePath";
 export { detectPools, collapseOrg, poolSubgraph, type Pool, type CollapsedOrg } from "./lib/orgPools";
 export {
   BUILTIN_ORGS, RELATIONSHIP_ARCHETYPES, COMMUNICATION_FORMS,

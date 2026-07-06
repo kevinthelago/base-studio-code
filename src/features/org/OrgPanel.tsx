@@ -3,6 +3,7 @@
 // rail (positions by department) · canvas (pan/zoom/node-drag) · inspector (position identity /
 // relationship). Driven by the real org/persona/skill stores; pure model + geometry live in lib/*.
 // The pan/zoom shell is the shared GraphCanvas template + useGraphViewport (#2208, epic #2197 slice 2).
+import departmentsEmbedded from "@data/org/departments.json";
 import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "@/store";
 import { Stack } from "@/shared/ui/layout/Stack";
@@ -19,10 +20,11 @@ import { RELATIONSHIP_ARCHETYPES } from "./lib/org";
 import { autoLayout, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
 import { detectPools, collapseOrg, poolSubgraph, type Pool } from "./lib/orgPools";
 import { positionDisplay, hueColor } from "./lib/orgView";
-import "./org.css";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
 
-/** Department display order in the left rail (positionDisplay assigns each a dept). */
-const DEPT_ORDER = ["Leadership", "Engineering", "Quality", "Support", "Team", "Resource", "External"];
+/** Department display order in the left rail (positionDisplay assigns each a dept) — from
+ *  `@data/org/departments.json` (#2419, beside the org vocabulary); config-dir-overlaid (#2047). */
+const DEPT_ORDER: string[] = overlayFile("org/departments.json", departmentsEmbedded);
 
 export function OrgPanel() {
   const orgs = useAppStore((s) => s.orgs);
@@ -240,8 +242,8 @@ export function OrgPanel() {
         />
       ) : undefined}
     >
-      {/* keyed so drilling in/out remounts + replays the transition animation (org.css) */}
-      <Box key={drill ?? "__root__"} className="org-drill-anim" style={{ position: "absolute", inset: 0 }}>
+      {/* keyed so drilling in/out remounts + replays the shared transition (graphCanvas.css, #2418) */}
+      <Box key={drill ?? "__root__"} className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>
         <OrgCanvas
           org={view.org} personas={personas} sel={sel} scale={scale} connecting={!!connect}
           dragMoved={vp.dragMoved} poolInfo={view.poolInfo}
