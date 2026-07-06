@@ -32,9 +32,8 @@ export function GlanceCanvas(p: CanvasProps) {
 
   return (
     <>
-      {/* dotted grid */}
-      <Box style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.6,
-        backgroundImage: "radial-gradient(color-mix(in oklch, var(--fg) 12%, transparent) 1px, transparent 1px)", backgroundSize: "28px 28px" }} />
+      {/* The dotted graph-paper backdrop is owned by the shared GraphCanvas (an infinite viewport
+          grid, `grid gridSize={28}` in GlanceWorkspace) — #2418, same as the org designer (#2389). */}
 
       {/* edges */}
       <svg width={model.worldW} height={model.worldH} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>

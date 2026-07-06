@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   classifyChange, makeChange, changeId, planPropagation, dedupeDispatches, dispatchKey,
-  type KitConsumer,
+  planKitDrain, deliveryKey, kitDispatchPrompt, kitUpdateIssue,
+  type KitConsumer, type Dispatch, type KitChange, type ChangeClass,
 } from "./propagation";
 import { SEED_COMPONENTS } from "./seed";
 import type { ComponentRecord } from "./model";
@@ -68,5 +69,49 @@ describe("kit-change propagation (#2277)", () => {
     ]);
     const seen = new Set([dispatchKey(all[0])]);
     expect(dedupeDispatches(all, seen).map((d) => d.projectKey)).toEqual(["b"]);
+  });
+
+  describe("planKitDrain (delivery gate/dedup/rate-limit)", () => {
+    const chg = (cls: ChangeClass, to = "2.4.0"): KitChange => makeChange(clone({ version: to }), button, { class: cls });
+    const disp = (projectKey: string, change: KitChange): Dispatch => ({ projectKey, kind: "notify", change, reason: "" });
+    const breaking = chg("breaking");
+
+    it("GATE: the toggle off delivers nothing (surface-only)", () => {
+      expect(planKitDrain([disp("a", breaking)], [], { enabled: false, live: true, maxPerCycle: 3 }).deliver).toEqual([]);
+    });
+
+    it("rail: a live consumer → assign, a dormant one → issue", () => {
+      expect(planKitDrain([disp("a", breaking)], [], { enabled: true, live: true, maxPerCycle: 3 }).deliver[0].rail).toBe("assign");
+      expect(planKitDrain([disp("a", breaking)], [], { enabled: true, live: false, maxPerCycle: 3 }).deliver[0].rail).toBe("issue");
+    });
+
+    it("only BREAKING changes auto-fire; additive/fix stay surface-only", () => {
+      const ds = [disp("a", chg("additive", "2.5.0")), disp("a", chg("fix", "2.4.1")), disp("a", breaking)];
+      const plan = planKitDrain(ds, [], { enabled: true, live: true, maxPerCycle: 9 });
+      expect(plan.deliver.map((d) => d.change.class)).toEqual(["breaking"]);
+    });
+
+    it("DEDUP: an already-delivered (consumer, change) never re-fires", () => {
+      const already = [deliveryKey("a", breaking.id)];
+      expect(planKitDrain([disp("a", breaking)], already, { enabled: true, live: true, maxPerCycle: 3 }).deliver).toEqual([]);
+    });
+
+    it("RATE-LIMIT: at most maxPerCycle deliveries per cycle, and records them in nextDelivered", () => {
+      const ds = [chg("breaking", "2.4.0"), chg("breaking", "2.5.0"), chg("breaking", "2.6.0")].map((c) => disp("a", c));
+      const plan = planKitDrain(ds, [], { enabled: true, live: true, maxPerCycle: 2 });
+      expect(plan.deliver).toHaveLength(2);
+      expect(plan.nextDelivered).toHaveLength(2);
+    });
+  });
+
+  it("kitUpdateIssue + kitDispatchPrompt carry the change + migration", () => {
+    const ch = makeChange(clone({ version: "2.4.0" }), button, {
+      class: "breaking", summary: "Button variant renamed", migration: "rename `type` → `variant`",
+    });
+    const iss = kitUpdateIssue(ch);
+    expect(iss.title).toContain("Button");
+    expect(iss.body).toContain("Migration");
+    expect(iss.body).toContain("rename `type`");
+    expect(kitDispatchPrompt(ch)).toContain("bsc-assign");
   });
 });

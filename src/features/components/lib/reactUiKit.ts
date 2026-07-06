@@ -15,6 +15,7 @@ export const REACT_UI_KIT_ID = "react-ui";
 /** Default architectural role by manifest group (the overlay may override per component). */
 const GROUP_ROLE: Record<PrimitiveGroup, Role> = {
   layout: "layout", typography: "primitive", controls: "primitive", data: "primitive", feedback: "primitive",
+  layouts: "layout",
 };
 
 /** Kit metadata the manifest doesn't encode, keyed by component name. Ported from the #2269 seed for
@@ -56,7 +57,7 @@ const GUIDANCE: Record<string, Guidance> = {
   TextField: {
     version: "1.2.0", used: 97, tags: ["form", "input"], wraps: "input",
     whenUse: ["Any single-line text input with a label.", "Controlled form fields (value + onChange)."],
-    whenNot: ["Multi-line input — use a textarea.", "A boolean — use Toggle / Checkbox."],
+    whenNot: ["Multi-line input — use TextArea.", "A boolean — use Toggle / Checkbox."],
     srcText: "export function TextField({ label, value, onChange, hint }: TextFieldProps) {\n  return (\n    <label className=\"field\">\n      <span>{label}</span>\n      <input className=\"input\" value={value}\n        onChange={(e) => onChange(e.target.value)} />\n    </label>\n  );\n}",
   },
   StatusDot: {
@@ -124,7 +125,12 @@ const GUIDANCE: Record<string, Guidance> = {
   ModalScrim: {
     tags: ["overlay"],
     whenUse: ["The dimmed, click-to-dismiss backdrop behind a modal surface.", "Trapping focus under a Dialog."],
-    whenNot: ["A non-modal overlay — use a positioned Box.", "The whole modal — compose this inside a Dialog."],
+    whenNot: ["A non-modal overlay — use a positioned Box.", "The whole modal — compose this inside a Dialog / ModalCard."],
+  },
+  ModalCard: {
+    role: "composite", tags: ["overlay"], composes: ["ModalScrim", "IconBox", "IconButton"],
+    whenUse: ["A rich titled modal — icon + title head, scrollable body, footer action row.", "A multi-section overlay (import/share flows, per-session pickers) that outgrows Dialog."],
+    whenNot: ["A short confirm or one-field form — use Dialog.", "Non-blocking info — use a Banner / toast."],
   },
 
   // ── typography ──
@@ -149,6 +155,11 @@ const GUIDANCE: Record<string, Guidance> = {
     tags: ["control", "form"],
     whenUse: ["An immediate on/off switch (a setting that applies at once).", "A prominent binary state."],
     whenNot: ["A form value submitted later — use Checkbox.", "More than two states — use SegmentedControl."],
+  },
+  TextArea: {
+    tags: ["control", "form", "input"], wraps: "textarea",
+    whenUse: ["Any multi-line text input with a label (prompts, bodies, notes).", "Controlled form fields (value + onChange) that span lines."],
+    whenNot: ["Single-line input — use TextField.", "Read-only code / prompt display — use Code."],
   },
   SelectField: {
     tags: ["control", "form"], wraps: "select",
@@ -206,6 +217,11 @@ const GUIDANCE: Record<string, Guidance> = {
     tags: ["data", "table"],
     whenUse: ["A row in a dense, column-aligned data table.", "Tabular records with fixed columns."],
     whenNot: ["A card-style list — use CardListRow.", "A single metric — use StatTile."],
+  },
+  RoleTierChips: {
+    role: "composite", tags: ["data", "status"], composes: ["Chip", "Row"],
+    whenUse: ["Showing a session role's permission floor (git · github · code · net) as pills.", "A persona/position clearance row in an editor or inspector."],
+    whenNot: ["Arbitrary tags or categories — use Chip.", "A single live status — use StatusDot."],
   },
   StatCard: {
     role: "composite", tags: ["data", "metric"], composes: ["Card", "StatTile"],
@@ -270,6 +286,67 @@ const GUIDANCE: Record<string, Guidance> = {
     role: "composite", tags: ["chart", "data-viz"],
     whenUse: ["Per-lane activity across a shared horizontal axis (streams over time).", "A timeline where each row is an independent track."],
     whenNot: ["A single aggregate series — use LineArea.", "Category totals — use Bars."],
+  },
+
+  // ── layouts (page-skeleton templates, #2197) ──
+  MasterDetail: {
+    version: "1.0.0", tags: ["layout", "page", "list-detail"], composes: ["Box", "Row", "Stack"],
+    variants: ["default", "resizable"],
+    whenUse: ["A list/nav rail beside a detail view (Personas · Skills · MCP · GitHub · Security · Settings).", "Any master→detail page where selecting a rail row drives the detail column."],
+    whenNot: ["A free pan/zoom graph — use GraphCanvas.", "A two-pane split with no fixed list rail — use SplitView."],
+    srcText: 'import { MasterDetail } from "@/shared/ui/layouts/MasterDetail";\n\n<MasterDetail\n  rail={<PersonaList/>}\n  detail={<PersonaEditor/>}\n/>',
+  },
+  SplitView: {
+    version: "1.0.0", tags: ["layout", "page", "split"], composes: ["Box", "Row", "Stack"],
+    variants: ["horizontal", "vertical"],
+    whenUse: ["A resizable two-pane split (the planner session's terminal + inspector).", "A main content area beside a fixed, draggable side panel."],
+    whenNot: ["A fixed-width list rail + detail — use MasterDetail.", "A grid of many equal panes — use PaneGrid."],
+    srcText: 'import { SplitView } from "@/shared/ui/layouts/SplitView";\n\n<SplitView\n  primary={<Terminal/>}\n  secondary={<Inspector/>}\n/>',
+  },
+  GraphCanvas: {
+    version: "1.0.0", tags: ["layout", "page", "graph"], composes: ["Box", "Row", "Stack", "IconButton"],
+    variants: ["default", "with-rail"],
+    whenUse: ["A pan/zoom graph workspace (Streams graph · Org designer · Glance).", "Any node/edge canvas needing viewport wiring + an optional rail/inspector."],
+    whenNot: ["A static list or form — use MasterDetail.", "A CSS grid of equal panes — use PaneGrid."],
+    srcText: 'import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";\nimport { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";\n\nconst vp = useGraphViewport(world);\n<GraphCanvas vp={vp} world={world} grid\n  toolbar={<ZoomControls vp={vp}/>}>\n  {edges}{nodes}\n</GraphCanvas>',
+  },
+  PaneGrid: {
+    version: "1.0.0", tags: ["layout", "page", "grid"], composes: ["Box"],
+    variants: ["2×2", "1×3"],
+    whenUse: ["A CSS grid of N equal panes (the Console tab grid).", "A dashboard of equally-weighted tiles kept alive across tab switches (hidden)."],
+    whenNot: ["A single list+detail split — use MasterDetail.", "A pan/zoom graph — use GraphCanvas."],
+    srcText: 'import { PaneGrid } from "@/shared/ui/layouts/PaneGrid";\n\n<PaneGrid cols={2} rows={2}>\n  {panes.map((p) => <Pane key={p.id} {...p}/>)}\n</PaneGrid>',
+  },
+  // ── #2421 gap-fill ──
+  LabelChip: {
+    role: "composite", tags: ["badge", "github"], composes: ["Chip"],
+    whenUse: ["A GitHub issue/PR label with its dynamic 6-hex color.", "Label rows in issue drawers / project boards."],
+    whenNot: ["A semantic status tag — use Chip with a tone.", "A clickable filter — use SegmentedControl."],
+  },
+  ActivityFeed: {
+    role: "composite", tags: ["data", "feed"], composes: ["Avatar", "EmptyState", "Skeleton"],
+    whenUse: ["A \"Recent activity\" card of actor · action · target rows.", "Cross-repo / cross-project event feeds sharing one striped layout."],
+    whenNot: ["A dense column-aligned table — use DataTableRow.", "A single event notice — use Banner."],
+  },
+  Pane: {
+    role: "layout", tags: ["overlay", "editor"], composes: ["IconButton"],
+    whenUse: ["A select-an-item → edit-its-fields surface: slide-over drawer or inline master-detail pane.", "Editors needing the standard draft/remove footer."],
+    whenNot: ["A blocking decision or short form — use Dialog.", "Static grouped content — use Card."],
+  },
+  TelemetryPanel: {
+    role: "composite", tags: ["chart", "data-viz"],
+    whenUse: ["The framed panel around an analytics chart (title · hint · right slot).", "Analytics tabs sharing the telemetry card chrome."],
+    whenNot: ["A KPI number — use StatCard.", "General grouped content — use Card."],
+  },
+  ItemBars: {
+    role: "composite", tags: ["chart", "data-viz"], composes: ["FillBar"],
+    whenUse: ["A labelled per-item meter list (calls per server, fires per hook).", "Ranked fractions where each row carries a label + value."],
+    whenNot: ["An SVG ranked bar chart with a shared axis — use HBars.", "One fraction — use FillBar."],
+  },
+  SplitBar: {
+    role: "composite", tags: ["chart", "data-viz"],
+    whenUse: ["A two-way proportion with its counts (ok/err, allow/block).", "Per-item health rows in an analytics panel."],
+    whenNot: ["More than two segments — use Donut / Bars.", "A single fill fraction — use FillBar."],
   },
 };
 

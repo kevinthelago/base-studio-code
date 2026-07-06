@@ -5,7 +5,7 @@
 // focus/menu change only re-renders the two panes whose flag flipped, not all N. Behavior-preserving.
 import { memo } from "react";
 import { PaneShell } from "@/app/console/panes/PaneShell";
-import { TerminalView } from "@/app/console/panes/views/TerminalView";
+import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 import { FilesView } from "@/app/console/panes/views/FilesView";
 import { BranchesView } from "@/app/console/panes/views/BranchesView";
 import { ChangesView } from "@/app/console/panes/views/ChangesView";
@@ -118,9 +118,12 @@ export const PaneAt = memo(function PaneAt({
         <DormantConsole onResume={() => resumePane(pid)} />
       ) : (
       <>
-      {/* Terminal stays mounted so the PTY session survives view switches */}
-      <TerminalView
+      {/* The console cell is the PRIMARY slot: the app-level TerminalHost re-parents the pane's single
+          terminal into here, and sources its launch/cwd/status props from this claim (#2378). The terminal
+          survives view switches (hidden, not unmounted) and moves intact when the Glance dock borrows it. */}
+      <TerminalSlot
         paneId={pid}
+        primary
         visible={view === "console" && !hidden}
         focused={focused}
         initialCwd={cwd}

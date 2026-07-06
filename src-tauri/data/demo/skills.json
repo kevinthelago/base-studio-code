@@ -1,0 +1,57 @@
+{
+  "skills": [
+    {
+      "id": "demo-idempotent-retries",
+      "name": "Idempotent payment retries",
+      "kind": "workflow",
+      "desc": "Charge/refund flows that are safe to retry — dedupe keys + at-most-once effects.",
+      "prompt": "Every mutating PSP call carries an idempotency key derived from the order id. On retry, look up the prior result before re-issuing. Never double-charge.",
+      "tools": ["Bash", "Read"],
+      "profiles": ["build"]
+    },
+    {
+      "id": "demo-double-entry",
+      "name": "Double-entry ledger invariants",
+      "kind": "review",
+      "desc": "Assert the ledger stays balanced: every posting has an equal-and-opposite entry.",
+      "prompt": "For any ledger change, verify debits == credits per transaction and that account balances reconcile. Reject a migration that breaks the invariant.",
+      "tools": ["Read", "Grep"],
+      "profiles": ["build", "review"]
+    },
+    {
+      "id": "demo-openapi-first",
+      "name": "OpenAPI contract-first",
+      "kind": "scaffold",
+      "desc": "Design the API from the OpenAPI spec, then generate types + a mock server.",
+      "prompt": "Author the OpenAPI 3.1 document first. Generate client/server types from it. The spec is the contract other streams build against in parallel.",
+      "tools": ["Bash", "Write"],
+      "profiles": ["build"]
+    },
+    {
+      "id": "demo-threat-model",
+      "name": "STRIDE threat modeling",
+      "kind": "review",
+      "desc": "Walk a change through STRIDE and note mitigations before it lands.",
+      "prompt": "For the touched surface, enumerate Spoofing/Tampering/Repudiation/Information-disclosure/DoS/Elevation risks and the concrete mitigation for each.",
+      "tools": ["Read"],
+      "profiles": ["review"]
+    },
+    {
+      "id": "demo-adr-writing",
+      "name": "Architecture decision records",
+      "kind": "docs",
+      "desc": "Capture each significant decision as a short ADR (context · decision · consequences).",
+      "prompt": "When a design choice is made, write docs/adr/NNNN-title.md: the context, the decision, the alternatives weighed, and the consequences.",
+      "tools": ["Write"],
+      "profiles": ["docs"]
+    }
+  ],
+  "groups": [
+    {
+      "id": "demo-commerce-playbook",
+      "name": "Commerce platform playbook",
+      "hue": "var(--accent)",
+      "skillIds": ["demo-idempotent-retries", "demo-double-entry", "demo-openapi-first", "demo-threat-model", "demo-adr-writing"]
+    }
+  ]
+}

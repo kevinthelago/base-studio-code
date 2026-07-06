@@ -7,8 +7,9 @@ describe("shortcuts registry", () => {
     for (const h of SCREEN_HOTKEYS) {
       expect(SCREEN_KEY_MAP[h.key]).toBe(h.screen);
     }
-    // Spot-check the canonical F-key bindings.
-    expect(SCREEN_KEY_MAP.F1).toBe("console");
+    // Spot-check the canonical F-key bindings. F1 → Console was retired (#2372/#2403).
+    expect(SCREEN_KEY_MAP.F1).toBeUndefined();
+    expect(SCREEN_KEY_MAP.F2).toBe("projects");
     expect(SCREEN_KEY_MAP.F6).toBe("github");
     expect(SCREEN_KEY_MAP.F7).toBe("agents");
     expect(SCREEN_KEY_MAP.F8).toBe("settings");

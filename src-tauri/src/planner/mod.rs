@@ -129,6 +129,23 @@ mod tests {
         assert!(md.contains("Work one stage at a time"), "must include the one-stage-at-a-time rule");
     }
 
+    /// The Deploy stage's config example must teach BOTH deploy modes — the `mode:"local"` example with
+    /// its `localKind`/`buildTargets`/`artifact` target fields, not just cloud `platform`/`workload`
+    /// (#2392: a cloud-only example led the planner to write a schema-invalid local service — `mode:local`
+    /// with a stray `workload` and no `localKind` — that never cleared the mode-aware Deployment gate).
+    #[test]
+    fn planning_process_md_deploy_example_covers_local_and_cloud_modes() {
+        let md = process_md();
+        assert!(md.contains(r#""mode":"cloud""#), "deploy example must include a mode:cloud service");
+        assert!(md.contains(r#""mode":"local""#), "deploy example must include a mode:local service");
+        assert!(md.contains(r#""localKind":"application""#), "local example must set localKind");
+        assert!(
+            md.contains("buildTargets") && md.contains("artifact"),
+            "a local application target needs buildTargets + artifact"
+        );
+        assert!(md.contains("MUTUALLY EXCLUSIVE"), "must state the cloud/local target fields are mutually exclusive");
+    }
+
     /// Both intros must carry the scope guard that makes the active-stages list
     /// authoritative over the fixed workflow steps (#666).
     #[test]

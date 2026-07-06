@@ -4,8 +4,10 @@ import { GlanceStreamMorph } from "./GlanceStreamMorph";
 
 // Same stubs as the dock test: xterm can't init in jsdom, and the Logs tab polls `bsc`. We test the
 // morph SHELL — that it hosts the live terminal for the pane id, and that closing morphs back → onClose.
-vi.mock("@/app/console/panes/views/TerminalView", () => ({
-  TerminalView: ({ paneId }: { paneId: string }) => <div data-testid="terminal" data-pane={paneId} />,
+// The dock renders TerminalSlot since the single Terminal Host landed (#2378) — mock the slot, not
+// the old direct TerminalView (which the dock no longer mounts).
+vi.mock("@/app/console/terminal/TerminalSlot", () => ({
+  TerminalSlot: ({ paneId }: { paneId: string }) => <div data-testid="terminal" data-pane={paneId} />,
 }));
 vi.mock("./GlanceSessionLog", () => ({ GlanceSessionLog: () => <div data-testid="logs" /> }));
 vi.mock("@/shared/lib/core/safeInvoke", () => ({ fireInvoke: vi.fn() }));

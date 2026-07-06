@@ -182,6 +182,17 @@ pub fn extract_faults(block: &str) -> Vec<DetectedFault> {
         let mut stack_lines: Vec<&str> = Vec::new();
         if wants_stack {
             let mut j = i + 1;
+            // A Rust panic head ends with ':' and carries its MESSAGE on the next line (the 1.65+
+            // two-line format) — absorb it, since it isn't a frame shape and the walk below would
+            // stop on it and drop the note/backtrace that follows. Never absorb another fault head.
+            if title.contains("panicked at") && title.trim_end().ends_with(':') {
+                if let Some(msg) = lines.get(j).copied() {
+                    if !msg.trim().is_empty() && classify_head(msg).is_none() {
+                        stack_lines.push(msg.trim_end());
+                        j += 1;
+                    }
+                }
+            }
             while j < lines.len() && stack_lines.len() < MAX_STACK_LINES {
                 let lj = lines[j];
                 if lj.trim().is_empty() || !is_frame_line(lj) {

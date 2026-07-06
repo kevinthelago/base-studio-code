@@ -3,7 +3,7 @@ import { UI_KIT, findPrimitive, primitivesByGroup, manifestJson, type PropType }
 import { UI_COMPONENTS, componentFor } from "./registry";
 
 const PROP_TYPES: PropType[] = [
-  "string", "number", "boolean", "enum", "node", "function", "style", "array", "space", "fontSize", "tracks", "color",
+  "string", "number", "boolean", "enum", "node", "function", "style", "array", "object", "space", "fontSize", "tracks", "color",
 ];
 
 describe("UI kit manifest — integrity", () => {

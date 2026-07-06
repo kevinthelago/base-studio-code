@@ -15,6 +15,7 @@ describe("blueprint-per-project + reset (#647)", () => {
       planConfirmedStages: { p: ["goal"] },
       planAutomations: { p: [] },
       projectLocalRepos: { p: ["o/r"] },
+      kitUsage: [], // #2277: isolate the consumer-index edges the bind auto-records
     });
   });
 
@@ -38,6 +39,25 @@ describe("blueprint-per-project + reset (#647)", () => {
     expect(s.planConfirmedStages["p"]).toBeUndefined();
     expect(s.planAutomations["p"]).toBeUndefined();
     expect(s.projectLocalRepos["p"]).toBeUndefined(); // repos unlinked (#664)
+  });
+
+  it("auto-records the blueprint's kit as a consumer-index edge on bind (#2277)", () => {
+    // `default` is a kit-bearing greenfield blueprint (kit: react-ui) — binding it makes the project a
+    // consumer, so the kit_usage edge is filed automatically (the index self-fills at planning).
+    useAppStore.getState().setProjectBlueprintId("p", "default");
+    expect(useAppStore.getState().kitUsage).toContainEqual({ projectKey: "p", kitId: "react-ui" });
+  });
+
+  it("records nothing for a kit-less blueprint, and stays idempotent across a switch (#2277)", () => {
+    // The authoring blueprint declares no kit → no edge.
+    useAppStore.getState().setProjectBlueprintId("q", "blueprint-author");
+    expect(useAppStore.getState().kitUsage.some((u) => u.projectKey === "q")).toBe(false);
+    // A greenfield project switched between two react-ui blueprints keeps exactly one edge (idempotent).
+    useAppStore.getState().setProjectBlueprintId("r", "default");
+    useAppStore.getState().applyBlueprintToProject("r", "complete");
+    expect(useAppStore.getState().kitUsage.filter((u) => u.projectKey === "r")).toEqual([
+      { projectKey: "r", kitId: "react-ui" },
+    ]);
   });
 
   it("confirmPlanStage / unconfirmPlanStage round-trip (drives the gate, #673)", () => {

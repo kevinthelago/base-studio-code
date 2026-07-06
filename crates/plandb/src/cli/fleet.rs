@@ -4,6 +4,7 @@
 //! own match for `get <stream-id>`/`--full`/lean rather than the shared blob-noun read shape.
 
 use super::{blob_count, open_store, unknown_sub, Args};
+use crate::FleetSession;
 use bsc_sqlite_util::{print_json, read_stdin_json_one};
 
 /// `fleet` — streams + per-stream permissions/flows + director/topology.
@@ -78,6 +79,47 @@ pub(crate) fn cmd_fleet(args: &Args) -> Result<(), String> {
                 Ok(())
             }
             other => Err(unknown_sub(args, "fleet meta", other)),
+        },
+        // `fleet session …` — the durable launched-agent ledger (#2405). The runtime records each
+        // agent it spawns here (a fact), so recovery reads it instead of inferring from disk.
+        "session" => match args.positional.get(2).map(String::as_str).unwrap_or("") {
+            // `fleet session set` upserts one launched agent (FleetSession JSON on stdin).
+            "set" => {
+                let sess: FleetSession = read_stdin_json_one("fleet session JSON")?;
+                s.fleet_session_upsert(&sess).map_err(|e| e.to_string())?;
+                if !args.json {
+                    println!("session set {}", sess.pane_id.trim());
+                }
+                Ok(())
+            }
+            "list" => {
+                let rows = s.fleet_session_list().map_err(|e| e.to_string())?;
+                print_json(&rows, args.pretty);
+                Ok(())
+            }
+            "heartbeat" => {
+                let pane = args.positional.get(3).ok_or("usage: bsc plan fleet session heartbeat <pane-id>")?;
+                s.fleet_session_heartbeat(pane).map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            "status" => {
+                let pane = args.positional.get(3).ok_or("usage: bsc plan fleet session status <pane-id> <status>")?;
+                let status = args.positional.get(4).ok_or("usage: bsc plan fleet session status <pane-id> <status>")?;
+                s.fleet_session_set_status(pane, status).map_err(|e| e.to_string())?;
+                if !args.json {
+                    println!("session {} → {status}", pane.trim());
+                }
+                Ok(())
+            }
+            "remove" => {
+                let pane = args.positional.get(3).ok_or("usage: bsc plan fleet session remove <pane-id>")?;
+                s.fleet_session_remove(pane).map_err(|e| e.to_string())?;
+                if !args.json {
+                    println!("removed session {}", pane.trim());
+                }
+                Ok(())
+            }
+            other => Err(unknown_sub(args, "fleet session", other)),
         },
         other => Err(unknown_sub(args, "fleet", other)),
     }

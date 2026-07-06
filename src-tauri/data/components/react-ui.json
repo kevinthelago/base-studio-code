@@ -411,13 +411,19 @@
           "name": "size",
           "type": "\"sm\" | \"md\"",
           "req": false,
-          "desc": "md (10px/.06em) or sm (9px/.08em, denser KPI tiles)."
+          "desc": "md (10px/.06em) or sm (9px/.08em, denser KPI tiles); a raw px number is also legal (dense .08em tracking)."
         },
         {
           "name": "tone",
           "type": "\"dim\" | \"muted\"",
           "req": false,
           "desc": "Label color."
+        },
+        {
+          "name": "right",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Right-aligned slot — renders a space-between label row (label · right); style then lands on the row."
         }
       ],
       "whenUse": [
@@ -539,10 +545,138 @@
       ],
       "whenNot": [
         "A non-modal overlay — use a positioned Box.",
-        "The whole modal — compose this inside a Dialog."
+        "The whole modal — compose this inside a Dialog / ModalCard."
       ],
       "src": "shared/ui/overlay/ModalScrim.tsx",
       "srcText": "import { ModalScrim } from \"@/shared/ui/overlay/ModalScrim\";\n\n<ModalScrim>…</ModalScrim>",
+      "builtin": true
+    },
+    {
+      "id": "modalcard",
+      "name": "ModalCard",
+      "kitId": "react-ui",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "overlay"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "ModalScrim",
+        "IconBox",
+        "IconButton"
+      ],
+      "props": [
+        {
+          "name": "title",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "Head title (mono h2)."
+        },
+        {
+          "name": "children",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "Body content (scrolls)."
+        },
+        {
+          "name": "sub",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Dim sub-line under the title."
+        },
+        {
+          "name": "icon",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Leading head glyph in a 30px IconBox."
+        },
+        {
+          "name": "iconBackground",
+          "type": "Color",
+          "req": false,
+          "desc": "Icon tile background (default: translucent accent)."
+        },
+        {
+          "name": "iconColor",
+          "type": "Color",
+          "req": false,
+          "desc": "Icon glyph color (default: accent)."
+        },
+        {
+          "name": "onClose",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Wires the head ✕ + Escape + scrim-click dismiss; omit for non-dismissable."
+        },
+        {
+          "name": "busy",
+          "type": "boolean",
+          "req": false,
+          "desc": "Disable the ✕ and suppress scrim/Escape dismiss while an op runs."
+        },
+        {
+          "name": "width",
+          "type": "number",
+          "req": false,
+          "desc": "Card width (px or CSS length); capped at 100%."
+        },
+        {
+          "name": "maxHeight",
+          "type": "string",
+          "req": false,
+          "desc": "Card max height."
+        },
+        {
+          "name": "align",
+          "type": "\"center\" | \"start\"",
+          "req": false,
+          "desc": "Scrim card alignment — start top-aligns tall scrolling modals."
+        },
+        {
+          "name": "blur",
+          "type": "boolean",
+          "req": false,
+          "desc": "Backdrop blur."
+        },
+        {
+          "name": "headExtra",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Extra head rows (search/tabs/meta) inside the bordered head block."
+        },
+        {
+          "name": "foot",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Footer action-row content."
+        },
+        {
+          "name": "bodyStyle",
+          "type": "CSSProperties",
+          "req": false,
+          "desc": "Merged onto the body (padding/overflow overrides for list bodies)."
+        },
+        {
+          "name": "footStyle",
+          "type": "CSSProperties",
+          "req": false,
+          "desc": "Merged onto the foot row."
+        }
+      ],
+      "whenUse": [
+        "A rich titled modal — icon + title head, scrollable body, footer action row.",
+        "A multi-section overlay (import/share flows, per-session pickers) that outgrows Dialog."
+      ],
+      "whenNot": [
+        "A short confirm or one-field form — use Dialog.",
+        "Non-blocking info — use a Banner / toast."
+      ],
+      "src": "shared/ui/overlay/ModalCard.tsx",
+      "srcText": "import { ModalCard } from \"@/shared/ui/overlay/ModalCard\";\n\n<ModalCard title={…}>…</ModalCard>",
       "builtin": true
     },
     {
@@ -959,13 +1093,81 @@
         "Controlled form fields (value + onChange)."
       ],
       "whenNot": [
-        "Multi-line input — use a textarea.",
+        "Multi-line input — use TextArea.",
         "A boolean — use Toggle / Checkbox."
       ],
       "src": "shared/ui/controls/Field.tsx",
       "srcText": "export function TextField({ label, value, onChange, hint }: TextFieldProps) {\n  return (\n    <label className=\"field\">\n      <span>{label}</span>\n      <input className=\"input\" value={value}\n        onChange={(e) => onChange(e.target.value)} />\n    </label>\n  );\n}",
       "builtin": true,
       "wraps": "input"
+    },
+    {
+      "id": "textarea",
+      "name": "TextArea",
+      "kitId": "react-ui",
+      "role": "primitive",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "control",
+        "form",
+        "input"
+      ],
+      "variants": [
+        "default",
+        "loading"
+      ],
+      "composes": [],
+      "props": [
+        {
+          "name": "value",
+          "type": "string",
+          "req": true,
+          "desc": "Textarea value."
+        },
+        {
+          "name": "onChange",
+          "type": "(…) => void",
+          "req": true,
+          "desc": "(value) => void."
+        },
+        {
+          "name": "label",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Field label."
+        },
+        {
+          "name": "hint",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Sub-label hint."
+        },
+        {
+          "name": "trailing",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Right-aligned control in the label row."
+        },
+        {
+          "name": "loading",
+          "type": "boolean",
+          "req": false,
+          "desc": "Render the field loading — keep the label, skeleton the textarea (#2302)."
+        }
+      ],
+      "whenUse": [
+        "Any multi-line text input with a label (prompts, bodies, notes).",
+        "Controlled form fields (value + onChange) that span lines."
+      ],
+      "whenNot": [
+        "Single-line input — use TextField.",
+        "Read-only code / prompt display — use Code."
+      ],
+      "src": "shared/ui/controls/Field.tsx",
+      "srcText": "import { TextArea } from \"@/shared/ui/controls/Field\";\n\n<TextArea value={…} onChange={…} />",
+      "builtin": true,
+      "wraps": "textarea"
     },
     {
       "id": "selectfield",
@@ -1867,6 +2069,44 @@
       "builtin": true
     },
     {
+      "id": "roletierchips",
+      "name": "RoleTierChips",
+      "kitId": "react-ui",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "data",
+        "status"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "Chip",
+        "Row"
+      ],
+      "props": [
+        {
+          "name": "role",
+          "type": "string",
+          "req": true,
+          "desc": "The SessionRole whose capability floor to render (planner/worker/director/…)."
+        }
+      ],
+      "whenUse": [
+        "Showing a session role's permission floor (git · github · code · net) as pills.",
+        "A persona/position clearance row in an editor or inspector."
+      ],
+      "whenNot": [
+        "Arbitrary tags or categories — use Chip.",
+        "A single live status — use StatusDot."
+      ],
+      "src": "shared/ui/data/RoleTierChips.tsx",
+      "srcText": "import { RoleTierChips } from \"@/shared/ui/data/RoleTierChips\";\n\n<RoleTierChips role={…} />",
+      "builtin": true
+    },
+    {
       "id": "statcard",
       "name": "StatCard",
       "kitId": "react-ui",
@@ -2678,6 +2918,726 @@
       ],
       "src": "shared/ui/feedback/Skeleton.tsx",
       "srcText": "import { Skeleton } from \"@/shared/ui/feedback/Skeleton\";\n\n<Skeleton />",
+      "builtin": true
+    },
+    {
+      "id": "masterdetail",
+      "name": "MasterDetail",
+      "kitId": "react-ui",
+      "role": "layout",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "layout",
+        "page",
+        "list-detail"
+      ],
+      "variants": [
+        "default",
+        "resizable"
+      ],
+      "composes": [
+        "Box",
+        "Row",
+        "Stack"
+      ],
+      "props": [
+        {
+          "name": "rail",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "The master column — the list/nav rail."
+        },
+        {
+          "name": "detail",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "The detail column — the selected item's editor/view."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Optional full-width toolbar/header above both columns."
+        },
+        {
+          "name": "railWidth",
+          "type": "number",
+          "req": false,
+          "desc": "Fixed rail width in px (the starting width when resizable)."
+        },
+        {
+          "name": "railPad",
+          "type": "Space",
+          "req": false,
+          "desc": "Rail inner padding — a rung/px or [block, inline] pair."
+        },
+        {
+          "name": "detailPad",
+          "type": "Space",
+          "req": false,
+          "desc": "Detail inner padding — a rung/px or [block, inline] pair."
+        },
+        {
+          "name": "resizable",
+          "type": "boolean",
+          "req": false,
+          "desc": "Opt into a drag-resizable rail (a .resize-x splitter), bounded by railMin/railMax."
+        }
+      ],
+      "whenUse": [
+        "A list/nav rail beside a detail view (Personas · Skills · MCP · GitHub · Security · Settings).",
+        "Any master→detail page where selecting a rail row drives the detail column."
+      ],
+      "whenNot": [
+        "A free pan/zoom graph — use GraphCanvas.",
+        "A two-pane split with no fixed list rail — use SplitView."
+      ],
+      "src": "shared/ui/layouts/MasterDetail.tsx",
+      "srcText": "import { MasterDetail } from \"@/shared/ui/layouts/MasterDetail\";\n\n<MasterDetail\n  rail={<PersonaList/>}\n  detail={<PersonaEditor/>}\n/>",
+      "builtin": true
+    },
+    {
+      "id": "splitview",
+      "name": "SplitView",
+      "kitId": "react-ui",
+      "role": "layout",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "layout",
+        "page",
+        "split"
+      ],
+      "variants": [
+        "horizontal",
+        "vertical"
+      ],
+      "composes": [
+        "Box",
+        "Row",
+        "Stack"
+      ],
+      "props": [
+        {
+          "name": "primary",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "The flexing pane — fills the remaining space (terminal, editor, main content)."
+        },
+        {
+          "name": "secondary",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "The fixed-size, drag-resizable trailing pane (inspector, sidebar, detail)."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Optional full-width toolbar/header above the split."
+        },
+        {
+          "name": "orientation",
+          "type": "\"horizontal\" | \"vertical\"",
+          "req": false,
+          "desc": "horizontal → side by side; vertical → primary above secondary."
+        },
+        {
+          "name": "resizable",
+          "type": "boolean",
+          "req": false,
+          "desc": "Draw the drag splitter (opt out for a fixed secondary), bounded by secondaryMin/secondaryMax."
+        },
+        {
+          "name": "secondarySize",
+          "type": "number",
+          "req": false,
+          "desc": "Secondary size in px (width when horizontal, height when vertical) — the starting size."
+        },
+        {
+          "name": "divider",
+          "type": "boolean",
+          "req": false,
+          "desc": "Draw the 1px divider border between the two panes."
+        }
+      ],
+      "whenUse": [
+        "A resizable two-pane split (the planner session's terminal + inspector).",
+        "A main content area beside a fixed, draggable side panel."
+      ],
+      "whenNot": [
+        "A fixed-width list rail + detail — use MasterDetail.",
+        "A grid of many equal panes — use PaneGrid."
+      ],
+      "src": "shared/ui/layouts/SplitView.tsx",
+      "srcText": "import { SplitView } from \"@/shared/ui/layouts/SplitView\";\n\n<SplitView\n  primary={<Terminal/>}\n  secondary={<Inspector/>}\n/>",
+      "builtin": true
+    },
+    {
+      "id": "graphcanvas",
+      "name": "GraphCanvas",
+      "kitId": "react-ui",
+      "role": "layout",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "layout",
+        "page",
+        "graph"
+      ],
+      "variants": [
+        "default",
+        "with-rail"
+      ],
+      "composes": [
+        "Box",
+        "Row",
+        "Stack",
+        "IconButton"
+      ],
+      "props": [
+        {
+          "name": "vp",
+          "type": "object",
+          "req": true,
+          "desc": "The viewport created by the page's useGraphViewport()."
+        },
+        {
+          "name": "world",
+          "type": "object",
+          "req": true,
+          "desc": "World (design-space) size { w, h } — drives the world layer's box."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "Full toolbar content (search + palette + <ZoomControls vp={vp}/> + fit)."
+        },
+        {
+          "name": "children",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "World-layer content: grid, SVG edges, node cards — positioned in world coords."
+        },
+        {
+          "name": "rail",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Optional left rail/sidebar (feature-styled full node)."
+        },
+        {
+          "name": "inspector",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Optional inspector column on the right (feature-styled full node)."
+        },
+        {
+          "name": "overlays",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Fixed overlays drawn over the canvas but NOT transformed (hints, legends)."
+        },
+        {
+          "name": "grid",
+          "type": "boolean",
+          "req": false,
+          "desc": "Dotted graph-paper backdrop — an infinite grid on the viewport that tracks zoom + pan."
+        },
+        {
+          "name": "gridSize",
+          "type": "number",
+          "req": false,
+          "desc": "Grid tile size in world px (scaled by zoom on screen)."
+        },
+        {
+          "name": "railResizable",
+          "type": "boolean",
+          "req": false,
+          "desc": "Make the left rail drag-resizable (a .resize-x splitter)."
+        },
+        {
+          "name": "inspectorResizable",
+          "type": "boolean",
+          "req": false,
+          "desc": "Make the right inspector drag-resizable (splitter on its left edge)."
+        },
+        {
+          "name": "onBackgroundClick",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Fires on a genuine click on the empty canvas backdrop (not a pan-drag end, not a node press)."
+        }
+      ],
+      "whenUse": [
+        "A pan/zoom graph workspace (Streams graph · Org designer · Glance).",
+        "Any node/edge canvas needing viewport wiring + an optional rail/inspector."
+      ],
+      "whenNot": [
+        "A static list or form — use MasterDetail.",
+        "A CSS grid of equal panes — use PaneGrid."
+      ],
+      "src": "shared/ui/layouts/GraphCanvas.tsx",
+      "srcText": "import { GraphCanvas, ZoomControls } from \"@/shared/ui/layouts/GraphCanvas\";\nimport { useGraphViewport } from \"@/shared/ui/layouts/useGraphViewport\";\n\nconst vp = useGraphViewport(world);\n<GraphCanvas vp={vp} world={world} grid\n  toolbar={<ZoomControls vp={vp}/>}>\n  {edges}{nodes}\n</GraphCanvas>",
+      "builtin": true
+    },
+    {
+      "id": "panegrid",
+      "name": "PaneGrid",
+      "kitId": "react-ui",
+      "role": "layout",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "layout",
+        "page",
+        "grid"
+      ],
+      "variants": [
+        "2×2",
+        "1×3"
+      ],
+      "composes": [
+        "Box"
+      ],
+      "props": [
+        {
+          "name": "children",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "The pane cells — N children laid across the grid tracks (cols × rows)."
+        },
+        {
+          "name": "cols",
+          "type": "number",
+          "req": true,
+          "desc": "Column track count → repeat(cols, 1fr). Clamped to ≥ 1."
+        },
+        {
+          "name": "rows",
+          "type": "number",
+          "req": true,
+          "desc": "Row track count → repeat(rows, 1fr). Clamped to ≥ 1."
+        },
+        {
+          "name": "gap",
+          "type": "number",
+          "req": false,
+          "desc": "Gap between cells in px."
+        },
+        {
+          "name": "pad",
+          "type": "number",
+          "req": false,
+          "desc": "Grid inner padding in px."
+        },
+        {
+          "name": "hidden",
+          "type": "boolean",
+          "req": false,
+          "desc": "Render the grid display:none but keep it MOUNTED (children stay alive — the console cross-tab mount)."
+        }
+      ],
+      "whenUse": [
+        "A CSS grid of N equal panes (the Console tab grid).",
+        "A dashboard of equally-weighted tiles kept alive across tab switches (hidden)."
+      ],
+      "whenNot": [
+        "A single list+detail split — use MasterDetail.",
+        "A pan/zoom graph — use GraphCanvas."
+      ],
+      "src": "shared/ui/layouts/PaneGrid.tsx",
+      "srcText": "import { PaneGrid } from \"@/shared/ui/layouts/PaneGrid\";\n\n<PaneGrid cols={2} rows={2}>\n  {panes.map((p) => <Pane key={p.id} {...p}/>)}\n</PaneGrid>",
+      "builtin": true
+    },
+    {
+      "id": "labelchip",
+      "name": "LabelChip",
+      "kitId": "react-ui",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "badge",
+        "github"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "Chip"
+      ],
+      "props": [
+        {
+          "name": "label",
+          "type": "object",
+          "req": true,
+          "desc": "The GitHub label — { name, color } (6-hex, no leading #)."
+        }
+      ],
+      "whenUse": [
+        "A GitHub issue/PR label with its dynamic 6-hex color.",
+        "Label rows in issue drawers / project boards."
+      ],
+      "whenNot": [
+        "A semantic status tag — use Chip with a tone.",
+        "A clickable filter — use SegmentedControl."
+      ],
+      "src": "shared/ui/data/LabelChip.tsx",
+      "srcText": "import { LabelChip } from \"@/shared/ui/data/LabelChip\";\n\n<LabelChip label={…} />",
+      "builtin": true
+    },
+    {
+      "id": "activityfeed",
+      "name": "ActivityFeed",
+      "kitId": "react-ui",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "data",
+        "feed"
+      ],
+      "variants": [
+        "default",
+        "loading"
+      ],
+      "composes": [
+        "Avatar",
+        "EmptyState",
+        "Skeleton"
+      ],
+      "props": [
+        {
+          "name": "items",
+          "type": "T[]",
+          "req": true,
+          "desc": "ActivityItem[] — { login, action, target, repo, createdAt }."
+        },
+        {
+          "name": "hint",
+          "type": "string",
+          "req": true,
+          "desc": "Dimmed hint after the card title."
+        },
+        {
+          "name": "loading",
+          "type": "boolean",
+          "req": true,
+          "desc": "Shimmer rows while the feed's source loads (only when items is empty)."
+        },
+        {
+          "name": "tone",
+          "type": "object",
+          "req": true,
+          "desc": "action → color map — each caller keeps its own EVENT_TONE."
+        },
+        {
+          "name": "right",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Optional header control on the right (e.g. a filter select)."
+        },
+        {
+          "name": "actionWidth",
+          "type": "number",
+          "req": false,
+          "desc": "Action column width in px (github uses 70, planner 80)."
+        }
+      ],
+      "whenUse": [
+        "A \"Recent activity\" card of actor · action · target rows.",
+        "Cross-repo / cross-project event feeds sharing one striped layout."
+      ],
+      "whenNot": [
+        "A dense column-aligned table — use DataTableRow.",
+        "A single event notice — use Banner."
+      ],
+      "src": "shared/ui/data/ActivityFeed.tsx",
+      "srcText": "import { ActivityFeed } from \"@/shared/ui/data/ActivityFeed\";\n\n<ActivityFeed items={…} hint={…} loading={…} tone={…} />",
+      "builtin": true
+    },
+    {
+      "id": "pane",
+      "name": "Pane",
+      "kitId": "react-ui",
+      "role": "layout",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "overlay",
+        "editor"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "IconButton"
+      ],
+      "props": [
+        {
+          "name": "mode",
+          "type": "\"drawer\" | \"inline\"",
+          "req": false,
+          "desc": "Slide-over (scrim + slide-in) vs fills-its-container."
+        },
+        {
+          "name": "open",
+          "type": "boolean",
+          "req": false,
+          "desc": "Drawer mode: drives the scrim/slide state and gates the body render."
+        },
+        {
+          "name": "header",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Top-zone content (drawer mode auto-appends a close button)."
+        },
+        {
+          "name": "body",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Body content — pass via body or as children."
+        },
+        {
+          "name": "children",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Body content (alias of body)."
+        },
+        {
+          "name": "footer",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Custom footer; omitted in drawer mode → the standard draft/remove bar."
+        },
+        {
+          "name": "onClose",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Close (scrim click / ✕ / cancel / done) handler."
+        },
+        {
+          "name": "onRemove",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Standard-footer remove handler for an existing item."
+        },
+        {
+          "name": "isDraft",
+          "type": "boolean",
+          "req": false,
+          "desc": "Standard footer: drafting (cancel/done) vs existing (remove/done)."
+        },
+        {
+          "name": "onCommit",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Standard-footer draft done handler."
+        },
+        {
+          "name": "commitDisabled",
+          "type": "boolean",
+          "req": false,
+          "desc": "Disable the draft done button (e.g. a required field is empty)."
+        },
+        {
+          "name": "flush",
+          "type": "boolean",
+          "req": false,
+          "desc": "Drop the body's default padding (sections supply their own)."
+        },
+        {
+          "name": "bare",
+          "type": "boolean",
+          "req": false,
+          "desc": "Inline mode only: bare flex-column frame with no styled zone wrappers."
+        },
+        {
+          "name": "className",
+          "type": "string",
+          "req": false,
+          "desc": "Extra class on the frame element."
+        }
+      ],
+      "whenUse": [
+        "A select-an-item → edit-its-fields surface: slide-over drawer or inline master-detail pane.",
+        "Editors needing the standard draft/remove footer."
+      ],
+      "whenNot": [
+        "A blocking decision or short form — use Dialog.",
+        "Static grouped content — use Card."
+      ],
+      "src": "shared/ui/overlay/Pane.tsx",
+      "srcText": "import { Pane } from \"@/shared/ui/overlay/Pane\";\n\n<Pane>…</Pane>",
+      "builtin": true
+    },
+    {
+      "id": "telemetrypanel",
+      "name": "TelemetryPanel",
+      "kitId": "react-ui",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "chart",
+        "data-viz"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [],
+      "props": [
+        {
+          "name": "title",
+          "type": "string",
+          "req": true,
+          "desc": "Panel title (mono h3)."
+        },
+        {
+          "name": "hint",
+          "type": "string",
+          "req": false,
+          "desc": "Dimmed hint after the title."
+        },
+        {
+          "name": "right",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Right-aligned header content (a legend, a filter, a count)."
+        },
+        {
+          "name": "children",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "Content."
+        }
+      ],
+      "whenUse": [
+        "The framed panel around an analytics chart (title · hint · right slot).",
+        "Analytics tabs sharing the telemetry card chrome."
+      ],
+      "whenNot": [
+        "A KPI number — use StatCard.",
+        "General grouped content — use Card."
+      ],
+      "src": "shared/ui/charts/telemetry.tsx",
+      "srcText": "import { TelemetryPanel } from \"@/shared/ui/charts/telemetry\";\n\n<TelemetryPanel title={…}>…</TelemetryPanel>",
+      "builtin": true
+    },
+    {
+      "id": "itembars",
+      "name": "ItemBars",
+      "kitId": "react-ui",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "chart",
+        "data-viz"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "FillBar"
+      ],
+      "props": [
+        {
+          "name": "rows",
+          "type": "T[]",
+          "req": true,
+          "desc": "ItemBarRow[] — { key, label, meta?, value, fraction (0–1), color? }."
+        },
+        {
+          "name": "empty",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Rendered when rows is empty; defaults to a \"No data recorded yet.\" hint."
+        }
+      ],
+      "whenUse": [
+        "A labelled per-item meter list (calls per server, fires per hook).",
+        "Ranked fractions where each row carries a label + value."
+      ],
+      "whenNot": [
+        "An SVG ranked bar chart with a shared axis — use HBars.",
+        "One fraction — use FillBar."
+      ],
+      "src": "shared/ui/charts/telemetry.tsx",
+      "srcText": "import { ItemBars } from \"@/shared/ui/charts/telemetry\";\n\n<ItemBars rows={…} />",
+      "builtin": true
+    },
+    {
+      "id": "splitbar",
+      "name": "SplitBar",
+      "kitId": "react-ui",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "chart",
+        "data-viz"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [],
+      "props": [
+        {
+          "name": "label",
+          "type": "string",
+          "req": true,
+          "desc": "Row label."
+        },
+        {
+          "name": "a",
+          "type": "number",
+          "req": true,
+          "desc": "First-segment count."
+        },
+        {
+          "name": "b",
+          "type": "number",
+          "req": true,
+          "desc": "Second-segment count."
+        },
+        {
+          "name": "aLabel",
+          "type": "string",
+          "req": true,
+          "desc": "First-segment legend label (e.g. ok)."
+        },
+        {
+          "name": "bLabel",
+          "type": "string",
+          "req": true,
+          "desc": "Second-segment legend label (e.g. err)."
+        },
+        {
+          "name": "aColor",
+          "type": "Color",
+          "req": false,
+          "desc": "First-segment color."
+        },
+        {
+          "name": "bColor",
+          "type": "Color",
+          "req": false,
+          "desc": "Second-segment color."
+        }
+      ],
+      "whenUse": [
+        "A two-way proportion with its counts (ok/err, allow/block).",
+        "Per-item health rows in an analytics panel."
+      ],
+      "whenNot": [
+        "More than two segments — use Donut / Bars.",
+        "A single fill fraction — use FillBar."
+      ],
+      "src": "shared/ui/charts/telemetry.tsx",
+      "srcText": "import { SplitBar } from \"@/shared/ui/charts/telemetry\";\n\n<SplitBar label={…} a={…} b={…} aLabel={…} bLabel={…} />",
       "builtin": true
     }
   ]

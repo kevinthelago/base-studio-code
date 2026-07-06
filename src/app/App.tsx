@@ -11,6 +11,7 @@ import { useHotkeys } from "./useHotkeys";
 import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 import { ConsoleWorkspace } from "@/app/console";
+import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { useConsoleTabs } from "@/app/console/useConsoleTabs";
 import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
 import { AutomationsStatus } from "@/features/automations";
@@ -103,6 +104,9 @@ export default function App() {
   if (isDetachedWindow()) return <DetachedWindow />;
 
   return (
+    // TerminalHost (#2378) owns the single <TerminalView> per agent and re-parents it between the console
+    // grid cells and the Glance dock — so wrapping the whole shell gives both surfaces the same host.
+    <TerminalHost>
     <Box className="app">
       <Achievements />
       <Titlebar workspace={titleWorkspace} />
@@ -164,5 +168,6 @@ export default function App() {
       {/* Console tab dialogs (new-tab layout picker + close-confirm) — owned by useConsoleTabs. */}
       {consoleTabs.dialogs}
     </Box>
+    </TerminalHost>
   );
 }
