@@ -4,7 +4,7 @@ import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { Trash2 } from "lucide-react";
 import { useAppStore } from "@/store";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
-import { sanitizeProjectKey, isKnownPublishedKey } from "@/shared/lib/core/projectPaths";
+import { sanitizeProjectKey, projectSlug } from "@/shared/lib/core/projectPaths";
 import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
@@ -30,7 +30,7 @@ export { ProjectRow };
 export function ProjectsList() {
   const {
     githubToken, activeWorkspace, setProjectsView, hiddenProjectIds, deleteLocalProject,
-    localDraftProjects, removeDraftProject, projectKeyAlias, setProjectKeyAlias, projectBlueprintId,
+    localDraftProjects, removeDraftProject, projectBlueprintId,
     planAuthoredBlueprint, blueprints, setPlanningContext, setPlanningTitle, setPlanningSession,
     setActiveProjectMeta,
   } = useAppStore();
@@ -90,20 +90,22 @@ export function ProjectsList() {
     void refreshLocalProjects();
   }, [activeWorkspace, refreshLocalProjects]);
 
-  // Reconcile published markers (#922): a local hub that matches a GitHub board (by title or alias)
-  // but isn't yet flagged published gets its in-place `.published` marker stamped. This is what
-  // promotes a hub that couldn't be flagged at publish time — e.g. a project published under the old
-  // #904 location split, or one whose publish-time write lost a race — and it catches the hub the
-  // startup migration moved out of draft/ as soon as its board is known. Runs whenever the list or
-  // boards change (NOT one-time): marking flips `lp.published`, so the set drains and it converges.
-  // The hub never moves and the marker is written in place, so this can't fail on a cwd lock. Gated
-  // on a completed GitHub sync (`lastSync`) so an unloaded board list can't look like "no boards".
+  // Reconcile published markers (#922): a local hub that matches a GitHub board — by title, or by
+  // the board's name-derived key (`projectSlug(title)`, #2409) — but isn't yet flagged published
+  // gets its in-place `.published` marker stamped. This is what promotes a hub that couldn't be
+  // flagged at publish time — e.g. a project published under the old #904 location split, or one
+  // whose publish-time write lost a race — and it catches the hub the startup migration moved out
+  // of draft/ as soon as its board is known. Runs whenever the list or boards change (NOT
+  // one-time): marking flips `lp.published`, so the set drains and it converges. The hub never
+  // moves and the marker is written in place, so this can't fail on a cwd lock. Gated on a
+  // completed GitHub sync (`lastSync`) so an unloaded board list can't look like "no boards".
   useEffect(() => {
     if (activeWorkspace !== "projects" || lastSync === null) return;
     const publishedTitles = new Set(projects.map(p => p.title.toLowerCase()));
+    const publishedKeys   = new Set(projects.map(p => projectSlug(p.title)));
     const toMark = localProjects.filter(lp =>
       !lp.published &&
-      (publishedTitles.has(lp.title.toLowerCase()) || isKnownPublishedKey(lp.key, projectKeyAlias)),
+      (publishedTitles.has(lp.title.toLowerCase()) || publishedKeys.has(lp.key)),
     );
     if (toMark.length === 0) return;
     (async () => {
@@ -113,20 +115,7 @@ export function ProjectsList() {
       }
       await refreshLocalProjects();
     })();
-  }, [activeWorkspace, lastSync, localProjects, projects, projectKeyAlias, refreshLocalProjects]);
-
-  // Reconcile legacy board node ids → on-disk folder keys (#…). The alias was never populated, so
-  // a project opened from the board keyed its store state under the node id, splitting it from the
-  // title-keyed on-disk hub. When a published project has a matching local folder and no alias yet,
-  // record it — safely (record-if-absent never clobbers a publish-set alias; only fires when the
-  // folder actually exists, so we never alias to a phantom key).
-  useEffect(() => {
-    for (const p of projects) {
-      if (projectKeyAlias[p.id]) continue;
-      const folderKey = sanitizeProjectKey(p.title);
-      if (localProjects.some(lp => lp.key === folderKey)) setProjectKeyAlias(p.id, folderKey);
-    }
-  }, [projects, localProjects, projectKeyAlias, setProjectKeyAlias]);
+  }, [activeWorkspace, lastSync, localProjects, projects, refreshLocalProjects]);
 
   // The GitHub list is re-fetched on every sync, so a project removed in-app is
   // filtered out here (persisted) rather than only spliced from local state.
@@ -197,15 +186,16 @@ export function ProjectsList() {
 
   // ── Local drafts (durable on-disk truth ∪ store draft map), dropping anything already published.
   // Dedup keys off the authoritative `.published` marker (#922 / #1449), so a hub whose folder key
-  // differs in case from its GitHub board title can't leak into BOTH lists. See `buildDrafts`.
+  // differs in case from its GitHub board title can't leak into BOTH lists. Both key forms of each
+  // board title are passed (#2409): the name-derived slug (today's keys) and the legacy
+  // case-preserving sanitize (grandfathered title-keyed hubs). See `buildDrafts`.
   const allDrafts = useMemo<DraftRow[]>(
     () => buildDrafts(
       localProjects,
       localDraftProjects,
-      projectKeyAlias,
-      visibleProjects.map(p => sanitizeProjectKey(p.title)),
+      visibleProjects.flatMap(p => [projectSlug(p.title), sanitizeProjectKey(p.title)]),
     ),
-    [localProjects, localDraftProjects, projectKeyAlias, visibleProjects],
+    [localProjects, localDraftProjects, visibleProjects],
   );
 
   // A draft bound to the blueprint-author lifecycle is an in-progress BLUEPRINT — it belongs in the
@@ -282,6 +272,8 @@ export function ProjectsList() {
         setMenuOpenId={setMenuOpenId}
         reopenDraft={reopenDraft}
         setDraftDeleteTarget={setDraftDeleteTarget}
+        localProjects={localProjects}
+        refreshLocalProjects={refreshLocalProjects}
       />
 
       <BlueprintLibrary

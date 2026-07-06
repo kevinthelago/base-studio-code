@@ -10,7 +10,7 @@ import { buildTriagePrompt, renderTriageDelta } from "../constants";
 import { invoke } from "@tauri-apps/api/core";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "@/shared/lib/session/checkpoint";
-import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, canonicalProjectKey, findProjectTabIdx, worktreeSlug } from "@/shared/lib/core/projectPaths";
+import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, findProjectTabIdx, worktreeSlug } from "@/shared/lib/core/projectPaths";
 import { fleetPaneId, directorPaneId, triagePaneId, positionalPaneId } from "@/app/console/lib/paneIdentity";
 import { clearTabStatuses as clearTabStatusesPure } from "@/app/console/lib/paneStatus";
 import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
@@ -35,19 +35,17 @@ import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 import { bscJson } from "@/shared/lib/core/bsc";
 
 type ProjectsSlice = Pick<AppStore,
-  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "autoTriage" | "setAutoTriage" | "autoKitDispatch" | "setAutoKitDispatch" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
+  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "rekeyProjectData" | "autoTriage" | "setAutoTriage" | "autoKitDispatch" | "setAutoKitDispatch" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
 >;
 
 export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> = (set, get) => ({
       deleteLocalProject: (keys) =>
         set((s) => {
-          // Resolve each passed key (project title OR GitHub node id) to its data key via the alias,
-          // so the per-project maps — keyed by the sanitized slug (`effectiveProjectId`) — are
-          // actually dropped, not just the raw title/id. Deleting a PUBLISHED project passes its node
-          // id; without this the slug-keyed planStages/planFleet/… leak (#997).
-          const keySet = new Set(
-            keys.flatMap((k) => (k ? [k, s.projectKeyAlias[k]] : [])).filter(Boolean) as string[],
-          );
+          // The caller passes every identity form the project's entries may sit under: the
+          // name-derived slug (#2409), plus — for grandfathered projects — the raw title and the
+          // GitHub node id. Each is dropped as-is (the node-id → key alias is retired; the key is
+          // derivable from the name, so there is nothing to resolve through).
+          const keySet = new Set(keys.filter(Boolean) as string[]);
           // Drop entries whose key is the project key. `m ?? {}` guards a slice that's
           // missing/null in a long-lived persisted store — `Object.entries(undefined)`
           // would throw and (without a boundary) crash the whole app on delete (#874).
@@ -77,7 +75,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             uiApproved:             byKey(s.uiApproved),
             planFleet:              byKey(s.planFleet),
             pinnedContext:          byKey(s.pinnedContext),
-            projectKeyAlias:        byKey(s.projectKeyAlias),
             issueLinks:             byKey(s.issueLinks),
             // Drop the deleted project id from every extension's scope list. `projects` may be
             // undefined (a def added without it, or persisted data predating the field) — guard,
@@ -103,7 +100,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           planStages: {}, planConfirmedStages: {}, planAuthoredBlueprint: {}, planSkippedStages: {}, planDeployConfig: {},
           planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stageRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {},
-          projectKeyAlias: {}, issueLinks: {}, autoTriage: {}, autoKitDispatch: {}, projectStartupPromptDoc: {},
+          issueLinks: {}, autoTriage: {}, autoKitDispatch: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
           activeProjectId: null, activeProjectName: "", activeProjectRepo: "",
           activeProjectNumber: 0, activeProjectRepos: [],
@@ -174,11 +171,71 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           if (!(projectKey in s.pendingPlannerPrompt)) return {};
           return { pendingPlannerPrompt: deleteMapEntry(s.pendingPlannerPrompt, projectKey) };
         }),
-      projectKeyAlias: {},
-      setProjectKeyAlias: (nodeId, key) =>
-        set((s) => (nodeId && key && !s.projectKeyAlias[nodeId]
-          ? { projectKeyAlias: setMapEntry(s.projectKeyAlias, nodeId, key) }
-          : {})),
+      // The store half of the one-time hub relink (#2409, pairs with `relink_project_hub`): move
+      // every per-project entry from the legacy key onto the name-derived slug. Target-wins — an
+      // entry already under `newKey` is kept and the old one dropped (never clobbered). Console
+      // tab/pane state is deliberately NOT rewritten (pane ids embed the key; a relinked project
+      // relaunches its fleet, which rebuilds tabs under the new key).
+      rekeyProjectData: (oldKey, newKey) =>
+        set((s) => {
+          if (!oldKey || !newKey || oldKey === newKey) return {};
+          // Move a per-project map entry `oldKey` → `newKey`; drop the old entry when the target
+          // already exists. `m ?? {}` guards persisted stores predating a slice (#874).
+          const byKey = <T,>(m: Record<string, T>): Record<string, T> => {
+            const src = m ?? {};
+            if (!(oldKey in src)) return src;
+            const { [oldKey]: moved, ...rest } = src;
+            return newKey in src ? rest : { ...rest, [newKey]: moved };
+          };
+          // Repo-scoped (`<key>::<repo>`) maps: re-prefix each entry, target-wins on collision.
+          const byRepoKey = <T,>(m: Record<string, T>): Record<string, T> => {
+            const src = m ?? {};
+            const out: Record<string, T> = {};
+            for (const [k, v] of Object.entries(src)) {
+              const idx = k.indexOf("::");
+              if (idx < 0 || k.slice(0, idx) !== oldKey) { out[k] = v; continue; }
+              const nk = newKey + k.slice(idx);
+              if (!(nk in src)) out[nk] = v;
+            }
+            return out;
+          };
+          // Extension/skill scope lists: swap the key in place (dedup if both forms were present).
+          const scoped = <E extends { projects?: string[] }>(list: E[]): E[] =>
+            (list ?? []).map((e) => ({
+              ...e,
+              projects: [...new Set((e.projects ?? []).map((p) => (p === oldKey ? newKey : p)))],
+            }));
+          return {
+            planStages:             byKey(s.planStages),
+            planConfirmedStages:    byKey(s.planConfirmedStages),
+            planAuthoredBlueprint:  byKey(s.planAuthoredBlueprint),
+            planDeployConfig:       byKey(s.planDeployConfig),
+            planSkippedStages:      byKey(s.planSkippedStages),
+            planAutomations:        byKey(s.planAutomations),
+            planStageConfig:        byKey(s.planStageConfig),
+            projectBlueprintId:     byKey(s.projectBlueprintId),
+            uiScreens:              byKey(s.uiScreens),
+            uiApproved:             byKey(s.uiApproved),
+            planFleet:              byKey(s.planFleet),
+            planFleetTopology:      byKey(s.planFleetTopology),
+            planFleetDirectorDrive: byKey(s.planFleetDirectorDrive),
+            planSourceConfig:       byKey(s.planSourceConfig),
+            planIntegrationConfig:  byKey(s.planIntegrationConfig),
+            loadVerified:           byKey(s.loadVerified),
+            pinnedContext:          byKey(s.pinnedContext),
+            issueLinks:             byKey(s.issueLinks),
+            projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
+            autoTriage:             byKey(s.autoTriage),
+            autoKitDispatch:        byKey(s.autoKitDispatch),
+            projectLocalRepos:      byKey(s.projectLocalRepos),
+            localDraftProjects:     byKey(s.localDraftProjects),
+            repoStartupPromptDoc:   byRepoKey(s.repoStartupPromptDoc),
+            repoTriagePromptDoc:    byRepoKey(s.repoTriagePromptDoc),
+            mcpServers:             scoped(s.mcpServers),
+            hooks:                  scoped(s.hooks),
+            skills:                 scoped(s.skills),
+          };
+        }),
       issueLinks: {},
       setIssueLinks: (projectKey, links) =>
         set((s) => ({ issueLinks: setMapEntry(s.issueLinks, projectKey, { ...(s.issueLinks[projectKey] ?? {}), ...links }) })),
@@ -192,8 +249,10 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           if (existing.includes(fullName)) return {};
           return { projectLocalRepos: setMapEntry(s.projectLocalRepos, projectId, [...existing, fullName]) };
         }),
-      findTriageTabIdx: (projectName, projectId = "") =>
-        findProjectTabIdx(get().tabs, canonicalProjectKey(projectName, projectId), "triage"),
+      // Tab identity keys off the ONE name-derived project key (#2409) — the node-id branch of the
+      // old canonicalProjectKey is gone (recovery/reuse is derivation, not lookup).
+      findTriageTabIdx: (projectName) =>
+        findProjectTabIdx(get().tabs, sanitizeProjectKey(projectName), "triage"),
       // #1004: prepare a triage re-run from plan.db — for each repo read the last-run marker and the
       // issues changed since it, render a one-line resume lead (renderTriageDelta), then STAMP a fresh
       // marker so the next run's "since" is now (read-before-write order). Returns fullName → lead for
@@ -242,10 +301,11 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // place at the same index. The caller kills the old panes' sessions first
           // and the bumped runId remounts them, so pty_create launches fresh
           // (resuming via --continue + the checkpoint) instead of reconnecting.
-          // Match on the STABLE projectKey, not the derived name, so a project rename
-          // relabels the tab in place instead of forking a duplicate (#457).
+          // Match on the STABLE projectKey (the name-derived key, #2409 — never the node
+          // id), so a project rename relabels the tab in place instead of forking a
+          // duplicate (#457).
           const tabName = `${projectName} · triage`;
-          const tabKey = canonicalProjectKey(projectName, projectId);
+          const tabKey = sanitizeProjectKey(projectName);
           const existingIdx = findProjectTabIdx(s.tabs, tabKey, "triage");
           if (repos.length === 0) return {};
           const newTabIdx = existingIdx >= 0 ? existingIdx : s.tabs.length;

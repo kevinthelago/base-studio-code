@@ -6,7 +6,8 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
-import type { DraftRow } from "./drafts";
+import type { DraftRow, LocalProjectLite } from "./drafts";
+import { useReopenProject } from "./ReopenProjectModal";
 import { STATUS_META, type GhProject, type ProjStatus } from "./published/publishedModel";
 import { ProjectRow } from "./published/ProjectRow";
 import { GroupHeader } from "./published/GroupHeader";
@@ -43,6 +44,11 @@ interface PublishedProjectsProps {
   setMenuOpenId: (id: string | null) => void;
   reopenDraft: (d: { key: string; title: string; pitch: string }) => void;
   setDraftDeleteTarget: (d: DraftRow | null) => void;
+  /** On-disk local hubs (`list_local_projects`) — the reopen flow derives each board project's hub
+   *  from its name (#2409) and offers these as link candidates on a mismatch. */
+  localProjects: LocalProjectLite[];
+  /** Re-scan the on-disk hubs (after a link moved one). */
+  refreshLocalProjects: () => void;
 }
 
 /** The published-projects column — the page header (title · summary · sync/new · new-project form ·
@@ -53,10 +59,11 @@ export function PublishedProjects({
   visibleProjects, grouped, fDrafts, fleetByProject, loading, error, lastSync, draftError,
   query, setQuery, sort, setSort, totalSummary, grandTotal, publishedCount,
   fetchProjects, setProjects, menuOpenId, setMenuOpenId, reopenDraft, setDraftDeleteTarget,
+  localProjects, refreshLocalProjects,
 }: PublishedProjectsProps) {
   const {
     setWorkspace, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard,
-    setPlanningContext, setPlanningTitle, setPlanningSession, projectKeyAlias,
+    setPlanningContext, setPlanningTitle, setPlanningSession,
   } = useAppStore();
   const [deleteTarget, setDeleteTarget] = useState<GhProject | null>(null);
 
@@ -69,7 +76,10 @@ export function PublishedProjects({
     openGithubBoard("board");
   }
 
-  function handleEditPlan(p: GhProject) {
+  // Enter the planning session for a board project under its settled key (#2409): the key is
+  // DERIVED from the name (`projectSlug`), never looked up through a node-id alias — the seam that
+  // fed recovery the wrong hub ("video game"). The node id stays in activeProjectId for API calls.
+  function openPlanning(p: GhProject, key: string) {
     const allRepos = p.repositories?.nodes?.map((r) => r.nameWithOwner) ?? [];
     const repo     = allRepos[0] ?? "";
     setActiveProjectMeta(p.id, p.title, repo, p.number, allRepos);
@@ -79,14 +89,15 @@ export function PublishedProjects({
     // title ("ok") would otherwise win and mislabel a published project's triage/fleet tab (#1988).
     setPlanningTitle(p.title);
     setPlanningContext(p.shortDescription ?? p.title, repo);
-    // Resolve the session key through the node-id alias set at publish (#1741): a project
-    // created with a stable id lives under that id on disk, so reopening it from the board must
-    // key the session to `projectKeyAlias[p.id]`, not the (display-only, freely-renamed) title.
-    // Grandfathered/title-keyed projects have no such alias (or it maps back to the title), so
-    // the fallback preserves their existing behavior exactly. The node id stays in
-    // activeProjectId for API calls only.
-    setPlanningSession(projectKeyAlias[p.id] ?? p.title);
+    setPlanningSession(key);
     setProjectsView("planning");
+  }
+
+  // Derivation first, modal on a mismatch (#2409): a hub at `projectSlug(title)` opens in place;
+  // otherwise the reopen-mismatch modal offers a one-time link (real on-disk move) or a fresh start.
+  const reopen = useReopenProject<GhProject>(openPlanning, refreshLocalProjects);
+  function handleEditPlan(p: GhProject) {
+    reopen.begin(p, p.title, localProjects);
   }
 
   const publishedAndDrafts = publishedCount + fDrafts.length;
@@ -104,6 +115,7 @@ export function PublishedProjects({
       <Stack style={{ flex: "1 1 0", minWidth: 320 }}>
         <PublishedHeader
           visibleProjects={visibleProjects}
+          localProjects={localProjects}
           publishedAndDrafts={publishedAndDrafts}
           totalSummary={totalSummary}
           lastSync={lastSync}
@@ -114,6 +126,8 @@ export function PublishedProjects({
           sort={sort}
           setSort={setSort}
           grandTotal={grandTotal}
+          openExistingPublished={handleEditPlan}
+          openExistingLocal={(lp) => reopenDraft({ key: lp.key, title: lp.title, pitch: "" })}
         />
 
         {/* scroll area: errors · drafts chips · active/shipped groups · empty */}
@@ -204,6 +218,9 @@ export function PublishedProjects({
           )}
         </Box>
       </Stack>
+
+      {/* Reopen-mismatch modal (#2409): link an existing local hub onto the name key, or start fresh. */}
+      {reopen.modal}
 
       {deleteTarget && (
         <DeleteProjectModal
