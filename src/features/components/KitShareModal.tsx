@@ -4,11 +4,10 @@
 // kitGist.ts); the store's `importKit` lands the result as a collision-safe user kit.
 import { useState } from "react";
 import { useAppStore } from "@/store";
-import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
+import { ModalCard } from "@/shared/ui/overlay/ModalCard";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
-import { IconButton } from "@/shared/ui/controls/IconButton";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
 import { Code } from "@/shared/ui/data/Code";
@@ -60,14 +59,8 @@ export function KitShareModal({ kit, components, onClose, onImported }: Props) {
   };
 
   return (
-    <ModalScrim onDismiss={onClose} blur style={{ padding: 36 }}>
-      <Box style={{ width: 480, maxWidth: "92vw", background: "var(--bg-elev, var(--bg-soft))", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", boxShadow: "0 24px 70px rgba(0,0,0,.5)" }}>
-        <Box style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 16px", borderBottom: "1px solid var(--border-soft, var(--border))" }}>
-          <Text weight={600} size={14}>Share &amp; import kits</Text>
-          <IconButton onClick={onClose} title="Close" aria-label="Close" />
-        </Box>
-
-        <Box style={{ padding: 16 }}>
+    <ModalCard title="Share & import kits" onClose={onClose} width={480}>
+        <Box>
           <SegmentedControl label="" options={[
             { label: "↓ Import", on: tab === "import", onClick: () => { setTab("import"); setError(null); } },
             { label: "↑ Share", on: tab === "share", onClick: () => { setTab("share"); setError(null); } },
@@ -117,7 +110,6 @@ export function KitShareModal({ kit, components, onClose, onImported }: Props) {
             </Box>
           )}
         </Box>
-      </Box>
-    </ModalScrim>
+    </ModalCard>
   );
 }

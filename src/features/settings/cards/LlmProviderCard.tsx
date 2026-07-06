@@ -1,24 +1,23 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import { providerNeedsBscAgent, type LlmProvider } from "@/shared/lib/core/llmConfig";
+import {
+  providerNeedsBscAgent, LLM_PROVIDERS,
+  DEFAULT_ANTHROPIC_MODEL, DEFAULT_LOCAL_MODEL, DEFAULT_LOCAL_BASE_URL,
+  type LlmProvider,
+} from "@/shared/lib/core/llmConfig";
 import { Card } from "@/shared/ui/data/Card";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Row } from "@/shared/ui/layout/Row";
 import { Button } from "@/shared/ui/controls/Button";
-import { SelectField } from "@/shared/ui/controls/Field";
+import { Field, TextField, SelectField } from "@/shared/ui/controls/Field";
 import { Box } from "@/shared/ui/layout/Box";
 
-export const LLM_PROVIDERS: [LlmProvider, string][] = [
-  ["anthropic", "Anthropic Claude"],
-  ["openai",    "OpenAI"],
-  ["gemini",    "Google Gemini"],
-  ["local",     "Local (Ollama / OpenAI-compatible)"],
-  ["ollama",    "Ollama (Local)"],
-];
-export const KEY_PLACEHOLDER: Record<LlmProvider, string> = {
-  anthropic: "sk-ant-…", openai: "sk-…", gemini: "AIza…", local: "", ollama: "",
-};
+// The provider list + placeholders live in `@data/console/model-defaults.json` (#2416), consumed
+// via `LLM_PROVIDERS` / the `DEFAULT_*` model constants from `@/shared/lib/core/llmConfig` — the
+// one source for every model default; nothing model-shaped is authored here.
+const keyPlaceholder = (p: LlmProvider): string =>
+  LLM_PROVIDERS.find((o) => o.id === p)?.keyPlaceholder ?? "";
 
 export function LlmProviderCard() {
   const { claudeApiKey, setClaudeApiKey } = useAppStore();
@@ -73,98 +72,78 @@ export function LlmProviderCard() {
     <Card title="LLM provider" hint={<>Powers planning &amp; assistant calls (autopilot, grader, cleanup).</>}>
       <Grid cols="1.4fr 1fr" gap={14}>
         <SelectField label="Provider" value={llmProvider} onChange={(v) => setLlmProvider(v as LlmProvider)}>
-          {LLM_PROVIDERS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+          {LLM_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
         </SelectField>
-        <Box className="field">
-          <label>Model</label>
-          {/* eslint-disable-next-line no-restricted-syntax -- field stack wraps a conditional <datalist> child; a TextField swap can't host the datalist without dropping the .field Box */}
-          <input
-            className="input"
-            value={llmModel}
-            onChange={(e) => setLlmModel(e.target.value)}
-            placeholder={isLocal ? "qwen3-coder" : "claude-sonnet-4-6"}
-            list={isLocal ? "ollama-models" : undefined}
-          />
-          {isLocal && models.length > 0 && (
-            <datalist id="ollama-models">
-              {models.map((m) => <option key={m} value={m} />)}
-            </datalist>
-          )}
-        </Box>
+        <TextField
+          label="Model"
+          value={llmModel}
+          onChange={setLlmModel}
+          placeholder={isLocal ? DEFAULT_LOCAL_MODEL : DEFAULT_ANTHROPIC_MODEL}
+          list={isLocal ? "ollama-models" : undefined}
+        />
+        {/* the datalist is display:none, so as a grid sibling it generates no box/track */}
+        {isLocal && models.length > 0 && (
+          <datalist id="ollama-models">
+            {models.map((m) => <option key={m} value={m} />)}
+          </datalist>
+        )}
         {isLocal && (
-          <Box className="field" style={{ gridColumn: "1 / -1" }}>
-            <label>Base URL</label>
-            <Row gap={8} align="stretch">
-              {/* eslint-disable-next-line no-restricted-syntax -- inline input beside a Button in a Row; a TextField .field wrapper would break the horizontal layout */}
-              <input
-                className="input"
-                value={localBaseUrl}
-                onChange={(e) => setLocalBaseUrl(e.target.value)}
-                placeholder="http://localhost:11434/v1"
-              />
-              <Button onClick={testConnection} disabled={testing}>
-                {testing ? "testing…" : "test"}
-              </Button>
-            </Row>
-            <Box className="hint">
-              {testMsg || (llmProvider === "ollama" ? "Ollama port / API URL." : "OpenAI-compatible endpoint (e.g. Ollama).")}
-            </Box>
+          <Box style={{ gridColumn: "1 / -1" }}>
+            <TextField
+              label="Base URL"
+              value={localBaseUrl}
+              onChange={setLocalBaseUrl}
+              placeholder={DEFAULT_LOCAL_BASE_URL}
+              trailing={
+                <Button onClick={testConnection} disabled={testing}>
+                  {testing ? "testing…" : "test"}
+                </Button>
+              }
+              hint={testMsg || (llmProvider === "ollama" ? "Ollama port / API URL." : "OpenAI-compatible endpoint (e.g. Ollama).")}
+            />
           </Box>
         )}
-        <Box className="field" style={{ gridColumn: "1 / -1" }}>
-          <label>API key</label>
+        <Box style={{ gridColumn: "1 / -1" }}>
           {(llmProvider === "local" || llmProvider === "ollama") ? (
-            <Box className="hint">Local provider — no API key needed; set the <b>Base URL</b> above.</Box>
+            <Field label="API key" hint={<>Local provider — no API key needed; set the <b>Base URL</b> above.</>}>{null}</Field>
           ) : (
-            <>
-              <Row gap={8} align="stretch">
-                {/* eslint-disable-next-line no-restricted-syntax -- inline input beside show/test Buttons in a Row; a TextField .field wrapper would break the horizontal layout */}
-                <input
-                  className="input"
-                  type="password"
-                  value={providerKey}
-                  onChange={(e) => setProviderKey(e.target.value)}
-                  placeholder={KEY_PLACEHOLDER[llmProvider]}
-                />
-                <Button>show</Button>
-                <Button>test</Button>
-              </Row>
-              <Box className="hint">Stored in OS keyring · never written to disk in plaintext. The per-pane agent model lives in Settings → General.</Box>
-            </>
+            <TextField
+              label="API key"
+              type="password"
+              value={providerKey}
+              onChange={setProviderKey}
+              placeholder={keyPlaceholder(llmProvider)}
+              trailing={<><Button>show</Button><Button>test</Button></>}
+              hint="Stored in OS keyring · never written to disk in plaintext. The per-pane agent model lives in Settings → General."
+            />
           )}
         </Box>
-        <Box className="field" style={{ gridColumn: "1 / -1" }}>
-          <label>Run the agent fleet on</label>
+        <Box style={{ gridColumn: "1 / -1" }}>
           {/* A local/ollama provider can't run on Claude Code, so it forces bsc-agent — the planner,
               workers, and director all run on the selected LLM. Lock the control + say so. */}
-          {/* eslint-disable-next-line no-restricted-syntax -- conditionally `disabled` select in a gridColumn-spanning field; SelectField carries neither disabled nor the wrapper style */}
-          <select
-            className="input"
+          <SelectField
+            label="Run the agent fleet on"
             value={providerNeedsBscAgent(llmProvider) ? "bsc-agent" : fleetHarness}
             disabled={providerNeedsBscAgent(llmProvider)}
-            onChange={(e) => setFleetHarness(e.target.value as "claude" | "bsc-agent")}
+            onChange={(v) => setFleetHarness(v as "claude" | "bsc-agent")}
+            hint={providerNeedsBscAgent(llmProvider)
+              ? "Locked to bsc-agent — the selected local provider runs the planner, workers, and director on the LLM above, with the same role permissions, MCP, and context."
+              : "Planner, workers + director launch on this harness; bsc-agent runs on the selected LLM with the same role permissions, MCP, and context."}
           >
             <option value="claude">Claude Code (default)</option>
             <option value="bsc-agent">bsc-agent — the provider/model above</option>
-          </select>
-          <Box className="hint">
-            {providerNeedsBscAgent(llmProvider)
-              ? "Locked to bsc-agent — the selected local provider runs the planner, workers, and director on the LLM above, with the same role permissions, MCP, and context."
-              : "Planner, workers + director launch on this harness; bsc-agent runs on the selected LLM with the same role permissions, MCP, and context."}
-          </Box>
+          </SelectField>
         </Box>
-        <Box className="field">
-          <label>Per-agent context cap</label>
+        <Field label="Per-agent context cap">
           {/* eslint-disable-next-line no-restricted-syntax -- uncontrolled defaultValue placeholder input; TextField requires controlled value/onChange */}
           <input className="input" defaultValue="64000" />
-        </Box>
-        <Box className="field">
-          <label>Monthly spend cap</label>
+        </Field>
+        <Field label="Monthly spend cap">
           {/* eslint-disable-next-line no-restricted-syntax -- uncontrolled defaultValue placeholder input; TextField requires controlled value/onChange */}
           <input className="input" defaultValue="$150" />
-        </Box>
-        <Box className="field" style={{ gridColumn: "1 / -1" }}>
-          <label>Extended thinking</label>
+        </Field>
+        <Field label="Extended thinking" style={{ gridColumn: "1 / -1" }}
+          hint="Off for haiku regardless of this setting.">
           <Row gap={6} align="stretch">
             {(["off", "auto", "always"] as const).map((v, i) => (
               <Button key={v} style={{
@@ -175,8 +154,7 @@ export function LlmProviderCard() {
               }}>{v}</Button>
             ))}
           </Row>
-          <Box className="hint">Off for haiku regardless of this setting.</Box>
-        </Box>
+        </Field>
       </Grid>
     </Card>
   );

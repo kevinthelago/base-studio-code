@@ -8,6 +8,8 @@
 // slow / rate-limited call, so it counts toward SUCCESS (only "fail" is an error). Pure +
 // unit-tested; the hook pair that EMITS these lines is wired separately (PR 2).
 
+import { dayKey } from "@/shared/lib/core/format";
+
 export type McpOutcome = "ok" | "warn" | "fail";
 
 export interface McpCall {
@@ -79,12 +81,6 @@ export interface McpAnalytics {
 const DAY_MS = 86_400_000;
 /** A server is "healthy" when at most this fraction of its calls failed. */
 const HEALTHY_ERR_RATE = 0.1;
-
-/** Local YYYY-MM-DD for an epoch-ms timestamp (matches the chart's daily bucketing). */
-function dayKey(ts: number): string {
-  const d = new Date(ts);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 /**
  * Aggregate MCP calls into the analytics the MCP Analytics tab renders. Only calls within the
