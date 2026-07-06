@@ -24,7 +24,8 @@ interface PublishedHeaderProps {
   totalSummary: string;
   lastSync: Date | null;
   loading: boolean;
-  fetchProjects: () => void;
+  /** Re-fetch the published boards; `force: true` (the manual ↻ sync) bypasses the TTL cache (#2447). */
+  fetchProjects: (opts?: { force?: boolean }) => void;
   query: string;
   setQuery: (s: string) => void;
   sort: "recency" | "name";
@@ -123,7 +124,7 @@ export function PublishedHeader({
             )}
           </Row>
         </Box>
-        <Button variant="ghost" onClick={fetchProjects} disabled={loading}>
+        <Button variant="ghost" onClick={() => fetchProjects({ force: true })} disabled={loading}>
           {loading ? "syncing…" : "↻ sync"}
         </Button>
         {/* eslint-disable-next-line no-restricted-syntax -- needs a real DOM ref for click-outside excludeRef (Button isn't forwardRef) */}
