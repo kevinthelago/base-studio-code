@@ -7,6 +7,7 @@ import { hue, tint, stageKind } from "@/features/planner/blueprints/blueprintCat
 import { IconBox } from "@/shared/ui/data/IconBox";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
+import { TextArea } from "@/shared/ui/controls/Field";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import type { Blueprint } from "@/features/planner/stages/blueprints";
@@ -50,10 +51,9 @@ export function PurposeView({ bp, onChange }: AuthorViewProps) {
 
       <Box>
         <Lbl hint="what it's for & why">Description</Lbl>
-        {/* eslint-disable-next-line no-restricted-syntax -- <textarea> has no shared primitive */}
-        <textarea className="input" value={bp.desc ?? ""} style={{ minHeight: 78 }}
+        <TextArea value={bp.desc ?? ""} style={{ minHeight: 78 }}
           placeholder="Describe the kind of project this blueprint plans…"
-          onChange={(e) => set({ desc: e.target.value })} />
+          onChange={(v) => set({ desc: v })} />
       </Box>
 
       <Box>
