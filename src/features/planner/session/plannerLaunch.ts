@@ -31,8 +31,9 @@ export interface PlannerLaunch {
   /** Whether the intro is suppressed on a resumed session (#1240). Claude keeps the fresh-only
    *  greeting; bsc-agent (a one-shot agent loop, not a REPL) always bakes the intro as its task. */
   startupPromptFreshOnly: boolean;
-  /** Request conversation resume — only meaningful for bsc-agent (its $BSC_AGENT_SESSION continuity);
-   *  the backend ANDs it with "history actually exists". */
+  /** Request conversation resume — the backend ANDs it with "history actually exists", so a fresh
+   *  project is unaffected (Claude resumes via `--continue`; bsc-agent via its $BSC_AGENT_SESSION
+   *  continuity). */
   continueSession?: boolean;
 }
 
@@ -50,6 +51,10 @@ export function plannerLaunchConfig(s: AppStore, ghEnv: Record<string, string>):
       initCmd: "claude --continue 2>/dev/null || claude",
       env: ghEnv,
       startupPromptFreshOnly: true,
+      // Defensive (#2396): request resume explicitly. With the fresh-only intro guard a baked prompt
+      // only ever fires when there's no history (where resume is a no-op), but if a caller ever bakes
+      // a prompt onto a cwd WITH history this resumes it instead of silently forking a fresh session.
+      continueSession: true,
     };
   }
   // The planner sees every installed MCP server (#1054); pass them to the runtime as $BSC_AGENT_MCP.
