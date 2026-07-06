@@ -5,11 +5,9 @@
 // confirmation. Presentational + self-contained (the parent owns the clone/build + status) so it's
 // unit-testable; styled to match the blueprint modals.
 
-import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
+import { ModalCard } from "@/shared/ui/overlay/ModalCard";
 import { Chip } from "@/shared/ui/data/Chip";
-import { IconButton } from "@/shared/ui/controls/IconButton";
 import { Button } from "@/shared/ui/controls/Button";
-import { IconBox } from "@/shared/ui/data/IconBox";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
@@ -62,36 +60,13 @@ export function McpDownloadModal({ items, onConfirm, onCancel }: {
 
   return (
     <Box className="bp-page" style={{ position: "fixed", inset: 0 }}>
-      <ModalScrim onDismiss={busy ? undefined : onCancel} blur style={{ padding: 30 }}>
-        <Stack className="modal" role="dialog" aria-label="Download MCP servers" style={{ width: 560, maxWidth: "100%", maxHeight: "88vh", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "0 24px 70px rgba(0,0,0,.55)", overflow: "hidden" }}>
-          <Row className="modal-head" gap={11} style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-soft)" }}>
-            <IconBox size={30} radius={7} fontSize={15} background="color-mix(in oklch, var(--accent), transparent 84%)" color="var(--accent)">↓</IconBox>
-            <Box>
-              <Text as="h2" mono size="lg" weight={600} style={{ margin: 0 }}>Download MCP servers</Text>
-              <Text as="div" size={10.5} tone="dim" style={{ marginTop: 1 }}>Your plan uses these MCP servers — review the source, then install.</Text>
-            </Box>
-            <IconButton aria-label="cancel" style={{ marginLeft: "auto" }} onClick={onCancel} disabled={busy} />
-          </Row>
-
-          <Stack className="modal-body" gap={10} style={{ padding: 20, overflowY: "auto" }}>
-            {items.map((it) => (
-              <Card key={it.name} style={{ padding: 13 }}>
-                <Row gap={9} style={{ marginBottom: 6 }}>
-                  <Text as="span" mono size={13} weight={600} style={{ color: "var(--fg)" }}>{it.name}</Text>
-                  <Chip>first-party</Chip>
-                  <Box as="span" style={{ flex: 1 }} />
-                  {it.status !== "pending" && (
-                    <Text as="span" mono size={10.5} style={{ color: STATUS_COLOR[it.status] }}>{STATUS_LABEL[it.status]}</Text>
-                  )}
-                </Row>
-                {it.desc && <Box className="hint" style={{ marginBottom: 6 }}>{it.desc}</Box>}
-                <a className="mono" href={it.link} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--accent)", wordBreak: "break-all" }}>{it.link}</a>
-                {it.install && <Box className="hint" style={{ marginTop: 6, fontSize: 10 }}>{it.install}</Box>}
-              </Card>
-            ))}
-          </Stack>
-
-          <Row className="modal-foot" gap={9} style={{ padding: "14px 20px", borderTop: "1px solid var(--border-soft)" }}>
+      <ModalCard
+        icon={<Text as="span" size={15}>↓</Text>} title="Download MCP servers"
+        sub="Your plan uses these MCP servers — review the source, then install."
+        ariaLabel="Download MCP servers"
+        onClose={onCancel} busy={busy} width={560}
+        foot={
+          <>
             <Box as="span" className="hint">Downloads from GitHub into <Text as="span" mono>~/.base-studio-code/mcp/</Text>. Skip to install later from the MCP screen.</Box>
             <Box as="span" style={{ flex: 1 }} />
             {allDone ? (
@@ -104,9 +79,27 @@ export function McpDownloadModal({ items, onConfirm, onCancel }: {
                 </Button>
               </>
             )}
-          </Row>
+          </>
+        }
+      >
+        <Stack gap={10}>
+          {items.map((it) => (
+            <Card key={it.name} style={{ padding: 13 }}>
+              <Row gap={9} style={{ marginBottom: 6 }}>
+                <Text as="span" mono size={13} weight={600} style={{ color: "var(--fg)" }}>{it.name}</Text>
+                <Chip>first-party</Chip>
+                <Box as="span" style={{ flex: 1 }} />
+                {it.status !== "pending" && (
+                  <Text as="span" mono size={10.5} style={{ color: STATUS_COLOR[it.status] }}>{STATUS_LABEL[it.status]}</Text>
+                )}
+              </Row>
+              {it.desc && <Box className="hint" style={{ marginBottom: 6 }}>{it.desc}</Box>}
+              <a className="mono" href={it.link} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--accent)", wordBreak: "break-all" }}>{it.link}</a>
+              {it.install && <Box className="hint" style={{ marginTop: 6, fontSize: 10 }}>{it.install}</Box>}
+            </Card>
+          ))}
         </Stack>
-      </ModalScrim>
+      </ModalCard>
     </Box>
   );
 }

@@ -71,6 +71,31 @@ describe("curated demo snapshot (#2282)", () => {
   it("the maintainer gist URL is intentionally empty (local snapshot is the functional path)", () => {
     expect(DEMO_GIST_URL).toBe("");
   });
+
+  // Guard for the externalized fixture content (@data/demo/*.json, #2419): the thin TS assembler
+  // fills the library/runtime defaults the seed JSON deliberately omits.
+  it("the assembler applies the defaults over the @data/demo seeds", () => {
+    const snap = demoSnapshot();
+    // Skills: shipped enabled + pinned team skills with zeroed telemetry.
+    for (const s of snap.skills ?? []) {
+      expect(s).toMatchObject({ source: "team", projects: [], enabled: true, pinned: true, invocations: 0, trend: [] });
+      expect(s.prompt.trim().length).toBeGreaterThan(0); // the startPrompt/prompt prose rode along
+    }
+    // Fleets: every plan runs an event-driven director over a director topology.
+    for (const fleet of Object.values(snap.planFleet ?? {})) {
+      expect(fleet.director).toEqual({ enabled: true, drive: "event" });
+      expect(fleet.topology).toBe("director");
+      for (const stream of fleet.streams) expect(Array.isArray(stream.dependsOn)).toBe(true);
+    }
+    // Automations: authored rules start never-yet-run.
+    for (const a of snap.automations ?? []) {
+      expect(a).toMatchObject({ lastRunAt: null, nextRunAt: null, runs: [] });
+    }
+    // The persona prose + model pin survived externalization.
+    const payments = (snap.personas ?? []).find((p) => p.id === "demo-payments-eng");
+    expect(payments?.model).toBe("claude-sonnet-4-6");
+    expect(payments?.startPrompt).toContain("idempotent");
+  });
 });
 
 describe("demo snapshot round-trips through loadDemoState (#2282)", () => {

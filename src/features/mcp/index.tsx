@@ -26,7 +26,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
-import { TextField } from "@/shared/ui/controls/Field";
+import { Field, TextField } from "@/shared/ui/controls/Field";
 import "./mcp.css";
 
 // #1545: public API for cross-feature consumers (planner, automations, app/console, store).
@@ -226,8 +226,7 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
             onSetProjects={ids => setMcpServerProjects(selected.id, ids)}
             onSetEnv={env => updateMcpServer(selected.id, { env })}
           >
-            <Box className="field">
-              <label>transport</label>
+            <Field label="transport">
               <SegmentedControl
                 options={(["stdio", "http"] as McpTransport[]).map(t => ({
                   label: t,
@@ -235,19 +234,19 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
                   onClick: () => updateMcpServer(selected.id, { transport: t }),
                 }))}
               />
-            </Box>
+            </Field>
             {selected.transport === "http"
               ? (
                 <TextField label="endpoint URL" value={selected.url ?? ""} onChange={url => updateMcpServer(selected.id, { url })} />
               ) : (
-                <Box className="field"><label>command</label>
+                <Field label="command">
                   <Row gap={6} align="stretch">
                     {/* eslint-disable-next-line no-restricted-syntax -- two inline inputs sharing one .field label in a Row (command + args); TextField would add a per-input .field/label */}
                     <input className="input" placeholder="command" value={selected.command ?? ""} onChange={ev => updateMcpServer(selected.id, { command: ev.target.value })} style={{ flex: "0 0 120px" }} />
                     {/* eslint-disable-next-line no-restricted-syntax -- two inline inputs sharing one .field label in a Row (command + args); TextField would add a per-input .field/label */}
                     <input className="input" placeholder="args" value={selected.args ?? ""} onChange={ev => updateMcpServer(selected.id, { args: ev.target.value })} style={{ flex: 1 }} />
                   </Row>
-                </Box>
+                </Field>
               )}
           </DrawerBody>
         )}
