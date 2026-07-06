@@ -40,6 +40,17 @@ const NO_PUBLISHED: GhProject[] = [];
 // instead of resetting to drafts-only and flashing.
 let publishedCache: GhProject[] | null = null;
 
+/** A published hub from the LOCAL inventory (#2445): `key` is the hub FOLDER key — the same key the
+ *  drill / `planFleet` / `fleetPaneStreams` resolve against — with the `.title` display name. */
+export interface LocalPublishedLite { key: string; title: string }
+
+/** The `list_local_projects` fields the seed reads (camelCase wire format, #789). */
+interface LocalProjectWire { key: string; title: string; published: boolean }
+
+// The last-fetched local published inventory (#2445) — module-level for the same remount reason as
+// `publishedCache`: a Glance revisit renders the published nodes immediately, then refreshes.
+let localPublishedCache: LocalPublishedLite[] | null = null;
+
 /**
  * Merge local drafts with published GitHub projects into the Glance node set, keyed by the PLAN key so each
  * project is exactly ONE node. Pure + exported for direct unit testing (#2339).
@@ -52,6 +63,7 @@ export function mergeGlanceProjects(
   drafts: DraftMap,
   planFleet: FleetMap,
   published: GhProject[],
+  localPublished: LocalPublishedLite[] = [],
 ): ProjectLite[] {
   const byKey = new Map<string, ProjectLite>();
   // slug(title) → draft key, so a published project collapses onto a legacy-keyed draft.
@@ -66,6 +78,16 @@ export function mergeGlanceProjects(
       status: d.status ?? ((planFleet[id]?.streams.length ?? 0) > 0 ? "planning" : "idle"),
     });
     draftKeyByTitle.set(projectSlug(d.title), id);
+  }
+  // Local published hubs (#2445) — the OFFLINE seed: a published project always has a node, keyed by
+  // its hub folder key (what the drill resolves), even when the GitHub set is absent (logged out /
+  // fetch not landed). A GitHub record below OVERLAYS it — same key directly (#2409 name-derived
+  // keys) or via the slug(title) bridge registered here (legacy-keyed hubs) — carrying the real
+  // open/shipped status. A draft-declared status (#2284) still wins for curated coloring.
+  for (const lp of localPublished) {
+    const prior = byKey.get(lp.key);
+    byKey.set(lp.key, { id: lp.key, name: lp.title, role: prior?.role, status: drafts[lp.key]?.status ?? "planning" });
+    draftKeyByTitle.set(projectSlug(lp.title), lp.key);
   }
   for (const p of published) {
     // The plan key derives from the name (#2409): a matching draft's key (covers grandfathered
@@ -131,6 +153,24 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   const planFleet = useAppStore((s) => s.planFleet);
   const liveKeys = useProjectLiveness(enabled);
 
+  // The local published inventory (#2445): the on-disk hubs carrying `.published`, so a published
+  // project has a Glance node even with no GitHub connection. Seeded from the module cache on a
+  // revisit (no flash), refreshed once per mount.
+  const [localPublished, setLocalPublished] = useState<LocalPublishedLite[]>(() => localPublishedCache ?? []);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    void safeInvoke<LocalProjectWire[]>("list_local_projects", undefined, []).then((list) => {
+      if (cancelled) return;
+      const pub = (Array.isArray(list) ? list : [])
+        .filter((lp) => lp?.published)
+        .map((lp) => ({ key: lp.key, title: lp.title }));
+      localPublishedCache = pub;
+      setLocalPublished(pub);
+    });
+    return () => { cancelled = true; };
+  }, [enabled]);
+
   // githubGraphql (not a raw invoke) so the read goes through the backend TTL cache (#2447):
   // a Glance revisit within the window is served with no network call.
   const published = useGithubQuery<GhProject[]>(
@@ -148,8 +188,9 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   const effectivePublished = published.data ?? publishedCache ?? NO_PUBLISHED;
 
   return useMemo(
-    // Merge first (drafts + published), then overlay live heartbeats as the `"live"` status (#2263).
-    () => applyLiveness(mergeGlanceProjects(drafts, planFleet, effectivePublished), liveKeys),
-    [drafts, planFleet, effectivePublished, liveKeys],
+    // Merge first (drafts + local published + GitHub published), then overlay live heartbeats as the
+    // `"live"` status (#2263).
+    () => applyLiveness(mergeGlanceProjects(drafts, planFleet, effectivePublished, localPublished), liveKeys),
+    [drafts, planFleet, effectivePublished, localPublished, liveKeys],
   );
 }

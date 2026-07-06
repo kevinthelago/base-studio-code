@@ -13,6 +13,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { AUTHORING_BLUEPRINT_ID, type Blueprint } from "../stages/blueprints";
 import { buildDrafts, type DraftRow } from "./drafts";
+import { buildLocalPublished, type LocalPublishedRow } from "./localPublished";
 import { PublishedProjects, ProjectRow, projStatus, type GhProject, type ProjStatus, PROJECTS_QUERY } from "./PublishedProjects";
 import { BlueprintLibrary, buildBlueprintItems, type BpItem } from "./BlueprintLibrary";
 
@@ -236,6 +237,16 @@ export function ProjectsList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [normalDrafts, sort, q]);
 
+  // ── Local published inventory (#2445): published hubs not (yet) covered by a fetched GitHub
+  // board — the whole published set while logged out, and the not-yet-overlaid remainder once the
+  // query returns. Rendered in the published column so a restored fleet's project is always reachable.
+  const localPublished = useMemo<LocalPublishedRow[]>(() => {
+    const needle = query.trim().toLowerCase();
+    return buildLocalPublished(localProjects, visibleProjects)
+      .filter(r => !needle || (r.title + " " + r.key).toLowerCase().includes(needle))
+      .sort((a, b) => sort === "name" ? a.title.toLowerCase().localeCompare(b.title.toLowerCase()) : b.updatedAt - a.updatedAt);
+  }, [localProjects, visibleProjects, sort, query]);
+
   const fBlueprints = useMemo(() => {
     const arr = blueprintItems.filter(matchB);
     arr.sort((a, b) => sort === "name" ? a.name.toLowerCase().localeCompare(b.name.toLowerCase()) : b.sort - a.sort);
@@ -274,6 +285,7 @@ export function ProjectsList() {
         setDraftDeleteTarget={setDraftDeleteTarget}
         localProjects={localProjects}
         refreshLocalProjects={refreshLocalProjects}
+        localPublished={localPublished}
       />
 
       <BlueprintLibrary

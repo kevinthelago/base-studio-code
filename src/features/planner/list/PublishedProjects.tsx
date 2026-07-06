@@ -7,6 +7,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
 import type { DraftRow, LocalProjectLite } from "./drafts";
+import type { LocalPublishedRow } from "./localPublished";
 import { useReopenProject } from "./ReopenProjectModal";
 import { STATUS_META, type GhProject, type ProjStatus } from "./published/publishedModel";
 import { ProjectRow } from "./published/ProjectRow";
@@ -50,6 +51,9 @@ interface PublishedProjectsProps {
   localProjects: LocalProjectLite[];
   /** Re-scan the on-disk hubs (after a link moved one). */
   refreshLocalProjects: () => void;
+  /** Published hubs rendered from the LOCAL inventory (#2445) — the offline published set; a fetched
+   *  GitHub board matching a hub overlays it (the hub drops out of this list, the board row renders). */
+  localPublished: LocalPublishedRow[];
 }
 
 /** The published-projects column — the page header (title · summary · sync/new · new-project form ·
@@ -60,11 +64,11 @@ export function PublishedProjects({
   visibleProjects, grouped, fDrafts, fleetByProject, loading, error, lastSync, draftError,
   query, setQuery, sort, setSort, totalSummary, grandTotal, publishedCount,
   fetchProjects, setProjects, menuOpenId, setMenuOpenId, reopenDraft, setDraftDeleteTarget,
-  localProjects, refreshLocalProjects,
+  localProjects, refreshLocalProjects, localPublished,
 }: PublishedProjectsProps) {
   const {
     setWorkspace, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard,
-    setPlanningContext, setPlanningTitle, setPlanningSession,
+    setPlanningContext, setPlanningTitle, setPlanningSession, githubToken,
   } = useAppStore();
   const [deleteTarget, setDeleteTarget] = useState<GhProject | null>(null);
 
@@ -103,8 +107,9 @@ export function PublishedProjects({
 
   const publishedAndDrafts = publishedCount + fDrafts.length;
   // The main (projects) column is empty when there are no projects or drafts; the
-  // blueprints rail shows its own empty state independently.
-  const projectsEmpty = publishedCount === 0 && fDrafts.length === 0;
+  // blueprints rail shows its own empty state independently. Local published hubs count as
+  // content (#2445) — logged out they ARE the published column.
+  const projectsEmpty = publishedCount === 0 && fDrafts.length === 0 && localPublished.length === 0;
   const q = query.trim().toLowerCase();
 
   return (
@@ -176,6 +181,39 @@ export function PublishedProjects({
                 </Box>
               ))}
             </Row>
+          )}
+
+          {/* published hubs from the LOCAL inventory (#2445) — the offline published set. Rendered
+              from `.published` + `.title` with the hub key as the identity; a fetched GitHub board
+              matching a hub OVERLAYS it (the hub leaves this list, the full ProjectRow renders below).
+              Logged out, a quiet "not synced" hint marks the column as local-only. */}
+          {localPublished.length > 0 && (
+            <Box style={{ marginBottom: 22 }}>
+              <GroupHeader label="published" count={localPublished.length} dot="var(--success)" />
+              {!githubToken && (
+                <Text className="hint" as="div" mono size={10} style={{ margin: "0 0 7px", paddingLeft: 2 }}>
+                  not synced — GitHub is disconnected, showing the local copies
+                </Text>
+              )}
+              <Box border="soft" radius="lg" style={{ overflow: "hidden" }}>
+                {localPublished.map((lp, i) => (
+                  <Row
+                    key={lp.key}
+                    gap={10}
+                    align="center"
+                    onClick={() => reopenDraft({ key: lp.key, title: lp.title, pitch: "" })}
+                    title={`local copy · ${lp.key}`}
+                    style={{ padding: "10px 14px", cursor: "pointer", borderTop: i ? "1px solid var(--border-soft)" : "none" }}
+                  >
+                    <Box as="span" bg="var(--success)" radius={99} style={{ width: 5, height: 5, flexShrink: 0 }} />
+                    <Text as="span" mono size={12} style={{ color: "var(--fg)", whiteSpace: "nowrap" }}>{lp.title}</Text>
+                    <Text as="span" mono size={10} tone="dim" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lp.key}</Text>
+                    <Box style={{ flex: 1 }} />
+                    <Text as="span" mono size={10} tone="dim" style={{ whiteSpace: "nowrap" }}>{timeAgoMs(lp.updatedAt)}</Text>
+                  </Row>
+                ))}
+              </Box>
+            </Box>
           )}
 
           {/* published projects, grouped by lifecycle */}

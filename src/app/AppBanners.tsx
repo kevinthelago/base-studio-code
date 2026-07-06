@@ -77,6 +77,8 @@ function CrashRecoveryBanner() {
 export function SessionRecoveryBanner() {
   const fleetStartProject = useAppStore((s) => s.fleetStartProject);
   const triageStartProject = useAppStore((s) => s.triageStartProject);
+  const setGlanceDrill = useAppStore((s) => s.setGlanceDrill);
+  const setWorkspace = useAppStore((s) => s.setWorkspace);
 
   const [recoverable, setRecoverable] = useState<RecoverableSession[]>([]);
   const [open, setOpen] = useState(false);
@@ -102,7 +104,14 @@ export function SessionRecoveryBanner() {
     const triage = sessions.filter((s) => s.kind === "triage");
     if (build.length) {
       const fleet = await bscJson<FleetPlan | null>(projectKey, ["plan", "fleet", "get", "--full", "--json"], null);
-      if (fleet) fleetStartProject(projectKey, fleet, projectKey);
+      if (fleet) {
+        fleetStartProject(projectKey, fleet, projectKey);
+        // Land the user on their restored agents (#2445): drill Glance into the project. Overrides
+        // fleetStartProject's console navigation — after a recovery the fleet-level Glance view is
+        // the surface that shows what just came back (and works even with GitHub disconnected).
+        setGlanceDrill(projectKey);
+        setWorkspace("glance");
+      }
     }
     if (triage.length) {
       const repos = [...new Set(triage.map((s) => s.repo).filter((r): r is string => !!r))];
@@ -121,7 +130,7 @@ export function SessionRecoveryBanner() {
       }
     }
     drop(new Set(sessions.map((s) => s.paneId)));
-  }, [fleetStartProject, triageStartProject, drop]);
+  }, [fleetStartProject, triageStartProject, setGlanceDrill, setWorkspace, drop]);
 
   const discard = useCallback(async (s: RecoverableSession) => {
     await invoke("reap_session", { paneId: s.paneId }).catch(() => {});
