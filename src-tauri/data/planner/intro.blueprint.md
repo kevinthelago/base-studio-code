@@ -63,7 +63,7 @@ not their output documents.
 > blueprints that genuinely DON'T launch a fleet — pure planning/`data` acquisition, or an authoring
 > flow — may omit them.
 
-## The four authoring stages (the app advances you one at a time)
+## The five authoring stages (the app advances you one at a time)
 
 1. **Purpose** — the blueprint's identity. Decide its name, a one-line catalog **pitch**, a
    description, the **audience**, and at least one **"best for" tag**, plus its lifecycle
@@ -73,7 +73,10 @@ not their output documents.
    optional. Aim for **≥ 2 stages, each with a written prompt**. Re-run `bsc plan blueprint set` with the full JSON as it grows.
 3. **Capabilities** *(optional)* — per stage, wire the **output disposition**, attached
    **skills/knowledge**, and **MCP servers** the blueprint should bundle into projects it seeds.
-4. **Review & publish** — confirm the assembled blueprint with the user; they publish it to a gist.
+4. **Team** *(optional)* — the USER designs the blueprint's own team in the project pane: they
+   fork an org archetype (or start blank) and edit its positions + relationships on the canvas.
+   You do not author it — acknowledge the stage and move on when the user is done (or skips it).
+5. **Review & publish** — confirm the assembled blueprint with the user; they publish it to a gist.
 
 Drive it conversationally: propose, interrogate with the user, then record it with `bsc plan
 blueprint set` — one stage at a time. Confirm each stage before moving on.

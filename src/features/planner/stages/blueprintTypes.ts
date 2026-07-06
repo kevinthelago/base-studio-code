@@ -7,6 +7,9 @@
 import { type ClassificationSignals } from "./classification";
 import { type StageGate, type Requirement } from "./stageGate";
 import { type AgentFlow } from "../fleet/agentFlow";
+// Type-only cross-feature import (allowed by the #1545 boundary): the blueprint team (#2450)
+// reuses the org feature's graph shape rather than redeclaring it.
+import type { Position, Relationship } from "@/features/org";
 
 // ── Substeps ─────────────────────────────────────────────────────────────────
 // A discrete step WITHIN a stage. The conductor injects ONE substep's prompt at a time and
@@ -199,6 +202,23 @@ export interface FleetPolicy {
   flow?: AgentFlow;
 }
 
+/** The TEAM a blueprint carries (#2450) — an embedded org configuration: positions (personas
+ *  referenced by id — personas stay a global library) wired by relationships, with the canvas
+ *  layout coords on each position. The same graph shape the `bsc org` store holds, MINUS the
+ *  library identity fields (`id`/`name`/`blurb`/`builtin`) — the blueprint itself is the identity.
+ *
+ *  FORK-ON-ATTACH: authoring starts by DEEP-COPYING a library org (or blank) into
+ *  `blueprint.team` (see `forkTeamFromOrg`); the `bsc org` store remains the archetype library.
+ *  Editing a blueprint's team never mutates the library org and vice versa — reproducibility of
+ *  the blueprint artifact wins. Persisted inside the blueprint's JSON (the `bsc blueprint` store
+ *  is verbatim JSON), so export/import carries it automatically. Optional — a blueprint without
+ *  `team` behaves exactly as before; plan-time consumption (seeding fleet streams from the team)
+ *  is a deliberate follow-up, not this field's contract. */
+export interface BlueprintTeam {
+  positions: Position[];
+  relationships: Relationship[];
+}
+
 export interface Blueprint {
   id: string;
   name: string;
@@ -230,6 +250,10 @@ export interface Blueprint {
    *  when it generates this project type's fleet. A composed sub-model; see {@link FleetPolicy}.
    *  Absent ⇒ today's launch-time defaults apply (byte-identical). */
   fleetPolicy?: FleetPolicy;
+  /** The blueprint's own TEAM (#2450) — an embedded org configuration forked from the org library
+   *  (or authored blank). A composed sub-model; see {@link BlueprintTeam}. Absent ⇒ no team
+   *  authored (today's behavior, byte-identical everywhere). */
+  team?: BlueprintTeam;
   /** Lifecycle intent (#645). Absent ⇒ greenfield (the create-a-project default). */
   category?: BlueprintCategory;
   /** Create (from a pitch) vs operate (against existing repos). Absent ⇒ create. */
