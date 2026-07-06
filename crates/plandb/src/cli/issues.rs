@@ -11,7 +11,7 @@ use bsc_sqlite_util::{print_json, read_stdin_json};
 /// `add` — upsert issues from JSON on stdin, echo the assigned ref(s).
 pub(crate) fn cmd_add_cmd(args: &Args) -> Result<(), String> {
     let s = open_store(&args.db)?;
-    let refs = cmd_add(&s)?;
+    let refs = cmd_add(&s, args.force)?;
     emit_set_result(args.json, &refs, "");
     Ok(())
 }
@@ -114,16 +114,16 @@ pub(crate) fn cmd_render(args: &Args) -> Result<(), String> {
 }
 
 /// Read JSON from stdin (one issue object or an array), upsert each, return the assigned refs.
-fn cmd_add(s: &Store) -> Result<Vec<String>, String> {
+/// The WHOLE batch is validated before anything is written (#2395) — ref + title + a known status
+/// per issue — so a bad item in an array can't leave a half-written batch behind. `force` relaxes
+/// the status-enum check only; the ref/title floor always holds (a keyless row is unusable).
+fn cmd_add(s: &Store, force: bool) -> Result<Vec<String>, String> {
     let issues: Vec<PlanIssue> = read_stdin_json("issue")?;
+    for issue in &issues {
+        crate::validate::validate_issue(issue, force)?;
+    }
     let mut refs = Vec::new();
     for issue in &issues {
-        if issue.r#ref.trim().is_empty() {
-            return Err("add: each issue needs a non-empty \"ref\"".into());
-        }
-        if issue.title.trim().is_empty() {
-            return Err(format!("add: issue '{}' needs a non-empty \"title\"", issue.r#ref));
-        }
         s.upsert(issue).map_err(|e| e.to_string())?;
         refs.push(issue.r#ref.clone());
     }

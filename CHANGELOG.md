@@ -9,6 +9,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`bsc plan` set-time validation — malformed configs fail LOUDLY, not silently at the gate (#2395, follow-up to #2392)** — every `bsc plan` command that takes a structured JSON blob used to store it opaquely, so a malformed shape (the #2392 case: a `mode:"local"` deploy service with a stray `workload` and no `localKind`) surfaced only later as a permanently-stuck gate with no visible cause. A new `plandb::validate` module now checks each shape **before persisting** — a rejected write exits non-zero with a field-level stderr message (the field, the problem, the expected values) and **leaves the previously-stored blob untouched**. The rules mirror what the frontend gates/readers actually consume (so validation and consumption can't drift), and the deploy enums come from the same embedded `@data/deploy/taxonomy.json` the frontend loads. Validated: `deploy set` (mode-aware target rules: cloud ⇒ known `platform`; local ⇒ `localKind` + its application/library fields), `fleet set`/`stream set`/`meta set`/`session set` (a `streams` array required — an absent one silently wiped the fleet; unique non-empty `id`+`repo` per stream), `deps set` (name + npm/cargo ecosystem per dependency; registries need a url), `blueprint set` (id+name; well-formed stages), `add` (ref/title + a known status), and `feature add` (whole-batch validation, no half-written batches). Successful writes echo a **readiness one-liner** mirroring the pane (e.g. `deploy set (2 services) — 1 of 2 deploy-ready (app: missing release strategy)`); `--force`/`--no-validate` is the documented escape hatch for deliberately storing a work-in-progress blob.
+
 ## [1.0.5] — 2026-07-06
 
 ### Added
