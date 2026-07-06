@@ -66,3 +66,50 @@ export function fmtBytes(n: number): string {
   const i = Math.min(u.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
   return `${(n / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
 }
+
+/**
+ * Truncate `s` with a `…` when it exceeds `max` characters (#2421 — the one home for the
+ * five hand-rolled ellipsis chains).
+ *
+ * `keep` is how many characters survive before the ellipsis and defaults to `max` — the
+ * "hard cap" shape (`s.slice(0, max) + "…"` only when longer, e.g. an issue body preview).
+ * Pass a smaller `keep` for the "display budget" shape the label sites use, where the
+ * truncated form must fit the same budget as the untruncated one (e.g. `truncate(s, 20, 18)`).
+ */
+export function truncate(s: string, max: number, keep = max): string {
+  return s.length > max ? `${s.slice(0, keep)}…` : s;
+}
+
+/**
+ * Kebab-case slug: lowercase, every run of non-alphanumerics collapsed to a single `-`,
+ * edge dashes stripped, optionally capped at `max` characters (#2421 — the one home for the
+ * planner/source/DesignStudio copies). Returns `""` for input with no alphanumerics — callers
+ * that need a fallback apply their own (`slugify(x, 40) || "source"`).
+ *
+ * NOT {@link sanitizeProjectKey} (../core/projectPaths.ts): that mirrors the Rust backend
+ * byte-for-byte (keeps case, `_` replacement, cap 80) and must not change; this is the
+ * display/id kebab-case convention.
+ *
+ * Note: the cap is applied AFTER edge-stripping (matching every former copy), so a capped
+ * slug can still end in a `-` when the cut lands on a word boundary.
+ */
+export function slugify(s: string, max?: number): string {
+  const slug = s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return max != null ? slug.slice(0, max) : slug;
+}
+
+/** Local wall-clock `HH:MM` (or `HH:MM:SS` with `{ seconds: true }`) for an epoch-ms
+ *  timestamp; `—` for null (#2421 — automations' HH:MM + MCP Analytics' HH:MM:SS unified). */
+export function fmtClock(ms: number | null, opts: { seconds?: boolean } = {}): string {
+  if (ms == null) return "—";
+  const d = new Date(ms);
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return opts.seconds ? `${hm}:${String(d.getSeconds()).padStart(2, "0")}` : hm;
+}
+
+/** Local `YYYY-MM-DD` for an epoch-ms timestamp — the daily-bucket key the telemetry
+ *  aggregators and their charts share (#2421; was byte-identical in hook/mcp telemetry). */
+export function dayKey(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}

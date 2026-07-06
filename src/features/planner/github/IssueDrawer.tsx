@@ -11,6 +11,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Box } from "@/shared/ui/layout/Box";
 import { Button } from "@/shared/ui/controls/Button";
 import type { BoardIssue } from "./projectBoard.types";
+import { truncate } from "@/shared/lib/core/format";
 
 // ── Issue drawer ──────────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ export function IssueDrawer({ issue, onClose }: { issue: BoardIssue; onClose: ()
           <Text as="div" mono size={10} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>description</Text>
           {issue.body ? (
             <Text as="div" size={12.5} tone="muted" style={{ fontFamily: "var(--sans)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
-              {issue.body.slice(0, 600)}{issue.body.length > 600 ? "…" : ""}
+              {truncate(issue.body, 600)}
             </Text>
           ) : (
             <Text as="div" mono size={11} tone="dim" style={{ fontStyle: "italic" }}>No description.</Text>
