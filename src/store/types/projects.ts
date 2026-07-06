@@ -126,6 +126,13 @@ export interface ProjectsState {
   autoTriage: Record<string, boolean>;
   /** Flip a project's auto-triage toggle (persisted). Default (absent) is OFF = surface-only. */
   setAutoTriage: (projectKey: string, on: boolean) => void;
+  // Per-project KIT AUTO-DISPATCH toggle (#2277). When ON, the kit-change drain (useKitDispatch) delivers
+  // a BREAKING kit change queued for this consumer to a rail — a live fleet → its director via bsc-issue →
+  // bsc-assign; no live fleet → a plain kit-update GitHub issue in the consumer repo. When OFF (the
+  // default) queued changes are surface-only (KitChangesCard). Keyed by the consumer project's plan key.
+  autoKitDispatch: Record<string, boolean>;
+  /** Flip a project's kit auto-dispatch toggle (persisted). Default (absent) is OFF = notify-only. */
+  setAutoKitDispatch: (projectKey: string, on: boolean) => void;
   // project key -> structure node id -> linked GitHub issue (#393).
   issueLinks: Record<string, Record<string, { number: number; url: string }>>;
   // Merge links for a project (idempotent upsert; never drops existing entries).
