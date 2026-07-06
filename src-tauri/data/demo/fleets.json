@@ -1,0 +1,26 @@
+{
+  "billing-svc": {
+    "recommended": 2,
+    "reasoning": "Billing splits cleanly into the ledger boundary and the subscription/invoice API — two non-overlapping streams.",
+    "streams": [
+      { "id": "ledger", "name": "Ledger", "repo": "northwind/billing-svc", "persona": "demo-ledger-architect", "owns": ["ledger/**", "migrations/**"], "issues": ["#12", "#14"], "dependsOn": [] },
+      { "id": "billing-api", "name": "Billing API", "repo": "northwind/billing-svc", "persona": "demo-payments-eng", "owns": ["api/**", "invoices/**"], "issues": ["#13", "#15"], "dependsOn": ["ledger"] }
+    ]
+  },
+  "payments-gw": {
+    "recommended": 2,
+    "reasoning": "The PSP integration is built by the payments engineer and independently threat-modeled by the reviewer.",
+    "streams": [
+      { "id": "gateway", "name": "Gateway", "repo": "northwind/payments-gw", "persona": "demo-payments-eng", "owns": ["gateway/**", "psp/**"], "issues": ["#21", "#22"], "dependsOn": [] },
+      { "id": "security-review", "name": "Security review", "repo": "northwind/payments-gw", "persona": "demo-security-reviewer", "owns": ["docs/security/**"], "issues": ["#23"], "dependsOn": ["gateway"] }
+    ]
+  },
+  "user-api": {
+    "recommended": 2,
+    "reasoning": "The public BFF is contract-first: the API stream lands the OpenAPI spec, the docs stream reconciles ADRs behind it.",
+    "streams": [
+      { "id": "api", "name": "API", "repo": "northwind/user-api", "persona": "demo-payments-eng", "owns": ["src/**", "openapi/**"], "issues": ["#31", "#32"], "dependsOn": [] },
+      { "id": "docs", "name": "Docs", "repo": "northwind/user-api", "persona": "demo-docs-scribe", "owns": ["docs/**"], "issues": ["#33"], "dependsOn": ["api"] }
+    ]
+  }
+}
