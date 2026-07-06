@@ -4,7 +4,7 @@ import type { ContextFile } from "@/features/planner/pane/projectPaneData";
 import { KindDot } from "@/features/planner/pane/focusedPrimitives";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
-import { Spacer } from "@/shared/ui/layout/Spacer";
+import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
@@ -70,27 +70,23 @@ export function DiscoveryBody({ context, onView, requiredContext }: {
     <Box>
       {required.length > 0 && (
         <Box style={{ marginBottom: 12 }}>
-          <Row gap={8} style={{ padding: "0 2px 6px" }}>
-            <Box as="span" className="ulabel">required files</Box>
-            <Spacer />
+          <SectionLabel size={9.5} style={{ padding: "0 2px 6px" }} right={
             <Text as="span" mono size={9} style={{
               color: missingCount === 0 ? "var(--success)" : "var(--fg-dim)",
             }}>
               {required.length - missingCount}/{required.length} written
             </Text>
-          </Row>
+          }>required files</SectionLabel>
           <Stack gap={2}>
             {required.map((t) => <RequiredCtxRow key={t} topic={t} written={written.has(t)} />)}
           </Stack>
         </Box>
       )}
-      <Row gap={8} style={{ padding: "0 2px 8px" }}>
-        <Box as="span" className="ulabel">context files</Box>
-        <Spacer />
+      <SectionLabel size={9.5} style={{ padding: "0 2px 8px" }} right={
         <Text as="span" mono size={9} tone="accent">
           {totalTok.toFixed(1)}k / 200k tok
         </Text>
-      </Row>
+      }>context files</SectionLabel>
       <Stack gap={4}>
         {files.map((f) => <CtxRow key={f.name} f={f} onView={onView ? () => onView(f) : undefined} />)}
       </Stack>

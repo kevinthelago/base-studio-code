@@ -1,9 +1,33 @@
 import { describe, it, expect } from "vitest";
 import {
   resolveLlmConfig, hasLlmKey, bscAgentEnv, aiderModelArg, aiderEnv, providerNeedsBscAgent, effectiveHarness,
-  resolveModel, modelOnProviderSwitch, DEFAULT_LOCAL_MODEL,
+  resolveModel, modelOnProviderSwitch, DEFAULT_LOCAL_MODEL, DEFAULT_ANTHROPIC_MODEL, DEFAULT_LOCAL_BASE_URL,
+  LLM_PROVIDERS,
   type LlmConfigSource,
 } from "./llmConfig";
+
+// #2416: the model-ID defaults + provider list moved to `@data/console/model-defaults.json` — the
+// ONE source for every model default. Pin that they resolve to the previous TS-authored values.
+describe("model defaults resolve from @data/console/model-defaults.json (#2416)", () => {
+  it("keeps the previous packaged defaults", () => {
+    expect(DEFAULT_ANTHROPIC_MODEL).toBe("claude-sonnet-4-6");
+    expect(DEFAULT_LOCAL_MODEL).toBe("qwen3-coder");
+    expect(DEFAULT_LOCAL_BASE_URL).toBe("http://localhost:11434/v1");
+  });
+
+  it("keeps the previous provider list + key placeholders, in order", () => {
+    expect(LLM_PROVIDERS.map((p) => [p.id, p.label])).toEqual([
+      ["anthropic", "Anthropic Claude"],
+      ["openai",    "OpenAI"],
+      ["gemini",    "Google Gemini"],
+      ["local",     "Local (Ollama / OpenAI-compatible)"],
+      ["ollama",    "Ollama (Local)"],
+    ]);
+    expect(Object.fromEntries(LLM_PROVIDERS.map((p) => [p.id, p.keyPlaceholder]))).toEqual({
+      anthropic: "sk-ant-…", openai: "sk-…", gemini: "AIza…", local: "", ollama: "",
+    });
+  });
+});
 
 const base: LlmConfigSource = {
   llmProvider: "anthropic",
