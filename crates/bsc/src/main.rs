@@ -12,12 +12,17 @@ mod hook;
 /// from each crate's own `CmdDoc` catalog (via `bsc <command> help`).
 const COMMANDS: &[(&str, &str)] = &[
     ("plan", "per-project plan store: issues, features, fleet, sections"),
+    ("todo", "two-scope agent todo store: feature checklist + global runbook"),
+    ("errors", "per-project runtime-fault store: fingerprinted errors + alerts"),
     ("project", "cross-project hub: list local projects + the .published marker"),
     ("skill", "global skills + task-groups store"),
     ("compliance", "compliance standards corpus"),
     ("blueprint", "user blueprint store"),
     ("persona", "user persona store: agent identities (prompt + skills + model over a role)"),
-    ("logs", "unified logs + perf + cost (read-only)"),
+    ("org", "user org store: persona-relationship graph (positions + relationships)"),
+    ("component", "component library: proven components in technology-scoped kits"),
+    ("ui", "UI spec SDK: the KitNode contract (schema) + validate a spec (#1852)"),
+    ("logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control"),
     ("files", "file-ops toolkit: read/write/edit/list/info"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
     ("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance"),
@@ -43,11 +48,16 @@ fn top_help() -> String {
 fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
     match cmd {
         "plan" => plandb::cli::run(rest, "bsc plan"),
+        "todo" => bsc_todo::cli::run(rest, "bsc todo"),
+        "errors" => errordb::cli::run(rest, "bsc errors"),
         "project" => bsc_project::cli::run(rest, "bsc project"),
         "skill" => skilldb::cli::run(rest, "bsc skill"),
         "compliance" => compliance::cli::run(rest, "bsc compliance"),
         "blueprint" => bsc_blueprint::cli::run(rest, "bsc blueprint"),
         "persona" => bsc_persona::cli::run(rest, "bsc persona"),
+        "org" => bsc_org::cli::run(rest, "bsc org"),
+        "component" => bsc_component::cli::run(rest, "bsc component"),
+        "ui" => bsc_ui::cli::run(rest, "bsc ui"),
         "logs" => logs::cli::run(rest, "bsc logs"),
         "files" => bsc_files::cli::run(rest, "bsc files"),
         #[cfg(feature = "data")]

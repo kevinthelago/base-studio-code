@@ -2,13 +2,14 @@
 // worker's question (typed straight into its running session), stop & remove it,
 // and switch the least-privilege profile it runs under.
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
+import { TextArea } from "@/shared/ui/controls/Field";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import type { StatusMeta } from "@/shared/data/fleet";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
-import type { AgentProfile } from "@/features/agents/lib/agentProfiles";
+import type { AgentProfile } from "@/features/agents";
 import { Modal } from "./WorkerDetailModal";
 import type { WorkerModal } from "./workerDetail.helpers";
 
@@ -40,8 +41,7 @@ export function WorkerModals({ modal, setModal, worker, st, draft, setDraft, sen
             </Box>
           )}
           <Box className="hint" style={{ marginBottom: 8 }}>Typed straight into this worker's running session.</Box>
-          {/* eslint-disable-next-line no-restricted-syntax -- freeform multiline input; textareas stay raw */}
-          <textarea value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus
+          <TextArea value={draft} onChange={setDraft} autoFocus
             placeholder={modal === "answer" ? "your decision…" : "e.g. skip the migration; focus on the API contract"}
             className="mono"
             style={{ width: "100%", minHeight: 84, resize: "vertical", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: 10, color: "var(--fg)", fontSize: 12, outline: "none" }} />

@@ -9,21 +9,34 @@
 //
 // Adding a primitive: add its name to `PrimitiveName`, a spec here, and a row in `registry.tsx`.
 // The `manifest.test.ts` sync test then guards that the three stay aligned.
+//
+// Consciously EXCLUDED from the kit (#2421): `overlay/promptDialog` (usePromptDialog /
+// useConfirmDialog) — an imperative hook API (an async fn + a `dialog` node to render), not a
+// composable primitive; a builder cannot instantiate a hook from a manifest node. Compose the
+// registered `Dialog` instead.
 
 /** Every primitive the kit exposes to the builder. Also the key type of the render-map registry. */
 export type PrimitiveName =
   // layout
-  | "Box" | "Stack" | "Row" | "Spacer" | "Grid"
+  | "Box" | "Stack" | "Row" | "Spacer" | "Grid" | "SectionHeader" | "SectionLabel" | "Dialog" | "ModalScrim" | "ModalCard"
   // typography
   | "Text"
   // controls
-  | "Button" | "IconButton" | "Checkbox" | "Toggle" | "SegmentedControl" | "TextField" | "SelectField"
+  | "Button" | "IconButton" | "Checkbox" | "Toggle" | "SegmentedControl" | "TextField" | "TextArea" | "SelectField"
+  | "BackButton" | "ColorSwatch" | "ConfirmButton"
   // data
   | "Card" | "Chip" | "StatTile" | "FillBar" | "Code"
+  | "Avatar" | "IconBox" | "CardListRow" | "DataTableRow" | "RoleTierChips"
+  // data · charts (analytics primitives)
+  | "StatCard" | "LineArea" | "Bars" | "Donut" | "HBars" | "Swimlane" | "Spark" | "Legend" | "StackedDayBars"
   // feedback
-  | "Banner" | "InlineError" | "EmptyState" | "StatusDot";
+  | "Banner" | "InlineError" | "EmptyState" | "StatusDot" | "Skeleton"
+  // #2421 gap-fill — data chips/feeds, the overlay pane, and the telemetry chart trio
+  | "LabelChip" | "ActivityFeed" | "Pane" | "TelemetryPanel" | "ItemBars" | "SplitBar"
+  // layouts — the page-skeleton templates tier (#2197)
+  | "MasterDetail" | "SplitView" | "GraphCanvas" | "PaneGrid";
 
-export type PrimitiveGroup = "layout" | "typography" | "controls" | "data" | "feedback";
+export type PrimitiveGroup = "layout" | "typography" | "controls" | "data" | "feedback" | "layouts";
 
 /** The kind of a prop's value — drives how a builder renders an editor control for it. */
 export type PropType =
@@ -35,6 +48,7 @@ export type PropType =
   | "function"  // event handler / callback
   | "style"     // a CSSProperties object
   | "array"     // a list of structured items (see `note`)
+  | "object"    // a single structured object (shape in the description)
   | "space"     // a spacing rung (SPACE_RUNGS) or a raw px number
   | "fontSize"  // a type rung (FONT_RUNGS) or a raw px number
   | "tracks"    // grid tracks: a number → repeat(n, 1fr), or a template string
@@ -120,6 +134,70 @@ export const UI_KIT: PrimitiveSpec[] = [
       INLINE("grid"),
     ],
   },
+  {
+    name: "SectionHeader", group: "layout", importPath: "@/shared/ui/layout/SectionHeader",
+    description: "The one uppercase section-title row — `title · hint · spacer · meta|right`.",
+    props: [
+      { name: "title", type: "node", required: true, description: "Section title (uppercase h3)." },
+      { name: "hint", type: "node", description: "Dimmed inline sub-text after the title." },
+      { name: "meta", type: "node", description: "Right-aligned dim mono text (e.g. a count)." },
+      { name: "right", type: "node", description: "Right-aligned raw content (input/button) — overrides meta." },
+      { name: "titleStyle", type: "style", description: "Inline style for the title element." },
+    ],
+  },
+  {
+    name: "SectionLabel", group: "layout", importPath: "@/shared/ui/layout/SectionLabel",
+    description: "The uppercase mono micro-label — a dim/muted section/kv caption, optionally a space-between label row via `right`.",
+    props: [
+      CHILDREN,
+      { name: "size", type: "enum", values: ["sm", "md"], default: "md", description: "md (10px/.06em) or sm (9px/.08em, denser KPI tiles); a raw px number is also legal (dense .08em tracking)." },
+      { name: "tone", type: "enum", values: ["dim", "muted"], default: "dim", description: "Label color." },
+      { name: "right", type: "node", description: "Right-aligned slot — renders a space-between label row (label · right); style then lands on the row." },
+    ],
+  },
+  {
+    name: "Dialog", group: "layout", importPath: "@/shared/ui/overlay/Dialog",
+    description: "The standard modal dialog card (built on ModalScrim) — title, body, right-aligned actions.",
+    props: [
+      { name: "title", type: "string", required: true, description: "Dialog heading." },
+      { name: "children", type: "node", required: true, description: "Body content." },
+      { name: "actions", type: "node", required: true, description: "Footer action buttons (right-aligned)." },
+      { name: "onDismiss", type: "function", required: true, description: "Escape / scrim-click dismiss handler." },
+      { name: "danger", type: "boolean", description: "Red heading + border for a destructive confirm." },
+    ],
+  },
+  {
+    name: "ModalScrim", group: "layout", importPath: "@/shared/ui/overlay/ModalScrim",
+    description: "The one centered-modal overlay — a full-screen scrim that flex-centers its card, with Escape + overlay-click dismiss.",
+    props: [
+      { name: "children", type: "node", required: true, description: "The centered modal card." },
+      { name: "onDismiss", type: "function", description: "Escape / scrim-click dismiss; omit to make it non-dismissable." },
+      { name: "align", type: "enum", values: ["center", "start"], default: "center", description: "Center the card, or top-align it for tall scrolling modals." },
+      { name: "blur", type: "boolean", default: false, description: "Add a backdrop blur." },
+    ],
+  },
+  {
+    name: "ModalCard", group: "layout", importPath: "@/shared/ui/overlay/ModalCard",
+    description: "The titled head/body/foot modal card over ModalScrim — icon+title(+sub) head with a ✕, scrollable body, optional footer action row.",
+    props: [
+      { name: "title", type: "node", required: true, description: "Head title (mono h2)." },
+      { name: "children", type: "node", required: true, description: "Body content (scrolls)." },
+      { name: "sub", type: "node", description: "Dim sub-line under the title." },
+      { name: "icon", type: "node", description: "Leading head glyph in a 30px IconBox." },
+      { name: "iconBackground", type: "color", description: "Icon tile background (default: translucent accent)." },
+      { name: "iconColor", type: "color", description: "Icon glyph color (default: accent)." },
+      { name: "onClose", type: "function", description: "Wires the head ✕ + Escape + scrim-click dismiss; omit for non-dismissable." },
+      { name: "busy", type: "boolean", default: false, description: "Disable the ✕ and suppress scrim/Escape dismiss while an op runs." },
+      { name: "width", type: "number", default: 540, description: "Card width (px or CSS length); capped at 100%." },
+      { name: "maxHeight", type: "string", default: "88vh", description: "Card max height." },
+      { name: "align", type: "enum", values: ["center", "start"], default: "center", description: "Scrim card alignment — start top-aligns tall scrolling modals." },
+      { name: "blur", type: "boolean", default: true, description: "Backdrop blur." },
+      { name: "headExtra", type: "node", description: "Extra head rows (search/tabs/meta) inside the bordered head block." },
+      { name: "foot", type: "node", description: "Footer action-row content." },
+      { name: "bodyStyle", type: "style", description: "Merged onto the body (padding/overflow overrides for list bodies)." },
+      { name: "footStyle", type: "style", description: "Merged onto the foot row." },
+    ],
+  },
   // ---- typography -----------------------------------------------------------
   {
     name: "Text", group: "typography", importPath: "@/shared/ui/typography/Text", passthrough: true,
@@ -131,6 +209,7 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "mono", type: "boolean", description: "Apply the mono (JetBrains Mono) utility class." },
       { name: "weight", type: "number", description: "Font weight — a number (500/600) or CSS keyword." },
       { name: "as", type: "string", default: "span", description: "The rendered element (span/div/p/label/h1–h4…)." },
+      { name: "loading", type: "boolean", description: "Render the text loading — an inline shimmer line the height of the text (#2302)." },
     ],
   },
   // ---- controls -------------------------------------------------------------
@@ -195,10 +274,23 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "label", type: "node", description: "Field label." },
       { name: "hint", type: "node", description: "Sub-label hint." },
       { name: "trailing", type: "node", description: "Right-aligned control in the label row." },
+      { name: "loading", type: "boolean", description: "Render the field loading — keep the label, skeleton the input (#2302)." },
     ],
   },
   {
-    name: "SelectField", group: "controls", importPath: "@/shared/ui/controls/Field",
+    name: "TextArea", group: "controls", importPath: "@/shared/ui/controls/Field", passthrough: true,
+    description: "A labelled multiline text area — the TextField sibling (same label + hint + trailing over an .input <textarea>).",
+    props: [
+      { name: "value", type: "string", required: true, description: "Textarea value." },
+      { name: "onChange", type: "function", required: true, description: "(value) => void." },
+      { name: "label", type: "node", description: "Field label." },
+      { name: "hint", type: "node", description: "Sub-label hint." },
+      { name: "trailing", type: "node", description: "Right-aligned control in the label row." },
+      { name: "loading", type: "boolean", description: "Render the field loading — keep the label, skeleton the textarea (#2302)." },
+    ],
+  },
+  {
+    name: "SelectField", group: "controls", importPath: "@/shared/ui/controls/Field", passthrough: true,
     description: "A labelled <select> (children are the <option>s).",
     props: [
       { name: "value", type: "string", required: true, description: "Selected value." },
@@ -206,6 +298,40 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "children", type: "node", required: true, description: "The <option> elements." },
       { name: "label", type: "node", description: "Field label." },
       { name: "hint", type: "node", description: "Sub-label hint." },
+    ],
+  },
+  {
+    name: "BackButton", group: "controls", importPath: "@/shared/ui/controls/BackButton",
+    description: "The one canonical back control — always the chevron_left glyph, as a boxed icon or a chevron + text label.",
+    props: [
+      { name: "onClick", type: "function", required: true, description: "Click handler." },
+      { name: "aria-label", type: "string", required: true, description: "Screen-reader label — required (the bare chevron has no text)." },
+      { name: "variant", type: "enum", values: ["icon", "text"], default: "text", description: "Boxed 30×30 chevron (icon) vs chevron + text label (text)." },
+      { name: "label", type: "string", description: "Text-variant label after the chevron (ignored for icon)." },
+      { name: "disabled", type: "boolean", description: "Disable the button." },
+      { name: "size", type: "number", description: "Chevron size in px (default 18 icon / 14 text)." },
+      { name: "title", type: "string", description: "Native tooltip." },
+    ],
+  },
+  {
+    name: "ColorSwatch", group: "controls", importPath: "@/shared/ui/controls/ColorSwatch",
+    description: "The small rounded color square used as a category / profile / legend indicator.",
+    props: [
+      { name: "color", type: "color", required: true, description: "Fill color — any CSS color incl. var()/color-mix()." },
+      { name: "size", type: "number", default: 9, description: "Square side in px." },
+      { name: "radius", type: "number", default: 2, description: "Corner radius in px." },
+    ],
+  },
+  {
+    name: "ConfirmButton", group: "controls", importPath: "@/shared/ui/controls/ConfirmButton",
+    description: "A two-step confirm button — the first click arms it (turns red), the second within the same focus fires; blur disarms.",
+    props: [
+      { name: "label", type: "string", required: true, description: "Resting label." },
+      { name: "armedLabel", type: "string", required: true, description: "Label shown once armed (after the first click)." },
+      { name: "onConfirm", type: "function", required: true, description: "Fired on the confirming second click." },
+      { name: "size", type: "enum", values: ["sm", "md"], default: "md", description: "Control size — md (reset cards) or sm (inline row actions)." },
+      { name: "disabled", type: "boolean", default: false, description: "Disable + dim the button." },
+      { name: "danger", type: "boolean", default: true, description: "Red (destructive) styling when armed." },
     ],
   },
   // ---- data -----------------------------------------------------------------
@@ -222,6 +348,7 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "interactive", type: "boolean", description: "Hover/press affordance." },
       { name: "pad", type: "enum", values: ["sm"], description: "Compact padding." },
       { name: "onClick", type: "function", description: "Click handler (implies interactive)." },
+      { name: "loading", type: "boolean", description: "Render the card loading — a skeleton body the shape of its content (#2302)." },
     ],
   },
   {
@@ -233,6 +360,7 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "color", type: "color", description: "Custom color (overrides tone)." },
       { name: "dot", type: "boolean", description: "Show a leading status dot." },
       { name: "size", type: "enum", values: ["xs", "sm", "md"], default: "sm", description: "Chip size." },
+      { name: "loading", type: "boolean", description: "Render the chip loading — a shimmer pill (#2302)." },
     ],
   },
   {
@@ -254,6 +382,7 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "track", type: "color", default: "var(--bg-elev2)", description: "Track (background) color." },
       { name: "height", type: "number", default: 8, description: "Bar height in px." },
       { name: "rounded", type: "boolean", default: true, description: "Round the ends." },
+      { name: "loading", type: "boolean", description: "Render the bar loading — an indeterminate shimmer track (#2302)." },
     ],
   },
   {
@@ -264,6 +393,166 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "maxHeight", type: "number", default: 150, description: "Max scroll height in px." },
       { name: "wrap", type: "boolean", default: true, description: "Soft-wrap long lines vs a horizontal scroll." },
       { name: "tone", type: "enum", values: ["dim", "muted", "accent", "danger", "success"], default: "muted", description: "Foreground color tone." },
+      { name: "loading", type: "boolean", description: "Render the block loading — shimmer lines inside the frame (#2302)." },
+    ],
+  },
+  {
+    name: "Avatar", group: "data", importPath: "@/shared/ui/data/Avatar",
+    description: "A round GitHub user avatar — the login's initial on a login-hashed color.",
+    props: [
+      { name: "login", type: "string", required: true, description: "GitHub login — its initial on a login-hashed color." },
+      { name: "size", type: "number", default: 20, description: "Diameter in px." },
+      { name: "palette", type: "boolean", default: false, description: "Use the discrete assignee-stack palette instead of the continuous login hue." },
+      { name: "bordered", type: "boolean", default: false, description: "1.5px canvas ring so overlapping avatars read as separate disks." },
+      { name: "ml", type: "number", description: "Left margin — negative for overlapping assignee stacks." },
+      { name: "fontScale", type: "number", default: 0.5, description: "Initial font size as a fraction of size." },
+    ],
+  },
+  {
+    name: "IconBox", group: "data", importPath: "@/shared/ui/data/IconBox",
+    description: "A centered fixed-size icon/glyph square — the dedup'd tile behind the planner modal + card glyphs.",
+    props: [
+      CHILDREN,
+      { name: "size", type: "number", default: 30, description: "Square side in px." },
+      { name: "radius", type: "number", default: 7, description: "Corner radius in px." },
+      { name: "background", type: "color", description: "Background color." },
+      { name: "color", type: "color", description: "Foreground color." },
+      { name: "fontSize", type: "number", description: "Glyph font size in px." },
+      { name: "fontWeight", type: "number", default: 700, description: "Glyph font weight." },
+      { name: "border", type: "string", description: "Full border shorthand (e.g. 1px solid …)." },
+    ],
+  },
+  {
+    name: "CardListRow", group: "data", importPath: "@/shared/ui/data/CardListRow",
+    description: "The selectable card-list row — `[lead · title+badge / subtitle · trailing]`; the card archetype of the row vocabulary (#1865).",
+    props: [
+      { name: "title", type: "node", required: true, description: "Primary label." },
+      { name: "lead", type: "node", description: "18px lead column — a status dot, icon, or avatar." },
+      { name: "badge", type: "node", description: "A pill next to the title (left of the spacer)." },
+      { name: "titleAside", type: "node", description: "Right-aligned element on the title line." },
+      { name: "subtitle", type: "node", description: "Secondary line under the title." },
+      { name: "body", type: "node", description: "Full-width rich content below the header line." },
+      { name: "trailing", type: "node", description: "Trailing (auto-width) column — chips, counts, controls." },
+      { name: "selected", type: "boolean", description: "Selection highlight." },
+      { name: "off", type: "boolean", description: "Dimmed/disabled look." },
+      { name: "variant", type: "enum", values: ["card", "grouped"], default: "card", description: "Bordered card vs borderless top-separated group row." },
+      { name: "accent", type: "color", description: "Left-rail accent color shown when selected." },
+      { name: "onClick", type: "function", description: "Click handler (adds a clickable affordance)." },
+    ],
+  },
+  {
+    name: "DataTableRow", group: "data", importPath: "@/shared/ui/data/DataTableRow",
+    description: "One columnar row of a data table — the columnar archetype of the row vocabulary (#1865; sibling: CardListRow).",
+    props: [
+      { name: "template", type: "string", required: true, description: "grid-template-columns — share with the DataTableHeader so cells align under labels." },
+      { name: "children", type: "node", required: true, description: "Cell content, one node per column." },
+      { name: "index", type: "number", description: "Row index — odd rows get a zebra-stripe when provided." },
+      { name: "selected", type: "boolean", description: "Selection highlight." },
+      { name: "off", type: "boolean", description: "Dimmed/disabled look." },
+      { name: "onClick", type: "function", description: "Click handler." },
+      { name: "height", type: "number", default: 37, description: "Fixed row height in px." },
+    ],
+  },
+  {
+    name: "RoleTierChips", group: "data", importPath: "@/shared/ui/data/RoleTierChips",
+    description: "A session role's capability tiers (git · github · code · net) as colored pills — the permission floor a persona/position inherits.",
+    props: [
+      { name: "role", type: "string", required: true, description: "The SessionRole whose capability floor to render (planner/worker/director/…)." },
+    ],
+  },
+  // ---- data · charts (analytics primitives, #399) ---------------------------
+  {
+    name: "StatCard", group: "data", importPath: "@/shared/ui/charts/primitives",
+    description: "An analytics KPI card — label, big value, sub-line, optional trend delta.",
+    props: [
+      { name: "k", type: "string", required: true, description: "The stat label." },
+      { name: "v", type: "node", required: true, description: "The stat value." },
+      { name: "sub", type: "node", description: "A sub-line under the value." },
+      { name: "tone", type: "enum", values: ["fg", "accent", "info", "success", "danger"], default: "fg", description: "Value color tone." },
+      { name: "loading", type: "boolean", description: "Render value + sub as shimmer placeholders while the metric loads (#2234)." },
+    ],
+  },
+  {
+    name: "LineArea", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A multi-series SVG line / area chart with optional hover tooltips.",
+    props: [
+      { name: "series", type: "array", required: true, description: "LineSeries[] — { name, color, data:number[], width?, dash?, dots?, fill?, dotR? }." },
+      { name: "labels", type: "array", required: true, description: "X-axis labels (string[]), one per data point." },
+      { name: "height", type: "number", default: 150, description: "Chart height in px." },
+      { name: "yMax", type: "number", description: "Fixed y-axis max (else derived from the data)." },
+      { name: "area", type: "boolean", default: true, description: "Fill the area under each series." },
+      { name: "fmtY", type: "function", description: "Format a y value for the axis + tooltip." },
+    ],
+  },
+  {
+    name: "Bars", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A grouped or stacked SVG bar chart with optional hover tooltips.",
+    props: [
+      { name: "groups", type: "array", required: true, description: "BarGroup[] — { name, color, data:number[] }." },
+      { name: "labels", type: "array", required: true, description: "X-axis labels (string[]), one per bucket." },
+      { name: "height", type: "number", default: 130, description: "Chart height in px." },
+      { name: "stacked", type: "boolean", default: false, description: "Stack the groups instead of clustering them." },
+      { name: "fmtY", type: "function", description: "Format a y value for the axis + tooltip." },
+    ],
+  },
+  {
+    name: "Donut", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A donut / gauge ring chart with an optional center label.",
+    props: [
+      { name: "slices", type: "array", required: true, description: "DonutSlice[] — { name, value, color }." },
+      { name: "size", type: "number", default: 132, description: "Diameter in px." },
+      { name: "thickness", type: "number", default: 16, description: "Ring thickness in px." },
+    ],
+  },
+  {
+    name: "HBars", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A ranked list of horizontal meter bars (label · meter · value).",
+    props: [
+      { name: "rows", type: "array", required: true, description: "HBarRow[] — { label, value, color?, strong?, icon?, tag? }." },
+      { name: "fmtV", type: "function", description: "Format a row value." },
+      { name: "max", type: "number", description: "Fixed bar max (else the largest row value)." },
+    ],
+  },
+  {
+    name: "Swimlane", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A swimlane / activity timeline — points + spans across labeled lanes, with optional time markers.",
+    props: [
+      { name: "lanes", type: "array", required: true, description: "SwimLane[] — { name, color? }." },
+      { name: "events", type: "array", required: true, description: "SwimEvent[] — { lane, t0, t1?, color, label, r? } (t in 0–1)." },
+      { name: "height", type: "number", default: 26, description: "Lane height in px." },
+      { name: "marks", type: "array", description: "SwimMark[] — { t, label } vertical time markers." },
+    ],
+  },
+  {
+    name: "Spark", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A tiny inline sparkline for a numeric series.",
+    props: [
+      { name: "data", type: "array", required: true, description: "The numeric series (number[]) — needs ≥2 points." },
+      { name: "color", type: "color", required: true, description: "Line / fill color." },
+      { name: "w", type: "number", default: 70, description: "Width in px." },
+      { name: "h", type: "number", default: 20, description: "Height in px." },
+      { name: "fill", type: "boolean", default: true, description: "Fill under the line." },
+      { name: "dot", type: "boolean", default: true, description: "Show a dot at the last point." },
+    ],
+  },
+  {
+    name: "Legend", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A swatch + label (+ optional value) legend row for a chart.",
+    props: [
+      { name: "items", type: "array", required: true, description: "LegendItem[] — { color, label, value? }." },
+    ],
+  },
+  {
+    name: "StackedDayBars", group: "data", importPath: "@/shared/ui/charts/Charts",
+    description: "A panel-wrapped two-series stacked bar chart over a run of days (the shared over-time card).",
+    props: [
+      { name: "data", type: "array", required: true, description: "StackedDay[] — { day, upper, lower }." },
+      { name: "title", type: "string", required: true, description: "Card title." },
+      { name: "subtitle", type: "string", required: true, description: "Card subtitle." },
+      { name: "upperLabel", type: "string", required: true, description: "Legend label for the upper (top) series." },
+      { name: "lowerLabel", type: "string", required: true, description: "Legend label for the lower (baseline) series." },
+      { name: "upperColor", type: "color", default: "var(--accent)", description: "Upper series color." },
+      { name: "lowerColor", type: "color", default: "var(--danger)", description: "Lower series color." },
     ],
   },
   // ---- feedback -------------------------------------------------------------
@@ -315,6 +604,144 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "title", type: "string", description: "Native tooltip." },
     ],
   },
+  {
+    name: "Skeleton", group: "feedback", importPath: "@/shared/ui/feedback/Skeleton",
+    description: "The shared loading placeholder — a shimmering block that holds a card's layout while data loads (#2234).",
+    props: [
+      { name: "w", type: "number", default: "100%", description: "Width — a px number or a CSS length string." },
+      { name: "h", type: "number", default: 12, description: "Height — a px number or a CSS length string." },
+      { name: "radius", type: "number", default: 6, description: "Corner radius in px." },
+    ],
+  },
+
+  // ---- layouts (page-skeleton templates — the Layouts tier, #2197) -----------
+  {
+    name: "MasterDetail", group: "layouts", importPath: "@/shared/ui/layouts/MasterDetail",
+    description: "The list+detail page skeleton — a fixed-width bordered scroll RAIL beside a flex scroll DETAIL, under an optional TOOLBAR. Owns rail width/border/scroll + detail scroll/padding by construction.",
+    props: [
+      { name: "rail", type: "node", required: true, description: "The master column — the list/nav rail." },
+      { name: "detail", type: "node", required: true, description: "The detail column — the selected item's editor/view." },
+      { name: "toolbar", type: "node", description: "Optional full-width toolbar/header above both columns." },
+      { name: "railWidth", type: "number", default: 240, description: "Fixed rail width in px (the starting width when resizable)." },
+      { name: "railPad", type: "space", default: 14, description: "Rail inner padding — a rung/px or [block, inline] pair." },
+      { name: "detailPad", type: "space", default: 20, description: "Detail inner padding — a rung/px or [block, inline] pair." },
+      { name: "resizable", type: "boolean", default: false, description: "Opt into a drag-resizable rail (a .resize-x splitter), bounded by railMin/railMax." },
+    ],
+  },
+  {
+    name: "SplitView", group: "layouts", importPath: "@/shared/ui/layouts/SplitView",
+    description: "The two-pane split page skeleton — a flexing PRIMARY pane beside (or above) a fixed-size, drag-resizable SECONDARY pane, under an optional TOOLBAR. The canonical planner session (terminal + inspector) split.",
+    props: [
+      { name: "primary", type: "node", required: true, description: "The flexing pane — fills the remaining space (terminal, editor, main content)." },
+      { name: "secondary", type: "node", required: true, description: "The fixed-size, drag-resizable trailing pane (inspector, sidebar, detail)." },
+      { name: "toolbar", type: "node", description: "Optional full-width toolbar/header above the split." },
+      { name: "orientation", type: "enum", values: ["horizontal", "vertical"], default: "horizontal", description: "horizontal → side by side; vertical → primary above secondary." },
+      { name: "resizable", type: "boolean", default: true, description: "Draw the drag splitter (opt out for a fixed secondary), bounded by secondaryMin/secondaryMax." },
+      { name: "secondarySize", type: "number", default: 340, description: "Secondary size in px (width when horizontal, height when vertical) — the starting size." },
+      { name: "divider", type: "boolean", default: true, description: "Draw the 1px divider border between the two panes." },
+    ],
+  },
+  {
+    name: "GraphCanvas", group: "layouts", importPath: "@/shared/ui/layouts/GraphCanvas",
+    description: "The pan/zoom graph page skeleton — a full-width TOOLBAR, an optional left RAIL, the pan/zoom CANVAS (viewport-clip + transformed world layer), and an optional INSPECTOR. Owns the viewport ref/wheel/pan wiring + world transform.",
+    props: [
+      { name: "vp", type: "object", required: true, description: "The viewport created by the page's useGraphViewport()." },
+      { name: "world", type: "object", required: true, description: "World (design-space) size { w, h } — drives the world layer's box." },
+      { name: "toolbar", type: "node", required: true, description: "Full toolbar content (search + palette + <ZoomControls vp={vp}/> + fit)." },
+      { name: "children", type: "node", required: true, description: "World-layer content: grid, SVG edges, node cards — positioned in world coords." },
+      { name: "rail", type: "node", description: "Optional left rail/sidebar (feature-styled full node)." },
+      { name: "inspector", type: "node", description: "Optional inspector column on the right (feature-styled full node)." },
+      { name: "overlays", type: "node", description: "Fixed overlays drawn over the canvas but NOT transformed (hints, legends)." },
+      { name: "grid", type: "boolean", default: false, description: "Dotted graph-paper backdrop — an infinite grid on the viewport that tracks zoom + pan." },
+      { name: "gridSize", type: "number", default: 24, description: "Grid tile size in world px (scaled by zoom on screen)." },
+      { name: "railResizable", type: "boolean", default: false, description: "Make the left rail drag-resizable (a .resize-x splitter)." },
+      { name: "inspectorResizable", type: "boolean", default: false, description: "Make the right inspector drag-resizable (splitter on its left edge)." },
+      { name: "onBackgroundClick", type: "function", description: "Fires on a genuine click on the empty canvas backdrop (not a pan-drag end, not a node press)." },
+    ],
+  },
+  {
+    name: "PaneGrid", group: "layouts", importPath: "@/shared/ui/layouts/PaneGrid",
+    description: "The grid-of-panes page skeleton — a cols × rows CSS grid that flexes to fill its parent, with a uniform gap + padding, hosting N pane cells. The canonical Console tab grid (one per tab, kept alive across switches via hidden).",
+    props: [
+      { name: "children", type: "node", required: true, description: "The pane cells — N children laid across the grid tracks (cols × rows)." },
+      { name: "cols", type: "number", required: true, description: "Column track count → repeat(cols, 1fr). Clamped to ≥ 1." },
+      { name: "rows", type: "number", required: true, description: "Row track count → repeat(rows, 1fr). Clamped to ≥ 1." },
+      { name: "gap", type: "number", default: 8, description: "Gap between cells in px." },
+      { name: "pad", type: "number", default: 10, description: "Grid inner padding in px." },
+      { name: "hidden", type: "boolean", default: false, description: "Render the grid display:none but keep it MOUNTED (children stay alive — the console cross-tab mount)." },
+    ],
+  },
+  // ---- #2421 gap-fill (contiguous block: data · layout/overlay · data · charts) ---------------
+  {
+    name: "LabelChip", group: "data", importPath: "@/shared/ui/data/LabelChip",
+    description: "A GitHub issue/PR label chip — a dotted Chip tinted from the label's dynamic 6-hex color.",
+    props: [
+      { name: "label", type: "object", required: true, description: "The GitHub label — { name, color } (6-hex, no leading #)." },
+    ],
+  },
+  {
+    name: "ActivityFeed", group: "data", importPath: "@/shared/ui/data/ActivityFeed",
+    description: "The \"Recent activity\" striped feed card — Avatar · action · target · repo · timeAgo rows, with loading + empty states.",
+    props: [
+      { name: "items", type: "array", required: true, description: "ActivityItem[] — { login, action, target, repo, createdAt }." },
+      { name: "hint", type: "string", required: true, description: "Dimmed hint after the card title." },
+      { name: "loading", type: "boolean", required: true, description: "Shimmer rows while the feed's source loads (only when items is empty)." },
+      { name: "tone", type: "object", required: true, description: "action → color map — each caller keeps its own EVENT_TONE." },
+      { name: "right", type: "node", description: "Optional header control on the right (e.g. a filter select)." },
+      { name: "actionWidth", type: "number", default: 80, description: "Action column width in px (github uses 70, planner 80)." },
+    ],
+  },
+  {
+    name: "Pane", group: "layout", importPath: "@/shared/ui/overlay/Pane",
+    description: "The ONE detail/editor pane — a header / scrollable-body / footer frame, as a slide-over drawer or an inline master-detail fill.",
+    props: [
+      { name: "mode", type: "enum", values: ["drawer", "inline"], default: "drawer", description: "Slide-over (scrim + slide-in) vs fills-its-container." },
+      { name: "open", type: "boolean", default: true, description: "Drawer mode: drives the scrim/slide state and gates the body render." },
+      { name: "header", type: "node", description: "Top-zone content (drawer mode auto-appends a close button)." },
+      { name: "body", type: "node", description: "Body content — pass via body or as children." },
+      { name: "children", type: "node", description: "Body content (alias of body)." },
+      { name: "footer", type: "node", description: "Custom footer; omitted in drawer mode → the standard draft/remove bar." },
+      { name: "onClose", type: "function", description: "Close (scrim click / ✕ / cancel / done) handler." },
+      { name: "onRemove", type: "function", description: "Standard-footer remove handler for an existing item." },
+      { name: "isDraft", type: "boolean", description: "Standard footer: drafting (cancel/done) vs existing (remove/done)." },
+      { name: "onCommit", type: "function", description: "Standard-footer draft done handler." },
+      { name: "commitDisabled", type: "boolean", description: "Disable the draft done button (e.g. a required field is empty)." },
+      { name: "flush", type: "boolean", description: "Drop the body's default padding (sections supply their own)." },
+      { name: "bare", type: "boolean", description: "Inline mode only: bare flex-column frame with no styled zone wrappers." },
+      { name: "className", type: "string", description: "Extra class on the frame element." },
+    ],
+  },
+  {
+    name: "TelemetryPanel", group: "data", importPath: "@/shared/ui/charts/telemetry",
+    description: "A framed analytics panel — bg-panel card with a baseline header (title · hint · right slot) over chart content.",
+    props: [
+      { name: "title", type: "string", required: true, description: "Panel title (mono h3)." },
+      { name: "hint", type: "string", description: "Dimmed hint after the title." },
+      { name: "right", type: "node", description: "Right-aligned header content (a legend, a filter, a count)." },
+      CHILDREN,
+    ],
+  },
+  {
+    name: "ItemBars", group: "data", importPath: "@/shared/ui/charts/telemetry",
+    description: "A vertical list of labelled FillBar rows (calls-per-server, fires-per-hook, …).",
+    props: [
+      { name: "rows", type: "array", required: true, description: "ItemBarRow[] — { key, label, meta?, value, fraction (0–1), color? }." },
+      { name: "empty", type: "node", description: "Rendered when rows is empty; defaults to a \"No data recorded yet.\" hint." },
+    ],
+  },
+  {
+    name: "SplitBar", group: "data", importPath: "@/shared/ui/charts/telemetry",
+    description: "A two-segment proportional bar with a label and the two counts (ok/err, allow/block, …).",
+    props: [
+      { name: "label", type: "string", required: true, description: "Row label." },
+      { name: "a", type: "number", required: true, description: "First-segment count." },
+      { name: "b", type: "number", required: true, description: "Second-segment count." },
+      { name: "aLabel", type: "string", required: true, description: "First-segment legend label (e.g. ok)." },
+      { name: "bLabel", type: "string", required: true, description: "Second-segment legend label (e.g. err)." },
+      { name: "aColor", type: "color", default: "var(--success)", description: "First-segment color." },
+      { name: "bColor", type: "color", default: "var(--danger)", description: "Second-segment color." },
+    ],
+  },
 ];
 
 /** Look up a primitive spec by name. */
@@ -324,7 +751,7 @@ export function findPrimitive(name: PrimitiveName): PrimitiveSpec | undefined {
 
 /** Group the kit by `PrimitiveGroup` (for a grouped palette in the builder). */
 export function primitivesByGroup(): Record<PrimitiveGroup, PrimitiveSpec[]> {
-  const out = { layout: [], typography: [], controls: [], data: [], feedback: [] } as Record<PrimitiveGroup, PrimitiveSpec[]>;
+  const out = { layout: [], typography: [], controls: [], data: [], feedback: [], layouts: [] } as Record<PrimitiveGroup, PrimitiveSpec[]>;
   for (const p of UI_KIT) out[p.group].push(p);
   return out;
 }

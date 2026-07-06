@@ -51,10 +51,16 @@ export const createPersonasSlice: StateCreator<AppStore, [], [], PersonasSlice> 
     if (!loaded) return; // bridge unreachable — keep the seeded built-ins
     const reconciled = reconcilePersonas(loaded);
     set({ personas: reconciled });
-    // Persist any built-in the store didn't have yet (first run / a new packaged persona), so the
-    // store — the source of truth — carries the full library a session/planner sees.
-    const had = new Set(loaded.map((p) => p.id));
-    for (const p of reconciled) if (!had.has(p.id)) void pushPersona(p);
+    // Converge the store — the source of truth a session/planner reads — with the reconciled library.
+    // Push a built-in that the store lacks (first run / a newly-packaged persona) OR whose stored copy
+    // drifted from the packaged prose (the #2185 upgrade path: worker/director seeded empty by an older
+    // app now carry their real fleet protocol). User edits are preserved by reconcile, so only genuine
+    // drift re-pushes.
+    const loadedById = new Map(loaded.map((p) => [p.id, p]));
+    for (const p of reconciled) {
+      const before = loadedById.get(p.id);
+      if (!before || (p.builtin && before.startPrompt !== p.startPrompt)) void pushPersona(p);
+    }
   },
 
   addPersona: (role = "reviewer") => {

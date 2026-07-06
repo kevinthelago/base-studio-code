@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "note": "The kit theme registry (#1852 Phase 3) — the ONE source of truth for the SDK's THEME axis. A theme is a map of overrides for the semantic component tokens (`--card-*`/`--btn-*`/`--field-*`/`--chip-*`, defined in src/styles/tokens.css). Applying a theme sets those CSS custom properties — globally on :root (via appearance/useAppBoot, same mechanism as the accent) or scoped on a subtree (via <ThemeScope>, for a coexisting themed card or an isolated live preview). This file is read by BOTH faces: the frontend (`src/shared/ui/kit/theme.ts` loads it + applies it) AND `bsc ui theme list|get` (crates/bsc-ui embeds it), so a live agent can enumerate + read themes from its own shell. `default` (empty overrides) is the base look; the rest retint the same components without touching any card's spec/structure. Values reference base tokens so a theme composes with light/dark + the chosen accent.",
+  "themes": [
+    {
+      "id": "default",
+      "label": "Default",
+      "description": "The base look — no overrides.",
+      "vars": {}
+    },
+    {
+      "id": "soft",
+      "label": "Soft",
+      "description": "Lifted, rounder cards with a gentler border — a calmer, less boxy surface.",
+      "vars": {
+        "--card-bg": "var(--bg-elev)",
+        "--card-border": "var(--border)",
+        "--card-radius": "14px",
+        "--card-pad": "18px",
+        "--btn-radius": "8px",
+        "--field-radius": "8px"
+      }
+    },
+    {
+      "id": "contrast",
+      "label": "High contrast",
+      "description": "Flat, square, strong borders — maximum legibility.",
+      "vars": {
+        "--card-border": "var(--fg-dim)",
+        "--card-radius": "4px",
+        "--btn-border": "var(--fg-dim)",
+        "--btn-radius": "4px",
+        "--field-border": "var(--fg-dim)",
+        "--field-radius": "4px",
+        "--chip-border": "var(--fg-dim)"
+      }
+    },
+    {
+      "id": "warm",
+      "label": "Warm",
+      "description": "Accent-tinted panels, borders, and chips — the surface picks up the accent hue.",
+      "vars": {
+        "--card-bg": "color-mix(in oklch, var(--bg-panel), var(--accent) 7%)",
+        "--card-border": "color-mix(in oklch, var(--border-soft), var(--accent) 24%)",
+        "--btn-bg": "color-mix(in oklch, var(--bg-elev), var(--accent) 7%)",
+        "--field-bg": "color-mix(in oklch, var(--bg-canvas), var(--accent) 6%)",
+        "--chip-bg": "color-mix(in oklch, var(--bg-elev2), var(--accent) 10%)"
+      }
+    }
+  ]
+}

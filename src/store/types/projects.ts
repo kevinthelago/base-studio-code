@@ -1,12 +1,29 @@
 // Projects domain — page mode/view, active-project meta, drafts, startup-prompt + reference-context
 // assignment, planning-session context, triage + fleet launch. Split from store/types (#1634).
 import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
+import type { ProjectLink } from "@/features/glance/lib/projectLinks";
+import type { GEdgeKind, GRole, GStatus } from "@/features/glance/lib/glanceGraph";
 
 /** Projects slice of {@link AppStore}. */
 export interface ProjectsState {
   // Projects (transient)
-  projectsPageMode: "projects" | "fleet" | "personas";
-  setProjectsPageMode: (v: "projects" | "fleet" | "personas") => void;
+  projectsPageMode: "projects" | "org";
+  setProjectsPageMode: (v: "projects" | "org") => void;
+  // Glance drill target (#…): the project whose fleet graph is open on the Glance Network page, or null
+  // for the project network. Lifted into the store (transient, not persisted) so the app-wide navigation
+  // history (mouse back/forward) can drive it alongside the active workspace. See useNavHistory.
+  glanceDrill: string | null;
+  setGlanceDrill: (id: string | null) => void;
+  // Project↔project relationships (#2253, part of #2205) — the user-drawn edges of the Glance L1 network.
+  // A write-through cache over the global `bsc project link` store (agent-reachable): `addProjectLink`
+  // (idempotent, deterministic id) + `removeProjectLink` push through the bridge; `hydrateProjectLinks`
+  // loads authoritative on boot; the persisted copy is a fast-first-paint fallback.
+  projectLinks: ProjectLink[];
+  addProjectLink: (from: string, to: string, kind: GEdgeKind) => void;
+  removeProjectLink: (id: string) => void;
+  /** Hydrate the links from the global `bsc project link` store on boot (write-through cache). No-op when
+   *  the bridge is unreachable (keeps the persisted cache). */
+  hydrateProjectLinks: () => Promise<void>;
   // The Projects page is list ↔ planning (#499): the board moved to the GitHub
   // page (#498) and the execution tabs were removed.
   projectsView: "list" | "planning";
@@ -29,8 +46,11 @@ export interface ProjectsState {
    *  after that change, or the legacy title-derived key for grandfathered drafts. The record's
    *  `title` is display-only: renaming edits it in place (`updateDraftProject`) and never moves
    *  the on-disk hub, and two same-titled drafts get distinct keys. */
-  localDraftProjects: Record<string, { title: string; pitch: string; createdAt: number }>;
-  addDraftProject: (key: string, draft: { title: string; pitch: string; createdAt: number }) => void;
+  /** `role`/`status` (#2284) are OPTIONAL Glance-node hints: when set they give the project's node its
+   *  curated colour/state on the Glance network (`infra/service/data/client` · `building/blocked/…`),
+   *  else `useGlanceProjects` derives them. Lets a project (or a loaded demo) declare its own coloring. */
+  localDraftProjects: Record<string, { title: string; pitch: string; createdAt: number; role?: GRole; status?: GStatus }>;
+  addDraftProject: (key: string, draft: { title: string; pitch: string; createdAt: number; role?: GRole; status?: GStatus }) => void;
   /** Patch a draft record in place (#1222) — persists a title edit so it survives a reopen;
    *  keyed by the FROZEN key so the on-disk folder doesn't move. No-ops if the draft is gone. */
   updateDraftProject: (key: string, patch: Partial<{ title: string; pitch: string }>) => void;
@@ -99,6 +119,20 @@ export interface ProjectsState {
   // node id and rendering an empty pane. First-write-wins (see setActiveProjectMeta).
   projectKeyAlias: Record<string, string>;
   setProjectKeyAlias: (nodeId: string, key: string) => void;
+  // Per-project AUTO-TRIAGE toggle (#2265). When ON, the fault-fix loop (useFaultTriage) routes a fix
+  // for a new unresolved runtime fault (errordb, #2260) into the project's director via bsc-issue →
+  // bsc-assign; when OFF (the default) faults are surfaced (the Glance node badge) but never
+  // auto-dispatched. Keyed by the project's plan key (the same key the errordb/plan.db resolve under).
+  autoTriage: Record<string, boolean>;
+  /** Flip a project's auto-triage toggle (persisted). Default (absent) is OFF = surface-only. */
+  setAutoTriage: (projectKey: string, on: boolean) => void;
+  // Per-project KIT AUTO-DISPATCH toggle (#2277). When ON, the kit-change drain (useKitDispatch) delivers
+  // a BREAKING kit change queued for this consumer to a rail — a live fleet → its director via bsc-issue →
+  // bsc-assign; no live fleet → a plain kit-update GitHub issue in the consumer repo. When OFF (the
+  // default) queued changes are surface-only (KitChangesCard). Keyed by the consumer project's plan key.
+  autoKitDispatch: Record<string, boolean>;
+  /** Flip a project's kit auto-dispatch toggle (persisted). Default (absent) is OFF = notify-only. */
+  setAutoKitDispatch: (projectKey: string, on: boolean) => void;
   // project key -> structure node id -> linked GitHub issue (#393).
   issueLinks: Record<string, Record<string, { number: number; url: string }>>;
   // Merge links for a project (idempotent upsert; never drops existing entries).

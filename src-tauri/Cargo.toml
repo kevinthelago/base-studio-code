@@ -23,12 +23,13 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-store = "2"
-tauri-plugin-log = "2"
 tauri-plugin-opener = "2"
 # Single-instance guard (#1303): a second launch focuses the running window instead of
 # spawning a duplicate process. Desktop-only.
 tauri-plugin-single-instance = "2"
-log = "0.4"
+# `std` enables `set_boxed_logger` for the custom `GraphLogger` (#1389) — previously pulled in
+# transitively by `tauri-plugin-log`, which we replaced.
+log = { version = "0.4", features = ["std"] }
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -71,6 +72,10 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # delegates `home_dir`/`bsc_base_dir` here.
 bsc-util = { path = "../crates/bsc-util" }
 
+# Unified log engine (#1607/#1389): the pure scope-graph policy (`logs::scope`) shared by the desktop
+# `GraphLogger` and the `bsc log` CLI, so one config type + one matching rule govern both surfaces.
+logs = { path = "../crates/logs" }
+
 # Data platform (#781/#784): the canonical Data Model store (DuckDB) + connector
 # framework. Pulling this in compiles bundled DuckDB into the desktop build.
 bsc-data = { path = "../crates/data" }
@@ -82,6 +87,15 @@ keyring = { version = "3", features = ["apple-native", "windows-native"] }
 # Per-project plan store (#plan-db) — shared with the `bsc-plan` agent CLI. The Tauri
 # commands below are a thin wrapper over this crate's `Store`.
 plandb = { path = "../crates/plandb" }
+
+# Per-project runtime-fault store (#2258/#2260) — shared with the `bsc errors` agent CLI. The
+# localhost fault-ingest collector (#2261, `observability::collector`) resolves each project's
+# error.db and calls this crate's `Store::record` to land fingerprinted runtime faults.
+errordb = { path = "../crates/errordb" }
+# Lightweight, synchronous, pure-Rust HTTP server (#2261). The fault-ingest collector runs one
+# `tiny_http` receiver bound to 127.0.0.1 on a background thread — no async runtime, no framework,
+# just the loopback POST endpoint the generated app's fault shim reports to.
+tiny_http = "0.12"
 # Mobile-tunnel wire contract + Noise crypto (#1919) — desktop tunnel glue (state/transport/commands) depends on it.
 bsc-tunnel = { path = "../crates/bsc-tunnel" }
 

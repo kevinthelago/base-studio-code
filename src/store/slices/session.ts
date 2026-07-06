@@ -3,6 +3,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import { DEFAULT_AUTO_FOCUS_MODE } from "@/app/console/lib/focusQueue";
+import { DEFAULT_MODEL_ID } from "@/app/console/lib/models";
 import { setMapEntry } from "../updateHelpers";
 
 // NOTE: skills moved to the Skills feature slice (@/features/skills/store) and MCP servers + hooks
@@ -10,7 +11,7 @@ import { setMapEntry } from "../updateHelpers";
 // allowed-command tiers were retired (#1457) — profiles own command auto-approval. This slice
 // keeps the global denied-command block-list and the session-wide flags/models.
 type SessionSlice = Pick<AppStore,
-  "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "bypassPermissions" | "setBypassPermissions" | "sandboxConsoles" | "setSandboxConsoles" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
+  "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "bypassPermissions" | "setBypassPermissions" | "sandboxConsoles" | "setSandboxConsoles" | "showConsolePage" | "setShowConsolePage" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
 >;
 
 export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = (set) => ({
@@ -46,6 +47,8 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       setBypassPermissions: (v) => set({ bypassPermissions: v }),
       sandboxConsoles: false,
       setSandboxConsoles: (v) => set({ sandboxConsoles: v }),
+      showConsolePage: false,
+      setShowConsolePage: (v) => set({ showConsolePage: v }),
 
       autoPlanWithClaude: false,
       setAutoPlanWithClaude: (v) => set({ autoPlanWithClaude: v }),
@@ -61,7 +64,7 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       coordAutoWake: false,
       setCoordAutoWake: (v) => set({ coordAutoWake: v }),
 
-      defaultModel: "sonnet-4.5",
+      defaultModel: DEFAULT_MODEL_ID,
       setDefaultModel: (m) => set({ defaultModel: m }),
       fleetHarness: "claude",
       setFleetHarness: (h) => set({ fleetHarness: h }),

@@ -11,6 +11,7 @@ import { SandboxedConsolesCard } from "../cards/SandboxedConsolesCard";
 import { LogsInventoryCard } from "../cards/LogsInventoryCard";
 import { LogsViewerCard } from "../cards/LogsViewerCard";
 import { LogsRetentionCard } from "../cards/LogsRetentionCard";
+import { SessionLogCard } from "../cards/SessionLogCard";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { SettingsPageHeader, SettingsSubHeader as Sub } from "./SettingsPageHeader";
@@ -28,7 +29,7 @@ export function PlannerPage() {
   const getStreamLabel = (stream: string) => {
     if (stream === "app") return "Application log";
     if (stream === "perf") return "Performance logs";
-    return `Session: ${stream}`;
+    return `${stream}.log`;
   };
 
   return (
@@ -81,6 +82,9 @@ export function PlannerPage() {
         onEnforced={() => setRefreshTrigger(prev => prev + 1)}
         flash={flash}
       />
+
+      <Sub>Session drill-down</Sub>
+      <SessionLogCard />
     </Stack>
   );
 }

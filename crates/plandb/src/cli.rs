@@ -199,6 +199,30 @@ USAGE:
 Prose lives in discovery/<topic>.md; these files gate on GENERATION (written, not confirmed).",
     },
     CmdDoc {
+        name: "confirm",
+        summary: "the durable stage-confirmation set (+ content fingerprints)",
+        usage: "\
+USAGE:
+  bsc plan confirm add <stage> [<fingerprint>]   # confirm a stage (records the content fingerprint)
+  bsc plan confirm remove <stage>                # unconfirm a stage (the per-stage reset)
+  bsc plan confirm list [--json]                 # the confirmed set: {stage, fingerprint} rows
+
+Durable record (#2256) of which stages the USER confirmed. The fingerprint is the stage content's
+signature at confirm time; the app resets ONE stage when its content changes (fingerprint mismatch).",
+    },
+    CmdDoc {
+        name: "skip",
+        summary: "the durable skipped-stage set (optional stages the user skipped)",
+        usage: "\
+USAGE:
+  bsc plan skip add <stage>...      # skip optional stage(s) — a deliberate user decision (#921)
+  bsc plan skip remove <stage>...   # unskip stage(s)
+  bsc plan skip list                # show the skipped set
+
+Durable record (#2267) of the OPTIONAL stages the user skipped. Unlike a confirmation this is a plain
+decision (not content-based), so there is no fingerprint / reset-on-change.",
+    },
+    CmdDoc {
         name: "integration",
         summary: "DEPRECATED (#1721) → use `bsc data connector`",
         usage: "\
@@ -401,6 +425,8 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "mcp" => nouns::cmd_mcp(&args),
         "blueprint" => nouns::cmd_blueprint(&args),
         "discovery" => nouns::cmd_discovery(&args),
+        "confirm" => nouns::cmd_confirm(&args),
+        "skip" => nouns::cmd_skip(&args),
         "integration" => nouns::cmd_integration(&args),
         "lesson" => nouns::cmd_lesson(&args),
         "triage" => nouns::cmd_triage(&args),
@@ -515,7 +541,7 @@ mod tests {
         // Every top-level command appears in the compact menu.
         for c in [
             "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
-            "fleet", "deploy", "deps", "mcp", "blueprint", "discovery", "integration",
+            "fleet", "deploy", "deps", "mcp", "blueprint", "discovery", "confirm", "skip", "integration",
             "lesson", "triage", "stage", "automations", "startup", "github-context",
         ] {
             assert!(ov.contains(c), "overview lists {c}");

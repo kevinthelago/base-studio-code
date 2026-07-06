@@ -6,6 +6,9 @@ import type { TabItem } from "@/app/chrome/TabBar";
 
 export const PROJECT_MODES: TabItem[] = [
   { id: "projects",   label: "Projects",    hint: "plan a project" },
-  { id: "fleet",      label: "Fleet",       hint: "live orchestration" },
-  { id: "personas",   label: "Personas",    hint: "the agent identities you dispatch" },
+  // Fleet analytics was folded into Glance (#2223/#2228) — the workspace mission-control home for the
+  // live orchestration dashboard — so a separate Projects tab was redundant.
+  // The standalone Personas tab was folded into Org (#2199): a persona is edited in the Org inspector
+  // (PersonaEditor) as the identity behind a position, so a separate library tab was redundant.
+  { id: "org",        label: "Org",         hint: "personas as positions, wired into a relationship graph" },
 ];

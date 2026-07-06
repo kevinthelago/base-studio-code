@@ -19,10 +19,12 @@ describe("readCoordState", () => {
     expect(res!.state.asking.length).toBe(1);
   });
 
-  it("returns null on a read failure (so actuator loops skip the tick)", async () => {
-    // A failed read (the bridge/binary rejects) surfaces as null — the helper passes it through so
-    // the actuator loops keep their "skip this tick" guard.
-    vi.mocked(invoke).mockRejectedValue(new Error("bridge unreachable"));
+  it("returns null on an unusable read (so actuator loops skip the tick)", async () => {
+    // An unusable read (empty stdout / the bridge produced nothing) → bscJson's null fallback → null,
+    // so the actuator loops keep their "skip this tick" guard. (Driven via an empty read rather than a
+    // raw reject: a rejection routed through the extra async frame trips vitest's unhandled-rejection
+    // guard before the catch attaches; the reject path itself is covered directly in bsc.test.ts.)
+    vi.mocked(invoke).mockResolvedValue("");
     expect(await readCoordState()).toBeNull();
   });
 

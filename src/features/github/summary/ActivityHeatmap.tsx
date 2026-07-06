@@ -5,8 +5,10 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
+import { SkeletonChart } from "@/shared/ui/feedback/Skeleton";
 import { heatFill } from "../heatFill";
 import { formatHeatDate } from "../lib/githubSummary";
+import { clamp } from "@/shared/lib/core/math";
 
 export function ActivityHeatmap({
   cells, rawCounts, rawDates, totalContribs, totalMerged, loading,
@@ -37,7 +39,7 @@ export function ActivityHeatmap({
     const tipW = 152, tipH = 16;
     const cellCx = 30 + c * (cell + gap) + cell / 2;
     const cellTop = r * (cell + gap) + 4;
-    const tipX = Math.max(0, Math.min(svgW - tipW, cellCx - tipW / 2));
+    const tipX = clamp(cellCx - tipW / 2, 0, svgW - tipW);
     const above = r >= 2;
     const tipY = above ? cellTop - tipH - 4 : cellTop + cell + 4;
     return { label, tipX, tipY, tipW, tipH };
@@ -59,6 +61,7 @@ export function ActivityHeatmap({
       }
       headMb={10}
     >
+      {loading ? <SkeletonChart height={H} /> : (
       <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ display: "block", width: "100%", overflow: "visible" }}>
         {["Mon", "", "Wed", "", "Fri", "", ""].map((d, i) => (
           <text key={i} x={0} y={4 + i * (cell + gap) + cell / 2}
@@ -90,6 +93,7 @@ export function ActivityHeatmap({
           </g>
         )}
       </svg>
+      )}
       <Row className="mono" justify="between" align="stretch" style={{ marginTop: 6, fontSize: 9.5, color: "var(--fg-dim)", paddingLeft: 30 }}>
         <Text>28 weeks ago</Text><Text>today</Text>
       </Row>

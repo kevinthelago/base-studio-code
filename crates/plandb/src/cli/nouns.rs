@@ -221,6 +221,79 @@ pub(crate) fn cmd_discovery(args: &Args) -> Result<(), String> {
     }
 }
 
+/// `confirm` — the durable stage-confirmation set (#2256). `add <stage> [<fingerprint>]` confirms a
+/// stage (recording the content fingerprint the app compares for the per-stage reset), `remove
+/// <stage>` unconfirms it, and `list` prints the `{stage, fingerprint}` rows (JSON with `--json`).
+pub(crate) fn cmd_confirm(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        "add" => {
+            let stage = args.positional.get(2).map(String::as_str).unwrap_or("");
+            if stage.is_empty() {
+                return Err("usage: bsc plan confirm add <stage> [<fingerprint>]".into());
+            }
+            let fingerprint = args.positional.get(3).map(String::as_str).unwrap_or("");
+            s.confirm_stage(stage, fingerprint).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("confirmed {stage}");
+            }
+            Ok(())
+        }
+        "remove" => {
+            let stage = args.positional.get(2).map(String::as_str).unwrap_or("");
+            if stage.is_empty() {
+                return Err("usage: bsc plan confirm remove <stage>".into());
+            }
+            s.unconfirm_stage(stage).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("unconfirmed {stage}");
+            }
+            Ok(())
+        }
+        "list" => {
+            let confirmed = s.confirmed_list().map_err(|e| e.to_string())?;
+            emit_json_or_lines(args.json, &confirmed, "(no confirmed stages)", |_, c| {
+                format!("{}\t{}", c.stage, c.fingerprint)
+            });
+            Ok(())
+        }
+        other => Err(unknown_sub(args, "confirm", other)),
+    }
+}
+
+/// `skip` — the durable skipped-stage set (#2267). `add <stage>...` skips optional stage(s),
+/// `remove <stage>...` unskips them, and `list` prints the set. A skip is a plain decision (no
+/// fingerprint), so this mirrors `discovery` rather than `confirm`.
+pub(crate) fn cmd_skip(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        "add" | "remove" => {
+            let stages: Vec<&String> = args.positional.iter().skip(2).collect();
+            if stages.is_empty() {
+                return Err(format!("usage: bsc plan skip {sub} <stage>..."));
+            }
+            let skipping = sub == "add";
+            for st in &stages {
+                if skipping {
+                    s.skip_stage(st).map_err(|e| e.to_string())?;
+                } else {
+                    s.unskip_stage(st).map_err(|e| e.to_string())?;
+                }
+            }
+            emit_set_result(args.json, &stages, if skipping { "skipped" } else { "unskipped" });
+            Ok(())
+        }
+        "list" => {
+            let skipped = s.skipped_list().map_err(|e| e.to_string())?;
+            emit_json_or_lines(args.json, &skipped, "(no skipped stages)", |_, t| t.clone());
+            Ok(())
+        }
+        other => Err(unknown_sub(args, "skip", other)),
+    }
+}
+
 /// `integration` — runtime (planner-authored) REST connector presets (#1235). These live in the
 /// connectors store (~/.base-studio-code/connectors.json) — NOT plan.db — so an authored integration
 /// is a native, app-wide connector like the built-ins. The spec is validated + secret-free on add

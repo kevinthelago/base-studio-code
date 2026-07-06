@@ -6,6 +6,7 @@
 
 import { type ClassificationSignals } from "./classification";
 import { type StageGate, type Requirement } from "./stageGate";
+import { type AgentFlow } from "../fleet/agentFlow";
 
 // ── Substeps ─────────────────────────────────────────────────────────────────
 // A discrete step WITHIN a stage. The conductor injects ONE substep's prompt at a time and
@@ -24,6 +25,34 @@ export interface SubStep {
   gate?: string;
   /** Repeat once per dynamic item (a feature, a repo). Absent ⇒ a single static substep. */
   loop?: SubStepLoop;
+}
+
+// ── Dynamic-blueprint additions (#1854 Phase a) ──────────────────────────────
+// The first slice of the dynamic-blueprints epic: a stage can adapt its prompt to the DRIVING
+// MODEL and can carry ARCHETYPE SEED CONTENT. Both are optional and additive — a stage without
+// them behaves exactly as before (its single `prompt`, no seed).
+
+/** A model CAPABILITY tier — the axis model-variant prompts key on (#1854 Phase a). Deliberately
+ *  keyed by *capability*, not by a vendor model id, because blueprints are WAN-distributable and
+ *  must not couple to a specific model/provider (they run on any {@link LlmProvider} via the
+ *  bsc-agent "run on any model" track, #1078):
+ *   - `frontier` — top frontier models (Claude Opus/Sonnet, GPT-4-class). The default open-ended
+ *     prompt (the base `prompt`) is already written for this tier, so an explicit variant is only
+ *     needed to override it.
+ *   - `standard` — mid-capability hosted models (Haiku-class, smaller hosted models).
+ *   - `local`    — weak local models. The headline payoff: a tight, schema-shaped, more-explicit
+ *     directive prompt that lets a weak model plan reliably.
+ *  A tier with no variant defined falls back to the base `prompt` (see {@link resolveStagePrompt}). */
+export type ModelCapabilityTier = "frontier" | "standard" | "local";
+
+/** Archetype seed content for a stage (#1854 Phase a) — starter content the stage can offer when it
+ *  opens (e.g. a "twitter clone" archetype → a starter feature set for the Features stage). Additive:
+ *  a stage with no `seed` behaves as today. Seeds; the planner + user still shape the final artifact. */
+export interface StageSeed {
+  /** The archetype this seed represents (a descriptive slug, e.g. "twitter-clone"). */
+  archetype?: string;
+  /** The starter content, as markdown — offered as an injectable option when the stage is active. */
+  content: string;
 }
 
 // ── Sections (the canonical planning stages) ─────────────────────────────────
@@ -55,6 +84,15 @@ export interface SectionDef {
   deps: string[];
   blurb: string;
   prompt: string;
+  /** Model-variant prompts (#1854 Phase a) — per {@link ModelCapabilityTier} overrides of `prompt`,
+   *  so a stage adapts its instructions to the DRIVING model (a tight, schema-shaped prompt for a
+   *  weak `local` model alongside the open-ended default). Absent tier ⇒ the base `prompt` is used
+   *  (resolved via {@link resolveStagePrompt}); the whole field absent ⇒ today's single-prompt
+   *  behavior. Reference-by-tier; unknown tiers are simply ignored. */
+  promptVariants?: Partial<Record<ModelCapabilityTier, string>>;
+  /** Archetype seed content (#1854 Phase a) — starter content this stage offers when active (e.g. a
+   *  starter feature set for a known archetype). Absent ⇒ no seed (today's behavior). */
+  seed?: StageSeed;
   /** UI stage only (#604): the self-contained instruction the file-intake "Route" action injects
    *  into the planner to read the staged design files and route each to the right repo. Carried as
    *  stage DATA (like `prompt`) so it isn't hardcoded in the frontend. Absent ⇒ no route prompt. */
@@ -139,6 +177,28 @@ export interface BlueprintGist {
   updatedAt?: string;
 }
 
+/** Fleet POLICY a blueprint declares (#1854 Phase b) — the default per-stream {@link AgentProfile}
+ *  and {@link AgentFlow} the planner instantiates when it generates this project type's fleet. A
+ *  COMPOSED typed sub-model (epic discipline #1: not N flat top-level fields), carrying only the
+ *  *recipe/policy* — the DEFAULTS — while the concrete per-stream config stays planner-GENERATED
+ *  per-project (discipline #2: static template vs generation policy). Resolution precedence is
+ *  stream-declared → this policy → the hard launch-time default (see `resolveStreamProfile` /
+ *  `resolveStreamFlow` in `../fleet/fleetPolicy`). Both fields optional ⇒ when unset, today's
+ *  launch-time defaults apply, byte-for-byte.
+ *
+ *  Trust boundary (discipline #3): a blueprint only *seeds* the launch default here — the role
+ *  gate (#219) still caps the session. The request-vs-cap permission POSTURE is Phase (c), out of
+ *  scope for this sub-model. */
+export interface FleetPolicy {
+  /** Default {@link AgentProfile} id for a WORKER stream that doesn't pin its own `profile` (#289).
+   *  A reference-by-id; an unknown id just falls through to the role default at launch. Applies to
+   *  worker streams only — never the director, which keeps its role's read-only review profile. */
+  profile?: string;
+  /** Default {@link AgentFlow} (autonomy + push + trigger + gate) for a stream that doesn't declare
+   *  its own `flow` (#297). Absent ⇒ the launch path applies {@link DEFAULT_FLOW}. */
+  flow?: AgentFlow;
+}
+
 export interface Blueprint {
   id: string;
   name: string;
@@ -161,6 +221,15 @@ export interface Blueprint {
   /** Blueprint-wide attached MCP servers (#897) — applied across every stage, in addition to
    *  each section's own `mcp`. Server NAMES (the portable ref). */
   mcp?: string[];
+  /** The component KIT (#2277) an app seeded from this blueprint is built on — a `bsc component` kit id
+   *  (e.g. `"react-ui"`). Recording it makes every project seeded here a CONSUMER of that kit, so a kit
+   *  change fans out to it (the `kit_usage` consumer index self-fills at planning). Absent ⇒ the blueprint
+   *  isn't tied to a shared kit (an authoring blueprint, or one that operates on a repo's own UI). */
+  kit?: string;
+  /** Fleet policy (#1854 Phase b) — the DEFAULT per-stream profile + flow the planner instantiates
+   *  when it generates this project type's fleet. A composed sub-model; see {@link FleetPolicy}.
+   *  Absent ⇒ today's launch-time defaults apply (byte-identical). */
+  fleetPolicy?: FleetPolicy;
   /** Lifecycle intent (#645). Absent ⇒ greenfield (the create-a-project default). */
   category?: BlueprintCategory;
   /** Create (from a pitch) vs operate (against existing repos). Absent ⇒ create. */

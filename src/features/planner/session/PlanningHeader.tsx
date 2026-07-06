@@ -10,7 +10,8 @@ import { Chip } from "@/shared/ui/data/Chip";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
-import { canLaunchTriage, triageLockReason } from "@/features/github/lib/projectSync";
+import { canLaunchTriage, triageLockReason } from "@/shared/lib/github/projectSync";
+import { clamp } from "@/shared/lib/core/math";
 
 export interface PlanningHeaderProps {
   isExisting: boolean;
@@ -85,7 +86,7 @@ export function PlanningHeader({
                     // Size to the text, capped — a long name stops at the cap instead of pushing
                     // the status pill away; minWidth:0 lets it shrink in a narrow pane.
                     maxWidth: 282, minWidth: 0,
-                    width: Math.min(282, Math.max(56, ((titleEdit ?? activeProjectName).length || 14) * 9.5 + 16)),
+                    width: clamp(((titleEdit ?? activeProjectName).length || 14) * 9.5 + 16, 56, 282),
                   }}
                 />
               </>
@@ -109,7 +110,7 @@ export function PlanningHeader({
                   color: draftTitleErr ? "var(--danger)" : planningTitle ? "var(--fg)" : "var(--fg-dim)",
                   // Size to the text (snug), with a usable floor and a 400px cap so the status
                   // pill sits right next to the title.
-                  width: Math.min(282, Math.max(56, (planningTitle.length || 14) * 9.5 + 16)),
+                  width: clamp((planningTitle.length || 14) * 9.5 + 16, 56, 282),
                   padding: 0,
                 }}
               />

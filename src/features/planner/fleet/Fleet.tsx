@@ -14,15 +14,33 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Skeleton, SkeletonChart } from "@/shared/ui/feedback/Skeleton";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
 import { useFleetGithub, type FleetGithub } from "./useFleetGithub";
 import { WorkerDetail } from "./WorkerDetail";
+import { CostEnergy } from "./CostEnergy";
+import { FleetHealth } from "./FleetHealth";
+import { FleetLessons } from "./FleetLessons";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
-import type { ThroughputSlice } from "@/features/github/lib/fleetGithub";
+import type { ThroughputSlice } from "@/shared/lib/github/fleetGithub";
 
 const GRID = "150px 96px 1fr 70px 22px";
+
+/** A compact empty state for a card body (#2234) — the card frame + head stay; the body shows this. */
+function CardEmpty({ icon = "○", title, hint }: { icon?: React.ReactNode; title: string; hint?: string }) {
+  return <EmptyState size="sm" iconVariant="dashed" icon={icon} title={title} description={hint} style={{ padding: "20px 12px" }} />;
+}
+
+/** A stack of shimmer rows — a loading placeholder for a list/table/chart card body (#2234). */
+function SkeletonRows({ rows = 4, h = 30 }: { rows?: number; h?: number }) {
+  return (
+    <Stack gap={6}>
+      {Array.from({ length: rows }).map((_, i) => <Skeleton key={i} h={h} radius={6} />)}
+    </Stack>
+  );
+}
 
 function WorkerBoard({ workers, onOpen }: { workers: LiveWorker[]; onOpen: (w: LiveWorker) => void }) {
   return (
@@ -37,7 +55,9 @@ function WorkerBoard({ workers, onOpen }: { workers: LiveWorker[]; onOpen: (w: L
         }}>
           <Box as="span">worker</Box><Box as="span">status</Box><Box as="span">current</Box><Box as="span" style={{ textAlign: "right" }}>issues</Box><Box as="span" />
         </Grid>
-        {workers.map((w, i) => {
+        {workers.length === 0 ? (
+          <CardEmpty icon="◇" title="No workers running" hint="Launch a fleet from a project's plan to fill the board." />
+        ) : workers.map((w, i) => {
           const st = STATUS[w.status];
           return (
             <Grid cols={GRID} gap={10} align="center" key={w.id} className="hrow" onClick={() => onOpen(w)} style={{
@@ -82,7 +102,8 @@ function FleetStatus({ counts, total }: { counts: Partial<Record<LiveWorker["sta
   return (
     <Card>
       <CardHead title="Fleet status" hint="right now" />
-      <Row gap={16}>
+      {total === 0 ? <CardEmpty icon="◔" title="No workers running" hint="Status by state appears once a fleet is live." />
+        : <Row gap={16}>
         <Donut slices={slices} center={{ value: total, label: "workers" }} />
         <Stack gap={6} style={{ flex: 1 }}>
           {slices.map(s => (
@@ -93,7 +114,7 @@ function FleetStatus({ counts, total }: { counts: Partial<Record<LiveWorker["sta
             </Grid>
           ))}
         </Stack>
-      </Row>
+      </Row>}
     </Card>
   );
 }
@@ -114,8 +135,8 @@ function Throughput({ gh }: { gh: FleetGithub }) {
     <Card>
       <CardHead title="Fleet throughput" hint="issues landed vs PRs merged"
         right={<RangeToggle value={range} onChange={setRange} options={["7d", "14d"]} />} />
-      {gh.loading && total === 0 ? <Box className="hint" pad={[8, 2]}>Loading from GitHub…</Box>
-        : total === 0 ? <Box className="hint" pad={[8, 2]}>No landed issues or merged PRs in the window.</Box>
+      {gh.loading && total === 0 ? <SkeletonChart height={150} />
+        : total === 0 ? <CardEmpty icon="⑃" title="No throughput yet" hint="Issues landed and PRs merged appear here once the fleet ships." />
         : <>
             <LineArea labels={d.labels} height={150} tip={tip} series={[
               { name: "landed", color: "var(--success)", data: d.landed },
@@ -137,7 +158,8 @@ function TimeToLand({ gh }: { gh: FleetGithub }) {
   return (
     <Card>
       <CardHead title="Time-to-land" hint="PR open → merged · last 14d" />
-      {total === 0 ? <Box className="hint" pad={[8, 2]}>{gh.loading ? "Loading from GitHub…" : "No merged PRs in the window."}</Box>
+      {gh.loading && total === 0 ? <SkeletonChart height={116} />
+        : total === 0 ? <CardEmpty icon="◷" title="No merged PRs" hint="Open→merge times appear here once PRs land." />
         : <>
             <Bars labels={gh.timeToLand.map(b => b.label)} height={116} tip={tip}
               groups={[{ name: "PRs", color: "var(--info)", data: gh.timeToLand.map(b => b.v) }]} />
@@ -156,8 +178,9 @@ function MergeQueue({ gh }: { gh: FleetGithub }) {
     <Card>
       <CardHead title="Merge queue" hint="open PRs across the fleet's repos"
         right={<Text as="span" mono size={10.5} tone="accent">{gh.mergeQueue.length}</Text>} />
-      {gh.mergeQueue.length === 0
-        ? <Box className="hint" pad={[8, 2]}>{gh.loading ? "Loading from GitHub…" : "No open PRs."}</Box>
+      {gh.loading && gh.mergeQueue.length === 0 ? <SkeletonRows rows={3} h={40} />
+        : gh.mergeQueue.length === 0
+        ? <CardEmpty icon="⇄" title="No open PRs" hint="Open PRs across the fleet's repos queue up here." />
         : (
           <Stack gap={1} style={{ borderRadius: 6, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
             {gh.mergeQueue.map((q, i) => (
@@ -172,18 +195,6 @@ function MergeQueue({ gh }: { gh: FleetGithub }) {
             ))}
           </Stack>
         )}
-    </Card>
-  );
-}
-
-/** Tokens/spend still need per-session accounting (#416) — honest note, no fake numbers. */
-function SpendNote() {
-  return (
-    <Card>
-      <CardHead title="Tokens & spend" hint="not measured yet" />
-      <Text as="div" mono size={11} tone="dim" style={{ lineHeight: 1.6 }}>
-        Per-session token + cost accounting doesn't exist yet (#416). Once it lands, token burn and spend appear here.
-      </Text>
     </Card>
   );
 }
@@ -205,18 +216,8 @@ export function Fleet() {
     return <WorkerDetail worker={selected} onBack={() => setSelected(null)} />;
   }
 
-  if (!hasFleet) {
-    return (
-      <section className="an-page">
-        <EmptyState
-          iconVariant="dashed"
-          title="No fleet running"
-          description="Launch a fleet from a project's plan to orchestrate parallel agents — workers, status, and coordination appear here live."
-        />
-      </section>
-    );
-  }
-
+  // The card layout ALWAYS renders (#2234) — each card shows a loading skeleton or a compact empty
+  // state, rather than a page-wide blank screen when no fleet is running.
   return (
     <section className="an-page">
       <Box className="an-wrap">
@@ -224,7 +225,9 @@ export function Fleet() {
           <Box style={{ flex: 1 }}>
             <Text as="h2" mono size={20} weight={600} style={{ margin: 0 }}>Fleet</Text>
             <Text as="div" size={12} tone="muted" style={{ marginTop: 4 }}>
-              {activeProjectName ? `${activeProjectName} · ` : ""}{kpis.total} worker{kpis.total === 1 ? "" : "s"} · {kpis.active} running · {kpis.needAttention} need attention
+              {hasFleet
+                ? <>{activeProjectName ? `${activeProjectName} · ` : ""}{kpis.total} worker{kpis.total === 1 ? "" : "s"} · {kpis.active} running · {kpis.needAttention} need attention{kpis.maintenance > 0 ? ` · ${kpis.maintenance} parked` : ""}</>
+                : "No fleet running — launch one from a project's plan to populate these panels."}
             </Text>
           </Box>
           <Button variant="ghost" onClick={() => setRefreshNonce(n => n + 1)} disabled={gh.loading}>
@@ -240,21 +243,23 @@ export function Fleet() {
           <StatCard k="active workers" v={`${kpis.active}/${kpis.total}`} sub="running now" tone="accent" />
           <StatCard k="need attention" v={String(kpis.needAttention)} sub="blocked · asking · waiting" tone={kpis.needAttention > 0 ? "danger" : "fg"} />
           <StatCard k="idle" v={String(kpis.idle)} sub="at rest" tone="fg" />
-          <StatCard k="landed today" v={String(gh.kpis.landedToday)} sub="issues closed" tone="success" />
-          <StatCard k="PRs merged · 7d" v={String(gh.kpis.prsMergedWeek)} sub="across the fleet's repos" tone="info" />
-          <StatCard k="time-to-land" v={gh.kpis.avgLandH ? `${gh.kpis.avgLandH}h` : "—"} sub="open → merge median" tone="fg" />
+          <StatCard k="landed today" v={String(gh.kpis.landedToday)} sub="issues closed" tone="success" loading={gh.loading} />
+          <StatCard k="PRs merged · 7d" v={String(gh.kpis.prsMergedWeek)} sub="across the fleet's repos" tone="info" loading={gh.loading} />
+          <StatCard k="time-to-land" v={gh.kpis.avgLandH ? `${gh.kpis.avgLandH}h` : "—"} sub="open → merge median" tone="fg" loading={gh.loading} />
         </Box>
 
         <Grid cols="1.6fr 1fr" gap={14}>
           <Stack gap={14} style={{ minWidth: 0 }}>
             <WorkerBoard workers={workers} onOpen={setSelected} />
+            <FleetHealth workers={workers} />
             <Throughput gh={gh} />
             <TimeToLand gh={gh} />
           </Stack>
           <Stack gap={14} style={{ minWidth: 0 }}>
             <FleetStatus counts={counts} total={kpis.total} />
+            <CostEnergy workers={workers} />
+            <FleetLessons />
             <MergeQueue gh={gh} />
-            <SpendNote />
           </Stack>
         </Grid>
       </Box>

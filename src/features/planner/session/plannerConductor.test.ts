@@ -25,6 +25,31 @@ describe("stagePrompts — the on-demand '?' helper list (#…)", () => {
   it("returns [] for no section", () => {
     expect(stagePrompts(undefined)).toEqual([]);
   });
+
+  // #1854 Phase (a): the overview row adapts to the driving model's capability tier, and a stage
+  // carrying archetype seed content surfaces a "seed" row right after the overview.
+  it("adapts the overview to the model tier and surfaces a seed row (#1854a)", () => {
+    const s = {
+      ...mkStage("discovery"),
+      prompt: "Open-ended overview.",
+      promptVariants: { local: "Tight, schema-shaped overview." },
+      seed: { archetype: "twitter-clone", content: "- Post a tweet" },
+    };
+    // No tier → base overview; the seed row follows the overview.
+    const base = stagePrompts(s);
+    expect(base[0].text).toBe("Open-ended overview.");
+    expect(base[1].label).toContain("seed");
+    expect(base[1].text).toBe("- Post a tweet");
+    // local tier → the variant overview (seed unchanged).
+    const local = stagePrompts(s, "local");
+    expect(local[0].text).toBe("Tight, schema-shaped overview.");
+    expect(local[1].text).toBe("- Post a tweet");
+  });
+
+  it("no seed row when the stage carries no seed (additive default)", () => {
+    const list = stagePrompts(mkStage("discovery"));
+    expect(list.some((p) => p.label.includes("seed"))).toBe(false);
+  });
 });
 
 describe("nextInjection — stage + static substeps", () => {
@@ -43,6 +68,14 @@ describe("nextInjection — stage + static substeps", () => {
     const injected = new Set(["discovery:_stage", "discovery:goal"]);
     expect(nextInjection(context, injected, emptyState())).toBeNull();
     expect(nextInjection(context, injected, state({ doneSubsteps: new Set(["goal"]) }))?.id).toBe("discovery:scope");
+  });
+
+  it("injects the tier-adapted stage prompt when a variant is defined (#1854a)", () => {
+    const s = { ...mkStage("mcps"), prompt: "Base orientation.", promptVariants: { local: "Local orientation." } };
+    expect(nextInjection(s, new Set(), emptyState())?.prompt).toBe("Base orientation.");
+    expect(nextInjection(s, new Set(), emptyState(), "local")?.prompt).toBe("Local orientation.");
+    // a tier without a variant falls back to the base prompt.
+    expect(nextInjection(s, new Set(), emptyState(), "standard")?.prompt).toBe("Base orientation.");
   });
 
   it("a substep-less stage injects only its stage prompt, once", () => {

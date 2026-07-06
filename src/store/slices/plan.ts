@@ -2,6 +2,7 @@
 // Typed Pick<AppStore, …> so AppStore stays whole in types.ts while the create() composes slices.
 import type { StateCreator } from "zustand";
 import { bscRun, bscWrite } from "@/shared/lib/core/bsc";
+import { hashString } from "@/shared/lib/core/hashString";
 import type { AppStore } from "../types";
 import { makeBlueprints, mkStage, cloneStages, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
 import { canonicalTopicKey } from "@/features/planner/stages/planTopics";
@@ -38,8 +39,17 @@ function dropRepoScoped<T>(m: Record<string, T>, projectKey: string): Record<str
   return Object.fromEntries(Object.entries(m).filter(([k]) => !k.startsWith(prefix)));
 }
 
+/** Record the project→kit consumer-index edge for a blueprint bind (#2277). If the blueprint declares a
+ *  component `kit`, the seeded project is a CONSUMER of it, so `addKitUsage` files the edge (idempotent by
+ *  (projectKey, kitId), write-through to `bsc component usage`). A blueprint with no `kit` is a no-op — so
+ *  this fills the consumer index automatically at every blueprint bind (creation + switch). */
+function recordBlueprintKit(get: () => AppStore, projectId: string, blueprintId: string): void {
+  const kit = get().blueprints.find((b) => b.id === blueprintId)?.kit;
+  if (kit) get().addKitUsage(projectId, kit);
+}
+
 type PlanSlice = Pick<AppStore,
-  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
+  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "markStageConfirmedLocal" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "markStageSkippedLocal" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
@@ -94,20 +104,40 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           planStages: setMapEntry(s.planStages, projectId, { ...(s.planStages[projectId] ?? {}), [key]: content }),
         })),
       planConfirmedStages: {},
+      // Confirm a stage. Durable in plan.db (#2256): the app-state used to be the ONLY home for
+      // confirmations, so a state reset/migration re-opened every gate on revisit — now we write
+      // through to plan.db with a FINGERPRINT of the stage's content at confirm time (the poll
+      // compares it to reset just this stage when its content later changes).
       confirmPlanStage: (projectId, key) =>
         set((s) => {
           const existing = s.planConfirmedStages[projectId] ?? [];
+          if (!existing.includes(key)) {
+            // Fire-and-forget durable write (the poll rehydrates from plan.db). Fingerprint the
+            // stage's current content so a later edit to it resets exactly this stage.
+            void bscRun(projectId, ["plan", "confirm", "add", key, hashString(s.planStages[projectId]?.[key] ?? "")]);
+          }
           if (existing.includes(key)) return {};
           return { planConfirmedStages: setMapEntry(s.planConfirmedStages, projectId, [...existing, key]) };
         }),
-      unconfirmPlanStage: (projectId, key) =>
+      // Unconfirm (the per-stage reset). Drops it from plan.db too so it doesn't rehydrate.
+      unconfirmPlanStage: (projectId, key) => {
+        void bscRun(projectId, ["plan", "confirm", "remove", key]);
         set((s) => ({
           planConfirmedStages: setMapEntry(
             s.planConfirmedStages,
             projectId,
             (s.planConfirmedStages[projectId] ?? []).filter((k) => k !== key),
           ),
-        })),
+        }));
+      },
+      // Add a confirmation to the store ONLY (no plan.db write) — used by the poll to rehydrate the
+      // durable confirmed set on revisit without echoing it straight back to plan.db.
+      markStageConfirmedLocal: (projectId, key) =>
+        set((s) => {
+          const existing = s.planConfirmedStages[projectId] ?? [];
+          if (existing.includes(key)) return {};
+          return { planConfirmedStages: setMapEntry(s.planConfirmedStages, projectId, [...existing, key]) };
+        }),
       planAuthoredBlueprint: {},
       setAuthoredBlueprint: (projectId, bp) =>
         set((s) => ({ planAuthoredBlueprint: setMapEntry(s.planAuthoredBlueprint, projectId, bp) })),
@@ -132,20 +162,35 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       acknowledgePlanInjections: (projectId, signature) =>
         set((s) => ({ planInjectionAck: setMapEntry(s.planInjectionAck, projectId, signature) })),
       planSkippedStages: {},
+      // Skip an optional stage. Durable in plan.db (#2267): like confirmations (#2256) a skip used to
+      // live only in app-state, so a reset/migration re-stopped the flow on an already-decided stage.
+      // A skip is a plain decision (not content-based), so — unlike a confirmation — there is no
+      // fingerprint / reset-on-change; we just write the flag through and rehydrate it via the poll.
       skipPlanStage: (projectId, key) =>
         set((s) => {
           const existing = s.planSkippedStages[projectId] ?? [];
+          if (!existing.includes(key)) void bscRun(projectId, ["plan", "skip", "add", key]);
           if (existing.includes(key)) return {};
           return { planSkippedStages: setMapEntry(s.planSkippedStages, projectId, [...existing, key]) };
         }),
-      unskipPlanStage: (projectId, key) =>
+      unskipPlanStage: (projectId, key) => {
+        void bscRun(projectId, ["plan", "skip", "remove", key]);
         set((s) => ({
           planSkippedStages: setMapEntry(
             s.planSkippedStages,
             projectId,
             (s.planSkippedStages[projectId] ?? []).filter((k) => k !== key),
           ),
-        })),
+        }));
+      },
+      // Add a skip to the store ONLY (no plan.db write) — the poll uses this to rehydrate the durable
+      // skipped set on revisit without echoing it straight back to plan.db.
+      markStageSkippedLocal: (projectId, key) =>
+        set((s) => {
+          const existing = s.planSkippedStages[projectId] ?? [];
+          if (existing.includes(key)) return {};
+          return { planSkippedStages: setMapEntry(s.planSkippedStages, projectId, [...existing, key]) };
+        }),
       canonicalizePlanStages: (projectId) =>
         set((s) => {
           const sections = s.planStages[projectId];
@@ -234,44 +279,49 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           loadVerified: setMapEntry(s.loadVerified, projectKey, { ...(s.loadVerified[projectKey] ?? {}), [entity]: verified }),
         })),
       projectBlueprintId: {},
-      setProjectBlueprintId: (projectId, blueprintId) =>
-        set((s) => ({ projectBlueprintId: setMapEntry(s.projectBlueprintId, projectId, blueprintId) })),
-      applyBlueprintToProject: (projectId, blueprintId) =>
-        set((s) => {
-          const bp = s.blueprints.find((b) => b.id === blueprintId);
-          if (!bp) return {};
-          // Only a greenfield project may switch, and only to a transform/harden lifecycle (#923);
-          // every other origin/target (incl. the locked blueprint-author) is refused.
-          const current = s.blueprints.find((b) => b.id === s.projectBlueprintId[projectId]);
-          if (!canSwitchBlueprint(current, bp)) return {};
-          const drop = <T,>(m: Record<string, T>): Record<string, T> => deleteMapEntry(m, projectId);
-          // Full reset: wipe ALL of the project's planning state (everything clearPlan
-          // drops) so no section reads as completed afterwards, then re-seed the stage
-          // config from the new blueprint + record it (#664).
-          return {
-            planStages:          drop(s.planStages),
-            planConfirmedStages: drop(s.planConfirmedStages),
-            planAuthoredBlueprint: drop(s.planAuthoredBlueprint),
-            planDeployConfig:      drop(s.planDeployConfig),
-            planSourceConfig:      drop(s.planSourceConfig),
-            planIntegrationConfig: drop(s.planIntegrationConfig),
-            reposPublic:           drop(s.reposPublic),
-            repoPublic:            dropRepoScoped(s.repoPublic, projectId),
-            planInjectionAck:      drop(s.planInjectionAck),
-            planSkippedStages:   drop(s.planSkippedStages),
-            planAutomations:       drop(s.planAutomations),
-            planFleet:             drop(s.planFleet),
-            issueLinks:            drop(s.issueLinks),
-            uiScreens:             drop(s.uiScreens),
-            uiApproved:            drop(s.uiApproved),
-            stagePreview:          drop(s.stagePreview),
-            stageRuns:     drop(s.stageRuns),
-            pinnedContext:         drop(s.pinnedContext),
-            projectLocalRepos:     drop(s.projectLocalRepos),
-            planStageConfig:    setMapEntry(s.planStageConfig, projectId, blueprintToStageConfig(bp)),
-            projectBlueprintId: setMapEntry(s.projectBlueprintId, projectId, blueprintId),
-          };
-        }),
+      setProjectBlueprintId: (projectId, blueprintId) => {
+        set((s) => ({ projectBlueprintId: setMapEntry(s.projectBlueprintId, projectId, blueprintId) }));
+        // Auto-record the consumer-index edge (#2277): a project seeded from a kit-bearing blueprint USES
+        // that kit, so a later kit change fans out to it. Idempotent by (projectKey, kitId); no-op when unset.
+        recordBlueprintKit(get, projectId, blueprintId);
+      },
+      applyBlueprintToProject: (projectId, blueprintId) => {
+        const bp = get().blueprints.find((b) => b.id === blueprintId);
+        if (!bp) return;
+        // Only a greenfield project may switch, and only to a transform/harden lifecycle (#923);
+        // every other origin/target (incl. the locked blueprint-author) is refused.
+        const current = get().blueprints.find((b) => b.id === get().projectBlueprintId[projectId]);
+        if (!canSwitchBlueprint(current, bp)) return;
+        const drop = <T,>(m: Record<string, T>): Record<string, T> => deleteMapEntry(m, projectId);
+        // Full reset: wipe ALL of the project's planning state (everything clearPlan
+        // drops) so no section reads as completed afterwards, then re-seed the stage
+        // config from the new blueprint + record it (#664).
+        set((s) => ({
+          planStages:          drop(s.planStages),
+          planConfirmedStages: drop(s.planConfirmedStages),
+          planAuthoredBlueprint: drop(s.planAuthoredBlueprint),
+          planDeployConfig:      drop(s.planDeployConfig),
+          planSourceConfig:      drop(s.planSourceConfig),
+          planIntegrationConfig: drop(s.planIntegrationConfig),
+          reposPublic:           drop(s.reposPublic),
+          repoPublic:            dropRepoScoped(s.repoPublic, projectId),
+          planInjectionAck:      drop(s.planInjectionAck),
+          planSkippedStages:   drop(s.planSkippedStages),
+          planAutomations:       drop(s.planAutomations),
+          planFleet:             drop(s.planFleet),
+          issueLinks:            drop(s.issueLinks),
+          uiScreens:             drop(s.uiScreens),
+          uiApproved:            drop(s.uiApproved),
+          stagePreview:          drop(s.stagePreview),
+          stageRuns:     drop(s.stageRuns),
+          pinnedContext:         drop(s.pinnedContext),
+          projectLocalRepos:     drop(s.projectLocalRepos),
+          planStageConfig:    setMapEntry(s.planStageConfig, projectId, blueprintToStageConfig(bp)),
+          projectBlueprintId: setMapEntry(s.projectBlueprintId, projectId, blueprintId),
+        }));
+        // #2277: the newly-seeded blueprint's kit becomes a consumer edge (idempotent; no-op when unset).
+        recordBlueprintKit(get, projectId, blueprintId);
+      },
       addBlueprint: () => {
         const id = `bp-${Date.now().toString(36)}`;
         const bp: Blueprint = {

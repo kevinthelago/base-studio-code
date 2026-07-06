@@ -4,7 +4,9 @@ import { useAppStore } from "@/store";
 import { timeAgo } from "@/shared/lib/core/format";
 import { langColor, type RepoCardData } from "../lib/githubSummary";
 import { Spark } from "@/shared/ui/charts";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Skeleton } from "@/shared/ui/feedback/Skeleton";
+import { StatusDot } from "@/shared/ui/feedback/StatusDot";
+import { CardEmpty } from "./cardStates";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
@@ -26,14 +28,19 @@ export function ReposGrid({ repos, loading }: {
       right={<Button variant="ghost" style={{ height: 24, fontSize: 10.5 }}>+ connect more</Button>}
       headMb={10}
     >
-      {repos.length === 0 && !loading && (
-        <EmptyState iconVariant="dashed" icon="⎇" title="No repositories connected." />
+      {loading && repos.length === 0 && (
+        <Grid cols={2} gap="sm">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} h={92} radius={10} />)}
+        </Grid>
+      )}
+      {!loading && repos.length === 0 && (
+        <CardEmpty icon="⎇" title="No repositories connected" hint="Connect repositories to see them here." />
       )}
       <Grid cols={2} gap="sm">
         {repos.map(r => (
           <Card key={r.full_name} interactive onClick={() => setGithubPageMode("repos")}>
             <Row align="baseline" gap={8} style={{ marginBottom: 4 }}>
-              <Box as="span" bg={r.language ? langColor(r.language) : "var(--fg-dim)"} style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, display: "inline-block" }} />
+              <StatusDot color={r.language ? langColor(r.language) : "var(--fg-dim)"} size={8} />
               <Box as="span" className="mono-value">{r.full_name}</Box>
               <Spacer />
               <Text as="span" mono size={9.5} tone="dim">{timeAgo(r.lastPush)}</Text>

@@ -16,7 +16,7 @@ import { resolveIssueAssignee } from "../fleet/fleetAssignee";
 import type { AgentStream } from "../fleet/planFleet";
 import { deriveTopics, buildReadme, communityFiles, type ScaffoldFile } from "../lib/repoScaffold";
 import { renderIssueBody, subIssueLinks, type PlanIssue } from "../issues/planIssues";
-import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "@/features/github/lib/issueProvenance";
+import { BSC_ISSUE_LABEL, BSC_ISSUE_LABEL_COLOR, withProvenanceLabel } from "@/shared/lib/github/issueProvenance";
 
 /** The injected GitHub transport — the same closures handlePublish built over `invoke`. */
 export interface GhApi {
@@ -273,6 +273,13 @@ export async function createIssues(
     for (const name of [...new Set(mine.flatMap(iss => iss.labels))]) {
       await api.post(`repos/${fullName}/labels`, { name, color: "0e8a16" }).catch(() => {});
     }
+    // Ensure each owning stream's `stream:<id>` label up front so issues are created ALREADY tagged
+    // (#2397). Labeling at creation — where the real GitHub number is in hand — avoids the fragile
+    // post-hoc "label by the plan's predicted number" pass, whose numbers 404 when an issue failed to
+    // post or the numbering drifted.
+    for (const label of new Set(mine.map(iss => iss.stream).filter(Boolean).map(s => `stream:${s}`))) {
+      await api.post(`repos/${fullName}/labels`, { name: label, color: "5319e7" }).catch(() => {});
+    }
     // ref → created GitHub node id, so feature parents + their sub-issues can be linked.
     const nodeByRef: Record<string, string> = {};
     for (const iss of mine) {
@@ -281,7 +288,10 @@ export async function createIssues(
       upd(id, { status: "running" });
       try {
         const body: Record<string, unknown> = { title: iss.title, body: renderIssueBody(iss) };
-        body.labels = withProvenanceLabel(iss.labels); // provenance stamp (#738)
+        // Tag the owning stream at creation (#2397) so ownership is correct without a number-matching
+        // pass. Provenance stamp (#738) rides along.
+        const labels = iss.stream ? [...iss.labels, `stream:${iss.stream}`] : iss.labels;
+        body.labels = withProvenanceLabel(labels);
         const issue = await api.post<{ number: number; node_id: string; html_url: string }>(`repos/${fullName}/issues`, body);
         if (issue.node_id) nodeByRef[iss.ref] = issue.node_id;
         if (projectId && issue.node_id) {
@@ -311,9 +321,11 @@ export async function createIssues(
   }
 }
 
-// ── 4. Stream labels — tag each fleet stream's owned issues with `stream:<id>` so ownership is
-//      visible on GitHub and the board. Ensure the label, then apply it to each owned issue
-//      resolvable by number. Idempotent. ──
+// ── 4. Stream labels — a best-effort RECONCILIATION pass (#2397). Issues created in this publish are
+//      already tagged `stream:<id>` at creation (createIssues); this pass re-applies the label to any
+//      PRE-EXISTING issues the stream owns, resolvable by number. Resilient: a plan-ref number that
+//      never became a real issue (a post that failed, or numbering that drifted) 404s — that issue is
+//      SKIPPED, never aborting the stream or surfacing the 404 as a publish error. Idempotent. ──
 export async function applyStreamLabels(
   api: GhApi,
   upd: Upd,
@@ -330,13 +342,17 @@ export async function applyStreamLabels(
         .map(ref => parseInt(ref.replace(/[^0-9]/g, ""), 10))
         .filter(n => Number.isFinite(n) && n > 0);
       let applied = 0;
+      let skipped = 0;
       for (const n of nums) {
-        await api.post(`repos/${st.repo}/issues/${n}/labels`, { labels: [label] });
-        applied++;
+        // Per-issue resilience: a 404 (the number isn't a real issue) skips just that one.
+        const ok = await api.post(`repos/${st.repo}/issues/${n}/labels`, { labels: [label] })
+          .then(() => true).catch(() => false);
+        if (ok) applied++; else skipped++;
       }
+      const skipNote = skipped > 0 ? ` · ${skipped} skipped (no matching issue)` : "";
       upd(id, applied > 0
-        ? { status: "created", detail: `${applied} issue${applied === 1 ? "" : "s"} labeled` }
-        : { status: "exists",  detail: "label ready · no numbered issues" });
+        ? { status: "created", detail: `${applied} issue${applied === 1 ? "" : "s"} labeled${skipNote}` }
+        : { status: "exists",  detail: `label ready${nums.length ? skipNote : " · no numbered issues"}` });
     } catch (e) {
       upd(id, { status: "error", detail: String(e) });
     }

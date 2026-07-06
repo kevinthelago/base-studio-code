@@ -5,22 +5,34 @@
 // streams; a persona stream gets THIS kickoff instead, so a read-only reviewer/documentor stream isn't
 // handed the worker's "own your globs, open a PR" prose.
 import type { Persona } from "@/features/personas";
-import { roleCapability } from "@/shared/lib/session/sessionRoles";
+import { roleCapability, hasScopedWriteCarveOut } from "@/shared/lib/session/sessionRoles";
 import { resolveFlow } from "./agentFlow";
 import { flowKickoffText } from "./flowKickoff";
 import { strategySettings, DEFAULT_STRATEGY, type IntegrationStrategy } from "@/features/planner/lib/integrationStrategy";
 import type { AgentStream } from "./planFleet";
+import personaKickoffEmbedded from "@data/fleet/persona-kickoff.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
+import { fillTemplate } from "@/shared/lib/core/template";
+
+// The kickoff PROSE (the role-agnostic scope paragraph, the read-only closing, and the owns/issues
+// fallbacks) is externalized to `@data/fleet/persona-kickoff.json` (#2416) — editable without touching
+// code + part of the exportable config bundle; the config-dir copy (#2047) overlays the embedded
+// default via `overlayFile`. This module keeps only the interpolation (`{{STREAM_NAME}}`/`{{BRANCH}}`/
+// `{{ISSUES}}`/`{{OWNS}}`/`{{CLOSING}}`) and the role/flow resolution that computes the closing.
+const KICKOFF_PROSE = overlayFile("fleet/persona-kickoff.json", personaKickoffEmbedded);
 
 /** The persona a stream references, or `undefined` (no reference, or an unknown/stale id). */
 export function resolveStreamPersona(personas: Persona[], stream: AgentStream): Persona | undefined {
   return stream.persona ? personas.find((p) => p.id === stream.persona) : undefined;
 }
 
-/** Whether a role may write code or push — drives whether the kickoff carries the worker autonomy/push
- *  prose or the read-only "report, don't commit" instruction. */
+/** Whether a role may write files or push — drives whether the kickoff carries the worker autonomy/push
+ *  prose or the read-only "report, don't commit" instruction. Includes the scoped-write carve-out
+ *  (#851/#1555) so a documentor (code:"none" + DOC_GLOBS) is briefed to WRITE its docs and open a
+ *  flow-governed docs PR, not treated as a read-only reviewer. */
 function roleWrites(role: Persona["role"]): boolean {
   const cap = roleCapability(role);
-  return cap.code === "write" || cap.git === "write";
+  return cap.code === "write" || cap.git === "write" || hasScopedWriteCarveOut(cap);
 }
 
 /**
@@ -33,8 +45,8 @@ function roleWrites(role: Persona["role"]): boolean {
 export function personaStreamPrompt(
   persona: Persona, stream: AgentStream, strategy?: IntegrationStrategy,
 ): string {
-  const owns   = stream.owns.length   ? stream.owns.join(", ")   : "the files for your area";
-  const issues = stream.issues.length ? stream.issues.join(", ") : "the issues assigned to your area";
+  const owns   = stream.owns.length   ? stream.owns.join(", ")   : KICKOFF_PROSE.ownsFallback;
+  const issues = stream.issues.length ? stream.issues.join(", ") : KICKOFF_PROSE.issuesFallback;
   const intro = persona.startPrompt.trim();
   const strat = strategy ?? DEFAULT_STRATEGY;
   const closing = roleWrites(persona.role)
@@ -43,15 +55,15 @@ export function personaStreamPrompt(
         const kick = flowKickoffText(effFlow, stream.id);
         return `${kick.autonomy} ${kick.push}`;
       })()
-    : "This is a read-only role: report what you find by piping notes into bsc-note on stdin; do not commit, push, or open PRs.";
+    : KICKOFF_PROSE.readOnlyClosing;
   return (
     (intro ? `${intro}\n\n` : "") +
-    `You are the "${stream.name}" stream in a parallel fleet, working in your own git worktree on branch ${stream.id} — ` +
-    `do not switch branches or touch other worktrees. Your assigned issues: ${issues}. Your scope: you own ${owns}; ` +
-    `stay within it and coordinate anything cross-cutting through the director. Integration interfaces between features ` +
-    `live in the contracts directory — read them as the source of truth, and ask the director if one is unclear or must change. ` +
-    `When you pause or finish a work session, pipe a short note of where you left off and the next step into bsc-checkpoint on stdin. ` +
-    `${closing} ` +
-    `Verify your work against the repo tests and CI rather than asking whether it is correct.`
+    fillTemplate(KICKOFF_PROSE.scope, {
+      STREAM_NAME: stream.name,
+      BRANCH: stream.id,
+      ISSUES: issues,
+      OWNS: owns,
+      CLOSING: closing,
+    })
   );
 }

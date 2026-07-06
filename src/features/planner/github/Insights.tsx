@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { ProjectsHeader } from "../list/ProjectsHeader";
 import { useActiveProjectGithub, QueryBanner } from "./useActiveProjectGithub";
 import { avatarColor, GH_OPTION_COLORS } from "@/shared/lib/github/colors";
-import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/features/github/lib/projectV2";
+import { parseProjectV2Items, parseProjectV2Fields, statusFieldValue, type ProjectV2Node } from "@/shared/lib/github/projectV2";
 import { Bars, HBars, StatCard } from "@/shared/ui/charts";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
@@ -11,6 +11,22 @@ import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Card } from "@/shared/ui/data/Card";
 import { Text } from "@/shared/ui/typography/Text";
 import { Box } from "@/shared/ui/layout/Box";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Skeleton, SkeletonChart } from "@/shared/ui/feedback/Skeleton";
+
+/** A compact empty state for a card body (#2243) — the card frame + head stay; the body shows this. */
+function CardEmpty({ icon = "○", title, hint }: { icon?: React.ReactNode; title: string; hint?: string }) {
+  return <EmptyState size="sm" iconVariant="dashed" icon={icon} title={title} description={hint} style={{ padding: "20px 12px" }} />;
+}
+
+/** A stack of shimmer rows — a loading placeholder for a bar-list card body (#2243). */
+function SkeletonRows({ rows = 5, h = 20 }: { rows?: number; h?: number }) {
+  return (
+    <Stack gap={8}>
+      {Array.from({ length: rows }).map((_, i) => <Skeleton key={i} h={h} radius={5} />)}
+    </Stack>
+  );
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -190,6 +206,9 @@ export function Insights() {
     return avg.toFixed(1);
   }, [weeklyActivity]);
 
+  // The card layout ALWAYS renders (#2243) — each card body shows a loading skeleton or a compact
+  // empty state, rather than a page-wide "Loading insights…" screen that hid every card. `isLoading`
+  // stays true only until the first page of data arrives, so a background refetch keeps the content.
   const isLoading = loading && issues.length === 0;
 
   return (
@@ -200,130 +219,134 @@ export function Insights() {
 
           <QueryBanner error={error} style={{ marginBottom: 16 }} />
 
-          {isLoading && (
-            <Text as="div" mono size={12} tone="dim" style={{ padding: "40px 0", textAlign: "center" }}>
-              Loading insights…
-            </Text>
-          )}
+          {/* Stat cards */}
+          <Grid cols={4} gap={10} style={{ marginBottom: 18 }}>
+            <StatCard k="total items"   v={String(total)}    sub={`${open} open · ${closed} closed`}         tone="fg"      loading={isLoading} />
+            <StatCard k="completion"    v={`${completionPct}%`} sub={`${closed} of ${total} closed`}          tone="success" loading={isLoading} />
+            <StatCard k="velocity"      v={`${velocity}/wk`} sub="issues closed · last 4 weeks"               tone="info"    loading={isLoading} />
+            <StatCard k="open issues"   v={String(open)}     sub={`${total > 0 ? Math.round((open / total) * 100) : 0}% remaining`} tone="accent" loading={isLoading} />
+          </Grid>
 
-          {!isLoading && (
-            <>
-              {/* Stat cards */}
-              <Grid cols={4} gap={10} style={{ marginBottom: 18 }}>
-                <StatCard k="total items"   v={String(total)}    sub={`${open} open · ${closed} closed`}         tone="fg"      />
-                <StatCard k="completion"    v={`${completionPct}%`} sub={`${closed} of ${total} closed`}          tone="success" />
-                <StatCard k="velocity"      v={`${velocity}/wk`} sub="issues closed · last 4 weeks"               tone="info"    />
-                <StatCard k="open issues"   v={String(open)}     sub={`${total > 0 ? Math.round((open / total) * 100) : 0}% remaining`} tone="accent" />
-              </Grid>
-
-              {/* Middle row: status + assignees */}
-              <Grid cols="1.4fr 1fr" gap={14} style={{ marginBottom: 14 }}>
-                {/* Status distribution */}
-                <Card style={{ padding: "16px 20px" }}>
-                  <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
-                    <Text as="h3" style={{ margin: 0 }}>Status distribution</Text>
-                    <Box as="span" className="hint">{total} items</Box>
-                  </Row>
-                  {statusDist.length === 0 ? (
-                    <Text as="div" mono size={11} tone="dim">No status field found.</Text>
-                  ) : (
-                    <HBars
-                      max={maxStatusCount}
-                      rows={statusDist.map(s => ({ label: s.name, value: s.count, color: s.color }))}
-                    />
-                  )}
-                </Card>
-
-                {/* Assignee workload */}
-                <Card style={{ padding: "16px 20px" }}>
-                  <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
-                    <Text as="h3" style={{ margin: 0 }}>Assignee workload</Text>
-                    <Box as="span" className="hint">open issues</Box>
-                  </Row>
-                  {assigneeDist.length === 0 ? (
-                    <Text as="div" mono size={11} tone="dim">No open issues.</Text>
-                  ) : (
-                    <Stack gap={8}>
-                      {assigneeDist.map(a => (
-                        <Grid key={a.login} cols="18px 112px 1fr 32px" gap={8} align="center">
-                          {a.login === "(unassigned)" ? (
-                            <Box as="span" className="mono" style={{
-                              width: 16, height: 16, borderRadius: "50%",
-                              border: "1px dashed var(--border)", color: "var(--fg-dim)",
-                              fontSize: 9,
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                            }}>?</Box>
-                          ) : (
-                            <Box as="span" className="mono" bg={avatarColor(a.login)} style={{
-                              width: 16, height: 16, borderRadius: "50%", color: "#1a120a",
-                              fontWeight: 700, fontSize: 9,
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                            }}>{a.login[0]?.toUpperCase()}</Box>
-                          )}
-                          <Text as="div" mono size={10.5} tone="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {a.login}
-                          </Text>
-                          <Box bg="var(--bg-elev2)" radius={3} style={{ height: 10, overflow: "hidden" }}>
-                            <Box bg={avatarColor(a.login === "(unassigned)" ? "?" : a.login)} radius={3} style={{
-                              height: "100%",
-                              width: `${(a.count / maxAssigneeCount) * 100}%`,
-                            }} />
-                          </Box>
-                          <Text as="div" mono size={10} tone="dim" style={{ textAlign: "right" }}>{a.count}</Text>
-                        </Grid>
-                      ))}
-                    </Stack>
-                  )}
-                </Card>
-              </Grid>
-
-              {/* Weekly activity */}
-              <Card style={{ padding: "16px 20px", marginBottom: 14 }}>
-                <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
-                  <Text as="h3" style={{ margin: 0 }}>Weekly activity</Text>
-                  <Box as="span" className="hint">last 8 weeks</Box>
-                  <Spacer />
-                  <Row className="mono" gap={14} align="stretch" style={{ fontSize: 10, color: "var(--fg-dim)" }}>
-                    <Box as="span" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <Box as="span" bg="color-mix(in oklch, var(--info), transparent 40%)" radius={2} style={{ width: 10, height: 10, display: "inline-block" }} />
-                      opened
-                    </Box>
-                    <Box as="span" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                      <Box as="span" bg="color-mix(in oklch, var(--success), transparent 40%)" radius={2} style={{ width: 10, height: 10, display: "inline-block" }} />
-                      closed
-                    </Box>
-                  </Row>
-                </Row>
-                <Bars
-                  labels={weeklyActivity.map(w => w.label)}
-                  height={100}
-                  groups={[
-                    { name: "opened", color: "color-mix(in oklch, var(--info), transparent 40%)",    data: weeklyActivity.map(w => w.opened) },
-                    { name: "closed", color: "color-mix(in oklch, var(--success), transparent 40%)", data: weeklyActivity.map(w => w.closed) },
-                  ]}
+          {/* Middle row: status + assignees */}
+          <Grid cols="1.4fr 1fr" gap={14} style={{ marginBottom: 14 }}>
+            {/* Status distribution */}
+            <Card style={{ padding: "16px 20px" }}>
+              <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
+                <Text as="h3" style={{ margin: 0 }}>Status distribution</Text>
+                <Box as="span" className="hint">{total} items</Box>
+              </Row>
+              {isLoading ? (
+                <SkeletonRows rows={5} h={22} />
+              ) : statusDist.length === 0 ? (
+                <CardEmpty icon="◔" title="No status field" hint="Add a Status field to the project board to see its distribution." />
+              ) : (
+                <HBars
+                  max={maxStatusCount}
+                  rows={statusDist.map(s => ({ label: s.name, value: s.count, color: s.color }))}
                 />
-              </Card>
-
-              {/* Label distribution */}
-              {labelDist.length > 0 && (
-                <Card style={{ padding: "16px 20px" }}>
-                  <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
-                    <Text as="h3" style={{ margin: 0 }}>Label frequency</Text>
-                    <Box as="span" className="hint">top {labelDist.length}</Box>
-                  </Row>
-                  <Grid cols={2} gap={32}>
-                    {[labelDist.slice(0, Math.ceil(labelDist.length / 2)), labelDist.slice(Math.ceil(labelDist.length / 2))].map((half, col) => (
-                      <HBars
-                        key={col}
-                        max={maxLabelCount}
-                        rows={half.map(l => ({ label: l.name, value: l.count, color: l.color }))}
-                      />
-                    ))}
-                  </Grid>
-                </Card>
               )}
-            </>
-          )}
+            </Card>
+
+            {/* Assignee workload */}
+            <Card style={{ padding: "16px 20px" }}>
+              <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
+                <Text as="h3" style={{ margin: 0 }}>Assignee workload</Text>
+                <Box as="span" className="hint">open issues</Box>
+              </Row>
+              {isLoading ? (
+                <SkeletonRows rows={5} h={16} />
+              ) : assigneeDist.length === 0 ? (
+                <CardEmpty icon="◇" title="No open issues" hint="Assignee workload appears here once issues are open." />
+              ) : (
+                <Stack gap={8}>
+                  {assigneeDist.map(a => (
+                    <Grid key={a.login} cols="18px 112px 1fr 32px" gap={8} align="center">
+                      {a.login === "(unassigned)" ? (
+                        <Box as="span" className="mono" style={{
+                          width: 16, height: 16, borderRadius: "50%",
+                          border: "1px dashed var(--border)", color: "var(--fg-dim)",
+                          fontSize: 9,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>?</Box>
+                      ) : (
+                        <Box as="span" className="mono" bg={avatarColor(a.login)} style={{
+                          width: 16, height: 16, borderRadius: "50%", color: "#1a120a",
+                          fontWeight: 700, fontSize: 9,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>{a.login[0]?.toUpperCase()}</Box>
+                      )}
+                      <Text as="div" mono size={10.5} tone="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {a.login}
+                      </Text>
+                      <Box bg="var(--bg-elev2)" radius={3} style={{ height: 10, overflow: "hidden" }}>
+                        <Box bg={avatarColor(a.login === "(unassigned)" ? "?" : a.login)} radius={3} style={{
+                          height: "100%",
+                          width: `${(a.count / maxAssigneeCount) * 100}%`,
+                        }} />
+                      </Box>
+                      <Text as="div" mono size={10} tone="dim" style={{ textAlign: "right" }}>{a.count}</Text>
+                    </Grid>
+                  ))}
+                </Stack>
+              )}
+            </Card>
+          </Grid>
+
+          {/* Weekly activity */}
+          <Card style={{ padding: "16px 20px", marginBottom: 14 }}>
+            <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
+              <Text as="h3" style={{ margin: 0 }}>Weekly activity</Text>
+              <Box as="span" className="hint">last 8 weeks</Box>
+              <Spacer />
+              <Row className="mono" gap={14} align="stretch" style={{ fontSize: 10, color: "var(--fg-dim)" }}>
+                <Box as="span" style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <Box as="span" bg="color-mix(in oklch, var(--info), transparent 40%)" radius={2} style={{ width: 10, height: 10, display: "inline-block" }} />
+                  opened
+                </Box>
+                <Box as="span" style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <Box as="span" bg="color-mix(in oklch, var(--success), transparent 40%)" radius={2} style={{ width: 10, height: 10, display: "inline-block" }} />
+                  closed
+                </Box>
+              </Row>
+            </Row>
+            {isLoading ? (
+              <SkeletonChart height={100} />
+            ) : total === 0 ? (
+              <CardEmpty icon="▦" title="No activity yet" hint="Opened vs closed issues per week appear here once the board has issues." />
+            ) : (
+              <Bars
+                labels={weeklyActivity.map(w => w.label)}
+                height={100}
+                groups={[
+                  { name: "opened", color: "color-mix(in oklch, var(--info), transparent 40%)",    data: weeklyActivity.map(w => w.opened) },
+                  { name: "closed", color: "color-mix(in oklch, var(--success), transparent 40%)", data: weeklyActivity.map(w => w.closed) },
+                ]}
+              />
+            )}
+          </Card>
+
+          {/* Label distribution — always present; body swaps loading → empty → content (#2243). */}
+          <Card style={{ padding: "16px 20px" }}>
+            <Row gap={10} align="baseline" style={{ marginBottom: 14 }}>
+              <Text as="h3" style={{ margin: 0 }}>Label frequency</Text>
+              {labelDist.length > 0 && <Box as="span" className="hint">top {labelDist.length}</Box>}
+            </Row>
+            {isLoading ? (
+              <SkeletonRows rows={6} h={16} />
+            ) : labelDist.length === 0 ? (
+              <CardEmpty icon="⌗" title="No labels yet" hint="Label frequency appears here once the board's issues carry labels." />
+            ) : (
+              <Grid cols={2} gap={32}>
+                {[labelDist.slice(0, Math.ceil(labelDist.length / 2)), labelDist.slice(Math.ceil(labelDist.length / 2))].map((half, col) => (
+                  <HBars
+                    key={col}
+                    max={maxLabelCount}
+                    rows={half.map(l => ({ label: l.name, value: l.count, color: l.color }))}
+                  />
+                ))}
+              </Grid>
+            )}
+          </Card>
 
         </Box>
       </section>

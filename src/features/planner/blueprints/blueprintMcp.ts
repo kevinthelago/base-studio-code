@@ -6,9 +6,9 @@
 // tool list, and the existing applyMcpAssign/{dir} machinery scopes them to the project at
 // launch. Pure (no React/Tauri) so it's unit-testable and shared by the editor + launch path.
 
-import { type McpServer } from "@/features/mcp/lib/mcpServers";
+import { type McpServer } from "@/features/mcp";
 import { MCP_CATALOG } from "@/shared/data/mcpCatalog";
-import { catalogLink } from "@/features/mcp/lib/mcpInstall";
+import { catalogLink } from "@/features/mcp";
 import { applyMcpAssign, type McpStoreLike } from "../lib/planExtensions";
 import { type Blueprint } from "../stages/blueprints";
 

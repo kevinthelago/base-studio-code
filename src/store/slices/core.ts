@@ -5,10 +5,12 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import { setMapEntry, deleteMapEntry } from "../updateHelpers";
-import { modelOnProviderSwitch } from "@/shared/lib/core/llmConfig";
+import { modelOnProviderSwitch, DEFAULT_ANTHROPIC_MODEL, DEFAULT_LOCAL_BASE_URL } from "@/shared/lib/core/llmConfig";
+import { projectLinkId } from "@/features/glance/lib/projectLinks";
+import { loadProjectLinks, pushProjectLink, dropProjectLink } from "@/features/glance/lib/projectLinksBridge";
 
 type CoreSlice = Pick<AppStore,
-  "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject"
+  "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "glanceDrill" | "setGlanceDrill" | "projectLinks" | "addProjectLink" | "removeProjectLink" | "hydrateProjectLinks" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject"
 >;
 
 export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) => ({
@@ -21,17 +23,42 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
       // default (a hosted `claude-*` model can't run on Ollama, and vice-versa) — a model the user
       // typed is preserved. So picking Ollama lands on `qwen3-coder` instead of a 404 on the Claude id.
       setLlmProvider: (p) => set((s) => ({ llmProvider: p, llmModel: modelOnProviderSwitch(p, s.llmModel) })),
-      llmModel: "claude-sonnet-4-6",
+      llmModel: DEFAULT_ANTHROPIC_MODEL,
       setLlmModel: (m) => set({ llmModel: m }),
       openaiKey: "",
       setOpenaiKey: (k) => set({ openaiKey: k }),
       geminiKey: "",
       setGeminiKey: (k) => set({ geminiKey: k }),
-      localBaseUrl: "http://localhost:11434/v1",
+      localBaseUrl: DEFAULT_LOCAL_BASE_URL,
       setLocalBaseUrl: (u) => set({ localBaseUrl: u }),
 
       projectsPageMode: "projects",
       setProjectsPageMode: (v) => set({ projectsPageMode: v }),
+      glanceDrill: null,
+      setGlanceDrill: (id) => set({ glanceDrill: id }),
+
+      // #2253 write-through cache over `bsc project link` — hydrate authoritative on boot, each mutation
+      // pushes through the bridge so agents (and a restart) see the same relationships.
+      projectLinks: [],
+      addProjectLink: (from, to, kind) => {
+        if (from === to) return;
+        const id = projectLinkId(from, to, kind);
+        let added = false;
+        set((s) => {
+          if (s.projectLinks.some((l) => l.id === id)) return {};
+          added = true;
+          return { projectLinks: [...s.projectLinks, { id, from, to, kind }] };
+        });
+        if (added) void pushProjectLink(from, to, kind);
+      },
+      removeProjectLink: (id) => {
+        set((s) => ({ projectLinks: s.projectLinks.filter((l) => l.id !== id) }));
+        void dropProjectLink(id);
+      },
+      hydrateProjectLinks: async () => {
+        const loaded = await loadProjectLinks();
+        if (loaded) set({ projectLinks: loaded }); // bridge unreachable → keep the persisted cache
+      },
       projectsView: "list",
       setProjectsView: (v) => set({ projectsView: v }),
       activeProjectId: null,

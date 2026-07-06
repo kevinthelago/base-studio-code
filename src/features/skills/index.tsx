@@ -100,11 +100,14 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
     return () => { cancelled = true; };
   }, [githubToken]);
 
-  // Real telemetry, merged over the library.
+  // Real telemetry, merged over the library. `statsLoaded` flips true on the first poll return so the
+  // telemetry surfaces (Runs, the digest leaderboard) show a loading skeleton rather than a cold
+  // "nothing yet" empty state before the log has been read once (#2245).
   const [stats, setStats] = useState<Record<string, SkillStats>>({});
+  const [statsLoaded, setStatsLoaded] = useState(false);
   usePoll(async (isCancelled) => {
     const lines = await bscJson<string[]>(null, ["logs", "tail", "skill", "--limit", "4000", "--json"], []);
-    if (!isCancelled()) setStats(aggregateSkillTelemetry(parseSkillLog((lines ?? []).join("\n")), new Date()));
+    if (!isCancelled()) { setStats(aggregateSkillTelemetry(parseSkillLog((lines ?? []).join("\n")), new Date())); setStatsLoaded(true); }
   }, 5000);
 
   const merged = useMemo<SkillDef[]>(() => mergeSkillStats(skills, stats), [skills, stats]);
@@ -203,7 +206,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
       {mode === "library" && (
         <Stack style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
           {/* KPI digest (collapsible) */}
-          <SkillsDigest merged={merged} stats={stats} kpis={kpis} digestOpen={digestOpen} onToggle={() => setDigestOpen((v) => !v)} />
+          <SkillsDigest merged={merged} stats={stats} kpis={kpis} statsLoaded={statsLoaded} digestOpen={digestOpen} onToggle={() => setDigestOpen((v) => !v)} />
 
           {/* Command bar */}
           <Row gap={10} style={{ padding: "10px 18px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
@@ -346,7 +349,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
       )}
 
       {mode === "runs" && (
-        <RunsTab merged={merged} stats={stats} onOpen={(id) => { select("library"); drawer.select(id); }} />
+        <RunsTab merged={merged} stats={stats} statsLoaded={statsLoaded} onOpen={(id) => { select("library"); drawer.select(id); }} />
       )}
 
     </Screen>
@@ -356,3 +359,10 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
 // Re-exported feature surface — this index is the skills feature's public API barrel (#1309).
 export { SkillsStatus } from "./SkillsStatus";
 export { SessionSkillsModal, type SessionSkillsModalProps } from "./SessionSkillsModal";
+
+// #1545: public API for cross-feature consumers (planner, app/console).
+export {
+  type SkillDef, skillFromPayload, resolveSkills, effectiveSessionSkills,
+  expandGroups, toSkillCfgs,
+} from "./lib/skills";
+export { loadPendingLessons, lessonTitle, type Lesson } from "./lib/lessons";

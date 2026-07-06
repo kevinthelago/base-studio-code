@@ -298,7 +298,7 @@ async fn noise_handshake_and_auth(
 /// Replay the current `TunnelState` snapshot to a freshly-paired client, in the exact
 /// wire order the mobile app expects: pane list + per-session state, per-pane PTY sizes,
 /// plan manifests (#588), the last live planner frames (#934), then the fleet roster (F2),
-/// automation list (A2), and MCP extension list (M2). Each `*_snapshot()` reads through
+/// automation list (A2), MCP extension list (M2), and hook telemetry (M3). Each `*_snapshot()` reads through
 /// `try_state`, so a missing `TunnelState` replays nothing rather than erroring. Called
 /// once after `auth_ok`, before subscribing to the live bus, so nothing is double-sent.
 async fn replay_state(
@@ -354,6 +354,12 @@ async fn replay_state(
     let mcp = snap(app, |s| s.mcp_snapshot());
     if !mcp.is_empty() {
         send_msg(sink, tx, &ServerMsg::McpList { extensions: mcp }).await?;
+    }
+
+    // Replay the last hook-telemetry summary (M3 / #937) — non-empty only after the
+    // frontend has pushed one.
+    if let Some(telemetry) = snap(app, |s| s.hook_telemetry_snapshot()) {
+        send_msg(sink, tx, &ServerMsg::HookTelemetry { telemetry }).await?;
     }
     Ok(())
 }

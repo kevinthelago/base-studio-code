@@ -1255,6 +1255,45 @@ describe("agent fleet store", () => {
     expect(st.agentProfiles).toEqual([]);
   });
 
+  it("fleetStartProject seeds worker profile + flow from the blueprint's fleetPolicy (#1854 Phase b)", () => {
+    // The project's seeding blueprint declares a fleetPolicy → unpinned WORKER streams pick up its
+    // default profile + flow; the director keeps its role default and carries no flow. A stream's
+    // own pin still wins (covered by the fleetPolicy resolver unit tests).
+    const policyFlow = { autonomy: "checkpoint", push: "push-confirm", trigger: "per-stage", gate: "hard" } as const;
+    useAppStore.setState({
+      bscBaseDir: "/base",
+      activeProjectId: "PVT_pub",
+      agentProfiles: [],
+      blueprints: [{ id: "bp-policy", name: "Policy", desc: "", sections: [], fleetPolicy: { profile: "pf_policy", flow: policyFlow } }] as never,
+      projectBlueprintId: { "pp-key": "bp-policy" },
+    });
+    useAppStore.getState().fleetStartProject("PP", fleet, "pp-key");
+    const st = useAppStore.getState();
+    // Unpinned workers inherit the blueprint policy's default profile + flow.
+    expect(st.paneProfiles[fleetPaneId("pp-key", "auth-ui")]).toBe("pf_policy");
+    expect(st.paneFlows[fleetPaneId("pp-key", "auth-ui")]).toEqual(policyFlow);
+    expect(st.paneProfiles[fleetPaneId("pp-key", "api")]).toBe("pf_policy");
+    // The director is NOT a worker stream: it keeps its role default profile and no flow.
+    expect(st.paneProfiles[directorPaneId("pp-key")]).not.toBe("pf_policy");
+    expect(st.paneFlows[directorPaneId("pp-key")]).toBeUndefined();
+  });
+
+  it("fleetStartProject applies no fleetPolicy default when the blueprint declares none (parity)", () => {
+    // A blueprint with no fleetPolicy ⇒ byte-identical to pre-policy behavior: workers fall back to
+    // the role default profile and carry no flow (DEFAULT_FLOW is applied downstream at pane mount).
+    useAppStore.setState({
+      bscBaseDir: "/base",
+      activeProjectId: "PVT_pub",
+      agentProfiles: [],
+      blueprints: [{ id: "bp-plain", name: "Plain", desc: "", sections: [] }] as never,
+      projectBlueprintId: { "np-key": "bp-plain" },
+    });
+    useAppStore.getState().fleetStartProject("NP", fleet, "np-key");
+    const st = useAppStore.getState();
+    expect(st.paneProfiles[fleetPaneId("np-key", "auth-ui")]).toBe("pf_auto"); // worker role default
+    expect(st.paneFlows[fleetPaneId("np-key", "auth-ui")]).toBeUndefined();
+  });
+
   it("prefers Rust-provided hub + worktree paths over the bscBaseDir mirror (#905)", () => {
     // bscBaseDir EMPTY — the exact condition that silently dropped every session at
     // user root, because projectHubCwd/agentWorktreeCwd return "" and the PTY then

@@ -12,3 +12,16 @@ src-tauri/data/planner/github-commands.md   text eol=lf
 src-tauri/data/planner/github-repo-item.md  text eol=lf
 src-tauri/data/planner/linked-repo-item.md  text eol=lf
 src-tauri/data/planner/automations-empty.md text eol=lf
+
+# Externalized bsc-* shell rc fragments (#2092) + the bsc-defer directive (#2145), embedded via
+# include_dir! (config::load_str) and concatenated into the session bsc-env.sh. MUST be LF: a CRLF
+# checkout would embed `\r` into sourced bash (breaking the #296 one-function-per-line glue) and drift
+# the assembled body from the rustc-normalized string literals these fragments replaced.
+src-tauri/data/shell/*.sh          text eol=lf
+src-tauri/data/fleet/*.md          text eol=lf
+
+# Runtime-fault instrumentation adapters + per-stack shim templates (#2262), embedded via include_dir!
+# and rendered verbatim into generated apps. Pin to LF so the rendered shim bytes are stable on every
+# platform (a CRLF checkout would ship the generated app CRLF-laden shims).
+src-tauri/data/runtime-fault/adapters.json  text eol=lf
+src-tauri/data/runtime-fault/shims/*.tmpl   text eol=lf

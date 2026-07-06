@@ -19,12 +19,14 @@ use crate::StrErr;
 mod bridge;
 mod provision;
 mod readiness;
+mod users;
 
 // Re-export every `#[tauri::command]` at `session::sandbox::*` so the invoke-handler registration in
 // `app::run` (and any other caller) keeps its existing paths after the split.
 pub(crate) use bridge::*;
 pub(crate) use provision::*;
 pub(crate) use readiness::*;
+pub(crate) use users::*;
 
 /// The sealed agent sandbox distro we import + run sessions inside (#1988). Built from
 /// `tooling/wsl-sandbox/` (Debian-slim + the slim Linux `bsc` sidecars + a locked-down `wsl.conf`,

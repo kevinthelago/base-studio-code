@@ -8,7 +8,8 @@
     "tester":    { "role": "tester",    "github": "read",  "git": "read",  "code": "none",  "net": "read", "writeGlobs": [] },
     "reviewer":  { "role": "reviewer",  "github": "read",  "git": "read",  "code": "none",  "net": "read", "writeGlobs": [] },
     "issuer":    { "role": "issuer",    "github": "write", "git": "read",  "code": "none",  "net": "read", "writeGlobs": [] },
-    "juror":     { "role": "juror",     "github": "read",  "git": "read",  "code": "none",  "net": "read", "writeGlobs": [] }
+    "juror":     { "role": "juror",     "github": "read",  "git": "read",  "code": "none",  "net": "read", "writeGlobs": [] },
+    "documentor": { "role": "documentor", "github": "read", "git": "read", "code": "none", "net": "read", "writeGlobs": ["*.md", "**/*.md", "README*", "**/README*", "CHANGELOG*"] }
   },
   "dbOwnedPlanFiles": ["deploy.md", "deploy.json", "phases.json", "issues.json", "fleet.json", "repos.json", "features.json"],
   "depManifestFiles": ["package.json", "package-lock.json", "Cargo.toml", "Cargo.lock", "pnpm-lock.yaml", "yarn.lock"]

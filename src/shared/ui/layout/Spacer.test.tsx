@@ -6,7 +6,8 @@ describe("Spacer", () => {
   it("is a greedy flex:1 filler by default", () => {
     const { container } = render(<Spacer />);
     const el = container.firstChild as HTMLElement;
-    expect(el.style.flex).toBe("1");
+    // jsdom's cssstyle serializer expands the `flex: 1` shorthand to its longhand equivalent.
+    expect(el.style.flex).toBe("1 1 0%");
     expect(el.getAttribute("aria-hidden")).toBe("true");
   });
 

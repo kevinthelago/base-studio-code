@@ -1,9 +1,33 @@
 import { describe, it, expect } from "vitest";
 import {
-  resolveLlmConfig, hasLlmKey, bscAgentEnv, providerNeedsBscAgent, effectiveHarness,
-  resolveModel, modelOnProviderSwitch, DEFAULT_LOCAL_MODEL,
+  resolveLlmConfig, hasLlmKey, bscAgentEnv, aiderModelArg, aiderEnv, providerNeedsBscAgent, effectiveHarness,
+  resolveModel, modelOnProviderSwitch, DEFAULT_LOCAL_MODEL, DEFAULT_ANTHROPIC_MODEL, DEFAULT_LOCAL_BASE_URL,
+  LLM_PROVIDERS,
   type LlmConfigSource,
 } from "./llmConfig";
+
+// #2416: the model-ID defaults + provider list moved to `@data/console/model-defaults.json` — the
+// ONE source for every model default. Pin that they resolve to the previous TS-authored values.
+describe("model defaults resolve from @data/console/model-defaults.json (#2416)", () => {
+  it("keeps the previous packaged defaults", () => {
+    expect(DEFAULT_ANTHROPIC_MODEL).toBe("claude-sonnet-4-6");
+    expect(DEFAULT_LOCAL_MODEL).toBe("qwen3-coder");
+    expect(DEFAULT_LOCAL_BASE_URL).toBe("http://localhost:11434/v1");
+  });
+
+  it("keeps the previous provider list + key placeholders, in order", () => {
+    expect(LLM_PROVIDERS.map((p) => [p.id, p.label])).toEqual([
+      ["anthropic", "Anthropic Claude"],
+      ["openai",    "OpenAI"],
+      ["gemini",    "Google Gemini"],
+      ["local",     "Local (Ollama / OpenAI-compatible)"],
+      ["ollama",    "Ollama (Local)"],
+    ]);
+    expect(Object.fromEntries(LLM_PROVIDERS.map((p) => [p.id, p.keyPlaceholder]))).toEqual({
+      anthropic: "sk-ant-…", openai: "sk-…", gemini: "AIza…", local: "", ollama: "",
+    });
+  });
+});
 
 const base: LlmConfigSource = {
   llmProvider: "anthropic",
@@ -117,5 +141,38 @@ describe("bscAgentEnv", () => {
     const e = bscAgentEnv({ provider: "local", model: "llama3", apiKey: "", baseUrl: "http://localhost:11434/v1" });
     expect(e.BSC_AGENT_API_KEY).toBeUndefined();
     expect(e.BSC_AGENT_BASE_URL).toBe("http://localhost:11434/v1");
+  });
+});
+
+describe("aiderModelArg (#1172)", () => {
+  it("namespaces anthropic + gemini models by provider", () => {
+    expect(aiderModelArg({ provider: "anthropic", model: "claude-sonnet-4-6", apiKey: "k", baseUrl: "" })).toBe("anthropic/claude-sonnet-4-6");
+    expect(aiderModelArg({ provider: "gemini", model: "gemini-2.0-flash", apiKey: "k", baseUrl: "" })).toBe("gemini/gemini-2.0-flash");
+  });
+  it("passes OpenAI models bare", () => {
+    expect(aiderModelArg({ provider: "openai", model: "gpt-4o", apiKey: "k", baseUrl: "" })).toBe("gpt-4o");
+  });
+  it("routes a local / ollama model through the openai/ prefix (OpenAI-compatible endpoint)", () => {
+    expect(aiderModelArg({ provider: "local", model: "qwen3-coder", apiKey: "", baseUrl: "http://x/v1" })).toBe("openai/qwen3-coder");
+    expect(aiderModelArg({ provider: "ollama", model: "llama3", apiKey: "", baseUrl: "http://x/v1" })).toBe("openai/llama3");
+  });
+  it("leaves a model that already carries a provider/ prefix untouched", () => {
+    expect(aiderModelArg({ provider: "anthropic", model: "anthropic/claude-3-5-sonnet", apiKey: "k", baseUrl: "" })).toBe("anthropic/claude-3-5-sonnet");
+  });
+});
+
+describe("aiderEnv (#1172)", () => {
+  it("maps each hosted provider's key to the var Aider/litellm reads", () => {
+    expect(aiderEnv({ provider: "anthropic", model: "m", apiKey: "ant", baseUrl: "" })).toEqual({ ANTHROPIC_API_KEY: "ant" });
+    expect(aiderEnv({ provider: "openai", model: "m", apiKey: "oai", baseUrl: "" })).toEqual({ OPENAI_API_KEY: "oai" });
+    expect(aiderEnv({ provider: "gemini", model: "m", apiKey: "gem", baseUrl: "" })).toEqual({ GEMINI_API_KEY: "gem" });
+  });
+  it("omits a hosted key when none is set", () => {
+    expect(aiderEnv({ provider: "anthropic", model: "m", apiKey: "", baseUrl: "" })).toEqual({});
+  });
+  it("carries OPENAI_API_BASE + a placeholder key for a local / ollama endpoint", () => {
+    const e = aiderEnv({ provider: "local", model: "m", apiKey: "", baseUrl: "http://localhost:11434/v1" });
+    expect(e.OPENAI_API_BASE).toBe("http://localhost:11434/v1");
+    expect(e.OPENAI_API_KEY).toBe("sk-local-none"); // non-empty so the client inits
   });
 });

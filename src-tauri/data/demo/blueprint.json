@@ -1,0 +1,6 @@
+{
+  "id": "demo-microservices-platform",
+  "name": "Northwind microservices",
+  "desc": "The lifecycle blueprint that seeds each Northwind service — discovery → structure → fleet, with the commerce playbook attached.",
+  "uses": 14
+}

@@ -1,0 +1,29 @@
+[package]
+name = "bsc-todo"
+version = "0.1.0"
+edition = "2021"
+description = "Two-scope agent todo store (#1872): the GLOBAL workflow-runbook store (SQLite) + the `bsc todo` CLI over both scopes (global here, feature scope in plandb), plus the per-turn context-injection renderer bsc-agent calls. Shared by the Tauri app, the `bsc` umbrella CLI, and the bsc-agent runtime."
+
+# The core lib (no Tauri) so the tiny CLI + the lean bsc-agent binary can reuse it without dragging
+# the whole desktop app in.
+[lib]
+name = "bsc_todo"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# `bundled` compiles SQLite from source (matches plandb/skilldb) for cross-platform reliability.
+rusqlite = { version = "0.40", features = ["bundled"] }
+# The feature-scope store + the shared `Todo` type + the connection-level todo helpers (#1872): the
+# global sibling store here REUSES them over its own db, and `bsc todo --scope feature` opens plan.db.
+plandb = { path = "../plandb" }
+# The cross-file impact/delete finder (#1873): `bsc todo seed-refs` runs `bsc_files::refs` and turns
+# its impact map into a feature checklist (#2331). Type + logic dep only — no cycle (bsc-files is a
+# leaf file tool that knows nothing of the todo store).
+bsc-files = { path = "../bsc-files" }
+# Shared SQLite connection plumbing (open + busy_timeout) the global store shares with plandb/skilldb.
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
+# Shared CLI scaffold (#1762): help dispatch + `resolve_store_path` (--db→env→default) + `emit`.
+bsc-cli-util = { path = "../bsc-cli-util" }
+# Shared leaf utilities (#1646): the one `~/.base-studio-code` base-dir resolver.
+bsc-util = { path = "../bsc-util" }

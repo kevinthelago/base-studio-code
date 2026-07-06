@@ -5,7 +5,7 @@ use crate::{app, extensions, fleet, planner, session};
 use crate::console::{bsc, discovery, ledger, pty};
 use crate::github::{self, git_hooks, oauth};
 use crate::mobile::tunnel;
-use crate::observability::{self, logs, perf, tokens};
+use crate::observability::{self, collector, graph_log, logs, perf, tokens};
 use crate::platform::docstore;
 use crate::project;
 use crate::sources::{credentials, data, oauth as source_oauth};
@@ -57,43 +57,41 @@ pub fn run() {
             super::single_instance::focus_main(app);
         }));
     }
+    // The runtime log-scope graph (#1389): the custom dual-sink `GraphLogger` replaces
+    // `tauri-plugin-log`. The scope registry is created here so it can be BOTH managed state (for the
+    // Tauri commands) and captured by the logger installed in `setup` (which needs the app handle to
+    // resolve the log-dir file path). It loads the persisted `log-scopes.json` (or the defaults).
+    let scope_registry = graph_log::ScopeRegistry::new(graph_log::scope_config_path());
+
     builder
-        .plugin(
-            tauri_plugin_log::Builder::new()
-                // Keep noisy dependencies (tauri/wry/reqwest) quiet — only warnings
-                // and above — while showing our own app logs at info. A global Info
-                // filter floods stdout+file from deps and can stall the UI.
-                .level(log::LevelFilter::Warn)
-                .level_for("base_studio_code_lib", log::LevelFilter::Info)
-                .format(|out, message, record| {
-                    let ts = time::OffsetDateTime::now_utc()
-                        .format(&time::macros::format_description!("[hour]:[minute]:[second]"))
-                        .unwrap_or_default();
-                    out.finish(format_args!(
-                        "\x1b[90m{ts}\x1b[0m {color}{level:<5}\x1b[0m \x1b[90m{target}\x1b[0m {message}",
-                        color = level_color(record.level()),
-                        level = record.level(),
-                        target = record.target(),
-                    ));
-                })
-                .targets([
-                    // Visible in the `tauri dev` terminal…
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                    // …and persisted to a rotating file in the app log dir.
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
-                        file_name: Some("base-studio-code".into()),
-                    }),
-                ])
-                .build(),
-        )
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .manage(crate::console::pty::PtyState::new())
         .manage(tunnel::TunnelState::new())
         .manage(perf::PerfState::new(perf_db()))
         .manage(logs::LogState::new(logs::LogConfig::default()))
+        .manage(scope_registry.clone())
+        // Runtime fault-ingest collector (#2261): the loopback receiver a generated app POSTs
+        // faults/heartbeats to. Started (bound + accept loop spawned) in `setup` below.
+        .manage(collector::CollectorState::new())
         .manage(UncleanShutdown(unclean_shutdown))
         .setup(move |app| {
+            // Install the dual-sink GraphLogger (#1389) in place of tauri-plugin-log — FIRST, so the
+            // startup logs below are captured. The FILE sink writes the rotating app log (the #1607
+            // reader's `app` stream, `<app_log_dir>/base-studio-code.log`); the CONSOLE sink is gated
+            // by the scope registry. A missing log-dir falls back under the base dir (still readable).
+            let app_log = logs::app_log_file(app.handle())
+                .unwrap_or_else(|| bsc_base_dir().join("base-studio-code.log"));
+            graph_log::install(scope_registry.clone(), app_log.clone());
+            // External-write watch: a `bsc log set` from a console session rewrites `log-scopes.json`;
+            // poll its mtime and reload the in-memory graph live (cheap stat; read only on a change).
+            let reg_poll = scope_registry.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    reg_poll.reload_if_changed();
+                }
+            });
             log::info!("[startup] process→setup {}ms (native + plugin init)", boot_start.elapsed().as_millis());
             // One-time layout migration (#922): consolidate legacy draft/ hubs back under
             // projects/ while nothing holds them as a cwd. Idempotent + cheap once draft/ is gone.
@@ -127,9 +125,15 @@ pub fn run() {
             // LogState default (10k lines) until the frontend pushes the user's value.
             let cap_base = bsc_base_dir();
             let cap_cfg = app.state::<logs::LogState>().get();
+            // The rotating app log now belongs to the GraphLogger (#1389) — no plugin rotates it — so
+            // include it in the boot cap alongside the TSV streams.
+            let cap_app_log = app_log.clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_secs(perf::STARTUP_GRACE_SECS)).await;
-                tauri::async_runtime::spawn_blocking(move || logs::cap_logs(&cap_base, &cap_cfg));
+                tauri::async_runtime::spawn_blocking(move || {
+                    logs::cap_logs(&cap_base, &cap_cfg);
+                    logs::cap_log(&cap_app_log, &cap_cfg);
+                });
             });
             // Reclaim stale fleet worktrees so they don't accumulate to GBs (#worktree-disk): orphans
             // (deleted project) + merged-and-clean worktrees. Off the synchronous boot path + on a
@@ -142,6 +146,10 @@ pub fn run() {
             // Spawn the background performance sampler.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(perf::run_sampler(handle));
+            // Start the localhost fault-ingest receiver (#2261): binds 127.0.0.1:0 and runs its accept
+            // loop on a background thread. A bind failure is logged and leaves the port at 0 (ingest
+            // unavailable) rather than aborting startup.
+            app.state::<collector::CollectorState>().start();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -164,6 +172,7 @@ pub fn run() {
             pty::pty_broadcast,
             pty::pty_resize,
             pty::pty_kill,
+            pty::pty_set_app_runner,
             bsc::bsc,
             app::dialog::pick_directory,
             app::dialog::pick_save_file,
@@ -219,6 +228,7 @@ pub fn run() {
             session::sandbox::sync_sandbox_plan_db,
             session::sandbox::sandbox_clone_repo,
             session::sandbox::ensure_sandbox_worktree,
+            session::sandbox::ensure_sandbox_user,
             app::recovery::was_unclean_shutdown,
             github::readiness::github_readiness,
             github::readiness::preflight,
@@ -257,6 +267,7 @@ pub fn run() {
             tunnel::tunnel_automation_ran,
             tunnel::tunnel_automation_failed,
             tunnel::tunnel_set_mcp_state,
+            tunnel::tunnel_set_hook_telemetry,
             fleet::inspect::read_worktree_changes,
             fleet::inspect::read_worktree_branch,
             fleet::inspect::read_worktree_commits,
@@ -270,6 +281,8 @@ pub fn run() {
             project::hub::project_dir_path,
             project::hub::repo_dir_path,
             observability::logs::append_coord_woke,
+            observability::collector::collector_info,
+            observability::collector::project_liveness,
             git_hooks::read_git_hooks,
             perf::perf_get_config,
             perf::perf_set_config,
@@ -285,6 +298,11 @@ pub fn run() {
             logs::log_get_config,
             logs::log_set_config,
             logs::enforce_log_caps,
+            // Runtime log-scope graph (#1389): the console-view control surface + the frontend bridge.
+            graph_log::log_get_scopes,
+            graph_log::log_set_scope,
+            graph_log::log_reset_scopes,
+            graph_log::frontend_log,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

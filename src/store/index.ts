@@ -9,6 +9,9 @@ import { migrateLegacyExtensions } from "@/features/mcp/lib/migrateExtensions";
 import { createMcpSlice } from "@/features/mcp/store";
 import { createPersonasSlice } from "@/features/personas/store";
 import { reconcilePersonas } from "@/features/personas/lib/persona";
+import { createOrgSlice } from "@/features/org/store";
+import { createComponentsSlice } from "@/features/components/store";
+import { reconcileOrgs } from "@/features/org/lib/org";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
 
@@ -46,6 +49,8 @@ export const useAppStore = create<AppStore>()(
       ...createSkillsSlice(set, get, store),
       ...createMcpSlice(set, get, store),
       ...createPersonasSlice(set, get, store),
+      ...createOrgSlice(set, get, store),
+      ...createComponentsSlice(set, get, store),
     }),
     {
       name: "app-state",
@@ -57,6 +62,7 @@ export const useAppStore = create<AppStore>()(
         activeTabIdx:    s.activeTabIdx,
         terminalFontSize: s.terminalFontSize,
         accent:          s.accent,
+        kitTheme:        s.kitTheme,
         keybindings:     s.keybindings,
         paneViews:       s.paneViews,
         paneNames:       s.paneNames,
@@ -76,6 +82,7 @@ export const useAppStore = create<AppStore>()(
         activeRepoName:  s.activeRepoName,
         automationsTab:  s.automationsTab,
         pageTabOrder:    s.pageTabOrder,
+        activePageTab:   s.activePageTab,
         settingsSection: s.settingsSection,
         sandboxNudgeDismissCount: s.sandboxNudgeDismissCount,
         perfConfig:      s.perfConfig,
@@ -103,6 +110,7 @@ export const useAppStore = create<AppStore>()(
         injectionHardGate:    s.injectionHardGate,
         bypassPermissions:    s.bypassPermissions,
         sandboxConsoles:      s.sandboxConsoles,
+        showConsolePage:      s.showConsolePage,
         autoPlanWithClaude:   s.autoPlanWithClaude,
         autoCompleteGates:    s.autoCompleteGates,
         allowGateOverride:    s.allowGateOverride,
@@ -115,7 +123,10 @@ export const useAppStore = create<AppStore>()(
         fleetPaneStreams:     s.fleetPaneStreams,
         projectLocalRepos:    s.projectLocalRepos,
         localDraftProjects:   s.localDraftProjects,
+        projectLinks:         s.projectLinks,   // #2253: user-drawn Glance project relationships
         projectKeyAlias:      s.projectKeyAlias,
+        autoTriage:           s.autoTriage,   // #2265: per-project fault auto-triage toggle
+        autoKitDispatch:      s.autoKitDispatch, // #2277: per-project kit auto-dispatch toggle
         issueLinks:           s.issueLinks,
         achievements:         s.achievements,
         hiddenProjectIds:     s.hiddenProjectIds,
@@ -155,6 +166,14 @@ export const useAppStore = create<AppStore>()(
         skillGroups:           s.skillGroups,
         sessionSkillGroups:    s.sessionSkillGroups,
         personas:              s.personas,   // #2094: the agent-identity library (built-ins reconciled on load)
+        orgs:                  s.orgs,       // #2193: the persona-relationship graph library (reconciled on load)
+        demoActive:            s.demoActive, // #2272: a loaded demo state + its pre-demo backup survive restart
+        demoBackup:            s.demoBackup,
+        orgZoom:               s.orgZoom,    // #2199: per-org canvas zoom (view state)
+        components:            s.components, // #2269: the proven-component library (seed until the bsc store lands)
+        kits:                  s.kits,       // #2269: the component kits (technology-scoped namespaces)
+        kitUsage:              s.kitUsage,   // #2277: the consumer index (project→kit) — a fast-first-paint cache
+        kitDispatches:         s.kitDispatches, // #2277: the pending fan-out queue — durable so the drain delivers it after a restart
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint
@@ -182,6 +201,10 @@ export const useAppStore = create<AppStore>()(
         // The Blueprints page-mode was folded into the Planner tab's blueprint rail (#blueprints);
         // a user whose last mode was it would otherwise land on a blank canvas.
         if (state && (state.projectsPageMode as string) === "blueprints") state.projectsPageMode = "projects";
+        // Personas was folded into Org (#2199) — a last-mode of "personas" now opens Org.
+        if (state && (state.projectsPageMode as string) === "personas") state.projectsPageMode = "org";
+        // The Fleet page-mode was folded into Glance (#2223/#2228) — a last-mode of "fleet" opens Projects.
+        if (state && (state.projectsPageMode as string) === "fleet") state.projectsPageMode = "projects";
         // Refresh BUILT-IN blueprints from code on every load (#677). They're code-owned
         // templates, but `blueprints` is persisted — so improvements to a built-in (the
         // `optional` UI stage, enabled repos, updated prompts, …) would never reach a user
@@ -192,6 +215,9 @@ export const useAppStore = create<AppStore>()(
         // built-in, restore built-in identity, and keep user edits + user-authored personas. Same
         // code-owned-template discipline as the blueprints refresh below.
         if (state?.personas) state.personas = reconcilePersonas(state.personas);
+        // Same discipline for the org library (#2193): re-seed dropped built-ins, restore built-in
+        // identity, keep user edits + user-authored orgs.
+        if (state?.orgs) state.orgs = reconcileOrgs(state.orgs);
         if (state?.blueprints) {
           state.blueprints = refreshBuiltIns(state.blueprints);
         }

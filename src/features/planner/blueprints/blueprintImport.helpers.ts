@@ -3,12 +3,10 @@
 
 import { type CSSProperties } from "react";
 import { type PreviewBlueprint } from "./BlueprintModals";
+// The loading shimmer is the shared skeleton style now (#2234) — one skeleton look app-wide.
+export { shimmer } from "@/shared/ui/feedback/shimmer";
 
 export const spin: CSSProperties = { animation: "bim-spin .8s linear infinite" };
-export const shimmer: CSSProperties = {
-  background: "linear-gradient(90deg,var(--bg-elev) 0%,var(--bg-elev2) 50%,var(--bg-elev) 100%)",
-  backgroundSize: "260px 100%", animation: "bim-shimmer 1.1s linear infinite",
-};
 
 /** A fetched blueprint-preview cache entry for a gist row (#1037). */
 export type PreviewEntry = { loading?: boolean; data?: PreviewBlueprint; error?: string };

@@ -8,6 +8,9 @@
 // user-facing agent template. Wiring personas into fleet-stream launch + console launch (so picking a
 // persona resolves role + prompt + skills + model in one step) is the follow-up phase.
 import type { SessionRole } from "@/shared/lib/session/sessionRoles";
+import { overlayGlob, overlayRaw } from "@/shared/lib/core/configOverrides";
+import workerProtocolMd from "@data/fleet/worker-protocol.md?raw";
+import directorProtocolMd from "@data/fleet/director-protocol.md?raw";
 
 export interface Persona {
   /** Stable, opaque id (slug for built-ins, minted for user personas). */
@@ -24,48 +27,68 @@ export interface Persona {
   startPrompt: string;
   /** Attached skill ids (the Skills library, #636) written into the session's .claude/skills/. */
   skills: string[];
+  /** The position's charter — what it is accountable for (#2193). One facet of the org abstraction,
+   *  orthogonal to skills (capability) and role (permission); optional, so pre-#2193 personas are
+   *  unaffected. Feeds the generated start prompt + the Org designer's position inspector. */
+  responsibilities?: string[];
   /** Default model id for this persona (empty = the session/global default). */
   model?: string;
+  /** This identity is meant to run as a POOL of interchangeable instances (#2199) — a swarm of N agents
+   *  doing the same job. In the Org designer, a set of positions on a pooled persona that share the same
+   *  external relationships collapses into ONE stacked card (drill in to see the members). Purely a
+   *  designer/consolidation hint today; the fleet still launches N real agents. Optional — unset = 1:1. */
+  pooled?: boolean;
   /** A packaged persona: seeded from code, restored on refresh. Can be cloned + edited (edits persist
    *  as an overlay) but not deleted; user-authored personas have `builtin` unset. */
   builtin?: boolean;
 }
 
-/** The packaged personas — one per current role, so the tab is populated + honest on day one. The
- *  `documentor` persona introduces a NEW behavioral identity WITHOUT a new role: it sits on the same
- *  read-only floor as `reviewer` but writes docs via its prompt + skills (a role write-scope for docs
- *  is a follow-up). Built-in prompts are short seeds; the two that have real runtime protocols
- *  (worker/director) get their prose wired from the backend `fleet/*.md` in a later phase (#2094 Part
- *  B follow-up) — for now they carry a placeholder pointer so the tab never shows invented content. */
-export const BUILTIN_PERSONAS: Persona[] = [
-  { id: "persona-planner",  name: "Planner",   role: "planner",  builtin: true, skills: [],
-    blurb: "Shapes a pitch or repo set into a complete, executable plan.",
-    startPrompt: "You are the planning session. Turn the pitch into goal/scope/stack/architecture, a feature breakdown, granular agent-ready issues, and the fleet. Plan only — never write project code." },
-  { id: "persona-worker",   name: "Worker",    role: "worker",   builtin: true, skills: [],
-    blurb: "Executes one assigned issue in its own worktree, then opens a PR.",
-    startPrompt: "" /* runtime protocol: fleet/worker-protocol.md (wired in a later phase) */ },
-  { id: "persona-director", name: "Director",  role: "director", builtin: true, skills: [],
-    blurb: "Coordinates the fleet: reviews/merges PRs, resolves decisions, keeps the board current.",
-    startPrompt: "" /* runtime protocol: fleet/director-protocol.md (wired in a later phase) */ },
-  { id: "persona-triage",   name: "Triage",    role: "triage",   builtin: true, skills: [],
-    blurb: "Works a repo's open issues by priority, resuming its prior conversation.",
-    startPrompt: "You are triage for this repo. Resume the prior conversation and work the open issues by priority. You may open/label issues but never touch code or git." },
-  { id: "persona-reviewer", name: "Reviewer",  role: "reviewer", builtin: true, skills: [],
-    blurb: "Reads a change and reviews it — read-only, no code writes.",
-    startPrompt: "You are a reviewer. Read the change and report a structured review against the acceptance criteria. Read-only: never edit code, commit, or push." },
-  { id: "persona-tester",   name: "Tester",    role: "tester",   builtin: true, skills: [],
-    blurb: "Runs the build + tests for a change and reports the result.",
-    startPrompt: "You are a tester. Run the build and test suite for this change and report pass/fail with the relevant output. Read-only: never edit code." },
-  { id: "persona-issuer",   name: "Issuer",    role: "issuer",   builtin: true, skills: [],
-    blurb: "Intake — shapes a request into a well-formed GitHub issue and hands off.",
-    startPrompt: "You are intake. Shape the incoming request into a well-formed GitHub issue (title, acceptance criteria, owned files) and open it. Never touch code or git; routing is the director's job." },
-  { id: "persona-juror",    name: "Juror",     role: "juror",    builtin: true, skills: [],
-    blurb: "Independently judges a landing against its acceptance criteria (verification jury, #394).",
-    startPrompt: "You are a juror. Independently judge whether this landing satisfies its acceptance criteria and report a structured verdict (pass/reject + reason). Read-only; you have no stake in throughput." },
-  { id: "persona-documentor", name: "Documentor", role: "reviewer", builtin: true, skills: [],
-    blurb: "Reads the code and writes/updates documentation — docs only, no code.",
-    startPrompt: "You are the documentor. Read the code and write or update its documentation (README, API docs, architecture notes, doc-comments). Write markdown/docs only — never change code behavior." },
-];
+/** A packaged persona definition, as authored under `src-tauri/data/personas/*.json` (#2185). It is a
+ *  {@link Persona} plus two load-time-only fields: `order` (display order in the library) and
+ *  `protocolFile` (a config-relative markdown path whose prose supplies the start prompt for the two
+ *  personas that have a real runtime protocol — worker/director). Both are stripped during assembly. */
+interface PersonaDef extends Omit<Persona, "builtin"> {
+  /** Display order in the library (ascending); absent sorts as 0. */
+  order?: number;
+  /** Config-relative markdown file (e.g. "fleet/worker-protocol.md") whose text fills an empty
+   *  `startPrompt` — the single source of truth for the worker/director protocol prose. */
+  protocolFile?: string;
+}
+
+// The built-in personas live as one JSON file per persona under src-tauri/data/personas/ (#2185) —
+// the same externalized-config pattern as blueprints/skills/roles (#2027/#2047), so the packaged set
+// is editable without a rebuild (config-dir overlay) and rides the export/import config bundle.
+const personaModules = import.meta.glob<{ default: PersonaDef }>("@data/personas/*.json", { eager: true });
+
+/** The runtime protocol prose for the personas that reference a `protocolFile`, keyed by that path.
+ *  Resolved ONCE from the shared `@data/fleet/*-protocol.md` (imported `?raw`) with the config-dir
+ *  overlay applied — so the worker/director personas and the fleet's CLAUDE.local.md draw the exact
+ *  same prose from one source, no duplication (the #2027 drift-killer). */
+const PROTOCOL_PROSE: Record<string, string> = {
+  "fleet/worker-protocol.md": overlayRaw("fleet/worker-protocol.md", workerProtocolMd).trim(),
+  "fleet/director-protocol.md": overlayRaw("fleet/director-protocol.md", directorProtocolMd).trim(),
+};
+
+/** Assemble the packaged persona library from the per-persona JSON defs: overlay the config-dir copies,
+ *  order them, resolve any `protocolFile` prose into an empty start prompt, and stamp `builtin`. */
+export function makeBuiltinPersonas(): Persona[] {
+  return overlayGlob<PersonaDef>("personas", personaModules)
+    .map(([, def]) => def)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map(({ order: _order, protocolFile, ...p }) => ({
+      ...p,
+      skills: p.skills ?? [],
+      startPrompt: p.startPrompt || (protocolFile ? PROTOCOL_PROSE[protocolFile] ?? "" : ""),
+      builtin: true,
+    }));
+}
+
+/** The packaged personas — one per role, so the tab is populated + honest on day one. `documentor`
+ *  (#1555) is the identity for the `documentor` role: read-only on git/GitHub with a DOC_GLOBS write
+ *  carve-out, so it reconciles prose docs after a change lands but can never touch code. The
+ *  worker/director carry the real fleet protocol prose (resolved from `@data/fleet/*-protocol.md`);
+ *  the rest are short seeds. */
+export const BUILTIN_PERSONAS: Persona[] = makeBuiltinPersonas();
 
 /** Slugify a persona name into an id fragment (user personas mint `persona-<slug>-<n>` in the store). */
 export function personaSlug(name: string): string {
@@ -77,6 +100,15 @@ export function blankPersona(id: string, role: SessionRole = "reviewer"): Person
   return { id, name: "New persona", blurb: "", role, startPrompt: "", skills: [] };
 }
 
+/** Keep only the keys of a persisted persona that carry a real value — so a copy seeded by an OLDER app
+ *  (which never wrote a newly-packaged field like `pooled`) doesn't MASK the built-in's value for it. An
+ *  absent field comes across as `undefined`; without this, `{...base, ...saved}` would overwrite
+ *  `base.pooled` with that `undefined`. Real values (incl. `false`/`""`) are kept, so genuine user edits
+ *  still win. */
+function definedFields(p: Persona): Partial<Persona> {
+  return Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)) as Partial<Persona>;
+}
+
 /** Merge the packaged built-ins with the persisted set: every built-in is present (re-seeded if the
  *  persisted copy dropped it), user edits to a built-in are preserved, and user-authored personas are
  *  kept. Keyed by id; built-in identity is restored so a stale persisted `builtin:false` can't turn a
@@ -86,8 +118,18 @@ export function reconcilePersonas(persisted: Persona[]): Persona[] {
   const out: Persona[] = BUILTIN_PERSONAS.map((base) => {
     const saved = byId.get(base.id);
     byId.delete(base.id);
+    if (!saved) return base;
     // Keep user edits (name/blurb/prompt/skills/model) but force builtin identity + role-reference.
-    return saved ? { ...base, ...saved, id: base.id, builtin: true } : base;
+    // `definedFields` means a field the persisted copy never had (a newly-packaged facet like `pooled`)
+    // inherits the built-in rather than being masked by an absent-value `undefined`.
+    // An EMPTY saved `startPrompt` also inherits the packaged prose rather than clobbering it — the
+    // upgrade path: a built-in seeded empty by an older app (worker/director) picks up its newly-wired
+    // protocol prose, and since an empty prompt already falls back to the role kickoff downstream,
+    // "clearing" a built-in's prompt was never meaningful anyway.
+    return {
+      ...base, ...definedFields(saved), id: base.id, builtin: true,
+      startPrompt: saved.startPrompt?.trim() ? saved.startPrompt : base.startPrompt,
+    };
   });
   // Whatever remains is user-authored (never builtin).
   for (const p of byId.values()) out.push({ ...p, builtin: false });

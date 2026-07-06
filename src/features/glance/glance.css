@@ -1,0 +1,32 @@
+/* Glance (#2206) — the few keyframes the project-network canvas needs (inline styles can't declare
+   @keyframes). Scoped by animation-name; no global element rules. The drill transition is the shared
+   .graph-drill-anim (shared/ui/layouts/graphCanvas.css, #2418). */
+@keyframes glance-dashmove { to { stroke-dashoffset: -26; } }
+@keyframes glance-softpulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+
+/* Node → live-terminal morph (#2401): a node grows in place into its CLI session. JS sets the panel's
+   geometry (left/top/width/height) from the node's rect → an expanded rect; the CSS animates that change
+   (never a scale, so the terminal stays crisp). The body cross-fades in on the second half of the grow. */
+.glance-morph { position: fixed; inset: 0; z-index: 60; }
+.glance-morph-scrim {
+  position: absolute; inset: 0; background: rgba(6, 9, 13, .5); backdrop-filter: blur(2px);
+  opacity: 0; transition: opacity .26s cubic-bezier(.22, .61, .36, 1);
+}
+.glance-morph.open .glance-morph-scrim { opacity: 1; }
+.glance-morph-panel {
+  position: absolute; display: flex; overflow: hidden;
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
+  transition: left .4s cubic-bezier(.22, .61, .36, 1), top .4s cubic-bezier(.22, .61, .36, 1),
+              width .4s cubic-bezier(.22, .61, .36, 1), height .4s cubic-bezier(.22, .61, .36, 1),
+              border-color .4s;
+}
+.glance-morph.open .glance-morph-panel { border-color: var(--border-strong, var(--border)); }
+.glance-morph-body {
+  flex: 1; min-width: 0; min-height: 0; display: flex;
+  opacity: 0; transition: opacity .22s .14s cubic-bezier(.22, .61, .36, 1);
+}
+.glance-morph.open .glance-morph-body { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .glance-morph-scrim, .glance-morph-panel, .glance-morph-body { transition-duration: .001ms !important; }
+}

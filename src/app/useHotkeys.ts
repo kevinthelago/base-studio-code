@@ -8,12 +8,23 @@ import { CLEAR_INPUT_BYTES } from "@/app/console/lib/clearInput";
 import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "@/app/console/lib/paneSelect";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { paneCountForLayout } from "@/app/console/lib/paneStatus";
-import { SCREEN_HOTKEYS } from "@/features/settings/lib/shortcuts";
+import { SCREEN_HOTKEYS } from "@/features/settings";
 import {
   matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
   type RebindableId,
-} from "@/features/settings/lib/keybindings";
+} from "@/features/settings";
 import { VIEW_ORDER } from "@/app/console/panes/viewDefs";
+import type { Workspace } from "@/app/chrome/Rail";
+
+/** If `e` matches a screen-navigation F-key (per the active bindings), return the target workspace, else
+ *  null. Shared by the always-on global screen-nav listener (every page) and the Console pane-hotkey
+ *  effect, so the F-key → screen map lives in exactly one place. */
+function screenForEvent(e: KeyboardEvent, bindings: Parameters<typeof matchesBinding>[1]): Workspace | null {
+  for (const h of SCREEN_HOTKEYS) {
+    if (matchesBinding(e, bindings, `screen-${h.screen}` as RebindableId)) return h.screen;
+  }
+  return null;
+}
 
 function keyToTermBytes(e: KeyboardEvent): string | null {
   const { key, ctrlKey, altKey, shiftKey } = e;
@@ -82,6 +93,24 @@ export function useHotkeys() {
   // then commit (resolve to a pane) on modifier release or after a short pause.
   const digitBufferRef = useRef("");
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Screen-navigation F-keys switch rail workspaces, so they must fire on EVERY page — NOT just the
+  // Console (the pane hotkeys below are Console-only per #1218, which accidentally made F-key nav
+  // Console-only too — #2403). This always-on listener handles them OFF the Console page; on the Console
+  // page the pane-hotkey effect below handles nav itself (after its broadcast intercept, so an F-key still
+  // broadcasts in broadcast mode), so this one is gated off-Console to avoid double-firing.
+  useEffect(() => {
+    if (activeWorkspace === "console") return;
+    function onKeyDown(e: KeyboardEvent) {
+      const t = e.target as HTMLElement;
+      // Don't yank focus away while the user is typing in a field (matches the Console effect's guard).
+      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) return;
+      const navTo = screenForEvent(e, useAppStore.getState().keybindings);
+      if (navTo) { e.preventDefault(); setWorkspace(navTo); }
+    }
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [activeWorkspace, setWorkspace]);
 
   useEffect(() => {
     // #1218: the hotkeys are Console-only. Don't attach the document listeners at all unless the
@@ -263,13 +292,14 @@ export function useHotkeys() {
       // Plain typing in inputs is fine; modifier combos still fire
       if (inInput && !e.ctrlKey && !e.metaKey && !e.altKey) return;
 
-      // Screen navigation (F1–F6 by default, rebindable per screen #773).
-      for (const h of SCREEN_HOTKEYS) {
-        if (matchesBinding(e, bindings, `screen-${h.screen}` as RebindableId)) {
-          e.preventDefault();
-          setWorkspace(h.screen);
-          return;
-        }
+      // Screen navigation (F-keys, rebindable per screen #773) — handled here too so it works on the
+      // Console page. It sits AFTER the broadcast intercept above, so in broadcast mode an F-key is sent
+      // to the panes rather than navigating (unchanged). Off-Console, the always-on effect above owns it.
+      const navTo = screenForEvent(e, bindings);
+      if (navTo) {
+        e.preventDefault();
+        setWorkspace(navTo);
+        return;
       }
 
       // ── CTRL = SELECT ─────────────────────────────────────────────────────

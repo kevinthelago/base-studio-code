@@ -1,0 +1,15 @@
+{
+  "Compliance":          { "transport": "stdio", "command": "bsc-compliance-mcp", "args": "" },
+  "Complexity Analyzer": { "transport": "stdio", "command": "node", "args": "{dir}/dist/mcp/index.js" },
+  "Dependency Graph":    { "transport": "stdio", "command": "node", "args": "{dir}/dist/index.js" },
+  "Plan Grader":         { "transport": "stdio", "command": "python", "args": "-m uv run --directory {dir} plan-grader-mcp" },
+  "Research":            { "transport": "stdio", "command": "bsc-research-mcp", "args": "" },
+  "Postgres":     { "transport": "stdio", "command": "npx", "args": "-y @modelcontextprotocol/server-postgres", "env": [["POSTGRES_CONNECTION_STRING", ""]] },
+  "SQLite":       { "transport": "stdio", "command": "npx", "args": "-y @modelcontextprotocol/server-sqlite --db-path ./data.db" },
+  "Slack":        { "transport": "stdio", "command": "npx", "args": "-y @modelcontextprotocol/server-slack", "env": [["SLACK_BOT_TOKEN", ""], ["SLACK_TEAM_ID", ""]] },
+  "Brave Search": { "transport": "stdio", "command": "npx", "args": "-y @modelcontextprotocol/server-brave-search", "env": [["BRAVE_API_KEY", ""]] },
+  "Stripe":       { "transport": "stdio", "command": "npx", "args": "-y @stripe/mcp --tools=all", "env": [["STRIPE_SECRET_KEY", ""]] },
+  "Sentry":       { "transport": "http", "url": "https://mcp.sentry.dev/sse" },
+  "Linear":       { "transport": "http", "url": "https://mcp.linear.app/sse" },
+  "Notion":       { "transport": "http", "url": "https://mcp.notion.com/mcp" }
+}

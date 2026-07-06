@@ -35,6 +35,12 @@ describe("McpWorkspace + HooksView", () => {
       mcpServers: MCP_SEED.map(e => ({ ...e })),
       hooks: HOOK_SEED.map(e => ({ ...e })),
       githubToken: "",
+      // Reset the per-page tab memory (#2254): usePageTabs persists the active tab to
+      // activePageTab.mcp, which would otherwise leak between tests (a test that clicks to
+      // Catalog/Analytics leaves the next test on the wrong tab).
+      activePageTab: {},
+      pageTabOrder: {},
+      detachedSections: {},
     });
   });
 
@@ -113,9 +119,14 @@ describe("McpWorkspace + HooksView", () => {
       mcpServers: [{ id: "c", name: "Dependency Graph", enabled: true, projects: [], transport: "stdio", command: "node", args: "x", env: [] }],
       githubToken: "",
     });
-    render(<McpWorkspace />); // opens on the Installed tab
-    // The control runs the version check on open; with the invoke mock it stays in "checking…".
-    expect(await screen.findByText("checking…")).toBeTruthy();
+    const { container } = render(<McpWorkspace />); // opens on the Installed tab
+    // The control runs the version check on open; with the invoke mock it stays in the loading
+    // state, rendered as an inline shimmer skeleton (#2246 replaced the "checking…" label).
+    await waitFor(() => {
+      const shimmer = Array.from(container.querySelectorAll<HTMLElement>('[aria-hidden="true"]'))
+        .find(el => (el.getAttribute("style") ?? "").includes("skeleton-shimmer"));
+      expect(shimmer).toBeTruthy();
+    });
   });
 
   it("opens the config drawer when a row is clicked and closes via the scrim", () => {

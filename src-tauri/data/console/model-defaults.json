@@ -1,0 +1,13 @@
+{
+  "defaultTier": "sonnet-4.5",
+  "anthropicModel": "claude-sonnet-4-6",
+  "localModel": "qwen3-coder",
+  "localBaseUrl": "http://localhost:11434/v1",
+  "providers": [
+    { "id": "anthropic", "label": "Anthropic Claude",                    "keyPlaceholder": "sk-ant-…" },
+    { "id": "openai",    "label": "OpenAI",                              "keyPlaceholder": "sk-…" },
+    { "id": "gemini",    "label": "Google Gemini",                       "keyPlaceholder": "AIza…" },
+    { "id": "local",     "label": "Local (Ollama / OpenAI-compatible)",  "keyPlaceholder": "" },
+    { "id": "ollama",    "label": "Ollama (Local)",                      "keyPlaceholder": "" }
+  ]
+}

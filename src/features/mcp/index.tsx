@@ -18,6 +18,7 @@ import { CardListRow } from "@/shared/ui/data/CardListRow";
 import { Pane } from "@/shared/ui/overlay/Pane";
 import { Chip } from "@/shared/ui/data/Chip";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Skeleton } from "@/shared/ui/feedback/Skeleton";
 import { Button } from "@/shared/ui/controls/Button";
 import { SectionHeader } from "@/shared/ui/layout/SectionHeader";
 import { Row } from "@/shared/ui/layout/Row";
@@ -25,8 +26,20 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
-import { TextField } from "@/shared/ui/controls/Field";
+import { Field, TextField } from "@/shared/ui/controls/Field";
 import "./mcp.css";
+
+// #1545: public API for cross-feature consumers (planner, automations, app/console, store).
+// Re-export the exact lib symbols other features reach for so Phase 2 can target the barrel.
+export {
+  type McpServer, type McpTransport, BUILTIN_MCP_SERVERS, resolveMcpServers,
+  mcpFromCatalog, resolveAllInstalledMcp, toBscAgentMcp,
+} from "./lib/mcpServers";
+export { catalogLink, resolveMcpInstallDir, repoNameFromLink, mcpRepoName } from "./lib/mcpInstall";
+export { toSessionPayloads, mcpAllowRules } from "./lib/sessionConfig";
+export { resolveHooks, type Hook } from "./lib/hooks";
+export { parseHookLog, aggregateHookTelemetry, type HookAnalytics } from "./lib/hookTelemetry";
+export { migrateLegacyExtensions } from "./lib/migrateExtensions";
 
 // ════════════════════════════════════════════════════════════════════════════════════════════
 // MCP servers screen — the Rail "MCP" page. Owns the install/version machinery (download, build,
@@ -85,8 +98,10 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
     if (s === "current") return <Chip tone="success" title="at the latest release">up to date</Chip>;
     if (s === "updating" || s === "building")
       return <Text as="span" className="hint" mono size={10}>{s === "building" ? "building…" : "updating…"}</Text>;
+    // While the version check (or an initial download) is in flight, a small inline shimmer is a
+    // cleaner loading cue than a "checking…" label (#2246).
     if (s === undefined || s === "checking" || s === "downloading")
-      return <Text as="span" className="hint" mono size={10}>checking…</Text>;
+      return <Skeleton w={54} h={14} radius={4} style={{ display: "inline-block" }} />;
     const label = s === "needs-build" ? "build" : s === "error" ? "retry ↻" : "update";
     return (
       <Button variant="ghost" style={{ height: 20, fontSize: 10, padding: "0 9px" }}
@@ -211,8 +226,7 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
             onSetProjects={ids => setMcpServerProjects(selected.id, ids)}
             onSetEnv={env => updateMcpServer(selected.id, { env })}
           >
-            <Box className="field">
-              <label>transport</label>
+            <Field label="transport">
               <SegmentedControl
                 options={(["stdio", "http"] as McpTransport[]).map(t => ({
                   label: t,
@@ -220,19 +234,19 @@ export function McpWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
                   onClick: () => updateMcpServer(selected.id, { transport: t }),
                 }))}
               />
-            </Box>
+            </Field>
             {selected.transport === "http"
               ? (
                 <TextField label="endpoint URL" value={selected.url ?? ""} onChange={url => updateMcpServer(selected.id, { url })} />
               ) : (
-                <Box className="field"><label>command</label>
+                <Field label="command">
                   <Row gap={6} align="stretch">
                     {/* eslint-disable-next-line no-restricted-syntax -- two inline inputs sharing one .field label in a Row (command + args); TextField would add a per-input .field/label */}
                     <input className="input" placeholder="command" value={selected.command ?? ""} onChange={ev => updateMcpServer(selected.id, { command: ev.target.value })} style={{ flex: "0 0 120px" }} />
                     {/* eslint-disable-next-line no-restricted-syntax -- two inline inputs sharing one .field label in a Row (command + args); TextField would add a per-input .field/label */}
                     <input className="input" placeholder="args" value={selected.args ?? ""} onChange={ev => updateMcpServer(selected.id, { args: ev.target.value })} style={{ flex: 1 }} />
                   </Row>
-                </Box>
+                </Field>
               )}
           </DrawerBody>
         )}

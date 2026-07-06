@@ -36,12 +36,13 @@ import { ScanViews } from "./ScanViews";
 import { MONO, grpLabel, monoSm } from "./bodyStyles";
 import { STATUS_DOT, SourceCard } from "./connectorForm";
 import { useSourceConnection } from "./sourceConnection";
+import { slugify } from "@/shared/lib/core/format";
 
 // Slug a free-typed system name into a stable, safe connector id (the agent authors a connector
 // under this id via `bsc data connector`, so the declared source resolves once it appears in the
 // polled runtime list). Keep it conservative: lowercase, hyphen-collapsed, trimmed, capped.
 function slugConnectorId(name: string): string {
-  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "source";
+  return slugify(name, 40) || "source";
 }
 
 // ② Build status — the coarse per-source chip (#1986). A declared source whose connector the agent

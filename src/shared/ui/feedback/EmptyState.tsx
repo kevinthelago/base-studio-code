@@ -19,6 +19,9 @@ export interface EmptyStateProps {
   /** Content alignment. `center` (default) for the symmetric empty states; `left` for the
    *  richer GitHub-page connect card, which left-aligns its icon, copy, and CTA. */
   align?: "center" | "left";
+  /** `md` (default) — the full page/section empty state. `sm` — a compact footprint (smaller icon,
+   *  title, padding) for an EMPTY state sitting inside a card body (#2234). */
+  size?: "sm" | "md";
   className?: string;
   style?: CSSProperties;
 }
@@ -28,16 +31,18 @@ export interface EmptyStateProps {
  *  screens, the skills no-match state, and the automations empty state (#1823). */
 export function EmptyState({
   icon, iconVariant = "solid", title, description, actions, extra,
-  variant = "inline", align = "center", className, style,
+  variant = "inline", align = "center", size = "md", className, style,
 }: EmptyStateProps) {
   const isCard = variant === "card";
   const left = align === "left";
+  const sm = size === "sm";
 
   const iconBox = icon != null && (
     <div className="mono" style={{
-      width: 54, height: 54, borderRadius: 14, margin: left ? "0 0 18px" : "0 auto 18px",
+      width: sm ? 38 : 54, height: sm ? 38 : 54, borderRadius: sm ? 11 : 14,
+      margin: left ? `0 0 ${sm ? 12 : 18}px` : `0 auto ${sm ? 12 : 18}px`,
       display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: 24,
+      fontSize: sm ? 17 : 24,
       background: iconVariant === "solid" ? "var(--bg-elev)" : "transparent",
       border: `1px ${iconVariant === "dashed" ? "dashed" : "solid"} var(--border)`,
       color: iconVariant === "solid" ? "var(--accent)" : "var(--fg-dim)",
@@ -47,11 +52,11 @@ export function EmptyState({
   const body = (
     <>
       {iconBox}
-      <h2 className="mono" style={{ margin: 0, fontSize: isCard ? 18 : 15, fontWeight: 600 }}>
+      <h2 className="mono" style={{ margin: 0, fontSize: isCard ? 18 : sm ? 12.5 : 15, fontWeight: 600 }}>
         {title}
       </h2>
       {description != null && (
-        <p style={{ margin: "8px 0 0", color: "var(--fg-muted)", fontSize: isCard ? 13 : 12.5, lineHeight: 1.6, maxWidth: left ? undefined : 400 }}>
+        <p style={{ margin: `${sm ? 6 : 8}px 0 0`, color: "var(--fg-muted)", fontSize: isCard ? 13 : sm ? 11 : 12.5, lineHeight: 1.55, maxWidth: left ? undefined : 400 }}>
           {description}
         </p>
       )}
@@ -80,7 +85,7 @@ export function EmptyState({
     <div className={className} style={{
       flex: 1, display: "flex", flexDirection: "column",
       alignItems: left ? "flex-start" : "center",
-      justifyContent: "center", textAlign: left ? "left" : "center", padding: "40px 20px", ...style,
+      justifyContent: "center", textAlign: left ? "left" : "center", padding: sm ? "22px 16px" : "40px 20px", ...style,
     }}>
       {body}
     </div>

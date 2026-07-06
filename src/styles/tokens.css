@@ -29,6 +29,11 @@
   --prov-local:     oklch(0.65 0.012 250);
   --accent-soft:   oklch(0.27 0.045 70);  /* role-badge / active-row wash — dark amber */
   --accent-text:   oklch(0.85 0.11 78);   /* accent-on-dark text — bright amber */
+  /* ink-on-fill (#2420): the dark foreground for text/glyphs sitting ON an accent/success fill
+     (primary buttons, toggle knobs, filled check tiles) — replaces the hardcoded #1a120a/#11100e
+     and oklch(0.20 0.04 145) that were scattered through the feature CSS. */
+  --on-accent:  #1a120a;                  /* ink on an --accent fill */
+  --on-success: oklch(0.20 0.04 145);     /* ink on a --success fill */
 
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --sans: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
@@ -229,15 +234,41 @@ html, body {
 .statusbar .s i.off{ background:var(--fg-dim); }
 .statusbar .spacer{ flex:1; }
 
+/* ===== kit component tokens (#1852 Phases 0/1) — the themeable semantic layer. Each DEFAULTS to the
+   base token the component currently uses, so introducing them is ZERO visual change; a THEME overrides
+   these (globally on :root, or scoped on a subtree via <ThemeScope>) and every .card/.btn/.input/.chip
+   follows. Registry: src/shared/ui/kit/theme.ts + src-tauri/data/ui/themes.json (also `bsc ui theme`). ===== */
+:root{
+  --card-bg: var(--bg-panel);
+  --card-border: var(--border-soft);
+  --card-radius: var(--r-lg);
+  --card-pad: 16px;
+  --btn-bg: var(--bg-elev);
+  --btn-bg-hover: var(--bg-elev2);
+  --btn-border: var(--border-soft);
+  --btn-fg: var(--fg);
+  --btn-radius: var(--r-md);
+  --btn-primary-bg: var(--accent);
+  --btn-primary-fg: #1a120a;
+  --field-bg: var(--bg-canvas);
+  --field-border: var(--border-soft);
+  --field-fg: var(--fg);
+  --field-radius: var(--r-md);
+  --field-focus-border: var(--accent-dim);
+  --chip-bg: var(--bg-elev2);
+  --chip-fg: var(--fg-muted);
+  --chip-border: var(--border-soft);
+}
+
 /* generic UI primitives */
 .btn{
-  height:28px; padding:0 12px; border-radius:var(--r-md);
-  background:var(--bg-elev); border:1px solid var(--border-soft);
-  color:var(--fg); font-family:var(--mono); font-size:11px; cursor:pointer;
+  height:28px; padding:0 12px; border-radius:var(--btn-radius);
+  background:var(--btn-bg); border:1px solid var(--btn-border);
+  color:var(--btn-fg); font-family:var(--mono); font-size:11px; cursor:pointer;
   display:inline-flex; align-items:center; gap:6px;
 }
-.btn:hover{ background:var(--bg-elev2); }
-.btn.primary{ background:var(--accent); color:#1a120a; border-color:transparent; font-weight:600; }
+.btn:hover{ background:var(--btn-bg-hover); }
+.btn.primary{ background:var(--btn-primary-bg); color:var(--btn-primary-fg); border-color:transparent; font-weight:600; }
 .btn.primary:hover{ filter:brightness(1.05); }
 .btn.ghost{ background:transparent; }
 .btn.danger{ color:var(--danger); border-color:color-mix(in oklch, var(--danger), transparent 70%); }
@@ -279,11 +310,14 @@ html, body {
 .above-modal{ z-index:var(--z-modal-float); }
 
 .input{
-  height:28px; padding:0 10px; border-radius:var(--r-md);
-  background:var(--bg-canvas); border:1px solid var(--border-soft);
-  color:var(--fg); font-family:var(--mono); font-size:11px; width:100%;
+  height:28px; padding:0 10px; border-radius:var(--field-radius);
+  background:var(--field-bg); border:1px solid var(--field-border);
+  color:var(--field-fg); font-family:var(--mono); font-size:11px; width:100%;
 }
-.input:focus{ outline:none; border-color:var(--accent-dim); }
+.input:focus{ outline:none; border-color:var(--field-focus-border); }
+/* the multiline form of .input (<TextArea>, #2417): relax the single-line height, pad both axes,
+   and keep user-resize vertical so a drag can't break the surrounding layout */
+textarea.input{ height:auto; min-height:64px; padding:8px 10px; resize:vertical; line-height:1.5; }
 
 .field{ display:flex; flex-direction:column; gap:6px; }
 .field label{ font-family:var(--mono); font-size:10.5px; color:var(--fg-muted); letter-spacing:.04em; text-transform:uppercase; }
@@ -298,8 +332,8 @@ html, body {
 .mono-value { font-family: var(--mono); font-size: 12px; color: var(--fg); }
 
 .card{
-  background:var(--bg-panel); border:1px solid var(--border-soft);
-  border-radius:var(--r-lg); padding:16px;
+  background:var(--card-bg); border:1px solid var(--card-border);
+  border-radius:var(--card-radius); padding:var(--card-pad);
 }
 .card h3{ margin:0 0 4px; font-family:var(--mono); font-size:12px; color:var(--fg); font-weight:600; letter-spacing:.02em; }
 .card p.sub{ margin:0 0 14px; font-size:11px; color:var(--fg-muted); }
@@ -330,6 +364,11 @@ html, body {
   background:transparent; transition:background .12s; touch-action:none;
 }
 .resize-x:hover,.resize-x:active{ background:var(--accent-dim); }
+.resize-y{
+  flex:0 0 5px; align-self:stretch; cursor:row-resize;
+  background:transparent; transition:background .12s; touch-action:none;
+}
+.resize-y:hover,.resize-y:active{ background:var(--accent-dim); }
 
 /* ===== console grid ===== */
 .console-grid{
@@ -346,6 +385,10 @@ html, body {
 .pane.focused{ border-color:var(--accent-dim); box-shadow:0 0 0 1px color-mix(in oklch, var(--accent), transparent 60%); }
 
 @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* Loading-skeleton shimmer (#2234) — the moving gradient behind the shared <Skeleton> (and the
+   blueprint-import loading rows). Promoted from `bim-shimmer` so the whole app has ONE skeleton look. */
+@keyframes skeleton-shimmer{ 0%{ background-position:-260px 0 } 100%{ background-position:260px 0 } }
 
 /* Indeterminate progress sweep — a short bar tracking left→right (source-stage scan, #source-pane). */
 @keyframes scan{ 0%{transform:translateX(-100%)} 100%{transform:translateX(320%)} }

@@ -1,6 +1,18 @@
 //! Subshell tests for the `bsc-*` shell rc fragments (extracted from `shell_rc.rs`, #1864).
 //! Each per-helper test installs the fragment via `BASH_ENV` and drives it in a fresh
 //! non-interactive bash, exactly as the agent's `bash -c` tool subprocesses do.
+//!
+//! The fragment TEXT is externalized to `data/shell/*.sh` (#2092); a test names its fragment by
+//! filename via `frag(...)` (which loads the embedded seed through the module's `load_shell`), so the
+//! subshell tests drive the exact bytes pty_create writes. `with_rc_subshell` (#2077) centralizes the
+//! "no usable bash → skip" preamble + the temp-dir/`BASH_ENV` scaffolding every helper-run test needs.
+
+/// Load an externalized `bsc-*` shell fragment by filename (the seed embedded via `include_dir!`).
+/// Thin alias over the module's `load_shell` (config-dir override else embedded seed) — replaced the
+/// `BSC_*_RC` string-literal constants the fragments were extracted from (#2092).
+fn frag(name: &str) -> String {
+    super::load_shell(name)
+}
 
 /// The (shell, temp dir, bash-form rc path) handed to a shell-rc subshell test (#2077).
 struct RcSub {
@@ -14,7 +26,8 @@ struct RcSub {
 /// invoking `f` (the test no-ops, exactly like the old inline early-`return`). Otherwise it
 /// makes a fresh temp dir (`bsc-<tag>-<pid>`), writes `rc_body` to `bsc-env.sh`, and hands
 /// `f` the shell, the dir, and the bash-form rc path. `f` owns the dir and removes it.
-fn with_rc_subshell(tag: &str, rc_body: &str, f: impl FnOnce(RcSub)) {
+/// `rc_body` is `impl AsRef<str>` so a test can pass an owned `frag(...)` fragment directly.
+fn with_rc_subshell(tag: &str, rc_body: impl AsRef<str>, f: impl FnOnce(RcSub)) {
     use std::process::Command;
     let shell = crate::platform::shell::resolve_shell();
     let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
@@ -26,10 +39,10 @@ fn with_rc_subshell(tag: &str, rc_body: &str, f: impl FnOnce(RcSub)) {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let rc = dir.join("bsc-env.sh");
-    // Post-#2064 the per-helper BSC_*_RC constants call the shared __bsc_* functions, so every
-    // subshell must install BSC_SHARED_RC first; prepending it here centralizes that (harmless
-    // for the few constants that don't use the shared helpers).
-    std::fs::write(&rc, format!("{}{}", super::BSC_SHARED_RC, rc_body)).unwrap();
+    // Post-#2064 the fragments call the shared __bsc_* functions, so every subshell must install the
+    // shared helpers first; prepending them here centralizes that (harmless for the few fragments
+    // that don't use the shared helpers).
+    std::fs::write(&rc, format!("{}{}", frag("shared.sh"), rc_body.as_ref())).unwrap();
     let rc_bash = crate::to_bash_path(&rc.to_string_lossy());
     f(RcSub { shell, dir, rc_bash });
 }
@@ -39,7 +52,7 @@ fn bsc_checkpoint_rc_defines_hyphenated_helper_reading_the_doc_var() {
     // The helper keeps its hyphenated, user-facing name (so it can't be exported
     // into subshells — it must be *defined* via the rc file) and writes whatever
     // it gets on stdin to the doc named by $BSC_CHECKPOINT_DOC.
-    let rc = super::BSC_CHECKPOINT_RC;
+    let rc = frag("checkpoint.sh");
     assert!(rc.contains("bsc-checkpoint()"), "rc must define the hyphenated helper");
     assert!(rc.contains("$BSC_CHECKPOINT_DOC"), "rc must target the doc env var");
     assert!(rc.contains("mkdir -p"), "rc must create the doc's parent dir");
@@ -57,7 +70,7 @@ fn bsc_checkpoint_helper_runs_in_a_fresh_non_interactive_subshell() {
     // Resolve the SAME shell the PTY launches (Git Bash on Windows, never the WSL
     // System32 stub — which can't read a /c/... BASH_ENV path). A bare `bash` would
     // resolve via PATH and may hit that stub, failing for reasons unrelated to the fix.
-    with_rc_subshell("ckpt", super::BSC_CHECKPOINT_RC, |RcSub { shell, dir, rc_bash }| {
+    with_rc_subshell("ckpt", frag("checkpoint.sh"), |RcSub { shell, dir, rc_bash }| {
     // Nested path exercises the helper's `mkdir -p` of the doc's parent.
     let doc = dir.join("nested").join("checkpoint.md");
 
@@ -86,7 +99,7 @@ fn bsc_decisions_rc_defines_note_helper() {
     // The fleet assume-and-log helper keeps its hyphenated name (defined via the rc file, like
     // bsc-checkpoint) and appends to the doc named by the env var. bsc-blocked — the runtime
     // dependency-WAIT — was removed (#1039): workers build against planned contracts in parallel.
-    let rc = super::BSC_DECISIONS_RC;
+    let rc = frag("decisions.sh");
     assert!(rc.contains("bsc-note()"), "rc must define bsc-note");
     assert!(!rc.contains("bsc-blocked"), "bsc-blocked (the dependency-wait) was removed (#1039)");
     assert!(rc.contains("BSC_DECISIONS_DOC"), "helper must target the decisions doc env var");
@@ -97,10 +110,62 @@ fn bsc_coord_emit_rc_defines_issuer_helpers() {
     // The issuer flow (#376) adds two emitters to the coord-emit rc; they carry more
     // columns than `__bsc_coord`, so they go through `__bsc_coord_log` with a
     // pre-tab-joined payload. coordination.ts `parseCoordLine` reads them back.
-    let rc = super::BSC_COORD_EMIT_RC;
+    let rc = frag("coord-emit.sh");
     assert!(rc.contains("bsc-issue()"), "rc must define bsc-issue");
     assert!(rc.contains("bsc-assign()"), "rc must define bsc-assign");
+    assert!(rc.contains("bsc-brief()"), "rc must define bsc-brief (#2377 planner→director/issuer)");
     assert!(rc.contains("__bsc_coord_log()"), "rc must define the multi-column log helper");
+}
+
+#[test]
+fn bsc_brief_emits_tab_aligned_coord_line() {
+    // bsc-brief (#2377): the PLANNER's runtime voice — a coordination write only (append one
+    // tab-separated line to $BSC_COORD_LOG), no code/git escalation. Its columns must match
+    // what coordination.ts parseCoordLine expects:
+    //   brief: ts \t pane \t brief \t target \t body \t ref?
+    // The target is $1, the optional ref comes via --ref, and the body is read from stdin.
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    with_rc_subshell("brief", frag("coord-emit.sh"), |RcSub { shell, dir, rc_bash }| {
+    let log = dir.join("coord.log");
+    let log_bash = crate::to_bash_path(&log.to_string_lossy());
+
+    let run = |cmd: &str, body: &str| {
+        let mut child = Command::new(&shell)
+            .arg("-c").arg(cmd)
+            .env("BASH_ENV", &rc_bash)
+            .env("BSC_COORD_LOG", &log_bash)
+            .env("BSC_AUDIT_PANE", "t0p0")
+            .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+            .spawn().unwrap();
+        let _ = child.stdin.take().unwrap().write_all(body.as_bytes());
+        assert!(child.wait().unwrap().success(), "{cmd} should run in the subshell");
+    };
+    // The ref must be quoted in shell usage — an unquoted `#77` starts a bash comment. Before
+    // #2414 the comment-eaten ref left `--ref` dangling and the parser's `shift 2` looped forever
+    // (shift-by-2 with one arg left shifts nothing), hanging this test until the CI job timeout.
+    run("bsc-brief director --ref '#77'", "scope grew: add CSV export");
+    run("bsc-brief issuer", "no ref carried");
+    // Dangling-flag regression (#2414): the unquoted-`#77` shape. Must terminate (empty ref).
+    run("bsc-brief director --ref #77", "ref eaten as a comment");
+
+    let text = std::fs::read_to_string(&log).unwrap();
+    let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(lines.len(), 3, "expected one line per emitter, got: {text:?}");
+
+    let withref: Vec<&str> = lines[0].split('\t').collect();
+    assert_eq!(withref[1], "t0p0", "pane column");
+    assert_eq!(&withref[2..], &["brief", "director", "scope grew: add CSV export", "#77"]);
+
+    let noref: Vec<&str> = lines[1].split('\t').collect();
+    assert_eq!(&noref[2..], &["brief", "issuer", "no ref carried", ""]);
+
+    let dangling: Vec<&str> = lines[2].split('\t').collect();
+    assert_eq!(&dangling[2..], &["brief", "director", "ref eaten as a comment", ""]);
+
+    let _ = std::fs::remove_dir_all(&dir);
+    });
 }
 
 #[test]
@@ -115,7 +180,7 @@ fn bsc_issue_and_assign_emit_tab_aligned_coord_lines() {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    with_rc_subshell("issuer", super::BSC_COORD_EMIT_RC, |RcSub { shell, dir, rc_bash }| {
+    with_rc_subshell("issuer", frag("coord-emit.sh"), |RcSub { shell, dir, rc_bash }| {
     // Nested path exercises the helper's `mkdir -p` of the log's parent.
     let log = dir.join("nested").join("coord.log");
 
@@ -156,7 +221,7 @@ fn bsc_fleet_joins_roster_with_coord_state() {
     // bsc-fleet (#734): the director's roster view. Joins fleet.roster.tsv with each
     // session's latest own-state event in coord.log → PANE/stream/repo/branch/role/STATE.
     use std::process::{Command, Stdio};
-    with_rc_subshell("fleet", super::BSC_FLEET_RC, |RcSub { shell, dir, rc_bash }| {
+    with_rc_subshell("fleet", frag("fleet.sh"), |RcSub { shell, dir, rc_bash }| {
     let roster = dir.join("fleet.roster.tsv");
     std::fs::write(&roster,
         "t0p0\tdirector\t-\t-\tdirector\n\
@@ -194,16 +259,16 @@ fn bsc_fleet_joins_roster_with_coord_state() {
 
 #[test]
 fn full_bsc_rc_is_syntactically_valid_bash() {
-    // Regression for the rc-glue bug: every rc constant must end with a newline so the
+    // Regression for the rc-glue bug: every rc fragment must end with a newline so the
     // bsc-env.sh that pty_create writes keeps each helper on its own line. A missing
     // trailing newline glues two functions (`}bsc-audit()`) and bash reports "unexpected
     // end of file", breaking every agent subshell. `bash -n` over the FULL concatenation
-    // (the exact format! pty_create uses) catches it; per-constant tests do not.
+    // (the exact body pty_create writes) catches it; per-fragment tests do not.
     use std::process::{Command, Stdio};
-    // Concatenate via the shared ALL_BSC_RC slice — the single source of truth for the
-    // fragment order, the same one wire_bsc_env writes (bsc_rc_body). A new helper added to
-    // the slice is covered here automatically, so the writer + this guard can't drift apart.
-    with_rc_subshell("rc-syntax", &super::bsc_rc_body(), |RcSub { shell, dir, rc_bash }| {
+    // Concatenate via bsc_rc_body() → all_bsc_rc() — the single source of truth for the
+    // fragment order, the same one wire_bsc_env writes. A new helper added to the ordered
+    // list is covered here automatically, so the writer + this guard can't drift apart.
+    with_rc_subshell("rc-syntax", super::bsc_rc_body(), |RcSub { shell, dir, rc_bash }| {
     let out = Command::new(&shell).arg("-n").arg(&rc_bash).stderr(Stdio::piped()).output().unwrap();
     let _ = std::fs::remove_dir_all(&dir);
     assert!(
@@ -216,34 +281,36 @@ fn full_bsc_rc_is_syntactically_valid_bash() {
 }
 
 #[test]
+fn bsc_defer_rc_embeds_the_externalized_directive() {
+    // #2145: the bsc-defer directive prose moved out of an inline const into the config-loaded
+    // data/fleet/defer-directive.md. Assert the assembled fragment still (a) carries the directive
+    // text, (b) keeps the JSON block-reason shape, and (c) ends with the mandatory trailing newline
+    // (#296) so it doesn't glue onto the next helper in the concatenated rc.
+    let frag = super::bsc_defer_rc();
+    assert!(frag.contains("Do not stop."), "defer fragment lost the directive prose");
+    assert!(frag.contains("enter MAINTENANCE"), "defer fragment lost the maintenance clause");
+    assert!(frag.contains(r#"{"decision":"block","reason":""#), "defer fragment lost the block-reason JSON shape");
+    assert!(frag.ends_with('\n'), "defer fragment must end with a trailing newline (#296)");
+}
+
+#[test]
 fn bsc_shared_rc_defines_and_runs_the_three_shared_helpers() {
     // #2064: the shared sh fragments (__bsc_jstr / __bsc_now_ms / __bsc_logline) are defined once
-    // in BSC_SHARED_RC and prepended (first in ALL_BSC_RC). Assert the constant defines all three,
-    // ends with the mandatory trailing newline (#296), and that each runs in a fresh subshell:
-    // __bsc_jstr extracts a JSON string field, __bsc_now_ms prints epoch ms, and __bsc_logline
-    // makes the parent dir + appends a printf-formatted line.
-    let rc = super::BSC_SHARED_RC;
+    // in data/shell/shared.sh and prepended (first in all_bsc_rc()). Assert the fragment defines all
+    // three, ends with the mandatory trailing newline (#296), and that each runs in a fresh subshell:
+    // __bsc_jstr extracts a JSON string field, __bsc_now_ms prints epoch ms, and __bsc_logline makes
+    // the parent dir + appends a printf-formatted line.
+    let rc = frag("shared.sh");
     assert!(rc.contains("__bsc_jstr()"), "defines the JSON-field extractor");
     assert!(rc.contains("__bsc_now_ms()"), "defines the epoch-ms helper");
     assert!(rc.contains("__bsc_logline()"), "defines the mkdir+append helper");
     assert!(rc.ends_with('\n'), "ends with a trailing newline (#296)");
 
     use std::process::{Command, Stdio};
-    let shell = crate::platform::shell::resolve_shell();
-    let usable = Command::new(&shell).arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-    if !usable {
-        eprintln!("skipping bsc_shared_rc test: no usable bash ({shell})");
-        return;
-    }
-
-    let dir = std::env::temp_dir().join(format!("bsc-shared-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let rc_file = dir.join("bsc-env.sh");
-    std::fs::write(&rc_file, super::BSC_SHARED_RC).unwrap();
+    // with_rc_subshell already prepends shared.sh, so an empty body installs exactly the shared helpers.
+    with_rc_subshell("shared", "", |RcSub { shell, dir, rc_bash }| {
     // Nested path exercises __bsc_logline's `mkdir -p` of the file's parent.
     let out = dir.join("nested").join("out.tsv");
-    let rc_bash = crate::to_bash_path(&rc_file.to_string_lossy());
     let out_bash = crate::to_bash_path(&out.to_string_lossy());
 
     let script = format!(
@@ -260,19 +327,20 @@ fn bsc_shared_rc_defines_and_runs_the_three_shared_helpers() {
     assert_eq!(fields[0], "Bash", "__bsc_jstr extracts the tool_name string field");
     assert!(fields[1].chars().all(|c| c.is_ascii_digit()) && !fields[1].is_empty(), "__bsc_now_ms is epoch ms: {:?}", fields[1]);
     let _ = std::fs::remove_dir_all(&dir);
+    });
 }
 
 #[test]
 fn bsc_rc_execs_the_one_umbrella_binary_via_bsc_bin() {
     // #1877: the eight per-CLI `bsc-*` exec helpers collapsed into ONE `bsc` function that execs
-    // the unified umbrella binary in $BSC_BIN (every state CLI is now `bsc <sub>`). Pin its EXACT
-    // bytes — including the mandatory trailing newline (#296) — so a drift in the wire bytes is
-    // caught here, not in a downstream session.
+    // the unified umbrella binary in $BSC_BIN (every state CLI is now `bsc <sub>`). Pin the EXACT
+    // bytes of the externalized data/shell/bsc.sh — including the mandatory trailing newline (#296)
+    // — so a drift in the seed's wire bytes is caught here, not in a downstream session.
     assert_eq!(
-        super::BSC_RC,
+        frag("bsc.sh"),
         "bsc() { if [ -n \"${BSC_BIN:-}\" ] && [ ! -s \"$BSC_BIN\" ]; then echo \"bsc: BSC_BIN ($BSC_BIN) is missing or a 0-byte stub; rebuild the sidecars with 'npm run build:plan'\" >&2; return 127; fi; \"${BSC_BIN:-bsc}\" \"$@\"; }\n",
     );
-    let rc = super::BSC_RC;
+    let rc = frag("bsc.sh");
     assert!(rc.starts_with("bsc() {"), "defines the single `bsc` helper");
     assert!(rc.contains("${BSC_BIN:-bsc}"), "execs $BSC_BIN, falling back to a bare `bsc` on PATH");
     assert!(rc.ends_with('\n'), "ends with a trailing newline (#296)");
@@ -313,7 +381,7 @@ fn bsc_note_appends_bulleted_lines_in_a_fresh_non_interactive_subshell() {
     use std::process::{Command, Stdio};
 
     // The installed rc is the checkpoint + decisions helpers concatenated.
-    with_rc_subshell("note", &format!("{}{}", super::BSC_CHECKPOINT_RC, super::BSC_DECISIONS_RC), |RcSub { shell, dir, rc_bash }| {
+    with_rc_subshell("note", format!("{}{}", frag("checkpoint.sh"), frag("decisions.sh")), |RcSub { shell, dir, rc_bash }| {
     // Nested path exercises the helper's `mkdir -p` of the doc's parent.
     let doc = dir.join("nested").join("DECISIONS.md");
 
@@ -351,7 +419,7 @@ fn bsc_skill_helper_appends_a_usage_line() {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    with_rc_subshell("skill", super::BSC_SKILL_RC, |RcSub { shell, dir, rc_bash }| {
+    with_rc_subshell("skill", frag("skill.sh"), |RcSub { shell, dir, rc_bash }| {
     // Nested path exercises the helper's `mkdir -p` of the log's parent.
     let log = dir.join("nested").join("skills.log");
 
@@ -389,7 +457,7 @@ fn bsc_skill_with_args_execs_the_cli_not_the_hook() {
     // isn't on PATH (same gating as the other helper-run tests).
     use std::process::{Command, Stdio};
 
-    with_rc_subshell("skill-cli", super::BSC_SKILL_RC, |RcSub { shell, dir, rc_bash }| {
+    with_rc_subshell("skill-cli", frag("skill.sh"), |RcSub { shell, dir, rc_bash }| {
 
     // The stub "CLI": write its args to args.txt. A shebang lets bash exec it by path.
     let stub = dir.join("bsc-skill-stub.sh");
@@ -432,7 +500,7 @@ fn bsc_learned_delegates_to_bsc_plan_lesson_add() {
     use std::process::{Command, Stdio};
 
     // bsc-learned delegates to the unified `bsc` helper (`bsc plan …`), so install BOTH fragments.
-    with_rc_subshell("learned", &format!("{}{}", super::BSC_RC, super::BSC_LEARNED_RC), |RcSub { shell, dir, rc_bash }| {
+    with_rc_subshell("learned", format!("{}{}", frag("bsc.sh"), frag("learned.sh")), |RcSub { shell, dir, rc_bash }| {
 
     // Stub `bsc` ($BSC_BIN): write its args, one per line, to args.txt.
     let stub = dir.join("bsc-stub.sh");
@@ -479,7 +547,7 @@ fn bsc_activity_appends_run_and_idle_lines_and_drains_stdin() {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    with_rc_subshell("activity", super::BSC_ACTIVITY_RC, |RcSub { shell, dir, rc_bash }| {
+    with_rc_subshell("activity", frag("activity.sh"), |RcSub { shell, dir, rc_bash }| {
     // Nested path exercises the helper's `mkdir -p` of the log's parent.
     let log = dir.join("nested").join("activity.log");
 
@@ -521,7 +589,7 @@ fn bsc_done_appends_pane_line_and_drains_stdin() {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    with_rc_subshell("done", super::BSC_DONE_RC, |RcSub { shell, dir, rc_bash }| {
+    with_rc_subshell("done", frag("done.sh"), |RcSub { shell, dir, rc_bash }| {
     let log = dir.join("nested").join("done.log"); // nested ⇒ exercises mkdir -p
 
     let log_bash = crate::to_bash_path(&log.to_string_lossy());
@@ -553,7 +621,7 @@ fn bsc_hook_runs_the_command_logs_outcome_and_propagates_exit() {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    with_rc_subshell("hook", super::BSC_HOOK_RC, |RcSub { shell, dir, rc_bash }| {
+    with_rc_subshell("hook", frag("hook.sh"), |RcSub { shell, dir, rc_bash }| {
     let log = dir.join("nested").join("hooks.log");
     let log_bash = crate::to_bash_path(&log.to_string_lossy());
 
@@ -602,7 +670,7 @@ fn bsc_scope_blocks_out_of_scope_writes() {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    with_rc_subshell("scope", super::BSC_SCOPE_RC, |RcSub { shell, dir, rc_bash }| {
+    with_rc_subshell("scope", frag("scope.sh"), |RcSub { shell, dir, rc_bash }| {
 
     // Fire bsc-scope as a PreToolUse hook would, with a given glob set + tool JSON on stdin.
     let fire = |globs: &str, path: &str| -> std::process::ExitStatus {
@@ -647,7 +715,7 @@ fn bsc_taint_gates_outward_actions_only_after_untrusted_ingestion() {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    with_rc_subshell("taint", super::BSC_TAINT_RC, |RcSub { shell, dir, rc_bash }| {
+    with_rc_subshell("taint", frag("taint.sh"), |RcSub { shell, dir, rc_bash }| {
     let taint_dir = dir.join("marks");
     let taint_bash = crate::to_bash_path(&taint_dir.to_string_lossy());
 
@@ -694,7 +762,7 @@ fn bsc_mcp_pairs_pre_post_and_logs_latency_and_outcome() {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    with_rc_subshell("mcp", super::BSC_MCP_RC, |RcSub { shell, dir, rc_bash }| {
+    with_rc_subshell("mcp", frag("mcp.sh"), |RcSub { shell, dir, rc_bash }| {
     let log = dir.join("nested").join("mcp.log");
     let tmp = dir.join("tmp");
     std::fs::create_dir_all(&tmp).unwrap();
@@ -754,7 +822,7 @@ fn bsc_tokens_helper_appends_a_session_line() {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    with_rc_subshell("tokens", super::BSC_TOKENS_RC, |RcSub { shell, dir, rc_bash }| {
+    with_rc_subshell("tokens", frag("tokens.sh"), |RcSub { shell, dir, rc_bash }| {
     // Nested path exercises the helper's `mkdir -p` of the log's parent.
     let log = dir.join("nested").join("tokens.log");
 

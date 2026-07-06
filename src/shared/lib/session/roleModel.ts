@@ -16,6 +16,23 @@ import { overlayFile } from "@/shared/lib/core/configOverrides";
 // The config-dir copy (#2047) overlays the embedded default — editable without a rebuild.
 const roleCaps = overlayFile("permissions/role-capabilities.json", roleCapsEmbedded);
 
+// Floor-merge on the EMBEDDED sets (#2325). `overlayFile` FULLY REPLACES the file with the config-dir
+// copy, so a STALE override — seeded on a first run BEFORE the shipped default gained a role/list — would
+// silently drop it. When code then reads that role at module load (e.g. `DOC_GLOBS =
+// ROLE_DEFAULTS.documentor.writeGlobs`, #1555), the missing role is `undefined` and it throws
+// `TypeError reading writeGlobs`, taking down the WHOLE UI. Basing every field on the embedded default
+// guarantees each `SessionRole` (and each list) the code knows about is always present; the overlay
+// still customizes/adds entries on top.
+const roleDefaultsMerged = mergeRoleDefaults(roleCapsEmbedded.roleDefaults, roleCaps.roleDefaults);
+
+/** Floor-merge role-default tables (#2325): `embedded` is the base (every shipped role), `overlaid` (the
+ *  config-dir copy) customizes/adds on top. Exported so the regression test can prove a stale override
+ *  MISSING a role still yields that role from the embedded floor (rather than `undefined` → the
+ *  module-load `TypeError reading writeGlobs` that took down the UI). */
+export function mergeRoleDefaults<T>(embedded: Record<string, T>, overlaid: Record<string, T>): Record<string, T> {
+  return { ...embedded, ...overlaid };
+}
+
 export type SessionRole =
   | "planner" | "worker" | "director" | "triage"
   // Pipeline-stage roles (#220): tester runs build/tests, reviewer reads + reviews.
@@ -26,7 +43,12 @@ export type SessionRole =
   | "issuer"
   // Juror (#394): a scoped reviewer that independently judges a landing against an
   // anchor (acceptance criteria / lens / subsystem slice). Read-only, like reviewer.
-  | "juror";
+  | "juror"
+  // Documentor (#1555): a post-refactor lifecycle actor that reconciles the project's PROSE
+  // documentation (the CLAUDE.md structure tree, architecture docs, README) after a change lands.
+  // It reads for context and writes ONLY prose docs — `code: "none"` with a DOC_GLOBS write
+  // carve-out (like the director's commons, #851), so it can never touch feature code.
+  | "documentor";
 
 /** Access to a capability: none < read < write. */
 export type AccessTier = "none" | "read" | "write";
@@ -67,26 +89,39 @@ export interface RoleCapability {
 // - DEP_MANIFEST_FILES (#1111) — dependency manifests + lockfiles a WORKER must not hand-edit (a new
 //   dep routes through the director). {@link roleWriteRules} denies the Edit/Write TOOLS on these
 //   even inside the worker's owned globs; `npm install` / `cargo build` via Bash still regenerate them.
-export const ROLE_DEFAULTS: Record<SessionRole, RoleCapability> = roleCaps.roleDefaults as Record<SessionRole, RoleCapability>;
-export const PLANNER_WRITE_GLOBS: string[] = ROLE_DEFAULTS.planner.writeGlobs;
-export const DB_OWNED_PLAN_FILES: string[] = roleCaps.dbOwnedPlanFiles;
-export const DEP_MANIFEST_FILES: string[] = roleCaps.depManifestFiles;
+export const ROLE_DEFAULTS: Record<SessionRole, RoleCapability> = roleDefaultsMerged as Record<SessionRole, RoleCapability>;
+export const PLANNER_WRITE_GLOBS: string[] = ROLE_DEFAULTS.planner?.writeGlobs ?? [];
+export const DB_OWNED_PLAN_FILES: string[] = roleCaps.dbOwnedPlanFiles ?? roleCapsEmbedded.dbOwnedPlanFiles;
+export const DEP_MANIFEST_FILES: string[] = roleCaps.depManifestFiles ?? roleCapsEmbedded.depManifestFiles;
+// DOC_GLOBS (#1555) — the prose-documentation paths the DOCUMENTOR may write: top-level and nested
+// markdown, the `docs/` tree, and README/CHANGELOG variants (incl. extension-less / .rst). Derived
+// from the documentor role so the list lives once. Path-granular by design (see the boundary note in
+// {@link hasScopedWriteCarveOut}): it grants markdown + docs and NOTHING with a code extension, so a
+// documentor can reconcile structural/architectural docs but never edit `src/*.ts` / `*.rs` source.
+export const DOC_GLOBS: string[] = ROLE_DEFAULTS.documentor?.writeGlobs ?? [];
 
 /** A role capability, optionally narrowed/widened per assignment (e.g. writeGlobs). */
 export function roleCapability(role: SessionRole, override: Partial<RoleCapability> = {}): RoleCapability {
   return { ...ROLE_DEFAULTS[role], ...override };
 }
 
+/** The `code: "none"` roles that carry an explicit, scoped write carve-out (a narrow allow layered
+ *  onto an otherwise write-denied capability): the **director** (its commons globs, #851) and the
+ *  **documentor** (its DOC_GLOBS prose docs, #1555). Every OTHER `code: "none"` role (triage, tester,
+ *  reviewer, juror, issuer) stays fully write-denied even if handed globs — the stewardship can't be
+ *  accidentally granted to a non-carve-out role. */
+const CARVE_OUT_ROLES: ReadonlySet<SessionRole> = new Set<SessionRole>(["director", "documentor"]);
+
 /**
- * Whether a capability has the director's explicit, scoped write carve-out (#851): the **director**
- * keeps `code: "none"` (no feature-code writes) yet is allowed to write EXACTLY the commons globs it
- * owns (`.gitignore`, manifests, CI config, …) when they're assigned to it. This mirrors the #304
- * precedent of a scoped role-gate carve-out — a narrow, explicit allow layered onto an
- * otherwise-denied capability. Scoped to the director role on purpose: every OTHER `code: "none"`
- * role (triage, tester, reviewer, …) stays fully write-denied even if handed globs, so the commons
- * stewardship can't be accidentally granted to a non-integrator. An empty `writeGlobs` (the default)
- * ⇒ no carve-out, full deny stands.
+ * Whether a capability has an explicit, scoped write carve-out (#851 / #1555): a `code: "none"` role
+ * (no feature-code writes) that is nonetheless allowed to write EXACTLY the globs it owns and nothing
+ * else — the **director** writes the commons globs (`.gitignore`, manifests, CI config, …) assigned to
+ * it, the **documentor** writes its DOC_GLOBS prose docs. This mirrors the #304 precedent of a scoped
+ * role-gate carve-out. Scoped to {@link CARVE_OUT_ROLES} on purpose: every OTHER `code: "none"` role
+ * stays fully write-denied even if handed globs. An empty `writeGlobs` ⇒ no carve-out, full deny stands
+ * (so a director without assigned commons keeps the full deny; the documentor ships DOC_GLOBS by
+ * default, so its carve-out is active as launched).
  */
 export function hasScopedWriteCarveOut(cap: RoleCapability): boolean {
-  return cap.role === "director" && cap.code === "none" && cap.writeGlobs.length > 0;
+  return CARVE_OUT_ROLES.has(cap.role) && cap.code === "none" && cap.writeGlobs.length > 0;
 }

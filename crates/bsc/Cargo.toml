@@ -27,9 +27,15 @@ skilldb = { path = "../skilldb" }
 compliance = { path = "../compliance" }
 bsc-blueprint = { path = "../bsc-blueprint" }
 bsc-persona = { path = "../bsc-persona" }
+bsc-org = { path = "../bsc-org" }
+bsc-component = { path = "../bsc-component" }
+bsc-ui = { path = "../bsc-ui" }
 logs = { path = "../logs" }
 bsc-files = { path = "../bsc-files" }
 plandb = { path = "../plandb" }
+errordb = { path = "../errordb" }
+# `bsc todo` — the two-scope agent todo store (#1872): global runbook here, feature scope in plandb.
+bsc-todo = { path = "../bsc-todo" }
 # DuckDB-backed `bsc data` — optional so `--no-default-features` yields a lean binary (#1877).
 bsc-data = { path = "../data", optional = true }
 # `bsc mcp <server>` — the bundled native MCP servers, now subcommands of the umbrella (#1877). Each

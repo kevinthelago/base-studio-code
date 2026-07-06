@@ -9,6 +9,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
 import { Text } from "@/shared/ui/typography/Text";
 import { langColor, SUMMARY_REPO_SAMPLE } from "../lib/githubSummary";
+import { CardEmpty, SkeletonRows } from "./cardStates";
 
 export function LanguageMix({ langTotals, repoCount, totalRepos, loading }: {
   langTotals: Record<string, number>;
@@ -45,8 +46,9 @@ export function LanguageMix({ langTotals, repoCount, totalRepos, loading }: {
       hint={<Box as="span" title={title}>{loading ? "loading…" : entries.length > 0 ? `by byte count · ${repoLabel}` : "no data"}</Box>}
       headMb={10}
     >
-      {entries.length === 0 && !loading && (
-        <Text mono size={11} tone="dim" as="div" style={{ padding: "4px 0" }}>No language data available.</Text>
+      {loading && entries.length === 0 && <SkeletonRows rows={4} h={16} />}
+      {!loading && entries.length === 0 && (
+        <CardEmpty icon="◐" title="No language data" hint="Detected languages across your repos surface here." />
       )}
       {entries.length > 0 && (
         <>

@@ -7,11 +7,32 @@ import { Box } from "@/shared/ui/layout/Box";
 import { ProjectsEmpty } from "./list/Empty";
 import { ProjectsList } from "./list/ProjectsList";
 import { Planning } from "./session/Planning";
-import { Fleet } from "./fleet/Fleet";
-import { PersonasPanel } from "@/features/personas";
+import { OrgPanel } from "@/features/org";
 import { useProjectScan } from "./list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
 import "./projectsScreen.css";
+
+// #1545: public API for cross-feature consumers. tunnel reaches plannerCore for CanonicalFile;
+// components reaches the gist manifest/publish helpers (included for barrel completeness).
+export type { CanonicalFile } from "./lib/plannerCore";
+export {
+  validateManifest, wrapExtension, encodeShareCode, decodeShareCode,
+  type ExtensionManifest, type ValidateResult,
+} from "./lib/gist/manifest";
+export { installFromGist, publishGist } from "./lib/gist/gist";
+// #1545: github's screen renders planner's project views (a one-way UI dependency now that planner
+// no longer reaches into github); the app's director pump + console launch reach planner fleet logic
+// (flow-permission rules, director drive). Exposed here so those consumers use the barrel, not deep paths.
+export { ProjectsSummary } from "./list/ProjectsSummary";
+export { ProjectBoard } from "./github/ProjectBoard";
+export { Roadmap } from "./github/Roadmap";
+export { Issues } from "./github/Issues";
+export { Insights } from "./github/Insights";
+export { flowPermissionRules, flowGrantedPushCommands } from "./fleet/flowPermissions";
+export {
+  decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
+  briefKey, pendingBriefPrompt, DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
+} from "./fleet/directorDrive";
 
 export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   // Re-resolve the active project's repos + plan on tab open / project change.
@@ -70,18 +91,14 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
       onTearOff={tearOff}
       pageOverride={pageOverride}
     >
-      {/* Fleet — live orchestration; the worker board opens a per-agent page (#499). Mounts on demand. */}
-      {mode === "fleet" && (
-        <Stack style={{ flex: 1, minHeight: 0 }}>
-          <Fleet />
-        </Stack>
-      )}
+      {/* Fleet analytics moved to Glance (#2223/#2228). The console fleet launch (fleetStartProject) is
+          unaffected — that's a separate build-tab flow, not this page mode. */}
 
-      {/* Personas — the CRUD-able agent-identity library (#2094). Mounts on demand. Torn-off section
-          windows never force this mode (it's authoring, not a live PTY). */}
-      {mode === "personas" && !pageOverride && (
+      {/* Org — the persona-relationship graph (#2193); also the persona editor (the Personas tab was
+          folded in here, #2199). Authoring, not a live PTY, so torn-off windows never force this mode. */}
+      {mode === "org" && !pageOverride && (
         <Stack style={{ flex: 1, minHeight: 0 }}>
-          <PersonasPanel />
+          <OrgPanel />
         </Stack>
       )}
 

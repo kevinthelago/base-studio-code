@@ -75,9 +75,17 @@ jobs:
       #     certificate-profile-name: ${{ secrets.TRUSTED_SIGNING_PROFILE }}
 
       - name: Build and release
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Bundle the host toolchain (#1277): the tauri-action runs `beforeBuildCommand`
+          # (`npm run stage:sidecar`) with TAURI_ENV_TARGET_TRIPLE set, so opting in here makes
+          # stage-sidecar fetch+verify+extract `gh` (all platforms) + PortableGit (Windows) into the
+          # beside-the-exe layout BEFORE the bundle. Best-effort: a fetch/verify miss only warns and
+          # the build still succeeds (the toolchain block never fails the build). NOTE: actually
+          # SHIPPING the staged binaries still needs the `externalBin`/`bundle.resources` wiring —
+          # the deferred final step tracked in #1277 (see scripts/stage-sidecar.mjs).
+          BSC_STAGE_TOOLCHAIN: '1'
           # GitHub OAuth Device Flow (#431): the OAuth App Client ID is a public
           # identifier baked directly into the Rust binary (see GITHUB_CLIENT_ID in
           # src-tauri/src/lib.rs) — no secret/env needed at build time.

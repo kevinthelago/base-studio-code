@@ -2,6 +2,7 @@
 // and perf + log config. Split from store/types (#1634).
 import type { PerfConfig } from "./perf";
 import type { LogConfig } from "./log";
+import type { AppStateSnapshot } from "../appState";
 
 /** App-chrome slice of {@link AppStore}. */
 export interface ShellState {
@@ -13,6 +14,14 @@ export interface ShellState {
    *  (#463). Unknown/new tabs append; stale ids are ignored. */
   pageTabOrder: Record<string, string[]>;
   setPageTabOrder: (page: string, order: string[]) => void;
+  /** Persisted last-selected page (tab id) per page (keyed by page id). Lets a
+   *  workspace reopen on the Page the user last viewed — across an in-session
+   *  workspace switch (most workspaces unmount when inactive) and across restart —
+   *  instead of always snapping back to the front tab. Falls back to the front tab
+   *  (see {@link pageTabOrder}, #463) when there's no memory; a stale id self-heals
+   *  to the front tab via `usePageTabs`'s validity effect. */
+  activePageTab: Record<string, string>;
+  setActivePageTab: (page: string, id: string) => void;
   /** Console tab ids currently shown in their own window (#430). Session-only
    *  (NOT persisted): hidden from this window's tab bar while detached, cleared
    *  on re-dock or app restart — so the tab returns to its persisted place. */
@@ -45,4 +54,16 @@ export interface ShellState {
   // Log management (#1060)
   logConfig: LogConfig;
   setLogConfig: (config: LogConfig) => void;
+
+  // Demo app-state (#2272) — a loaded demo overlays the demoable store slices; the pre-demo values
+  // are stashed in `demoBackup` so clearing restores exactly what was there (empty → empty). Both
+  // persist so a demo survives restart and stays clearable.
+  /** Whether a demo app-state is currently loaded over the user's real state. */
+  demoActive: boolean;
+  /** The demoable slice values captured just before the demo was loaded (null when no demo active). */
+  demoBackup: AppStateSnapshot | null;
+  /** Overlay a demo snapshot onto the store, backing up the current demoable state first (once). */
+  loadDemoState: (snapshot: AppStateSnapshot) => void;
+  /** Restore the pre-demo state (no-op when no demo is active). */
+  clearDemoState: () => void;
 }

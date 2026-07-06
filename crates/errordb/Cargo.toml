@@ -1,0 +1,21 @@
+[package]
+name = "errordb"
+version = "0.1.0"
+edition = "2021"
+description = "Per-project runtime-fault store (SQLite) for base-studio-code (#2258/#2260) — the fingerprinted sink `bsc errors` reads and the (slice-2) collector writes."
+
+# Tauri-free core lib + the `bsc errors` subcommand, so the umbrella binary and the desktop app both
+# reuse it without relinking the whole app (mirrors plandb/skilldb).
+[lib]
+name = "errordb"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# `bundled` compiles SQLite from source (matches src-tauri) for cross-platform reliability.
+rusqlite = { version = "0.40", features = ["bundled"] }
+# Shared SQLite open + busy_timeout plumbing (the `conn` feature) — the same app/CLI-share connection
+# setup plandb/skilldb use so a CLI write never races the app's poll on SQLITE_BUSY.
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
+# Shared CLI scaffold: cli_main + resolve_store_path (--db→env→default) + the CmdDoc help system.
+bsc-cli-util = { path = "../bsc-cli-util" }

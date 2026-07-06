@@ -41,6 +41,16 @@ pub const SIDECARS: &[Sidecar] = &[
         advertise: true,
     },
     Sidecar {
+        name: "errors", context_env: Some("BSC_ERROR_DB"),
+        blurb: "this project's runtime-fault store: fingerprinted errors + alerts from the running app",
+        advertise: true,
+    },
+    Sidecar {
+        name: "todo", context_env: None,
+        blurb: "your todo list: `--scope feature` (this issue's steps, plan.db) or `--scope global` (the workflow runbook); check items off with `todo done <id>`",
+        advertise: true,
+    },
+    Sidecar {
         name: "data", context_env: Some("BSC_DATA_DB"),
         blurb: "the Data Model + Platform Behavior Summary + entity tables; REST connectors",
         advertise: true,
@@ -52,7 +62,7 @@ pub const SIDECARS: &[Sidecar] = &[
     },
     Sidecar {
         name: "logs", context_env: None,
-        blurb: "query this session's logs (tools/skills/mcp/hooks/cost/coord/activity) + perf (read-only)",
+        blurb: "query this session's logs (tools/skills/mcp/hooks/cost/coord/activity) + perf (read-only); `logs scope` toggles runtime CONSOLE log scopes (the file/audit log is always kept)",
         advertise: true,
     },
     Sidecar {
@@ -68,6 +78,21 @@ pub const SIDECARS: &[Sidecar] = &[
     Sidecar {
         name: "persona", context_env: None,
         blurb: "the user persona library: agent identities (start prompt + skills + model over a role)",
+        advertise: true,
+    },
+    Sidecar {
+        name: "org", context_env: None,
+        blurb: "the user org library: the persona-relationship graph (positions wired by relationships)",
+        advertise: true,
+    },
+    Sidecar {
+        name: "component", context_env: None,
+        blurb: "the component library: proven components in technology-scoped kits (reuse, don't re-invent)",
+        advertise: true,
+    },
+    Sidecar {
+        name: "ui", context_env: None,
+        blurb: "the UI spec SDK: the KitNode contract (`ui schema`) an AI emits UI as data against, and `ui validate` to check a spec",
         advertise: true,
     },
     Sidecar {
@@ -122,13 +147,14 @@ mod tests {
 
     #[test]
     fn only_cwd_derived_project_stores_carry_a_context_env() {
-        // The agent prompt's "needs a project context" caveat must fire ONLY for the two cwd-derived
-        // project stores; the global/none subcommands must not be flagged.
+        // The agent prompt's "needs a project context" caveat must fire ONLY for the cwd-derived
+        // project stores (plan/errors/data); the global/none subcommands must not be flagged.
         for s in SIDECARS {
-            let scoped = matches!(s.name, "plan" | "data");
+            let scoped = matches!(s.name, "plan" | "errors" | "data");
             assert_eq!(s.context_env.is_some(), scoped, "{} context_env scoping wrong", s.name);
         }
         assert_eq!(SIDECARS.iter().find(|s| s.name == "plan").unwrap().context_env, Some("BSC_PLAN_DB"));
+        assert_eq!(SIDECARS.iter().find(|s| s.name == "errors").unwrap().context_env, Some("BSC_ERROR_DB"));
         assert_eq!(SIDECARS.iter().find(|s| s.name == "data").unwrap().context_env, Some("BSC_DATA_DB"));
     }
 
@@ -137,7 +163,7 @@ mod tests {
         let advertised: Vec<&str> = SIDECARS.iter().filter(|s| s.advertise).map(|s| s.name).collect();
         assert_eq!(
             advertised,
-            ["plan", "data", "skill", "logs", "compliance", "blueprint", "persona", "project", "files"],
+            ["plan", "errors", "todo", "data", "skill", "logs", "compliance", "blueprint", "persona", "org", "component", "ui", "project", "files"],
             "the advertised set + order is what the agent prompt block renders (as `bsc <sub>`)",
         );
     }

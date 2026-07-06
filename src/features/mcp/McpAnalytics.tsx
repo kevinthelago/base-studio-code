@@ -10,6 +10,9 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Skeleton, SkeletonChart } from "@/shared/ui/feedback/Skeleton";
+import { fmtClock } from "@/shared/lib/core/format";
 
 // MCP Analytics tab (#879) — KPI cards + 3 charts + a call-results log over the MCP tool-call
 // telemetry (~/.base-studio-code/mcp.log via `bsc logs tail mcp` + mcpTelemetry.ts). The over-time chart +
@@ -20,10 +23,25 @@ import { Text } from "@/shared/ui/typography/Text";
 const DAYS = 14;
 
 const fmtMs = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`);
-const fmtClock = (ts: number) => {
-  const d = new Date(ts);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
-};
+
+/** A compact empty state for a telemetry card body (#2246) — the panel frame + head stay; the body shows this. */
+function CardEmpty({ title, hint }: { title: string; hint?: string }) {
+  return <EmptyState size="sm" iconVariant="dashed" icon="○" title={title} description={hint} style={{ padding: "20px 12px" }} />;
+}
+
+/** A stack of shimmer bar-rows (label line + track) — a loading placeholder for a per-server bar card (#2246). */
+function SkeletonBars({ rows = 4 }: { rows?: number }) {
+  return (
+    <Stack gap={14}>
+      {Array.from({ length: rows }).map((_, i) => (
+        <Box key={i}>
+          <Skeleton h={11} w="40%" style={{ marginBottom: 6 }} />
+          <Skeleton h={8} radius={4} />
+        </Box>
+      ))}
+    </Stack>
+  );
+}
 
 export function McpAnalyticsTab() {
   // Transport per server, joined by name from the live store (the log carries only the name).
@@ -52,27 +70,41 @@ export function McpAnalyticsTab() {
     return list;
   }, [an, filter]);
 
-  if (!an) return <Box className="hint" pad={16}>Loading MCP telemetry…</Box>;
-
-  const maxServerCalls = Math.max(1, ...an.perServer.map((s) => s.calls));
-  const errCount = an.recent.filter((c) => c.outcome === "fail").length;
+  // The card LAYOUT always renders (#2246) — each async card body shows a loading skeleton (while the
+  // log query is in flight) or a compact empty state (no telemetry yet), rather than a page-wide
+  // "Loading…" line that hides the whole surface.
+  const loading = an === null;
+  const maxServerCalls = an ? Math.max(1, ...an.perServer.map((s) => s.calls)) : 1;
+  const errCount = an ? an.recent.filter((c) => c.outcome === "fail").length : 0;
 
   return (
     <Box style={{ padding: "4px 0 12px" }}>
       {/* KPI cards */}
       <Grid cols={4} gap={8} style={{ marginBottom: 12 }}>
-        <StatCard k="Total calls" v={an.total} sub={`last ${DAYS} days`} />
-        <StatCard k="Errors" v={an.errors} sub="failed calls" tone="danger" />
-        <StatCard k="Success rate" v={`${an.successRate}%`} sub={`${an.ok} ok`} tone="success" />
-        <StatCard k="Active servers" v={an.activeServers} sub={`${an.healthyServers} healthy`} />
+        <StatCard k="Total calls" v={an?.total ?? 0} sub={`last ${DAYS} days`} loading={loading} />
+        <StatCard k="Errors" v={an?.errors ?? 0} sub="failed calls" tone="danger" loading={loading} />
+        <StatCard k="Success rate" v={`${an?.successRate ?? 0}%`} sub={`${an?.ok ?? 0} ok`} tone="success" loading={loading} />
+        <StatCard k="Active servers" v={an?.activeServers ?? 0} sub={`${an?.healthyServers ?? 0} healthy`} loading={loading} />
       </Grid>
 
       {/* Calls over time */}
-      <StackedDayBars
-        data={an.daily.map((d) => ({ day: d.day, upper: d.ok, lower: d.error }))}
-        title="Calls over time" subtitle="daily tool calls · ok vs error"
-        upperLabel="ok" lowerLabel="error"
-      />
+      {loading ? (
+        <Box style={{ marginBottom: 10 }}>
+          <TelemetryPanel title="Calls over time" hint="daily tool calls · ok vs error"><SkeletonChart height={160} /></TelemetryPanel>
+        </Box>
+      ) : an.total === 0 ? (
+        <Box style={{ marginBottom: 10 }}>
+          <TelemetryPanel title="Calls over time" hint="daily tool calls · ok vs error">
+            <CardEmpty title="No calls yet" hint="Daily tool-call volume appears once agents use these servers." />
+          </TelemetryPanel>
+        </Box>
+      ) : (
+        <StackedDayBars
+          data={an.daily.map((d) => ({ day: d.day, upper: d.ok, lower: d.error }))}
+          title="Calls over time" subtitle="daily tool calls · ok vs error"
+          upperLabel="ok" lowerLabel="error"
+        />
+      )}
 
       <Grid cols={2} gap={10} style={{ marginBottom: 10 }}>
         {/* Calls per server */}
@@ -83,26 +115,30 @@ export function McpAnalyticsTab() {
             <Row inline gap={5} className="mono" style={{ fontSize: 9.5, color: "var(--fg-muted)" }}><ColorSwatch color="var(--violet, oklch(0.70 0.12 300))" />stdio</Row>
           </>}
         >
-          <ItemBars
-            rows={an.perServer.map((s) => {
-              const transport = transportByServer[s.server] ?? "stdio";
-              return {
-                key: s.server, label: s.server, meta: transport, value: s.calls, fraction: s.calls / maxServerCalls,
-                color: transport === "http" ? "var(--info)" : "var(--violet, oklch(0.70 0.12 300))",
-              };
-            })}
-            empty={<Text as="span" className="hint">No MCP calls recorded yet.</Text>}
-          />
+          {loading ? <SkeletonBars /> : (
+            <ItemBars
+              rows={an.perServer.map((s) => {
+                const transport = transportByServer[s.server] ?? "stdio";
+                return {
+                  key: s.server, label: s.server, meta: transport, value: s.calls, fraction: s.calls / maxServerCalls,
+                  color: transport === "http" ? "var(--info)" : "var(--violet, oklch(0.70 0.12 300))",
+                };
+              })}
+              empty={<Text as="span" className="hint">No MCP calls recorded yet.</Text>}
+            />
+          )}
         </TelemetryPanel>
 
         {/* Success vs errors */}
         <TelemetryPanel title="Success vs errors" hint="per server">
-          <Stack gap={14}>
-            {an.perServerSplit.length === 0 && <Text as="span" className="hint">No calls yet.</Text>}
-            {an.perServerSplit.map((p) => (
-              <SplitBar key={p.server} label={p.server} a={p.ok} b={p.errors} aLabel="ok" bLabel="err" />
-            ))}
-          </Stack>
+          {loading ? <SkeletonBars rows={3} /> : (
+            <Stack gap={14}>
+              {an.perServerSplit.length === 0 && <Text as="span" className="hint">No calls yet.</Text>}
+              {an.perServerSplit.map((p) => (
+                <SplitBar key={p.server} label={p.server} a={p.ok} b={p.errors} aLabel="ok" bLabel="err" />
+              ))}
+            </Stack>
+          )}
           <Box style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border-soft)", fontSize: 10.5, color: "var(--fg-dim)", lineHeight: 1.5 }}>
             Parsed from <Text as="span" mono tone="muted">~/.base-studio-code/mcp.log</Text> via <Text as="span" mono tone="muted">mcpTelemetry.ts</Text> — one line per call (ts · server · tool · outcome · ms).
           </Box>
@@ -132,7 +168,11 @@ export function McpAnalyticsTab() {
             ))}
           </Row>
         </Row>
-        {recent.length === 0 ? (
+        {loading ? (
+          <Stack gap={6}>
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} h={22} radius={5} />)}
+          </Stack>
+        ) : recent.length === 0 ? (
           <Text as="span" className="hint">No calls recorded yet — the MCP call log fills as agents use these servers.</Text>
         ) : (
           <Stack>
@@ -149,7 +189,7 @@ function CallRow({ c }: { c: McpCall }) {
   const label = c.outcome === "fail" ? "fail" : c.outcome === "warn" ? "warn" : "ok";
   return (
     <Row className="mono" gap={10} style={{ padding: "6px 0", borderTop: "1px solid var(--border-soft)", fontSize: 10.5 }}>
-      <Box as="span" style={{ color: "var(--fg-dim)", width: 56 }}>{fmtClock(c.ts)}</Box>
+      <Box as="span" style={{ color: "var(--fg-dim)", width: 56 }}>{fmtClock(c.ts, { seconds: true })}</Box>
       <Box as="span" style={{ color: "var(--fg)", whiteSpace: "nowrap" }}>{c.server}<Text as="span" tone="muted">.{c.tool}</Text></Box>
       <Box as="span" style={{ flex: 1, color: "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.detail && `→ ${c.detail}`}</Box>
       <Text as="span" tone="muted">{c.ms ? fmtMs(c.ms) : "—"}</Text>

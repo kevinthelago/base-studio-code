@@ -14,6 +14,7 @@ import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
+import { IconBox } from "@/shared/ui/data/IconBox";
 import { Banner } from "@/shared/ui/feedback/Banner";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
@@ -127,7 +128,7 @@ function ProfDetail({ p, consoles, setMode, setTool, removeCmd, addCmd, addPath,
         </Box>
         {isApp && (
           <Stack gap={10} style={{ padding: "12px 18px", borderBottom: "1px solid var(--border-soft)" }}>
-            <Banner tone="info" lead={<Box as="span" bg={p.color} radius={6} style={{ width: 22, height: 22, flex: "0 0 22px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 11, color: "#11100e"}}>◆</Box>}>
+            <Banner tone="info" lead={<IconBox size={22} radius={6} background={p.color} fontSize={11} color="var(--on-accent)">◆</IconBox>}>
               <Text as="span"><b style={{ color: "var(--fg)" }}>System role.</b> Always present in every workspace — can't be deleted or assigned to a console pane. It runs as its own session.</Text>
             </Banner>
             <Box className="owns-card">

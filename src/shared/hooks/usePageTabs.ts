@@ -3,7 +3,7 @@
 // "opens the first tab" (so the user's preferred view = whatever they drag to the
 // front), reordering persists, and tear-off is wired in by the page.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useAppStore } from "@/store";
 import { moveInArray } from "@/shared/lib/core/arrayMove";
 import { openDetachedSection } from "@/shared/lib/core/detachSection";
@@ -47,7 +47,12 @@ export interface PageTabs {
  *
  * Pass `controlled` when the active tab lives in the store and is shared across
  * components (e.g. the Projects board, where the bar and the content are separate
- * components) — the hook then reads/writes that instead of local state.
+ * components) — the hook then reads/writes that instead of the persisted map.
+ *
+ * The uncontrolled active page is **persisted** per `pageKey` (`activePageTab`), so a
+ * workspace reopens on the Page the user last viewed — across an in-session workspace
+ * switch and across restart — falling back to the front tab (#463) when there's no
+ * memory. A stale persisted id self-heals to the front tab via the validity effect.
  */
 export function usePageTabs(
   pageKey: string,
@@ -58,16 +63,20 @@ export function usePageTabs(
   const setOrder = useAppStore((s) => s.setPageTabOrder);
   const detached = useAppStore((s) => s.detachedSections[pageKey]) ?? EMPTY;
   const setDetached = useAppStore((s) => s.setSectionDetached);
+  const persistedActive = useAppStore((s) => s.activePageTab[pageKey]);
+  const setPersistedActive = useAppStore((s) => s.setActivePageTab);
 
   const ordered = useMemo(() => orderTabs(defs, order), [defs, order]);
   const tabs = useMemo(() => ordered.filter((t) => !detached.includes(t.id)), [ordered, detached]);
-  const [localActive, setLocalActive] = useState<string>(() => tabs[0]?.id ?? "");
-  const activeId = controlled ? controlled.activeId : localActive;
-  const setActiveId = controlled ? controlled.setActive : setLocalActive;
+  const setUncontrolled = useCallback((id: string) => setPersistedActive(pageKey, id), [pageKey, setPersistedActive]);
+  const activeId = controlled ? controlled.activeId : (persistedActive ?? tabs[0]?.id ?? "");
+  const setActiveId = controlled ? controlled.setActive : setUncontrolled;
 
-  // Keep the active id valid if the visible set changes (order/defs/detach shift).
+  // Keep the active id valid if the visible set changes (order/defs/detach shift):
+  // a persisted id that no longer resolves to a visible tab heals to the front tab.
+  // Skip while there are no tabs yet so we don't persist an empty selection.
   useEffect(() => {
-    if (!tabs.some((t) => t.id === activeId)) setActiveId(tabs[0]?.id ?? "");
+    if (tabs.length > 0 && !tabs.some((t) => t.id === activeId)) setActiveId(tabs[0].id);
   }, [tabs, activeId, setActiveId]);
 
   // Reorder operates on visible positions; translate to the full ordered list so

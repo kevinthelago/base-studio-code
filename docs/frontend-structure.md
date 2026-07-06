@@ -78,3 +78,13 @@ the planner render-preview's `StageScreen*` / `stageScreens`, and the UI editor'
 - A new top-level rail destination is a **Workspace**; it renders a **`Screen`** and defines its **Pages**.
 - Never reuse **Screen** for an L1 destination, **Page** for a Console View, or **Tab** for a Page.
 - The page-tab state always comes from **`usePageTabs`**; don't hand-roll a tab strip.
+
+## Feature boundaries — the barrel is the public API (#1545)
+
+A feature is a **black box behind its `index.ts` barrel**. The barrel is the feature's public API; everything else under `features/<x>/` (its `lib/*`, components, subdirs) is **private**.
+
+- **Cross-feature imports go through the barrel:** import `@/features/<x>` — never `@/features/<x>/lib/foo` or `@/features/<x>/SomeComponent`. So a feature can refactor its internals without churning importers. Need a symbol another feature reaches for? **Re-export it from that feature's `index.ts`** (a curated public API), don't deep-import it.
+- **Intra-feature imports keep using the alias:** within `features/<x>/`, `@/features/<x>/lib/foo` is fine (the repo prefers the `@/` alias over `../../` — see "Path alias"). Only *cross*-feature deep imports are forbidden.
+- **`import type` is exempt:** a type-only coupling is erased at build and doesn't wire runtime, so `import type { T } from "@/features/<x>/lib/..."` stays allowed (mirrors the `shared/` rule, #1626).
+- **Enforced by lint:** `eslint.config.js` generates a per-feature `no-restricted-imports` block (each feature forbids the *other* features' internals) plus an app-shell block. `components/**` and `glance/**` are temporarily exempt as importers (a parallel restructure, #2197/#2214/#2372) — remove them from `EXEMPT_IMPORTERS` to fold them in.
+- **Shared vs. feature-owned data:** genuinely feature-agnostic infrastructure lives in `shared/` — e.g. the **GitHub data/query layer** (`shared/lib/github/*`: the client, `useGithubQuery`, `projectV2`, `projectSync`, `issueProvenance`, device flow) that both `github` and `planner` consume. A feature's *views* over that data stay feature-owned (planner's `ProjectBoard`/`Roadmap`/`Issues`/`Insights` are planner's; github's screen imports them one-way through the planner barrel). `shared/` never value-imports a feature (#1626).

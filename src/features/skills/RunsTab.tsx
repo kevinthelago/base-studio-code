@@ -5,17 +5,21 @@ import { useMemo } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
+import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { Skeleton } from "@/shared/ui/feedback/Skeleton";
 import { Spark } from "@/shared/ui/charts";
 import { KIND, fmtCount } from "@/shared/data/skills";
 import { skillSlug, type SkillDef } from "./lib/skills";
 import { type SkillStats } from "./lib/skillTelemetry";
 import { successColor } from "./skillStyles";
 
-export function RunsTab({ merged, stats, onOpen }: {
+export function RunsTab({ merged, stats, statsLoaded, onOpen }: {
   merged: SkillDef[];
   stats: Record<string, SkillStats>;
+  /** First telemetry poll has returned — false shows a loading skeleton instead of "No runs yet" (#2245). */
+  statsLoaded: boolean;
   onOpen: (id: string) => void;
 }) {
   const runRows = useMemo(() => [...merged].filter((s) => s.invocations > 0).sort((a, b) => b.invocations - a.invocations), [merged]);
@@ -24,7 +28,10 @@ export function RunsTab({ merged, stats, onOpen }: {
     <Box as="section" className="an-page"><Box className="an-wrap">
       <Text as="h2" mono size="xl" style={{ margin: "0 0 4px" }}>Runs</Text>
       <Text as="div" tone="muted" size={12} style={{ marginBottom: 14 }}>Live skill invocations from the usage log · last 7 days</Text>
-      {runRows.length === 0 ? (
+      {!statsLoaded && runRows.length === 0 ? (
+        // First poll pending — skeleton rows sized like the invocation table, not a cold empty state.
+        <Stack gap={6}>{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} h={34} radius={6} />)}</Stack>
+      ) : runRows.length === 0 ? (
         <EmptyState title="No runs yet" description="Run the fleet — each time an agent invokes a skill it's logged here with its success rate and 7-day trend." />
       ) : (
         <Box border="soft" radius={6} style={{ overflow: "hidden" }}>

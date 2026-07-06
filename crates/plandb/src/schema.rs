@@ -2,7 +2,7 @@
 //! DDL, and the additive/rename migrations — run by {@link crate::Store::open}. Split out of `lib.rs`
 //! so the schema is one file (mirrors how `crates/data` keeps one file per concern).
 
-use crate::lessons;
+use crate::{lessons, sessions, todos};
 use rusqlite::Connection;
 
 /// Every plan-store table, in the order `clear()` truncates them — the single source of truth for the
@@ -20,7 +20,11 @@ pub(crate) const ALL_TABLES: &[&str] = &[
     "startup",
     "blueprint",
     "discovery",
+    "confirmed_stages",
+    "skipped_stages",
     "triage_runs",
+    "todos",
+    "fleet_sessions",
 ];
 
 pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
@@ -114,6 +118,15 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             position    INTEGER NOT NULL DEFAULT 0,
             updated_at  INTEGER NOT NULL DEFAULT 0
          );
+         CREATE TABLE IF NOT EXISTS confirmed_stages (
+            stage       TEXT PRIMARY KEY,
+            fingerprint TEXT NOT NULL DEFAULT '',
+            updated_at  INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS skipped_stages (
+            stage       TEXT PRIMARY KEY,
+            updated_at  INTEGER NOT NULL DEFAULT 0
+         );
          CREATE TABLE IF NOT EXISTS triage_runs (
             repo        TEXT PRIMARY KEY,
             last_run    INTEGER NOT NULL DEFAULT 0
@@ -121,6 +134,10 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     )?;
     // Self-correction lessons (#1362) own their schema in the `lessons` module.
     conn.execute_batch(lessons::LESSONS_DDL)?;
+    // Agent todo lists — feature scope (#1872) — own their schema in the `todos` module.
+    conn.execute_batch(todos::TODOS_DDL)?;
+    // Fleet-session ledger (#2405) — the durable launched-agent record; owns its schema in `sessions`.
+    conn.execute_batch(sessions::FLEET_SESSIONS_DDL)?;
     // Additive migrations for a plan.db created before a column existed (each errors if the column is
     // already present — ignored).
     let _ = conn.execute("ALTER TABLE issues ADD COLUMN status TEXT NOT NULL DEFAULT 'open'", []);

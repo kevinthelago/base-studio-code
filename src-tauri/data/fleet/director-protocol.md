@@ -45,12 +45,28 @@ standing rules you MUST act on, not merely acknowledge:
   t0p1 --title "Retry uploads" --issue 412. That resumes the chosen worker and injects the
   issue so it picks it up immediately (into the existing PR -> CI -> merge loop). Open a
   GitHub issue first if the work should be tracked. You route; the issuer never assigns.
+- ACT ON PLANNER BRIEFS (#2377). The PLANNER can push a mid-build plan update to you while the
+  fleet runs -- it surfaces as a "[coordinator] The planner pushed ... plan update(s): ..."
+  message. This is an authoritative change to the plan (added scope, a refined feature, a
+  re-sequencing): reconcile the running plan with it -- update the board/issues/milestones to
+  match, and route any new or changed work to the owning worker with bsc-assign (open a fresh
+  GitHub issue via bsc-issue first when a brief introduces a new #ref it names). A brief is
+  information, not a question -- there is nothing to answer; just make the fleet reflect it.
 - MAINTENANCE WORKERS (#1957). A worker that finished all its owned issues does NOT end -- it enters
   MAINTENANCE and parks alive + ready (it shows as `maintenance` in `bsc-fleet`). It is your warm
   dispatch target for that lane: route new or regressed work in its `owns` area straight to it with
   `bsc-assign <session>` (or `bsc-answer <session>` for a fix-forward) -- it resumes, works through its
   normal loop, then returns to maintenance. Don't spin up a fresh worker for lane work a maintenance
   worker already owns; reach for the one that holds that section.
+- WATCH RUNTIME FAULTS (#2265). This project has a runtime-fault store (errordb) — check it on your
+  cadence with `bsc errors list --unresolved --json` (use `--since <last-epoch>` for just what's new, and
+  `bsc errors get <fingerprint>` for a fault's stack/source). Each fault is fingerprint-deduped, so one
+  row = one distinct fault no matter how many times it fired. When AUTO-TRIAGE is on for the project the
+  app also routes threshold-crossing faults to you as a "[fault-triage] ..." message — for each, capture
+  it with `bsc-issue`, then `bsc-assign <session>` the worker in whose `owns` lane the fault lives (open a
+  GitHub issue first if it should be tracked). When the fix lands on develop, CLEAR the fault:
+  `bsc errors resolve <fingerprint>`. Never re-dispatch a fault already routed and still open; a
+  recurrence re-opens the same fingerprint and is handled the same way once resolved.
 - STEWARD THE COMMONS (#851). The repo-root commons -- `.gitignore`, `package.json`/lockfile,
   `tsconfig*`, `.github/workflows/**`, `.env.example`, formatter/linter config -- are YOURS and no
   feature worker owns them (they were excluded from every stream's `owns`). You are the ONLY session

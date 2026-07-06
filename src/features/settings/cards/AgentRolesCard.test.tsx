@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { AgentRolesCard } from "./AgentRolesCard";
 import { ROLE_DEFAULTS, roleDeniedCommands, type SessionRole } from "@/shared/lib/session/sessionRoles";
 import { roleProfileId } from "@/shared/lib/session/roleProfile";
@@ -20,19 +20,23 @@ describe("AgentRolesCard", () => {
 
   it("shows the four capability-tier chips per role with their access tier", () => {
     render(<AgentRolesCard />);
-    // The worker is the richest row: git write, github read, code write.
+    // The worker's tiers appear (git write, github read, code write). Use getAllByText — several
+    // roles legitimately share a tier (worker + director both have `git: write`), so these are not
+    // unique across the roster.
     const cap = ROLE_DEFAULTS.worker;
-    expect(screen.getByText(`git: ${cap.git}`)).toBeInTheDocument();
-    expect(screen.getByText(`github: ${cap.github}`)).toBeInTheDocument();
-    expect(screen.getByText(`code: ${cap.code}`)).toBeInTheDocument();
-    // Every role contributes 4 axis chips → at least 4 × role count on the page.
+    expect(screen.getAllByText(`git: ${cap.git}`).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(`github: ${cap.github}`).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(`code: ${cap.code}`).length).toBeGreaterThan(0);
+    // Every role contributes 4 axis chips → exactly 4 × role count on the page.
     expect(screen.getAllByText(/^(git|github|code|net): /).length).toBe(ROLES.length * 4);
   });
 
   it("surfaces each role's default profile", () => {
     render(<AgentRolesCard />);
-    expect(screen.getByText(roleProfileId("planner"))).toBeInTheDocument();
-    expect(screen.getByText(roleProfileId("worker"))).toBeInTheDocument();
+    // A profile id can back several roles (e.g. worker + documentor both use pf_auto), so it may
+    // appear more than once — assert presence, not uniqueness.
+    expect(screen.getAllByText(roleProfileId("planner")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(roleProfileId("worker")).length).toBeGreaterThan(0);
   });
 
   it("expands a role's denied commands on demand", () => {
@@ -40,8 +44,13 @@ describe("AgentRolesCard", () => {
     // The planner denies mutating git/gh commands; its toggle exists and reveals them.
     const denied = roleDeniedCommands(ROLE_DEFAULTS.planner);
     expect(denied.length).toBeGreaterThan(0);
-    const toggle = screen.getByRole("button", { name: new RegExp(`Show ${denied.length} denied`) });
+    // Scope to the planner's row — the "Show N denied" button label collides across roles with the
+    // same denied count, so climb from the role name to the row that owns a denied-command toggle.
+    let row: HTMLElement | null = screen.getByText("planner");
+    while (row && !within(row).queryByRole("button", { name: /denied command/ })) row = row.parentElement;
+    expect(row).not.toBeNull();
+    const toggle = within(row!).getByRole("button", { name: /denied command/ });
     fireEvent.click(toggle);
-    expect(screen.getByText(denied[0])).toBeInTheDocument();
+    expect(within(row!).getByText(denied[0])).toBeInTheDocument();
   });
 });

@@ -260,6 +260,10 @@ pub(crate) fn pty_create(
     // #1988: when set, run this session INSIDE the named sealed WSL2 distro (the model-agnostic
     // sandbox). None ⇒ the normal host shell — every existing caller, unchanged.
     wsl_distro: Option<String>,
+    // #1994: when set (alongside `wsl_distro`), run the distro session as this per-agent Linux USER —
+    // its private mode-700 home isolates it from co-located agents (raw Bash can't cross Unix perms).
+    // Derive + provision it first via `ensure_sandbox_user`. None ⇒ the distro's default `agent` user.
+    wsl_user: Option<String>,
     app: AppHandle,
     state: State<'_, PtyState>,
 ) -> Result<bool, String> {
@@ -284,9 +288,16 @@ pub(crate) fn pty_create(
     // which LLM drives the session. Everything distro-specific below is guarded on this, so a None
     // session (every current caller) takes the exact original path.
     let into_sandbox = wsl_distro.as_deref().filter(|d| !d.is_empty()).map(str::to_string);
+    // #1994: the per-agent Linux user to run the distro session as (its private 700 home isolates it
+    // from co-located agents). Only meaningful alongside a distro; empty → None → the distro default.
+    let into_sandbox_user = into_sandbox
+        .as_ref()
+        .and(wsl_user.as_deref().filter(|u| !u.is_empty()).map(str::to_string));
     let mut cmd = if let Some(distro) = into_sandbox.as_deref() {
         let mut c = CommandBuilder::new("wsl.exe");
-        for a in ["-d", distro, "--", "bash", "-i"] {
+        // `-d <distro>` [`-u <user>`] `-- bash -i` — the user arg makes the session run as its own
+        // isolated Linux user when one was provisioned (#1994), else the distro's default user (#1988).
+        for a in crate::platform::shell::wsl_interactive_args(distro, into_sandbox_user.as_deref()) {
             c.arg(a);
         }
         c
@@ -310,6 +321,12 @@ pub(crate) fn pty_create(
     // launches, and a no-op when the config is already valid.
     harness.prepare_config();
 
+    // #1994: a per-agent sandbox session with no explicit cwd starts in its OWN private (mode-700)
+    // home, not the distro's shared default `~` — so isolation holds even for a bare launch.
+    let cwd = match into_sandbox_user.as_deref() {
+        Some(user) if cwd.is_empty() => crate::session::sandbox::agent_home(user),
+        _ => cwd,
+    };
     // Resolve the session's working directory (#367/#979/#1819/#1988): normalize a git-bash drive
     // path back to native, detect a missing/empty cwd (both logged loudly, never a silent home
     // fallback), and pick the effective start dir. All the `into_sandbox` cwd re-tests live in the
@@ -373,13 +390,24 @@ pub(crate) fn pty_create(
     // The session harness (#1078 P0): ClaudeCodeAdapter is the only impl today; it reproduces the
     // exact launch behavior this block had inline. bsc-agent becomes a second adapter (P2).
     let has_history = harness.detect_history(&cwd);
-    let launch = match plan_launch(
+    let plan = plan_launch(
         startup_prompt.as_deref(),
         init_cmd.as_deref(),
         has_history,
         continue_session.unwrap_or(false),
         startup_prompt_fresh_only.unwrap_or(false),
-    ) {
+    );
+    // #2396: make the resume decision visible — an "always fresh" regression (a caller dropping the
+    // resume init/flag) shows up in the logs as `resumed=false` right next to `has_history=true`.
+    // An Init launch resumes when its command carries `--continue` AND there's history to continue
+    // (the `claude --continue || claude` chain falls back to fresh on its own otherwise).
+    let resumed = match &plan {
+        LaunchPlan::Prompt { resume } => *resume,
+        LaunchPlan::Init(s) => s.contains("--continue") && has_history,
+        LaunchPlan::None => false,
+    };
+    log::info!("pty[{pane_id}] launch decision · has_history={has_history} · resumed={resumed}");
+    let launch = match plan {
         LaunchPlan::Prompt { resume } => Some(harness.launch_command(startup_prompt.as_deref().unwrap_or(""), resume)),
         LaunchPlan::Init(s) => Some(s),
         LaunchPlan::None => None,
@@ -529,6 +557,29 @@ pub(crate) fn pty_kill(
             log::info!("pty[{pane_id}] kill");
         }
         None => log::info!("pty[{pane_id}] kill (no-op; session absent)"),
+    }
+    Ok(())
+}
+
+/// Mark (or un-mark) a pane as "running the app" for the best-effort runtime-fault PTY tap (#2264).
+/// When enabled, the PTY emitter scans this pane's output for stack traces / panics / `ERROR` lines
+/// and records them (source `pty-tap`) in `project_key`'s `error.db`. Off by default per pane — every
+/// ordinary terminal stays untapped. `project_key` is the pane's owning project (from the store's
+/// pane→project binding); it's required to enable and ignored when disabling.
+#[tauri::command]
+pub(crate) fn pty_set_app_runner(
+    pane_id: String,
+    enabled: bool,
+    project_key: Option<String>,
+) -> Result<(), String> {
+    use crate::observability::pty_faults;
+    if enabled {
+        let key = project_key.filter(|k| !k.is_empty()).ok_or_else(|| {
+            "pty_set_app_runner: enabling the fault tap needs a non-empty project_key".to_string()
+        })?;
+        pty_faults::mark_app_runner(&pane_id, &key);
+    } else {
+        pty_faults::clear_app_runner(&pane_id);
     }
     Ok(())
 }

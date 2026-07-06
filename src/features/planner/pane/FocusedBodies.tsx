@@ -26,6 +26,8 @@ import { AuthoringBody } from "../bodies/FocusedAuthoringBody";
 import { StreamsBody } from "../bodies/StreamsBody";
 import type { FleetHandlers, McpHandlers } from "../bodies/focusedHandlers";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+// The Planner Components pane (#2314) — the body of the `test_ui` stage.
+import { PlannerComponentsPane } from "@/features/components";
 
 // Re-export the shared body types so existing `from "./FocusedBodies"` imports keep resolving
 // (ProjectPane imports `AuthoringWiring`).
@@ -97,6 +99,12 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
       return <AutomationsBody automations={data?.automations} />;
     case "skills":
       return <SkillsBody skills={data?.skills} />;
+    case "test_ui":
+      // The Planner Components pane (#2314): the project-scoped lens on the proven-component library —
+      // a Components ⇄ Full UI toggle (inspect one component with pull-into-plan / open-in-studio
+      // hand-offs, or the whole app assembled from the kit). Reads the global library from the store,
+      // so it needs no stage data.
+      return <PlannerComponentsPane />;
     // Blueprint-authoring stages (#923): the interactive editor views over the in-progress blueprint.
     case "purpose":
     case "bp_stages":

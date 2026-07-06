@@ -7,6 +7,16 @@
 // from features/ (the feature-first rule). `features/planner/blueprints/blueprintIcons` re-exports it.
 
 import type { CSSProperties } from "react";
+import { createLucideIcon, type LucideIcon } from "lucide-react";
+
+/** The GitHub octocat as a lucide-native STROKE icon. lucide dropped its brand logos (trademark), so we
+ *  reconstruct the classic single-path outline via `createLucideIcon` — it renders with lucide's exact
+ *  SVG wrapper (viewBox 0 0 24 24 · fill:none · stroke:currentColor · width 2 · round caps/joins), so the
+ *  GitHub rail tab shows the real mark while staying in the same visual language as the other rail icons
+ *  (Network/FolderKanban/…). Drop-in wherever a `LucideIcon` is expected (e.g. app/registry.ts). */
+export const Github: LucideIcon = createLucideIcon("Github", [
+  ["path", { d: "M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22", key: "gh-body" }],
+]);
 
 /** Glyph name → inner SVG markup (paths share viewBox 0 0 24 24). */
 export const ICONS: Record<string, string> = {
@@ -32,6 +42,8 @@ export const ICONS: Record<string, string> = {
   dns: '<rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/>',
   deployed_code: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22" x2="12" y2="12"/>',
   menu_book: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+  // grid_view — the test_ui / component-kit stage (#2314); a 2×2 grid distinct from `category`.
+  grid_view: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/><path d="M3 12h18"/>',
   // dispositions
   description: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
   task_alt: '<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',

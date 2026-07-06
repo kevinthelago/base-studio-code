@@ -1,0 +1,32 @@
+{
+  "order": 5,
+  "id": "ui-kit",
+  "name": "UI Kit",
+  "desc": "Greenfield with a component-library stage — browse and iterate the proven-component kit while planning",
+  "origin": "built-in",
+  "category": "greenfield",
+  "mode": "create",
+  "sections": [
+    {
+      "key": "discovery"
+    },
+    {
+      "key": "deployment"
+    },
+    {
+      "key": "features"
+    },
+    {
+      "key": "ui",
+      "optional": true
+    },
+    {
+      "key": "test_ui",
+      "optional": true
+    },
+    {
+      "key": "streams"
+    }
+  ],
+  "kit": "react-ui"
+}

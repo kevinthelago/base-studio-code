@@ -48,6 +48,9 @@ export interface PlanState {
   planConfirmedStages: Record<string, string[]>;
   confirmPlanStage:   (projectId: string, key: string) => void;
   unconfirmPlanStage: (projectId: string, key: string) => void;
+  /** Add a confirmation to the store ONLY (no plan.db write-through) — the poll uses this to
+   *  rehydrate the durable confirmed set (#2256) from plan.db on revisit without echoing it back. */
+  markStageConfirmedLocal: (projectId: string, key: string) => void;
   /** The in-progress blueprint an AUTHORING project (#923) is designing — emitted by the planner's
    *  <blueprint> tag, rendered in the focused pane, and published to a gist at the Review stage. */
   planAuthoredBlueprint: Record<string, Blueprint>;
@@ -85,6 +88,9 @@ export interface PlanState {
   planSkippedStages:  Record<string, string[]>;
   skipPlanStage:      (projectId: string, key: string) => void;
   unskipPlanStage:    (projectId: string, key: string) => void;
+  /** Add a skip to the store ONLY (no plan.db write-through) — the poll uses this to rehydrate the
+   *  durable skipped set (#2267) from plan.db on revisit without echoing it back. */
+  markStageSkippedLocal: (projectId: string, key: string) => void;
   /** Collapse non-canonical section keys (e.g. "Tech stack" → "stack") for a project,
    *  merging content into the canonical key (and deduping confirmed keys) — repairs a gate
    *  stuck on a stale title-named section (#803). */

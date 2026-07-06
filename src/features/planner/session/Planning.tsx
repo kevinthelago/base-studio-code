@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
-import { useDragResize } from "@/shared/hooks/useDragResize";
+import { SplitView } from "@/shared/ui/layouts/SplitView";
 import { buildGhStructure } from "../github/ghStructure";
 import type { Section, SectionState } from "../github/ghStructure";
 import {
   ANCHOR_KEYS, SKIPPED_KEY, FEATURES_KEY, titleForTopic, groupTopics,
 } from "../stages/planTopics";
 import { FLEET_KEY, parseFleetFile } from "../fleet/planFleet";
-import { resolveSkills } from "@/features/skills/lib/skills";
+import { resolveSkills } from "@/features/skills";
 import { parseFeaturesFile, featuresSummary, featureDependencyCycle } from "../issues/featureList";
 import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencies";
 import type { FlowAutonomy, FlowPush, FlowGate } from "../fleet/agentFlow";
@@ -26,6 +26,7 @@ import { normalizeDeployConfig } from "../lib/deployConfig";
 import { InjectionGateBanner } from "./InjectionGateBanner";
 import { mkStage, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
 import { clampIndex } from "../stages/focusedPlan";
+import { stagesToBackfill } from "../stages/confirmReconcile";
 import { featureSectionsToIssues } from "../issues/planFeatures";
 import { flattenPrompt } from "./plannerConductor";
 import { usePlannerPromptDelivery } from "./usePlannerPromptDelivery";
@@ -248,6 +249,23 @@ export function Planning({ visible }: { visible: boolean }) {
     const fleet = parseFleetFile(raw);
     if (fleet) useAppStore.getState().setPlanFleet(effectiveProjectId, fleet);
   }, [savedSections, effectiveProjectId]);
+
+  // Backfill durable confirmations for an already-published project (#2259). A project published
+  // BEFORE #2256 has no plan.db confirmations to rehydrate, so it would ask to reconfirm every stage
+  // once. Since a published project's discovery sections were all confirmed to reach publish, restore
+  // them ONCE: for a published/existing project with no confirmations yet, confirm every drafted
+  // section (write-through to plan.db, so it's durable thereafter). Guarded per project; skipped the
+  // moment any confirmation exists (durable) and never runs for an unpublished draft.
+  const backfilledRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!isExisting || backfilledRef.current.has(effectiveProjectId)) return;
+    // Any existing confirmation means this project is already durable — don't backfill.
+    if (confirmedSet.size > 0) { backfilledRef.current.add(effectiveProjectId); return; }
+    const toConfirm = stagesToBackfill(sections, confirmedSet);
+    if (toConfirm.length === 0) return; // sections not loaded yet — wait for a later poll tick
+    backfilledRef.current.add(effectiveProjectId);
+    for (const k of toConfirm) confirmPlanStage(effectiveProjectId, k);
+  }, [isExisting, effectiveProjectId, confirmedSet, sections, confirmPlanStage]);
 
 
   // Title + derived GitHub object graph that the structure card renders and the
@@ -479,8 +497,6 @@ export function Planning({ visible }: { visible: boolean }) {
   // Publish / triage / recovery state + callbacks live in usePlanPublish (#1490) — the hook is
   // called below, once all the plan data it reads is in scope.
 
-  // Drag-to-resize the plan-sections panel (#43; the terminal flexes to fill the rest).
-  const sectionsPanel  = useDragResize({ initial: 430, min: 300, max: 760, axis: "x", invert: true });
   // The xterm terminal + PTY refs (containerRef, termRef) come from usePlannerTerminal, called below
   // once its inputs (processChunk, stageIdsFor, refreshSetupSig) are in scope.
   // The planner's PTY output buffer (#1474): owns bufRef + autopilotTxRef and a `processChunk` that
@@ -682,12 +698,17 @@ export function Planning({ visible }: { visible: boolean }) {
         publishRepos={publishRepos}
       />
 
-      {/* Split panel */}
-      {/* eslint-disable-next-line no-restricted-syntax -- measured split-panel hosting the PTY terminal region */}
-      <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden", borderTop: "1px solid var(--border-soft)" }}>
-        {/* Claude CLI terminal */}
-        <section style={{ flex: "1 1 0", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", borderRight: "1px solid var(--border-soft)" }}>
-          {/* eslint-disable-next-line no-restricted-syntax -- PTY terminal mount ref */}
+      {/* Split panel — the shared SplitView template (#2197): the terminal is the flexing PRIMARY,
+          the plan-sections/publish panel the fixed, drag-resizable SECONDARY (#43). The template
+          owns the divider seam, the splitter + its bounds; the top border seams it from the notices. */}
+      <SplitView
+        style={{ borderTop: "1px solid var(--border-soft)" }}
+        secondarySize={430}
+        secondaryMin={300}
+        secondaryMax={760}
+        secondaryStyle={{ background: "var(--bg-panel)" }}
+        primary={
+          // eslint-disable-next-line no-restricted-syntax -- PTY terminal mount ref
           <div
             ref={containerRef}
             style={{
@@ -697,22 +718,17 @@ export function Planning({ visible }: { visible: boolean }) {
               padding: "6px 4px",
             }}
           />
-        </section>
-
-        {/* Drag handle between the terminal and the plan-sections panel (#43). */}
-        {/* eslint-disable-next-line no-restricted-syntax -- resize drag handle spreads measured handleProps */}
-        <div className="resize-x" {...sectionsPanel.handleProps} title="Drag to resize" />
-
-        {/* Plan sections / publish progress panel */}
-        <aside style={{ flex: `0 0 ${sectionsPanel.size}px`, display: "flex", flexDirection: "column", background: "var(--bg-panel)", minHeight: 0, overflow: "hidden" }}>
-          {/* Plan-injection provenance banner (#1107) — shown above the pane while planning. */}
-          {publishPhase === "idle" && (
-            <InjectionGateBanner
-              gate={injectionGateState}
-              onAcknowledge={(sig) => acknowledgePlanInjections(effectiveProjectId, sig)}
-            />
-          )}
-          {publishPhase === "idle" ? (
+        }
+        secondary={
+          <>
+            {/* Plan-injection provenance banner (#1107) — shown above the pane while planning. */}
+            {publishPhase === "idle" && (
+              <InjectionGateBanner
+                gate={injectionGateState}
+                onAcknowledge={(sig) => acknowledgePlanInjections(effectiveProjectId, sig)}
+              />
+            )}
+            {publishPhase === "idle" ? (
             <ProjectPane
               data={paneData}
               projectId={effectiveProjectId}
@@ -783,16 +799,17 @@ export function Planning({ visible }: { visible: boolean }) {
                 } : undefined,
               }}
             />
-          ) : (
-            <PublishProgressView
-              publishPhase={publishPhase}
-              onBackToPlan={() => setPublishPhase("idle")}
-              structure={ghStructure}
-              status={ghStatus}
-            />
-          )}
-        </aside>
-      </div>
+            ) : (
+              <PublishProgressView
+                publishPhase={publishPhase}
+                onBackToPlan={() => setPublishPhase("idle")}
+                structure={ghStructure}
+                status={ghStatus}
+              />
+            )}
+          </>
+        }
+      />
 
       {/* Overlays (extracted → PlanningDialogs) */}
       <PlanningDialogs

@@ -8,22 +8,24 @@ import { ErrorBoundary } from "@/app/safety/ErrorBoundary";
 import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { useHotkeys } from "./useHotkeys";
-import { useScheduler } from "@/features/automations/useScheduler";
-import { useTunnelSync, useTunnelAutomations, useTunnelCoordControl } from "@/features/tunnel";
+import { useScheduler } from "@/features/automations";
+import { useTunnelSync, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 import { ConsoleWorkspace } from "@/app/console";
+import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { useConsoleTabs } from "@/app/console/useConsoleTabs";
 import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
-import { AutomationsStatus } from "@/features/automations/AutomationsStatus";
-import { SkillsStatus } from "@/features/skills/SkillsStatus";
+import { AutomationsStatus } from "@/features/automations";
+import { SkillsStatus } from "@/features/skills";
 import { Achievements } from "@/app/Achievement";
 import { AppBanners } from "@/app/AppBanners";
 import { useWarden } from "@/shared/lib/fleet/useWarden";
 import { useWorkerAutoEnd } from "@/shared/lib/fleet/useWorkerAutoEnd";
 import { useAppBoot } from "@/app/useAppBoot";
+import { useNavHistory } from "@/shared/hooks/useNavHistory";
 import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, SettingsWorkspace,
-  ProjectsWorkspace, SkillsWorkspace, AgentsWorkspace, WorkspaceFallback,
+  ProjectsWorkspace, SkillsWorkspace, AgentsWorkspace, GlanceWorkspace, DesignWorkspace, WorkspaceFallback,
 } from "@/app/lazyWorkspaces";
 
 // ── App shell ─────────────────────────────────────────────────────────────────
@@ -35,11 +37,13 @@ export default function App() {
   useWarden();     // always-on fleet conformance warden — hard-pauses a drifted worker (#1102)
   useWorkerAutoEnd(); // auto-end a finished worker on PTY exit, from plan.db issue status (#920)
   useTunnelAutomations(); // project automations + accept arm/run-now from a paired phone (#937)
+  useTunnelHookTelemetry(); // project read-only hook-fire telemetry to a paired phone (#937)
   useTunnelCoordControl(); // route a paired phone's wake/approve into the coordinator (#935)
   useAppBoot();    // accent vars · startup trace · base-dir/crash/skills hydration · deferred perf monitor
+  useNavHistory(); // mouse back/forward (X1/X2) → app-wide navigation history (workspace + Glance drill)
 
   const {
-    activeWorkspace, setWorkspace,
+    activeWorkspace: rawActiveWorkspace, setWorkspace,
     tabs, activeTabIdx,
     focusedAgentName,
     activeRepoName,
@@ -47,7 +51,14 @@ export default function App() {
     settingsSection,
     projectsView,
     hasHydrated,
+    showConsolePage,
   } = useAppStore();
+
+  // The legacy Console page is opt-in (#2372). When it's off, a persisted (or just-toggled-off)
+  // console-active workspace falls back to Glance — derived, so every downstream `activeWorkspace`
+  // check (rail highlight, chrome, the console mount's display:none) redirects with no reset effect.
+  // The console STILL mounts hidden (its PTYs stay alive for the Glance stream dock to reconnect).
+  const activeWorkspace = !showConsolePage && rawActiveWorkspace === "console" ? "glance" : rawActiveWorkspace;
 
   // The console owns its tabs: the layout picker, close (+ a confirm when a session is live),
   // layout change (PTY teardown), reorder, tear-off — all behind useConsoleTabs (#app-shell).
@@ -93,6 +104,9 @@ export default function App() {
   if (isDetachedWindow()) return <DetachedWindow />;
 
   return (
+    // TerminalHost (#2378) owns the single <TerminalView> per agent and re-parents it between the console
+    // grid cells and the Glance dock — so wrapping the whole shell gives both surfaces the same host.
+    <TerminalHost>
     <Box className="app">
       <Achievements />
       <Titlebar workspace={titleWorkspace} />
@@ -126,10 +140,16 @@ export default function App() {
           )}
           {/* The remaining screens mount only while active — their chunks load on first nav. */}
           <Suspense fallback={<WorkspaceFallback />}>
+            {activeWorkspace === "glance"     && <GlanceWorkspace />}
             {activeWorkspace === "github"     && <GitHubWorkspace />}
             {activeWorkspace === "automation" && <AutomationsWorkspace />}
             {activeWorkspace === "mcp" && <McpWorkspace />}
             {activeWorkspace === "skills"     && <SkillsWorkspace />}
+            {/* Design Studio — the Component Library pane fills its container (height:100%),
+                so give it a flex-fill wrapper like the other self-measuring surfaces (#2303). */}
+            {activeWorkspace === "design"     && (
+              <Box style={{ flex: 1, minHeight: 0, display: "flex" }}><DesignWorkspace /></Box>
+            )}
             {activeWorkspace === "agents"     && <AgentsWorkspace />}
             {activeWorkspace === "settings"   && <SettingsWorkspace />}
           </Suspense>
@@ -148,5 +168,6 @@ export default function App() {
       {/* Console tab dialogs (new-tab layout picker + close-confirm) — owned by useConsoleTabs. */}
       {consoleTabs.dialogs}
     </Box>
+    </TerminalHost>
   );
 }
