@@ -16,10 +16,9 @@ export interface ScreenHotkey {
   label: string;
 }
 
-/** F1–F6 navigate the rail screens. The one definition both the handler and the
- *  reference derive from. */
+/** F2–F8 navigate the rail screens. The one definition both the handler and the reference derive from.
+ *  (F1 → Console was removed with the console page's retirement, #2372/#2403.) */
 export const SCREEN_HOTKEYS: ScreenHotkey[] = [
-  { key: "F1", screen: "console",    label: "Console" },
   { key: "F2", screen: "projects",   label: "Planner" },
   { key: "F3", screen: "skills",     label: "Skills" },
   { key: "F4", screen: "automation", label: "Automations" },
@@ -107,7 +106,6 @@ export interface ShortcutDef {
 /** Single source of truth for every keyboard shortcut in the app. The Keyboard settings page
  *  derives its reference list from this registry; the `useHotkeys` handler (app shell) consumes it. */
 export const SHORTCUT_REGISTRY: ShortcutDef[] = [
-  { id: "screen-console",      label: "Go to Console",            keys: "F1",                  description: "Switch to the Console screen" },
   { id: "screen-automation",   label: "Go to Automations",        keys: "F3",                  description: "Switch to the Automations screen" },
   { id: "screen-github",       label: "Go to GitHub",             keys: "F4",                  description: "Switch to the GitHub screen" },
   { id: "screen-projects",     label: "Go to Projects",           keys: "F5",                  description: "Switch to the Projects screen" },
