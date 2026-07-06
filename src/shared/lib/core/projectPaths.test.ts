@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   sanitizeProjectKey,
-  mintProjectId,
+  projectSlug,
   repoShortName,
   projectRepoCwd,
   isKnownPublishedKey,
@@ -32,28 +32,31 @@ describe("sanitizeProjectKey", () => {
   });
 });
 
-describe("mintProjectId (#1741)", () => {
-  it("is slug-safe so sanitizeProjectKey is a no-op on it", () => {
-    for (let i = 0; i < 50; i++) {
-      const id = mintProjectId();
-      expect(id).toMatch(/^p-[a-z0-9]+-[a-z0-9]{6}$/);
-      // The backend slugifier must leave a minted id byte-for-byte unchanged.
-      expect(sanitizeProjectKey(id)).toBe(id);
-      expect(id.length).toBeLessThanOrEqual(80);
+describe("projectSlug (#2409)", () => {
+  it("is a readable, lowercase slug of the name", () => {
+    expect(projectSlug("Video Game")).toBe("video-game");
+    expect(projectSlug("Acme Payments v2!")).toBe("acme-payments-v2");
+    expect(projectSlug("  Trim  Me  ")).toBe("trim-me");
+  });
+
+  it("is slug-safe so the backend sanitizeProjectKey is a no-op on it", () => {
+    for (const name of ["Video Game", "café.dot!", "a/b c", "MiXeD CaSe 123"]) {
+      const key = projectSlug(name);
+      expect(key).toMatch(/^[a-z0-9-]+$/);
+      expect(sanitizeProjectKey(key)).toBe(key); // backend leaves it byte-for-byte
     }
   });
 
-  it("mints a distinct key on every call (two same-titled projects never collide)", () => {
-    const ids = new Set<string>();
-    for (let i = 0; i < 1000; i++) ids.add(mintProjectId());
-    expect(ids.size).toBe(1000);
+  it("caps at 60 chars and falls back to 'project' for emoji-only / non-latin names", () => {
+    expect(projectSlug("x".repeat(100))).toHaveLength(60);
+    expect(projectSlug("🎮🎮")).toBe("project");
+    expect(projectSlug("")).toBe("project");
   });
 
-  it("is NOT derived from any title — identical titles yield different keys", () => {
-    // Two projects created with the same display title get independent stable keys.
-    const a = mintProjectId();
-    const b = mintProjectId();
-    expect(a).not.toBe(b);
+  it("is deterministic — the SAME name yields the SAME key (a collision the create modal resolves)", () => {
+    // Under #2409 the name IS the identity, so two same-named projects DO collide (by design) — the
+    // creation modal blocks the duplicate rather than minting a distinct opaque id like #1741 did.
+    expect(projectSlug("Video Game")).toBe(projectSlug("video game"));
   });
 });
 
