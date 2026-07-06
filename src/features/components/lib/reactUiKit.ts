@@ -276,6 +276,38 @@ const GUIDANCE: Record<string, Guidance> = {
     whenUse: ["Per-lane activity across a shared horizontal axis (streams over time).", "A timeline where each row is an independent track."],
     whenNot: ["A single aggregate series — use LineArea.", "Category totals — use Bars."],
   },
+
+  // ── #2421 gap-fill ──
+  LabelChip: {
+    role: "composite", tags: ["badge", "github"], composes: ["Chip"],
+    whenUse: ["A GitHub issue/PR label with its dynamic 6-hex color.", "Label rows in issue drawers / project boards."],
+    whenNot: ["A semantic status tag — use Chip with a tone.", "A clickable filter — use SegmentedControl."],
+  },
+  ActivityFeed: {
+    role: "composite", tags: ["data", "feed"], composes: ["Avatar", "EmptyState", "Skeleton"],
+    whenUse: ["A \"Recent activity\" card of actor · action · target rows.", "Cross-repo / cross-project event feeds sharing one striped layout."],
+    whenNot: ["A dense column-aligned table — use DataTableRow.", "A single event notice — use Banner."],
+  },
+  Pane: {
+    role: "layout", tags: ["overlay", "editor"], composes: ["IconButton"],
+    whenUse: ["A select-an-item → edit-its-fields surface: slide-over drawer or inline master-detail pane.", "Editors needing the standard draft/remove footer."],
+    whenNot: ["A blocking decision or short form — use Dialog.", "Static grouped content — use Card."],
+  },
+  TelemetryPanel: {
+    role: "composite", tags: ["chart", "data-viz"],
+    whenUse: ["The framed panel around an analytics chart (title · hint · right slot).", "Analytics tabs sharing the telemetry card chrome."],
+    whenNot: ["A KPI number — use StatCard.", "General grouped content — use Card."],
+  },
+  ItemBars: {
+    role: "composite", tags: ["chart", "data-viz"], composes: ["FillBar"],
+    whenUse: ["A labelled per-item meter list (calls per server, fires per hook).", "Ranked fractions where each row carries a label + value."],
+    whenNot: ["An SVG ranked bar chart with a shared axis — use HBars.", "One fraction — use FillBar."],
+  },
+  SplitBar: {
+    role: "composite", tags: ["chart", "data-viz"],
+    whenUse: ["A two-way proportion with its counts (ok/err, allow/block).", "Per-item health rows in an analytics panel."],
+    whenNot: ["More than two segments — use Donut / Bars.", "A single fill fraction — use FillBar."],
+  },
 };
 
 /** A manifest prop's type rendered as a short human/TS-ish string for the props table. */

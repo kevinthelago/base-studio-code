@@ -9,6 +9,11 @@
 //
 // Adding a primitive: add its name to `PrimitiveName`, a spec here, and a row in `registry.tsx`.
 // The `manifest.test.ts` sync test then guards that the three stay aligned.
+//
+// Consciously EXCLUDED from the kit (#2421): `overlay/promptDialog` (usePromptDialog /
+// useConfirmDialog) — an imperative hook API (an async fn + a `dialog` node to render), not a
+// composable primitive; a builder cannot instantiate a hook from a manifest node. Compose the
+// registered `Dialog` instead.
 
 /** Every primitive the kit exposes to the builder. Also the key type of the render-map registry. */
 export type PrimitiveName =
@@ -25,7 +30,9 @@ export type PrimitiveName =
   // data · charts (analytics primitives)
   | "StatCard" | "LineArea" | "Bars" | "Donut" | "HBars" | "Swimlane" | "Spark" | "Legend" | "StackedDayBars"
   // feedback
-  | "Banner" | "InlineError" | "EmptyState" | "StatusDot" | "Skeleton";
+  | "Banner" | "InlineError" | "EmptyState" | "StatusDot" | "Skeleton"
+  // #2421 gap-fill — data chips/feeds, the overlay pane, and the telemetry chart trio
+  | "LabelChip" | "ActivityFeed" | "Pane" | "TelemetryPanel" | "ItemBars" | "SplitBar";
 
 export type PrimitiveGroup = "layout" | "typography" | "controls" | "data" | "feedback";
 
@@ -39,6 +46,7 @@ export type PropType =
   | "function"  // event handler / callback
   | "style"     // a CSSProperties object
   | "array"     // a list of structured items (see `note`)
+  | "object"    // a single structured object (shape in the description)
   | "space"     // a spacing rung (SPACE_RUNGS) or a raw px number
   | "fontSize"  // a type rung (FONT_RUNGS) or a raw px number
   | "tracks"    // grid tracks: a number → repeat(n, 1fr), or a template string
@@ -571,6 +579,77 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "w", type: "number", default: "100%", description: "Width — a px number or a CSS length string." },
       { name: "h", type: "number", default: 12, description: "Height — a px number or a CSS length string." },
       { name: "radius", type: "number", default: 6, description: "Corner radius in px." },
+    ],
+  },
+  // ---- #2421 gap-fill (contiguous block: data · layout/overlay · data · charts) ---------------
+  {
+    name: "LabelChip", group: "data", importPath: "@/shared/ui/data/LabelChip",
+    description: "A GitHub issue/PR label chip — a dotted Chip tinted from the label's dynamic 6-hex color.",
+    props: [
+      { name: "label", type: "object", required: true, description: "The GitHub label — { name, color } (6-hex, no leading #)." },
+    ],
+  },
+  {
+    name: "ActivityFeed", group: "data", importPath: "@/shared/ui/data/ActivityFeed",
+    description: "The \"Recent activity\" striped feed card — Avatar · action · target · repo · timeAgo rows, with loading + empty states.",
+    props: [
+      { name: "items", type: "array", required: true, description: "ActivityItem[] — { login, action, target, repo, createdAt }." },
+      { name: "hint", type: "string", required: true, description: "Dimmed hint after the card title." },
+      { name: "loading", type: "boolean", required: true, description: "Shimmer rows while the feed's source loads (only when items is empty)." },
+      { name: "tone", type: "object", required: true, description: "action → color map — each caller keeps its own EVENT_TONE." },
+      { name: "right", type: "node", description: "Optional header control on the right (e.g. a filter select)." },
+      { name: "actionWidth", type: "number", default: 80, description: "Action column width in px (github uses 70, planner 80)." },
+    ],
+  },
+  {
+    name: "Pane", group: "layout", importPath: "@/shared/ui/overlay/Pane",
+    description: "The ONE detail/editor pane — a header / scrollable-body / footer frame, as a slide-over drawer or an inline master-detail fill.",
+    props: [
+      { name: "mode", type: "enum", values: ["drawer", "inline"], default: "drawer", description: "Slide-over (scrim + slide-in) vs fills-its-container." },
+      { name: "open", type: "boolean", default: true, description: "Drawer mode: drives the scrim/slide state and gates the body render." },
+      { name: "header", type: "node", description: "Top-zone content (drawer mode auto-appends a close button)." },
+      { name: "body", type: "node", description: "Body content — pass via body or as children." },
+      { name: "children", type: "node", description: "Body content (alias of body)." },
+      { name: "footer", type: "node", description: "Custom footer; omitted in drawer mode → the standard draft/remove bar." },
+      { name: "onClose", type: "function", description: "Close (scrim click / ✕ / cancel / done) handler." },
+      { name: "onRemove", type: "function", description: "Standard-footer remove handler for an existing item." },
+      { name: "isDraft", type: "boolean", description: "Standard footer: drafting (cancel/done) vs existing (remove/done)." },
+      { name: "onCommit", type: "function", description: "Standard-footer draft done handler." },
+      { name: "commitDisabled", type: "boolean", description: "Disable the draft done button (e.g. a required field is empty)." },
+      { name: "flush", type: "boolean", description: "Drop the body's default padding (sections supply their own)." },
+      { name: "bare", type: "boolean", description: "Inline mode only: bare flex-column frame with no styled zone wrappers." },
+      { name: "className", type: "string", description: "Extra class on the frame element." },
+    ],
+  },
+  {
+    name: "TelemetryPanel", group: "data", importPath: "@/shared/ui/charts/telemetry",
+    description: "A framed analytics panel — bg-panel card with a baseline header (title · hint · right slot) over chart content.",
+    props: [
+      { name: "title", type: "string", required: true, description: "Panel title (mono h3)." },
+      { name: "hint", type: "string", description: "Dimmed hint after the title." },
+      { name: "right", type: "node", description: "Right-aligned header content (a legend, a filter, a count)." },
+      CHILDREN,
+    ],
+  },
+  {
+    name: "ItemBars", group: "data", importPath: "@/shared/ui/charts/telemetry",
+    description: "A vertical list of labelled FillBar rows (calls-per-server, fires-per-hook, …).",
+    props: [
+      { name: "rows", type: "array", required: true, description: "ItemBarRow[] — { key, label, meta?, value, fraction (0–1), color? }." },
+      { name: "empty", type: "node", description: "Rendered when rows is empty; defaults to a \"No data recorded yet.\" hint." },
+    ],
+  },
+  {
+    name: "SplitBar", group: "data", importPath: "@/shared/ui/charts/telemetry",
+    description: "A two-segment proportional bar with a label and the two counts (ok/err, allow/block, …).",
+    props: [
+      { name: "label", type: "string", required: true, description: "Row label." },
+      { name: "a", type: "number", required: true, description: "First-segment count." },
+      { name: "b", type: "number", required: true, description: "Second-segment count." },
+      { name: "aLabel", type: "string", required: true, description: "First-segment legend label (e.g. ok)." },
+      { name: "bLabel", type: "string", required: true, description: "Second-segment legend label (e.g. err)." },
+      { name: "aColor", type: "color", default: "var(--success)", description: "First-segment color." },
+      { name: "bColor", type: "color", default: "var(--danger)", description: "Second-segment color." },
     ],
   },
 ];
