@@ -1,0 +1,40 @@
+{
+  "rawNodes": [
+    { "id": "auth-core", "role": "infra", "status": "done" },
+    { "id": "events-bus", "role": "infra", "status": "done" },
+    { "id": "identity-svc", "role": "service", "status": "building" },
+    { "id": "ledger", "role": "data", "status": "review" },
+    { "id": "notifications", "role": "service", "status": "idle" },
+    { "id": "analytics", "role": "data", "status": "blocked" },
+    { "id": "user-api", "role": "service", "status": "building" },
+    { "id": "billing-svc", "role": "service", "status": "planning" },
+    { "id": "reporting", "role": "data", "status": "blocked" },
+    { "id": "search-svc", "role": "service", "status": "idle" },
+    { "id": "payments-gw", "role": "service", "status": "review" },
+    { "id": "mobile-app", "role": "client", "status": "planning" },
+    { "id": "admin-console", "role": "client", "status": "idle" },
+    { "id": "web-app", "role": "client", "status": "building" }
+  ],
+  "rawEdges": [
+    { "from": "identity-svc", "to": "auth-core", "kind": "api" },
+    { "from": "user-api", "to": "identity-svc", "kind": "api" },
+    { "from": "billing-svc", "to": "identity-svc", "kind": "api" },
+    { "from": "billing-svc", "to": "ledger", "kind": "data" },
+    { "from": "payments-gw", "to": "billing-svc", "kind": "api" },
+    { "from": "ledger", "to": "events-bus", "kind": "events" },
+    { "from": "notifications", "to": "events-bus", "kind": "events" },
+    { "from": "analytics", "to": "events-bus", "kind": "events" },
+    { "from": "web-app", "to": "user-api", "kind": "api" },
+    { "from": "web-app", "to": "billing-svc", "kind": "api" },
+    { "from": "web-app", "to": "search-svc", "kind": "api" },
+    { "from": "mobile-app", "to": "user-api", "kind": "api" },
+    { "from": "mobile-app", "to": "notifications", "kind": "api" },
+    { "from": "search-svc", "to": "user-api", "kind": "api" },
+    { "from": "reporting", "to": "ledger", "kind": "data" },
+    { "from": "reporting", "to": "analytics", "kind": "data" },
+    { "from": "analytics", "to": "reporting", "kind": "data" },
+    { "from": "admin-console", "to": "user-api", "kind": "api" },
+    { "from": "admin-console", "to": "billing-svc", "kind": "api" },
+    { "from": "admin-console", "to": "reporting", "kind": "data" }
+  ]
+}

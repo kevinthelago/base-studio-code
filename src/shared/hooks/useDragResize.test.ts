@@ -1,18 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { clampSize, useDragResize } from "./useDragResize";
+import { useDragResize } from "./useDragResize";
 
-describe("clampSize", () => {
-  it("returns the value when within range", () => {
-    expect(clampSize(200, 100, 300)).toBe(200);
-  });
-  it("clamps to the lower bound", () => {
-    expect(clampSize(50, 100, 300)).toBe(100);
-  });
-  it("clamps to the upper bound", () => {
-    expect(clampSize(999, 100, 300)).toBe(300);
-  });
-});
+// clampSize was consolidated into the shared `clamp` (#2421) — covered by shared/lib/core/math.test.ts.
 
 // Minimal pointer-event stub with the capture methods the hook calls.
 function pointerEvent(coords: { clientX?: number; clientY?: number }) {

@@ -1,0 +1,29 @@
+{
+  "schedules": [
+    {
+      "id": "S-01", "name": "Nightly ledger reconciliation", "on": true, "when": "every day · 02:00",
+      "target": "billing-svc · build", "action": "command", "detail": "reconcile-ledger", "lastRun": "02:00", "nextRun": "tomorrow 02:00"
+    },
+    {
+      "id": "S-02", "name": "Refresh search index", "on": true, "when": "every 6h",
+      "target": "search-svc · build", "action": "command", "detail": "reindex-catalog", "lastRun": "6h ago", "nextRun": "in 6h"
+    }
+  ],
+  "commands": [
+    { "id": "C-01", "name": "reconcile-ledger", "cmd": "bsc plan run reconcile --project billing-svc", "used": 42, "tags": ["ledger", "finance"] },
+    { "id": "C-02", "name": "replay-payments", "cmd": "bsc plan run replay --project payments-gw --since 24h", "used": 7, "tags": ["payments"] },
+    { "id": "C-03", "name": "regen-openapi", "cmd": "npm run gen:openapi", "kind": "claude", "used": 19, "tags": ["user-api", "contract"] }
+  ],
+  "automations": [
+    {
+      "id": "A-01", "name": "PR triage · payments-gw", "armed": true, "when": { "kind": "cron", "expr": "0 9 * * 1-5" },
+      "targetTab": "payments-gw · build", "targetPaneIdx": 0, "action": "command",
+      "command": "gh pr list --repo northwind/payments-gw"
+    },
+    {
+      "id": "A-02", "name": "Nightly ledger check", "armed": true, "when": { "kind": "simple", "every": "day", "at": "02:30" },
+      "targetTab": "billing-svc · build", "targetPaneIdx": 0, "action": "command",
+      "command": "reconcile-ledger"
+    }
+  ]
+}

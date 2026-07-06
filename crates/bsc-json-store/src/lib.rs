@@ -98,15 +98,19 @@ impl Store {
 }
 
 /// Slugify a record id into a single safe directory segment: keep `[A-Za-z0-9_-]`, replace every
-/// other char with `_`, and reject the result if it is empty / `.` / `..` (so it can never escape the
-/// parent dir). Byte-identical to `platform/fsx.rs::safe_dir_segment` as applied by the Tauri path,
-/// kept duplicated here because that helper lives in the (Tauri) app crate.
+/// other char with `_`, and reject an id with no real content (so it can never escape the parent
+/// dir). Same output as `platform/fsx.rs::safe_dir_segment` for every id carrying an alphanumeric
+/// (kept duplicated because that helper lives in the (Tauri) app crate) — this copy is stricter
+/// only for degenerate all-punctuation ids, which it rejects instead of storing as underscores.
 fn safe_id(id: &str, noun: &str) -> Result<String, String> {
     let safe: String = id
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
         .collect();
-    if safe.is_empty() || safe == "." || safe == ".." {
+    // A dot can never survive the mapper above, so the fsx-style post-slug `.`/`..` match would
+    // be dead code here; requiring an alphanumeric rejects the same traversal shapes (`..` slugs
+    // to `__`) and keeps all-punctuation ids from colliding onto one underscores-only file.
+    if !safe.chars().any(|c| c.is_ascii_alphanumeric()) {
         return Err(format!("{noun} id is empty/invalid"));
     }
     Ok(safe)
