@@ -3,7 +3,7 @@
 export { OrgPanel } from "./OrgPanel";
 export { OrgCanvas, type Selection } from "./OrgCanvas";
 export { OrgInspector } from "./OrgInspector";
-export { TierChips, FormChip, FormLane, SectionLabel } from "./components";
+export { FormChip, FormLane } from "./components";
 export { createOrgSlice, type OrgSlice } from "./store";
 export {
   positionDisplay, positionComms, tierChips, formColor, formArrow, hueColor, ROLE_META,

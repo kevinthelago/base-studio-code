@@ -6,32 +6,21 @@
 // prompt (for the narrow Org inspector).
 import { useState } from "react";
 import { useAppStore } from "@/store";
-import { roleCapability, ROLE_DEFAULTS, type SessionRole } from "@/shared/lib/session/sessionRoles";
+import { ROLE_DEFAULTS, type SessionRole } from "@/shared/lib/session/sessionRoles";
 import { MODEL_IDS } from "@/app/console/lib/models";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import { Chip } from "@/shared/ui/data/Chip";
+import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { TextField, TextArea, SelectField } from "@/shared/ui/controls/Field";
 import { Checkbox } from "@/shared/ui/controls/Checkbox";
+import { RoleTierChips } from "@/shared/ui/data/RoleTierChips";
 import type { Persona } from "./lib/persona";
 
 const ROLES = Object.keys(ROLE_DEFAULTS) as SessionRole[];
-const TIER_COLOR: Record<string, string> = { none: "var(--fg-dim)", read: "var(--info)", write: "var(--accent)" };
-
-/** The four capability tiers of a role, as coloured pills — the permission floor a persona inherits. */
-export function RoleTiers({ role }: { role: SessionRole }) {
-  const cap = roleCapability(role);
-  const tiers: [string, string][] = [["git", cap.git], ["github", cap.github], ["code", cap.code], ["net", cap.net]];
-  return (
-    <Row gap={5} wrap>
-      {tiers.map(([k, v]) => <Chip key={k} color={TIER_COLOR[v] ?? "var(--fg-dim)"}>{k} · {v}</Chip>)}
-    </Row>
-  );
-}
 
 export function PersonaEditor({ persona, compact = false }: { persona: Persona; compact?: boolean }) {
   const skills = useAppStore((s) => s.skills);
@@ -54,15 +43,14 @@ export function PersonaEditor({ persona, compact = false }: { persona: Persona; 
         <SelectField label="Role — the permission floor (edited on Security)" value={persona.role} onChange={(v) => updatePersona(persona.id, { role: v as SessionRole })}>
           {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
         </SelectField>
-        <Box style={{ marginTop: 6 }}><RoleTiers role={persona.role} /></Box>
+        <Box style={{ marginTop: 6 }}><RoleTierChips role={persona.role} /></Box>
       </Box>
 
       {/* responsibilities — an editable charter list */}
       <Box>
-        <Row align="center" justify="between" style={{ marginBottom: 6 }}>
-          <Text as="div" className="ulabel" tone="dim">responsibilities · {resp.length}</Text>
-          <Button variant="ghost" onClick={() => setResp([...resp, ""])}>+ add</Button>
-        </Row>
+        <SectionLabel size={9.5} style={{ marginBottom: 6 }} right={<Button variant="ghost" onClick={() => setResp([...resp, ""])}>+ add</Button>}>
+          responsibilities · {resp.length}
+        </SectionLabel>
         <Stack gap={5}>
           {resp.map((r, i) => (
             <Row key={i} gap={6} align="center">
@@ -76,10 +64,9 @@ export function PersonaEditor({ persona, compact = false }: { persona: Persona; 
       {/* start prompt — collapsible in compact mode */}
       <Box>
         {compact && (
-          <Row align="center" justify="between" style={{ marginBottom: 6 }}>
-            <Text as="div" className="ulabel" tone="dim">start prompt</Text>
-            <Button variant="ghost" onClick={() => setShowPrompt((v) => !v)}>{showPrompt ? "hide" : "edit"}</Button>
-          </Row>
+          <SectionLabel size={9.5} style={{ marginBottom: 6 }} right={<Button variant="ghost" onClick={() => setShowPrompt((v) => !v)}>{showPrompt ? "hide" : "edit"}</Button>}>
+            start prompt
+          </SectionLabel>
         )}
         {showPrompt && (
           <TextArea
@@ -108,7 +95,7 @@ export function PersonaEditor({ persona, compact = false }: { persona: Persona; 
       </Row>
 
       <Box>
-        <Text as="div" className="ulabel" tone="dim" style={{ marginBottom: 6 }}>attached skills · {persona.skills.length}</Text>
+        <SectionLabel size={9.5} style={{ marginBottom: 6 }}>attached skills · {persona.skills.length}</SectionLabel>
         {skills.length === 0 ? (
           <Text as="div" size={11} tone="dim">No skills in the library yet — author them on the Skills page.</Text>
         ) : (

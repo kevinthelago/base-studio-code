@@ -196,6 +196,27 @@ export function renderSpecimen(comp: ComponentRecord, variant: string, theme: Pr
           </div>
         </div>
       );
+    case "ModalCard":
+      return (
+        <div style={{ width: 290, borderRadius: 10, background: t.panel, border: `1px solid ${t.border}`, boxShadow: "0 20px 60px rgba(0,0,0,.5)", overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "11px 14px", borderBottom: `1px solid ${t.borderSoft}` }}>
+            <span style={{ width: 24, height: 24, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 12, background: "color-mix(in oklch, var(--accent), transparent 84%)", color: "var(--accent)" }}>↓</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontFamily: mono, fontSize: 12, fontWeight: 600, color: t.fg }}>Import from gist</span>
+              <span style={{ display: "block", fontSize: 9.5, color: t.dim, marginTop: 1 }}>Pull a shared blueprint</span>
+            </span>
+            <span style={{ color: t.dim, fontSize: 12 }}>✕</span>
+          </div>
+          <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
+            <span style={{ display: "block", width: "80%", height: 8, borderRadius: 4, background: t.elev }} />
+            <span style={{ display: "block", width: "60%", height: 8, borderRadius: 4, background: t.elev }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: `1px solid ${t.borderSoft}` }}>
+            <button style={{ height: 24, padding: "0 11px", borderRadius: 5, background: "transparent", color: t.fg, border: `1px solid ${t.borderSoft}`, fontFamily: mono, fontSize: 10, cursor: "default" }}>Cancel</button>
+            <button style={{ height: 24, padding: "0 11px", borderRadius: 5, background: "var(--accent)", color: "var(--accent-text)", border: 0, fontFamily: mono, fontSize: 10, fontWeight: 600, cursor: "default" }}>Resolve gist</button>
+          </div>
+        </div>
+      );
 
     // ── typography ──
     case "Text":
@@ -309,6 +330,14 @@ export function renderSpecimen(comp: ComponentRecord, variant: string, theme: Pr
         <div style={{ display: "flex", gap: 10 }}>
           {[["✦", "var(--accent)"], ["◫", t.muted], ["⚙", t.muted]].map(([g, c], i) => (
             <span key={i} style={{ width: 34, height: 34, borderRadius: 9, background: t.elev, border: `1px solid ${t.borderSoft}`, color: c, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>{g}</span>
+          ))}
+        </div>
+      );
+    case "RoleTierChips":
+      return (
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", width: 240 }}>
+          {[["git · write", "var(--accent)"], ["github · read", "var(--info)"], ["code · write", "var(--accent)"], ["net · none", t.dim]].map(([label, c]) => (
+            <span key={label} style={{ display: "inline-flex", alignItems: "center", height: 20, padding: "0 9px", borderRadius: 99, fontFamily: mono, fontSize: 10, color: c, background: `color-mix(in oklch, ${c}, transparent 88%)`, border: `1px solid color-mix(in oklch, ${c}, transparent 72%)` }}>{label}</span>
           ))}
         </div>
       );
