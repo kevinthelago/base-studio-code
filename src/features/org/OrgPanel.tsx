@@ -21,7 +21,7 @@ import { OrgCanvas, OrgLegend, type Selection } from "./OrgCanvas";
 import { OrgInspector } from "./OrgInspector";
 import { OrgContextMenu } from "./OrgContextMenu";
 import { RELATIONSHIP_ARCHETYPES } from "./lib/org";
-import { autoLayout, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
+import { autoLayout, nodeBox, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
 import { detectPools, collapseOrg, poolSubgraph, type Pool } from "./lib/orgPools";
 import { positionDisplay, hueColor } from "./lib/orgView";
 import { overlayFile } from "@/shared/lib/core/configOverrides";
@@ -256,6 +256,19 @@ export function OrgPanel() {
           onSelectNode={onSelectNode} onSelectEdge={(id) => setSel({ type: "edge", id })}
           onMoveNode={(nodeId, x, y) => updatePosition(org.id, nodeId, { x, y })}
           onDrillPool={onDrillPool}
+          onMovePool={(poolNodeId, dx, dy) => {
+            // The pool node is synthetic (rendered at its members' centroid) — commit a stack drag by
+            // shifting EVERY member by the delta, so the centroid lands at the drop point and the
+            // drill-in keeps its relative arrangement (#2439). nodeBox supplies the same default
+            // position the canvas rendered, so members without a stored x/y shift from where they SHOW.
+            const members = collapsed.poolInfo[poolNodeId]?.memberNodeIds ?? [];
+            for (const m of members) {
+              const pos = org.positions.find((p) => p.nodeId === m);
+              if (!pos) continue;
+              const b = nodeBox(pos);
+              updatePosition(org.id, m, { x: b.x + dx, y: b.y + dy });
+            }
+          }}
           onContext={(target, e) => { setSel(target); setMenu({ x: e.clientX, y: e.clientY, target }); }}
         />
       </Box>
