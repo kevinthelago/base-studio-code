@@ -350,18 +350,18 @@ describe("deleteLocalProject", () => {
     expect(useAppStore.getState().projectsView).toBe("planning");
   });
 
-  it("deleting a PUBLISHED project clears slug-keyed data + the planning session via the alias (#997)", () => {
+  it("deleting a PUBLISHED project clears slug-keyed data + the planning session by the derived key (#997/#2409)", () => {
     useAppStore.setState({
-      // Per-project maps are keyed by the sanitized slug (effectiveProjectId), NOT the title/node id.
+      // Per-project maps are keyed by the name-derived slug (effectiveProjectId).
       planStages: { "my-app": { goal: "x" }, other: { goal: "y" } },
-      projectKeyAlias: { "PVT_id1": "my-app" },
       activeProjectId: "PVT_id1",        // a published project's active id is the GitHub node id
       activeProjectName: "My App",
       planningSessionKey: "my-app",      // the still-mounted Planning pane resolves here
       projectsView: "planning",
     });
-    // ProjectsList passes [title, nodeId] — neither equals the slug, so the alias must resolve it.
-    useAppStore.getState().deleteLocalProject(["My App", "PVT_id1"]);
+    // The delete modal passes every identity form directly — the slug (derived from the name),
+    // plus the raw title + node id for grandfathered entries. No alias resolution (#2409).
+    useAppStore.getState().deleteLocalProject(["my-app", "My App", "PVT_id1"]);
     const s = useAppStore.getState();
     expect(s.planStages["my-app"]).toBeUndefined();  // slug-keyed data actually dropped (no leak)
     expect(s.planStages.other).toBeDefined();        // unrelated project untouched
@@ -379,38 +379,54 @@ describe("deleteLocalProject", () => {
   });
 });
 
-// ── Project key alias ───────────────────────────────────────
+// ── One-time project rekey (#2409, pairs with relink_project_hub) ───────────────────────────────
 
-describe("projectKeyAlias", () => {
-  it("setActiveProjectMeta binds the GitHub node id to the title key (first-write-wins)", () => {
-    useAppStore.setState({ projectKeyAlias: {} });
-    useAppStore.getState().setActiveProjectMeta("PVT_n1", "studio-code", "o/r", 16, ["o/r"]);
-    expect(useAppStore.getState().projectKeyAlias["PVT_n1"]).toBe("studio-code");
-    // A later sighting under a renamed title must NOT clobber the working alias.
-    useAppStore.getState().setActiveProjectMeta("PVT_n1", "Studio Code Redux", "o/r", 16, ["o/r"]);
-    expect(useAppStore.getState().projectKeyAlias["PVT_n1"]).toBe("studio-code");
+describe("rekeyProjectData (#2409)", () => {
+  it("moves every per-project entry (incl. repo-scoped + scope lists) onto the new key", () => {
+    useAppStore.setState({
+      planStages: { "p-old": { goal: "x" }, other: { goal: "y" } },
+      planConfirmedStages: { "p-old": ["goal"] },
+      planFleet: { "p-old": { recommended: 1, reasoning: "", director: { enabled: true, role: "integrator" }, streams: [] } },
+      projectBlueprintId: { "p-old": "bp-default" },
+      projectLocalRepos: { "p-old": ["o/a"] },
+      localDraftProjects: { "p-old": { title: "Video Game", pitch: "", createdAt: 1 } },
+      repoStartupPromptDoc: { "p-old::o/a": "d", "other::o/b": "e" },
+      repoTriagePromptDoc: { "p-old::o/a": "t" },
+      mcpServers: [{ id: "m1", projects: ["p-old", "other"] } as never],
+    });
+    useAppStore.getState().rekeyProjectData("p-old", "video-game");
+    const s = useAppStore.getState();
+    expect(s.planStages["p-old"]).toBeUndefined();
+    expect(s.planStages["video-game"]).toEqual({ goal: "x" });
+    expect(s.planStages.other).toEqual({ goal: "y" });          // unrelated project untouched
+    expect(s.planConfirmedStages["video-game"]).toEqual(["goal"]);
+    expect(s.planFleet["video-game"]).toBeDefined();
+    expect(s.projectBlueprintId["video-game"]).toBe("bp-default");
+    expect(s.projectLocalRepos["video-game"]).toEqual(["o/a"]);
+    expect(s.localDraftProjects["video-game"]?.title).toBe("Video Game");
+    expect(s.repoStartupPromptDoc["video-game::o/a"]).toBe("d");
+    expect(s.repoStartupPromptDoc["p-old::o/a"]).toBeUndefined();
+    expect(s.repoStartupPromptDoc["other::o/b"]).toBe("e");     // other project's repo kept
+    expect(s.repoTriagePromptDoc["video-game::o/a"]).toBe("t");
+    expect(s.mcpServers[0].projects).toEqual(["video-game", "other"]);
   });
 
-  it("does not record an alias when there is no node id (unpublished draft)", () => {
-    useAppStore.setState({ projectKeyAlias: {} });
-    useAppStore.getState().setActiveProjectMeta(null, "", "", 0);
-    expect(useAppStore.getState().projectKeyAlias).toEqual({});
+  it("is target-wins: an entry already under the new key is never clobbered", () => {
+    useAppStore.setState({
+      planStages: { "p-old": { goal: "stale" }, "video-game": { goal: "fresh" } },
+    });
+    useAppStore.getState().rekeyProjectData("p-old", "video-game");
+    const s = useAppStore.getState();
+    expect(s.planStages["video-game"]).toEqual({ goal: "fresh" }); // existing target kept
+    expect(s.planStages["p-old"]).toBeUndefined();                 // old entry dropped
   });
 
-  it("setProjectKeyAlias records when absent and ignores empties / overwrites", () => {
-    useAppStore.setState({ projectKeyAlias: {} });
-    useAppStore.getState().setProjectKeyAlias("PVT_a", "my-app");
-    useAppStore.getState().setProjectKeyAlias("PVT_a", "renamed"); // ignored, already set
-    useAppStore.getState().setProjectKeyAlias("", "x");           // ignored, empty id
-    expect(useAppStore.getState().projectKeyAlias).toEqual({ "PVT_a": "my-app" });
-  });
-
-  it("deleteLocalProject prunes the alias entry for the removed project", () => {
-    useAppStore.setState({ projectKeyAlias: { "PVT_gone": "gone", "PVT_keep": "keep" } });
-    useAppStore.getState().deleteLocalProject(["gone", "PVT_gone"]);
-    const a = useAppStore.getState().projectKeyAlias;
-    expect(a["PVT_gone"]).toBeUndefined();
-    expect(a["PVT_keep"]).toBe("keep");
+  it("no-ops on empty or identical keys", () => {
+    useAppStore.setState({ planStages: { k: { goal: "x" } } });
+    useAppStore.getState().rekeyProjectData("k", "k");
+    useAppStore.getState().rekeyProjectData("", "k");
+    useAppStore.getState().rekeyProjectData("k", "");
+    expect(useAppStore.getState().planStages.k).toEqual({ goal: "x" });
   });
 });
 
@@ -423,7 +439,6 @@ describe("resetProjectData", () => {
       planConfirmedStages: { P: ["goal"] },
       projectLocalRepos: { P: ["o/r"] },
       hiddenProjectIds: ["PVT_x"],
-      projectKeyAlias: { PVT_x: "P" },
       activeProjectId: "PVT_x", activeProjectName: "P",
       planningSessionKey: "P", projectsView: "planning",
       githubToken: "tok", claudeApiKey: "key",
@@ -434,7 +449,6 @@ describe("resetProjectData", () => {
     expect(s.planConfirmedStages).toEqual({});
     expect(s.projectLocalRepos).toEqual({});
     expect(s.hiddenProjectIds).toEqual([]);
-    expect(s.projectKeyAlias).toEqual({});
     expect(s.activeProjectId).toBeNull();
     expect(s.planningSessionKey).toBe("");
     expect(s.projectsView).toBe("list");
@@ -1522,21 +1536,22 @@ describe("agent fleet store", () => {
     expect(st.tabs.filter(t => t.projectKey === "bigkey" && t.kind === "build")).toHaveLength(2);
   });
 
-  it("sets a stable projectKey + kind on triage tabs and reuses across a rename", () => {
+  it("sets a stable projectKey + kind on triage tabs and reuses across re-runs (#2409)", () => {
     const before = useAppStore.getState().tabs.length;
-    // projectId is the stable identity; the display name drifts.
-    useAppStore.getState().triageStartProject("Alpha", ["o/a", "o/b"], "PID1");
-    const idx = useAppStore.getState().findTriageTabIdx("Alpha", "PID1");
+    // The launch passes the project's name-derived key (#2409); the tab keys off it directly —
+    // there is no node-id identity branch anymore (renames are display-only and never re-key).
+    useAppStore.getState().triageStartProject("alpha-app", ["o/a", "o/b"], "PID1");
+    const idx = useAppStore.getState().findTriageTabIdx("alpha-app");
     expect(idx).toBe(before);
     expect(useAppStore.getState().tabs[idx].kind).toBe("triage");
-    expect(useAppStore.getState().tabs[idx].projectKey).toBe("PID1");
+    expect(useAppStore.getState().tabs[idx].projectKey).toBe("alpha-app");
 
-    // Rename (name → "Beta", same projectId) reuses the tab in place.
-    useAppStore.getState().triageStartProject("Beta", ["o/a", "o/b"], "PID1");
+    // A re-run under the same key reuses the tab in place (bumped runId), never forks a duplicate.
+    useAppStore.getState().triageStartProject("alpha-app", ["o/a", "o/b"], "PID1");
     const st = useAppStore.getState();
     expect(st.tabs.length).toBe(before + 1);
-    expect(st.findTriageTabIdx("Beta", "PID1")).toBe(idx);
-    expect(st.tabs[idx].name).toBe("Beta · triage");
+    expect(st.findTriageTabIdx("alpha-app")).toBe(idx);
+    expect(st.tabs[idx].name).toBe("alpha-app · triage");
     expect(st.tabs[idx].runId).toBe(1);
   });
 });
@@ -1770,7 +1785,7 @@ describe("draft projects (#379)", () => {
 });
 
 
-describe("stable project id (#1741)", () => {
+describe("name-derived project key (#2409)", () => {
   const st = () => useAppStore.getState();
 
   it("keeps the workspace key stable across a title change (no path orphaning)", () => {

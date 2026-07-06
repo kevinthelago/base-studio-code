@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { planRename, applyRename, RENAME_PROJECT_MUTATION, type RenameDeps } from "./renameProject";
-import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
+import { projectSlug } from "@/shared/lib/core/projectPaths";
 
 describe("planRename — the published-rename guard (#1226)", () => {
   const noKeys = new Set<string>();
@@ -18,7 +18,7 @@ describe("planRename — the published-rename guard (#1226)", () => {
   });
 
   it("errors when the new name slugifies onto ANOTHER project's frozen key", () => {
-    const others = new Set([sanitizeProjectKey("Acme Web")]); // an existing project's key
+    const others = new Set([projectSlug("Acme Web")]); // an existing project's key
     expect(planRename("Acme Web", "Old", "node1", others)).toEqual({
       kind: "error",
       message: expect.stringMatching(/already uses that name/i),

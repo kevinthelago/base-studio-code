@@ -4,11 +4,8 @@ import {
   projectSlug,
   repoShortName,
   projectRepoCwd,
-  isKnownPublishedKey,
-  canonicalProjectKey,
   findProjectTabIdx,
   deriveTabIdentity,
-  resolveProjectKey,
   findByTitle,
 } from "./projectPaths";
 
@@ -97,41 +94,6 @@ describe("projectRepoCwd", () => {
 });
 
 
-describe("isKnownPublishedKey (#380 — guard the draft clean-start delete)", () => {
-  const alias = {
-    "PVT_kwHOA_BZbml": "github-pretty-readme",
-    "PVT_kwHOA_BYsJC": "studio-code",
-  };
-  it("is true when a node id is aliased to the draft key", () => {
-    expect(isKnownPublishedKey("github-pretty-readme", alias)).toBe(true);
-    expect(isKnownPublishedKey("studio-code", alias)).toBe(true);
-  });
-  it("is false for a name no node id maps to (a genuine unpublished draft)", () => {
-    expect(isKnownPublishedKey("brand-new-idea", alias)).toBe(false);
-  });
-  it("is false against an empty alias map", () => {
-    expect(isKnownPublishedKey("github-pretty-readme", {})).toBe(false);
-  });
-  it("matches the published NAME, not a node id key", () => {
-    // a node id is a KEY, never a value — so passing one must not falsely match
-    expect(isKnownPublishedKey("PVT_kwHOA_BZbml", alias)).toBe(false);
-  });
-});
-
-describe("canonicalProjectKey (#457/#380 — one canonical identity)", () => {
-  it("prefers the explicit projectId (stable across renames), sanitized", () => {
-    expect(canonicalProjectKey("Display Name", "PVT_node id")).toBe("PVT_node_id");
-  });
-  it("falls back to the sanitized name when no id is given", () => {
-    expect(canonicalProjectKey("My Project")).toBe("My_Project");
-    expect(canonicalProjectKey("My Project", "")).toBe("My_Project");
-    expect(canonicalProjectKey("My Project", "   ")).toBe("My_Project");
-  });
-  it("renaming the display name does not change the key when an id is present", () => {
-    expect(canonicalProjectKey("Alpha", "PID1")).toBe(canonicalProjectKey("Beta", "PID1"));
-  });
-});
-
 describe("findProjectTabIdx (#457 — match on stable key, not name)", () => {
   const tabs = [
     { name: "tab-1", layout: "1×1" }, // ad-hoc, no identity
@@ -178,26 +140,6 @@ describe("deriveTabIdentity (#457 migration — back-derive from a frozen name)"
   it("matches the launch-time key for the same name (round-trips with sanitizeProjectKey)", () => {
     const derived = deriveTabIdentity("Alpha Beta · build")!;
     expect(derived.projectKey).toBe(sanitizeProjectKey("Alpha Beta"));
-  });
-});
-
-describe("resolveProjectKey (#380 — one canonical workspace key)", () => {
-  const alias = { "PVT_node1": "my-project", "PVT_node2": "other" };
-  it("maps an aliased node id to its stable folder key", () => {
-    expect(resolveProjectKey("PVT_node1", alias)).toBe("my-project");
-  });
-  it("returns the raw key unchanged when no alias maps it (local-only draft)", () => {
-    expect(resolveProjectKey("my-project", alias)).toBe("my-project");
-    expect(resolveProjectKey("brand-new", alias)).toBe("brand-new");
-  });
-  it("is a no-op against an empty alias map", () => {
-    expect(resolveProjectKey("PVT_node1", {})).toBe("PVT_node1");
-  });
-  it("a write key and a read key derived through it agree (no divergence)", () => {
-    // Board-reached session keys off the node id; the planner wrote under the folder key.
-    const writeKey = resolveProjectKey("my-project", alias); // planner's raw folder key
-    const readKey = resolveProjectKey("PVT_node1", alias);   // board's node id
-    expect(writeKey).toBe(readKey);
   });
 });
 

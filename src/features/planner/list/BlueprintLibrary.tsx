@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Layers, Download } from "lucide-react";
 import { useAppStore } from "@/store";
-import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
+import { projectSlug } from "@/shared/lib/core/projectPaths";
 import { AUTHORING_BLUEPRINT_ID, uid, type Blueprint, type BlueprintStage } from "../stages/blueprints";
 import { ImportModal, type PreviewBlueprint } from "../blueprints/BlueprintModals";
 import { BlueprintImportModal } from "../blueprints/BlueprintImportModal";
@@ -65,7 +65,9 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
       return;
     }
     const full = blueprints.find(x => x.id === b.id);
-    const key = sanitizeProjectKey(b.name);
+    // The authoring session keys off the blueprint's NAME — the same name-derived key rule as
+    // projects (#2409), so its draft/hub are derivable from the name alone.
+    const key = projectSlug(b.name);
     setProjectBlueprintId(key, AUTHORING_BLUEPRINT_ID);
     if (full) setAuthoredBlueprint(key, full);
     setPlanningTitle(b.name);
@@ -88,7 +90,7 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
   function startNewBlueprint() {
     const title = bpTitle.trim();
     if (!title) return;
-    const key = sanitizeProjectKey(title);
+    const key = projectSlug(title);
     setProjectBlueprintId(key, AUTHORING_BLUEPRINT_ID);
     setPlanningTitle(title);
     setPlanningContext("Design a reusable blueprint to publish as a gist.", "");

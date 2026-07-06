@@ -82,7 +82,6 @@ export function Planning({ visible }: { visible: boolean }) {
     planFleet,
     planFleetTopology, setPlanFleetTopology,
     planFleetDirectorDrive, setPlanFleetDirectorDrive,
-    projectKeyAlias,
     pinnedContext,
     blueprints, planStageConfig,
     projectBlueprintId, setProjectBlueprintId,
@@ -109,12 +108,11 @@ export function Planning({ visible }: { visible: boolean }) {
   // for the planning directory, PTY slot, and plan buckets — identical to the
   // remount key in projects/index.tsx. It is frozen for the session, so the
   // publish flow assigning a GitHub Project id or a title edit cannot move the
-  // working directory. The ref fallbacks keep older/in-flight sessions working.
-  // Resolve through the alias so a project reached via the board (only
-  // `activeProjectId` set = the GitHub node id) maps to the stable folder/data
-  // key its plan files live under, instead of an empty node-id key.
+  // working directory. Every entry path sets `planningSessionKey` to the
+  // name-derived key (#2409), so there is no alias to resolve through; the ref
+  // fallbacks keep older/in-flight sessions working if the key was never set.
   const rawSessionKey = planningSessionKey || activeProjectId || planningTitle || planningPitch;
-  const sessionKeyRef = useRef(projectKeyAlias[rawSessionKey] ?? rawSessionKey);
+  const sessionKeyRef = useRef(rawSessionKey);
   const effectiveProjectId = sessionKeyRef.current;
   // The skills that apply to THIS project (#1056) — the global library filtered to enabled global +
   // project-scoped, mapped to the focused Skills body's shape. Skills the planner authored THIS
@@ -283,7 +281,7 @@ export function Planning({ visible }: { visible: boolean }) {
     draftTitleErr, setDraftTitleErr, commitDraftTitle,
   } = usePlanningTitle({
     activeProjectId, activeProjectName, activeProjectNumber, activeProjectRepos,
-    projectKeyAlias, planningTitle, setPlanningTitle, effectiveProjectId,
+    planningTitle, setPlanningTitle, effectiveProjectId,
   });
   const ghStructure  = buildGhStructure(sections, publishRepos, projectTitle, planFleet[effectiveProjectId]);
 

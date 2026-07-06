@@ -13,7 +13,7 @@ const gh = (id: string, title: string, closed = false): GhProject => ({
 });
 
 describe("useGlanceProjects — declared role/status (#2284)", () => {
-  beforeEach(() => useAppStore.setState({ localDraftProjects: {}, planFleet: {}, projectKeyAlias: {}, githubToken: "" }));
+  beforeEach(() => useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "" }));
 
   it("passes through a draft's DECLARED role + status (curated coloring wins)", () => {
     useAppStore.setState({
@@ -46,32 +46,41 @@ describe("useGlanceProjects — declared role/status (#2284)", () => {
   });
 });
 
-describe("mergeGlanceProjects — draft/published dedup (#2339)", () => {
-  it("dedupes a draft + an UN-ALIASED published project with the SAME title to ONE node", () => {
-    // The regression: no alias, so the published key would title-derive to a DIFFERENT key than the
-    // draft's stable id → two nodes. The sanitize(title)→stableId lookup must collapse them to one.
+describe("mergeGlanceProjects — draft/published dedup (#2339/#2409)", () => {
+  it("dedupes a legacy-keyed draft + a published project with the SAME title to ONE node", () => {
+    // Grandfathering: a draft still keyed by a legacy minted id must collapse with its published
+    // board via the slug(title)→draftKey lookup — the node-id alias table is gone (#2409).
     const drafts = { "p-abc123": { title: "Billing Service", pitch: "", createdAt: 1, role: "service" as const } };
     const published = [gh("PVT_node1", "Billing Service", false)];
 
-    const merged = mergeGlanceProjects(drafts, {}, {}, published);
+    const merged = mergeGlanceProjects(drafts, {}, published);
 
     const billing = merged.filter((p) => p.name === "Billing Service");
     expect(billing).toHaveLength(1);
-    expect(billing[0].id).toBe("p-abc123");        // collapsed onto the draft's stable id
+    expect(billing[0].id).toBe("p-abc123");        // collapsed onto the draft's key
     expect(billing[0].status).toBe("planning");     // published (open) status wins
     expect(billing[0].role).toBe("service");        // draft-declared role survives the collapse
   });
 
-  it("lets an ALIASED published project override its draft (single node on the aliased key)", () => {
-    const drafts = { "p-abc123": { title: "Billing Service", pitch: "", createdAt: 1 } };
-    const aliases = { PVT_node1: "p-abc123" };
+  it("keys a draft-less published project by its name-derived slug (#2409)", () => {
     const published = [gh("PVT_node1", "Billing Service", true)]; // closed ⇒ shipped ⇒ done
 
-    const merged = mergeGlanceProjects(drafts, {}, aliases, published);
+    const merged = mergeGlanceProjects({}, {}, published);
 
     expect(merged).toHaveLength(1);
-    expect(merged[0].id).toBe("p-abc123");
+    expect(merged[0].id).toBe("billing-service"); // projectSlug(title) — never the node id
     expect(merged[0].status).toBe("done");
+  });
+
+  it("collapses a slug-keyed draft with its published board on the SAME key (#2409)", () => {
+    const drafts = { "billing-service": { title: "Billing Service", pitch: "", createdAt: 1 } };
+    const published = [gh("PVT_node1", "Billing Service", true)];
+
+    const merged = mergeGlanceProjects(drafts, {}, published);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe("billing-service");
+    expect(merged[0].status).toBe("done"); // published status wins over the draft's derived idle
   });
 });
 
@@ -98,7 +107,7 @@ describe("applyLiveness — heartbeat → 'live' status (#2263)", () => {
 
 describe("useGlanceProjects — status producer wires 'live' from project_liveness (#2263)", () => {
   beforeEach(() => {
-    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, projectKeyAlias: {}, githubToken: "" });
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "" });
     vi.mocked(invoke).mockReset();
   });
 
@@ -132,7 +141,7 @@ describe("useGlanceProjects — status producer wires 'live' from project_livene
 
 describe("useGlanceProjects — published cache survives remount (#2339)", () => {
   beforeEach(() => {
-    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, projectKeyAlias: {}, githubToken: "" });
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "" });
     vi.mocked(invoke).mockReset();
   });
 

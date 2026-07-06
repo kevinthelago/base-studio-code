@@ -67,17 +67,12 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
       activeProjectRepos: [],
       activeProjectNumber: 0,
       setActiveProject: (id) => set({ activeProjectId: id }),
+      // The node id is API-only meta (#2409): the project's data/folder key derives from its NAME
+      // (`projectSlug`), so there is no node-id → key alias to record here anymore.
       setActiveProjectMeta: (id, name, repo, number, repos = []) =>
-        set((s) => ({
+        set({
           activeProjectId: id, activeProjectName: name, activeProjectRepo: repo, activeProjectNumber: number, activeProjectRepos: repos,
-          // First-write-wins: bind the GitHub node id to the folder/data key (the
-          // title slug the plan files live under) so a board-path open resolves to
-          // real data, not the empty node-id key. Frozen on first sighting so a
-          // later GitHub rename can't clobber a working alias.
-          projectKeyAlias: id && name && !s.projectKeyAlias[id]
-            ? setMapEntry(s.projectKeyAlias, id, name)
-            : s.projectKeyAlias,
-        })),
+        }),
       hiddenProjectIds: [],
       dismissProject: (id) =>
         set((s) => (!id || s.hiddenProjectIds.includes(id) ? {} : { hiddenProjectIds: [...s.hiddenProjectIds, id] })),
