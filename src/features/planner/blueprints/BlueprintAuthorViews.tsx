@@ -13,4 +13,5 @@ export type { AuthorViewProps } from "./authorViews/shared";
 export { PurposeView } from "./authorViews/PurposeView";
 export { StagesView } from "./authorViews/StagesView";
 export { CapabilitiesView } from "./authorViews/CapabilitiesView";
+export { TeamView } from "./authorViews/TeamView";
 export { PublishView, authoringChecks } from "./authorViews/PublishView";
