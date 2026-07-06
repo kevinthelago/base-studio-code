@@ -6,8 +6,9 @@
 // composition GRAPH view, and a resizable inspector (props/API · variants · composes · guidance).
 //
 // It reuses the pure domain (`lib/model`), the shared specimen renderer (`renderSpecimen`), the shared
-// graph toolkit (`useGraphViewport` + `layerDag`), and `useDragResize` — so it stays on-architecture and
-// the planner Kickoff pane is untouched. Data comes from the global store via the `bsc component` bridge.
+// graph stack (`GraphCanvas` + `ZoomControls` + `useGraphViewport` + `layerDag` + `graphEdge` ports
+// routing, #2418), and `useDragResize` — so it stays on-architecture and the planner Kickoff pane is
+// untouched. Data comes from the global store via the `bsc component` bridge.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
@@ -18,8 +19,10 @@ import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Code } from "@/shared/ui/data/Code";
 import { useDragResize } from "@/shared/hooks/useDragResize";
+import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { layerDag } from "@/shared/lib/graph/layers";
+import { graphEdge } from "@/shared/lib/graph/edgePath";
 import type { GraphEdge } from "@/shared/lib/graph/types";
 import { ROLE_COLOR, matchesQuery, resolveComposes, resolveUsedBy, type ComponentRecord } from "./lib/model";
 import { renderSpecimen, type PreviewTheme } from "./specimens";
@@ -423,54 +426,53 @@ interface GraphProps {
   gvp: ReturnType<typeof useGraphViewport>; onSelect: (c: ComponentRecord) => void;
 }
 function GraphView({ graph, comps, selId, kitName, gvp, onSelect }: GraphProps) {
-  // Pull the viewport values out as locals (as GraphCanvas does) — the callback ref + computed
-  // transform read inline would trip react-hooks/refs (ref access during render).
-  const { setVp, onCanvasDown, worldTransform, zoomBy, fit } = gvp;
-  const zoomPct = Math.round(gvp.view.scale * 100);
+  // The pan/zoom shell is the shared GraphCanvas template (#2208) — viewport ref/wheel/pan + the world
+  // transform + the infinite dotted grid all live there; this brings only the toolbar + world content.
+  const EDGE_COLOR = "var(--border-strong, #3a434d)";
   return (
-    <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <Box className="ds-colhead" style={{ height: 38 }}>
-        <Text className="ds-eyebrow" as="span">Composition graph · {kitName}</Text>
-        <Box style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <Box as="button" className="ds-act" style={{ height: 22, width: 24, padding: 0, justifyContent: "center" }} onClick={() => zoomBy(1 / 1.15)}>−</Box>
-          <Text mono size="xxs" tone="dim" style={{ width: 38, textAlign: "center" }}>{zoomPct}%</Text>
-          <Box as="button" className="ds-act" style={{ height: 22, width: 24, padding: 0, justifyContent: "center" }} onClick={() => zoomBy(1.15)}>＋</Box>
-          <Box as="button" className="ds-act" style={{ height: 22, padding: "0 8px" }} onClick={() => fit()}>fit</Box>
-        </Box>
-      </Box>
-      {/* eslint-disable-next-line no-restricted-syntax -- pan/zoom viewport element for useGraphViewport */}
-      <div className="ds-graph-vp" ref={setVp} onMouseDown={onCanvasDown}>
-        {/* eslint-disable-next-line no-restricted-syntax -- transformed world layer (pan/zoom target) */}
-        <div className="ds-graph-world" style={{ ...worldTransform, width: graph.world.w, height: graph.world.h }}>
-          <svg width={graph.world.w} height={graph.world.h} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
-            <defs>
-              <marker id="ds-ah" markerWidth={8} markerHeight={8} refX={7} refY={4} orient="auto">
-                <path d="M0,0 L8,4 L0,8 z" fill="var(--border-strong, #3a434d)" />
-              </marker>
-            </defs>
-            {graph.edges.map((e) => {
-              const a = graph.pos.get(e.from), b = graph.pos.get(e.to);
-              if (!a || !b) return null;
-              const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2, x2 = b.x, y2 = b.y + NODE_H / 2, mx = (x1 + x2) / 2;
-              return <path key={e.id} d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`} stroke="var(--border-strong, #3a434d)" strokeWidth={1.5} fill="none" markerEnd="url(#ds-ah)" />;
-            })}
-          </svg>
-          {comps.map((c) => {
-            const pos = graph.pos.get(c.id); if (!pos) return null;
-            return (
-              <Box key={c.id} data-node onClick={() => onSelect(c)} className={`ds-node${c.id === selId ? " on" : ""}`} style={{ left: pos.x, top: pos.y, width: NODE_W }}>
-                <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                  {roleDot(c.role)}<Text weight={600} size={13}>{c.name}</Text>
-                </Box>
-                <Box style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <Text size={10} tone="dim">{c.role}</Text><Text mono size="xxs" tone="muted">×{c.used}</Text>
-                </Box>
-              </Box>
-            );
-          })}
-        </div>
-      </div>
-    </Box>
+    <GraphCanvas
+      vp={gvp}
+      world={graph.world}
+      grid gridSize={22} gridColor="var(--border-soft, var(--border))"
+      canvasBackground="var(--bg-canvas, var(--bg))"
+      toolbar={
+        <>
+          <Text className="ds-eyebrow" as="span">Composition graph · {kitName}</Text>
+          <Box style={{ flex: 1 }} />
+          <ZoomControls vp={gvp} step={1.15} />
+          <Box as="button" className="ds-act" onClick={() => gvp.fit()}>fit</Box>
+        </>
+      }
+    >
+      <svg width={graph.world.w} height={graph.world.h} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
+        {graph.edges.map((e) => {
+          const a = graph.pos.get(e.from), b = graph.pos.get(e.to);
+          if (!a || !b) return null;
+          // The shared graph line-type (#2222) with SIDE-PORT routing (#2226) — the composition graph
+          // is a layered left→right DAG, same columnar flow as Glance.
+          const g = graphEdge({ ...a, w: NODE_W, h: NODE_H }, { ...b, w: NODE_W, h: NODE_H }, { routing: "ports" });
+          return (
+            <g key={e.id}>
+              <path d={g.d} stroke={EDGE_COLOR} strokeWidth={1.5} fill="none" />
+              <path d={g.arrow} fill={EDGE_COLOR} />
+            </g>
+          );
+        })}
+      </svg>
+      {comps.map((c) => {
+        const pos = graph.pos.get(c.id); if (!pos) return null;
+        return (
+          <Box key={c.id} data-node onClick={() => onSelect(c)} className={`ds-node${c.id === selId ? " on" : ""}`} style={{ left: pos.x, top: pos.y, width: NODE_W }}>
+            <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+              {roleDot(c.role)}<Text weight={600} size={13}>{c.name}</Text>
+            </Box>
+            <Box style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <Text size={10} tone="dim">{c.role}</Text><Text mono size="xxs" tone="muted">×{c.used}</Text>
+            </Box>
+          </Box>
+        );
+      })}
+    </GraphCanvas>
   );
 }
 
