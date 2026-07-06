@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
+import { KitChangesCard } from "./KitChangesCard";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
@@ -197,6 +198,9 @@ export function DesignStudio() {
           onImported={(k) => selectKit(k.id)}
         />
       )}
+
+      {/* kit-change propagation notify surface (#2277) — renders only when changes are pending */}
+      <KitChangesCard />
 
       {/* ── body ── */}
       <Box className="ds-body">

@@ -126,6 +126,7 @@ export const useAppStore = create<AppStore>()(
         projectLinks:         s.projectLinks,   // #2253: user-drawn Glance project relationships
         projectKeyAlias:      s.projectKeyAlias,
         autoTriage:           s.autoTriage,   // #2265: per-project fault auto-triage toggle
+        autoKitDispatch:      s.autoKitDispatch, // #2277: per-project kit auto-dispatch toggle
         issueLinks:           s.issueLinks,
         achievements:         s.achievements,
         hiddenProjectIds:     s.hiddenProjectIds,
@@ -172,6 +173,7 @@ export const useAppStore = create<AppStore>()(
         components:            s.components, // #2269: the proven-component library (seed until the bsc store lands)
         kits:                  s.kits,       // #2269: the component kits (technology-scoped namespaces)
         kitUsage:              s.kitUsage,   // #2277: the consumer index (project→kit) — a fast-first-paint cache
+        kitDispatches:         s.kitDispatches, // #2277: the pending fan-out queue — durable so the drain delivers it after a restart
       }),
       // Storage is async (Tauri plugin-store), so hydration finishes AFTER the
       // first render. Flip hasHydrated here so the shell can hold its first paint
