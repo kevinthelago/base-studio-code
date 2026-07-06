@@ -216,10 +216,13 @@ export function OrgCanvas(props: CanvasProps) {
               <Box style={{ position: "absolute", inset: 0, transform: "translate(11px,11px)", borderRadius: 13, background: "var(--bg-elev)", border: "1px solid var(--border)", opacity: 0.45 }} />
               <Box style={{ position: "absolute", inset: 0, transform: "translate(6px,6px)", borderRadius: 13, background: "var(--bg-elev)", border: "1px solid var(--border)", opacity: 0.7 }} />
               <Box style={{ position: "relative", width: "100%", height: "100%" }}><AgentFace d={d} isSel={isSel} /></Box>
-              {/* ×N badge + a drill hint */}
+              {/* ×N badge + a drill hint. A mixed-wiring stack (members with differing external edges,
+                  unioned onto this node — #2436) says so, since the top view can't show who has what. */}
               <Box style={{ position: "absolute", top: -9, right: -9, minWidth: 22, height: 22, padding: "0 6px", borderRadius: 11,
                 background: "var(--accent)", color: "var(--bg-canvas)", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,.35)" }}>×{pool.count}</Box>
-              <Text as="div" mono size={8.5} tone="dim" style={{ position: "absolute", left: 0, right: 0, bottom: -14, textAlign: "center", pointerEvents: "none" }}>click to open pool</Text>
+              <Text as="div" mono size={8.5} tone="dim" style={{ position: "absolute", left: 0, right: 0, bottom: -14, textAlign: "center", pointerEvents: "none" }}>
+                {pool.homogeneous ? "click to open pool" : "mixed wiring · click to open"}
+              </Text>
             </div>
           );
         }
