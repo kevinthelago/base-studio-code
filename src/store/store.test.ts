@@ -9,7 +9,7 @@ import type { Hook } from "@/features/mcp/lib/hooks";
 import { defaultStageConfig } from "@/features/planner/stages/planStages";
 import { makeBlueprints } from "@/features/planner/stages/blueprints";
 import { directorPaneId, fleetPaneId, triagePaneId, paneIdFor } from "@/app/console/lib/paneIdentity";
-import { sanitizeProjectKey, mintProjectId } from "@/shared/lib/core/projectPaths";
+import { sanitizeProjectKey, projectSlug } from "@/shared/lib/core/projectPaths";
 
 // Stable pane identity ids (#1176): triage panes key by `<projKey>:<repo>:triage`,
 // fleet director by `<key>:director`, workers by `<key>:<streamId>`.
@@ -1774,31 +1774,30 @@ describe("stable project id (#1741)", () => {
   const st = () => useAppStore.getState();
 
   it("keeps the workspace key stable across a title change (no path orphaning)", () => {
-    // A new project is created keyed by a minted, NON-title-derived stable id, used as the
-    // planning session key. Renaming edits only the display title in place.
-    const stableId = mintProjectId();
-    st().addDraftProject(stableId, { title: "Acme Web", pitch: "", createdAt: 1 });
-    st().setPlanningSession(stableId);
-    expect(st().planningSessionKey).toBe(stableId);
+    // A new project is created keyed by the readable name-slug (#2409), used as the planning session
+    // key. Renaming is display-only — the key (and every on-disk path keyed off it) stays frozen.
+    const key = projectSlug("Acme Web"); // "acme-web"
+    st().addDraftProject(key, { title: "Acme Web", pitch: "", createdAt: 1 });
+    st().setPlanningSession(key);
+    expect(st().planningSessionKey).toBe(key);
 
-    // Rename: the title changes but the key (and every on-disk path keyed off it) does NOT.
-    st().updateDraftProject(stableId, { title: "Acme Web — Renamed" });
-    expect(st().planningSessionKey).toBe(stableId);
-    expect(st().localDraftProjects[stableId]?.title).toBe("Acme Web — Renamed");
-    // The record still lives under the original key — no new title-derived entry appeared.
-    expect(Object.keys(st().localDraftProjects)).toContain(stableId);
-    expect(st().localDraftProjects[sanitizeProjectKey("Acme Web — Renamed")]).toBeUndefined();
+    // Rename: the title changes but the key does NOT (the folder keeps its birth-slug).
+    st().updateDraftProject(key, { title: "Acme Web — Renamed" });
+    expect(st().planningSessionKey).toBe(key);
+    expect(st().localDraftProjects[key]?.title).toBe("Acme Web — Renamed");
+    // The record still lives under the original key — no new slug entry appeared for the new title.
+    expect(Object.keys(st().localDraftProjects)).toContain(key);
+    expect(st().localDraftProjects[projectSlug("Acme Web — Renamed")]).toBeUndefined();
   });
 
-  it("gives two projects with the SAME title distinct keys (no collision)", () => {
-    const a = mintProjectId();
-    const b = mintProjectId();
-    expect(a).not.toBe(b);
-    st().addDraftProject(a, { title: "Duplicate", pitch: "", createdAt: 1 });
-    st().addDraftProject(b, { title: "Duplicate", pitch: "", createdAt: 2 });
-    expect(st().localDraftProjects[a]).toBeDefined();
-    expect(st().localDraftProjects[b]).toBeDefined();
-    expect(st().localDraftProjects[a]).not.toBe(st().localDraftProjects[b]);
+  it("gives two projects with the SAME name the SAME key — a collision the create modal resolves (#2409)", () => {
+    // The name IS the identity now: same name → same slug → one hub. The creation modal blocks the
+    // duplicate (see PublishedHeader), rather than minting distinct opaque ids like #1741 did.
+    expect(projectSlug("Duplicate")).toBe(projectSlug("Duplicate"));
+    st().addDraftProject(projectSlug("Duplicate"), { title: "Duplicate", pitch: "", createdAt: 1 });
+    // A second add under the same name targets the SAME map key (idempotent record, not a fork).
+    st().addDraftProject(projectSlug("duplicate"), { title: "Duplicate", pitch: "", createdAt: 2 });
+    expect(Object.keys(st().localDraftProjects).filter((k) => k === "duplicate")).toEqual(["duplicate"]);
   });
 });
 
