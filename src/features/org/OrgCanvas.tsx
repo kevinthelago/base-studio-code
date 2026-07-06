@@ -28,14 +28,18 @@ interface CanvasProps {
   connecting: boolean;
   /** True during a background pan-drag — suppresses the edge click that ends it. */
   dragMoved: React.MutableRefObject<boolean>;
-  /** Synthetic pool nodes (a collapsed swarm) keyed by nodeId — rendered as stacked cards that drill in
-   *  instead of select/drag. Empty inside a pool's own sub-graph. */
+  /** Synthetic pool nodes (a collapsed swarm) keyed by nodeId — rendered as stacked cards: a click
+   *  drills in, a drag moves the whole stack (#2439). Empty inside a pool's own sub-graph. */
   poolInfo?: Record<string, Pool>;
   onSelectNode: (nodeId: string) => void;
   onSelectEdge: (relId: string) => void;
   onMoveNode: (nodeId: string, x: number, y: number) => void;
   /** Enter a pool's own graph (clicking its stacked card). */
   onDrillPool?: (poolNodeId: string) => void;
+  /** A pool card was DRAGGED by (dx, dy) design-space units (#2439). The pool node is synthetic —
+   *  rendered at its members' centroid — so the owner shifts every member by the delta; the centroid
+   *  then lands where the user dropped the stack. */
+  onMovePool?: (poolNodeId: string, dx: number, dy: number) => void;
   /** Right-click a node/edge → open the canvas context menu (delete, …). #2385. */
   onContext?: (sel: Selection, e: React.MouseEvent) => void;
 }
@@ -68,7 +72,7 @@ function AgentFace({ d, isSel }: { d: PositionDisplay; isSel: boolean }) {
 /** The world-layer content — placed inside GraphCanvas's transformed world box. */
 export function OrgCanvas(props: CanvasProps) {
   const { org, personas, sel, scale, connecting, dragMoved, poolInfo,
-    onSelectNode, onSelectEdge, onMoveNode, onDrillPool, onContext } = props;
+    onSelectNode, onSelectEdge, onMoveNode, onDrillPool, onMovePool, onContext } = props;
   /** Right-click a node/edge → open the context menu at the cursor (delete). */
   const context = (s: Selection) => (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); onContext?.(s, e); };
 
@@ -76,22 +80,22 @@ export function OrgCanvas(props: CanvasProps) {
   // Live node-drag preview (design-space x/y). Commits to the store on drop.
   const [drag, setDrag] = useState<{ nodeId: string; x: number; y: number } | null>(null);
   const gesture = useRef<{ nodeId: string; sx: number; sy: number; bx: number; by: number; moved: boolean } | null>(null);
-  // A pool card's press is a drill (a click), never a drag — its own tiny gesture tracks click-vs-drag.
-  const poolGesture = useRef<{ sx: number; sy: number; moved: boolean } | null>(null);
-  const onPoolDown = (e: React.PointerEvent) => {
+  // A pool card shares the node drag machinery (#2439) — the live preview moves the stacked card via
+  // `at()` like any node. Only the drop differs: a drag reports the DELTA (the owner shifts every
+  // member, since the synthetic node re-renders at the members' centroid); a click drills in.
+  const onPoolDown = (poolNodeId: string) => (e: React.PointerEvent) => {
     e.stopPropagation();
-    poolGesture.current = { sx: e.clientX, sy: e.clientY, moved: false };
+    const b = boxes.get(poolNodeId)!;
+    gesture.current = { nodeId: poolNodeId, sx: e.clientX, sy: e.clientY, bx: b.x, by: b.y, moved: false };
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
   };
-  const onPoolMove = (e: React.PointerEvent) => {
-    const g = poolGesture.current;
-    if (g && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > DRAG_THRESHOLD) g.moved = true;
-  };
   const onPoolUp = (poolNodeId: string) => (e: React.PointerEvent) => {
-    const g = poolGesture.current;
-    poolGesture.current = null;
+    const g = gesture.current;
+    gesture.current = null;
+    setDrag(null);
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-    if (g && !g.moved) onDrillPool?.(poolNodeId);
+    if (g && g.moved) onMovePool?.(poolNodeId, Math.round((e.clientX - g.sx) / scale), Math.round((e.clientY - g.sy) / scale));
+    else onDrillPool?.(poolNodeId);
   };
 
   /** The x/y to render a node at — its live drag preview if being dragged, else its stored box. */
@@ -203,23 +207,26 @@ export function OrgCanvas(props: CanvasProps) {
         const dim = focused && !nodeActive(pos.nodeId);
         const pool = poolInfo?.[pos.nodeId];
 
-        // A pool: a stacked card (offset shadow cards behind + a ×N badge). A press drills into the
-        // pool's own graph rather than selecting/dragging.
+        // A pool: a stacked card (offset shadow cards behind + a ×N badge). A click drills into the
+        // pool's own graph; a drag moves the whole stack (#2439 — the drop shifts every member).
         if (pool) {
           return (
             // eslint-disable-next-line no-restricted-syntax -- data-node marks it as owning its own press gesture (no background pan)
             <div key={pos.nodeId} data-node={pos.nodeId}
-              onPointerDown={onPoolDown} onPointerMove={onPoolMove} onPointerUp={onPoolUp(pos.nodeId)}
+              onPointerDown={onPoolDown(pos.nodeId)} onPointerMove={onNodeMove} onPointerUp={onPoolUp(pos.nodeId)}
               style={{ position: "absolute", left: xy.x, top: xy.y, width: box.w, height: box.h,
-                cursor: "pointer", zIndex: isSel ? 6 : 3, opacity: dim ? 0.5 : 1, transition: "opacity .15s", touchAction: "none" }}>
+                cursor: "pointer", zIndex: isSel ? 6 : 3, opacity: dim ? 0.5 : 1, transition: drag ? "none" : "opacity .15s", touchAction: "none", userSelect: "none" }}>
               {/* stacked shadow cards behind the face — the "N of them" cue */}
               <Box style={{ position: "absolute", inset: 0, transform: "translate(11px,11px)", borderRadius: 13, background: "var(--bg-elev)", border: "1px solid var(--border)", opacity: 0.45 }} />
               <Box style={{ position: "absolute", inset: 0, transform: "translate(6px,6px)", borderRadius: 13, background: "var(--bg-elev)", border: "1px solid var(--border)", opacity: 0.7 }} />
               <Box style={{ position: "relative", width: "100%", height: "100%" }}><AgentFace d={d} isSel={isSel} /></Box>
-              {/* ×N badge + a drill hint */}
+              {/* ×N badge + a drill hint. A mixed-wiring stack (members with differing external edges,
+                  unioned onto this node — #2436) says so, since the top view can't show who has what. */}
               <Box style={{ position: "absolute", top: -9, right: -9, minWidth: 22, height: 22, padding: "0 6px", borderRadius: 11,
                 background: "var(--accent)", color: "var(--bg-canvas)", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,.35)" }}>×{pool.count}</Box>
-              <Text as="div" mono size={8.5} tone="dim" style={{ position: "absolute", left: 0, right: 0, bottom: -14, textAlign: "center", pointerEvents: "none" }}>click to open pool</Text>
+              <Text as="div" mono size={8.5} tone="dim" style={{ position: "absolute", left: 0, right: 0, bottom: -14, textAlign: "center", pointerEvents: "none" }}>
+                {pool.homogeneous ? "click to open pool" : "mixed wiring · click to open"}
+              </Text>
             </div>
           );
         }
@@ -230,7 +237,7 @@ export function OrgCanvas(props: CanvasProps) {
             onPointerDown={onNodeDown(pos.nodeId)} onPointerMove={onNodeMove} onPointerUp={onNodeUp(pos.nodeId)}
             onContextMenu={context({ type: "node", id: pos.nodeId })}
             style={{ position: "absolute", left: xy.x, top: xy.y, width: box.w, height: box.h,
-              cursor: connecting ? "crosshair" : "grab", zIndex: isSel ? 6 : 3, opacity: dim ? 0.5 : 1, transition: drag ? "none" : "opacity .15s", touchAction: "none" }}>
+              cursor: connecting ? "crosshair" : "grab", zIndex: isSel ? 6 : 3, opacity: dim ? 0.5 : 1, transition: drag ? "none" : "opacity .15s", touchAction: "none", userSelect: "none" }}>
             {pos.kind === "agent" && <AgentFace d={d} isSel={isSel} />}
             {pos.kind === "resource" && (
               <Box style={{ width: "100%", height: "100%", boxSizing: "border-box", padding: "11px 13px", display: "flex", flexDirection: "column", justifyContent: "center",

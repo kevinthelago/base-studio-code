@@ -43,8 +43,12 @@ pub(crate) fn plan_launch(
 /// (a loud red warning + nearest-existing-ancestor fallback when it's `cwd_missing`, nothing when
 /// `cwd` is empty), install the OSC-7 cwd + `__bsc_state` run/idle markers and the `claude()`
 /// wrapper (`claude_fn`), source the bsc-* helpers from `rc_bash` into the interactive shell,
-/// wire `PROMPT_COMMAND`, clear the screen, and append the optional `launch` command. Pure (no
-/// fs/env) so the exact wire string is unit-testable; `to_bash_path` is a no-op off Windows.
+/// wire `PROMPT_COMMAND`, clear the screen, and append the optional `launch` command — EXCEPT when
+/// the cwd is missing (#2438): the launch is suppressed, since it would start the agent in the
+/// fallback ancestor (for a fleet worktree that's the parent of EVERY worktree) with no role gate
+/// (`ensure_session_settings` wrote into the missing configured path), and the agent's TUI would
+/// clear the warning off screen. Pure (no fs/env) so the exact wire string is unit-testable;
+/// `to_bash_path` is a no-op off Windows.
 pub(super) fn build_bash_init_line(
     cwd: &str,
     cwd_missing: bool,
@@ -53,18 +57,25 @@ pub(super) fn build_bash_init_line(
     claude_fn: &str,
     rc_bash: &str,
 ) -> String {
-    let init_suffix = launch.map(|s| format!("; {}", s)).unwrap_or_default();
+    // The suffix runs AFTER the final screen clear, so it's what the user actually sees: the launch
+    // command normally, or — when the configured cwd is gone — the red warning as an inert shell's
+    // banner (printing it any earlier gets wiped by the clear; launching anyway would start the agent
+    // in the fallback ancestor, ungated).
+    let init_suffix = if cwd_missing {
+        format!(
+            "; printf '\\033[1;31m[bsc] WARNING: configured directory %s does not exist; this session did NOT start in its project directory and the agent was NOT started. Relaunch the fleet to recreate the worktree, or remove this pane.\\033[0m\\n' \"{disp}\"",
+            disp = to_bash_path(cwd),
+        )
+    } else {
+        launch.map(|s| format!("; {}", s)).unwrap_or_default()
+    };
     // Explicit cd after .bashrc runs so any `cd ~` in .bashrc doesn't win.
     // Uses a bash-compatible POSIX path so Git Bash on Windows handles it.
     let cd_prefix = if cwd.is_empty() {
         String::new()
     } else if cwd_missing {
-        // Loud, visible warning instead of a silent home fallback, then sit in the
-        // nearest existing ancestor (not $HOME) so the agent is at least near the project.
-        format!(
-            "printf '\\033[1;31m[bsc] WARNING: configured directory %s does not exist; this session did NOT start in its project directory.\\033[0m\\n' \"{disp}\"; cd \"{anc}\" 2>/dev/null; ",
-            disp = to_bash_path(cwd), anc = to_bash_path(effective_cwd),
-        )
+        // Sit in the nearest existing ancestor (not $HOME); the warning prints post-clear (above).
+        format!("cd \"{}\" 2>/dev/null; ", to_bash_path(effective_cwd))
     } else {
         format!("cd \"{}\" 2>/dev/null; ", to_bash_path(cwd))
     };
@@ -113,12 +124,22 @@ mod tests {
 
     #[test]
     fn build_bash_init_line_missing_cwd_warns_and_falls_to_ancestor() {
+        // `launch` is Some on purpose: a missing cwd must suppress it anyway (#2438) — launching
+        // would start the agent ungated in the fallback ancestor (for a fleet worktree, the parent
+        // of EVERY worktree; the role gate was written into the missing configured path).
         let line = build_bash_init_line(
             "/home/u/projects/gone", true, "/home/u/projects",
-            None, "claude() { :; }; ", "/rc.sh",
+            Some("claude --continue"), "claude() { :; }; ", "/rc.sh",
         );
         assert!(line.contains("WARNING: configured directory"), "loud warning printed: {line}");
         assert!(line.contains("cd \"/home/u/projects\" 2>/dev/null; "), "cd's into the nearest ancestor: {line}");
+        assert!(line.contains("the agent was NOT started"), "warning states the launch suppression: {line}");
+        assert!(!line.contains("claude --continue"), "launch suppressed when the cwd is missing: {line}");
+        // The warning is the POST-clear suffix — printing it earlier gets wiped by the final
+        // `printf '\033[2J\033[H'` screen clear (#2438).
+        let clear = line.find("printf '\\033[2J\\033[H'").expect("clears the screen");
+        let warn = line.find("WARNING").expect("warns");
+        assert!(warn > clear, "warning must print after the screen clear: {line}");
     }
 
     #[test]

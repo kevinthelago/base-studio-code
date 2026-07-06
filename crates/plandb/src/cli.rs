@@ -48,9 +48,12 @@ const COMMANDS: &[CmdDoc] = &[
         summary: "upsert issue(s) from JSON on stdin; prints ref(s)",
         usage: "\
 USAGE:
-  bsc plan add   # one issue object, or an array, as JSON on stdin
+  bsc plan add [--force]   # one issue object, or an array, as JSON on stdin
 
-Upserts each issue by its (required, non-empty) \"ref\" (and \"title\"). Prints the ref(s) written.",
+Upserts each issue by its (required, non-empty) \"ref\" (and \"title\"). Prints the ref(s) written.
+Validated at set-time (#2395): a non-empty ref + title per issue, and a known \"status\" when set
+(open | in_progress | blocked | complete | verified | failed). A bad batch is rejected whole —
+nothing is written. --force skips validation.",
     },
     CmdDoc {
         name: "get",
@@ -146,29 +149,42 @@ USAGE:
         summary: "streams + per-stream permissions/flows + director/topology",
         usage: "\
 USAGE:
-  bsc plan fleet set                  # replace the fleet from a FleetPlan JSON on stdin
+  bsc plan fleet set [--force]        # replace the fleet from a FleetPlan JSON on stdin
   bsc plan fleet get [<stream-id>]    # print the fleet (lean; --full for detail), or one stream
   bsc plan fleet stream set <id>      # upsert ONE stream's JSON on stdin (granular; keeps order)
   bsc plan fleet meta set             # upsert just the meta (director/topology/…) JSON on stdin
   bsc plan fleet remove <stream-id>   # drop one stream
 
-`fleet get` is lean by default (id/name/dependsOn per stream); add --full for permissions/flows.",
+`fleet get` is lean by default (id/name/dependsOn per stream); add --full for permissions/flows.
+Writes are validated at set-time (#2395): `set` needs a \"streams\" array (an absent one would
+silently wipe the fleet) and every stream a non-empty, unique \"id\" + a \"repo\"; `stream set`'s
+blob id must match <id>; `meta set` must not carry \"streams\". --force skips validation.",
     },
     CmdDoc {
         name: "deploy",
         summary: "the Deploy stage's structured config (one blob)",
         usage: "\
 USAGE:
-  bsc plan deploy set   # replace the deploy config from a DeployConfig JSON on stdin
-  bsc plan deploy get   # print the deploy config (DeployConfig JSON)",
+  bsc plan deploy set [--force]   # replace the deploy config from a DeployConfig JSON on stdin
+  bsc plan deploy get             # print the deploy config (DeployConfig JSON)
+
+`set` validates the shape before storing (#2395) — a malformed config is rejected with a
+field-level error and the stored config is untouched. Mode-aware target rules: mode:\"cloud\"
+(or no mode) needs a known \"platform\"; mode:\"local\" needs \"localKind\" — \"application\"
+(buildTargets + artifact) or \"library\" (publishRegistry + packageName). A successful set echoes
+the pane's \"N of M deploy-ready\" readiness. --force stores a work-in-progress blob unvalidated.",
     },
     CmdDoc {
         name: "deps",
         summary: "the locked dependency manifest (one blob)",
         usage: "\
 USAGE:
-  bsc plan deps set   # replace the manifest from a DependencyManifest JSON on stdin
-  bsc plan deps get   # print the manifest (a `dependencies` array + a `registries` map)",
+  bsc plan deps set [--force]   # replace the manifest from a DependencyManifest JSON on stdin
+  bsc plan deps get             # print the manifest (a `dependencies` array + a `registries` map)
+
+`set` validates before storing (#2395): every dependency needs a non-empty \"name\" and an
+\"ecosystem\" of \"npm\"/\"cargo\" (anything else is silently dropped by the readers); every
+registry needs a \"url\". A rejected write leaves the stored manifest untouched. --force skips.",
     },
     CmdDoc {
         name: "mcp",
@@ -184,8 +200,12 @@ USAGE:
         summary: "the blueprint an authoring project is designing (one blob)",
         usage: "\
 USAGE:
-  bsc plan blueprint set   # replace the blueprint from a Blueprint JSON on stdin
-  bsc plan blueprint get   # print the blueprint (Blueprint JSON)",
+  bsc plan blueprint set [--force]   # replace the blueprint from a Blueprint JSON on stdin
+  bsc plan blueprint get             # print the blueprint (Blueprint JSON)
+
+`set` validates before storing (#2395): a non-empty \"id\" + \"name\" (without them the reader
+silently ignores the whole blob), and every stage/section entry needs a \"key\" + \"name\". A
+rejected write leaves the stored blueprint untouched. --force skips validation.",
     },
     CmdDoc {
         name: "discovery",
@@ -347,6 +367,9 @@ struct Args {
     since: Option<i64>,
     /// Re-expand a JSON read to indented form (the default is compact, to save agent tokens).
     pretty: bool,
+    /// Skip set-time validation on a structured write (#2395) — the deliberate
+    /// store-a-work-in-progress-blob escape hatch. Validation is otherwise strict-reject.
+    force: bool,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
@@ -355,7 +378,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         rule: None, cause: None, from: None, command: None, schedule: None, description: None,
         mode: None, path: None,
         full: false, fields: None, limit: None,
-        since: None, pretty: false,
+        since: None, pretty: false, force: false,
     };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
@@ -374,6 +397,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--description" => a.description = Some(it.next().ok_or("--description needs a value")?),
             "--full" => a.full = true,
             "--pretty" => a.pretty = true,
+            "--force" | "--no-validate" => a.force = true,
             "--fields" => a.fields = Some(it.next().ok_or("--fields needs a comma-separated list")?),
             "--limit" => {
                 let v = it.next().ok_or("--limit needs a number")?;
@@ -490,16 +514,36 @@ fn blob_count(v: &serde_json::Value, key: &str) -> usize {
     v.get(key).and_then(|x| x.as_array()).map(|a| a.len()).unwrap_or(0)
 }
 
+/// The validate-then-persist seam every structured write goes through (#2395): run `validate` on
+/// the parsed blob (skipped by `--force`), and only call `set_fn` when it passes — so a rejected
+/// write returns `Err` WITHOUT touching the store and the previously-stored good blob survives.
+fn validated_set(
+    v: &serde_json::Value,
+    force: bool,
+    validate: impl Fn(&serde_json::Value) -> Result<(), String>,
+    set_fn: impl FnOnce(&serde_json::Value) -> Result<(), String>,
+) -> Result<(), String> {
+    if !force {
+        validate(v)?;
+    }
+    set_fn(v)
+}
+
 /// The shared `set`/`get` handler for the singleton-blob nouns (`deploy`/`deps`/`blueprint`). `set`
-/// reads one JSON object on stdin, replaces the blob via `set_fn`, and echoes `msg_fn(&value)` in
-/// human mode; `get` emits the stored blob via `get_fn` or `null`/`none_text`. `verb` names the noun
-/// in the unknown-subcommand error; `parse_noun` names the value in the stdin parse error. (`fleet`
-/// keeps its own match for `get <stream-id>`/`--full`/lean — only its `set` shares this read shape.)
+/// reads one JSON object on stdin, validates it via `validate` (#2395 — strict-reject unless
+/// `--force`), replaces the blob via `set_fn`, and echoes `msg_fn(&value)` in human mode; `get`
+/// emits the stored blob via `get_fn` or `null`/`none_text`. `verb` names the noun in the
+/// unknown-subcommand error; `parse_noun` names the value in the stdin parse error. (`fleet` keeps
+/// its own match for `get <stream-id>`/`--full`/lean — only its `set` shares this read shape.)
+// One flat parameter per per-noun behavior (validate/set/get/msg) — three call sites, and a
+// builder/struct would just re-spell the same four closures with more ceremony.
+#[allow(clippy::too_many_arguments)]
 fn cmd_blob_noun(
     args: &Args,
     verb: &str,
     parse_noun: &str,
     none_text: &str,
+    validate: impl Fn(&serde_json::Value) -> Result<(), String>,
     set_fn: impl Fn(&Store, &serde_json::Value) -> Result<(), String>,
     get_fn: impl Fn(&Store) -> Result<Option<serde_json::Value>, String>,
     msg_fn: impl Fn(&serde_json::Value) -> String,
@@ -508,7 +552,7 @@ fn cmd_blob_noun(
     match args.positional.get(1).map(String::as_str).unwrap_or("") {
         "set" => {
             let v: serde_json::Value = read_stdin_json_one(parse_noun)?;
-            set_fn(&s, &v)?;
+            validated_set(&v, args.force, validate, |v| set_fn(&s, v))?;
             if !args.json {
                 println!("{}", msg_fn(&v));
             }
@@ -553,6 +597,48 @@ mod tests {
         assert!(!f.contains("lesson"));
         // An unknown command falls back to the overview.
         assert!(cmd_help("bsc plan", "nope").contains("COMMANDS:"));
+    }
+
+    #[test]
+    fn validated_set_rejects_before_persisting_and_force_bypasses() {
+        // The keep-previous-value contract (#2395): a rejected write must not clobber a good blob.
+        let s = Store::open_in_memory().unwrap();
+        let good = serde_json::json!({ "services": [{
+            "id": "web", "repo": "o/web", "platform": "vercel",
+            "release": { "strategy": "rolling" }
+        }]});
+        validated_set(&good, false, crate::validate::validate_deploy_config, |v| {
+            s.deploy_set(v).map_err(|e| e.to_string())
+        })
+        .unwrap();
+        // The #2392 regression shape: mode:"local" + a stray workload + no localKind → rejected,
+        // and the previously-stored good config survives untouched.
+        let bad = serde_json::json!({ "services": [{
+            "id": "eno", "repo": "o/eno", "mode": "local", "workload": "application"
+        }]});
+        let err = validated_set(&bad, false, crate::validate::validate_deploy_config, |v| {
+            s.deploy_set(v).map_err(|e| e.to_string())
+        })
+        .unwrap_err();
+        assert!(err.contains("localKind"), "field-level message: {err}");
+        let stored = s.deploy_get().unwrap().unwrap();
+        assert_eq!(stored["services"][0]["id"], serde_json::json!("web"), "good blob kept");
+        // --force is the documented escape hatch: the same bad blob stores unvalidated.
+        validated_set(&bad, true, crate::validate::validate_deploy_config, |v| {
+            s.deploy_set(v).map_err(|e| e.to_string())
+        })
+        .unwrap();
+        assert_eq!(s.deploy_get().unwrap().unwrap()["services"][0]["id"], serde_json::json!("eno"));
+    }
+
+    #[test]
+    fn parse_args_reads_force_and_no_validate() {
+        let a = parse_args(vec!["deploy".into(), "set".into(), "--force".into()]).unwrap();
+        assert!(a.force);
+        let b = parse_args(vec!["deps".into(), "set".into(), "--no-validate".into()]).unwrap();
+        assert!(b.force);
+        let c = parse_args(vec!["deploy".into(), "set".into()]).unwrap();
+        assert!(!c.force);
     }
 
     #[test]
