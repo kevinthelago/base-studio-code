@@ -17,7 +17,7 @@ export type PrimitiveName =
   // typography
   | "Text"
   // controls
-  | "Button" | "IconButton" | "Checkbox" | "Toggle" | "SegmentedControl" | "TextField" | "SelectField"
+  | "Button" | "IconButton" | "Checkbox" | "Toggle" | "SegmentedControl" | "TextField" | "TextArea" | "SelectField"
   | "BackButton" | "ColorSwatch" | "ConfirmButton"
   // data
   | "Card" | "Chip" | "StatTile" | "FillBar" | "Code"
@@ -245,7 +245,19 @@ export const UI_KIT: PrimitiveSpec[] = [
     ],
   },
   {
-    name: "SelectField", group: "controls", importPath: "@/shared/ui/controls/Field",
+    name: "TextArea", group: "controls", importPath: "@/shared/ui/controls/Field", passthrough: true,
+    description: "A labelled multiline text area — the TextField sibling (same label + hint + trailing over an .input <textarea>).",
+    props: [
+      { name: "value", type: "string", required: true, description: "Textarea value." },
+      { name: "onChange", type: "function", required: true, description: "(value) => void." },
+      { name: "label", type: "node", description: "Field label." },
+      { name: "hint", type: "node", description: "Sub-label hint." },
+      { name: "trailing", type: "node", description: "Right-aligned control in the label row." },
+      { name: "loading", type: "boolean", description: "Render the field loading — keep the label, skeleton the textarea (#2302)." },
+    ],
+  },
+  {
+    name: "SelectField", group: "controls", importPath: "@/shared/ui/controls/Field", passthrough: true,
     description: "A labelled <select> (children are the <option>s).",
     props: [
       { name: "value", type: "string", required: true, description: "Selected value." },
