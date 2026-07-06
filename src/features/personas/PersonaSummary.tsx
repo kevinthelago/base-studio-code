@@ -7,6 +7,7 @@ import { useAppStore } from "@/store";
 import type { Persona } from "./lib/persona";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
+import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { Chip } from "@/shared/ui/data/Chip";
@@ -29,16 +30,16 @@ export function PersonaSummary({ persona, flat = false }: {
         )}
 
         <Row gap={8} wrap align="center">
-          <Text as="span" className="ulabel" tone="dim">model</Text>
+          <SectionLabel size={9.5}>model</SectionLabel>
           <Text as="span" mono size={9.5} tone={persona.model ? "accent" : "dim"}>
             {persona.model || "session default"}
           </Text>
         </Row>
 
         <Box>
-          <Text as="div" className="ulabel" tone="dim" style={{ marginBottom: 5 }}>
+          <SectionLabel size={9.5} style={{ marginBottom: 5 }}>
             skills · {skillNames.length}
-          </Text>
+          </SectionLabel>
           {skillNames.length === 0 ? (
             <Text as="div" mono size={9.5} tone="dim">none attached</Text>
           ) : (

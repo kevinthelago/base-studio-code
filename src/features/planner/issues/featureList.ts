@@ -5,6 +5,7 @@
 // Pure + tolerant of partial/malformed input — no React/Tauri.
 
 import type { PlanIssue } from "./planIssues";
+import { slugify } from "@/shared/lib/core/format";
 
 export interface PlanFeature {
   /** Stable slug / stream id (kebab-case). */
@@ -36,10 +37,6 @@ function strArray(v: unknown): string[] | undefined {
   const out = v.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((s) => s.trim());
   return out.length ? out : undefined;
 }
-function slugify(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
-}
-
 /** Parse `features.json` (a JSON array of feature objects) into a clean list. Tolerant: bad JSON
  *  ⇒ []; entries missing both slug and name are dropped; duplicate slugs are de-duped; a missing
  *  slug is derived from the name, and stream defaults to the slug. */
@@ -54,7 +51,7 @@ export function parseFeaturesFile(raw: string): PlanFeature[] {
     if (!item || typeof item !== "object") continue;
     const o = item as Record<string, unknown>;
     const name = str(o.name) ?? "";
-    const slug = str(o.slug) ?? slugify(name);
+    const slug = str(o.slug) ?? slugify(name, 60);
     if (!slug || !name || seen.has(slug)) continue;
     seen.add(slug);
     out.push({
