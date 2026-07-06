@@ -1,7 +1,7 @@
 // Org feature (#2193) — the persona-relationship graph: positions wired by relationship archetypes
 // that expand into communication forms. Public API barrel.
 export { OrgPanel } from "./OrgPanel";
-export { OrgCanvas, type Selection } from "./OrgCanvas";
+export { OrgCanvas, OrgLegend, type Selection } from "./OrgCanvas";
 export { OrgInspector } from "./OrgInspector";
 export { FormChip, FormLane } from "./components";
 export { createOrgSlice, type OrgSlice } from "./store";
