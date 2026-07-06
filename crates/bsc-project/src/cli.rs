@@ -8,7 +8,10 @@
 //!   bsc project published help  # detailed help for ONE command
 //!   bsc project <cmd> help      # same, after any command
 
-use crate::{add_link, is_published, list_projects, load_links, mark_published, remove_link};
+use crate::{
+    add_link, is_published, list_projects, load_github_state, load_links, mark_published,
+    remove_link, save_github_state,
+};
 use bsc_cli_util::CmdDoc;
 
 const TAGLINE: &str =
@@ -51,6 +54,20 @@ A link records that project <from> depends on / consumes project <to> over a con
 (api | data | events). Global (not tied to one plan.db); stored in ~/.base-studio-code/project-links.json.
 Agents read `link list --json` to learn what their project consumes.",
     },
+    CmdDoc {
+        name: "github-state",
+        summary: "read or replace the persisted last-known GitHub board state (#2446)",
+        usage: "\
+USAGE:
+  bsc project github-state [get]      # print the persisted board-state JSON
+  bsc project github-state set        # replace it wholesale from a JSON body on stdin
+
+The desktop app mirrors its last successful GitHub projects fetch here
+(~/.base-studio-code/github-state.json) so the last-known board state is reachable offline:
+{ records: [{ id, number, title, shortDescription, url, closed, updatedAt, itemsTotalCount,
+openCount, closedCount, repos }, ...], fetchedAt: <epoch ms> }. `set` expects that whole envelope
+on stdin and rejects anything else, so a malformed write never clobbers the last good state.",
+    },
 ];
 
 /// Parsed global flags + leftover positional args.
@@ -88,6 +105,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "list" => cmd_list(&args),
         "published" => cmd_published(&args, prog),
         "link" => cmd_link(&args, prog),
+        "github-state" => cmd_github_state(&args, prog),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
@@ -190,6 +208,38 @@ fn cmd_link(args: &Args, prog: &str) -> Result<(), String> {
     }
 }
 
+/// `github-state [get]|set` — the persisted last-known GitHub board state (#2446). Defaults to
+/// `get`; `set` reads the whole `{ records, fetchedAt }` envelope from stdin (validated by
+/// `save_github_state`).
+fn cmd_github_state(args: &Args, prog: &str) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("get");
+    match sub {
+        "get" => {
+            match load_github_state() {
+                // The state IS JSON — print it verbatim in both modes (`null` when absent under --json).
+                Some(json) => println!("{json}"),
+                None if args.json => println!("null"),
+                None => println!("(no github state — no fetch has been mirrored yet)"),
+            }
+            Ok(())
+        }
+        "set" => {
+            use std::io::Read;
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+            save_github_state(&buf)?;
+            if !args.json {
+                println!("saved");
+            }
+            Ok(())
+        }
+        other => Err(format!(
+            "unknown github-state command '{other}'\n\n{}",
+            bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "github-state")
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,11 +263,28 @@ mod tests {
     }
 
     #[test]
+    fn github_state_cli_reads_the_persisted_state() {
+        crate::testhome::with_home(|_home| {
+            // Absent → still Ok (prints the no-state placeholder / `null` under --json).
+            run(vec!["github-state".into()], "bsc project").unwrap();
+            run(vec!["github-state".into(), "get".into(), "--json".into()], "bsc project").unwrap();
+            // Once the app has mirrored a fetch, `get` reads it back (the default sub IS get).
+            crate::save_github_state(r#"{"records":[],"fetchedAt":5}"#).unwrap();
+            run(vec!["github-state".into()], "bsc project").unwrap();
+            run(vec!["github-state".into(), "get".into()], "bsc project").unwrap();
+            // An unknown sub errors with that command's help.
+            let err = run(vec!["github-state".into(), "nope".into()], "bsc project").unwrap_err();
+            assert!(err.contains("github-state"));
+        });
+    }
+
+    #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
         let ov = bsc_cli_util::help_overview("bsc project", TAGLINE, COMMANDS);
         assert!(ov.contains("list"));
         assert!(ov.contains("published"));
         assert!(ov.contains("link"));
+        assert!(ov.contains("github-state"));
         // The link command's help drills into its add/remove subcommands.
         let link = bsc_cli_util::help_for("bsc project", TAGLINE, COMMANDS, "link");
         assert!(link.contains("bsc project link"));
