@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nodeBox, edgeGeometry, styleDash, autoLayout, layerNodes, NODE_SIZE, CANVAS_W, CANVAS_H } from "./orgLayout";
+import { nodeBox, edgeGeometry, styleDash, autoLayout, layerNodes, NODE_SIZE, CANVAS_W, CANVAS_H, AUTO_ROW } from "./orgLayout";
 import { anchor } from "@/shared/lib/graph/edgePath";
 import { BUILTIN_ORGS, type Org, type Position } from "./org";
 
@@ -196,5 +196,46 @@ describe("autoLayout (#2199)", () => {
     };
     expect(() => autoLayout(org)).not.toThrow();
     expect(Object.keys(autoLayout(org))).toHaveLength(2);
+  });
+});
+
+describe("autoLayout per-node size overrides (#2451)", () => {
+  it("keeps an overridden (taller) node's CENTER on its hierarchy row", () => {
+    const org: Org = {
+      id: "x", name: "x",
+      positions: [{ nodeId: "boss", kind: "agent" }, { nodeId: "a", kind: "agent" }],
+      relationships: [{ id: "e1", archetype: "manages", from: "boss", to: "a" }],
+    };
+    const sizes = { boss: { w: 300, h: 156 } };
+    const layout = autoLayout(org, sizes);
+    // Rows pin node CENTERS one AUTO_ROW apart; a taller box shifts only the returned top-left.
+    const bossCy = layout.boss.y + sizes.boss.h / 2;
+    const aCy = layout.a.y + NODE_SIZE.agent.h / 2;
+    expect(Math.abs(aCy - bossCy - AUTO_ROW)).toBeLessThanOrEqual(1);
+  });
+
+  it("collision spaces nodes by their OVERRIDDEN boxes (the stacked-card footprint)", () => {
+    // Two disconnected same-layer nodes seeded ~AUTO_COL apart — narrower than the overridden card,
+    // so only an override-aware collision pass can separate them.
+    const org: Org = {
+      id: "x", name: "x",
+      positions: [{ nodeId: "wide", kind: "agent" }, { nodeId: "b", kind: "agent" }],
+      relationships: [],
+    };
+    const sizes = { wide: { w: 400, h: 96 } };
+    const layout = autoLayout(org, sizes);
+    const boxes = [
+      { ...layout.wide, ...sizes.wide },
+      { ...layout.b, ...NODE_SIZE.agent },
+    ];
+    const [a, b] = boxes;
+    const overlap = a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    expect(overlap).toBe(false);
+  });
+
+  it("is deterministic with overrides too", () => {
+    const fleet = BUILTIN_ORGS.find((o) => o.id === "org-default-fleet")!;
+    const sizes = { director: { w: 201, h: 107 } };
+    expect(autoLayout(fleet, sizes)).toEqual(autoLayout(fleet, sizes));
   });
 });

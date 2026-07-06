@@ -62,7 +62,9 @@ export function styleDash(style: string): string {
 const HIERARCHY_ARCHETYPES = new Set(["manages", "serves", "oversees", "stewards"]);
 
 const AUTO_COL = 230; // seed horizontal spacing between nodes in a layer (before force refinement)
-const AUTO_ROW = 200; // vertical gap between hierarchy layers (fixed once assigned — keeps rows clean)
+/** Vertical gap between hierarchy layers (fixed once assigned — keeps rows clean). Exported for the
+ *  #2451 row-alignment regression tests (center-y deltas between laid-out nodes are multiples of it). */
+export const AUTO_ROW = 200;
 
 // Force-refinement tuning (fixed; the user never tunes these — #2199 follow-up). y is pinned per layer,
 // so the simulation only moves nodes HORIZONTALLY: repulsion spreads a crowded row, link springs pull
@@ -124,8 +126,12 @@ interface SimNode extends SimulationNodeDatum { id: string; w: number; h: number
  *  the "natural structure" the graph finds on its own, so the user never has to hand-place a node.
  *
  *  Deterministic: d3-force seeds a fixed LCG (not `Math.random`) and the seed positions are computed, so
- *  re-running "Auto organize" reproduces the same layout. Returns fresh top-left `{x,y}` per nodeId. */
-export function autoLayout(org: Org): Record<string, { x: number; y: number }> {
+ *  re-running "Auto organize" reproduces the same layout. Returns fresh top-left `{x,y}` per nodeId.
+ *
+ *  `sizes` optionally overrides a node's box per nodeId (#2451): a synthetic pool node in a collapsed
+ *  org renders as a STACKED card (agent card + shadow-stack overhang), so the collision pass must see
+ *  that real footprint — not the plain agent size its `kind` implies. */
+export function autoLayout(org: Org, sizes?: Record<string, { w: number; h: number }>): Record<string, { x: number; y: number }> {
   const { layer, order } = layerNodes(org);
   const rowY = (l: number) => 60 + l * AUTO_ROW;
 
@@ -135,7 +141,7 @@ export function autoLayout(org: Org): Record<string, { x: number; y: number }> {
     const l = layer.get(p.nodeId)!;
     const row = order.get(l)!;
     const idx = row.indexOf(p.nodeId);
-    const { w, h } = NODE_SIZE[p.kind];
+    const { w, h } = sizes?.[p.nodeId] ?? NODE_SIZE[p.kind];
     return {
       id: p.nodeId,
       w, h,
