@@ -186,6 +186,113 @@ pub(crate) fn list_local_projects() -> Result<Vec<LocalProject>, String> {
     }
     Ok(out)
 }
+/// One-time re-key of a project's on-disk footprint onto its name-derived slug (#2409) — the
+/// backend half of the reopen-mismatch modal's "Link to an existing local project": move
+/// `projects/<old>` → `projects/<new>` and `worktrees/<old>` → `worktrees/<new>`, then repair the
+/// git worktree links in BOTH directions (the clones live inside the hub and the worktrees moved
+/// with the project, so each clone's `.git/worktrees/<id>/gitdir` records AND each worktree's
+/// `.git` pointer file are stale). plan.db, `.title`, `.published`, prompts, and every plan file
+/// travel with the hub — the move IS the whole migration; nothing else on disk keys off the old
+/// name. Refuses to clobber: an existing hub at the new key is an error (the caller resolves that
+/// as a create-collision instead).
+#[tauri::command]
+pub(crate) fn relink_project_hub(
+    old_key: String,
+    new_key: String,
+    pty: tauri::State<'_, crate::console::pty::PtyState>,
+) -> Result<(), String> {
+    relink_project_hub_impl(&old_key, &new_key, pty.inner())
+}
+
+/// Core of [`relink_project_hub`], taking `&PtyState` directly so it's callable from tests.
+pub(crate) fn relink_project_hub_impl(
+    old_key: &str,
+    new_key: &str,
+    pty: &crate::console::pty::PtyState,
+) -> Result<(), String> {
+    let old = sanitize_project_key(old_key);
+    let new = sanitize_project_key(new_key);
+    if old.is_empty() || new.is_empty() {
+        return Err("relink_project_hub: empty project key".into());
+    }
+    if old == new {
+        return Ok(()); // already keyed by its name-slug — nothing to move
+    }
+    let src = project_dir(&old);
+    let dst = project_dir(&new);
+    if !src.is_dir() {
+        return Err(format!("relink_project_hub: no hub at {src:?}"));
+    }
+    if dst.exists() {
+        return Err(format!("relink_project_hub: a hub already exists at {dst:?}"));
+    }
+    // Release cwd locks first (#1387, same as delete): tear down any live PTY session of the OLD
+    // key and reap orphaned shells, so the rename can't fail on a held Windows directory handle.
+    crate::console::pty::kill_project_sessions(pty, &old);
+    let _ = crate::console::ledger::reap_project_shells(&old);
+    rename_retrying(&src, &dst).map_err(|e| format!("relink_project_hub: hub move failed: {e}"))?;
+    // The fleet worktrees live OUTSIDE the hub (#844) — move them onto the new key too.
+    let wt_src = worktrees_dir(&old);
+    let wt_dst = worktrees_dir(&new);
+    if wt_src.is_dir() {
+        if let Err(e) = rename_retrying(&wt_src, &wt_dst) {
+            // Non-fatal: the hub already moved (the identity is re-keyed); a stale worktree tree is
+            // recoverable by relaunching the fleet, which recreates worktrees under the new key.
+            log::warn!("relink_project_hub: worktrees move failed ({e}); relaunch the fleet to rebuild them");
+        }
+    }
+    repair_moved_worktrees(&dst, &wt_dst);
+    log::info!("relinked project hub {old:?} → {new:?} (#2409)");
+    Ok(())
+}
+
+/// `fs::rename` with the same short-retry backoff as [`remove_dir_all_retrying`] (#1387): Windows
+/// can hold a just-released directory handle for a few ms, failing the first attempt spuriously.
+fn rename_retrying(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    let mut attempt = 0u32;
+    loop {
+        match std::fs::rename(src, dst) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                attempt += 1;
+                if attempt >= 5 {
+                    return Err(e);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(60 * attempt as u64));
+            }
+        }
+    }
+}
+
+/// After BOTH a hub and its worktree tree moved (#2409): from each repo clone in the hub, run
+/// `git worktree repair <its worktree paths…>` — passing the paths is what lets git rewrite both
+/// the clone-side gitdir records and each worktree's `.git` pointer when the two sides moved
+/// together (a bare `repair` can't find worktrees that moved). A clone's worktrees are matched by
+/// the `<repoShort>--` dir-name prefix ([`worktree_dir_name`]). Best-effort, like
+/// [`repair_hub_worktrees`].
+fn repair_moved_worktrees(hub: &std::path::Path, wts: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(hub) else { return };
+    for entry in entries.flatten() {
+        let clone = entry.path();
+        if !clone.join(".git").exists() {
+            continue;
+        }
+        let Some(clone_name) = clone.file_name().and_then(|n| n.to_str()).map(str::to_owned) else { continue };
+        let mut wt_paths: Vec<String> = Vec::new();
+        if let Ok(wt_entries) = std::fs::read_dir(wts) {
+            for wt in wt_entries.flatten() {
+                let name = wt.file_name().to_string_lossy().to_string();
+                if parse_worktree_dir_name(&name).is_some_and(|(repo, _)| repo == clone_name) {
+                    wt_paths.push(wt.path().to_string_lossy().to_string());
+                }
+            }
+        }
+        let mut args: Vec<&str> = vec!["worktree", "repair"];
+        args.extend(wt_paths.iter().map(String::as_str));
+        let _ = git_ok(&clone.to_string_lossy(), &args);
+    }
+}
+
 /// Run `git worktree repair` in every cloned repo under a moved hub (#904) so a fleet launched
 /// before the move keeps working: the worktrees (kept outside the hub) still point at the repo's
 /// OLD path, and `repair` rewrites those links to the repo's new location. Best-effort.
@@ -395,6 +502,50 @@ mod relocated_tests {
         assert!(set_project_title(String::new(), "x".to_string()).is_err());
         std::fs::remove_dir_all(&home).ok();
     }
+    #[test]
+    fn relink_moves_the_hub_and_worktrees_onto_the_new_key() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("relink");
+        // A legacy-keyed hub (plan file + published marker + .title) and a relocated worktree tree.
+        write_file(&project_dir("Video_Game").join("goal.md"), "# goal");
+        write_file(&project_dir("Video_Game").join(".title"), "Video Game");
+        write_file(&worktrees_dir("Video_Game").join("web--auth").join("x.rs"), "fn main() {}");
+
+        relink_project_hub_impl("Video_Game", "video-game", &crate::console::pty::PtyState::new()).unwrap();
+
+        // The whole footprint moved: hub (with plan files + sidecars) and the worktree tree.
+        assert!(!project_dir("Video_Game").exists(), "old hub gone");
+        assert!(project_dir("video-game").join("goal.md").exists(), "plan files travel with the hub");
+        assert!(project_dir("video-game").join(".title").exists(), ".title travels with the hub");
+        assert!(!worktrees_dir("Video_Game").exists(), "old worktree tree gone");
+        assert!(worktrees_dir("video-game").join("web--auth").join("x.rs").exists(), "worktrees moved");
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn relink_refuses_to_clobber_and_requires_an_existing_source() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("relinkguard");
+        let pty = crate::console::pty::PtyState::new();
+        write_file(&project_dir("old-key").join("goal.md"), "# goal");
+        write_file(&project_dir("taken").join("goal.md"), "# other project");
+
+        // Destination occupied → error, and NEITHER hub is touched.
+        assert!(relink_project_hub_impl("old-key", "taken", &pty).is_err());
+        assert!(project_dir("old-key").join("goal.md").exists(), "source untouched on refusal");
+        assert_eq!(
+            std::fs::read_to_string(project_dir("taken").join("goal.md")).unwrap(),
+            "# other project",
+            "destination untouched on refusal",
+        );
+        // Missing source → error; empty keys → error; same key → Ok(no-op).
+        assert!(relink_project_hub_impl("does-not-exist", "fresh", &pty).is_err());
+        assert!(relink_project_hub_impl("", "fresh", &pty).is_err());
+        assert!(relink_project_hub_impl("old-key", "old-key", &pty).is_ok());
+        assert!(project_dir("old-key").join("goal.md").exists(), "same-key relink is a no-op");
+        std::fs::remove_dir_all(&home).ok();
+    }
+
     #[test]
     fn delete_project_dir_removes_a_dir_with_a_read_only_file() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
