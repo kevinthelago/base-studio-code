@@ -12,6 +12,15 @@ import type { ComponentRecord, Kit, PropSpec, Role } from "./model";
 
 export const REACT_UI_KIT_ID = "react-ui";
 
+/** The packaged kit's GLOBAL-store identity (#2465): the publisher-scoped id + exact semver it is
+ *  registered under in the versioned kit store (`~/.base-studio-code/kits/<id>/<version>/`). Stamped
+ *  into the generated `react-ui.json` (+ its `react-ui-kit.meta.json` hash sidecar) by
+ *  `reactUiKit.gen.test.ts`, embedded by the Rust `bsc ui kit` store as the packaged fallback entry,
+ *  and default-pinned onto every newly-authored blueprint (`PACKAGED_UI_KIT_PIN`). A published
+ *  `id@version` is immutable — changing the kit's content means bumping this version. */
+export const REACT_UI_KIT_STORE_ID = "bsc/react-ui";
+export const REACT_UI_KIT_VERSION = "1.0.0";
+
 /** Default architectural role by manifest group (the overlay may override per component). */
 const GROUP_ROLE: Record<PrimitiveGroup, Role> = {
   layout: "layout", typography: "primitive", controls: "primitive", data: "primitive", feedback: "primitive",
