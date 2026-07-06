@@ -9,6 +9,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **One name-derived project key — the identity collapse (#2409, supersedes #1741)** — a project's key is now **`projectSlug(name)`, frozen at creation**: the ONE value that names the on-disk hub (`projects/<key>/`), its `plan.db`, `worktrees/<key>/…`, the session skill group, the pane ids, every app-state map key, and (1:1) the GitHub project. **Recovery is derivation, not lookup** — reopening a board project derives its hub from the title, so the alias-divergence class of bug (#347/#380/#457/#791/#874/#997/#1279/#1390/#1579, the "video game" wrong-hub recovery) cannot recur. **Deleted:** `mintProjectId` (the opaque `p-…` id), the `projectKeyAlias` map + `setProjectKeyAlias` + `resolveProjectKey`, `canonicalProjectKey`'s node-id branch (and the helper), `isKnownPublishedKey`, the `ProjectsList` alias-backfill effect, the publish-time alias write, and the board-open alias reads. **Edge cases are modals, not machinery:** creating a name whose slug already exists opens a **collision modal** (open the existing project / pick a different name — now also checking local hubs); a board project whose slug has no local hub opens the **reopen-mismatch modal** — *Link to an existing local project* performs a one-time real move onto the name key (new `relink_project_hub` command: hub + worktrees + `git worktree repair`, plus the new `rekeyProjectData` store action), or *Start fresh*. Renames stay **display-only** (the folder keeps its birth-slug). Legacy-keyed hubs are grandfathered untouched on disk; reopening one from the board offers the one-time link (its legacy hub pre-selected).
+
 ## [1.0.5] — 2026-07-06
 
 ### Added
