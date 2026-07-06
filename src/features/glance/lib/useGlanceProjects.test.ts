@@ -161,3 +161,37 @@ describe("useGlanceProjects — published cache survives remount (#2339)", () =>
     second.unmount();
   });
 });
+
+describe("local published inventory seeds Glance (#2445)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "" });
+    vi.mocked(invoke).mockReset();
+  });
+
+  it("merge seeds a node for a local published hub — keyed by the HUB folder key — when GitHub is absent", () => {
+    const merged = mergeGlanceProjects({}, {}, [], [{ key: "acme-crm", title: "Acme CRM" }]);
+    expect(merged).toHaveLength(1);
+    // The hub key IS the drill / fleetPaneStreams key — never a fabricated one.
+    expect(merged[0]).toMatchObject({ id: "acme-crm", name: "Acme CRM", status: "planning" });
+  });
+
+  it("a GitHub record OVERLAYS the local node — collapsing onto a LEGACY hub key via slug(title)", () => {
+    const merged = mergeGlanceProjects({}, {}, [gh("PVT_1", "Acme CRM", true)], [{ key: "p-legacy1", title: "Acme CRM" }]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe("p-legacy1"); // stayed on the hub key (what the drill resolves)
+    expect(merged[0].status).toBe("done");  // the GitHub shipped status won the overlay
+  });
+
+  it("hook: LOGGED OUT, a local published hub still produces its Glance node", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) =>
+      cmd === "list_local_projects"
+        ? [{ key: "restored-app", title: "Restored App", hasPlan: true, updatedAt: 1, published: true },
+           { key: "just-a-draft", title: "Just A Draft", hasPlan: true, updatedAt: 1, published: false }]
+        : null,
+    );
+    const { result } = renderHook(() => useGlanceProjects());
+    await waitFor(() => expect(result.current.some((p) => p.id === "restored-app")).toBe(true));
+    // Only PUBLISHED hubs seed from the inventory — unpublished ones stay draft-map-driven.
+    expect(result.current.some((p) => p.id === "just-a-draft")).toBe(false);
+  });
+});
