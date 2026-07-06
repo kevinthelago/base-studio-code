@@ -6,6 +6,7 @@ import { Trash2 } from "lucide-react";
 import { useAppStore } from "@/store";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
 import { sanitizeProjectKey, projectSlug } from "@/shared/lib/core/projectPaths";
+import { toMinimalGhProjects, minimalToGhProject, filterRecordsToLocal } from "@/shared/lib/github/githubState";
 import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
@@ -34,7 +35,7 @@ export function ProjectsList() {
     githubToken, activeWorkspace, setProjectsView, hiddenProjectIds, deleteLocalProject,
     localDraftProjects, removeDraftProject, projectBlueprintId,
     planAuthoredBlueprint, blueprints, setPlanningContext, setPlanningTitle, setPlanningSession,
-    setActiveProjectMeta,
+    setActiveProjectMeta, githubState, setGithubState,
   } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
   const [loading, setLoading]     = useState(false);
@@ -63,12 +64,16 @@ export function ProjectsList() {
     setError(null);
     githubGraphql<{ viewer: { projectsV2: { nodes: GhProject[] } } }>(PROJECTS_QUERY, null, { force: opts?.force })
       .then(data => {
-        setProjects(data.viewer?.projectsV2?.nodes ?? []);
+        const nodes = data.viewer?.projectsV2?.nodes ?? [];
+        setProjects(nodes);
         setLastSync(new Date());
+        // Persist the last-known board state (#2446): a fresh fetch overwrites records + fetchedAt
+        // (and mirrors the durable copy into the bsc-project store).
+        setGithubState(toMinimalGhProjects(nodes));
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [githubToken]);
+  }, [githubToken, setGithubState]);
 
   // Re-fetch whenever the Projects tab becomes active (the screen stays mounted
   // across navigation, so a plain mount effect wouldn't refresh on re-open) as
@@ -118,9 +123,22 @@ export function ProjectsList() {
     })();
   }, [activeWorkspace, lastSync, localProjects, projects, refreshLocalProjects]);
 
+  // ── Persisted GitHub-state overlay (#2446): until a LIVE fetch lands this mount (`lastSync`),
+  // the last-known records render as stale board rows — but only for projects that still exist on
+  // disk (a deleted hub is NOT resurrected; consistent with #2445's merge, where a GitHub-only
+  // project renders only while the live fetch vouches for it). Precedence: live fetch > persisted
+  // records > local-inventory-only rows.
+  const staleProjects = useMemo<GhProject[]>(() => {
+    if (lastSync !== null || !githubState?.records.length) return [];
+    return filterRecordsToLocal(githubState.records, localProjects).map(minimalToGhProject);
+  }, [lastSync, githubState, localProjects]);
+  const effectiveProjects = lastSync !== null ? projects : staleProjects;
+  // When the persisted overlay is what's rendering, surface its age ("last synced 2h ago").
+  const staleFetchedAt = lastSync === null && staleProjects.length > 0 ? githubState!.fetchedAt : null;
+
   // The GitHub list is re-fetched on every sync, so a project removed in-app is
   // filtered out here (persisted) rather than only spliced from local state.
-  const visibleProjects = projects.filter(p => !hiddenProjectIds.includes(p.id));
+  const visibleProjects = effectiveProjects.filter(p => !hiddenProjectIds.includes(p.id));
 
   function reopenDraft(d: { key: string; title: string; pitch: string }) {
     setPlanningTitle(d.title);
@@ -286,6 +304,7 @@ export function ProjectsList() {
         localProjects={localProjects}
         refreshLocalProjects={refreshLocalProjects}
         localPublished={localPublished}
+        staleFetchedAt={staleFetchedAt}
       />
 
       <BlueprintLibrary

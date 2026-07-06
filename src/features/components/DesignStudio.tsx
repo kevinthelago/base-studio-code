@@ -1,9 +1,10 @@
 // Design Studio (#2308) — the full-page component workbench, the standalone Rail workspace body (#2303).
 // An IDE-style page over the SAME global component library the planner's condensed `PlannerComponentsPane`
-// (#2314) browses: a toolbar (kit switcher · search · Library/Graph toggle · ＋Kit/＋Component),
-// a resizable kits→components tree rail, a center that flips between a LIBRARY view (live preview +
-// variant/theme/viewport switchers + Source/Props/Usage tabs + a generate-variants design bar) and a
-// composition GRAPH view, and a resizable inspector (props/API · variants · composes · guidance).
+// (#2314) browses: a toolbar (kit switcher · search · ＋Kit/＋Component), a resizable kits→components tree
+// rail, the composition GRAPH as the one-and-only center view (#2453 — the former Library center mode is
+// folded into the inspector), and a resizable inspector carrying the full per-component detail: live
+// preview (variant / theme / viewport switchers + the render-error card), Overview / Source / Usage tabs,
+// and the generate-variants design bar.
 //
 // It reuses the pure domain (`lib/model`), the shared specimen renderer (`renderSpecimen`), the shared
 // graph stack (`GraphCanvas` + `ZoomControls` + `useGraphViewport` + `graphEdge`, #2418; the top-down
@@ -30,12 +31,11 @@ import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { RoleDot, KitChip } from "./kitChrome";
-import { matchesQuery, resolveComposes, resolveUsedBy, NO_COMPONENTS_TITLE, type ComponentRecord } from "./lib/model";
+import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecord } from "./lib/model";
 import { renderSpecimen, type PreviewTheme } from "./specimens";
 import "./designStudio.css";
 
-type View = "library" | "graph";
-type Tab = "source" | "props" | "usage";
+type Tab = "overview" | "source" | "usage";
 type Viewport = "sm" | "md" | "auto";
 const VP: Record<Viewport, { w: string; label: string }> = {
   sm: { w: "380px", label: "375 · mobile" },
@@ -54,8 +54,7 @@ export function DesignStudio() {
   const firstFor = (kitId: string) => components.find((c) => c.kitId === kitId);
   const [kitId, setKitId] = useState(() => kits[0]?.id ?? "");
   const [compId, setCompId] = useState(() => firstFor(kits[0]?.id ?? "")?.id ?? "");
-  const [view, setView] = useState<View>("library");
-  const [tab, setTab] = useState<Tab>("props");
+  const [tab, setTab] = useState<Tab>("overview");
   const [variant, setVariant] = useState(() => firstFor(kits[0]?.id ?? "")?.variants[0] ?? "default");
   const [theme, setTheme] = useState<PreviewTheme>("dark");
   const [vp, setVpKind] = useState<Viewport>("auto");
@@ -70,7 +69,8 @@ export function DesignStudio() {
   const [shareOpen, setShareOpen] = useState(false); // the share/import kits modal (#2305 slice 1c)
 
   const rail = useDragResize({ initial: 266, min: 200, max: 400, axis: "x" });
-  const insp = useDragResize({ initial: 322, min: 240, max: 460, axis: "x", invert: true });
+  // The inspector carries the full library detail (#2453), so it defaults — and is allowed — wider.
+  const insp = useDragResize({ initial: 420, min: 300, max: 680, axis: "x", invert: true });
   const genTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => () => genTimers.current.forEach(clearTimeout), []);
 
@@ -84,16 +84,15 @@ export function DesignStudio() {
   const allVariants = sel ? [...sel.variants, ...(genVariants[sel.id] ?? [])] : [];
   const activeVariant = allVariants.includes(variant) ? variant : allVariants[0] ?? "default";
   const composes = sel ? resolveComposes(sel, components) : [];
-  const usedBy = sel ? resolveUsedBy(sel, components) : [];
 
   const selectKit = (id: string) => {
     const first = components.find((c) => c.kitId === id && match(c)) ?? firstFor(id);
     setKitId(id); setCompId(first?.id ?? ""); setVariant(first?.variants[0] ?? "default");
-    setExpanded((e) => ({ ...e, [id]: true })); setTab("props"); setCandidates(null); setView("library");
+    setExpanded((e) => ({ ...e, [id]: true })); setTab("overview"); setCandidates(null);
   };
   const selectComp = (c: ComponentRecord) => {
     if (c.kitId !== kitId) setKitId(c.kitId);
-    setCompId(c.id); setVariant(c.variants[0] ?? "default"); setTab("props"); setCandidates(null);
+    setCompId(c.id); setVariant(c.variants[0] ?? "default"); setTab("overview"); setCandidates(null);
   };
 
   const generate = () => {
@@ -122,7 +121,7 @@ export function DesignStudio() {
 
   const gvp = useGraphViewport(graph.world);
   const gvpFit = gvp.fit;
-  useEffect(() => { if (view === "graph") gvpFit(); }, [view, kitId, gvpFit]);
+  useEffect(() => { gvpFit(); }, [kitId, gvpFit]); // re-fit on mount + whenever the kit switches
 
   if (!kit) return <StudioEmpty />;
 
@@ -157,13 +156,6 @@ export function DesignStudio() {
             <Text as="span" className="ds-kbd">⌘K</Text>
           </Box>
         </Box>
-        <SegmentedControl
-          label=""
-          options={[
-            { label: "▦ Library", on: view === "library", onClick: () => setView("library") },
-            { label: "⬡ Graph", on: view === "graph", onClick: () => setView("graph") },
-          ]}
-        />
         <Box style={{ display: "flex", alignItems: "center", gap: 7, flex: "none" }}>
           <Box as="button" className="ds-act" title="Share or import a kit (gist / share code)" onClick={() => setShareOpen(true)}><Text as="span" tone="dim">⇅</Text> Share</Box>
           <Box as="button" className="ds-act accent" title="Add a new component"><Text as="span">＋</Text> Component</Box>
@@ -224,167 +216,24 @@ export function DesignStudio() {
         </Box>
         <Box className="ds-handle" {...rail.handleProps} />
 
-        {/* center — keyed on the active view so flipping Library ⇄ Graph remounts it → the incoming view drills in (#2344) */}
+        {/* center — the composition graph is the one-and-only center view (#2453) */}
         <Box className="ds-col ds-center">
-          {view === "graph"
-            ? <GraphView graph={graph} comps={kitComps} selId={sel?.id ?? ""} kitName={kit.name} gvp={gvp} onSelect={selectComp} />
-            : <LibraryView
-                sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
-                allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
-                theme={theme} setTheme={setTheme} vp={vp} setVpKind={setVpKind}
-                previewEl={previewEl} previewErr={previewErr} onRetry={() => setRenderKey((k) => k + 1)}
-                generating={generating} genStep={genStep} candidates={candidates} onAccept={accept}
-                prompt={prompt} setPrompt={setPrompt} onGenerate={generate}
-                composes={composes} usedBy={usedBy}
-              />}
+          <GraphView graph={graph} comps={kitComps} selId={sel?.id ?? ""} kitName={kit.name} gvp={gvp} onSelect={selectComp} />
         </Box>
         <Box className="ds-handle" {...insp.handleProps} />
 
         {/* inspector */}
-        <Inspector width={insp.size} sel={sel} kitName={kit.name} activeVariant={activeVariant} allVariants={allVariants} composes={composes} onSelect={selectComp} />
+        <Inspector
+          width={insp.size} sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
+          allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
+          theme={theme} setTheme={setTheme} vp={vp} setVpKind={setVpKind}
+          previewEl={previewEl} previewErr={previewErr} onRetry={() => setRenderKey((k) => k + 1)}
+          generating={generating} genStep={genStep} candidates={candidates} onAccept={accept}
+          prompt={prompt} setPrompt={setPrompt} onGenerate={generate}
+          composes={composes} onSelect={selectComp}
+        />
       </Box>
     </Box>
-  );
-}
-
-// ── Library view ─────────────────────────────────────────────────────────────
-interface LibProps {
-  sel: ComponentRecord | null; kitName: string; tab: Tab; setTab: (t: Tab) => void;
-  allVariants: string[]; activeVariant: string; setVariant: (v: string) => void;
-  theme: PreviewTheme; setTheme: (t: PreviewTheme) => void; vp: Viewport; setVpKind: (v: Viewport) => void;
-  previewEl: ReactNode; previewErr: string | null; onRetry: () => void;
-  generating: boolean; genStep: number; candidates: string[] | null; onAccept: (v: string) => void;
-  prompt: string; setPrompt: (v: string) => void; onGenerate: () => void;
-  composes: ReturnType<typeof resolveComposes>; usedBy: ComponentRecord[];
-}
-function LibraryView(p: LibProps) {
-  if (!p.sel) return <StudioEmpty inline />;
-  const sel = p.sel;
-  return (
-    <>
-      {/* preview */}
-      <Box className="ds-preview">
-        <Box className="ds-colhead" style={{ height: 38 }}>
-          <Text className="ds-eyebrow" as="span">Live preview</Text>
-          <Box style={{ flex: 1 }} />
-          <SegmentedControl label="" options={p.allVariants.map((v) => ({ label: v, on: v === p.activeVariant, onClick: () => p.setVariant(v) }))} />
-          <SegmentedControl label="" options={(["dark", "light"] as PreviewTheme[]).map((th) => ({ label: th === "dark" ? "◐ dark" : "◑ light", on: th === p.theme, onClick: () => p.setTheme(th) }))} />
-          <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === p.vp, onClick: () => p.setVpKind(k) }))} />
-        </Box>
-        <Box className="ds-surface">
-          {p.generating && (
-            <Box className="ds-overlay" style={{ background: "color-mix(in srgb, var(--bg) 72%, transparent)", backdropFilter: "blur(2px)" }}>
-              <Box style={{ textAlign: "center" }}>
-                <Box className="ds-spinner" />
-                <Text weight={500} size={13} as="div" style={{ marginBottom: 4 }}>Generating variants…</Text>
-                <Text mono size="xxs" tone="dim" as="div" style={{ animation: "ds-pulse 1.4s infinite" }}>rendering candidate {p.genStep} / 4</Text>
-              </Box>
-            </Box>
-          )}
-          {p.previewErr ? (
-            <Box className="ds-overlay" style={{ padding: 24 }}>
-              <Box style={{ maxWidth: 400, width: "100%", background: "var(--bg-elev, var(--bg-soft))", border: "1px solid color-mix(in srgb, var(--danger) 40%, var(--border))", borderRadius: 12, overflow: "hidden" }}>
-                <Box style={{ height: 30, display: "flex", alignItems: "center", gap: 8, padding: "0 12px", background: "color-mix(in srgb, var(--danger) 12%, transparent)", borderBottom: "1px solid color-mix(in srgb, var(--danger) 30%, transparent)" }}>
-                  <StatusDot color="var(--danger)" size={8} />
-                  <Text mono size="xxs" tone="danger" style={{ letterSpacing: ".05em", textTransform: "uppercase" }}>Preview failed to render</Text>
-                </Box>
-                <Box style={{ padding: "14px 16px" }}>
-                  <Code maxHeight={140} wrap>{p.previewErr}</Code>
-                  <Box style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                    <Button variant="primary" size="sm" onClick={p.onRetry}>↻ Retry render</Button>
-                  </Box>
-                </Box>
-              </Box>
-            </Box>
-          ) : (
-            <Box className="ds-frame">
-              {/* centered on the surface (#2333); the width transition + fixed VP width are layout, not the removed motion pass */}
-              <Box style={{ width: VP[p.vp].w, maxWidth: "100%", transition: "width .25s ease", display: "flex", justifyContent: "center" }}>{p.previewEl}</Box>
-            </Box>
-          )}
-          <Text as="div" className="ds-vplabel">{VP[p.vp].label}</Text>
-        </Box>
-      </Box>
-
-      {/* tabs */}
-      <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <Box className="ds-tabs">
-          {(["source", "props", "usage"] as Tab[]).map((t) => (
-            <Box as="button" key={t} role="tab" aria-selected={p.tab === t} className={`ds-tab${p.tab === t ? " on" : ""}`} onClick={() => p.setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</Box>
-          ))}
-          <Box style={{ flex: 1 }} />
-          <Text mono size="xxs" tone="dim">{sel.name}.tsx</Text>
-        </Box>
-        <Box className="ds-panel">
-          {p.tab === "source" && (
-            <Box style={{ padding: "14px 16px" }}>
-              <Text mono size="xxs" tone="dim" as="div" style={{ marginBottom: 6 }}>{sel.src}</Text>
-              <Code maxHeight={9999} wrap={false}>{sel.srcText}</Code>
-            </Box>
-          )}
-          {p.tab === "props" && (
-            <Box style={{ padding: "12px 14px" }}>
-              {sel.props.length ? (
-                <Box style={{ display: "grid", gridTemplateColumns: "150px 130px 1fr", border: "1px solid var(--border)", borderRadius: 9, overflow: "hidden" }}>
-                  {["prop", "type", "description"].map((h, i) => (
-                    <Text key={h} mono size="xxs" tone="dim" style={{ padding: "8px 11px", letterSpacing: ".05em", textTransform: "uppercase", background: "var(--bg-soft)", borderBottom: "1px solid var(--border)", borderRight: i < 2 ? "1px solid var(--border-soft, var(--border))" : "none" }}>{h}</Text>
-                  ))}
-                  {sel.props.map((pr) => (
-                    <PropRow key={pr.name} pr={pr} />
-                  ))}
-                </Box>
-              ) : (
-                <Text mono size={11.5} tone="dim" as="div" style={{ padding: "8px 2px" }}>No public props — this component reads from the global store.</Text>
-              )}
-            </Box>
-          )}
-          {p.tab === "usage" && (
-            <Box style={{ padding: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, maxWidth: 820 }}>
-              <GuideCard tone="success" title="✓ When to use" items={sel.whenUse} glyph="→" />
-              <GuideCard tone="danger" title="✗ When NOT to use" items={sel.whenNot} glyph="✕" />
-            </Box>
-          )}
-        </Box>
-      </Box>
-
-      {/* design bar */}
-      <Box className="ds-designbar">
-        {p.candidates && p.candidates.length > 0 && (
-          <Box className="ds-candstrip">
-            {p.candidates.map((v) => (
-              <Box key={v} className="ds-cand">
-                <Box style={{ height: 78, display: "flex", alignItems: "center", justifyContent: "center", borderBottom: "1px solid var(--border-soft, var(--border))", overflow: "hidden" }}>
-                  <Box style={{ transform: "scale(.62)" }}>{renderSpecimen(sel, v, "dark")}</Box>
-                </Box>
-                <Box style={{ padding: "6px 9px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                  <Text mono size="xxs" tone="muted">{v}</Text>
-                  <Box as="button" onClick={() => p.onAccept(v)} style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: 5, border: "1px solid color-mix(in srgb, var(--success) 45%, transparent)", background: "color-mix(in srgb, var(--success) 14%, transparent)", color: "var(--success)", cursor: "pointer" }}>accept</Box>
-                </Box>
-              </Box>
-            ))}
-          </Box>
-        )}
-        <Box className="ds-designrow">
-          <Box className="ds-spark">✦</Box>
-          {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline prompt box for the generate loop */}
-          <input value={p.prompt} onChange={(e) => p.setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") p.onGenerate(); }} disabled={p.generating} placeholder="Describe a change or a new variant — “add a loading state”, “tighter, pill-shaped”…" aria-label="Describe a variant" />
-          <Button variant="primary" size="sm" onClick={p.onGenerate} disabled={p.generating || !p.prompt.trim()}>{p.generating ? "generating…" : "✦ Generate variants"}</Button>
-        </Box>
-      </Box>
-    </>
-  );
-}
-
-function PropRow({ pr }: { pr: ComponentRecord["props"][number] }) {
-  const cell = { padding: "8px 11px", borderBottom: "1px solid var(--border-soft, var(--border))" } as const;
-  return (
-    <>
-      <Box style={{ ...cell, borderRight: "1px solid var(--border-soft, var(--border))", display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-        <Text mono size={11.5}>{pr.name}</Text>{pr.req && <Text mono size={11} tone="danger">*</Text>}
-      </Box>
-      <Text mono size={11} tone="accent" style={{ ...cell, borderRight: "1px solid var(--border-soft, var(--border))", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{pr.type}</Text>
-      <Text size={11.5} tone="muted" style={{ ...cell, lineHeight: 1.5 }}>{pr.desc}</Text>
-    </>
   );
 }
 
@@ -463,99 +312,205 @@ function GraphView({ graph, comps, selId, kitName, gvp, onSelect }: GraphProps) 
 }
 
 // ── Inspector ────────────────────────────────────────────────────────────────
-function Inspector({ width, sel, kitName, activeVariant, allVariants, composes, onSelect }: {
-  width: number; sel: ComponentRecord | null; kitName: string; activeVariant: string; allVariants: string[];
+// The full per-component detail surface (#2453) — it absorbed the removed Library center view:
+// identity header · live preview (variant/theme/viewport + error card) · Overview/Source/Usage tabs ·
+// the generate-variants design bar.
+interface InspProps {
+  width: number; sel: ComponentRecord | null; kitName: string; tab: Tab; setTab: (t: Tab) => void;
+  allVariants: string[]; activeVariant: string; setVariant: (v: string) => void;
+  theme: PreviewTheme; setTheme: (t: PreviewTheme) => void; vp: Viewport; setVpKind: (v: Viewport) => void;
+  previewEl: ReactNode; previewErr: string | null; onRetry: () => void;
+  generating: boolean; genStep: number; candidates: string[] | null; onAccept: (v: string) => void;
+  prompt: string; setPrompt: (v: string) => void; onGenerate: () => void;
   composes: ReturnType<typeof resolveComposes>; onSelect: (c: ComponentRecord) => void;
-}) {
+}
+function Inspector(p: InspProps) {
+  const sel = p.sel;
   // The width splitter is the parent's handle (it drives `width`); the inspector just fills it.
   return (
-    <Box className="ds-col ds-insp" style={{ width, flexBasis: width }}>
+    <Box className="ds-col ds-insp" style={{ width: p.width, flexBasis: p.width }}>
       <Box className="ds-colhead">
         <Text className="ds-eyebrow" as="span">Inspector</Text>
         <Text size={10} tone="dim" style={{ display: "flex", alignItems: "center", gap: 5 }}><StatusDot color="var(--success)" size={6} />editable</Text>
       </Box>
       {!sel ? (
-        <Box style={{ padding: 16 }}><Text size={12} tone="dim">Select a component to inspect it.</Text></Box>
+        <Box style={{ padding: 16 }}><Text size={12} tone="dim">Select a component — a graph node or a rail entry — to inspect it.</Text></Box>
       ) : (
-        <Box className="ds-scroll" style={{ flex: 1, padding: "16px 14px" }}>
-          {/* title */}
-          <Box style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14 }}>
+        <>
+          {/* identity — always visible above the preview */}
+          <Box style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", flex: "none" }}>
             <RoleDot role={sel.role} size={9} glow={4} style={{ marginTop: 5 }} />
             <Box style={{ flex: 1, minWidth: 0 }}>
               <Text weight={600} size={16} style={{ letterSpacing: "-.01em" }}>{sel.name}</Text>
-              <Text size={11.5} tone="muted" as="div" style={{ marginTop: 2 }}>{sel.role} · {kitName}</Text>
+              <Text size={11.5} tone="muted" as="div" style={{ marginTop: 2 }}>{sel.role} · {p.kitName}</Text>
             </Box>
             <Text mono size={10} tone="muted" style={{ border: "1px solid var(--border)", borderRadius: 5, padding: "2px 7px" }}>v{sel.version}</Text>
           </Box>
-          {/* meta pills */}
-          <Box style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 18 }}>
-            <Chip color="var(--accent)">used ×{sel.used}</Chip>
-            {sel.tags.map((t) => <Chip key={t}>{t}</Chip>)}
-          </Box>
-          {/* props */}
-          <Text mono size="xxs" tone="dim" as="div" style={{ letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 8 }}>Props / API</Text>
-          <Box className="ds-inspbox" style={{ marginBottom: 18 }}>
-            {sel.props.length ? sel.props.map((pr) => (
-              <Box key={pr.name} className="ds-insprow">
-                <Box style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
-                  <Text mono size={11} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pr.name}</Text>{pr.req && <Text mono size={11} tone="danger">*</Text>}
+
+          {/* live preview — folded in from the removed Library center view (#2453) */}
+          <Box className="ds-preview">
+            <Box className="ds-prevctl">
+              <Text className="ds-eyebrow" as="span">Live preview</Text>
+              <SegmentedControl label="" options={p.allVariants.map((v) => ({ label: v, on: v === p.activeVariant, onClick: () => p.setVariant(v) }))} />
+              <SegmentedControl label="" options={(["dark", "light"] as PreviewTheme[]).map((th) => ({ label: th === "dark" ? "◐ dark" : "◑ light", on: th === p.theme, onClick: () => p.setTheme(th) }))} />
+              <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === p.vp, onClick: () => p.setVpKind(k) }))} />
+            </Box>
+            <Box className="ds-surface">
+              {p.generating && (
+                <Box className="ds-overlay" style={{ background: "color-mix(in srgb, var(--bg) 72%, transparent)", backdropFilter: "blur(2px)" }}>
+                  <Box style={{ textAlign: "center" }}>
+                    <Box className="ds-spinner" />
+                    <Text weight={500} size={13} as="div" style={{ marginBottom: 4 }}>Generating variants…</Text>
+                    <Text mono size="xxs" tone="dim" as="div" style={{ animation: "ds-pulse 1.4s infinite" }}>rendering candidate {p.genStep} / 4</Text>
+                  </Box>
                 </Box>
-                <Text mono size={10.5} tone="accent" style={{ maxWidth: 120, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pr.type}</Text>
-              </Box>
-            )) : <Box className="ds-insprow"><Text size={11.5} tone="dim">No public props.</Text></Box>}
-          </Box>
-          {/* variants */}
-          <Text mono size="xxs" tone="dim" as="div" style={{ letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 8 }}>Variants</Text>
-          <Box style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 18 }}>
-            {allVariants.map((v) => (
-              <Text key={v} size={11.5} tone={v === activeVariant ? "accent" : "muted"} style={{ background: "var(--bg-soft)", border: `1px solid ${v === activeVariant ? "var(--accent-dim, var(--accent))" : "var(--border)"}`, borderRadius: 6, padding: "3px 9px" }}>{v}</Text>
-            ))}
-          </Box>
-          {/* composes */}
-          <Text mono size="xxs" tone="dim" as="div" style={{ letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 8 }}>Composes</Text>
-          <Box style={{ border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-soft)", padding: 12, marginBottom: 18 }}>
-            {composes.length ? (
-              <>
-                <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                  <Text size={11.5} weight={600} style={{ background: "var(--bg-elev, var(--bg-canvas))", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 10px" }}>{sel.name}</Text>
-                  <Text tone="dim" size={11}>depends on ↓</Text>
-                </Box>
-                <Box style={{ display: "flex", flexDirection: "column", gap: 6, paddingLeft: 12, borderLeft: "1px dashed var(--border)" }}>
-                  {composes.map(({ name, comp }) => (
-                    <Box as={comp ? "button" : "span"} key={name} className="ds-rel" onClick={comp ? () => onSelect(comp) : undefined} aria-disabled={!comp} style={comp ? undefined : { opacity: .55, cursor: "default" }}>
-                      <Text as="span" tone="dim" size={11}>└</Text><RoleDot role={comp?.role ?? "primitive"} size={6} /><Text as="span" size={11.5} tone="accent">{name}</Text>
+              )}
+              {p.previewErr ? (
+                <Box className="ds-overlay" style={{ padding: 24 }}>
+                  <Box style={{ maxWidth: 400, width: "100%", background: "var(--bg-elev, var(--bg-soft))", border: "1px solid color-mix(in srgb, var(--danger) 40%, var(--border))", borderRadius: 12, overflow: "hidden" }}>
+                    <Box style={{ height: 30, display: "flex", alignItems: "center", gap: 8, padding: "0 12px", background: "color-mix(in srgb, var(--danger) 12%, transparent)", borderBottom: "1px solid color-mix(in srgb, var(--danger) 30%, transparent)" }}>
+                      <StatusDot color="var(--danger)" size={8} />
+                      <Text mono size="xxs" tone="danger" style={{ letterSpacing: ".05em", textTransform: "uppercase" }}>Preview failed to render</Text>
                     </Box>
-                  ))}
+                    <Box style={{ padding: "14px 16px" }}>
+                      <Code maxHeight={140} wrap>{p.previewErr}</Code>
+                      <Box style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                        <Button variant="primary" size="sm" onClick={p.onRetry}>↻ Retry render</Button>
+                      </Box>
+                    </Box>
+                  </Box>
                 </Box>
-              </>
-            ) : <Text size={11.5} tone="dim" style={{ fontStyle: "italic" }}>Primitive — composes nothing.</Text>}
-          </Box>
-          {/* guidance */}
-          <Text mono size="xxs" tone="dim" as="div" style={{ letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 8 }}>Guidance</Text>
-          <Box className="ds-inspbox">
-            <Box style={{ padding: "9px 11px", borderBottom: "1px solid var(--border-soft, var(--border))" }}>
-              <Text size={10} as="div" tone="success" style={{ marginBottom: 4 }}>✓ Use when</Text>
-              <Text size={11.5} tone="muted" style={{ lineHeight: 1.5 }}>{sel.whenUse[0] ?? "—"}</Text>
-            </Box>
-            <Box style={{ padding: "9px 11px" }}>
-              <Text size={10} as="div" tone="danger" style={{ marginBottom: 4 }}>✗ Avoid when</Text>
-              <Text size={11.5} tone="muted" style={{ lineHeight: 1.5 }}>{sel.whenNot[0] ?? "—"}</Text>
+              ) : (
+                <Box className="ds-frame">
+                  {/* centered on the surface (#2333); the width transition + fixed VP width are layout, not the removed motion pass */}
+                  <Box style={{ width: VP[p.vp].w, maxWidth: "100%", transition: "width .25s ease", display: "flex", justifyContent: "center" }}>{p.previewEl}</Box>
+                </Box>
+              )}
+              <Text as="div" className="ds-vplabel">{VP[p.vp].label}</Text>
             </Box>
           </Box>
-        </Box>
+
+          {/* detail tabs */}
+          <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+            <Box className="ds-tabs">
+              {(["overview", "source", "usage"] as Tab[]).map((t) => (
+                <Box as="button" key={t} role="tab" aria-selected={p.tab === t} className={`ds-tab${p.tab === t ? " on" : ""}`} onClick={() => p.setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</Box>
+              ))}
+              <Box style={{ flex: 1 }} />
+              <Text mono size="xxs" tone="dim">{sel.name}.tsx</Text>
+            </Box>
+            <Box className="ds-panel">
+              {p.tab === "overview" && <InspectorOverview sel={sel} allVariants={p.allVariants} activeVariant={p.activeVariant} composes={p.composes} onSelect={p.onSelect} />}
+              {p.tab === "source" && (
+                <Box style={{ padding: "14px 16px" }}>
+                  <Text mono size="xxs" tone="dim" as="div" style={{ marginBottom: 6 }}>{sel.src}</Text>
+                  <Code maxHeight={9999} wrap={false}>{sel.srcText}</Code>
+                </Box>
+              )}
+              {p.tab === "usage" && (
+                <Box style={{ padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <GuideCard tone="success" title="✓ When to use" items={sel.whenUse} glyph="→" />
+                  <GuideCard tone="danger" title="✗ When NOT to use" items={sel.whenNot} glyph="✕" />
+                </Box>
+              )}
+            </Box>
+          </Box>
+
+          {/* design bar — the generate-variants loop */}
+          <Box className="ds-designbar">
+            {p.candidates && p.candidates.length > 0 && (
+              <Box className="ds-candstrip">
+                {p.candidates.map((v) => (
+                  <Box key={v} className="ds-cand">
+                    <Box style={{ height: 78, display: "flex", alignItems: "center", justifyContent: "center", borderBottom: "1px solid var(--border-soft, var(--border))", overflow: "hidden" }}>
+                      <Box style={{ transform: "scale(.62)" }}>{renderSpecimen(sel, v, "dark")}</Box>
+                    </Box>
+                    <Box style={{ padding: "6px 9px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                      <Text mono size="xxs" tone="muted">{v}</Text>
+                      <Box as="button" onClick={() => p.onAccept(v)} style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: 5, border: "1px solid color-mix(in srgb, var(--success) 45%, transparent)", background: "color-mix(in srgb, var(--success) 14%, transparent)", color: "var(--success)", cursor: "pointer" }}>accept</Box>
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            )}
+            <Box className="ds-designrow">
+              <Box className="ds-spark">✦</Box>
+              {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline prompt box for the generate loop */}
+              <input value={p.prompt} onChange={(e) => p.setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") p.onGenerate(); }} disabled={p.generating} placeholder="Describe a change or a new variant — “add a loading state”, “tighter, pill-shaped”…" aria-label="Describe a variant" />
+              <Button variant="primary" size="sm" onClick={p.onGenerate} disabled={p.generating || !p.prompt.trim()}>{p.generating ? "generating…" : "✦ Generate variants"}</Button>
+            </Box>
+          </Box>
+        </>
       )}
     </Box>
   );
 }
 
+/** The Overview tab body — props/API (with descriptions), variants, and the composes mini-graph. */
+function InspectorOverview({ sel, allVariants, activeVariant, composes, onSelect }: {
+  sel: ComponentRecord; allVariants: string[]; activeVariant: string;
+  composes: ReturnType<typeof resolveComposes>; onSelect: (c: ComponentRecord) => void;
+}) {
+  return (
+    <Box style={{ padding: "14px 14px 16px" }}>
+      {/* meta pills */}
+      <Box style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 18 }}>
+        <Chip color="var(--accent)">used ×{sel.used}</Chip>
+        {sel.tags.map((t) => <Chip key={t}>{t}</Chip>)}
+      </Box>
+      {/* props */}
+      <Text mono size="xxs" tone="dim" as="div" style={{ letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 8 }}>Props / API</Text>
+      <Box className="ds-inspbox" style={{ marginBottom: 18 }}>
+        {sel.props.length ? sel.props.map((pr) => (
+          <Box key={pr.name} className="ds-insprow" style={{ flexDirection: "column", alignItems: "stretch", gap: 3 }}>
+            <Box style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <Box style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                <Text mono size={11} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pr.name}</Text>{pr.req && <Text mono size={11} tone="danger">*</Text>}
+              </Box>
+              <Text mono size={10.5} tone="accent" style={{ maxWidth: 160, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pr.type}</Text>
+            </Box>
+            {pr.desc && <Text size={11} tone="muted" as="div" style={{ lineHeight: 1.45 }}>{pr.desc}</Text>}
+          </Box>
+        )) : <Box className="ds-insprow"><Text size={11.5} tone="dim">No public props — this component reads from the global store.</Text></Box>}
+      </Box>
+      {/* variants */}
+      <Text mono size="xxs" tone="dim" as="div" style={{ letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 8 }}>Variants</Text>
+      <Box style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 18 }}>
+        {allVariants.map((v) => (
+          <Text key={v} size={11.5} tone={v === activeVariant ? "accent" : "muted"} style={{ background: "var(--bg-soft)", border: `1px solid ${v === activeVariant ? "var(--accent-dim, var(--accent))" : "var(--border)"}`, borderRadius: 6, padding: "3px 9px" }}>{v}</Text>
+        ))}
+      </Box>
+      {/* composes */}
+      <Text mono size="xxs" tone="dim" as="div" style={{ letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 8 }}>Composes</Text>
+      <Box style={{ border: "1px solid var(--border)", borderRadius: 9, background: "var(--bg-soft)", padding: 12 }}>
+        {composes.length ? (
+          <>
+            <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <Text size={11.5} weight={600} style={{ background: "var(--bg-elev, var(--bg-canvas))", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 10px" }}>{sel.name}</Text>
+              <Text tone="dim" size={11}>depends on ↓</Text>
+            </Box>
+            <Box style={{ display: "flex", flexDirection: "column", gap: 6, paddingLeft: 12, borderLeft: "1px dashed var(--border)" }}>
+              {composes.map(({ name, comp }) => (
+                <Box as={comp ? "button" : "span"} key={name} className="ds-rel" onClick={comp ? () => onSelect(comp) : undefined} aria-disabled={!comp} style={comp ? undefined : { opacity: .55, cursor: "default" }}>
+                  <Text as="span" tone="dim" size={11}>└</Text><RoleDot role={comp?.role ?? "primitive"} size={6} /><Text as="span" size={11.5} tone="accent">{name}</Text>
+                </Box>
+              ))}
+            </Box>
+          </>
+        ) : <Text size={11.5} tone="dim" style={{ fontStyle: "italic" }}>Primitive — composes nothing.</Text>}
+      </Box>
+    </Box>
+  );
+}
+
 // ── Empty state ──────────────────────────────────────────────────────────────
-function StudioEmpty({ inline }: { inline?: boolean } = {}) {
+function StudioEmpty() {
   return (
     <EmptyState
       icon="⬡" iconVariant="dashed"
       title={NO_COMPONENTS_TITLE}
       description={<>A <b style={{ color: "var(--fg)" }}>kit</b> is a technology-scoped namespace of proven components. Seed one from the UI already living in your repo, or start an empty kit.</>}
-      style={{ height: inline ? undefined : "100%" }}
+      style={{ height: "100%" }}
     />
   );
 }

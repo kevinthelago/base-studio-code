@@ -9,6 +9,7 @@
 // signatures) so the UI can mark mixed-wiring stacks. Edges among members (a peer mesh) are internal —
 // they show on drill-in. Pure model (React-free) so it's unit-testable, canvas stays thin.
 import type { Org, Position, Relationship } from "./org";
+import { autoLayout, NODE_SIZE } from "./orgLayout";
 import { BUILTIN_PERSONAS, type Persona } from "@/features/personas";
 
 /** Whether a persona's positions stack. An explicit (hydrated) `pooled` always wins — a user who
@@ -123,4 +124,92 @@ export function poolSubgraph(org: Org, pool: Pool): Org {
   const nodeIds = new Set<string>(pool.memberNodeIds);
   for (const r of relationships) { nodeIds.add(r.from); nodeIds.add(r.to); }
   return { ...org, id: `${org.id}::${pool.nodeId}`, positions: org.positions.filter((p) => nodeIds.has(p.nodeId)), relationships };
+}
+
+// ── Auto-organize over pools (#2451) ─────────────────────────────────────────
+// `autoLayout(org)` on the FULL org laid out every pooled member as an individual node while the
+// canvas renders the COLLAPSED org — so the pool card (drawn at the members' centroid) landed at the
+// row center, or BETWEEN hierarchy rows when mixed wiring (#2436) put members on different layers,
+// and no collision pass ever saw the stacked card. The fix: lay out the graph the user is LOOKING AT
+// (the collapsed org, with the pool node carrying its real stacked-card footprint), then write back
+// through the pool abstraction — translate each member cluster so its centroid is the pool's
+// laid-out spot, preserving the members' relative arrangement for drill-in (#2439).
+
+/** The stacked card's shadow-card offset (design px) — OrgCanvas renders the outermost shadow card
+ *  at `translate(POOL_STACK_OFFSET, POOL_STACK_OFFSET)`, so a pool's true render footprint is the
+ *  agent card plus this overhang in each axis. The layout must see THAT size (via `poolLayoutSizes`)
+ *  so collision spaces the stack like the card the user actually sees. */
+export const POOL_STACK_OFFSET = 11;
+
+/** Per-node size overrides for `autoLayout` over a COLLAPSED org: each synthetic pool node takes the
+ *  stacked card's real footprint (agent card + shadow-stack overhang). */
+export function poolLayoutSizes(pools: Pool[]): Record<string, { w: number; h: number }> {
+  const size = { w: NODE_SIZE.agent.w + POOL_STACK_OFFSET, h: NODE_SIZE.agent.h + POOL_STACK_OFFSET };
+  return Object.fromEntries(pools.map((p) => [p.nodeId, size]));
+}
+
+// The degenerate-cluster spread: when every member sits on the SAME point (typically all unplaced at
+// 0,0), a pure translation would keep them exactly coincident — so instead they get a small
+// deterministic grid around the pool's laid-out spot (centroid still lands ON the spot). Steps are
+// deliberately smaller than a card: the parent view shows one stack either way, and the drill-in's
+// own auto-organize is the real untangler.
+const SPREAD_X = 60;
+const SPREAD_Y = 44;
+
+/** Write a collapsed-org layout back onto the FULL org's positions (#2451). Non-pooled nodes take
+ *  their laid-out spot directly. Each pool's members are TRANSLATED by one shared delta so their
+ *  centroid — where the stacked card renders (`collapseOrg`) — equals the pool node's laid-out spot,
+ *  preserving the members' relative arrangement (the #2439 drill-in contract). A coincident/unplaced
+ *  member cluster gets a small deterministic spread around the spot instead (see above). Pure +
+ *  deterministic; returns a fresh positions array. */
+export function applyPoolLayout(org: Org, pools: Pool[], layout: Record<string, { x: number; y: number }>): Position[] {
+  const moved = new Map<string, { x: number; y: number }>();
+  for (const pool of pools) {
+    const target = layout[pool.nodeId];
+    if (!target) continue; // pool absent from the laid-out graph — leave its members untouched
+    const members = org.positions.filter((p) => pool.memberNodeIds.includes(p.nodeId));
+    const xs = members.map((m) => m.x ?? 0);
+    const ys = members.map((m) => m.y ?? 0);
+    if (xs.every((x) => x === xs[0]) && ys.every((y) => y === ys[0])) {
+      // Degenerate: all members coincident — deterministic compact grid, centered so centroid = target.
+      const cols = Math.ceil(Math.sqrt(members.length));
+      const offs = members.map((_, i) => ({ x: (i % cols) * SPREAD_X, y: Math.floor(i / cols) * SPREAD_Y }));
+      const cx = avg(offs.map((o) => o.x)), cy = avg(offs.map((o) => o.y));
+      members.forEach((m, i) => moved.set(m.nodeId, { x: Math.round(target.x + offs[i].x - cx), y: Math.round(target.y + offs[i].y - cy) }));
+    } else {
+      // One shared delta for the whole cluster (integer inputs keep relative offsets EXACT through
+      // the rounding, since every member rounds with the same fractional part).
+      const dx = target.x - avg(xs), dy = target.y - avg(ys);
+      members.forEach((m, i) => moved.set(m.nodeId, { x: Math.round(xs[i] + dx), y: Math.round(ys[i] + dy) }));
+    }
+  }
+  return org.positions.map((p) => {
+    const next = moved.get(p.nodeId) ?? layout[p.nodeId];
+    return next ? { ...p, ...next } : p;
+  });
+}
+
+/** Auto-organize INSIDE a drilled pool (#2451): re-lay out ONLY the members (over their internal peer
+ *  mesh), then anchor the new cluster at the members' previous centroid so the surrounding context
+ *  doesn't jump. Boundary neighbors belong to the PARENT view and are never moved — chosen over
+ *  layering members against pinned boundary nodes because the members are one persona (a flat
+ *  row/grid near their old spot reads well) and "context stays put" is the simplest honest contract
+ *  from inside a drill. Returns the full org's positions with only the members changed. */
+export function organizeDrilledPool(org: Org, pool: Pool): Position[] {
+  const memberSet = new Set(pool.memberNodeIds);
+  const members = org.positions.filter((p) => memberSet.has(p.nodeId));
+  if (!members.length) return org.positions;
+  const sub: Org = {
+    ...org,
+    positions: members,
+    relationships: org.relationships.filter((r) => memberSet.has(r.from) && memberSet.has(r.to)),
+  };
+  const layout = autoLayout(sub);
+  const dx = avg(members.map((m) => m.x ?? 0)) - avg(members.map((m) => layout[m.nodeId].x));
+  const dy = avg(members.map((m) => m.y ?? 0)) - avg(members.map((m) => layout[m.nodeId].y));
+  const moved = new Map(members.map((m) => [m.nodeId, { x: Math.round(layout[m.nodeId].x + dx), y: Math.round(layout[m.nodeId].y + dy) }]));
+  return org.positions.map((p) => {
+    const next = moved.get(p.nodeId);
+    return next ? { ...p, ...next } : p;
+  });
 }

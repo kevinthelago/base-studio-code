@@ -1,5 +1,7 @@
-import { describe, it, expect } from "vitest";
-import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, bundledSkillsFromManifest } from "./blueprintShare";
+import { describe, it, expect, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, coerceTeam, bundledSkillsFromManifest } from "./blueprintShare";
+import type { BlueprintTeam } from "../stages/blueprints";
 import { resolveBlueprintSkillPayloads, type SkillPayload } from "./blueprintSkills";
 import { skillFromPayload } from "@/features/skills/lib/skills";
 import { encodeShareCode, decodeShareCode, wrapExtension } from "@/features/planner/lib/gist/manifest";
@@ -148,6 +150,101 @@ describe("blueprintShare (#598)", () => {
     expect(def).toMatchObject({ id: "sk1", name: "Rust HMAC", prompt: "verify", desc: "d", kind: "review", tools: ["Read"], source: "imported", enabled: true });
     // A bogus/absent skillKind falls back to a valid kind.
     expect(["workflow", "scaffold", "codemod", "review", "docs"]).toContain(skillFromPayload({ id: "a", name: "b", content: "c" }).kind);
+  });
+});
+
+describe("embedded team (#2450)", () => {
+  const team = (): BlueprintTeam => ({
+    positions: [
+      { nodeId: "n1", kind: "agent", personaId: "persona-director", x: 10, y: 20 },
+      { nodeId: "n2", kind: "resource", label: "Commons", x: 100, y: 200 },
+    ],
+    relationships: [{ id: "r1", archetype: "stewards", from: "n1", to: "n2", bow: 24 }],
+  });
+
+  it("coerceBlueprint preserves the team byte-faithfully; a blueprint without one stays without one", () => {
+    const withTeam = coerceBlueprint({
+      id: "x", name: "Teamed", team: team(),
+      sections: [{ key: "discovery", name: "Discovery" }],
+    });
+    expect(withTeam!.team).toEqual(team());
+    // No `team` in the payload → the coerced blueprint carries NO team key (optional field,
+    // untouched behavior for existing blueprints).
+    const without = coerceBlueprint({ id: "x", name: "Plain", sections: [{ key: "discovery", name: "Discovery" }] });
+    expect(without).not.toBeNull();
+    expect("team" in without!).toBe(false);
+  });
+
+  it("round-trips the team through the share manifest (export/import)", () => {
+    const bp: Blueprint = { ...sample(), team: team() };
+    const back = manifestToBlueprint(blueprintToManifest(bp));
+    expect(back.ok).toBe(true);
+    if (back.ok) expect(back.blueprint.team).toEqual(team());
+  });
+
+  it("round-trips the team through the `bsc blueprint` store serialization (verbatim JSON)", () => {
+    // The write-through store persists the blueprint verbatim on stdin (`bsc blueprint set`, #2143)
+    // and hydration reads the raw JSON back — assert the JSON round-trip is byte-faithful.
+    const bp: Blueprint = { ...sample(), origin: "local", team: team() };
+    const restored = JSON.parse(JSON.stringify(bp)) as Blueprint;
+    expect(restored.team).toEqual(team());
+    // …and the coercion path (import / the planner's <blueprint> tag poll) keeps it too.
+    expect(coerceBlueprint(restored)!.team).toEqual(team());
+  });
+
+  it("coerceTeam drops malformed entries and rejects non-object payloads", () => {
+    expect(coerceTeam(undefined)).toBeUndefined();
+    expect(coerceTeam("garbage")).toBeUndefined();
+    expect(coerceTeam([1, 2])).toBeUndefined();
+    const t = coerceTeam({
+      positions: [
+        { nodeId: "ok", kind: "agent" },
+        { kind: "agent" },                    // no nodeId → dropped
+        { nodeId: "weird", kind: "alien" },   // unknown kind → defaults to agent
+        "junk",
+      ],
+      relationships: [
+        { id: "r1", archetype: "manages", from: "ok", to: "weird" },
+        { id: "r2", archetype: "manages", from: "ok" }, // no `to` → dropped
+        null,
+      ],
+    });
+    expect(t!.positions.map((p) => p.nodeId)).toEqual(["ok", "weird"]);
+    expect(t!.positions[1].kind).toBe("agent");
+    expect(t!.relationships.map((r) => r.id)).toEqual(["r1"]);
+  });
+
+  it("store: updateBlueprintMeta persists the team through `bsc blueprint set`", () => {
+    useAppStore.setState({ blueprints: makeBlueprints(), activeBlueprintId: "default" });
+    const id = useAppStore.getState().addBlueprint(); // a user blueprint (write-through eligible)
+    vi.mocked(invoke).mockClear();
+    useAppStore.getState().updateBlueprintMeta(id, { team: team() });
+    const argsOf = (call: unknown[]) => (call[1] as { args?: string[] } | undefined)?.args;
+    const set = vi.mocked(invoke).mock.calls.find(
+      (call) => call[0] === "bsc" && JSON.stringify(argsOf(call)) === JSON.stringify(["blueprint", "set"]),
+    );
+    expect(set).toBeTruthy();
+    const persisted = JSON.parse((set![1] as { stdin: string }).stdin) as Blueprint;
+    expect(persisted.id).toBe(id);
+    expect(persisted.team).toEqual(team()); // the team travels inside the blueprint JSON, verbatim
+    useAppStore.getState().removeBlueprint(id);
+  });
+
+  it("store: duplicateBlueprint deep-copies the team (no shared graph objects with the source)", () => {
+    // Seed the source directly (a minted id could collide with duplicate's same-ms Date.now id).
+    const id = "bp-team-src";
+    useAppStore.setState({
+      blueprints: [...makeBlueprints(), { ...sample(), id, name: "Teamed", origin: "local" as const, team: team() }],
+      activeBlueprintId: "default",
+    });
+    const nid = useAppStore.getState().duplicateBlueprint(id);
+    const src = useAppStore.getState().blueprints.find((b) => b.id === id)!;
+    const copy = useAppStore.getState().blueprints.find((b) => b.id === nid)!;
+    expect(copy.team).toEqual(src.team);
+    expect(copy.team).not.toBe(src.team);
+    expect(copy.team!.positions[0]).not.toBe(src.team!.positions[0]);
+    useAppStore.getState().removeBlueprint(nid);
+    useAppStore.getState().removeBlueprint(id);
   });
 });
 

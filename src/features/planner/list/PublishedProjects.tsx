@@ -54,6 +54,10 @@ interface PublishedProjectsProps {
   /** Published hubs rendered from the LOCAL inventory (#2445) — the offline published set; a fetched
    *  GitHub board matching a hub overlays it (the hub drops out of this list, the board row renders). */
   localPublished: LocalPublishedRow[];
+  /** When the PERSISTED last-known board state (#2446) is what's rendering (no live fetch yet this
+   *  mount), the time that state was fetched (epoch ms) — drives the "last synced 2h ago" hint.
+   *  `null` when the live fetch landed or there is no persisted overlay. */
+  staleFetchedAt: number | null;
 }
 
 /** The published-projects column — the page header (title · summary · sync/new · new-project form ·
@@ -64,7 +68,7 @@ export function PublishedProjects({
   visibleProjects, grouped, fDrafts, fleetByProject, loading, error, lastSync, draftError,
   query, setQuery, sort, setSort, totalSummary, grandTotal, publishedCount,
   fetchProjects, setProjects, menuOpenId, setMenuOpenId, reopenDraft, setDraftDeleteTarget,
-  localProjects, refreshLocalProjects, localPublished,
+  localProjects, refreshLocalProjects, localPublished, staleFetchedAt,
 }: PublishedProjectsProps) {
   const {
     setWorkspace, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard,
@@ -183,18 +187,26 @@ export function PublishedProjects({
             </Row>
           )}
 
+          {/* Staleness hint (#2445/#2446): pre-sync, the column renders the local copies and/or the
+              persisted last-known board state. With persisted data the hint carries its age ("last
+              synced 2h ago"); with none — and logged out — it keeps the #2445 "not synced" wording. */}
+          {staleFetchedAt != null ? (
+            <Text className="hint" as="div" mono size={10} style={{ margin: "0 0 7px", paddingLeft: 2 }}>
+              last synced {timeAgoMs(staleFetchedAt)}
+            </Text>
+          ) : (!githubToken && localPublished.length > 0 && (
+            <Text className="hint" as="div" mono size={10} style={{ margin: "0 0 7px", paddingLeft: 2 }}>
+              not synced — GitHub is disconnected, showing the local copies
+            </Text>
+          ))}
+
           {/* published hubs from the LOCAL inventory (#2445) — the offline published set. Rendered
               from `.published` + `.title` with the hub key as the identity; a fetched GitHub board
-              matching a hub OVERLAYS it (the hub leaves this list, the full ProjectRow renders below).
-              Logged out, a quiet "not synced" hint marks the column as local-only. */}
+              (live, or the persisted #2446 overlay) matching a hub OVERLAYS it (the hub leaves this
+              list, the full ProjectRow renders below). */}
           {localPublished.length > 0 && (
             <Box style={{ marginBottom: 22 }}>
               <GroupHeader label="published" count={localPublished.length} dot="var(--success)" />
-              {!githubToken && (
-                <Text className="hint" as="div" mono size={10} style={{ margin: "0 0 7px", paddingLeft: 2 }}>
-                  not synced — GitHub is disconnected, showing the local copies
-                </Text>
-              )}
               <Box border="soft" radius="lg" style={{ overflow: "hidden" }}>
                 {localPublished.map((lp, i) => (
                   <Row

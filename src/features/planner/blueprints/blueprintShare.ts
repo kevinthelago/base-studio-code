@@ -3,9 +3,11 @@
 // manifest (fresh uids, defensive field coercion — never trusts the payload shape).
 // Pure; pairs with lib/gist/manifest.ts.
 
-import { type Blueprint, type BlueprintStage, uid, dedupeSections } from "../stages/blueprints";
+import { type Blueprint, type BlueprintStage, type BlueprintTeam, uid, dedupeSections } from "../stages/blueprints";
 import { wrapExtension, type ExtensionManifest } from "@/features/planner/lib/gist/manifest";
 import { type SkillPayload } from "./blueprintSkills";
+// Type-only cross-feature imports (allowed by the #1545 boundary) — the team's node/edge shapes.
+import type { Position, Relationship } from "@/features/org";
 
 const str = (v: unknown, d = ""): string => (typeof v === "string" ? v : d);
 const strArr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
@@ -40,6 +42,49 @@ function coerceSection(v: unknown): BlueprintStage | null {
   };
 }
 
+// ── Embedded team (#2450) ────────────────────────────────────────────────────
+const POSITION_KINDS = ["agent", "external", "resource"] as const;
+
+function coercePosition(v: unknown): Position | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const nodeId = str(o.nodeId);
+  if (!nodeId) return null;
+  const kind = (POSITION_KINDS as readonly string[]).includes(str(o.kind))
+    ? (str(o.kind) as Position["kind"]) : "agent";
+  return {
+    nodeId, kind,
+    ...(str(o.personaId) ? { personaId: str(o.personaId) } : {}),
+    ...(str(o.label) ? { label: str(o.label) } : {}),
+    ...(typeof o.x === "number" ? { x: o.x } : {}),
+    ...(typeof o.y === "number" ? { y: o.y } : {}),
+  };
+}
+
+function coerceRelationship(v: unknown): Relationship | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const id = str(o.id);
+  const archetype = str(o.archetype);
+  const from = str(o.from);
+  const to = str(o.to);
+  if (!id || !archetype || !from || !to) return null;
+  return { id, archetype, from, to, ...(typeof o.bow === "number" ? { bow: o.bow } : {}) };
+}
+
+/** Coerce a blueprint's embedded team (#2450) out of an untrusted payload: positions need a nodeId,
+ *  relationships need id/archetype/from/to; malformed entries are dropped. `undefined` when the
+ *  field is absent or not an object — a blueprint without a team stays without one. */
+export function coerceTeam(v: unknown): BlueprintTeam | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const positions = (Array.isArray(o.positions) ? o.positions : [])
+    .map(coercePosition).filter((p): p is Position => !!p);
+  const relationships = (Array.isArray(o.relationships) ? o.relationships : [])
+    .map(coerceRelationship).filter((r): r is Relationship => !!r);
+  return { positions, relationships };
+}
+
 /** Reconstruct a Blueprint from an untrusted payload, or null if it's not one. Requires an id, a
  *  name, and (by default) at least one valid section; assigns fresh uids.
  *
@@ -70,6 +115,9 @@ export function coerceBlueprint(
   const VIS = ["local", "private-gist", "catalog"] as const;
   const visibility = (VIS as readonly string[]).includes(str(o.visibility))
     ? (str(o.visibility) as Blueprint["visibility"]) : undefined;
+  // Embedded team (#2450) — preserved through import/share so the blueprint keeps its own org
+  // configuration instead of silently dropping it (same discipline as skills/mcp above).
+  const team = coerceTeam(o.team);
   return {
     id, name, desc: str(o.desc), sections,
     // Blueprint-wide attached capabilities (#897) + lifecycle metadata, preserved on import.
@@ -84,6 +132,7 @@ export function coerceBlueprint(
     ...(str(o.icon) ? { icon: str(o.icon) } : {}),
     ...(category ? { category } : {}),
     ...(mode ? { mode } : {}),
+    ...(team ? { team } : {}),
   };
 }
 

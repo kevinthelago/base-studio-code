@@ -8,8 +8,9 @@
 // #2339 — the network showed a DIFFERENT set on every visit. Two causes, both fixed here:
 //   1. RACE. `useGithubQuery` re-inits to `{ data: null }` on every mount and the Rail unmounts/remounts
 //      Glance on leave/return, so each visit rendered drafts-only → then flipped to drafts+published once
-//      the async fetch (variable latency) landed. A tiny module-level cache of the last non-null published
-//      set seeds the merge on a revisit, so it renders the last-known network immediately, then refreshes.
+//      the async fetch (variable latency) landed. The PERSISTED last-known board state (#2446 — the
+//      `githubState` store field, which also survives an app restart) seeds the merge on a revisit, so
+//      it renders the last-known network immediately, then refreshes.
 //   2. DEDUP GAP. Drafts were keyed by their stable id but published by a different derivation; when
 //      the two keys differed the SAME project became TWO nodes. The merge resolves a published project
 //      onto its matching draft via a slug(title)→draftKey map, so legacy-keyed drafts collapse too.
@@ -18,6 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAppStore } from "@/store";
 import { githubGraphql } from "@/shared/lib/github/github";
 import { useGithubQuery } from "@/shared/lib/github/useGithubQuery";
+import { toMinimalGhProjects, minimalToGhProject, filterRecordsToLocal } from "@/shared/lib/github/githubState";
 import { PROJECTS_QUERY, projStatus, type GhProject } from "@/features/planner/list/published/publishedModel";
 import { projectSlug } from "@/shared/lib/core/projectPaths";
 import { usePoll } from "@/shared/hooks/usePoll";
@@ -35,11 +37,6 @@ type FleetMap = Record<string, { streams: unknown[] } | undefined>;
 /** Stable empty published set — a fresh `[]` each render would needlessly re-run the merge memo. */
 const NO_PUBLISHED: GhProject[] = [];
 
-// The last non-null published set (#2339) — see the file header (cause 1). Module-level so it survives the
-// Glance workspace unmount/remount the Rail does on every leave/return; a revisit seeds its merge from this
-// instead of resetting to drafts-only and flashing.
-let publishedCache: GhProject[] | null = null;
-
 /** A published hub from the LOCAL inventory (#2445): `key` is the hub FOLDER key — the same key the
  *  drill / `planFleet` / `fleetPaneStreams` resolve against — with the `.title` display name. */
 export interface LocalPublishedLite { key: string; title: string }
@@ -47,8 +44,10 @@ export interface LocalPublishedLite { key: string; title: string }
 /** The `list_local_projects` fields the seed reads (camelCase wire format, #789). */
 interface LocalProjectWire { key: string; title: string; published: boolean }
 
-// The last-fetched local published inventory (#2445) — module-level for the same remount reason as
-// `publishedCache`: a Glance revisit renders the published nodes immediately, then refreshes.
+// The last-fetched local published inventory (#2445) — module-level so it survives the Glance
+// workspace unmount/remount the Rail does on every leave/return: a revisit renders the published
+// nodes immediately, then refreshes. (The GitHub-side equivalent is the PERSISTED `githubState`
+// store field, #2446.)
 let localPublishedCache: LocalPublishedLite[] | null = null;
 
 /**
@@ -151,6 +150,8 @@ function sameKeys(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
 export function useGlanceProjects(enabled = true): ProjectLite[] {
   const drafts = useAppStore((s) => s.localDraftProjects);
   const planFleet = useAppStore((s) => s.planFleet);
+  const githubState = useAppStore((s) => s.githubState);
+  const setGithubState = useAppStore((s) => s.setGithubState);
   const liveKeys = useProjectLiveness(enabled);
 
   // The local published inventory (#2445): the on-disk hubs carrying `.published`, so a published
@@ -179,13 +180,26 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
     [], enabled,
   );
 
-  // Persist the freshest published set across the Glance remount (#2339). Written in an effect (not during
-  // render) so it stays a clean side effect; the merge below reads the cache synchronously as a fallback.
-  useEffect(() => { if (published.data) publishedCache = published.data; }, [published.data]);
+  // Persist the freshest published set (#2446, superseding the module-level #2339 cache): a fresh fetch
+  // overwrites the store's `githubState` records+fetchedAt (and mirrors into the bsc-project store), so
+  // the last-known board state survives the Glance remount AND an app restart. Written in an effect (not
+  // during render) so it stays a clean side effect; the merge below reads it synchronously as a fallback.
+  useEffect(() => { if (published.data) setGithubState(toMinimalGhProjects(published.data)); }, [published.data, setGithubState]);
 
-  // Prefer the live fetch; on a revisit (data still null) fall back to the cached set so the network renders
-  // immediately instead of flashing drafts-only, then refreshes once the fetch re-lands.
-  const effectivePublished = published.data ?? publishedCache ?? NO_PUBLISHED;
+  // Precedence (#2446): live fetch > persisted records > local-inventory-only. The persisted fallback
+  // renders the last-known set immediately (no drafts-only flash), then refreshes when the fetch lands —
+  // FILTERED to projects that still exist locally (a draft or a published hub): a record whose hub was
+  // deleted must not resurrect a node. That matches how the merge treats GitHub-only projects — they
+  // render only while the LIVE fetch vouches for them.
+  const effectivePublished = useMemo<GhProject[]>(() => {
+    if (published.data) return published.data;
+    if (!githubState?.records.length) return NO_PUBLISHED;
+    const locals = [
+      ...Object.entries(drafts).map(([key, d]) => ({ key, title: d.title })),
+      ...localPublished,
+    ];
+    return filterRecordsToLocal(githubState.records, locals).map(minimalToGhProject);
+  }, [published.data, githubState, drafts, localPublished]);
 
   return useMemo(
     // Merge first (drafts + local published + GitHub published), then overlay live heartbeats as the

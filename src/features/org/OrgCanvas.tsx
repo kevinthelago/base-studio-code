@@ -13,7 +13,7 @@ import { RELATIONSHIP_ARCHETYPES, archetypeById, type Org } from "./lib/org";
 import { CANVAS_W, CANVAS_H, nodeBox, edgeGeometry, styleDash } from "./lib/orgLayout";
 import { positionDisplay, hueColor, type PositionDisplay } from "./lib/orgView";
 import { Chip } from "@/shared/ui/data/Chip";
-import type { Pool } from "./lib/orgPools";
+import { POOL_STACK_OFFSET, type Pool } from "./lib/orgPools";
 import type { Persona } from "@/features/personas";
 
 export interface Selection { type: "node" | "edge"; id: string }
@@ -216,8 +216,10 @@ export function OrgCanvas(props: CanvasProps) {
               onPointerDown={onPoolDown(pos.nodeId)} onPointerMove={onNodeMove} onPointerUp={onPoolUp(pos.nodeId)}
               style={{ position: "absolute", left: xy.x, top: xy.y, width: box.w, height: box.h,
                 cursor: "pointer", zIndex: isSel ? 6 : 3, opacity: dim ? 0.5 : 1, transition: drag ? "none" : "opacity .15s", touchAction: "none", userSelect: "none" }}>
-              {/* stacked shadow cards behind the face — the "N of them" cue */}
-              <Box style={{ position: "absolute", inset: 0, transform: "translate(11px,11px)", borderRadius: 13, background: "var(--bg-elev)", border: "1px solid var(--border)", opacity: 0.45 }} />
+              {/* stacked shadow cards behind the face — the "N of them" cue. The outer card's offset
+                  IS the stack's extra footprint, so it comes from POOL_STACK_OFFSET (the constant
+                  poolLayoutSizes feeds autoLayout, #2451) and layout collision matches the render. */}
+              <Box style={{ position: "absolute", inset: 0, transform: `translate(${POOL_STACK_OFFSET}px,${POOL_STACK_OFFSET}px)`, borderRadius: 13, background: "var(--bg-elev)", border: "1px solid var(--border)", opacity: 0.45 }} />
               <Box style={{ position: "absolute", inset: 0, transform: "translate(6px,6px)", borderRadius: 13, background: "var(--bg-elev)", border: "1px solid var(--border)", opacity: 0.7 }} />
               <Box style={{ position: "relative", width: "100%", height: "100%" }}><AgentFace d={d} isSel={isSel} /></Box>
               {/* ×N badge + a drill hint. A mixed-wiring stack (members with differing external edges,
