@@ -1,11 +1,7 @@
 // Compact local-time formatting for automation timestamps.
+// fmtClock moved to the shared home (@/shared/lib/core/format, #2421) — import it from there.
 
-/** "HH:MM", or "—" for null. */
-export function fmtClock(ms: number | null): string {
-  if (ms == null) return "—";
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
+import { fmtClock } from "@/shared/lib/core/format";
 
 /** "today HH:MM" / "yesterday HH:MM" / "Mon D HH:MM", or "—" for null. */
 export function fmtStamp(ms: number | null): string {

@@ -17,6 +17,7 @@ import { Code } from "@/shared/ui/data/Code";
 import { SelectField } from "@/shared/ui/controls/Field";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
+import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { useAppStore } from "@/store";
@@ -128,7 +129,7 @@ export function StreamFocusCards({ a, agents, dependencies, registries, onFlow, 
       >
         <Stack gap={14}>
           <Stack gap={6}>
-            <Box className="ulabel">model</Box>
+            <SectionLabel size={9.5}>model</SectionLabel>
             <Row gap={8} align="center">
               <Seg
                 options={["default", "haiku", "sonnet", "opus"]}
@@ -141,7 +142,7 @@ export function StreamFocusCards({ a, agents, dependencies, registries, onFlow, 
             </Row>
           </Stack>
           <Stack gap={9}>
-            <Box className="ulabel">flow</Box>
+            <SectionLabel size={9.5}>flow</SectionLabel>
             <Row gap={8} align="center">
               <Text as="span" mono size={10} tone="muted" style={{ flex: "0 0 64px" }}>autonomy</Text>
               <Seg options={["continuous", "checkpoint", "confirm"]} value={flow.autonomy}

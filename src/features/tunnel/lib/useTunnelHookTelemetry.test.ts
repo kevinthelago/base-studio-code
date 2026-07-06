@@ -3,7 +3,11 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { useAppStore } from "@/store";
 
 vi.mock("@/shared/lib/core/bsc", () => ({
-  bscJson: vi.fn(),
+  // Must resolve the fallback like the real bridge: this file imports @/store, whose
+  // persist-rehydrate calls `bscJson(...).then(...)` — a bare vi.fn() returns undefined
+  // and that `.then` becomes an unhandled rejection that fails the whole vitest run (#2414).
+  bscJson: vi.fn(async (_key: string | null, _args: string[], fallback: unknown) => fallback),
+  bscWrite: vi.fn(async () => {}),
 }));
 vi.mock("./tunnelClient", () => ({
   tunnelSetHookTelemetry: vi.fn().mockResolvedValue(undefined),
