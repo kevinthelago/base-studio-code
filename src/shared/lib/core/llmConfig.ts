@@ -4,7 +4,25 @@
 // model (ModelId / defaultModel / paneModels → `claude --model`), which the harness
 // adapter owns (P0/P2) — do not conflate them.
 
+import modelDefaultsEmbedded from "@data/console/model-defaults.json";
+import { overlayFile } from "./configOverrides";
+
 export type LlmProvider = "anthropic" | "openai" | "gemini" | "local" | "ollama";
+
+/** A selectable provider for the Settings UI: id + display label + API-key placeholder. */
+export interface LlmProviderOption {
+  id: LlmProvider;
+  label: string;
+  /** The key-field placeholder (empty for local providers, which need no key). */
+  keyPlaceholder: string;
+}
+
+// The model-ID defaults (+ provider list) are externalized to `@data/console/model-defaults.json`
+// (#2416) — the ONE source for every model default, editable without touching code + part of the
+// exportable config bundle; the config-dir copy (#2047) overlays the embedded default via
+// `overlayFile`. (The per-pane tier default in the same file is consumed by the model catalog,
+// `@/app/console/lib/models` — a separate surface; see the note above about not conflating them.)
+const MODEL_DEFAULTS = overlayFile("console/model-defaults.json", modelDefaultsEmbedded);
 
 export interface LlmConfig {
   provider: LlmProvider;
@@ -27,9 +45,13 @@ export interface LlmConfigSource {
 
 /** Default model for a local runtime (Ollama / OpenAI-compatible). A hosted `claude-*` model can
  *  never run locally, so a local provider falls back to this. (`ollama run qwen3-coder`.) */
-export const DEFAULT_LOCAL_MODEL = "qwen3-coder";
+export const DEFAULT_LOCAL_MODEL: string = MODEL_DEFAULTS.localModel;
 /** The packaged Anthropic default, restored when switching back to a hosted provider. */
-export const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6";
+export const DEFAULT_ANTHROPIC_MODEL: string = MODEL_DEFAULTS.anthropicModel;
+/** The default OpenAI-compatible endpoint for the `local`/`ollama` provider (Ollama's port). */
+export const DEFAULT_LOCAL_BASE_URL: string = MODEL_DEFAULTS.localBaseUrl;
+/** The selectable providers, in Settings display order. */
+export const LLM_PROVIDERS: LlmProviderOption[] = MODEL_DEFAULTS.providers as LlmProviderOption[];
 
 /** The model to actually send for a config. A `local`/`ollama` provider substitutes
  *  {@link DEFAULT_LOCAL_MODEL} when the stored model is empty or a hosted `claude-*` model (which

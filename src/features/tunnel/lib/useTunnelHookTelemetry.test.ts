@@ -3,7 +3,11 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { useAppStore } from "@/store";
 
 vi.mock("@/shared/lib/core/bsc", () => ({
-  bscJson: vi.fn(),
+  // Must resolve the fallback like the real bridge: this file imports @/store, whose
+  // persist-rehydrate calls `bscJson(...).then(...)` — a bare vi.fn() returns undefined
+  // and that `.then` becomes an unhandled rejection that fails the whole vitest run (#2414).
+  bscJson: vi.fn(async (_key: string | null, _args: string[], fallback: unknown) => fallback),
+  bscWrite: vi.fn(async () => {}),
 }));
 vi.mock("./tunnelClient", () => ({
   tunnelSetHookTelemetry: vi.fn().mockResolvedValue(undefined),
@@ -54,7 +58,9 @@ describe("toHookTelemetryFrame (#937)", () => {
 describe("useTunnelHookTelemetry (#937)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(bscJson).mockResolvedValue([line("bsc-deny", "PreToolUse", "block")]);
+    // The hook aggregates with `new Date()` (a real-time 14-day window), so the fixture line must be
+    // RECENT — a hardcoded past date rots out of the window over time and the frame reads all-zeros.
+    vi.mocked(bscJson).mockResolvedValue([line("bsc-deny", "PreToolUse", "block", Date.now() - 3_600_000)]);
     useAppStore.setState({ tunnelRunning: true });
   });
 
