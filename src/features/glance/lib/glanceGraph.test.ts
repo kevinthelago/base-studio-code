@@ -55,6 +55,21 @@ describe("buildGraph (#2206)", () => {
     const g = buildGraph(NODES, [{ from: "api", to: "api", kind: "api" }, { from: "api", to: "ghost", kind: "api" }]);
     expect(g.edges).toHaveLength(0);
   });
+
+  it("orders a layer by the barycenter of its neighbors (shared orderLayers, #2418 — parity baseline)", () => {
+    // p1/p2 are layer-0 providers; c1/c3 depend on p2, c2 on p1. The pre-#2418 inline barycenter
+    // (6 snapshot passes) settled the consumer column as [c2, c1, c3] — locked here as the parity order.
+    const nodes: GRawNode[] = ["p1", "p2", "c1", "c2", "c3"].map((id) => ({ id, role: "service" as const, status: "idle" as const }));
+    const edges: GRawEdge[] = [
+      { from: "c1", to: "p2", kind: "api" },
+      { from: "c2", to: "p1", kind: "api" },
+      { from: "c3", to: "p2", kind: "api" },
+    ];
+    const g = buildGraph(nodes, edges);
+    const y = Object.fromEntries(g.nodes.map((n) => [n.id, n.y]));
+    expect(y.c2).toBeLessThan(y.c1);
+    expect(y.c1).toBeLessThan(y.c3);
+  });
 });
 
 describe("focusSets (#2206)", () => {

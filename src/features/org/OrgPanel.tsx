@@ -21,7 +21,6 @@ import { autoLayout, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
 import { detectPools, collapseOrg, poolSubgraph, type Pool } from "./lib/orgPools";
 import { positionDisplay, hueColor } from "./lib/orgView";
 import { overlayFile } from "@/shared/lib/core/configOverrides";
-import "./org.css";
 
 /** Department display order in the left rail (positionDisplay assigns each a dept) — from
  *  `@data/org/departments.json` (#2419, beside the org vocabulary); config-dir-overlaid (#2047). */
@@ -243,8 +242,8 @@ export function OrgPanel() {
         />
       ) : undefined}
     >
-      {/* keyed so drilling in/out remounts + replays the transition animation (org.css) */}
-      <Box key={drill ?? "__root__"} className="org-drill-anim" style={{ position: "absolute", inset: 0 }}>
+      {/* keyed so drilling in/out remounts + replays the shared transition (graphCanvas.css, #2418) */}
+      <Box key={drill ?? "__root__"} className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>
         <OrgCanvas
           org={view.org} personas={personas} sel={sel} scale={scale} connecting={!!connect}
           dragMoved={vp.dragMoved} poolInfo={view.poolInfo}
