@@ -25,9 +25,9 @@
   position: relative; z-index: 2;
   background: var(--bg-elev2); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent-dim);
   transition: background .16s, color .16s; }
-.prail-node.complete { background: var(--success); color: oklch(0.20 0.04 145); box-shadow: none; }
+.prail-node.complete { background: var(--success); color: var(--on-success); box-shadow: none; }
 .prail-node.ahead { background: color-mix(in oklch, var(--success), transparent 12%);
-  color: oklch(0.20 0.04 145); box-shadow: inset 0 0 0 1.5px var(--success); }
+  color: var(--on-success); box-shadow: inset 0 0 0 1.5px var(--success); }
 .prail-node.active { background: var(--bg-elev2); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent-dim); }
 .prail-node.skipped { background: color-mix(in oklch, var(--info), transparent 86%);
   color: var(--info); box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--info), transparent 35%); }

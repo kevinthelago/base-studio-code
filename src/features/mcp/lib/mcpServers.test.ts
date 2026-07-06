@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import catalogTemplates from "@data/mcp/catalog-templates.json";
 import { resolveMcpServers, resolveAllInstalledMcp, resolveStreamMcp, toMcpPayload, toBscAgentMcp, mcpFromCatalog, blankMcpServer, type McpServer, type McpServerPayload } from "./mcpServers";
 import { MCP_CATALOG } from "@/shared/data/mcpCatalog";
 
@@ -130,6 +131,26 @@ describe("catalog templates + blank", () => {
 
   it("blankMcpServer produces an empty stdio shape", () => {
     expect(blankMcpServer()).toMatchObject({ transport: "stdio", command: "", enabled: false, projects: [] });
+  });
+});
+
+// Guard for the externalized catalog templates (@data/mcp/catalog-templates.json, #2419).
+describe("catalog template registry (loaded from @data/mcp/catalog-templates.json)", () => {
+  it("every template yields a RUNNABLE config through mcpFromCatalog (stdio ⇒ command, http ⇒ url)", () => {
+    for (const [name, t] of Object.entries(catalogTemplates)) {
+      const s = mcpFromCatalog(name);
+      expect(s.name).toBe(name);
+      expect(["stdio", "http"]).toContain(s.transport);
+      if (s.transport === "http") expect(s.url).toMatch(/^https:\/\//);
+      else expect(s.command).toBeTruthy();
+      expect(s.transport).toBe(t.transport); // the template's config rode through unchanged
+    }
+  });
+
+  it("keeps the well-known entries the planner's <mcp_assign> resolves by name", () => {
+    for (const name of ["Compliance", "Research", "Postgres", "Slack", "Sentry", "Linear", "Notion"]) {
+      expect(catalogTemplates).toHaveProperty(name);
+    }
   });
 });
 
