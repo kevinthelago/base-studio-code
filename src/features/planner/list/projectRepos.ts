@@ -7,12 +7,13 @@
 //   title-derived `effectiveProjectId`. The linked set is DB-owned (`bsc plan repo add` → plan.db,
 //   reflected into `projectLocalRepos` by the section poll), so it survives a restart.
 //
-// KEY MISMATCH (#881): linked repos are written under TWO keys — the title-derived
+// KEY MISMATCH (#881): historically, linked repos were written under TWO keys — the name-derived
 // `effectiveProjectId` (the planning link + auto-clone path) and the GitHub node id
-// `activeProjectId` (the published-project + header path). Once a repo is cloned,
-// `projectKeyAlias` maps the node id → title key, so the two diverge. Reading only one key
-// dropped links written under the other, so they vanished on restart → relink. We now read
-// the local set from BOTH keys (deduped) so a link survives regardless of which key wrote it.
+// `activeProjectId` (the published-project + header path). New writes all use the one
+// name-derived key (#2409), but persisted stores still carry node-id-keyed entries, so reading
+// only one key dropped links written under the other — they vanished on restart → relink. We read
+// the local set from BOTH keys (deduped) so a grandfathered link survives regardless of which key
+// wrote it.
 
 /** Deduped union of the persisted local links under every given key. Exported so the planning
  *  page reads the cloned/linked set under the same dual keys (avoids the #881 mismatch). */

@@ -9,7 +9,6 @@ describe("deriveAllRepos", () => {
         projB: ["octo/two", "octo/three"], // octo/two is a dup — projA seen first
       },
       "/base",
-      {},
     );
     expect(repos.map((r) => r.full_name)).toEqual(["octo/one", "octo/two", "octo/three"]);
     // Each entry carries a resolved local path string.
@@ -20,6 +19,6 @@ describe("deriveAllRepos", () => {
   });
 
   it("returns an empty list when there are no cloned repos", () => {
-    expect(deriveAllRepos({}, "/base", {})).toEqual([]);
+    expect(deriveAllRepos({}, "/base")).toEqual([]);
   });
 });

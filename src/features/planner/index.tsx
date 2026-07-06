@@ -47,7 +47,6 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
     planningPitch,
     planningTitle,
     planningSessionKey,
-    projectKeyAlias,
   } = useAppStore();
 
   // The page modes ride the shared <Screen> shell (#1876), store-controlled so the tab bar and
@@ -65,10 +64,10 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
 
   // Single source of truth for the session identity, frozen at session start.
   // Remounting Planning only when this changes means publish assigning a project
-  // id (or a title edit) no longer tears down the active session. Fallback keeps
-  // older sessions working if the key was never set.
-  const rawPlanningKey = planningSessionKey || activeProjectId || `${planningTitle}::${planningPitch}`;
-  const planningKey = projectKeyAlias[rawPlanningKey] ?? rawPlanningKey;
+  // id (or a title edit) no longer tears down the active session. Every entry path
+  // sets `planningSessionKey` to the name-derived key (#2409) — no alias resolution;
+  // the fallbacks keep older in-flight sessions working if the key was never set.
+  const planningKey = planningSessionKey || activeProjectId || `${planningTitle}::${planningPitch}`;
 
   // Not connected (main window only): the connect prompt owns the whole screen, no tabs. A detached
   // section window still renders its body (it shares the connected store).

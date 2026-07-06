@@ -4,12 +4,13 @@
 // The Drafts list = on-disk local hubs ∪ the store draft map, MINUS anything already published.
 // Published-ness is the authoritative in-place `.published` marker (#922), surfaced per hub as
 // `LocalProject.published`. The earlier dedup excluded a draft only when its folder `key` matched
-// `sanitizeProjectKey(githubTitle)` or an alias value — a fragile title→key derivation that drifts
-// from the marker: `sanitizeProjectKey` is case-PRESERVING, but the published-marker reconcile
-// matches the GitHub board case-INSENSITIVELY (and the title is read from goal.md), so a hub whose
-// folder key differs in case/spelling from the board title got marked published yet survived the
-// draft filter — showing in BOTH lists. Keying off `lp.published` is the fix; the title/alias keys
-// stay as a secondary signal for hubs the reconcile hasn't marked yet.
+// a title-derived key or a node-id alias value — a fragile derivation that drifts from the marker:
+// `sanitizeProjectKey` is case-PRESERVING, but the published-marker reconcile matches the GitHub
+// board case-INSENSITIVELY (and the title is read from goal.md), so a hub whose folder key differs
+// in case/spelling from the board title got marked published yet survived the draft filter —
+// showing in BOTH lists. Keying off `lp.published` is the fix; the board-title keys stay as a
+// secondary signal for hubs the reconcile hasn't marked yet. (The node-id alias is retired, #2409 —
+// a board's key derives from its name.)
 
 /** The fields of the backend `LocalProject` this selection needs. */
 export interface LocalProjectLite {
@@ -31,22 +32,21 @@ export interface DraftRow { key: string; title: string; pitch: string; sort: num
  *
  * @param localProjects     on-disk hubs from `list_local_projects` (carry the `.published` marker).
  * @param localDraftProjects the store's draft map (key → {title, pitch, createdAt}).
- * @param projectKeyAlias   GitHub node id → folder key aliases (published projects).
- * @param publishedTitleKeys `sanitizeProjectKey(title)` for each visible GitHub board.
+ * @param publishedTitleKeys every key form of each visible GitHub board title — the name-derived
+ *                           `projectSlug(title)` (#2409) plus the legacy `sanitizeProjectKey(title)`
+ *                           for grandfathered title-keyed hubs.
  * @returns draft rows, deduped by key, sorted not applied (caller sorts).
  */
 export function buildDrafts(
   localProjects: LocalProjectLite[],
   localDraftProjects: Record<string, DraftMapEntry>,
-  projectKeyAlias: Record<string, string>,
   publishedTitleKeys: string[],
 ): DraftRow[] {
   const safeLocals = Array.isArray(localProjects) ? localProjects : [];
   const publishedKeys = new Set<string>([
-    ...Object.values(projectKeyAlias),
     ...publishedTitleKeys,
     // The authoritative signal (#922): a hub flagged published is never a draft, regardless of
-    // whether its folder key matches the (case-preserving) sanitized board title.
+    // whether its folder key matches a board-title-derived key.
     ...safeLocals.filter(lp => lp?.published).map(lp => lp.key),
   ]);
 

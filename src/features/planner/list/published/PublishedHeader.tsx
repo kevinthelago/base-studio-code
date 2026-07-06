@@ -3,17 +3,21 @@ import { useClickOutside } from "@/shared/hooks/useClickOutside";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { Search } from "lucide-react";
 import { useAppStore } from "@/store";
-import { mintProjectId, findByTitle } from "@/shared/lib/core/projectPaths";
+import { projectSlug } from "@/shared/lib/core/projectPaths";
 import { timeAgo } from "@/shared/lib/core/format";
+import { Dialog } from "@/shared/ui/overlay/Dialog";
 import { Button } from "@/shared/ui/controls/Button";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { DEFAULT_BLUEPRINT_ID } from "../../stages/blueprints";
 import type { GhProject } from "./publishedModel";
+import type { LocalProjectLite } from "../drafts";
 
 interface PublishedHeaderProps {
   visibleProjects: GhProject[];
+  /** On-disk local hubs — a new name that slugs onto an existing hub key is a collision too (#2409). */
+  localProjects: LocalProjectLite[];
   /** Published count (active + shipped) + local drafts, for the header badge. */
   publishedAndDrafts: number;
   /** Cross-section summary line ("N published · M drafts · K blueprints · R repos"). */
@@ -27,14 +31,18 @@ interface PublishedHeaderProps {
   setSort: (s: "recency" | "name") => void;
   /** Total matches across all three lists (drives the "N matches" pill while searching). */
   grandTotal: number;
+  /** Open a clashing PUBLISHED project (the collision modal's "open existing", #2409). */
+  openExistingPublished: (p: GhProject) => void;
+  /** Open a clashing LOCAL project/draft (the collision modal's "open existing", #2409). */
+  openExistingLocal: (lp: LocalProjectLite) => void;
 }
 
 /** The fixed page header: title · summary · sync/new · new-project form · search+sort.
  *  Owns the new-project form (title input + start-planning flow) — the one place the header
  *  reaches the store to mint a fresh draft. */
 export function PublishedHeader({
-  visibleProjects, publishedAndDrafts, totalSummary, lastSync, loading, fetchProjects,
-  query, setQuery, sort, setSort, grandTotal,
+  visibleProjects, localProjects, publishedAndDrafts, totalSummary, lastSync, loading, fetchProjects,
+  query, setQuery, sort, setSort, grandTotal, openExistingPublished, openExistingLocal,
 }: PublishedHeaderProps) {
   const {
     setProjectsView, setActiveProjectMeta, setPlanningContext, setPlanningTitle, setPlanningSession,
@@ -42,6 +50,11 @@ export function PublishedHeader({
   } = useAppStore();
   const [title, setTitle]         = useState("");
   const [newOpen, setNewOpen]     = useState(false);
+  // The existing project a would-be new name collides with (#2409) — a published board or a local
+  // hub/draft. When set, the collision modal is up: the name IS the identity, so we never silently
+  // fork (or adopt) a second hub for it. The modal resolves it: open the existing project, or pick
+  // a different name.
+  const [collision, setCollision] = useState<{ title: string; published?: GhProject; local?: LocalProjectLite } | null>(null);
   // New-project form: dismiss by clicking outside (no cancel button). The typed title is KEPT in
   // state on dismiss, so a mistaken click outside doesn't lose it — reopening restores what was typed.
   const newFormRef = useRef<HTMLDivElement>(null);
@@ -52,22 +65,18 @@ export function PublishedHeader({
   useClickOutside(newFormRef, () => setNewOpen(false), newOpen, newBtnRef);
 
   const titleTrimmed = title.trim();
-  // One title matcher (#380) — case/whitespace-insensitive — so the guard that no-ops a
-  // re-typed existing-project name agrees with everywhere else "title already taken" is judged.
-  const titleConflict = findByTitle(visibleProjects, titleTrimmed, p => p.title);
 
   function handleStartPlanning() {
-    // Never start over an existing published project. The button is disabled on titleConflict,
-    // but the Enter-key handler isn't, so this guard is what actually stops a re-typed
-    // published-project name from forking a confusing duplicate (#380).
-    if (!titleTrimmed || titleConflict) return;
-    // New project starts as a DRAFT (#379). Its workspace key is a freshly minted STABLE id
-    // (#1741) — opaque, not title-derived — so the on-disk hub never moves on a rename and two
-    // same-titled projects get distinct keys. The title is display-only from here. (A fresh id
-    // can't collide with an existing folder, so the old title-key path's stale-folder cleanup —
-    // remove/delete the prior same-named draft — is no longer needed: same-named drafts now
-    // simply coexist as distinct projects.)
-    const draftKey = mintProjectId();
+    if (!titleTrimmed) return;
+    // The project's KEY is a readable slug of its name (#2409) — the single identity that names the hub,
+    // plan.db, worktrees, pane ids, and the 1:1 GitHub project. Two names that slug to the SAME key would
+    // share a hub, so a collision opens the modal instead of silently forking (the class of bug that made
+    // "video game" recover the wrong plan). Match on the slug so "Video Game" and "video-game" also clash,
+    // against BOTH the published boards and the on-disk local hubs.
+    const draftKey = projectSlug(titleTrimmed);
+    const published = visibleProjects.find((p) => projectSlug(p.title) === draftKey);
+    const local = (Array.isArray(localProjects) ? localProjects : []).find((lp) => lp.key === draftKey);
+    if (published || local) { setCollision({ title: (published?.title ?? local?.title) || titleTrimmed, published, local }); return; }
     setPlanningTitle(titleTrimmed);
     // The pitch is described in the planning conversation now — creation only needs the title (#…).
     setPlanningContext("", "");
@@ -142,16 +151,43 @@ export function PublishedHeader({
               fontSize: 12, color: "var(--fg)",
             }}
           />
-          {titleConflict && (
-            <Text mono size={10} tone="danger" style={{ whiteSpace: "nowrap" }}>⚠ exists</Text>
-          )}
           <Button
             onClick={handleStartPlanning}
-            disabled={!titleTrimmed || !!titleConflict}
+            disabled={!titleTrimmed}
             variant="primary"
-            style={{ height: 24, fontSize: 10.5, opacity: (titleTrimmed && !titleConflict) ? 1 : 0.4, whiteSpace: "nowrap" }}
+            style={{ height: 24, fontSize: 10.5, opacity: titleTrimmed ? 1 : 0.4, whiteSpace: "nowrap" }}
           >start planning →</Button>
         </div>
+      )}
+
+      {/* Name-collision modal (#2409) — the name is the project's identity, so a would-be duplicate is
+          resolved here (open the existing project, or pick a different name) rather than silently
+          forking a second hub. */}
+      {collision && (
+        <Dialog
+          title="That name's already taken"
+          onDismiss={() => setCollision(null)}
+          actions={
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  const c = collision;
+                  setCollision(null);
+                  setNewOpen(false);
+                  setTitle("");
+                  if (c.published) openExistingPublished(c.published);
+                  else if (c.local) openExistingLocal(c.local);
+                }}
+              >Open the existing project</Button>
+              <Button variant="primary" onClick={() => setCollision(null)}>Choose a different name</Button>
+            </>
+          }
+        >
+          A project named <Text as="span" mono style={{ color: "var(--fg)" }}>“{collision.title}”</Text> already
+          exists — the name IS the project (it names its files, sessions, and GitHub project), so two can't share it.
+          Open it, or pick a different name to continue.
+        </Dialog>
       )}
 
       {/* search + sort */}
