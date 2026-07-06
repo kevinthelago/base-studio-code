@@ -25,6 +25,8 @@ describe("plannerLaunchConfig", () => {
     expect(l.providerId).toBeUndefined();
     expect(l.initCmd).toContain("claude");
     expect(l.startupPromptFreshOnly).toBe(true);
+    // Defensive (#2396): resume is requested explicitly; the backend ANDs it with real history.
+    expect(l.continueSession).toBe(true);
     expect(l.env).toEqual(GH); // no BSC_AGENT_* env for a Claude planner
   });
 
