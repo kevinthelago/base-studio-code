@@ -38,7 +38,7 @@
 .ds-caret { display: inline-block; width: 12px; color: var(--fg-dim); font-size: 10px; transition: transform .15s; }
 .ds-comprow { width: 100%; display: flex; align-items: center; gap: 9px; height: 29px; padding: 0 9px 0 12px; border: none; border-radius: 7px; cursor: pointer; font-size: 12.5px; background: transparent; color: var(--fg-muted); }
 .ds-comprow:hover { background: var(--bg-soft); }
-.ds-comprow.on { background: var(--accent-soft); color: var(--fg); box-shadow: inset 2px 0 0 var(--accent); }
+.ds-comprow.on { background: var(--accent-soft); color: var(--fg); }
 
 /* ── preview (lives in the inspector, #2453) ── */
 .ds-preview { flex: none; height: 34%; min-height: 200px; display: flex; flex-direction: column; border-top: 1px solid var(--border-soft, var(--border)); border-bottom: 1px solid var(--border); }
