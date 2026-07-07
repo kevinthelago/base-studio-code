@@ -36,7 +36,7 @@ export type PrimitiveName =
   // #2475 — the key-value record rendering (the property-list archetype of the row vocabulary)
   | "KeyValueList"
   // layouts — the page-skeleton templates tier (#2197)
-  | "MasterDetail" | "SplitView" | "GraphCanvas" | "PaneGrid" | "Tree";
+  | "MasterDetail" | "SplitView" | "GraphCanvas" | "PaneGrid" | "Tree" | "Sequence";
 
 export type PrimitiveGroup = "layout" | "typography" | "controls" | "data" | "feedback" | "layouts";
 
@@ -671,6 +671,21 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "gap", type: "number", default: 8, description: "Gap between cells in px." },
       { name: "pad", type: "number", default: 10, description: "Grid inner padding in px." },
       { name: "hidden", type: "boolean", default: false, description: "Render the grid display:none but keep it MOUNTED (children stay alive — the console cross-tab mount)." },
+    ],
+  },
+  {
+    name: "Sequence", group: "layouts", importPath: "@/shared/ui/layouts/Sequence",
+    description: "The ordered-steps page skeleton for linked-list-shaped data (workflows, pipelines, wizards, timelines) — a status-colored step STRIP (nodes joined by directional prev→next connectors; horizontal stepper or vertical timeline rail) driving an active-step DETAIL panel, under an optional TOOLBAR. Owns the ordering, connectors, click-to-focus, and the strip's own overflow scroll.",
+    props: [
+      { name: "steps", type: "array", required: true, description: "SequenceStep[] — ordered { id, label, status?, hint? }; array order IS the sequence. status: complete | active | upcoming | blocked (default upcoming)." },
+      { name: "detail", type: "function", description: "The focus panel — a render prop receiving the focused step. Omit for a strip-only sequence." },
+      { name: "orientation", type: "enum", values: ["horizontal", "vertical"], default: "horizontal", description: "horizontal → stepper strip above the detail; vertical → timeline rail beside it." },
+      { name: "toolbar", type: "node", description: "Optional full-width toolbar/header above the sequence." },
+      { name: "selectedId", type: "string", description: "Controlled focused step id (pair with onSelect); omit for uncontrolled selection." },
+      { name: "defaultSelectedId", type: "string", description: "Uncontrolled initial focus — defaults to auto-following the active step, else the first." },
+      { name: "onSelect", type: "function", description: "Fires with the clicked step's id (both modes)." },
+      { name: "railWidth", type: "number", default: 260, description: "Timeline rail width in px (vertical only)." },
+      { name: "detailPad", type: "space", default: 20, description: "Detail inner padding — a rung/px or [block, inline] pair." },
     ],
   },
   {

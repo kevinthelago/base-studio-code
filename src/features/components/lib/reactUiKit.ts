@@ -338,6 +338,14 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["A single list+detail split — use MasterDetail.", "A pan/zoom graph — use GraphCanvas."],
     srcText: 'import { PaneGrid } from "@/shared/ui/layouts/PaneGrid";\n\n<PaneGrid cols={2} rows={2}>\n  {panes.map((p) => <Pane key={p.id} {...p}/>)}\n</PaneGrid>',
   },
+  Sequence: {
+    version: "1.0.0", tags: ["layout", "page", "linked-list"], composes: ["Box", "Row", "Stack"],
+    shapes: ["linked-list"], // the ideal linked-list-shape layout — fills the gap the #2475 shape axis recorded
+    variants: ["horizontal", "vertical"],
+    whenUse: ["Linked-list-shaped data where the prev→next ORDER is the first-class thing (workflows, pipelines, wizards, timelines).", "A status-tracked stepper or timeline whose focused step drives a detail panel."],
+    whenNot: ["An arbitrary node/edge graph — use GraphCanvas.", "An unordered list beside a detail view — use MasterDetail."],
+    srcText: 'import { Sequence } from "@/shared/ui/layouts/Sequence";\n\n<Sequence\n  steps={[\n    { id: "plan", label: "Plan", status: "complete" },\n    { id: "build", label: "Build", status: "active" },\n    { id: "ship", label: "Ship" },\n  ]}\n  detail={(step) => <StepEditor step={step}/>}\n/>',
+  },
   Tree: {
     version: "1.0.0", tags: ["layout", "page", "tree"], composes: ["MasterDetail", "GraphCanvas", "Box", "Row", "Stack", "Text", "IconButton"],
     shapes: ["tree"], // the ideal tree-shape layout — fills the gap the #2475 shape axis recorded
