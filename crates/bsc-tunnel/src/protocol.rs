@@ -11,6 +11,52 @@ use serde::{Deserialize, Serialize};
 // shared tunnelProtocol.fixtures.json (resolved by name via find_fixture) pins the exact
 // byte shape; `shared_fixture_matches_serde` (below) fails CI on any drift (#46).
 
+/// Tunnel wire-contract version (#2497). Carried by the mobile client in its `auth` frame
+/// (`protocolVersion`, optional — a pre-v2 client omits it) and echoed by the desktop in
+/// `auth_ok`, so each side knows exactly which contract the peer speaks.
+///
+/// **Mismatch policy: accept, but surface.** A version mismatch never rejects the session —
+/// the desktop logs both versions and still replies `auth_ok` (carrying ITS version), so the
+/// client can warn the user that some frames may be missing/ignored. Unknown inbound frame
+/// types are already tolerated on both sides, which is what makes this policy safe.
+///
+/// v1 (implicit — no version on the wire) → v2: adds `store_state`, `auth.protocolVersion` /
+/// `auth_ok.protocolVersion`, the optional `PaneDescriptor.kind`, and pins the plan_sync
+/// frames to the Rust shapes.
+pub const PROTOCOL_VERSION: u32 = 2;
+
+/// The registered `store_state` domain vocabulary (#2497). The frame itself is fully
+/// domain-agnostic (any string routes), so adding a domain is data, not a protocol change —
+/// these constants only name the projections the desktop currently publishes so both repos
+/// spell them identically.
+pub mod store_domains {
+    /// Glance graph model + links + faults.
+    pub const GLANCE: &str = "glance";
+    /// Plan projections (plan.db-derived).
+    pub const PLAN: &str = "plan";
+    /// Org graph (positions + relationships), incl. the team.
+    pub const ORG: &str = "org";
+    /// Blueprint library.
+    pub const BLUEPRINTS: &str = "blueprints";
+    /// Skills library + lessons.
+    pub const SKILLS: &str = "skills";
+    /// Component kits.
+    pub const COMPONENTS: &str = "components";
+    /// Kit themes.
+    pub const THEMES: &str = "themes";
+    /// Automations + hooks.
+    pub const AUTOMATIONS: &str = "automations";
+    /// MCP servers.
+    pub const MCP: &str = "mcp";
+    /// Alerts / notifications feed.
+    pub const ALERTS: &str = "alerts";
+
+    /// Every registered domain (the initial vocabulary).
+    pub const ALL: [&str; 10] = [
+        GLANCE, PLAN, ORG, BLUEPRINTS, SKILLS, COMPONENTS, THEMES, AUTOMATIONS, MCP, ALERTS,
+    ];
+}
+
 /// One mirrored pane as the mobile client lists it. Mirrors mobile `PaneDescriptor`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PaneDescriptor {
@@ -19,6 +65,13 @@ pub struct PaneDescriptor {
     pub name: String,
     /// One of `running | idle | awaiting_input | error` (mobile `PaneStatus`).
     pub status: String,
+    /// What kind of session this pane is (#2497): one of
+    /// `console | worker | planner | designer | triage` (the fleet director rides as
+    /// `worker`). **Optional for backward compatibility** — a pre-v2 desktop omits it and a
+    /// pre-v2 mobile ignores it; absent ⇒ treat as `console`. Omitted from the wire when
+    /// `None` so v1 fixtures stay byte-stable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 /// A pushed session-state snapshot from the frontend (camelCase on the wire).
@@ -165,9 +218,29 @@ pub struct HookTelemetryFrame {
 #[serde(tag = "type", rename_all = "snake_case")]
 #[allow(dead_code)]
 pub enum ServerMsg {
-    AuthOk,
+    /// Auth accepted. Echoes the desktop's [`PROTOCOL_VERSION`] (#2497) so the client can
+    /// compare against its own and warn on a mismatch (the desktop never rejects on version —
+    /// see the `PROTOCOL_VERSION` mismatch policy).
+    #[serde(rename_all = "camelCase")]
+    AuthOk {
+        protocol_version: u32,
+    },
     PaneList {
         panes: Vec<PaneDescriptor>,
+    },
+    /// Generic store projection (#2497): the last-written state of one desktop store
+    /// `domain` (see [`store_domains`]) as an opaque JSON string, with a monotonically
+    /// increasing per-domain `rev` so the client can drop stale/out-of-order frames.
+    /// Replayed on connect (last frame per domain) and broadcast on every change.
+    ///
+    /// MIGRATION POSTURE (#2497): this frame is the successor of the bespoke
+    /// `fleet_roster` / `automation_list` / `mcp_list` / `hook_telemetry` pushes. Those
+    /// stay on the wire, unchanged, for now — `store_state` ships ALONGSIDE them; retiring
+    /// the bespoke frames is a follow-up once mobile consumes the store_state domains.
+    StoreState {
+        domain: String,
+        rev: u64,
+        json: String,
     },
     #[serde(rename_all = "camelCase")]
     PaneOutput {
@@ -319,6 +392,11 @@ pub enum ClientMsg {
         token: String,
         #[serde(default)]
         fcm_token: Option<String>,
+        /// The client's tunnel contract version (#2497) — see [`PROTOCOL_VERSION`].
+        /// Optional: a pre-v2 client omits it (`None` ⇒ treat as v1). The desktop accepts
+        /// any version and echoes its own in `auth_ok`; a mismatch is logged, never fatal.
+        #[serde(default)]
+        protocol_version: Option<u32>,
     },
     /// Mobile pushes a refreshed FCM registration token mid-session (#846). The initial
     /// token rides in `Auth.fcmToken`; FCM tokens rotate, so the client re-sends here and

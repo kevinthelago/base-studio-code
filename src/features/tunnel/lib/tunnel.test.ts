@@ -3,7 +3,9 @@ import {
   buildPanePayload,
   mapStatus,
   paneCountForLayout,
+  paneKindFor,
   pairingPayload,
+  TUNNEL_PROTOCOL_VERSION,
   type TunnelStatus,
   type PlanStateFrame,
   type PlanEventFrame,
@@ -13,6 +15,7 @@ import {
   type PlanChatFrame,
   type PlanMessage,
 } from "./tunnel";
+import { STORE_DOMAINS } from "./tunnelClient";
 import fixtures from "./tunnelProtocol.fixtures.json";
 
 describe("pairingPayload", () => {
@@ -237,5 +240,123 @@ describe("plan-session frames (#985 / #934)", () => {
     expect(Object.keys(serverToClient.plan_state).sort()).toEqual(
       ["confirmedSections", "currentStage", "files", "messages", "pipelineRuns", "projectId", "type"],
     );
+  });
+});
+
+// ── Contract v2 (#2497): protocol version, store_state, pane kind, plan_sync shapes ──
+describe("contract v2 fixtures (#2497)", () => {
+  const { serverToClient, clientToServer } = fixtures;
+
+  it("auth carries protocolVersion; auth_no_fcm pins BOTH optional fields absent", () => {
+    expect(clientToServer.auth).toMatchObject({ type: "auth", protocolVersion: TUNNEL_PROTOCOL_VERSION });
+    expect(clientToServer.auth_no_fcm).not.toHaveProperty("protocolVersion");
+    expect(clientToServer.auth_no_fcm).not.toHaveProperty("fcmToken");
+  });
+
+  it("auth_ok echoes the desktop's protocolVersion", () => {
+    expect(serverToClient.auth_ok).toEqual({ type: "auth_ok", protocolVersion: TUNNEL_PROTOCOL_VERSION });
+  });
+
+  it("store_state is the domain-agnostic {domain, rev, json} projection frame", () => {
+    expect(Object.keys(serverToClient.store_state).sort()).toEqual(["domain", "json", "rev", "type"]);
+    // The fixture's domain is one of the registered vocabulary (the frame accepts any string).
+    expect(STORE_DOMAINS).toContain(serverToClient.store_state.domain);
+    expect(() => JSON.parse(serverToClient.store_state.json)).not.toThrow();
+  });
+
+  it("pane_list panes carry an OPTIONAL kind (v1 descriptors still valid)", () => {
+    const panes = serverToClient.pane_list.panes as Array<{ id: string; kind?: string }>;
+    expect(panes.find((p) => p.id === "t0p0")?.kind).toBe("console");
+    expect(panes.find((p) => p.id === "t0p1")).not.toHaveProperty("kind"); // optionality pinned
+    expect(panes.find((p) => p.id === "proj:api-core")?.kind).toBe("worker");
+    expect(panes.find((p) => p.id === "planning_proj")?.kind).toBe("planner");
+  });
+
+  it("plan_sync frames are pinned to the Rust shapes (single project; files as arrays)", () => {
+    // server → client
+    expect(Object.keys(serverToClient.plan_sync_manifest).sort()).toEqual(["files", "projectId", "type"]);
+    expect(serverToClient.plan_sync_manifest.files).toEqual({ "goal.md": "bf9cf968" });
+    expect(Object.keys(serverToClient.plan_sync_files).sort()).toEqual(["files", "projectId", "type"]);
+    expect(serverToClient.plan_sync_files.files).toEqual([{ relpath: "goal.md", content: "foobar" }]);
+    expect(serverToClient.plan_sync_ack).toEqual({
+      type: "plan_sync_ack", projectId: "proj-bf9cf968", applied: true,
+    });
+    // client → server
+    expect(clientToServer.plan_sync_manifest_request).toEqual({
+      type: "plan_sync_manifest_request", projectId: "proj-bf9cf968",
+    });
+    expect(clientToServer.plan_sync_pull).toEqual({
+      type: "plan_sync_pull", projectId: "proj-bf9cf968", paths: ["goal.md"],
+    });
+    expect(clientToServer.plan_sync_push).toEqual({
+      type: "plan_sync_push", projectId: "proj-bf9cf968", files: [{ relpath: "goal.md", content: "foobar" }],
+    });
+  });
+});
+
+// ── Session roster (#2497): identity ids + kind ───────────────────────────────
+describe("paneKindFor — id grammar → wire kind", () => {
+  it("maps worker AND director identity ids to worker (fleet sessions)", () => {
+    expect(paneKindFor("proj:api-core")).toBe("worker");
+    expect(paneKindFor("proj:director")).toBe("worker");
+  });
+  it("maps triage / planner ids", () => {
+    expect(paneKindFor("proj:owner/repo:triage")).toBe("triage");
+    expect(paneKindFor("planning_proj")).toBe("planner");
+  });
+  it("maps manual + legacy positional console ids to console", () => {
+    expect(paneKindFor("man:tab-uuid:p0")).toBe("console");
+    expect(paneKindFor("t0p0")).toBe("console");
+  });
+});
+
+describe("buildPanePayload — identity roster (#2497)", () => {
+  it("keys fleet-tab panes by their minted identity ids with kind worker", () => {
+    const { panes } = buildPanePayload({
+      tabs: [{ layout: "2×1", kind: "build", paneIds: ["proj:director", "proj:api-core"] }],
+      paneNames: { 0: { 0: "director", 1: "api-core" } },
+      paneCwds: { "proj:director": "/hub/proj", "proj:api-core": "/wt/api--api-core" },
+      paneStatuses: { "proj:director": "run", "proj:api-core": "run" },
+      disabledPanes: {},
+      awaiting: new Set<string>(),
+      nowIso: "2026-05-29T00:00:00.000Z",
+    });
+    expect(panes.map((p) => p.id)).toEqual(["proj:director", "proj:api-core"]);
+    expect(panes.map((p) => p.kind)).toEqual(["worker", "worker"]);
+    expect(panes[1].cwd).toBe("/wt/api--api-core"); // cwd resolved by IDENTITY id
+  });
+
+  it("keys manual-tab panes by their man:<tabId> identity ids with kind console", () => {
+    const { panes, sessions } = buildPanePayload({
+      tabs: [{ layout: "1×1", id: "tab-uuid" }],
+      paneNames: {},
+      paneCwds: { "man:tab-uuid:p0": "/repo" },
+      paneStatuses: { "man:tab-uuid:p0": "run" },
+      disabledPanes: {},
+      awaiting: new Set<string>(),
+      nowIso: "2026-05-29T00:00:00.000Z",
+    });
+    expect(panes).toEqual([
+      { id: "man:tab-uuid:p0", cwd: "/repo", name: "console-1-1", status: "running", kind: "console" },
+    ]);
+    expect(sessions[0].paneId).toBe("man:tab-uuid:p0");
+  });
+
+  it("derives a kind for an extra pane that doesn't carry one, keeps an explicit one", () => {
+    const { panes } = buildPanePayload({
+      tabs: [],
+      paneNames: {},
+      paneCwds: {},
+      paneStatuses: {},
+      disabledPanes: {},
+      awaiting: new Set<string>(),
+      nowIso: "2026-05-29T00:00:00.000Z",
+      extraPanes: [
+        { id: "planning_proj", cwd: "/hub/proj", name: "Planner", status: "running" },
+        { id: "design-studio:designer", cwd: "/design-studio", name: "Design Studio", status: "running", kind: "designer" },
+      ],
+    });
+    expect(panes[0].kind).toBe("planner");   // derived from the planning_ grammar
+    expect(panes[1].kind).toBe("designer");  // explicit kind wins (the id parses as worker)
   });
 });

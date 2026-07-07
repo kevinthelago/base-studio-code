@@ -298,6 +298,27 @@ pub fn tunnel_set_hook_telemetry(telemetry: HookTelemetryFrame, state: State<'_,
     });
 }
 
+// ── Generic store projections (#2497) — Tauri commands ──────────────────────
+
+/// Push one store domain's projection from the frontend — the SINGLE entry point for the
+/// generic `store_state` frame (#2497). `domain` names the store (see
+/// `protocol::store_domains` for the registered vocabulary — the frame itself is
+/// domain-agnostic), `rev` is the caller's monotonically increasing revision for that
+/// domain, and `json` is the opaque serialized projection. Stored per domain for replay to
+/// freshly-paired clients and broadcast to connected ones.
+///
+/// The bespoke `tunnel_set_fleet_state` / `tunnel_set_automations` / `tunnel_set_mcp_state`
+/// / `tunnel_set_hook_telemetry` pushes remain wire-compatible alongside this; retiring
+/// them onto store_state domains is a follow-up once mobile consumes the new frames.
+#[tauri::command]
+pub fn tunnel_set_store_state(domain: String, rev: u64, json: String, state: State<'_, TunnelState>) {
+    log::debug!("tunnel: store_state[{domain}] rev {rev} pushed ({} bytes)", json.len());
+    let frame = ServerMsg::StoreState { domain: domain.clone(), rev, json };
+    state.set_and_broadcast(frame.clone(), |inner| {
+        inner.store_states.insert(domain, frame);
+    });
+}
+
 // ── Relay diagnostics (T3b) ──────────────────────────────────────────────────
 
 /// Diagnostic report from `tunnel_check_relay`. All error conditions are captured in the
