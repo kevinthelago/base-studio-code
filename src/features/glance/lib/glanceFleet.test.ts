@@ -68,21 +68,28 @@ describe("buildRealFleetData (glance drill — real fleet)", () => {
   });
 });
 
-describe("nodeHasLiveSession (#2534 — every terminal node morphs)", () => {
+describe("nodeHasLiveSession (#2534/#2539 — every terminal node morphs)", () => {
   it("is live when the pane is in the launched roster (workers)", () => {
     const roster = { "proj:api": { id: "api" } };
     expect(nodeHasLiveSession("proj:api", roster, {})).toBe(true);
   });
 
-  it("is live for a node with a running/at-rest pane status — notably the DIRECTOR, which isn't a stream", () => {
-    // The director pane (`<project>:director`) never enters the roster, but its live status makes it
-    // morphable just like any worker.
+  it("is live for a running pane status", () => {
     expect(nodeHasLiveSession("proj:director", {}, { "proj:director": "run" })).toBe(true);
     expect(nodeHasLiveSession("proj:director", {}, { "proj:director": "on" })).toBe(true);
   });
 
-  it("is NOT live with no roster entry and an idle/absent status", () => {
+  it("is live for a RESTING director — claude active but status idle (#2539)", () => {
+    // The director isn't in the roster and sits at "idle" between prompts; a live claude session
+    // (paneClaudeActive) is what keeps it morphable exactly when the user clicks it.
+    expect(nodeHasLiveSession("proj:director", {}, { "proj:director": "idle" }, { "proj:director": true })).toBe(true);
+    // claudeActive alone (no status yet — launch race) is enough.
+    expect(nodeHasLiveSession("proj:director", {}, {}, { "proj:director": true })).toBe(true);
+  });
+
+  it("is NOT live with no roster, no claude session, and an idle/absent status", () => {
     expect(nodeHasLiveSession("proj:director", {}, { "proj:director": "idle" })).toBe(false);
+    expect(nodeHasLiveSession("proj:director", {}, { "proj:director": "idle" }, { "proj:director": false })).toBe(false);
     expect(nodeHasLiveSession("proj:ghost", {}, {})).toBe(false);
   });
 });

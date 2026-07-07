@@ -46,10 +46,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // The launched fleet (paneId → stream, keyed by the identity id `<key>:<stream>`, #1176). A worker
   // node is LIVE — its real PTY stream openable in the dock — iff its identity pane id is here.
   const fleetPaneStreams = useAppStore((s) => s.fleetPaneStreams);
-  // Authoritative per-pane session status — the UNIVERSAL "has a live terminal" signal (#2534). The
-  // roster above is streams only, so the DIRECTOR (a `<key>:director` session, not a stream) never
-  // enters it; a live pane status is how any node with a terminal — director included — reads as live.
+  // Authoritative per-pane session status — a live-terminal signal (#2534). The roster above is
+  // streams only, so the DIRECTOR (a `<key>:director` session, not a stream) never enters it.
   const paneStatus = useAppStore((s) => s.paneStatus);
+  // Whether a live claude session owns the pane — set true when claude starts, false when it exits, so
+  // it holds ACROSS idle turns (unlike paneStatus, which drops to "idle" between prompts). This is what
+  // makes the resting DIRECTOR read as live (#2539); its transient status alone missed it on click.
+  const paneClaudeActive = useAppStore((s) => s.paneClaudeActive);
   // The REAL project set: published GitHub projects merged with local drafts (keyed by the plan key so the
   // drill resolves each project's fleet). A "planning" status marks a planned project; "live" (app running)
   // is the detection follow-up.
@@ -133,10 +136,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const pickEdge = (id: string) => { setSel({ type: "edge", id }); setShowCycle(false); };
   // A node is LIVE — its real PTY openable via the in-graph terminal — iff a session exists for its
   // identity pane id (`<project>:<stream>` or `<project>:director`). EVERY node with a terminal gets
-  // the morph (#2534): the launched roster covers workers immediately, and an authoritative live pane
-  // status ("run"/"on") covers any node — notably the DIRECTOR, which isn't a stream. Drilled only.
+  // the morph (#2534): the launched roster covers workers, a live claude session covers any node even
+  // at rest (the DIRECTOR, #2539), and a live status covers the launch race. Drilled only.
   const isLiveAgent = (nodeId: string) =>
-    !!drill && nodeHasLiveSession(fleetPaneId(drill, nodeId), fleetPaneStreams, paneStatus);
+    !!drill && nodeHasLiveSession(fleetPaneId(drill, nodeId), fleetPaneStreams, paneStatus, paneClaudeActive);
   // On the L0 network: connect-mode wires two projects; otherwise a click drills into the fleet. Inside a
   // fleet a click checks in on a LIVE agent (morph → terminal, #2401) or selects a non-live one.
   const onNodeClick = (id: string) => {
