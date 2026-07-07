@@ -304,7 +304,14 @@ async fn noise_handshake_and_auth(
         }
         _ => return Err("expected auth as the first frame".into()),
     }
-    send_msg(sink, &mut noise_tx, &ServerMsg::AuthOk { protocol_version: protocol::PROTOCOL_VERSION }).await?;
+    // auth_ok carries the connect-time input grant (#2511) so a freshly-paired phone
+    // renders view-only accurately; live toggles then ride `input_grant_changed`.
+    let input_granted = app
+        .try_state::<TunnelState>()
+        .map(|s| s.input_granted())
+        .unwrap_or(false);
+    let auth_ok = ServerMsg::AuthOk { protocol_version: protocol::PROTOCOL_VERSION, input_granted };
+    send_msg(sink, &mut noise_tx, &auth_ok).await?;
     Ok(noise_tx)
 }
 
