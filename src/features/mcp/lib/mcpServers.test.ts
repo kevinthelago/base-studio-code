@@ -32,6 +32,14 @@ describe("resolveMcpServers", () => {
     expect(names).toContain("Research");
     expect(names).toContain("Compliance");
   });
+
+  it("tolerates a nameless entry from malformed persisted state (#2515): it shadows no built-in", () => {
+    const nameless = { id: "m1", enabled: true, projects: [], transport: "stdio" } as unknown as McpServer;
+    const resolved = resolveMcpServers([nameless], "");
+    expect(resolved.map(e => e.id)).toEqual(["builtin-research", "builtin-compliance", "m1"]);
+    // The stream resolver's name matching must not throw on it either.
+    expect(() => resolveStreamMcp([nameless], ["Research"], "")).not.toThrow();
+  });
 });
 
 describe("resolveAllInstalledMcp", () => {

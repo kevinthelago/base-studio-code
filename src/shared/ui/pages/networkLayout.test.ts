@@ -41,8 +41,15 @@ describe("layoutNetwork — layering rides the shared graph stack", () => {
     const cyc = [...EDGES, { from: "ui", to: "db" }]; // db → api → ui → db
     const l = layoutNetwork(NODES, cyc);
     expect(l.edges).toHaveLength(3);                  // the cycle edge still draws
-    expect(l.layer.db).toBe(0);                       // …but does not diverge the layers
-    expect(l.layer.ui).toBe(2);
+    // …but does not diverge the layers. The shared findBackEdges DFS visits nodes in NODES order,
+    // so it roots at "api" and marks db→api as the back-edge — layering keeps api→ui and ui→db
+    // (#2515: the original expectation assumed the ADDED edge broke, which the contract never promised).
+    expect(l.layer.api).toBe(0);
+    expect(l.layer.ui).toBe(1);
+    expect(l.layer.db).toBe(2);
+    // The invariant that matters: every kept (non-back) edge still flows strictly downward.
+    expect(l.layer.ui).toBeGreaterThan(l.layer.api);
+    expect(l.layer.db).toBeGreaterThan(l.layer.ui);
   });
 
   it("networkEdges keeps explicit ids and derives `from->to` for the rest", () => {
