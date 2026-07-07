@@ -60,6 +60,24 @@ describe("blueprints — seed library", () => {
     }
   });
 
+  it("test_ui teaches the theme pairing + the swappable-CSS emission (#2489)", () => {
+    const def = STAGE_DEFS.test_ui;
+    // Both faces of the seed teach the whole loop: enumerate themes, choose WITH the user, record
+    // the {kit, theme} pair in plan.db, and emit the two-layer palette for the generated app.
+    for (const text of [def.prompt ?? "", def.directive ?? ""]) {
+      expect(text).toContain("bsc ui theme list");
+      expect(text).toContain("bsc plan ui set");
+      expect(text).toContain("bsc ui emit-css");
+      expect(text).toContain("tokens.css");
+      expect(text).toContain("theme.css");
+      // Re-theming is the one-file swap — the payoff the stage must state.
+      expect(text).toMatch(/swapping (that one file|theme\.css)/);
+    }
+    // The token contract layer is read-only for the build agents.
+    expect(def.prompt).toMatch(/read-only for build agents/);
+    expect(def.directive).toMatch(/read-only for workers/);
+  });
+
   it("adds an optional MCPs stage after Streams in the Complete blueprint (#878/#1003/#1914)", () => {
     expect(STAGE_DEFS.mcps).toBeTruthy();
     expect(STAGE_DEFS.mcps.optional).toBe(true);

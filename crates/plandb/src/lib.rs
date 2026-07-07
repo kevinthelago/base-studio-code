@@ -27,8 +27,8 @@
 //! codec. Each cohesive cluster of `Store` methods (and its serde row types) lives in its own module
 //! and hangs its methods off `Store` via a split inherent `impl` (Rust allows this within a crate):
 //! `schema` (DDL + migrations), `issues`, `features`, `repos`, `fleet`, `deploy` (deploy + deps),
-//! `mcp`, `blueprint`, `assignments` (automations + startup scripts), `discovery`, `triage`, and
-//! `lessons` (self-correction lessons, #1362). Each type is re-exported here so the crate's public
+//! `mcp`, `blueprint`, `ui` (the {kit, theme} pairing, #2489), `assignments` (automations + startup
+//! scripts), `discovery`, `triage`, and `lessons` (self-correction lessons, #1362). Each type is re-exported here so the crate's public
 //! API stays flat (`plandb::PlanIssue`, `plandb::Store`, …).
 
 /// The `bsc plan` subcommand (#1877) — the agent-facing CLI extracted from the old `bsc-plan` binary,
@@ -53,6 +53,7 @@ mod skipped;
 /// reuses the [`todos::Todo`] type + the connection-level `add`/`list`/… helpers over its own db.
 pub mod todos;
 mod triage;
+mod ui;
 /// Set-time validation for the structured JSON writes (#2395) — `pub` so the app/bridge can reuse
 /// the same shape checks the `bsc plan` CLI enforces.
 pub mod validate;
@@ -97,8 +98,8 @@ impl Store {
         self.conn.execute_batch(&stmt)
     }
 
-    // ── singleton-blob helpers (#1688) — the deploy/deps/fleet_meta/blueprint tables each hold ONE
-    //    row (`id = 1`) carrying a JSON blob. These two methods are the shared upsert/read those four
+    // ── singleton-blob helpers (#1688) — the deploy/deps/fleet_meta/blueprint/ui tables each hold ONE
+    //    row (`id = 1`) carrying a JSON blob. These two methods are the shared upsert/read those five
     //    set/get pairs delegate to, so the `ON CONFLICT … DO UPDATE` / `from_str().ok()` pattern lives
     //    in exactly one place. `table` is a hardcoded string literal at every call site (never user
     //    input), so formatting it into the SQL is safe — there is no injection surface. ──
