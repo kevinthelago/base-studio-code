@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, coerceTeam, coerceUiKit, bundledSkillsFromManifest } from "./blueprintShare";
-import type { BlueprintTeam } from "../stages/blueprints";
+import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, coerceTeam, coerceUiKit, coerceFleetPolicy, bundledSkillsFromManifest } from "./blueprintShare";
+import type { BlueprintTeam, FleetPolicy } from "../stages/blueprints";
+import { DEFAULT_FLOW } from "../fleet/agentFlow";
 import { resolveBlueprintSkillPayloads, type SkillPayload } from "./blueprintSkills";
 import { skillFromPayload } from "@/features/skills/lib/skills";
 import { encodeShareCode, decodeShareCode, wrapExtension } from "@/features/planner/lib/gist/manifest";
@@ -352,6 +353,85 @@ describe("UI-kit pin (#2465)", () => {
     const persisted = JSON.parse((set![1] as { stdin: string }).stdin) as Blueprint;
     expect(persisted.id).toBe(id);
     expect(persisted.uiKit).toEqual(pin()); // the pin travels inside the blueprint JSON, verbatim
+    useAppStore.getState().removeBlueprint(id);
+  });
+});
+
+describe("fleet policy (#1854 Phase b / #2460)", () => {
+  const policy = (): FleetPolicy => ({
+    profile: "cautious-worker",
+    flow: { autonomy: "checkpoint", push: "commit-only", trigger: "per-stage", gate: "soft" },
+  });
+
+  it("coerceBlueprint preserves the policy byte-faithfully; a blueprint without one stays without one", () => {
+    const withPolicy = coerceBlueprint({
+      id: "x", name: "Fleeted", fleetPolicy: policy(),
+      sections: [{ key: "discovery", name: "Discovery" }],
+    });
+    expect(withPolicy!.fleetPolicy).toEqual(policy());
+    // No `fleetPolicy` in the payload → the coerced blueprint carries NO fleetPolicy key
+    // (optional field, untouched behavior for existing blueprints — the #2450 whitelist lesson).
+    const without = coerceBlueprint({ id: "x", name: "Plain", sections: [{ key: "discovery", name: "Discovery" }] });
+    expect(without).not.toBeNull();
+    expect("fleetPolicy" in without!).toBe(false);
+  });
+
+  it("survives coerce → export → import → coerce (the full share round-trip) byte-faithfully", () => {
+    const first = coerceBlueprint({
+      id: "x", name: "Fleeted", fleetPolicy: policy(),
+      sections: [{ key: "discovery", name: "Discovery" }],
+    })!;
+    const back = manifestToBlueprint(blueprintToManifest(first));
+    expect(back.ok).toBe(true);
+    if (!back.ok) return;
+    expect(back.blueprint.fleetPolicy).toEqual(policy());
+    // …and a second coercion (the planner's 2s `bsc plan blueprint get` poll re-coerces) keeps it.
+    expect(coerceBlueprint(back.blueprint)!.fleetPolicy).toEqual(policy());
+  });
+
+  it("round-trips through the `bsc blueprint` store JSON AND the poll path", () => {
+    const bp: Blueprint = { ...sample(), origin: "local", fleetPolicy: policy() };
+    const restored = JSON.parse(JSON.stringify(bp)) as Blueprint;
+    expect(restored.fleetPolicy).toEqual(policy());
+    // The poll path: the authoring session's `<blueprint>` tag goes through
+    // coerceBlueprint(allowEmptySections) — the policy must survive it too.
+    expect(coerceBlueprint(restored, { allowEmptySections: true })!.fleetPolicy).toEqual(policy());
+  });
+
+  it("coerceFleetPolicy drops a malformed policy whole without nulling the blueprint", () => {
+    expect(coerceFleetPolicy(undefined)).toBeUndefined();
+    expect(coerceFleetPolicy("garbage")).toBeUndefined();
+    expect(coerceFleetPolicy([1, 2])).toBeUndefined();
+    // An informationless policy (neither field usable) carries nothing → treated as absent.
+    expect(coerceFleetPolicy({})).toBeUndefined();
+    expect(coerceFleetPolicy({ profile: 42, flow: "yolo" })).toBeUndefined();
+    // profile-only / flow-only policies are valid (both fields optional in FleetPolicy).
+    expect(coerceFleetPolicy({ profile: "p1" })).toEqual({ profile: "p1" });
+    expect(coerceFleetPolicy({ flow: policy().flow })).toEqual({ flow: policy().flow });
+    // A partial flow normalizes to a complete launch-safe flow — the same flowOrUndefined rule
+    // the tag/fleet.json parsers apply; a flow naming no field is dropped.
+    expect(coerceFleetPolicy({ profile: "p1", flow: { push: "commit-only" } }))
+      .toEqual({ profile: "p1", flow: { ...DEFAULT_FLOW, push: "commit-only" } });
+    expect(coerceFleetPolicy({ profile: "p1", flow: {} })).toEqual({ profile: "p1" });
+    // A malformed policy never nulls the whole blueprint — it just imports policy-less.
+    const bp = coerceBlueprint({ id: "x", name: "X", fleetPolicy: "broken", sections: [{ key: "discovery", name: "Discovery" }] });
+    expect(bp).not.toBeNull();
+    expect("fleetPolicy" in bp!).toBe(false);
+  });
+
+  it("store: updateBlueprintMeta persists the policy through `bsc blueprint set`", () => {
+    useAppStore.setState({ blueprints: makeBlueprints(), activeBlueprintId: "default" });
+    const id = useAppStore.getState().addBlueprint();
+    vi.mocked(invoke).mockClear();
+    useAppStore.getState().updateBlueprintMeta(id, { fleetPolicy: policy() });
+    const argsOf = (call: unknown[]) => (call[1] as { args?: string[] } | undefined)?.args;
+    const set = vi.mocked(invoke).mock.calls.find(
+      (call) => call[0] === "bsc" && JSON.stringify(argsOf(call)) === JSON.stringify(["blueprint", "set"]),
+    );
+    expect(set).toBeTruthy();
+    const persisted = JSON.parse((set![1] as { stdin: string }).stdin) as Blueprint;
+    expect(persisted.id).toBe(id);
+    expect(persisted.fleetPolicy).toEqual(policy()); // the policy travels inside the blueprint JSON, verbatim
     useAppStore.getState().removeBlueprint(id);
   });
 });
