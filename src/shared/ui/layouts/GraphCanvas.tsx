@@ -108,7 +108,10 @@ export function GraphCanvas({
           } : undefined}
           style={{ position: "relative", flex: 1, overflow: "hidden", cursor: "grab", minWidth: 0, background: canvasBackground ?? "var(--bg)" }}>
           {gridStyle && <div style={gridStyle} />}
-          <Box style={{ position: "absolute", left: 0, top: 0, width: world.w, height: world.h, ...worldTransform, willChange: "transform" }}>
+          {/* No text selection of node labels / edges on click or drag (#2527) — shared here so every
+              graph (Org · Glance · Design Studio) is covered in one place. Inspector/toolbar text (outside
+              the world layer) stays selectable. */}
+          <Box style={{ position: "absolute", left: 0, top: 0, width: world.w, height: world.h, userSelect: "none", ...worldTransform, willChange: "transform" }}>
             {children}
           </Box>
           {overlays}
