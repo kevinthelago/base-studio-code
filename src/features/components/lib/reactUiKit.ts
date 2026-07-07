@@ -8,7 +8,7 @@
 // overlay. A primitive without an overlay entry gets sensible generated defaults + a stub source;
 // authoring the rich guidance for the rest is #2305 slice 3.
 import { UI_KIT, type PrimitiveSpec, type PropSpec as ManifestProp, type PrimitiveGroup } from "@/shared/ui/manifest";
-import type { ComponentRecord, Kit, PropSpec, Role } from "./model";
+import type { ComponentRecord, DataShape, Kit, PropSpec, Role } from "./model";
 
 export const REACT_UI_KIT_ID = "react-ui";
 
@@ -42,6 +42,11 @@ interface Guidance {
   whenUse?: string[];
   whenNot?: string[];
   srcText?: string;
+  /** The data shapes this component is an IDEAL rendering for (#2475) — stamped honestly from an
+   *  audit of the real source, never guessed. Absent ⇒ not shape-indexed. In react-ui today `tree`
+   *  and `linked-list` are deliberately UNCOVERED — the Tree (#2476) and Sequence (#2477) templates
+   *  land separately and get stamped when they do; don't fake coverage with a near-fit. */
+  shapes?: DataShape[];
 }
 
 const GUIDANCE: Record<string, Guidance> = {
@@ -64,7 +69,8 @@ const GUIDANCE: Record<string, Guidance> = {
     srcText: "export function Chip({ tone = \"neutral\", color, dot, children }: ChipProps) {\n  if (color) return <span style={mix(color)}>{children}</span>;\n  return <span className={`chip tone-${tone}`}>{children}</span>;\n}",
   },
   TextField: {
-    version: "1.2.0", used: 97, tags: ["form", "input"], wraps: "input",
+    // Composes the (unregistered) Field stack; the in-kit edge is the loading Skeleton (Field.tsx).
+    version: "1.2.0", used: 97, tags: ["form", "input"], wraps: "input", composes: ["Skeleton"],
     whenUse: ["Any single-line text input with a label.", "Controlled form fields (value + onChange)."],
     whenNot: ["Multi-line input — use TextArea.", "A boolean — use Toggle / Checkbox."],
     srcText: "export function TextField({ label, value, onChange, hint }: TextFieldProps) {\n  return (\n    <label className=\"field\">\n      <span>{label}</span>\n      <input className=\"input\" value={value}\n        onChange={(e) => onChange(e.target.value)} />\n    </label>\n  );\n}",
@@ -144,7 +150,7 @@ const GUIDANCE: Record<string, Guidance> = {
 
   // ── typography ──
   Text: {
-    tags: ["typography"], wraps: "span",
+    tags: ["typography"], wraps: "span", composes: ["Skeleton"], // loading renders a Skeleton line (#2302)
     whenUse: ["Any text — sized by rung, semantically toned, mono or not.", "Labels, values, and body copy."],
     whenNot: ["A raw string in a slot that already styles its text.", "An interactive label — pair it with a control."],
   },
@@ -166,7 +172,7 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["A form value submitted later — use Checkbox.", "More than two states — use SegmentedControl."],
   },
   TextArea: {
-    tags: ["control", "form", "input"], wraps: "textarea",
+    tags: ["control", "form", "input"], wraps: "textarea", composes: ["Skeleton"], // loading state (Field.tsx)
     whenUse: ["Any multi-line text input with a label (prompts, bodies, notes).", "Controlled form fields (value + onChange) that span lines."],
     whenNot: ["Single-line input — use TextField.", "Read-only code / prompt display — use Code."],
   },
@@ -203,7 +209,7 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["A precise value — pair it with a label.", "A time series — use a chart."],
   },
   Code: {
-    tags: ["data"],
+    tags: ["data"], composes: ["Skeleton"], // loading renders SkeletonText (the Skeleton family)
     whenUse: ["A read-only, scrollable monospace code / prompt block.", "Showing a command, config, or source snippet."],
     whenNot: ["Editable code — use an editor.", "Inline mono text — use Text mono."],
   },
@@ -218,14 +224,25 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["A clickable icon — use IconButton.", "A bare inline glyph — use Text."],
   },
   CardListRow: {
-    role: "composite", tags: ["data", "list"], composes: ["Card"],
+    // shapes: renders ONE homogeneous item of a flat collection (the card-list archetype, #1865).
+    role: "composite", tags: ["data", "list"], composes: ["Card"], shapes: ["list"],
     whenUse: ["A selectable row in a card-style list.", "A master-list item with a leading glyph + trailing meta."],
     whenNot: ["A dense table row — use DataTableRow.", "A standalone card — use Card."],
   },
   DataTableRow: {
-    tags: ["data", "table"],
+    // shapes: the columnar-row archetype — with DataTableHeader's shared `template` it renders
+    // fixed, aligned columns over homogeneous records: the table rendering.
+    tags: ["data", "table"], shapes: ["table"],
     whenUse: ["A row in a dense, column-aligned data table.", "Tabular records with fixed columns."],
     whenNot: ["A card-style list — use CardListRow.", "A single metric — use StatTile."],
+  },
+  KeyValueList: {
+    // shapes: the key-value rendering (#2475) — added because NOTHING else in the kit renders a keyed
+    // RECORD read-only: StatTile is a single KPI pair, the Field controls are editable inputs,
+    // RoleTierChips is domain-fixed to the four permission axes.
+    tags: ["data", "key-value"], composes: ["Skeleton"], shapes: ["key-value"],
+    whenUse: ["A read-only label : value property list — a detail summary, config panel, or inspector facts block.", "Rendering one record's named fields in a fixed, aligned two-column grid."],
+    whenNot: ["Editable fields — use TextField / SelectField.", "One headline metric — use StatTile.", "Many homogeneous records — use DataTableRow / CardListRow."],
   },
   RoleTierChips: {
     role: "composite", tags: ["data", "status"], composes: ["Chip", "Row"],
@@ -245,12 +262,12 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["A blocking decision — use Dialog.", "A short inline error — use InlineError."],
   },
   InlineError: {
-    tags: ["feedback"],
+    tags: ["feedback"], composes: ["Box"], // a toned Box wash (InlineError.tsx)
     whenUse: ["A short static error string on a danger wash.", "A field- or section-level failure note."],
     whenNot: ["A dismissible page notice — use Banner.", "A blocking error — use Dialog."],
   },
   Skeleton: {
-    tags: ["feedback", "loading"],
+    tags: ["feedback", "loading"], composes: ["Box"], // a Box with the shimmer atom (Skeleton.tsx)
     whenUse: ["A shape-matched loading placeholder while content loads.", "The loading state a content component renders for itself (#2302)."],
     whenNot: ["An empty (no-data) state — use EmptyState.", "An error — use InlineError / Banner."],
   },
@@ -298,9 +315,13 @@ const GUIDANCE: Record<string, Guidance> = {
   },
 
   // ── layouts (page-skeleton templates, #2197) ──
+  // Data-shape audit (#2475): MasterDetail's rail IS a list (select-a-row → detail) and GraphCanvas's
+  // world IS a node/edge graph, so they stamp. SplitView (two HETEROGENEOUS panes) and PaneGrid
+  // (hosts opaque workspace/pane cells, not data items) are honestly NOT shape-indexed. `tree` and
+  // `linked-list` have no ideal in react-ui yet — the Tree (#2476) / Sequence (#2477) templates add them.
   MasterDetail: {
     version: "1.0.0", tags: ["layout", "page", "list-detail"], composes: ["Box", "Row", "Stack"],
-    variants: ["default", "resizable"],
+    variants: ["default", "resizable"], shapes: ["list"],
     whenUse: ["A list/nav rail beside a detail view (Personas · Skills · MCP · GitHub · Security · Settings).", "Any master→detail page where selecting a rail row drives the detail column."],
     whenNot: ["A free pan/zoom graph — use GraphCanvas.", "A two-pane split with no fixed list rail — use SplitView."],
     srcText: 'import { MasterDetail } from "@/shared/ui/layouts/MasterDetail";\n\n<MasterDetail\n  rail={<PersonaList/>}\n  detail={<PersonaEditor/>}\n/>',
@@ -314,7 +335,7 @@ const GUIDANCE: Record<string, Guidance> = {
   },
   GraphCanvas: {
     version: "1.0.0", tags: ["layout", "page", "graph"], composes: ["Box", "Row", "Stack", "IconButton"],
-    variants: ["default", "with-rail"],
+    variants: ["default", "with-rail"], shapes: ["graph"],
     whenUse: ["A pan/zoom graph workspace (Streams graph · Org designer · Glance).", "Any node/edge canvas needing viewport wiring + an optional rail/inspector."],
     whenNot: ["A static list or form — use MasterDetail.", "A CSS grid of equal panes — use PaneGrid."],
     srcText: 'import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";\nimport { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";\n\nconst vp = useGraphViewport(world);\n<GraphCanvas vp={vp} world={world} grid\n  toolbar={<ZoomControls vp={vp}/>}>\n  {edges}{nodes}\n</GraphCanvas>',
@@ -326,6 +347,14 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["A single list+detail split — use MasterDetail.", "A pan/zoom graph — use GraphCanvas."],
     srcText: 'import { PaneGrid } from "@/shared/ui/layouts/PaneGrid";\n\n<PaneGrid cols={2} rows={2}>\n  {panes.map((p) => <Pane key={p.id} {...p}/>)}\n</PaneGrid>',
   },
+  Tree: {
+    version: "1.0.0", tags: ["layout", "page", "tree"], composes: ["MasterDetail", "GraphCanvas", "Box", "Row", "Stack", "Text", "IconButton"],
+    shapes: ["tree"], // the ideal tree-shape layout — fills the gap the #2475 shape axis recorded
+    variants: ["indented", "layered"],
+    whenUse: ["Deep / navigational tree data (file systems, category hierarchies) — variant=\"indented\": collapsible depth-indented rows + a detail panel.", "A presentational top-down hierarchy (org chart, ownership map) — variant=\"layered\" rides the shared graph stack (layerDag + edge grammar + GraphCanvas pan/zoom)."],
+    whenNot: ["A flat list beside a detail — use MasterDetail.", "A general (multi-parent / cyclic) graph — use GraphCanvas with layerDag directly."],
+    srcText: 'import { Tree } from "@/shared/ui/layouts/Tree";\n\n<Tree\n  nodes={[{ id: "src", label: "src", children: [\n    { id: "app", label: "app" },\n  ] }]}\n  detail={(n) => <NodeDetail node={n}/>}\n  onSelect={setSelected}\n/>',
+  },
   // ── #2421 gap-fill ──
   LabelChip: {
     role: "composite", tags: ["badge", "github"], composes: ["Chip"],
@@ -333,7 +362,8 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["A semantic status tag — use Chip with a tone.", "A clickable filter — use SegmentedControl."],
   },
   ActivityFeed: {
-    role: "composite", tags: ["data", "feed"], composes: ["Avatar", "EmptyState", "Skeleton"],
+    // shapes: a striped feed of homogeneous event rows — a flat, ordered list rendering.
+    role: "composite", tags: ["data", "feed"], composes: ["Avatar", "EmptyState", "Skeleton"], shapes: ["list"],
     whenUse: ["A \"Recent activity\" card of actor · action · target rows.", "Cross-repo / cross-project event feeds sharing one striped layout."],
     whenNot: ["A dense column-aligned table — use DataTableRow.", "A single event notice — use Banner."],
   },
@@ -418,6 +448,7 @@ function toRecord(spec: PrimitiveSpec): ComponentRecord {
     srcText: g.srcText ?? stubSrc(spec),
     builtin: true,
     ...(g.wraps ? { wraps: g.wraps } : {}),
+    ...(g.shapes ? { shapes: g.shapes } : {}),
   };
 }
 

@@ -1,6 +1,6 @@
 // UI-kit pins (#2465) — the blueprint↔kit-store link. A blueprint REFERENCES a UI kit as a
 // lockfile entry (`Blueprint.uiKit = { id, version, hash, source? }`, exact pins only) against the
-// GLOBAL versioned kit store (`~/.base-studio-code/kits/<id>/<version>/`, the Rust `bsc ui kit`
+// GLOBAL versioned kit store (`~/.base-studio-code/kits/<id>/<version>/`, the Rust `bsc ui release`
 // CLI), so one copy serves every blueprint that pins it and the same kit is never downloaded twice.
 //
 //  · PACKAGED_UI_KIT_PIN — the packaged `bsc/react-ui` kit's pin (id/version/hash read from the
@@ -14,7 +14,7 @@
 //    the exact bytes for everyone downstream).
 //
 // Pure of React; store access goes through the generic `bsc` bridge (#2114), the same surface a
-// live session reaches with `bsc ui kit …` from its own shell.
+// live session reaches with `bsc ui release …` from its own shell.
 
 import packagedKitMeta from "@data/ui/react-ui-kit.meta.json";
 import { bsc, bscJson } from "@/shared/lib/core/bsc";
@@ -24,7 +24,7 @@ import { fetchGistManifestText } from "@/features/planner/lib/gist/gist";
 import { parseManifest } from "@/features/planner/lib/gist/manifest";
 import type { Blueprint, BlueprintUiKit } from "../stages/blueprints";
 
-/** A kit-store entry's manifest, as `bsc ui kit list|get|add` emit it. */
+/** A kit-store entry's manifest, as `bsc ui release list|get|add` emit it. */
 export interface KitStoreManifest {
   id: string;
   version: string;
@@ -47,12 +47,12 @@ export function kitRef(pin: Pick<BlueprintUiKit, "id" | "version">): string {
 
 /** Every kit in the local store (incl. the packaged default). Empty when the bridge is absent. */
 export async function listStoreKits(): Promise<KitStoreManifest[]> {
-  return bscJson<KitStoreManifest[]>(null, ["ui", "kit", "list"], []);
+  return bscJson<KitStoreManifest[]>(null, ["ui", "release", "list"], []);
 }
 
 /** One store entry's manifest, or null when `id@version` isn't in the store. */
 export async function getStoreKit(pin: Pick<BlueprintUiKit, "id" | "version">): Promise<KitStoreManifest | null> {
-  return bscJson<KitStoreManifest | null>(null, ["ui", "kit", "get", kitRef(pin)], null);
+  return bscJson<KitStoreManifest | null>(null, ["ui", "release", "get", kitRef(pin)], null);
 }
 
 export type UiKitResolution =
@@ -65,7 +65,7 @@ export type UiKitResolution =
  * `id@version` is NEVER re-fetched — immutable versions make the local copy valid forever); miss ⇒
  * fetch the typed gist at `pin.source`, verify its sha256 against `pin.hash` BEFORE anything is
  * written, and only then add it to the store. A hash mismatch (or a missing source) is a loud
- * `{ ok: false }` and the store is untouched. The `--sha256` handed to `bsc ui kit add` makes the
+ * `{ ok: false }` and the store is untouched. The `--sha256` handed to `bsc ui release add` makes the
  * Rust store re-verify, so the no-write-on-mismatch guarantee holds even if this caller is wrong.
  */
 export async function resolveUiKitPin(pin: BlueprintUiKit, token = ""): Promise<UiKitResolution> {
@@ -85,7 +85,7 @@ export async function resolveUiKitPin(pin: BlueprintUiKit, token = ""): Promise<
   try {
     await bsc(
       null,
-      ["ui", "kit", "add", pin.id, pin.version, "--kind", "component-kit", "--sha256", pin.hash, "--source", pin.source],
+      ["ui", "release", "add", pin.id, pin.version, "--kind", "component-kit", "--sha256", pin.hash, "--source", pin.source],
       raw.text,
     );
   } catch (e) {
@@ -157,7 +157,7 @@ export async function importKitByGistUrl(url: string, token = ""): Promise<KitIm
   const { id, version } = deriveKitIdentity(parsed.manifest, raw.owner);
   const hash = await sha256Hex(raw.text);
   try {
-    await bsc(null, ["ui", "kit", "add", id, version, "--kind", "component-kit", "--source", url], raw.text);
+    await bsc(null, ["ui", "release", "add", id, version, "--kind", "component-kit", "--source", url], raw.text);
   } catch (e) {
     return { ok: false, error: `could not add ${id}@${version} to the kit store: ${String(e)}` };
   }

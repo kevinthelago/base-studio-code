@@ -1,13 +1,20 @@
 // Pure model for the Component Library (#2269) — the technology-scoped "kits" of proven components the
 // planner's `test_ui` stage browses. React/Tauri-free so non-UI code (and tests) can use it directly.
 //
-// The library is a GLOBAL store reached through the `bsc component` CLI (see componentBridge.ts); this
+// The library is a GLOBAL store reached through the `bsc ui` CLI (see componentBridge.ts); this
 // module owns only the shapes + pure derivations (search, compose/used-by resolution, role colors).
 
 /** A component's architectural role — drives its accent color + grouping. */
 export type Role = "primitive" | "composite" | "layout" | "page" | "service";
 
 export const ROLES: Role[] = ["primitive", "composite", "layout", "page", "service"];
+
+/** The data-shape vocabulary (#2475) — the six canonical shapes a feature's data can take. The
+ *  planner derives its data's shape, then asks the kit for the ideal rendering
+ *  (`bsc ui shapes <shape>` / `bsc ui list --shape <shape>`). */
+export type DataShape = "list" | "linked-list" | "tree" | "graph" | "table" | "key-value";
+
+export const DATA_SHAPES: DataShape[] = ["list", "linked-list", "tree", "graph", "table", "key-value"];
 
 /** One public prop / API member of a component. */
 export interface PropSpec {
@@ -83,6 +90,11 @@ export interface ComponentRecord {
   /** Author-declared lint rules this component contributes to its kit's preset (in addition to the
    *  ones derived from `wraps`). Absent ⇒ none. */
   rules?: KitRule[];
+  /** The data shapes this component is an IDEAL rendering for (#2475) — the axis `bsc ui shapes` /
+   *  `bsc ui list --shape` picks layouts by. Meaningful on layout-role components and the
+   *  data-rendering composites (rows, feeds, property lists); absent ⇒ not shape-indexed (chrome,
+   *  controls, chrome-level layouts that host arbitrary panes rather than render a data collection). */
+  shapes?: DataShape[];
 }
 
 /** The shared zero-state title — Design Studio and the Planner Components pane must say the same

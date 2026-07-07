@@ -467,6 +467,22 @@ export function renderSpecimen(comp: ComponentRecord, variant: string, theme: Pr
         </div>
       );
     }
+    case "KeyValueList": {
+      const kv = (k: string, v: string, accent?: boolean) => (
+        <>
+          <span style={{ fontFamily: mono, fontSize: 10, textTransform: "uppercase", letterSpacing: ".05em", color: t.muted }}>{k}</span>
+          <span style={{ fontFamily: mono, fontSize: 11.5, color: accent ? "var(--accent)" : t.fg }}>{v}</span>
+        </>
+      );
+      return (
+        <div style={{ width: 250, display: "grid", gridTemplateColumns: "90px 1fr", rowGap: 7, columnGap: 12, alignItems: "baseline" }}>
+          {kv("repo", "base-studio-code")}
+          {kv("branch", "develop", true)}
+          {kv("streams", "4 active")}
+          {kv("plan.db", "~/.base-studio-code")}
+        </div>
+      );
+    }
     case "Pane": {
       return (
         <div style={{ width: 250, height: 150, borderRadius: 10, border: `1px solid ${t.border}`, background: t.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -591,6 +607,201 @@ export function renderSpecimen(comp: ComponentRecord, variant: string, theme: Pr
         </div>
       );
     }
+
+    case "Tree": {
+      if (variant === "layered") {
+        // Top-down org-chart schematic: root over two children over two grandchildren, anchor edges.
+        const card = (x: number, y: number, w: number, on?: boolean) => <div style={{ position: "absolute", left: x, top: y, width: w, height: 20, borderRadius: 5, background: on ? "color-mix(in oklch, var(--accent), transparent 82%)" : t.elev, border: `1px solid ${on ? "var(--accent)" : t.border}` }} />;
+        return (
+          <div style={{ width: 280, height: 152, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.panel, display: "flex", flexDirection: "column" }}>
+            <div style={{ height: 22, flex: "none", borderBottom: `1px solid ${t.borderSoft}`, background: t.elev, display: "flex", alignItems: "center", padding: "0 8px", gap: 5 }}>
+              <span style={{ width: 34, height: 7, borderRadius: 3, background: t.dim }} /><span style={{ flex: 1 }} />
+              <span style={{ display: "flex", gap: 3 }}>{["−", "%", "+"].map((g) => <span key={g} style={{ width: 14, height: 12, borderRadius: 3, background: t.bg, border: `1px solid ${t.borderSoft}`, fontFamily: mono, fontSize: 8, color: t.muted, display: "flex", alignItems: "center", justifyContent: "center" }}>{g}</span>)}</span>
+            </div>
+            <div style={{ flex: 1, position: "relative", overflow: "hidden", backgroundImage: `radial-gradient(${t.borderSoft} 1px, transparent 1px)`, backgroundSize: "12px 12px" }}>
+              <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}>
+                <path d="M131,32 C110,48 100,48 84,54" stroke={t.border} strokeWidth={1.5} fill="none" />
+                <path d="M147,32 C168,48 178,48 194,54" stroke={t.border} strokeWidth={1.5} fill="none" />
+                <path d="M60,74 C48,90 42,90 34,96" stroke={t.border} strokeWidth={1.5} fill="none" />
+                <path d="M78,74 C92,90 98,90 108,96" stroke={t.border} strokeWidth={1.5} fill="none" />
+              </svg>
+              {card(116, 12, 46, true)}{card(46, 54, 46)}{card(186, 54, 46)}{card(10, 96, 46)}{card(86, 96, 46)}
+            </div>
+          </div>
+        );
+      }
+      // Indented (file-explorer) schematic: chevroned, depth-indented rows + the detail column.
+      const chev = (open: boolean) => <span style={{ fontSize: 6, color: t.dim, width: 7, flex: "none", display: "inline-block", transform: open ? "rotate(90deg)" : "none" }}>▶</span>;
+      const row = (depth: number, w: number, open?: boolean, active?: boolean, leaf?: boolean) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 4px", paddingLeft: 4 + depth * 10, borderRadius: 4, marginBottom: 2, background: active ? "color-mix(in oklch, var(--accent), transparent 84%)" : "transparent", border: `1px solid ${active ? "var(--accent)" : "transparent"}` }}>
+          {leaf ? <span style={{ width: 7, flex: "none" }} /> : chev(!!open)}
+          <span style={{ width: w, height: 6, borderRadius: 3, background: active ? "var(--accent)" : t.elev, border: active ? undefined : `1px solid ${t.borderSoft}` }} />
+        </div>
+      );
+      return (
+        <div style={{ width: 280, height: 152, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.panel, display: "flex" }}>
+          <div style={{ width: 112, flex: "none", borderRight: `1px solid ${t.borderSoft}`, padding: 7, overflow: "hidden" }}>
+            {row(0, 46, true)}{row(1, 38, true)}{row(2, 42, false, true, true)}{row(2, 30, false, false, true)}{row(1, 34, false)}{row(0, 40, false, false, true)}
+          </div>
+          <div style={{ flex: 1, padding: 10, display: "flex", flexDirection: "column", gap: 7 }}>
+            <span style={{ width: "55%", height: 10, borderRadius: 4, background: t.fg, opacity: 0.8 }} />
+            {["100%", "88%", "70%"].map((w) => <span key={w} style={{ width: w, height: 7, borderRadius: 3, background: t.elev }} />)}
+          </div>
+        </div>
+      );
+    }
+
+    // ── examples kit (the exemplar, #2456) — a small persona-manager demo app ──
+    case "DemoButton": {
+      const base: CSSProperties = { height: 28, padding: "0 14px", borderRadius: 6, fontFamily: mono, fontSize: 11.5, fontWeight: 600, display: "inline-flex", alignItems: "center", border: "1px solid transparent", cursor: "default" };
+      if (variant === "primary") return <button style={{ ...base, background: "var(--accent)", color: "var(--accent-text)" }}>Save persona</button>;
+      if (variant === "danger") return <button style={{ ...base, background: "transparent", color: "var(--danger)", borderColor: "color-mix(in oklch, var(--danger), transparent 60%)" }}>Delete</button>;
+      return <button style={{ ...base, background: "transparent", color: t.fg, borderColor: t.borderSoft }}>Cancel</button>;
+    }
+    case "DemoField":
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, width: 230 }}>
+          <label style={{ fontFamily: mono, fontSize: 10, textTransform: "uppercase", letterSpacing: ".05em", color: t.muted }}>Name</label>
+          <div style={{ height: 28, display: "flex", alignItems: "center", padding: "0 10px", borderRadius: 6, background: t.bg, border: `1px solid ${t.borderSoft}`, color: t.fg, fontFamily: mono, fontSize: 12 }}>Senior Reviewer</div>
+        </div>
+      );
+    case "RoleTag": {
+      const tone: Record<string, string> = { planner: "var(--violet)", worker: "var(--success)", director: "var(--info)" };
+      const c = tone[variant] || tone.planner;
+      const role = tone[variant] ? variant : "planner";
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: mono, fontSize: 10.5, color: c, background: `color-mix(in oklch, ${c}, transparent 88%)`, border: `1px solid color-mix(in oklch, ${c}, transparent 72%)`, borderRadius: 99, padding: "3px 10px" }}>
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: c }} />{role}
+        </span>
+      );
+    }
+    case "PersonaBadge": {
+      const badge = (initials: string, hue: number) => (
+        <span style={{ width: 28, height: 28, borderRadius: "50%", background: `oklch(0.35 0.09 ${hue})`, color: "oklch(0.92 0.02 " + hue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 10.5, fontWeight: 600 }}>{initials}</span>
+      );
+      return <div style={{ display: "flex", gap: 8 }}>{badge("SR", 280)}{badge("AB", 150)}{badge("TW", 40)}</div>;
+    }
+    case "DemoHeading":
+      return (
+        <h2 style={{ margin: 0, display: "flex", alignItems: "baseline", gap: 9, fontFamily: mono, fontSize: 15, fontWeight: 600, color: t.fg }}>
+          Personas <span style={{ fontSize: 10.5, fontWeight: 400, color: t.dim }}>3 in the library</span>
+        </h2>
+      );
+    case "PersonaRow": {
+      return (
+        <button style={{ display: "flex", alignItems: "center", gap: 9, width: 230, padding: "7px 10px", borderRadius: 8, background: "var(--accent-soft)", border: "1px solid var(--accent-dim)", cursor: "default", textAlign: "left" }}>
+          <span style={{ width: 22, height: 22, borderRadius: "50%", background: "oklch(0.35 0.09 280)", color: "oklch(0.92 0.02 280)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 9, fontWeight: 600, flexShrink: 0 }}>SR</span>
+          <span style={{ flex: 1, fontFamily: mono, fontSize: 11.5, color: t.fg }}>Senior Reviewer</span>
+          <span style={{ fontFamily: mono, fontSize: 9.5, color: "var(--violet)", background: "color-mix(in oklch, var(--violet), transparent 88%)", border: "1px solid color-mix(in oklch, var(--violet), transparent 72%)", borderRadius: 99, padding: "2px 8px" }}>planner</span>
+        </button>
+      );
+    }
+    case "PersonaList": {
+      const row = (initials: string, name: string, role: string, c: string, active: boolean) => (
+        <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", borderRadius: 7, background: active ? "var(--accent-soft)" : "transparent", border: `1px solid ${active ? "var(--accent-dim)" : "transparent"}` }}>
+          <span style={{ width: 20, height: 20, borderRadius: "50%", background: `color-mix(in oklch, ${c}, transparent 78%)`, color: c, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 8.5, fontWeight: 600, flexShrink: 0 }}>{initials}</span>
+          <span style={{ flex: 1, fontFamily: mono, fontSize: 11, color: t.fg }}>{name}</span>
+          <span style={{ fontFamily: mono, fontSize: 9, color: t.dim }}>{role}</span>
+        </div>
+      );
+      return (
+        <div style={{ width: 230, display: "flex", flexDirection: "column", gap: 5 }}>
+          <div style={{ height: 26, display: "flex", alignItems: "center", padding: "0 9px", borderRadius: 6, background: t.bg, border: `1px solid ${t.borderSoft}`, color: t.dim, fontFamily: mono, fontSize: 11 }}>⌕ search…</div>
+          {row("SR", "Senior Reviewer", "planner", "var(--violet)", true)}
+          {row("AB", "API Builder", "worker", "var(--success)", false)}
+          {row("TW", "Test Writer", "worker", "var(--success)", false)}
+        </div>
+      );
+    }
+    case "PersonaForm":
+      return (
+        <div style={{ width: 240, display: "flex", flexDirection: "column", gap: 10 }}>
+          {[["Name", "Senior Reviewer"], ["Start prompt", "Review diffs for correctness…"]].map(([label, val]) => (
+            <div key={label} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <label style={{ fontFamily: mono, fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".05em", color: t.muted }}>{label}</label>
+              <div style={{ height: 26, display: "flex", alignItems: "center", padding: "0 9px", borderRadius: 6, background: t.bg, border: `1px solid ${t.borderSoft}`, color: t.fg, fontFamily: mono, fontSize: 11 }}>{val}</div>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <span style={{ height: 26, display: "inline-flex", alignItems: "center", padding: "0 12px", borderRadius: 6, color: "var(--danger)", border: "1px solid color-mix(in oklch, var(--danger), transparent 60%)", fontFamily: mono, fontSize: 10.5 }}>Delete</span>
+            <span style={{ height: 26, display: "inline-flex", alignItems: "center", padding: "0 12px", borderRadius: 6, background: "var(--accent)", color: "var(--accent-text)", fontFamily: mono, fontSize: 10.5, fontWeight: 600 }}>Save</span>
+          </div>
+        </div>
+      );
+    case "AgentTile":
+      return (
+        <div style={{ width: 170, padding: "12px 13px", borderRadius: 10, background: t.panel, border: `1px solid ${t.borderSoft}`, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 24, height: 24, borderRadius: "50%", background: "oklch(0.35 0.09 150)", color: "oklch(0.92 0.02 150)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 9, fontWeight: 600 }}>AB</span>
+            <span style={{ flex: 1, fontFamily: mono, fontSize: 11.5, fontWeight: 600, color: t.fg }}>API Builder</span>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--state-run)" }} />
+          </div>
+          <span style={{ alignSelf: "flex-start", fontFamily: mono, fontSize: 9.5, color: "var(--success)", background: "color-mix(in oklch, var(--success), transparent 88%)", border: "1px solid color-mix(in oklch, var(--success), transparent 72%)", borderRadius: 99, padding: "2px 8px" }}>worker</span>
+          <span style={{ fontFamily: mono, fontSize: 9.5, color: t.dim }}>issue #2412 · 14m</span>
+        </div>
+      );
+    case "PersonaShell":
+      return (
+        <div style={{ width: 280, height: 150, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.panel, display: "flex", flexDirection: "column" }}>
+          <div style={{ height: 26, flex: "none", borderBottom: `1px solid ${t.borderSoft}`, display: "flex", alignItems: "center", padding: "0 10px", fontFamily: mono, fontSize: 11, fontWeight: 600, color: t.fg }}>Personas <span style={{ marginLeft: 7, fontSize: 9, fontWeight: 400, color: t.dim }}>hint</span></div>
+          <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+            <div style={{ width: 86, flex: "none", borderRight: `1px solid ${t.borderSoft}`, padding: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+              <span style={{ fontFamily: mono, fontSize: 8.5, color: t.dim, textTransform: "uppercase" }}>rail</span>
+              {[0, 1, 2].map((i) => <span key={i} style={{ height: 9, borderRadius: 3, background: i === 0 ? "color-mix(in oklch, var(--accent), transparent 82%)" : t.elev, border: `1px solid ${i === 0 ? "var(--accent)" : t.borderSoft}` }} />)}
+            </div>
+            <div style={{ flex: 1, padding: 10, display: "flex", flexDirection: "column", gap: 7 }}>
+              <span style={{ fontFamily: mono, fontSize: 8.5, color: t.dim, textTransform: "uppercase" }}>children</span>
+              {["90%", "100%", "65%"].map((w) => <span key={w} style={{ width: w, height: 7, borderRadius: 3, background: t.elev }} />)}
+            </div>
+          </div>
+        </div>
+      );
+    case "PersonasPanel":
+      return (
+        <div style={{ width: 280, height: 152, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.panel, display: "flex", flexDirection: "column" }}>
+          <div style={{ height: 24, flex: "none", borderBottom: `1px solid ${t.borderSoft}`, display: "flex", alignItems: "center", padding: "0 10px", fontFamily: mono, fontSize: 10.5, fontWeight: 600, color: t.fg }}>Personas</div>
+          <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+            <div style={{ width: 96, flex: "none", borderRight: `1px solid ${t.borderSoft}`, padding: 7, display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={{ height: 16, borderRadius: 4, background: t.bg, border: `1px solid ${t.borderSoft}` }} />
+              {[0, 1, 2].map((i) => (
+                <span key={i} style={{ display: "flex", alignItems: "center", gap: 4, height: 15, borderRadius: 4, padding: "0 4px", background: i === 0 ? "var(--accent-soft)" : "transparent", border: `1px solid ${i === 0 ? "var(--accent-dim)" : "transparent"}` }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: t.dim, flexShrink: 0 }} /><span style={{ flex: 1, height: 4, borderRadius: 2, background: t.elev }} />
+                </span>
+              ))}
+            </div>
+            <div style={{ flex: 1, padding: 9, display: "flex", flexDirection: "column", gap: 5 }}>
+              {["55%", "100%", "100%"].map((w, i) => <span key={i} style={{ width: w, height: i ? 14 : 6, borderRadius: 4, background: i ? t.bg : t.elev, border: i ? `1px solid ${t.borderSoft}` : "none" }} />)}
+              <span style={{ alignSelf: "flex-end", marginTop: "auto", width: 34, height: 12, borderRadius: 4, background: "var(--accent)" }} />
+            </div>
+          </div>
+        </div>
+      );
+    case "AgentsBoard":
+      return (
+        <div style={{ width: 280, height: 152, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.panel, display: "flex", flexDirection: "column" }}>
+          <div style={{ height: 24, flex: "none", borderBottom: `1px solid ${t.borderSoft}`, display: "flex", alignItems: "center", padding: "0 10px", fontFamily: mono, fontSize: 10.5, fontWeight: 600, color: t.fg }}>Agents</div>
+          <div style={{ flex: 1, padding: 8, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gridTemplateRows: "repeat(2, 1fr)", gap: 6 }}>
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <div key={i} style={{ borderRadius: 6, background: t.bg, border: `1px solid ${t.borderSoft}`, padding: 5, display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: t.elev }} />
+                  <span style={{ flex: 1, height: 4, borderRadius: 2, background: t.elev }} />
+                  <span style={{ width: 4, height: 4, borderRadius: "50%", background: i < 4 ? "var(--state-run)" : "var(--state-wait)" }} />
+                </span>
+                <span style={{ width: "55%", height: 4, borderRadius: 2, background: t.elev }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    case "PersonaStore":
+      return (
+        <div style={{ width: 264, borderRadius: 8, background: t.bg, border: `1px solid ${t.borderSoft}`, padding: "10px 12px", fontFamily: mono, fontSize: 10.5, lineHeight: 1.7 }}>
+          <div><span style={{ color: t.muted }}>const </span><span style={{ color: "var(--accent)" }}>{"{ personas, save }"}</span><span style={{ color: t.muted }}> =</span></div>
+          <div style={{ paddingLeft: 12 }}><span style={{ color: "var(--info)" }}>PersonaStore</span><span style={{ color: t.muted }}>.usePersonas();</span></div>
+          <div style={{ marginTop: 6, color: t.dim }}>// live list + writers, via `bsc persona`</div>
+        </div>
+      );
 
     default:
       return (

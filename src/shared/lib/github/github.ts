@@ -26,6 +26,27 @@ export function isGithubAuthError(e: unknown): boolean {
 }
 
 /**
+ * Match the backend's typed rate-limit error (#2448): `github rate-limited until <epoch secs>` —
+ * raised when GitHub's quota is exhausted (403/429 + `X-RateLimit-Remaining: 0` / `Retry-After`)
+ * and while the backend's in-memory gate short-circuits further requests.
+ *
+ * @returns the reset time in epoch **milliseconds**, or null for any other failure.
+ */
+export function rateLimitedUntil(e: unknown): number | null {
+  const m = /github rate-limited until (\d+)/.exec(String(e));
+  return m ? Number(m[1]) * 1000 : null;
+}
+
+/** The quiet inline wording for a rate-limited query (#2448), or null for any other error —
+ *  callers render this as a dim note instead of the red error banner. */
+export function rateLimitNote(e: unknown): string | null {
+  const until = rateLimitedUntil(e);
+  if (until === null) return null;
+  const at = new Date(until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `GitHub rate limit reached — showing cached data; retrying after ${at}.`;
+}
+
+/**
  * Call the GitHub REST API through the ETag-validated backend cache (`github_request`).
  *
  * - Pulls the token from the store, so callers just pass a path.

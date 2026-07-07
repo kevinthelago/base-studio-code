@@ -1,7 +1,7 @@
 // UI-kit pin machinery tests (#2465): the packaged default pin, the default-pin on new-blueprint
 // authoring (existing/no-pin blueprints unaffected), and the resolve flow — store hit ⇒ zero
 // downloads · miss ⇒ fetch + sha256-verify BEFORE the store write · hash mismatch ⇒ loud rejection
-// with nothing stored. The fetch (github_request) and the store (`bsc ui kit …`) are both behind
+// with nothing stored. The fetch (github_request) and the store (`bsc ui release …`) are both behind
 // the mocked Tauri `invoke`, so every path is asserted at the wire.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
@@ -20,12 +20,12 @@ if (!globalThis.crypto?.subtle) vi.stubGlobal("crypto", webcrypto);
 
 const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 
-/** Route the mocked `invoke` — `bsc ui kit get` returns `storeGet`, github_request returns `gist`,
+/** Route the mocked `invoke` — `bsc ui release get` returns `storeGet`, github_request returns `gist`,
  *  everything else null. Records nothing itself; assertions read vi.mocked(invoke).mock.calls. */
 function wire({ storeGet = null as unknown, gist = null as unknown } = {}) {
   vi.mocked(invoke).mockImplementation(async (cmd, payload) => {
     const p = payload as { args?: string[] } | undefined;
-    if (cmd === "bsc" && p?.args?.[0] === "ui" && p.args[1] === "kit") {
+    if (cmd === "bsc" && p?.args?.[0] === "ui" && p.args[1] === "release") {
       if (p.args[2] === "get") return JSON.stringify(storeGet);
       if (p.args[2] === "add") return JSON.stringify({ ok: true });
       if (p.args[2] === "list") return JSON.stringify(storeGet ? [storeGet] : []);
@@ -93,7 +93,7 @@ describe("default-pin on new-blueprint authoring", () => {
     await vi.waitFor(() => {
       const gets = vi.mocked(invoke).mock.calls.filter((c) => c[0] === "bsc" && (c[1] as { args?: string[] })?.args?.[2] === "get");
       expect(gets.length).toBeGreaterThan(0);
-      expect((gets[0][1] as { args: string[] }).args).toEqual(["ui", "kit", "get", "bsc/react-ui@1.0.0"]);
+      expect((gets[0][1] as { args: string[] }).args).toEqual(["ui", "release", "get", "bsc/react-ui@1.0.0"]);
     });
     // Cached in the store ⇒ zero downloads, nothing added.
     expect(fetchCalls()).toHaveLength(0);
@@ -121,7 +121,7 @@ describe("resolveUiKitPin — the resolve flow", () => {
     expect(fetchCalls()).toHaveLength(1);
     const [, payload] = addCalls()[0];
     const { args, stdin } = payload as { args: string[]; stdin: string };
-    expect(args).toEqual(["ui", "kit", "add", "acme/neon", "2.0.0", "--kind", "component-kit", "--sha256", sha256(text), "--source", GIST_URL]);
+    expect(args).toEqual(["ui", "release", "add", "acme/neon", "2.0.0", "--kind", "component-kit", "--sha256", sha256(text), "--source", GIST_URL]);
     expect(stdin).toBe(text); // the EXACT fetched bytes are what gets stored
   });
 

@@ -7,13 +7,14 @@ import { useAppStore } from "@/store";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
 import { sanitizeProjectKey, projectSlug } from "@/shared/lib/core/projectPaths";
 import { toMinimalGhProjects, minimalToGhProject, filterRecordsToLocal } from "@/shared/lib/github/githubState";
+import { fetchProjectsWithProbe } from "@/shared/lib/github/githubProbe";
 import { ModalScrim } from "@/shared/ui/overlay/ModalScrim";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { AUTHORING_BLUEPRINT_ID, type Blueprint } from "../stages/blueprints";
-import { buildDrafts, type DraftRow } from "./drafts";
+import { buildDrafts, type DraftRow, type LocalProjectLite } from "./drafts";
 import { buildLocalPublished, type LocalPublishedRow } from "./localPublished";
 import { PublishedProjects, ProjectRow, projStatus, type GhProject, type ProjStatus, PROJECTS_QUERY } from "./PublishedProjects";
 import { BlueprintLibrary, buildBlueprintItems, type BpItem } from "./BlueprintLibrary";
@@ -51,20 +52,28 @@ export function ProjectsList() {
   const [draftError, setDraftError] = useState<string | null>(null);
   // On-disk local projects (#…) — the durable source of truth for unpublished work, since the
   // store's draft map drifts out of sync with the `projects/` dir.
-  const [localProjects, setLocalProjects] = useState<{ key: string; title: string; hasPlan: boolean; updatedAt: number; published: boolean }[]>([]);
+  const [localProjects, setLocalProjects] = useState<LocalProjectLite[]>([]);
   // Live fleet (for the per-project "agents running" pill).
   const { workers } = useFleetLive();
 
   // Routed through `githubGraphql` so the read hits the backend TTL cache (#2447): re-opening the
-  // tab within the window serves the cached board list with no network call. The manual "↻ sync"
-  // button passes `force: true` so an explicit refresh always re-POSTs.
+  // tab within the window serves the cached board list with no network call. Past the window, the
+  // light updatedAt probe (#2448) diffs against the persisted records — when no board moved, the
+  // heavy `items(first:100)` re-POST is skipped and the records are re-served (setGithubState below
+  // re-stamps fetchedAt). The manual "↻ sync" button passes `force: true` so an explicit refresh
+  // skips the probe and always re-POSTs.
   const fetchProjects = useCallback((opts?: { force?: boolean }) => {
     if (!githubToken) return;
     setLoading(true);
     setError(null);
-    githubGraphql<{ viewer: { projectsV2: { nodes: GhProject[] } } }>(PROJECTS_QUERY, null, { force: opts?.force })
-      .then(data => {
-        const nodes = data.viewer?.projectsV2?.nodes ?? [];
+    fetchProjectsWithProbe({
+      fetchHeavy: () =>
+        githubGraphql<{ viewer: { projectsV2: { nodes: GhProject[] } } }>(PROJECTS_QUERY, null, { force: opts?.force })
+          .then(data => data.viewer?.projectsV2?.nodes ?? []),
+      records: useAppStore.getState().githubState?.records,
+      force: opts?.force,
+    })
+      .then(nodes => {
         setProjects(nodes);
         setLastSync(new Date());
         // Persist the last-known board state (#2446): a fresh fetch overwrites records + fetchedAt
@@ -85,7 +94,7 @@ export function ProjectsList() {
   // Enumerate on-disk local projects whenever the tab opens, so unpublished local work always
   // shows even when it isn't in the store's draft map or on GitHub (#…).
   const refreshLocalProjects = useCallback(() => {
-    return invoke<{ key: string; title: string; hasPlan: boolean; updatedAt: number; published: boolean }[]>("list_local_projects")
+    return invoke<LocalProjectLite[]>("list_local_projects")
       // Coerce to an array: a null/garbage return would make `for (const lp of localProjects)`
       // non-iterable and throw during render (#874).
       .then((list) => { const arr = Array.isArray(list) ? list : []; setLocalProjects(arr); return arr; })
@@ -113,11 +122,28 @@ export function ProjectsList() {
       !lp.published &&
       (publishedTitles.has(lp.title.toLowerCase()) || publishedKeys.has(lp.key)),
     );
-    if (toMark.length === 0) return;
+    // Title backfill (#2467): a hub matched to a board but with NO `.title` sidecar (its listed
+    // title is derived — de-slugged key or placeholder) gets the board's real title persisted, so
+    // the offline inventory shows true names after one connected session. `titled` guards a user's
+    // own rename from ever being stomped by the board. Match by key (slug or legacy sanitize) —
+    // title-matching is useless here, the local title is the wrong one being fixed.
+    const boardByKey = new Map<string, string>();
+    for (const p of projects) {
+      boardByKey.set(projectSlug(p.title), p.title);
+      boardByKey.set(sanitizeProjectKey(p.title), p.title);
+    }
+    const toTitle = localProjects
+      .filter((lp) => !lp.titled && boardByKey.has(lp.key))
+      .map((lp) => ({ key: lp.key, title: boardByKey.get(lp.key)! }));
+    if (toMark.length === 0 && toTitle.length === 0) return;
     (async () => {
       for (const lp of toMark) {
         await safeInvoke("mark_published", { projectKey: lp.key }, undefined,
           (e) => console.warn(`mark_published ${lp.key} failed:`, e));
+      }
+      for (const t of toTitle) {
+        await safeInvoke("set_project_title", { projectKey: t.key, title: t.title }, undefined,
+          (e) => console.warn(`set_project_title ${t.key} failed:`, e));
       }
       await refreshLocalProjects();
     })();

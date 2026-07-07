@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { githubRequest, githubGraphql, isGithubAuthError, DEFAULT_MAX_AGE_SECS } from "./github";
+import {
+  githubRequest, githubGraphql, isGithubAuthError, rateLimitedUntil, rateLimitNote,
+  DEFAULT_MAX_AGE_SECS,
+} from "./github";
 import { useAppStore } from "@/store";
 
 const mockInvoke = vi.mocked(invoke);
@@ -19,6 +22,25 @@ describe("isGithubAuthError", () => {
   it("ignores other failures", () => {
     expect(isGithubAuthError("GitHub API error (404): Not Found")).toBe(false);
     expect(isGithubAuthError("GitHub API error (500): boom")).toBe(false);
+  });
+});
+
+describe("rateLimitedUntil / rateLimitNote (#2448)", () => {
+  it("parses the backend's typed rate-limit error into an epoch-ms reset time", () => {
+    // The exact string src-tauri/src/github/api.rs `rate_limited_error` produces.
+    expect(rateLimitedUntil("github rate-limited until 1700000123")).toBe(1_700_000_123_000);
+    expect(rateLimitedUntil(new Error("github rate-limited until 42"))).toBe(42_000);
+  });
+
+  it("returns null for every other failure", () => {
+    expect(rateLimitedUntil("GitHub API error (403 Forbidden): Resource not accessible")).toBeNull();
+    expect(rateLimitedUntil("GitHub API error (401 Unauthorized): Bad credentials")).toBeNull();
+    expect(rateLimitedUntil(null)).toBeNull();
+  });
+
+  it("rateLimitNote renders the quiet wording only for the typed error", () => {
+    expect(rateLimitNote("github rate-limited until 1700000123")).toContain("GitHub rate limit reached");
+    expect(rateLimitNote("GitHub API error (500): boom")).toBeNull();
   });
 });
 

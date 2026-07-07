@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { matchesQuery, resolveComposes, resolveUsedBy, ROLE_COLOR, ROLES, type ComponentRecord } from "./model";
+import { matchesQuery, resolveComposes, resolveUsedBy, DATA_SHAPES, ROLE_COLOR, ROLES, type ComponentRecord, type DataShape } from "./model";
 import { SEED_COMPONENTS } from "./seed";
 
 const byName = (n: string) => SEED_COMPONENTS.find((c) => c.name === n)!;
@@ -25,12 +25,12 @@ describe("component model helpers (#2269)", () => {
   });
 
   it("resolveUsedBy finds the components that compose the target", () => {
-    const button = byName("Button"); // composed by SegmentedControl + EmptyState + PersonasPanel
+    const button = byName("Button"); // composed by SegmentedControl + ConfirmButton + EmptyState
     const users = resolveUsedBy(button, SEED_COMPONENTS).map((c) => c.name);
     expect(users).toContain("SegmentedControl");
     expect(users).toContain("EmptyState");
-    // A leaf that nothing composes.
-    expect(resolveUsedBy(byName("FsWatcher"), SEED_COMPONENTS)).toEqual([]);
+    // A page root that nothing composes.
+    expect(resolveUsedBy(byName("AgentsBoard"), SEED_COMPONENTS)).toEqual([]);
   });
 
   it("every role has a color token", () => {
@@ -41,5 +41,15 @@ describe("component model helpers (#2269)", () => {
     const ids = SEED_COMPONENTS.map((c: ComponentRecord) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(byName("Button").id).toBe("button");
+  });
+
+  it("the data-shape vocabulary is exactly the six canonical shapes (#2475)", () => {
+    expect(DATA_SHAPES).toEqual(["list", "linked-list", "tree", "graph", "table", "key-value"]);
+    // `shapes` is an optional, typed axis on ComponentRecord — every stamped value is in-vocabulary.
+    for (const c of SEED_COMPONENTS) {
+      for (const s of c.shapes ?? []) {
+        expect(DATA_SHAPES, `${c.name} stamps an in-vocabulary shape`).toContain(s as DataShape);
+      }
+    }
   });
 });

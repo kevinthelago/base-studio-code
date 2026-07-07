@@ -82,4 +82,15 @@ describe("QueryBanner", () => {
     render(<QueryBanner error="x" style={{ margin: 8 }} />);
     expect((screen.getByText("x") as HTMLElement).style.margin).toBe("8px");
   });
+
+  // #2448 — a rate-limited query is expected, quiet degradation (the screens keep their cached
+  // data), not a failure: the typed backend error renders as a dim note, never the red callout.
+  it("renders a rate-limited error as a quiet note instead of the danger banner", () => {
+    render(<QueryBanner error="github rate-limited until 4102444800" />);
+    const note = screen.getByText(/GitHub rate limit reached/);
+    expect(note).toBeTruthy();
+    expect((note as HTMLElement).style.color).not.toBe("var(--danger)");
+    // The raw typed error string is not shown to the user.
+    expect(screen.queryByText(/rate-limited until 4102444800/)).toBeNull();
+  });
 });

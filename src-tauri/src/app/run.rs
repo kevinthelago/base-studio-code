@@ -217,6 +217,7 @@ pub fn run() {
             session::claude_config::read_claude_config,
             session::claude_config::write_claude_config,
             session::settings::ensure_session_settings,
+            session::designer::setup_designer_workspace,
             session::sandbox::wsl_sandbox_status,
             session::sandbox::provision_sandbox,
             session::sandbox::sandbox_run,

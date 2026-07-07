@@ -53,6 +53,18 @@ describe("component-kit gist envelope (#2305 slice 1c)", () => {
   it("rejects a kit with no valid components", () => {
     expect(kitFromCode(kitShareCode(kit, [])).ok).toBe(false);
   });
+
+  it("rides the data-shape axis through a share, filtered to the vocabulary (#2475)", () => {
+    const stamped = { ...comps[0], shapes: ["list", "blob"] } as unknown as ComponentRecord;
+    const r = kitFromManifest(kitToManifest(kit, [stamped]));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // In-vocabulary shapes survive; the off-vocabulary token is dropped, never trusted.
+    expect(r.components[0].shapes).toEqual(["list"]);
+    // An unstamped component stays unstamped (no fabricated empty array).
+    const r2 = kitFromManifest(kitToManifest(kit, comps));
+    expect(r2.ok && r2.components[0].shapes).toBeUndefined();
+  });
 });
 
 describe("publish with a kit-store identity (#2465)", () => {
@@ -86,7 +98,7 @@ describe("publish with a kit-store identity (#2465)", () => {
     // …and the local store got EXACTLY those bytes, verified by the same hash.
     const add = vi.mocked(invoke).mock.calls.find((c) => c[0] === "bsc")!;
     const { args, stdin } = add[1] as { args: string[]; stdin: string };
-    expect(args).toEqual(["ui", "kit", "add", "me-user/my-kit", "1.0.0", "--kind", KIT_KIND, "--sha256", expectedHash, "--source", res.url]);
+    expect(args).toEqual(["ui", "release", "add", "me-user/my-kit", "1.0.0", "--kind", KIT_KIND, "--sha256", expectedHash, "--source", res.url]);
     expect(stdin).toBe(expectedText);
   });
 

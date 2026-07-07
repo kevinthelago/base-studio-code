@@ -26,6 +26,10 @@ const ROLE_PROFILE: Record<SessionRole, string> = {
   juror: "pf_review",
   documentor: "pf_auto",
   planner: "sys_planner",
+  // Designer (#2471): the Design Studio's UI-kit session. Read-only review is the closest packaged
+  // floor; its real launch path (`useDesignerTerminal`) renders the role gate + `restrictedAllow`
+  // directly, so this mapping only backs the generic role→profile surfaces.
+  designer: "pf_review",
 };
 
 /** The default profile id for a role (or the Sandboxed default when there's no role). */
