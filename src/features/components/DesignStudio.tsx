@@ -34,6 +34,8 @@ import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { RoleDot, KitChip } from "./kitChrome";
 import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecord } from "./lib/model";
 import { renderSpecimen, type PreviewTheme } from "./specimens";
+import { ThemeScope, DEFAULT_THEME } from "@/shared/ui/kit";
+import type { KitThemeRecord } from "./lib/themes";
 import "./designStudio.css";
 
 type Tab = "overview" | "source" | "usage";
@@ -51,6 +53,8 @@ const GEN_MS = 1600;
 export function DesignStudio() {
   const components = useAppStore((s) => s.components);
   const kits = useAppStore((s) => s.kits);
+  // The hydrated kit-THEME collection (#2488) — feeds the preview's palette switcher.
+  const kitThemes = useAppStore((s) => s.kitThemes);
 
   const firstFor = (kitId: string) => components.find((c) => c.kitId === kitId);
   const [kitId, setKitId] = useState(() => kits[0]?.id ?? "");
@@ -58,6 +62,9 @@ export function DesignStudio() {
   const [tab, setTab] = useState<Tab>("overview");
   const [variant, setVariant] = useState(() => firstFor(kits[0]?.id ?? "")?.variants[0] ?? "default");
   const [theme, setTheme] = useState<PreviewTheme>("dark");
+  // The kit-THEME axis of the preview (#2488) — orthogonal to the dark/light SURFACE toggle above:
+  // the surface picks the sandbox palette, the kit theme overrides the semantic component tokens.
+  const [kitTheme, setKitTheme] = useState<string>(DEFAULT_THEME);
   const [vp, setVpKind] = useState<Viewport>("auto");
   const [query, setQuery] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -239,6 +246,7 @@ export function DesignStudio() {
           width={insp.size} sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
           allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
           theme={theme} setTheme={setTheme} vp={vp} setVpKind={setVpKind}
+          kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
           previewEl={previewEl} previewErr={previewErr} onRetry={() => setRenderKey((k) => k + 1)}
           generating={generating} genStep={genStep} candidates={candidates} onAccept={accept}
           prompt={prompt} setPrompt={setPrompt} onGenerate={generate}
@@ -334,6 +342,8 @@ interface InspProps {
   width: number; sel: ComponentRecord | null; kitName: string; tab: Tab; setTab: (t: Tab) => void;
   allVariants: string[]; activeVariant: string; setVariant: (v: string) => void;
   theme: PreviewTheme; setTheme: (t: PreviewTheme) => void; vp: Viewport; setVpKind: (v: Viewport) => void;
+  /** The preview's kit-THEME axis (#2488): the hydrated theme collection + the applied selection. */
+  kitTheme: string; setKitTheme: (id: string) => void; kitThemes: KitThemeRecord[];
   previewEl: ReactNode; previewErr: string | null; onRetry: () => void;
   generating: boolean; genStep: number; candidates: string[] | null; onAccept: (v: string) => void;
   prompt: string; setPrompt: (v: string) => void; onGenerate: () => void;
@@ -369,6 +379,20 @@ function Inspector(p: InspProps) {
               <SegmentedControl label="" options={p.allVariants.map((v) => ({ label: v, on: v === p.activeVariant, onClick: () => p.setVariant(v) }))} />
               <SegmentedControl label="" options={(["dark", "light"] as PreviewTheme[]).map((th) => ({ label: th === "dark" ? "◐ dark" : "◑ light", on: th === p.theme, onClick: () => p.setTheme(th) }))} />
               <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === p.vp, onClick: () => p.setVpKind(k) }))} />
+              {/* kit-THEME switcher (#2488): the hydrated theme collection (designer-authored included);
+                  composes with the SURFACE toggle above — a compact select since the set is open-ended. */}
+              {/* eslint-disable-next-line no-restricted-syntax -- compact toolbar select over a dynamic set (SelectField imposes a labelled field layout) */}
+              <select
+                className="sel"
+                aria-label="Kit theme"
+                title="Kit theme — semantic-token palette applied to the specimen (bsc ui theme)"
+                value={p.kitTheme}
+                onChange={(e) => p.setKitTheme(e.target.value)}
+              >
+                {p.kitThemes.map((t) => (
+                  <option key={t.id} value={t.id}>◈ {t.label}</option>
+                ))}
+              </select>
             </Box>
             <Box className="ds-surface">
               {p.generating && (
@@ -397,8 +421,9 @@ function Inspector(p: InspProps) {
                 </Box>
               ) : (
                 <Box className="ds-frame">
-                  {/* centered on the surface (#2333); the width transition + fixed VP width are layout, not the removed motion pass */}
-                  <Box style={{ width: VP[p.vp].w, maxWidth: "100%", transition: "width .25s ease", display: "flex", justifyContent: "center" }}>{p.previewEl}</Box>
+                  {/* centered on the surface (#2333); the width transition + fixed VP width are layout, not the removed motion pass.
+                      The ThemeScope (#2488) applies the selected kit theme's semantic-token overrides to the specimen frame. */}
+                  <ThemeScope theme={p.kitTheme} style={{ width: VP[p.vp].w, maxWidth: "100%", transition: "width .25s ease", display: "flex", justifyContent: "center" }}>{p.previewEl}</ThemeScope>
                 </Box>
               )}
               <Text as="div" className="ds-vplabel">{VP[p.vp].label}</Text>
