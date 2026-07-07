@@ -238,6 +238,12 @@ export interface BlueprintUiKit {
   hash: string;
   /** Typed-gist URL to fetch from when the id@version is missing locally. */
   source?: string;
+  /** The kit THEME paired with the pin (#2489) — a `bsc ui theme` id. Absent ⇒ `"default"`. An ID,
+   *  never the vars: the theme resolves through `bsc ui theme get` at EMISSION time
+   *  (`bsc ui emit-css --theme <id>` → the generated app's tokens.css + theme.css), so
+   *  designer-authored themes apply the moment they exist. This is the blueprint-level default;
+   *  the planned application's actual pair is recorded per project in plan.db (`bsc plan ui`). */
+  themeId?: string;
 }
 
 export interface Blueprint {

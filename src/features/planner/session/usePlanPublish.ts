@@ -14,7 +14,7 @@ import { type GhStatusMap } from "./GitHubStructureCard";
 import { deriveProjectTitle } from "./projectTitle";
 import { parseFeaturesFile } from "../issues/featureList";
 import { parseDependencyManifest, depsForRepo } from "../issues/dependencies";
-import { buildWorkerScope } from "../fleet/workerScope";
+import { buildWorkerScope, toWorkerUiPairing } from "../fleet/workerScope";
 import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 import { type PlanIssue } from "../issues/planIssues";
 import { pruneCompletedStreams, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
@@ -160,6 +160,15 @@ export function usePlanPublish(deps: PlanPublishDeps) {
           + `(${maintenance.map(s => s.id).join(", ")}) relaunching into maintenance`
           + (active.length > 0 ? `; ${active.length} active.` : "."));
       }
+      // The project's {kit, theme} pairing (#2489): plan.db's `ui` blob (the planner's per-project
+      // record, `bsc plan ui set` in the Test UI stage) with the project blueprint's pin filling
+      // whatever it doesn't set — inlined into every worker's scope as the UI-palette lock block
+      // (token layer read-only; palette = the swappable theme.css).
+      const uiBlob = await bscJson<{ kit?: { id?: string; version?: string } | null; themeId?: string } | null>(
+        effectiveProjectId, ["plan", "ui", "get", "--json"], null);
+      const storeUi = useAppStore.getState();
+      const uiPairing = toWorkerUiPairing(
+        uiBlob, storeUi.blueprints.find(b => b.id === storeUi.projectBlueprintId[effectiveProjectId])?.uiKit);
       // Create each worker's git worktree FAIL-CLOSED (#551/#359): if any can't be created,
       // abort the launch so no agent starts in a fallback dir. (Restored: the refactor had
       // weakened this to a non-fatal .catch that let the launch continue.)
@@ -168,7 +177,7 @@ export function usePlanPublish(deps: PlanPublishDeps) {
         // repo's LOCKED dependency manifest (#1111), not the full plan — the worktree lives outside
         // the hub so the planner spec is no longer an ancestor (#844). In-distro when sandboxed
         // (ensure_sandbox_worktree clones the repo + adds the worktree on the distro's ext4, #1988).
-        const scopeMd = buildWorkerScope(st, depsForRepo(planDependencies, st.repo), maintenanceIds.has(st.id));
+        const scopeMd = buildWorkerScope(st, depsForRepo(planDependencies, st.repo), maintenanceIds.has(st.id), uiPairing);
         const call = sandbox
           ? invoke<string>("ensure_sandbox_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd, token: githubToken })
           : invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd });

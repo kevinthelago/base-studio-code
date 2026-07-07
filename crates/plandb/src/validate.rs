@@ -752,6 +752,46 @@ pub fn blueprint_stage_count(v: &Value) -> usize {
         .unwrap_or(0)
 }
 
+// ── ui pairing (`bsc plan ui set`) — the planned app's {kit, theme} pair (#2489) ─────────────────
+
+/// Validate the UI pairing blob: `{ "kit": { "id", "version" }, "themeId" }`, both halves optional
+/// but not both absent. Mirrors consumption: the emission path (`bsc ui emit-css --theme <id>`) and
+/// the worker context read `themeId` (an empty one silently falls back to `default`, hiding the
+/// choice), and the kit half is only usable with a non-empty `id` + `version` (the store ref).
+pub fn validate_ui_pairing(v: &Value) -> Result<(), String> {
+    let noun = "ui pairing";
+    if !v.is_object() {
+        return Err(reject(noun, vec![
+            r#"the pairing must be a JSON object: {"kit": {"id": "bsc/react-ui", "version": "1.0.0"}, "themeId": "soft"}"#.into(),
+        ]));
+    }
+    let mut errs = Vec::new();
+    if let Some(kit) = v.get("kit").filter(|k| !k.is_null()) {
+        if !kit.is_object() {
+            errs.push(r#""kit" must be a JSON object: {"id": "bsc/react-ui", "version": "1.0.0"}"#.into());
+        } else if str_of(kit, "id").is_none() || str_of(kit, "version").is_none() {
+            errs.push(r#""kit" needs a non-empty "id" AND "version" — the id@version ref into the released-kit store; without both the pin is unusable"#.into());
+        }
+    }
+    if present(v, "themeId") && str_of(v, "themeId").is_none() {
+        errs.push(r#""themeId" must be a non-empty string — a `bsc ui theme list` id (an empty one silently falls back to "default", hiding the choice)"#.into());
+    }
+    if !present(v, "kit") && !present(v, "themeId") {
+        errs.push(r#"an empty pairing records nothing — set at least a "kit" or a "themeId""#.into());
+    }
+    if errs.is_empty() { Ok(()) } else { Err(reject(noun, errs)) }
+}
+
+/// The pairing's human-mode set-echo halves: (`id@version` or `(none)`, themeId or `default`).
+pub fn ui_pairing_echo(v: &Value) -> (String, String) {
+    let kit = v
+        .get("kit")
+        .and_then(|k| Some(format!("{}@{}", str_of(k, "id")?, str_of(k, "version")?)))
+        .unwrap_or_else(|| "(none)".into());
+    let theme = str_of(v, "themeId").unwrap_or("default").to_string();
+    (kit, theme)
+}
+
 // ── issues (`bsc plan add`) + features (`bsc plan feature add`) ──────────────────────────────────
 
 /// Validate one issue for `plan add`: non-empty `ref` + `title` (the upsert key + the minimum a
@@ -1180,6 +1220,38 @@ mod tests {
         assert_eq!(blueprint_stage_count(&json!({ "stages": [1, 2] })), 2);
         assert_eq!(blueprint_stage_count(&json!({ "sections": [1] })), 1);
         assert_eq!(blueprint_stage_count(&json!({})), 0);
+    }
+
+    // ── ui pairing (#2489) ───────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn ui_pairing_validation_accepts_the_pair_and_each_half_alone() {
+        assert!(validate_ui_pairing(&json!({ "kit": { "id": "bsc/react-ui", "version": "1.0.0" }, "themeId": "soft" })).is_ok());
+        assert!(validate_ui_pairing(&json!({ "themeId": "default" })).is_ok());
+        assert!(validate_ui_pairing(&json!({ "kit": { "id": "acme/neon", "version": "2.0.0" } })).is_ok());
+    }
+
+    #[test]
+    fn ui_pairing_validation_rejects_the_silently_misbehaving_shapes() {
+        // Non-object / empty pairing — nothing downstream could read either.
+        assert!(validate_ui_pairing(&json!("soft")).is_err());
+        let err = validate_ui_pairing(&json!({})).unwrap_err();
+        assert!(err.contains("at least"), "{err}");
+        // A kit missing id/version is an unusable store ref.
+        let err = validate_ui_pairing(&json!({ "kit": { "id": "bsc/react-ui" } })).unwrap_err();
+        assert!(err.contains(r#""id" AND "version""#), "{err}");
+        assert!(validate_ui_pairing(&json!({ "kit": "bsc/react-ui" })).is_err());
+        // An empty themeId silently falls back to default downstream — reject it loudly.
+        let err = validate_ui_pairing(&json!({ "themeId": "" })).unwrap_err();
+        assert!(err.contains("non-empty string"), "{err}");
+    }
+
+    #[test]
+    fn ui_pairing_echo_renders_both_halves_with_defaults() {
+        let (kit, theme) = ui_pairing_echo(&json!({ "kit": { "id": "bsc/react-ui", "version": "1.0.0" }, "themeId": "soft" }));
+        assert_eq!((kit.as_str(), theme.as_str()), ("bsc/react-ui@1.0.0", "soft"));
+        let (kit, theme) = ui_pairing_echo(&json!({ "kit": { "id": "x" } }));
+        assert_eq!((kit.as_str(), theme.as_str()), ("(none)", "default"));
     }
 
     // ── issues / features / sessions ─────────────────────────────────────────────────────────
