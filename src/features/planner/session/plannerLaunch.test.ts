@@ -27,7 +27,17 @@ describe("plannerLaunchConfig", () => {
     expect(l.startupPromptFreshOnly).toBe(true);
     // Defensive (#2396): resume is requested explicitly; the backend ANDs it with real history.
     expect(l.continueSession).toBe(true);
-    expect(l.env).toEqual(GH); // no BSC_AGENT_* env for a Claude planner
+    // No BSC_AGENT_* env for a Claude planner — just the GH tokens + the store-scope doc (#2470).
+    expect(l.env).toEqual({ ...GH, BSC_SCOPES: JSON.stringify({ ui: "read" }) });
+  });
+
+  it("carries the planner's BSC_SCOPES store-scope doc on both harnesses (#2470)", () => {
+    // The runtime write check the store CLIs read: the planner may USE the component kit (`bsc ui`
+    // reads) but its mutating verbs refuse — on Claude and on the bsc-agent runtime alike.
+    const claude = plannerLaunchConfig(store({}), GH);
+    expect(JSON.parse(claude.env.BSC_SCOPES)).toEqual({ ui: "read" });
+    const agent = plannerLaunchConfig(store({ llmProvider: "ollama" }), GH);
+    expect(JSON.parse(agent.env.BSC_SCOPES)).toEqual({ ui: "read" });
   });
 
   it("runs the planner on bsc-agent + Ollama when the provider is ollama (no second toggle)", () => {

@@ -18,17 +18,18 @@ describe("AgentRolesCard", () => {
     expect(screen.queryByText("nonexistent-role")).not.toBeInTheDocument();
   });
 
-  it("shows the four capability-tier chips per role with their access tier", () => {
+  it("shows the five capability-tier chips per role with their access tier", () => {
     render(<AgentRolesCard />);
-    // The worker's tiers appear (git write, github read, code write). Use getAllByText — several
-    // roles legitimately share a tier (worker + director both have `git: write`), so these are not
-    // unique across the roster.
+    // The worker's tiers appear (git write, github read, code write, ui read). Use getAllByText —
+    // several roles legitimately share a tier (worker + director both have `git: write`), so these
+    // are not unique across the roster.
     const cap = ROLE_DEFAULTS.worker;
     expect(screen.getAllByText(`git: ${cap.git}`).length).toBeGreaterThan(0);
     expect(screen.getAllByText(`github: ${cap.github}`).length).toBeGreaterThan(0);
     expect(screen.getAllByText(`code: ${cap.code}`).length).toBeGreaterThan(0);
-    // Every role contributes 4 axis chips → exactly 4 × role count on the page.
-    expect(screen.getAllByText(/^(git|github|code|net): /).length).toBe(ROLES.length * 4);
+    expect(screen.getAllByText(`ui: ${cap.ui}`).length).toBeGreaterThan(0); // the #2470 axis surfaces
+    // Every role contributes 5 axis chips → exactly 5 × role count on the page.
+    expect(screen.getAllByText(/^(git|github|code|net|ui): /).length).toBe(ROLES.length * 5);
   });
 
   it("surfaces each role's default profile", () => {

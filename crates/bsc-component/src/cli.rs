@@ -159,11 +159,34 @@ pub fn command_docs() -> &'static [CmdDoc] {
     COMPONENT_COMMANDS
 }
 
+/// Whether `args` is one of the store's MUTATING verb invocations — `set` / `remove` on either
+/// collection (`… set|remove` or `… kit set|remove`) — gated by the session's runtime `ui` scope
+/// (#2470). The trailing `help` form (`set help`, `kit set help`) is NOT a mutation: help must stay
+/// reachable from a read-scoped session. Read verbs (`list`/`get`/`eslint-preset`/`usage`/`kit
+/// list|get`) never gate.
+fn is_scoped_mutation(args: &[String]) -> bool {
+    let (verb, next) = if args.first().map(String::as_str) == Some("kit") {
+        (args.get(1), args.get(2))
+    } else {
+        (args.first(), args.get(1))
+    };
+    matches!(verb.map(String::as_str), Some("set") | Some("remove"))
+        && next.map(String::as_str) != Some("help")
+}
+
 /// The component-verb entrypoint: `args` is everything after the mount point (`bsc ui`, or the
 /// deprecated `bsc component` alias — `prog` is that display name for help/errors). `<prog> kit …`
 /// routes to the KIT collection; everything else to the COMPONENT collection — each is the shared
 /// verbatim-JSON store CLI over its own dir.
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
+    // Runtime `ui` scope check (#2470, defense-in-depth): refuse the mutating verbs when the
+    // session's `$BSC_SCOPES` doc scopes `ui` to read/none — BEFORE any store is touched. Guarding
+    // here (the verb dispatch this crate owns) holds under BOTH mounts of the store CLI (`bsc ui`
+    // and the deprecated `bsc component` alias, #2469). Absent env ⇒ unrestricted (hand shells);
+    // NOT a security boundary — the launch-time deny rules are (see `bsc_cli_util`).
+    if is_scoped_mutation(&args) {
+        bsc_cli_util::require_write_scope("ui")?;
+    }
     match args.first().map(String::as_str) {
         Some("kit") => {
             let kit_prog = format!("{prog} kit");
@@ -458,6 +481,42 @@ mod tests {
     #[test]
     fn empty_component_set_yields_an_empty_rules_object() {
         assert_eq!(eslint_preset(&[]), serde_json::json!({ "rules": {} }));
+    }
+
+    #[test]
+    fn is_scoped_mutation_classifies_exactly_the_mutating_verbs() {
+        let a = |args: &[&str]| args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // The four mutating shapes (#2470) — gated on both collections.
+        assert!(is_scoped_mutation(&a(&["set"])));
+        assert!(is_scoped_mutation(&a(&["remove", "button"])));
+        assert!(is_scoped_mutation(&a(&["kit", "set"])));
+        assert!(is_scoped_mutation(&a(&["kit", "remove", "react-ui"])));
+        // Read verbs never gate.
+        for read in [
+            &["list"][..], &["get", "button"], &["kit", "list"], &["kit", "get", "react-ui"],
+            &["eslint-preset"], &["usage", "list"], &["help"], &[],
+        ] {
+            assert!(!is_scoped_mutation(&a(read)), "read shape gated: {read:?}");
+        }
+        // The trailing `help` form is documentation, not a mutation — reachable read-scoped.
+        assert!(!is_scoped_mutation(&a(&["set", "help"])));
+        assert!(!is_scoped_mutation(&a(&["kit", "remove", "help"])));
+    }
+
+    // ONE test owns the real $BSC_SCOPES env var (parallel test threads share the process env).
+    #[test]
+    fn mutating_verbs_refuse_under_a_read_ui_scope_before_touching_the_store() {
+        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
+        // `remove` errs at the scope gate — BEFORE any store dir is resolved or touched (no --dir
+        // is passed here on purpose: reaching the store would touch the real default location).
+        let err = run(vec!["remove".into(), "x".into()], "bsc component").unwrap_err();
+        assert!(err.contains("'ui'"), "refusal names the scope: {err}");
+        assert!(err.contains("BSC_SCOPES"), "refusal names the env doc: {err}");
+        let err = run(vec!["kit".into(), "set".into()], "bsc component").unwrap_err();
+        assert!(err.contains("read-only"), "kit set refuses too: {err}");
+        // Help stays reachable under the read scope (prints, returns Ok).
+        assert!(run(vec!["set".into(), "help".into()], "bsc component").is_ok());
+        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
     }
 
     #[test]

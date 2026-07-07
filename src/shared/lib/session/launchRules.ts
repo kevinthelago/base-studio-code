@@ -5,7 +5,7 @@
 // ({@link bscAgentPerms}). Pure enforcement core, free of React / xterm / Tauri. Re-exported from
 // `sessionRoles.ts`.
 
-import type { RoleCapability } from "./roleModel";
+import type { AccessTier, RoleCapability } from "./roleModel";
 import { DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, hasScopedWriteCarveOut } from "./roleModel";
 
 // ── Launch wiring: write-tool permission rules ──────────────────────────────────
@@ -103,6 +103,15 @@ const GH_WRITE_DENY = [
   "gh api -X POST", "gh api -X PATCH", "gh api -X PUT", "gh api -X DELETE",
 ];
 
+/** `bsc ui` (component/kit store) mutating verb prefixes (#2470) — denied at `ui: "read"` so a
+ *  session can READ the kit it implements against but never redefine it. Includes the deprecated
+ *  `bsc component` alias's verbs while that alias lives (#2469); deny-wins keeps these solid over
+ *  the baseline's broad `bsc` allow. */
+const UI_WRITE_DENY = [
+  "bsc ui set", "bsc ui remove", "bsc ui kit set", "bsc ui kit remove",
+  "bsc component set", "bsc component remove", "bsc component kit set", "bsc component kit remove",
+];
+
 /**
  * Command-prefix denies to apply at session launch for a role, merged into the
  * session's `deniedCommands` (the backend wraps each as `Bash(<prefix> *)`, and a
@@ -120,6 +129,12 @@ export function roleDeniedCommands(cap: RoleCapability): string[] {
   else if (cap.git === "read") out.push(...GIT_WRITE_DENY);
   if (cap.github === "none") out.push("gh");
   else if (cap.github === "read") out.push(...GH_WRITE_DENY);
+  // UI store tier (#2470), rendered like git/gh. FAIL-CLOSED on the tier: only an explicit
+  // `"write"` skips the mutating-verb denies, so a capability read from a STALE config-dir
+  // override that predates the `ui` field (#2325 floor-merge hazard — the merged role OBJECT can
+  // lack it) behaves as `"read"`, never as an accidental grant.
+  if (cap.ui === "none") out.push("bsc ui", "bsc component");
+  else if (cap.ui !== "write") out.push(...UI_WRITE_DENY);
   return out;
 }
 
@@ -162,4 +177,15 @@ export function bscAgentPerms(
     deny_bash: [...new Set([...roleDenies, ...extraDenyBash.map((c) => c.trim()).filter(Boolean)])],
     write_globs: cap && (cap.code === "write" || carveOut) ? cap.writeGlobs : [],
   };
+}
+
+/** The per-store access-scope doc rendered into a gated session's `$BSC_SCOPES` env (#2470) — the
+ *  runtime, defense-in-depth twin of the launch-time verb denies above. A store CLI reads it via
+ *  `bsc_cli_util::scope_allows_write` and refuses its mutating verbs when the store is scoped
+ *  read-only. Explicitly NOT a security boundary (a session owns its own env) — it guards accidents
+ *  and non-Claude runtimes (`bsc-agent`, raw shells); {@link roleDeniedCommands} is the boundary.
+ *  Currently just `ui`; other stores (`plan`, `skill`, `data`, …) adopt incrementally by adding
+ *  their tier here. Missing tier ⇒ `"read"` (the same fail-closed floor as the deny rendering). */
+export function sessionScopes(cap: RoleCapability): Record<string, AccessTier> {
+  return { ui: cap.ui ?? "read" };
 }
