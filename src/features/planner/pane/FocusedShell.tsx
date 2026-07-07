@@ -191,7 +191,7 @@ const FOOTER_LABEL: Record<FooterKind, string> = {
 /** The advance bar: back · progress · the context-sensitive primary action. */
 export function StageFooter({ stage, action, published, publishLabel, onBack, onPrimary, onSkip }: {
   stage: Stage;
-  action: { kind: FooterKind; enabled: boolean; canSkip?: boolean; override?: boolean };
+  action: { kind: FooterKind; enabled: boolean; canSkip?: boolean; skipEnabled?: boolean };
   /** The project already has a GitHub board — the publish action re-syncs it ("Update GitHub", #823). */
   published?: boolean;
   /** Override the publish action's label (#923) — e.g. "Publish blueprint" for an authoring project,
@@ -199,36 +199,42 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
   publishLabel?: string;
   onBack: () => void;
   onPrimary: () => void;
-  /** Skip the active OPTIONAL stage (#921) — rendered when `action.canSkip`. */
+  /** Skip the active stage (#921/#2533) — rendered whenever `action.canSkip`, disabled unless
+   *  `action.skipEnabled` (optional stage, or gate-override on for a required stage). */
   onSkip?: () => void;
 }) {
   const primaryLabel =
-    action.override ? "⚠ override gate & continue →"
-    : action.kind === "approve-continue" && !action.enabled ? "gate blocking…"
+    action.kind === "approve-continue" && !action.enabled ? "gate blocking…"
     : action.kind === "publish" && published ? "⟳ Update GitHub"
     : action.kind === "publish" && publishLabel ? publishLabel
     : FOOTER_LABEL[action.kind];
   const primary = action.kind === "approve-continue" || action.kind === "route-design" || action.kind === "publish";
   // When the gate is blocking the advance button, the tooltip says what's still needed (#805).
-  // In override mode (#1285) the button IS enabled, but the tooltip warns it bypasses the gate.
   const unmet = stage.unmet ?? [];
   const stillNeeded = unmet.length > 0 ? "Still needed: " + unmet.map(reasonText).join("; ") : "";
-  const blockedTip = action.override
-    ? ("Override: advance past this stage's gate without meeting it." + (stillNeeded ? " " + stillNeeded : ""))
-    : action.kind === "approve-continue" && !action.enabled && stillNeeded ? stillNeeded
-    : undefined;
+  const blockedTip =
+    action.kind === "approve-continue" && !action.enabled && stillNeeded ? stillNeeded : undefined;
+  // Skip tooltip (#2533): a disabled skip explains how to enable it; an enabled skip on a REQUIRED
+  // stage warns it bypasses the gate; on an optional stage it's the ordinary optional-skip.
+  const skipTip = !action.skipEnabled
+    ? "Enable “allow gate override” in Settings → Security to skip a required stage."
+    : stage.optional
+    ? "This stage is optional — skip it and continue without completing its gate."
+    : "⚠ Gate override: skip past this required stage without meeting its gate.";
   return (
     <Box className="ph-foot">
       <BackButton variant="text" label="back" className="nav-btn" disabled={stage.index === 0} onClick={onBack} aria-label="Back" />
       <Box as="span" className="prog">stage {stage.index + 1} of {stage.total}</Box>
       <Box as="span" style={{ flex: 1 }} />
-      {/* This stage is OPTIONAL — the USER decides whether to do or skip it (#921). */}
+      {/* The Skip control shows on every active stage (#2533) — the USER decides whether to move past
+          it. It's disabled on a required stage until gate-override is enabled (skipEnabled). */}
       {action.canSkip && onSkip && (
         // eslint-disable-next-line no-restricted-syntax -- bespoke `.nav-btn` footer button (styled by the `.fp .nav-btn` CSS, not the .btn kit)
         <button
           className="nav-btn"
+          disabled={!action.skipEnabled}
           onClick={onSkip}
-          title="This stage is optional — skip it and continue without completing its gate"
+          title={skipTip}
         >
           skip stage →
         </button>
@@ -239,7 +245,6 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
         disabled={!action.enabled}
         onClick={onPrimary}
         title={blockedTip}
-        style={action.override ? { background: "var(--danger)", borderColor: "var(--danger)", color: "#1a120a" } : undefined}
       >
         {primaryLabel}
       </button>
