@@ -36,7 +36,7 @@ export type PrimitiveName =
   // #2475 — the key-value record rendering (the property-list archetype of the row vocabulary)
   | "KeyValueList"
   // layouts — the page-skeleton templates tier (#2197)
-  | "MasterDetail" | "SplitView" | "GraphCanvas" | "PaneGrid";
+  | "MasterDetail" | "SplitView" | "GraphCanvas" | "PaneGrid" | "Tree";
 
 export type PrimitiveGroup = "layout" | "typography" | "controls" | "data" | "feedback" | "layouts";
 
@@ -671,6 +671,23 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "gap", type: "number", default: 8, description: "Gap between cells in px." },
       { name: "pad", type: "number", default: 10, description: "Grid inner padding in px." },
       { name: "hidden", type: "boolean", default: false, description: "Render the grid display:none but keep it MOUNTED (children stay alive — the console cross-tab mount)." },
+    ],
+  },
+  {
+    name: "Tree", group: "layouts", importPath: "@/shared/ui/layouts/Tree",
+    description: "The tree page skeleton for hierarchy-shaped data (#2476) — one recursive `nodes` prop, two variants: INDENTED (file-explorer rail of collapsible, depth-indented rows + a detail panel, for deep/navigational trees) or LAYERED (a top-down org-chart canvas on the shared graph stack — layerDag + the edge grammar + GraphCanvas pan/zoom, for presentational hierarchies).",
+    props: [
+      { name: "nodes", type: "array", required: true, description: "The tree roots — a recursive forest of TreeNodeData ({ id, label, meta?, children? }). Ids must be unique." },
+      { name: "variant", type: "enum", values: ["indented", "layered"], default: "indented", description: "indented → collapsible rows + detail; layered → top-down pan/zoom chart." },
+      { name: "detail", type: "node", description: "Detail panel for the selected node — a node, or a render fn of the selected TreeNodeData. Indented: the detail column; layered: the canvas inspector." },
+      { name: "toolbar", type: "node", description: "Optional toolbar — full-width above (indented) / in the canvas toolbar row before the zoom cluster (layered)." },
+      { name: "selectedId", type: "string", description: "Controlled selection — the selected node id (pair with onSelect). Omit for uncontrolled (defaultSelectedId)." },
+      { name: "onSelect", type: "function", description: "Fires with the clicked node's id (both selection modes)." },
+      { name: "defaultCollapsedIds", type: "array", description: "Indented: branch ids that start collapsed (expansion is uncontrolled). Default: all expanded." },
+      { name: "onToggle", type: "function", description: "Fires (id, expanded) when a branch expands/collapses." },
+      { name: "indent", type: "number", default: 16, description: "Indented: px of indentation per depth level." },
+      { name: "railWidth", type: "number", default: 260, description: "Indented: rail width in px (the starting width when resizable)." },
+      { name: "resizable", type: "boolean", default: false, description: "Indented: opt into a drag-resizable rail (MasterDetail's .resize-x splitter)." },
     ],
   },
   // ---- #2421 gap-fill (contiguous block: data · layout/overlay · data · charts) ---------------
