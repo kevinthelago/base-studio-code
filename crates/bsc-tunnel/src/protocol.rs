@@ -23,6 +23,10 @@ use serde::{Deserialize, Serialize};
 /// v1 (implicit — no version on the wire) → v2: adds `store_state`, `auth.protocolVersion` /
 /// `auth_ok.protocolVersion`, the optional `PaneDescriptor.kind`, and pins the plan_sync
 /// frames to the Rust shapes.
+///
+/// Post-v2 additive changes ride WITHIN v2 (no bump — both sides ignore unknown fields /
+/// frame types, so an optional-field or new-frame addition breaks neither peer):
+/// `auth_ok.inputGranted` + the `input_grant_changed` frame (#2511).
 pub const PROTOCOL_VERSION: u32 = 2;
 
 /// The registered `store_state` domain vocabulary (#2497). The frame itself is fully
@@ -224,6 +228,22 @@ pub enum ServerMsg {
     #[serde(rename_all = "camelCase")]
     AuthOk {
         protocol_version: u32,
+        /// Whether the desktop currently grants the paired phone input control (#2511 —
+        /// the connect-time snapshot of the #B-wan-viewonly gate, so the phone can render
+        /// its view-only state honestly instead of typing into silently-dropped frames).
+        /// ALWAYS serialized: this is the current revision of the frame, and an older
+        /// mobile ignores unknown fields. Only the mobile side treats it as optional (a
+        /// pre-#2511 desktop omits it ⇒ grant unknown). An ADDITIVE optional-field change,
+        /// so [`PROTOCOL_VERSION`] stays 2 — no version bump.
+        input_granted: bool,
+    },
+    /// The desktop granted or revoked the paired phone's input control mid-session
+    /// (#2511). Broadcast on every live toggle of the #B-wan-viewonly gate. NO replay
+    /// entry on connect — `auth_ok.inputGranted` already carries the connect-time state,
+    /// and the gate only changes through the broadcasting setter, so a replay frame would
+    /// be pure duplication. Additive within v2 (an older mobile ignores unknown frames).
+    InputGrantChanged {
+        granted: bool,
     },
     PaneList {
         panes: Vec<PaneDescriptor>,

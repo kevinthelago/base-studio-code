@@ -39,6 +39,6 @@
       "prompt": "Synthesize: score the six-dimension rubric — problemSeverity, problemFrequency,\nreachableMarket, competitiveGap, timing, moat — each an integer 1-5 with a rationale and at\nleast one fetched source, plus a verdict (go | caution | no-go, with its rationale). Record\nit with `bsc plan market set` (JSON on stdin — the stage prompt carries the full worked\nexample; `bsc plan market get` shows what's stored). The write is validated (#2395): a\npartial or uncited rubric is rejected with a field-level error. Then write the prose\nfindings to market.md via the section-file flow like the other stages."
     }
   ],
-  "icon": "query_stats",
+  "icon": "monitoring",
   "hue": 45
 }
