@@ -5,6 +5,8 @@
   "kit": {
     "id": "react-ui",
     "name": "react-ui",
+    "tech": "react",
+    "style": "studio",
     "stack": "React · TypeScript",
     "dot": "var(--info)",
     "builtin": true
