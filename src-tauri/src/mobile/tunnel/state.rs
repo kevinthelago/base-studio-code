@@ -392,11 +392,24 @@ impl TunnelState {
     }
 
     /// Grant or revoke the paired phone's input control. Resets the "input requested"
-    /// notification latch so a later view-only attempt re-prompts the desktop.
+    /// notification latch so a later view-only attempt re-prompts the desktop, and
+    /// broadcasts `input_grant_changed` to the paired phone when the grant actually
+    /// flips (#2511) — so mobile's view-only rendering tracks the live gate. Connect-time
+    /// state rides in `auth_ok.inputGranted`, so this frame needs no replay entry; the
+    /// session resets in `rotate_and_dial`/`tunnel_stop` write the field directly and
+    /// deliberately do NOT broadcast (no client is paired / the next pairing gets a fresh
+    /// `auth_ok`). An idempotent re-set still clears the latch but sends nothing.
     pub(super) fn set_input_granted(&self, granted: bool) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.input_granted = granted;
-        inner.input_requested = false;
+        let changed = {
+            let mut inner = self.inner.lock().unwrap();
+            let changed = inner.input_granted != granted;
+            inner.input_granted = granted;
+            inner.input_requested = false;
+            changed
+        };
+        if changed {
+            let _ = self.event_tx.send(ServerMsg::InputGrantChanged { granted });
+        }
     }
 
     /// Latch the first view-only input attempt: returns `true` exactly once per session

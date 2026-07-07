@@ -1,7 +1,9 @@
 {
-  "$comment": "Canonical wire-protocol fixtures for the mobile tunnel (#240 / #46 / #2497 = contract v2). Shared BYTE-IDENTICALLY by base-studio-code (TS tests in src/features/tunnel/lib/tunnel.test.ts; Rust serde tests in src-tauri/src/mobile/tunnel/tests.rs resolve this file by name) and by mobile-studio-code (src/lib/tunnel/tunnelProtocol.fixtures.test.ts). These application frames are carried UNCHANGED inside the relay's Noise-encrypted envelope ({room, ciphertext}) — the Cloudflare relay never sees them in plaintext. Messages are flat JSON tagged by a snake_case `type`; multi-word field names are camelCase. Contract v2 adds: auth/auth_ok protocolVersion, the generic store_state projection frame, the optional PaneDescriptor.kind, and pins the plan_sync frames to the Rust (bsc-tunnel) shapes.",
+  "$comment": "Canonical wire-protocol fixtures for the mobile tunnel (#240 / #46 / #2497 = contract v2). Shared BYTE-IDENTICALLY by base-studio-code (TS tests in src/features/tunnel/lib/tunnel.test.ts; Rust serde tests in src-tauri/src/mobile/tunnel/tests.rs resolve this file by name) and by mobile-studio-code (src/lib/tunnel/tunnelProtocol.fixtures.test.ts). These application frames are carried UNCHANGED inside the relay's Noise-encrypted envelope ({room, ciphertext}) — the Cloudflare relay never sees them in plaintext. Messages are flat JSON tagged by a snake_case `type`; multi-word field names are camelCase. Contract v2 adds: auth/auth_ok protocolVersion, the generic store_state projection frame, the optional PaneDescriptor.kind, and pins the plan_sync frames to the Rust (bsc-tunnel) shapes. #2511 rides WITHIN v2 (additive, no version bump): auth_ok.inputGranted (always serialized by the current desktop; optional for mobile — auth_ok_pre_grant pins the pre-#2511 shape) + the input_grant_changed broadcast.",
   "serverToClient": {
-    "auth_ok": { "type": "auth_ok", "protocolVersion": 2 },
+    "auth_ok": { "type": "auth_ok", "protocolVersion": 2, "inputGranted": false },
+    "auth_ok_pre_grant": { "type": "auth_ok", "protocolVersion": 2 },
+    "input_grant_changed": { "type": "input_grant_changed", "granted": true },
     "pane_list": {
       "type": "pane_list",
       "panes": [
