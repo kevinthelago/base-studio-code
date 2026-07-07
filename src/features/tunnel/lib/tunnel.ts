@@ -12,11 +12,24 @@
 
 // The desktop's canonical per-pane status (#435), the input this module maps FROM.
 import type { PaneStatus as DesktopPaneStatus } from "@/app/console/lib/paneStatus";
+// Pane IDENTITY (#1176): the pane-id grammar + minting, a pure (React/Tauri-free) shell
+// module. The roster keys panes by the SAME identity id the PTY/status/cwd are keyed by,
+// so mobile's pane_input/pane_output target real PTY ids (#2497).
+import { paneIdFor, parsePaneIdentity, isPlanningPaneId } from "@/app/console/lib/paneIdentity";
 import type { CanonicalFile } from "@/features/planner";
+
+/** The tunnel wire-contract version (#2497). Mirrors `bsc_tunnel::protocol::PROTOCOL_VERSION`
+ *  (Rust owns the handshake; this constant exists TS-side for display/diagnostics only). */
+export const TUNNEL_PROTOCOL_VERSION = 2;
 
 /** Pane status as the mobile client models it (`PaneStatus`) — a distinct wire
  *  vocabulary the desktop's `DesktopPaneStatus` is mapped into by `mapStatus`. */
 export type PaneStatus = "running" | "idle" | "awaiting_input" | "error";
+
+/** What kind of session a mirrored pane is (#2497). The wire vocabulary is fixed —
+ *  the fleet DIRECTOR rides as `worker` (a fleet session) and manual/positional console
+ *  panes are `console`. Optional on the wire for backward compatibility (absent ⇒ console). */
+export type PaneKind = "console" | "worker" | "planner" | "designer" | "triage";
 
 /** One mirrored pane in the list the mobile client renders (`pane_list`). */
 export interface PaneDescriptor {
@@ -24,6 +37,8 @@ export interface PaneDescriptor {
   cwd: string;
   name: string;
   status: PaneStatus;
+  /** Session kind (#2497); optional so a v1 peer's descriptor still parses. */
+  kind?: PaneKind;
 }
 
 /** A per-pane session-state snapshot pushed to connected clients (`session_state`).
@@ -179,23 +194,58 @@ export function mapStatus(
   return "idle";
 }
 
+/** The tab fields the roster needs — the identity subset of the store's `Tab` (#1176):
+ *  `paneIds` (minted fleet/triage identity ids), `kind` (app-created tab), `id` (manual tab). */
+export interface RosterTab {
+  layout: string;
+  id?: string;
+  kind?: "build" | "triage";
+  paneIds?: string[];
+}
+
+/**
+ * Session kind for a pane identity id (#2497) — maps the self-describing id grammar
+ * (#1266) into the wire's fixed `kind` vocabulary. The fleet director rides as `worker`
+ * (it's a fleet session; the wire vocabulary has no separate director slot); manual and
+ * legacy positional console panes are `console`; the dedicated planner pane
+ * (`planning_<key>`) is `planner`.
+ */
+export function paneKindFor(id: string): PaneKind {
+  if (isPlanningPaneId(id)) return "planner";
+  const parsed = parsePaneIdentity(id);
+  switch (parsed?.kind) {
+    case "worker":
+    case "director":
+      return "worker";
+    case "triage":
+      return "triage";
+    default:
+      return "console";
+  }
+}
+
 export interface PanePayloadInput {
-  tabs: { layout: string }[];
+  tabs: RosterTab[];
   paneNames: Record<number, Record<number, string>>;
   paneCwds: Record<string, string>;
   paneStatuses: Record<string, DesktopPaneStatus>;
   disabledPanes: Record<string, boolean>;
-  /** paneIds (`t{t}p{p}`) currently awaiting user input (from the focus queue). */
+  /** Identity pane ids currently awaiting user input (from the focus queue). */
   awaiting: ReadonlySet<string>;
   /** ISO timestamp stamped onto every session (injected for deterministic tests). */
   nowIso: string;
-  /** Ad-hoc panes outside the Console tab grid (e.g. the planner's `planning_<key>` pane),
-   *  so they mirror over the relay too (#801). A disabled extra pane is omitted. */
+  /** Ad-hoc panes outside the Console tab grid (the planner's `planning_<key>` pane, the
+   *  designer session, …), so they mirror over the relay too (#801/#2497). A disabled
+   *  extra pane is omitted. An extra pane without an explicit `kind` gets one derived
+   *  from its id grammar. */
   extraPanes?: PaneDescriptor[];
 }
 
-/** Pure transform: store pane state → the `{ panes, sessions }` the tunnel pushes
- *  down. Disabled panes (PTY killed) are omitted entirely. */
+/** Pure transform: store pane state → the `{ panes, sessions }` the tunnel pushes down.
+ *  Panes are keyed by their IDENTITY id (`paneIdFor`, #1176/#2497) — the same id the PTY,
+ *  status, and cwd are keyed by — so mobile's `pane_input`/`pane_output` target real PTY
+ *  ids for manual (`man:…`) and fleet (`<key>:<stream>`) panes, not just legacy positional
+ *  tabs. Disabled panes (PTY killed) are omitted entirely. */
 export function buildPanePayload(
   input: PanePayloadInput,
 ): { panes: PaneDescriptor[]; sessions: SessionMeta[] } {
@@ -205,12 +255,12 @@ export function buildPanePayload(
   input.tabs.forEach((tab, tabIdx) => {
     const count = paneCountForLayout(tab.layout);
     for (let paneIdx = 0; paneIdx < count; paneIdx++) {
-      const id = `t${tabIdx}p${paneIdx}`;
+      const id = paneIdFor(tab, tabIdx, paneIdx);
       if (input.disabledPanes[id]) continue;
       const name = input.paneNames[tabIdx]?.[paneIdx] ?? `console-${tabIdx + 1}-${paneIdx + 1}`;
       const cwd = input.paneCwds[id] ?? "";
       const status = mapStatus(input.paneStatuses[id], input.awaiting.has(id));
-      panes.push({ id, cwd, name, status });
+      panes.push({ id, cwd, name, status, kind: paneKindFor(id) });
       sessions.push({
         paneId: id,
         status,
@@ -225,7 +275,7 @@ export function buildPanePayload(
 
   for (const p of input.extraPanes ?? []) {
     if (input.disabledPanes[p.id]) continue;
-    panes.push(p);
+    panes.push({ ...p, kind: p.kind ?? paneKindFor(p.id) });
     sessions.push({
       paneId: p.id,
       status: p.status,

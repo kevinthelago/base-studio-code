@@ -11,10 +11,12 @@ export interface TunnelSlice {
   setTunnelRelayUrl: (url: string) => void;
   tunnelRunning: boolean;
   setTunnelRunning: (v: boolean) => void;
-  /** Ad-hoc panes (e.g. the active planner pane) mirrored over the relay alongside the Console
-   *  panes (#801). Transient — not persisted. */
-  tunnelExtraPanes: PaneDescriptor[];
-  setTunnelExtraPanes: (panes: PaneDescriptor[]) => void;
+  /** Ad-hoc session panes outside the Console tab grid, mirrored over the relay alongside the
+   *  Console panes (#801/#2497), keyed by the REGISTERING SOURCE (`"planner"`, `"designer"`, …)
+   *  so independent owners never clobber each other. Transient — not persisted. */
+  tunnelExtraPanes: Record<string, PaneDescriptor[]>;
+  /** Register (or replace) one source's mirrored panes; pass `[]` to unregister the source. */
+  registerTunnelPanes: (source: string, panes: PaneDescriptor[]) => void;
 }
 
 export const createTunnelSlice: StateCreator<AppStore, [], [], TunnelSlice> = (set) => ({
@@ -22,6 +24,12 @@ export const createTunnelSlice: StateCreator<AppStore, [], [], TunnelSlice> = (s
   setTunnelRelayUrl: (url) => set({ tunnelRelayUrl: url }),
   tunnelRunning: false,
   setTunnelRunning: (v) => set({ tunnelRunning: v }),
-  tunnelExtraPanes: [],
-  setTunnelExtraPanes: (panes) => set({ tunnelExtraPanes: panes }),
+  tunnelExtraPanes: {},
+  registerTunnelPanes: (source, panes) =>
+    set((s) => {
+      const next = { ...s.tunnelExtraPanes };
+      if (panes.length === 0) delete next[source];
+      else next[source] = panes;
+      return { tunnelExtraPanes: next };
+    }),
 });

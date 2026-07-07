@@ -7,9 +7,12 @@ export { useTunnelAutomations } from "./lib/useTunnelAutomations";
 export { useTunnelHookTelemetry } from "./lib/useTunnelHookTelemetry";
 export { useTunnelCoordControl } from "./lib/useTunnelCoordControl";
 
-// #1545: public API for cross-feature consumers (app/console, planner).
-export type { PlanMessage, SessionMeta } from "./lib/tunnel";
+// #1545: public API for cross-feature consumers (app/console, planner, components).
+export type { PlanMessage, SessionMeta, PaneDescriptor, PaneKind } from "./lib/tunnel";
+export { TUNNEL_PROTOCOL_VERSION } from "./lib/tunnel";
 export {
   tunnelStatus, tunnelSetSessions, tunnelSetPlanState,
   tunnelEmitPlanState, tunnelEmitPlanStatus, tunnelEmitPlanEvent,
+  tunnelSetStoreState, STORE_DOMAINS,
 } from "./lib/tunnelClient";
+export type { StoreDomain } from "./lib/tunnelClient";

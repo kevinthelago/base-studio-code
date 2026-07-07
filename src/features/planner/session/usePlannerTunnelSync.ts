@@ -82,13 +82,17 @@ export function usePlannerTunnelSync(opts: PlannerTunnelSyncOpts) {
     tunnelSetPlanState(canonicalPlan.meta.projectId, canonicalPlan.files).catch(() => {});
   }, [tunnelRunning, canonicalPlan]);
 
-  // (2) PTY mirror — expose the planner pane so a paired phone can view (and, if granted,
-  // drive) the live planner terminal. Cleared when the planner unmounts or the relay stops.
+  // (2) PTY mirror — register the planner pane in the session roster (keyed source, #2497)
+  // so a paired phone can view (and, if granted, drive) the live planner terminal.
+  // Unregistered when the planner unmounts or the relay stops.
   useEffect(() => {
-    const setExtra = useAppStore.getState().setTunnelExtraPanes;
-    if (!tunnelRunning || !planningDir) { setExtra([]); return; }
-    setExtra([{ id: paneId, cwd: planningDir, name: `Planner — ${projectTitle}`, status: "running" as const }]);
-    return () => useAppStore.getState().setTunnelExtraPanes([]);
+    const register = useAppStore.getState().registerTunnelPanes;
+    if (!tunnelRunning || !planningDir) { register("planner", []); return; }
+    register("planner", [{
+      id: paneId, cwd: planningDir, name: `Planner — ${projectTitle}`,
+      status: "running" as const, kind: "planner" as const,
+    }]);
+    return () => useAppStore.getState().registerTunnelPanes("planner", []);
   }, [tunnelRunning, planningDir, paneId, projectTitle]);
 
   // (1b) plan_state — debounced snapshot (replayed to newly-paired clients Rust-side).
