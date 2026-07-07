@@ -1,0 +1,121 @@
+{
+  "_comment": "The transformation taxonomy (#2509 slice b): the verb vocabulary (each with a one-line hint of how that verb's invariants are typically checked), the composite RECIPES that generate transformation lists, and the composition tiers the bottom-up confirm queue orders by. ONE source of truth, embedded on both sides: crates/plandb/src/validate.rs (include_str! — the verb/recipe enums `bsc plan transformation` validates against) and the frontend (@data/transformations/taxonomy.json via overlayFile — verbMeta/tierLabel). recipes[].steps are the CANONICAL recipe playbooks: the Transformations stage prompt (src-tauri/data/stages/transformations.json) expands them into prose, and a drift test (planner/directives.rs recipe_playbooks_mirror_the_taxonomy_steps) pins the two in lockstep.",
+  "verbs": [
+    {
+      "id": "rename",
+      "label": "Rename",
+      "blurb": "Change a name — symbol, file, route, concept — everywhere it appears; nothing else moves.",
+      "verification": "grep finds zero references to the old name; the build and existing tests pass unchanged."
+    },
+    {
+      "id": "extract",
+      "label": "Extract",
+      "blurb": "Pull a shared abstraction out of N similar implementations (or build a missing one) so the copies can point at it.",
+      "verification": "the abstraction exists and builds; every planned consumer can express its case through it; existing tests pass."
+    },
+    {
+      "id": "split",
+      "label": "Split",
+      "blurb": "Break one oversized unit into focused parts along a seam (module, service, component).",
+      "verification": "each part builds and is exercised independently; together they cover the original behavior — existing tests pass."
+    },
+    {
+      "id": "merge",
+      "label": "Merge",
+      "blurb": "Combine overlapping units into one; the absorbed originals are deleted.",
+      "verification": "the merged unit serves every former caller; grep finds no references to the absorbed originals; existing tests pass."
+    },
+    {
+      "id": "move",
+      "label": "Move",
+      "blurb": "Relocate a piece to where it belongs; every reference follows it.",
+      "verification": "the piece lives at its new path with no stale-path references; behavior is unchanged — existing tests pass."
+    },
+    {
+      "id": "replace",
+      "label": "Replace",
+      "blurb": "Swap an implementation for an equivalent — a kit component, a library, a pattern — at every usage site; the replaced original is deleted.",
+      "verification": "every usage site renders/behaves through the replacement, the original is gone, and the stated invariants (handlers, focus, output) hold."
+    },
+    {
+      "id": "upgrade",
+      "label": "Upgrade",
+      "blurb": "Raise a dependency, platform, or API to a newer version and absorb its breaking changes.",
+      "verification": "the new version builds with no deprecation fallout left behind; the existing test suite passes unchanged."
+    },
+    {
+      "id": "restyle",
+      "label": "Restyle",
+      "blurb": "Change the look — styles, tokens, spacing — without changing structure or behavior.",
+      "verification": "the diff is style-only: DOM structure, handlers, and behavior are unchanged; existing tests pass."
+    },
+    {
+      "id": "remove",
+      "label": "Remove",
+      "blurb": "Delete something no longer needed, plus every reference to it.",
+      "verification": "grep finds zero remaining references; the build and existing tests pass without it."
+    },
+    {
+      "id": "optimize",
+      "label": "Optimize",
+      "blurb": "Make the same behavior measurably faster or lighter — the contract does not change.",
+      "verification": "the measured metric improves (before/after numbers recorded) while behavior is unchanged — existing tests pass."
+    },
+    {
+      "id": "harden",
+      "label": "Harden",
+      "blurb": "Close a robustness or security gap — the failure mode becomes handled behavior.",
+      "verification": "a test exercises the failure mode and now passes; existing tests still pass."
+    }
+  ],
+  "recipes": [
+    {
+      "id": "migrate-to-kit",
+      "label": "Migrate to kit",
+      "blurb": "Scan the target frontend, match every component against the kit (whenUse/whenNot), and generate the migration list — gap-fill builds first, migrations in dependent waves.",
+      "steps": [
+        "Enumerate the kit: components, whenUse/whenNot guidance, variants (bsc ui kit list · bsc ui list --full · bsc ui get <id> · bsc ui shapes)",
+        "Scan the linked frontend for components and usage sites (Glob/Grep); count usages per component",
+        "Bucket every finding: direct-mappable · mappable-with-adaptation · no-equivalent",
+        "No-equivalent clusters (>=2 similar bespoke implementations, or pages needing a missing Layout) become gap-fill rows: kitContribution true, verb extract, the tier of the thing being built, evidence = the bespoke instances with usage counts",
+        "Migration rows dependsOn their gap-fill builds",
+        "Assign tiers per the taxonomy (0 primitives -> 3 pages)",
+        "Write the whole list in ONE bsc plan transformation add batch"
+      ]
+    },
+    {
+      "id": "extract-and-abstract",
+      "label": "Extract & abstract",
+      "blurb": "Find N similar bespoke implementations, build the shared abstraction once, then replace all N and delete the originals — foundation-first waves.",
+      "steps": [
+        "Find the N similar bespoke implementations (Glob/Grep; record each with its usage count as evidence)",
+        "Record ONE extract row for the shared abstraction — the foundation, at the lower tier",
+        "Record N replace rows, one per original, each dependsOn the extract row",
+        "Fold delete-the-original into each replace row's delta (no separate remove rows)",
+        "Sequence foundation-first waves and write the whole list in one bsc plan transformation add batch"
+      ]
+    }
+  ],
+  "tiers": [
+    {
+      "tier": 0,
+      "label": "primitives",
+      "blurb": "The most basic building blocks — buttons, fields, chips; nothing composes below them. Confirmed first."
+    },
+    {
+      "tier": 1,
+      "label": "composites",
+      "blurb": "Assemblies of primitives — cards, form rows, toolbars — generated against confirmed primitives."
+    },
+    {
+      "tier": 2,
+      "label": "layouts",
+      "blurb": "Page-structure templates composing composites — master-detail, split view, pane grid."
+    },
+    {
+      "tier": 3,
+      "label": "pages",
+      "blurb": "Full screens assembled on the layouts — the top of the queue, confirmed last as the completed UI."
+    }
+  ]
+}

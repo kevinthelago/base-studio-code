@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import type { TransformationRow } from "../lib/transformations";
+import { verbMeta, type TransformationRow } from "../lib/transformations";
 import { TransformationsBody } from "./TransformationsBody";
 
 const PID = "p-transforms";
@@ -116,6 +116,14 @@ describe("TransformationsBody — item presentation", () => {
     expect(screen.getByText(/bespoke buttons → one shared/)).toBeTruthy();
     expect(screen.getByText("existing tests pass")).toBeTruthy();
     expect(screen.getByText(/owns src\/shared\/ui/)).toBeTruthy();
+  });
+
+  it("verb chips carry the taxonomy blurb as a tooltip (#2509 slice b — verb metadata is @data)", () => {
+    useAppStore.getState().setPlanTransformations(PID, [row({ id: "prim", tier: 0 })]);
+    render(<TransformationsBody projectId={PID} />);
+    const blurb = verbMeta("extract").blurb;
+    expect(blurb.length).toBeGreaterThan(0);
+    expect(screen.getByText("extract").getAttribute("title")).toBe(blurb);
   });
 
   it("omits the kit-contribution badge when the row is not a kit contribution", () => {
