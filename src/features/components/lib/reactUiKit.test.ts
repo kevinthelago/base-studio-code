@@ -20,12 +20,6 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     }
   });
 
-  it("keeps the examples-kit rows out of react-ui (the generator only emits manifest primitives)", () => {
-    for (const fake of ["PersonasPanel", "AgentsBoard", "PersonaShell", "DemoButton", "PersonaStore"]) {
-      expect(byName(fake)).toBeUndefined();
-    }
-  });
-
   it("layers the authored guidance overlay onto the generated records", () => {
     const button = byName("Button")!;
     expect(button.wraps).toBe("button");            // → derives the anti-duplication lint rule
@@ -138,14 +132,11 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     expect(all("linked-list")).toEqual(["PipelinePage", "Sequence"]);
   });
 
-  it("keeps the exemplar demos in a separate `examples` kit (#2456)", () => {
-    expect(SEED_KITS.map((k) => k.id)).toEqual(["react-ui", "examples"]);
-    const examples = SEED_COMPONENTS.filter((c) => c.kitId === "examples").map((c) => c.name);
-    expect(examples).toContain("PersonasPanel");
-    expect(examples).toContain("AgentsBoard");
-    expect(examples).toContain("PersonaStore");
-    // The seed is the generated react-ui kit + the examples exemplar kit.
-    expect(SEED_COMPONENTS.length).toBe(REACT_UI_COMPONENTS.length + examples.length);
+  it("the packaged seed is EXACTLY the generated react-ui kit — the examples exemplar kit is retired (#2506)", () => {
+    // The #2456 examples kit demonstrated the page→primitive model; react-ui's own pages tier
+    // (#2505) supersedes it, so the seed carries the one generated kit and nothing else.
+    expect(SEED_KITS.map((k) => k.id)).toEqual(["react-ui"]);
+    expect(SEED_COMPONENTS.map((c) => c.name).sort()).toEqual(REACT_UI_COMPONENTS.map((c) => c.name).sort());
   });
 });
 

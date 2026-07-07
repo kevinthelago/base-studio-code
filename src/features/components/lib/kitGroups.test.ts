@@ -1,5 +1,6 @@
-// Hierarchical kit navigation (#2487) — the pure grouping model: tech → style → kit with the
-// trivial-level auto-flatten, first-appearance ordering ("other" last), and missing-field tolerance.
+// Hierarchical kit navigation (#2487, policy fixed by #2506) — the pure grouping model: ALWAYS
+// technology → style, the single-kit style merge (the style header IS the kit), first-appearance
+// ordering ("other" last), and missing-field tolerance.
 import { describe, it, expect } from "vitest";
 import type { Kit } from "./model";
 import { groupKits, OTHER_BUCKET, type KitGroup, type KitTreeNode } from "./kitGroups";
@@ -10,51 +11,62 @@ const kit = (id: string, tech?: string, style?: string): Kit =>
 
 /** The kit ids of a node list, descending groups depth-first (order-preserving). */
 const flatIds = (nodes: KitTreeNode[]): string[] =>
-  nodes.flatMap((n) => (n.kind === "kit" ? [n.kit.id] : flatIds(n.children)));
+  nodes.flatMap((n) => (n.kind === "kit" ? [n.kit.id] : [...(n.kit ? [n.kit.id] : []), ...flatIds(n.children)]));
 
 const asGroup = (n: KitTreeNode): KitGroup => {
   expect(n.kind).toBe("group");
   return n as KitGroup;
 };
 
-describe("groupKits auto-flatten (#2487)", () => {
-  it("single tech + one kit per style → EXACTLY flat (no group nodes, order preserved)", () => {
+describe("groupKits — always technology → style (#2506)", () => {
+  it("a single-tech library still nests: tech group → one merged style header per kit", () => {
     const t = groupKits([kit("a", "react", "studio"), kit("b", "react", "demo")]);
-    expect(t.every((n) => n.kind === "kit")).toBe(true);
-    expect(flatIds(t)).toEqual(["a", "b"]);
-  });
-
-  it("the real packaged seed renders flat — no extra depth over the pre-#2487 rail", () => {
-    const t = groupKits(SEED_KITS);
-    expect(t.every((n) => n.kind === "kit")).toBe(true);
-    expect(flatIds(t)).toEqual(SEED_KITS.map((k) => k.id));
-  });
-
-  it("a genuinely multi-tech library nests under tech headers — uniformly, even a one-kit tech", () => {
-    const t = groupKits([kit("a", "react", "studio"), kit("b", "react", "demo"), kit("v", "vue", "material")]);
-    expect(t.map((n) => asGroup(n).label)).toEqual(["react", "vue"]);
-    const [react, vue] = t.map(asGroup);
+    expect(t.map((n) => asGroup(n).label)).toEqual(["react"]);
+    const react = asGroup(t[0]);
     expect(react.level).toBe("tech");
     expect(react.key).toBe("tech:react");
     expect(react.count).toBe(2);
-    // react's style level is trivial (one kit per style) → kits sit directly under the tech group.
-    expect(react.children.every((n) => n.kind === "kit")).toBe(true);
-    expect(flatIds(react.children)).toEqual(["a", "b"]);
-    expect(flatIds(vue.children)).toEqual(["v"]);
-  });
-
-  it("a genuinely multi-style tech nests style subgroups under its tech header", () => {
-    const t = groupKits([
-      kit("a", "react", "studio"), kit("b", "react", "studio"), kit("c", "react", "demo"),
-      kit("v", "vue", "material"),
-    ]);
-    const react = asGroup(t[0]);
     const styles = react.children.map(asGroup);
     expect(styles.map((s) => s.label)).toEqual(["studio", "demo"]);
     expect(styles.map((s) => s.level)).toEqual(["style", "style"]);
     expect(styles[0].key).toBe("style:react/studio"); // stable, tech-scoped expand key
+    // The normal case — one kit per (tech, style): the style header IS the kit, no kit rows nest.
+    expect(styles.map((s) => s.kit?.id)).toEqual(["a", "b"]);
+    expect(styles.every((s) => s.children.length === 0)).toBe(true);
+  });
+
+  it("the real packaged seed renders React → Studio → components (#2506 — no flatten)", () => {
+    const t = groupKits(SEED_KITS);
+    expect(t.map((n) => asGroup(n).label)).toEqual(["react"]);
+    const styles = asGroup(t[0]).children.map(asGroup);
+    expect(styles.map((s) => s.label)).toEqual(["studio"]);
+    expect(styles[0].kit?.id).toBe("react-ui"); // the style header IS the one packaged kit
+    expect(flatIds(t)).toEqual(SEED_KITS.map((k) => k.id));
+  });
+
+  it("a multi-tech library nests one header per tech — even a one-kit tech", () => {
+    const t = groupKits([kit("a", "react", "studio"), kit("b", "react", "demo"), kit("v", "vue", "material")]);
+    expect(t.map((n) => asGroup(n).label)).toEqual(["react", "vue"]);
+    const [react, vue] = t.map(asGroup);
+    expect(react.count).toBe(2);
+    expect(flatIds(react.children)).toEqual(["a", "b"]);
+    expect(vue.count).toBe(1);
+    expect(flatIds(vue.children)).toEqual(["v"]);
+  });
+
+  it("SEVERAL kits under one (tech, style) still nest a kit level beneath the style group", () => {
+    const t = groupKits([
+      kit("a", "react", "studio"), kit("b", "react", "studio"), kit("c", "react", "demo"),
+    ]);
+    const styles = asGroup(t[0]).children.map(asGroup);
+    expect(styles.map((s) => s.label)).toEqual(["studio", "demo"]);
+    // studio holds two kits → real kit rows, no header merge.
+    expect(styles[0].kit).toBeUndefined();
+    expect(styles[0].count).toBe(2);
+    expect(styles[0].children.map((n) => n.kind)).toEqual(["kit", "kit"]);
     expect(flatIds(styles[0].children)).toEqual(["a", "b"]);
-    expect(flatIds(styles[1].children)).toEqual(["c"]);
+    // demo holds one → merged.
+    expect(styles[1].kit?.id).toBe("c");
   });
 
   it("tech normalization: case/whitespace-insensitive bucketing", () => {
@@ -63,22 +75,32 @@ describe("groupKits auto-flatten (#2487)", () => {
     expect(asGroup(t[0]).count).toBe(2);
   });
 
-  it("kits without tech group into the trailing OTHER bucket — never a crash", () => {
+  it("kits without tech group into the trailing OTHER tech bucket — never a crash", () => {
     // "u" appears FIRST but its bucket still orders last.
     const t = groupKits([kit("u"), kit("a", "react", "studio"), kit("b", "react", "demo")]);
     expect(t.map((n) => asGroup(n).label)).toEqual(["react", OTHER_BUCKET]);
     expect(flatIds(asGroup(t[1]).children)).toEqual(["u"]);
   });
 
-  it("ALL kits missing tech/style → the single bucket is trivial → flat", () => {
-    const t = groupKits([kit("a"), kit("b"), kit("c")]);
-    expect(t.every((n) => n.kind === "kit")).toBe(true);
-    expect(flatIds(t)).toEqual(["a", "b", "c"]);
+  it("a kit without style groups into the trailing OTHER style bucket within its tech", () => {
+    const t = groupKits([kit("bare", "react"), kit("a", "react", "studio")]);
+    const styles = asGroup(t[0]).children.map(asGroup);
+    expect(styles.map((s) => s.label)).toEqual(["studio", OTHER_BUCKET]);
+    expect(styles[1].kit?.id).toBe("bare");
   });
 
-  it("one kit per tech (all-singleton partition) → headers would restate the kits → flat", () => {
+  it("ALL kits missing tech/style → other → other, kits nested beneath (still grouped)", () => {
+    const t = groupKits([kit("a"), kit("b"), kit("c")]);
+    expect(t.map((n) => asGroup(n).label)).toEqual([OTHER_BUCKET]);
+    const styles = asGroup(t[0]).children.map(asGroup);
+    expect(styles.map((s) => s.label)).toEqual([OTHER_BUCKET]);
+    expect(flatIds(styles[0].children)).toEqual(["a", "b", "c"]);
+  });
+
+  it("one kit per tech keeps one header per tech (#2487's all-singleton flatten is gone)", () => {
     const t = groupKits([kit("r", "react", "a"), kit("v", "vue", "b"), kit("k", "kotlin", "c")]);
-    expect(t.every((n) => n.kind === "kit")).toBe(true);
+    expect(t.map((n) => asGroup(n).label)).toEqual(["react", "vue", "kotlin"]);
+    expect(t.every((n) => n.kind === "group")).toBe(true);
   });
 
   it("empty library → empty tree", () => {

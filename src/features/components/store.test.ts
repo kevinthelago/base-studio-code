@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useAppStore } from "@/store";
+import type { ComponentRecord, Kit } from "./lib/model";
 import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
 import { SEED_THEMES, type KitThemeRecord } from "./lib/themes";
 import { stampSeedHash } from "./lib/seedRefresh";
@@ -94,6 +95,65 @@ describe("hash-based built-in seed refresh (#2483)", () => {
     expect(useAppStore.getState().kits.some((k) => k.id === "spring-kotlin")).toBe(false);
     expect(dropK).toHaveBeenCalledWith("spring-kotlin");
     expect(useAppStore.getState().seedNotices).toEqual([]);
+  });
+
+  // The retired `examples` exemplar kit (#2506) — a stale store fixture shaped EXACTLY like the
+  // copies a pre-#2506 install holds: `builtin` + self-consistently `seedHash`-stamped, i.e. what
+  // `makeBuiltinKits` shipped before the kit left the seed.
+  const examplesKit: Kit = stampSeedHash({
+    id: "examples", name: "examples", tech: "react", style: "demo",
+    stack: "React · demo", dot: "var(--state-wait)", builtin: true,
+  });
+  const exampleComp = (id: string, name: string, role: ComponentRecord["role"], composes: string[] = []): ComponentRecord =>
+    stampSeedHash({
+      id, name, kitId: "examples", role, version: "1.0.0", used: 0, tags: ["demo"],
+      variants: ["default"], composes, props: [], whenUse: ["demo"], whenNot: ["real UI"],
+      src: `examples/${name}.tsx`, srcText: `<${name} />`, builtin: true,
+    });
+
+  it("boot hydrate DELETES the retired examples kit + its components from a stale store (#2506)", async () => {
+    // The mechanism that cleans every existing install: #2506 removed `examples` from the packaged
+    // seed, so the #2483 reconcile must reach the DELETE verdict for the pristine stored copies and
+    // converge the global store through the bridge drops — no manual cleanup.
+    const staleComps = [
+      exampleComp("personaspanel", "PersonasPanel", "page", ["PersonaStore"]),
+      exampleComp("agentsboard", "AgentsBoard", "page"),
+      exampleComp("personastore", "PersonaStore", "service"),
+    ];
+    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([...SEED_COMPONENTS, ...staleComps]);
+    vi.spyOn(bridge, "loadKits").mockResolvedValueOnce([...SEED_KITS, examplesKit]);
+    const pushC = vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
+    const pushK = vi.spyOn(bridge, "pushKit").mockResolvedValue(undefined);
+    const dropC = vi.spyOn(bridge, "dropComponent").mockResolvedValue(undefined);
+    const dropK = vi.spyOn(bridge, "dropKit").mockResolvedValue(undefined);
+    await useAppStore.getState().hydrateComponents();
+    // The kit and every one of its components are gone from the reconciled collection…
+    expect(useAppStore.getState().kits.map((k) => k.id)).toEqual(SEED_KITS.map((k) => k.id));
+    expect(useAppStore.getState().components.some((c) => c.kitId === "examples")).toBe(false);
+    // …and the store converges via the bridge: one dropKit + one dropComponent per stale record.
+    expect(dropK).toHaveBeenCalledWith("examples");
+    for (const c of staleComps) expect(dropC).toHaveBeenCalledWith(c.id);
+    expect(dropC).toHaveBeenCalledTimes(staleComps.length);
+    // Everything else was current → nothing re-pushed, and a DELETE is silent (no orphan notice).
+    expect(pushC).not.toHaveBeenCalled();
+    expect(pushK).not.toHaveBeenCalled();
+    expect(useAppStore.getState().seedNotices).toEqual([]);
+  });
+
+  it("keeps a USER-EDITED copy of a retired examples component, marked orphaned (#2506)", async () => {
+    // The safety valve on the same retirement: content moved off its recorded baseline → never
+    // deleted, surfaced as an `orphaned` notice instead.
+    const edited = { ...exampleComp("personaspanel", "PersonasPanel", "page"), srcText: "// my tweaks" };
+    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([...SEED_COMPONENTS, edited]);
+    vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
+    vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
+    const dropC = vi.spyOn(bridge, "dropComponent").mockResolvedValue(undefined);
+    await useAppStore.getState().hydrateComponents();
+    expect(useAppStore.getState().components.find((c) => c.id === "personaspanel")).toEqual(edited);
+    expect(dropC).not.toHaveBeenCalled();
+    expect(useAppStore.getState().seedNotices).toEqual([
+      { kind: "orphaned", type: "component", id: "personaspanel", name: "PersonasPanel" },
+    ]);
   });
 
   it("legacy no-hash pristine records refresh once, re-pushed with the stamp", async () => {

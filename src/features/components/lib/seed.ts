@@ -1,18 +1,20 @@
 // The packaged Component Library (#2269), loaded from `src-tauri/data/components/*.json` (#2305 slice
 // 1b — one self-contained, gist-distributable JSON file per kit). `react-ui` is the app's own shared-UI
 // primitives, GENERATED from the introspection manifest (`reactUiKit.ts`, kept in sync by
-// `reactUiKit.gen.test.ts`); `examples` is hand-authored demo data. This is what the library shows
-// until the global `bsc ui` store lands (then `hydrateComponents` replaces it).
+// `reactUiKit.gen.test.ts`). The hand-authored `examples` demo kit was retired (#2506): react-ui's own
+// pages tier (#2505) supersedes its page→primitive exemplar role, and the #2483 seed refresh deletes
+// its pristine copies from existing stores on the next boot. This is what the library shows until the
+// global `bsc ui` store lands (then `hydrateComponents` replaces it).
 import type { ComponentRecord, Kit } from "./model";
 import { makeBuiltinKits } from "./builtinKits";
 import { reconcileSeed, type SeedReconcile } from "./seedRefresh";
 
 const { kits, components } = makeBuiltinKits();
 
-/** The packaged built-in kits (react-ui + the examples demo kit), from `@data/components/*.json`. */
+/** The packaged built-in kits (the generated react-ui kit), from `@data/components/*.json`. */
 export const SEED_KITS: Kit[] = kits;
 
-/** The packaged built-in components — the generated react-ui kit + the examples demo kit. */
+/** The packaged built-in components — the generated react-ui kit's records. */
 export const SEED_COMPONENTS: ComponentRecord[] = components;
 
 /** Reconcile the store's loaded components with the packaged built-ins (#2483, hash-based refresh —
