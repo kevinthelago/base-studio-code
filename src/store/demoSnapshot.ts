@@ -32,7 +32,7 @@ import orgData from "@data/demo/org.json";
 import blueprintData from "@data/demo/blueprint.json";
 import fleetsData from "@data/demo/fleets.json";
 import automationsData from "@data/demo/automations.json";
-import { SAMPLE_GRAPH, type GRole, type GStatus } from "@/features/glance";
+import { SAMPLE_GRAPH, type GRole, type GHealth, type GActivity } from "@/features/glance";
 import { projectLinkId, type ProjectLink } from "@/features/glance/lib/projectLinks";
 import type { Persona } from "@/features/personas/lib/persona";
 import type { Org } from "@/features/org/lib/org";
@@ -59,18 +59,18 @@ const DEMO_EPOCH = Date.UTC(2026, 0, 15); // 2026-01-15
 
 // ── Projects — the Glance spine ──────────────────────────────────────────────────────────────────
 // Display name + one-line pitch for each SAMPLE_GRAPH node (`@data/demo/project-meta.json`).
-// role/status come straight from the sample graph so the loaded Glance network matches the packaged
-// sample exactly (the cycle hazard included).
+// role/health/activity come straight from the sample graph so the loaded Glance network matches the
+// packaged sample exactly (the cycle hazard + the curated warning/error nodes included).
 const PROJECT_META: Record<string, { title: string; pitch: string }> = projectMetaData;
 
-type DemoProject = { title: string; pitch: string; createdAt: number; role?: GRole; status?: GStatus };
+type DemoProject = { title: string; pitch: string; createdAt: number; role?: GRole; health?: GHealth; activity?: GActivity; reason?: string };
 
 /** The 14 demo projects, keyed by the SAMPLE_GRAPH node id (also the Glance node id + fleet/plan key). */
 function demoProjects(): Record<string, DemoProject> {
   const out: Record<string, DemoProject> = {};
   for (const n of SAMPLE_GRAPH.rawNodes) {
     const meta = PROJECT_META[n.id] ?? { title: n.id, pitch: "" };
-    out[n.id] = { title: meta.title, pitch: meta.pitch, createdAt: DEMO_EPOCH, role: n.role, status: n.status };
+    out[n.id] = { title: meta.title, pitch: meta.pitch, createdAt: DEMO_EPOCH, role: n.role, health: n.health, activity: n.activity, reason: n.reason };
   }
   return out;
 }

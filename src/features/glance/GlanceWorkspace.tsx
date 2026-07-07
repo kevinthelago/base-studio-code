@@ -27,10 +27,10 @@ import { Fleet } from "@/features/planner/fleet/Fleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";
-import { buildGraph, focusSets, STATUS_META, ROLE_COLOR, EDGE_META, NW, NH, type GEdgeKind } from "./lib/glanceGraph";
+import { buildGraph, focusSets, HEALTH_META, ROLE_COLOR, EDGE_META, NW, NH, type GEdgeKind } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession } from "./lib/glanceFleet";
-import { useGlanceProjects } from "./lib/useGlanceProjects";
+import { useGlanceProjects, applyFaultHealth } from "./lib/useGlanceProjects";
 import { useGlanceFaults } from "./lib/useGlanceFaults";
 import { useProjectFleet } from "./lib/useProjectFleet";
 import "./glance.css";
@@ -65,13 +65,11 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // Per-project auto-triage toggle (#2265) — gates the fault→fix loop; surfaced in the node inspector.
   const autoTriage = useAppStore((s) => s.autoTriage);
   const setAutoTriage = useAppStore((s) => s.setAutoTriage);
-  // FAULT-health (#2265): unresolved runtime-fault count per project (from `bsc errors`), merged onto
-  // each node so its card shows a fault badge. Orthogonal to the liveness status (#2263).
-  const faultCounts = useGlanceFaults(useMemo(() => projectsBase.map((p) => p.id), [projectsBase]));
-  const projects = useMemo(
-    () => projectsBase.map((p) => ({ ...p, faults: faultCounts[p.id] })),
-    [projectsBase, faultCounts],
-  );
+  // HEALTH axis (#2541, was #2265): the worst unresolved fault per project (from `bsc errors`) overlaid
+  // onto each node — escalating health to warning/error and carrying the fault title as the reason.
+  // Applied last so a fault beats a healthy/live resting state.
+  const faults = useGlanceFaults(useMemo(() => projectsBase.map((p) => p.id), [projectsBase]));
+  const projects = useMemo(() => applyFaultHealth(projectsBase, faults), [projectsBase, faults]);
   // L0 — the project-network graph (nodes = real projects, edges = the user-drawn relationships #2253).
   const projectData = useMemo(() => buildGlanceData(projects, projectLinks), [projects, projectLinks]);
   const projectModel = useMemo(() => buildGraph(projectData.rawNodes, projectData.rawEdges), [projectData]);
@@ -270,7 +268,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           </Row>
           <Box style={{ flex: 1, overflowY: "auto", padding: "0 8px 8px" }}>
             {sidebar.map((n) => {
-              const st = STATUS_META[n.status];
+              const st = HEALTH_META[n.rollupHealth];
               const on = selNodeId === n.id || hoverNode === n.id;
               return (
                 <Row key={n.id} gap={9} align="center" onClick={() => onNodeClick(n.id)} onMouseEnter={() => setHoverNode(n.id)} onMouseLeave={() => setHoverNode(null)}
