@@ -16,6 +16,22 @@
 // Everything else on the record IS seed content — a change to any other field is a user edit (store
 // copy) or a new release (seed copy).
 //
+// THE ROUND-TRIP CONTRACT (#2514). A stamp is only meaningful if the record's seed-relevant content
+// survives the push→store→load round-trip byte-for-byte: `bsc ui … set` persists the JSON verbatim
+// (key order aside), `… list --full` returns it verbatim, and the bridge projections
+// (componentBridge/themeBridge `loadX`) must carry every seed-relevant field WITHOUT normalizing it —
+// an absent optional field must stay absent (never defaulted to `""`/`[]`), or the reloaded copy
+// hashes differently from its stamp and the reconcile mis-judges a pristine record as user-modified
+// forever. This invariant is EXECUTED, not assumed: `seedRoundTrip.test.ts` pushes every packaged
+// seed record through the real bridge mapping over a faithful store emulation and asserts the
+// reloaded content still hashes to its stamp.
+//
+// Defense in depth for a stamp that rots anyway (an older hasher, a byte-mangling round-trip in some
+// past build): a mismatched `builtin` copy gets a second chance against the CURRENT seed — content
+// identical to the seed ⇒ the stamp itself was wrong, re-judged pristine and re-stamped (see the
+// verdict table on `reconcileSeed`). Silent keep-forever is impossible: every KEEP of a diverged
+// copy surfaces a notice.
+//
 // Deliberately GENERIC over `{ id, name, builtin?, seedHash? }` (components AND kits today) so the
 // same helper can be extracted for the other seed-and-keep stores (personas, orgs, blueprints) later
 // — it has no component-specific knowledge beyond the volatile-field list above.
@@ -115,6 +131,13 @@ export interface SeedReconcile<T extends SeedRecord> {
  * | no  | no  |                            | DELETE (drop from store) |
  * | no  | yes |                            | KEEP + `orphaned` notice |
  *
+ * Tolerant re-stamp (#2514): before the "modified" KEEP fires for an in-seed record, its content is
+ * compared against the CURRENT seed copy's content hash. Identical content ⇒ only the recorded stamp
+ * is wrong (an older hasher / a byte-mangling round-trip in a past build stamped it) — the record is
+ * re-judged PRISTINE and refreshed to the seed copy (same content, corrected stamp), no notice. A
+ * retired record with a wrong stamp has no seed copy to compare against, so it stays on the
+ * conservative KEEP + `orphaned` branch — kept, but never silently (the notice is the surface).
+ *
  * Non-builtin (user-authored) loaded records pass through untouched, always. Seed records the store
  * lacks are appended + pushed (the original seed-and-keep add).
  *
@@ -136,9 +159,15 @@ export function reconcileSeed<T extends SeedRecord>(loaded: T[], seed: T[], type
     }
     const seeded = seedById.get(rec.id);
     // Legacy pre-#2483 copies (no seedHash) are grandfathered as unmodified.
-    const modified = rec.seedHash !== undefined && seedHashOf(rec) !== rec.seedHash;
+    const contentHash = rec.seedHash === undefined ? undefined : seedHashOf(rec);
+    let modified = contentHash !== undefined && contentHash !== rec.seedHash;
     if (seeded) {
-      const seedMoved = (seeded.seedHash ?? seedHashOf(seeded)) !== rec.seedHash;
+      const seedContentHash = seeded.seedHash ?? seedHashOf(seeded);
+      // Tolerant re-stamp (#2514): content identical to the CURRENT seed ⇒ the recorded stamp is the
+      // broken part, not the content — re-judge pristine (the refresh below adopts the seed copy,
+      // which is the same content with the corrected stamp).
+      if (modified && contentHash === seedContentHash) modified = false;
+      const seedMoved = seedContentHash !== rec.seedHash;
       if (!modified && seedMoved) {
         records.push(seeded); // pristine + stale → refresh to the new seed copy
         pushes.push(seeded);
