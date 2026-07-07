@@ -82,6 +82,11 @@
    was the only animated page; a motion vocabulary is deferred until the design system is in place.
    The functional loading indicators stay (ds-spin/ds-pulse above + ds-skel below). */
 
+/* ── designer session panel (#2471) — the collapsible bottom terminal. Collapse is display:none on
+   the panel (the component stays MOUNTED so the PTY survives); the hook re-fits on reopen. */
+.ds-terminal { flex: none; height: 260px; min-height: 180px; display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
+.ds-termhost { flex: 1; min-height: 0; padding: 4px 8px; background: #181a1f; /* TERM_THEME background */ }
+
 /* loading preview (#2302) — a component's skeleton in the Studio rides the app's ONE shimmer
    keyframe (`skeleton-shimmer`, tokens.css), so the loading state uses the same motion vocabulary as
    every Skeleton elsewhere; the gradient colors are inline (the preview's dark/light sandbox). */

@@ -8,7 +8,7 @@ import { wrapExtension, encodeShareCode, decodeShareCode, type ExtensionManifest
 import { installFromGist, publishGist } from "@/features/planner/lib/gist/gist";
 import { bsc } from "@/shared/lib/core/bsc";
 import { sha256Hex } from "@/shared/lib/core/sha256";
-import { ROLES, type ComponentRecord, type Kit, type PropSpec, type Role } from "./model";
+import { DATA_SHAPES, ROLES, type ComponentRecord, type DataShape, type Kit, type PropSpec, type Role } from "./model";
 
 /** The manifest kind a component kit ships as. */
 export const KIT_KIND = "component-kit" as const;
@@ -58,6 +58,9 @@ function coerceComponent(v: unknown, kitId: string): ComponentRecord | null {
     src: str(o.src), srcText: str(o.srcText),
   };
   if (str(o.wraps)) rec.wraps = str(o.wraps);
+  // The data-shape axis (#2475) rides a shared kit, filtered to the six-shape vocabulary.
+  const shapes = strArr(o.shapes).filter((s): s is DataShape => (DATA_SHAPES as string[]).includes(s));
+  if (shapes.length) rec.shapes = shapes;
   return rec;
 }
 
@@ -143,7 +146,7 @@ export async function publishKitToGist(
     try {
       await bsc(
         null,
-        ["ui", "kit", "add", store.id, store.version, "--kind", KIT_KIND, "--sha256", pin.hash, "--source", res.htmlUrl],
+        ["ui", "release", "add", store.id, store.version, "--kind", KIT_KIND, "--sha256", pin.hash, "--source", res.htmlUrl],
         text,
       );
     } catch (e) {

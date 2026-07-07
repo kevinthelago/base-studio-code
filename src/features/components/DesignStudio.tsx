@@ -7,13 +7,15 @@
 // and the generate-variants design bar.
 //
 // It reuses the pure domain (`lib/model`), the shared specimen renderer (`renderSpecimen`), the shared
-// graph stack (`GraphCanvas` + `ZoomControls` + `useGraphViewport` + `layerDag` + `graphEdge` ports
-// routing, #2418), and `useDragResize` — so it stays on-architecture and the planner Kickoff pane is
-// untouched. Data comes from the global store via the `bsc component` bridge.
+// graph stack (`GraphCanvas` + `ZoomControls` + `useGraphViewport` + `graphEdge`, #2418; the top-down
+// hierarchy layout lives in `lib/compositionLayout`, #2455), and `useDragResize` — so it stays
+// on-architecture and the planner Kickoff pane is untouched. Data comes from the global store via the
+// `bsc ui` bridge.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
 import { KitChangesCard } from "./KitChangesCard";
+import { DesignerTerminal } from "./DesignerTerminal";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
@@ -23,10 +25,9 @@ import { Code } from "@/shared/ui/data/Code";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
-import { layerDag } from "@/shared/lib/graph/layers";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 import { slugify } from "@/shared/lib/core/format";
-import type { GraphEdge } from "@/shared/lib/graph/types";
+import { layoutComposition, NODE_W, NODE_H, type CompositionLayout } from "./lib/compositionLayout";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
@@ -44,8 +45,6 @@ const VP: Record<Viewport, { w: string; label: string }> = {
 };
 /** Optimistic delay before generated variants appear (the store generate loop isn't wired yet). */
 const GEN_MS = 1600;
-/** Graph node box + column/row spacing (world coords). */
-const NODE_W = 170, NODE_H = 54, COL_GAP = 230, ROW_GAP = 96, PAD = 60;
 
 // The role dot + kit chip live in kitChrome.tsx (#2420) — shared with the Planner Components pane.
 
@@ -69,6 +68,14 @@ export function DesignStudio() {
   const [candidates, setCandidates] = useState<string[] | null>(null);
   const [renderKey, setRenderKey] = useState(0); // bumped by "Retry render" after a preview error
   const [shareOpen, setShareOpen] = useState(false); // the share/import kits modal (#2305 slice 1c)
+  // The designer session panel (#2471): `designerBooted` mounts the terminal on FIRST open and keeps
+  // it mounted thereafter — collapsing only flips `designerOpen` (CSS-hide), so the PTY survives.
+  const [designerOpen, setDesignerOpen] = useState(false);
+  const [designerBooted, setDesignerBooted] = useState(false);
+  const toggleDesigner = () => {
+    setDesignerBooted(true);
+    setDesignerOpen((v) => !v);
+  };
 
   const rail = useDragResize({ initial: 266, min: 200, max: 400, axis: "x" });
   // The inspector carries the full library detail (#2453), so it defaults — and is allowed — wider.
@@ -117,27 +124,9 @@ export function DesignStudio() {
   };
   const accept = (name: string) => { setVariant(name); setCandidates(null); };
 
-  // ── graph layout (shared layerer) ──
-  const graph = useMemo(() => {
-    const nodeIds = kitComps.map((c) => c.id);
-    const idByName = new Map(kitComps.map((c) => [c.name, c.id] as const));
-    const edges: GraphEdge[] = [];
-    for (const c of kitComps) for (const dep of c.composes) {
-      const to = idByName.get(dep);
-      if (to) edges.push({ id: `${c.id}->${to}`, from: c.id, to });
-    }
-    const layer = layerDag(nodeIds, edges); // dependency sits deeper (further right)
-    const rows: Record<number, number> = {};
-    const pos = new Map<string, { x: number; y: number }>();
-    for (const c of kitComps) {
-      const L = layer[c.id] ?? 0;
-      const row = rows[L] ?? 0; rows[L] = row + 1;
-      pos.set(c.id, { x: PAD + L * COL_GAP, y: PAD + row * ROW_GAP });
-    }
-    let w = 400, h = 300;
-    for (const p of pos.values()) { w = Math.max(w, p.x + NODE_W + PAD); h = Math.max(h, p.y + NODE_H + PAD); }
-    return { pos, edges, world: { w, h } };
-  }, [kitComps]);
+  // ── graph layout (#2455) — hierarchical top-down: composers above, dependencies below, role-tier
+  // banding for edge-less nodes, `used`-desc ordering within a row. Pure model: lib/compositionLayout.
+  const graph = useMemo(() => layoutComposition(kitComps), [kitComps]);
 
   const gvp = useGraphViewport(graph.world);
   const gvpFit = gvp.fit;
@@ -177,6 +166,7 @@ export function DesignStudio() {
           </Box>
         </Box>
         <Box style={{ display: "flex", alignItems: "center", gap: 7, flex: "none" }}>
+          <Box as="button" className={`ds-act${designerOpen ? " accent" : ""}`} title="Open the designer session — a restricted terminal that works the UI kits via bsc ui (#2471)" aria-expanded={designerOpen} onClick={toggleDesigner}><Text as="span">✦</Text> Designer</Box>
           <Box as="button" className="ds-act" title="Share or import a kit (gist / share code)" onClick={() => setShareOpen(true)}><Text as="span" tone="dim">⇅</Text> Share</Box>
           <Box as="button" className="ds-act accent" title="Add a new component"><Text as="span">＋</Text> Component</Box>
         </Box>
@@ -253,6 +243,9 @@ export function DesignStudio() {
           composes={composes} onSelect={selectComp}
         />
       </Box>
+
+      {/* ── designer session (#2471) — mounted on first open, CSS-hidden on collapse (PTY survives) ── */}
+      {designerBooted && <DesignerTerminal open={designerOpen} />}
     </Box>
   );
 }
@@ -275,7 +268,7 @@ function GuideCard({ tone, title, items, glyph }: { tone: "success" | "danger"; 
 
 // ── Graph view ───────────────────────────────────────────────────────────────
 interface GraphProps {
-  graph: { pos: Map<string, { x: number; y: number }>; edges: GraphEdge[]; world: { w: number; h: number } };
+  graph: CompositionLayout;
   comps: ComponentRecord[]; selId: string; kitName: string;
   gvp: ReturnType<typeof useGraphViewport>; onSelect: (c: ComponentRecord) => void;
 }
@@ -302,9 +295,10 @@ function GraphView({ graph, comps, selId, kitName, gvp, onSelect }: GraphProps) 
         {graph.edges.map((e) => {
           const a = graph.pos.get(e.from), b = graph.pos.get(e.to);
           if (!a || !b) return null;
-          // The shared graph line-type (#2222) with SIDE-PORT routing (#2226) — the composition graph
-          // is a layered left→right DAG, same columnar flow as Glance.
-          const g = graphEdge({ ...a, w: NODE_W, h: NODE_H }, { ...b, w: NODE_W, h: NODE_H }, { routing: "ports" });
+          // The shared graph line-type (#2222) with PERIMETER-ANCHOR routing — the composition graph
+          // is a layered TOP-DOWN DAG (#2455); the side-port router is horizontal-only, and the anchor
+          // router leaves each card facing the other, which reads cleanly for the vertical flow.
+          const g = graphEdge({ ...a, w: NODE_W, h: NODE_H }, { ...b, w: NODE_W, h: NODE_H });
           return (
             <g key={e.id}>
               <path d={g.d} stroke={EDGE_COLOR} strokeWidth={1.5} fill="none" />

@@ -129,6 +129,54 @@ pub(crate) struct LocalProject {
     pub(crate) updated_at: u64,
     /// True when the hub has been published — marked in-place by the `.published` file (#922).
     pub(crate) published: bool,
+    /// True when `title` came from the durable `.title` sidecar (the user's own input). False =
+    /// derived (goal.md / de-slugged key / placeholder) — the frontend backfills `.title` from the
+    /// matched GitHub board title for these (#2467), and only for these, so a user's rename is
+    /// never stomped by the board.
+    pub(crate) titled: bool,
+}
+
+/// True for a legacy minted project id (`p-<base36 epoch>-<random>`, #1741) — the ONLY key shape
+/// that is genuinely opaque. Deliberately broad (any lowercase two-part `p-…`): a real project
+/// slug that happens to match (e.g. `p-card-tracker`) merely stays "Untitled project" offline
+/// until the board-title backfill (#2467) writes its `.title` on the next connected session.
+fn is_opaque_minted_key(key: &str) -> bool {
+    let Some(rest) = key.strip_prefix("p-") else { return false };
+    let Some((a, b)) = rest.split_once('-') else { return false };
+    let alnum_lower = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+    alnum_lower(a) && alnum_lower(b)
+}
+
+/// Derive a display title from a NAME-DERIVED key (#2467): post-#2409 the key IS the slug of the
+/// project's name (`pokemon-card-tracker`, legacy `Beautiful_Emails`), so de-slugging is faithful —
+/// separators to spaces, and Title Case only when the key was all-lowercase (a mixed-case legacy
+/// key keeps the user's own casing). Returns None for opaque minted `p-…` keys, which must never
+/// masquerade as a display name (the original rule this fallback is scoped around).
+fn title_from_key(key: &str) -> Option<String> {
+    if is_opaque_minted_key(key) {
+        return None;
+    }
+    let spaced = key.replace(['_', '-'], " ");
+    let words: Vec<&str> = spaced.split_whitespace().collect();
+    if words.is_empty() {
+        return None;
+    }
+    if key.chars().any(|c| c.is_ascii_uppercase()) {
+        return Some(words.join(" "));
+    }
+    Some(
+        words
+            .iter()
+            .map(|w| {
+                let mut cs = w.chars();
+                match cs.next() {
+                    Some(f) => f.to_ascii_uppercase().to_string() + cs.as_str(),
+                    None => String::new(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
 }
 /// List the on-disk local projects (the `projects/<key>/` dirs) so the Projects page can surface
 /// unpublished local work, not just GitHub boards + the store's draft map (#…). The on-disk hub is
@@ -159,9 +207,12 @@ pub(crate) fn list_local_projects() -> Result<Vec<LocalProject>, String> {
         // surfacing a freshly-created/empty hub (just CLAUDE.md + an empty plan.db) as a draft.
         let has_plan = goal.exists() || dir.join("scope.md").exists();
         // Title precedence: the durable `.title` sidecar (the user's own input) → the goal.md-derived
-        // first sentence → a neutral placeholder. Crucially the old `key.replace(['_','-'], " ")`
-        // fabrication is GONE — the opaque key must never masquerade as a display name (#…).
-        let title = read_hub_title(&dir)
+        // first sentence → the DE-SLUGGED key (#2467 — post-#2409 keys ARE name-derived, so this is
+        // faithful; opaque minted `p-…` keys are still excluded so they never masquerade as a name)
+        // → a neutral placeholder.
+        let sidecar = read_hub_title(&dir);
+        let titled = sidecar.is_some();
+        let title = sidecar
             .or_else(|| {
                 std::fs::read_to_string(&goal).ok().and_then(|c| {
                     // First real (non-empty, non-heading) line → its first sentence. SKIP heading lines
@@ -174,6 +225,7 @@ pub(crate) fn list_local_projects() -> Result<Vec<LocalProject>, String> {
                 })
                 .filter(|t| !t.is_empty())
             })
+            .or_else(|| title_from_key(&key))
             .unwrap_or_else(|| "Untitled project".to_string());
         let updated_at = std::fs::metadata(&dir)
             .ok()
@@ -182,7 +234,7 @@ pub(crate) fn list_local_projects() -> Result<Vec<LocalProject>, String> {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         let published = is_published(&key);
-        out.push(LocalProject { key, title, has_plan, updated_at, published });
+        out.push(LocalProject { key, title, has_plan, updated_at, published, titled });
     }
     Ok(out)
 }
@@ -479,6 +531,34 @@ mod relocated_tests {
         assert!(json.contains("\"updatedAt\""), "expected camelCase updatedAt in {json}");
         assert!(!json.contains("has_plan") && !json.contains("updated_at"), "must not emit snake_case: {json}");
 
+        std::fs::remove_dir_all(&home).ok();
+    }
+    #[test]
+    fn title_falls_back_to_the_deslugged_key_for_name_derived_keys() {
+        // #2467: post-#2409 keys ARE name-derived slugs, so with no .title/goal.md the key de-slugs
+        // into a faithful display title — Title Case for all-lowercase slugs, the user's own casing
+        // kept for mixed-case legacy keys. Opaque minted `p-…` keys still refuse to become a name.
+        assert_eq!(title_from_key("pokemon-card-tracker").as_deref(), Some("Pokemon Card Tracker"));
+        assert_eq!(title_from_key("Beautiful_Emails").as_deref(), Some("Beautiful Emails"));
+        assert_eq!(title_from_key("video_game").as_deref(), Some("Video Game"));
+        assert_eq!(title_from_key("p-mr7zkqjn-xoufes"), None, "minted id stays opaque");
+        assert_eq!(title_from_key("p-abc-xyz"), None, "two-part lowercase p-… treated as minted");
+        assert_eq!(title_from_key("p-Card-Tracker").as_deref(), Some("P Card Tracker"), "mixed case is not a minted id");
+
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("tfk");
+        let root = bsc_base_dir().join("projects");
+        // A bare published-style hub (the 29-of-30 real-world case): no .title, no goal.md.
+        std::fs::create_dir_all(root.join("pokemon-card-tracker").join("prompts")).unwrap();
+        write_file(&root.join("Beautiful_Emails").join("CLAUDE.md"), "spec");
+        let found = list_local_projects().unwrap();
+        let by = |k: &str| found.iter().find(|p| p.key == k).unwrap();
+        assert_eq!(by("pokemon-card-tracker").title, "Pokemon Card Tracker");
+        assert!(!by("pokemon-card-tracker").titled, "derived title ⇒ titled=false (backfill target)");
+        assert_eq!(by("Beautiful_Emails").title, "Beautiful Emails");
+        // The wire carries `titled` for the frontend's backfill guard.
+        let json = serde_json::to_string(by("pokemon-card-tracker")).unwrap();
+        assert!(json.contains("\"titled\":false"), "titled serialized: {json}");
         std::fs::remove_dir_all(&home).ok();
     }
     #[test]

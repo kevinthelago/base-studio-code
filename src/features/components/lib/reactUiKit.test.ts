@@ -20,8 +20,8 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     }
   });
 
-  it("drops the fake demo rows from react-ui", () => {
-    for (const fake of ["PersonasPanel", "BscBridge", "FsWatcher", "PersonaService", "CommandRouter"]) {
+  it("keeps the examples-kit rows out of react-ui (the generator only emits manifest primitives)", () => {
+    for (const fake of ["PersonasPanel", "AgentsBoard", "PersonaShell", "DemoButton", "PersonaStore"]) {
       expect(byName(fake)).toBeUndefined();
     }
   });
@@ -88,12 +88,39 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     expect(byName("StatCard")!.composes).toEqual(expect.arrayContaining(["Card", "StatTile"]));
   });
 
-  it("keeps the demos in a separate `examples` kit", () => {
+  it("stamps the data-shape axis honestly — exact sets, audited components only (#2475)", () => {
+    // The ideal-rendering index the planner queries via `bsc ui shapes` / `bsc ui list --shape`.
+    expect(byName("MasterDetail")!.shapes).toEqual(["list"]);     // rail = select-a-row list → detail
+    expect(byName("GraphCanvas")!.shapes).toEqual(["graph"]);     // node/edge pan-zoom world
+    expect(byName("DataTableRow")!.shapes).toEqual(["table"]);    // aligned fixed-column records
+    expect(byName("CardListRow")!.shapes).toEqual(["list"]);      // the card-list row archetype
+    expect(byName("ActivityFeed")!.shapes).toEqual(["list"]);     // striped feed of homogeneous rows
+    expect(byName("KeyValueList")!.shapes).toEqual(["key-value"]); // the record/property-list rendering
+    // Audited and deliberately NOT shape-indexed: SplitView's panes are heterogeneous, PaneGrid hosts
+    // opaque workspace panes (not data items), StatTile renders a single KPI pair, not a record.
+    for (const n of ["SplitView", "PaneGrid", "StatTile"]) {
+      expect(byName(n)!.shapes, `${n} must not fake a shape ideal`).toBeUndefined();
+    }
+    // `tree` is covered by the Tree template (#2476) — and ONLY by it; `linked-list` stays
+    // UNCOVERED until the Sequence template (#2477) lands — no component may fake coverage.
+    expect(byName("Tree")!.shapes).toEqual(["tree"]);
+    for (const c of REACT_UI_COMPONENTS) {
+      if (c.name !== "Tree") {
+        expect(c.shapes ?? [], `${c.name} must not claim tree`)
+          .not.toEqual(expect.arrayContaining(["tree"]));
+      }
+      expect(c.shapes ?? [], `${c.name} must not claim linked-list yet`)
+        .not.toEqual(expect.arrayContaining(["linked-list"]));
+    }
+  });
+
+  it("keeps the exemplar demos in a separate `examples` kit (#2456)", () => {
     expect(SEED_KITS.map((k) => k.id)).toEqual(["react-ui", "examples"]);
     const examples = SEED_COMPONENTS.filter((c) => c.kitId === "examples").map((c) => c.name);
-    expect(examples).toContain("PersonaService");
     expect(examples).toContain("PersonasPanel");
-    // The seed is the generated react-ui kit + the examples demos.
+    expect(examples).toContain("AgentsBoard");
+    expect(examples).toContain("PersonaStore");
+    // The seed is the generated react-ui kit + the examples exemplar kit.
     expect(SEED_COMPONENTS.length).toBe(REACT_UI_COMPONENTS.length + examples.length);
   });
 });

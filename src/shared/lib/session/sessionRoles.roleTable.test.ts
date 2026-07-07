@@ -1,27 +1,33 @@
 import { describe, it, expect } from "vitest";
-import { ROLE_DEFAULTS, PLANNER_WRITE_GLOBS, DOC_GLOBS, DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES } from "./sessionRoles";
-import { mergeRoleDefaults, type RoleCapability } from "./roleModel";
+import { ROLE_DEFAULTS, PLANNER_WRITE_GLOBS, DOC_GLOBS, DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, roleDeniedCommands, sessionScopes } from "./sessionRoles";
+import { mergeRoleDefaults, roleCapability, type RoleCapability } from "./roleModel";
 
 // Security guard for the externalized role→capability table (@data/permissions/role-capabilities.json,
 // #2027 P1). The role gate is least-privilege; a JSON edit that WIDENS a role's access (e.g. gives a
 // reviewer git:write, or hands a non-planner default write globs) must trip a test here, not ship.
 describe("role capability table (loaded from @data/permissions/role-capabilities.json)", () => {
-  it("has exactly the 9 roles with their intended github/git/code/net tiers", () => {
+  it("has exactly the 10 roles with their intended github/git/code/net/ui tiers", () => {
     const tiers = Object.fromEntries(
-      Object.values(ROLE_DEFAULTS).map((c) => [c.role, `${c.github}/${c.git}/${c.code}/${c.net}`]),
+      Object.values(ROLE_DEFAULTS).map((c) => [c.role, `${c.github}/${c.git}/${c.code}/${c.net}/${c.ui}`]),
     );
+    // ui: "read" across the board (#2470) — every existing role may USE the component kit but never
+    // redefine it; `write` is reserved for the designer session (#2471).
     expect(tiers).toEqual({
-      planner:    "read/read/write/read",
-      worker:     "read/write/write/read",
-      director:   "write/write/none/read",
-      triage:     "write/none/none/read",
-      tester:     "read/read/none/read",
-      reviewer:   "read/read/none/read",
-      issuer:     "write/read/none/read",
-      juror:      "read/read/none/read",
+      planner:    "read/read/write/read/read",
+      worker:     "read/write/write/read/read",
+      director:   "write/write/none/read/read",
+      triage:     "write/none/none/read/read",
+      tester:     "read/read/none/read/read",
+      reviewer:   "read/read/none/read/read",
+      issuer:     "write/read/none/read/read",
+      juror:      "read/read/none/read/read",
       // Documentor (#1555): read-only on git/GitHub, code:none — writes come solely from its
       // DOC_GLOBS carve-out (asserted below), never a code tier.
-      documentor: "read/read/none/read",
+      documentor: "read/read/none/read/read",
+      // Designer (#2471): the Design Studio's UI-kit session — `none` on every OTHER axis; the kit
+      // store is its one write grant (`ui: write`, #2470), and its whole command surface is
+      // `bsc ui`, granted at launch via the restricted allow-list.
+      designer:   "none/none/none/none/write",
     });
   });
 
@@ -62,5 +68,31 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
     // And an override that DOES carry a role still customizes it (overlay wins on top of the floor).
     const customized = mergeRoleDefaults(embedded, { planner: cap("planner", ["custom/**"]) });
     expect(customized.planner.writeGlobs).toEqual(["custom/**"]);
+  });
+
+  // Regression for #2470 (the per-FIELD companion to #2325): `mergeRoleDefaults` floors missing
+  // ROLES, but an overlaid role OBJECT fully replaces the embedded one — so a stale config-dir
+  // override written BEFORE the `ui` axis shipped yields a merged entry with `ui: undefined`.
+  // Nothing may crash, and the gate must fail CLOSED (behave as `read`), never as a write grant.
+  it("a stale override missing the ui field defaults to read everywhere it's consumed (#2470)", () => {
+    // The pre-#2470 capability shape: role present, no `ui` field (what a stale override yields).
+    const stale = {
+      role: "worker", github: "read", git: "write", code: "write", net: "read", writeGlobs: [] as string[],
+    } as RoleCapability;
+    expect(stale.ui).toBeUndefined(); // the hazard under test
+
+    // First, prove the merge really produces that shape (an overlaid role object replaces wholesale).
+    const embedded = { worker: { ...stale, ui: "read" as const } };
+    expect(mergeRoleDefaults(embedded, { worker: stale }).worker.ui).toBeUndefined();
+
+    // The accessor prepends the field floor, so a capability built through it always carries a tier.
+    expect(roleCapability("worker").ui).toBe("read");
+    // The hard gate fails closed on the missing tier: mutating verbs stay denied…
+    const denies = roleDeniedCommands(stale);
+    expect(denies).toContain("bsc ui set");
+    expect(denies).toContain("bsc component kit remove");
+    expect(denies).not.toContain("bsc ui"); // …but not the whole tool (that's the `none` tier).
+    // And the runtime scope doc renders the same read floor.
+    expect(sessionScopes(stale)).toEqual({ ui: "read" });
   });
 });

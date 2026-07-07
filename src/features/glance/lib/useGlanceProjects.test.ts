@@ -224,6 +224,54 @@ describe("useGlanceProjects — persisted github-state (#2446, supersedes the #2
   });
 });
 
+describe("useGlanceProjects — updatedAt probe gates the heavy fetch (#2448)", () => {
+  const HEAVY_MARKER = "items(first: 100)"; // only PROJECTS_QUERY carries the heavy items scan
+
+  beforeEach(() => {
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "tok", githubState: null });
+    vi.mocked(invoke).mockReset();
+  });
+
+  it("probe unchanged ⇒ no heavy POST; the records render and fetchedAt refreshes", async () => {
+    useAppStore.setState({
+      localDraftProjects: { "cached-project": { title: "Cached Project", pitch: "", createdAt: 1 } },
+      githubState: { records: [{ ...rec("Cached Project", true), updatedAt: "T1" }], fetchedAt: 5 },
+    });
+    vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+      if (cmd !== "github_graphql") return null;
+      const q = String((args as { query: string }).query);
+      if (q.includes(HEAVY_MARKER)) throw new Error("heavy query must not fire when nothing moved");
+      return { viewer: { projectsV2: { nodes: [{ id: "PVT_Cached Project", updatedAt: "T1" }] } } };
+    });
+
+    const { result } = renderHook(() => useGlanceProjects());
+    // The probe-served records render with their real (shipped) status…
+    await waitFor(() => expect(result.current.find((p) => p.id === "cached-project")?.status).toBe("done"));
+    // …and the skip re-stamps fetchedAt (the "still current as of now" mark).
+    await waitFor(() => expect(useAppStore.getState().githubState!.fetchedAt).toBeGreaterThan(5));
+  });
+
+  it("probe moved ⇒ the heavy fetch fires and overwrites the records", async () => {
+    useAppStore.setState({
+      localDraftProjects: { "cached-project": { title: "Cached Project", pitch: "", createdAt: 1 } },
+      githubState: { records: [{ ...rec("Cached Project"), updatedAt: "T1" }], fetchedAt: 5 },
+    });
+    vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+      if (cmd !== "github_graphql") return null;
+      const q = String((args as { query: string }).query);
+      if (q.includes(HEAVY_MARKER)) {
+        return { viewer: { projectsV2: { nodes: [{ ...gh("PVT_Cached Project", "Cached Project", true), updatedAt: "T2" }] } } };
+      }
+      return { viewer: { projectsV2: { nodes: [{ id: "PVT_Cached Project", updatedAt: "T2" }] } } };
+    });
+
+    const { result } = renderHook(() => useGlanceProjects());
+    // The heavy result landed: the fresh (closed ⇒ done) status renders and the records carry T2.
+    await waitFor(() => expect(result.current.find((p) => p.id === "cached-project")?.status).toBe("done"));
+    await waitFor(() => expect(useAppStore.getState().githubState!.records[0].updatedAt).toBe("T2"));
+  });
+});
+
 describe("local published inventory seeds Glance (#2445)", () => {
   beforeEach(() => {
     useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null });
