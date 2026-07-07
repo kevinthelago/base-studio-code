@@ -24,7 +24,7 @@ export const REACT_UI_KIT_VERSION = "1.0.0";
 /** Default architectural role by manifest group (the overlay may override per component). */
 const GROUP_ROLE: Record<PrimitiveGroup, Role> = {
   layout: "layout", typography: "primitive", controls: "primitive", data: "primitive", feedback: "primitive",
-  layouts: "layout",
+  layouts: "layout", pages: "page",
 };
 
 /** Kit metadata the manifest doesn't encode, keyed by component name. Ported from the #2269 seed for
@@ -394,6 +394,60 @@ const GUIDANCE: Record<string, Guidance> = {
     role: "composite", tags: ["chart", "data-viz"],
     whenUse: ["A two-way proportion with its counts (ok/err, allow/block).", "Per-item health rows in an analytics panel."],
     whenNot: ["More than two segments — use Donut / Bars.", "A single fill fraction — use FillBar."],
+  },
+
+  // ── pages (complete data-driven page compositions, #2505) ──
+  // The top of the composition pyramid: each page composes ONLY kit components (layout template +
+  // data composites + primitives), so the Design Studio graph shows finished UIs deriving from the
+  // base components. Shapes (#2475): a page stamps the shape its WHOLE composition ideally renders —
+  // the same shape its central layout template claims, one tier up (the layouts stay the structural
+  // ideals; the page is the complete rendering of that shape). DashboardPage stamps NOTHING: it
+  // renders a heterogeneous board (metrics + series + slices + events) with no single page shape.
+  TablePage: {
+    version: "1.0.0", tags: ["page", "table", "records"], shapes: ["table"],
+    composes: ["SplitView", "DataTableRow", "KeyValueList", "EmptyState", "SectionHeader", "Box", "Stack", "Text"],
+    whenUse: ["A complete records browser: columnar rows from typed columns × rows, with a selected-record inspector.", "Any dataset whose fields align under fixed column labels (runs, issues, sessions)."],
+    whenNot: ["Card-styled list items with rich slots — use CollectionPage.", "Just the row primitive inside your own frame — use DataTableRow directly."],
+    srcText: 'import { TablePage } from "@/shared/ui/pages/TablePage";\n\n<TablePage\n  title="Sessions" hint="today"\n  columns={[\n    { key: "name", label: "Session" },\n    { key: "state", label: "State", width: "90px" },\n  ]}\n  rows={sessions.map((s) => ({ id: s.id, cells: { name: s.name, state: s.state } }))}\n  onSelect={setSelected}\n/>',
+  },
+  TreeExplorerPage: {
+    version: "1.0.0", tags: ["page", "tree", "explorer"], shapes: ["tree"],
+    composes: ["Tree", "KeyValueList", "EmptyState", "SectionHeader", "Box", "Stack", "Text"],
+    whenUse: ["A complete hierarchy explorer: collapsible indented rows beside a node-facts detail panel.", "Deep navigational trees (file systems, category hierarchies) that deserve a whole page."],
+    whenNot: ["A presentational top-down chart — use Tree variant=\"layered\" (or NetworkPage for general graphs).", "Just the tree rail inside your own frame — use Tree directly."],
+    srcText: 'import { TreeExplorerPage } from "@/shared/ui/pages/TreeExplorerPage";\n\n<TreeExplorerPage\n  title="Project files" hint="src/"\n  nodes={[{ id: "src", label: "src", children: [\n    { id: "app", label: "app", meta: "12 files" },\n  ] }]}\n  onSelect={setSelected}\n/>',
+  },
+  PipelinePage: {
+    version: "1.0.0", tags: ["page", "linked-list", "workflow"], shapes: ["linked-list"],
+    variants: ["horizontal", "vertical"],
+    composes: ["Sequence", "Chip", "KeyValueList", "SectionHeader", "Box", "Row", "Stack", "Text"],
+    whenUse: ["A complete pipeline/workflow page: the status-colored step strip driving a focused-step detail (status Chip + description + facts).", "Deploy pipelines, wizards, and timelines where prev→next order is the page's subject."],
+    whenNot: ["An arbitrary node/edge graph — use NetworkPage.", "Just the step strip inside your own frame — use Sequence directly."],
+    srcText: 'import { PipelinePage } from "@/shared/ui/pages/PipelinePage";\n\n<PipelinePage\n  title="Deploy" hint="release 1.0.5"\n  steps={[\n    { id: "build", label: "Build", status: "complete", facts: [{ k: "took", v: "41s" }] },\n    { id: "test", label: "Test", status: "active", description: "Running the vitest suite." },\n    { id: "ship", label: "Ship" },\n  ]}\n/>',
+  },
+  NetworkPage: {
+    version: "1.0.0", tags: ["page", "graph", "network"], shapes: ["graph"],
+    composes: ["GraphCanvas", "IconButton", "KeyValueList", "Box", "Spacer", "Stack", "Text"],
+    whenUse: ["A complete graph workspace: pan/zoom node cards + directional edges from typed { nodes, edges }, with a selected-node inspector.", "Dependency / coordination networks laid out by the shared graph stack (cycles tolerated)."],
+    whenNot: ["A strict single-parent hierarchy — use TreeExplorerPage (or Tree layered).", "A custom world (bespoke nodes, drag) — use GraphCanvas + the shared graph libs directly."],
+    srcText: 'import { NetworkPage } from "@/shared/ui/pages/NetworkPage";\n\n<NetworkPage\n  title="Streams" hint="dependency graph"\n  nodes={[{ id: "api", label: "api" }, { id: "ui", label: "ui", meta: "3 issues" }]}\n  edges={[{ from: "api", to: "ui" }]}\n  onSelect={setSelected}\n/>',
+  },
+  DashboardPage: {
+    // shapes: deliberately ABSENT — a dashboard is a heterogeneous BOARD (KPI tiles + a time series
+    // + composition slices + an event feed); no single #2475 shape is "the page's shape", and the
+    // feed region's `list` is the ActivityFeed's claim, not the page's. Stamping one would fake an ideal.
+    version: "1.0.0", tags: ["page", "dashboard", "analytics"],
+    composes: ["StatCard", "Spark", "LineArea", "Donut", "Legend", "ActivityFeed", "Card", "Grid", "Row", "Stack", "Box", "SectionHeader"],
+    whenUse: ["A complete metrics board: KPI stat tiles (inline Spark trends), a LineArea trend card, a Donut breakdown card, and an activity column.", "Project / fleet health overviews rendered entirely from typed stats + series + slices + events."],
+    whenNot: ["One metric or one chart — use StatCard / a chart primitive in a Card.", "Records the user drills into — use TablePage or CollectionPage."],
+    srcText: 'import { DashboardPage } from "@/shared/ui/pages/DashboardPage";\n\n<DashboardPage\n  title="Fleet" hint="last 7 days"\n  stats={[{ k: "landed", v: 12, tone: "success", trend: [3, 5, 4, 8, 12] }]}\n  trend={{ title: "Throughput", labels: days, series: [{ name: "landed", color: "var(--success)", data }] }}\n  breakdown={{ title: "By state", slices: [{ name: "landed", value: 12, color: "var(--success)" }] }}\n  activity={{ hint: "all repos", items, tone: EVENT_TONE }}\n/>',
+  },
+  CollectionPage: {
+    version: "1.0.0", tags: ["page", "list", "master-detail"], shapes: ["list"],
+    composes: ["MasterDetail", "CardListRow", "Chip", "KeyValueList", "EmptyState", "SectionHeader", "Box", "Stack", "Text"],
+    whenUse: ["A complete master→detail collection page: CardListRow items (badge Chip, subtitle, trailing meta) beside an item-facts detail.", "Libraries and registries (personas, skills, servers) whose items carry rich row slots."],
+    whenNot: ["Field-aligned columnar records — use TablePage.", "Just the list rail inside your own frame — use MasterDetail + CardListRow directly."],
+    srcText: 'import { CollectionPage } from "@/shared/ui/pages/CollectionPage";\n\n<CollectionPage\n  title="Personas" hint="library"\n  items={personas.map((p) => ({\n    id: p.id, title: p.name, subtitle: p.summary,\n    badge: p.role, facts: [{ k: "model", v: p.model }],\n  }))}\n  onSelect={setSelected}\n/>',
   },
 };
 
