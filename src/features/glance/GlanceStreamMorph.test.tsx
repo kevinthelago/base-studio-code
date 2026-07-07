@@ -50,6 +50,39 @@ describe("GlanceStreamMorph (#2401/#2534)", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it("a CLICK outside the card closes it (#2537)", () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    render(<GlanceStreamMorph node={NODE} paneId="proj:api-client" name="api-client" onClose={onClose} />);
+    // Press + release on the graph background (outside the card), no movement → a click → close.
+    fireEvent.mouseDown(document.body, { clientX: 10, clientY: 10 });
+    fireEvent.mouseUp(document.body, { clientX: 10, clientY: 10 });
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("a DRAG (pan) outside the card leaves it open — the graph keeps its gesture (#2537)", () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    render(<GlanceStreamMorph node={NODE} paneId="proj:api-client" name="api-client" onClose={onClose} />);
+    // Press then release far away (moved past the 4px threshold) → a pan, not a click → stays open.
+    fireEvent.mouseDown(document.body, { clientX: 10, clientY: 10 });
+    fireEvent.mouseUp(document.body, { clientX: 120, clientY: 90 });
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("a press that STARTS inside the card never closes it (#2537)", () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    const { container } = render(<GlanceStreamMorph node={NODE} paneId="proj:api-client" name="api-client" onClose={onClose} />);
+    const card = container.querySelector(".glance-card") as HTMLElement;
+    fireEvent.mouseDown(card, { clientX: 10, clientY: 10 });
+    fireEvent.mouseUp(document.body, { clientX: 10, clientY: 10 });
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("hides the chat input while the CLI is running, showing it at rest (#2534)", () => {
     // At rest (no "run" status) the message input is present.
     const { rerender } = render(<GlanceStreamMorph node={NODE} paneId="proj:api-client" name="api-client" onClose={() => {}} />);
