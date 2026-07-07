@@ -43,16 +43,21 @@ const GLANCE_TABS: TabItem[] = [
 export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const planFleet = useAppStore((s) => s.planFleet);
   const personas = useAppStore((s) => s.personas);
-  // The launched fleet (paneId → stream, keyed by the identity id `<key>:<stream>`, #1176). A worker
-  // node is LIVE — its real PTY stream openable in the dock — iff its identity pane id is here.
-  const fleetPaneStreams = useAppStore((s) => s.fleetPaneStreams);
-  // Authoritative per-pane session status — a live-terminal signal (#2534). The roster above is
-  // streams only, so the DIRECTOR (a `<key>:director` session, not a stream) never enters it.
-  const paneStatus = useAppStore((s) => s.paneStatus);
-  // Whether a live claude session owns the pane — set true when claude starts, false when it exits, so
-  // it holds ACROSS idle turns (unlike paneStatus, which drops to "idle" between prompts). This is what
-  // makes the resting DIRECTOR read as live (#2539); its transient status alone missed it on click.
-  const paneClaudeActive = useAppStore((s) => s.paneClaudeActive);
+  // Launched-fleet panes (#2542): the set of pane ids that are live CELLS of an open tab — a durable,
+  // symmetric "this agent has a terminal in the fleet" signal for BOTH workers AND the DIRECTOR. The
+  // earlier per-pane runtime signals (roster / status / paneClaudeActive) covered workers but never the
+  // director — it isn't a stream (so it's off the roster) and sits idle between prompts. Every fleet
+  // node is a cell in the build tab, so tab membership opens them all. Ended/disabled cells drop out.
+  const consoleTabs = useAppStore((s) => s.tabs);
+  const endedPanes = useAppStore((s) => s.endedPanes);
+  const disabledPanes = useAppStore((s) => s.disabledPanes);
+  const livePaneIds = useMemo(() => {
+    const live = new Set<string>();
+    for (const t of consoleTabs) for (const pid of t.paneIds ?? []) {
+      if (pid && !endedPanes[pid] && !disabledPanes[pid]) live.add(pid);
+    }
+    return live;
+  }, [consoleTabs, endedPanes, disabledPanes]);
   // The REAL project set: published GitHub projects merged with local drafts (keyed by the plan key so the
   // drill resolves each project's fleet). A "planning" status marks a planned project; "live" (app running)
   // is the detection follow-up.
@@ -134,12 +139,11 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   const pickNode = (id: string) => { setSel({ type: "node", id }); setShowCycle(false); };
   const pickEdge = (id: string) => { setSel({ type: "edge", id }); setShowCycle(false); };
-  // A node is LIVE — its real PTY openable via the in-graph terminal — iff a session exists for its
-  // identity pane id (`<project>:<stream>` or `<project>:director`). EVERY node with a terminal gets
-  // the morph (#2534): the launched roster covers workers, a live claude session covers any node even
-  // at rest (the DIRECTOR, #2539), and a live status covers the launch race. Drilled only.
+  // A node is LIVE — its terminal openable via the in-graph morph — iff its identity pane id
+  // (`<project>:<stream>` or `<project>:director`) is a live cell of a launched fleet tab. EVERY fleet
+  // node — workers AND the director — gets the morph (#2534/#2542). Drilled only.
   const isLiveAgent = (nodeId: string) =>
-    !!drill && nodeHasLiveSession(fleetPaneId(drill, nodeId), fleetPaneStreams, paneStatus, paneClaudeActive);
+    !!drill && nodeHasLiveSession(fleetPaneId(drill, nodeId), livePaneIds);
   // On the L0 network: connect-mode wires two projects; otherwise a click drills into the fleet. Inside a
   // fleet a click checks in on a LIVE agent (morph → terminal, #2401) or selects a non-live one.
   const onNodeClick = (id: string) => {
