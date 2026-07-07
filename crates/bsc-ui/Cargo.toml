@@ -17,6 +17,9 @@ bsc-util = { path = "../bsc-util" }
 # The component-library store CLI (#2281), mounted under `bsc ui` (#2469): list/get/set/remove +
 # kit/eslint-preset/usage delegate to bsc_component::cli; its CmdDocs compose into the merged help.
 bsc-component = { path = "../bsc-component" }
+# The verbatim-JSON-per-id store (#2158) backing the designer-writable THEME collection (#2488):
+# `bsc ui theme set/remove` persist to ~/.base-studio-code/themes/<id>.json.
+bsc-json-store = { path = "../bsc-json-store" }
 serde_json = "1"
 # Content hashing for the kit store's id@version integrity (#2465). Same version the app crate
 # already locks, so this adds no new dependency to the workspace graph.

@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useAppStore } from "@/store";
 import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
+import { SEED_THEMES, type KitThemeRecord } from "./lib/themes";
 import { stampSeedHash } from "./lib/seedRefresh";
 import * as bridge from "./lib/componentBridge";
+import * as themeBridge from "./lib/themeBridge";
 import * as usageBridge from "./lib/kitUsageBridge";
+import { setActiveKitThemes, activeKitThemes, themeById } from "@/shared/ui/kit";
 
 describe("components store slice (#2281)", () => {
   beforeEach(() => {
@@ -115,6 +118,72 @@ describe("hash-based built-in seed refresh (#2483)", () => {
     expect(useAppStore.getState().seedNotices).toEqual([
       { kind: "updated-upstream", type: "component", id: "button", name: "Button" },
     ]);
+  });
+});
+
+describe("kit-theme collection slice (#2488)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ kitThemes: SEED_THEMES, seedNotices: [] });
+    setActiveKitThemes([]); // reset the shared resolvers to the packaged registry
+    vi.restoreAllMocks();
+  });
+
+  it("hydrateThemes keeps the packaged seed when the bridge is unreachable", async () => {
+    vi.spyOn(themeBridge, "loadThemes").mockResolvedValueOnce(null);
+    await useAppStore.getState().hydrateThemes();
+    expect(useAppStore.getState().kitThemes).toEqual(SEED_THEMES);
+  });
+
+  it("hydrateThemes re-seeds an empty store, pushing stamped built-ins, and syncs the resolvers", async () => {
+    vi.spyOn(themeBridge, "loadThemes").mockResolvedValueOnce([]);
+    const push = vi.spyOn(themeBridge, "pushTheme").mockResolvedValue(undefined);
+    await useAppStore.getState().hydrateThemes();
+    expect(useAppStore.getState().kitThemes).toEqual(SEED_THEMES);
+    expect(push).toHaveBeenCalledTimes(SEED_THEMES.length);
+    expect(push).toHaveBeenCalledWith(expect.objectContaining({ id: "default", builtin: true }));
+    // The shared resolvers (themeById/ThemeScope) now resolve against the hydrated set.
+    expect(activeKitThemes()).toEqual(SEED_THEMES);
+  });
+
+  it("hydrateThemes keeps a designer-edited built-in — themeById serves the edit — with a theme notice", async () => {
+    const soft = SEED_THEMES.find((t) => t.id === "soft")!;
+    const edited: KitThemeRecord = { ...soft, vars: { "--card-bg": "black" }, seedHash: "00000000" };
+    vi.spyOn(themeBridge, "loadThemes").mockResolvedValueOnce([...SEED_THEMES.filter((t) => t.id !== "soft"), edited]);
+    const push = vi.spyOn(themeBridge, "pushTheme").mockResolvedValue(undefined);
+    await useAppStore.getState().hydrateThemes();
+    expect(useAppStore.getState().kitThemes.find((t) => t.id === "soft")).toEqual(edited);
+    expect(push).not.toHaveBeenCalled();
+    expect(useAppStore.getState().seedNotices).toEqual([
+      { kind: "updated-upstream", type: "theme", id: "soft", name: soft.label },
+    ]);
+    expect(themeById("soft").vars).toEqual({ "--card-bg": "black" });
+  });
+
+  it("orders the hydrated collection: packaged registry order first, authored themes after", async () => {
+    const neon: KitThemeRecord = { id: "neon", label: "Neon", description: "", vars: { "--chip-bg": "red" } };
+    // A filesystem-order shuffle: the authored theme first, built-ins reversed.
+    vi.spyOn(themeBridge, "loadThemes").mockResolvedValueOnce([neon, ...[...SEED_THEMES].reverse()]);
+    await useAppStore.getState().hydrateThemes();
+    expect(useAppStore.getState().kitThemes.map((t) => t.id)).toEqual([...SEED_THEMES.map((t) => t.id), "neon"]);
+  });
+
+  it("theme notices survive a later hydrateComponents (the two hydrates race on boot)", async () => {
+    const soft = SEED_THEMES.find((t) => t.id === "soft")!;
+    const edited: KitThemeRecord = { ...soft, vars: { "--card-bg": "black" }, seedHash: "00000000" };
+    vi.spyOn(themeBridge, "loadThemes").mockResolvedValueOnce([...SEED_THEMES.filter((t) => t.id !== "soft"), edited]);
+    await useAppStore.getState().hydrateThemes();
+    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce(SEED_COMPONENTS);
+    vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
+    await useAppStore.getState().hydrateComponents();
+    expect(useAppStore.getState().seedNotices).toEqual([
+      { kind: "updated-upstream", type: "theme", id: "soft", name: soft.label },
+    ]);
+  });
+
+  it("dismissSeedNotice works for theme notices via the shared surface", () => {
+    useAppStore.setState({ seedNotices: [{ kind: "orphaned", type: "theme", id: "gone", name: "Gone" }] });
+    useAppStore.getState().dismissSeedNotice("theme", "gone");
+    expect(useAppStore.getState().seedNotices).toEqual([]);
   });
 });
 

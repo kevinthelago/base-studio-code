@@ -12,8 +12,11 @@ import type { KitConsumer, KitChange, Dispatch } from "./lib/propagation";
 import type { SeedNotice } from "./lib/seedRefresh";
 import { kitUsageId, makeChange, planPropagation, dispatchKey } from "./lib/propagation";
 import { SEED_COMPONENTS, SEED_KITS, reconcileComponents, reconcileKits } from "./lib/seed";
+import { SEED_THEMES, reconcileThemes, orderThemes, type KitThemeRecord } from "./lib/themes";
 import { loadComponents, loadKits, pushComponent, dropComponent, pushKit, dropKit } from "./lib/componentBridge";
+import { loadThemes, pushTheme, dropTheme } from "./lib/themeBridge";
 import { loadKitUsage, pushKitUsage, dropKitUsage } from "./lib/kitUsageBridge";
+import { setActiveKitThemes } from "@/shared/ui/kit";
 
 export interface ComponentsSlice {
   /** The proven-component library — the typed seed until the global store lands, then its contents. */
@@ -24,6 +27,17 @@ export interface ComponentsSlice {
    *  bridge is unreachable. Applies the hash-based seed refresh (#2483): pushes refreshed/added
    *  built-ins, drops deleted ones, and surfaces the kept-but-diverged outcomes as `seedNotices`. */
   hydrateComponents: () => Promise<void>;
+
+  /** The kit THEME collection (#2488) — the packaged registry until the designer-writable theme
+   *  store hydrates, then its contents (ordered: built-ins in registry order, then authored). The
+   *  Settings picker + the Design Studio preview switcher read this; `themeById`/`ThemeScope`
+   *  resolve against the same set via `setActiveKitThemes`. */
+  kitThemes: KitThemeRecord[];
+  /** Hydrate the theme collection from the global `bsc ui theme` store on boot (#2488), mirroring
+   *  `hydrateComponents`: no-op (keeps the packaged seed) when the bridge is unreachable; reconciles
+   *  built-ins via the #2483 seed refresh (theme notices ride the same `seedNotices` surface) and
+   *  syncs the result into the shared theme resolvers. */
+  hydrateThemes: () => Promise<void>;
   /** Built-ins kept through a seed divergence (#2483): the user's customized copy survived an
    *  upstream update, or a retired built-in was kept because it was customized. Recomputed on each
    *  hydrate (not persisted); rendered by the Design Studio's SeedNoticesCard. */
@@ -66,13 +80,37 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     if (!loadedC && !loadedK) return; // bridge unreachable — keep the seed
     const rc = reconcileComponents(loadedC ?? []);
     const rk = reconcileKits(loadedK ?? []);
-    set({ components: rc.records, kits: rk.records, seedNotices: [...rk.notices, ...rc.notices] });
+    // Replace only OUR notice types — theme notices (#2488) belong to hydrateThemes, which may have
+    // already run (the two hydrates race on boot).
+    set((s) => ({
+      components: rc.records,
+      kits: rk.records,
+      seedNotices: [...s.seedNotices.filter((n) => n.type === "theme"), ...rk.notices, ...rc.notices],
+    }));
     // Converge the store to the verdicts (#2483): push refreshed + missing built-ins (stamped with the
     // new seedHash), drop pristine copies of retired built-ins. User records are never pushed/dropped.
     for (const c of rc.pushes) void pushComponent(c);
     for (const id of rc.drops) void dropComponent(id);
     for (const k of rk.pushes) void pushKit(k);
     for (const id of rk.drops) void dropKit(id);
+  },
+
+  kitThemes: SEED_THEMES,
+
+  hydrateThemes: async () => {
+    const loaded = await loadThemes();
+    if (!loaded) return; // bridge unreachable — keep the packaged seed (already the active set)
+    const rt = reconcileThemes(loaded);
+    const records = orderThemes(rt.records);
+    set((s) => ({
+      kitThemes: records,
+      seedNotices: [...s.seedNotices.filter((n) => n.type !== "theme"), ...rt.notices],
+    }));
+    // Sync the shared resolvers (themeById/themeVars/ThemeScope/applyThemeToRoot) to the same set.
+    setActiveKitThemes(records);
+    // Converge the store (#2483): materialize refreshed + missing built-ins, drop pristine retirees.
+    for (const t of rt.pushes) void pushTheme(t);
+    for (const id of rt.drops) void dropTheme(id);
   },
 
   seedNotices: [],
