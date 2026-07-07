@@ -10,7 +10,12 @@
 //! allowed set · enum fields hold an allowed value · a children-bearing kind's `children` (when present)
 //! is an array — recursing into any nested node (`header`) or array-of-nodes (`children`).
 
+//! Home, too, of the global UI-KIT STORE (#2465) — [`kit`]: immutable versioned kit artifacts
+//! (`~/.base-studio-code/kits/<id>/<version>/`) blueprints PIN by `{ id, version, hash }`, with the
+//! packaged `bsc/react-ui` kit resolving as an embedded fallback entry. Surfaced as `bsc ui kit`.
+
 pub mod cli;
+pub mod kit;
 
 use serde_json::Value;
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, coerceTeam, bundledSkillsFromManifest } from "./blueprintShare";
+import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, coerceTeam, coerceUiKit, bundledSkillsFromManifest } from "./blueprintShare";
 import type { BlueprintTeam } from "../stages/blueprints";
 import { resolveBlueprintSkillPayloads, type SkillPayload } from "./blueprintSkills";
 import { skillFromPayload } from "@/features/skills/lib/skills";
@@ -268,5 +268,76 @@ describe("blueprint CRUD store actions (#598)", () => {
     expect(s.blueprints.some((b) => b.id === "default")).toBe(false);
     expect(s.activeBlueprintId).not.toBe("default"); // fell back to a remaining blueprint
     expect(s.blueprints.some((b) => b.id === s.activeBlueprintId)).toBe(true);
+  });
+});
+
+describe("UI-kit pin (#2465)", () => {
+  const pin = () => ({
+    id: "acme/neon", version: "2.1.0",
+    hash: "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+    source: "https://gist.github.com/acme/0123456789abcdef",
+  });
+
+  it("coerceBlueprint preserves the pin byte-faithfully; a blueprint without one stays without one", () => {
+    const withPin = coerceBlueprint({
+      id: "x", name: "Pinned", uiKit: pin(),
+      sections: [{ key: "discovery", name: "Discovery" }],
+    });
+    expect(withPin!.uiKit).toEqual(pin());
+    // No `uiKit` in the payload → the coerced blueprint carries NO uiKit key (optional field,
+    // untouched behavior for existing blueprints — the #2450 whitelist lesson).
+    const without = coerceBlueprint({ id: "x", name: "Plain", sections: [{ key: "discovery", name: "Discovery" }] });
+    expect(without).not.toBeNull();
+    expect("uiKit" in without!).toBe(false);
+  });
+
+  it("round-trips the pin through the share manifest (export/import)", () => {
+    const bp: Blueprint = { ...sample(), uiKit: pin() };
+    const back = manifestToBlueprint(blueprintToManifest(bp));
+    expect(back.ok).toBe(true);
+    if (back.ok) expect(back.blueprint.uiKit).toEqual(pin());
+  });
+
+  it("round-trips the pin through the `bsc blueprint` store serialization AND the poll path", () => {
+    // Store: `bsc blueprint set` persists the blueprint verbatim; hydration reads raw JSON back.
+    const bp: Blueprint = { ...sample(), origin: "local", uiKit: pin() };
+    const restored = JSON.parse(JSON.stringify(bp)) as Blueprint;
+    expect(restored.uiKit).toEqual(pin());
+    // The poll path: the authoring session's `<blueprint>` tag goes through
+    // coerceBlueprint(allowEmptySections) — the pin must survive it too.
+    expect(coerceBlueprint(restored, { allowEmptySections: true })!.uiKit).toEqual(pin());
+  });
+
+  it("coerceUiKit requires id+version+hash (an unverifiable pin is dropped, not carried)", () => {
+    expect(coerceUiKit(undefined)).toBeUndefined();
+    expect(coerceUiKit("nope")).toBeUndefined();
+    expect(coerceUiKit([])).toBeUndefined();
+    expect(coerceUiKit({ id: "a/b", version: "1.0.0" })).toBeUndefined();          // no hash
+    expect(coerceUiKit({ id: "a/b", hash: "h" })).toBeUndefined();                 // no version
+    expect(coerceUiKit({ version: "1.0.0", hash: "h" })).toBeUndefined();          // no id
+    // source is optional and dropped when empty/non-string.
+    expect(coerceUiKit({ id: "a/b", version: "1.0.0", hash: "h" })).toEqual({ id: "a/b", version: "1.0.0", hash: "h" });
+    expect(coerceUiKit({ id: "a/b", version: "1.0.0", hash: "h", source: 42 })).toEqual({ id: "a/b", version: "1.0.0", hash: "h" });
+    expect(coerceUiKit(pin())).toEqual(pin());
+    // A malformed pin never nulls the whole blueprint — it just imports unpinned.
+    const bp = coerceBlueprint({ id: "x", name: "X", uiKit: { id: "a/b" }, sections: [{ key: "discovery", name: "Discovery" }] });
+    expect(bp).not.toBeNull();
+    expect("uiKit" in bp!).toBe(false);
+  });
+
+  it("store: updateBlueprintMeta persists the pin through `bsc blueprint set`", () => {
+    useAppStore.setState({ blueprints: makeBlueprints(), activeBlueprintId: "default" });
+    const id = useAppStore.getState().addBlueprint();
+    vi.mocked(invoke).mockClear();
+    useAppStore.getState().updateBlueprintMeta(id, { uiKit: pin() });
+    const argsOf = (call: unknown[]) => (call[1] as { args?: string[] } | undefined)?.args;
+    const set = vi.mocked(invoke).mock.calls.find(
+      (call) => call[0] === "bsc" && JSON.stringify(argsOf(call)) === JSON.stringify(["blueprint", "set"]),
+    );
+    expect(set).toBeTruthy();
+    const persisted = JSON.parse((set![1] as { stdin: string }).stdin) as Blueprint;
+    expect(persisted.id).toBe(id);
+    expect(persisted.uiKit).toEqual(pin()); // the pin travels inside the blueprint JSON, verbatim
+    useAppStore.getState().removeBlueprint(id);
   });
 });

@@ -12,6 +12,11 @@ import type { ComponentRecord, Kit } from "./model";
 interface KitFile {
   /** Ascending display order in the library (absent sorts as 0). Stripped on assembly. */
   order?: number;
+  /** Global-store identity (#2465, react-ui only): the publisher-scoped id (`bsc/react-ui`) +
+   *  exact version the packaged kit is registered under in the versioned `bsc ui kit` store.
+   *  Ignored here (the library keys on `kit.id`); the store/pin machinery reads it. */
+  id?: string;
+  version?: string;
   kit: Kit;
   components: ComponentRecord[];
 }

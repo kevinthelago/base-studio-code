@@ -6,15 +6,27 @@
 // transport, mirroring `store/appStateGist.ts`.
 import { wrapExtension, encodeShareCode, decodeShareCode, type ExtensionManifest, type ValidateResult } from "@/features/planner/lib/gist/manifest";
 import { installFromGist, publishGist } from "@/features/planner/lib/gist/gist";
+import { bsc } from "@/shared/lib/core/bsc";
+import { sha256Hex } from "@/shared/lib/core/sha256";
 import { DATA_SHAPES, ROLES, type ComponentRecord, type DataShape, type Kit, type PropSpec, type Role } from "./model";
 
 /** The manifest kind a component kit ships as. */
 export const KIT_KIND = "component-kit" as const;
 
-/** The kit + its components — the payload a `component-kit` gist carries. */
+/** The GLOBAL kit-store identity a published kit carries (#2465): the publisher-scoped id
+ *  (`<publisher>/<kit-slug>`) + exact version it registers under in the versioned kit store —
+ *  what an importer pins (`Blueprint.uiKit`) instead of re-deriving an identity per download. */
+export interface KitStoreIdentity {
+  id: string;
+  version: string;
+}
+
+/** The kit + its components — the payload a `component-kit` gist carries. `store` (#2465) stamps
+ *  the publisher's kit-store identity so every importer lands it under the SAME id@version. */
 export interface KitPayload {
   kit: Kit;
   components: ComponentRecord[];
+  store?: KitStoreIdentity;
 }
 
 const str = (v: unknown, d = ""): string => (typeof v === "string" ? v : d);
@@ -52,9 +64,12 @@ function coerceComponent(v: unknown, kitId: string): ComponentRecord | null {
   return rec;
 }
 
-/** Wrap a kit + its components in the typed extension envelope for publishing/sharing. */
-export function kitToManifest(kit: Kit, components: ComponentRecord[], version = "1.0.0"): ExtensionManifest<KitPayload> {
-  return wrapExtension(KIT_KIND, kit.id, kit.name, version, { kit, components }, { description: `Component kit: ${kit.name}` });
+/** Wrap a kit + its components in the typed extension envelope for publishing/sharing. `store`
+ *  (#2465) stamps the payload with the publisher's kit-store identity (absent ⇒ the pre-#2465
+ *  envelope, byte-identical). */
+export function kitToManifest(kit: Kit, components: ComponentRecord[], version = "1.0.0", store?: KitStoreIdentity): ExtensionManifest<KitPayload> {
+  const payload: KitPayload = { kit, components, ...(store ? { store } : {}) };
+  return wrapExtension(KIT_KIND, kit.id, kit.name, version, payload, { description: `Component kit: ${kit.name}` });
 }
 
 /** Reconstruct a sanitized { kit, components } from a validated manifest, or an error if it's not a
@@ -93,12 +108,51 @@ export async function importKitFromGist(url: string, token = ""): Promise<{ ok: 
   return res.ok ? kitFromManifest(res.manifest) : res;
 }
 
+/** The pin a published kit hands its consumers (#2465): the kit-store identity + the sha256 of the
+ *  published manifest bytes, with the gist URL as `source` — exactly the `Blueprint.uiKit` shape. */
+export interface PublishedKitPin {
+  id: string;
+  version: string;
+  hash: string;
+  source: string;
+}
+
+/** A lowercase [a-z0-9-] slug segment for the store identity. */
+const idSlug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "kit";
+
 /** Publish a kit as a gist (needs a token with the `gist` scope). `public` makes it a shareable public
- *  gist; the default is a secret gist. Returns the gist URL. */
-export async function publishKitToGist(token: string, kit: Kit, components: ComponentRecord[], opts: { public?: boolean } = {}): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+ *  gist; the default is a secret gist. Returns the gist URL.
+ *
+ *  `publisher` (#2465) additionally registers the kit in the GLOBAL versioned kit store: the manifest
+ *  is stamped with its store identity (`<publisher>/<kit-slug>@<version>`), hashed (sha256 of the
+ *  EXACT bytes the gist holds), published, then written to the local store with the gist URL as
+ *  `source` — so the publisher's own store entry, the gist bytes, and the returned `pin` all agree.
+ *  A same-id@version conflict with different content is refused by the store (immutability) and
+ *  surfaced as `warning` — the publish itself has already succeeded; bump `version` and re-publish. */
+export async function publishKitToGist(
+  token: string, kit: Kit, components: ComponentRecord[],
+  opts: { public?: boolean; publisher?: string; version?: string } = {},
+): Promise<{ ok: true; url: string; pin?: PublishedKitPin; warning?: string } | { ok: false; error: string }> {
+  const store: KitStoreIdentity | undefined = opts.publisher
+    ? { id: `${idSlug(opts.publisher)}/${idSlug(kit.id)}`, version: opts.version ?? "1.0.0" }
+    : undefined;
+  const manifest = kitToManifest(kit, components, store?.version ?? "1.0.0", store);
   try {
-    const res = await publishGist(token, kitToManifest(kit, components), { public: opts.public });
-    return { ok: true, url: res.htmlUrl };
+    const res = await publishGist(token, manifest, { public: opts.public });
+    if (!store) return { ok: true, url: res.htmlUrl };
+    // The bytes publishGist wrote (same object, same serialization) — the hash consumers verify.
+    const text = JSON.stringify(manifest, null, 2);
+    const pin: PublishedKitPin = { ...store, hash: await sha256Hex(text), source: res.htmlUrl };
+    try {
+      await bsc(
+        null,
+        ["ui", "release", "add", store.id, store.version, "--kind", KIT_KIND, "--sha256", pin.hash, "--source", res.htmlUrl],
+        text,
+      );
+    } catch (e) {
+      return { ok: true, url: res.htmlUrl, pin, warning: `published, but the local kit store refused ${store.id}@${store.version}: ${String(e)}` };
+    }
+    return { ok: true, url: res.htmlUrl, pin };
   } catch (e) {
     return { ok: false, error: String(e) };
   }
