@@ -2,12 +2,13 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { DesignStudio } from "./DesignStudio";
 import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
+import { SEED_THEMES } from "./lib/themes";
 import type { Kit } from "./lib/model";
 import { useAppStore } from "@/store";
 
 /** Reset the library slice to the seed before each test (the store is a singleton). */
 beforeEach(() => {
-  useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS });
+  useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, kitThemes: SEED_THEMES });
 });
 
 /** The rail entry for a component (its name also renders on the graph node + inspector header). */
@@ -74,6 +75,25 @@ describe("DesignStudio (#2308)", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Usage" }));
     expect(screen.getByText("✓ When to use")).toBeTruthy();
     expect(screen.getByText("✗ When NOT to use")).toBeTruthy();
+  });
+
+  it("the preview kit-THEME switcher applies the selected theme's vars to the specimen frame (#2488)", () => {
+    const { container } = render(<DesignStudio />);
+    const sel = screen.getByLabelText("Kit theme") as HTMLSelectElement;
+    // Fed by the hydrated theme collection, defaulting to the base look.
+    expect(sel.value).toBe("default");
+    expect(Array.from(sel.options).map((o) => o.value)).toEqual(SEED_THEMES.map((t) => t.id));
+    // No overrides on the frame under `default`.
+    const defaultFrame = container.querySelector('[data-kit-theme="default"]') as HTMLElement;
+    expect(defaultFrame).toBeTruthy();
+    expect(defaultFrame.style.getPropertyValue("--card-radius")).toBe("");
+    // Switching applies the theme's semantic-token overrides to the specimen frame via ThemeScope.
+    fireEvent.change(sel, { target: { value: "soft" } });
+    const frame = container.querySelector('[data-kit-theme="soft"]') as HTMLElement;
+    expect(frame).toBeTruthy();
+    expect(frame.style.getPropertyValue("--card-radius")).toBe("14px");
+    // The dark/light SURFACE toggle is a separate, composing axis — it stays.
+    expect(screen.getByText("◐ dark")).toBeTruthy();
   });
 
   it("the generate bar is disabled until a prompt is entered", () => {
