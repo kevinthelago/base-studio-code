@@ -460,9 +460,12 @@ function toRecord(spec: PrimitiveSpec): ComponentRecord {
   };
 }
 
-/** The `react-ui` kit — the app's own shared-UI primitives. */
+/** The `react-ui` kit — the app's own shared-UI primitives. `tech`/`style` are the #2487 rail
+ *  hierarchy axes: react technology, and "studio" — the app's neutral house visual language (the
+ *  structural component set; palettes/themes are a separate axis and never name a style). */
 export const REACT_UI_KIT: Kit = {
-  id: REACT_UI_KIT_ID, name: "react-ui", stack: "React · TypeScript", dot: "var(--info)", builtin: true,
+  id: REACT_UI_KIT_ID, name: "react-ui", tech: "react", style: "studio", stack: "React · TypeScript",
+  dot: "var(--info)", builtin: true,
 };
 
 /** Every registered primitive as a component record — generated from the manifest, so this is exactly
