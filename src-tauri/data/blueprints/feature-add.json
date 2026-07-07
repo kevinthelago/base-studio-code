@@ -11,6 +11,10 @@
       "key": "discovery"
     },
     {
+      "key": "transformations",
+      "optional": true
+    },
+    {
       "key": "deployment"
     },
     {

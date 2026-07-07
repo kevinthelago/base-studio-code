@@ -125,7 +125,7 @@ mod tests {
         // structure+permissions → `streams`; the legacy `repos`/`structure`/`permissions` defs are gone.
         let migrated = ["discovery","deployment","ui","features",
             "automations","skills","purpose","bp_stages","bp_capabilities","bp_review",
-            "streams","source","market"];
+            "streams","source","market","transformations"];
         for id in migrated {
             let d = stage_directive(id);
             assert!(!d.trim().is_empty(), "stage '{id}' has an empty directive");
@@ -138,6 +138,39 @@ mod tests {
             let shipped = v.get("directive").and_then(|x| x.as_str()).unwrap_or_default();
             assert!(!shipped.trim().is_empty(), "stage '{id}' embedded JSON has a `directive`");
         }
+    }
+
+    /// The Transformations stage prompt carries a CONCRETE worked example (#2392 lesson — an example
+    /// beats prose) of `echo '…' | bsc plan transformation add`. Machine-verify it: the echoed block
+    /// must be single-quote-safe (a stray `'` would end the shell quoting mid-JSON), parse as JSON,
+    /// and each row must pass the SAME `validate_transformation` the CLI enforces at set-time — so
+    /// the taught example can never drift from the #2509 contract.
+    #[test]
+    fn transformations_worked_example_is_single_quote_safe_and_passes_the_cli_validator() {
+        let raw = crate::platform::config::embedded_str("stages/transformations.json");
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("valid stage JSON");
+        let prompt = v["prompt"].as_str().expect("prompt string");
+        let start = prompt.find("echo '").expect("prompt carries the echo example") + "echo '".len();
+        let rest = &prompt[start..];
+        let end = rest.find("' | bsc plan transformation add").expect("example pipes into the CLI");
+        let block = &rest[..end];
+        assert!(!block.contains('\''), "the example JSON must be single-quote-safe");
+        let rows: serde_json::Value = serde_json::from_str(block).expect("example is valid JSON");
+        let rows = rows.as_array().expect("example is an array of rows");
+        assert_eq!(rows.len(), 2, "two worked rows: a migrate-to-kit replace + an extract");
+        for (i, row) in rows.iter().enumerate() {
+            plandb::validate::validate_transformation(row)
+                .unwrap_or_else(|e| panic!("worked-example row {i} fails the contract: {e}"));
+        }
+        // Row 1: the migrate-to-kit replace, with its optional KitNode `spec` deliberately omitted.
+        assert_eq!(rows[0]["verb"], serde_json::json!("replace"));
+        assert_eq!(rows[0]["provenance"]["recipe"], serde_json::json!("migrate-to-kit"));
+        assert!(rows[0].get("spec").is_none(), "the replace row teaches that `spec` is optional");
+        assert_eq!(rows[0]["tier"], serde_json::json!(0));
+        // Row 2: the extract, one tier up, sequenced on the foundation row.
+        assert_eq!(rows[1]["verb"], serde_json::json!("extract"));
+        assert_eq!(rows[1]["provenance"]["recipe"], serde_json::json!("extract-and-abstract"));
+        assert_eq!(rows[1]["dependsOn"], serde_json::json!(["replace-bespoke-buttons"]));
     }
 
     /// Drift guard (the `find_fixture`-style contract): the stage JSONs carrying a `directive` are
@@ -160,7 +193,7 @@ mod tests {
             .collect();
         let expected: BTreeSet<String> = ["discovery","deployment","ui","features",
             "automations","skills","purpose","bp_stages","bp_capabilities",
-            "bp_review","streams","source","test_ui","market"].iter().map(|s| s.to_string()).collect();
+            "bp_review","streams","source","test_ui","market","transformations"].iter().map(|s| s.to_string()).collect();
         assert_eq!(with_directive, expected, "stage `directive` set drifted from the expected set");
     }
 }
