@@ -9,6 +9,7 @@ built in slices 1–2 are:
 | **SplitView** (#2197 s2) | `src/shared/ui/layouts/SplitView.tsx` | flex **primary** + fixed, resizable **secondary** (trailing), optional toolbar |
 | **GraphCanvas** (#2208) | `src/shared/ui/layouts/GraphCanvas.tsx` | toolbar + optional rail + pan/zoom **canvas** + optional inspector |
 | **PaneGrid** (#2197 s2) | `src/shared/ui/layouts/PaneGrid.tsx` | CSS-grid of N equal panes (the console); `hidden` keeps a grid mounted display:none |
+| **Sequence** (#2477) | `src/shared/ui/layouts/Sequence.tsx` | ordered, status-colored step **strip** (horizontal stepper / vertical timeline) + active-step **detail** panel, optional toolbar — the linked-list shape (workflows, pipelines, wizards, timelines) |
 
 The initial sweep found the epic's page inventory was aspirational — most non-list pages are a
 different shape. This doc is the page-by-page decision table: current shape → decision → one-line

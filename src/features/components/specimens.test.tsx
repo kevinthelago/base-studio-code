@@ -39,9 +39,9 @@ describe("component specimens (#2305 slice 3b)", () => {
 
   it("renders a live schematic for every Layouts-tier template + variant (#2197 slice 3)", () => {
     const layouts = reactUi.filter((c) => c.role === "layout" && (c.tags ?? []).includes("page"));
-    // The four page-skeleton templates must all be present and each must render a bespoke schematic
+    // The five page-skeleton templates must all be present and each must render a bespoke schematic
     // (never the fallback placeholder) for every registered variant, in both preview themes.
-    expect(layouts.map((c) => c.name).sort()).toEqual(["GraphCanvas", "MasterDetail", "PaneGrid", "SplitView"]);
+    expect(layouts.map((c) => c.name).sort()).toEqual(["GraphCanvas", "MasterDetail", "PaneGrid", "Sequence", "SplitView"]);
     for (const c of layouts) {
       for (const variant of c.variants) {
         for (const theme of ["dark", "light"] as const) {
