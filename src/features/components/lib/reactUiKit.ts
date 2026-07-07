@@ -340,6 +340,7 @@ const GUIDANCE: Record<string, Guidance> = {
   },
   Tree: {
     version: "1.0.0", tags: ["layout", "page", "tree"], composes: ["MasterDetail", "GraphCanvas", "Box", "Row", "Stack", "Text", "IconButton"],
+    shapes: ["tree"], // the ideal tree-shape layout — fills the gap the #2475 shape axis recorded
     variants: ["indented", "layered"],
     whenUse: ["Deep / navigational tree data (file systems, category hierarchies) — variant=\"indented\": collapsible depth-indented rows + a detail panel.", "A presentational top-down hierarchy (org chart, ownership map) — variant=\"layered\" rides the shared graph stack (layerDag + edge grammar + GraphCanvas pan/zoom)."],
     whenNot: ["A flat list beside a detail — use MasterDetail.", "A general (multi-parent / cyclic) graph — use GraphCanvas with layerDag directly."],
