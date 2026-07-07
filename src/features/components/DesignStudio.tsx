@@ -33,6 +33,7 @@ import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { RoleDot, KitChip } from "./kitChrome";
 import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecord, type Kit } from "./lib/model";
+import { useUiActivity } from "./lib/uiActivity";
 import { groupKits, type KitTreeNode } from "./lib/kitGroups";
 import { renderSpecimen, type PreviewTheme } from "./specimens";
 import { ThemeScope, DEFAULT_THEME } from "@/shared/ui/kit";
@@ -56,6 +57,8 @@ export function DesignStudio() {
   const kits = useAppStore((s) => s.kits);
   // The hydrated kit-THEME collection (#2488) — feeds the preview's palette switcher.
   const kitThemes = useAppStore((s) => s.kitThemes);
+  // The node the designer AI is currently working (#2525) — a `.working` pulse + auto-pan target.
+  const aiFocusedId = useAppStore((s) => s.aiFocusedId);
 
   const firstFor = (kitId: string) => components.find((c) => c.kitId === kitId);
   const [kitId, setKitId] = useState(() => kits[0]?.id ?? "");
@@ -84,6 +87,11 @@ export function DesignStudio() {
     setDesignerBooted(true);
     setDesignerOpen((v) => !v);
   };
+  // Live-focus (#2525): poll the designer activity stream ONLY once the session is booted (the PTY
+  // survives collapse, so the AI may be working while the panel is hidden — keep polling). Clear the
+  // focus when the Design Studio (and its designer session) unmounts.
+  useUiActivity(designerBooted);
+  useEffect(() => () => useAppStore.getState().setAiFocused(null), []);
 
   const rail = useDragResize({ initial: 266, min: 200, max: 400, axis: "x" });
   // The inspector carries the full library detail (#2453), so it defaults — and is allowed — wider.
@@ -139,6 +147,14 @@ export function DesignStudio() {
   const gvp = useGraphViewport(graph.world);
   const gvpFit = gvp.fit;
   useEffect(() => { gvpFit(); }, [kitId, gvpFit]); // re-fit on mount + whenever the kit switches
+  // Auto-pan the AI-touched node into view (#2525) — center it, keeping zoom (least-disruptive). Only
+  // when the node lives in the CURRENT kit's graph; a touch in another kit just doesn't pan.
+  const gvpCenter = gvp.centerOn;
+  useEffect(() => {
+    if (!aiFocusedId) return;
+    const pos = graph.pos.get(aiFocusedId);
+    if (pos) gvpCenter(pos.x + NODE_W / 2, pos.y + NODE_H / 2);
+  }, [aiFocusedId, graph, gvpCenter]);
 
   // ── rail hierarchy (#2487, policy fixed by #2506) — ALWAYS technology → style; a single-kit style
   // header IS the kit (lib/kitGroups), so the packaged library reads React → Studio → components.
@@ -265,7 +281,7 @@ export function DesignStudio() {
 
         {/* center — the composition graph is the one-and-only center view (#2453) */}
         <Box className="ds-col ds-center">
-          <GraphView graph={graph} comps={kitComps} selId={sel?.id ?? ""} kitName={kit.name} gvp={gvp} onSelect={selectComp} />
+          <GraphView graph={graph} comps={kitComps} selId={sel?.id ?? ""} workingId={aiFocusedId ?? ""} kitName={kit.name} gvp={gvp} onSelect={selectComp} />
         </Box>
         <Box className="ds-handle" {...insp.handleProps} />
 
@@ -307,10 +323,12 @@ function GuideCard({ tone, title, items, glyph }: { tone: "success" | "danger"; 
 // ── Graph view ───────────────────────────────────────────────────────────────
 interface GraphProps {
   graph: CompositionLayout;
-  comps: ComponentRecord[]; selId: string; kitName: string;
+  comps: ComponentRecord[]; selId: string;
+  /** The AI-touched node (#2525) — pulses as `.working`, distinct from the user's `.on` selection. */
+  workingId: string; kitName: string;
   gvp: ReturnType<typeof useGraphViewport>; onSelect: (c: ComponentRecord) => void;
 }
-function GraphView({ graph, comps, selId, kitName, gvp, onSelect }: GraphProps) {
+function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect }: GraphProps) {
   // The pan/zoom shell is the shared GraphCanvas template (#2208) — viewport ref/wheel/pan + the world
   // transform + the infinite dotted grid all live there; this brings only the toolbar + world content.
   const EDGE_COLOR = "var(--border-strong, #3a434d)";
@@ -358,8 +376,13 @@ function GraphView({ graph, comps, selId, kitName, gvp, onSelect }: GraphProps) 
         const pos = graph.pos.get(c.id); if (!pos) return null;
         // Full ring for the selection, softer ring for its related nodes (#2523); .on wins over .related.
         const state = c.id === selId ? " on" : relatedNodes.has(c.id) ? " related" : "";
+        // AI live-focus (#2525): the touched node pulses as `.working` — a DISTINCT state from the
+        // user's selection. Precedence: the user's `.on` wins if it's the SAME node (no `.working`
+        // added then), so a user's active selection is never overridden; a DIFFERENT touched node
+        // pulses (and composes with `.related` — `.working` is placed after `.related` in the CSS).
+        const working = c.id === workingId && c.id !== selId ? " working" : "";
         return (
-          <Box key={c.id} data-node onClick={() => onSelect(c)} className={`ds-node${state}`} style={{ left: pos.x, top: pos.y, width: NODE_W }}>
+          <Box key={c.id} data-node onClick={() => onSelect(c)} className={`ds-node${state}${working}`} style={{ left: pos.x, top: pos.y, width: NODE_W }}>
             <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
               <RoleDot role={c.role} /><Text weight={600} size={13}>{c.name}</Text>
             </Box>

@@ -3,7 +3,7 @@
 // plus the wheel-listener lifecycle owned by the `setVp` ref callback (#2454).
 import { describe, it, expect } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useGraphViewport, zoomAboutPoint, fitView, type GraphView } from "./useGraphViewport";
+import { useGraphViewport, zoomAboutPoint, fitView, centerView, type GraphView } from "./useGraphViewport";
 
 const V0: GraphView = { tx: 0, ty: 0, scale: 1 };
 
@@ -56,6 +56,19 @@ describe("fitView (#2208)", () => {
     // A huge world would want a tiny scale, but min floors it.
     const v = fitView(10000, 10000, 400, 400, 0.4, 1.5, 20, 1.5);
     expect(v.scale).toBe(0.4);
+  });
+});
+
+describe("centerView (#2525)", () => {
+  it("pans a world point to the viewport center, keeping the current zoom", () => {
+    const v: GraphView = { tx: 0, ty: 0, scale: 2 };
+    const r = centerView(v, 800, 600, 100, 50);
+    expect(r.scale).toBe(2);            // zoom is untouched (least-disruptive focus)
+    expect(r.tx).toBe(800 / 2 - 100 * 2); // 400 - 200 = 200
+    expect(r.ty).toBe(600 / 2 - 50 * 2);  // 300 - 100 = 200
+    // The centered world point maps back to the viewport center under the new view.
+    expect(100 * r.scale + r.tx).toBe(400);
+    expect(50 * r.scale + r.ty).toBe(300);
   });
 });
 
@@ -121,5 +134,19 @@ describe("useGraphViewport wheel listener lifecycle (#2454)", () => {
     act(() => result.current.setVp(null));
     act(() => { wheel(el); });
     expect(result.current.view.scale).toBe(1);
+  });
+
+  it("centerOn pans the given world point toward the viewport center, keeping zoom (#2525)", () => {
+    const { result } = renderHook(() => useGraphViewport({ w: 1000, h: 1000 }));
+    // No-op before the viewport element mounts (no ref yet).
+    act(() => result.current.centerOn(200, 100));
+    expect(result.current.view).toEqual({ tx: 0, ty: 0, scale: 1 });
+    // Attached: jsdom clientWidth/Height are 0 → center is (0,0); tx = 0 - wx*scale (scale 1).
+    const el = document.createElement("div");
+    act(() => result.current.setVp(el));
+    act(() => result.current.centerOn(200, 100));
+    expect(result.current.view.scale).toBe(1); // zoom untouched
+    expect(result.current.view.tx).toBe(-200);
+    expect(result.current.view.ty).toBe(-100);
   });
 });

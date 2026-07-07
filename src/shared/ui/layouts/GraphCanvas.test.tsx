@@ -11,6 +11,7 @@ function fakeVp(over: Partial<GraphViewport> = {}): GraphViewport {
     setVp: () => {},
     onCanvasDown: () => {},
     fit: () => {},
+    centerOn: () => {},
     zoomBy: () => {},
     zoomTo: () => {},
     dragMoved: { current: false },

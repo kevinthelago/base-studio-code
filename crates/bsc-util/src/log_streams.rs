@@ -52,6 +52,12 @@ pub const LOG_STREAMS: &[LogStream] = &[
     // and the Rust `bsc hook bash-deny` — append one `ts·pane·gate·verdict·target·reason` line per
     // block, so a denial is joinable to its session in `bsc logs perm`/`session` (it was unlogged).
     LogStream { key: "perm", env_var: "BSC_PERM_LOG", filename: "perm.log", reader_stream: true },
+    // UI-design activity (#2525): the designer session's `bsc ui set/remove` mutations append one
+    // `ts·pane·ui-touch·collection·id` line (via `bsc_util::emit_ui_activity`, fired right after the
+    // ui-scope gate passes + the write lands). The Design Studio tails this to live-focus (pulse +
+    // pan) the touched node and re-hydrate its content. `_LOG`-suffixed env var (registry invariant)
+    // even though the helper documents it as the activity stream.
+    LogStream { key: "ui", env_var: "BSC_UI_ACTIVITY_LOG", filename: "ui-activity.log", reader_stream: true },
     // Token + cost accounting (#416): the `bsc-tokens` Stop/SubagentStop hook appends one
     // `ts·pane·session_id·transcript_path` line; `read_token_usage` parses + prices the transcript.
     // Read via the separate cost path (`crates/logs::cost`), so NOT a unified reader stream.
@@ -98,6 +104,7 @@ mod tests {
                 ("done", "done.log"),
                 ("coord", "coord.log"),
                 ("perm", "perm.log"),
+                ("ui", "ui-activity.log"),
             ],
         );
         // The token/cost stream is staged + written but read via the cost path, so it's excluded.
