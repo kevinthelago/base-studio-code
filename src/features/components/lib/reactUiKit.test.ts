@@ -101,20 +101,41 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     for (const n of ["SplitView", "PaneGrid", "StatTile"]) {
       expect(byName(n)!.shapes, `${n} must not fake a shape ideal`).toBeUndefined();
     }
-    // Every shape now has exactly ONE ideal template claiming it: `tree` → Tree (#2476),
-    // `linked-list` → Sequence (#2477). No other component may fake coverage.
+    // The Layouts-tier shape ideals: `tree` → Tree (#2476), `linked-list` → Sequence (#2477).
     expect(byName("Tree")!.shapes).toEqual(["tree"]);
     expect(byName("Sequence")!.shapes).toEqual(["linked-list"]);
-    for (const c of REACT_UI_COMPONENTS) {
-      if (c.name !== "Tree") {
-        expect(c.shapes ?? [], `${c.name} must not claim tree`)
-          .not.toEqual(expect.arrayContaining(["tree"]));
-      }
-      if (c.name !== "Sequence") {
-        expect(c.shapes ?? [], `${c.name} must not claim linked-list`)
-          .not.toEqual(expect.arrayContaining(["linked-list"]));
-      }
+    // #2505 — the Pages tier stamps the shape its WHOLE composition renders: the same shape as its
+    // central layout template, one tier up. DashboardPage is honestly NOT shape-indexed — it renders
+    // a heterogeneous board (KPIs + series + slices + feed); no single shape is "the page's shape".
+    expect(byName("TablePage")!.shapes).toEqual(["table"]);
+    expect(byName("TreeExplorerPage")!.shapes).toEqual(["tree"]);
+    expect(byName("PipelinePage")!.shapes).toEqual(["linked-list"]);
+    expect(byName("NetworkPage")!.shapes).toEqual(["graph"]);
+    expect(byName("CollectionPage")!.shapes).toEqual(["list"]);
+    expect(byName("DashboardPage")!.shapes, "DashboardPage must not fake a shape ideal").toBeUndefined();
+  });
+
+  it("keeps shape claimants unambiguous per role tier (#2475, refined by #2505)", () => {
+    // THE CLAIMANT CONTRACT. #2475's original guard was one claimant per shape ACROSS THE KIT for
+    // tree/linked-list — sized for a kit whose only claimant tier was the layouts. The Pages tier
+    // (#2505) legitimately re-claims those shapes one tier up, so the contract is now per ROLE TIER:
+    // within each tier that names an "ideal" — the LAYOUTS (structural templates) and the PAGES
+    // (complete compositions) — a shape has AT MOST ONE claimant. The layouts stay the shape IDEALS
+    // (`bsc ui shapes` answers carry `role`, so a reader tells the structural ideal from the finished
+    // page); a page claiming the same shape is the complete rendering of it, never a competing
+    // template — and no near-fit outside those two tiers may fake tree/linked-list coverage.
+    const claimants = (shape: string, role: string) =>
+      REACT_UI_COMPONENTS.filter((c) => c.role === role && ((c.shapes ?? []) as string[]).includes(shape))
+        .map((c) => c.name);
+    for (const s of ["list", "linked-list", "tree", "graph", "table", "key-value"]) {
+      expect(claimants(s, "layout").length, `layout tier claims ${s} at most once`).toBeLessThanOrEqual(1);
+      expect(claimants(s, "page").length, `page tier claims ${s} at most once`).toBeLessThanOrEqual(1);
     }
+    // tree/linked-list keep exhaustive claimant sets: the template + its page, nothing else.
+    const all = (shape: string) =>
+      REACT_UI_COMPONENTS.filter((c) => ((c.shapes ?? []) as string[]).includes(shape)).map((c) => c.name).sort();
+    expect(all("tree")).toEqual(["Tree", "TreeExplorerPage"]);
+    expect(all("linked-list")).toEqual(["PipelinePage", "Sequence"]);
   });
 
   it("keeps the exemplar demos in a separate `examples` kit (#2456)", () => {
@@ -125,5 +146,60 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     expect(examples).toContain("PersonaStore");
     // The seed is the generated react-ui kit + the examples exemplar kit.
     expect(SEED_COMPONENTS.length).toBe(REACT_UI_COMPONENTS.length + examples.length);
+  });
+});
+
+describe("the pages tier (#2505) — complete data-driven page compositions", () => {
+  const PAGES = ["CollectionPage", "DashboardPage", "NetworkPage", "PipelinePage", "TablePage", "TreeExplorerPage"];
+
+  it("registers exactly the six pages, each with role `page` (the top of the pyramid)", () => {
+    const pages = REACT_UI_COMPONENTS.filter((c) => c.role === "page").map((c) => c.name).sort();
+    expect(pages).toEqual(PAGES);
+  });
+
+  it("every page's composes list is non-empty and every name resolves in-kit (no dangling edges)", () => {
+    const names = new Set(REACT_UI_COMPONENTS.map((c) => c.name));
+    for (const p of PAGES) {
+      const c = byName(p)!;
+      expect(c.composes.length, `${p} must record its composition`).toBeGreaterThan(0);
+      for (const dep of c.composes) expect(names.has(dep), `${p} composes unknown ${dep}`).toBe(true);
+    }
+  });
+
+  it("graph completeness: every page transitively reaches a primitive via composes — no orphan pages", () => {
+    const byN = new Map(REACT_UI_COMPONENTS.map((c) => [c.name, c]));
+    const reachesPrimitive = (name: string, seen: Set<string>): boolean => {
+      const c = byN.get(name);
+      if (!c || seen.has(name)) return false;
+      seen.add(name);
+      if (c.role === "primitive") return true;
+      return c.composes.some((d) => reachesPrimitive(d, seen));
+    };
+    for (const p of PAGES) {
+      expect(reachesPrimitive(p, new Set()), `${p} must reach a primitive through its composes chain`).toBe(true);
+    }
+  });
+
+  it("each page's central layout template is a composes edge (page → layout → … in the graph)", () => {
+    expect(byName("TablePage")!.composes).toContain("SplitView");
+    expect(byName("TreeExplorerPage")!.composes).toContain("Tree");
+    expect(byName("PipelinePage")!.composes).toContain("Sequence");
+    expect(byName("NetworkPage")!.composes).toContain("GraphCanvas");
+    expect(byName("CollectionPage")!.composes).toContain("MasterDetail");
+    // DashboardPage has no single template — its chart/feed composites are the edges down.
+    expect(byName("DashboardPage")!.composes).toEqual(
+      expect.arrayContaining(["StatCard", "LineArea", "Donut", "Legend", "Spark", "ActivityFeed"]),
+    );
+  });
+
+  it("authors full guidance + a realistic source snippet for every page", () => {
+    for (const p of PAGES) {
+      const c = byName(p)!;
+      expect(c.whenUse.length, `${p} whenUse`).toBeGreaterThan(0);
+      expect(c.whenNot.length, `${p} whenNot`).toBeGreaterThan(0);
+      expect(c.tags).toContain("page");
+      expect(c.srcText).toContain(`<${p}`);
+      expect(c.src).toBe(`shared/ui/pages/${p}.tsx`);
+    }
   });
 });

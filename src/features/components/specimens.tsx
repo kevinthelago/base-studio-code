@@ -54,6 +54,43 @@ function loadingSpecimen(comp: ComponentRecord, t: Tok): ReactNode {
   }
 }
 
+// ── pages (#2505) — schematic scaffolding shared by the six page-composition specimens ──
+/** The standard 280×152 page frame every page schematic sits in. */
+function pageFrame(t: Tok, children: ReactNode): ReactNode {
+  return <div style={{ width: 280, height: 152, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.panel, display: "flex", flexDirection: "column" }}>{children}</div>;
+}
+/** The titled header bar (title · hint · spacer · control) the pages open with. */
+function pageHead(t: Tok, extra?: ReactNode): ReactNode {
+  return (
+    <div style={{ height: 22, flex: "none", borderBottom: `1px solid ${t.borderSoft}`, background: t.elev, display: "flex", alignItems: "center", padding: "0 8px", gap: 5 }}>
+      <span style={{ width: 40, height: 7, borderRadius: 3, background: t.fg, opacity: 0.75 }} />
+      <span style={{ width: 22, height: 5, borderRadius: 3, background: t.dim }} />
+      <span style={{ flex: 1 }} />
+      {extra ?? <span style={{ width: 22, height: 8, borderRadius: 3, background: "var(--accent)" }} />}
+    </div>
+  );
+}
+/** Schematic KeyValueList rows — the pages' shared detail-panel rendering. */
+function kvRows(t: Tok, n = 3): ReactNode {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "32px 1fr", rowGap: 6, columnGap: 8, alignContent: "start" }}>
+      {Array.from({ length: n }).flatMap((_, i) => [
+        <span key={`k${i}`} style={{ height: 5, borderRadius: 2, background: t.dim, opacity: 0.7 }} />,
+        <span key={`v${i}`} style={{ height: 6, borderRadius: 2, background: t.elev, border: `1px solid ${t.borderSoft}`, width: `${88 - i * 16}%` }} />,
+      ])}
+    </div>
+  );
+}
+/** The schematic detail column: a heading line over kv rows. */
+function detailPanel(t: Tok, kv = 3): ReactNode {
+  return (
+    <div style={{ flex: 1, minWidth: 0, padding: 9, display: "flex", flexDirection: "column", gap: 7 }}>
+      <span style={{ width: "55%", height: 8, borderRadius: 3, background: t.fg, opacity: 0.8 }} />
+      {kvRows(t, kv)}
+    </div>
+  );
+}
+
 /** Render a specimen for `comp` in a `variant` on the `theme` sandbox. */
 export function renderSpecimen(comp: ComponentRecord, variant: string, theme: PreviewTheme): ReactNode {
   const t = previewTokens(theme);
@@ -699,6 +736,179 @@ export function renderSpecimen(comp: ComponentRecord, variant: string, theme: Pr
           </div>
         </div>
       );
+    }
+
+    // ── pages (complete data-driven page compositions, #2505) — schematic mocks of each page ──
+    case "TablePage": {
+      const cell = (w: string, head?: boolean, tone?: string) => <span style={{ width: w, height: head ? 5 : 6, borderRadius: 2, background: tone ?? (head ? t.dim : t.elev), border: head || tone ? undefined : `1px solid ${t.borderSoft}` }} />;
+      const row = (i: number, selectedRow?: boolean) => (
+        <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 34px 34px", gap: 6, alignItems: "center", padding: "4px 6px", borderRadius: 4, background: selectedRow ? "color-mix(in oklch, var(--accent), transparent 84%)" : i % 2 ? `color-mix(in oklch, ${t.fg}, transparent 96%)` : "transparent", border: `1px solid ${selectedRow ? "var(--accent)" : "transparent"}` }}>
+          {cell("70%")}{cell("100%", false, i === 1 ? "var(--success)" : undefined)}{cell("80%")}
+        </div>
+      );
+      return pageFrame(t, <>
+        {pageHead(t)}
+        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+          <div style={{ flex: 1, minWidth: 0, padding: 7, borderRight: `1px solid ${t.borderSoft}` }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 34px 34px", gap: 6, padding: "2px 6px 5px", borderBottom: `1px solid ${t.borderSoft}`, marginBottom: 3 }}>
+              {cell("55%", true)}{cell("90%", true)}{cell("70%", true)}
+            </div>
+            {row(0)}{row(1, true)}{row(2)}
+          </div>
+          <div style={{ width: 92, flex: "none" }}>{detailPanel(t)}</div>
+        </div>
+      </>);
+    }
+    case "TreeExplorerPage": {
+      const chev = (open: boolean) => <span style={{ fontSize: 6, color: t.dim, width: 7, flex: "none", display: "inline-block", transform: open ? "rotate(90deg)" : "none" }}>▶</span>;
+      const row = (depth: number, w: number, open?: boolean, active?: boolean, leaf?: boolean) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 4px", paddingLeft: 4 + depth * 10, borderRadius: 4, marginBottom: 2, background: active ? "color-mix(in oklch, var(--accent), transparent 84%)" : "transparent", border: `1px solid ${active ? "var(--accent)" : "transparent"}` }}>
+          {leaf ? <span style={{ width: 7, flex: "none" }} /> : chev(!!open)}
+          <span style={{ width: w, height: 6, borderRadius: 3, background: active ? "var(--accent)" : t.elev, border: active ? undefined : `1px solid ${t.borderSoft}` }} />
+        </div>
+      );
+      return pageFrame(t, <>
+        {pageHead(t)}
+        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+          <div style={{ width: 104, flex: "none", borderRight: `1px solid ${t.borderSoft}`, padding: 7, overflow: "hidden" }}>
+            {row(0, 44, true)}{row(1, 36, true)}{row(2, 40, false, true, true)}{row(2, 28, false, false, true)}{row(1, 32, false)}{row(0, 38, false, false, true)}
+          </div>
+          {detailPanel(t)}
+        </div>
+      </>);
+    }
+    case "PipelinePage": {
+      const vertical = variant === "vertical";
+      const node = (kind: "done" | "active" | "up", txt: string) => (
+        <span style={{ width: 14, height: 14, flex: "none", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 8, fontWeight: 700,
+          ...(kind === "done" ? { background: "var(--success)", color: "var(--on-success)" }
+            : kind === "active" ? { background: t.elev, color: "var(--accent)", boxShadow: "inset 0 0 0 1.5px var(--accent)" }
+            : { background: t.elev, color: t.dim, boxShadow: `inset 0 0 0 1px ${t.border}` }) }}>
+          {kind === "done" ? "✓" : txt}
+        </span>
+      );
+      const kinds: ("done" | "active" | "up")[] = ["done", "active", "up", "up"];
+      // The focused-step detail: heading + status chip + kv facts — what sets the PAGE apart from bare Sequence.
+      const stepDetail = (
+        <div style={{ flex: 1, minWidth: 0, padding: 9, display: "flex", flexDirection: "column", gap: 7 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: "40%", height: 8, borderRadius: 3, background: t.fg, opacity: 0.8 }} />
+            <span style={{ width: 30, height: 10, borderRadius: 99, background: "color-mix(in oklch, var(--accent), transparent 86%)", border: "1px solid color-mix(in oklch, var(--accent), transparent 70%)" }} />
+          </div>
+          {kvRows(t, 3)}
+        </div>
+      );
+      if (vertical) {
+        return pageFrame(t, <>
+          {pageHead(t)}
+          <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+            <div style={{ width: 84, flex: "none", borderRight: `1px solid ${t.borderSoft}`, padding: 8, display: "flex", flexDirection: "column" }}>
+              {kinds.map((k, i) => (
+                <div key={i} style={{ display: "flex", flexDirection: "column" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    {node(k, String(i + 1))}
+                    <span style={{ flex: 1, height: 5, borderRadius: 3, background: k === "active" ? "color-mix(in oklch, var(--accent), transparent 75%)" : t.elev }} />
+                  </div>
+                  {i < kinds.length - 1 && <span style={{ width: 2, height: 8, marginLeft: 6, background: k === "done" ? "var(--success)" : t.borderSoft }} />}
+                </div>
+              ))}
+            </div>
+            {stepDetail}
+          </div>
+        </>);
+      }
+      return pageFrame(t, <>
+        {pageHead(t)}
+        <div style={{ height: 26, flex: "none", borderBottom: `1px solid ${t.borderSoft}`, background: t.elev, display: "flex", alignItems: "center", padding: "0 9px", gap: 4 }}>
+          {kinds.map((k, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, ...(i < kinds.length - 1 ? { flex: 1 } : {}) }}>
+              {node(k, String(i + 1))}
+              {i < kinds.length - 1 && <span style={{ flex: 1, minWidth: 12, height: 2, borderRadius: 2, background: k === "done" ? "var(--success)" : t.borderSoft }} />}
+            </div>
+          ))}
+        </div>
+        {stepDetail}
+      </>);
+    }
+    case "NetworkPage": {
+      const node = (x: number, y: number, on?: boolean) => <div style={{ position: "absolute", left: x, top: y, width: 42, height: 20, borderRadius: 5, background: on ? "color-mix(in oklch, var(--accent), transparent 82%)" : t.elev, border: `1px solid ${on ? "var(--accent)" : t.border}` }} />;
+      const zoom = (
+        <span style={{ display: "flex", gap: 3 }}>{["−", "%", "+"].map((g) => <span key={g} style={{ width: 14, height: 12, borderRadius: 3, background: t.bg, border: `1px solid ${t.borderSoft}`, fontFamily: mono, fontSize: 8, color: t.muted, display: "flex", alignItems: "center", justifyContent: "center" }}>{g}</span>)}</span>
+      );
+      return pageFrame(t, <>
+        {pageHead(t, zoom)}
+        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+          <div style={{ flex: 1, position: "relative", overflow: "hidden", backgroundImage: `radial-gradient(${t.borderSoft} 1px, transparent 1px)`, backgroundSize: "12px 12px" }}>
+            <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}>
+              <path d="M80,32 C60,46 54,46 44,52" stroke={t.border} strokeWidth={1.5} fill="none" />
+              <path d="M96,32 C116,46 122,46 132,52" stroke={t.border} strokeWidth={1.5} fill="none" />
+              <path d="M132,72 C112,86 106,86 96,92" stroke={t.border} strokeWidth={1.5} fill="none" />
+              <path d="M44,72 C64,86 70,86 80,92" stroke={t.border} strokeWidth={1.5} fill="none" />
+            </svg>
+            {node(66, 12)}{node(20, 52)}{node(112, 52, true)}{node(66, 92)}
+          </div>
+          <div style={{ width: 84, flex: "none", borderLeft: `1px solid ${t.borderSoft}` }}>{detailPanel(t)}</div>
+        </div>
+      </>);
+    }
+    case "DashboardPage": {
+      const tile = (tone: string) => (
+        <div style={{ flex: 1, borderRadius: 6, background: t.bg, border: `1px solid ${t.borderSoft}`, padding: "5px 7px", display: "flex", flexDirection: "column", gap: 3 }}>
+          <span style={{ width: "60%", height: 4, borderRadius: 2, background: t.dim }} />
+          <span style={{ fontFamily: mono, fontSize: 12, fontWeight: 700, color: tone, lineHeight: 1 }}>▮▮</span>
+        </div>
+      );
+      const feedRow = (striped: boolean) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 5px", background: striped ? `color-mix(in oklch, ${t.fg}, transparent 96%)` : "transparent" }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: t.elev, border: `1px solid ${t.borderSoft}`, flexShrink: 0 }} />
+          <span style={{ flex: 1, height: 4, borderRadius: 2, background: t.elev }} />
+        </div>
+      );
+      return pageFrame(t, <>
+        {pageHead(t)}
+        <div style={{ flex: 1, minHeight: 0, padding: 8, display: "flex", flexDirection: "column", gap: 7 }}>
+          <div style={{ display: "flex", gap: 6 }}>{tile(t.fg)}{tile("var(--success)")}{tile("var(--danger)")}</div>
+          <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "2fr 1fr", gap: 6 }}>
+            <div style={{ borderRadius: 6, background: t.bg, border: `1px solid ${t.borderSoft}`, padding: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ width: "40%", height: 4, borderRadius: 2, background: t.dim }} />
+              <svg width="100%" height="34" preserveAspectRatio="none" viewBox="0 0 120 34">
+                <path d="M0,28 L20,22 L40,25 L60,12 L80,17 L100,7 L120,12 L120,34 L0,34 Z" fill="color-mix(in oklch, var(--accent), transparent 82%)" />
+                <polyline points="0,28 20,22 40,25 60,12 80,17 100,7 120,12" fill="none" stroke="var(--accent)" strokeWidth={1.5} />
+              </svg>
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ width: 18, height: 18, borderRadius: "50%", flexShrink: 0, background: `conic-gradient(var(--accent) 0 60%, var(--success) 60% 85%, ${t.elev} 85% 100%)` }} />
+                {[0, 1].map((i) => <span key={i} style={{ display: "flex", alignItems: "center", gap: 3 }}><span style={{ width: 5, height: 5, borderRadius: 2, background: i ? "var(--success)" : "var(--accent)" }} /><span style={{ width: 16, height: 4, borderRadius: 2, background: t.elev }} /></span>)}
+              </div>
+            </div>
+            <div style={{ borderRadius: 6, background: t.bg, border: `1px solid ${t.borderSoft}`, padding: 4, display: "flex", flexDirection: "column", gap: 1, overflow: "hidden" }}>
+              {feedRow(false)}{feedRow(true)}{feedRow(false)}{feedRow(true)}
+            </div>
+          </div>
+        </div>
+      </>);
+    }
+    case "CollectionPage": {
+      const row = (active?: boolean) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 6px", borderRadius: 6, marginBottom: 4, background: active ? "color-mix(in oklch, var(--accent), transparent 84%)" : t.bg, border: `1px solid ${active ? "var(--accent)" : t.borderSoft}` }}>
+          <span style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: "48%", height: 5, borderRadius: 2, background: active ? "var(--accent)" : t.muted }} />
+              <span style={{ width: 18, height: 8, borderRadius: 99, background: `color-mix(in oklch, ${active ? "var(--accent)" : t.dim}, transparent 84%)`, border: `1px solid color-mix(in oklch, ${active ? "var(--accent)" : t.dim}, transparent 66%)` }} />
+            </span>
+            <span style={{ width: "70%", height: 4, borderRadius: 2, background: t.elev }} />
+          </span>
+          <span style={{ width: 12, height: 4, borderRadius: 2, background: t.dim, flexShrink: 0 }} />
+        </div>
+      );
+      return pageFrame(t, <>
+        {pageHead(t)}
+        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+          <div style={{ width: 112, flex: "none", borderRight: `1px solid ${t.borderSoft}`, padding: 7, overflow: "hidden" }}>
+            {row(true)}{row()}{row()}
+          </div>
+          {detailPanel(t)}
+        </div>
+      </>);
     }
 
     // ── examples kit (the exemplar, #2456) — a small persona-manager demo app ──

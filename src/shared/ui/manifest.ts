@@ -36,9 +36,11 @@ export type PrimitiveName =
   // #2475 — the key-value record rendering (the property-list archetype of the row vocabulary)
   | "KeyValueList"
   // layouts — the page-skeleton templates tier (#2197)
-  | "MasterDetail" | "SplitView" | "GraphCanvas" | "PaneGrid" | "Tree" | "Sequence";
+  | "MasterDetail" | "SplitView" | "GraphCanvas" | "PaneGrid" | "Tree" | "Sequence"
+  // pages — the complete data-driven page compositions tier (#2505)
+  | "TablePage" | "TreeExplorerPage" | "PipelinePage" | "NetworkPage" | "DashboardPage" | "CollectionPage";
 
-export type PrimitiveGroup = "layout" | "typography" | "controls" | "data" | "feedback" | "layouts";
+export type PrimitiveGroup = "layout" | "typography" | "controls" | "data" | "feedback" | "layouts" | "pages";
 
 /** The kind of a prop's value — drives how a builder renders an editor control for it. */
 export type PropType =
@@ -92,6 +94,15 @@ const WRAP: PropSpec = { name: "wrap", type: "boolean", description: "Allow chil
 const PAD: PropSpec = { name: "pad", type: "space", description: "Inner padding — a rung/px, or a [block, inline] pair." };
 const INLINE = (kind: string): PropSpec => ({ name: "inline", type: "boolean", description: `Render as inline-${kind} instead of ${kind}.` });
 const CHILDREN: PropSpec = { name: "children", type: "node", required: true, description: "Content." };
+
+// Shared prop fragments for the Pages tier (#2505) — the titled header bar + the house selection idiom.
+const PAGE_TITLE: PropSpec = { name: "title", type: "node", required: true, description: "Page title (the header bar)." };
+const PAGE_HINT: PropSpec = { name: "hint", type: "node", description: "Dimmed inline hint after the title." };
+const PAGE_TOOLBAR: PropSpec = { name: "toolbar", type: "node", description: "Right-aligned header controls (search, filters, actions)." };
+const SELECTED_ID = (what: string): PropSpec => ({ name: "selectedId", type: "string", description: `Controlled selection — the selected ${what} id (pair with onSelect). Omit for uncontrolled.` });
+const DEFAULT_SELECTED = (what: string): PropSpec => ({ name: "defaultSelectedId", type: "string", description: `Uncontrolled: the initially selected ${what} id.` });
+const ON_SELECT = (what: string): PropSpec => ({ name: "onSelect", type: "function", description: `Fires with the clicked ${what}'s id (both selection modes).` });
+const PAGE_DETAIL = (of: string, dflt: string): PropSpec => ({ name: "detail", type: "function", description: `Detail panel override — a render fn of the selected ${of}. Default: ${dflt}.` });
 
 export const UI_KIT: PrimitiveSpec[] = [
   // ---- layout ---------------------------------------------------------------
@@ -786,6 +797,81 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "bColor", type: "color", default: "var(--danger)", description: "Second-segment color." },
     ],
   },
+
+  // ---- pages (complete data-driven page compositions — the Pages tier, #2505) -----------------
+  {
+    name: "TablePage", group: "pages", importPath: "@/shared/ui/pages/TablePage",
+    description: "The complete records-browser page for TABLE-shaped data — a titled header bar, a columnar data table (DataTableHeader + DataTableRow) rendered from typed columns × rows, and a selected-record detail (KeyValueList) in a SplitView inspector.",
+    props: [
+      PAGE_TITLE, PAGE_HINT, PAGE_TOOLBAR,
+      { name: "columns", type: "array", required: true, description: "TablePageColumn[] — { key, label, width? }; order is display order, `key` addresses the row cells." },
+      { name: "rows", type: "array", required: true, description: "TablePageRow[] — { id, cells: Record<key, ReactNode> }, in display order." },
+      SELECTED_ID("row"), DEFAULT_SELECTED("row"), ON_SELECT("row"),
+      PAGE_DETAIL("row", "a KeyValueList of the row's cells"),
+      { name: "detailWidth", type: "number", default: 320, description: "Detail (SplitView secondary) width in px." },
+    ],
+  },
+  {
+    name: "TreeExplorerPage", group: "pages", importPath: "@/shared/ui/pages/TreeExplorerPage",
+    description: "The complete hierarchy-explorer page for TREE-shaped data — the Tree template's indented variant (collapsible depth-indented rows) under a titled header bar, with the selected node's facts (id · meta · children) as a KeyValueList detail.",
+    props: [
+      PAGE_TITLE, PAGE_HINT, PAGE_TOOLBAR,
+      { name: "nodes", type: "array", required: true, description: "The tree roots — a recursive forest of TreeNodeData ({ id, label, meta?, children? }). Ids must be unique." },
+      SELECTED_ID("node"), DEFAULT_SELECTED("node"), ON_SELECT("node"),
+      { name: "defaultCollapsedIds", type: "array", description: "Branch ids that start collapsed (expansion is uncontrolled). Default: all expanded." },
+      PAGE_DETAIL("node", "the node's facts as a KeyValueList"),
+      { name: "nodeFacts", type: "function", description: "Extra KeyValueItem[] appended to the default detail, derived from the selected node." },
+      { name: "railWidth", type: "number", default: 260, description: "Rail width in px." },
+    ],
+  },
+  {
+    name: "PipelinePage", group: "pages", importPath: "@/shared/ui/pages/PipelinePage",
+    description: "The complete pipeline/workflow page for LINKED-LIST-shaped data — the Sequence template (status-colored prev→next step strip) under a titled header bar, driving a focused-step detail: label + status Chip, description, and the step's facts as a KeyValueList.",
+    props: [
+      PAGE_TITLE, PAGE_HINT, PAGE_TOOLBAR,
+      { name: "steps", type: "array", required: true, description: "PipelineStep[] — ordered SequenceStep ({ id, label, status?, hint? }) plus { description?, facts? }; array order IS the pipeline." },
+      { name: "orientation", type: "enum", values: ["horizontal", "vertical"], default: "horizontal", description: "horizontal → stepper strip above the detail; vertical → timeline rail beside it." },
+      SELECTED_ID("step"), DEFAULT_SELECTED("step"), ON_SELECT("step"),
+      PAGE_DETAIL("step", "heading + status Chip + description + facts KeyValueList"),
+    ],
+  },
+  {
+    name: "NetworkPage", group: "pages", importPath: "@/shared/ui/pages/NetworkPage",
+    description: "The complete node/edge workspace page for GRAPH-shaped data — GraphCanvas pan/zoom over typed { nodes, edges } laid out by the shared graph stack (findBackEdges + layerDag + orderLayers + the #2222 edge grammar), with a selected-node inspector (facts as a KeyValueList).",
+    props: [
+      { name: "title", type: "node", required: true, description: "Page title (the toolbar row)." },
+      PAGE_HINT,
+      { name: "toolbar", type: "node", description: "Extra toolbar controls, before the zoom cluster." },
+      { name: "nodes", type: "array", required: true, description: "NetworkNodeData[] — { id, label, meta? }. Ids must be unique." },
+      { name: "edges", type: "array", required: true, description: "NetworkEdgeData[] — directed { from, to, id? }; cycles are fine (layering breaks them, drawing keeps them)." },
+      SELECTED_ID("node"), DEFAULT_SELECTED("node"), ON_SELECT("node"),
+      PAGE_DETAIL("node", "label + facts (id · meta · in/out degree) as a KeyValueList"),
+      { name: "inspectorWidth", type: "number", default: 300, description: "Inspector width in px when a node is selected." },
+    ],
+  },
+  {
+    name: "DashboardPage", group: "pages", importPath: "@/shared/ui/pages/DashboardPage",
+    description: "The complete analytics dashboard page — a Grid of StatCard KPI tiles (optional inline Spark trends), a LineArea trend Card + a Donut/Legend breakdown Card, and an ActivityFeed column, all under a titled header bar. Renders entirely from typed stats/trend/breakdown/activity inputs.",
+    props: [
+      PAGE_TITLE, PAGE_HINT,
+      { name: "toolbar", type: "node", description: "Right-aligned header controls (range toggle, filters)." },
+      { name: "stats", type: "array", required: true, description: "DashboardStat[] — { k, v, sub?, tone?, trend?, trendColor? }, in display order." },
+      { name: "trend", type: "object", description: "The trend chart card — { title, hint?, labels, series: LineSeries[] }. Omit to drop the card." },
+      { name: "breakdown", type: "object", description: "The breakdown donut card — { title, hint?, slices: DonutSlice[] }. Omit to drop the card." },
+      { name: "activity", type: "object", description: "The activity column — { hint, items: ActivityItem[], tone }. Omit to drop the column." },
+    ],
+  },
+  {
+    name: "CollectionPage", group: "pages", importPath: "@/shared/ui/pages/CollectionPage",
+    description: "The complete master→detail collection page for LIST-shaped data — MasterDetail with the rail rendered as CardListRow items (badge Chip, subtitle, trailing meta) under a titled header bar, and a selected-item detail (title + subtitle + facts KeyValueList).",
+    props: [
+      PAGE_TITLE, PAGE_HINT, PAGE_TOOLBAR,
+      { name: "items", type: "array", required: true, description: "CollectionItem[] — { id, title, subtitle?, badge?, badgeTone?, meta?, facts? }, in display order." },
+      SELECTED_ID("item"), DEFAULT_SELECTED("item"), ON_SELECT("item"),
+      PAGE_DETAIL("item", "title + subtitle + facts KeyValueList"),
+      { name: "railWidth", type: "number", default: 280, description: "Rail width in px." },
+    ],
+  },
 ];
 
 /** Look up a primitive spec by name. */
@@ -795,7 +881,7 @@ export function findPrimitive(name: PrimitiveName): PrimitiveSpec | undefined {
 
 /** Group the kit by `PrimitiveGroup` (for a grouped palette in the builder). */
 export function primitivesByGroup(): Record<PrimitiveGroup, PrimitiveSpec[]> {
-  const out = { layout: [], typography: [], controls: [], data: [], feedback: [], layouts: [] } as Record<PrimitiveGroup, PrimitiveSpec[]>;
+  const out = { layout: [], typography: [], controls: [], data: [], feedback: [], layouts: [], pages: [] } as Record<PrimitiveGroup, PrimitiveSpec[]>;
   for (const p of UI_KIT) out[p.group].push(p);
   return out;
 }

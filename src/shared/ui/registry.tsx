@@ -59,6 +59,13 @@ import { Pane } from "./overlay/Pane";
 import { TelemetryPanel, ItemBars, SplitBar } from "./charts/telemetry";
 // #2475 — the key-value record rendering
 import { KeyValueList } from "./data/KeyValueList";
+// #2505 — the Pages tier (complete data-driven page compositions)
+import { TablePage } from "./pages/TablePage";
+import { TreeExplorerPage } from "./pages/TreeExplorerPage";
+import { PipelinePage } from "./pages/PipelinePage";
+import { NetworkPage } from "./pages/NetworkPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { CollectionPage } from "./pages/CollectionPage";
 
 // Heterogeneous prop shapes — a render-map is intentionally prop-agnostic.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,6 +85,7 @@ export const UI_COMPONENTS: Record<PrimitiveName, AnyComponent> = {
   MasterDetail, SplitView, GraphCanvas, PaneGrid, Sequence, Tree,
   LabelChip, ActivityFeed, Pane, TelemetryPanel, ItemBars, SplitBar,
   KeyValueList,
+  TablePage, TreeExplorerPage, PipelinePage, NetworkPage, DashboardPage, CollectionPage,
 };
 
 /** Resolve a primitive name to its component (undefined for an unknown name). */
