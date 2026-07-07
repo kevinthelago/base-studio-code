@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { GlanceChatDock } from "./GlanceChatDock";
+import { useAppStore } from "@/store";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 
 // Since #2378 the dock renders a <TerminalSlot> (the app-level TerminalHost owns the real terminal) — stub
@@ -17,7 +18,9 @@ vi.mock("./GlanceSessionLog", () => ({
 vi.mock("@/shared/lib/core/safeInvoke", () => ({ fireInvoke: vi.fn() }));
 
 describe("GlanceChatDock", () => {
-  beforeEach(() => vi.clearAllMocks());
+  // Reset per-pane status: the input is hidden while a pane is "run" (#2534), so tests that expect the
+  // input start from a clean (at-rest) state.
+  beforeEach(() => { vi.clearAllMocks(); useAppStore.setState({ paneStatus: {} }); });
   it("shows the agent name/role and the live stream by default", () => {
     render(<GlanceChatDock paneId="proj:api" name="api-worker" role="worker" onClose={() => {}} />);
     expect(screen.getByText("api-worker")).toBeInTheDocument();

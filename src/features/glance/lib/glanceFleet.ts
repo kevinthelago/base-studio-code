@@ -61,6 +61,24 @@ export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): Glanc
   return { rawNodes, rawEdges, sample: false };
 }
 
+/**
+ * Whether a fleet node has a LIVE terminal session — the check that decides if clicking it morphs the
+ * node into its in-graph terminal (#2534). True when the node's identity pane id
+ * (`<project>:<stream>` / `<project>:director`) is in the launched roster, OR has an authoritative live
+ * pane status ("run"/"on"). The status branch is what makes the DIRECTOR live: it's a session, not a
+ * stream, so it never enters the roster — yet it has a terminal, and EVERY node with a terminal gets
+ * the morph. Pure — the workspace passes its live store maps in. ("idle"/absent status = no session.)
+ */
+export function nodeHasLiveSession(
+  paneId: string,
+  roster: Record<string, unknown>,
+  paneStatus: Record<string, string | undefined>,
+): boolean {
+  if (roster[paneId]) return true;
+  const st = paneStatus[paneId];
+  return st === "run" || st === "on";
+}
+
 /** Build a project's fleet as a Glance graph: a director (infra hub), 2–4 workers (service), and a
  *  reviewer (data). Edges are "depends on": each worker depends on the director's direction (api), the
  *  reviewer reads each worker's output (data) — so the layout flows director → workers → reviewer. All
