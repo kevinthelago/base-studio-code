@@ -153,4 +153,26 @@ describe("TransformationsBody — live spec render (#1852 KitRenderer)", () => {
     expect(screen.getByText(/spec present \(2 nodes\)/)).toBeTruthy();
     expect(screen.queryByTestId("transformation-spec-prim")).toBeNull();
   });
+
+  it("frames a kitContribution row's preview as a Proposed component (#2509 slice d)", () => {
+    useAppStore.getState().setPlanTransformations(PID, [
+      row({ id: "gap", tier: 0, kitContribution: true, spec: { kind: "tag", label: "sketch-chip" } }),
+    ]);
+    render(<TransformationsBody projectId={PID} />);
+    // The proposed-component caption sits above the live preview.
+    expect(screen.getByTestId("transformation-proposed-gap")).toBeTruthy();
+    expect(screen.getByText("Proposed component")).toBeTruthy();
+    expect(screen.getByTestId("transformation-spec-gap")).toBeTruthy();
+  });
+
+  it("a plain migration row (not a kit contribution) shows no Proposed-component framing", () => {
+    useAppStore.getState().setPlanTransformations(PID, [
+      row({ id: "mig", tier: 0, kitContribution: false, spec: { kind: "tag", label: "target-chip" } }),
+    ]);
+    render(<TransformationsBody projectId={PID} />);
+    expect(screen.queryByTestId("transformation-proposed-mig")).toBeNull();
+    expect(screen.queryByText("Proposed component")).toBeNull();
+    // The preview still renders — just without the proposal caption.
+    expect(screen.getByTestId("transformation-spec-mig")).toBeTruthy();
+  });
 });

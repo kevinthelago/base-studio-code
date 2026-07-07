@@ -223,9 +223,11 @@ Each row is one transformation — verb + target + delta + invariants + blast ra
   \"kitContribution\"?, \"spec\"?, \"confirmed\"? }
 Rows are keyed by \"id\" (derived from the title when omitted); `tier` is the composition tier the
 bottom-up confirm queue orders by (0 = primitives … N = pages); `owns` is the blast radius. Targets
-are DISCOVERED by scanning the linked repos, never invented. Writes are validated at set-time
-(#2395) with field-level errors — a bad batch is rejected whole; --force skips. HARD RULE: the USER
-confirms each item in the pane — the planner NEVER runs `confirm`.",
+are DISCOVERED by scanning the linked repos, never invented. `spec` is the KitNode render spec the
+pane previews live — REQUIRED on a gap-fill row (kitContribution: true) so the user SEES the proposed
+component. Writes are validated at set-time (#2395) with field-level errors — a bad batch is rejected
+whole; --force skips. HARD RULE: the USER confirms each item in the pane — the planner NEVER runs
+`confirm`.",
     },
     CmdDoc {
         name: "mcp",

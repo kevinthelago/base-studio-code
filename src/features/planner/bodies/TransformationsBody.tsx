@@ -6,7 +6,9 @@
 // is pending or confirmed, NOTHING ELSE: the one action is Confirm (no reject/exclude — changes
 // are described conversationally to the planner and the item re-presents). When a row carries a
 // KitNode `spec` it renders live through the #1852 KitRenderer (defensively — a bad spec falls
-// back to a "spec present" chip, never a pane crash). Once every row is confirmed the final
+// back to a "spec present" chip, never a pane crash); a kitContribution (gap-fill) row frames that
+// preview as a "Proposed component" (#2509 slice d) — the NEW component the user is deciding to
+// build — vs a plain migration preview, which renders the existing kit target. Once every row is confirmed the final
 // synthetic "Completed UI" card shows; signing it off is the NORMAL stage confirm in the footer.
 
 import { Component, type ReactNode } from "react";
@@ -127,7 +129,22 @@ function TransformationItem({ row, actionable, onConfirm }: {
             owns {row.owns.join(" · ")}
           </Text>
         )}
-        {row.spec && <SpecPreview id={row.id} spec={row.spec} />}
+        {row.spec &&
+          (row.kitContribution ? (
+            // A gap-fill row proposes a NEW kit component — frame its live preview as a proposal
+            // (distinct from a plain migration preview, which renders the EXISTING kit target).
+            <Stack gap={3}>
+              <Text
+                as="div" mono size={9.5} tone="dim"
+                data-testid={`transformation-proposed-${row.id}`}
+              >
+                Proposed component
+              </Text>
+              <SpecPreview id={row.id} spec={row.spec} />
+            </Stack>
+          ) : (
+            <SpecPreview id={row.id} spec={row.spec} />
+          ))}
       </Stack>
     </Box>
   );

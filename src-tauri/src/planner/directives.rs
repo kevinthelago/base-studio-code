@@ -208,6 +208,11 @@ mod tests {
             evidence.iter().all(|e| e.as_str().is_some_and(|s| s.contains("usages"))),
             "every evidence entry carries its usage count"
         );
+        // #2509 slice d: the gap-fill row carries a live-preview `spec` (a KitNode object) — the
+        // user decides to build the NEW component by SEEING it in the pane, so a gap-fill spec is
+        // now REQUIRED at set-time and the taught example must model one.
+        assert!(rows[0]["spec"].is_object(), "the gap-fill row carries a preview spec object");
+        assert_eq!(rows[0]["spec"]["kind"], serde_json::json!("card"), "the spec is a card sketch");
         // Row 2: the migration — replace, sequenced ON the gap-fill (foundation before fan-out).
         assert_eq!(rows[1]["verb"], serde_json::json!("replace"));
         assert_eq!(rows[1]["kitContribution"], serde_json::json!(false));
