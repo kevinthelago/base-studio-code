@@ -82,26 +82,56 @@ pub(crate) fn embedded_dir_files(dir_rel: &str) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
+/// Packaged top-level dirs that are NOT runtime config and must never be mirrored into the config
+/// dir. `components/` (the packaged component kits, #2305) is owned by the `bsc ui` kit store + its
+/// hash-based seed refresh (#2483); an auto-seeded copy became a de-facto override that pinned every
+/// install's effective seed at its first-run roster — refresh/retire verdicts could never fire
+/// (#2514). The frontend no longer reads a `config/components/` overlay at all (`builtinKits.ts`);
+/// skipping the seed keeps the trap files from materializing on new installs.
+const SEED_SKIP_DIRS: &[&str] = &["components"];
+
 /// First-run seed: mirror the embedded tree into [`config_root`], writing only files that are ABSENT
-/// so a user edit is never clobbered. Idempotent — safe to call on every boot. Best-effort; on an I/O
-/// error the embedded fallback stays in force, so a seed failure is non-fatal.
+/// so a user edit is never clobbered, and skipping the non-config [`SEED_SKIP_DIRS`]. Idempotent —
+/// safe to call on every boot. Best-effort; on an I/O error the embedded fallback stays in force, so
+/// a seed failure is non-fatal.
 pub(crate) fn ensure_seeded() -> std::io::Result<()> {
-    seed_dir(&EMBEDDED, &config_root())
+    seed_root(&EMBEDDED, &config_root())
+}
+
+/// The top level of the seed mirror: like [`seed_dir`] but excluding [`SEED_SKIP_DIRS`].
+fn seed_root(dir: &Dir, dest: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dest)?;
+    seed_files(dir, dest)?;
+    for sub in dir.dirs() {
+        if let Some(name) = sub.path().file_name() {
+            if SEED_SKIP_DIRS.iter().any(|s| name == std::ffi::OsStr::new(s)) {
+                continue;
+            }
+            seed_dir(sub, &dest.join(name))?;
+        }
+    }
+    Ok(())
 }
 
 fn seed_dir(dir: &Dir, dest: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dest)?;
+    seed_files(dir, dest)?;
+    for sub in dir.dirs() {
+        if let Some(name) = sub.path().file_name() {
+            seed_dir(sub, &dest.join(name))?;
+        }
+    }
+    Ok(())
+}
+
+/// Write `dir`'s direct files into `dest`, only where absent (a user edit is never clobbered).
+fn seed_files(dir: &Dir, dest: &Path) -> std::io::Result<()> {
     for f in dir.files() {
         if let Some(name) = f.path().file_name() {
             let target = dest.join(name);
             if !target.exists() {
                 std::fs::write(&target, f.contents())?;
             }
-        }
-    }
-    for sub in dir.dirs() {
-        if let Some(name) = sub.path().file_name() {
-            seed_dir(sub, &dest.join(name))?;
         }
     }
     Ok(())
@@ -256,6 +286,23 @@ mod tests {
             "USER_EDIT",
             "a re-seed must never overwrite a file the user has edited",
         );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn seed_root_skips_the_component_kits_but_mirrors_real_config() {
+        // The packaged kits ARE embedded (the skip below is meaningful, not vacuous)…
+        assert!(
+            EMBEDDED.get_dir("components").is_some(),
+            "data/components is packaged — if this moved, retire SEED_SKIP_DIRS with it",
+        );
+        let root = scratch_dir("seed-skip");
+        seed_root(&EMBEDDED, &root).unwrap();
+        // …but are NEVER mirrored into the config dir: an auto-seeded copy acted as a stale override
+        // pinning the effective component seed at its first-run roster (#2514).
+        assert!(!root.join("components").exists(), "config/components must not be seeded");
+        // Real config surfaces still seed as before.
+        assert!(root.join("permissions/base.json").exists(), "config surfaces still mirror");
         std::fs::remove_dir_all(&root).ok();
     }
 

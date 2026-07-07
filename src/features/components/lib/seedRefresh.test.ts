@@ -127,6 +127,36 @@ describe("reconcileSeed verdicts (#2483)", () => {
     expect(r.drops).toEqual(["tauri-rust-row"]);
   });
 
+  it("re-stamps a wrong-stamped copy whose content EQUALS the current seed (#2514 tolerant heal)", () => {
+    // The #2514 failure class: content is byte-identical to the seed but the recorded stamp is rot
+    // (an older hasher / a byte-mangling round-trip stamped it). Without the tolerant path this is
+    // judged user-modified and kept — with the WRONG stamp — forever.
+    const wrongStamp = { ...seedNew, seedHash: "deadbeef" };
+    const r = reconcileSeed([wrongStamp], [seedNew], "component");
+    expect(r.records).toEqual([seedNew]); // same content, corrected stamp
+    expect(r.pushes).toEqual([seedNew]); // pushed so the store converges on the good stamp
+    expect(r.drops).toEqual([]);
+    expect(r.notices).toEqual([]); // nothing diverged — no notice
+  });
+
+  it("keeps a wrong-stamped copy whose content matches NEITHER its stamp NOR the seed — with a notice, never silently (#2514)", () => {
+    // Indistinguishable from a genuine user edit (could equally be an old seed's content under a
+    // broken stamp) — conservative KEEP, surfaced via the updated-upstream notice.
+    const divergent = { ...seedNew, srcText: "my tweak", seedHash: "deadbeef" };
+    const r = reconcileSeed([divergent], [seedNew], "component");
+    expect(r.records).toEqual([divergent]);
+    expect(r.pushes).toEqual([]);
+    expect(r.notices).toEqual([{ kind: "updated-upstream", type: "component", id: "button", name: "Button" }]);
+  });
+
+  it("keeps a wrong-stamped RETIRED copy on the orphan branch (no seed to verify against, #2514)", () => {
+    const retired = { ...stampSeedHash(comp({ id: "spring-row", name: "SpringRow" })), seedHash: "deadbeef" };
+    const r = reconcileSeed([retired, seedNew], [seedNew], "component");
+    expect(r.records).toEqual([retired, seedNew]);
+    expect(r.drops).toEqual([]);
+    expect(r.notices).toEqual([{ kind: "orphaned", type: "component", id: "spring-row", name: "SpringRow" }]);
+  });
+
   it("never touches user-authored records, even when stale-looking or absent from the seed", () => {
     const mine = comp({ id: "my-widget", name: "MyWidget", builtin: undefined });
     const mineWithStrayHash = comp({ id: "my-other", name: "MyOther", builtin: false, seedHash: "deadbeef" });
