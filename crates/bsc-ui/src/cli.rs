@@ -182,9 +182,10 @@ mod tests {
         // The one help surface presents BOTH families (#2469): the contract verbs + the mounted
         // component-library verbs.
         let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, &merged_commands());
-        for c in
-            ["schema", "validate", "theme", "list", "get", "set", "remove", "kit", "eslint-preset", "usage"]
-        {
+        for c in [
+            "schema", "validate", "theme", "list", "shapes", "get", "set", "remove", "kit",
+            "eslint-preset", "usage",
+        ] {
             assert!(ov.contains(c), "merged overview lists {c}");
         }
     }
@@ -211,7 +212,12 @@ mod tests {
         // The kit collection routes one level down, and eslint-preset (the custom store read, #2279)
         // works over an empty store.
         assert!(run(vec!["kit".into(), "list".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
-        assert!(run(vec!["eslint-preset".into(), "--dir".into(), dir], "bsc ui").is_ok());
+        assert!(run(vec!["eslint-preset".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        // The #2475 shape picker mounts too: the `shapes` verb + the `list --shape` filter.
+        assert!(run(vec!["shapes".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        assert!(
+            run(vec!["list".into(), "--shape".into(), "graph".into(), "--dir".into(), dir], "bsc ui").is_ok()
+        );
     }
 
     #[test]

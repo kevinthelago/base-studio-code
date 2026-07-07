@@ -48,4 +48,16 @@ describe("component-kit gist envelope (#2305 slice 1c)", () => {
   it("rejects a kit with no valid components", () => {
     expect(kitFromCode(kitShareCode(kit, [])).ok).toBe(false);
   });
+
+  it("rides the data-shape axis through a share, filtered to the vocabulary (#2475)", () => {
+    const stamped = { ...comps[0], shapes: ["list", "blob"] } as unknown as ComponentRecord;
+    const r = kitFromManifest(kitToManifest(kit, [stamped]));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // In-vocabulary shapes survive; the off-vocabulary token is dropped, never trusted.
+    expect(r.components[0].shapes).toEqual(["list"]);
+    // An unstamped component stays unstamped (no fabricated empty array).
+    const r2 = kitFromManifest(kitToManifest(kit, comps));
+    expect(r2.ok && r2.components[0].shapes).toBeUndefined();
+  });
 });
