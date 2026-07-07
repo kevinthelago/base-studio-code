@@ -68,6 +68,11 @@ pub(super) struct Inner {
     /// Latest aggregated hook-fire telemetry — replayed to freshly-paired mobile clients.
     /// `None` until the frontend pushes the first summary (read-only projection).
     pub(super) hook_telemetry: Option<HookTelemetryFrame>,
+    // ── Generic store projections (#2497) ────────────────────────────────────
+    /// Last `store_state` frame per domain (see `protocol::store_domains`) — replayed to a
+    /// freshly-paired client so every published projection arrives on connect. Only the
+    /// LAST frame per domain is kept (the frame is a full snapshot, `rev` orders them).
+    pub(super) store_states: HashMap<String, ServerMsg>,
 }
 
 /// Single source of truth for the tunnel, managed by Tauri. Holds the desktop's static
@@ -223,6 +228,7 @@ impl TunnelState {
                 automations: Vec::new(),
                 mcp_extensions: Vec::new(),
                 hook_telemetry: None,
+                store_states: HashMap::new(),
             }),
             output_tx,
             event_tx,
@@ -422,6 +428,15 @@ impl TunnelState {
     /// (M3 / #937). `None` until the frontend has pushed one.
     pub(super) fn hook_telemetry_snapshot(&self) -> Option<HookTelemetryFrame> {
         self.inner.lock().unwrap().hook_telemetry.clone()
+    }
+
+    /// The last `store_state` frame per domain (#2497), sorted by domain for a
+    /// deterministic replay order. Empty until the frontend publishes a projection.
+    pub(super) fn store_states_snapshot(&self) -> Vec<ServerMsg> {
+        let inner = self.inner.lock().unwrap();
+        let mut domains: Vec<&String> = inner.store_states.keys().collect();
+        domains.sort();
+        domains.into_iter().map(|d| inner.store_states[d].clone()).collect()
     }
 
     /// Record how many mobile clients are connected (for the settings card).

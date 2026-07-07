@@ -137,11 +137,12 @@ fn shared_fixture_matches_serde() {
     let c = &fx["clientToServer"];
     assert!(matches!(
         serde_json::from_value::<ClientMsg>(c["auth"].clone()).unwrap(),
-        ClientMsg::Auth { fcm_token: Some(_), .. }
+        ClientMsg::Auth { fcm_token: Some(_), protocol_version: Some(PROTOCOL_VERSION), .. }
     ));
+    // auth_no_fcm pins BOTH optional fields absent — a pre-v2 client's auth still parses.
     assert!(matches!(
         serde_json::from_value::<ClientMsg>(c["auth_no_fcm"].clone()).unwrap(),
-        ClientMsg::Auth { fcm_token: None, .. }
+        ClientMsg::Auth { fcm_token: None, protocol_version: None, .. }
     ));
     assert!(matches!(
         serde_json::from_value::<ClientMsg>(c["set_fcm_token"].clone()).unwrap(),
@@ -164,9 +165,57 @@ fn shared_fixture_matches_serde() {
         ClientMsg::PaneResize { cols: 80, rows: 24, .. }
     ));
 
+    // client → server: the plan_sync frames deserialize into the Rust shapes (#2497 —
+    // these fixtures pin the shapes mobile must send; Rust is authoritative).
+    assert!(matches!(
+        serde_json::from_value::<ClientMsg>(c["plan_sync_manifest_request"].clone()).unwrap(),
+        ClientMsg::PlanSyncManifestRequest { project_id } if project_id == "proj-bf9cf968"
+    ));
+    assert!(matches!(
+        serde_json::from_value::<ClientMsg>(c["plan_sync_pull"].clone()).unwrap(),
+        ClientMsg::PlanSyncPull { paths, .. } if paths == ["goal.md"]
+    ));
+    assert!(matches!(
+        serde_json::from_value::<ClientMsg>(c["plan_sync_push"].clone()).unwrap(),
+        ClientMsg::PlanSyncPush { files, .. } if files.len() == 1 && files[0].relpath == "goal.md"
+    ));
+
     // server → client: our serialization equals the fixture byte-shape.
     let s = &fx["serverToClient"];
-    assert_eq!(serde_json::to_value(ServerMsg::AuthOk).unwrap(), s["auth_ok"]);
+    assert_eq!(
+        serde_json::to_value(ServerMsg::AuthOk { protocol_version: PROTOCOL_VERSION }).unwrap(),
+        s["auth_ok"]
+    );
+    assert_eq!(
+        serde_json::to_value(ServerMsg::StoreState {
+            domain: store_domains::PLAN.into(),
+            rev: 3,
+            json: "{\"projects\":[]}".into(),
+        })
+        .unwrap(),
+        s["store_state"]
+    );
+    assert_eq!(
+        serde_json::to_value(ServerMsg::PlanSyncManifest {
+            project_id: "proj-bf9cf968".into(),
+            files: [("goal.md".to_string(), "bf9cf968".to_string())].into_iter().collect(),
+        })
+        .unwrap(),
+        s["plan_sync_manifest"]
+    );
+    assert_eq!(
+        serde_json::to_value(ServerMsg::PlanSyncFiles {
+            project_id: "proj-bf9cf968".into(),
+            files: vec![PlanFile { relpath: "goal.md".into(), content: "foobar".into() }],
+        })
+        .unwrap(),
+        s["plan_sync_files"]
+    );
+    assert_eq!(
+        serde_json::to_value(ServerMsg::PlanSyncAck { project_id: "proj-bf9cf968".into(), applied: true })
+            .unwrap(),
+        s["plan_sync_ack"]
+    );
     assert_eq!(
         serde_json::to_value(ServerMsg::PaneOutput {
             pane_id: "t0p0".into(),
@@ -681,11 +730,11 @@ fn app_messages_roundtrip_through_the_noise_session() {
     let (mut host, mut mobile) = handshake_pair();
 
     // desktop → mobile: encode a ServerMsg, decrypt + parse on the mobile side.
-    let frame = transport::encode(&mut host, &ServerMsg::AuthOk).unwrap();
+    let frame = transport::encode(&mut host, &ServerMsg::AuthOk { protocol_version: PROTOCOL_VERSION }).unwrap();
     let mut out = vec![0u8; frame.len()];
     let n = mobile.read_message(&frame, &mut out).unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out[..n]).unwrap();
-    assert_eq!(v, serde_json::json!({ "type": "auth_ok" }));
+    assert_eq!(v, serde_json::json!({ "type": "auth_ok", "protocolVersion": PROTOCOL_VERSION }));
 
     // mobile → desktop: a client `auth` frame decodes via decode_room_msg.
     let cj = serde_json::to_vec(&serde_json::json!({ "type": "auth", "token": "secret" })).unwrap();
@@ -924,6 +973,141 @@ fn mcp_list_msg_type_tag() {
     let msg = ServerMsg::McpList { extensions: vec![] };
     let v = serde_json::to_value(&msg).unwrap();
     assert_eq!(v["type"], "mcp_list");
+}
+
+// ── Contract v2 (#2497): protocol version + store_state + pane kind ──────────
+
+/// `auth.protocolVersion` is optional (a pre-v2 client omits it) and parses when present;
+/// `auth_ok` echoes the desktop's version in camelCase. Round-trips both directions of the
+/// versioned handshake.
+#[test]
+fn auth_protocol_version_round_trips_and_defaults_to_none() {
+    // Pre-v2 client: no protocolVersion → None (treated as v1; never rejected).
+    let legacy = serde_json::from_value::<ClientMsg>(
+        serde_json::json!({ "type": "auth", "token": "secret" }),
+    )
+    .unwrap();
+    assert!(matches!(legacy, ClientMsg::Auth { protocol_version: None, .. }));
+
+    // v2 client: protocolVersion parses.
+    let v2 = serde_json::from_value::<ClientMsg>(
+        serde_json::json!({ "type": "auth", "token": "secret", "protocolVersion": 2 }),
+    )
+    .unwrap();
+    assert!(matches!(v2, ClientMsg::Auth { protocol_version: Some(2), .. }));
+
+    // auth_ok carries the desktop's version, camelCase on the wire.
+    let ok = serde_json::to_value(ServerMsg::AuthOk { protocol_version: PROTOCOL_VERSION }).unwrap();
+    assert_eq!(ok["type"], "auth_ok");
+    assert_eq!(ok["protocolVersion"], PROTOCOL_VERSION);
+    assert!(ok.get("protocol_version").is_none());
+}
+
+/// store_state serializes with the snake_case tag and its three domain-agnostic fields.
+#[test]
+fn store_state_msg_shape() {
+    let msg = ServerMsg::StoreState {
+        domain: store_domains::GLANCE.into(),
+        rev: 7,
+        json: "{\"nodes\":[]}".into(),
+    };
+    let v = serde_json::to_value(&msg).unwrap();
+    assert_eq!(v["type"], "store_state");
+    assert_eq!(v["domain"], "glance");
+    assert_eq!(v["rev"], 7);
+    assert_eq!(v["json"], "{\"nodes\":[]}");
+}
+
+/// The registered domain vocabulary is unique and spelled as expected (both repos share it).
+#[test]
+fn store_domain_vocabulary_is_unique() {
+    let all = store_domains::ALL;
+    let set: std::collections::HashSet<_> = all.iter().collect();
+    assert_eq!(set.len(), all.len(), "duplicate store_state domain");
+    assert!(all.contains(&"glance") && all.contains(&"plan") && all.contains(&"alerts"));
+}
+
+/// The store bus keeps the LAST store_state per domain (replay-on-connect semantics, #2497):
+/// a second push for the same domain replaces the first, other domains are untouched, and
+/// the snapshot comes back in stable (sorted-domain) order.
+#[test]
+fn store_state_replay_keeps_last_per_domain() {
+    let st = TunnelState::new();
+    assert!(st.store_states_snapshot().is_empty());
+
+    // Same store-then-broadcast path as the tunnel_set_store_state command.
+    let push = |domain: &str, rev: u64, json: &str| {
+        let frame = ServerMsg::StoreState { domain: domain.into(), rev, json: json.into() };
+        let d = domain.to_string();
+        st.set_and_broadcast(frame.clone(), |inner| {
+            inner.store_states.insert(d, frame);
+        });
+    };
+    push(store_domains::PLAN, 1, "{\"v\":1}");
+    push(store_domains::GLANCE, 1, "{\"g\":1}");
+    push(store_domains::PLAN, 2, "{\"v\":2}"); // supersedes plan rev 1
+
+    let frames = st.store_states_snapshot();
+    assert_eq!(frames.len(), 2, "one frame per domain");
+    // Sorted by domain: glance before plan.
+    match &frames[0] {
+        ServerMsg::StoreState { domain, rev, .. } => {
+            assert_eq!((domain.as_str(), *rev), ("glance", 1));
+        }
+        other => panic!("expected store_state, got {other:?}"),
+    }
+    match &frames[1] {
+        ServerMsg::StoreState { domain, rev, json } => {
+            assert_eq!((domain.as_str(), *rev), ("plan", 2), "last write per domain wins");
+            assert_eq!(json, "{\"v\":2}");
+        }
+        other => panic!("expected store_state, got {other:?}"),
+    }
+}
+
+/// A store_state push is broadcast to connected clients (the live-change leg; replay covers
+/// the connect leg).
+#[test]
+fn store_state_push_broadcasts_to_subscribers() {
+    let st = TunnelState::new();
+    let mut rx = st.subscribe_events();
+    let frame = ServerMsg::StoreState { domain: "org".into(), rev: 1, json: "{}".into() };
+    st.set_and_broadcast(frame.clone(), |inner| {
+        inner.store_states.insert("org".into(), frame);
+    });
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        ServerMsg::StoreState { domain, rev: 1, .. } if domain == "org"
+    ));
+}
+
+/// PaneDescriptor.kind (#2497) is optional both ways: absent on the wire ⇒ `None` (a v1
+/// pane list still parses), `None` serializes WITHOUT the key (a v1 client sees the old
+/// byte shape), `Some` round-trips.
+#[test]
+fn pane_descriptor_kind_is_optional_and_round_trips() {
+    // v1 descriptor (no kind) still parses.
+    let legacy: PaneDescriptor = serde_json::from_value(
+        serde_json::json!({ "id": "t0p0", "cwd": "/repo", "name": "api", "status": "running" }),
+    )
+    .unwrap();
+    assert_eq!(legacy.kind, None);
+    // None is omitted from the wire.
+    let v = serde_json::to_value(&legacy).unwrap();
+    assert!(v.get("kind").is_none(), "kind: None must not serialize");
+
+    // Some(kind) round-trips.
+    let worker = PaneDescriptor {
+        id: "proj:api-core".into(),
+        cwd: "/worktrees/proj/api--api-core".into(),
+        name: "api-core".into(),
+        status: "running".into(),
+        kind: Some("worker".into()),
+    };
+    let v = serde_json::to_value(&worker).unwrap();
+    assert_eq!(v["kind"], "worker");
+    let back: PaneDescriptor = serde_json::from_value(v).unwrap();
+    assert_eq!(back, worker);
 }
 
 // ── TunnelState snapshot methods ────────────────────────────────────────────
