@@ -4,6 +4,7 @@ import {
   coerceTransformationRows, specNodeCount, TRANSFORMATION_TAXONOMY, verbMeta,
   type TransformationRow,
 } from "./transformations";
+import { validateKitNode, demoSpec, type KitNode } from "@/shared/ui/spec";
 
 /** A minimal valid row; override per test. */
 const row = (over: Partial<TransformationRow> = {}): TransformationRow => ({
@@ -179,5 +180,46 @@ describe("specNodeCount", () => {
 
   it("ignores non-node objects (a target/provenance blob is not a node)", () => {
     expect(specNodeCount({ description: "not a node" })).toBe(0);
+  });
+});
+
+// The gap-fill preview contract (#2509 slice d): the Transformations stage prompt (Rust-owned,
+// src-tauri/data/stages/transformations.json) teaches the planner to author a KitNode `spec` on
+// every gap-fill row so the pane can render a LIVE preview of the proposed component. The Rust
+// prompt can't be imported into a frontend test, so we pin the SHAPE the playbook teaches against
+// the same `validateKitNode` the pane (and `bsc ui validate`) enforce — if this contract ever
+// changes, the taught example must change with it.
+describe("gap-fill preview spec — the KitNode contract the planner authors to (#2509 slice d)", () => {
+  it("the canonical demoSpec-shaped card (header + representative children) validates", () => {
+    // demoSpec is the reference card an agent copies when learning the contract.
+    expect(validateKitNode(demoSpec)).toEqual([]);
+  });
+
+  it("a DataGrid-style gap-fill sketch (the migrate-to-kit worked example's shape) validates", () => {
+    // The same shape the stage prompt's gap-fill worked example models: a `card` with a `header`
+    // and representative children composed purely from the 8 kinds — a proposal sketch, not code.
+    const spec: KitNode = {
+      kind: "card",
+      tone: "var(--accent)",
+      header: { kind: "header", title: "DataGrid", hint: "sortable + selectable" },
+      children: [
+        {
+          kind: "row",
+          label: "Columns",
+          children: [
+            { kind: "tag", label: "Name", tone: "accent" },
+            { kind: "tag", label: "Status", tone: "accent" },
+            { kind: "tag", label: "Amount", tone: "accent" },
+          ],
+        },
+        { kind: "row", label: "Select all", children: [{ kind: "toggle", bind: "selectAll" }] },
+        { kind: "text", text: "3 rows selected", tone: "muted" },
+        { kind: "field", control: "text", label: "Filter rows", bind: "filter", placeholder: "Search rows" },
+        { kind: "button", variant: "primary", label: "Export", action: "export" },
+      ],
+    };
+    expect(validateKitNode(spec)).toEqual([]);
+    // It is a real tree the pane's "n nodes" fallback can also count.
+    expect(specNodeCount(spec)).toBeGreaterThan(1);
   });
 });
