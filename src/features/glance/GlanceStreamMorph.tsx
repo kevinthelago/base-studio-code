@@ -50,6 +50,31 @@ export function GlanceStreamMorph({ node, paneId, name, role, onClose }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A CLICK anywhere OUTSIDE the card closes it (#2537). We do NOT use a scrim — that would swallow the
+  // graph's own gestures — so we listen at the window (capture phase, before any stopPropagation) and
+  // decide on mouseUP: only a press-release that STAYED put is a click. A press that DRAGGED past the
+  // viewport's own 4px pan threshold is a pan (or a terminal text-selection), so the graph keeps
+  // panning/zooming/selecting and the card stays open. A press that starts inside the card is ignored.
+  useEffect(() => {
+    let start: { x: number; y: number } | null = null;
+    const onDown = (e: MouseEvent) => {
+      start = (e.target as HTMLElement)?.closest(".glance-card") ? null : { x: e.clientX, y: e.clientY };
+    };
+    const onUp = (e: MouseEvent) => {
+      if (!start) return;
+      const moved = Math.abs(e.clientX - start.x) + Math.abs(e.clientY - start.y);
+      start = null;
+      if (moved <= 4) close(); // a click, not a drag/pan
+    };
+    window.addEventListener("mousedown", onDown, true);
+    window.addEventListener("mouseup", onUp, true);
+    return () => {
+      window.removeEventListener("mousedown", onDown, true);
+      window.removeEventListener("mouseup", onUp, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // World box: collapsed = the node's card; open = an expanded panel centered on the node's centre.
   const cx = node.x + NW / 2, cy = node.y + NH / 2;
   const box = open
