@@ -54,6 +54,17 @@ describe("DesignStudio (#2308)", () => {
     expect(graphNode("Chip").className).toContain("on");             // the node highlights
   });
 
+  it("selecting a node highlights its edges + softly rings its related nodes (#2523)", () => {
+    const { container } = render(<DesignStudio />);
+    fireEvent.click(graphNode("Chip"));                              // Chip composes StatusDot
+    expect(graphNode("Chip").className).toContain("on");             // the selection: full ring
+    expect(graphNode("StatusDot").className).toContain("related");   // its dependency: soft ring
+    expect(graphNode("StatusDot").className).not.toContain("on");    // .related, not the full .on
+    expect(container.querySelector("g.ds-edge.on")).toBeTruthy();    // an incident edge draws accent
+    // A node with no edge to Chip carries neither state.
+    expect(graphNode("Grid").className).not.toMatch(/\b(on|related)\b/);
+  });
+
   it("switching kits re-scopes the graph and selects the kit's first component", () => {
     // The packaged seed is the one react-ui kit (#2506 retired the examples kit), so switching is
     // exercised against a second, user-authored kit in the store.
@@ -115,8 +126,9 @@ describe("DesignStudio (#2308)", () => {
     expect(container.querySelector(".ds-preview-enter")).toBeNull();
     expect(container.querySelector(".ds-view-enter")).toBeNull();
     expect(container.querySelector(".ds-comprow-enter")).toBeNull();
-    // Graph (always mounted now): composition edges are plain (no flowing class).
-    expect(container.querySelector("path.ds-edge")).toBeNull();
+    // Graph (always mounted now): composition edges carry no flowing/animation class (the #2523
+    // `.ds-edge`/`.on` state hooks are static styling, not motion).
+    expect(container.querySelector(".ds-edge-flow")).toBeNull();
   });
 
   it("the inspector shows the composes graph for a component that has dependencies", () => {
