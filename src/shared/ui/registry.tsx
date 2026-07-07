@@ -55,6 +55,8 @@ import { LabelChip } from "./data/LabelChip";
 import { ActivityFeed } from "./data/ActivityFeed";
 import { Pane } from "./overlay/Pane";
 import { TelemetryPanel, ItemBars, SplitBar } from "./charts/telemetry";
+// #2475 — the key-value record rendering
+import { KeyValueList } from "./data/KeyValueList";
 
 // Heterogeneous prop shapes — a render-map is intentionally prop-agnostic.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,6 +75,7 @@ export const UI_COMPONENTS: Record<PrimitiveName, AnyComponent> = {
   Banner, InlineError, EmptyState, StatusDot, Skeleton,
   MasterDetail, SplitView, GraphCanvas, PaneGrid,
   LabelChip, ActivityFeed, Pane, TelemetryPanel, ItemBars, SplitBar,
+  KeyValueList,
 };
 
 /** Resolve a primitive name to its component (undefined for an unknown name). */

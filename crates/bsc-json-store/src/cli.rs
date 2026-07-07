@@ -29,7 +29,8 @@ pub struct CliSpec {
     /// The command catalog (drives dispatch validation + the shared help system).
     pub commands: &'static [CmdDoc],
     /// The keys the lean `list` projects from each stored object (`["id","name"]` / `["id","name","role"]`),
-    /// each rendered as the stored string or `""` when absent.
+    /// each rendered as the stored string — or verbatim for a non-string value (e.g. the component
+    /// store's `shapes` array, #2475) — and `""` when absent.
     pub meta_fields: &'static [&'static str],
 }
 
@@ -152,15 +153,21 @@ pub fn id_of(v: &Value, noun: &str) -> Result<String, String> {
 }
 
 /// The lean `list` projection one record contributes: an object with just `fields`, each the stored
-/// string or `""` when missing — robust to odd-shaped files (an unparseable blob yields all-empty,
-/// never a panic). `fields` are alphabetically ordered by the two shipped specs (`id`,`name`,`role`),
+/// string — a NON-string value (an array like the component store's `shapes`, #2475) rides verbatim —
+/// or `""` when missing / null; robust to odd-shaped files (an unparseable blob yields all-empty,
+/// never a panic). `fields` are alphabetically ordered by the shipped specs (`id`,`name`,`role`,…),
 /// so the `serde_json::Map` (BTreeMap) render is byte-identical to the old derived structs.
-fn lean_meta(json: &str, fields: &[&str]) -> Value {
+/// Public so a wrapper's custom read verbs (e.g. `bsc ui list --shape`) project the SAME lean shape.
+pub fn lean_meta(json: &str, fields: &[&str]) -> Value {
     let v: Value = serde_json::from_str(json).unwrap_or(Value::Null);
     let mut m = serde_json::Map::new();
     for f in fields {
-        let val = v.get(*f).and_then(Value::as_str).unwrap_or_default().to_string();
-        m.insert((*f).to_string(), Value::String(val));
+        let val = match v.get(*f) {
+            Some(Value::String(s)) => Value::String(s.clone()),
+            Some(Value::Null) | None => Value::String(String::new()),
+            Some(other) => other.clone(),
+        };
+        m.insert((*f).to_string(), val);
     }
     Value::Object(m)
 }
@@ -202,6 +209,18 @@ mod tests {
         // A field-less / unparseable blob yields empty strings for each field, never a panic.
         let m = lean_meta("not json", &["id", "name"]);
         assert_eq!(m, serde_json::json!({"id":"","name":""}));
+    }
+
+    #[test]
+    fn lean_meta_rides_non_string_fields_verbatim() {
+        // The component store's `shapes` array (#2475) projects verbatim; absent stays "".
+        let m = lean_meta(r#"{"id":"masterdetail","shapes":["list"]}"#, &["id", "shapes"]);
+        assert_eq!(m, serde_json::json!({"id":"masterdetail","shapes":["list"]}));
+        let m = lean_meta(r#"{"id":"button"}"#, &["id", "shapes"]);
+        assert_eq!(m, serde_json::json!({"id":"button","shapes":""}));
+        // An explicit null renders as "" too (matching the absent case).
+        let m = lean_meta(r#"{"id":"x","shapes":null}"#, &["id", "shapes"]);
+        assert_eq!(m, serde_json::json!({"id":"x","shapes":""}));
     }
 
     #[test]

@@ -38,6 +38,7 @@ export async function loadComponents(): Promise<ComponentRecord[] | null> {
         builtin: c.builtin,
         wraps: c.wraps,
         rules: c.rules,
+        shapes: c.shapes,
       }));
   } catch {
     return null;
