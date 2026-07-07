@@ -183,8 +183,24 @@ fn shared_fixture_matches_serde() {
     // server → client: our serialization equals the fixture byte-shape.
     let s = &fx["serverToClient"];
     assert_eq!(
-        serde_json::to_value(ServerMsg::AuthOk { protocol_version: PROTOCOL_VERSION }).unwrap(),
+        serde_json::to_value(ServerMsg::AuthOk {
+            protocol_version: PROTOCOL_VERSION,
+            input_granted: false,
+        })
+        .unwrap(),
         s["auth_ok"]
+    );
+    // auth_ok_pre_grant pins the pre-#2511 frame WITHOUT inputGranted — a decode-side pin
+    // for mobile (an old desktop omits the field); the current desktop always serializes
+    // it, so only the shape (not our serialization) is asserted here.
+    assert_eq!(s["auth_ok_pre_grant"]["type"], "auth_ok");
+    assert!(
+        s["auth_ok_pre_grant"].get("inputGranted").is_none(),
+        "auth_ok_pre_grant must stay grant-less (pins the optional field for old desktops)"
+    );
+    assert_eq!(
+        serde_json::to_value(ServerMsg::InputGrantChanged { granted: true }).unwrap(),
+        s["input_grant_changed"]
     );
     assert_eq!(
         serde_json::to_value(ServerMsg::StoreState {
@@ -741,11 +757,18 @@ fn app_messages_roundtrip_through_the_noise_session() {
     let (mut host, mut mobile) = handshake_pair();
 
     // desktop → mobile: encode a ServerMsg, decrypt + parse on the mobile side.
-    let frame = transport::encode(&mut host, &ServerMsg::AuthOk { protocol_version: PROTOCOL_VERSION }).unwrap();
+    let frame = transport::encode(
+        &mut host,
+        &ServerMsg::AuthOk { protocol_version: PROTOCOL_VERSION, input_granted: false },
+    )
+    .unwrap();
     let mut out = vec![0u8; frame.len()];
     let n = mobile.read_message(&frame, &mut out).unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out[..n]).unwrap();
-    assert_eq!(v, serde_json::json!({ "type": "auth_ok", "protocolVersion": PROTOCOL_VERSION }));
+    assert_eq!(
+        v,
+        serde_json::json!({ "type": "auth_ok", "protocolVersion": PROTOCOL_VERSION, "inputGranted": false })
+    );
 
     // mobile → desktop: a client `auth` frame decodes via decode_room_msg.
     let cj = serde_json::to_vec(&serde_json::json!({ "type": "auth", "token": "secret" })).unwrap();
@@ -1007,11 +1030,59 @@ fn auth_protocol_version_round_trips_and_defaults_to_none() {
     .unwrap();
     assert!(matches!(v2, ClientMsg::Auth { protocol_version: Some(2), .. }));
 
-    // auth_ok carries the desktop's version, camelCase on the wire.
-    let ok = serde_json::to_value(ServerMsg::AuthOk { protocol_version: PROTOCOL_VERSION }).unwrap();
+    // auth_ok carries the desktop's version, camelCase on the wire — and, since #2511,
+    // ALWAYS the current input grant (mobile treats it as optional for old desktops).
+    let ok = serde_json::to_value(ServerMsg::AuthOk {
+        protocol_version: PROTOCOL_VERSION,
+        input_granted: true,
+    })
+    .unwrap();
     assert_eq!(ok["type"], "auth_ok");
     assert_eq!(ok["protocolVersion"], PROTOCOL_VERSION);
     assert!(ok.get("protocol_version").is_none());
+    assert_eq!(ok["inputGranted"], true);
+    assert!(ok.get("input_granted").is_none());
+}
+
+// ── Input grant on the wire (#2511) ──────────────────────────────────────────
+
+/// `input_grant_changed` serializes with the snake_case tag + bare `granted` bool —
+/// the mid-session companion to `auth_ok.inputGranted` (which covers connect time).
+#[test]
+fn input_grant_changed_msg_shape() {
+    let v = serde_json::to_value(ServerMsg::InputGrantChanged { granted: false }).unwrap();
+    assert_eq!(v, serde_json::json!({ "type": "input_grant_changed", "granted": false }));
+}
+
+/// Toggling the grant broadcasts `input_grant_changed` to connected clients; an
+/// idempotent re-set is silent (no duplicate frame), and connect-time state is
+/// auth_ok's job — this bus event is only the live-change leg (#2511).
+#[test]
+fn input_grant_toggle_broadcasts_change_frames_only() {
+    let st = TunnelState::new();
+    let mut rx = st.subscribe_events();
+
+    // false → false: idempotent, nothing on the bus (fresh state is view-only).
+    st.set_input_granted(false);
+    assert!(rx.try_recv().is_err(), "idempotent re-set must not broadcast");
+
+    // false → true: broadcast granted=true.
+    st.set_input_granted(true);
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        ServerMsg::InputGrantChanged { granted: true }
+    ));
+
+    // true → true: idempotent again.
+    st.set_input_granted(true);
+    assert!(rx.try_recv().is_err(), "idempotent re-grant must not broadcast");
+
+    // true → false: broadcast the revoke.
+    st.set_input_granted(false);
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        ServerMsg::InputGrantChanged { granted: false }
+    ));
 }
 
 /// store_state serializes with the snake_case tag and its three domain-agnostic fields.

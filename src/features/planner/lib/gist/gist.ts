@@ -150,15 +150,17 @@ export type GistTextResult =
 export async function fetchGistManifestText(ref: string, token = ""): Promise<GistTextResult> {
   const id = gistIdFromUrl(ref);
   if (!id) return { ok: false, error: "that doesn't look like a gist URL or id" };
-  let gist: GistApiResponse;
+  let gist: GistApiResponse | null;
   try {
-    gist = (await invoke("github_request", { token, path: `gists/${id}`, maxAgeSecs: 0, force: true })) as GistApiResponse;
+    gist = (await invoke("github_request", { token, path: `gists/${id}`, maxAgeSecs: 0, force: true })) as GistApiResponse | null;
   } catch (e) {
     return { ok: false, error: `couldn't fetch the gist: ${String(e)}` };
   }
-  const content = pickManifestContent(gist.files);
+  // A missing/404 gist can come back as null rather than a throw (#2515) — that's a soft
+  // "not found", never a TypeError.
+  const content = pickManifestContent(gist?.files);
   if (!content) return { ok: false, error: "no extension manifest found in that gist" };
-  return { ok: true, text: content, ...(gist.owner?.login ? { owner: gist.owner.login } : {}) };
+  return { ok: true, text: content, ...(gist?.owner?.login ? { owner: gist.owner.login } : {}) };
 }
 
 /**

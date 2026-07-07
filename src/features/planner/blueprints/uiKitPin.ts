@@ -102,9 +102,13 @@ export async function resolveUiKitPin(pin: BlueprintUiKit, token = ""): Promise<
 export function resolveBlueprintUiKit(bp: Pick<Blueprint, "name" | "uiKit"> | undefined, token = ""): void {
   const pin = bp?.uiKit;
   if (!pin) return;
-  void resolveUiKitPin(pin, token).then((res) => {
-    if (!res.ok) log.error(`blueprint "${bp?.name ?? "?"}": ${res.error}`);
-  });
+  void resolveUiKitPin(pin, token).then(
+    (res) => {
+      if (!res.ok) log.error(`blueprint "${bp?.name ?? "?"}": ${res.error}`);
+    },
+    // Fire-and-forget: an unexpected throw must land in the log, never as an unhandled rejection (#2515).
+    (e) => log.error(`blueprint "${bp?.name ?? "?"}": UI-kit resolve failed: ${String(e)}`),
+  );
 }
 
 /** The store-identity block a published kit gist carries in its payload (`payload.store`). */

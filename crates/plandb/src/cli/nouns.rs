@@ -174,6 +174,108 @@ pub(crate) fn cmd_market(args: &Args) -> Result<(), String> {
     )
 }
 
+/// `transformation` — the Transformations stage's list (#2509): the modification counterpart to
+/// features, one JSON-per-row (the `fleet_streams` shape) backing the bottom-up confirm queue.
+/// Writes validate at set-time (#2395: verb taxonomy, discovered target, delta, invariants, owns,
+/// tier — field-level rejects, batch rejected whole); every write echoes the queue's readiness
+/// (`N transformations · M confirmed · tiers 0-K`) so the gate distance is always visible. The
+/// `confirm` verb is the PANE's (the user's one action per queue item) — the planner never runs it.
+pub(crate) fn cmd_transformation(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        // `transformation add` — upsert row(s) from stdin JSON (one object or an array). The whole
+        // batch validates before ANY row persists, so a bad item can't leave a half-written queue.
+        "add" => {
+            let v: serde_json::Value = bsc_sqlite_util::read_stdin_json_one("transformation JSON")?;
+            let rows: Vec<serde_json::Value> = match &v {
+                serde_json::Value::Array(a) => a.clone(),
+                other => vec![other.clone()],
+            };
+            if !args.force {
+                crate::validate::validate_transformations(&rows)?;
+            }
+            let ids = s.transformation_add(&v).map_err(|e| e.to_string())?;
+            emit_set_result(args.json, &ids, "");
+            transformation_echo(args, &s)
+        }
+        "list" => {
+            let rows = s.transformation_list().map_err(|e| e.to_string())?;
+            emit_json_or_lines(args.json, &rows, "(no transformations)", |_, t| render_transformation_line(t));
+            Ok(())
+        }
+        "get" => {
+            let id = args.positional.get(2).ok_or("usage: bsc plan transformation get <id>")?;
+            match s.transformation_get(id).map_err(|e| e.to_string())? {
+                Some(t) => {
+                    print_json(&t, args.pretty);
+                    Ok(())
+                }
+                None => Err(format!("no transformation with id '{id}'")),
+            }
+        }
+        // `transformation update <id>` — replace one row (position kept, so the item re-presents in
+        // place in the queue). Never an implicit add: an unknown id is an error.
+        "update" => {
+            let id = args.positional.get(2).ok_or("usage: bsc plan transformation update <id>  (JSON on stdin)")?;
+            let v: serde_json::Value = bsc_sqlite_util::read_stdin_json_one("transformation JSON")?;
+            if !args.force {
+                crate::validate::validate_transformation_update(id, &v)?;
+            }
+            if !s.transformation_update(id, &v).map_err(|e| e.to_string())? {
+                return Err(format!(
+                    "no transformation with id '{id}' — use `bsc plan transformation add` for a new row"
+                ));
+            }
+            if !args.json {
+                println!("updated {id} — the item re-presents in the confirm queue");
+            }
+            transformation_echo(args, &s)
+        }
+        // `transformation confirm <id>` — the USER's one action per queue item (the pane drives it).
+        "confirm" => {
+            let id = args.positional.get(2).ok_or("usage: bsc plan transformation confirm <id>")?;
+            if !s.transformation_confirm(id).map_err(|e| e.to_string())? {
+                return Err(format!("no transformation with id '{id}'"));
+            }
+            if !args.json {
+                println!("confirmed {id}");
+            }
+            transformation_echo(args, &s)
+        }
+        "remove" => {
+            let id = args.positional.get(2).ok_or("usage: bsc plan transformation remove <id>")?;
+            s.transformation_remove(id).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("removed {id}");
+            }
+            Ok(())
+        }
+        other => Err(unknown_sub(args, "transformation", other)),
+    }
+}
+
+/// The human-mode readiness echo after any transformation write — the #2395 echo pattern, over the
+/// whole stored queue (`N transformations · M confirmed · tiers 0-K`).
+fn transformation_echo(args: &Args, s: &crate::Store) -> Result<(), String> {
+    if !args.json {
+        let all = s.transformation_list().map_err(|e| e.to_string())?;
+        println!("{}", crate::validate::transformations_readiness(&all));
+    }
+    Ok(())
+}
+
+/// One queue line: `replace-bespoke-buttons      · replace  tier 0  Replace the bespoke buttons`
+/// (· = pending, ✓ = confirmed), emitted in queue (position) order.
+fn render_transformation_line(t: &serde_json::Value) -> String {
+    let id = t.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+    let mark = if t.get("confirmed").and_then(|v| v.as_bool()).unwrap_or(false) { "✓" } else { "·" };
+    let verb = t.get("verb").and_then(|v| v.as_str()).unwrap_or("?");
+    let tier = t.get("tier").and_then(|v| v.as_i64()).unwrap_or(0);
+    let title = t.get("title").and_then(|v| v.as_str()).unwrap_or("");
+    format!("{id:<28} {mark} {verb:<8} tier {tier}  {title}")
+}
+
 /// `mcp` — catalog MCP servers scoped to the project (durable in plan.db).
 pub(crate) fn cmd_mcp(args: &Args) -> Result<(), String> {
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");

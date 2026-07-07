@@ -39,6 +39,9 @@ export const ICONS: Record<string, string> = {
   science: '<path d="M9 3h6"/><path d="M10 3v6.5L5 19a1 1 0 0 0 .9 1.5h12.2A1 1 0 0 0 19 19l-5-9.5V3"/><path d="M7.5 14h9"/>',
   security: '<path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/>',
   monitoring: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+  // query_stats — the market-research stage (#2430): a trend line under a magnifier (#2515: the
+  // stage shipped referencing this glyph without an entry here, so its card fell to `category`).
+  query_stats: '<path d="M2 14l3.5-5 3 3.5L12 7l2.5 3.5"/><circle cx="16.5" cy="15.5" r="4"/><path d="m19.5 18.5 2.5 2.5"/>',
   dns: '<rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/>',
   deployed_code: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22" x2="12" y2="12"/>',
   menu_book: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',

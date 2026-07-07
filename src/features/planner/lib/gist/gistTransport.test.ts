@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { gistIdFromUrl, pickManifestContent, publishGist, updateGist, installFromGist, MANIFEST_FILENAME } from "./gist";
+import { gistIdFromUrl, pickManifestContent, publishGist, updateGist, installFromGist, fetchGistManifestText, MANIFEST_FILENAME } from "./gist";
 import { wrapExtension } from "./manifest";
 
 describe("gist transport — pure helpers (#598)", () => {
@@ -61,5 +61,11 @@ describe("gist transport — invoke-backed (#598)", () => {
     expect((await installFromGist("nonsense")).ok).toBe(false);
     vi.mocked(invoke).mockResolvedValueOnce({ id: "gid", files: { "readme.md": { content: "hi", filename: "readme.md" } } });
     expect((await installFromGist("0123456789abcdef")).ok).toBe(false);
+  });
+
+  it("fetchGistManifestText soft-fails on a null/404 gist response instead of throwing (#2515)", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(null);
+    const res = await fetchGistManifestText("0123456789abcdef");
+    expect(res).toEqual({ ok: false, error: "no extension manifest found in that gist" });
   });
 });

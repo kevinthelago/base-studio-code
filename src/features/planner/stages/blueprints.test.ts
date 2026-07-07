@@ -143,11 +143,15 @@ describe("blueprints — seed library", () => {
     expect(bp!.origin).toBe("built-in");
     const keys = bp!.sections.map((s) => s.key);
     // Converted from the old imported vocabulary (context/repos/architecture/structure/permissions/
-    // testing) into the current model: discovery → deployment → features → ui? → streams.
-    expect(keys).toEqual(["discovery", "deployment", "features", "ui", "streams"]);
+    // testing) into the current model: discovery → transformations? → deployment → features → ui?
+    // → streams. Transformations (#2509) is the modification list, right after discovery.
+    expect(keys).toEqual(["discovery", "transformations", "deployment", "features", "ui", "streams"]);
     // every stage key resolves to a real def (no orphan/legacy keys survive the conversion)
     for (const k of keys) expect(STAGE_DEFS[k], `stage '${k}' resolves`).toBeTruthy();
-    // Features before UI (#825), and UI is the only optional stage
+    // Transformations right after discovery (#2509), and optional (a pure feature-add plan skips it).
+    expect(keys.indexOf("transformations")).toBe(keys.indexOf("discovery") + 1);
+    expect(bp!.sections.find((s) => s.key === "transformations")!.optional).toBe(true);
+    // Features before UI (#825); UI + transformations are the optional stages
     expect(keys.indexOf("features")).toBeLessThan(keys.indexOf("ui"));
     expect(bp!.sections.find((s) => s.key === "ui")!.optional).toBe(true);
   });

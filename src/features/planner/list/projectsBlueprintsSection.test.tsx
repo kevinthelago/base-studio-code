@@ -80,9 +80,9 @@ describe("ProjectsList — Blueprints section", () => {
     fireEvent.click(screen.getByText("start planning →"));
     await waitFor(() => {
       const s = useAppStore.getState();
-      // #1741: the workspace key is a minted, opaque stable id — NOT the title-derived "My_New_App".
-      expect(s.planningSessionKey).toMatch(/^p-[a-z0-9]+-[a-z0-9]{6}$/);
-      expect(s.planningSessionKey).not.toBe("My_New_App");
+      // #2409 (supersedes the #1741 minted id): the workspace key IS the name-derived slug,
+      // frozen at creation — `projectSlug("My New App")`.
+      expect(s.planningSessionKey).toBe("my-new-app");
       // …and the blueprint is bound to the selection at creation, under that same stable key.
       expect(s.projectBlueprintId[s.planningSessionKey]).toBe("fullstack");
     });
@@ -111,7 +111,8 @@ describe("ProjectsList — Blueprints section", () => {
     fireEvent.click(screen.getByText("modify in planner"));
     const s = useAppStore.getState();
     expect(s.projectsView).toBe("planning");                              // → planner
-    expect(s.projectBlueprintId["My_Greenfield"]).toBe(AUTHORING_BLUEPRINT_ID);
-    expect(s.planAuthoredBlueprint["My_Greenfield"]?.name).toBe("My Greenfield"); // seeded with the blueprint
+    // #2409: the authoring session keys off `projectSlug(name)`, same rule as projects.
+    expect(s.projectBlueprintId["my-greenfield"]).toBe(AUTHORING_BLUEPRINT_ID);
+    expect(s.planAuthoredBlueprint["my-greenfield"]?.name).toBe("My Greenfield"); // seeded with the blueprint
   });
 });

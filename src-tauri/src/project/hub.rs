@@ -543,7 +543,9 @@ mod relocated_tests {
         assert_eq!(title_from_key("video_game").as_deref(), Some("Video Game"));
         assert_eq!(title_from_key("p-mr7zkqjn-xoufes"), None, "minted id stays opaque");
         assert_eq!(title_from_key("p-abc-xyz"), None, "two-part lowercase p-… treated as minted");
-        assert_eq!(title_from_key("p-Card-Tracker").as_deref(), Some("P Card Tracker"), "mixed case is not a minted id");
+        // Mixed case ⇒ not a minted id, and the user's own casing is KEPT (no Title Case pass) —
+        // the documented contract; the old literal "P Card Tracker" contradicted it (#2515).
+        assert_eq!(title_from_key("p-Card-Tracker").as_deref(), Some("p Card Tracker"), "mixed case is not a minted id");
 
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = temp_home("tfk");
