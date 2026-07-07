@@ -5,6 +5,7 @@
 // until the global `bsc ui` store lands (then `hydrateComponents` replaces it).
 import type { ComponentRecord, Kit } from "./model";
 import { makeBuiltinKits } from "./builtinKits";
+import { reconcileSeed, type SeedReconcile } from "./seedRefresh";
 
 const { kits, components } = makeBuiltinKits();
 
@@ -14,17 +15,18 @@ export const SEED_KITS: Kit[] = kits;
 /** The packaged built-in components — the generated react-ui kit + the examples demo kit. */
 export const SEED_COMPONENTS: ComponentRecord[] = components;
 
-/** Reconcile the store's loaded components with the packaged built-ins: the store wins for records it
- *  has (so a user edit to a built-in is preserved), and any built-in the store LACKS is re-added — the
- *  same seed-and-keep pattern as personas/orgs. `hydrateComponents` re-pushes the re-added built-ins so
- *  the store converges. */
-export function reconcileComponents(loaded: ComponentRecord[]): ComponentRecord[] {
-  const have = new Set(loaded.map((c) => c.id));
-  return [...loaded, ...SEED_COMPONENTS.filter((b) => !have.has(b.id))];
+/** Reconcile the store's loaded components with the packaged built-ins (#2483, hash-based refresh —
+ *  the full verdict table lives on {@link reconcileSeed}): a PRISTINE built-in copy (its content
+ *  still hashes to its stamped `seedHash`; a legacy no-hash copy counts as pristine) tracks the
+ *  seed — refreshed when the seed changed, deleted when the built-in left the seed. A USER-EDITED
+ *  built-in is always kept (store wins), with a notice when the seed diverged. User-authored records
+ *  are never touched; built-ins the store lacks are re-added. `hydrateComponents` applies the
+ *  pushes/drops so the store converges. */
+export function reconcileComponents(loaded: ComponentRecord[]): SeedReconcile<ComponentRecord> {
+  return reconcileSeed(loaded, SEED_COMPONENTS, "component");
 }
 
 /** Reconcile loaded kits with the packaged built-in kits (see {@link reconcileComponents}). */
-export function reconcileKits(loaded: Kit[]): Kit[] {
-  const have = new Set(loaded.map((k) => k.id));
-  return [...loaded, ...SEED_KITS.filter((b) => !have.has(b.id))];
+export function reconcileKits(loaded: Kit[]): SeedReconcile<Kit> {
+  return reconcileSeed(loaded, SEED_KITS, "kit");
 }

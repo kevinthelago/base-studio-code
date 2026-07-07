@@ -1,0 +1,158 @@
+// Hash-based built-in seed refresh (#2483) — the pure decision spine that replaced the frozen
+// seed-and-keep reconcile. The store wins ONLY for records the user actually edited; a pristine
+// built-in copy tracks the packaged seed release-to-release (the react-ui kit is GENERATED from the
+// app's own source, so every release drifts the seed).
+//
+// The mechanism: every packaged built-in carries a `seedHash` — a small content hash of its
+// seed-relevant fields, stamped at seed-assembly time (`makeBuiltinKits`). A store copy whose
+// current content still hashes to its recorded `seedHash` is UNMODIFIED (safe to refresh/delete);
+// one that no longer does was edited by the user (kept, with an "updated upstream" notice when the
+// seed moved too).
+//
+// Hash exclusions (the "volatile" set, `SEED_HASH_EXCLUDED`):
+//   - `seedHash`  — the stamp itself can never feed its own hash.
+//   - `builtin`   — provenance, not content (stamped on assembly AND carried by the bridge).
+//   - `used`      — the runtime reuse counter; it drifts without a user edit.
+// Everything else on the record IS seed content — a change to any other field is a user edit (store
+// copy) or a new release (seed copy).
+//
+// Deliberately GENERIC over `{ id, name, builtin?, seedHash? }` (components AND kits today) so the
+// same helper can be extracted for the other seed-and-keep stores (personas, orgs, blueprints) later
+// — it has no component-specific knowledge beyond the volatile-field list above.
+
+/** The minimum shape the reconcile needs; components and kits both satisfy it. */
+export interface SeedRecord {
+  id: string;
+  name: string;
+  /** A packaged built-in. Absent/false ⇒ user-authored (never touched by the reconcile). */
+  builtin?: boolean;
+  /** The content hash stamped when this copy was seeded (#2483). Absent ⇒ a legacy pre-#2483 copy. */
+  seedHash?: string;
+}
+
+/** Fields excluded from the seed hash — see the module doc for why each. */
+export const SEED_HASH_EXCLUDED = ["seedHash", "builtin", "used"] as const;
+
+/** Deterministic JSON: keys sorted recursively, `undefined` properties dropped (so an absent
+ *  optional field and an explicitly-undefined one hash identically). */
+export function stableStringify(v: unknown): string {
+  if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";
+  if (Array.isArray(v)) return `[${v.map((x) => (x === undefined ? "null" : stableStringify(x))).join(",")}]`;
+  const o = v as Record<string, unknown>;
+  const keys = Object.keys(o).filter((k) => o[k] !== undefined).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(o[k])}`).join(",")}}`;
+}
+
+/** FNV-1a 32-bit over the text, as 8 hex digits. Not cryptographic — a drift detector, not a
+ *  security boundary (the store is the user's own local files). */
+export function fnv1a(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+/** The seed hash of a record's CURRENT content (volatile fields excluded). */
+export function seedHashOf(record: SeedRecord): string {
+  const rest: Record<string, unknown> = { ...record };
+  for (const k of SEED_HASH_EXCLUDED) delete rest[k];
+  return fnv1a(stableStringify(rest));
+}
+
+/** Stamp a record with its own content hash — what `makeBuiltinKits` applies to every packaged
+ *  built-in at seed-assembly time (the packaged JSON files do NOT bake the field in). */
+export function stampSeedHash<T extends SeedRecord>(record: T): T {
+  return { ...record, seedHash: seedHashOf(record) };
+}
+
+/** What a notice is about. */
+export type SeedNoticeType = "component" | "kit";
+
+/** A reconcile outcome the user should see (the propagation-surface record, #2483). */
+export interface SeedNotice {
+  /** `updated-upstream`: the packaged built-in changed but the user's customized copy was kept.
+   *  `orphaned`: the built-in left the seed but the user's customized copy was kept. */
+  kind: "updated-upstream" | "orphaned";
+  type: SeedNoticeType;
+  id: string;
+  name: string;
+}
+
+/** The reconcile verdicts: the final collection + the write-through work to converge the store. */
+export interface SeedReconcile<T extends SeedRecord> {
+  /** The reconciled collection (loaded order, refreshed in place; missing seeds appended). */
+  records: T[];
+  /** Records to write through (`bsc ui set` / `kit set`): refreshed + newly-added built-ins. */
+  pushes: T[];
+  /** Ids to remove from the store (`bsc ui remove` / `kit remove`): deleted built-ins. */
+  drops: string[];
+  /** The "kept but diverged" outcomes to surface. */
+  notices: SeedNotice[];
+}
+
+/**
+ * Reconcile the store's loaded records with the packaged seed (#2483). Verdict table — for a loaded
+ * record with `builtin: true` ("modified" = its content no longer hashes to its recorded `seedHash`;
+ * a record with NO `seedHash` is a legacy pre-#2483 copy, grandfathered as UNMODIFIED — all three
+ * real rot incidents were pristine copies, so this heals every existing install once):
+ *
+ * | in seed? | modified? | seed moved (`seed.seedHash !== record.seedHash`)? | verdict |
+ * |---|---|---|---|
+ * | yes | no  | yes (incl. legacy no-hash) | REFRESH — take the new seed copy, push it |
+ * | yes | no  | no                         | keep the store copy (already current) |
+ * | yes | yes | yes (incl. legacy… n/a)    | KEEP + `updated-upstream` notice |
+ * | yes | yes | no                         | keep (customized, seed unchanged) |
+ * | no  | no  |                            | DELETE (drop from store) |
+ * | no  | yes |                            | KEEP + `orphaned` notice |
+ *
+ * Non-builtin (user-authored) loaded records pass through untouched, always. Seed records the store
+ * lacks are appended + pushed (the original seed-and-keep add).
+ *
+ * @param loaded the store's records (from the bridge).
+ * @param seed   the packaged built-ins, seedHash-stamped (`makeBuiltinKits`).
+ * @param type   what the records are (for the notices).
+ */
+export function reconcileSeed<T extends SeedRecord>(loaded: T[], seed: T[], type: SeedNoticeType): SeedReconcile<T> {
+  const seedById = new Map(seed.map((s) => [s.id, s]));
+  const records: T[] = [];
+  const pushes: T[] = [];
+  const drops: string[] = [];
+  const notices: SeedNotice[] = [];
+
+  for (const rec of loaded) {
+    if (!rec.builtin) {
+      records.push(rec); // user-authored — never touched
+      continue;
+    }
+    const seeded = seedById.get(rec.id);
+    // Legacy pre-#2483 copies (no seedHash) are grandfathered as unmodified.
+    const modified = rec.seedHash !== undefined && seedHashOf(rec) !== rec.seedHash;
+    if (seeded) {
+      const seedMoved = (seeded.seedHash ?? seedHashOf(seeded)) !== rec.seedHash;
+      if (!modified && seedMoved) {
+        records.push(seeded); // pristine + stale → refresh to the new seed copy
+        pushes.push(seeded);
+      } else {
+        records.push(rec); // current, or customized (store wins)
+        if (modified && seedMoved) notices.push({ kind: "updated-upstream", type, id: rec.id, name: rec.name });
+      }
+    } else if (modified) {
+      records.push(rec); // customized copy of a retired built-in — keep, but say so
+      notices.push({ kind: "orphaned", type, id: rec.id, name: rec.name });
+    } else {
+      drops.push(rec.id); // pristine copy of a retired built-in → delete
+    }
+  }
+
+  // Built-ins the store lacks entirely (first run / newly packaged) — append + push.
+  const have = new Set(loaded.map((r) => r.id));
+  for (const s of seed) {
+    if (have.has(s.id)) continue;
+    records.push(s);
+    pushes.push(s);
+  }
+
+  return { records, pushes, drops, notices };
+}

@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
-import { KitChangesCard } from "./KitChangesCard";
+import { KitChangesCard, SeedNoticesCard } from "./KitChangesCard";
 import { DesignerTerminal } from "./DesignerTerminal";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -183,6 +183,8 @@ export function DesignStudio() {
 
       {/* kit-change propagation notify surface (#2277) — renders only when changes are pending */}
       <KitChangesCard />
+      {/* built-in seed-refresh notices (#2483) — customized built-ins kept through a seed divergence */}
+      <SeedNoticesCard />
 
       {/* ── body ── */}
       <Box className="ds-body">
