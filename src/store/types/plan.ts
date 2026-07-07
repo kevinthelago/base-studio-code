@@ -9,6 +9,7 @@ import type { StageConfig, StageId } from "@/features/planner/stages/planStages"
 import type { StageRunState } from "@/features/planner/preview/stageRun";
 import type { Blueprint, BlueprintStage } from "@/features/planner/stages/blueprints";
 import type { DeployConfig } from "@/features/planner/lib/deployConfig";
+import type { MarketConfig } from "@/features/planner/lib/marketConfig";
 import type { SourceConfig } from "@/features/planner/lib/sourceConfig";
 import type { IntegrationConfig } from "@/features/planner/lib/integrationConfig";
 import type { DataModel } from "@/features/planner/data/dataModel";
@@ -59,6 +60,11 @@ export interface PlanState {
    *  stage pane; the `deploymentDefined` gate signal derives from it. */
   planDeployConfig: Record<string, DeployConfig>;
   setPlanDeployConfig: (projectId: string, cfg: DeployConfig) => void;
+  /** Per-project market assessment (#2430) — the scored desk-research rubric the planner records
+   *  via `bsc plan market set` (reflected from plan.db by the stage poll); the `marketDefined`
+   *  gate signal derives from it. */
+  planMarketConfig: Record<string, MarketConfig>;
+  setPlanMarketConfig: (projectId: string, cfg: MarketConfig) => void;
   /** Per-project migration SOURCE config (#source-pane) — the legacy systems a project migrates
    *  from, declared + connected read-only in the Source stage pane; the `sourcesConnected` gate
    *  signal derives from it. Secret credentials are NEVER stored here (they live in the OS keychain). */

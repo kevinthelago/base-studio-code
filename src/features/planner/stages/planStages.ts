@@ -31,6 +31,7 @@ const stageRegistry = overlayFile("planner/stage-registry.json", stageRegistryEm
  *  but exists in the union so other stages and signal consumers can reference it by name. */
 export type StageId =
   | "discovery"
+  | "market"
   | "deployment"
   | "source"
   | "features"
