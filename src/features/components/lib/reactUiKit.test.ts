@@ -88,6 +88,29 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     expect(byName("StatCard")!.composes).toEqual(expect.arrayContaining(["Card", "StatTile"]));
   });
 
+  it("stamps the data-shape axis honestly — exact sets, audited components only (#2475)", () => {
+    // The ideal-rendering index the planner queries via `bsc ui shapes` / `bsc ui list --shape`.
+    expect(byName("MasterDetail")!.shapes).toEqual(["list"]);     // rail = select-a-row list → detail
+    expect(byName("GraphCanvas")!.shapes).toEqual(["graph"]);     // node/edge pan-zoom world
+    expect(byName("DataTableRow")!.shapes).toEqual(["table"]);    // aligned fixed-column records
+    expect(byName("CardListRow")!.shapes).toEqual(["list"]);      // the card-list row archetype
+    expect(byName("ActivityFeed")!.shapes).toEqual(["list"]);     // striped feed of homogeneous rows
+    expect(byName("KeyValueList")!.shapes).toEqual(["key-value"]); // the record/property-list rendering
+    // Audited and deliberately NOT shape-indexed: SplitView's panes are heterogeneous, PaneGrid hosts
+    // opaque workspace panes (not data items), StatTile renders a single KPI pair, not a record.
+    for (const n of ["SplitView", "PaneGrid", "StatTile"]) {
+      expect(byName(n)!.shapes, `${n} must not fake a shape ideal`).toBeUndefined();
+    }
+    // `tree` + `linked-list` are UNCOVERED until the Tree (#2476) / Sequence (#2477) templates land —
+    // no component may fake coverage for them.
+    for (const c of REACT_UI_COMPONENTS) {
+      expect(c.shapes ?? [], `${c.name} must not claim tree/linked-list yet`)
+        .not.toEqual(expect.arrayContaining(["tree"]));
+      expect(c.shapes ?? [], `${c.name} must not claim tree/linked-list yet`)
+        .not.toEqual(expect.arrayContaining(["linked-list"]));
+    }
+  });
+
   it("keeps the exemplar demos in a separate `examples` kit (#2456)", () => {
     expect(SEED_KITS.map((k) => k.id)).toEqual(["react-ui", "examples"]);
     const examples = SEED_COMPONENTS.filter((c) => c.kitId === "examples").map((c) => c.name);

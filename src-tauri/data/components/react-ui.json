@@ -2003,7 +2003,10 @@
       ],
       "src": "shared/ui/data/CardListRow.tsx",
       "srcText": "import { CardListRow } from \"@/shared/ui/data/CardListRow\";\n\n<CardListRow title={…} />",
-      "builtin": true
+      "builtin": true,
+      "shapes": [
+        "list"
+      ]
     },
     {
       "id": "datatablerow",
@@ -2074,7 +2077,10 @@
       ],
       "src": "shared/ui/data/DataTableRow.tsx",
       "srcText": "import { DataTableRow } from \"@/shared/ui/data/DataTableRow\";\n\n<DataTableRow template={…}>…</DataTableRow>",
-      "builtin": true
+      "builtin": true,
+      "shapes": [
+        "table"
+      ]
     },
     {
       "id": "roletierchips",
@@ -3007,7 +3013,10 @@
       ],
       "src": "shared/ui/layouts/MasterDetail.tsx",
       "srcText": "import { MasterDetail } from \"@/shared/ui/layouts/MasterDetail\";\n\n<MasterDetail\n  rail={<PersonaList/>}\n  detail={<PersonaEditor/>}\n/>",
-      "builtin": true
+      "builtin": true,
+      "shapes": [
+        "list"
+      ]
     },
     {
       "id": "splitview",
@@ -3192,7 +3201,10 @@
       ],
       "src": "shared/ui/layouts/GraphCanvas.tsx",
       "srcText": "import { GraphCanvas, ZoomControls } from \"@/shared/ui/layouts/GraphCanvas\";\nimport { useGraphViewport } from \"@/shared/ui/layouts/useGraphViewport\";\n\nconst vp = useGraphViewport(world);\n<GraphCanvas vp={vp} world={world} grid\n  toolbar={<ZoomControls vp={vp}/>}>\n  {edges}{nodes}\n</GraphCanvas>",
-      "builtin": true
+      "builtin": true,
+      "shapes": [
+        "graph"
+      ]
     },
     {
       "id": "panegrid",
@@ -3368,7 +3380,70 @@
       ],
       "src": "shared/ui/data/ActivityFeed.tsx",
       "srcText": "import { ActivityFeed } from \"@/shared/ui/data/ActivityFeed\";\n\n<ActivityFeed items={…} hint={…} loading={…} tone={…} />",
-      "builtin": true
+      "builtin": true,
+      "shapes": [
+        "list"
+      ]
+    },
+    {
+      "id": "keyvaluelist",
+      "name": "KeyValueList",
+      "kitId": "react-ui",
+      "role": "primitive",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "data",
+        "key-value"
+      ],
+      "variants": [
+        "default",
+        "loading"
+      ],
+      "composes": [
+        "Skeleton"
+      ],
+      "props": [
+        {
+          "name": "items",
+          "type": "T[]",
+          "req": true,
+          "desc": "KeyValueItem[] — the { k, v } rows, in display order."
+        },
+        {
+          "name": "labelWidth",
+          "type": "number",
+          "req": false,
+          "desc": "Fixed label column width in px."
+        },
+        {
+          "name": "mono",
+          "type": "boolean",
+          "req": false,
+          "desc": "Render values (not labels) in the mono font — ids, paths, config values."
+        },
+        {
+          "name": "loading",
+          "type": "boolean",
+          "req": false,
+          "desc": "Shimmer value placeholders (labels stay) while the record's source loads (#2302)."
+        }
+      ],
+      "whenUse": [
+        "A read-only label : value property list — a detail summary, config panel, or inspector facts block.",
+        "Rendering one record's named fields in a fixed, aligned two-column grid."
+      ],
+      "whenNot": [
+        "Editable fields — use TextField / SelectField.",
+        "One headline metric — use StatTile.",
+        "Many homogeneous records — use DataTableRow / CardListRow."
+      ],
+      "src": "shared/ui/data/KeyValueList.tsx",
+      "srcText": "import { KeyValueList } from \"@/shared/ui/data/KeyValueList\";\n\n<KeyValueList items={…} />",
+      "builtin": true,
+      "shapes": [
+        "key-value"
+      ]
     },
     {
       "id": "pane",
