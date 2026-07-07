@@ -213,6 +213,29 @@ pub fn build_warden_message(
     )
 }
 
+/// Build an FCM push for one alert from the #2498 taxonomy (agent-paused / prompt-waiting /
+/// worker-question / fleet-failed / fleet-landed / gate-ready / planner-waiting). The
+/// notification banner carries the frontend-composed title/body; the `data` block carries the
+/// `kind` (mobile routes the tap on it) and the pane/session id when the alert has one. The
+/// inbox itself rides the `alerts` store_state domain — this push is the out-of-band notify
+/// for a backgrounded/quit phone.
+pub fn build_alert_message(
+    device_token: &str,
+    kind: &str,
+    title: &str,
+    body: &str,
+    pane_id: &str,
+) -> serde_json::Value {
+    let title = if title.trim().is_empty() { "Studio Code" } else { title };
+    build_push(
+        device_token,
+        title,
+        &notification_body(body),
+        // Contract — mobile parses these exact keys; values MUST be strings.
+        serde_json::json!({ "type": "alert", "kind": kind, "paneId": pane_id }),
+    )
+}
+
 #[derive(Serialize)]
 struct JwtClaims<'a> {
     iss: &'a str,
@@ -414,6 +437,30 @@ mod tests {
         // A blank detail still yields a meaningful banner, never an empty body.
         let blank = build_warden_message("tok", "t0p2", "  ");
         assert_eq!(blank["notification"]["body"], "A worker was paused — it drifted off its assigned plan.");
+    }
+
+    #[test]
+    fn build_alert_message_matches_the_mobile_contract() {
+        let m = build_alert_message(
+            "tok-5",
+            "gate-ready",
+            "Plan stage ready — demo",
+            "Stage \"features\" gate passed — awaiting your confirm.",
+            "planning_demo",
+        );
+        assert_eq!(m["notification"]["title"], "Plan stage ready — demo");
+        assert_eq!(m["notification"]["body"], "Stage \"features\" gate passed — awaiting your confirm.");
+        // data block — the fixed contract mobile parses; all values are strings.
+        assert_eq!(m["data"]["type"], "alert");
+        assert_eq!(m["data"]["kind"], "gate-ready");
+        assert_eq!(m["data"]["paneId"], "planning_demo");
+        assert!(m["data"]["kind"].is_string() && m["data"]["paneId"].is_string());
+        assert_eq!(m["token"], "tok-5");
+        assert_eq!(m["apns"]["headers"]["apns-priority"], "10");
+        // A blank title falls back rather than showing an empty banner; the body collapses.
+        let blank = build_alert_message("tok", "fleet-landed", "  ", "  #42   merged ", "");
+        assert_eq!(blank["notification"]["title"], "Studio Code");
+        assert_eq!(blank["notification"]["body"], "#42 merged");
     }
 
     #[test]
