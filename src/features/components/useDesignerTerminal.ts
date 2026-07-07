@@ -140,6 +140,15 @@ export function useDesignerTerminal(visible: boolean): DesignerTerminalHandle {
         // CLI lets mutate; every other role-gated launch renders `read` here.
         env: { BSC_SCOPES: JSON.stringify(sessionScopes(cap)) },
       }, undefined, console.error);
+
+      // Session roster (#2497): register the designer session so a paired phone lists it
+      // alongside the console/fleet/planner panes. Registering is plain store state —
+      // useTunnelSync flattens the registry and only pushes while the relay runs, so this
+      // is inert without a tunnel. Unregistered in the unmount cleanup (the pty_kill site).
+      useAppStore.getState().registerTunnelPanes("designer", [{
+        id: DESIGNER_PANE_ID, cwd: paths.design_dir, name: "Design Studio",
+        status: "running", kind: "designer",
+      }]);
     });
 
     const ro = new ResizeObserver(() => {
@@ -158,6 +167,7 @@ export function useDesignerTerminal(visible: boolean): DesignerTerminalHandle {
       term.dispose();
       termRef.current = null;
       fitRef.current  = null;
+      useAppStore.getState().registerTunnelPanes("designer", []); // roster (#2497)
       fireInvoke("pty_kill", { paneId: DESIGNER_PANE_ID }, console.error);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
