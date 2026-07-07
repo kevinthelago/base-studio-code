@@ -106,6 +106,7 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     expect(byName("PipelinePage")!.shapes).toEqual(["linked-list"]);
     expect(byName("NetworkPage")!.shapes).toEqual(["graph"]);
     expect(byName("CollectionPage")!.shapes).toEqual(["list"]);
+    expect(byName("RecordPage")!.shapes).toEqual(["key-value"]); // #2508 — the key-value shape's page
     expect(byName("DashboardPage")!.shapes, "DashboardPage must not fake a shape ideal").toBeUndefined();
   });
 
@@ -125,11 +126,13 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
       expect(claimants(s, "layout").length, `layout tier claims ${s} at most once`).toBeLessThanOrEqual(1);
       expect(claimants(s, "page").length, `page tier claims ${s} at most once`).toBeLessThanOrEqual(1);
     }
-    // tree/linked-list keep exhaustive claimant sets: the template + its page, nothing else.
+    // tree/linked-list/key-value keep exhaustive claimant sets: the ideal component/template + its
+    // page, nothing else (key-value's pair is composite-tier KeyValueList + page-tier RecordPage, #2508).
     const all = (shape: string) =>
       REACT_UI_COMPONENTS.filter((c) => ((c.shapes ?? []) as string[]).includes(shape)).map((c) => c.name).sort();
     expect(all("tree")).toEqual(["Tree", "TreeExplorerPage"]);
     expect(all("linked-list")).toEqual(["PipelinePage", "Sequence"]);
+    expect(all("key-value")).toEqual(["KeyValueList", "RecordPage"]);
   });
 
   it("the packaged seed is EXACTLY the generated react-ui kit — the examples exemplar kit is retired (#2506)", () => {
@@ -141,9 +144,9 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
 });
 
 describe("the pages tier (#2505) — complete data-driven page compositions", () => {
-  const PAGES = ["CollectionPage", "DashboardPage", "NetworkPage", "PipelinePage", "TablePage", "TreeExplorerPage"];
+  const PAGES = ["CollectionPage", "DashboardPage", "NetworkPage", "PipelinePage", "RecordPage", "TablePage", "TreeExplorerPage"];
 
-  it("registers exactly the six pages, each with role `page` (the top of the pyramid)", () => {
+  it("registers exactly the seven pages, each with role `page` (the top of the pyramid)", () => {
     const pages = REACT_UI_COMPONENTS.filter((c) => c.role === "page").map((c) => c.name).sort();
     expect(pages).toEqual(PAGES);
   });
@@ -177,6 +180,9 @@ describe("the pages tier (#2505) — complete data-driven page compositions", ()
     expect(byName("PipelinePage")!.composes).toContain("Sequence");
     expect(byName("NetworkPage")!.composes).toContain("GraphCanvas");
     expect(byName("CollectionPage")!.composes).toContain("MasterDetail");
+    // RecordPage (#2508) has no single template either — its centre is the KeyValueList composite
+    // (the key-value archetype one tier down), grouped by SectionLabel.
+    expect(byName("RecordPage")!.composes).toEqual(expect.arrayContaining(["KeyValueList", "SectionLabel"]));
     // DashboardPage has no single template — its chart/feed composites are the edges down.
     expect(byName("DashboardPage")!.composes).toEqual(
       expect.arrayContaining(["StatCard", "LineArea", "Donut", "Legend", "Spark", "ActivityFeed"]),
