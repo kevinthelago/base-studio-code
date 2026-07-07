@@ -14,10 +14,12 @@ describe("planStages — registry", () => {
   it("default config honors each stage's defaultEnabled, in registry order", () => {
     const d = defaultStageConfig();
     expect(d.order).toEqual(PLAN_STAGES.map((s) => s.id));
-    // Every stage but the opt-in market stage (#2430, defaultEnabled: false) starts on.
+    // Every stage but the opt-in market (#2430) + transformations (#2509) stages (defaultEnabled:
+    // false) starts on.
     expect(PLAN_STAGES.every((s) => d.enabled[s.id] === s.defaultEnabled)).toBe(true);
     expect(d.enabled.market).toBe(false);
-    expect(PLAN_STAGES.filter((s) => s.id !== "market").every((s) => d.enabled[s.id])).toBe(true);
+    expect(d.enabled.transformations).toBe(false);
+    expect(PLAN_STAGES.filter((s) => s.id !== "market" && s.id !== "transformations").every((s) => d.enabled[s.id])).toBe(true);
   });
 
   it("discoveryOnlyStageConfig enables only Discovery, preserving registry order (#1395)", () => {
