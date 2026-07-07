@@ -30,20 +30,21 @@ const fleet: FleetPlan = {
 
 describe("buildGlancePayload", () => {
   const projects: ProjectLite[] = [
-    { id: "demo", name: "Demo", role: "service", status: "building" },
-    { id: "other", name: "Other", role: "client", status: "idle" },
+    { id: "demo", name: "Demo", role: "service", health: "healthy", activity: "building" },
+    { id: "other", name: "Other", role: "client", health: "idle", activity: "building" },
   ];
 
-  it("merges fault counts onto their project and passes links/drill through", () => {
+  it("overlays the fault health (error + reason + count) onto its project and passes links/drill through (#2541)", () => {
     const out = buildGlancePayload({
       projects,
       links: [{ id: "demo>other:api", from: "demo", to: "other", kind: "api" }],
-      faults: { demo: 3 },
+      faults: { demo: { level: "error", title: "boom", count: 3 } },
       drill: "demo",
       drillFleet: fleet,
     });
-    expect(out.projects[0]).toMatchObject({ id: "demo", faults: 3 });
+    expect(out.projects[0]).toMatchObject({ id: "demo", health: "error", reason: "boom", faults: 3 });
     expect(out.projects[1].faults).toBeUndefined();
+    expect(out.projects[1].health).toBe("idle"); // no fault → untouched
     expect(out.links).toHaveLength(1);
     expect(out.drill).toBe("demo");
     expect(out.drillFleet).toBe(fleet);

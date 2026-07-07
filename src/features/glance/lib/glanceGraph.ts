@@ -14,8 +14,21 @@ import { orderLayers } from "@/shared/lib/graph/order";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 
 export type GRole = "infra" | "service" | "data" | "client";
-export type GStatus = "idle" | "planning" | "building" | "review" | "blocked" | "done" | "live";
+/** Axis 1 — HEALTH (#2541): the top-left dot colour + the attention/propagation signal. An escalation
+ *  ladder that rolls UP the dependency chain (a node shows the worst of itself + everything it depends
+ *  on). `idle`/`healthy` never propagate — only `warning`/`error` do. Sourced from the worst unresolved
+ *  `bsc errors` FaultLevel; this REPLACES the old separate fault badge. */
+export type GHealth = "idle" | "healthy" | "warning" | "error";
+/** Axis 2 — ACTIVITY (#2541): the bottom-right lifecycle word — what the project is doing right now.
+ *  `planning` surfaces ONLY when the user has re-opened the planner on an already-triaged project (a
+ *  re-edit state, never the default). `waiting` = an EXPECTED blocked state (an agent parked for the
+ *  user, `bsc-wait`) — calm, not alarming; it lives here, not on the health axis. */
+export type GActivity = "planning" | "building" | "waiting" | "review" | "live";
 export type GEdgeKind = "api" | "data" | "events";
+
+/** Severity rank for the health rollup — only `warning`/`error` (rank ≥ 1) propagate up dependency
+ *  edges; `idle` and `healthy` are both "no problem" (rank 0) and stay put. */
+export const HEALTH_RANK: Record<GHealth, number> = { idle: 0, healthy: 0, warning: 1, error: 2 };
 
 /** A project node as supplied by the data adapter (before layout). */
 export interface GRawNode {
@@ -23,23 +36,36 @@ export interface GRawNode {
   /** Display name (defaults to id). */
   slug?: string;
   role: GRole;
-  status: GStatus;
+  /** Axis 1 — the node's OWN health (before the dependency rollup). #2541. */
+  health: GHealth;
+  /** Axis 2 — the lifecycle word shown bottom-right. #2541. */
+  activity: GActivity;
+  /** When health is `warning`/`error`, the short reason (the `Fault.title` that set it) shown in place
+   *  of the activity word, so the user sees WHY the dot changed. #2541. */
+  reason?: string;
   /** Optional director id (for the node badge / inspector). */
   director?: string;
   /** Display label for the role when the mapped `role` category isn't the real thing — e.g. a fleet
    *  agent's actual session role ("worker" / "reviewer" / "director"), from its persona. The `role`
    *  category still drives the colour; this is the text shown on the card + inspector. */
   roleLabel?: string;
-  /** Unresolved runtime-fault count for the project (#2265), from `bsc errors` — drives the node's
-   *  fault badge / health tint. Optional + orthogonal to `status` (liveness, #2263), so the two merge
-   *  cleanly; absent/0 ⇒ no badge. */
+  /** Unresolved runtime-fault count for the project (#2265), from `bsc errors` — surfaced in the
+   *  inspector. The count's worst LEVEL drives `health` (#2541); absent/0 ⇒ healthy/idle. */
   faults?: number;
 }
 /** A dependency edge: `from` depends on `to`, over a contract of `kind`. Optional stable `id` (a
  *  user-drawn project link carries its own; sample/derived edges fall back to a positional id). */
 export interface GRawEdge { from: string; to: string; kind: GEdgeKind; id?: string }
 
-export interface GNode extends GRawNode { slug: string; layer: number; x: number; y: number }
+export interface GNode extends GRawNode {
+  slug: string; layer: number; x: number; y: number;
+  /** Health after the up-the-chain rollup (#2541): the worst of this node's own `health` and every node
+   *  it (transitively) depends on. This is what the top-left dot renders. */
+  rollupHealth: GHealth;
+  /** True when `rollupHealth` is worse than the node's OWN `health` — i.e. the node is only lit because
+   *  of a downstream dependency. Renders as a MUTED dot (the origin keeps the full/pulsing treatment). */
+  healthInherited: boolean;
+}
 export interface GEdge {
   id: string; from: string; to: string; kind: GEdgeKind;
   /** A hard dependency (api/data) blocks the consumer on a breaking change; events are soft. */
@@ -63,16 +89,22 @@ export interface GraphModel {
 export const ROLE_COLOR: Record<GRole, string> = {
   infra: "#5b9dff", service: "#4fd6a0", data: "#b98bff", client: "#f2b155",
 };
-/** Status → colour + whether it pulses (live activity). */
-export const STATUS_META: Record<GStatus, { label: string; color: string; pulse: boolean }> = {
-  idle: { label: "idle", color: "#6b7280", pulse: false },
-  planning: { label: "planning", color: "#5b9dff", pulse: false },
-  building: { label: "building", color: "#4fd6a0", pulse: true },
-  review: { label: "in review", color: "#f2b155", pulse: false },
-  blocked: { label: "blocked", color: "#f2555f", pulse: true },
-  done: { label: "shipped", color: "#3f7d63", pulse: false },
-  // The app itself is detected RUNNING (a local dev server or a cloud deployment) — a bright pulsing green.
-  live: { label: "live", color: "#3fe08f", pulse: true },
+/** Axis 1 — HEALTH → the top-left dot colour + whether it pulses (#2541). Blue = at rest, green =
+ *  active & fine, orange = warning, red = error/fatal (pulses; the node to look at). */
+export const HEALTH_META: Record<GHealth, { label: string; color: string; pulse: boolean }> = {
+  idle: { label: "idle", color: "#5b9dff", pulse: false },
+  healthy: { label: "healthy", color: "#4fd6a0", pulse: false },
+  warning: { label: "warning", color: "#f2b155", pulse: false },
+  error: { label: "error", color: "#f2555f", pulse: true },
+};
+/** Axis 2 — ACTIVITY → the bottom-right lifecycle word (#2541). Colour is the health axis's job; this
+ *  is just the label + whether it animates (a live app / building fleet reads as active). */
+export const ACTIVITY_META: Record<GActivity, { label: string; pulse: boolean }> = {
+  planning: { label: "planning", pulse: false },
+  building: { label: "building", pulse: true },
+  waiting: { label: "waiting", pulse: false },
+  review: { label: "in review", pulse: false },
+  live: { label: "live", pulse: true },
 };
 /** Edge kind → label · colour · dash · default line width · the contract "surface" blurb. */
 export const EDGE_META: Record<GEdgeKind, { label: string; color: string; dash: string; w: number; surface: string }> = {
@@ -122,9 +154,47 @@ export function focusSets(
   return null;
 }
 
+/**
+ * Roll HEALTH up the dependency chain (#2541): each node's effective health is the WORST of its own
+ * health and every node it (transitively) depends on — so a foundational service's error surfaces on
+ * everything downstream that depends on it. Only `warning`/`error` (rank ≥ 1) propagate; `idle`/`healthy`
+ * never override the dependent's own resting state. Cycle-safe (a per-start visited set). Pure.
+ *
+ * Returns, per node id, the rolled-up `health` and whether it is `inherited` (worse than the node's own
+ * health — i.e. lit only because of a dependency, so the dot renders muted, not as the origin).
+ */
+export function rollUpHealth(
+  nodes: { id: string; health: GHealth }[],
+  edges: { from: string; to: string }[],
+): Map<string, { health: GHealth; inherited: boolean }> {
+  const own = new Map(nodes.map((n) => [n.id, n.health]));
+  const deps = new Map<string, string[]>(nodes.map((n) => [n.id, []]));
+  for (const e of edges) deps.get(e.from)?.push(e.to); // `from depends on to`
+  const worstFrom = (start: string): GHealth => {
+    let worst = own.get(start) ?? "idle";
+    const seen = new Set<string>([start]);
+    const stack = [...(deps.get(start) ?? [])];
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const h = own.get(id) ?? "idle";
+      if (HEALTH_RANK[h] > HEALTH_RANK[worst]) worst = h;
+      for (const d of deps.get(id) ?? []) stack.push(d);
+    }
+    return worst;
+  };
+  const out = new Map<string, { health: GHealth; inherited: boolean }>();
+  for (const n of nodes) {
+    const eff = worstFrom(n.id);
+    out.set(n.id, { health: eff, inherited: HEALTH_RANK[eff] > HEALTH_RANK[own.get(n.id) ?? "idle"] });
+  }
+  return out;
+}
+
 /** Build the laid-out, cycle-aware graph model from raw nodes + edges. Deterministic. */
 export function buildGraph(rawNodes: GRawNode[], rawEdges: GRawEdge[]): GraphModel {
-  const nodes: GNode[] = rawNodes.map((n) => ({ ...n, slug: n.slug ?? n.id, layer: 0, x: 0, y: 0 }));
+  const nodes: GNode[] = rawNodes.map((n) => ({ ...n, slug: n.slug ?? n.id, layer: 0, x: 0, y: 0, rollupHealth: n.health, healthInherited: false }));
   const byId: Record<string, GNode> = {};
   nodes.forEach((n) => (byId[n.id] = n));
 
@@ -135,6 +205,10 @@ export function buildGraph(rawNodes: GRawNode[], rawEdges: GRawEdge[]): GraphMod
   // Cycle detection: mutual pairs (a→b AND b→a) — the shared graph-core primitive (#2217).
   const { pairs: cyclePairs, edgeIds: cycleEdge, nodeIds: cycleNodeIds } = mutualPairs(edges);
   edges.forEach((e) => { if (cycleEdge.has(e.id)) e.isCycle = true; });
+
+  // Roll health up the dependency edges (#2541) — every node now carries its effective (rolled) health.
+  const rolled = rollUpHealth(nodes, edges);
+  nodes.forEach((n) => { const r = rolled.get(n.id)!; n.rollupHealth = r.health; n.healthInherited = r.inherited; });
 
   // No dependency edges (real projects before a cross-project relationship model exists, #…): a plain
   // GRID so the cards read as a network of peers instead of stacking in one column. Skip the layering.

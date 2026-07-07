@@ -1,19 +1,19 @@
 {
   "rawNodes": [
-    { "id": "auth-core", "role": "infra", "status": "done" },
-    { "id": "events-bus", "role": "infra", "status": "done" },
-    { "id": "identity-svc", "role": "service", "status": "building" },
-    { "id": "ledger", "role": "data", "status": "review" },
-    { "id": "notifications", "role": "service", "status": "idle" },
-    { "id": "analytics", "role": "data", "status": "blocked" },
-    { "id": "user-api", "role": "service", "status": "building" },
-    { "id": "billing-svc", "role": "service", "status": "planning" },
-    { "id": "reporting", "role": "data", "status": "blocked" },
-    { "id": "search-svc", "role": "service", "status": "idle" },
-    { "id": "payments-gw", "role": "service", "status": "review" },
-    { "id": "mobile-app", "role": "client", "status": "planning" },
-    { "id": "admin-console", "role": "client", "status": "idle" },
-    { "id": "web-app", "role": "client", "status": "building" }
+    { "id": "auth-core", "role": "infra", "health": "healthy", "activity": "live" },
+    { "id": "events-bus", "role": "infra", "health": "healthy", "activity": "live" },
+    { "id": "identity-svc", "role": "service", "health": "healthy", "activity": "building" },
+    { "id": "ledger", "role": "data", "health": "idle", "activity": "review" },
+    { "id": "notifications", "role": "service", "health": "idle", "activity": "building" },
+    { "id": "analytics", "role": "data", "health": "error", "activity": "building", "reason": "unhandled exception in aggregation" },
+    { "id": "user-api", "role": "service", "health": "healthy", "activity": "building" },
+    { "id": "billing-svc", "role": "service", "health": "idle", "activity": "planning" },
+    { "id": "reporting", "role": "data", "health": "warning", "activity": "waiting", "reason": "no instructions · 14m" },
+    { "id": "search-svc", "role": "service", "health": "idle", "activity": "building" },
+    { "id": "payments-gw", "role": "service", "health": "idle", "activity": "review" },
+    { "id": "mobile-app", "role": "client", "health": "healthy", "activity": "building" },
+    { "id": "admin-console", "role": "client", "health": "idle", "activity": "building" },
+    { "id": "web-app", "role": "client", "health": "healthy", "activity": "building" }
   ],
   "rawEdges": [
     { "from": "identity-svc", "to": "auth-core", "kind": "api" },
