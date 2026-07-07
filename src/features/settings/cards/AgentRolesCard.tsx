@@ -30,12 +30,13 @@ function tierTone(tier: AccessTier): ChipTone {
   return tier === "write" ? "accent" : tier === "read" ? "info" : "neutral";
 }
 
-/** The four capability axes, in the order the role gate reasons about them. */
-const AXES: { key: keyof Pick<RoleCapability, "git" | "github" | "code" | "net">; label: string }[] = [
+/** The five capability axes, in the order the role gate reasons about them. */
+const AXES: { key: keyof Pick<RoleCapability, "git" | "github" | "code" | "net" | "ui">; label: string }[] = [
   { key: "git", label: "git" },
   { key: "github", label: "github" },
   { key: "code", label: "code" },
   { key: "net", label: "net" },
+  { key: "ui", label: "ui" },
 ];
 
 function RoleRow({ role }: { role: SessionRole }) {
@@ -53,7 +54,7 @@ function RoleRow({ role }: { role: SessionRole }) {
         </Text>
       </Row>
 
-      {/* The four capability-tier chips — coloured by access level. */}
+      {/* The capability-tier chips — coloured by access level. */}
       <Row gap={6} wrap style={{ marginTop: 8 }}>
         {AXES.map(({ key, label }) => (
           <Chip key={key} tone={tierTone(cap[key])} size="sm">
@@ -106,7 +107,7 @@ export function AgentRolesCard() {
       <Text as="p" tone="muted" size={12} style={{ margin: "0 0 14px", lineHeight: 1.6 }}>
         Every session launches under a <strong>role</strong> that bounds what it can do
         (least-privilege). These are the capability tiers each role is granted — <strong>git</strong>,{" "}
-        <strong>github</strong>, <strong>code</strong>, and <strong>net</strong> access, its
+        <strong>github</strong>, <strong>code</strong>, <strong>net</strong>, and <strong>ui</strong> access, its
         write-scope, and the default profile it runs under — read straight from the enforcement core,
         so this roster can never drift from what agents are actually allowed. Role <em>identities</em>{" "}
         (start prompt, skills, model) are defined as <strong>Personas</strong> on the Planner workspace.

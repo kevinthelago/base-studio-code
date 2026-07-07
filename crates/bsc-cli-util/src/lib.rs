@@ -89,6 +89,54 @@ pub fn emit<T: Serialize>(pretty: bool, json: bool, value: &T, lean: impl FnOnce
     }
 }
 
+/// The env var carrying a session's per-store access scopes (#2470) — a JSON object of store name →
+/// access tier, e.g. `{"ui":"read"}`, rendered from the session's ROLE by the desktop at launch
+/// (`sessionScopes` in `sessionLaunch.ts`) and injected into `pty_create`'s env.
+pub const BSC_SCOPES_ENV: &str = "BSC_SCOPES";
+
+/// Whether the current session's `$BSC_SCOPES` doc permits WRITING the named store (#2470).
+///
+/// **NOT a security boundary** — a session owns its own environment and can unset the var. This is
+/// defense-in-depth against *accidents* (an agent absent-mindedly redefining a shared kit) and a
+/// consistent guard for non-Claude runtimes (`bsc-agent`, raw hand shells); the launch-time
+/// command-deny rules (`roleDeniedCommands` → `permissions.deny` / `$BSC_DENY_BASH`) are the
+/// enforcement boundary.
+///
+/// Back-compat is deliberately permissive: an absent env var, malformed JSON, an absent store key,
+/// or a non-string tier all mean **unrestricted** (`true`) — a hand shell with no scope doc keeps
+/// working. Only an explicit `"read"` or `"none"` tier refuses the write.
+///
+/// A store CLI adopts it by guarding its mutating verb handlers, e.g. in `bsc skill`'s `remove`:
+/// ```ignore
+/// bsc_cli_util::require_write_scope("skill")?; // Err → stderr + nonzero exit via cli_main
+/// ```
+pub fn scope_allows_write(scope: &str) -> bool {
+    scope_allows_write_in(std::env::var(BSC_SCOPES_ENV).ok().as_deref(), scope)
+}
+
+/// The pure core of [`scope_allows_write`]: `doc` is the raw `$BSC_SCOPES` value (or `None` when the
+/// var is unset). Split out so the tier logic is testable without touching the process environment.
+pub fn scope_allows_write_in(doc: Option<&str>, scope: &str) -> bool {
+    let Some(doc) = doc else { return true };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(doc) else { return true };
+    !matches!(v.get(scope).and_then(serde_json::Value::as_str), Some("read") | Some("none"))
+}
+
+/// [`scope_allows_write`] as a `Result` for the CLI verb handlers: `Err` carries the refusal message
+/// (naming the scope + the env doc that imposed it), which `cli_main` prints to stderr with a nonzero
+/// exit. See [`scope_allows_write`] for the semantics and the non-boundary caveat.
+pub fn require_write_scope(scope: &str) -> Result<(), String> {
+    if scope_allows_write(scope) {
+        Ok(())
+    } else {
+        Err(format!(
+            "this session's '{scope}' scope is read-only ($BSC_SCOPES) — mutating verbs are \
+             disabled. Read verbs still work; route the change through a session whose role \
+             grants '{scope}' write access."
+        ))
+    }
+}
+
 /// One command's documentation for the shared help system. `name` is the subcommand word, `summary`
 /// is the single line shown in the compact overview, and `usage` is the detailed block shown by
 /// `<prog> <name> help`. The split is deliberate: the overview stays tiny (cheap context for a model
@@ -262,6 +310,53 @@ mod tests {
         // A real command → NOT handled, so the caller dispatches it.
         assert!(!handle_help("bsc-x", "t", DOCS, &pos(&["tree"])));
         assert!(!handle_help("bsc-x", "t", DOCS, &pos(&["stat", "src/x"])));
+    }
+
+    #[test]
+    fn scope_allows_write_in_is_unrestricted_without_a_scope_doc() {
+        // Absent env (hand shells, pre-#2470 launches) ⇒ unrestricted — the back-compat contract.
+        assert!(scope_allows_write_in(None, "ui"));
+        // Absent KEY ⇒ unrestricted (stores adopt incrementally; an unlisted store is ungated).
+        assert!(scope_allows_write_in(Some(r#"{}"#), "ui"));
+        assert!(scope_allows_write_in(Some(r#"{"plan":"read"}"#), "ui"));
+    }
+
+    #[test]
+    fn scope_allows_write_in_refuses_read_and_none_tiers_only() {
+        assert!(!scope_allows_write_in(Some(r#"{"ui":"read"}"#), "ui"));
+        assert!(!scope_allows_write_in(Some(r#"{"ui":"none"}"#), "ui"));
+        assert!(scope_allows_write_in(Some(r#"{"ui":"write"}"#), "ui"));
+        // The doc gates PER store: ui read-only doesn't touch another store's writes.
+        assert!(scope_allows_write_in(Some(r#"{"ui":"read","skill":"write"}"#), "skill"));
+    }
+
+    #[test]
+    fn scope_allows_write_in_treats_malformed_docs_as_unrestricted() {
+        // Malformed JSON, a non-object doc, and a non-string tier all fall open (guards accidents,
+        // never breaks a session on garbage — the launch-time deny rules are the boundary).
+        assert!(scope_allows_write_in(Some("not json"), "ui"));
+        assert!(scope_allows_write_in(Some(""), "ui"));
+        assert!(scope_allows_write_in(Some(r#"["ui"]"#), "ui"));
+        assert!(scope_allows_write_in(Some(r#"{"ui":5}"#), "ui"));
+    }
+
+    // ONE test owns the real $BSC_SCOPES env var (tests run in parallel threads; splitting these
+    // cases across tests would race on the shared process environment).
+    #[test]
+    fn scope_env_wrapper_and_require_write_scope_read_bsc_scopes() {
+        std::env::set_var(BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
+        assert!(!scope_allows_write("ui"));
+        assert!(scope_allows_write("plan")); // unlisted store stays unrestricted
+        let err = require_write_scope("ui").unwrap_err();
+        assert!(err.contains("'ui'"), "refusal names the scope: {err}");
+        assert!(err.contains("BSC_SCOPES"), "refusal names the env doc: {err}");
+        assert!(err.contains("read-only"), "refusal states the tier semantics: {err}");
+        std::env::set_var(BSC_SCOPES_ENV, r#"{"ui":"write"}"#);
+        assert!(scope_allows_write("ui"));
+        assert!(require_write_scope("ui").is_ok());
+        std::env::remove_var(BSC_SCOPES_ENV);
+        assert!(scope_allows_write("ui"), "absent env is unrestricted (back-compat)");
+        assert!(require_write_scope("ui").is_ok());
     }
 
     #[test]

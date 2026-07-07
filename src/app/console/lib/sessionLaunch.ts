@@ -14,7 +14,7 @@ import { resolveMcpServers, toBscAgentMcp, resolveHooks, toSessionPayloads } fro
 import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/skills";
 import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
-import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs } from "@/shared/lib/session/sessionRoles";
+import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes } from "@/shared/lib/session/sessionRoles";
 import { resolveProfileSettings } from "@/features/agents";
 import { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner";
 import type { ConsoleProvider, ProviderLaunchConfig } from "@/app/console/lib/providers";
@@ -22,7 +22,8 @@ import type { AppStore } from "@/store/types";
 
 /**
  * Base session env for `pty_create`. Carries `GH_TOKEN` for gh/git-over-https; the write-scope globs
- * (`BSC_SCOPE_GLOBS`) for the `bsc-scope` PreToolUse hook on any gated pane; and, for a bsc-agent
+ * (`BSC_SCOPE_GLOBS`) for the `bsc-scope` PreToolUse hook on any gated pane; the role's per-store
+ * access scopes (`BSC_SCOPES`, #2470) for the store CLIs' runtime write check; and, for a bsc-agent
  * session, the selected LLM provider/model/key, role-derived perms (`BSC_AGENT_PERMS`) and resolved
  * MCP servers (`BSC_AGENT_MCP`). Returns undefined when nothing needs to be injected.
  *
@@ -50,16 +51,21 @@ export function buildAgentEnv(
   const scopeRole = s.paneRoles[paneId];
   if (scopeRole) {
     const roleGlobs = s.paneRoleGlobs[paneId] ?? [];
+    const scopeCap = roleCapability(scopeRole, { writeGlobs: roleGlobs });
     const sg = scopeWriteGlobs(scopeRole, roleGlobs);
     if (sg.length > 0) {
       e.BSC_SCOPE_GLOBS = sg.join(" ");
-    } else if (roleCapability(scopeRole, { writeGlobs: roleGlobs }).code === "none") {
+    } else if (scopeCap.code === "none") {
       // code:none with no write globs ⇒ DENY ALL writes (#1916 Step 3.5). The sentinel makes bsc-scope
       // hard-block every Edit/Write — surviving bypassPermissions, where the role's permissions.deny
       // write rule is ignored. (A code:none role WITH globs — e.g. a director's commons — is scoped
       // above; an ungated pane has no scopeRole, so it stays allow-all.)
       e.BSC_SCOPE_GLOBS = SCOPE_DENY_ALL;
     }
+    // Store scopes (#2470, defense-in-depth): the role's per-store access tiers (currently just `ui`)
+    // for the store CLIs — `bsc ui` refuses its mutating verbs when scoped read-only. Guards accidents
+    // + non-Claude runtimes; the launch-time deny rules (sessionDeniedCommands) are the boundary.
+    e.BSC_SCOPES = JSON.stringify(sessionScopes(scopeCap));
   }
   // Deny-list (#1916): the session's role/user/profile deny patterns for the `bsc-deny` PreToolUse
   // hook (newline-separated; the dangerous floor itself is compiled into `bsc hook bash-deny`). This
