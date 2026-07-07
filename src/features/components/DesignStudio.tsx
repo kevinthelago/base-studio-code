@@ -27,7 +27,7 @@ import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 import { slugify } from "@/shared/lib/core/format";
-import { layoutComposition, NODE_W, NODE_H, type CompositionLayout } from "./lib/compositionLayout";
+import { layoutComposition, selectionNeighborhood, NODE_W, NODE_H, type CompositionLayout } from "./lib/compositionLayout";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
@@ -314,6 +314,13 @@ function GraphView({ graph, comps, selId, kitName, gvp, onSelect }: GraphProps) 
   // The pan/zoom shell is the shared GraphCanvas template (#2208) — viewport ref/wheel/pan + the world
   // transform + the infinite dotted grid all live there; this brings only the toolbar + world content.
   const EDGE_COLOR = "var(--border-strong, #3a434d)";
+  const EDGE_HL = "var(--accent)";
+  // Selection neighborhood (#2523): the selected node's edges draw in accent, its related nodes get a
+  // softer ring. Incident edges render LAST (sorted to the end) so they sit above the dim ones.
+  const { incidentEdges, relatedNodes } = selectionNeighborhood(graph.edges, selId);
+  const orderedEdges = [...graph.edges].sort(
+    (a, b) => Number(incidentEdges.has(a.id)) - Number(incidentEdges.has(b.id)),
+  );
   return (
     <GraphCanvas
       vp={gvp}
@@ -330,25 +337,29 @@ function GraphView({ graph, comps, selId, kitName, gvp, onSelect }: GraphProps) 
       }
     >
       <svg width={graph.world.w} height={graph.world.h} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
-        {graph.edges.map((e) => {
+        {orderedEdges.map((e) => {
           const a = graph.pos.get(e.from), b = graph.pos.get(e.to);
           if (!a || !b) return null;
           // The shared graph line-type (#2222) with PERIMETER-ANCHOR routing — the composition graph
           // is a layered TOP-DOWN DAG (#2455); the side-port router is horizontal-only, and the anchor
           // router leaves each card facing the other, which reads cleanly for the vertical flow.
           const g = graphEdge({ ...a, w: NODE_W, h: NODE_H }, { ...b, w: NODE_W, h: NODE_H });
+          const on = incidentEdges.has(e.id); // incident to the selection → accent + thicker (#2523)
+          const color = on ? EDGE_HL : EDGE_COLOR;
           return (
-            <g key={e.id}>
-              <path d={g.d} stroke={EDGE_COLOR} strokeWidth={1.5} fill="none" />
-              <path d={g.arrow} fill={EDGE_COLOR} />
+            <g key={e.id} className={on ? "ds-edge on" : "ds-edge"}>
+              <path d={g.d} stroke={color} strokeWidth={on ? 2.25 : 1.5} fill="none" />
+              <path d={g.arrow} fill={color} />
             </g>
           );
         })}
       </svg>
       {comps.map((c) => {
         const pos = graph.pos.get(c.id); if (!pos) return null;
+        // Full ring for the selection, softer ring for its related nodes (#2523); .on wins over .related.
+        const state = c.id === selId ? " on" : relatedNodes.has(c.id) ? " related" : "";
         return (
-          <Box key={c.id} data-node onClick={() => onSelect(c)} className={`ds-node${c.id === selId ? " on" : ""}`} style={{ left: pos.x, top: pos.y, width: NODE_W }}>
+          <Box key={c.id} data-node onClick={() => onSelect(c)} className={`ds-node${state}`} style={{ left: pos.x, top: pos.y, width: NODE_W }}>
             <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
               <RoleDot role={c.role} /><Text weight={600} size={13}>{c.name}</Text>
             </Box>
