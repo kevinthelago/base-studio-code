@@ -4,6 +4,7 @@
 // edge = dependency contract. The fixed hint/legend overlays are GlanceOverlays (drawn over, untransformed).
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { ROLE_COLOR, STATUS_META, EDGE_META, NW, NH, type GraphModel } from "./lib/glanceGraph";
 
 const REST_N = 0.14, REST_E = 0.06;
@@ -21,11 +22,18 @@ interface CanvasProps {
   onHoverEdge: (id: string | null) => void;
   onSelectNode: (id: string) => void;
   onSelectEdge: (id: string) => void;
+  /** A live agent's terminal morphed open IN the graph (#2534) — rendered as an oversized node at its
+   *  node's world coords. Null = none open. */
+  chat?: { nodeId: string; paneId: string; name: string; role?: string } | null;
+  onCloseChat?: () => void;
 }
 
 /** The world-layer content — placed inside GraphCanvas's transformed world box. */
 export function GlanceCanvas(p: CanvasProps) {
   const { model, focus } = p;
+  // The node whose terminal is morphed open (#2534) — resolved from the live model so its world coords
+  // (and thus the card's position) always track the current graph.
+  const chatNode = p.chat ? model.nodes.find((n) => n.id === p.chat!.nodeId) ?? null : null;
   // A node/edge click: suppressed after a pan-drag, and stopPropagation so it doesn't bubble to the
   // backdrop deselect (Glance nodes aren't [data-node]) (#2232).
   const click = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); if (!p.dragMoved.current) fn(); };
@@ -95,6 +103,12 @@ export function GlanceCanvas(p: CanvasProps) {
           </Box>
         );
       })}
+
+      {/* A live agent's terminal, morphed open IN the graph (#2534): an oversized node grown at the
+          clicked node's world coords, so it pans/zooms/scales with the canvas. No portal, no scrim. */}
+      {chatNode && p.chat && p.onCloseChat && (
+        <GlanceStreamMorph node={chatNode} paneId={p.chat.paneId} name={p.chat.name} role={p.chat.role} onClose={p.onCloseChat} />
+      )}
     </>
   );
 }
