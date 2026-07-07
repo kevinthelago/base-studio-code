@@ -2,7 +2,7 @@
 // component is a *release*, and every app built on the kit is a consumer that may need to adopt it. This
 // module owns the model + the fan-out logic ONLY (no storage, no delivery): classify a change, and turn
 // { change × consumers } into a per-consumer dispatch plan. The consumer index (who uses the kit), the
-// change origin (`bsc component set` emitting a change), and the delivery (issuer / `bsc-assign` /
+// change origin (`bsc ui set` emitting a change), and the delivery (issuer / `bsc-assign` /
 // GitHub issue) are follow-up slices that ride on this.
 import type { ComponentRecord } from "./model";
 
@@ -52,7 +52,7 @@ export function changeId(kitId: string, component: string, to: string | undefine
 }
 
 /** A consumer-index edge id — one edge per (project, kit). Byte-identical to the Rust `usage_id`
- *  (`crates/bsc-component/src/usage.rs`) so the frontend and `bsc component usage` agree. */
+ *  (`crates/bsc-component/src/usage.rs`) so the frontend and `bsc ui usage` agree. */
 export function kitUsageId(projectKey: string, kitId: string): string {
   return `${projectKey}>${kitId}`;
 }

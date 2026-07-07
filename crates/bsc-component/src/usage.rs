@@ -1,6 +1,6 @@
 //! The kit-usage consumer index (#2277) — which projects consume which kit. A flat edge list at the
 //! GLOBAL `~/.base-studio-code/kit-usage.json` (the same shape as the project-links store, #2253), it's
-//! the data the change-propagation fan-out reads: `bsc component usage list` → every (projectKey, kitId)
+//! the data the change-propagation fan-out reads: `bsc ui usage list` → every (projectKey, kitId)
 //! edge, so a kit change knows exactly which apps to notify. Written verbatim; one edge per (project, kit).
 
 use serde_json::Value;
