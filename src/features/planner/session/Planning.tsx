@@ -77,6 +77,7 @@ export function Planning({ visible }: { visible: boolean }) {
     planAuthoredBlueprint, importBlueprint, setAuthoredBlueprint,
     planDeployConfig, setPlanDeployConfig,
     planMarketConfig,
+    planTransformations,
     planSourceConfig, planIntegrationConfig,
     reposPublic, repoPublic,
     injectionHardGate, planInjectionAck, acknowledgePlanInjections,
@@ -330,6 +331,12 @@ export function Planning({ visible }: { visible: boolean }) {
     () => planMarketConfig[effectiveProjectId] ?? null,
     [planMarketConfig, effectiveProjectId],
   );
+  // Transformations stage (#2509): the verb-shaped modification rows the planner records via
+  // `bsc plan transformation add`; drive the `transformationsConfirmed` gate signal.
+  const transformationRows = useMemo(
+    () => planTransformations[effectiveProjectId] ?? [],
+    [planTransformations, effectiveProjectId],
+  );
   // Source stage (#source-pane): the project's migration-source config — declared + connected
   // legacy systems; the `sourcesConnected` gate signal derives from it.
   const sourceCfg = useMemo(
@@ -441,7 +448,7 @@ export function Planning({ visible }: { visible: boolean }) {
     sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
     confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
-    deployCfg, marketCfg, intgCfg, isAuthoring, authoringSig,
+    deployCfg, marketCfg, transformationRows, intgCfg, isAuthoring, authoringSig,
   });
 
   // The focused-pane SELECTION + its derived footer/pill/prompts live in usePlanFocusedPane, called

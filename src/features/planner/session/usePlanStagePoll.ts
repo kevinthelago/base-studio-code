@@ -19,6 +19,7 @@ import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencie
 import { AUTHORING_BLUEPRINT_ID } from "../stages/blueprints";
 import { parseDeployConfigTag } from "../lib/deployConfig";
 import { coerceMarketConfig } from "../lib/marketConfig";
+import { coerceTransformationRows } from "../lib/transformations";
 import { applyMcpAssign } from "../lib/planExtensions";
 import { catalogLink } from "@/features/mcp";
 import { coerceBlueprint } from "../blueprints/blueprintShare";
@@ -48,6 +49,7 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
   // `lastBpJsonRef` the authored-blueprint coercion (reset on project switch).
   const deployAppliedRef = useRef<Record<string, string>>({});
   const marketAppliedRef = useRef<Record<string, string>>({});
+  const transformationsAppliedRef = useRef<Record<string, string>>({});
   const depsAppliedRef = useRef<Record<string, string>>({});
   const depsImportedRef = useRef<Set<string>>(new Set());
   const mcpAppliedRef = useRef<Set<string>>(new Set());
@@ -154,6 +156,21 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
             }
           }
         } catch { /* plan.db not created until the planner sets the market assessment — ignore */ }
+
+        // Transformations are DB-owned (#2509) — the planner decomposes the modification request
+        // with `bsc plan transformation add` (validated at write, #2395). Coerce the stored rows and
+        // push them into planTransformations so the `transformationsConfirmed` gate signal + the
+        // Transformations body (the bottom-up confirm queue) read them. Skip an unchanged list so we
+        // don't churn the store every tick — which also protects an optimistic confirm flip until
+        // the DB write lands.
+        try {
+          const dbTransforms = await bscJson<unknown>(effectiveProjectId, ["plan", "transformation", "list", "--json"], []);
+          const raw = JSON.stringify(dbTransforms ?? []);
+          if (raw !== transformationsAppliedRef.current[effectiveProjectId]) {
+            transformationsAppliedRef.current[effectiveProjectId] = raw;
+            store.setPlanTransformations(effectiveProjectId, coerceTransformationRows(dbTransforms));
+          }
+        } catch { /* plan.db not created until the planner adds a transformation — ignore */ }
 
         // Dependency manifest is DB-owned (#1191) — the planner records it with `bsc-plan deps set`
         // (was a raw `dependencies.json`). Reflect the stored blob into the DEPENDENCIES section so the

@@ -32,6 +32,7 @@ const stageRegistry = overlayFile("planner/stage-registry.json", stageRegistryEm
 export type StageId =
   | "discovery"
   | "market"
+  | "transformations"
   | "deployment"
   | "source"
   | "features"

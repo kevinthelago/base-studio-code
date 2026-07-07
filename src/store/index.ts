@@ -140,6 +140,7 @@ export const useAppStore = create<AppStore>()(
         planAuthoredBlueprint: s.planAuthoredBlueprint,
         planDeployConfig:      s.planDeployConfig,
         planMarketConfig:      s.planMarketConfig, // #2430: the market-stage assessment
+        planTransformations:   s.planTransformations, // #2509: the transformations confirm queue
         reposPublic:           s.reposPublic,   // #1227: repo visibility (default + …)
         repoPublic:            s.repoPublic,    //        per-repo overrides) survives restart
         planSkippedStages:   s.planSkippedStages,
