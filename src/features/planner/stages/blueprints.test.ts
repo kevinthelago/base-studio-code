@@ -45,6 +45,21 @@ describe("blueprints — seed library", () => {
     expect(STAGE_DEFS.ui.deps).toContain("features");
   });
 
+  it("test_ui teaches the data-shape layout picker (#2475)", () => {
+    const def = STAGE_DEFS.test_ui;
+    expect(def).toBeTruthy();
+    // The seed teaches the flow: derive the data's shape, then query the kit's ideals via the two
+    // read verbs — and treat an uncovered shape as a gap, never a forced fit.
+    for (const text of [def.prompt ?? "", def.directive ?? ""]) {
+      expect(text).toContain("bsc ui shapes");
+      expect(text).toContain("bsc ui list --shape");
+    }
+    // The whole six-shape vocabulary is named for the planner to derive against.
+    for (const shape of ["list", "linked-list", "tree", "graph", "table", "key-value"]) {
+      expect(def.prompt ?? "", `prompt names the ${shape} shape`).toContain(shape);
+    }
+  });
+
   it("adds an optional MCPs stage after Streams in the Complete blueprint (#878/#1003/#1914)", () => {
     expect(STAGE_DEFS.mcps).toBeTruthy();
     expect(STAGE_DEFS.mcps.optional).toBe(true);
