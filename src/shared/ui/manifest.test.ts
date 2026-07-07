@@ -46,9 +46,9 @@ describe("UI kit manifest — integrity", () => {
     expect(total).toBe(UI_KIT.length);
   });
 
-  it("carries the pages tier (#2505) — the six complete page compositions in their own group", () => {
+  it("carries the pages tier (#2505, +RecordPage #2508) — the seven complete page compositions in their own group", () => {
     expect(primitivesByGroup().pages.map((p) => p.name).sort()).toEqual(
-      ["CollectionPage", "DashboardPage", "NetworkPage", "PipelinePage", "TablePage", "TreeExplorerPage"]);
+      ["CollectionPage", "DashboardPage", "NetworkPage", "PipelinePage", "RecordPage", "TablePage", "TreeExplorerPage"]);
   });
 });
 
