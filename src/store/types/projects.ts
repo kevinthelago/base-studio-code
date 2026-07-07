@@ -14,6 +14,11 @@ export interface ProjectsState {
   // history (mouse back/forward) can drive it alongside the active workspace. See useNavHistory.
   glanceDrill: string | null;
   setGlanceDrill: (id: string | null) => void;
+  // Org drill target (#2492): the pool nodeId whose sub-graph is open in the Org designer, or null for
+  // the parent graph. Transient like glanceDrill and lifted into the store for the same reason — the
+  // app-wide navigation history (mouse back/forward) steps drill in/out. See useNavHistory.
+  orgDrill: string | null;
+  setOrgDrill: (id: string | null) => void;
   // Project↔project relationships (#2253, part of #2205) — the user-drawn edges of the Glance L1 network.
   // A write-through cache over the global `bsc project link` store (agent-reachable): `addProjectLink`
   // (idempotent, deterministic id) + `removeProjectLink` push through the bridge; `hydrateProjectLinks`

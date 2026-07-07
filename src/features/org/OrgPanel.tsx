@@ -52,8 +52,11 @@ export function OrgPanel() {
   const [menu, setMenu] = useState<{ x: number; y: number; target: Selection } | null>(null);
   // Click-to-connect: a chosen archetype + the pending source node; two node clicks make an edge.
   const [connect, setConnect] = useState<{ archetype: string; from: string | null } | null>(null);
-  // Drill state: the pool nodeId whose OWN graph is showing (null = the collapsed parent graph).
-  const [drill, setDrill] = useState<string | null>(null);
+  // Drill state: the pool nodeId whose OWN graph is showing (null = the collapsed parent graph),
+  // held in the STORE (#2492) so the app-wide nav history (mouse back/forward,
+  // useNavHistory) can step drill in/out — same treatment as glanceDrill.
+  const drill = useAppStore((s) => s.orgDrill);
+  const setDrill = useAppStore((s) => s.setOrgDrill);
 
   const vp = useGraphViewport({ w: CANVAS_W, h: CANVAS_H }, { min: 0.4, max: 1.5, fitPad: 20, maxFitScale: 1.5 });
   const scale = vp.view.scale;
