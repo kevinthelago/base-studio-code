@@ -57,10 +57,10 @@ export function ProjectPane({
     activeIdx: number;
     onSelect: (i: number) => void;
     pill: GatePill;
-    footer: { kind: FooterKind; enabled: boolean; canSkip?: boolean };
+    footer: { kind: FooterKind; enabled: boolean; canSkip?: boolean; skipEnabled?: boolean };
     onBack: () => void;
     onPrimary: () => void;
-    /** Skip the active OPTIONAL stage (#921) — rendered when `footer.canSkip`. */
+    /** Skip the active stage (#921/#2533) — rendered when `footer.canSkip`, enabled per `skipEnabled`. */
     onSkip?: () => void;
     /** The project already has a GitHub board — the publish action reads as "Update GitHub" (#823). */
     published?: boolean;

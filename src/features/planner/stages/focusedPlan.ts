@@ -131,12 +131,13 @@ export type FooterKind = "back-to-current" | "jump-to-current" | "approve-contin
 export interface FooterAction {
   kind: FooterKind;
   enabled: boolean;
-  /** The active stage is an OPTIONAL one the user can deliberately skip past — the advance bar
-   *  shows a secondary "Skip stage" control alongside the primary action (#921). */
+  /** A Skip control is rendered beside the primary action — on EVERY active stage (#2533), so the
+   *  footer reads as a consistent Continue + Skip pair regardless of whether the stage is optional. */
   canSkip?: boolean;
-  /** The primary action is a user GATE OVERRIDE (#1285): the active stage's gate is NOT satisfied,
-   *  but the "allow gate override" setting lets the user force past it. Rendered cautionary. */
-  override?: boolean;
+  /** Whether that Skip control is ACTIONABLE (#2533): always on an optional stage; on a required
+   *  stage only when the user enabled "allow gate override" (#1285) — otherwise it renders disabled
+   *  with an explanatory tooltip. Distinct from `canSkip`, which only governs whether it's shown. */
+  skipEnabled?: boolean;
 }
 
 /**
@@ -145,39 +146,49 @@ export interface FooterAction {
  * current; on the active stage → approve & continue (enabled when its gate is ready), or
  * publish when the whole plan is complete.
  *
- * `activeSkippable` (#921): the active stage is an enabled OPTIONAL stage that hasn't been decided
- * yet — so the user can either complete it (approve & continue) OR skip it. The flow stops on every
- * optional stage; skipping is how the USER, not the app, decides to move past one.
+ * `canSkip` (#2533): the Skip control is shown on EVERY active stage (both approve-continue and
+ * route-design), giving a uniform Continue + Skip pair. Whether Skip is actually clickable is
+ * decided later by {@link resolveFooter} (`skipEnabled`), which knows if the stage is optional and
+ * whether gate-override is on. Navigation and publish never offer skip.
  */
 export function footerAction(
   selectedIdx: number, activeIdx: number, planComplete: boolean, currentGateReady: boolean,
-  activeSkippable = false, routeDesign = false,
+  routeDesign = false,
 ): FooterAction {
   if (selectedIdx > activeIdx) return { kind: "back-to-current", enabled: true };
   if (selectedIdx < activeIdx) return { kind: "jump-to-current", enabled: true };
   if (planComplete) return { kind: "publish", enabled: true };
   // #2121: the active UI stage whose design is missing or stale → the primary action ROUTES the
-  // design (sync the skeleton + mark it current) instead of advancing. While route-design is the
-  // primary action, SKIP is hidden — offering both "route the design" and "skip the stage" at once
-  // is contradictory; skip only reappears on the normal approve-continue once the design is routed.
-  if (routeDesign) return { kind: "route-design", enabled: true, canSkip: false };
-  return { kind: "approve-continue", enabled: currentGateReady, canSkip: activeSkippable };
+  // design (sync the skeleton + mark it current) instead of advancing. Skip is still offered (#2533)
+  // — routing and skipping the stage are both valid choices, and hiding skip here made the UI pane's
+  // button set flicker as the design state changed.
+  if (routeDesign) return { kind: "route-design", enabled: true, canSkip: true };
+  return { kind: "approve-continue", enabled: currentGateReady, canSkip: true };
 }
 
 /**
- * Resolve the final advance-bar action from the raw {@link footerAction} (#1285). For a blocking
- * "approve & continue" (gate not ready), it lights up in priority order:
- *   1. `pendingCount > 0` — there are drafted-but-unconfirmed sections; clicking confirms them (the
- *      normal one-click approval, NOT an override).
- *   2. `allowOverride` — the user enabled gate override in Settings; force-enable + flag `override`
- *      so the footer renders a cautionary "override gate & continue" that bypasses the gate.
- * Otherwise the action passes through unchanged (button stays disabled). Pure + unit-tested.
+ * Resolve the final advance-bar action from the raw {@link footerAction}. Two independent axes:
+ *
+ * PRIMARY — a blocking "approve & continue" (gate not ready) lights up when `pendingCount > 0`:
+ * there are drafted-but-unconfirmed sections and clicking confirms them (the one-click approval).
+ * Otherwise the primary stays disabled ("gate blocking…").
+ *
+ * SKIP (#2533) — for any action that shows a Skip control (`canSkip`), `skipEnabled` is set: always
+ * on an OPTIONAL stage, and on a REQUIRED stage only when the user enabled gate override (#1285).
+ * Skip is the single, uniform "move past without completing" affordance — it replaces the old
+ * cautionary primary-morph, so both optional-skip and required-override render the same way.
+ *
+ * Pure + unit-tested.
  */
-export function resolveFooter(raw: FooterAction, pendingCount: number, allowOverride: boolean): FooterAction {
-  if (raw.kind !== "approve-continue" || raw.enabled) return raw;
-  if (pendingCount > 0) return { ...raw, enabled: true };
-  if (allowOverride) return { ...raw, enabled: true, override: true };
-  return raw;
+export function resolveFooter(
+  raw: FooterAction, pendingCount: number, allowOverride: boolean, activeOptional: boolean,
+): FooterAction {
+  // Skip actionability (only meaningful where a Skip control is shown).
+  const withSkip = raw.canSkip ? { ...raw, skipEnabled: activeOptional || allowOverride } : raw;
+  // One-click confirm lights the blocking primary; nothing else force-enables it now.
+  if (withSkip.kind !== "approve-continue" || withSkip.enabled) return withSkip;
+  if (pendingCount > 0) return { ...withSkip, enabled: true };
+  return withSkip;
 }
 
 /** Whether the active stage's gate is satisfied — enables "approve & continue". */

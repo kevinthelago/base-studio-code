@@ -794,12 +794,10 @@ export function Planning({ visible }: { visible: boolean }) {
                   // confirm the ui section). Stays on the stage so the footer flips to advance.
                   if (focusFooter.kind === "route-design") { void routeDesignToProject(); return; }
                   if (focusFooter.kind === "approve-continue") {
-                    // User gate override (#1285): the gate isn't met but the user chose to advance —
-                    // force past the active stage (the skip/advance primitive) and tell the planner.
-                    if (focusFooter.override) { onSkipStage(); setFocusSel(null); return; }
                     // One-click stage approval: confirm every drafted section the active stage needs,
                     // then tell the planner in a single message. The gate re-evaluates and the
-                    // selection re-follows to the next live stage (#807-followup).
+                    // selection re-follows to the next live stage (#807-followup). Moving past a
+                    // blocking gate now goes through the uniform Skip control (#2533), not the primary.
                     if (pendingConfirm.length > 0) confirmStageKeys(pendingConfirm);
                   }
                   setFocusSel(null); // re-follow the live stage

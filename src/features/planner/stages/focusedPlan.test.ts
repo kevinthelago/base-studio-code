@@ -116,57 +116,56 @@ describe("gatePill (#652)", () => {
   });
 });
 
-describe("footerAction (#652)", () => {
+describe("footerAction (#652/#2533)", () => {
   it("navigates by selection vs active, publishes when complete", () => {
     expect(footerAction(2, 1, false, false).kind).toBe("back-to-current");
     expect(footerAction(0, 1, false, false).kind).toBe("jump-to-current");
     expect(footerAction(1, 1, true, false)).toEqual({ kind: "publish", enabled: true });
-    expect(footerAction(1, 1, false, true)).toEqual({ kind: "approve-continue", enabled: true, canSkip: false });
-    expect(footerAction(1, 1, false, false)).toEqual({ kind: "approve-continue", enabled: false, canSkip: false });
   });
 
-  it("offers a skip control on the active OPTIONAL stage (#921)", () => {
-    // The active stage is an enabled optional stage the user hasn't decided — `canSkip` lights up
-    // alongside "approve & continue" so the USER, not the app, decides whether to skip it.
-    expect(footerAction(1, 1, false, false, true)).toEqual({ kind: "approve-continue", enabled: false, canSkip: true });
-    expect(footerAction(1, 1, false, true, true)).toEqual({ kind: "approve-continue", enabled: true, canSkip: true });
+  it("shows a Skip control on EVERY active stage (#2533) — not just optional ones", () => {
+    // On the active stage, `canSkip` is always true so the footer reads as a uniform Continue + Skip
+    // pair; whether Skip is actionable is decided later by resolveFooter (`skipEnabled`).
+    expect(footerAction(1, 1, false, true)).toEqual({ kind: "approve-continue", enabled: true, canSkip: true });
+    expect(footerAction(1, 1, false, false)).toEqual({ kind: "approve-continue", enabled: false, canSkip: true });
     // Browsing away from the active stage never offers skip.
-    expect(footerAction(2, 1, false, false, true).kind).toBe("back-to-current");
+    expect(footerAction(2, 1, false, false).kind).toBe("back-to-current");
+    expect(footerAction(0, 1, false, false).canSkip).toBeUndefined();
   });
 
-  it("routes the design on the active UI stage when it's missing/stale (#2121)", () => {
-    // routeDesign=true on the active stage → an always-enabled "route-design" action instead of
-    // "approve & continue". SKIP is hidden while route-design is the primary action — even when the
-    // stage is optional — so the user can't both "route the design" and "skip the stage" at once.
-    expect(footerAction(1, 1, false, false, false, true)).toEqual({ kind: "route-design", enabled: true, canSkip: false });
-    expect(footerAction(1, 1, false, true, true, true)).toEqual({ kind: "route-design", enabled: true, canSkip: false });
-    // Skip DOES return on the normal approve-continue once the design is routed (routeDesign=false).
-    expect(footerAction(1, 1, false, true, true, false)).toEqual({ kind: "approve-continue", enabled: true, canSkip: true });
+  it("routes the design on the active UI stage when it's missing/stale, still offering skip (#2121/#2533)", () => {
+    // routeDesign=true on the active stage → an always-enabled "route-design" primary instead of
+    // "approve & continue". Skip is now ALSO shown (#2533) — routing and skipping are both valid.
+    expect(footerAction(1, 1, false, false, true)).toEqual({ kind: "route-design", enabled: true, canSkip: true });
+    expect(footerAction(1, 1, false, true, true)).toEqual({ kind: "route-design", enabled: true, canSkip: true });
     // route-design never overrides navigation or publish.
-    expect(footerAction(2, 1, false, false, false, true).kind).toBe("back-to-current");
-    expect(footerAction(1, 1, true, false, false, true)).toEqual({ kind: "publish", enabled: true });
+    expect(footerAction(2, 1, false, false, true).kind).toBe("back-to-current");
+    expect(footerAction(1, 1, true, false, true)).toEqual({ kind: "publish", enabled: true });
     // Once the design is current (routeDesign=false) it reverts to the normal advance action.
-    expect(footerAction(1, 1, false, true, false, false).kind).toBe("approve-continue");
+    expect(footerAction(1, 1, false, true, false).kind).toBe("approve-continue");
   });
 });
 
-describe("resolveFooter — gate override (#1285)", () => {
-  const blocked = footerAction(1, 1, false, false); // approve-continue, gate blocking
-  it("passes an already-enabled or non-approve action through untouched", () => {
-    const ready = footerAction(1, 1, false, true);
-    expect(resolveFooter(ready, 0, true)).toBe(ready);
+describe("resolveFooter — skip gating + one-click confirm (#1285/#2533)", () => {
+  const blocked = footerAction(1, 1, false, false); // approve-continue, gate blocking, canSkip
+  it("passes a non-skippable action (publish/nav) through untouched", () => {
     const publish = footerAction(1, 1, true, false);
-    expect(resolveFooter(publish, 0, true)).toBe(publish);
+    expect(resolveFooter(publish, 0, true, false)).toBe(publish);
+    const nav = footerAction(2, 1, false, false);
+    expect(resolveFooter(nav, 0, false, false)).toBe(nav);
   });
-  it("pending-confirm enables WITHOUT marking override (normal one-click approval)", () => {
-    const r = resolveFooter(blocked, 2, true);
-    expect(r.enabled).toBe(true);
-    expect(r.override).toBeUndefined();
+  it("enables Skip on an optional stage always; on a required stage only with gate override", () => {
+    expect(resolveFooter(blocked, 0, false, true).skipEnabled).toBe(true);   // optional → always
+    expect(resolveFooter(blocked, 0, false, false).skipEnabled).toBe(false); // required + override off
+    expect(resolveFooter(blocked, 0, true, false).skipEnabled).toBe(true);   // required + override on
+    // Skip gating never touches the primary, and there is no `override` flag anymore.
+    expect(resolveFooter(blocked, 0, true, false).enabled).toBe(false);
+    expect("override" in resolveFooter(blocked, 0, true, false)).toBe(false);
   });
-  it("override enables + flags a blocking gate ONLY when allowed and nothing to confirm", () => {
-    expect(resolveFooter(blocked, 0, false)).toEqual(blocked);          // off → still blocked
-    const r = resolveFooter(blocked, 0, true);
-    expect(r).toMatchObject({ kind: "approve-continue", enabled: true, override: true });
+  it("pending-confirm lights the primary; nothing else force-enables a blocking gate", () => {
+    expect(resolveFooter(blocked, 2, false, false).enabled).toBe(true);  // drafted sections → confirm
+    expect(resolveFooter(blocked, 0, false, false).enabled).toBe(false); // nothing pending → blocked
+    expect(resolveFooter(blocked, 0, true, true).enabled).toBe(false);   // override enables SKIP, not primary
   });
 });
 

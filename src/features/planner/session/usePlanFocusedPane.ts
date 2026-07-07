@@ -2,8 +2,9 @@
 // derived advance-bar/pill/prompt-help. Owns `focusSel` (null = auto-follow the active stage; a
 // number = a user-pinned selection), resets it on a project/blueprint switch, and derives:
 //   • focusSelectedIdx — the clamped resolved index (selection ?? active).
-//   • focusFooter — the advance-bar action (footerAction → resolveFooter); lit by pendingConfirm, and
-//     with gate-override on (#1285) a blocking gate becomes a cautionary "override gate & continue".
+//   • focusFooter — the advance-bar action (footerAction → resolveFooter); the primary is lit by
+//     pendingConfirm, and a uniform Skip control (skipEnabled) advances past a stage — always on an
+//     optional stage, and on a required stage only with gate-override on (#1285/#2533).
 //   • focusPill — the selected stage's gate pill.
 //   • focusStagePrompts — the injectable prompts for the SELECTED stage (the header "?" helper).
 // The JSX wires `setFocusSel` into onSelect/onBack/onSkip/onPrimary. Behavior-preserving move — the
@@ -53,16 +54,16 @@ export function usePlanFocusedPane(opts: PlanFocusedPaneOpts) {
   useEffect(() => { setFocusSel(null); }, [effectiveProjectId, effectiveBlueprintId]);
   const focusSelectedIdx = clampIndex(focusSel ?? focusActiveIdx, stages.length);
 
-  // The active stage is an enabled OPTIONAL stage the user hasn't decided yet — so the advance bar
-  // offers a "Skip stage" control beside the primary action (#921).
-  const activeSkippable = stages[focusActiveIdx]?.optional === true && stages[focusActiveIdx]?.status === "active";
+  // Whether the active stage is OPTIONAL — drives Skip actionability (#2533): an optional stage is
+  // always skippable; a required one only when gate-override is on. The Skip CONTROL itself now shows
+  // on every active stage (footerAction), so the footer reads as a uniform Continue + Skip pair.
+  const activeOptional = stages[focusActiveIdx]?.optional === true;
   // #2121: on the active UI stage with missing/stale design, the primary action routes the design.
   const routeDesign = stages[focusActiveIdx]?.key === "ui" && uiNeedsRoute;
-  const footerRaw = footerAction(focusSelectedIdx, focusActiveIdx, planComplete, focusGateReady, activeSkippable, routeDesign);
+  const footerRaw = footerAction(focusSelectedIdx, focusActiveIdx, planComplete, focusGateReady, routeDesign);
   // Let "approve & continue" light up as soon as there are drafted sections to confirm (clicking
-  // confirms them, see onPrimary), and — when the user enabled gate override (#1285) — let a blocking
-  // gate be force-advanced as a cautionary "override gate & continue".
-  const focusFooter = resolveFooter(footerRaw, pendingConfirm.length, allowGateOverride);
+  // confirms them, see onPrimary); resolveFooter also sets `skipEnabled` from optional + override.
+  const focusFooter = resolveFooter(footerRaw, pendingConfirm.length, allowGateOverride, activeOptional);
   const focusSelStage = stages[focusSelectedIdx];
   const focusPill = focusSelStage ? gatePill(focusSelStage) : "wait";
   // Injectable prompts for the SELECTED stage — the header "?" helper lists them and the user picks
