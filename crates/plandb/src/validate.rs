@@ -353,6 +353,189 @@ fn service_missing_checks(s: &Value) -> Vec<&'static str> {
     missing
 }
 
+// ── market assessment (`bsc plan market set`) — the marketDefined gate's artifact (#2430) ───────
+
+/// The market-stage rubric — the same file the frontend imports as `@data/market/rubric.json`
+/// (#2430), embedded at compile time (the deploy-taxonomy pattern) so the validator and the
+/// frontend's weighted-total computation share one dimension vocabulary.
+const MARKET_RUBRIC_JSON: &str = include_str!("../../../src-tauri/data/market/rubric.json");
+
+/// The rubric's dimension ids (problemSeverity … moat), in rubric order.
+fn market_dimensions() -> &'static Vec<String> {
+    static DIMS: OnceLock<Vec<String>> = OnceLock::new();
+    DIMS.get_or_init(|| {
+        let v: Value = serde_json::from_str(MARKET_RUBRIC_JSON).unwrap_or(Value::Null);
+        v["dimensions"]
+            .as_array()
+            .map(|arr| arr.iter().filter_map(|d| d["id"].as_str().map(String::from)).collect())
+            .unwrap_or_default()
+    })
+}
+
+/// The verdict vocabulary the frontend gate reads.
+const MARKET_RECOMMENDATIONS: &[&str] = &["go", "caution", "no-go"];
+
+/// Validate a market assessment blob (`bsc plan market set`) against the #2430 contract — the
+/// structured artifact behind the `marketDefined` gate. Required: a non-empty `summary`; a `scores`
+/// object with EXACTLY the six rubric dimensions, each `{score: integer 1-5, rationale: non-empty,
+/// sources: non-empty array of non-empty strings}` (citation discipline — an uncited score is
+/// confident fiction); a `verdict` with `recommendation` ∈ go|caution|no-go and a non-empty
+/// `rationale`. `sizing`/`competitors` are optional — shape-checked only when present. Rejections
+/// are field-level (#2395) so an LLM author can self-correct.
+pub fn validate_market_config(v: &Value) -> Result<(), String> {
+    let noun = "market assessment";
+    if !v.is_object() {
+        return Err(reject(noun, vec![
+            r#"the market assessment must be a JSON object: {"summary": "...", "scores": {...}, "verdict": {...}}"#.into(),
+        ]));
+    }
+    let mut errs = Vec::new();
+    if str_of(v, "summary").is_none() {
+        errs.push(r#"missing non-empty "summary" — one or two sentences: the problem, who has it, and the market's shape"#.into());
+    }
+    validate_market_scores(v, &mut errs);
+    validate_market_verdict(v, &mut errs);
+    // sizing / competitors are OPTIONAL — validate shape only when present.
+    if let Some(sizing) = v.get("sizing") {
+        if !sizing.is_null() && !sizing.is_object() {
+            errs.push(r#""sizing" must be a JSON object when present (e.g. {"tam": "...", "sam": "...", "som": "...", "method": "bottom-up: buyers x price x penetration"})"#.into());
+        }
+    }
+    match v.get("competitors") {
+        None => {}
+        Some(comps) if comps.is_null() => {}
+        Some(comps) => match comps.as_array() {
+            Some(arr) => {
+                for (i, c) in arr.iter().enumerate() {
+                    if !c.is_object() {
+                        errs.push(format!("competitors[{i}]: each competitor must be a JSON object (name / pricing / segment / gap)"));
+                    } else if str_of(c, "name").is_none() {
+                        errs.push(format!(r#"competitors[{i}]: missing non-empty "name""#));
+                    }
+                }
+            }
+            None => errs.push(r#""competitors" must be a JSON array of competitor objects when present"#.into()),
+        },
+    }
+    if errs.is_empty() { Ok(()) } else { Err(reject(noun, errs)) }
+}
+
+/// The `scores` object: EXACTLY the six rubric dimensions, each fully scored + cited.
+fn validate_market_scores(v: &Value, errs: &mut Vec<String>) {
+    let dims = market_dimensions();
+    let Some(scores) = v.get("scores") else {
+        errs.push(format!(
+            r#"missing "scores" — an object with EXACTLY the six rubric dimensions: {}"#,
+            quote_list(dims)
+        ));
+        return;
+    };
+    let Some(map) = scores.as_object() else {
+        errs.push(r#""scores" must be a JSON object keyed by dimension id"#.into());
+        return;
+    };
+    for dim in dims {
+        let at = format!("scores.{dim}");
+        let Some(cell) = map.get(dim) else {
+            errs.push(format!(
+                "{at}: missing — all six rubric dimensions must be scored (a partial rubric jams the marketDefined gate)"
+            ));
+            continue;
+        };
+        if !cell.is_object() {
+            errs.push(format!(r#"{at}: must be an object {{"score": 1-5, "rationale": "...", "sources": ["..."]}}"#));
+            continue;
+        }
+        match cell.get("score").and_then(Value::as_i64) {
+            Some(n) if (1..=5).contains(&n) => {}
+            Some(n) => errs.push(format!("{at}.score: {n} is out of range — an integer 1 to 5")),
+            None => errs.push(format!("{at}.score: missing or not an integer — an integer 1 to 5")),
+        }
+        if str_of(cell, "rationale").is_none() {
+            errs.push(format!("{at}.rationale: missing non-empty rationale — say WHY this score, from the evidence"));
+        }
+        match cell.get("sources").and_then(Value::as_array) {
+            Some(arr) if !arr.is_empty() => {
+                if !arr.iter().all(|s| s.as_str().map(str::trim).filter(|x| !x.is_empty()).is_some()) {
+                    errs.push(format!("{at}.sources: every source must be a non-empty string (the fetched URL)"));
+                }
+            }
+            Some(_) => errs.push(format!(
+                "{at}.sources: must be a NON-EMPTY array of fetched source URLs — an uncited score is confident fiction (citation discipline)"
+            )),
+            None => errs.push(format!("{at}.sources: missing — a non-empty array of fetched source URLs")),
+        }
+    }
+    for key in map.keys() {
+        if !dims.iter().any(|d| d == key) {
+            errs.push(format!(
+                "scores.{key}: unknown dimension — the rubric has EXACTLY {}",
+                quote_list(dims)
+            ));
+        }
+    }
+}
+
+/// The `verdict`: `recommendation` from the fixed vocabulary + a non-empty `rationale`.
+fn validate_market_verdict(v: &Value, errs: &mut Vec<String>) {
+    let Some(verdict) = v.get("verdict") else {
+        errs.push(r#"missing "verdict" — {"recommendation": "go" | "caution" | "no-go", "rationale": "..."}"#.into());
+        return;
+    };
+    if !verdict.is_object() {
+        errs.push(r#""verdict" must be a JSON object: {"recommendation": ..., "rationale": ...}"#.into());
+        return;
+    }
+    match str_of(verdict, "recommendation") {
+        Some(r) if MARKET_RECOMMENDATIONS.contains(&r) => {}
+        Some(r) => errs.push(format!(
+            r#"verdict.recommendation: unknown value "{r}" — expected "go" | "caution" | "no-go""#
+        )),
+        None => errs.push(r#"verdict.recommendation: missing — "go" | "caution" | "no-go""#.into()),
+    }
+    if str_of(verdict, "rationale").is_none() {
+        errs.push(r#"verdict.rationale: missing non-empty rationale — why this recommendation follows from the scores"#.into());
+    }
+}
+
+/// Whether one dimension cell is fully scored + cited (score 1-5, rationale, ≥1 source).
+fn market_dimension_scored(v: &Value, dim: &str) -> bool {
+    let Some(cell) = v.get("scores").and_then(|s| s.get(dim)) else {
+        return false;
+    };
+    cell.get("score").and_then(Value::as_i64).map(|n| (1..=5).contains(&n)).unwrap_or(false)
+        && str_of(cell, "rationale").is_some()
+        && cell.get("sources").and_then(Value::as_array).map(|a| !a.is_empty()).unwrap_or(false)
+}
+
+/// The non-fatal readiness suffix printed after a successful `market set` (mirrors
+/// [`deploy_readiness`]): `N of 6 dimensions scored, cited` + the verdict — so a `--force`-stored
+/// partial assessment shows exactly which dimensions still block the `marketDefined` gate.
+pub fn market_readiness(v: &Value) -> String {
+    let dims = market_dimensions();
+    if dims.is_empty() {
+        return String::new();
+    }
+    let missing: Vec<&str> =
+        dims.iter().filter(|d| !market_dimension_scored(v, d)).map(String::as_str).collect();
+    let scored = dims.len() - missing.len();
+    let verdict = v
+        .get("verdict")
+        .and_then(|w| w.get("recommendation"))
+        .and_then(Value::as_str)
+        .unwrap_or("unset");
+    if missing.is_empty() {
+        format!(" — {scored} of {} dimensions scored, cited (verdict: {verdict})", dims.len())
+    } else {
+        format!(
+            " — {scored} of {} dimensions scored ({} missing) — gate blocked: the marketDefined gate needs all {}, cited",
+            dims.len(),
+            missing.join(", "),
+            dims.len()
+        )
+    }
+}
+
 // ── fleet plan (`bsc plan fleet set` / `fleet stream set` / `fleet meta set`) ────────────────────
 
 /// Validate a whole FleetPlan blob against what `fleet_set` + the frontend `parseFleetFile` consume.
@@ -788,6 +971,151 @@ mod tests {
         assert_eq!(deploy_readiness(&json!({ "services": [sec] })), " — 1 of 1 deploy-ready");
         // Zero services: the gate can never pass — say so.
         assert!(deploy_readiness(&json!({ "services": [] })).contains("gate blocked"));
+    }
+
+    // ── market ───────────────────────────────────────────────────────────────────────────────
+
+    /// A fully scored + cited market assessment (the #2430 contract shape).
+    fn good_market() -> Value {
+        let cell = |score: i64| {
+            json!({ "score": score, "rationale": "cited evidence", "sources": ["https://example.com/source"] })
+        };
+        json!({
+            "summary": "Real, cited pain in a reachable niche.",
+            "scores": {
+                "problemSeverity": cell(4), "problemFrequency": cell(3), "reachableMarket": cell(4),
+                "competitiveGap": cell(3), "timing": cell(3), "moat": cell(2)
+            },
+            "sizing": { "tam": "$4B", "sam": "$480M", "som": "$2M ARR", "method": "bottom-up" },
+            "competitors": [{ "name": "FreshBooks", "pricing": "$19-60/mo", "gap": "chasing is buried" }],
+            "verdict": { "recommendation": "caution", "rationale": "thin moat" }
+        })
+    }
+
+    #[test]
+    fn market_accepts_the_contract_shape_with_and_without_optionals() {
+        assert!(validate_market_config(&good_market()).is_ok());
+        // sizing/competitors are optional — a payload without them is still valid.
+        let mut lean = good_market();
+        lean.as_object_mut().unwrap().remove("sizing");
+        lean.as_object_mut().unwrap().remove("competitors");
+        assert!(validate_market_config(&lean).is_ok());
+    }
+
+    #[test]
+    fn market_rejects_each_broken_dimension_shape_with_a_field_level_message() {
+        // missing dimension — named
+        let mut m = good_market();
+        m["scores"].as_object_mut().unwrap().remove("timing");
+        let err = validate_market_config(&m).unwrap_err();
+        assert!(err.contains("scores.timing: missing"), "names the missing dimension: {err}");
+        // score 0 (below range) — named
+        let mut m = good_market();
+        m["scores"]["moat"]["score"] = json!(0);
+        let err = validate_market_config(&m).unwrap_err();
+        assert!(err.contains("scores.moat.score: 0 is out of range"), "{err}");
+        // score 6 (above range) — named
+        let mut m = good_market();
+        m["scores"]["problemSeverity"]["score"] = json!(6);
+        let err = validate_market_config(&m).unwrap_err();
+        assert!(err.contains("scores.problemSeverity.score: 6 is out of range"), "{err}");
+        // non-integer score
+        let mut m = good_market();
+        m["scores"]["timing"]["score"] = json!(3.5);
+        assert!(validate_market_config(&m).unwrap_err().contains("scores.timing.score: missing or not an integer"));
+        // empty rationale — named
+        let mut m = good_market();
+        m["scores"]["competitiveGap"]["rationale"] = json!("  ");
+        let err = validate_market_config(&m).unwrap_err();
+        assert!(err.contains("scores.competitiveGap.rationale"), "{err}");
+        // empty sources — the citation-discipline rejection, named
+        let mut m = good_market();
+        m["scores"]["reachableMarket"]["sources"] = json!([]);
+        let err = validate_market_config(&m).unwrap_err();
+        assert!(err.contains("scores.reachableMarket.sources") && err.contains("NON-EMPTY"), "{err}");
+        // a blank source string inside the array
+        let mut m = good_market();
+        m["scores"]["problemFrequency"]["sources"] = json!(["https://ok.example", ""]);
+        assert!(validate_market_config(&m).unwrap_err().contains("scores.problemFrequency.sources"));
+        // an unknown seventh dimension — EXACTLY six
+        let mut m = good_market();
+        m["scores"]["brandStrength"] = json!({ "score": 3, "rationale": "r", "sources": ["https://x"] });
+        let err = validate_market_config(&m).unwrap_err();
+        assert!(err.contains("scores.brandStrength: unknown dimension"), "{err}");
+    }
+
+    #[test]
+    fn market_rejects_summary_verdict_and_structural_problems() {
+        // bad recommendation — named, with the vocabulary
+        let mut m = good_market();
+        m["verdict"]["recommendation"] = json!("maybe");
+        let err = validate_market_config(&m).unwrap_err();
+        assert!(err.contains(r#"verdict.recommendation: unknown value "maybe""#) && err.contains("no-go"), "{err}");
+        // missing verdict / empty verdict rationale
+        let mut m = good_market();
+        m.as_object_mut().unwrap().remove("verdict");
+        assert!(validate_market_config(&m).unwrap_err().contains(r#"missing "verdict""#));
+        let mut m = good_market();
+        m["verdict"]["rationale"] = json!("");
+        assert!(validate_market_config(&m).unwrap_err().contains("verdict.rationale"));
+        // missing summary / scores / root shape
+        let mut m = good_market();
+        m.as_object_mut().unwrap().remove("summary");
+        assert!(validate_market_config(&m).unwrap_err().contains(r#"missing non-empty "summary""#));
+        let mut m = good_market();
+        m.as_object_mut().unwrap().remove("scores");
+        assert!(validate_market_config(&m).unwrap_err().contains(r#"missing "scores""#));
+        assert!(validate_market_config(&json!("nope")).unwrap_err().contains("must be a JSON object"));
+        // optional fields shape-checked when present
+        let mut m = good_market();
+        m["sizing"] = json!("big");
+        assert!(validate_market_config(&m).unwrap_err().contains(r#""sizing" must be a JSON object"#));
+        let mut m = good_market();
+        m["competitors"] = json!("many");
+        assert!(validate_market_config(&m).unwrap_err().contains(r#""competitors" must be a JSON array"#));
+        let mut m = good_market();
+        m["competitors"] = json!([{ "pricing": "$9/mo" }]);
+        assert!(validate_market_config(&m).unwrap_err().contains(r#"competitors[0]: missing non-empty "name""#));
+        // the rejection wrapper documents the escape hatch
+        assert!(validate_market_config(&json!({})).unwrap_err().contains("--force"));
+    }
+
+    #[test]
+    fn market_readiness_mirrors_the_gate_and_names_missing_dimensions() {
+        assert_eq!(
+            market_readiness(&good_market()),
+            " — 6 of 6 dimensions scored, cited (verdict: caution)"
+        );
+        // a partial (--force-stored) assessment names what still blocks the gate
+        let mut m = good_market();
+        m["scores"].as_object_mut().unwrap().remove("timing");
+        m["scores"]["moat"]["sources"] = json!([]);
+        let echo = market_readiness(&m);
+        assert!(echo.contains("4 of 6 dimensions scored"), "{echo}");
+        assert!(echo.contains("timing, moat missing"), "{echo}");
+        assert!(echo.contains("gate blocked") && echo.contains("marketDefined"), "{echo}");
+    }
+
+    #[test]
+    fn market_rubric_embeds_six_dimensions_and_unit_weights_per_category() {
+        // The embedded file is the SAME @data/market/rubric.json the frontend loads for the
+        // weighted total — guard the dimension set + that every category's weights cover exactly
+        // those dimensions and sum to 1.
+        let dims = market_dimensions();
+        assert_eq!(
+            dims.as_slice(),
+            ["problemSeverity", "problemFrequency", "reachableMarket", "competitiveGap", "timing", "moat"]
+        );
+        let rubric: Value = serde_json::from_str(MARKET_RUBRIC_JSON).unwrap();
+        let weights = rubric["weights"].as_object().expect("weights map");
+        for cat in ["greenfield", "transform", "harden", "maintain"] {
+            let w = weights[cat].as_object().unwrap_or_else(|| panic!("weights for {cat}"));
+            let keys: std::collections::BTreeSet<&str> = w.keys().map(String::as_str).collect();
+            let expected: std::collections::BTreeSet<&str> = dims.iter().map(String::as_str).collect();
+            assert_eq!(keys, expected, "{cat} weights cover exactly the rubric dimensions");
+            let sum: f64 = w.values().filter_map(Value::as_f64).sum();
+            assert!((sum - 1.0).abs() < 1e-9, "{cat} weights sum to 1 (got {sum})");
+        }
     }
 
     // ── fleet ────────────────────────────────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ import { reconcileConfirmations, reconcileSkips, type ConfirmRow } from "../stag
 import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencies";
 import { AUTHORING_BLUEPRINT_ID } from "../stages/blueprints";
 import { parseDeployConfigTag } from "../lib/deployConfig";
+import { coerceMarketConfig } from "../lib/marketConfig";
 import { applyMcpAssign } from "../lib/planExtensions";
 import { catalogLink } from "@/features/mcp";
 import { coerceBlueprint } from "../blueprints/blueprintShare";
@@ -46,6 +47,7 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
   // gates the one-time legacy dependencies.json import; `mcpAppliedRef` the per-name MCP resolve;
   // `lastBpJsonRef` the authored-blueprint coercion (reset on project switch).
   const deployAppliedRef = useRef<Record<string, string>>({});
+  const marketAppliedRef = useRef<Record<string, string>>({});
   const depsAppliedRef = useRef<Record<string, string>>({});
   const depsImportedRef = useRef<Set<string>>(new Set());
   const mcpAppliedRef = useRef<Set<string>>(new Set());
@@ -136,6 +138,22 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
             }
           }
         } catch { /* plan.db not created until the planner sets deploy — ignore */ }
+
+        // Market assessment is DB-owned (#2430) — the planner records the scored rubric with
+        // `bsc plan market set` (validated at write). Coerce the stored blob and push it into
+        // planMarketConfig so the `marketDefined` gate signal + the Market body read it. Skip an
+        // unchanged blob so we don't churn the store every tick.
+        try {
+          const dbMarket = await bscJson<unknown | null>(effectiveProjectId, ["plan", "market", "get", "--json"], null);
+          if (dbMarket) {
+            const raw = JSON.stringify(dbMarket);
+            if (raw !== marketAppliedRef.current[effectiveProjectId]) {
+              marketAppliedRef.current[effectiveProjectId] = raw;
+              const cfg = coerceMarketConfig(dbMarket);
+              if (cfg) store.setPlanMarketConfig(effectiveProjectId, cfg);
+            }
+          }
+        } catch { /* plan.db not created until the planner sets the market assessment — ignore */ }
 
         // Dependency manifest is DB-owned (#1191) — the planner records it with `bsc-plan deps set`
         // (was a raw `dependencies.json`). Reflect the stored blob into the DEPENDENCIES section so the

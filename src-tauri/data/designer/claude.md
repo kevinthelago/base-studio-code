@@ -19,15 +19,49 @@ Everything you produce lives in the shared component-library store and is reache
 - `bsc ui validate <file>` (or spec JSON on stdin) — structurally validate a KitNode spec against
   the contract. **Always validate a spec before writing it into the store**; only an `ok` spec
   renders in the desktop preview.
-- `bsc ui theme list` / `bsc ui theme get <id>` — the kit theme registry (semantic component-token
-  overrides: `--card-*` / `--btn-*` / `--field-*` / `--chip-*`).
+- `bsc ui theme list [--full]` / `bsc ui theme get <id>` — the kit theme collection (semantic
+  component-token overrides: `--card-*` / `--btn-*` / `--field-*` / `--chip-*`).
 
-**Kit + component CRUD:**
+**Kit + component + theme CRUD:**
 
 - `bsc ui list [--full]` · `bsc ui get <id>` · `bsc ui set` (JSON on stdin, upsert by `id`) ·
   `bsc ui remove <id>` — the components.
 - `bsc ui kit list` · `bsc ui kit get <id>` · `bsc ui kit set` · `bsc ui kit remove <id>` — the
   kits (technology-scoped namespaces: `{ id, name, stack, dot }`).
+- `bsc ui theme set` (JSON on stdin, upsert by `id`) · `bsc ui theme remove <id>` — the themes
+  (see **Theme authoring** below). Removing a built-in's stored copy restores the packaged version.
+
+## Theme authoring — palettes only
+
+A **theme** retints the whole kit without touching any component or spec: it is a map of overrides
+for the SEMANTIC component tokens, shape `{ id, label, description, vars }`. Read
+`bsc ui theme get default` (empty `vars` — the base look) and `bsc ui theme get soft` /
+`contrast` / `warm` for exemplars before authoring.
+
+**The semantic-token contract** — `vars` keys are exactly these CSS custom properties (defined in
+the app's `tokens.css`; a key outside this set silently does nothing):
+
+- **Cards**: `--card-bg` · `--card-border` · `--card-radius` · `--card-pad`
+- **Buttons**: `--btn-bg` · `--btn-bg-hover` · `--btn-border` · `--btn-fg` · `--btn-radius` ·
+  `--btn-primary-bg` · `--btn-primary-fg`
+- **Fields**: `--field-bg` · `--field-border` · `--field-fg` · `--field-radius` ·
+  `--field-focus-border`
+- **Chips**: `--chip-bg` · `--chip-fg` · `--chip-border`
+
+**Rules:**
+
+- **Palettes only.** A theme overrides token VALUES — it never changes a spec's structure, a
+  component's markup, or invents new token names. Structural change = a component variant or a new
+  spec, not a theme.
+- **Compose, don't hardcode.** Reference base tokens (`var(--bg-elev)`, `var(--accent)`,
+  `color-mix(in oklch, var(--bg-panel), var(--accent) 7%)`) rather than raw hex, so the theme
+  composes with light/dark and the user's chosen accent.
+- **Author → set → verify.** Write the theme JSON, `bsc ui theme set` it (stdin), then
+  `bsc ui theme get <id>` to confirm the stored copy. The desktop pickers (Settings → Appearance,
+  the Design Studio preview) list it immediately.
+- **Built-ins refresh.** The packaged themes (`default`/`soft`/`contrast`/`warm`) are seeded and
+  tracked release-to-release; editing one keeps YOUR copy (with an "updated upstream" notice when
+  the packaged version moves). Prefer authoring a NEW id over editing `default`.
 
 ## The kit model
 

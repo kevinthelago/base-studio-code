@@ -20,14 +20,22 @@
 // same helper can be extracted for the other seed-and-keep stores (personas, orgs, blueprints) later
 // — it has no component-specific knowledge beyond the volatile-field list above.
 
-/** The minimum shape the reconcile needs; components and kits both satisfy it. */
+/** The minimum shape the reconcile needs; components, kits, and themes (#2488) all satisfy it. */
 export interface SeedRecord {
   id: string;
-  name: string;
+  /** Display name for the notices — components/kits carry `name`; themes carry `label` instead. */
+  name?: string;
+  /** Theme display name (#2488) — the notices fall back name → label → id. */
+  label?: string;
   /** A packaged built-in. Absent/false ⇒ user-authored (never touched by the reconcile). */
   builtin?: boolean;
   /** The content hash stamped when this copy was seeded (#2483). Absent ⇒ a legacy pre-#2483 copy. */
   seedHash?: string;
+}
+
+/** The display name a notice carries: `name` (components/kits) → `label` (themes) → the id. */
+function displayName(rec: SeedRecord): string {
+  return rec.name ?? rec.label ?? rec.id;
 }
 
 /** Fields excluded from the seed hash — see the module doc for why each. */
@@ -68,7 +76,7 @@ export function stampSeedHash<T extends SeedRecord>(record: T): T {
 }
 
 /** What a notice is about. */
-export type SeedNoticeType = "component" | "kit";
+export type SeedNoticeType = "component" | "kit" | "theme";
 
 /** A reconcile outcome the user should see (the propagation-surface record, #2483). */
 export interface SeedNotice {
@@ -136,11 +144,11 @@ export function reconcileSeed<T extends SeedRecord>(loaded: T[], seed: T[], type
         pushes.push(seeded);
       } else {
         records.push(rec); // current, or customized (store wins)
-        if (modified && seedMoved) notices.push({ kind: "updated-upstream", type, id: rec.id, name: rec.name });
+        if (modified && seedMoved) notices.push({ kind: "updated-upstream", type, id: rec.id, name: displayName(rec) });
       }
     } else if (modified) {
       records.push(rec); // customized copy of a retired built-in — keep, but say so
-      notices.push({ kind: "orphaned", type, id: rec.id, name: rec.name });
+      notices.push({ kind: "orphaned", type, id: rec.id, name: displayName(rec) });
     } else {
       drops.push(rec.id); // pristine copy of a retired built-in → delete
     }

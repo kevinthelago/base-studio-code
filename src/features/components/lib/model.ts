@@ -29,7 +29,22 @@ export interface PropSpec {
 export interface Kit {
   id: string;
   name: string;
-  /** Short stack label (e.g. "React · TypeScript"). */
+  /** The technology axis (#2487) — a lowercase slug (`react`, `vue`, `kotlin`, …), the top level of
+   *  the Design Studio rail hierarchy (tech → visual language → kit → components). Absent ⇒ a
+   *  user-authored/imported kit that never declared one; it groups into the trailing "other" bucket
+   *  (`kitGroups.ts`), never crashes the rail. OPTIONAL rather than defaulted-to-`""` on purpose: a
+   *  pre-#2487 store copy must keep hashing to its recorded `seedHash` (absent fields drop out of
+   *  `stableStringify`), so the #2483 reconcile sees it as pristine and auto-refreshes it when the
+   *  packaged seed gains these fields. */
+  tech?: string;
+  /** The visual-language axis (#2487) — the label of the kit's visual language (`studio`, `demo`,
+   *  `material`, …), the second rail level. A visual language is a STRUCTURALLY different component
+   *  set — different DOM/composition/CSS architecture, i.e. a DIFFERENT KIT — which is why it lives
+   *  on the kit. The palette is the separate THEME axis: a theme restyles ONE kit via its semantic
+   *  tokens and deliberately never appears in this hierarchy. Absent ⇒ "other" bucket (see `tech`). */
+  style?: string;
+  /** Short stack label — display text only (e.g. "React · TypeScript"); the structured grouping
+   *  axes are `tech` + `style`. */
   stack: string;
   /** The kit's dot color (a CSS color; the seed uses app tokens). */
   dot: string;

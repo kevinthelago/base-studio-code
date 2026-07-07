@@ -3,8 +3,11 @@
 //!
 //! - the **contract** verbs (#1852, owned here, over the embedded KitNode contract
 //!   `crate::CONTRACT_JSON`): `schema` (print the contract — every kind, its fields + enums),
-//!   `validate [file]` (check a KitNode spec, a file else stdin, against it), and `theme list|get`
-//!   (the kit THEME registry).
+//!   `validate [file]` (check a KitNode spec, a file else stdin, against it), and
+//!   `theme list|get|set|remove` (the kit THEME collection — a designer-writable verbatim-JSON store
+//!   at `~/.base-studio-code/themes/` seeded by the desktop from the embedded registry, #2488; the
+//!   reads MERGE the embedded built-ins in so a pre-seed session still sees every theme, and the
+//!   mutations are ui-scope gated like the component `set`/`remove`, #2470).
 //! - the **released-kit store** verb (#2465, owned here): `release list|get|add|remove|verify` —
 //!   immutable id@version kit artifacts blueprints pin (distinct from the mutable working `kit`s
 //!   below; a RELEASE is a frozen published snapshot).
@@ -90,16 +93,23 @@ at emission time (never snapshotted), and an unknown id errors listing the avail
     },
     CmdDoc {
         name: "theme",
-        summary: "the kit THEME registry — list themes or get one (#1852 Phase 3)",
+        summary: "the kit THEME store — list/get themes, or author them via set/remove (#1852/#2488)",
         usage: "\
 USAGE:
-  bsc ui theme list [--pretty]     # every theme's { id, label, description }
-  bsc ui theme get <id> [--pretty] # one theme verbatim (id, label, description, vars), or null
+  bsc ui theme list [--full] [--pretty]      # every theme's { id, label, description }; --full = complete objects
+  bsc ui theme get <id> [--pretty]           # one theme verbatim (id, label, description, vars), or null
+  bsc ui theme set [--file PATH] [--pretty]  # theme JSON (object or array) on stdin or --file; upsert by id
+  bsc ui theme remove <id> [--pretty]        # delete a stored theme (packaged built-ins stay embedded)
 
 A theme is a map of semantic component-token overrides (--card-*/--btn-*/--field-*/--chip-*) applied
 globally (:root) or scoped to a subtree — restyling every card/button/field/chip without touching a
-spec's structure. This is the SDK's THEME axis (style × theme × spec); the same registry the desktop
-theme picker reads.",
+spec's structure. This is the SDK's THEME axis (style × theme × spec); the same collection the desktop
+theme picker reads. Themes live in the designer-writable store at ~/.base-studio-code/themes/ (--dir/
+BSC_UI_THEME_DIR override, #2488); the reads MERGE the packaged built-ins in, so every theme is always
+visible and removing a built-in's stored copy falls back to the embedded one. `set`/`remove` are
+ui-scope MUTATIONS (#2470): they refuse when the session's $BSC_SCOPES grants only `ui: read`.
+`bsc ui theme get default` prints the shape to author against — palettes only: override the semantic
+tokens, never a spec's structure.",
     },
 ];
 
@@ -133,7 +143,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("validate") => cmd_validate(&args[1..]),
         Some("release") => cmd_kit(&args[1..], prog),
         Some("emit-css") => cmd_emit_css(&args[1..]),
-        Some("theme") => cmd_theme(&args[1..]),
+        Some("theme") => cmd_theme(&args[1..], prog),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
         // ours so the error shows the MERGED overview, not the component-only one.
@@ -182,27 +192,158 @@ fn cmd_validate(args: &[String]) -> Result<(), String> {
     }
 }
 
-fn cmd_theme(args: &[String]) -> Result<(), String> {
-    let pretty = args.iter().any(|a| a == "--pretty");
-    let positional: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
+/// The theme store's location knobs (#2488): `--dir` → `$BSC_UI_THEME_DIR` →
+/// `~/.base-studio-code/themes/` — the same flag→env→default precedence as every store CLI.
+const THEME_DIR_ENV: &str = "BSC_UI_THEME_DIR";
+const THEME_DIR_SEGMENT: &str = "themes";
+
+/// Resolve the designer-writable theme store (#2488) — a verbatim-JSON-per-id store like the
+/// component/kit collections, in its own `themes/` dir so ids can never collide with a kit's.
+fn theme_store(dir: &Option<String>) -> Result<bsc_json_store::Store, String> {
+    let dir = bsc_cli_util::resolve_store_path(dir, THEME_DIR_ENV, || {
+        bsc_util::bsc_base_dir()
+            .map(|b| b.join(THEME_DIR_SEGMENT))
+            .ok_or_else(|| "could not resolve a home directory; set HOME/USERPROFILE".to_string())
+    })?;
+    Ok(bsc_json_store::Store::new(dir, "theme"))
+}
+
+/// The embedded built-in themes as store-shaped records: `builtin: true` stamped in, so the desktop's
+/// hash-based seed reconcile (#2483) recognizes a not-yet-materialized built-in as a PACKAGED copy
+/// (refresh/seed it) rather than a user-authored theme (keep it forever).
+fn embedded_themes() -> Vec<serde_json::Value> {
+    crate::themes()
+        .into_iter()
+        .map(|mut t| {
+            if let Some(o) = t.as_object_mut() {
+                o.entry("builtin").or_insert(serde_json::Value::Bool(true));
+            }
+            t
+        })
+        .collect()
+}
+
+/// The `theme list` read set: the STORED themes (verbatim, in store order) plus every embedded
+/// built-in the store doesn't hold yet (stamped `builtin: true`). A store copy wins by id — so a
+/// designer-edited built-in shows the edit — and a fresh install lists exactly the packaged registry,
+/// keeping the pre-store output shape (#2488). Pure → unit-testable.
+fn merge_with_embedded(stored: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
+    let have: Vec<String> = stored
+        .iter()
+        .filter_map(|t| t.get("id").and_then(serde_json::Value::as_str).map(String::from))
+        .collect();
+    let mut all = stored;
+    for t in embedded_themes() {
+        let id = t.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if !have.iter().any(|h| h.as_str() == id) {
+            all.push(t);
+        }
+    }
+    all
+}
+
+/// `bsc ui theme …` (#1852 Phase 3 + #2488) — the kit THEME collection. Reads (`list`/`get`) merge the
+/// packaged built-ins under the store; the mutations (`set`/`remove`) persist to the theme store and
+/// are gated by the session's runtime `ui` scope (#2470) BEFORE any store is touched — the same
+/// defense-in-depth as the component `set`/`remove`, wired here because the theme verbs are bsc-ui's
+/// own (not delegated to `bsc_component::cli`, whose gate can't see them). The trailing `help` form
+/// (`theme set help`) is documentation, never a mutation — it must stay reachable read-scoped.
+fn cmd_theme(args: &[String], prog: &str) -> Result<(), String> {
+    let (mut dir, mut file) = (None::<String>, None::<String>);
+    let (mut pretty, mut full) = (false, false);
+    let mut positional: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--file" => file = it.next().cloned(),
+            "--pretty" => pretty = true,
+            "--full" => full = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            _ => positional.push(a.clone()),
+        }
+    }
+    let verb = positional.first().map(String::as_str).unwrap_or("list");
+    // `theme <verb> help` (and a stray `theme help`, though run()'s handle_help catches that form)
+    // resolves to the theme doc — reachable from ANY scope, before the mutation gate below.
+    if verb == "help" || positional.get(1).map(String::as_str) == Some("help") {
+        print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "theme"));
+        return Ok(());
+    }
     let emit = |v: &serde_json::Value| -> Result<(), String> {
         let s = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
         println!("{}", s.map_err(|e| e.to_string())?);
         Ok(())
     };
-    match positional.first().copied().unwrap_or("list") {
+    match verb {
         "list" => {
-            let list: Vec<serde_json::Value> = crate::themes()
-                .iter()
-                .map(|t| serde_json::json!({ "id": t.get("id"), "label": t.get("label"), "description": t.get("description") }))
-                .collect();
-            emit(&serde_json::Value::Array(list))
+            let stored: Vec<serde_json::Value> =
+                theme_store(&dir)?.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+            let all = merge_with_embedded(stored);
+            if full {
+                emit(&serde_json::Value::Array(all))
+            } else {
+                let lean: Vec<serde_json::Value> = all
+                    .iter()
+                    .map(|t| serde_json::json!({ "id": t.get("id"), "label": t.get("label"), "description": t.get("description") }))
+                    .collect();
+                emit(&serde_json::Value::Array(lean))
+            }
         }
         "get" => {
             let id = positional.get(1).ok_or("usage: bsc ui theme get <id>")?;
-            emit(&crate::theme_by_id(id).unwrap_or(serde_json::Value::Null))
+            match theme_store(&dir)?.get(id)? {
+                // A stored theme prints verbatim (the store owns the shape), re-indented under --pretty.
+                Some(json) => match serde_json::from_str::<serde_json::Value>(&json) {
+                    Ok(v) if pretty => emit(&v),
+                    _ => {
+                        println!("{}", json.trim_end());
+                        Ok(())
+                    }
+                },
+                // Not materialized → the embedded built-in (builtin-stamped), else null.
+                None => emit(
+                    &embedded_themes()
+                        .into_iter()
+                        .find(|t| t.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str()))
+                        .unwrap_or(serde_json::Value::Null),
+                ),
+            }
         }
-        other => Err(format!("unknown theme command '{other}' — want: list | get <id>")),
+        "set" => {
+            // ui-scope MUTATION gate (#2470) — refuse BEFORE reading input or resolving the store.
+            bsc_cli_util::require_write_scope("ui")?;
+            let raw = match file {
+                Some(p) => std::fs::read_to_string(&p).map_err(|e| format!("cannot read {p}: {e}"))?,
+                None => {
+                    let mut s = String::new();
+                    std::io::stdin().read_to_string(&mut s).map_err(|e| format!("cannot read stdin: {e}"))?;
+                    s
+                }
+            };
+            let v: serde_json::Value =
+                serde_json::from_str(&raw).map_err(|e| format!("theme is not valid JSON: {e}"))?;
+            let items = match v {
+                serde_json::Value::Array(a) => a,
+                other => vec![other],
+            };
+            let store = theme_store(&dir)?;
+            let mut ids = Vec::new();
+            for item in &items {
+                let id = bsc_json_store::cli::id_of(item, "theme")?;
+                let json = serde_json::to_string(item).map_err(|e| format!("set: {e}"))?;
+                store.set(&id, &json)?;
+                ids.push(id);
+            }
+            emit(&serde_json::json!(ids))
+        }
+        "remove" => {
+            bsc_cli_util::require_write_scope("ui")?;
+            let id = positional.get(1).ok_or("usage: bsc ui theme remove <id>")?;
+            theme_store(&dir)?.remove(id)?;
+            emit(&serde_json::json!(id))
+        }
+        other => Err(format!("unknown theme command '{other}' — want: list | get <id> | set | remove <id>")),
     }
 }
 
@@ -342,6 +483,12 @@ fn cmd_emit_css(args: &[String]) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// Serializes every test that either SETS `$BSC_SCOPES` or drives a scope-GATED verb (`set` /
+    /// `remove` on any collection): tests run in parallel threads sharing the process environment,
+    /// so an unguarded scope test would make a concurrent mutation flakily refuse. Poisoning is
+    /// ignored (an assert failure in one test must not cascade).
+    static SCOPES_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn help_overview_lists_the_commands() {
         let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMMANDS);
@@ -457,6 +604,10 @@ mod tests {
 
     #[test]
     fn component_store_verbs_dispatch_under_bsc_ui() {
+        // Drives gated verbs (`remove`) → hold the scopes lock so a concurrent scope test can't
+        // flip $BSC_SCOPES mid-run.
+        let _guard = SCOPES_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
         // The former `bsc component` root verbs work as `bsc ui …` (#2469), against a scratch --dir.
         let dir = tmp_store_dir("comp");
         assert!(run(vec!["list".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
@@ -506,5 +657,108 @@ mod tests {
         let err = run(vec!["frobnicate".into()], "bsc ui").unwrap_err();
         assert!(err.contains("unknown command 'frobnicate'"));
         assert!(err.contains("schema") && err.contains("eslint-preset"), "merged overview in the error");
+    }
+
+    // ── the designer-writable theme store (#2488) ────────────────────────────────────────────────
+
+    #[test]
+    fn theme_help_documents_the_store_verbs() {
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "theme");
+        for needle in ["set", "remove", "--file", "BSC_UI_THEME_DIR", "$BSC_SCOPES", "--full"] {
+            assert!(d.contains(needle), "theme help mentions {needle}");
+        }
+        // `bsc ui theme help` (top-level dispatch) and the trailing per-verb forms all resolve.
+        assert!(run(vec!["theme".into(), "help".into()], "bsc ui").is_ok());
+        assert!(run(vec!["theme".into(), "list".into(), "help".into()], "bsc ui").is_ok());
+    }
+
+    #[test]
+    fn merge_with_embedded_serves_builtins_under_the_store() {
+        // An empty store lists exactly the packaged registry (the pre-store output), builtin-stamped.
+        let fresh = merge_with_embedded(Vec::new());
+        assert_eq!(fresh.len(), crate::themes().len());
+        assert!(fresh.iter().any(|t| t["id"] == "default"));
+        for t in &fresh {
+            assert_eq!(t["builtin"], serde_json::json!(true), "embedded fallbacks are builtin-stamped");
+        }
+        // A stored copy WINS by id (a designer-edited built-in shows the edit) and keeps store order
+        // first; embedded built-ins the store lacks are appended.
+        let edited = serde_json::json!({ "id": "soft", "label": "Softer", "description": "d", "vars": {} });
+        let user = serde_json::json!({ "id": "neon", "label": "Neon", "description": "d", "vars": {} });
+        let merged = merge_with_embedded(vec![edited.clone(), user.clone()]);
+        assert_eq!(merged[0], edited, "store copy of a built-in wins");
+        assert_eq!(merged[1], user, "user themes ride verbatim");
+        assert_eq!(merged.iter().filter(|t| t["id"] == "soft").count(), 1, "no duplicate for an overridden built-in");
+        assert!(merged.iter().any(|t| t["id"] == "default"), "missing built-ins appended");
+    }
+
+    #[test]
+    fn theme_cli_round_trips_against_an_explicit_dir() {
+        // Drives gated verbs (`theme set`/`remove`) → hold the scopes lock (see SCOPES_ENV_LOCK).
+        let _guard = SCOPES_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        let dir = tmp_store_dir("theme");
+        let run_theme = |rest: &[&str]| {
+            let mut args = vec!["theme".to_string()];
+            args.extend(rest.iter().map(|s| s.to_string()));
+            args.extend(["--dir".to_string(), dir.clone()]);
+            run(args, "bsc ui")
+        };
+        // Reads work over the empty store (embedded fallback keeps the pre-store semantics).
+        run_theme(&["list"]).unwrap();
+        run_theme(&["list", "--full", "--pretty"]).unwrap();
+        run_theme(&["get", "default"]).unwrap();
+        // set via --file (stdin isn't drivable in a unit test) — the source file lives OUTSIDE the
+        // store dir so `list` can't pick it up as a record.
+        let src = std::env::temp_dir().join(format!("bsc-ui-theme-src-{}.json", std::process::id()));
+        std::fs::write(&src, r#"{"id":"neon","label":"Neon","description":"glow","vars":{"--card-bg":"black"}}"#).unwrap();
+        run_theme(&["set", "--file", src.to_str().unwrap()]).unwrap();
+        let store = bsc_json_store::Store::new(dir.clone(), "theme");
+        assert_eq!(
+            store.get("neon").unwrap().as_deref(),
+            Some(r#"{"id":"neon","label":"Neon","description":"glow","vars":{"--card-bg":"black"}}"#),
+            "stored verbatim"
+        );
+        run_theme(&["get", "neon"]).unwrap();
+        run_theme(&["get", "neon", "--pretty"]).unwrap();
+        // An array upserts every element by id.
+        std::fs::write(&src, r#"[{"id":"a1","label":"A","description":"","vars":{}},{"id":"b2","label":"B","description":"","vars":{}}]"#).unwrap();
+        run_theme(&["set", "--file", src.to_str().unwrap()]).unwrap();
+        assert!(store.get("a1").unwrap().is_some() && store.get("b2").unwrap().is_some());
+        // remove deletes the stored record; a removed built-in override falls back to embedded (get ok).
+        run_theme(&["remove", "neon"]).unwrap();
+        assert!(store.get("neon").unwrap().is_none());
+        run_theme(&["get", "neon"]).unwrap(); // prints null, still Ok
+        // A theme without an id is rejected; garbage JSON is rejected; unknown verbs error.
+        std::fs::write(&src, r#"{"label":"NoId"}"#).unwrap();
+        assert!(run_theme(&["set", "--file", src.to_str().unwrap()]).is_err());
+        std::fs::write(&src, "not json").unwrap();
+        assert!(run_theme(&["set", "--file", src.to_str().unwrap()]).is_err());
+        assert!(run_theme(&["frobnicate"]).is_err());
+        assert!(run_theme(&["get"]).is_err(), "get without an id is a usage error");
+        assert!(run_theme(&["remove"]).is_err(), "remove without an id is a usage error");
+        let _ = std::fs::remove_file(&src);
+    }
+
+    #[test]
+    fn theme_mutations_refuse_under_a_read_ui_scope_and_help_stays_reachable() {
+        let _guard = SCOPES_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
+        // The mutations refuse AT THE GATE — before stdin/--file is read or any store dir resolved
+        // (no --dir/--file passed on purpose: reaching either would hang on stdin / touch the real
+        // default store).
+        let err = run(vec!["theme".into(), "set".into()], "bsc ui").unwrap_err();
+        assert!(err.contains("'ui'"), "refusal names the scope: {err}");
+        assert!(err.contains("BSC_SCOPES"), "refusal names the env doc: {err}");
+        let err = run(vec!["theme".into(), "remove".into(), "x".into()], "bsc ui").unwrap_err();
+        assert!(err.contains("read-only"), "remove refuses too: {err}");
+        // Reads keep working under the read scope (the planner's `ui: read` can list/get themes) …
+        let dir = tmp_store_dir("theme-read");
+        assert!(run(vec!["theme".into(), "list".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        assert!(run(vec!["theme".into(), "get".into(), "default".into(), "--dir".into(), dir], "bsc ui").is_ok());
+        // … and the trailing `help` forms are documentation, not mutations — reachable read-scoped.
+        assert!(run(vec!["theme".into(), "set".into(), "help".into()], "bsc ui").is_ok());
+        assert!(run(vec!["theme".into(), "remove".into(), "help".into()], "bsc ui").is_ok());
+        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
     }
 }
