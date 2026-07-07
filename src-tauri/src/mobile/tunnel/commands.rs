@@ -319,6 +319,25 @@ pub fn tunnel_set_store_state(domain: String, rev: u64, json: String, state: Sta
     });
 }
 
+/// Queue an FCM push for one alert from the #2498 taxonomy (agent-paused / prompt-waiting /
+/// worker-question / fleet-failed / fleet-landed / gate-ready / planner-waiting). Deliberately
+/// THIN and wire-free: the alert INBOX rides the `alerts` store_state domain (replayed on
+/// connect, so a foregrounded phone reads it there); this command only reaches a
+/// backgrounded/quit phone out-of-band via FCM. No-op without a paired FCM token. `at` is
+/// accepted for parity with the frontend event (logged, not forwarded — FCM stamps delivery).
+#[tauri::command]
+pub fn tunnel_emit_alert(
+    kind: String,
+    title: String,
+    body: String,
+    pane_id: Option<String>,
+    at: u64,
+    state: State<'_, TunnelState>,
+) {
+    log::debug!("tunnel: alert kind={kind} pane={pane_id:?} at={at}");
+    state.enqueue_alert_push(&kind, &title, &body, pane_id.as_deref().unwrap_or(""));
+}
+
 // ── Relay diagnostics (T3b) ──────────────────────────────────────────────────
 
 /// Diagnostic report from `tunnel_check_relay`. All error conditions are captured in the
