@@ -7,6 +7,7 @@
 // replacement/extra kit into their config dir without a rebuild.
 import { overlayGlob } from "@/shared/lib/core/configOverrides";
 import type { ComponentRecord, Kit } from "./model";
+import { stampSeedHash } from "./seedRefresh";
 
 /** One packaged kit file under `@data/components/*.json`. */
 interface KitFile {
@@ -24,13 +25,15 @@ interface KitFile {
 const kitModules = import.meta.glob<{ default: KitFile }>("@data/components/*.json", { eager: true });
 
 /** Assemble the packaged kit library from the per-kit JSON files: apply the config-dir overlay, order
- *  by `order`, and stamp `builtin` on every kit + record. */
+ *  by `order`, and stamp `builtin` + `seedHash` (#2483) on every kit + record. The hash is computed
+ *  HERE, at assembly time — the packaged JSON files never bake it in, so the generated react-ui kit
+ *  and the hand-authored examples kit both get it for free. */
 export function makeBuiltinKits(): { kits: Kit[]; components: ComponentRecord[] } {
   const files = overlayGlob<KitFile>("components", kitModules)
     .map(([, f]) => f)
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   return {
-    kits: files.map((f) => ({ ...f.kit, builtin: true })),
-    components: files.flatMap((f) => f.components.map((c) => ({ ...c, builtin: true }))),
+    kits: files.map((f) => stampSeedHash({ ...f.kit, builtin: true })),
+    components: files.flatMap((f) => f.components.map((c) => stampSeedHash({ ...c, builtin: true }))),
   };
 }
