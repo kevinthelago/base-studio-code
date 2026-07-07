@@ -62,28 +62,17 @@ export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): Glanc
 }
 
 /**
- * Whether a fleet node has a LIVE terminal session — the check that decides if clicking it morphs the
- * node into its in-graph terminal (#2534). EVERY node with a terminal gets the morph, so liveness is
- * the union of three signals:
- *   1. the launched `roster` (`fleetPaneStreams`) — workers, always true once launched;
- *   2. `claudeActive` (`paneClaudeActive`) — a live claude session, set true when claude starts and
- *      false when it exits, so it stays true ACROSS idle turns. This is what makes the DIRECTOR work
- *      (#2539): the director isn't a stream, so it's never in the roster, and it sits at "idle" between
- *      prompts — its transient `paneStatus` alone missed it exactly when the user clicked it;
- *   3. a live `paneStatus` ("run"/"on") — covers the brief window before claudeActive is set, and any
- *      non-claude session.
- * Pure — the workspace passes its live store maps in. (Absent from all three = no session.)
+ * Whether a fleet node has a LIVE terminal to open — the check that decides if clicking it morphs the
+ * node into its in-graph terminal (#2534). A node is openable iff its identity pane id
+ * (`<project>:<stream>` or `<project>:director`) is a live CELL of a launched fleet tab — the durable,
+ * symmetric truth for BOTH workers and the DIRECTOR (#2542). Both are cells in the build tab, so both
+ * open. This replaced the earlier per-pane runtime signals (roster / paneStatus / paneClaudeActive),
+ * which covered workers but never the director: it isn't a stream (off the roster) and sits at "idle"
+ * between prompts, so no transient runtime signal was true at click time. `livePaneIds` is the set of
+ * pane ids that are cells of an open tab, minus ended/disabled panes. Pure.
  */
-export function nodeHasLiveSession(
-  paneId: string,
-  roster: Record<string, unknown>,
-  paneStatus: Record<string, string | undefined>,
-  claudeActive: Record<string, boolean> = {},
-): boolean {
-  if (roster[paneId]) return true;
-  if (claudeActive[paneId]) return true;
-  const st = paneStatus[paneId];
-  return st === "run" || st === "on";
+export function nodeHasLiveSession(paneId: string, livePaneIds: ReadonlySet<string>): boolean {
+  return livePaneIds.has(paneId);
 }
 
 /** Build a project's fleet as a Glance graph: a director (infra hub), 2–4 workers (service), and a
