@@ -3264,6 +3264,95 @@
       "builtin": true
     },
     {
+      "id": "sequence",
+      "name": "Sequence",
+      "kitId": "react-ui",
+      "role": "layout",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "layout",
+        "page",
+        "linked-list"
+      ],
+      "variants": [
+        "horizontal",
+        "vertical"
+      ],
+      "composes": [
+        "Box",
+        "Row",
+        "Stack"
+      ],
+      "props": [
+        {
+          "name": "steps",
+          "type": "T[]",
+          "req": true,
+          "desc": "SequenceStep[] — ordered { id, label, status?, hint? }; array order IS the sequence. status: complete | active | upcoming | blocked (default upcoming)."
+        },
+        {
+          "name": "detail",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "The focus panel — a render prop receiving the focused step. Omit for a strip-only sequence."
+        },
+        {
+          "name": "orientation",
+          "type": "\"horizontal\" | \"vertical\"",
+          "req": false,
+          "desc": "horizontal → stepper strip above the detail; vertical → timeline rail beside it."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Optional full-width toolbar/header above the sequence."
+        },
+        {
+          "name": "selectedId",
+          "type": "string",
+          "req": false,
+          "desc": "Controlled focused step id (pair with onSelect); omit for uncontrolled selection."
+        },
+        {
+          "name": "defaultSelectedId",
+          "type": "string",
+          "req": false,
+          "desc": "Uncontrolled initial focus — defaults to auto-following the active step, else the first."
+        },
+        {
+          "name": "onSelect",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Fires with the clicked step's id (both modes)."
+        },
+        {
+          "name": "railWidth",
+          "type": "number",
+          "req": false,
+          "desc": "Timeline rail width in px (vertical only)."
+        },
+        {
+          "name": "detailPad",
+          "type": "Space",
+          "req": false,
+          "desc": "Detail inner padding — a rung/px or [block, inline] pair."
+        }
+      ],
+      "whenUse": [
+        "Linked-list-shaped data where the prev→next ORDER is the first-class thing (workflows, pipelines, wizards, timelines).",
+        "A status-tracked stepper or timeline whose focused step drives a detail panel."
+      ],
+      "whenNot": [
+        "An arbitrary node/edge graph — use GraphCanvas.",
+        "An unordered list beside a detail view — use MasterDetail."
+      ],
+      "src": "shared/ui/layouts/Sequence.tsx",
+      "srcText": "import { Sequence } from \"@/shared/ui/layouts/Sequence\";\n\n<Sequence\n  steps={[\n    { id: \"plan\", label: \"Plan\", status: \"complete\" },\n    { id: \"build\", label: \"Build\", status: \"active\" },\n    { id: \"ship\", label: \"Ship\" },\n  ]}\n  detail={(step) => <StepEditor step={step}/>}\n/>",
+      "builtin": true
+    },
+    {
       "id": "labelchip",
       "name": "LabelChip",
       "kitId": "react-ui",

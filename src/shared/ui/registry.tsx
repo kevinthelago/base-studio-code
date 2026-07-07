@@ -50,6 +50,7 @@ import { MasterDetail } from "./layouts/MasterDetail";
 import { SplitView } from "./layouts/SplitView";
 import { GraphCanvas } from "./layouts/GraphCanvas";
 import { PaneGrid } from "./layouts/PaneGrid";
+import { Sequence } from "./layouts/Sequence";
 // #2421 gap-fill
 import { LabelChip } from "./data/LabelChip";
 import { ActivityFeed } from "./data/ActivityFeed";
@@ -71,7 +72,7 @@ export const UI_COMPONENTS: Record<PrimitiveName, AnyComponent> = {
   Avatar, IconBox, CardListRow, DataTableRow, RoleTierChips,
   StatCard, LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars,
   Banner, InlineError, EmptyState, StatusDot, Skeleton,
-  MasterDetail, SplitView, GraphCanvas, PaneGrid,
+  MasterDetail, SplitView, GraphCanvas, PaneGrid, Sequence,
   LabelChip, ActivityFeed, Pane, TelemetryPanel, ItemBars, SplitBar,
 };
 

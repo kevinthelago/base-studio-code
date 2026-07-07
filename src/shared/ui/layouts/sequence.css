@@ -1,0 +1,63 @@
+/* Sequence (#2477) — the ordered-steps page template's visual language: status-colored nodes joined
+   by directional prev→next connectors, in a horizontal stepper strip or a vertical timeline rail.
+   The status vocabulary + node look mirror the planner stepper (ProgressionRail): 24px rounded-square
+   nodes — complete = filled success ✓, active = accent-ringed (pulses), blocked = danger-ringed !,
+   upcoming = dim position number. Frame/scroll styles are inline in Sequence.tsx (the tier idiom);
+   this file owns the step / node / connector look. Tokens from styles/tokens.css. */
+
+.seq-track { display: flex; }
+.seq-track.seq-h { flex-direction: row; align-items: center; min-width: max-content; padding: 10px 14px; gap: 4px; }
+.seq-track.seq-v { flex-direction: column; align-items: stretch; padding: 12px 10px; gap: 2px; }
+
+/* A step: a clickable node + label (+ hint in the vertical timeline). */
+.seq-step { display: flex; align-items: center; gap: 8px; background: none; border: none;
+  padding: 4px 6px; border-radius: 8px; cursor: pointer; font-family: var(--mono);
+  text-align: left; min-width: 0; }
+.seq-step:hover { background: color-mix(in oklch, var(--fg), transparent 94%); }
+.seq-track.seq-v .seq-step { align-items: flex-start; }
+
+/* The node: a 24px rounded square — the ring/fill color carries the status. */
+.seq-node { width: 24px; height: 24px; flex: 0 0 24px; border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; line-height: 1; font-weight: 700;
+  background: var(--bg-elev2); color: var(--fg-dim); box-shadow: inset 0 0 0 1.5px var(--border);
+  transition: background .16s, color .16s; }
+.seq-node.complete { background: var(--success); color: var(--on-success); box-shadow: none; }
+.seq-node.active { color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent-dim); }
+.seq-node.blocked { background: color-mix(in oklch, var(--danger), transparent 86%);
+  color: var(--danger); box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--danger), transparent 35%); }
+
+/* The active node pulses ("you are here") — the stepper idiom. */
+.seq-step.active .seq-node { animation: seq-ring 2s ease-in-out infinite; }
+@keyframes seq-ring {
+  0%,100% { box-shadow: inset 0 0 0 1.5px var(--accent-dim), 0 0 0 4px color-mix(in oklch, var(--accent), transparent 78%); }
+  50%     { box-shadow: inset 0 0 0 1.5px var(--accent-dim), 0 0 0 6px color-mix(in oklch, var(--accent), transparent 88%); }
+}
+@media (prefers-reduced-motion: reduce) { .seq-step.active .seq-node { animation: none; } }
+
+/* The focused (selected) step — outline on the node, accent label. */
+.seq-step.sel .seq-node { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seq-step.sel .seq-label { color: var(--accent); font-weight: 600; }
+
+/* Labels — status-toned; single-line so a long horizontal sequence scrolls, never wraps. */
+.seq-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.seq-label { font-size: 11px; color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seq-step.blocked .seq-label { color: var(--danger); }
+.seq-step.upcoming .seq-label { color: var(--fg-dim); }
+.seq-hint { font-size: 9.5px; color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Connectors — the explicit prev→next affordance: a 2px line with an arrowhead pointing at the next
+   node. currentColor drives both the line and the arrow; solid = success (after a completed node),
+   dim = border-soft (the ProgressionRail 2-state connector). */
+.seq-conn { position: relative; flex: none; background: currentColor; border-radius: 2px; }
+.seq-conn.solid { color: var(--success); }
+.seq-conn.dim { color: var(--border-soft); }
+.seq-conn::after { content: ""; position: absolute; width: 0; height: 0; }
+.seq-track.seq-h .seq-conn { width: 22px; height: 2px; margin: 0 2px; }
+.seq-track.seq-h .seq-conn::after { right: -1px; top: 50%; transform: translateY(-50%);
+  border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 5px solid currentColor; }
+/* Vertical: the connector drops from the node column's center — step pad-left 6 + half the 24px node
+   = 18px into the track content box; the 2px line centers there at margin-left 17px. */
+.seq-track.seq-v .seq-conn { width: 2px; height: 16px; margin: 0 0 0 17px; }
+.seq-track.seq-v .seq-conn::after { bottom: -1px; left: 50%; transform: translateX(-50%);
+  border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }
