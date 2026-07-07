@@ -11,18 +11,29 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
 
   it("assembles the full packaged set from the @data/personas JSON, ordered", () => {
     const built = makeBuiltinPersonas();
-    // The nine packaged personas are all present, one per role (documentor now its own role, #1555).
+    // The ten packaged personas are all present, one per role (documentor #1555, designer #2471).
     for (const id of [
       "persona-planner", "persona-worker", "persona-director", "persona-triage", "persona-reviewer",
-      "persona-tester", "persona-issuer", "persona-juror", "persona-documentor",
+      "persona-tester", "persona-issuer", "persona-juror", "persona-documentor", "persona-designer",
     ]) {
       expect(built.some((p) => p.id === id)).toBe(true);
     }
-    // Ordered by each def's `order` field: planner leads, documentor trails.
+    // Ordered by each def's `order` field: planner leads, designer trails.
     expect(built[0]?.id).toBe("persona-planner");
-    expect(built[built.length - 1]?.id).toBe("persona-documentor");
+    expect(built[built.length - 1]?.id).toBe("persona-designer");
     // `order`/`protocolFile` are load-time-only — they must not leak onto the assembled Persona.
     expect(built.every((p) => !("order" in p) && !("protocolFile" in p))).toBe(true);
+  });
+
+  it("the designer persona (#2471) rides the designer role and kicks off onto the bsc ui surface", () => {
+    const designer = makeBuiltinPersonas().find((p) => p.id === "persona-designer")!;
+    expect(designer.role).toBe("designer");
+    expect(designer.builtin).toBe(true);
+    // The start prompt IS the session kickoff (baked into the launch arg by useDesignerTerminal):
+    // it must anchor the session to the bsc ui contract + CRUD and the deprecated alias.
+    for (const needle of ["bsc ui", "bsc ui schema", "bsc ui validate", "bsc component", "composes"]) {
+      expect(designer.startPrompt).toContain(needle);
+    }
   });
 
   it("resolves the real fleet protocol prose into the worker/director start prompts", () => {

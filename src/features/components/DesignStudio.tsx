@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
 import { KitChangesCard } from "./KitChangesCard";
+import { DesignerTerminal } from "./DesignerTerminal";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
@@ -67,6 +68,14 @@ export function DesignStudio() {
   const [candidates, setCandidates] = useState<string[] | null>(null);
   const [renderKey, setRenderKey] = useState(0); // bumped by "Retry render" after a preview error
   const [shareOpen, setShareOpen] = useState(false); // the share/import kits modal (#2305 slice 1c)
+  // The designer session panel (#2471): `designerBooted` mounts the terminal on FIRST open and keeps
+  // it mounted thereafter — collapsing only flips `designerOpen` (CSS-hide), so the PTY survives.
+  const [designerOpen, setDesignerOpen] = useState(false);
+  const [designerBooted, setDesignerBooted] = useState(false);
+  const toggleDesigner = () => {
+    setDesignerBooted(true);
+    setDesignerOpen((v) => !v);
+  };
 
   const rail = useDragResize({ initial: 266, min: 200, max: 400, axis: "x" });
   // The inspector carries the full library detail (#2453), so it defaults — and is allowed — wider.
@@ -157,6 +166,7 @@ export function DesignStudio() {
           </Box>
         </Box>
         <Box style={{ display: "flex", alignItems: "center", gap: 7, flex: "none" }}>
+          <Box as="button" className={`ds-act${designerOpen ? " accent" : ""}`} title="Open the designer session — a restricted terminal that works the UI kits via bsc ui (#2471)" aria-expanded={designerOpen} onClick={toggleDesigner}><Text as="span">✦</Text> Designer</Box>
           <Box as="button" className="ds-act" title="Share or import a kit (gist / share code)" onClick={() => setShareOpen(true)}><Text as="span" tone="dim">⇅</Text> Share</Box>
           <Box as="button" className="ds-act accent" title="Add a new component"><Text as="span">＋</Text> Component</Box>
         </Box>
@@ -233,6 +243,9 @@ export function DesignStudio() {
           composes={composes} onSelect={selectComp}
         />
       </Box>
+
+      {/* ── designer session (#2471) — mounted on first open, CSS-hidden on collapse (PTY survives) ── */}
+      {designerBooted && <DesignerTerminal open={designerOpen} />}
     </Box>
   );
 }
