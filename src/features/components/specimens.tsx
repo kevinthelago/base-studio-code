@@ -54,7 +54,7 @@ function loadingSpecimen(comp: ComponentRecord, t: Tok): ReactNode {
   }
 }
 
-// ── pages (#2505) — schematic scaffolding shared by the six page-composition specimens ──
+// ── pages (#2505/#2508) — schematic scaffolding shared by the seven page-composition specimens ──
 /** The standard 280×152 page frame every page schematic sits in. */
 function pageFrame(t: Tok, children: ReactNode): ReactNode {
   return <div style={{ width: 280, height: 152, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.panel, display: "flex", flexDirection: "column" }}>{children}</div>;
@@ -907,6 +907,34 @@ export function renderSpecimen(comp: ComponentRecord, variant: string, theme: Pr
             {row(true)}{row()}{row()}
           </div>
           {detailPanel(t)}
+        </div>
+      </>);
+    }
+    case "RecordPage": {
+      // Identity header: title + status pill next to it, the actions block right-aligned.
+      const head = (
+        <div style={{ height: 22, flex: "none", borderBottom: `1px solid ${t.borderSoft}`, background: t.elev, display: "flex", alignItems: "center", padding: "0 8px", gap: 5 }}>
+          <span style={{ width: 40, height: 7, borderRadius: 3, background: t.fg, opacity: 0.75 }} />
+          <span style={{ width: 20, height: 9, borderRadius: 99, background: "color-mix(in oklch, var(--success), transparent 86%)", border: "1px solid color-mix(in oklch, var(--success), transparent 70%)" }} />
+          <span style={{ width: 22, height: 5, borderRadius: 3, background: t.dim }} />
+          <span style={{ flex: 1 }} />
+          <span style={{ width: 22, height: 8, borderRadius: 3, background: "var(--accent)" }} />
+        </div>
+      );
+      // One labelled field group: a SectionLabel line over kv rows.
+      const group = (n: number) => (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ width: 34, height: 4, borderRadius: 2, background: t.dim }} />
+          {kvRows(t, n)}
+        </div>
+      );
+      return pageFrame(t, <>
+        {head}
+        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+          <div style={{ flex: 1, minWidth: 0, padding: 9, display: "flex", flexDirection: "column", gap: 9, overflow: "hidden" }}>
+            {group(3)}{group(2)}
+          </div>
+          <div style={{ width: 84, flex: "none", borderLeft: `1px solid ${t.borderSoft}` }}>{detailPanel(t)}</div>
         </div>
       </>);
     }
