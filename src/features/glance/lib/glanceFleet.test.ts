@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFleetData, buildRealFleetData } from "./glanceFleet";
+import { buildFleetData, buildRealFleetData, nodeHasLiveSession } from "./glanceFleet";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 
@@ -65,5 +65,24 @@ describe("buildRealFleetData (glance drill — real fleet)", () => {
     expect(d.rawEdges).toContainEqual({ from: "ui", to: "api", kind: "api" });
     // coordination edge producer→consumer (api→ui handoff) ⇒ consumer depends on producer (deduped w/ dependsOn)
     expect(d.rawEdges.filter((e) => e.from === "ui" && e.to === "api")).toHaveLength(1);
+  });
+});
+
+describe("nodeHasLiveSession (#2534 — every terminal node morphs)", () => {
+  it("is live when the pane is in the launched roster (workers)", () => {
+    const roster = { "proj:api": { id: "api" } };
+    expect(nodeHasLiveSession("proj:api", roster, {})).toBe(true);
+  });
+
+  it("is live for a node with a running/at-rest pane status — notably the DIRECTOR, which isn't a stream", () => {
+    // The director pane (`<project>:director`) never enters the roster, but its live status makes it
+    // morphable just like any worker.
+    expect(nodeHasLiveSession("proj:director", {}, { "proj:director": "run" })).toBe(true);
+    expect(nodeHasLiveSession("proj:director", {}, { "proj:director": "on" })).toBe(true);
+  });
+
+  it("is NOT live with no roster entry and an idle/absent status", () => {
+    expect(nodeHasLiveSession("proj:director", {}, { "proj:director": "idle" })).toBe(false);
+    expect(nodeHasLiveSession("proj:ghost", {}, {})).toBe(false);
   });
 });

@@ -26,11 +26,10 @@ import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { Fleet } from "@/features/planner/fleet/Fleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
-import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";
-import { buildGraph, focusSets, STATUS_META, ROLE_COLOR, EDGE_META, type GEdgeKind } from "./lib/glanceGraph";
+import { buildGraph, focusSets, STATUS_META, ROLE_COLOR, EDGE_META, NW, NH, type GEdgeKind } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
-import { buildFleetData, buildRealFleetData } from "./lib/glanceFleet";
+import { buildFleetData, buildRealFleetData, nodeHasLiveSession } from "./lib/glanceFleet";
 import { useGlanceProjects } from "./lib/useGlanceProjects";
 import { useGlanceFaults } from "./lib/useGlanceFaults";
 import { useProjectFleet } from "./lib/useProjectFleet";
@@ -44,9 +43,13 @@ const GLANCE_TABS: TabItem[] = [
 export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const planFleet = useAppStore((s) => s.planFleet);
   const personas = useAppStore((s) => s.personas);
-  // The launched fleet (paneId → stream, keyed by the identity id `<key>:<stream>`, #1176). An agent
-  // node is LIVE — and its real PTY stream openable in the dock — iff its identity pane id is here.
+  // The launched fleet (paneId → stream, keyed by the identity id `<key>:<stream>`, #1176). A worker
+  // node is LIVE — its real PTY stream openable in the dock — iff its identity pane id is here.
   const fleetPaneStreams = useAppStore((s) => s.fleetPaneStreams);
+  // Authoritative per-pane session status — the UNIVERSAL "has a live terminal" signal (#2534). The
+  // roster above is streams only, so the DIRECTOR (a `<key>:director` session, not a stream) never
+  // enters it; a live pane status is how any node with a terminal — director included — reads as live.
+  const paneStatus = useAppStore((s) => s.paneStatus);
   // The REAL project set: published GitHub projects merged with local drafts (keyed by the plan key so the
   // drill resolves each project's fleet). A "planning" status marks a planned project; "live" (app running)
   // is the detection follow-up.
@@ -128,9 +131,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   const pickNode = (id: string) => { setSel({ type: "node", id }); setShowCycle(false); };
   const pickEdge = (id: string) => { setSel({ type: "edge", id }); setShowCycle(false); };
-  // A node is LIVE — its real PTY openable — iff its identity pane id (`<project>:<stream>`) is in the
-  // launched fleet. Only a drilled, live agent has a session to check in on.
-  const isLiveAgent = (nodeId: string) => !!drill && !!fleetPaneStreams[fleetPaneId(drill, nodeId)];
+  // A node is LIVE — its real PTY openable via the in-graph terminal — iff a session exists for its
+  // identity pane id (`<project>:<stream>` or `<project>:director`). EVERY node with a terminal gets
+  // the morph (#2534): the launched roster covers workers immediately, and an authoritative live pane
+  // status ("run"/"on") covers any node — notably the DIRECTOR, which isn't a stream. Drilled only.
+  const isLiveAgent = (nodeId: string) =>
+    !!drill && nodeHasLiveSession(fleetPaneId(drill, nodeId), fleetPaneStreams, paneStatus);
   // On the L0 network: connect-mode wires two projects; otherwise a click drills into the fleet. Inside a
   // fleet a click checks in on a LIVE agent (morph → terminal, #2401) or selects a non-live one.
   const onNodeClick = (id: string) => {
@@ -151,6 +157,16 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // out (or a nav-history back/forward that swaps `drill`) closes it by derivation, no reset effect.
   const chatPaneId = drill && chatNode && isLiveAgent(chatNode) ? fleetPaneId(drill, chatNode) : null;
   const chatMeta = chatPaneId ? model.nodes.find((n) => n.id === chatNode) : null;
+
+  // On opening a live agent's terminal (#2534): bring its node into view and ensure a readable zoom, so
+  // the in-graph terminal lands legible (option A: it scales with the graph). centerOn is the
+  // least-disruptive focus (keeps the current zoom); we only bump zoom up when the graph is small.
+  useEffect(() => {
+    if (!chatPaneId || !chatMeta) return;
+    if (vp.view.scale < 0.85) vp.zoomTo(1);
+    vp.centerOn(chatMeta.x + NW / 2, chatMeta.y + NH / 2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatPaneId]);
 
   const q = search.trim().toLowerCase();
   const sidebar = model.nodes.slice().sort((a, b) => a.layer - b.layer || a.slug.localeCompare(b.slug)).filter((n) => !q || n.slug.toLowerCase().includes(q));
@@ -299,19 +315,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           model={model} dragMoved={vp.dragMoved}
           focus={focus} selNodeId={selNodeId} selEdgeId={selEdgeId}
           onHoverNode={setHoverNode} onHoverEdge={setHoverEdge} onSelectNode={onNodeClick} onSelectEdge={pickEdge}
+          // The live-agent terminal morphs open IN the graph, as an oversized node (#2534).
+          chat={chatPaneId && chatNode ? { nodeId: chatNode, paneId: chatPaneId, name: chatMeta?.slug ?? "agent", role: chatMeta?.roleLabel } : null}
+          onCloseChat={() => setChatNode(null)}
         />
       </Box>
     </GraphCanvas>
       </Box>
-      {chatPaneId && chatNode && (
-        <GlanceStreamMorph
-          nodeId={chatNode}
-          paneId={chatPaneId}
-          name={chatMeta?.slug ?? "agent"}
-          role={chatMeta?.roleLabel}
-          onClose={() => setChatNode(null)}
-        />
-      )}
       </Box>
       )}
     </Screen>
