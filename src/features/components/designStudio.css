@@ -35,8 +35,9 @@
 .ds-kithead { width: 100%; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border: none; background: transparent; border-radius: 7px; cursor: pointer; color: var(--fg); font-size: 12.5px; }
 .ds-kithead.active { background: var(--bg-soft); }
 .ds-kithead:hover { background: var(--bg-soft); }
-/* hierarchy group headers (#2487) — the tech / visual-language levels above the kit heads (the
-   ds-kithead family; they render only when a level genuinely partitions the kits, lib/kitGroups). */
+/* hierarchy group headers (#2487/#2506) — the rail is ALWAYS technology → style (lib/kitGroups):
+   tech levels render .ds-grouphead; a single-kit style header renders as the kit head itself (the
+   .ds-kithead family) labelled with the style — only a multi-kit style nests bare kit rows. */
 .ds-grouphead { width: 100%; display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px; border: none; background: transparent; border-radius: 7px; cursor: pointer; color: var(--fg-muted); }
 .ds-grouphead:hover { background: var(--bg-soft); color: var(--fg); }
 .ds-groupkids { margin: 2px 0 6px; padding-left: 8px; border-left: 1px solid var(--border-soft, var(--border)); }
