@@ -5,6 +5,7 @@ import { bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import { hashString } from "@/shared/lib/core/hashString";
 import type { AppStore } from "../types";
 import { makeBlueprints, mkStage, cloneStages, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
+import { packagedUiKitPin, resolveBlueprintUiKit } from "@/features/planner/blueprints/uiKitPin";
 import { canonicalTopicKey } from "@/features/planner/stages/planTopics";
 import { emptyFleet } from "@/features/planner/fleet/planFleet";
 import { defaultStageConfig, discoveryOnlyStageConfig } from "@/features/planner/stages/planStages";
@@ -258,7 +259,13 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
 
       blueprints: makeBlueprints(),
       activeBlueprintId: DEFAULT_BLUEPRINT_ID,
-      setActiveBlueprint: (id) => set({ activeBlueprintId: id }),
+      setActiveBlueprint: (id) => {
+        set({ activeBlueprintId: id });
+        // Opening a pinned blueprint resolves its UI kit against the local store (#2465):
+        // store hit ⇒ zero downloads; miss ⇒ fetch its typed gist, verified before storing.
+        // Fire-and-forget; a blueprint without a pin is a no-op.
+        resolveBlueprintUiKit(get().blueprints.find((b) => b.id === id), get().githubToken);
+      },
 
       dataModels: seedDataModels(),
       activeDataModelId: "dm-crm",
@@ -331,6 +338,10 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         const bp: Blueprint = {
           id, name: "Untitled blueprint", desc: "New configuration",
           sections: [mkStage("discovery", { expanded: true })],
+          // Default-pin the packaged UI kit (#2465): a NEW blueprint is always fully specified.
+          // The pin resolves against the store's embedded fallback, so it costs zero downloads;
+          // existing blueprints without a pin are untouched (this only runs at creation).
+          uiKit: packagedUiKitPin(),
         };
         set((s) => ({ blueprints: [...s.blueprints, bp] }));
         syncBlueprintFile(bp);
@@ -383,6 +394,9 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         };
         set((s) => ({ blueprints: [...s.blueprints, created] }));
         syncBlueprintFile(created);
+        // An imported blueprint's UI-kit pin resolves immediately (#2465): already-stored
+        // id@version ⇒ no download; else fetch-verify-store from the pin's source gist.
+        resolveBlueprintUiKit(created, get().githubToken);
         return id;
       },
 

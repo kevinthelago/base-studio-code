@@ -25,3 +25,10 @@ src-tauri/data/fleet/*.md          text eol=lf
 # platform (a CRLF checkout would ship the generated app CRLF-laden shims).
 src-tauri/data/runtime-fault/adapters.json  text eol=lf
 src-tauri/data/runtime-fault/shims/*.tmpl   text eol=lf
+
+# The packaged UI kit artifact + its hash sidecar (#2465). The sidecar records sha256(artifact
+# bytes) and the Rust `bsc ui kit` store embeds BOTH via include_str! as the packaged fallback
+# entry — pin to LF so the embedded bytes (and therefore the recorded hash) are identical on
+# every platform. The artifact is (re)generated LF by reactUiKit.gen.test.ts.
+src-tauri/data/components/react-ui.json  text eol=lf
+src-tauri/data/ui/react-ui-kit.meta.json text eol=lf
