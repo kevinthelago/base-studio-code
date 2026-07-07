@@ -325,6 +325,20 @@ describe("UI-kit pin (#2465)", () => {
     expect("uiKit" in bp!).toBe(false);
   });
 
+  it("coerceUiKit carries the paired themeId (#2489); a malformed one is dropped, not carried", () => {
+    expect(coerceUiKit({ ...pin(), themeId: "soft" })).toEqual({ ...pin(), themeId: "soft" });
+    expect(coerceUiKit({ ...pin(), themeId: "" })).toEqual(pin());
+    expect(coerceUiKit({ ...pin(), themeId: 42 })).toEqual(pin());
+    // The theme id rides the pin through a full blueprint round-trip: the share manifest
+    // (export/import) AND the store-JSON + poll path (coerceBlueprint).
+    const bp: Blueprint = { ...sample(), uiKit: { ...pin(), themeId: "warm" } };
+    const back = manifestToBlueprint(blueprintToManifest(bp));
+    expect(back.ok).toBe(true);
+    if (back.ok) expect(back.blueprint.uiKit).toEqual({ ...pin(), themeId: "warm" });
+    const restored = coerceBlueprint(JSON.parse(JSON.stringify(bp)) as unknown, { allowEmptySections: true });
+    expect(restored!.uiKit).toEqual({ ...pin(), themeId: "warm" });
+  });
+
   it("store: updateBlueprintMeta persists the pin through `bsc blueprint set`", () => {
     useAppStore.setState({ blueprints: makeBlueprints(), activeBlueprintId: "default" });
     const id = useAppStore.getState().addBlueprint();

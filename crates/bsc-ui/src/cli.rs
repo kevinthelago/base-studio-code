@@ -76,6 +76,22 @@ stored), and refuses to overwrite an existing version with different content (bu
 instead). The packaged `bsc/react-ui` kit resolves as a built-in entry with zero setup.",
     },
     CmdDoc {
+        name: "emit-css",
+        summary: "emit a generated app's palette pair: the token contract + a theme.css (#2489)",
+        usage: "\
+USAGE:
+  bsc ui emit-css [--theme <id>]        # print the full stylesheet (contract layer + theme block)
+  bsc ui emit-css --theme <id> --out D  # write D/tokens.css + D/theme.css (two files, the real layout)
+
+Emits the CSS a generated app ships its palette as (#2489). Two documented layers, in stylesheet
+order: (1) `tokens.css` — the semantic token contract (base palette defaults + the `--card-*`/
+`--btn-*`/`--field-*`/`--chip-*` tokens kit components consume; READ-ONLY for build agents), then
+(2) `theme.css` — the chosen theme's overrides, THE app's palette. App styles load after both. So
+re-theming an app = replacing theme.css only (re-run with another --theme): zero component changes.
+--theme defaults to `default`; the id resolves through the same lookup `bsc ui theme get` serves,
+at emission time (never snapshotted), and an unknown id errors listing the available themes.",
+    },
+    CmdDoc {
         name: "theme",
         summary: "the kit THEME store — list/get themes, or author them via set/remove (#1852/#2488)",
         usage: "\
@@ -126,6 +142,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("schema") => cmd_schema(&args[1..]),
         Some("validate") => cmd_validate(&args[1..]),
         Some("release") => cmd_kit(&args[1..], prog),
+        Some("emit-css") => cmd_emit_css(&args[1..]),
         Some("theme") => cmd_theme(&args[1..], prog),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
@@ -419,6 +436,49 @@ fn cmd_kit(args: &[String], prog: &str) -> Result<(), String> {
     }
 }
 
+/// `bsc ui emit-css` (#2489) — emit the palette pair a generated app ships: the semantic token
+/// contract layer ([`crate::TOKENS_CONTRACT_CSS`], its `tokens.css`) + the chosen theme's override
+/// block ([`crate::theme_css`], its `theme.css`). Stdout prints both in stylesheet order; `--out`
+/// writes them as the real two-file layout so re-theming stays a one-file (theme.css) swap.
+/// (Kept apart from the `theme` verb block on purpose — `theme` is the registry read surface.)
+fn cmd_emit_css(args: &[String]) -> Result<(), String> {
+    let mut theme = "default".to_string();
+    let mut out = None::<String>;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--theme" => theme = it.next().cloned().ok_or("--theme needs a theme id")?,
+            "--out" => out = Some(it.next().cloned().ok_or("--out needs a directory")?),
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => return Err(format!("unexpected argument '{other}' — usage: bsc ui emit-css [--theme <id>] [--out <dir>]")),
+        }
+    }
+    // Resolve the theme FIRST (the same lookup `bsc ui theme get` serves) so an unknown id is a
+    // hard error before anything is printed or written.
+    let theme_block = crate::theme_css(&theme)?;
+    match out {
+        Some(dir) => {
+            let d = std::path::Path::new(&dir);
+            std::fs::create_dir_all(d).map_err(|e| format!("cannot create {dir}: {e}"))?;
+            let tokens_path = d.join("tokens.css");
+            let theme_path = d.join("theme.css");
+            std::fs::write(&tokens_path, crate::TOKENS_CONTRACT_CSS)
+                .map_err(|e| format!("cannot write {}: {e}", tokens_path.display()))?;
+            std::fs::write(&theme_path, &theme_block)
+                .map_err(|e| format!("cannot write {}: {e}", theme_path.display()))?;
+            println!("wrote {} + {} (theme: {theme})", tokens_path.display(), theme_path.display());
+            Ok(())
+        }
+        None => {
+            // Stylesheet order on stdout: the contract layer, then the theme block.
+            print!("{}", crate::TOKENS_CONTRACT_CSS);
+            println!();
+            print!("{theme_block}");
+            Ok(())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -433,6 +493,41 @@ mod tests {
     fn help_overview_lists_the_commands() {
         let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMMANDS);
         assert!(ov.contains("schema") && ov.contains("validate") && ov.contains("theme") && ov.contains("release"));
+        assert!(ov.contains("emit-css"), "the #2489 emission verb is listed");
+    }
+
+    #[test]
+    fn emit_css_prints_default_and_named_theme_and_writes_the_two_file_layout() {
+        // stdout runs (default + named) succeed; the unknown id is a hard error listing the ids.
+        assert!(run(vec!["emit-css".into()], "bsc ui").is_ok());
+        assert!(run(vec!["emit-css".into(), "--theme".into(), "soft".into()], "bsc ui").is_ok());
+        let err = run(vec!["emit-css".into(), "--theme".into(), "nope".into()], "bsc ui").unwrap_err();
+        assert!(err.contains("unknown theme 'nope'") && err.contains("default"), "{err}");
+        // Bad shapes error crisply.
+        assert!(run(vec!["emit-css".into(), "--theme".into()], "bsc ui").is_err());
+        assert!(run(vec!["emit-css".into(), "stray".into()], "bsc ui").is_err());
+        assert!(run(vec!["emit-css".into(), "--frob".into()], "bsc ui").is_err());
+        // --out writes the real two-file layout: tokens.css (the contract) + theme.css (the palette).
+        let dir = std::env::temp_dir().join(format!("bsc-ui-emit-css-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        run(vec!["emit-css".into(), "--theme".into(), "contrast".into(), "--out".into(), dir.to_string_lossy().into_owned()], "bsc ui").unwrap();
+        let tokens = std::fs::read_to_string(dir.join("tokens.css")).unwrap();
+        let theme = std::fs::read_to_string(dir.join("theme.css")).unwrap();
+        assert_eq!(tokens, crate::TOKENS_CONTRACT_CSS, "tokens.css is the contract layer verbatim");
+        assert!(theme.contains("theme: contrast") && theme.contains("--card-radius: 4px;"), "theme.css carries the chosen theme's overrides");
+        // An unknown theme with --out writes NOTHING (resolve-first).
+        let dir2 = dir.join("never");
+        assert!(run(vec!["emit-css".into(), "--theme".into(), "nope".into(), "--out".into(), dir2.to_string_lossy().into_owned()], "bsc ui").is_err());
+        assert!(!dir2.exists(), "a failed resolve writes nothing");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn emit_css_help_documents_the_stylesheet_order_contract() {
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "emit-css");
+        for needle in ["tokens.css", "theme.css", "READ-ONLY", "replacing theme.css only", "--theme"] {
+            assert!(d.contains(needle), "emit-css help mentions {needle}");
+        }
     }
 
     #[test]

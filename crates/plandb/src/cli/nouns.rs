@@ -1,5 +1,5 @@
 //! The remaining plan.db + connector nouns of `bsc plan` (#1864): `feature`/`repo`/`deploy`/`deps`/
-//! `mcp`/`blueprint`/`discovery`/`integration`/`lesson`. Split out of `cli.rs` as a pure move —
+//! `mcp`/`blueprint`/`ui`/`discovery`/`integration`/`lesson`. Split out of `cli.rs` as a pure move —
 //! [`super::run`] dispatches each here; the shared plumbing (`Args`/`open_store`/`emit_*`/
 //! `cmd_blob_noun`/`blob_count`/`unknown_sub`) stays in the parent module. Output is byte-for-byte
 //! what `cli.rs` emitted before the split.
@@ -220,6 +220,23 @@ pub(crate) fn cmd_blueprint(args: &Args) -> Result<(), String> {
         |v| {
             let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("blueprint");
             format!("blueprint set: {name} ({} stages)", crate::validate::blueprint_stage_count(v))
+        },
+    )
+}
+
+/// `ui` — the app's UI pairing: the {kit, theme} the planned application ships on (#2489, one
+/// blob). Recorded in the Test UI stage after the theme is chosen with the user; the generated
+/// app's palette is EMITTED from it (`bsc ui emit-css --theme <themeId>` → tokens.css + theme.css),
+/// resolved by id at emission time — never snapshotted. Validated at set-time (#2395).
+pub(crate) fn cmd_ui(args: &Args) -> Result<(), String> {
+    cmd_blob_noun(
+        args, "ui", "ui pairing JSON", "(no ui pairing)",
+        crate::validate::validate_ui_pairing,
+        |s, v| s.ui_set(v).map_err(|e| e.to_string()),
+        |s| s.ui_get().map_err(|e| e.to_string()),
+        |v| {
+            let (kit, theme) = crate::validate::ui_pairing_echo(v);
+            format!("ui pairing set: kit {kit}, theme {theme}")
         },
     )
 }

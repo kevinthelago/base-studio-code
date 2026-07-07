@@ -19,6 +19,7 @@ import { defaultStageConfig, enabledOrderedStages } from "../stages/planStages";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
 import { type McpInstallState } from "../lib/mcpPaneData";
 import { buildProjectPaneData } from "../pane/projectPaneData";
+import { toWorkerUiPairing } from "../fleet/workerScope";
 import { normalizeDeployConfig } from "../lib/deployConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
@@ -360,8 +361,11 @@ export function Planning({ visible }: { visible: boolean }) {
       mcpInstallState,
       topologyOverride: planFleetTopology[effectiveProjectId],
       directorDriveOverride: planFleetDirectorDrive[effectiveProjectId],
+      // #2489: the blueprint's {kit, theme} pin drives the agent cards' UI-palette lock preview
+      // (the launch path additionally merges plan.db's per-project `ui` record on top).
+      uiPairing: toWorkerUiPairing(null, blueprints.find(b => b.id === effectiveBlueprintId)?.uiKit),
     }),
-    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, personas, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, depManifest, planDependencies, mcpServers, paneSkills, mcpInstallState],
+    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, personas, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, depManifest, planDependencies, mcpServers, paneSkills, mcpInstallState, blueprints, effectiveBlueprintId],
   );
 
   // The planner MCP install lifecycle (#1474, usePlanMcpManagement). mcpInstallState stays here

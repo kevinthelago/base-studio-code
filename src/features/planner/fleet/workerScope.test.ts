@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildWorkerScope } from "./workerScope";
+import { buildWorkerScope, buildWorkerUiThemeBlock, toWorkerUiPairing } from "./workerScope";
 import type { AgentStream } from "./planFleet";
 
 const stream = (over: Partial<AgentStream> = {}): AgentStream => ({
@@ -83,5 +83,46 @@ describe("buildWorkerScope (#844)", () => {
     expect(md).not.toMatch(/contracts of:\*\* [^\n]*commons/i);
     // …and the commons note acknowledges it's already scaffolded.
     expect(md).toContain("already scaffolded on develop");
+  });
+});
+
+describe("UI palette lock block (#2489)", () => {
+  it("appends the palette lock when a pairing is present, mirroring the deps-lock guardrail", () => {
+    const md = buildWorkerScope(stream(), [], false, { kit: { id: "bsc/react-ui", version: "1.0.0" }, themeId: "soft" });
+    expect(md).toContain("## UI palette (locked by the planner)");
+    expect(md).toContain("`bsc/react-ui@1.0.0` component kit");
+    expect(md).toContain("`soft` theme");
+    // The concrete emission command, the layer order, and the read-only guardrail.
+    expect(md).toContain("ui emit-css --theme soft");
+    expect(md).toMatch(/`tokens\.css`[\s\S]*`theme\.css`[\s\S]*app styles/);
+    expect(md).toContain("Do NOT edit `tokens.css`");
+    expect(md).toContain("one-file swap");
+    expect(md).toContain("`bsc-ask`");
+  });
+
+  it("omits the block when no pairing is recorded; themeId falls back to `default`", () => {
+    expect(buildWorkerScope(stream())).not.toContain("UI palette (locked");
+    expect(buildWorkerUiThemeBlock(undefined)).toBe("");
+    expect(buildWorkerUiThemeBlock({})).toBe("");
+    const md = buildWorkerUiThemeBlock({ kit: { id: "a/b", version: "1.0.0" } });
+    expect(md).toContain("`default` theme");
+    expect(md).toContain("--theme default");
+    // A theme-only pairing still locks the palette (kit named generically).
+    expect(buildWorkerUiThemeBlock({ themeId: "warm" })).toContain("`warm` theme");
+  });
+
+  it("toWorkerUiPairing: plan.db's record wins per half, the blueprint pin fills the rest", () => {
+    const pin = { id: "bsc/react-ui", version: "1.0.0", themeId: "warm" };
+    // No plan.db record ⇒ the blueprint pin (kit + its default theme) is the pairing.
+    expect(toWorkerUiPairing(null, pin)).toEqual({ kit: { id: "bsc/react-ui", version: "1.0.0" }, themeId: "warm" });
+    // A theme-only record overrides the theme but keeps the pinned kit.
+    expect(toWorkerUiPairing({ themeId: "contrast" }, pin))
+      .toEqual({ kit: { id: "bsc/react-ui", version: "1.0.0" }, themeId: "contrast" });
+    // A full record wins outright.
+    expect(toWorkerUiPairing({ kit: { id: "acme/neon", version: "2.0.0" }, themeId: "soft" }, pin))
+      .toEqual({ kit: { id: "acme/neon", version: "2.0.0" }, themeId: "soft" });
+    // Malformed halves are ignored, not carried; nothing at all ⇒ undefined (no block).
+    expect(toWorkerUiPairing({ kit: { id: "" }, themeId: "" }, undefined)).toBeUndefined();
+    expect(toWorkerUiPairing(null, undefined)).toBeUndefined();
   });
 });

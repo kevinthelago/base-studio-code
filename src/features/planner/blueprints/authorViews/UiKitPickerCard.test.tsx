@@ -20,11 +20,12 @@ const bp = (uiKit?: BlueprintUiKit): Blueprint => ({
   id: "bp-x", name: "My blueprint", desc: "", sections: [], ...(uiKit ? { uiKit } : {}),
 });
 
-/** Wire the bridge: `ui kit list` serves `entries`, `ui kit get <ref>` serves a matching entry. */
+/** Wire the bridge: `ui release list` serves `entries`, `ui release get <ref>` serves a matching
+ *  entry. (The store verb is `release` since the #2469 mount collision rename.) */
 function wire(entries: (typeof packagedManifest)[]) {
   vi.mocked(invoke).mockImplementation(async (cmd, payload) => {
     const args = (payload as { args?: string[] } | undefined)?.args ?? [];
-    if (cmd === "bsc" && args[0] === "ui" && args[1] === "kit") {
+    if (cmd === "bsc" && args[0] === "ui" && args[1] === "release") {
       if (args[2] === "list") return JSON.stringify(entries);
       if (args[2] === "get") {
         return JSON.stringify(entries.find((e) => `${e.id}@${e.version}` === args[3]) ?? null);
@@ -83,5 +84,31 @@ describe("UiKitPickerCard (#2465)", () => {
     wire([packagedManifest]);
     render(<UiKitPickerCard bp={bp({ id: "acme/ghost", version: "1.0.0", hash: "a".repeat(64) })} onChange={() => {}} />);
     await waitFor(() => expect(screen.getByText(/no source to fetch it from/)).toBeTruthy());
+  });
+
+  it("theme picker (#2489): marks the pin's theme active and records a pick on the pin", () => {
+    wire([packagedManifest]);
+    const onChange = vi.fn();
+    render(<UiKitPickerCard bp={bp({ ...packagedUiKitPin(), themeId: "soft" })} onChange={onChange} />);
+    // The registry's themes render; picking one records its id on the pin.
+    fireEvent.click(screen.getByText("High contrast"));
+    expect((onChange.mock.calls[0][0] as Blueprint).uiKit).toEqual({ ...packagedUiKitPin(), themeId: "contrast" });
+    // Picking Default stores NO themeId — absent = default, the canonical form the packaged pin uses.
+    fireEvent.click(screen.getByText("Default"));
+    expect((onChange.mock.calls[1][0] as Blueprint).uiKit).toEqual(packagedUiKitPin());
+    // No theme row without a pin.
+    render(<UiKitPickerCard bp={bp()} onChange={() => {}} />);
+    expect(screen.queryAllByText("Warm").length).toBe(1); // only the pinned card's row rendered one
+  });
+
+  it("the chosen theme RIDES a kit swap (#2489): re-pinning to a stored kit keeps themeId", async () => {
+    const other = { id: "acme/neon", version: "2.0.0", sha256: "f".repeat(64), kind: "component-kit" as const, source: "https://gist.github.com/acme/0123456789abcdef" };
+    wire([packagedManifest, other]);
+    const onChange = vi.fn();
+    render(<UiKitPickerCard bp={bp({ ...packagedUiKitPin(), themeId: "warm" })} onChange={onChange} />);
+    fireEvent.click(await screen.findByText("+ acme/neon@2.0.0"));
+    expect((onChange.mock.calls[0][0] as Blueprint).uiKit).toEqual({
+      id: "acme/neon", version: "2.0.0", hash: "f".repeat(64), source: other.source, themeId: "warm",
+    });
   });
 });

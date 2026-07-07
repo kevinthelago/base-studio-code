@@ -21,6 +21,65 @@ import { overlayFile } from "@/shared/lib/core/configOverrides";
 // values / the `gatedOnCommons` flag), and the builder still assembles the whole markdown.
 const SCOPE_PROSE = overlayFile("fleet/worker-scope.json", workerScopeEmbedded);
 
+/** The project's {kit, theme} pairing (#2489) as the worker context needs it — the kit ref halves
+ *  plus the chosen theme id. Sourced from plan.db's `ui` blob (`bsc plan ui get`, the planner's
+ *  per-project record) falling back to the blueprint's pin. */
+export interface WorkerUiPairing {
+  kit?: { id: string; version: string };
+  /** A `bsc ui theme` id. Absent ⇒ `"default"`. */
+  themeId?: string;
+}
+
+/**
+ * Fold the two pairing sources into the worker's {@link WorkerUiPairing} (#2489): plan.db's `ui`
+ * blob (`bsc plan ui get` — the planner's per-project record) wins PER HALF, the project
+ * blueprint's pin fills what it doesn't set (kit and/or themeId). Tolerant of the untyped blob
+ * shape; `undefined` when neither source contributes anything (no block is inlined). Pure so the
+ * fold is unit-testable; callers do the async reads.
+ */
+export function toWorkerUiPairing(
+  planned: { kit?: { id?: unknown; version?: unknown } | null; themeId?: unknown } | null | undefined,
+  pin?: { id: string; version: string; themeId?: string },
+): WorkerUiPairing | undefined {
+  const plannedKit =
+    planned?.kit && typeof planned.kit.id === "string" && planned.kit.id && typeof planned.kit.version === "string" && planned.kit.version
+      ? { id: planned.kit.id, version: planned.kit.version }
+      : undefined;
+  const kit = plannedKit ?? (pin ? { id: pin.id, version: pin.version } : undefined);
+  const themeId =
+    (typeof planned?.themeId === "string" && planned.themeId ? planned.themeId : undefined) ?? pin?.themeId;
+  if (!kit && !themeId) return undefined;
+  return { ...(kit ? { kit } : {}), ...(themeId ? { themeId } : {}) };
+}
+
+/**
+ * Render the project's UI-palette pairing (#2489) as the worker-context block appended to the
+ * scope — mirroring the dependencies-lock guardrail (#1111): the semantic token layer is
+ * planner-owned and READ-ONLY for workers; the palette lives entirely in the swappable
+ * `theme.css`. Returns "" when the project recorded no pairing (nothing to inline).
+ */
+export function buildWorkerUiThemeBlock(ui?: WorkerUiPairing): string {
+  if (!ui || (!ui.kit && !ui.themeId)) return "";
+  const theme = ui.themeId || "default";
+  const kit = ui.kit ? `\`${ui.kit.id}@${ui.kit.version}\` component kit` : "component kit";
+  return [
+    "## UI palette (locked by the planner)",
+    "",
+    `This app is built on the ${kit} with the \`${theme}\` theme. Its stylesheet order is the`,
+    "contract: `tokens.css` (the semantic token layer the kit components consume — `--card-*`/",
+    "`--btn-*`/`--field-*`/`--chip-*`) → `theme.css` (the chosen theme's overrides — THE app's",
+    "palette) → app styles. Both files are emitted into the app's styles dir by:",
+    "",
+    `    "$BSC_BIN" ui emit-css --theme ${theme} --out <styles dir>`,
+    "",
+    "**Do NOT edit `tokens.css`, and do NOT hand-roll palette values in component styles** — the",
+    "token layer is read-only for you; the palette lives ENTIRELY in `theme.css`, so re-theming the",
+    "app stays a one-file swap (re-run `emit-css` with another `--theme`). Components reference the",
+    "semantic tokens, never raw colors. If a view genuinely needs a token the layer doesn't provide,",
+    "request it from the director (`bsc-ask`) rather than adding it yourself.",
+  ].join("\n");
+}
+
 /**
  * Render a stream's owned globs / issues / dependencies into the scope block that leads
  * a worker's `CLAUDE.local.md`. Kept deliberately small — the worker's job is to finish
@@ -31,11 +90,14 @@ const SCOPE_PROSE = overlayFile("fleet/worker-scope.json", workerScopeEmbedded);
  * appended as the planner-owned "Dependencies (locked)" block so the worker installs from a single
  * authority instead of adding its own (the source of parallel-worktree manifest collisions).
  *
+ * `ui` is the project's recorded {kit, theme} pairing (#2489): when present it's appended as the
+ * planner-owned "UI palette (locked)" block — token layer read-only, palette in theme.css.
+ *
  * Returns a heading + bullet list. Empty fields are rendered as an explicit "none"/"all
  * within your owned paths" so the worker isn't left guessing whether the field was
  * omitted or genuinely empty.
  */
-export function buildWorkerScope(stream: AgentStream, deps: PlanDependency[] = [], maintenance = false): string {
+export function buildWorkerScope(stream: AgentStream, deps: PlanDependency[] = [], maintenance = false, ui?: WorkerUiPairing): string {
   const owns = stream.owns.length
     ? stream.owns.map((g) => `\`${g}\``).join(", ")
     : "(none assigned — confirm your lane with the director before writing)";
@@ -71,6 +133,9 @@ export function buildWorkerScope(stream: AgentStream, deps: PlanDependency[] = [
 
   const depBlock = buildWorkerDependencyBlock(deps);
   if (depBlock) lines.push("", depBlock);
+
+  const uiBlock = buildWorkerUiThemeBlock(ui);
+  if (uiBlock) lines.push("", uiBlock);
 
   return lines.join("\n");
 }
