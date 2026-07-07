@@ -110,6 +110,9 @@ enum PushJob {
     AutomFailed { name: String, error: String },
     /// The warden quarantined a worker — possible prompt injection / hijack (#1102).
     Warden { session: String, detail: String },
+    /// One alert from the #2498 taxonomy (the `alerts` store_state domain's push companion).
+    /// The frontend composes title/body; `kind` routes the tap on mobile.
+    Alert { kind: String, title: String, body: String, pane_id: String },
 }
 
 /// Drain `rx` and send an FCM push per paired token for each job. Runs on its own OS thread
@@ -167,6 +170,8 @@ fn spawn_push_worker(mut rx: mpsc::UnboundedReceiver<PushJob>, tokens: Arc<Mutex
                                 fcm::build_autom_failed_message(token, name, error),
                             PushJob::Warden { session, detail } =>
                                 fcm::build_warden_message(token, session, detail),
+                            PushJob::Alert { kind, title, body, pane_id } =>
+                                fcm::build_alert_message(token, kind, title, body, pane_id),
                         };
                         match sender.send_built(msg).await {
                             SendOutcome::Sent => {
@@ -175,6 +180,7 @@ fn spawn_push_worker(mut rx: mpsc::UnboundedReceiver<PushJob>, tokens: Arc<Mutex
                                     PushJob::CoordWait { session, .. } => format!("coord_wait session={session}"),
                                     PushJob::AutomFailed { name, .. } => format!("autom_failed name={name}"),
                                     PushJob::Warden { session, .. } => format!("warden_quarantine session={session}"),
+                                    PushJob::Alert { kind, pane_id, .. } => format!("alert kind={kind} pane={pane_id}"),
                                 });
                             }
                             SendOutcome::DropToken => {
@@ -294,6 +300,16 @@ impl TunnelState {
         self.enqueue(PushJob::Warden {
             session: session.to_string(),
             detail: detail.to_string(),
+        });
+    }
+
+    /// Queue an FCM push for one #2498 alert. Non-blocking. No-op without stored tokens.
+    pub(super) fn enqueue_alert_push(&self, kind: &str, title: &str, body: &str, pane_id: &str) {
+        self.enqueue(PushJob::Alert {
+            kind: kind.to_string(),
+            title: title.to_string(),
+            body: body.to_string(),
+            pane_id: pane_id.to_string(),
         });
     }
 

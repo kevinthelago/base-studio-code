@@ -563,6 +563,17 @@ fn input_grant_toggles_state_and_resets_request_latch() {
     assert!(st.take_input_request());
 }
 
+/// The #2498 alert push (`tunnel_emit_alert` → `enqueue_alert_push`) is non-blocking and safe
+/// both without a paired FCM token (guarded no-op) and with one (enqueued to the worker).
+/// Delivery itself is the push worker's job; this pins that the enqueue path never panics.
+#[test]
+fn enqueue_alert_push_is_safe_with_and_without_tokens() {
+    let st = TunnelState::new();
+    st.enqueue_alert_push("gate-ready", "Plan stage ready", "Stage gate passed", "planning_demo");
+    st.add_fcm_token("tok-1".into());
+    st.enqueue_alert_push("fleet-landed", "Fleet: landed", "#42 merged", "");
+}
+
 #[test]
 fn host_pub_key_is_base64_of_static_public() {
     let st = TunnelState::new();

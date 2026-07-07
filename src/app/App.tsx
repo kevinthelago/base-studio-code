@@ -9,7 +9,7 @@ import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { useHotkeys } from "./useHotkeys";
 import { useScheduler } from "@/features/automations";
-import { useTunnelSync, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
+import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 import { ConsoleWorkspace } from "@/app/console";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { useConsoleTabs } from "@/app/console/useConsoleTabs";
@@ -34,6 +34,7 @@ export default function App() {
   useHotkeys();
   useScheduler();
   useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
+  useStoreProjector(); // generic store_state projector: scoped domains + the alert pipeline (#2498)
   useWarden();     // always-on fleet conformance warden — hard-pauses a drifted worker (#1102)
   useWorkerAutoEnd(); // auto-end a finished worker on PTY exit, from plan.db issue status (#920)
   useTunnelAutomations(); // project automations + accept arm/run-now from a paired phone (#937)
