@@ -43,6 +43,27 @@ mod relocated_tests {
         assert!(p.contains("OWN ALL GITHUB") && p.contains("gh pr merge"),
             "director protocol must claim ownership of GitHub PR writes (merge/close) as the default");
     }
+
+    #[test]
+    fn director_protocol_routes_confirmed_transformations() {
+        // #2509 slice (e): the director dispatches ONLY confirmed transformation rows, in
+        // dependency order, via the existing bsc-issue + bsc-assign loop — the user's confirm
+        // queue is the uniform gate. Guard the standing protocol says exactly that.
+        let p = crate::platform::config::embedded_str("fleet/director-protocol.md");
+        assert!(p.contains("ROUTE CONFIRMED TRANSFORMATIONS"),
+            "director protocol must carry the confirmed-transformations routing section (#2509)");
+        assert!(p.contains("bsc plan transformation list"),
+            "director must read the transformation list from plan.db");
+        // Confirmed-only: it dispatches rows with confirmed:true and NEVER confirms (the user's gate).
+        assert!(p.contains("confirmed: true") && p.contains("NEVER confirm"),
+            "director routes only confirmed rows and never confirms one itself");
+        // Ordering: tier + dependsOn, foundation-first waves.
+        assert!(p.contains("dependsOn") && p.contains("tier"),
+            "director must respect tier + dependsOn ordering when routing transformations");
+        // Reuses the existing capture-and-route loop.
+        assert!(p.contains("bsc-issue") && p.contains("bsc-assign"),
+            "director routes confirmed transformations through the existing bsc-issue + bsc-assign loop");
+    }
     #[test]
     fn director_protocol_includes_injection_resistance() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());

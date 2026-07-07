@@ -36,6 +36,18 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
     }
   });
 
+  it("the issuer persona (#2509) decomposes a modification into transformations at intake", () => {
+    const issuer = makeBuiltinPersonas().find((p) => p.id === "persona-issuer")!;
+    expect(issuer.role).toBe("issuer");
+    // Runtime intake wiring: a modification decomposes into transformation rows via the plan.db CLI
+    // (the uniform confirm queue), the user confirms, the issuer never confirms/routes/touches code.
+    for (const needle of ["DECOMPOSE", "transformation", "bsc plan transformation add", "NEVER"]) {
+      expect(issuer.startPrompt).toContain(needle);
+    }
+    // A net-new feature still becomes a single well-formed GitHub issue.
+    expect(issuer.startPrompt).toContain("GitHub issue");
+  });
+
   it("resolves the real fleet protocol prose into the worker/director start prompts", () => {
     const byId = new Map(makeBuiltinPersonas().map((p) => [p.id, p]));
     const worker = byId.get("persona-worker")!;
