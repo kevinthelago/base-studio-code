@@ -18,6 +18,7 @@ import { DeploymentBody } from "../bodies/ReposDeployView";
 import { SourceBody } from "../bodies/FocusedSourceBody";
 // Core planning-stage bodies (#1757 split out of this file).
 import { DiscoveryBody } from "../bodies/DiscoveryBody";
+import { MarketBody } from "../bodies/MarketBody";
 import { AutomationsBody } from "../bodies/FocusedAutomationsBody";
 import { SkillsBody } from "../bodies/FocusedSkillsBody";
 import { McpsBody } from "../bodies/McpsBody";
@@ -80,6 +81,10 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
       );
     case "discovery":
       return <DiscoveryBody context={data?.context} onView={onView} requiredContext={requiredContext} />;
+    case "market":
+      // The market-research stage (#2430): read-focused rendering of the planner-recorded
+      // assessment (gap statement · scored rubric · competitors · verdict) from `bsc plan market`.
+      return <MarketBody projectId={projectId} />;
     case "ui":
       // The UI stage's drop-in-files surface (#604/#829): stage design assets into the
       // project's `design/` dir for the planner to route. The pipeline-screen registry that

@@ -27,7 +27,7 @@ export const DEMOABLE_KEYS = [
   // Automations
   "schedules", "commands", "automations",
   // Per-project plan / fleet / UI-plan data
-  "planStages", "planConfirmedStages", "planSkippedStages", "planAuthoredBlueprint", "planDeployConfig",
+  "planStages", "planConfirmedStages", "planSkippedStages", "planAuthoredBlueprint", "planDeployConfig", "planMarketConfig",
   "planAutomations", "planStageConfig", "projectBlueprintId", "uiScreens", "uiApproved",
   "planFleet", "planFleetTopology", "planFleetDirectorDrive", "pinnedContext", "loadVerified",
   // Agent config · startup/triage prompt docs · repo visibility · per-session skill mapping
