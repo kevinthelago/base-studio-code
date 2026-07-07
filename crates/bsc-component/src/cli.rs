@@ -22,17 +22,48 @@ use bsc_json_store::cli::CliSpec;
 const TAGLINE: &str = "the component library — proven components in technology-scoped kits (#2281)";
 const KIT_TAGLINE: &str = "the component library's kits — technology-scoped component namespaces (#2281)";
 
+/// The data-shape vocabulary (#2475) — the six canonical shapes a feature's data can take, each with
+/// the one-line description `bsc ui shapes` prints. A component's optional `shapes` JSON field stamps
+/// the shapes it is an IDEAL rendering for; the CLI computes the index from those fields verbatim
+/// (no Rust schema — the store stays verbatim JSON). Mirrors `DataShape` in
+/// `src/features/components/lib/model.ts`.
+const DATA_SHAPES: &[(&str, &str)] = &[
+    ("list", "a flat, ordered collection of homogeneous items"),
+    ("linked-list", "a sequence whose items chain by explicit next/prev links"),
+    ("tree", "a hierarchy — every item nests under a single parent"),
+    ("graph", "nodes joined by arbitrary edges (many-to-many)"),
+    ("table", "homogeneous records with fixed, aligned columns"),
+    ("key-value", "one record's named fields — a label → value map"),
+];
+
 const COMPONENT_COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "list",
-        summary: "every component's {id, name, kitId, role} (JSON)",
+        summary: "every component's {id, name, kitId, role, shapes} (JSON)",
         usage: "\
 USAGE:
-  bsc ui list [--full] [--pretty]
+  bsc ui list [--shape <shape>] [--full] [--pretty]
 
-Prints every component's { id, name, kitId, role } as JSON (compact; --pretty for indented). --full
-emits the COMPLETE component objects (variants + props + composes + guidance + source + …) as a plain
-array — the full-fidelity read the desktop library hydration needs.",
+Prints every component's { id, name, kitId, role, shapes } as JSON (compact; --pretty for indented).
+--shape filters to the components whose `shapes` field stamps <shape> — the kit's IDEAL renderings
+for that data shape (#2475; one of list · linked-list · tree · graph · table · key-value — see
+`bsc ui shapes`). --full emits the COMPLETE component objects (variants + props + composes + guidance
++ source + …) as a plain array — the full-fidelity read the desktop library hydration needs.",
+    },
+    CmdDoc {
+        name: "shapes",
+        summary: "the data-shape vocabulary → each shape's ideal components (#2475)",
+        usage: "\
+USAGE:
+  bsc ui shapes [<shape>] [--pretty]
+
+Prints the six-shape data vocabulary — list · linked-list · tree · graph · table · key-value — as a
+JSON array of { shape, desc, components }, where components are the stored components whose `shapes`
+field stamps that shape (the kit's IDEAL renderings for it, as lean {id, name, kitId, role, shapes}
+rows). With <shape>, prints just that shape's entry. An EMPTY components array means the kit has no
+ideal layout for that shape yet — a genuine gap to record, not a fit to force. Read-only: how the
+planner picks a layout — derive the data's shape, then `bsc ui shapes <shape>` (or the equivalent
+filter, `bsc ui list --shape <shape>`).",
     },
     CmdDoc {
         name: "get",
@@ -132,14 +163,15 @@ kit objects (incl. the dot color) as a plain array.",
     },
 ];
 
-/// The component collection's knobs over the shared CLI. Lean `list` projects id/name/kitId/role.
+/// The component collection's knobs over the shared CLI. Lean `list` projects id/name/kitId/role +
+/// the data-shape axis (`shapes` rides the projection verbatim, #2475).
 const COMPONENT_SPEC: CliSpec = CliSpec {
     noun: "component",
     dir_env: "BSC_COMPONENT_DIR",
     dir_segment: "components",
     tagline: TAGLINE,
     commands: COMPONENT_COMMANDS,
-    meta_fields: &["id", "name", "kitId", "role"],
+    meta_fields: &["id", "name", "kitId", "role", "shapes"],
 };
 
 /// The kit collection's knobs. Lean `list` projects id/name/stack.
@@ -211,8 +243,123 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 cmd_usage(&args[1..], prog)
             }
         }
+        // `shapes` is the data-shape picker (#2475): the vocabulary + each shape's ideal components,
+        // computed from the stored `shapes` fields — a custom read, so it's handled here.
+        Some("shapes") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "shapes"));
+                Ok(())
+            } else {
+                cmd_shapes(&args[1..])
+            }
+        }
+        // `list --shape <shape>` (#2475) filters to one shape's ideal components — intercepted here
+        // (the shared store CLI rejects unknown flags); a plain `list` still delegates unchanged.
+        Some("list") if args.iter().any(|a| a == "--shape") => cmd_list_shape(&args[1..]),
         _ => bsc_json_store::cli::run(args, prog, &COMPONENT_SPEC),
     }
+}
+
+/// Resolve the COMPONENT store with the same flag → env (`BSC_COMPONENT_DIR`) → default
+/// (`~/.base-studio-code/components/`) precedence as the shared store CLI, for the custom reads.
+fn open_component_store(dir: &Option<String>) -> Result<bsc_json_store::Store, String> {
+    let dir = bsc_cli_util::resolve_store_path(dir, COMPONENT_SPEC.dir_env, || {
+        bsc_util::bsc_base_dir()
+            .map(|b| b.join(COMPONENT_SPEC.dir_segment))
+            .ok_or_else(|| "could not resolve a home directory; set HOME/USERPROFILE".to_string())
+    })?;
+    Ok(bsc_json_store::Store::new(dir, "component"))
+}
+
+/// Validate a shape token against the six-shape vocabulary (#2475); the error teaches the whole set.
+fn require_shape(shape: &str) -> Result<(), String> {
+    if DATA_SHAPES.iter().any(|(s, _)| *s == shape) {
+        return Ok(());
+    }
+    let all: Vec<&str> = DATA_SHAPES.iter().map(|(s, _)| *s).collect();
+    Err(format!("unknown shape '{shape}' — the data-shape vocabulary is: {}", all.join(" | ")))
+}
+
+/// Whether a stored component's raw JSON stamps `shape` in its `shapes` array. Lenient: unparseable
+/// records or a missing/odd-typed `shapes` field simply don't match (matching the lean-list posture).
+fn json_has_shape(json: &str, shape: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()
+        .and_then(|v| v.get("shapes").cloned())
+        .and_then(|s| s.as_array().cloned())
+        .is_some_and(|arr| arr.iter().any(|x| x.as_str() == Some(shape)))
+}
+
+/// The `shapes` index (#2475): each vocabulary entry (or just `only`) with its description and the
+/// stored components that stamp it, as lean rows — `[{ shape, desc, components: [...] }]`.
+fn shape_index(raw: &[String], only: Option<&str>) -> serde_json::Value {
+    let entries: Vec<serde_json::Value> = DATA_SHAPES
+        .iter()
+        .filter(|(s, _)| only.is_none_or(|o| o == *s))
+        .map(|(s, d)| {
+            let comps: Vec<serde_json::Value> = raw
+                .iter()
+                .filter(|j| json_has_shape(j, s))
+                .map(|j| bsc_json_store::cli::lean_meta(j, COMPONENT_SPEC.meta_fields))
+                .collect();
+            serde_json::json!({ "shape": s, "desc": d, "components": comps })
+        })
+        .collect();
+    serde_json::Value::Array(entries)
+}
+
+/// `shapes [<shape>] [--dir D] [--pretty]` — print the data-shape vocabulary with each shape's ideal
+/// components (#2475). A read verb: never scope-gated.
+fn cmd_shapes(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut pretty, mut shape) = (None::<String>, false, None::<String>);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            positional => shape = Some(positional.to_string()),
+        }
+    }
+    if let Some(s) = &shape {
+        require_shape(s)?;
+    }
+    let store = open_component_store(&dir)?;
+    let index = shape_index(&store.list(), shape.as_deref());
+    let json = if pretty { serde_json::to_string_pretty(&index) } else { serde_json::to_string(&index) };
+    println!("{}", json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `list --shape <shape> [--full] [--dir D] [--pretty]` — the filtered twin of the store `list`
+/// (#2475): only the components whose `shapes` field stamps <shape>, in the SAME lean projection
+/// (or --full objects). Validates the shape BEFORE any store is touched.
+fn cmd_list_shape(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut pretty, mut full, mut shape) = (None::<String>, false, false, None::<String>);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--shape" => shape = it.next().cloned(),
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            "--full" => full = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            _ => {}
+        }
+    }
+    let shape = shape.ok_or("--shape needs a value (see `bsc ui shapes`)")?;
+    require_shape(&shape)?;
+    let store = open_component_store(&dir)?;
+    let raw = store.list();
+    let selected: Vec<&String> = raw.iter().filter(|j| json_has_shape(j, &shape)).collect();
+    let out: Vec<serde_json::Value> = if full {
+        selected.iter().filter_map(|j| serde_json::from_str(j).ok()).collect()
+    } else {
+        selected.iter().map(|j| bsc_json_store::cli::lean_meta(j, COMPONENT_SPEC.meta_fields)).collect()
+    };
+    let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    println!("{}", json.map_err(|e| e.to_string())?);
+    Ok(())
 }
 
 /// The escape-hatch clause every rule message carries — MUST stay byte-identical to
@@ -389,11 +536,20 @@ fn cmd_usage(args: &[String], prog: &str) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// A fresh (created, empty) scratch store dir so the shape-verb tests never touch the user's
+    /// real `~/.base-studio-code/components` store.
+    fn tmp_store_dir(tag: &str) -> String {
+        let d = std::env::temp_dir().join(format!("bsc-component-cli-test-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        d.to_string_lossy().into_owned()
+    }
+
     #[test]
     fn specs_are_the_two_collections_with_the_right_lean_fields() {
         assert_eq!(COMPONENT_SPEC.noun, "component");
         assert_eq!(COMPONENT_SPEC.dir_segment, "components");
-        assert_eq!(COMPONENT_SPEC.meta_fields, &["id", "name", "kitId", "role"]);
+        // `shapes` rides the lean list projection (#2475) so `list`/`list --shape` expose the axis.
+        assert_eq!(COMPONENT_SPEC.meta_fields, &["id", "name", "kitId", "role", "shapes"]);
         assert_eq!(KIT_SPEC.noun, "kit");
         assert_eq!(KIT_SPEC.dir_segment, "kits");
         assert_eq!(KIT_SPEC.meta_fields, &["id", "name", "stack"]);
@@ -434,7 +590,7 @@ mod tests {
         // `bsc ui` composes this catalog (#2469): every store verb is present, and the usage text
         // teaches the CANONICAL `bsc ui …` form (the `bsc component` alias is deprecated).
         let names: Vec<&str> = command_docs().iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["list", "get", "set", "remove", "kit", "eslint-preset", "usage"]);
+        assert_eq!(names, vec!["list", "shapes", "get", "set", "remove", "kit", "eslint-preset", "usage"]);
         for c in command_docs() {
             assert!(!c.usage.contains("bsc component"), "{}'s usage teaches `bsc ui`, not the alias", c.name);
         }
@@ -491,10 +647,11 @@ mod tests {
         assert!(is_scoped_mutation(&a(&["remove", "button"])));
         assert!(is_scoped_mutation(&a(&["kit", "set"])));
         assert!(is_scoped_mutation(&a(&["kit", "remove", "react-ui"])));
-        // Read verbs never gate.
+        // Read verbs never gate — incl. the #2475 shape picker (`shapes` + `list --shape`).
         for read in [
             &["list"][..], &["get", "button"], &["kit", "list"], &["kit", "get", "react-ui"],
-            &["eslint-preset"], &["usage", "list"], &["help"], &[],
+            &["eslint-preset"], &["usage", "list"], &["shapes"], &["shapes", "graph"],
+            &["list", "--shape", "table"], &["help"], &[],
         ] {
             assert!(!is_scoped_mutation(&a(read)), "read shape gated: {read:?}");
         }
@@ -516,6 +673,14 @@ mod tests {
         assert!(err.contains("read-only"), "kit set refuses too: {err}");
         // Help stays reachable under the read scope (prints, returns Ok).
         assert!(run(vec!["set".into(), "help".into()], "bsc component").is_ok());
+        // The #2475 shape picker is READ tier — both verbs work under the read-scoped session
+        // (the planner's `ui: read`), against a scratch --dir.
+        let dir = tmp_store_dir("read-scope");
+        assert!(run(vec!["shapes".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        assert!(run(vec!["shapes".into(), "graph".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        assert!(
+            run(vec!["list".into(), "--shape".into(), "table".into(), "--dir".into(), dir], "bsc ui").is_ok()
+        );
         std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
     }
 
@@ -525,5 +690,101 @@ mod tests {
         assert!(ov.contains("usage"));
         let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "usage");
         assert!(d.contains("bsc ui usage add") && d.contains("consumer index"));
+    }
+
+    // ── the data-shape picker (#2475) ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn data_shapes_vocabulary_is_exactly_the_six_canonical_shapes() {
+        let names: Vec<&str> = DATA_SHAPES.iter().map(|(s, _)| *s).collect();
+        assert_eq!(names, vec!["list", "linked-list", "tree", "graph", "table", "key-value"]);
+        for (s, d) in DATA_SHAPES {
+            assert!(!d.is_empty(), "{s} carries a description");
+            assert!(require_shape(s).is_ok());
+        }
+        // An off-vocabulary token errors, teaching the whole set.
+        let err = require_shape("blob").unwrap_err();
+        assert!(err.contains("unknown shape 'blob'"));
+        for s in ["list", "linked-list", "tree", "graph", "table", "key-value"] {
+            assert!(err.contains(s), "the error teaches {s}");
+        }
+    }
+
+    #[test]
+    fn json_has_shape_matches_only_a_stamped_shapes_array() {
+        assert!(json_has_shape(r#"{"id":"md","shapes":["list"]}"#, "list"));
+        assert!(json_has_shape(r#"{"id":"gc","shapes":["graph","list"]}"#, "graph"));
+        // Missing / empty / odd-typed `shapes` (and garbage records) simply don't match.
+        assert!(!json_has_shape(r#"{"id":"button"}"#, "list"));
+        assert!(!json_has_shape(r#"{"id":"x","shapes":[]}"#, "list"));
+        assert!(!json_has_shape(r#"{"id":"x","shapes":"list"}"#, "list"));
+        assert!(!json_has_shape("not json", "list"));
+    }
+
+    #[test]
+    fn shape_index_computes_each_shapes_ideals_from_the_stored_fields() {
+        let raw = vec![
+            r#"{"id":"masterdetail","name":"MasterDetail","kitId":"react-ui","role":"layout","shapes":["list"]}"#.to_string(),
+            r#"{"id":"graphcanvas","name":"GraphCanvas","kitId":"react-ui","role":"layout","shapes":["graph"]}"#.to_string(),
+            r#"{"id":"button","name":"Button","kitId":"react-ui","role":"primitive"}"#.to_string(),
+        ];
+        let idx = shape_index(&raw, None);
+        let entries = idx.as_array().unwrap();
+        assert_eq!(entries.len(), DATA_SHAPES.len(), "one entry per vocabulary shape");
+        let entry = |s: &str| entries.iter().find(|e| e["shape"] == s).unwrap().clone();
+        // Stamped shapes list their ideal components as the SAME lean rows as `list` (incl. `shapes`).
+        let list = entry("list");
+        assert_eq!(list["components"][0]["name"], "MasterDetail");
+        assert_eq!(list["components"][0]["shapes"], serde_json::json!(["list"]));
+        assert_eq!(entry("graph")["components"][0]["name"], "GraphCanvas");
+        // An uncovered shape is an honest EMPTY entry (a kit gap), never fabricated coverage.
+        assert_eq!(entry("tree")["components"], serde_json::json!([]));
+        assert_eq!(entry("linked-list")["components"], serde_json::json!([]));
+        // Every entry carries its description (the vocabulary the planner derives against).
+        for e in entries {
+            assert!(e["desc"].as_str().is_some_and(|d| !d.is_empty()));
+        }
+        // A single-shape query narrows to that one entry.
+        let one = shape_index(&raw, Some("graph"));
+        assert_eq!(one.as_array().unwrap().len(), 1);
+        assert_eq!(one[0]["shape"], "graph");
+    }
+
+    #[test]
+    fn shapes_and_list_shape_run_against_a_store_and_reject_off_vocabulary_shapes() {
+        let dir = tmp_store_dir("shapes");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store
+            .set("masterdetail", r#"{"id":"masterdetail","name":"MasterDetail","kitId":"react-ui","role":"layout","shapes":["list"]}"#)
+            .unwrap();
+        // Both read verbs run Ok end-to-end (lean + --full + single-shape).
+        assert!(run(vec!["shapes".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        assert!(run(vec!["shapes".into(), "list".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        assert!(run(vec!["list".into(), "--shape".into(), "list".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        assert!(run(
+            vec!["list".into(), "--shape".into(), "list".into(), "--full".into(), "--dir".into(), dir.clone()],
+            "bsc ui"
+        )
+        .is_ok());
+        // An off-vocabulary shape errors BEFORE any store is touched (no --dir needed), teaching the set.
+        let err = run(vec!["shapes".into(), "blob".into()], "bsc ui").unwrap_err();
+        assert!(err.contains("unknown shape 'blob'") && err.contains("key-value"));
+        let err = run(vec!["list".into(), "--shape".into(), "blob".into()], "bsc ui").unwrap_err();
+        assert!(err.contains("unknown shape 'blob'"));
+        // A bare `--shape` with no value is a usage error pointing at the vocabulary verb.
+        let err = run(vec!["list".into(), "--shape".into()], "bsc ui").unwrap_err();
+        assert!(err.contains("bsc ui shapes"));
+    }
+
+    #[test]
+    fn component_help_lists_the_shapes_verb_and_the_shape_filter() {
+        let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMPONENT_COMMANDS);
+        assert!(ov.contains("shapes"));
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "shapes");
+        assert!(d.contains("key-value") && d.contains("ideal"), "shapes detail teaches the vocabulary");
+        let list = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "list");
+        assert!(list.contains("--shape"), "list detail documents the --shape filter");
+        // `shapes help` resolves to the doc (a read, reachable from any scope).
+        assert!(run(vec!["shapes".into(), "help".into()], "bsc ui").is_ok());
     }
 }

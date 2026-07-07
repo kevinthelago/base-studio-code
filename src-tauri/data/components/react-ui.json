@@ -2003,7 +2003,10 @@
       ],
       "src": "shared/ui/data/CardListRow.tsx",
       "srcText": "import { CardListRow } from \"@/shared/ui/data/CardListRow\";\n\n<CardListRow title={…} />",
-      "builtin": true
+      "builtin": true,
+      "shapes": [
+        "list"
+      ]
     },
     {
       "id": "datatablerow",
@@ -2074,7 +2077,10 @@
       ],
       "src": "shared/ui/data/DataTableRow.tsx",
       "srcText": "import { DataTableRow } from \"@/shared/ui/data/DataTableRow\";\n\n<DataTableRow template={…}>…</DataTableRow>",
-      "builtin": true
+      "builtin": true,
+      "shapes": [
+        "table"
+      ]
     },
     {
       "id": "roletierchips",
@@ -3007,7 +3013,10 @@
       ],
       "src": "shared/ui/layouts/MasterDetail.tsx",
       "srcText": "import { MasterDetail } from \"@/shared/ui/layouts/MasterDetail\";\n\n<MasterDetail\n  rail={<PersonaList/>}\n  detail={<PersonaEditor/>}\n/>",
-      "builtin": true
+      "builtin": true,
+      "shapes": [
+        "list"
+      ]
     },
     {
       "id": "splitview",
@@ -3192,7 +3201,10 @@
       ],
       "src": "shared/ui/layouts/GraphCanvas.tsx",
       "srcText": "import { GraphCanvas, ZoomControls } from \"@/shared/ui/layouts/GraphCanvas\";\nimport { useGraphViewport } from \"@/shared/ui/layouts/useGraphViewport\";\n\nconst vp = useGraphViewport(world);\n<GraphCanvas vp={vp} world={world} grid\n  toolbar={<ZoomControls vp={vp}/>}>\n  {edges}{nodes}\n</GraphCanvas>",
-      "builtin": true
+      "builtin": true,
+      "shapes": [
+        "graph"
+      ]
     },
     {
       "id": "panegrid",
@@ -3350,7 +3362,118 @@
       ],
       "src": "shared/ui/layouts/Sequence.tsx",
       "srcText": "import { Sequence } from \"@/shared/ui/layouts/Sequence\";\n\n<Sequence\n  steps={[\n    { id: \"plan\", label: \"Plan\", status: \"complete\" },\n    { id: \"build\", label: \"Build\", status: \"active\" },\n    { id: \"ship\", label: \"Ship\" },\n  ]}\n  detail={(step) => <StepEditor step={step}/>}\n/>",
-      "builtin": true
+      "builtin": true,
+      "shapes": [
+        "linked-list"
+      ]
+    },
+    {
+      "id": "tree",
+      "name": "Tree",
+      "kitId": "react-ui",
+      "role": "layout",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "layout",
+        "page",
+        "tree"
+      ],
+      "variants": [
+        "indented",
+        "layered"
+      ],
+      "composes": [
+        "MasterDetail",
+        "GraphCanvas",
+        "Box",
+        "Row",
+        "Stack",
+        "Text",
+        "IconButton"
+      ],
+      "props": [
+        {
+          "name": "nodes",
+          "type": "T[]",
+          "req": true,
+          "desc": "The tree roots — a recursive forest of TreeNodeData ({ id, label, meta?, children? }). Ids must be unique."
+        },
+        {
+          "name": "variant",
+          "type": "\"indented\" | \"layered\"",
+          "req": false,
+          "desc": "indented → collapsible rows + detail; layered → top-down pan/zoom chart."
+        },
+        {
+          "name": "detail",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Detail panel for the selected node — a node, or a render fn of the selected TreeNodeData. Indented: the detail column; layered: the canvas inspector."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Optional toolbar — full-width above (indented) / in the canvas toolbar row before the zoom cluster (layered)."
+        },
+        {
+          "name": "selectedId",
+          "type": "string",
+          "req": false,
+          "desc": "Controlled selection — the selected node id (pair with onSelect). Omit for uncontrolled (defaultSelectedId)."
+        },
+        {
+          "name": "onSelect",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Fires with the clicked node's id (both selection modes)."
+        },
+        {
+          "name": "defaultCollapsedIds",
+          "type": "T[]",
+          "req": false,
+          "desc": "Indented: branch ids that start collapsed (expansion is uncontrolled). Default: all expanded."
+        },
+        {
+          "name": "onToggle",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Fires (id, expanded) when a branch expands/collapses."
+        },
+        {
+          "name": "indent",
+          "type": "number",
+          "req": false,
+          "desc": "Indented: px of indentation per depth level."
+        },
+        {
+          "name": "railWidth",
+          "type": "number",
+          "req": false,
+          "desc": "Indented: rail width in px (the starting width when resizable)."
+        },
+        {
+          "name": "resizable",
+          "type": "boolean",
+          "req": false,
+          "desc": "Indented: opt into a drag-resizable rail (MasterDetail's .resize-x splitter)."
+        }
+      ],
+      "whenUse": [
+        "Deep / navigational tree data (file systems, category hierarchies) — variant=\"indented\": collapsible depth-indented rows + a detail panel.",
+        "A presentational top-down hierarchy (org chart, ownership map) — variant=\"layered\" rides the shared graph stack (layerDag + edge grammar + GraphCanvas pan/zoom)."
+      ],
+      "whenNot": [
+        "A flat list beside a detail — use MasterDetail.",
+        "A general (multi-parent / cyclic) graph — use GraphCanvas with layerDag directly."
+      ],
+      "src": "shared/ui/layouts/Tree.tsx",
+      "srcText": "import { Tree } from \"@/shared/ui/layouts/Tree\";\n\n<Tree\n  nodes={[{ id: \"src\", label: \"src\", children: [\n    { id: \"app\", label: \"app\" },\n  ] }]}\n  detail={(n) => <NodeDetail node={n}/>}\n  onSelect={setSelected}\n/>",
+      "builtin": true,
+      "shapes": [
+        "tree"
+      ]
     },
     {
       "id": "labelchip",
@@ -3457,7 +3580,70 @@
       ],
       "src": "shared/ui/data/ActivityFeed.tsx",
       "srcText": "import { ActivityFeed } from \"@/shared/ui/data/ActivityFeed\";\n\n<ActivityFeed items={…} hint={…} loading={…} tone={…} />",
-      "builtin": true
+      "builtin": true,
+      "shapes": [
+        "list"
+      ]
+    },
+    {
+      "id": "keyvaluelist",
+      "name": "KeyValueList",
+      "kitId": "react-ui",
+      "role": "primitive",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "data",
+        "key-value"
+      ],
+      "variants": [
+        "default",
+        "loading"
+      ],
+      "composes": [
+        "Skeleton"
+      ],
+      "props": [
+        {
+          "name": "items",
+          "type": "T[]",
+          "req": true,
+          "desc": "KeyValueItem[] — the { k, v } rows, in display order."
+        },
+        {
+          "name": "labelWidth",
+          "type": "number",
+          "req": false,
+          "desc": "Fixed label column width in px."
+        },
+        {
+          "name": "mono",
+          "type": "boolean",
+          "req": false,
+          "desc": "Render values (not labels) in the mono font — ids, paths, config values."
+        },
+        {
+          "name": "loading",
+          "type": "boolean",
+          "req": false,
+          "desc": "Shimmer value placeholders (labels stay) while the record's source loads (#2302)."
+        }
+      ],
+      "whenUse": [
+        "A read-only label : value property list — a detail summary, config panel, or inspector facts block.",
+        "Rendering one record's named fields in a fixed, aligned two-column grid."
+      ],
+      "whenNot": [
+        "Editable fields — use TextField / SelectField.",
+        "One headline metric — use StatTile.",
+        "Many homogeneous records — use DataTableRow / CardListRow."
+      ],
+      "src": "shared/ui/data/KeyValueList.tsx",
+      "srcText": "import { KeyValueList } from \"@/shared/ui/data/KeyValueList\";\n\n<KeyValueList items={…} />",
+      "builtin": true,
+      "shapes": [
+        "key-value"
+      ]
     },
     {
       "id": "pane",
