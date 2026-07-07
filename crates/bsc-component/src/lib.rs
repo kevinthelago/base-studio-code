@@ -5,7 +5,8 @@
 //!
 //! It's the one store the desktop Component Library pane (#2269), the planner's `test_ui` stage (#2274),
 //! and every live session share: the UI reaches it through the generic `bsc` command
-//! (`bsc component …`, over the #2114 bridge), and a session's own shell reaches the SAME store through
+//! (`bsc ui …`, over the #2114 bridge — the store verbs are mounted under `bsc ui` per #2469, with
+//! `bsc component` a deprecated alias), and a session's own shell reaches the SAME store through
 //! the [`cli`] module — so an agent building UI reads the kit (and doesn't re-invent a component) straight
 //! from bash. Packaged (built-in) kits/components are seeded into this store on first hydrate + kept
 //! reconciled by the frontend, exactly like the user persona/blueprint libraries.

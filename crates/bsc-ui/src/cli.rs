@@ -1,17 +1,29 @@
-//! The `bsc ui` subcommand (#1852 Phase 2) — the agent-facing face of the spec-first UI SDK. Two
-//! read-only commands over the embedded KitNode contract (`crate::CONTRACT_JSON`):
-//!   bsc ui schema              # print the contract (every kind, its fields + enums) — the agent's contract
-//!   bsc ui validate [file]     # validate a KitNode spec (a file, else stdin) against the contract
+//! The `bsc ui` subcommand — the ONE UI-design-surface command (#2469). Two verb families under a
+//! single mount, so a restricted design session is expressible as one allow rule (`Bash(bsc ui *)`):
 //!
-//! So an agent composing UI-as-data can learn the vocabulary (`schema`) and check its work (`validate`)
-//! from its own shell, against the exact contract the desktop `KitRenderer` renders. Dispatched by the
-//! unified `bsc` binary (#1877) via [`run`]. Per-command help (#1762): `bsc ui help`, `bsc ui <cmd> help`.
+//! - the **contract** verbs (#1852, owned here, over the embedded KitNode contract
+//!   `crate::CONTRACT_JSON`): `schema` (print the contract — every kind, its fields + enums),
+//!   `validate [file]` (check a KitNode spec, a file else stdin, against it), and `theme list|get`
+//!   (the kit THEME registry).
+//! - the **component-library** verbs (#2281, mounted verbatim from `bsc_component::cli` — formerly
+//!   `bsc component`, which remains a deprecated alias for one release, #2469):
+//!   `list|get|set|remove` (the components), `kit list|get|set|remove` (the kits), and
+//!   `eslint-preset` + `usage …` (kit lint enforcement + the consumer index).
+//!
+//! Composition: the contract verbs dispatch FIRST (they win any name collision — `theme list` vs the
+//! component `list` disambiguates positionally), every KNOWN component verb delegates into
+//! `bsc_component::cli::run` under this prog, and the help/unknown-command surfaces are built from the
+//! MERGED `CmdDoc` catalog so `bsc ui help` presents one coherent tree. Dispatched by the unified
+//! `bsc` binary (#1877) via [`run`]. Per-command help (#1762): `bsc ui help`, `bsc ui <cmd> help`.
 
 use bsc_cli_util::CmdDoc;
 use std::io::Read;
 
-const TAGLINE: &str = "the UI spec SDK — the KitNode contract an AI emits UI as data, plus a validator (#1852)";
+const TAGLINE: &str =
+    "the UI design surface — the KitNode contract + themes (#1852) and the component library (#2469)";
 
+/// The contract verbs bsc-ui owns. The component-library verbs are appended from
+/// [`bsc_component::cli::command_docs`] by [`merged_commands`].
 const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "schema",
@@ -53,19 +65,43 @@ theme picker reads.",
     },
 ];
 
+/// The merged command catalog (#2469): the contract verbs first, then the component-library verbs
+/// verbatim. This one list drives the overview, per-command help, and the unknown-command error, so
+/// every help surface shows the same coherent tree. (No names collide today — schema/validate/theme
+/// vs list/get/set/remove/kit/eslint-preset/usage — and if one ever did, dispatch order makes the
+/// contract verb win.)
+fn merged_commands() -> Vec<CmdDoc> {
+    let mut all = COMMANDS.to_vec();
+    all.extend_from_slice(bsc_component::cli::command_docs());
+    all
+}
+
 /// The `ui` subcommand entrypoint: `args` is everything after `bsc ui`; `prog` is the display name for
-/// help/errors.
+/// help/errors. Contract verbs (schema/validate/theme) dispatch here; the component-library verbs
+/// delegate into [`bsc_component::cli::run`] under the same prog; anything else errors with the merged
+/// overview.
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
-    if bsc_cli_util::handle_help(prog, TAGLINE, COMMANDS, &args) {
+    // Fold `-h`/`--help` to the `help` token so `bsc ui --help` (and `bsc ui <cmd> --help`) presents
+    // the merged tree here rather than leaking into a delegate's partial catalog.
+    let args: Vec<String> =
+        args.into_iter().map(|a| if a == "-h" || a == "--help" { "help".into() } else { a }).collect();
+    let merged = merged_commands();
+    if bsc_cli_util::handle_help(prog, TAGLINE, &merged, &args) {
         return Ok(());
     }
     match args.first().map(String::as_str) {
         Some("schema") => cmd_schema(&args[1..]),
         Some("validate") => cmd_validate(&args[1..]),
         Some("theme") => cmd_theme(&args[1..]),
-        Some(other) => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
+        // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
+        // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
+        // ours so the error shows the MERGED overview, not the component-only one.
+        Some(v) if bsc_component::cli::command_docs().iter().any(|c| c.name == v) => {
+            bsc_component::cli::run(args, prog)
+        }
+        Some(other) => Err(bsc_cli_util::unknown_command(prog, TAGLINE, &merged, other)),
         None => {
-            print!("{}", bsc_cli_util::help_overview(prog, TAGLINE, COMMANDS));
+            print!("{}", bsc_cli_util::help_overview(prog, TAGLINE, &merged));
             Ok(())
         }
     }
@@ -133,18 +169,60 @@ fn cmd_theme(args: &[String]) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn help_overview_lists_the_commands() {
-        let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMMANDS);
-        assert!(ov.contains("schema") && ov.contains("validate") && ov.contains("theme"));
+    /// A fresh (created, empty) store dir so the component-verb tests never touch the user's real
+    /// `~/.base-studio-code/{components,kits}` stores.
+    fn tmp_store_dir(tag: &str) -> String {
+        let d = std::env::temp_dir().join(format!("bsc-ui-cli-test-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        d.to_string_lossy().into_owned()
     }
 
     #[test]
-    fn theme_list_and_get_round_trip() {
+    fn help_overview_lists_the_merged_tree() {
+        // The one help surface presents BOTH families (#2469): the contract verbs + the mounted
+        // component-library verbs.
+        let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, &merged_commands());
+        for c in
+            ["schema", "validate", "theme", "list", "get", "set", "remove", "kit", "eslint-preset", "usage"]
+        {
+            assert!(ov.contains(c), "merged overview lists {c}");
+        }
+    }
+
+    #[test]
+    fn contract_verbs_dispatch_first() {
+        // The bsc-ui-owned verbs are untouched by the mount: schema prints, theme round-trips.
+        assert!(run(vec!["schema".into()], "bsc ui").is_ok());
         assert!(run(vec!["theme".into(), "list".into()], "bsc ui").is_ok());
         assert!(run(vec!["theme".into(), "get".into(), "default".into()], "bsc ui").is_ok());
-        // `get` with no id is a usage error.
+        // `theme get` with no id is a usage error — `theme` wins over the component `get` (positional
+        // disambiguation: the collision-prone words are one level down).
         assert!(run(vec!["theme".into(), "get".into()], "bsc ui").is_err());
+    }
+
+    #[test]
+    fn component_store_verbs_dispatch_under_bsc_ui() {
+        // The former `bsc component` root verbs work as `bsc ui …` (#2469), against a scratch --dir.
+        let dir = tmp_store_dir("comp");
+        assert!(run(vec!["list".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        assert!(run(vec!["list".into(), "--full".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        assert!(run(vec!["get".into(), "absent".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        assert!(run(vec!["remove".into(), "absent".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        // The kit collection routes one level down, and eslint-preset (the custom store read, #2279)
+        // works over an empty store.
+        assert!(run(vec!["kit".into(), "list".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        assert!(run(vec!["eslint-preset".into(), "--dir".into(), dir], "bsc ui").is_ok());
+    }
+
+    #[test]
+    fn component_verb_help_resolves_through_the_merged_catalog() {
+        // `bsc ui <component-verb> help` / `bsc ui help <verb>` are answered HERE (merged tree).
+        assert!(run(vec!["set".into(), "help".into()], "bsc ui").is_ok());
+        assert!(run(vec!["usage".into(), "help".into()], "bsc ui").is_ok());
+        assert!(run(vec!["help".into(), "kit".into()], "bsc ui").is_ok());
+        // ... and the component docs teach the canonical `bsc ui` form.
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, &merged_commands(), "set");
+        assert!(d.contains("bsc ui set"));
     }
 
     #[test]
@@ -154,13 +232,19 @@ mod tests {
     }
 
     #[test]
-    fn run_help_is_ok_without_args() {
+    fn run_help_is_ok_without_args_and_folds_help_flags() {
         assert!(run(vec!["help".into()], "bsc ui").is_ok());
         assert!(run(vec![], "bsc ui").is_ok());
+        // `--help`/-h fold to the help token so the merged tree answers them.
+        assert!(run(vec!["--help".into()], "bsc ui").is_ok());
+        assert!(run(vec!["-h".into()], "bsc ui").is_ok());
     }
 
     #[test]
-    fn run_unknown_command_errors() {
-        assert!(run(vec!["frobnicate".into()], "bsc ui").is_err());
+    fn run_unknown_command_errors_with_the_merged_overview() {
+        // An unknown verb is OUR error (not the component CLI's), so the pointer shows the whole tree.
+        let err = run(vec!["frobnicate".into()], "bsc ui").unwrap_err();
+        assert!(err.contains("unknown command 'frobnicate'"));
+        assert!(err.contains("schema") && err.contains("eslint-preset"), "merged overview in the error");
     }
 }

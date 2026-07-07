@@ -41,7 +41,7 @@ function dropRepoScoped<T>(m: Record<string, T>, projectKey: string): Record<str
 
 /** Record the project→kit consumer-index edge for a blueprint bind (#2277). If the blueprint declares a
  *  component `kit`, the seeded project is a CONSUMER of it, so `addKitUsage` files the edge (idempotent by
- *  (projectKey, kitId), write-through to `bsc component usage`). A blueprint with no `kit` is a no-op — so
+ *  (projectKey, kitId), write-through to `bsc ui usage`). A blueprint with no `kit` is a no-op — so
  *  this fills the consumer index automatically at every blueprint bind (creation + switch). */
 function recordBlueprintKit(get: () => AppStore, projectId: string, blueprintId: string): void {
   const kit = get().blueprints.find((b) => b.id === blueprintId)?.kit;
