@@ -39,6 +39,7 @@ export async function loadComponents(): Promise<ComponentRecord[] | null> {
         wraps: c.wraps,
         rules: c.rules,
         shapes: c.shapes,
+        seedHash: c.seedHash, // #2483 — must ride the allowlist or the refresh baseline is lost on write-through
       }));
   } catch {
     return null;
@@ -52,7 +53,7 @@ export async function loadKits(): Promise<Kit[] | null> {
     const rows = JSON.parse(out.trim() || "[]") as Partial<Kit>[];
     return (rows ?? [])
       .filter((k): k is Kit => typeof k.id === "string" && !!k.id && !!k.name)
-      .map((k) => ({ id: k.id, name: k.name!, stack: k.stack ?? "", dot: k.dot ?? "var(--fg-muted)", builtin: k.builtin }));
+      .map((k) => ({ id: k.id, name: k.name!, stack: k.stack ?? "", dot: k.dot ?? "var(--fg-muted)", builtin: k.builtin, seedHash: k.seedHash }));
   } catch {
     return null;
   }

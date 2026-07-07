@@ -11,12 +11,53 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
 import type { KitChange } from "./lib/propagation";
+import type { SeedNotice } from "./lib/seedRefresh";
 
 const CLASS_COLOR: Record<KitChange["class"], string> = {
   breaking: "var(--danger)",
   additive: "var(--accent)",
   fix: "var(--success)",
 };
+
+const NOTICE_TEXT: Record<SeedNotice["kind"], string> = {
+  "updated-upstream": "the packaged built-in was updated upstream; your customized copy was kept",
+  orphaned: "no longer ships with the app; your customized copy was kept",
+};
+
+/** Built-in seed-refresh notices (#2483) — a built-in the hydrate reconcile KEPT despite a seed
+ *  divergence (updated upstream while customized, or retired from the seed while customized).
+ *  Sibling of {@link KitChangesCard}; renders nothing when there are no notices. */
+export function SeedNoticesCard() {
+  const notices = useAppStore((s) => s.seedNotices);
+  const dismiss = useAppStore((s) => s.dismissSeedNotice);
+  if (notices.length === 0) return null;
+  return (
+    <Box
+      style={{
+        margin: "10px 14px 0", border: "1px solid var(--border)", borderRadius: 10,
+        background: "var(--bg-soft)", overflow: "hidden", flex: "none",
+      }}
+    >
+      <Box style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
+        <Text mono size="xxs" tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase" }}>Built-in updates</Text>
+        <Chip color="var(--state-wait)">{notices.length} kept</Chip>
+        <Box style={{ flex: 1 }} />
+        <Text size={11} tone="muted">customized built-ins are never overwritten</Text>
+      </Box>
+      <Box style={{ display: "flex", flexDirection: "column" }}>
+        {notices.map((n) => (
+          <Box key={`${n.type}:${n.id}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--border-soft, var(--border))" }}>
+            <Chip color={n.kind === "orphaned" ? "var(--state-wait)" : "var(--accent)"}>{n.kind}</Chip>
+            <Text weight={600} size={12.5}>{n.name}</Text>
+            <Text mono size="xxs" tone="dim">{n.type}</Text>
+            <Text size={12} tone="muted" style={{ flex: 1 }}>— {NOTICE_TEXT[n.kind]}</Text>
+            <Button size="sm" variant="ghost" onClick={() => dismiss(n.type, n.id)}>dismiss</Button>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
+}
 
 export function KitChangesCard() {
   const dispatches = useAppStore((s) => s.kitDispatches);
