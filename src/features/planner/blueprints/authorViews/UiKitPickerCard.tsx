@@ -1,12 +1,14 @@
 // Blueprint Author — UI KIT picker (#2465). The blueprint-WIDE kit pin, surfaced in the
 // Capabilities view (the author view that already wires the blueprint's attached capabilities —
 // skills/MCP per stage; the kit is the same idea one level up). A pin is a lockfile entry
-// `{ id, version, hash, source? }` against the GLOBAL versioned kit store:
+// `{ id, version, hash, source?, themeId? }` against the GLOBAL versioned kit store:
 //   · new blueprints arrive default-pinned to the packaged `bsc/react-ui` kit;
 //   · switch to any kit already in the store (one shared copy, zero downloads);
 //   · import a kit by gist URL — it's added to the store FIRST, then pinned.
 // The card also resolves the current pin live (store hit / fetch-verify / loud hash-mismatch
-// rejection), so a broken pin is visible where it's authored.
+// rejection), so a broken pin is visible where it's authored. The pin's paired THEME (#2489 —
+// the blueprint-level default the planned app starts from; absent = "default") is picked here
+// too, and RIDES a kit swap/import untouched: re-pinning the kit never resets the theme.
 import { useEffect, useState } from "react";
 import { useAppStore } from "@/store";
 import { Card } from "@/shared/ui/data/Card";
@@ -17,6 +19,7 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { DEFAULT_THEME, KIT_THEMES } from "@/shared/ui/kit";
 import type { BlueprintUiKit } from "@/features/planner/stages/blueprints";
 import {
   kitRef, listStoreKits, packagedUiKitPin, resolveUiKitPin, importKitByGistUrl,
@@ -60,8 +63,11 @@ export function UiKitPickerCard({ bp, onChange }: Pick<AuthorViewProps, "bp" | "
   }, [refKey, token]);
   const resolve: UiKitResolution | null = pin && resolved?.key === refKey ? resolved.res : null;
 
+  // The chosen theme rides every kit re-pin (#2489): swapping/importing a kit is a palette-neutral
+  // operation, so the previous pin's themeId is carried onto the new one.
+  const keepTheme = pin?.themeId ? { themeId: pin.themeId } : {};
   const pinStoreKit = (m: KitStoreManifest) =>
-    setPin({ id: m.id, version: m.version, hash: m.sha256, ...(m.source && m.source !== "packaged" ? { source: m.source } : {}) });
+    setPin({ id: m.id, version: m.version, hash: m.sha256, ...(m.source && m.source !== "packaged" ? { source: m.source } : {}), ...keepTheme });
 
   const doImport = async () => {
     const ref = url.trim();
@@ -71,7 +77,15 @@ export function UiKitPickerCard({ bp, onChange }: Pick<AuthorViewProps, "bp" | "
     setBusy(false);
     if (!res.ok) { setImportError(res.error); return; }
     setUrl("");
-    setPin(res.pin);
+    setPin({ ...res.pin, ...keepTheme });
+  };
+
+  // Picking `default` stores NO themeId (absent = default — the canonical form the packaged pin
+  // and coerce round-trips use); any other id is recorded on the pin.
+  const pickTheme = (themeId: string) => {
+    if (!pin) return;
+    const { themeId: _prev, ...rest } = pin;
+    setPin(themeId === DEFAULT_THEME ? rest : { ...rest, themeId });
   };
 
   const packaged = packagedUiKitPin();
@@ -96,6 +110,27 @@ export function UiKitPickerCard({ bp, onChange }: Pick<AuthorViewProps, "bp" | "
         </Row>
       )}
       {resolve && !resolve.ok && <InlineError>{resolve.error}</InlineError>}
+
+      {pin && (
+        <Box style={{ marginTop: 10 }}>
+          <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 5 }}>
+            Theme — the app&apos;s default palette (swappable per project)
+          </Text>
+          <Row gap={6} align="center" style={{ flexWrap: "wrap" }}>
+            {KIT_THEMES.map((t) => (
+              <Button
+                key={t.id}
+                size="sm"
+                variant={(pin.themeId ?? DEFAULT_THEME) === t.id ? "primary" : "ghost"}
+                title={t.description}
+                onClick={() => pickTheme(t.id)}
+              >
+                {t.label}
+              </Button>
+            ))}
+          </Row>
+        </Box>
+      )}
 
       {storeKits.some((m) => !pin || kitRef(m) !== kitRef(pin)) && (
         <Box style={{ marginTop: 10 }}>

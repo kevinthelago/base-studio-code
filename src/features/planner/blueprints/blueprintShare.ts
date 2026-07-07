@@ -89,7 +89,9 @@ export function coerceTeam(v: unknown): BlueprintTeam | undefined {
  *  referencing an immutable `id@version` artifact in the global kit store. A pin is only as good
  *  as its integrity data, so ALL of id/version/hash are required (a hash-less pin can't be
  *  verified on fetch); anything malformed ⇒ `undefined` — the blueprint just stays unpinned,
- *  exactly like a blueprint that never had one. `source` (the typed-gist URL) stays optional. */
+ *  exactly like a blueprint that never had one. `source` (the typed-gist URL) stays optional, as
+ *  is the paired `themeId` (#2489 — the theme id rides the pin wherever the pin travels; absent ⇒
+ *  `"default"`). */
 export function coerceUiKit(v: unknown): BlueprintUiKit | undefined {
   if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
   const o = v as Record<string, unknown>;
@@ -97,7 +99,11 @@ export function coerceUiKit(v: unknown): BlueprintUiKit | undefined {
   const version = str(o.version);
   const hash = str(o.hash);
   if (!id || !version || !hash) return undefined;
-  return { id, version, hash, ...(str(o.source) ? { source: str(o.source) } : {}) };
+  return {
+    id, version, hash,
+    ...(str(o.source) ? { source: str(o.source) } : {}),
+    ...(str(o.themeId) ? { themeId: str(o.themeId) } : {}),
+  };
 }
 
 /** Reconstruct a Blueprint from an untrusted payload, or null if it's not one. Requires an id, a

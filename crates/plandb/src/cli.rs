@@ -208,6 +208,24 @@ silently ignores the whole blob), and every stage/section entry needs a \"key\" 
 rejected write leaves the stored blueprint untouched. --force skips validation.",
     },
     CmdDoc {
+        name: "ui",
+        summary: "the app's UI pairing — the {kit, theme} the planned app ships on (one blob)",
+        usage: "\
+USAGE:
+  bsc plan ui set [--force]   # replace the pairing from JSON on stdin
+  bsc plan ui get             # print the pairing (or null)
+
+The planned application's {kit, theme} pair (#2489), e.g.
+  {\"kit\": {\"id\": \"bsc/react-ui\", \"version\": \"1.0.0\"}, \"themeId\": \"soft\"}
+`kit` is the blueprint's pinned id@version into the released-kit store; `themeId` is a
+`bsc ui theme list` id (absent = \"default\"). Recorded in the Test UI stage after choosing the
+theme WITH the user; the generated app's palette is emitted FROM it — `bsc ui emit-css --theme
+<themeId>` produces tokens.css (the semantic contract layer, read-only) + theme.css (the one
+swappable palette file), resolved by id at emission time (never snapshotted). `set` validates
+before storing (#2395): a present \"kit\" needs a non-empty \"id\" + \"version\", a present
+\"themeId\" must be a non-empty string, and an empty pairing is rejected. --force skips.",
+    },
+    CmdDoc {
         name: "discovery",
         summary: "the Discovery stage's dynamic required-set",
         usage: "\
@@ -448,6 +466,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "deps" => nouns::cmd_deps(&args),
         "mcp" => nouns::cmd_mcp(&args),
         "blueprint" => nouns::cmd_blueprint(&args),
+        "ui" => nouns::cmd_ui(&args),
         "discovery" => nouns::cmd_discovery(&args),
         "confirm" => nouns::cmd_confirm(&args),
         "skip" => nouns::cmd_skip(&args),
@@ -529,13 +548,13 @@ fn validated_set(
     set_fn(v)
 }
 
-/// The shared `set`/`get` handler for the singleton-blob nouns (`deploy`/`deps`/`blueprint`). `set`
+/// The shared `set`/`get` handler for the singleton-blob nouns (`deploy`/`deps`/`blueprint`/`ui`). `set`
 /// reads one JSON object on stdin, validates it via `validate` (#2395 — strict-reject unless
 /// `--force`), replaces the blob via `set_fn`, and echoes `msg_fn(&value)` in human mode; `get`
 /// emits the stored blob via `get_fn` or `null`/`none_text`. `verb` names the noun in the
 /// unknown-subcommand error; `parse_noun` names the value in the stdin parse error. (`fleet` keeps
 /// its own match for `get <stream-id>`/`--full`/lean — only its `set` shares this read shape.)
-// One flat parameter per per-noun behavior (validate/set/get/msg) — three call sites, and a
+// One flat parameter per per-noun behavior (validate/set/get/msg) — four call sites, and a
 // builder/struct would just re-spell the same four closures with more ceremony.
 #[allow(clippy::too_many_arguments)]
 fn cmd_blob_noun(
@@ -585,7 +604,7 @@ mod tests {
         // Every top-level command appears in the compact menu.
         for c in [
             "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
-            "fleet", "deploy", "deps", "mcp", "blueprint", "discovery", "confirm", "skip", "integration",
+            "fleet", "deploy", "deps", "mcp", "blueprint", "ui", "discovery", "confirm", "skip", "integration",
             "lesson", "triage", "stage", "automations", "startup", "github-context",
         ] {
             assert!(ov.contains(c), "overview lists {c}");
