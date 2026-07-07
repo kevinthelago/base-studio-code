@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, providerLaunchConfig, SCOPE_DENY_ALL } from "./sessionLaunch";
 import { aiderProvider } from "@/app/console/lib/providers/providers/aider";
-import { roleCapability, roleDeniedCommands, roleDeniedTools, scopeWriteGlobs, bscAgentPerms } from "@/shared/lib/session/sessionRoles";
+import { roleCapability, roleDeniedCommands, roleDeniedTools, scopeWriteGlobs, bscAgentPerms, sessionScopes } from "@/shared/lib/session/sessionRoles";
 import { flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
 import { resolveProfileSettings } from "@/features/agents/lib/profileEnforcement";
 import { PROFILES } from "@/features/agents/lib/agentProfiles";
@@ -52,6 +52,23 @@ describe("buildAgentEnv", () => {
     expect(buildAgentEnv(mkStore({ paneRoles: { p: "triage" } }), "p", "claude", "")?.BSC_SCOPE_GLOBS).toBe(SCOPE_DENY_ALL);
     // A worker (code:write) with no globs is NOT deny-all — it writes code within its worktree.
     expect(buildAgentEnv(mkStore({ paneRoles: { p: "worker" } }), "p", "claude", "")?.BSC_SCOPE_GLOBS).toBeUndefined();
+  });
+
+  it("emits BSC_SCOPES (the role's per-store access tiers) on every gated pane (#2470)", () => {
+    // The runtime doc the store CLIs read (`bsc_cli_util::scope_allows_write`): a worker's ui tier
+    // is read, so `bsc ui set`/`remove` refuse at the verb handler even if the launch denies are
+    // bypassed by a non-Claude runtime.
+    const e = buildAgentEnv(mkStore({ paneRoles: { p: "worker" } }), "p", "claude", "");
+    expect(e?.BSC_SCOPES).toBe(JSON.stringify(sessionScopes(roleCapability("worker"))));
+    expect(JSON.parse(e!.BSC_SCOPES!)).toEqual({ ui: "read" });
+    // Role-independent: every gated pane carries the doc (a code:write worker included, above; a
+    // code:none triage too).
+    const triage = buildAgentEnv(mkStore({ paneRoles: { p: "triage" } }), "p", "claude", "");
+    expect(JSON.parse(triage!.BSC_SCOPES!)).toEqual({ ui: "read" });
+  });
+
+  it("does not emit BSC_SCOPES for an ungated pane (absent env ⇒ unrestricted, back-compat)", () => {
+    expect(buildAgentEnv(mkStore(), "p", "claude", "tok")?.BSC_SCOPES).toBeUndefined();
   });
 
   it("emits BSC_DENY_BASH (user + role denies) for the bsc-deny hook (#1916)", () => {
