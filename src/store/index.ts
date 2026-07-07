@@ -124,6 +124,7 @@ export const useAppStore = create<AppStore>()(
         fleetPaneStreams:     s.fleetPaneStreams,
         projectLocalRepos:    s.projectLocalRepos,
         localDraftProjects:   s.localDraftProjects,
+        triagedProjects:      s.triagedProjects,  // #2541: drafted→triaged marker; gates the Glance network
         projectLinks:         s.projectLinks,   // #2253: user-drawn Glance project relationships
         autoTriage:           s.autoTriage,   // #2265: per-project fault auto-triage toggle
         autoKitDispatch:      s.autoKitDispatch, // #2277: per-project kit auto-dispatch toggle

@@ -62,6 +62,13 @@ export interface ProjectsState {
    *  keyed by the FROZEN key so the on-disk folder doesn't move. No-ops if the draft is gone. */
   updateDraftProject: (key: string, patch: Partial<{ title: string; pitch: string }>) => void;
   removeDraftProject: (key: string) => void;
+  /** TRIAGED projects (#2541): the durable set of projects whose triage/fleet has been launched — the
+   *  drafted→triaged transition. Keyed by the plan key → the ms epoch it was first triaged. This is what
+   *  gates the Glance network: a project appears there only once it's WORKING (`useGlanceProjects` filters
+   *  to these keys), so a mere draft/plan never shows. Stamped by `triageStartProject`/`fleetStartProject`. */
+  triagedProjects: Record<string, number>;
+  /** Mark a project triaged (idempotent — keeps the first timestamp). */
+  markProjectTriaged: (key: string) => void;
   /**
    * Move every per-project store entry from `oldKey` to `newKey` (#2409) — the store half of the
    * one-time hub relink (`relink_project_hub`) that migrates a legacy-keyed project onto its

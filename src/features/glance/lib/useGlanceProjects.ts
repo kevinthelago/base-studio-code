@@ -169,9 +169,20 @@ function sameKeys(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   return true;
 }
 
+/**
+ * Keep only TRIAGED projects (#2541) — the drafted→triaged gate. A project appears on the Glance
+ * network ONLY once its triage/fleet has been launched (its key is in `triaged`), so a mere draft or a
+ * published-but-never-worked hub is filtered out. "Once the nodes are here, it's because they're
+ * working." Pure + exported for direct testing.
+ */
+export function filterTriaged(projects: ProjectLite[], triaged: Record<string, number>): ProjectLite[] {
+  return projects.filter((p) => triaged[p.id] !== undefined);
+}
+
 export function useGlanceProjects(enabled = true): ProjectLite[] {
   const drafts = useAppStore((s) => s.localDraftProjects);
   const planFleet = useAppStore((s) => s.planFleet);
+  const triagedProjects = useAppStore((s) => s.triagedProjects);
   const githubState = useAppStore((s) => s.githubState);
   const setGithubState = useAppStore((s) => s.setGithubState);
   const liveKeys = useProjectLiveness(enabled);
@@ -231,9 +242,12 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   }, [published.data, githubState, drafts, localPublished]);
 
   return useMemo(
-    // Merge first (drafts + local published + GitHub published), then overlay live heartbeats as the
-    // `"live"` status (#2263).
-    () => applyLiveness(mergeGlanceProjects(drafts, planFleet, effectivePublished, localPublished), liveKeys),
-    [drafts, planFleet, effectivePublished, localPublished, liveKeys],
+    // Merge first (drafts + local published + GitHub published), FILTER to triaged/working projects
+    // (#2541 — a draft/plan never shows), then overlay live heartbeats as the `"live"` activity (#2263).
+    () => applyLiveness(
+      filterTriaged(mergeGlanceProjects(drafts, planFleet, effectivePublished, localPublished), triagedProjects),
+      liveKeys,
+    ),
+    [drafts, planFleet, effectivePublished, localPublished, triagedProjects, liveKeys],
   );
 }
