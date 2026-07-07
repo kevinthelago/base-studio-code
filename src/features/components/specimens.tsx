@@ -608,6 +608,56 @@ export function renderSpecimen(comp: ComponentRecord, variant: string, theme: Pr
       );
     }
 
+    case "Sequence": {
+      const vertical = variant === "vertical";
+      const node = (kind: "done" | "active" | "up", txt: string) => (
+        <span style={{ width: 16, height: 16, flex: "none", borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 9, fontWeight: 700,
+          ...(kind === "done" ? { background: "var(--success)", color: "var(--on-success)" }
+            : kind === "active" ? { background: t.elev, color: "var(--accent)", boxShadow: "inset 0 0 0 1.5px var(--accent)" }
+            : { background: t.elev, color: t.dim, boxShadow: `inset 0 0 0 1px ${t.border}` }) }}>
+          {kind === "done" ? "✓" : txt}
+        </span>
+      );
+      const kinds: ("done" | "active" | "up")[] = ["done", "done", "active", "up"];
+      const detailBody = (
+        <div style={{ flex: 1, minWidth: 0, padding: 10, display: "flex", flexDirection: "column", gap: 7 }}>
+          <span style={{ width: "50%", height: 10, borderRadius: 4, background: t.fg, opacity: 0.8 }} />
+          {["100%", "84%", "68%"].map((w) => <span key={w} style={{ width: w, height: 7, borderRadius: 3, background: t.elev }} />)}
+        </div>
+      );
+      if (vertical) {
+        return (
+          <div style={{ width: 280, height: 152, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.panel, display: "flex" }}>
+            <div style={{ width: 96, flex: "none", borderRight: `1px solid ${t.borderSoft}`, padding: 9, display: "flex", flexDirection: "column" }}>
+              {kinds.map((k, i) => (
+                <div key={i} style={{ display: "flex", flexDirection: "column" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {node(k, String(i + 1))}
+                    <span style={{ flex: 1, height: 6, borderRadius: 3, background: k === "active" ? "color-mix(in oklch, var(--accent), transparent 75%)" : t.elev }} />
+                  </div>
+                  {i < kinds.length - 1 && <span style={{ width: 2, height: 10, marginLeft: 7, background: k === "done" ? "var(--success)" : t.borderSoft }} />}
+                </div>
+              ))}
+            </div>
+            {detailBody}
+          </div>
+        );
+      }
+      return (
+        <div style={{ width: 280, height: 152, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.panel, display: "flex", flexDirection: "column" }}>
+          <div style={{ height: 32, flex: "none", borderBottom: `1px solid ${t.borderSoft}`, background: t.elev, display: "flex", alignItems: "center", padding: "0 10px", gap: 5 }}>
+            {kinds.map((k, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 5, ...(i < kinds.length - 1 ? { flex: 1 } : {}) }}>
+                {node(k, String(i + 1))}
+                {i < kinds.length - 1 && <span style={{ flex: 1, minWidth: 14, height: 2, borderRadius: 2, background: k === "done" ? "var(--success)" : t.borderSoft }} />}
+              </div>
+            ))}
+          </div>
+          {detailBody}
+        </div>
+      );
+    }
+
     case "Tree": {
       if (variant === "layered") {
         // Top-down org-chart schematic: root over two children over two grandchildren, anchor edges.
