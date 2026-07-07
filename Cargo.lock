@@ -905,6 +905,7 @@ name = "bsc-ui"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "bsc-component",
  "serde_json",
 ]
 

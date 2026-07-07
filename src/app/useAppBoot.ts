@@ -69,12 +69,12 @@ export function useAppBoot() {
     // so the desktop Org tab, live sessions, and the planner share ONE library. Reconciles the packaged
     // built-ins + seeds the store on first run; a no-op when the bridge is absent (keeps the seed).
     void useAppStore.getState().hydrateOrgs();
-    // Component library (#2269): hydrate the proven-component library from the global `bsc component`
+    // Component library (#2269): hydrate the proven-component library from the global `bsc ui`
     // store so the planner's test_ui pane + (later) the Design Studio share ONE library. A no-op that
     // keeps the typed seed when the bridge is unreachable (which is every build until the store lands).
     void useAppStore.getState().hydrateComponents();
     // Kit-usage consumer index (#2277): hydrate which projects use which kit from the global
-    // `bsc component usage` store — the edges a kit change fans out over. No-op keeping the cache when
+    // `bsc ui usage` store — the edges a kit change fans out over. No-op keeping the cache when
     // the bridge is absent.
     void useAppStore.getState().hydrateKitUsage();
     // Project relationships (#2253): hydrate the Glance L1 network edges from the global `bsc project

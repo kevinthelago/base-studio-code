@@ -2,7 +2,7 @@
 // 1b — one self-contained, gist-distributable JSON file per kit). `react-ui` is the app's own shared-UI
 // primitives, GENERATED from the introspection manifest (`reactUiKit.ts`, kept in sync by
 // `reactUiKit.gen.test.ts`); `examples` is hand-authored demo data. This is what the library shows
-// until the global `bsc component` store lands (then `hydrateComponents` replaces it).
+// until the global `bsc ui` store lands (then `hydrateComponents` replaces it).
 import type { ComponentRecord, Kit } from "./model";
 import { makeBuiltinKits } from "./builtinKits";
 

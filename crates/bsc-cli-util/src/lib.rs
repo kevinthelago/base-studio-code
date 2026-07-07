@@ -92,7 +92,10 @@ pub fn emit<T: Serialize>(pretty: bool, json: bool, value: &T, lean: impl FnOnce
 /// One command's documentation for the shared help system. `name` is the subcommand word, `summary`
 /// is the single line shown in the compact overview, and `usage` is the detailed block shown by
 /// `<prog> <name> help`. The split is deliberate: the overview stays tiny (cheap context for a model
-/// to load), and full detail is fetched one command at a time on demand.
+/// to load), and full detail is fetched one command at a time on demand. `Copy` (all fields are
+/// `&'static str`) so a CLI that MOUNTS another CLI's verbs can compose the two catalogs into one
+/// merged help tree (`bsc ui` + the component-library verbs, #2469).
+#[derive(Clone, Copy)]
 pub struct CmdDoc {
     pub name: &'static str,
     pub summary: &'static str,
