@@ -245,3 +245,15 @@ export type StoreDomain = (typeof STORE_DOMAINS)[number];
  *  store_state domains is a follow-up once mobile consumes the new frames. */
 export const tunnelSetStoreState = (domain: string, rev: number, json: string): Promise<void> =>
   invoke("tunnel_set_store_state", { domain, rev, json });
+
+/** Queue an FCM push for one alert (#2498) — the thin out-of-band notify beside the `alerts`
+ *  store_state domain (which carries the inbox itself). No relay frame: a foregrounded phone
+ *  reads the domain; the push reaches a backgrounded/quit phone. No-op Rust-side without a
+ *  paired FCM token. */
+export const tunnelEmitAlert = (
+  kind: string,
+  title: string,
+  body: string,
+  paneId: string | null,
+  at: number,
+): Promise<void> => invoke("tunnel_emit_alert", { kind, title, body, paneId, at });
