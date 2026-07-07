@@ -1,5 +1,5 @@
 // Components feature store slice (#2269) — the proven-component library, a WRITE-THROUGH cache over the
-// GLOBAL component store (reached via `bsc component` — see lib/componentBridge.ts, #2281). The planner's
+// GLOBAL component store (reached via `bsc ui` — see lib/componentBridge.ts, #2281). The planner's
 // `test_ui` pane and (later) the full Design Studio page share ONE library. On boot `hydrateComponents`
 // loads both collections through the bridge, reconciles the packaged built-ins, and re-seeds any the
 // store lacks — the persona/org pattern. A no-op that keeps the seed when the bridge is unreachable
@@ -18,12 +18,12 @@ export interface ComponentsSlice {
   components: ComponentRecord[];
   /** The kits (technology-scoped namespaces) the components belong to. */
   kits: Kit[];
-  /** Hydrate the library from the global `bsc component` store on boot. No-op (keeps the seed) when the
+  /** Hydrate the library from the global `bsc ui` store on boot. No-op (keeps the seed) when the
    *  bridge is unreachable. */
   hydrateComponents: () => Promise<void>;
 
   /** The consumer index (#2277) — which projects use which kit; the edges a kit CHANGE fans out over.
-   *  A write-through cache over the global `bsc component usage` store. */
+   *  A write-through cache over the global `bsc ui usage` store. */
   kitUsage: KitConsumer[];
   /** Hydrate the consumer index on boot (no-op keeping the persisted cache when unreachable). */
   hydrateKitUsage: () => Promise<void>;
@@ -39,7 +39,7 @@ export interface ComponentsSlice {
   setComponent: (component: ComponentRecord, changeOverride?: Partial<Pick<KitChange, "class" | "summary" | "migration">>) => void;
   /** Import a whole kit + its components (from a gist / share code, #2305 slice 1c) as a USER kit:
    *  collision-safe (a colliding kit or component id is freshly minted so a packaged built-in can never
-   *  be clobbered), write-through to the `bsc component` store. Returns the (possibly re-id'd) kit. */
+   *  be clobbered), write-through to the `bsc ui` store. Returns the (possibly re-id'd) kit. */
   importKit: (kit: Kit, components: ComponentRecord[]) => Kit;
   /** The pending fan-out — the planned per-consumer dispatches a kit change produced (notify-only by
    *  default; issue/assign only for breaking + opted-in consumers). Drained by the delivery slice. */
@@ -59,7 +59,7 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     const kits = reconcileKits(loadedK ?? []);
     set({ components, kits });
     // Converge the store: re-push any built-in it lacks (first run / a newly-packaged component or kit),
-    // so a session reading `bsc component …` sees the full seeded library. User records are preserved by
+    // so a session reading `bsc ui …` sees the full seeded library. User records are preserved by
     // reconcile, so only genuinely-missing built-ins re-push.
     const haveC = new Set((loadedC ?? []).map((c) => c.id));
     for (const c of components) if (c.builtin && !haveC.has(c.id)) void pushComponent(c);

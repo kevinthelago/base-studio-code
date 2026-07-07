@@ -2,7 +2,7 @@
 // on the proven-component library (direction 1a of the Planner Components Pane design), docked in the
 // planner's focused pane. A Components ⇄ Full UI toggle: inspect one component in isolation (list +
 // inline-expand preview/props/guidance + pull-into-plan / request / open-in-studio hand-offs) or the
-// whole app assembled from the kit (highlighted, with a legend). Reuses the global `bsc component`
+// whole app assembled from the kit (highlighted, with a legend). Reuses the global `bsc ui`
 // store + the shared specimen renderer; "Open in studio" hands off to the Design Studio workspace (#2308).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/store";

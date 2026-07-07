@@ -10,7 +10,7 @@
 // graph stack (`GraphCanvas` + `ZoomControls` + `useGraphViewport` + `graphEdge`, #2418; the top-down
 // hierarchy layout lives in `lib/compositionLayout`, #2455), and `useDragResize` — so it stays
 // on-architecture and the planner Kickoff pane is untouched. Data comes from the global store via the
-// `bsc component` bridge.
+// `bsc ui` bridge.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
