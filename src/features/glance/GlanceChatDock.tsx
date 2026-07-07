@@ -10,6 +10,7 @@
 // hidden-buffer, reconnect-not-respawn) with NO second xterm and no PTY-sizing coordination hack. The
 // "Logs" tab is the shared sessionLog surface.
 import { useState } from "react";
+import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
@@ -32,6 +33,10 @@ export function GlanceChatDock({
 }) {
   const [tab, setTab] = useState<DockTab>("stream");
   const [draft, setDraft] = useState("");
+  // Hide the chat input while the CLI is actively working (#2534): the pane's authoritative turn state
+  // ("run" = a turn in flight, driven by the bsc-activity hooks) means the agent isn't at a prompt, so a
+  // raw pty_write would land mid-TUI. The input returns the moment the turn closes ("on"/idle).
+  const running = useAppStore((s) => s.paneStatus[paneId] === "run");
 
   // Send a chat message to the agent: write it to its PTY + Enter, exactly as the fleet's steer/answer
   // does (fireInvoke pty_write). The PTY echoes it back into the stream above, so the terminal IS the
@@ -78,17 +83,25 @@ export function GlanceChatDock({
                 dock is open. `visible` gates its render/fit exactly like a background console pane. */}
             <TerminalSlot paneId={paneId} visible={tab === "stream"} focused={false} />
           </Box>
-          <Row gap="sm" align="center" style={{ padding: "8px 10px", borderTop: "1px solid var(--border)", flex: "none" }}>
-            <Box style={{ flex: 1, minWidth: 0 }}>
-              <TextField
-                value={draft}
-                onChange={setDraft}
-                placeholder="Message the agent — Enter to send"
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-              />
-            </Box>
-            <Button size="sm" variant="primary" onClick={send} disabled={!draft.trim()}>Send</Button>
-          </Row>
+          {running ? (
+            // CLI is working — no prompt to type at, so show status instead of the input (#2534).
+            <Row gap="sm" align="center" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)", flex: "none" }}>
+              <Box style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--accent)", flex: "none", animation: "glance-softpulse 1.4s ease-in-out infinite" }} />
+              <Text mono size="xs" tone="dim">working — input returns when the agent is ready</Text>
+            </Row>
+          ) : (
+            <Row gap="sm" align="center" style={{ padding: "8px 10px", borderTop: "1px solid var(--border)", flex: "none" }}>
+              <Box style={{ flex: 1, minWidth: 0 }}>
+                <TextField
+                  value={draft}
+                  onChange={setDraft}
+                  placeholder="Message the agent — Enter to send"
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+                />
+              </Box>
+              <Button size="sm" variant="primary" onClick={send} disabled={!draft.trim()}>Send</Button>
+            </Row>
+          )}
         </Box>
         {tab === "logs" && (
           <Box style={{ position: "absolute", inset: 0 }}>
