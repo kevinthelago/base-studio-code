@@ -21,7 +21,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("persona", "user persona store: agent identities (prompt + skills + model over a role)"),
     ("org", "user org store: persona-relationship graph (positions + relationships)"),
     ("component", "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)"),
-    ("ui", "UI design surface: KitNode contract + themes (#1852) + the component library (#2469)"),
+    ("ui", "UI design surface: KitNode contract + themes (#1852) + the component library (#2469) + the released-kit store (release, #2465)"),
     ("logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control"),
     ("files", "file-ops toolkit: read/write/edit/list/info"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),

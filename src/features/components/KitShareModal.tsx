@@ -12,7 +12,7 @@ import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
 import { Code } from "@/shared/ui/data/Code";
 import type { ComponentRecord, Kit } from "./lib/model";
-import { importKitFromGist, kitFromCode, kitShareCode, publishKitToGist } from "./lib/kitGist";
+import { importKitFromGist, kitFromCode, kitShareCode, publishKitToGist, type PublishedKitPin } from "./lib/kitGist";
 
 interface Props {
   /** The active kit (offered for Share); null hides the Share tab's target. */
@@ -26,12 +26,17 @@ interface Props {
 
 export function KitShareModal({ kit, components, onClose, onImported }: Props) {
   const token = useAppStore((s) => s.githubToken);
+  const login = useAppStore((s) => s.githubUser)?.login;
   const importKit = useAppStore((s) => s.importKit);
   const [tab, setTab] = useState<"import" | "share">(kit ? "share" : "import");
   const [ref, setRef] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  // The published kit's store pin (#2465): id@version + sha256 — what a blueprint records to
+  // reference this exact artifact. `warning` surfaces a local-store refusal (immutability).
+  const [publishedPin, setPublishedPin] = useState<PublishedKitPin | null>(null);
+  const [publishWarning, setPublishWarning] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const doImport = async () => {
@@ -51,11 +56,16 @@ export function KitShareModal({ kit, components, onClose, onImported }: Props) {
 
   const publish = async () => {
     if (!kit || busy) return;
-    setBusy(true); setError(null); setPublishedUrl(null);
-    const res = await publishKitToGist(token, kit, components, { public: true });
+    setBusy(true); setError(null); setPublishedUrl(null); setPublishedPin(null); setPublishWarning(null);
+    // `publisher` (#2465): stamp the kit-store identity + register the published bytes in the
+    // local versioned kit store, so the share carries a pinnable { id, version, hash } and the
+    // gist URL becomes its `source`.
+    const res = await publishKitToGist(token, kit, components, { public: true, publisher: login ?? "user" });
     setBusy(false);
     if (!res.ok) { setError(res.error); return; }
     setPublishedUrl(res.url);
+    setPublishedPin(res.pin ?? null);
+    setPublishWarning(res.warning ?? null);
   };
 
   return (
@@ -97,13 +107,21 @@ export function KitShareModal({ kit, components, onClose, onImported }: Props) {
                     <Button variant="primary" size="sm" onClick={publish} disabled={busy || !token}>{busy ? "publishing…" : "Publish to gist ↗"}</Button>
                   </Box>
                   {publishedUrl && (
-                    <Box style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 11px", borderRadius: 8, background: "color-mix(in oklch, var(--success), transparent 90%)", border: "1px solid color-mix(in oklch, var(--success), transparent 70%)" }}>
-                      <Text size={11.5} tone="success">Published →</Text>
-                      <Text mono size={11} tone="accent" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{publishedUrl}</Text>
-                      <Box style={{ flex: 1 }} />
-                      <Button variant="ghost" size="sm" onClick={() => { void navigator.clipboard?.writeText(publishedUrl); }}>copy url</Button>
+                    <Box style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 11px", borderRadius: 8, background: "color-mix(in oklch, var(--success), transparent 90%)", border: "1px solid color-mix(in oklch, var(--success), transparent 70%)" }}>
+                      <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Text size={11.5} tone="success">Published →</Text>
+                        <Text mono size={11} tone="accent" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{publishedUrl}</Text>
+                        <Box style={{ flex: 1 }} />
+                        <Button variant="ghost" size="sm" onClick={() => { void navigator.clipboard?.writeText(publishedUrl); }}>copy url</Button>
+                      </Box>
+                      {publishedPin && (
+                        <Text mono size={10} tone="dim" title={publishedPin.hash} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          pin {publishedPin.id}@{publishedPin.version} · sha256 {publishedPin.hash.slice(0, 12)}… — in your kit store; blueprints can pin it
+                        </Text>
+                      )}
                     </Box>
                   )}
+                  {publishWarning && <InlineError>{publishWarning}</InlineError>}
                   {error && <InlineError>{error}</InlineError>}
                 </>
               )}

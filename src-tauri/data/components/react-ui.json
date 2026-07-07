@@ -1,5 +1,7 @@
 {
   "order": 0,
+  "id": "bsc/react-ui",
+  "version": "1.0.0",
   "kit": {
     "id": "react-ui",
     "name": "react-ui",

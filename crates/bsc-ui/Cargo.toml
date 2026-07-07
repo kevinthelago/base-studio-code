@@ -12,7 +12,12 @@ name = "bsc_ui"
 [dependencies]
 # Shared CLI scaffold (#1762): CmdDoc help catalog + help dispatch.
 bsc-cli-util = { path = "../bsc-cli-util" }
+# Base-dir resolution for the default released-kit store root (~/.base-studio-code/kits, #2465).
+bsc-util = { path = "../bsc-util" }
 # The component-library store CLI (#2281), mounted under `bsc ui` (#2469): list/get/set/remove +
 # kit/eslint-preset/usage delegate to bsc_component::cli; its CmdDocs compose into the merged help.
 bsc-component = { path = "../bsc-component" }
 serde_json = "1"
+# Content hashing for the kit store's id@version integrity (#2465). Same version the app crate
+# already locks, so this adds no new dependency to the workspace graph.
+sha2 = "0.11"
