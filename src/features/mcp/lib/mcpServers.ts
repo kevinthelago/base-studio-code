@@ -37,9 +37,10 @@ export interface McpServer {
  */
 export const BUILTIN_MCP_SERVERS: McpServer[] = overlayFile("mcp/builtin-servers.json", builtinServersEmbedded as McpServer[]);
 
-/** Prepend the built-in servers, skipping any a user entry already shadows by name (case-insensitive). */
+/** Prepend the built-in servers, skipping any a user entry already shadows by name (case-insensitive).
+ *  Tolerates a nameless entry (malformed persisted state, #2515) — it shadows nothing. */
 function withBuiltins(servers: McpServer[]): McpServer[] {
-  const taken = new Set(servers.map(s => s.name.toLowerCase()));
+  const taken = new Set(servers.map(s => s.name?.toLowerCase()).filter((n): n is string => !!n));
   return [...BUILTIN_MCP_SERVERS.filter(b => !taken.has(b.name.toLowerCase())), ...servers];
 }
 
@@ -82,7 +83,7 @@ export function resolveStreamMcp(all: McpServer[], streamMcp: string[] = [], pro
   const baseIds = new Set(base.map(e => e.id));
   const assigned = new Set(streamMcp.map(n => n.toLowerCase()));
   const extra = all.filter(
-    e => toMcpPayload(e) !== null && assigned.has(e.name.toLowerCase()) && !baseIds.has(e.id),
+    e => toMcpPayload(e) !== null && !!e.name && assigned.has(e.name.toLowerCase()) && !baseIds.has(e.id),
   );
   return [...base, ...extra];
 }

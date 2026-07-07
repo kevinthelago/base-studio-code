@@ -78,7 +78,9 @@ describe("useStoreProjector", () => {
     useAppStore.setState({ tunnelRunning: true });
     renderHook(() => useStoreProjector());
     vi.mocked(publishTunnelDomain).mockClear();
-    act(() => useAppStore.setState({ kitTheme: "contrast" }));
+    // Braced body (#2515): persist makes setState return a Promise; leaking it into act defers
+    // the projector effect past the assertion (see useNavHistory.test.tsx).
+    act(() => { useAppStore.setState({ kitTheme: "contrast" }); });
     expect(publishedDomains()).toEqual(new Set(["themes"]));
   });
 });
