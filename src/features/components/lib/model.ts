@@ -35,6 +35,10 @@ export interface Kit {
   dot: string;
   /** A packaged built-in (re-seeded into the store on hydrate). Absent ⇒ user-authored. */
   builtin?: boolean;
+  /** Content hash of the seed copy this record came from (#2483, `seedRefresh.ts`) — stamped at
+   *  seed-assembly time; lets hydrate tell a pristine built-in (refreshable) from a user-edited one
+   *  (kept). Absent ⇒ user-authored or a legacy pre-#2483 copy. */
+  seedHash?: string;
 }
 
 /** A config-level lint rule a kit ships (#2279) — each maps to a stock eslint rule (NO custom AST
@@ -95,6 +99,8 @@ export interface ComponentRecord {
    *  data-rendering composites (rows, feeds, property lists); absent ⇒ not shape-indexed (chrome,
    *  controls, chrome-level layouts that host arbitrary panes rather than render a data collection). */
   shapes?: DataShape[];
+  /** Content hash of the seed copy this record came from (#2483) — see {@link Kit.seedHash}. */
+  seedHash?: string;
 }
 
 /** The shared zero-state title — Design Studio and the Planner Components pane must say the same
