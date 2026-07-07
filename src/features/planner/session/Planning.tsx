@@ -462,6 +462,8 @@ export function Planning({ visible }: { visible: boolean }) {
   usePlannerTunnelSync({
     effectiveProjectId, savedSections, confirmedSet, currentStage, planStatusLabel,
     planningDir, paneId, projectTitle, confirmPlanStage,
+    // #2498: the stage/gate board (the `plan` store_state domain) + gate-ready/planner-waiting alerts.
+    stages, focusGateReady, planComplete,
   });
 
   // Stage gate-confirm/skip logic (#1775, usePlanConfirmations): the active stage's pending sections,

@@ -37,12 +37,12 @@ describe("component specimens (#2305 slice 3b)", () => {
     }
   });
 
-  it("renders a bespoke schematic for every Pages-tier composition + variant, both themes (#2505)", () => {
+  it("renders a bespoke schematic for every Pages-tier composition + variant, both themes (#2505/#2508)", () => {
     const pages = reactUi.filter((c) => c.role === "page");
-    // The six page compositions must all be present, and each must render a bespoke schematic
+    // The seven page compositions must all be present, and each must render a bespoke schematic
     // (never the fallback placeholder) for every registered variant, in both preview themes.
     expect(pages.map((c) => c.name).sort()).toEqual(
-      ["CollectionPage", "DashboardPage", "NetworkPage", "PipelinePage", "TablePage", "TreeExplorerPage"]);
+      ["CollectionPage", "DashboardPage", "NetworkPage", "PipelinePage", "RecordPage", "TablePage", "TreeExplorerPage"]);
     for (const c of pages) {
       for (const variant of c.variants) {
         for (const theme of ["dark", "light"] as const) {

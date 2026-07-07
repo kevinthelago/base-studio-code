@@ -38,7 +38,7 @@ export type PrimitiveName =
   // layouts — the page-skeleton templates tier (#2197)
   | "MasterDetail" | "SplitView" | "GraphCanvas" | "PaneGrid" | "Tree" | "Sequence"
   // pages — the complete data-driven page compositions tier (#2505)
-  | "TablePage" | "TreeExplorerPage" | "PipelinePage" | "NetworkPage" | "DashboardPage" | "CollectionPage";
+  | "TablePage" | "TreeExplorerPage" | "PipelinePage" | "NetworkPage" | "DashboardPage" | "CollectionPage" | "RecordPage";
 
 export type PrimitiveGroup = "layout" | "typography" | "controls" | "data" | "feedback" | "layouts" | "pages";
 
@@ -870,6 +870,20 @@ export const UI_KIT: PrimitiveSpec[] = [
       SELECTED_ID("item"), DEFAULT_SELECTED("item"), ON_SELECT("item"),
       PAGE_DETAIL("item", "title + subtitle + facts KeyValueList"),
       { name: "railWidth", type: "number", default: 280, description: "Rail width in px." },
+    ],
+  },
+  {
+    name: "RecordPage", group: "pages", importPath: "@/shared/ui/pages/RecordPage",
+    description: "The complete record-detail page for KEY-VALUE-shaped data — a titled identity header (status Chip beside the title, subtitle, an actions slot) over grouped KeyValueList sections (a SectionLabel per group), with an optional side column for facts/related items.",
+    props: [
+      { name: "title", type: "node", required: true, description: "The record's identity — the page title (the header bar)." },
+      { name: "subtitle", type: "node", description: "Dimmed identity sub-text after the title (the header hint slot)." },
+      { name: "status", type: "string", description: "A status Chip label rendered beside the title (e.g. \"running\", \"archived\")." },
+      { name: "statusTone", type: "enum", values: ["neutral", "accent", "success", "info", "danger"], default: "neutral", description: "Status Chip tone." },
+      { name: "actions", type: "node", description: "Right-aligned header actions (edit, open, delete)." },
+      { name: "sections", type: "array", required: true, description: "RecordSection[] — { label, entries: { k, v }[] }, in display order; each renders as a SectionLabel over a KeyValueList." },
+      { name: "aside", type: "node", description: "Optional side column (facts, related items) beside the sections." },
+      { name: "asideWidth", type: "number", default: 300, description: "Side column width in px." },
     ],
   },
 ];
