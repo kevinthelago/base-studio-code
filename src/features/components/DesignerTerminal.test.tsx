@@ -101,6 +101,8 @@ describe("useDesignerTerminal launch wiring (#2471)", () => {
     expect(pty.initCmd).toContain("claude --continue");
     expect(String(pty.startupPrompt)).toContain("bsc ui");
     expect(String(pty.startupPrompt)).toContain("bsc ui validate");
+    // The runtime scope doc (#2470 integration): the designer is the one ui:"write" launch.
+    expect(pty.env).toEqual({ BSC_SCOPES: JSON.stringify({ ui: "write" }) });
   });
 
   it("does NOT launch when the workspace setup fails (no ungated session on an empty cwd)", async () => {

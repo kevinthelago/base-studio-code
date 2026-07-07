@@ -15,6 +15,7 @@ import {
   roleWriteRules,
   roleDeniedTools,
   bscAgentPerms,
+  sessionScopes,
   scopeWriteGlobs,
   hasScopedWriteCarveOut,
 } from "./sessionRoles";
@@ -170,14 +171,66 @@ describe("roleDeniedCommands (launch wiring)", () => {
     expect(denies).not.toContain("git push");
   });
 
-  it("director denies nothing", () => {
-    expect(roleDeniedCommands(ROLE_DEFAULTS.director)).toEqual([]);
+  it("director denies no git/gh commands (write tiers) — only the ui-store writes (#2470)", () => {
+    const denies = roleDeniedCommands(ROLE_DEFAULTS.director);
+    expect(denies.some((d) => d.startsWith("git") || d.startsWith("gh"))).toBe(false);
+    expect(denies).toContain("bsc ui set"); // ui: read — even the director doesn't redefine kits
   });
 
   it("triage denies git outright (no access) but allows gh writes", () => {
     const denies = roleDeniedCommands(ROLE_DEFAULTS.triage);
     expect(denies).toContain("git");
     expect(denies).not.toContain("gh issue create");
+  });
+
+  describe("ui tier (#2470) — the bsc ui component/kit store", () => {
+    const UI_MUTATING = [
+      "bsc ui set", "bsc ui remove", "bsc ui kit set", "bsc ui kit remove",
+      // The deprecated `bsc component` alias's verbs stay denied while the alias lives (#2469).
+      "bsc component set", "bsc component remove", "bsc component kit set", "bsc component kit remove",
+    ];
+
+    it("ui: read (every shipped role but the designer) denies exactly the mutating verbs, leaving reads alone", () => {
+      for (const cap of Object.values(ROLE_DEFAULTS)) {
+        if (cap.role === "designer") continue; // ui:"write" by design (#2471) — asserted in its own suite
+        const denies = roleDeniedCommands(cap);
+        for (const verb of UI_MUTATING) expect(denies).toContain(verb);
+        expect(denies).not.toContain("bsc ui");        // reads stay (list/get/kit list…)
+        expect(denies).not.toContain("bsc component");
+      }
+    });
+
+    it("ui: none denies the tool outright (both the canonical name and the alias)", () => {
+      const denies = roleDeniedCommands(roleCapability("worker", { ui: "none" }));
+      expect(denies).toContain("bsc ui");
+      expect(denies).toContain("bsc component");
+      // The verb-level denies are subsumed by the whole-tool deny — not emitted redundantly.
+      expect(denies).not.toContain("bsc ui set");
+    });
+
+    it("ui: write (the designer tier) denies nothing on the store", () => {
+      const denies = roleDeniedCommands(roleCapability("worker", { ui: "write" }));
+      expect(denies.some((d) => d.startsWith("bsc"))).toBe(false);
+    });
+
+    it("flows through to bscAgentPerms deny_bash so the tier binds a bsc-agent session too", () => {
+      const p = bscAgentPerms(roleCapability("worker", { writeGlobs: ["src/**"] }));
+      expect(p.deny_bash).toContain("bsc ui set");
+      expect(p.deny_bash).toContain("bsc component kit remove");
+      const none = bscAgentPerms(roleCapability("worker", { ui: "none" }));
+      expect(none.deny_bash).toContain("bsc ui");
+    });
+  });
+});
+
+describe("sessionScopes (#2470) — the $BSC_SCOPES runtime doc", () => {
+  it("renders the role's ui tier per role default (read across the shipped roles)", () => {
+    expect(sessionScopes(roleCapability("worker"))).toEqual({ ui: "read" });
+    expect(sessionScopes(roleCapability("director"))).toEqual({ ui: "read" });
+  });
+  it("honors a per-assignment override (the designer path stamps write)", () => {
+    expect(sessionScopes(roleCapability("worker", { ui: "write" }))).toEqual({ ui: "write" });
+    expect(sessionScopes(roleCapability("worker", { ui: "none" }))).toEqual({ ui: "none" });
   });
 });
 
@@ -498,21 +551,27 @@ describe("designer role (#2471)", () => {
   const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
   const designer = ROLE_DEFAULTS.designer;
 
-  it("is none on every axis — no git, no GitHub, no code, no net", () => {
+  it("is none on every axis except the kit store — no git, no GitHub, no code, no net; ui: write", () => {
     expect(designer.git).toBe("none");
     expect(designer.github).toBe("none");
     expect(designer.code).toBe("none");
     expect(designer.net).toBe("none");
+    // The ONE write grant (#2470 integration): the designer is the sole ui:"write" role, so the
+    // runtime scope doc lets it drive `bsc ui set/remove` where every other role is read-scoped.
+    expect(designer.ui).toBe("write");
+    expect(sessionScopes(designer)).toEqual({ ui: "write" });
     expect(designer.writeGlobs).toEqual([]);
   });
 
-  it("roleDeniedCommands denies git AND gh outright (the whole tools, not just their writes)", () => {
+  it("roleDeniedCommands denies git AND gh outright (the whole tools) and nothing on the kit store", () => {
     const denies = roleDeniedCommands(designer);
     expect(denies).toContain("git");
     expect(denies).toContain("gh");
     // The `none` tiers deny the bare tool — the granular write-prefix lists are the read-tier form.
     expect(denies).not.toContain("git push");
     expect(denies).not.toContain("gh pr create");
+    // ui:"write" — no bsc denies; the restricted allow-list (not the role gate) narrows the surface.
+    expect(denies.some((d) => d.startsWith("bsc"))).toBe(false);
   });
 
   it("roleDeniedTools denies the web tools (net:none) — no live injection surface", () => {

@@ -1,7 +1,7 @@
 // Pure model for the Component Library (#2269) — the technology-scoped "kits" of proven components the
 // planner's `test_ui` stage browses. React/Tauri-free so non-UI code (and tests) can use it directly.
 //
-// The library is a GLOBAL store reached through the `bsc component` CLI (see componentBridge.ts); this
+// The library is a GLOBAL store reached through the `bsc ui` CLI (see componentBridge.ts); this
 // module owns only the shapes + pure derivations (search, compose/used-by resolution, role colors).
 
 /** A component's architectural role — drives its accent color + grouping. */

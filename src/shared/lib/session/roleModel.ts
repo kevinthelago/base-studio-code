@@ -71,6 +71,12 @@ export interface RoleCapability {
    *  as untrusted data (the planner template frames this). This is the gate the per-agent `net`
    *  profile (#289) ties into; `write` is unused (there's no "network write" tool to grant). */
   net: AccessTier;
+  /** The `bsc ui` component/kit store (#2470): `read` lets a session use the kit it builds against
+   *  but never redefine it (the mutating verbs — `bsc ui set`/`remove`/`kit set`/`kit remove` and
+   *  the deprecated `bsc component` alias — are denied at launch, {@link roleDeniedCommands});
+   *  `none` denies `bsc ui` outright; `write` is the designer's tier. Same philosophy as the
+   *  dep-manifest lock (#1111): nobody but the designated role mutates the shared contract. */
+  ui: AccessTier;
   /** Path globs this role/assignment may write. Empty ⇒ no code writes. */
   writeGlobs: string[];
 }
@@ -105,9 +111,16 @@ export const DEP_MANIFEST_FILES: string[] = roleCaps.depManifestFiles ?? roleCap
 // documentor can reconcile structural/architectural docs but never edit `src/*.ts` / `*.rs` source.
 export const DOC_GLOBS: string[] = ROLE_DEFAULTS.documentor?.writeGlobs ?? [];
 
-/** A role capability, optionally narrowed/widened per assignment (e.g. writeGlobs). */
+/** A role capability, optionally narrowed/widened per assignment (e.g. writeGlobs).
+ *
+ *  Field-level floor (#2470, the per-FIELD companion to the per-ROLE floor-merge #2325):
+ *  `mergeRoleDefaults` floors missing ROLES, but an overlaid role OBJECT fully replaces the embedded
+ *  one — so a STALE config-dir override seeded before a field shipped (e.g. `ui`) leaves that field
+ *  `undefined` on the merged entry. Defaults are prepended here so every capability handed to the
+ *  launch wiring carries a value; the table (and any explicit `override`) still wins when present. */
 export function roleCapability(role: SessionRole, override: Partial<RoleCapability> = {}): RoleCapability {
-  return { ...ROLE_DEFAULTS[role], ...override };
+  const merged = { ...ROLE_DEFAULTS[role], ...override };
+  return { ...merged, ui: merged.ui ?? "read" };
 }
 
 /** The `code: "none"` roles that carry an explicit, scoped write carve-out (a narrow allow layered
