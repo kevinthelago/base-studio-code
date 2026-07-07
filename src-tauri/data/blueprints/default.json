@@ -12,6 +12,10 @@
       "key": "discovery"
     },
     {
+      "key": "market",
+      "optional": true
+    },
+    {
       "key": "deployment"
     },
     {
