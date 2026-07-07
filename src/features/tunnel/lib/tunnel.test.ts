@@ -253,8 +253,23 @@ describe("contract v2 fixtures (#2497)", () => {
     expect(clientToServer.auth_no_fcm).not.toHaveProperty("fcmToken");
   });
 
-  it("auth_ok echoes the desktop's protocolVersion", () => {
-    expect(serverToClient.auth_ok).toEqual({ type: "auth_ok", protocolVersion: TUNNEL_PROTOCOL_VERSION });
+  it("auth_ok echoes the desktop's protocolVersion + the connect-time input grant (#2511)", () => {
+    expect(serverToClient.auth_ok).toEqual({
+      type: "auth_ok",
+      protocolVersion: TUNNEL_PROTOCOL_VERSION,
+      inputGranted: false,
+    });
+  });
+
+  it("auth_ok_pre_grant pins the pre-#2511 shape (inputGranted optional for old desktops)", () => {
+    expect(serverToClient.auth_ok_pre_grant).toEqual({
+      type: "auth_ok",
+      protocolVersion: TUNNEL_PROTOCOL_VERSION,
+    });
+  });
+
+  it("input_grant_changed carries the bare granted flag (#2511, additive within v2)", () => {
+    expect(serverToClient.input_grant_changed).toEqual({ type: "input_grant_changed", granted: true });
   });
 
   it("store_state is the domain-agnostic {domain, rev, json} projection frame", () => {
