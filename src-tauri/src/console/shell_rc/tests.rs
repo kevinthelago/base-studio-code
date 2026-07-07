@@ -3,15 +3,23 @@
 //! non-interactive bash, exactly as the agent's `bash -c` tool subprocesses do.
 //!
 //! The fragment TEXT is externalized to `data/shell/*.sh` (#2092); a test names its fragment by
-//! filename via `frag(...)` (which loads the embedded seed through the module's `load_shell`), so the
-//! subshell tests drive the exact bytes pty_create writes. `with_rc_subshell` (#2077) centralizes the
-//! "no usable bash → skip" preamble + the temp-dir/`BASH_ENV` scaffolding every helper-run test needs.
+//! filename via `frag(...)`, which reads the EMBEDDED seed (`embedded_str`), NOT the module's
+//! `load_shell` — that one prefers the developer's `~/.base-studio-code/config/shell/` override, so
+//! going through it made these tests non-hermetic: a stale local copy (e.g. a pre-#2377 coord-emit.sh
+//! without `bsc-brief`) failed tests that validate the SHIPPED fragments (#2515). `frag` applies the
+//! same CRLF-strip + trailing-newline fixups as `load_shell`, so it asserts the exact bytes a fresh
+//! install's pty_create writes. `with_rc_subshell` (#2077) centralizes the "no usable bash → skip"
+//! preamble + the temp-dir/`BASH_ENV` scaffolding every helper-run test needs.
 
-/// Load an externalized `bsc-*` shell fragment by filename (the seed embedded via `include_dir!`).
-/// Thin alias over the module's `load_shell` (config-dir override else embedded seed) — replaced the
-/// `BSC_*_RC` string-literal constants the fragments were extracted from (#2092).
+/// Load an externalized `bsc-*` shell fragment by filename — the seed embedded via `include_dir!`,
+/// ignoring any config-dir override (tests validate the packaged content; see the module doc above).
+/// Replaced the `BSC_*_RC` string-literal constants the fragments were extracted from (#2092).
 fn frag(name: &str) -> String {
-    super::load_shell(name)
+    let mut s = crate::platform::config::embedded_str(&format!("shell/{name}")).replace('\r', "");
+    if !s.ends_with('\n') {
+        s.push('\n');
+    }
+    s
 }
 
 /// The (shell, temp dir, bash-form rc path) handed to a shell-rc subshell test (#2077).

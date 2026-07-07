@@ -1,5 +1,10 @@
 // useNavHistory (#2492) — the app-wide mouse back/forward history over workspace + planner page +
 // glance/org drills. Drives the REAL store; each test restores the slice it touched.
+//
+// NOTE (#2515): every store setter RETURNS a Promise under the persist middleware (zustand v5's
+// wrapped `set` returns `setItem()`), so an act callback must use a braced body — a brace-less
+// `act(() => setX(...))` leaks that promise, React treats the act as async, and the un-awaited
+// scope defers the hook's push effect past the assertions.
 import { describe, it, expect, beforeEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useAppStore } from "@/store";
@@ -26,7 +31,7 @@ describe("useNavHistory", () => {
   it("mouse back exits an org pool drill; forward re-enters it (#2492)", () => {
     useAppStore.setState({ projectsPageMode: "org" });
     const hook = renderHook(() => useNavHistory());
-    act(() => useAppStore.getState().setOrgDrill("pool:engineer"));
+    act(() => { useAppStore.getState().setOrgDrill("pool:engineer"); });
     expect(useAppStore.getState().orgDrill).toBe("pool:engineer");
 
     back();
@@ -40,8 +45,8 @@ describe("useNavHistory", () => {
 
   it("planner page switches join the history (Projects ↔ Org)", () => {
     const hook = renderHook(() => useNavHistory());
-    act(() => useAppStore.getState().setProjectsPageMode("org"));
-    act(() => useAppStore.getState().setOrgDrill("pool:x"));
+    act(() => { useAppStore.getState().setProjectsPageMode("org"); });
+    act(() => { useAppStore.getState().setOrgDrill("pool:x"); });
 
     back(); // drill out
     expect(useAppStore.getState().orgDrill).toBeNull();
@@ -53,8 +58,8 @@ describe("useNavHistory", () => {
 
   it("glance drill + workspace switches keep working (regression)", () => {
     const hook = renderHook(() => useNavHistory());
-    act(() => useAppStore.getState().setWorkspace("glance"));
-    act(() => useAppStore.getState().setGlanceDrill("proj-1"));
+    act(() => { useAppStore.getState().setWorkspace("glance"); });
+    act(() => { useAppStore.getState().setGlanceDrill("proj-1"); });
 
     back();
     expect(useAppStore.getState().glanceDrill).toBeNull();
@@ -76,9 +81,9 @@ describe("useNavHistory", () => {
 
   it("an org drill on another workspace does not pollute the history", () => {
     const hook = renderHook(() => useNavHistory());
-    act(() => useAppStore.getState().setWorkspace("glance"));
+    act(() => { useAppStore.getState().setWorkspace("glance"); });
     // A stale org drill set while Glance is showing is not a location change on Glance...
-    act(() => useAppStore.getState().setOrgDrill("pool:stale"));
+    act(() => { useAppStore.getState().setOrgDrill("pool:stale"); });
     back(); // ...so one back returns to the planner, not to a phantom drill entry.
     expect(useAppStore.getState().activeWorkspace).toBe("projects");
     hook.unmount();

@@ -714,11 +714,17 @@ mod tests {
         std::fs::write(&src, r#"{"id":"neon","label":"Neon","description":"glow","vars":{"--card-bg":"black"}}"#).unwrap();
         run_theme(&["set", "--file", src.to_str().unwrap()]).unwrap();
         let store = bsc_json_store::Store::new(dir.clone(), "theme");
-        assert_eq!(
-            store.get("neon").unwrap().as_deref(),
-            Some(r#"{"id":"neon","label":"Neon","description":"glow","vars":{"--card-bg":"black"}}"#),
-            "stored verbatim"
-        );
+        // `set` re-serializes each item through serde_json::Value (that's what lets an array upsert
+        // per element), so key ORDER follows serde_json's map (alphabetical without preserve_order) —
+        // compare parsed values, not bytes (#2515: the old byte-equality assert encoded an order the
+        // code never promised).
+        let stored: serde_json::Value =
+            serde_json::from_str(&store.get("neon").unwrap().unwrap()).unwrap();
+        let expected: serde_json::Value = serde_json::from_str(
+            r#"{"id":"neon","label":"Neon","description":"glow","vars":{"--card-bg":"black"}}"#,
+        )
+        .unwrap();
+        assert_eq!(stored, expected, "stored content round-trips semantically");
         run_theme(&["get", "neon"]).unwrap();
         run_theme(&["get", "neon", "--pretty"]).unwrap();
         // An array upserts every element by id.

@@ -65,6 +65,9 @@ const RESET_STATE = {
   repoStartupPromptDoc: {} as Record<string, string | null>,
   repoTriagePromptDoc: {} as Record<string, string | null>,
   kbProjectScope: null as { keys: string[]; label: string } | null,
+  // #2515: without this reset a test-local mcpServers fixture leaks into every later test
+  // (the fleetStartProject suite crashed on a nameless entry seeded by the rekey test).
+  mcpServers: [] as McpServer[],
 };
 
 beforeEach(() => {
@@ -392,7 +395,7 @@ describe("rekeyProjectData (#2409)", () => {
       localDraftProjects: { "p-old": { title: "Video Game", pitch: "", createdAt: 1 } },
       repoStartupPromptDoc: { "p-old::o/a": "d", "other::o/b": "e" },
       repoTriagePromptDoc: { "p-old::o/a": "t" },
-      mcpServers: [{ id: "m1", projects: ["p-old", "other"] } as never],
+      mcpServers: [{ id: "m1", name: "m1", projects: ["p-old", "other"] } as never],
     });
     useAppStore.getState().rekeyProjectData("p-old", "video-game");
     const s = useAppStore.getState();
