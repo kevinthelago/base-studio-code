@@ -81,6 +81,15 @@
 /* Related nodes (#2523) — a softer, thinner ring than .on; still no background change (the #2491 rule).
    .on wins over .related (the selection is never also "related" to itself). */
 .ds-node.related { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 6px 20px rgba(0,0,0,.3); }
+/* AI live-focus (#2525) — the designer session is working THIS node: a pulsing accent ring, NO
+   background change (#2491). Placed AFTER .on/.related so a node that is also related takes the
+   animated ring; the component only applies .working to a node that is NOT the current selection, so
+   the user's .on always wins visually when they're the same node. */
+.ds-node.working { border-color: var(--accent); animation: ds-working-pulse 1.5s ease-in-out infinite; }
+@keyframes ds-working-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent), 0 6px 20px rgba(0,0,0,.3); }
+  50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent), 0 6px 20px rgba(0,0,0,.3); }
+}
 .ds-edge path { transition: stroke .12s, fill .12s; }
 
 /* ── inspector bits ── */

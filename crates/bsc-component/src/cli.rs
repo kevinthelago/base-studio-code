@@ -222,7 +222,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     match args.first().map(String::as_str) {
         Some("kit") => {
             let kit_prog = format!("{prog} kit");
-            bsc_json_store::cli::run(args.into_iter().skip(1).collect(), &kit_prog, &KIT_SPEC)
+            // Emit a `ui-touch` for the Design Studio's live-focus (#2525) after each kit set/remove
+            // write lands — WITH the "kit" collection context (bsc-json-store has none). A no-op for
+            // read verbs (the hook only fires inside set/remove) and for non-designer sessions.
+            bsc_json_store::cli::run_hooked(
+                args.into_iter().skip(1).collect(),
+                &kit_prog,
+                &KIT_SPEC,
+                Some(&|id: &str| bsc_util::emit_ui_activity("kit", id)),
+            )
         }
         // `eslint-preset` is a custom read (store → eslint config), not a CRUD verb, so it's handled
         // here before delegating to the shared store CLI.
@@ -256,7 +264,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `list --shape <shape>` (#2475) filters to one shape's ideal components — intercepted here
         // (the shared store CLI rejects unknown flags); a plain `list` still delegates unchanged.
         Some("list") if args.iter().any(|a| a == "--shape") => cmd_list_shape(&args[1..]),
-        _ => bsc_json_store::cli::run(args, prog, &COMPONENT_SPEC),
+        // The COMPONENT collection's list/get/set/remove. Fire the live-focus `ui-touch` (#2525) after
+        // a component set/remove write lands, with the "component" collection context.
+        _ => bsc_json_store::cli::run_hooked(
+            args,
+            prog,
+            &COMPONENT_SPEC,
+            Some(&|id: &str| bsc_util::emit_ui_activity("component", id)),
+        ),
     }
 }
 
@@ -536,6 +551,12 @@ fn cmd_usage(args: &[String], prog: &str) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// Serializes the tests that mutate the process-wide `$BSC_SCOPES` / `$BSC_UI_ACTIVITY_LOG` env
+    /// (the scope-gate test and the #2525 emit test): parallel threads share the process env, so an
+    /// unguarded scope flip would make a concurrent gated mutation flakily refuse or misroute a
+    /// `ui-touch`. Poisoning is ignored (one test's assert failure must not cascade).
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// A fresh (created, empty) scratch store dir so the shape-verb tests never touch the user's
     /// real `~/.base-studio-code/components` store.
     fn tmp_store_dir(tag: &str) -> String {
@@ -663,6 +684,7 @@ mod tests {
     // ONE test owns the real $BSC_SCOPES env var (parallel test threads share the process env).
     #[test]
     fn mutating_verbs_refuse_under_a_read_ui_scope_before_touching_the_store() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
         // `remove` errs at the scope gate — BEFORE any store dir is resolved or touched (no --dir
         // is passed here on purpose: reaching the store would touch the real default location).
@@ -786,5 +808,42 @@ mod tests {
         assert!(list.contains("--shape"), "list detail documents the --shape filter");
         // `shapes help` resolves to the doc (a read, reachable from any scope).
         assert!(run(vec!["shapes".into(), "help".into()], "bsc ui").is_ok());
+    }
+
+    // ── UI-activity live-focus emit (#2525) ──────────────────────────────────────────────────────
+
+    #[test]
+    fn component_and_kit_remove_emit_a_ui_touch_with_their_collection() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // Unrestricted scope (a designer session or a hand shell): the mutation runs, and the emit
+        // fires because $BSC_UI_ACTIVITY_LOG is wired.
+        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        let act = std::env::temp_dir().join(format!("bsc-component-uiact-{}.log", std::process::id()));
+        let _ = std::fs::remove_file(&act);
+        std::env::set_var("BSC_UI_ACTIVITY_LOG", &act);
+        std::env::set_var("BSC_AUDIT_PANE", "design-studio:designer");
+
+        // Seed a component + a kit into a scratch store, then remove each through the CLI.
+        let dir = tmp_store_dir("emit-comp");
+        bsc_json_store::Store::new(dir.clone(), "component").set("button", r#"{"id":"button"}"#).unwrap();
+        let kdir = tmp_store_dir("emit-kit");
+        bsc_json_store::Store::new(kdir.clone(), "kit").set("react-ui", r#"{"id":"react-ui"}"#).unwrap();
+
+        run(vec!["remove".into(), "button".into(), "--dir".into(), dir], "bsc ui").unwrap();
+        run(vec!["kit".into(), "remove".into(), "react-ui".into(), "--dir".into(), kdir], "bsc ui").unwrap();
+
+        let text = std::fs::read_to_string(&act).unwrap();
+        assert!(
+            text.contains("\tui-touch\tcomponent\tbutton"),
+            "component remove emits a component touch: {text:?}",
+        );
+        assert!(
+            text.contains("\tui-touch\tkit\treact-ui"),
+            "kit remove emits a kit touch: {text:?}",
+        );
+
+        std::env::remove_var("BSC_UI_ACTIVITY_LOG");
+        std::env::remove_var("BSC_AUDIT_PANE");
+        let _ = std::fs::remove_file(&act);
     }
 }

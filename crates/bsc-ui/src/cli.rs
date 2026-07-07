@@ -333,6 +333,9 @@ fn cmd_theme(args: &[String], prog: &str) -> Result<(), String> {
                 let id = bsc_json_store::cli::id_of(item, "theme")?;
                 let json = serde_json::to_string(item).map_err(|e| format!("set: {e}"))?;
                 store.set(&id, &json)?;
+                // Design Studio live-focus (#2525): emit a `ui-touch` after the theme write lands,
+                // with the "theme" collection so the frontend re-hydrates themes (not just components).
+                bsc_util::emit_ui_activity("theme", &id);
                 ids.push(id);
             }
             emit(&serde_json::json!(ids))
@@ -341,6 +344,7 @@ fn cmd_theme(args: &[String], prog: &str) -> Result<(), String> {
             bsc_cli_util::require_write_scope("ui")?;
             let id = positional.get(1).ok_or("usage: bsc ui theme remove <id>")?;
             theme_store(&dir)?.remove(id)?;
+            bsc_util::emit_ui_activity("theme", id); // Design Studio live-focus (#2525)
             emit(&serde_json::json!(id))
         }
         other => Err(format!("unknown theme command '{other}' — want: list | get <id> | set | remove <id>")),
@@ -766,5 +770,33 @@ mod tests {
         assert!(run(vec!["theme".into(), "set".into(), "help".into()], "bsc ui").is_ok());
         assert!(run(vec!["theme".into(), "remove".into(), "help".into()], "bsc ui").is_ok());
         std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+    }
+
+    #[test]
+    fn theme_set_and_remove_emit_a_ui_touch_for_live_focus() {
+        // #2525: a theme mutation from a write-scoped (designer) session appends a `ui-touch` with the
+        // "theme" collection, so the Design Studio re-hydrates themes. Holds the scopes lock (drives
+        // gated set/remove) and wires $BSC_UI_ACTIVITY_LOG for the duration.
+        let _guard = SCOPES_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        let act = std::env::temp_dir().join(format!("bsc-ui-uiact-{}.log", std::process::id()));
+        let _ = std::fs::remove_file(&act);
+        std::env::set_var("BSC_UI_ACTIVITY_LOG", &act);
+        std::env::set_var("BSC_AUDIT_PANE", "design-studio:designer");
+
+        let dir = tmp_store_dir("theme-emit");
+        let src = std::env::temp_dir().join(format!("bsc-ui-theme-emit-src-{}.json", std::process::id()));
+        std::fs::write(&src, r#"{"id":"neon","label":"Neon","description":"glow","vars":{}}"#).unwrap();
+        run(vec!["theme".into(), "set".into(), "--file".into(), src.to_string_lossy().into_owned(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+        run(vec!["theme".into(), "remove".into(), "neon".into(), "--dir".into(), dir], "bsc ui").unwrap();
+
+        let text = std::fs::read_to_string(&act).unwrap();
+        let touches: Vec<&str> = text.lines().filter(|l| l.contains("\tui-touch\ttheme\tneon")).collect();
+        assert_eq!(touches.len(), 2, "one touch for the set, one for the remove: {text:?}");
+
+        std::env::remove_var("BSC_UI_ACTIVITY_LOG");
+        std::env::remove_var("BSC_AUDIT_PANE");
+        let _ = std::fs::remove_file(&act);
+        let _ = std::fs::remove_file(&src);
     }
 }

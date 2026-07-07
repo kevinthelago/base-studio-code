@@ -32,6 +32,10 @@ export interface GraphViewport {
   onCanvasDown: (e: React.MouseEvent) => void;
   /** Fit the whole world in the viewport and center it. */
   fit: () => void;
+  /** Pan so world point (wx,wy) sits at the viewport center, KEEPING the current zoom — the
+   *  least-disruptive "focus this node" move (Design Studio AI live-focus, #2525). No-op before the
+   *  viewport element mounts. */
+  centerOn: (wx: number, wy: number) => void;
   /** Zoom by a factor around the viewport center (the +/- buttons). */
   zoomBy: (factor: number) => void;
   /** Set an absolute zoom around the viewport center (e.g. restoring a saved level). */
@@ -61,6 +65,14 @@ export function fitView(w: number, h: number, cw: number, ch: number, min: numbe
   return { scale: s, tx: (cw - w * s) / 2, ty: (ch - h * s) / 2 };
 }
 
+/**
+ * Pan a `v.scale`d world so world point (wx,wy) sits at the center of a `cw`×`ch` viewport, keeping
+ * `v.scale` unchanged. Pure — the least-disruptive "focus this node" move (#2525). Exported for testing.
+ */
+export function centerView(v: GraphView, cw: number, ch: number, wx: number, wy: number): GraphView {
+  return { scale: v.scale, tx: cw / 2 - wx * v.scale, ty: ch / 2 - wy * v.scale };
+}
+
 export function useGraphViewport(world: { w: number; h: number }, opts: GraphViewportOpts = {}): GraphViewport {
   const min = opts.min ?? 0.28;
   const max = opts.max ?? 2.6;
@@ -88,6 +100,13 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
     const { w, h } = worldRef.current;
     setView(fitView(w, h, el.clientWidth, el.clientHeight, min, max, fitPad, maxFitScale));
   }, [min, max, fitPad, maxFitScale]);
+
+  /** Pan world point (wx,wy) to the viewport center, keeping the current zoom (#2525). */
+  const centerOn = useCallback((wx: number, wy: number) => {
+    const el = vpRef.current;
+    if (!el) return;
+    setView((v) => centerView(v, el.clientWidth, el.clientHeight, wx, wy));
+  }, []);
 
   /** Zoom by a factor around the viewport center (the +/- buttons). */
   const zoomBy = useCallback((f: number) => {
@@ -149,7 +168,7 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
   }, [onWheel]);
 
   return {
-    view, setVp, onCanvasDown, fit, zoomBy, zoomTo, dragMoved,
+    view, setVp, onCanvasDown, fit, centerOn, zoomBy, zoomTo, dragMoved,
     worldTransform: { transform: `translate(${view.tx}px,${view.ty}px) scale(${view.scale})`, transformOrigin: "0 0" },
   };
 }
