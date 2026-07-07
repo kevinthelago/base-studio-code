@@ -3378,7 +3378,10 @@
       ],
       "src": "shared/ui/layouts/Tree.tsx",
       "srcText": "import { Tree } from \"@/shared/ui/layouts/Tree\";\n\n<Tree\n  nodes={[{ id: \"src\", label: \"src\", children: [\n    { id: \"app\", label: \"app\" },\n  ] }]}\n  detail={(n) => <NodeDetail node={n}/>}\n  onSelect={setSelected}\n/>",
-      "builtin": true
+      "builtin": true,
+      "shapes": [
+        "tree"
+      ]
     },
     {
       "id": "labelchip",
