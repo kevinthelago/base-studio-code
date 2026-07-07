@@ -48,13 +48,13 @@ export function SettingsWorkspace() {
       rail={
         <Stack gap={2}>
           <Text as="div" mono size={10} tone="dim" style={{
-            letterSpacing: ".08em", padding: "4px 12px 10px",
+            letterSpacing: ".08em", padding: "4px 12px 10px 14px",
           }}>SETTINGS</Text>
           {SECTIONS.map(it => {
             const on = it.k === active.k;
             return (
               <Box key={it.k} className="mono" onClick={() => setSettingsSection(it.k)} bg={on ? "var(--bg-elev)" : "transparent"} radius={6} style={{
-                padding: "7px 12px",
+                padding: "7px 12px 7px 14px",
                 fontSize: 11.5,
                 color: on ? "var(--fg)" : "var(--fg-muted)",
                 cursor: "pointer",
