@@ -140,23 +140,25 @@ export function DesignStudio() {
   const gvpFit = gvp.fit;
   useEffect(() => { gvpFit(); }, [kitId, gvpFit]); // re-fit on mount + whenever the kit switches
 
-  // ── rail hierarchy (#2487) — technology → visual language → kit → components, with trivial levels
-  // auto-flattened (lib/kitGroups: today's single-tech library renders exactly as flat as before).
+  // ── rail hierarchy (#2487, policy fixed by #2506) — ALWAYS technology → style; a single-kit style
+  // header IS the kit (lib/kitGroups), so the packaged library reads React → Studio → components.
   const railTree = useMemo(() => groupKits(kits), [kits]);
 
   if (!kit) return <StudioEmpty />;
 
-  // One rail kit entry: the collapsible kit head + its (search-filtered) component rows.
-  const renderRailKit = (k: Kit) => {
+  // One rail kit entry: the collapsible kit head + its (search-filtered) component rows. Under the
+  // #2506 single-kit style merge this IS the style header — `label` shows the style name instead of
+  // the kit name (the kit identity stays in the tooltip), and no separate kit row renders.
+  const renderRailKit = (k: Kit, label?: string) => {
     const open = !!expanded[k.id];
     const inKit = components.filter((c) => c.kitId === k.id);
     const rows = inKit.filter(match);
     return (
       <Box key={k.id} style={{ marginBottom: 4 }}>
-        <Box as="button" className={`ds-kithead${k.id === kitId ? " active" : ""}`} onClick={() => setExpanded((e) => ({ ...e, [k.id]: !e[k.id] }))}>
+        <Box as="button" className={`ds-kithead${k.id === kitId ? " active" : ""}`} title={label ? `${label} · ${k.name} — ${k.stack}` : k.stack} onClick={() => setExpanded((e) => ({ ...e, [k.id]: !e[k.id] }))}>
           <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
           <ColorSwatch color={k.dot} size={7} />
-          <Text as="span" weight={500} style={{ flex: 1, textAlign: "left" }}>{k.name}</Text>
+          <Text as="span" weight={500} style={{ flex: 1, textAlign: "left" }}>{label ?? k.name}</Text>
           <Text mono size="xxs" tone="dim">{inKit.length}</Text>
         </Box>
         {open && (
@@ -177,9 +179,11 @@ export function DesignStudio() {
     );
   };
   // A rail tree node: a kit entry, or a collapsible tech/style group header (default OPEN — its
-  // expand state shares the `expanded` record under the group's stable key).
+  // expand state shares the `expanded` record under the group's stable key). A single-kit style
+  // group (#2506) renders as the kit entry labelled with the style — the style header IS the kit.
   const renderRailNode = (n: KitTreeNode): ReactNode => {
     if (n.kind === "kit") return renderRailKit(n.kit);
+    if (n.kit) return renderRailKit(n.kit, n.label);
     const open = expanded[n.key] ?? true;
     return (
       <Box key={n.key} style={{ marginBottom: 4 }}>

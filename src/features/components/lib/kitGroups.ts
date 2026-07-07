@@ -1,29 +1,27 @@
-// Hierarchical kit navigation (#2487) — the PURE grouping model behind the Design Studio rail.
-// The full hierarchy is technology → visual language → kit → components: `tech` (lowercase slug)
-// is the top grouping axis, `style` (the visual language — a STRUCTURALLY different component set,
-// i.e. a different kit; the palette/THEME axis restyles one kit via tokens and never appears here)
-// is the second. React/Tauri-free so the rail render and the tests share one model.
+// Hierarchical kit navigation (#2487, policy fixed by #2506) — the PURE grouping model behind the
+// Design Studio rail. The full hierarchy is technology → visual language → kit → components: `tech`
+// (lowercase slug) is the top grouping axis, `style` (the visual language — a STRUCTURALLY different
+// component set, i.e. a different kit; the palette/THEME axis restyles one kit via tokens and never
+// appears here) is the second. React/Tauri-free so the rail render and the tests share one model.
 //
-// AUTO-FLATTEN — a level materializes only when it genuinely partitions the kits under it. A level
-// collapses out when its partition is TRIVIAL:
-//   - ONE bucket   — every kit shares the value (today: both packaged kits are `react`), or
-//   - ALL SINGLETON buckets — one kit per value (today: `studio` + `demo` each hold one kit), so a
-//     header per kit would just restate the kit rows beneath it.
-// With the packaged library (2 react kits, one kit per style) BOTH levels are trivial and the rail
-// renders exactly as flat as the pre-#2487 kit list; the hierarchy appears only as the library
-// grows genuinely multi-tech / multi-style. Levels render uniformly — a non-trivial level shows a
-// header over EVERY bucket (a `vue` group keeps its header even with one kit when `react` beside it
-// has two), never a mix of headers and bare kit rows.
+// ALWAYS GROUPED (#2506) — the rail shows technology groups at the top level and style groups within
+// each technology, ALWAYS. (#2487 originally auto-flattened a level whose partition was trivial; that
+// heuristic is superseded by explicit user direction — the fixed two-level hierarchy is the point, so
+// the packaged single-kit library reads React → Studio → components rather than a bare kit list.)
+//
+// THE SINGLE-KIT STYLE MERGE — a kit is a (tech, style) unit, so the normal case is a style bucket
+// holding exactly ONE kit. Then the style header IS the kit: the group node carries `kit`, its
+// components list directly under the style header, and no redundant kit row renders. Only when
+// several kits share one (tech, style) pair does a kit level nest beneath the style group.
 //
 // MISSING FIELDS — kits without `tech`/`style` (user-authored, imported, pre-#2487) group into the
-// trailing "other" bucket; when everything lacks the fields the single bucket is trivial and the
-// rail stays flat. Never a crash.
+// trailing "other" bucket on that axis. Never a crash.
 import type { Kit } from "./model";
 
 /** The bucket kits without a `tech`/`style` value group under (always ordered last). */
 export const OTHER_BUCKET = "other";
 
-/** A kit row in the rail tree. */
+/** A kit row in the rail tree (only under a style that holds SEVERAL kits — see the module doc). */
 export interface KitLeaf {
   kind: "kit";
   kit: Kit;
@@ -38,6 +36,9 @@ export interface KitGroup {
   label: string;
   /** Kits under this group (transitively). */
   count: number;
+  /** Style level only: when the style holds exactly ONE kit, the header IS that kit — components
+   *  render directly beneath it and `children` is empty (#2506). */
+  kit?: Kit;
   children: KitTreeNode[];
 }
 
@@ -63,37 +64,28 @@ function bucket(kits: Kit[], keyOf: (k: Kit) => string): Map<string, Kit[]> {
   return m;
 }
 
-/** The axis's partition of `kits`, or `null` when it is trivial (see the module doc) — collapse it. */
-function partition(kits: Kit[], keyOf: (k: Kit) => string): Map<string, Kit[]> | null {
-  const m = bucket(kits, keyOf);
-  return m.size <= 1 || m.size === kits.length ? null : m;
-}
-
-const leaves = (kits: Kit[]): KitTreeNode[] => kits.map((kit) => ({ kind: "kit", kit }));
-
-/** The visual-language level under one tech group (or under the root when the tech level collapsed). */
+/** The style level under one tech group: a style group per bucket; a single-kit style merges the kit
+ *  into its header (see the module doc). */
 function styleLevel(kits: Kit[], keyPrefix: string): KitTreeNode[] {
-  const byStyle = partition(kits, styleOf);
-  if (!byStyle) return leaves(kits);
-  return [...byStyle].map(([style, inStyle]) => ({
+  return [...bucket(kits, styleOf)].map(([style, inStyle]) => ({
     kind: "group" as const,
     level: "style" as const,
     key: `style:${keyPrefix}${style}`,
     label: style,
     count: inStyle.length,
-    children: leaves(inStyle),
+    ...(inStyle.length === 1
+      ? { kit: inStyle[0], children: [] as KitTreeNode[] }
+      : { children: inStyle.map((kit): KitTreeNode => ({ kind: "kit", kit })) }),
   }));
 }
 
 /**
- * Group the kit library into the rail tree: tech groups → style groups → kit leaves, with each
- * trivial level auto-flattened out (see the module doc). Kits keep their library order within a
- * bucket; buckets order by first appearance, the "other" bucket last.
+ * Group the kit library into the rail tree: tech groups → style groups (→ kit leaves only when a
+ * style holds several kits) — ALWAYS grouped, per the module doc (#2506). Kits keep their library
+ * order within a bucket; buckets order by first appearance, the "other" bucket last.
  */
 export function groupKits(kits: Kit[]): KitTreeNode[] {
-  const byTech = partition(kits, techOf);
-  if (!byTech) return styleLevel(kits, "");
-  return [...byTech].map(([tech, inTech]) => ({
+  return [...bucket(kits, techOf)].map(([tech, inTech]) => ({
     kind: "group" as const,
     level: "tech" as const,
     key: `tech:${tech}`,
