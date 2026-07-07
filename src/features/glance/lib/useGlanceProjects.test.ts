@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useGlanceProjects, mergeGlanceProjects, applyLiveness, applyFaultHealth } from "./useGlanceProjects";
+import { useGlanceProjects, mergeGlanceProjects, applyLiveness, applyFaultHealth, filterTriaged } from "./useGlanceProjects";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
 import type { MinimalGhProject } from "@/shared/lib/github/githubState";
 import type { ProjectLite } from "./glanceData";
@@ -26,6 +26,7 @@ describe("useGlanceProjects — declared role/health/activity (#2284/#2541)", ()
   it("passes through a draft's DECLARED role + health + activity (curated colouring wins)", () => {
     useAppStore.setState({
       localDraftProjects: { "billing-svc": { title: "billing-svc", pitch: "", createdAt: 1, role: "service", health: "warning", activity: "waiting" } },
+      triagedProjects: { "billing-svc": 1 },
     });
     const { result } = renderHook(() => useGlanceProjects());
     expect(result.current.find((p) => p.id === "billing-svc")).toMatchObject({ role: "service", health: "warning", activity: "waiting" });
@@ -44,6 +45,7 @@ describe("useGlanceProjects — declared role/health/activity (#2284/#2541)", ()
           director: { enabled: false },
         } as never,
       },
+      triagedProjects: { plain: 1, fleeted: 1 },
     });
     const { result } = renderHook(() => useGlanceProjects());
     const plain = result.current.find((p) => p.id === "plain");
@@ -51,6 +53,41 @@ describe("useGlanceProjects — declared role/health/activity (#2284/#2541)", ()
     expect(plain).toMatchObject({ health: "idle", activity: "planning" });
     expect(plain?.role).toBeUndefined(); // derived downstream in buildGlanceData (hash), not here
     expect(fleeted).toMatchObject({ health: "idle", activity: "building" });
+  });
+});
+
+describe("filterTriaged — only triaged/working projects render (#2541)", () => {
+  const projects: ProjectLite[] = [
+    { id: "worked", name: "Worked", health: "idle", activity: "building" },
+    { id: "just-a-draft", name: "Draft", health: "idle", activity: "planning" },
+  ];
+
+  it("keeps a project whose key is marked triaged and drops one that is not", () => {
+    const out = filterTriaged(projects, { worked: 1720000000000 });
+    expect(out.map((p) => p.id)).toEqual(["worked"]);
+  });
+
+  it("empty triaged set ⇒ empty graph (a plan/draft never shows until worked)", () => {
+    expect(filterTriaged(projects, {})).toEqual([]);
+  });
+});
+
+describe("useGlanceProjects — hides a non-triaged draft (#2541)", () => {
+  beforeEach(() => useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null, triagedProjects: {} }));
+
+  it("a drafted-but-never-triaged project does NOT appear on the network", () => {
+    useAppStore.setState({ localDraftProjects: { "fresh-draft": { title: "Fresh Draft", pitch: "", createdAt: 1 } } });
+    const { result } = renderHook(() => useGlanceProjects());
+    expect(result.current.some((p) => p.id === "fresh-draft")).toBe(false);
+  });
+
+  it("the SAME project appears once it is marked triaged", () => {
+    useAppStore.setState({
+      localDraftProjects: { "fresh-draft": { title: "Fresh Draft", pitch: "", createdAt: 1 } },
+      triagedProjects: { "fresh-draft": 1 },
+    });
+    const { result } = renderHook(() => useGlanceProjects());
+    expect(result.current.some((p) => p.id === "fresh-draft")).toBe(true);
   });
 });
 
@@ -135,7 +172,7 @@ describe("applyFaultHealth — worst fault → warning/error + reason (#2541)", 
 
 describe("useGlanceProjects — wires 'live' from project_liveness (#2263)", () => {
   beforeEach(() => {
-    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null });
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null, triagedProjects: { "billing-svc": 1 } });
     vi.mocked(invoke).mockReset();
   });
 
@@ -185,7 +222,8 @@ describe("useGlanceProjects — published read hits the TTL cache (#2447)", () =
 
 describe("useGlanceProjects — persisted github-state (#2446, supersedes the #2339 module cache)", () => {
   beforeEach(() => {
-    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null });
+    // Triaged so the machinery-under-test projects render (the drafted→triaged gate, #2541).
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null, triagedProjects: { "cached-project": 1, "acme-crm": 1 } });
     vi.mocked(invoke).mockReset();
   });
 
@@ -239,7 +277,7 @@ describe("useGlanceProjects — updatedAt probe gates the heavy fetch (#2448)", 
   const HEAVY_MARKER = "items(first: 100)"; // only PROJECTS_QUERY carries the heavy items scan
 
   beforeEach(() => {
-    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "tok", githubState: null });
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "tok", githubState: null, triagedProjects: { "cached-project": 1 } });
     vi.mocked(invoke).mockReset();
   });
 
@@ -282,7 +320,7 @@ describe("useGlanceProjects — updatedAt probe gates the heavy fetch (#2448)", 
 
 describe("local published inventory seeds Glance (#2445)", () => {
   beforeEach(() => {
-    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null });
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null, triagedProjects: { "restored-app": 1 } });
     vi.mocked(invoke).mockReset();
   });
 

@@ -20,7 +20,7 @@ import type { AppStore } from "./types";
  */
 export const DEMOABLE_KEYS = [
   // Projects + the Glance project-network graph
-  "localDraftProjects", "projectLinks", "issueLinks", "hiddenProjectIds", "achievements",
+  "localDraftProjects", "triagedProjects", "projectLinks", "issueLinks", "hiddenProjectIds", "achievements",
   // Libraries (built-ins are reconciled on load; these carry the user/demo additions + selection)
   "blueprints", "activeBlueprintId", "skills", "skillGroups", "personas", "orgs", "orgZoom",
   "dataModels", "activeDataModelId", "mcpServers", "hooks",

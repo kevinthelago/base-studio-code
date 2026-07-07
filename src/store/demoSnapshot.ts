@@ -185,8 +185,10 @@ export function demoSnapshot(): AppStateSnapshot {
 
   const org = demoOrg();
   return {
-    // Glance — the project network
+    // Glance — the project network. Every demo project is TRIAGED (#2541) so the curated network
+    // renders (the drafted→triaged gate would otherwise hide un-worked projects).
     localDraftProjects: projects,
+    triagedProjects: Object.fromEntries(Object.keys(projects).map((k) => [k, DEMO_EPOCH])),
     projectLinks: demoLinks(),
     achievements: { "super-user": DEMO_EPOCH },
 

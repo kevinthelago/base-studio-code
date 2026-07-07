@@ -87,6 +87,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             skills:                 (s.skills ?? []).map((sk) => ({ ...sk, projects: (sk.projects ?? []).filter((p) => !keySet.has(p)) })),
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
             autoTriage:             byKey(s.autoTriage),
+            triagedProjects:        byKey(s.triagedProjects),
             autoKitDispatch:        byKey(s.autoKitDispatch),
             projectLocalRepos:      byKey(s.projectLocalRepos),
         localDraftProjects:     byKey(s.localDraftProjects),
@@ -230,6 +231,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             issueLinks:             byKey(s.issueLinks),
             projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
             autoTriage:             byKey(s.autoTriage),
+            triagedProjects:        byKey(s.triagedProjects),
             autoKitDispatch:        byKey(s.autoKitDispatch),
             projectLocalRepos:      byKey(s.projectLocalRepos),
             localDraftProjects:     byKey(s.localDraftProjects),
@@ -430,6 +432,8 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneNames: setMapEntry(s.paneNames, newTabIdx, tabPaneNames),
             automations: [...s.automations, ...addedAutos],
             activeWorkspace: "console" as Workspace,
+            // TRIAGED (#2541): launching triage marks the project WORKING → it now appears on Glance.
+            ...(projectId || tabKey ? { triagedProjects: { ...s.triagedProjects, [projectId || tabKey]: s.triagedProjects[projectId || tabKey] ?? Date.now() } } : {}),
           };
         }),
 
@@ -738,6 +742,8 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneStatus: newPaneStatus,
             paneNames: newPaneNames,
             activeWorkspace: "console" as Workspace,
+            // TRIAGED (#2541): launching the fleet marks the project WORKING → it now appears on Glance.
+            ...(projectKey ? { triagedProjects: { ...s.triagedProjects, [projectKey]: s.triagedProjects[projectKey] ?? Date.now() } } : {}),
           };
         });
         // The caller persists these to the hub (publishFleetRoster) — the store stays
