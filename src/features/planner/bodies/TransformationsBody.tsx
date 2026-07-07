@@ -23,7 +23,7 @@ import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { KitRenderer, validateKitNode, type KitNode } from "@/shared/ui/spec";
 import { Card } from "./bodyPrimitives";
 import {
-  tierGroups, nextPendingTier, tierLabel, specNodeCount, type TransformationRow,
+  tierGroups, nextPendingTier, tierLabel, specNodeCount, verbMeta, type TransformationRow,
 } from "../lib/transformations";
 
 const EMPTY_ROWS: TransformationRow[] = [];
@@ -76,7 +76,8 @@ function TransformationItem({ row, actionable, onConfirm }: {
     >
       <Stack gap={5}>
         <Row gap={7}>
-          <Chip tone="accent" size="xs">{row.verb}</Chip>
+          {/* The taxonomy blurb rides as the tooltip (#2509 slice b — verb metadata is @data). */}
+          <Chip tone="accent" size="xs" title={verbMeta(row.verb).blurb}>{row.verb}</Chip>
           <Text as="span" size={12} weight={600} style={{ color: "var(--fg)" }}>{row.title}</Text>
           <Spacer />
           {confirmed ? (

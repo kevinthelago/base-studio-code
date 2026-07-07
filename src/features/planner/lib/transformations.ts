@@ -7,6 +7,14 @@
 // generated against confirmed primitives and nothing is built on unreviewed foundations. An item is
 // pending or confirmed, NOTHING ELSE (no rejections/exclusions — changes are described to the
 // planner conversationally and the item re-presents). Pure (no React/Tauri) so it's unit-testable.
+//
+// The verb/recipe/tier TAXONOMY is `@data` (#2509 slice b, `@data/transformations/taxonomy.json`,
+// per the config-externalization standard #2027): the SAME file `crates/plandb` embeds for the
+// `bsc plan transformation` set-time enums, so the vocabulary can't drift between the CLI
+// validator and the pane's display metadata (verbMeta tooltips, tierLabel headings).
+
+import taxonomyEmbedded from "@data/transformations/taxonomy.json";
+import { overlayFile } from "@/shared/lib/core/configOverrides";
 
 /** The identified piece of the existing system a transformation modifies — discovered by
  *  scanning, never invented. */
@@ -51,6 +59,51 @@ export interface TransformationRow {
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
+
+// ── taxonomy (@data/transformations/taxonomy.json, #2509 slice b) ─────────────
+
+/** One verb of the fixed taxonomy: display metadata + the one-line hint of how that verb's
+ *  invariants are typically checked. */
+export interface TransformationVerbMeta {
+  id: string;
+  label: string;
+  blurb: string;
+  verification: string;
+}
+
+/** One composite recipe (migrate-to-kit · extract-and-abstract): the canonical steps the
+ *  Transformations stage prompt's playbooks expand. */
+export interface TransformationRecipeMeta {
+  id: string;
+  label: string;
+  blurb: string;
+  steps: string[];
+}
+
+/** One composition tier of the bottom-up confirm queue (0 primitives … 3 pages). */
+export interface TransformationTierMeta {
+  tier: number;
+  label: string;
+  blurb: string;
+}
+
+export interface TransformationTaxonomy {
+  verbs: TransformationVerbMeta[];
+  recipes: TransformationRecipeMeta[];
+  tiers: TransformationTierMeta[];
+}
+
+// The config-dir copy (#2047) overlays the embedded default — editable without a rebuild.
+export const TRANSFORMATION_TAXONOMY: TransformationTaxonomy =
+  overlayFile("transformations/taxonomy.json", taxonomyEmbedded as TransformationTaxonomy);
+
+/** The taxonomy's display metadata for one verb (label/blurb/verification — the blurb is the verb
+ *  chip's tooltip), tolerant of a stale taxonomy file (an unknown id echoes back bare). */
+export function verbMeta(id: string): TransformationVerbMeta {
+  return (
+    TRANSFORMATION_TAXONOMY.verbs.find((v) => v.id === id) ?? { id, label: id, blurb: "", verification: "" }
+  );
+}
 
 /**
  * The `transformationsConfirmed` gate signal (#2509): the queue is non-empty AND every row is
@@ -98,13 +151,18 @@ export function nextPendingTier(rows: TransformationRow[]): number | null {
 }
 
 /**
- * Display label for a tier heading: tier 0 is always the primitives floor, the TOP tier (when
- * above 0) is the pages layer, everything between is a composite layer — "Tier 0 · primitives"
- * → "Tier 1 · composites" → … → "Tier N · pages".
+ * Display label for a tier heading, driven by the taxonomy's tier ladder (#2509 slice b —
+ * primitives → composites → layouts → pages): tier 0 is always the floor (the first taxonomy
+ * tier), the TOP tier (when above 0) is the last (pages), and a middle tier reads its taxonomy
+ * label clamped to the middle band — "Tier 0 · primitives" → "Tier 1 · composites" →
+ * "Tier 2 · layouts" → "Tier N · pages".
  */
 export function tierLabel(tier: number, maxTier: number): string {
-  const kind = tier === 0 ? "primitives" : tier === maxTier ? "pages" : "composites";
-  return `Tier ${tier} · ${kind}`;
+  const tiers = TRANSFORMATION_TAXONOMY.tiers;
+  const last = tiers.length - 1;
+  const idx = tier <= 0 ? 0 : tier >= maxTier ? last : Math.min(tier, last - 1);
+  const kind = tiers[idx]?.label;
+  return kind ? `Tier ${tier} · ${kind}` : `Tier ${tier}`;
 }
 
 /**
