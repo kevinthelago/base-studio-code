@@ -61,10 +61,23 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     Ok(a)
 }
 
+/// A per-mutation observer: fired with the affected id AFTER a `set` write (once per upserted id) or
+/// a `remove` lands (#2525). The seam the component/theme stores use to emit their `ui-touch` activity
+/// line WITH their own collection context — bsc-json-store never emits itself (it has no collection
+/// context, the reason the emit doesn't live here), it just invokes the caller's hook.
+pub type WriteHook<'a> = &'a dyn Fn(&str);
+
 /// The store subcommand entrypoint: `args` is everything after `bsc <noun>`; `prog` is the display
 /// name for help/errors (`"bsc blueprint"` from the umbrella). `spec` supplies the per-store nouns +
 /// help catalog. Handles help (no command / `help` / `help <cmd>` / `<cmd> help`) before any store read.
 pub fn run(args: Vec<String>, prog: &str, spec: &CliSpec) -> Result<(), String> {
+    run_hooked(args, prog, spec, None)
+}
+
+/// [`run`] with an optional [`WriteHook`] fired after each `set`/`remove` write lands (#2525). Stores
+/// that don't observe writes call [`run`] (`on_write = None`); the component/kit/theme surfaces pass a
+/// hook that emits a `ui-touch` line for the Design Studio's live-focus.
+pub fn run_hooked(args: Vec<String>, prog: &str, spec: &CliSpec, on_write: Option<WriteHook>) -> Result<(), String> {
     let args = parse_args(args)?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
 
@@ -108,24 +121,38 @@ pub fn run(args: Vec<String>, prog: &str, spec: &CliSpec) -> Result<(), String> 
         // Upsert from an object — or an array of them — on stdin, written verbatim by id.
         "set" => {
             let items: Vec<Value> = read_stdin_json(spec.noun)?;
-            let mut ids = Vec::new();
-            for item in &items {
-                let id = id_of(item, spec.noun)?;
-                let json = serde_json::to_string(item).map_err(|e| format!("set: {e}"))?;
-                store.set(&id, &json)?;
-                ids.push(id);
-            }
+            let ids = set_items(&store, &items, spec.noun, on_write)?;
             print_json(&ids, args.pretty);
             Ok(())
         }
         "remove" => {
             let id = args.positional.get(1).ok_or_else(|| format!("usage: {prog} remove <id>"))?;
             store.remove(id)?;
+            if let Some(hook) = on_write {
+                hook(id);
+            }
             print_json(&id, args.pretty);
             Ok(())
         }
         other => Err(bsc_cli_util::unknown_command(prog, spec.tagline, spec.commands, other)),
     }
+}
+
+/// Upsert every `item` into `store` by its (required, non-empty) `id`, written verbatim, firing
+/// `on_write(id)` after each write lands (#2525). Returns the written ids in input order. Split out of
+/// the `set` arm so the per-id write + hook is unit-testable without a drivable stdin.
+fn set_items(store: &Store, items: &[Value], noun: &str, on_write: Option<WriteHook>) -> Result<Vec<String>, String> {
+    let mut ids = Vec::new();
+    for item in items {
+        let id = id_of(item, noun)?;
+        let json = serde_json::to_string(item).map_err(|e| format!("set: {e}"))?;
+        store.set(&id, &json)?;
+        if let Some(hook) = on_write {
+            hook(&id);
+        }
+        ids.push(id);
+    }
+    Ok(ids)
 }
 
 /// Resolve the store: explicit `--dir` wins, then the store's env var, else the default user store at
@@ -248,6 +275,71 @@ mod tests {
     fn parse_args_routes_help_flag_to_the_help_command() {
         let a = parse_args(vec!["--help".into()]).unwrap();
         assert_eq!(a.positional.first().map(String::as_str), Some("help"));
+    }
+
+    fn tmp_store(tag: &str) -> Store {
+        let d = std::env::temp_dir().join(format!("bsc-json-store-cli-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        Store::new(d, "record")
+    }
+
+    #[test]
+    fn set_items_writes_each_by_id_and_fires_the_write_hook_per_id() {
+        // #2525: the extracted set core writes each item and invokes on_write(id) after each write —
+        // the seam the component/kit surfaces use to emit a `ui-touch` line (no stdin needed here).
+        let store = tmp_store("set-hook");
+        let seen = std::cell::RefCell::new(Vec::<String>::new());
+        let items = vec![
+            serde_json::json!({ "id": "button", "name": "Button" }),
+            serde_json::json!({ "id": "chip", "name": "Chip" }),
+        ];
+        let hook = |id: &str| seen.borrow_mut().push(id.to_string());
+        let ids = set_items(&store, &items, "record", Some(&hook)).unwrap();
+        assert_eq!(ids, vec!["button".to_string(), "chip".to_string()]);
+        assert_eq!(*seen.borrow(), vec!["button".to_string(), "chip".to_string()], "hook fires once per written id");
+        // The writes actually landed (hook fires AFTER the store write).
+        assert!(store.get("button").unwrap().is_some() && store.get("chip").unwrap().is_some());
+        // No hook ⇒ writes still happen, no fire.
+        let ids = set_items(&store, &[serde_json::json!({ "id": "box" })], "record", None).unwrap();
+        assert_eq!(ids, vec!["box".to_string()]);
+    }
+
+    #[test]
+    fn run_hooked_fires_the_write_hook_on_remove() {
+        // `remove` is drivable via run_hooked (positional id, no stdin): the hook fires after the
+        // delete lands, carrying the removed id.
+        let store = tmp_store("rm-hook");
+        store.set("button", r#"{"id":"button"}"#).unwrap();
+        let dir = store_dir(&store);
+        let seen = std::cell::RefCell::new(Vec::<String>::new());
+        let hook = |id: &str| seen.borrow_mut().push(id.to_string());
+        run_hooked(
+            vec!["remove".into(), "button".into(), "--dir".into(), dir],
+            "bsc widget",
+            &widget_spec(),
+            Some(&hook),
+        )
+        .unwrap();
+        assert_eq!(*seen.borrow(), vec!["button".to_string()]);
+        assert!(store.get("button").unwrap().is_none(), "the remove landed");
+    }
+
+    /// The scratch store's dir as a string, for the `--dir` flag.
+    fn store_dir(store: &Store) -> String {
+        store.dir().to_string_lossy().into_owned()
+    }
+
+    /// A concrete CliSpec over the TEST_COMMANDS, for the dispatch tests.
+    fn widget_spec() -> CliSpec {
+        CliSpec {
+            noun: "record",
+            dir_env: "BSC_WIDGET_DIR_TEST",
+            dir_segment: "widgets",
+            tagline: "the widget store",
+            commands: TEST_COMMANDS,
+            meta_fields: &["id", "name"],
+        }
     }
 
     #[test]

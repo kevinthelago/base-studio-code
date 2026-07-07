@@ -121,6 +121,41 @@ pub fn iso8601_to_epoch_ms(ts: &str) -> Option<i64> {
     Some((days * 86_400 + h * 3_600 + mi * 60 + s) * 1_000)
 }
 
+/// Format one UI-activity TSV line (#2525) — the pure, testable core of [`emit_ui_activity`].
+/// Columns: `ts \t pane \t ui-touch \t <collection> \t <id>\n` — the same `ts·pane·kind·…` shape the
+/// coord emitters write, so `bsc logs tail ui` reads it uniformly. Trailing newline included.
+pub fn ui_activity_line(ts: &str, pane: &str, collection: &str, id: &str) -> String {
+    format!("{ts}\t{pane}\tui-touch\t{collection}\t{id}\n")
+}
+
+/// Append a `ui-touch` activity line for `(collection, id)` to `$BSC_UI_ACTIVITY_LOG` (#2525) — the
+/// designer session's live-focus signal, fired by the `bsc ui set/remove` mutation paths right after
+/// the ui-scope gate passes and the store write lands. A **no-op when the env var is absent or empty**
+/// (hand shells / non-designer sessions never write it), so it's safe to call unconditionally. The
+/// pane column is `$BSC_AUDIT_PANE` (else `?`); the timestamp is [`now_ms`] → [`epoch_ms_to_iso8601`],
+/// matching the `bsc-*` helpers' `date -u +%Y-%m-%dT%H:%M:%SZ`. Best-effort: a write failure is
+/// swallowed (activity signalling must never break a store mutation).
+pub fn emit_ui_activity(collection: &str, id: &str) {
+    let path = match std::env::var_os("BSC_UI_ACTIVITY_LOG") {
+        Some(p) if !p.is_empty() => PathBuf::from(p),
+        _ => return, // no activity stream wired — hand shell / non-designer session
+    };
+    let pane = std::env::var("BSC_AUDIT_PANE").ok().filter(|p| !p.is_empty()).unwrap_or_else(|| "?".to_string());
+    let line = ui_activity_line(&epoch_ms_to_iso8601(now_ms()), &pane, collection, id);
+    append_line(&path, &line);
+}
+
+/// Append `line` to `path`, creating the parent dir if needed. Best-effort (errors ignored).
+fn append_line(path: &std::path::Path, line: &str) {
+    use std::io::Write;
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
 /// Days since the Unix epoch for a civil (y, m, d) date — Howard Hinnant's algorithm (no deps).
 fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
@@ -229,5 +264,59 @@ mod tests {
     fn now_is_monotonic_ish_and_consistent() {
         assert!(now_secs() > 1_700_000_000);
         assert!(now_ms() >= now_secs() * 1_000);
+    }
+
+    // ── UI-activity emit (#2525) ─────────────────────────────────────────────────────────────────
+    // `emit_ui_activity` reads the process-wide `BSC_UI_ACTIVITY_LOG`/`BSC_AUDIT_PANE` env; serialize
+    // the tests that mutate it (bsc-util's other tests never touch these vars, so this lock alone
+    // fully isolates them).
+    static UI_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn ui_activity_line_is_the_tsv_touch_shape() {
+        assert_eq!(
+            ui_activity_line("2026-07-07T00:00:00Z", "design-studio:designer", "component", "button"),
+            "2026-07-07T00:00:00Z\tdesign-studio:designer\tui-touch\tcomponent\tbutton\n",
+        );
+    }
+
+    #[test]
+    fn emit_ui_activity_writes_when_the_env_is_set_and_is_a_no_op_when_absent() {
+        let _lock = UI_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("bsc-util-uiact-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let file = dir.join("ui-activity.log");
+
+        // Absent env ⇒ a pure no-op: nothing is created.
+        std::env::remove_var("BSC_UI_ACTIVITY_LOG");
+        std::env::remove_var("BSC_AUDIT_PANE");
+        emit_ui_activity("component", "button");
+        assert!(!file.exists(), "no activity file without the env var");
+
+        // Env set ⇒ one TSV `ui-touch` line, with the pane from $BSC_AUDIT_PANE and the right cols.
+        std::env::set_var("BSC_UI_ACTIVITY_LOG", &file);
+        std::env::set_var("BSC_AUDIT_PANE", "design-studio:designer");
+        emit_ui_activity("component", "button");
+        emit_ui_activity("theme", "neon");
+        let text = std::fs::read_to_string(&file).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2, "one line appended per call");
+        let cols: Vec<&str> = lines[0].split('\t').collect();
+        assert_eq!(cols[1], "design-studio:designer", "pane column is $BSC_AUDIT_PANE");
+        assert_eq!(cols[2], "ui-touch");
+        assert_eq!(cols[3], "component");
+        assert_eq!(cols[4], "button");
+        assert!(iso8601_to_epoch_ms(cols[0]).is_some(), "col0 is a parseable ISO-8601 timestamp");
+        assert!(lines[1].ends_with("\ttheme\tneon"), "the second collection/id rides through");
+
+        // Missing pane falls back to "?".
+        std::env::remove_var("BSC_AUDIT_PANE");
+        emit_ui_activity("kit", "react-ui");
+        let text = std::fs::read_to_string(&file).unwrap();
+        let last = text.lines().last().unwrap();
+        assert_eq!(last.split('\t').nth(1), Some("?"), "no pane env ⇒ ? column");
+
+        std::env::remove_var("BSC_UI_ACTIVITY_LOG");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
