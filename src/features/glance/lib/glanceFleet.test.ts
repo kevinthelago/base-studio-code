@@ -68,28 +68,22 @@ describe("buildRealFleetData (glance drill — real fleet)", () => {
   });
 });
 
-describe("nodeHasLiveSession (#2534/#2539 — every terminal node morphs)", () => {
-  it("is live when the pane is in the launched roster (workers)", () => {
-    const roster = { "proj:api": { id: "api" } };
-    expect(nodeHasLiveSession("proj:api", roster, {})).toBe(true);
+describe("nodeHasLiveSession (#2534/#2542 — a fleet-tab cell morphs)", () => {
+  // A launched build tab: the director + workers are all cells (paneIds), so all are openable.
+  const live = new Set(["proj:director", "proj:foundation", "proj:pages-a"]);
+
+  it("is live for a worker cell of the launched fleet tab", () => {
+    expect(nodeHasLiveSession("proj:foundation", live)).toBe(true);
   });
 
-  it("is live for a running pane status", () => {
-    expect(nodeHasLiveSession("proj:director", {}, { "proj:director": "run" })).toBe(true);
-    expect(nodeHasLiveSession("proj:director", {}, { "proj:director": "on" })).toBe(true);
+  it("is live for the DIRECTOR cell — same durable tab-membership signal as workers (#2542)", () => {
+    // The director isn't a stream (never in the roster) and sits idle between prompts, but it IS a
+    // cell in the build tab, so it opens exactly like a worker.
+    expect(nodeHasLiveSession("proj:director", live)).toBe(true);
   });
 
-  it("is live for a RESTING director — claude active but status idle (#2539)", () => {
-    // The director isn't in the roster and sits at "idle" between prompts; a live claude session
-    // (paneClaudeActive) is what keeps it morphable exactly when the user clicks it.
-    expect(nodeHasLiveSession("proj:director", {}, { "proj:director": "idle" }, { "proj:director": true })).toBe(true);
-    // claudeActive alone (no status yet — launch race) is enough.
-    expect(nodeHasLiveSession("proj:director", {}, {}, { "proj:director": true })).toBe(true);
-  });
-
-  it("is NOT live with no roster, no claude session, and an idle/absent status", () => {
-    expect(nodeHasLiveSession("proj:director", {}, { "proj:director": "idle" })).toBe(false);
-    expect(nodeHasLiveSession("proj:director", {}, { "proj:director": "idle" }, { "proj:director": false })).toBe(false);
-    expect(nodeHasLiveSession("proj:ghost", {}, {})).toBe(false);
+  it("is NOT live for a pane that isn't a cell of any launched tab", () => {
+    expect(nodeHasLiveSession("proj:ghost", live)).toBe(false);
+    expect(nodeHasLiveSession("proj:director", new Set())).toBe(false);
   });
 });
