@@ -204,6 +204,30 @@ rejected). A rejected write leaves the stored assessment untouched; a successful
 \"N of 6 dimensions scored, cited\" readiness. --force stores a work-in-progress blob unvalidated.",
     },
     CmdDoc {
+        name: "transformation",
+        summary: "the Transformations stage's list — the modification counterpart to features (#2509)",
+        usage: "\
+USAGE:
+  bsc plan transformation add [--force]         # upsert row(s) from JSON on stdin (one object or an
+                                                # array); prints the id(s) written
+  bsc plan transformation list [--json]         # the list, position-ordered (the bottom-up confirm queue)
+  bsc plan transformation get <id> [--pretty]   # print one transformation (JSON)
+  bsc plan transformation update <id> [--force] # replace one row from JSON on stdin; the item re-presents
+  bsc plan transformation confirm <id>          # the USER's confirm (sets confirmed: true in the row)
+  bsc plan transformation remove <id>           # drop one row
+
+Each row is one transformation — verb + target + delta + invariants + blast radius:
+{ \"verb\": rename|extract|split|merge|move|replace|upgrade|restyle|remove|optimize|harden,
+  \"title\", \"target\": { \"description\", \"files\"? }, \"delta\", \"invariants\": [...],
+  \"owns\": [...], \"dependsOn\"?, \"tier\": 0.., \"provenance\"?: { \"recipe\", \"evidence\" },
+  \"kitContribution\"?, \"spec\"?, \"confirmed\"? }
+Rows are keyed by \"id\" (derived from the title when omitted); `tier` is the composition tier the
+bottom-up confirm queue orders by (0 = primitives … N = pages); `owns` is the blast radius. Targets
+are DISCOVERED by scanning the linked repos, never invented. Writes are validated at set-time
+(#2395) with field-level errors — a bad batch is rejected whole; --force skips. HARD RULE: the USER
+confirms each item in the pane — the planner NEVER runs `confirm`.",
+    },
+    CmdDoc {
         name: "mcp",
         summary: "catalog MCP servers scoped to the project",
         usage: "\
@@ -482,6 +506,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "deploy" => nouns::cmd_deploy(&args),
         "deps" => nouns::cmd_deps(&args),
         "market" => nouns::cmd_market(&args),
+        "transformation" => nouns::cmd_transformation(&args),
         "mcp" => nouns::cmd_mcp(&args),
         "blueprint" => nouns::cmd_blueprint(&args),
         "ui" => nouns::cmd_ui(&args),
@@ -622,8 +647,9 @@ mod tests {
         // Every top-level command appears in the compact menu.
         for c in [
             "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
-            "fleet", "deploy", "deps", "market", "mcp", "blueprint", "ui", "discovery", "confirm", "skip",
-            "integration", "lesson", "triage", "stage", "automations", "startup", "github-context",
+            "fleet", "deploy", "deps", "market", "transformation", "mcp", "blueprint", "ui", "discovery",
+            "confirm", "skip", "integration", "lesson", "triage", "stage", "automations", "startup",
+            "github-context",
         ] {
             assert!(ov.contains(c), "overview lists {c}");
         }

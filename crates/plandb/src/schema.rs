@@ -27,6 +27,7 @@ pub(crate) const ALL_TABLES: &[&str] = &[
     "triage_runs",
     "todos",
     "fleet_sessions",
+    "transformations",
 ];
 
 pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
@@ -140,6 +141,12 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
          CREATE TABLE IF NOT EXISTS triage_runs (
             repo        TEXT PRIMARY KEY,
             last_run    INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE IF NOT EXISTS transformations (
+            id          TEXT PRIMARY KEY,
+            data        TEXT NOT NULL DEFAULT '{}',
+            position    INTEGER NOT NULL DEFAULT 0,
+            updated_at  INTEGER NOT NULL DEFAULT 0
          );",
     )?;
     // Self-correction lessons (#1362) own their schema in the `lessons` module.
