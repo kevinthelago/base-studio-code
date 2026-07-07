@@ -30,6 +30,7 @@ import {
   roleDeniedCommands,
   roleDeniedTools,
   roleWriteRules,
+  sessionScopes,
 } from "@/shared/lib/session/sessionRoles";
 import { BUILTIN_PERSONAS } from "@/features/personas";
 // Deep import of the planner's pure terminal-theme leaf (no React, no planner state): pulling the
@@ -135,6 +136,9 @@ export function useDesignerTerminal(visible: boolean): DesignerTerminalHandle {
         startupPrompt: designerStartPrompt() || undefined,
         startupPromptFreshOnly: true,
         continueSession: true,
+        // The runtime scope doc (#2470): `ui: "write"` — the designer is the one role the store
+        // CLI lets mutate; every other role-gated launch renders `read` here.
+        env: { BSC_SCOPES: JSON.stringify(sessionScopes(cap)) },
       }, undefined, console.error);
     });
 

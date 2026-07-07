@@ -1,14 +1,18 @@
-//! The `bsc component` subcommand (#2281) — the component-library shim over the shared verbatim-
-//! JSON-per-id store CLI ([`bsc_json_store::cli`], #2158). TWO collections: the **components**
+//! The component-library CLI (#2281) — the shim over the shared verbatim-JSON-per-id store CLI
+//! ([`bsc_json_store::cli`], #2158). TWO collections: the **components**
 //! (`~/.base-studio-code/components/<id>.json`) and the **kits** (`~/.base-studio-code/kits/<id>.json`),
 //! each list/get/set/remove-able from a session's own shell — the same store the desktop Component
 //! Library pane reads/writes and an agent reaches to reuse a proven component instead of re-inventing it.
 //!
-//! `bsc component <cmd>` operates on components; `bsc component kit <cmd>` operates on kits. Dispatched
-//! by the unified `bsc` binary (#1877) via [`run`]. Per-command help (#1762):
-//!   bsc component help          # component commands
-//!   bsc component kit help      # kit commands
-//!   bsc component set help      # detailed help for ONE command
+//! **Mounted under `bsc ui` (#2469)** — the one UI-design-surface command: `bsc ui <cmd>` operates on
+//! components; `bsc ui kit <cmd>` operates on kits (`bsc_ui::cli` delegates the store verbs here via
+//! [`run`], composing [`command_docs`] into its merged help tree). `bsc component …` remains a thin
+//! DEPRECATED alias for one release (the umbrella `bsc` prints a stderr pointer, then delegates here
+//! unchanged — the #1721 `bsc plan integration` → `bsc data connector` pattern). Per-command help
+//! (#1762):
+//!   bsc ui help          # the merged UI-surface commands
+//!   bsc ui kit help      # kit commands
+//!   bsc ui set help      # detailed help for ONE command
 //!
 //! Each collection resolves via `--dir <path>` or its env var, defaulting to `~/.base-studio-code/<seg>/`.
 
@@ -24,7 +28,7 @@ const COMPONENT_COMMANDS: &[CmdDoc] = &[
         summary: "every component's {id, name, kitId, role} (JSON)",
         usage: "\
 USAGE:
-  bsc component list [--full] [--pretty]
+  bsc ui list [--full] [--pretty]
 
 Prints every component's { id, name, kitId, role } as JSON (compact; --pretty for indented). --full
 emits the COMPLETE component objects (variants + props + composes + guidance + source + …) as a plain
@@ -35,7 +39,7 @@ array — the full-fidelity read the desktop library hydration needs.",
         summary: "print one component (JSON, verbatim) or null",
         usage: "\
 USAGE:
-  bsc component get <id> [--pretty]
+  bsc ui get <id> [--pretty]
 
 Prints the stored component JSON for <id> verbatim, or `null` if absent.",
     },
@@ -44,7 +48,7 @@ Prints the stored component JSON for <id> verbatim, or `null` if absent.",
         summary: "upsert from component JSON on stdin; prints id(s)",
         usage: "\
 USAGE:
-  bsc component set [--pretty]   # component JSON (one object or an array) on stdin
+  bsc ui set [--pretty]   # component JSON (one object or an array) on stdin
 
 Upserts each component by its (required, non-empty) \"id\" field, written verbatim. Prints the id(s)
 written — how an agent (or the pane) authors/updates a component in the shared kit.",
@@ -54,7 +58,7 @@ written — how an agent (or the pane) authors/updates a component in the shared
         summary: "delete a component (no-op if absent)",
         usage: "\
 USAGE:
-  bsc component remove <id> [--pretty]
+  bsc ui remove <id> [--pretty]
 
 Deletes the component keyed by <id>. A no-op (not an error) when it does not exist.",
     },
@@ -63,12 +67,12 @@ Deletes the component keyed by <id>. A no-op (not an error) when it does not exi
         summary: "operate on the KITS instead of the components",
         usage: "\
 USAGE:
-  bsc component kit list [--full] [--pretty]   # every kit's { id, name, stack }
-  bsc component kit get <id> [--pretty]
-  bsc component kit set [--pretty]             # kit JSON on stdin (upsert by id)
-  bsc component kit remove <id> [--pretty]
+  bsc ui kit list [--full] [--pretty]   # every kit's { id, name, stack }
+  bsc ui kit get <id> [--pretty]
+  bsc ui kit set [--pretty]             # kit JSON on stdin (upsert by id)
+  bsc ui kit remove <id> [--pretty]
 
-A kit is a technology-scoped namespace of components ({ id, name, stack, dot }). `bsc component kit …`
+A kit is a technology-scoped namespace of components ({ id, name, stack, dot }). `bsc ui kit …`
 is the same list/get/set/remove over the kit collection.",
     },
     CmdDoc {
@@ -76,7 +80,7 @@ is the same list/get/set/remove over the kit collection.",
         summary: "emit the kit's lint rules as an eslint config (bake into an app, #2279)",
         usage: "\
 USAGE:
-  bsc component eslint-preset [--kit K] [--pretty]
+  bsc ui eslint-preset [--kit K] [--pretty]
 
 Emits `{ rules: { … } }` — the kit's auto-firing lint enforcement as a plain eslint config the
 generated app EXTENDS, so an agent building on the kit can't quietly re-invent a component. Rules are
@@ -90,9 +94,9 @@ component). Every message carries the escape hatch. The planner writes this into
         summary: "the consumer index — which projects use which kit (#2277)",
         usage: "\
 USAGE:
-  bsc component usage list [--json]              # every (projectKey, kitId) consumer edge
-  bsc component usage add <projectKey> <kitId>   # record that a project uses a kit (idempotent; prints the id)
-  bsc component usage remove <id>                # remove an edge by id (id is \"<projectKey>><kitId>\")
+  bsc ui usage list [--json]              # every (projectKey, kitId) consumer edge
+  bsc ui usage add <projectKey> <kitId>   # record that a project uses a kit (idempotent; prints the id)
+  bsc ui usage remove <id>                # remove an edge by id (id is \"<projectKey>><kitId>\")
 
 The consumer index a kit CHANGE fans out over (#2277): who to notify when a component in the kit
 changes. A flat edge store at ~/.base-studio-code/kit-usage.json (like `bsc project link`). Recorded at
@@ -106,7 +110,7 @@ const KIT_COMMANDS: &[CmdDoc] = &[
         summary: "every kit's {id, name, stack} (JSON)",
         usage: "\
 USAGE:
-  bsc component kit list [--full] [--pretty]
+  bsc ui kit list [--full] [--pretty]
 
 Every kit's { id, name, stack } as JSON (compact; --pretty for indented). --full emits the complete
 kit objects (incl. the dot color) as a plain array.",
@@ -114,17 +118,17 @@ kit objects (incl. the dot color) as a plain array.",
     CmdDoc {
         name: "get",
         summary: "print one kit (JSON, verbatim) or null",
-        usage: "USAGE:\n  bsc component kit get <id> [--pretty]\n\nThe stored kit JSON for <id> verbatim, or `null` if absent.",
+        usage: "USAGE:\n  bsc ui kit get <id> [--pretty]\n\nThe stored kit JSON for <id> verbatim, or `null` if absent.",
     },
     CmdDoc {
         name: "set",
         summary: "upsert from kit JSON on stdin; prints id(s)",
-        usage: "USAGE:\n  bsc component kit set [--pretty]   # kit JSON (object or array) on stdin\n\nUpserts each kit by its \"id\", written verbatim.",
+        usage: "USAGE:\n  bsc ui kit set [--pretty]   # kit JSON (object or array) on stdin\n\nUpserts each kit by its \"id\", written verbatim.",
     },
     CmdDoc {
         name: "remove",
         summary: "delete a kit (no-op if absent)",
-        usage: "USAGE:\n  bsc component kit remove <id> [--pretty]\n\nDeletes the kit keyed by <id>; a no-op when absent.",
+        usage: "USAGE:\n  bsc ui kit remove <id> [--pretty]\n\nDeletes the kit keyed by <id>; a no-op when absent.",
     },
 ];
 
@@ -148,10 +152,41 @@ const KIT_SPEC: CliSpec = CliSpec {
     meta_fields: &["id", "name", "stack"],
 };
 
-/// The `component` subcommand entrypoint: `args` is everything after `bsc component`; `prog` is the
-/// display name for help/errors. `bsc component kit …` routes to the KIT collection; everything else to
-/// the COMPONENT collection — each is the shared verbatim-JSON store CLI over its own dir.
+/// The component-surface command catalog, exposed so `bsc ui` (#2469) can compose it verbatim into its
+/// merged help tree AND gate which verbs it delegates here (unknown verbs stay `bsc ui`'s, so its
+/// error shows the MERGED overview rather than this partial one).
+pub fn command_docs() -> &'static [CmdDoc] {
+    COMPONENT_COMMANDS
+}
+
+/// Whether `args` is one of the store's MUTATING verb invocations — `set` / `remove` on either
+/// collection (`… set|remove` or `… kit set|remove`) — gated by the session's runtime `ui` scope
+/// (#2470). The trailing `help` form (`set help`, `kit set help`) is NOT a mutation: help must stay
+/// reachable from a read-scoped session. Read verbs (`list`/`get`/`eslint-preset`/`usage`/`kit
+/// list|get`) never gate.
+fn is_scoped_mutation(args: &[String]) -> bool {
+    let (verb, next) = if args.first().map(String::as_str) == Some("kit") {
+        (args.get(1), args.get(2))
+    } else {
+        (args.first(), args.get(1))
+    };
+    matches!(verb.map(String::as_str), Some("set") | Some("remove"))
+        && next.map(String::as_str) != Some("help")
+}
+
+/// The component-verb entrypoint: `args` is everything after the mount point (`bsc ui`, or the
+/// deprecated `bsc component` alias — `prog` is that display name for help/errors). `<prog> kit …`
+/// routes to the KIT collection; everything else to the COMPONENT collection — each is the shared
+/// verbatim-JSON store CLI over its own dir.
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
+    // Runtime `ui` scope check (#2470, defense-in-depth): refuse the mutating verbs when the
+    // session's `$BSC_SCOPES` doc scopes `ui` to read/none — BEFORE any store is touched. Guarding
+    // here (the verb dispatch this crate owns) holds under BOTH mounts of the store CLI (`bsc ui`
+    // and the deprecated `bsc component` alias, #2469). Absent env ⇒ unrestricted (hand shells);
+    // NOT a security boundary — the launch-time deny rules are (see `bsc_cli_util`).
+    if is_scoped_mutation(&args) {
+        bsc_cli_util::require_write_scope("ui")?;
+    }
     match args.first().map(String::as_str) {
         Some("kit") => {
             let kit_prog = format!("{prog} kit");
@@ -329,13 +364,14 @@ fn cmd_usage(args: &[String], prog: &str) -> Result<(), String> {
             Ok(())
         }
         "add" => {
-            let project_key = positional.get(1).ok_or("usage: bsc component usage add <projectKey> <kitId>")?;
-            let kit_id = positional.get(2).ok_or("usage: bsc component usage add <projectKey> <kitId>")?;
+            let usage_err = || format!("usage: {prog} usage add <projectKey> <kitId>");
+            let project_key = positional.get(1).ok_or_else(usage_err)?;
+            let kit_id = positional.get(2).ok_or_else(usage_err)?;
             println!("{}", crate::usage::add(project_key, kit_id)?);
             Ok(())
         }
         "remove" => {
-            let id = positional.get(1).ok_or("usage: bsc component usage remove <id>")?;
+            let id = positional.get(1).ok_or_else(|| format!("usage: {prog} usage remove <id>"))?;
             crate::usage::remove(id)?;
             if !json {
                 println!("removed {id}");
@@ -368,18 +404,18 @@ mod tests {
 
     #[test]
     fn component_help_lists_commands_incl_the_kit_pointer() {
-        let ov = bsc_cli_util::help_overview("bsc component", TAGLINE, COMPONENT_COMMANDS);
+        let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMPONENT_COMMANDS);
         for c in ["list", "get", "set", "remove", "kit"] {
             assert!(ov.contains(c), "overview lists {c}");
         }
         // The kit pointer's detail explains the sub-noun.
-        let kit = bsc_cli_util::help_for("bsc component", TAGLINE, COMPONENT_COMMANDS, "kit");
-        assert!(kit.contains("bsc component kit"));
+        let kit = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "kit");
+        assert!(kit.contains("bsc ui kit"));
     }
 
     #[test]
     fn kit_help_lists_the_kit_crud() {
-        let ov = bsc_cli_util::help_overview("bsc component kit", KIT_TAGLINE, KIT_COMMANDS);
+        let ov = bsc_cli_util::help_overview("bsc ui kit", KIT_TAGLINE, KIT_COMMANDS);
         for c in ["list", "get", "set", "remove"] {
             assert!(ov.contains(c), "kit overview lists {c}");
         }
@@ -387,10 +423,21 @@ mod tests {
 
     #[test]
     fn component_help_lists_the_eslint_preset_command() {
-        let ov = bsc_cli_util::help_overview("bsc component", TAGLINE, COMPONENT_COMMANDS);
+        let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMPONENT_COMMANDS);
         assert!(ov.contains("eslint-preset"));
-        let d = bsc_cli_util::help_for("bsc component", TAGLINE, COMPONENT_COMMANDS, "eslint-preset");
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "eslint-preset");
         assert!(d.contains("--kit") && d.contains("eslint config"));
+    }
+
+    #[test]
+    fn command_docs_expose_the_component_surface_for_the_ui_mount() {
+        // `bsc ui` composes this catalog (#2469): every store verb is present, and the usage text
+        // teaches the CANONICAL `bsc ui …` form (the `bsc component` alias is deprecated).
+        let names: Vec<&str> = command_docs().iter().map(|c| c.name).collect();
+        assert_eq!(names, vec!["list", "get", "set", "remove", "kit", "eslint-preset", "usage"]);
+        for c in command_docs() {
+            assert!(!c.usage.contains("bsc component"), "{}'s usage teaches `bsc ui`, not the alias", c.name);
+        }
     }
 
     #[test]
@@ -437,10 +484,46 @@ mod tests {
     }
 
     #[test]
+    fn is_scoped_mutation_classifies_exactly_the_mutating_verbs() {
+        let a = |args: &[&str]| args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // The four mutating shapes (#2470) — gated on both collections.
+        assert!(is_scoped_mutation(&a(&["set"])));
+        assert!(is_scoped_mutation(&a(&["remove", "button"])));
+        assert!(is_scoped_mutation(&a(&["kit", "set"])));
+        assert!(is_scoped_mutation(&a(&["kit", "remove", "react-ui"])));
+        // Read verbs never gate.
+        for read in [
+            &["list"][..], &["get", "button"], &["kit", "list"], &["kit", "get", "react-ui"],
+            &["eslint-preset"], &["usage", "list"], &["help"], &[],
+        ] {
+            assert!(!is_scoped_mutation(&a(read)), "read shape gated: {read:?}");
+        }
+        // The trailing `help` form is documentation, not a mutation — reachable read-scoped.
+        assert!(!is_scoped_mutation(&a(&["set", "help"])));
+        assert!(!is_scoped_mutation(&a(&["kit", "remove", "help"])));
+    }
+
+    // ONE test owns the real $BSC_SCOPES env var (parallel test threads share the process env).
+    #[test]
+    fn mutating_verbs_refuse_under_a_read_ui_scope_before_touching_the_store() {
+        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
+        // `remove` errs at the scope gate — BEFORE any store dir is resolved or touched (no --dir
+        // is passed here on purpose: reaching the store would touch the real default location).
+        let err = run(vec!["remove".into(), "x".into()], "bsc component").unwrap_err();
+        assert!(err.contains("'ui'"), "refusal names the scope: {err}");
+        assert!(err.contains("BSC_SCOPES"), "refusal names the env doc: {err}");
+        let err = run(vec!["kit".into(), "set".into()], "bsc component").unwrap_err();
+        assert!(err.contains("read-only"), "kit set refuses too: {err}");
+        // Help stays reachable under the read scope (prints, returns Ok).
+        assert!(run(vec!["set".into(), "help".into()], "bsc component").is_ok());
+        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+    }
+
+    #[test]
     fn component_help_lists_the_usage_command() {
-        let ov = bsc_cli_util::help_overview("bsc component", TAGLINE, COMPONENT_COMMANDS);
+        let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMPONENT_COMMANDS);
         assert!(ov.contains("usage"));
-        let d = bsc_cli_util::help_for("bsc component", TAGLINE, COMPONENT_COMMANDS, "usage");
-        assert!(d.contains("bsc component usage add") && d.contains("consumer index"));
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "usage");
+        assert!(d.contains("bsc ui usage add") && d.contains("consumer index"));
     }
 }
