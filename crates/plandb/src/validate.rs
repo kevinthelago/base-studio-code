@@ -536,6 +536,198 @@ pub fn market_readiness(v: &Value) -> String {
     }
 }
 
+// ── transformations (`bsc plan transformation add/update`) — the modification list (#2509) ──────
+
+/// The transformation verb taxonomy — each verb has a known recipe + verification pattern (#2509).
+/// (Slice b externalizes the verb + recipe taxonomies to `@data`; until then this is the vocabulary.)
+const TRANSFORMATION_VERBS: &[&str] = &[
+    "rename", "extract", "split", "merge", "move", "replace", "upgrade", "restyle", "remove",
+    "optimize", "harden",
+];
+
+/// The recipes a transformation's `provenance.recipe` may name — the composite transforms that
+/// GENERATE list entries (the codified refactor workflow + the migrate-to-kit flagship).
+const TRANSFORMATION_RECIPES: &[&str] = &["migrate-to-kit", "extract-and-abstract"];
+
+/// Validate ONE transformation row against the #2509 contract — the unit behind the bottom-up
+/// confirm queue. Required: `verb` from the taxonomy; a non-empty `title`; a `target` object with a
+/// non-empty `description` (targets are DISCOVERED by scanning, never invented) and optional `files`
+/// (non-empty strings); a non-empty `delta` (from-state → to-state); non-empty `invariants` (what
+/// must NOT change) and `owns` (the blast radius); an integer `tier >= 0` (the composition tier the
+/// confirm queue orders by). Optional: `id` (non-empty when present), `dependsOn` (strings),
+/// `provenance` (`recipe` from the recipe set, `evidence` strings), `kitContribution`/`confirmed`
+/// (booleans), `spec` (an object — the KitNode render spec the pane previews). Rejections are
+/// field-level (#2395) so an LLM author can self-correct.
+pub fn validate_transformation(v: &Value) -> Result<(), String> {
+    let mut errs = Vec::new();
+    transformation_errors("", v, &mut errs);
+    if errs.is_empty() { Ok(()) } else { Err(reject("transformation", errs)) }
+}
+
+/// Validate a whole `transformation add` batch (already normalized to a slice — one stdin object or
+/// an array). The batch is rejected WHOLE (nothing is written) with each error naming its row.
+pub fn validate_transformations(rows: &[Value]) -> Result<(), String> {
+    let mut errs = Vec::new();
+    for (i, row) in rows.iter().enumerate() {
+        transformation_errors(&format!("transformations[{i}]."), row, &mut errs);
+    }
+    if errs.is_empty() { Ok(()) } else { Err(reject("transformation batch", errs)) }
+}
+
+/// Validate a `transformation update <id>` blob: the row contract, plus its `"id"` (when present)
+/// must MATCH the `<id>` argument — the row is keyed by the argument but readers (and other rows'
+/// `dependsOn`) key off the blob's `id`, so a mismatch makes the item unreachable under either name.
+pub fn validate_transformation_update(arg_id: &str, v: &Value) -> Result<(), String> {
+    let mut errs = Vec::new();
+    transformation_errors("", v, &mut errs);
+    if let Some(id) = str_of(v, "id") {
+        if id != arg_id.trim() {
+            errs.push(format!(
+                r#"id: the blob's id "{id}" does not match the argument "{arg_id}" — readers and dependsOn key off the row's "id", so they must agree"#
+            ));
+        }
+    }
+    if errs.is_empty() { Ok(()) } else { Err(reject("transformation", errs)) }
+}
+
+/// One row's field-level errors, each prefixed with `at` (`""` for a single row,
+/// `"transformations[i]."` in a batch).
+fn transformation_errors(at: &str, v: &Value, errs: &mut Vec<String>) {
+    if !v.is_object() {
+        errs.push(format!(
+            "{}: each transformation must be a JSON object (verb / title / target / delta / invariants / owns / tier)",
+            if at.is_empty() { "transformation" } else { at.trim_end_matches('.') }
+        ));
+        return;
+    }
+    match str_of(v, "verb") {
+        Some(verb) if TRANSFORMATION_VERBS.contains(&verb) => {}
+        Some(verb) => errs.push(format!(
+            r#"{at}verb: unknown verb "{verb}" — the taxonomy is {}"#,
+            quote_str_list(TRANSFORMATION_VERBS)
+        )),
+        None => errs.push(format!(r#"{at}verb: missing — one of {}"#, quote_str_list(TRANSFORMATION_VERBS))),
+    }
+    if str_of(v, "title").is_none() {
+        errs.push(format!("{at}title: missing non-empty title — the queue item's one-line name"));
+    }
+    if present(v, "id") && str_of(v, "id").is_none() {
+        errs.push(format!(
+            "{at}id: must be a non-empty string when present (the row key; derived from the title when omitted)"
+        ));
+    }
+    match v.get("target") {
+        Some(t) if t.is_object() => {
+            if str_of(t, "description").is_none() {
+                errs.push(format!(
+                    "{at}target.description: missing non-empty description — the identified piece of the EXISTING system (discovered by scanning, never invented)"
+                ));
+            }
+            if present(t, "files") {
+                nonempty_string_list(&format!("{at}target.files"), t.get("files").unwrap_or(&Value::Null), false, errs);
+            }
+        }
+        Some(_) => errs.push(format!(r#"{at}target: must be an object {{"description": "...", "files": ["..."]}}"#)),
+        None => errs.push(format!(
+            r#"{at}target: missing — {{"description": "the scanned target"}}; targets are discovered by scanning the linked repos, never invented"#
+        )),
+    }
+    if str_of(v, "delta").is_none() {
+        errs.push(format!("{at}delta: missing non-empty delta — the from-state → to-state"));
+    }
+    nonempty_string_list(&format!("{at}invariants"), v.get("invariants").unwrap_or(&Value::Null), true, errs);
+    nonempty_string_list(&format!("{at}owns"), v.get("owns").unwrap_or(&Value::Null), true, errs);
+    match v.get("tier") {
+        Some(t) => match t.as_i64() {
+            Some(n) if n >= 0 => {}
+            Some(n) => errs.push(format!(
+                "{at}tier: {n} is negative — the composition tier is an integer >= 0 (0 = primitives … N = pages)"
+            )),
+            None => errs.push(format!(
+                "{at}tier: not an integer — the composition tier is an integer >= 0 (0 = primitives … N = pages)"
+            )),
+        },
+        None => errs.push(format!(
+            "{at}tier: missing — the composition tier the bottom-up confirm queue orders by (an integer >= 0: 0 = primitives … N = pages)"
+        )),
+    }
+    if present(v, "dependsOn") {
+        nonempty_string_list(&format!("{at}dependsOn"), v.get("dependsOn").unwrap_or(&Value::Null), false, errs);
+    }
+    if let Some(p) = v.get("provenance").filter(|p| !p.is_null()) {
+        if !p.is_object() {
+            errs.push(format!(r#"{at}provenance: must be an object {{"recipe": ..., "evidence": ["..."]}} when present"#));
+        } else {
+            if present(p, "recipe") {
+                match str_of(p, "recipe") {
+                    Some(r) if TRANSFORMATION_RECIPES.contains(&r) => {}
+                    _ => errs.push(format!(
+                        "{at}provenance.recipe: unknown recipe — expected {}",
+                        quote_str_list(TRANSFORMATION_RECIPES)
+                    )),
+                }
+            }
+            if present(p, "evidence") {
+                nonempty_string_list(&format!("{at}provenance.evidence"), p.get("evidence").unwrap_or(&Value::Null), false, errs);
+            }
+        }
+    }
+    for key in ["kitContribution", "confirmed"] {
+        if present(v, key) && !v.get(key).map(Value::is_boolean).unwrap_or(false) {
+            errs.push(format!("{at}{key}: must be a boolean when present"));
+        }
+    }
+    if present(v, "spec") && !v.get("spec").map(Value::is_object).unwrap_or(false) {
+        errs.push(format!(
+            "{at}spec: must be an object when present (the optional KitNode render spec the pane previews)"
+        ));
+    }
+}
+
+/// `"a" | "b" | …` over a static vocabulary (the `&'static str` sibling of [`quote_list`]).
+fn quote_str_list(items: &[&str]) -> String {
+    items.iter().map(|s| format!("\"{s}\"")).collect::<Vec<_>>().join(" | ")
+}
+
+/// Require `val` to be an array of non-empty strings; when `required`, it must also be present and
+/// non-empty. Pushes one field-level error naming `at` on any failure.
+fn nonempty_string_list(at: &str, val: &Value, required: bool, errs: &mut Vec<String>) {
+    match val.as_array() {
+        Some(arr) => {
+            if required && arr.is_empty() {
+                errs.push(format!("{at}: must be a NON-EMPTY array of strings"));
+            } else if !arr.iter().all(|s| s.as_str().map(str::trim).filter(|x| !x.is_empty()).is_some()) {
+                errs.push(format!("{at}: every entry must be a non-empty string"));
+            }
+        }
+        None if required => errs.push(format!("{at}: missing — a non-empty array of strings")),
+        None => errs.push(format!("{at}: must be an array of strings when present")),
+    }
+}
+
+/// The non-fatal readiness echo after a transformation write (mirrors [`deploy_readiness`]):
+/// `N transformations · M confirmed · tiers 0-K` — so the author (and the pane) see how far the
+/// bottom-up confirm queue is from the `transformationsConfirmed` gate (every item confirmed).
+pub fn transformations_readiness(rows: &[Value]) -> String {
+    if rows.is_empty() {
+        return "0 transformations — gate blocked: decompose the modification request first (the transformationsConfirmed gate needs the list, every item confirmed)".into();
+    }
+    let confirmed = rows
+        .iter()
+        .filter(|r| r.get("confirmed").and_then(Value::as_bool).unwrap_or(false))
+        .count();
+    let max_tier = rows.iter().filter_map(|r| r.get("tier").and_then(Value::as_i64)).max().unwrap_or(0).max(0);
+    let base = format!("{} transformations · {confirmed} confirmed · tiers 0-{max_tier}", rows.len());
+    if confirmed == rows.len() {
+        format!("{base} — all confirmed")
+    } else {
+        format!(
+            "{base} — gate blocked: {} pending (the USER confirms each item in the pane, bottom-up)",
+            rows.len() - confirmed
+        )
+    }
+}
+
 // ── fleet plan (`bsc plan fleet set` / `fleet stream set` / `fleet meta set`) ────────────────────
 
 /// Validate a whole FleetPlan blob against what `fleet_set` + the frontend `parseFleetFile` consume.
@@ -1116,6 +1308,170 @@ mod tests {
             let sum: f64 = w.values().filter_map(Value::as_f64).sum();
             assert!((sum - 1.0).abs() < 1e-9, "{cat} weights sum to 1 (got {sum})");
         }
+    }
+
+    // ── transformations (#2509) ──────────────────────────────────────────────────────────────
+
+    /// A fully specified transformation (the #2509 contract shape, every optional present).
+    fn good_transformation() -> Value {
+        json!({
+            "id": "replace-bespoke-buttons",
+            "verb": "replace",
+            "title": "Replace the bespoke buttons with the kit Button",
+            "target": {
+                "description": "the hand-rolled button components across the dashboard",
+                "files": ["src/components/SaveButton.tsx"]
+            },
+            "delta": "each bespoke button renders through the kit Button",
+            "invariants": ["existing tests pass", "click handlers keep their behavior"],
+            "owns": ["src/components/*Button*.tsx"],
+            "dependsOn": [],
+            "tier": 0,
+            "provenance": { "recipe": "migrate-to-kit", "evidence": ["src/components/SaveButton.tsx"] },
+            "kitContribution": false,
+            "spec": { "type": "Button", "props": { "variant": "primary" } },
+            "confirmed": false
+        })
+    }
+
+    #[test]
+    fn transformation_accepts_the_contract_shape_with_and_without_optionals() {
+        assert!(validate_transformation(&good_transformation()).is_ok());
+        // the minimal row: only the required fields
+        let lean = json!({
+            "verb": "extract", "title": "Extract the form field",
+            "target": { "description": "the duplicated form scaffold" },
+            "delta": "one shared FormField", "invariants": ["existing tests pass"],
+            "owns": ["src/shared/"], "tier": 1
+        });
+        assert!(validate_transformation(&lean).is_ok());
+    }
+
+    #[test]
+    fn transformation_rejects_each_broken_field_with_a_field_level_message() {
+        // non-object row
+        assert!(validate_transformation(&json!("nope")).unwrap_err().contains("must be a JSON object"));
+        // unknown / missing verb — names the field + the taxonomy
+        let mut t = good_transformation();
+        t["verb"] = json!("polish");
+        let err = validate_transformation(&t).unwrap_err();
+        assert!(err.contains(r#"verb: unknown verb "polish""#) && err.contains("\"harden\""), "{err}");
+        let mut t = good_transformation();
+        t.as_object_mut().unwrap().remove("verb");
+        assert!(validate_transformation(&t).unwrap_err().contains("verb: missing"));
+        // title / delta
+        let mut t = good_transformation();
+        t["title"] = json!("  ");
+        assert!(validate_transformation(&t).unwrap_err().contains("title: missing non-empty"));
+        let mut t = good_transformation();
+        t.as_object_mut().unwrap().remove("delta");
+        assert!(validate_transformation(&t).unwrap_err().contains("delta: missing non-empty"));
+        // target: missing / wrong shape / empty description / bad files
+        let mut t = good_transformation();
+        t.as_object_mut().unwrap().remove("target");
+        assert!(validate_transformation(&t).unwrap_err().contains("target: missing"));
+        let mut t = good_transformation();
+        t["target"] = json!("the buttons");
+        assert!(validate_transformation(&t).unwrap_err().contains("target: must be an object"));
+        let mut t = good_transformation();
+        t["target"] = json!({ "files": ["a.tsx"] });
+        assert!(validate_transformation(&t).unwrap_err().contains("target.description"));
+        let mut t = good_transformation();
+        t["target"]["files"] = json!(["ok.tsx", ""]);
+        assert!(validate_transformation(&t).unwrap_err().contains("target.files"));
+        // invariants: missing / empty / blank entry
+        let mut t = good_transformation();
+        t.as_object_mut().unwrap().remove("invariants");
+        assert!(validate_transformation(&t).unwrap_err().contains("invariants: missing"));
+        let mut t = good_transformation();
+        t["invariants"] = json!([]);
+        assert!(validate_transformation(&t).unwrap_err().contains("invariants: must be a NON-EMPTY array"));
+        let mut t = good_transformation();
+        t["invariants"] = json!(["ok", " "]);
+        assert!(validate_transformation(&t).unwrap_err().contains("invariants: every entry"));
+        // owns (the blast radius): empty
+        let mut t = good_transformation();
+        t["owns"] = json!([]);
+        assert!(validate_transformation(&t).unwrap_err().contains("owns: must be a NON-EMPTY array"));
+        // tier: missing / negative / non-integer
+        let mut t = good_transformation();
+        t.as_object_mut().unwrap().remove("tier");
+        assert!(validate_transformation(&t).unwrap_err().contains("tier: missing"));
+        let mut t = good_transformation();
+        t["tier"] = json!(-1);
+        assert!(validate_transformation(&t).unwrap_err().contains("tier: -1 is negative"));
+        let mut t = good_transformation();
+        t["tier"] = json!(1.5);
+        assert!(validate_transformation(&t).unwrap_err().contains("tier: not an integer"));
+        // dependsOn entries must be non-empty strings
+        let mut t = good_transformation();
+        t["dependsOn"] = json!([7]);
+        assert!(validate_transformation(&t).unwrap_err().contains("dependsOn"));
+        // provenance: wrong shape / unknown recipe / bad evidence
+        let mut t = good_transformation();
+        t["provenance"] = json!("scan");
+        assert!(validate_transformation(&t).unwrap_err().contains("provenance: must be an object"));
+        let mut t = good_transformation();
+        t["provenance"]["recipe"] = json!("copy-paste");
+        let err = validate_transformation(&t).unwrap_err();
+        assert!(err.contains("provenance.recipe: unknown recipe") && err.contains("extract-and-abstract"), "{err}");
+        let mut t = good_transformation();
+        t["provenance"]["evidence"] = json!([""]);
+        assert!(validate_transformation(&t).unwrap_err().contains("provenance.evidence"));
+        // booleans + spec + id
+        let mut t = good_transformation();
+        t["kitContribution"] = json!("yes");
+        assert!(validate_transformation(&t).unwrap_err().contains("kitContribution: must be a boolean"));
+        let mut t = good_transformation();
+        t["confirmed"] = json!("true");
+        assert!(validate_transformation(&t).unwrap_err().contains("confirmed: must be a boolean"));
+        let mut t = good_transformation();
+        t["spec"] = json!("Button");
+        assert!(validate_transformation(&t).unwrap_err().contains("spec: must be an object"));
+        let mut t = good_transformation();
+        t["id"] = json!("  ");
+        assert!(validate_transformation(&t).unwrap_err().contains("id: must be a non-empty string"));
+        // the rejection wrapper documents the escape hatch
+        assert!(validate_transformation(&json!({})).unwrap_err().contains("--force"));
+    }
+
+    #[test]
+    fn transformation_batch_names_the_offending_row_and_update_checks_the_id() {
+        // a batch error carries the row index so the author can find it
+        let err = validate_transformations(&[good_transformation(), json!({ "verb": "extract" })]).unwrap_err();
+        assert!(err.contains("transformations[1].title"), "{err}");
+        assert!(!err.contains("transformations[0]"), "the good row raises nothing: {err}");
+        assert!(validate_transformations(&[good_transformation()]).is_ok());
+        // update: the blob id must match the argument (readers + dependsOn key off the blob's id)
+        assert!(validate_transformation_update("replace-bespoke-buttons", &good_transformation()).is_ok());
+        let err = validate_transformation_update("other-id", &good_transformation()).unwrap_err();
+        assert!(err.contains(r#"does not match the argument "other-id""#), "{err}");
+        // an id-less update blob is fine — the row is keyed by the argument
+        let mut t = good_transformation();
+        t.as_object_mut().unwrap().remove("id");
+        assert!(validate_transformation_update("anything", &t).is_ok());
+    }
+
+    #[test]
+    fn transformations_readiness_reports_counts_tiers_and_the_gate() {
+        // empty list: the gate can never pass — say so
+        let echo = transformations_readiness(&[]);
+        assert!(echo.contains("0 transformations") && echo.contains("gate blocked"), "{echo}");
+        // partial: N · M · tiers 0-K + the pending count (and WHO confirms)
+        let mut a = good_transformation();
+        a["confirmed"] = json!(true);
+        let mut b = good_transformation();
+        b["tier"] = json!(2);
+        b.as_object_mut().unwrap().remove("confirmed");
+        let c = good_transformation(); // confirmed: false
+        let echo = transformations_readiness(&[a.clone(), b.clone(), c]);
+        assert!(echo.contains("3 transformations · 1 confirmed · tiers 0-2"), "{echo}");
+        assert!(echo.contains("gate blocked: 2 pending") && echo.contains("USER confirms"), "{echo}");
+        // all confirmed: the gate-ready branch
+        b["confirmed"] = json!(true);
+        let echo = transformations_readiness(&[a, b]);
+        assert!(echo.contains("2 transformations · 2 confirmed · tiers 0-2"), "{echo}");
+        assert!(echo.contains("all confirmed"), "{echo}");
     }
 
     // ── fleet ────────────────────────────────────────────────────────────────────────────────
