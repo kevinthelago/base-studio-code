@@ -1,0 +1,69 @@
+{
+  "_comment": "Market-stage scoring rubric (#2430). Consumption: the planner stores the RAW 1-5 scores per dimension (`bsc plan market set` -> plan.db, validated against exactly these dimension ids); the FRONTEND computes the weighted total by joining the raw scores with the `weights` entry for the project's blueprint category. Each category's weights sum to 1.",
+  "dimensions": [
+    {
+      "id": "problemSeverity",
+      "label": "Problem severity",
+      "blurb": "How painful the problem is when it occurs — revealed by unprompted complaints (reviews, forums, issue trackers), not stated preference."
+    },
+    {
+      "id": "problemFrequency",
+      "label": "Problem frequency",
+      "blurb": "How often the target user hits the problem — recurring workflows score higher than rare events."
+    },
+    {
+      "id": "reachableMarket",
+      "label": "Reachable market",
+      "blurb": "Bottom-up SOM: buyer counts × realistic price × plausible penetration, from free statistical sources."
+    },
+    {
+      "id": "competitiveGap",
+      "label": "Competitive gap",
+      "blurb": "What job incumbents do badly, for whom, and why they structurally won't fix it — the gap statement."
+    },
+    {
+      "id": "timing",
+      "label": "Timing",
+      "blurb": "Category trajectory: search trend direction, funding flow, regulatory/platform drivers."
+    },
+    {
+      "id": "moat",
+      "label": "Moat",
+      "blurb": "What compounds defensibly after launch — data, integrations, workflow depth, distribution."
+    }
+  ],
+  "weights": {
+    "greenfield": {
+      "problemSeverity": 0.15,
+      "problemFrequency": 0.1,
+      "reachableMarket": 0.25,
+      "competitiveGap": 0.15,
+      "timing": 0.25,
+      "moat": 0.1
+    },
+    "transform": {
+      "problemSeverity": 0.2,
+      "problemFrequency": 0.15,
+      "reachableMarket": 0.15,
+      "competitiveGap": 0.2,
+      "timing": 0.15,
+      "moat": 0.15
+    },
+    "harden": {
+      "problemSeverity": 0.25,
+      "problemFrequency": 0.2,
+      "reachableMarket": 0.15,
+      "competitiveGap": 0.05,
+      "timing": 0.15,
+      "moat": 0.2
+    },
+    "maintain": {
+      "problemSeverity": 0.25,
+      "problemFrequency": 0.25,
+      "reachableMarket": 0.1,
+      "competitiveGap": 0.05,
+      "timing": 0.15,
+      "moat": 0.2
+    }
+  }
+}

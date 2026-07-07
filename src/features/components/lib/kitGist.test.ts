@@ -65,6 +65,21 @@ describe("component-kit gist envelope (#2305 slice 1c)", () => {
     const r2 = kitFromManifest(kitToManifest(kit, comps));
     expect(r2.ok && r2.components[0].shapes).toBeUndefined();
   });
+
+  it("rides the rail-hierarchy axes through a share; a missing axis stays absent (#2487)", () => {
+    const r = kitFromManifest(kitToManifest({ ...kit, tech: "react", style: "studio" }, comps));
+    expect(r.ok && r.kit.tech).toBe("react");
+    expect(r.ok && r.kit.style).toBe("studio");
+    // tech normalizes to its lowercase-slug form; declared-but-blank counts as missing.
+    const r2 = kitFromManifest(kitToManifest({ ...kit, tech: "React", style: "  " }, comps));
+    expect(r2.ok && r2.kit.tech).toBe("react");
+    expect(r2.ok && r2.kit.style).toBeUndefined();
+    // A kit that never declared the axes imports without them (no fabricated values) — it groups
+    // into the rail's "other" bucket instead of crashing.
+    const r3 = kitFromManifest(kitToManifest(kit, comps));
+    expect(r3.ok && r3.kit.tech).toBeUndefined();
+    expect(r3.ok && r3.kit.style).toBeUndefined();
+  });
 });
 
 describe("publish with a kit-store identity (#2465)", () => {

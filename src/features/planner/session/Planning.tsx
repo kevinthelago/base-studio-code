@@ -76,6 +76,7 @@ export function Planning({ visible }: { visible: boolean }) {
     planStages, planConfirmedStages,
     planAuthoredBlueprint, importBlueprint, setAuthoredBlueprint,
     planDeployConfig, setPlanDeployConfig,
+    planMarketConfig,
     planSourceConfig, planIntegrationConfig,
     reposPublic, repoPublic,
     injectionHardGate, planInjectionAck, acknowledgePlanInjections,
@@ -323,6 +324,12 @@ export function Planning({ visible }: { visible: boolean }) {
     () => normalizeDeployConfig(planDeployConfig[effectiveProjectId], publishRepos),
     [planDeployConfig, effectiveProjectId, publishRepos],
   );
+  // Market stage (#2430): the scored desk-research assessment the planner records via
+  // `bsc plan market set`; drives the `marketDefined` gate signal.
+  const marketCfg = useMemo(
+    () => planMarketConfig[effectiveProjectId] ?? null,
+    [planMarketConfig, effectiveProjectId],
+  );
   // Source stage (#source-pane): the project's migration-source config — declared + connected
   // legacy systems; the `sourcesConnected` gate signal derives from it.
   const sourceCfg = useMemo(
@@ -434,7 +441,7 @@ export function Planning({ visible }: { visible: boolean }) {
     sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
     confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
-    deployCfg, intgCfg, isAuthoring, authoringSig,
+    deployCfg, marketCfg, intgCfg, isAuthoring, authoringSig,
   });
 
   // The focused-pane SELECTION + its derived footer/pill/prompts live in usePlanFocusedPane, called

@@ -91,18 +91,28 @@ describe("blueprints — seed library", () => {
     }
   });
 
+  it("adds an optional market stage right after discovery in the greenfield blueprints (#2430)", () => {
+    for (const id of ["default", "complete"]) {
+      const bp = makeBlueprints().find((b) => b.id === id)!;
+      const keys = bp.sections.map((s) => s.key);
+      expect(keys.indexOf("market"), `${id}: market right after discovery`).toBe(keys.indexOf("discovery") + 1);
+      // Optional — a project that doesn't need the desk-research assessment skips it (#2267).
+      expect(bp.sections.find((s) => s.key === "market")!.optional).toBe(true);
+    }
+  });
+
   it("keeps the Default blueprint minimal; the advanced stages live on Complete (#1003/#1914)", () => {
     const bp = (id: string) => makeBlueprints().find((b) => b.id === id)!;
     const keysOf = (id: string) => bp(id).sections.map((s) => s.key);
     // Default is the simplest greenfield path — no source/mcps/automations/skills. The unified
     // vocabulary (#1914) collapsed repos+deploy → `deployment` and structure+permissions → `streams`.
-    expect(keysOf("default")).toEqual(["discovery", "deployment", "features", "ui", "streams"]);
+    expect(keysOf("default")).toEqual(["discovery", "market", "deployment", "features", "ui", "streams"]);
     for (const k of ["source", "mcps", "automations", "skills", "repos", "structure", "permissions"]) {
       expect(keysOf("default"), `default omits ${k}`).not.toContain(k);
     }
     // Complete is the thorough greenfield path — the trimmed Default flow plus source + the advanced stages.
     expect(keysOf("complete")).toEqual(
-      ["discovery", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
+      ["discovery", "market", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
     );
     // Complete sorts right after Default in the greenfield group.
     const greenfield = makeBlueprints().filter((b) => b.category === "greenfield").map((b) => b.id);
@@ -521,7 +531,7 @@ describe("dedupeSections", () => {
     const complete = makeBlueprints().find((b) => b.id === "complete")!;
     const overview = complete.sections.filter((s) => s.enabled).map((s) => s.key);
     expect(overview).toEqual(
-      ["discovery", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
+      ["discovery", "market", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
     );
   });
 

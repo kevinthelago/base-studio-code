@@ -32,8 +32,11 @@ import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { RoleDot, KitChip } from "./kitChrome";
-import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecord } from "./lib/model";
+import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecord, type Kit } from "./lib/model";
+import { groupKits, type KitTreeNode } from "./lib/kitGroups";
 import { renderSpecimen, type PreviewTheme } from "./specimens";
+import { ThemeScope, DEFAULT_THEME } from "@/shared/ui/kit";
+import type { KitThemeRecord } from "./lib/themes";
 import "./designStudio.css";
 
 type Tab = "overview" | "source" | "usage";
@@ -51,6 +54,8 @@ const GEN_MS = 1600;
 export function DesignStudio() {
   const components = useAppStore((s) => s.components);
   const kits = useAppStore((s) => s.kits);
+  // The hydrated kit-THEME collection (#2488) — feeds the preview's palette switcher.
+  const kitThemes = useAppStore((s) => s.kitThemes);
 
   const firstFor = (kitId: string) => components.find((c) => c.kitId === kitId);
   const [kitId, setKitId] = useState(() => kits[0]?.id ?? "");
@@ -58,6 +63,9 @@ export function DesignStudio() {
   const [tab, setTab] = useState<Tab>("overview");
   const [variant, setVariant] = useState(() => firstFor(kits[0]?.id ?? "")?.variants[0] ?? "default");
   const [theme, setTheme] = useState<PreviewTheme>("dark");
+  // The kit-THEME axis of the preview (#2488) — orthogonal to the dark/light SURFACE toggle above:
+  // the surface picks the sandbox palette, the kit theme overrides the semantic component tokens.
+  const [kitTheme, setKitTheme] = useState<string>(DEFAULT_THEME);
   const [vp, setVpKind] = useState<Viewport>("auto");
   const [query, setQuery] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -132,7 +140,58 @@ export function DesignStudio() {
   const gvpFit = gvp.fit;
   useEffect(() => { gvpFit(); }, [kitId, gvpFit]); // re-fit on mount + whenever the kit switches
 
+  // ── rail hierarchy (#2487) — technology → visual language → kit → components, with trivial levels
+  // auto-flattened (lib/kitGroups: today's single-tech library renders exactly as flat as before).
+  const railTree = useMemo(() => groupKits(kits), [kits]);
+
   if (!kit) return <StudioEmpty />;
+
+  // One rail kit entry: the collapsible kit head + its (search-filtered) component rows.
+  const renderRailKit = (k: Kit) => {
+    const open = !!expanded[k.id];
+    const inKit = components.filter((c) => c.kitId === k.id);
+    const rows = inKit.filter(match);
+    return (
+      <Box key={k.id} style={{ marginBottom: 4 }}>
+        <Box as="button" className={`ds-kithead${k.id === kitId ? " active" : ""}`} onClick={() => setExpanded((e) => ({ ...e, [k.id]: !e[k.id] }))}>
+          <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
+          <ColorSwatch color={k.dot} size={7} />
+          <Text as="span" weight={500} style={{ flex: 1, textAlign: "left" }}>{k.name}</Text>
+          <Text mono size="xxs" tone="dim">{inKit.length}</Text>
+        </Box>
+        {open && (
+          <Box style={{ margin: "2px 0 6px", paddingLeft: 6 }}>
+            {rows.map((c) => (
+              <Box as="button" key={c.id} className={`ds-comprow${c.id === compId && k.id === kitId ? " on" : ""}`} onClick={() => selectComp(c)}>
+                <RoleDot role={c.role} size={7} glow={3} />
+                <Text as="span" style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</Text>
+                <Text mono size="xxs" tone="dim" style={{ padding: "1px 5px", background: "var(--bg-soft)", borderRadius: 4 }}>×{c.used}</Text>
+              </Box>
+            ))}
+            {open && rows.length === 0 && query && (
+              <Text size={11} tone="dim" as="div" style={{ padding: "6px 10px", fontStyle: "italic" }}>no matches</Text>
+            )}
+          </Box>
+        )}
+      </Box>
+    );
+  };
+  // A rail tree node: a kit entry, or a collapsible tech/style group header (default OPEN — its
+  // expand state shares the `expanded` record under the group's stable key).
+  const renderRailNode = (n: KitTreeNode): ReactNode => {
+    if (n.kind === "kit") return renderRailKit(n.kit);
+    const open = expanded[n.key] ?? true;
+    return (
+      <Box key={n.key} style={{ marginBottom: 4 }}>
+        <Box as="button" className="ds-grouphead" aria-expanded={open} title={`${n.level === "tech" ? "technology" : "visual language"}: ${n.label}`} onClick={() => setExpanded((e) => ({ ...e, [n.key]: !(e[n.key] ?? true) }))}>
+          <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
+          <Text as="span" mono size="xxs" style={{ flex: 1, textAlign: "left", letterSpacing: ".07em", textTransform: "uppercase" }}>{n.label}</Text>
+          <Text mono size="xxs" tone="dim">{n.count}</Text>
+        </Box>
+        {open && <Box className="ds-groupkids">{n.children.map(renderRailNode)}</Box>}
+      </Box>
+    );
+  };
 
   // The live preview node, guarded — a specimen that throws surfaces the error card, not a crash.
   let previewEl: ReactNode = null, previewErr: string | null = null;
@@ -195,35 +254,7 @@ export function DesignStudio() {
             <Text mono size="xxs" tone="dim">{kitComps.length} comps</Text>
           </Box>
           <Box className="ds-scroll" style={{ flex: 1, padding: "8px 8px 16px" }}>
-            {kits.map((k) => {
-              const open = !!expanded[k.id];
-              const inKit = components.filter((c) => c.kitId === k.id);
-              const rows = inKit.filter(match);
-              return (
-                <Box key={k.id} style={{ marginBottom: 4 }}>
-                  <Box as="button" className={`ds-kithead${k.id === kitId ? " active" : ""}`} onClick={() => setExpanded((e) => ({ ...e, [k.id]: !e[k.id] }))}>
-                    <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
-                    <ColorSwatch color={k.dot} size={7} />
-                    <Text as="span" weight={500} style={{ flex: 1, textAlign: "left" }}>{k.name}</Text>
-                    <Text mono size="xxs" tone="dim">{inKit.length}</Text>
-                  </Box>
-                  {open && (
-                    <Box style={{ margin: "2px 0 6px", paddingLeft: 6 }}>
-                      {rows.map((c) => (
-                        <Box as="button" key={c.id} className={`ds-comprow${c.id === compId && k.id === kitId ? " on" : ""}`} onClick={() => selectComp(c)}>
-                          <RoleDot role={c.role} size={7} glow={3} />
-                          <Text as="span" style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</Text>
-                          <Text mono size="xxs" tone="dim" style={{ padding: "1px 5px", background: "var(--bg-soft)", borderRadius: 4 }}>×{c.used}</Text>
-                        </Box>
-                      ))}
-                      {open && rows.length === 0 && query && (
-                        <Text size={11} tone="dim" as="div" style={{ padding: "6px 10px", fontStyle: "italic" }}>no matches</Text>
-                      )}
-                    </Box>
-                  )}
-                </Box>
-              );
-            })}
+            {railTree.map(renderRailNode)}
           </Box>
         </Box>
         <Box className="ds-handle" {...rail.handleProps} />
@@ -239,6 +270,7 @@ export function DesignStudio() {
           width={insp.size} sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
           allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
           theme={theme} setTheme={setTheme} vp={vp} setVpKind={setVpKind}
+          kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
           previewEl={previewEl} previewErr={previewErr} onRetry={() => setRenderKey((k) => k + 1)}
           generating={generating} genStep={genStep} candidates={candidates} onAccept={accept}
           prompt={prompt} setPrompt={setPrompt} onGenerate={generate}
@@ -334,6 +366,8 @@ interface InspProps {
   width: number; sel: ComponentRecord | null; kitName: string; tab: Tab; setTab: (t: Tab) => void;
   allVariants: string[]; activeVariant: string; setVariant: (v: string) => void;
   theme: PreviewTheme; setTheme: (t: PreviewTheme) => void; vp: Viewport; setVpKind: (v: Viewport) => void;
+  /** The preview's kit-THEME axis (#2488): the hydrated theme collection + the applied selection. */
+  kitTheme: string; setKitTheme: (id: string) => void; kitThemes: KitThemeRecord[];
   previewEl: ReactNode; previewErr: string | null; onRetry: () => void;
   generating: boolean; genStep: number; candidates: string[] | null; onAccept: (v: string) => void;
   prompt: string; setPrompt: (v: string) => void; onGenerate: () => void;
@@ -369,6 +403,20 @@ function Inspector(p: InspProps) {
               <SegmentedControl label="" options={p.allVariants.map((v) => ({ label: v, on: v === p.activeVariant, onClick: () => p.setVariant(v) }))} />
               <SegmentedControl label="" options={(["dark", "light"] as PreviewTheme[]).map((th) => ({ label: th === "dark" ? "◐ dark" : "◑ light", on: th === p.theme, onClick: () => p.setTheme(th) }))} />
               <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === p.vp, onClick: () => p.setVpKind(k) }))} />
+              {/* kit-THEME switcher (#2488): the hydrated theme collection (designer-authored included);
+                  composes with the SURFACE toggle above — a compact select since the set is open-ended. */}
+              {/* eslint-disable-next-line no-restricted-syntax -- compact toolbar select over a dynamic set (SelectField imposes a labelled field layout) */}
+              <select
+                className="sel"
+                aria-label="Kit theme"
+                title="Kit theme — semantic-token palette applied to the specimen (bsc ui theme)"
+                value={p.kitTheme}
+                onChange={(e) => p.setKitTheme(e.target.value)}
+              >
+                {p.kitThemes.map((t) => (
+                  <option key={t.id} value={t.id}>◈ {t.label}</option>
+                ))}
+              </select>
             </Box>
             <Box className="ds-surface">
               {p.generating && (
@@ -397,8 +445,9 @@ function Inspector(p: InspProps) {
                 </Box>
               ) : (
                 <Box className="ds-frame">
-                  {/* centered on the surface (#2333); the width transition + fixed VP width are layout, not the removed motion pass */}
-                  <Box style={{ width: VP[p.vp].w, maxWidth: "100%", transition: "width .25s ease", display: "flex", justifyContent: "center" }}>{p.previewEl}</Box>
+                  {/* centered on the surface (#2333); the width transition + fixed VP width are layout, not the removed motion pass.
+                      The ThemeScope (#2488) applies the selected kit theme's semantic-token overrides to the specimen frame. */}
+                  <ThemeScope theme={p.kitTheme} style={{ width: VP[p.vp].w, maxWidth: "100%", transition: "width .25s ease", display: "flex", justifyContent: "center" }}>{p.previewEl}</ThemeScope>
                 </Box>
               )}
               <Text as="div" className="ds-vplabel">{VP[p.vp].label}</Text>

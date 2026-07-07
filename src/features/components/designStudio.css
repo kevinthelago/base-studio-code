@@ -35,6 +35,11 @@
 .ds-kithead { width: 100%; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border: none; background: transparent; border-radius: 7px; cursor: pointer; color: var(--fg); font-size: 12.5px; }
 .ds-kithead.active { background: var(--bg-soft); }
 .ds-kithead:hover { background: var(--bg-soft); }
+/* hierarchy group headers (#2487) — the tech / visual-language levels above the kit heads (the
+   ds-kithead family; they render only when a level genuinely partitions the kits, lib/kitGroups). */
+.ds-grouphead { width: 100%; display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px; border: none; background: transparent; border-radius: 7px; cursor: pointer; color: var(--fg-muted); }
+.ds-grouphead:hover { background: var(--bg-soft); color: var(--fg); }
+.ds-groupkids { margin: 2px 0 6px; padding-left: 8px; border-left: 1px solid var(--border-soft, var(--border)); }
 .ds-caret { display: inline-block; width: 12px; color: var(--fg-dim); font-size: 10px; transition: transform .15s; }
 .ds-comprow { width: 100%; display: flex; align-items: center; gap: 9px; height: 29px; padding: 0 9px 0 12px; border: none; border-radius: 7px; cursor: pointer; font-size: 12.5px; background: transparent; color: var(--fg-muted); }
 .ds-comprow:hover { background: var(--bg-soft); }
@@ -69,7 +74,9 @@
 /* ── graph ── */
 /* The viewport/world shell + dotted grid are the shared GraphCanvas (#2418); only the node card is ours. */
 .ds-node { position: absolute; cursor: pointer; border-radius: 11px; padding: 11px 13px; background: var(--bg-elev, var(--bg-soft)); border: 1px solid var(--border); box-shadow: 0 6px 20px rgba(0,0,0,.3); transition: border-color .12s; }
-.ds-node.on { background: var(--bg-soft); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), 0 10px 30px rgba(0,0,0,.4); }
+/* Selection must NOT touch the background (#2491) — the node keeps its elevated surface; the solid
+   accent ring + border alone carry the selected state. */
+.ds-node.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 10px 30px rgba(0,0,0,.4); }
 
 /* ── inspector bits ── */
 .ds-inspbox { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }

@@ -15,6 +15,7 @@ pub(crate) const ALL_TABLES: &[&str] = &[
     "fleet_meta",
     "deploy",
     "deps",
+    "market",
     "mcp",
     "automations",
     "startup",
@@ -86,6 +87,10 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             data        TEXT NOT NULL DEFAULT '{}'
          );
          CREATE TABLE IF NOT EXISTS deps (
+            id          INTEGER PRIMARY KEY,
+            data        TEXT NOT NULL DEFAULT '{}'
+         );
+         CREATE TABLE IF NOT EXISTS market (
             id          INTEGER PRIMARY KEY,
             data        TEXT NOT NULL DEFAULT '{}'
          );
