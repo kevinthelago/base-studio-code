@@ -79,6 +79,14 @@ pub(crate) struct SessionSettingsSpec<'a> {
     pub bash_posture: &'a str,
     /// `bypassPermissions` mode (hooks-only gating) vs the allow-list `default` mode.
     pub bypass: bool,
+    /// Restricted allow-list (#2471): when true, the ALLOW rules are EXACTLY the passed
+    /// `allowed_commands` (each as `Bash(<cmd> *)`) — no bare `Bash`, no mandatory gh/git/bsc tier,
+    /// no readonly/build baselines, no `Bash(bsc-*)` helpers. Deny-wins means a broad `bsc` deny
+    /// could never re-allow `bsc ui`, so a tightly-scoped session (the Design Studio's designer)
+    /// instead SUPPRESSES the baselines and enumerates its whole surface. Denies (the dangerous
+    /// floor + user/role denies) and the verbatim tool rules still apply on top; the always-on
+    /// PreToolUse hook floor is separate machinery and unaffected.
+    pub restricted_allow: bool,
 }
 
 #[cfg(test)]
@@ -100,6 +108,7 @@ impl<'a> SessionSettingsSpec<'a> {
             replace_permissions: false,
             bash_posture: "allow",
             bypass: true,
+            restricted_allow: false,
         }
     }
 }
@@ -119,6 +128,8 @@ pub(crate) fn ensure_session_settings(
     replace_permissions: Option<bool>,
     bash_posture: Option<String>,
     bypass: Option<bool>,
+    // JS `restrictedAllow` — Tauri renames invoke ARGS camelCase → snake_case (#2471).
+    restricted_allow: Option<bool>,
 ) -> Result<(), String> {
     // Bind the unwrapped Options to locals so the borrowed spec can reference them.
     let mcp_servers = mcp_servers.unwrap_or_default();
@@ -141,6 +152,7 @@ pub(crate) fn ensure_session_settings(
         replace_permissions: replace_permissions.unwrap_or(false),
         bash_posture: &bash_posture,
         bypass: bypass.unwrap_or(false),
+        restricted_allow: restricted_allow.unwrap_or(false),
     })
 }
 /// Synchronous core of [`ensure_session_settings`] (testable without a runtime), taking a
@@ -170,6 +182,7 @@ pub(crate) fn write_session_settings(spec: &SessionSettingsSpec) -> Result<(), S
         replace_permissions,
         bash_posture,
         bypass,
+        restricted_allow,
     } = *spec;
     if cwd.is_empty() { return Ok(()); }
     // Normalize a git-bash drive path (`/c/Users/...`, the OSC-7 form the app persists and the frontend
@@ -185,7 +198,7 @@ pub(crate) fn write_session_settings(spec: &SessionSettingsSpec) -> Result<(), S
 
     // Allow + deny rule assembly (posture-scaled): each list is built by a pure helper below,
     // then the verbatim tool-permission rules are folded in (they're shared between the two).
-    let mut allow_rules = build_allow_rules(bash_posture, allowed_commands);
+    let mut allow_rules = build_allow_rules(bash_posture, allowed_commands, restricted_allow);
     let mut deny_rules = build_deny_rules(denied_commands);
 
     // Tool-permission rules (verbatim, NOT Bash-wrapped) — the role write-path guard
@@ -245,8 +258,19 @@ pub(crate) fn write_session_settings(spec: &SessionSettingsSpec) -> Result<(), S
 ///   - "deny"  (sandboxed): neither baseline.
 ///
 /// ALWAYS: mandatory gh/git/bsc + each per-stream granted command (`allowed_commands`).
-fn build_allow_rules(bash_posture: &str, allowed_commands: &[String]) -> Vec<String> {
+///
+/// EXCEPT under `restricted_allow` (#2471): the rules are EXACTLY the wrapped `allowed_commands`
+/// — no bare `Bash`, no posture baselines, no mandatory tier, no `Bash(bsc-*)` — so a
+/// tightly-scoped session's entire auto-runnable surface is what its launcher enumerated.
+fn build_allow_rules(bash_posture: &str, allowed_commands: &[String], restricted_allow: bool) -> Vec<String> {
     let mut allow_rules: Vec<String> = Vec::new();
+    if restricted_allow {
+        for c in allowed_commands {
+            let c = c.trim();
+            if !c.is_empty() { push_unique_trimmed(&mut allow_rules, &bash_rule(c)); }
+        }
+        return allow_rules;
+    }
     let mut baseline: Vec<String> = Vec::new();
     match bash_posture {
         "deny" => {}
@@ -640,6 +664,70 @@ mod tests {
             assert!(allow.contains(&"Bash(bsc-*)".to_string()), "{posture}: bsc-* helpers always present");
         }
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// #2471: `restricted_allow` suppresses EVERY baseline tier — the allow list is exactly the
+    /// wrapped granted commands. No bare `Bash`, no mandatory gh/git/bsc, no readonly/build
+    /// baselines, no `Bash(bsc-*)` helpers. Denies (dangerous floor + user denies) and the verbatim
+    /// tool rules still land on top (deny > allow).
+    #[test]
+    fn write_session_settings_restricted_allow_emits_only_the_granted_commands() {
+        use crate::session::settings::write_session_settings;
+        let dir = std::env::temp_dir().join(format!("bsc-ess-restricted-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+
+        // The designer shape (#2471): bsc ui + the deprecated bsc component alias, git/gh denied by
+        // the role's `none` tiers, the write tools + web tools denied outright.
+        write_session_settings(&SessionSettingsSpec {
+            allowed_commands: &["bsc ui".into(), "bsc component".into()],
+            denied_commands: &["git".into(), "gh".into()],
+            deny_tool_rules: &["Edit".into(), "Write".into(), "WebFetch".into(), "WebSearch".into()],
+            restricted_allow: true,
+            replace_permissions: true,
+            bypass: false,
+            ..SessionSettingsSpec::for_dir(&dir.to_string_lossy())
+        }).unwrap();
+
+        let v: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+        let allow: Vec<String> = v["permissions"]["allow"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        let deny: Vec<String> = v["permissions"]["deny"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+
+        // The granted commands are the ONLY Bash allows.
+        assert!(allow.contains(&"Bash(bsc ui *)".to_string()));
+        assert!(allow.contains(&"Bash(bsc component *)".to_string()));
+        // No bare Bash, no mandatory tier, no posture baselines, no bsc-* helper family.
+        assert!(!allow.contains(&"Bash".to_string()), "restricted: no bare Bash, got {allow:?}");
+        for absent in ["Bash(git *)", "Bash(gh *)", "Bash(bsc *)", "Bash(bsc-*)", "Bash(ls *)", "Bash(cargo *)"] {
+            assert!(!allow.contains(&absent.to_string()), "restricted: {absent} must be absent, got {allow:?}");
+        }
+        // Denies still layer on top: the dangerous floor + the role's git/gh denies + the tool denies.
+        assert!(deny.contains(&"Bash(sudo *)".to_string()));
+        assert!(deny.contains(&"Bash(git *)".to_string()));
+        assert!(deny.contains(&"Bash(gh *)".to_string()));
+        for t in ["Edit", "Write", "WebFetch", "WebSearch"] {
+            assert!(deny.contains(&t.to_string()), "restricted: tool deny {t} must land verbatim");
+        }
+
+        // Contrast: the SAME spec with restricted_allow OFF re-grows the baselines (mandatory tier
+        // + bare Bash under the `allow` posture) — proving the flag is what suppressed them.
+        write_session_settings(&SessionSettingsSpec {
+            allowed_commands: &["bsc ui".into()],
+            replace_permissions: true,
+            ..SessionSettingsSpec::for_dir(&dir.to_string_lossy())
+        }).unwrap();
+        let v2: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap()).unwrap();
+        let allow2: Vec<String> = v2["permissions"]["allow"].as_array().unwrap()
+            .iter().map(|x| x.as_str().unwrap().to_string()).collect();
+        assert!(allow2.contains(&"Bash".to_string()));
+        assert!(allow2.contains(&"Bash(git *)".to_string()));
+        assert!(allow2.contains(&"Bash(bsc-*)".to_string()));
+        assert!(allow2.contains(&"Bash(bsc ui *)".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Regression (triage `cargo test` permission prompts): write_session_settings must normalize a

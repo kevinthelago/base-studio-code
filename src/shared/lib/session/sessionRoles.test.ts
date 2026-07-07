@@ -279,8 +279,9 @@ describe("roleWriteRules (write-tool guard)", () => {
 });
 
 describe("network gate (#1107)", () => {
-  it("net defaults to read for every role — web tools stay allowed (no behavior change)", () => {
+  it("net defaults to read for every role but the designer — web tools stay allowed (no behavior change)", () => {
     for (const role of Object.keys(ROLE_DEFAULTS) as SessionRole[]) {
+      if (role === "designer") continue; // net:"none" by design (#2471) — asserted in its own suite
       expect(ROLE_DEFAULTS[role].net).toBe("read");
       expect(roleDeniedTools(ROLE_DEFAULTS[role])).not.toContain("WebFetch");
     }
@@ -486,5 +487,64 @@ describe("documentor prose-doc carve-out (#1555)", () => {
 
   it("does not spawn its own sub-agents restriction — only workers deny Task; documentor keeps it", () => {
     expect(roleDeniedTools(documentor)).toEqual([]);
+  });
+});
+
+// #2471 — the designer role: the Design Studio's UI-kit session. `none` on every axis: kits live in
+// the bsc store (not files), so there is nothing it should write, commit, publish, or fetch. Its one
+// command surface (`bsc ui` + the deprecated `bsc component` alias) is granted at launch via the
+// restricted allow-list (`restrictedAllow`, settings.rs), not by the role gate.
+describe("designer role (#2471)", () => {
+  const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+  const designer = ROLE_DEFAULTS.designer;
+
+  it("is none on every axis — no git, no GitHub, no code, no net", () => {
+    expect(designer.git).toBe("none");
+    expect(designer.github).toBe("none");
+    expect(designer.code).toBe("none");
+    expect(designer.net).toBe("none");
+    expect(designer.writeGlobs).toEqual([]);
+  });
+
+  it("roleDeniedCommands denies git AND gh outright (the whole tools, not just their writes)", () => {
+    const denies = roleDeniedCommands(designer);
+    expect(denies).toContain("git");
+    expect(denies).toContain("gh");
+    // The `none` tiers deny the bare tool — the granular write-prefix lists are the read-tier form.
+    expect(denies).not.toContain("git push");
+    expect(denies).not.toContain("gh pr create");
+  });
+
+  it("roleDeniedTools denies the web tools (net:none) — no live injection surface", () => {
+    expect(roleDeniedTools(designer)).toEqual(["WebFetch", "WebSearch"]);
+  });
+
+  it("every file-write tool is denied outright, with NO carve-out (kits live in the store, not files)", () => {
+    const rules = roleWriteRules(designer);
+    expect(rules.deny).toEqual(WRITE_TOOLS);
+    expect(rules.allow).toEqual([]);
+    expect(hasScopedWriteCarveOut(designer)).toBe(false);
+    // Even handed globs, the designer stays fully write-denied (not a carve-out role).
+    const withGlobs = roleCapability("designer", { writeGlobs: ["**"] });
+    expect(hasScopedWriteCarveOut(withGlobs)).toBe(false);
+    expect(roleWriteRules(withGlobs).deny).toEqual(WRITE_TOOLS);
+    expect(canWritePath(withGlobs, "src/App.tsx")).toBe(false);
+  });
+
+  it("checkCommand blocks every git/gh invocation, reads included", () => {
+    expect(checkCommand(designer, "git status").allowed).toBe(false);
+    expect(checkCommand(designer, "git push").allowed).toBe(false);
+    expect(checkCommand(designer, "gh issue list").allowed).toBe(false);
+    expect(checkCommand(designer, "gh pr create -t x").allowed).toBe(false);
+    // Non-git/gh commands pass this gate — the restricted allow-list is what narrows them to bsc ui.
+    expect(checkCommand(designer, "bsc ui schema").allowed).toBe(true);
+  });
+
+  it("bscAgentPerms renders the same wall for the bsc-agent runtime", () => {
+    const p = bscAgentPerms(designer);
+    expect(p.deny_tools).toEqual(["write_file", "edit_file"]);
+    expect(p.deny_bash).toContain("git");
+    expect(p.deny_bash).toContain("gh");
+    expect(p.write_globs).toEqual([]);
   });
 });

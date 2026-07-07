@@ -48,7 +48,12 @@ export type SessionRole =
   // documentation (the CLAUDE.md structure tree, architecture docs, README) after a change lands.
   // It reads for context and writes ONLY prose docs — `code: "none"` with a DOC_GLOBS write
   // carve-out (like the director's commons, #851), so it can never touch feature code.
-  | "documentor";
+  | "documentor"
+  // Designer (#2471): the Design Studio's heavily-restricted UI-kit session. Its ENTIRE surface is
+  // the `bsc ui` CLI (kits live in the store, not files) — `none` on every axis: no git, no
+  // GitHub, no file writes, no web. Launched with `restrictedAllow`, so the baseline command
+  // tiers are suppressed and only `bsc ui` (+ the deprecated `bsc component` alias) auto-runs.
+  | "designer";
 
 /** Access to a capability: none < read < write. */
 export type AccessTier = "none" | "read" | "write";

@@ -6,7 +6,7 @@ import { mergeRoleDefaults, type RoleCapability } from "./roleModel";
 // #2027 P1). The role gate is least-privilege; a JSON edit that WIDENS a role's access (e.g. gives a
 // reviewer git:write, or hands a non-planner default write globs) must trip a test here, not ship.
 describe("role capability table (loaded from @data/permissions/role-capabilities.json)", () => {
-  it("has exactly the 9 roles with their intended github/git/code/net tiers", () => {
+  it("has exactly the 10 roles with their intended github/git/code/net tiers", () => {
     const tiers = Object.fromEntries(
       Object.values(ROLE_DEFAULTS).map((c) => [c.role, `${c.github}/${c.git}/${c.code}/${c.net}`]),
     );
@@ -22,6 +22,9 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
       // Documentor (#1555): read-only on git/GitHub, code:none — writes come solely from its
       // DOC_GLOBS carve-out (asserted below), never a code tier.
       documentor: "read/read/none/read",
+      // Designer (#2471): the Design Studio's UI-kit session — `none` on EVERY axis; its whole
+      // surface is `bsc ui`, granted at launch via the restricted allow-list.
+      designer:   "none/none/none/none",
     });
   });
 
