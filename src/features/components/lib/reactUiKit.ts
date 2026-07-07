@@ -338,6 +338,14 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["A single list+detail split — use MasterDetail.", "A pan/zoom graph — use GraphCanvas."],
     srcText: 'import { PaneGrid } from "@/shared/ui/layouts/PaneGrid";\n\n<PaneGrid cols={2} rows={2}>\n  {panes.map((p) => <Pane key={p.id} {...p}/>)}\n</PaneGrid>',
   },
+  Tree: {
+    version: "1.0.0", tags: ["layout", "page", "tree"], composes: ["MasterDetail", "GraphCanvas", "Box", "Row", "Stack", "Text", "IconButton"],
+    shapes: ["tree"], // the ideal tree-shape layout — fills the gap the #2475 shape axis recorded
+    variants: ["indented", "layered"],
+    whenUse: ["Deep / navigational tree data (file systems, category hierarchies) — variant=\"indented\": collapsible depth-indented rows + a detail panel.", "A presentational top-down hierarchy (org chart, ownership map) — variant=\"layered\" rides the shared graph stack (layerDag + edge grammar + GraphCanvas pan/zoom)."],
+    whenNot: ["A flat list beside a detail — use MasterDetail.", "A general (multi-parent / cyclic) graph — use GraphCanvas with layerDag directly."],
+    srcText: 'import { Tree } from "@/shared/ui/layouts/Tree";\n\n<Tree\n  nodes={[{ id: "src", label: "src", children: [\n    { id: "app", label: "app" },\n  ] }]}\n  detail={(n) => <NodeDetail node={n}/>}\n  onSelect={setSelected}\n/>',
+  },
   // ── #2421 gap-fill ──
   LabelChip: {
     role: "composite", tags: ["badge", "github"], composes: ["Chip"],

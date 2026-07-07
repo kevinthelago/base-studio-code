@@ -608,6 +608,49 @@ export function renderSpecimen(comp: ComponentRecord, variant: string, theme: Pr
       );
     }
 
+    case "Tree": {
+      if (variant === "layered") {
+        // Top-down org-chart schematic: root over two children over two grandchildren, anchor edges.
+        const card = (x: number, y: number, w: number, on?: boolean) => <div style={{ position: "absolute", left: x, top: y, width: w, height: 20, borderRadius: 5, background: on ? "color-mix(in oklch, var(--accent), transparent 82%)" : t.elev, border: `1px solid ${on ? "var(--accent)" : t.border}` }} />;
+        return (
+          <div style={{ width: 280, height: 152, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.panel, display: "flex", flexDirection: "column" }}>
+            <div style={{ height: 22, flex: "none", borderBottom: `1px solid ${t.borderSoft}`, background: t.elev, display: "flex", alignItems: "center", padding: "0 8px", gap: 5 }}>
+              <span style={{ width: 34, height: 7, borderRadius: 3, background: t.dim }} /><span style={{ flex: 1 }} />
+              <span style={{ display: "flex", gap: 3 }}>{["−", "%", "+"].map((g) => <span key={g} style={{ width: 14, height: 12, borderRadius: 3, background: t.bg, border: `1px solid ${t.borderSoft}`, fontFamily: mono, fontSize: 8, color: t.muted, display: "flex", alignItems: "center", justifyContent: "center" }}>{g}</span>)}</span>
+            </div>
+            <div style={{ flex: 1, position: "relative", overflow: "hidden", backgroundImage: `radial-gradient(${t.borderSoft} 1px, transparent 1px)`, backgroundSize: "12px 12px" }}>
+              <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}>
+                <path d="M131,32 C110,48 100,48 84,54" stroke={t.border} strokeWidth={1.5} fill="none" />
+                <path d="M147,32 C168,48 178,48 194,54" stroke={t.border} strokeWidth={1.5} fill="none" />
+                <path d="M60,74 C48,90 42,90 34,96" stroke={t.border} strokeWidth={1.5} fill="none" />
+                <path d="M78,74 C92,90 98,90 108,96" stroke={t.border} strokeWidth={1.5} fill="none" />
+              </svg>
+              {card(116, 12, 46, true)}{card(46, 54, 46)}{card(186, 54, 46)}{card(10, 96, 46)}{card(86, 96, 46)}
+            </div>
+          </div>
+        );
+      }
+      // Indented (file-explorer) schematic: chevroned, depth-indented rows + the detail column.
+      const chev = (open: boolean) => <span style={{ fontSize: 6, color: t.dim, width: 7, flex: "none", display: "inline-block", transform: open ? "rotate(90deg)" : "none" }}>▶</span>;
+      const row = (depth: number, w: number, open?: boolean, active?: boolean, leaf?: boolean) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 4px", paddingLeft: 4 + depth * 10, borderRadius: 4, marginBottom: 2, background: active ? "color-mix(in oklch, var(--accent), transparent 84%)" : "transparent", border: `1px solid ${active ? "var(--accent)" : "transparent"}` }}>
+          {leaf ? <span style={{ width: 7, flex: "none" }} /> : chev(!!open)}
+          <span style={{ width: w, height: 6, borderRadius: 3, background: active ? "var(--accent)" : t.elev, border: active ? undefined : `1px solid ${t.borderSoft}` }} />
+        </div>
+      );
+      return (
+        <div style={{ width: 280, height: 152, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.panel, display: "flex" }}>
+          <div style={{ width: 112, flex: "none", borderRight: `1px solid ${t.borderSoft}`, padding: 7, overflow: "hidden" }}>
+            {row(0, 46, true)}{row(1, 38, true)}{row(2, 42, false, true, true)}{row(2, 30, false, false, true)}{row(1, 34, false)}{row(0, 40, false, false, true)}
+          </div>
+          <div style={{ flex: 1, padding: 10, display: "flex", flexDirection: "column", gap: 7 }}>
+            <span style={{ width: "55%", height: 10, borderRadius: 4, background: t.fg, opacity: 0.8 }} />
+            {["100%", "88%", "70%"].map((w) => <span key={w} style={{ width: w, height: 7, borderRadius: 3, background: t.elev }} />)}
+          </div>
+        </div>
+      );
+    }
+
     // ── examples kit (the exemplar, #2456) — a small persona-manager demo app ──
     case "DemoButton": {
       const base: CSSProperties = { height: 28, padding: "0 14px", borderRadius: 6, fontFamily: mono, fontSize: 11.5, fontWeight: 600, display: "inline-flex", alignItems: "center", border: "1px solid transparent", cursor: "default" };
