@@ -16,8 +16,9 @@ describe("settings nav selection style (#2493)", () => {
     )!;
     expect(item).toBeTruthy();
     expect(item.style.borderLeft).toBe("");
-    // Selected and unselected items share one padding — no compensating shift.
-    expect(item.style.padding).toBe("7px 12px");
-    expect(item.style.paddingLeft).toBe("12px");
+    // Selected and unselected items share one padding — no compensating shift. The 14px left
+    // inset replaces the room the old 2px transparent border used to take.
+    expect(item.style.padding).toBe("7px 12px 7px 14px");
+    expect(item.style.paddingLeft).toBe("14px");
   });
 });
