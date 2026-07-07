@@ -3,7 +3,8 @@
 // manifest (fresh uids, defensive field coercion — never trusts the payload shape).
 // Pure; pairs with lib/gist/manifest.ts.
 
-import { type Blueprint, type BlueprintStage, type BlueprintTeam, type BlueprintUiKit, uid, dedupeSections } from "../stages/blueprints";
+import { type Blueprint, type BlueprintStage, type BlueprintTeam, type BlueprintUiKit, type FleetPolicy, uid, dedupeSections } from "../stages/blueprints";
+import { flowOrUndefined } from "../fleet/agentFlow";
 import { wrapExtension, type ExtensionManifest } from "@/features/planner/lib/gist/manifest";
 import { type SkillPayload } from "./blueprintSkills";
 // Type-only cross-feature imports (allowed by the #1545 boundary) — the team's node/edge shapes.
@@ -106,6 +107,26 @@ export function coerceUiKit(v: unknown): BlueprintUiKit | undefined {
   };
 }
 
+/** Coerce a blueprint's fleet POLICY (#1854 Phase b / #2460) out of an untrusted payload — the
+ *  default per-stream profile + flow the planner instantiates for this project type's fleet.
+ *  `profile` is a reference-by-id (any non-empty string; an unknown id already falls through to
+ *  the role default at launch). `flow` reuses the canonical flow coercion ({@link flowOrUndefined}
+ *  — the same rule the tag/fleet.json parsers apply): a flow naming at least one field normalizes
+ *  to a complete launch-safe AgentFlow, so a fully-specified valid flow round-trips byte-faithfully;
+ *  a non-object flow, or one naming no flow field, is dropped. A policy carrying NEITHER field —
+ *  malformed, non-object, or informationless `{}` — ⇒ `undefined`: the blueprint just stays on
+ *  today's launch-time defaults, exactly like one that never declared a policy. */
+export function coerceFleetPolicy(v: unknown): FleetPolicy | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const profile = str(o.profile);
+  const rawFlow = o.flow && typeof o.flow === "object" && !Array.isArray(o.flow)
+    ? (o.flow as Record<string, unknown>) : undefined;
+  const flow = flowOrUndefined(rawFlow);
+  if (!profile && !flow) return undefined;
+  return { ...(profile ? { profile } : {}), ...(flow ? { flow } : {}) };
+}
+
 /** Reconstruct a Blueprint from an untrusted payload, or null if it's not one. Requires an id, a
  *  name, and (by default) at least one valid section; assigns fresh uids.
  *
@@ -142,6 +163,10 @@ export function coerceBlueprint(
   // UI-kit pin (#2465) — the whitelist below silently strips unknown fields (the #2450 lesson),
   // so the pin MUST be coerced explicitly or it would vanish on every import/poll round-trip.
   const uiKit = coerceUiKit(o.uiKit);
+  // Fleet policy (#1854 Phase b / #2460) — same whitelist discipline: without explicit coercion
+  // every import/share/poll round-trip would silently strip the default per-stream profile+flow,
+  // reverting the blueprint's fleet to launch defaults.
+  const fleetPolicy = coerceFleetPolicy(o.fleetPolicy);
   return {
     id, name, desc: str(o.desc), sections,
     // Blueprint-wide attached capabilities (#897) + lifecycle metadata, preserved on import.
@@ -156,6 +181,7 @@ export function coerceBlueprint(
     ...(str(o.icon) ? { icon: str(o.icon) } : {}),
     ...(category ? { category } : {}),
     ...(mode ? { mode } : {}),
+    ...(fleetPolicy ? { fleetPolicy } : {}),
     ...(team ? { team } : {}),
     ...(uiKit ? { uiKit } : {}),
   };
