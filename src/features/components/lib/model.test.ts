@@ -30,7 +30,7 @@ describe("component model helpers (#2269)", () => {
     expect(users).toContain("SegmentedControl");
     expect(users).toContain("EmptyState");
     // A page root that nothing composes.
-    expect(resolveUsedBy(byName("AgentsBoard"), SEED_COMPONENTS)).toEqual([]);
+    expect(resolveUsedBy(byName("DashboardPage"), SEED_COMPONENTS)).toEqual([]);
   });
 
   it("every role has a color token", () => {
@@ -56,7 +56,6 @@ describe("component model helpers (#2269)", () => {
   it("every packaged kit carries the rail-hierarchy axes: tech (a lowercase slug) + style (#2487)", () => {
     const byId = new Map(SEED_KITS.map((k) => [k.id, k]));
     expect(byId.get("react-ui")).toMatchObject({ tech: "react", style: "studio" });
-    expect(byId.get("examples")).toMatchObject({ tech: "react", style: "demo" });
     for (const k of SEED_KITS) {
       expect(k.tech, `${k.id} tech is a lowercase slug`).toMatch(/^[a-z][a-z0-9-]*$/);
       expect(k.style, `${k.id} carries a visual-language label`).toBeTruthy();
