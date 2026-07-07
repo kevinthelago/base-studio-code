@@ -1,12 +1,14 @@
 {
-  "$comment": "Canonical wire-protocol fixtures for the mobile tunnel (#240 / #46). Shared by base-studio-code (TS tests in src/__tests__/tunnel.test.ts import it; the future Rust relay transport in src-tauri/src/tunnel.rs will assert against it) and by mobile-studio-code, whose src/lib/types.ts is the source of truth. These application frames are carried UNCHANGED inside the relay's Noise-encrypted envelope ({room, ciphertext}) — the Cloudflare relay never sees them in plaintext. Messages are flat JSON tagged by a snake_case `type`; multi-word field names are camelCase. See docs/tunnel-protocol.md.",
+  "$comment": "Canonical wire-protocol fixtures for the mobile tunnel (#240 / #46 / #2497 = contract v2). Shared BYTE-IDENTICALLY by base-studio-code (TS tests in src/features/tunnel/lib/tunnel.test.ts; Rust serde tests in src-tauri/src/mobile/tunnel/tests.rs resolve this file by name) and by mobile-studio-code (src/lib/tunnel/tunnelProtocol.fixtures.test.ts). These application frames are carried UNCHANGED inside the relay's Noise-encrypted envelope ({room, ciphertext}) — the Cloudflare relay never sees them in plaintext. Messages are flat JSON tagged by a snake_case `type`; multi-word field names are camelCase. Contract v2 adds: auth/auth_ok protocolVersion, the generic store_state projection frame, the optional PaneDescriptor.kind, and pins the plan_sync frames to the Rust (bsc-tunnel) shapes.",
   "serverToClient": {
-    "auth_ok": { "type": "auth_ok" },
+    "auth_ok": { "type": "auth_ok", "protocolVersion": 2 },
     "pane_list": {
       "type": "pane_list",
       "panes": [
-        { "id": "t0p0", "cwd": "/home/dev/api", "name": "api", "status": "running" },
-        { "id": "t0p1", "cwd": "/home/dev/web", "name": "web", "status": "idle" }
+        { "id": "t0p0", "cwd": "/home/dev/api", "name": "api", "status": "running", "kind": "console" },
+        { "id": "t0p1", "cwd": "/home/dev/web", "name": "web", "status": "idle" },
+        { "id": "proj:api-core", "cwd": "/worktrees/proj/api--api-core", "name": "api-core", "status": "running", "kind": "worker" },
+        { "id": "planning_proj", "cwd": "/hub/proj", "name": "Planner — proj", "status": "running", "kind": "planner" }
       ]
     },
     "pane_output": { "type": "pane_output", "paneId": "t0p0", "data": "$ ls\r\n", "coarse": false },
@@ -20,6 +22,18 @@
       "prompt": "Apply this change? (y/n)"
     },
     "user_request": { "type": "user_request", "paneId": "t0p0", "prompt": "Apply this change? (y/n)" },
+    "store_state": { "type": "store_state", "domain": "plan", "rev": 3, "json": "{\"projects\":[]}" },
+    "plan_sync_manifest": {
+      "type": "plan_sync_manifest",
+      "projectId": "proj-bf9cf968",
+      "files": { "goal.md": "bf9cf968" }
+    },
+    "plan_sync_files": {
+      "type": "plan_sync_files",
+      "projectId": "proj-bf9cf968",
+      "files": [{ "relpath": "goal.md", "content": "foobar" }]
+    },
+    "plan_sync_ack": { "type": "plan_sync_ack", "projectId": "proj-bf9cf968", "applied": true },
     "plan_state": {
       "type": "plan_state",
       "projectId": "proj-bf9cf968",
@@ -61,13 +75,20 @@
     }
   },
   "clientToServer": {
-    "auth": { "type": "auth", "token": "0123456789abcdef", "fcmToken": "fcm-token-xyz" },
+    "auth": { "type": "auth", "token": "0123456789abcdef", "fcmToken": "fcm-token-xyz", "protocolVersion": 2 },
     "auth_no_fcm": { "type": "auth", "token": "0123456789abcdef" },
     "set_fcm_token": { "type": "set_fcm_token", "fcmToken": "fcm-token-xyz" },
     "pane_set_state": { "type": "pane_set_state", "paneId": "t0p0", "state": "streaming" },
     "pane_focus": { "type": "pane_focus", "paneId": "t0p0" },
     "pane_input": { "type": "pane_input", "paneId": "t0p0", "data": "ls\n" },
     "pane_resize": { "type": "pane_resize", "paneId": "t0p0", "cols": 80, "rows": 24 },
+    "plan_sync_manifest_request": { "type": "plan_sync_manifest_request", "projectId": "proj-bf9cf968" },
+    "plan_sync_pull": { "type": "plan_sync_pull", "projectId": "proj-bf9cf968", "paths": ["goal.md"] },
+    "plan_sync_push": {
+      "type": "plan_sync_push",
+      "projectId": "proj-bf9cf968",
+      "files": [{ "relpath": "goal.md", "content": "foobar" }]
+    },
     "plan_advance": { "type": "plan_advance", "projectId": "proj-bf9cf968", "stageKey": "scope" },
     "plan_confirm": { "type": "plan_confirm", "projectId": "proj-bf9cf968", "section": "goal" },
     "plan_chat": { "type": "plan_chat", "projectId": "proj-bf9cf968", "text": "make the goal more specific" }

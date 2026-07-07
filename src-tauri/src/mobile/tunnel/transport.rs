@@ -4,7 +4,8 @@
 
 use crate::StrErr;
 use super::{
-    decode_room_msg, noise, ClientMsg, PaneOutputChunk, ServerMsg, SessionMeta, TunnelState,
+    decode_room_msg, noise, protocol, ClientMsg, PaneOutputChunk, ServerMsg, SessionMeta,
+    TunnelState,
 };
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
@@ -273,7 +274,7 @@ async fn noise_handshake_and_auth(
     // First app frame must be `auth`; validate the pairing secret.
     let frame = next_binary(read).await?;
     match decode_room_msg(&mut noise_tx, &frame)? {
-        ClientMsg::Auth { token, fcm_token } => {
+        ClientMsg::Auth { token, fcm_token, protocol_version } => {
             let psk = app
                 .try_state::<TunnelState>()
                 .map(|s| s.psk())
@@ -287,18 +288,31 @@ async fn noise_handshake_and_auth(
             if let (Some(state), Some(t)) = (app.try_state::<TunnelState>(), fcm_token) {
                 state.add_fcm_token(t);
             }
-            log::info!("tunnel: auth accepted");
+            // Protocol version (#2497): accept ANY version — a mismatch is logged (both
+            // versions) and the desktop's own version rides back in `auth_ok`, so the
+            // client can warn. `None` = a pre-v2 client (treated as v1).
+            let client_version = protocol_version.unwrap_or(1);
+            if client_version == protocol::PROTOCOL_VERSION {
+                log::info!("tunnel: auth accepted (protocol v{client_version})");
+            } else {
+                log::warn!(
+                    "tunnel: auth accepted with a protocol version mismatch — desktop v{}, mobile v{client_version}; \
+                     newer frames may be ignored by the older peer",
+                    protocol::PROTOCOL_VERSION,
+                );
+            }
         }
         _ => return Err("expected auth as the first frame".into()),
     }
-    send_msg(sink, &mut noise_tx, &ServerMsg::AuthOk).await?;
+    send_msg(sink, &mut noise_tx, &ServerMsg::AuthOk { protocol_version: protocol::PROTOCOL_VERSION }).await?;
     Ok(noise_tx)
 }
 
 /// Replay the current `TunnelState` snapshot to a freshly-paired client, in the exact
 /// wire order the mobile app expects: pane list + per-session state, per-pane PTY sizes,
 /// plan manifests (#588), the last live planner frames (#934), then the fleet roster (F2),
-/// automation list (A2), MCP extension list (M2), and hook telemetry (M3). Each `*_snapshot()` reads through
+/// automation list (A2), MCP extension list (M2), hook telemetry (M3), and the generic
+/// store projections (last per domain, #2497). Each `*_snapshot()` reads through
 /// `try_state`, so a missing `TunnelState` replays nothing rather than erroring. Called
 /// once after `auth_ok`, before subscribing to the live bus, so nothing is double-sent.
 async fn replay_state(
@@ -360,6 +374,13 @@ async fn replay_state(
     // frontend has pushed one.
     if let Some(telemetry) = snap(app, |s| s.hook_telemetry_snapshot()) {
         send_msg(sink, tx, &ServerMsg::HookTelemetry { telemetry }).await?;
+    }
+
+    // Replay the generic store projections (#2497) — the LAST store_state frame per
+    // domain, in stable (sorted-domain) order, so every published projection reaches a
+    // freshly-paired client without waiting for the next change.
+    for frame in snap(app, |s| s.store_states_snapshot()) {
+        send_msg(sink, tx, &frame).await?;
     }
     Ok(())
 }
