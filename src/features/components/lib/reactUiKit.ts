@@ -449,6 +449,16 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["Field-aligned columnar records — use TablePage.", "Just the list rail inside your own frame — use MasterDetail + CardListRow directly."],
     srcText: 'import { CollectionPage } from "@/shared/ui/pages/CollectionPage";\n\n<CollectionPage\n  title="Personas" hint="library"\n  items={personas.map((p) => ({\n    id: p.id, title: p.name, subtitle: p.summary,\n    badge: p.role, facts: [{ k: "model", v: p.model }],\n  }))}\n  onSelect={setSelected}\n/>',
   },
+  RecordPage: {
+    // #2508 — the key-value shape's page, completing the page-per-shape set. Like DashboardPage it
+    // has no single layout template edge: the KeyValueList composite (the key-value archetype, one
+    // tier down) is the composition's centre; SectionLabel groups it, the header rides SectionHeader.
+    version: "1.0.0", tags: ["page", "key-value", "record"], shapes: ["key-value"],
+    composes: ["KeyValueList", "Chip", "EmptyState", "SectionHeader", "SectionLabel", "Box", "Row", "Stack"],
+    whenUse: ["A complete record-detail page for ONE keyed record: an identity header (status Chip, subtitle, actions) over grouped label : value sections.", "Config/property inspectors, session or entity detail views whose subject is a single record's fields."],
+    whenNot: ["Many records the user picks from — use CollectionPage (or TablePage for columnar fields).", "Just the property list inside your own frame — use KeyValueList directly."],
+    srcText: 'import { RecordPage } from "@/shared/ui/pages/RecordPage";\n\n<RecordPage\n  title="api-builder" subtitle="stream api"\n  status="running" statusTone="success"\n  actions={<Button size="sm">Edit</Button>}\n  sections={[\n    { label: "Session", entries: [{ k: "model", v: "opus" }, { k: "role", v: "worker" }] },\n    { label: "Worktree", entries: [{ k: "branch", v: "2409-name-derived-key" }] },\n  ]}\n/>',
+  },
 };
 
 /** A manifest prop's type rendered as a short human/TS-ish string for the props table. */

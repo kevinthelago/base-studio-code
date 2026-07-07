@@ -4519,6 +4519,96 @@
       "shapes": [
         "list"
       ]
+    },
+    {
+      "id": "recordpage",
+      "name": "RecordPage",
+      "kitId": "react-ui",
+      "role": "page",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "page",
+        "key-value",
+        "record"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "KeyValueList",
+        "Chip",
+        "EmptyState",
+        "SectionHeader",
+        "SectionLabel",
+        "Box",
+        "Row",
+        "Stack"
+      ],
+      "props": [
+        {
+          "name": "title",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "The record's identity — the page title (the header bar)."
+        },
+        {
+          "name": "subtitle",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Dimmed identity sub-text after the title (the header hint slot)."
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "req": false,
+          "desc": "A status Chip label rendered beside the title (e.g. \"running\", \"archived\")."
+        },
+        {
+          "name": "statusTone",
+          "type": "\"neutral\" | \"accent\" | \"success\" | \"info\" | \"danger\"",
+          "req": false,
+          "desc": "Status Chip tone."
+        },
+        {
+          "name": "actions",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Right-aligned header actions (edit, open, delete)."
+        },
+        {
+          "name": "sections",
+          "type": "T[]",
+          "req": true,
+          "desc": "RecordSection[] — { label, entries: { k, v }[] }, in display order; each renders as a SectionLabel over a KeyValueList."
+        },
+        {
+          "name": "aside",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Optional side column (facts, related items) beside the sections."
+        },
+        {
+          "name": "asideWidth",
+          "type": "number",
+          "req": false,
+          "desc": "Side column width in px."
+        }
+      ],
+      "whenUse": [
+        "A complete record-detail page for ONE keyed record: an identity header (status Chip, subtitle, actions) over grouped label : value sections.",
+        "Config/property inspectors, session or entity detail views whose subject is a single record's fields."
+      ],
+      "whenNot": [
+        "Many records the user picks from — use CollectionPage (or TablePage for columnar fields).",
+        "Just the property list inside your own frame — use KeyValueList directly."
+      ],
+      "src": "shared/ui/pages/RecordPage.tsx",
+      "srcText": "import { RecordPage } from \"@/shared/ui/pages/RecordPage\";\n\n<RecordPage\n  title=\"api-builder\" subtitle=\"stream api\"\n  status=\"running\" statusTone=\"success\"\n  actions={<Button size=\"sm\">Edit</Button>}\n  sections={[\n    { label: \"Session\", entries: [{ k: \"model\", v: \"opus\" }, { k: \"role\", v: \"worker\" }] },\n    { label: \"Worktree\", entries: [{ k: \"branch\", v: \"2409-name-derived-key\" }] },\n  ]}\n/>",
+      "builtin": true,
+      "shapes": [
+        "key-value"
+      ]
     }
   ]
 }

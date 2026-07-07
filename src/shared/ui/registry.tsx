@@ -66,6 +66,8 @@ import { PipelinePage } from "./pages/PipelinePage";
 import { NetworkPage } from "./pages/NetworkPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { CollectionPage } from "./pages/CollectionPage";
+// #2508 — the key-value shape's page, completing the page-per-shape set
+import { RecordPage } from "./pages/RecordPage";
 
 // Heterogeneous prop shapes — a render-map is intentionally prop-agnostic.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -85,7 +87,7 @@ export const UI_COMPONENTS: Record<PrimitiveName, AnyComponent> = {
   MasterDetail, SplitView, GraphCanvas, PaneGrid, Sequence, Tree,
   LabelChip, ActivityFeed, Pane, TelemetryPanel, ItemBars, SplitBar,
   KeyValueList,
-  TablePage, TreeExplorerPage, PipelinePage, NetworkPage, DashboardPage, CollectionPage,
+  TablePage, TreeExplorerPage, PipelinePage, NetworkPage, DashboardPage, CollectionPage, RecordPage,
 };
 
 /** Resolve a primitive name to its component (undefined for an unknown name). */
