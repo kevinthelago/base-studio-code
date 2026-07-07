@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { matchesQuery, resolveComposes, resolveUsedBy, DATA_SHAPES, ROLE_COLOR, ROLES, type ComponentRecord, type DataShape } from "./model";
-import { SEED_COMPONENTS } from "./seed";
+import { SEED_COMPONENTS, SEED_KITS } from "./seed";
 
 const byName = (n: string) => SEED_COMPONENTS.find((c) => c.name === n)!;
 
@@ -50,6 +50,16 @@ describe("component model helpers (#2269)", () => {
       for (const s of c.shapes ?? []) {
         expect(DATA_SHAPES, `${c.name} stamps an in-vocabulary shape`).toContain(s as DataShape);
       }
+    }
+  });
+
+  it("every packaged kit carries the rail-hierarchy axes: tech (a lowercase slug) + style (#2487)", () => {
+    const byId = new Map(SEED_KITS.map((k) => [k.id, k]));
+    expect(byId.get("react-ui")).toMatchObject({ tech: "react", style: "studio" });
+    expect(byId.get("examples")).toMatchObject({ tech: "react", style: "demo" });
+    for (const k of SEED_KITS) {
+      expect(k.tech, `${k.id} tech is a lowercase slug`).toMatch(/^[a-z][a-z0-9-]*$/);
+      expect(k.style, `${k.id} carries a visual-language label`).toBeTruthy();
     }
   });
 });
