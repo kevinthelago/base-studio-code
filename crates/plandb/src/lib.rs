@@ -27,7 +27,7 @@
 //! codec. Each cohesive cluster of `Store` methods (and its serde row types) lives in its own module
 //! and hangs its methods off `Store` via a split inherent `impl` (Rust allows this within a crate):
 //! `schema` (DDL + migrations), `issues`, `features`, `repos`, `fleet`, `deploy` (deploy + deps),
-//! `market`, `mcp`, `blueprint`, `ui` (the {kit, theme} pairing, #2489), `assignments` (automations + startup scripts), `discovery`, `triage`, and
+//! `market`, `transformations` (the modification list, #2509), `mcp`, `blueprint`, `ui` (the {kit, theme} pairing, #2489), `assignments` (automations + startup scripts), `discovery`, `triage`, and
 //! `lessons` (self-correction lessons, #1362). Each type is re-exported here so the crate's public
 //! API stays flat (`plandb::PlanIssue`, `plandb::Store`, …).
 
@@ -53,6 +53,7 @@ mod skipped;
 /// Agent todo lists — the feature scope (#1872). `pub` so the global sibling store (`crates/bsc-todo`)
 /// reuses the [`todos::Todo`] type + the connection-level `add`/`list`/… helpers over its own db.
 pub mod todos;
+mod transformations;
 mod triage;
 mod ui;
 /// Set-time validation for the structured JSON writes (#2395) — `pub` so the app/bridge can reuse
