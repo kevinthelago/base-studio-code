@@ -146,6 +146,29 @@ pub async fn run(
     log::info!("tunnel: relay client stopped");
 }
 
+/// Normalize a relay URL to its `ws`/`wss` origin (no path), mirroring the frontend's
+/// `relayWsBase` (`src/features/tunnel/lib/relayProbe.ts`): `https://`→`wss://`,
+/// `http://`→`ws://`, an existing `ws(s)://` is kept, and a **scheme-less** URL (a bare
+/// hostname) gets `wss://` prepended. Trailing slashes are trimmed.
+///
+/// Without the scheme-less case, a bare hostname configured in Settings → Security dialed
+/// as a URL with no scheme, which tungstenite rejects (`HTTP format error: invalid
+/// format`) — so the host never joined the room while the frontend's Test-relay probe
+/// (which DID normalize) reported the relay reachable (#2531).
+fn relay_ws_base(relay_url: &str) -> String {
+    let trimmed = relay_url.trim().trim_end_matches('/');
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("https://") {
+        format!("wss://{}", &trimmed["https://".len()..])
+    } else if lower.starts_with("http://") {
+        format!("ws://{}", &trimmed["http://".len()..])
+    } else if lower.starts_with("wss://") || lower.starts_with("ws://") {
+        trimmed.to_string()
+    } else {
+        format!("wss://{trimmed}")
+    }
+}
+
 /// One relay session: dial, Noise handshake (responder), authenticate, replay, pump.
 async fn session(
     app: &AppHandle,
@@ -154,12 +177,7 @@ async fn session(
     static_priv: &[u8],
     shutdown_rx: &mut watch::Receiver<bool>,
 ) -> Result<(), String> {
-    let scheme = if relay_url.starts_with("http") {
-        relay_url.replacen("http", "ws", 1)
-    } else {
-        relay_url.to_string()
-    };
-    let url = format!("{scheme}/connect?room={room}&role=host");
+    let url = format!("{}/connect?room={room}&role=host", relay_ws_base(relay_url));
     log::debug!("tunnel: dialing host websocket {url}");
     // `connect_async` has no built-in timeout: a stalled TLS/WS upgrade would hang
     // forever — never entering the room, never erroring, never logging. Bound it so a
@@ -522,5 +540,36 @@ fn handle_client_msg(app: &AppHandle, msg: ClientMsg, focused: &mut Option<Strin
             log::info!("tunnel: mobile chat into planner {project_id} ({} chars)", text.len());
             let _ = app.emit("tunnel://plan-chat", serde_json::json!({ "projectId": project_id, "text": text }));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::relay_ws_base;
+
+    #[test]
+    fn relay_ws_base_normalizes_every_scheme_form() {
+        // Bare hostname (the #2531 bug): must get a wss:// scheme, not pass through raw.
+        assert_eq!(relay_ws_base("relay.example.workers.dev"), "wss://relay.example.workers.dev");
+        // http(s) → ws(s).
+        assert_eq!(relay_ws_base("https://relay.example.workers.dev"), "wss://relay.example.workers.dev");
+        assert_eq!(relay_ws_base("http://localhost:8787"), "ws://localhost:8787");
+        // Already ws(s):// is kept as-is.
+        assert_eq!(relay_ws_base("wss://relay.example.workers.dev"), "wss://relay.example.workers.dev");
+        assert_eq!(relay_ws_base("ws://localhost:8787"), "ws://localhost:8787");
+        // Trailing slashes and surrounding whitespace are trimmed.
+        assert_eq!(relay_ws_base("  https://relay.example.workers.dev/  "), "wss://relay.example.workers.dev");
+        assert_eq!(relay_ws_base("relay.example.workers.dev/"), "wss://relay.example.workers.dev");
+        // Scheme match is case-insensitive; the host remainder is preserved verbatim.
+        assert_eq!(relay_ws_base("HTTPS://Relay.Example.Workers.Dev"), "wss://Relay.Example.Workers.Dev");
+    }
+
+    #[test]
+    fn relay_ws_base_output_is_a_valid_connect_url() {
+        // The scheme-less case must build a schemed URL a WS client can parse — the
+        // tungstenite "HTTP format error: invalid format" reproducer was a missing scheme.
+        let url = format!("{}/connect?room=abc&role=host", relay_ws_base("relay.example.workers.dev"));
+        assert_eq!(url, "wss://relay.example.workers.dev/connect?room=abc&role=host");
+        assert!(url.parse::<tokio_tungstenite::tungstenite::http::Uri>().is_ok());
     }
 }
