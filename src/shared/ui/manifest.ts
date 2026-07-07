@@ -33,6 +33,8 @@ export type PrimitiveName =
   | "Banner" | "InlineError" | "EmptyState" | "StatusDot" | "Skeleton"
   // #2421 gap-fill — data chips/feeds, the overlay pane, and the telemetry chart trio
   | "LabelChip" | "ActivityFeed" | "Pane" | "TelemetryPanel" | "ItemBars" | "SplitBar"
+  // #2475 — the key-value record rendering (the property-list archetype of the row vocabulary)
+  | "KeyValueList"
   // layouts — the page-skeleton templates tier (#2197)
   | "MasterDetail" | "SplitView" | "GraphCanvas" | "PaneGrid" | "Tree";
 
@@ -706,6 +708,16 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "tone", type: "object", required: true, description: "action → color map — each caller keeps its own EVENT_TONE." },
       { name: "right", type: "node", description: "Optional header control on the right (e.g. a filter select)." },
       { name: "actionWidth", type: "number", default: 80, description: "Action column width in px (github uses 70, planner 80)." },
+    ],
+  },
+  {
+    name: "KeyValueList", group: "data", importPath: "@/shared/ui/data/KeyValueList",
+    description: "The read-only label : value property list (#2475) — one aligned labelWidth·1fr grid of { k, v } rows. The key-value archetype of the row vocabulary (siblings: CardListRow, DataTableRow): a detail summary, config/property panel, or inspector facts block.",
+    props: [
+      { name: "items", type: "array", required: true, description: "KeyValueItem[] — the { k, v } rows, in display order." },
+      { name: "labelWidth", type: "number", default: 120, description: "Fixed label column width in px." },
+      { name: "mono", type: "boolean", default: false, description: "Render values (not labels) in the mono font — ids, paths, config values." },
+      { name: "loading", type: "boolean", description: "Shimmer value placeholders (labels stay) while the record's source loads (#2302)." },
     ],
   },
   {

@@ -467,6 +467,22 @@ export function renderSpecimen(comp: ComponentRecord, variant: string, theme: Pr
         </div>
       );
     }
+    case "KeyValueList": {
+      const kv = (k: string, v: string, accent?: boolean) => (
+        <>
+          <span style={{ fontFamily: mono, fontSize: 10, textTransform: "uppercase", letterSpacing: ".05em", color: t.muted }}>{k}</span>
+          <span style={{ fontFamily: mono, fontSize: 11.5, color: accent ? "var(--accent)" : t.fg }}>{v}</span>
+        </>
+      );
+      return (
+        <div style={{ width: 250, display: "grid", gridTemplateColumns: "90px 1fr", rowGap: 7, columnGap: 12, alignItems: "baseline" }}>
+          {kv("repo", "base-studio-code")}
+          {kv("branch", "develop", true)}
+          {kv("streams", "4 active")}
+          {kv("plan.db", "~/.base-studio-code")}
+        </div>
+      );
+    }
     case "Pane": {
       return (
         <div style={{ width: 250, height: 150, borderRadius: 10, border: `1px solid ${t.border}`, background: t.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
