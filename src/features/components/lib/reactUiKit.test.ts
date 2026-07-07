@@ -101,16 +101,19 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     for (const n of ["SplitView", "PaneGrid", "StatTile"]) {
       expect(byName(n)!.shapes, `${n} must not fake a shape ideal`).toBeUndefined();
     }
-    // `tree` is covered by the Tree template (#2476) — and ONLY by it; `linked-list` stays
-    // UNCOVERED until the Sequence template (#2477) lands — no component may fake coverage.
+    // Every shape now has exactly ONE ideal template claiming it: `tree` → Tree (#2476),
+    // `linked-list` → Sequence (#2477). No other component may fake coverage.
     expect(byName("Tree")!.shapes).toEqual(["tree"]);
+    expect(byName("Sequence")!.shapes).toEqual(["linked-list"]);
     for (const c of REACT_UI_COMPONENTS) {
       if (c.name !== "Tree") {
         expect(c.shapes ?? [], `${c.name} must not claim tree`)
           .not.toEqual(expect.arrayContaining(["tree"]));
       }
-      expect(c.shapes ?? [], `${c.name} must not claim linked-list yet`)
-        .not.toEqual(expect.arrayContaining(["linked-list"]));
+      if (c.name !== "Sequence") {
+        expect(c.shapes ?? [], `${c.name} must not claim linked-list`)
+          .not.toEqual(expect.arrayContaining(["linked-list"]));
+      }
     }
   });
 

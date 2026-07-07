@@ -3,7 +3,7 @@
 // manifest (fresh uids, defensive field coercion — never trusts the payload shape).
 // Pure; pairs with lib/gist/manifest.ts.
 
-import { type Blueprint, type BlueprintStage, type BlueprintTeam, uid, dedupeSections } from "../stages/blueprints";
+import { type Blueprint, type BlueprintStage, type BlueprintTeam, type BlueprintUiKit, uid, dedupeSections } from "../stages/blueprints";
 import { wrapExtension, type ExtensionManifest } from "@/features/planner/lib/gist/manifest";
 import { type SkillPayload } from "./blueprintSkills";
 // Type-only cross-feature imports (allowed by the #1545 boundary) — the team's node/edge shapes.
@@ -85,6 +85,21 @@ export function coerceTeam(v: unknown): BlueprintTeam | undefined {
   return { positions, relationships };
 }
 
+/** Coerce a blueprint's UI-kit pin (#2465) out of an untrusted payload — the lockfile entry
+ *  referencing an immutable `id@version` artifact in the global kit store. A pin is only as good
+ *  as its integrity data, so ALL of id/version/hash are required (a hash-less pin can't be
+ *  verified on fetch); anything malformed ⇒ `undefined` — the blueprint just stays unpinned,
+ *  exactly like a blueprint that never had one. `source` (the typed-gist URL) stays optional. */
+export function coerceUiKit(v: unknown): BlueprintUiKit | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const id = str(o.id);
+  const version = str(o.version);
+  const hash = str(o.hash);
+  if (!id || !version || !hash) return undefined;
+  return { id, version, hash, ...(str(o.source) ? { source: str(o.source) } : {}) };
+}
+
 /** Reconstruct a Blueprint from an untrusted payload, or null if it's not one. Requires an id, a
  *  name, and (by default) at least one valid section; assigns fresh uids.
  *
@@ -118,6 +133,9 @@ export function coerceBlueprint(
   // Embedded team (#2450) — preserved through import/share so the blueprint keeps its own org
   // configuration instead of silently dropping it (same discipline as skills/mcp above).
   const team = coerceTeam(o.team);
+  // UI-kit pin (#2465) — the whitelist below silently strips unknown fields (the #2450 lesson),
+  // so the pin MUST be coerced explicitly or it would vanish on every import/poll round-trip.
+  const uiKit = coerceUiKit(o.uiKit);
   return {
     id, name, desc: str(o.desc), sections,
     // Blueprint-wide attached capabilities (#897) + lifecycle metadata, preserved on import.
@@ -133,6 +151,7 @@ export function coerceBlueprint(
     ...(category ? { category } : {}),
     ...(mode ? { mode } : {}),
     ...(team ? { team } : {}),
+    ...(uiKit ? { uiKit } : {}),
   };
 }
 

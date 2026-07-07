@@ -12,6 +12,15 @@ import type { ComponentRecord, DataShape, Kit, PropSpec, Role } from "./model";
 
 export const REACT_UI_KIT_ID = "react-ui";
 
+/** The packaged kit's GLOBAL-store identity (#2465): the publisher-scoped id + exact semver it is
+ *  registered under in the versioned kit store (`~/.base-studio-code/kits/<id>/<version>/`). Stamped
+ *  into the generated `react-ui.json` (+ its `react-ui-kit.meta.json` hash sidecar) by
+ *  `reactUiKit.gen.test.ts`, embedded by the Rust `bsc ui kit` store as the packaged fallback entry,
+ *  and default-pinned onto every newly-authored blueprint (`PACKAGED_UI_KIT_PIN`). A published
+ *  `id@version` is immutable — changing the kit's content means bumping this version. */
+export const REACT_UI_KIT_STORE_ID = "bsc/react-ui";
+export const REACT_UI_KIT_VERSION = "1.0.0";
+
 /** Default architectural role by manifest group (the overlay may override per component). */
 const GROUP_ROLE: Record<PrimitiveGroup, Role> = {
   layout: "layout", typography: "primitive", controls: "primitive", data: "primitive", feedback: "primitive",
@@ -337,6 +346,14 @@ const GUIDANCE: Record<string, Guidance> = {
     whenUse: ["A CSS grid of N equal panes (the Console tab grid).", "A dashboard of equally-weighted tiles kept alive across tab switches (hidden)."],
     whenNot: ["A single list+detail split — use MasterDetail.", "A pan/zoom graph — use GraphCanvas."],
     srcText: 'import { PaneGrid } from "@/shared/ui/layouts/PaneGrid";\n\n<PaneGrid cols={2} rows={2}>\n  {panes.map((p) => <Pane key={p.id} {...p}/>)}\n</PaneGrid>',
+  },
+  Sequence: {
+    version: "1.0.0", tags: ["layout", "page", "linked-list"], composes: ["Box", "Row", "Stack"],
+    shapes: ["linked-list"], // the ideal linked-list-shape layout — fills the gap the #2475 shape axis recorded
+    variants: ["horizontal", "vertical"],
+    whenUse: ["Linked-list-shaped data where the prev→next ORDER is the first-class thing (workflows, pipelines, wizards, timelines).", "A status-tracked stepper or timeline whose focused step drives a detail panel."],
+    whenNot: ["An arbitrary node/edge graph — use GraphCanvas.", "An unordered list beside a detail view — use MasterDetail."],
+    srcText: 'import { Sequence } from "@/shared/ui/layouts/Sequence";\n\n<Sequence\n  steps={[\n    { id: "plan", label: "Plan", status: "complete" },\n    { id: "build", label: "Build", status: "active" },\n    { id: "ship", label: "Ship" },\n  ]}\n  detail={(step) => <StepEditor step={step}/>}\n/>',
   },
   Tree: {
     version: "1.0.0", tags: ["layout", "page", "tree"], composes: ["MasterDetail", "GraphCanvas", "Box", "Row", "Stack", "Text", "IconButton"],
