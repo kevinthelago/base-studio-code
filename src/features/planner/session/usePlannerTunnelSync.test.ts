@@ -12,6 +12,9 @@ vi.mock("@/features/tunnel/lib/tunnelClient", () => ({
   tunnelEmitPlanState: vi.fn().mockResolvedValue(undefined),
   tunnelEmitPlanStatus: vi.fn().mockResolvedValue(undefined),
   tunnelEmitPlanEvent: vi.fn().mockResolvedValue(undefined),
+  // #2498: the plan store_state domain + the alert push ride the same client module.
+  tunnelSetStoreState: vi.fn().mockResolvedValue(undefined),
+  tunnelEmitAlert: vi.fn().mockResolvedValue(undefined),
 }));
 // The transcript poll is its own (separately-tested) hook — keep it inert here.
 vi.mock("./usePlannerMessages", () => ({ usePlannerMessages: () => [] }));
@@ -28,6 +31,10 @@ const base: PlannerTunnelSyncOpts = {
   paneId: "planning_proj",
   projectTitle: "Proj",
   confirmPlanStage: () => {},
+  // #2498: the stage/gate board inputs (the `plan` store_state domain).
+  stages: [],
+  focusGateReady: false,
+  planComplete: false,
 };
 
 const render = (p: PlannerTunnelSyncOpts) =>
