@@ -1,10 +1,14 @@
 // OrgPanel (#2193/#2333) — the Org designer opens with NO node selected (the empty sentinel), not
 // focused on the first position (the director). Regression guard for #2333.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { OrgPanel } from "./OrgPanel";
 import { useAppStore } from "@/store";
 import { nodeBox } from "./lib/orgLayout";
+
+// The drill lives in the store since #2492 (nav-history integration) — reset it so a drill from one
+// test can't leak a drilled canvas into the next render.
+beforeEach(() => useAppStore.setState({ orgDrill: null }));
 
 describe("OrgPanel initial selection (#2333)", () => {
   it("opens with nothing selected — the inspector shows no position (no 'Persona' section)", () => {
