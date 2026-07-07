@@ -52,6 +52,26 @@ describe("reconcile against the real seed (#2483 acceptance criteria)", () => {
     expect(r.drops).toEqual(["spring-kotlin"]);
   });
 
+  it("a pre-#2487 stored kit (no tech/style) auto-refreshes when the seed gains the hierarchy axes", () => {
+    // Yesterday's release: the same packaged kit WITHOUT the later-added tech/style fields —
+    // pristine (self-consistently hashed, absent fields drop out of the hash), but stale.
+    for (const current of SEED_KITS) {
+      expect(current.tech).toBeTruthy(); // sanity: the packaged seed now carries the axes
+      expect(current.style).toBeTruthy();
+      const rest = { ...current };
+      delete rest.tech;
+      delete rest.style;
+      delete rest.seedHash;
+      const stale = stampSeedHash(rest);
+      const r = reconcileKits([stale]);
+      const reconciled = r.records.find((k) => k.id === current.id)!;
+      expect(reconciled.tech).toBe(current.tech); // the new seed copy won
+      expect(reconciled.style).toBe(current.style);
+      expect(r.pushes).toContainEqual(current); // and converges the store
+      expect(r.notices).toEqual([]); // a refresh, not a kept-divergence
+    }
+  });
+
   it("legacy no-hash records refresh once without user action (every pre-#2483 install)", () => {
     // A pre-#2483 store: pristine copies pushed WITHOUT seedHash.
     const legacyKits: Kit[] = SEED_KITS.map((k) => ({ ...k, seedHash: undefined }));

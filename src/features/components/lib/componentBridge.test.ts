@@ -29,6 +29,17 @@ describe("componentBridge → bsc ui (#2469)", () => {
     expect(bsc).toHaveBeenCalledWith(null, ["ui", "kit", "list", "--full"]);
   });
 
+  it("kit rows carry the #2487 tech/style axes verbatim — an absent axis stays ABSENT, never defaulted (the #2483 seedHash transition depends on it)", async () => {
+    vi.mocked(bsc).mockResolvedValueOnce(JSON.stringify([
+      { id: "react-ui", name: "react-ui", tech: "react", style: "studio" },
+      { id: "legacy", name: "legacy" }, // a pre-#2487 store copy
+    ]));
+    const kits = await loadKits();
+    expect(kits?.[0]).toMatchObject({ tech: "react", style: "studio" });
+    expect(kits?.[1].tech).toBeUndefined();
+    expect(kits?.[1].style).toBeUndefined();
+  });
+
   it("writes component upsert/removal through the ui surface", async () => {
     const comp = { id: "c1" } as unknown as ComponentRecord;
     await pushComponent(comp);

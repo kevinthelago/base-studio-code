@@ -32,7 +32,8 @@ import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { RoleDot, KitChip } from "./kitChrome";
-import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecord } from "./lib/model";
+import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecord, type Kit } from "./lib/model";
+import { groupKits, type KitTreeNode } from "./lib/kitGroups";
 import { renderSpecimen, type PreviewTheme } from "./specimens";
 import { ThemeScope, DEFAULT_THEME } from "@/shared/ui/kit";
 import type { KitThemeRecord } from "./lib/themes";
@@ -139,7 +140,58 @@ export function DesignStudio() {
   const gvpFit = gvp.fit;
   useEffect(() => { gvpFit(); }, [kitId, gvpFit]); // re-fit on mount + whenever the kit switches
 
+  // ── rail hierarchy (#2487) — technology → visual language → kit → components, with trivial levels
+  // auto-flattened (lib/kitGroups: today's single-tech library renders exactly as flat as before).
+  const railTree = useMemo(() => groupKits(kits), [kits]);
+
   if (!kit) return <StudioEmpty />;
+
+  // One rail kit entry: the collapsible kit head + its (search-filtered) component rows.
+  const renderRailKit = (k: Kit) => {
+    const open = !!expanded[k.id];
+    const inKit = components.filter((c) => c.kitId === k.id);
+    const rows = inKit.filter(match);
+    return (
+      <Box key={k.id} style={{ marginBottom: 4 }}>
+        <Box as="button" className={`ds-kithead${k.id === kitId ? " active" : ""}`} onClick={() => setExpanded((e) => ({ ...e, [k.id]: !e[k.id] }))}>
+          <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
+          <ColorSwatch color={k.dot} size={7} />
+          <Text as="span" weight={500} style={{ flex: 1, textAlign: "left" }}>{k.name}</Text>
+          <Text mono size="xxs" tone="dim">{inKit.length}</Text>
+        </Box>
+        {open && (
+          <Box style={{ margin: "2px 0 6px", paddingLeft: 6 }}>
+            {rows.map((c) => (
+              <Box as="button" key={c.id} className={`ds-comprow${c.id === compId && k.id === kitId ? " on" : ""}`} onClick={() => selectComp(c)}>
+                <RoleDot role={c.role} size={7} glow={3} />
+                <Text as="span" style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</Text>
+                <Text mono size="xxs" tone="dim" style={{ padding: "1px 5px", background: "var(--bg-soft)", borderRadius: 4 }}>×{c.used}</Text>
+              </Box>
+            ))}
+            {open && rows.length === 0 && query && (
+              <Text size={11} tone="dim" as="div" style={{ padding: "6px 10px", fontStyle: "italic" }}>no matches</Text>
+            )}
+          </Box>
+        )}
+      </Box>
+    );
+  };
+  // A rail tree node: a kit entry, or a collapsible tech/style group header (default OPEN — its
+  // expand state shares the `expanded` record under the group's stable key).
+  const renderRailNode = (n: KitTreeNode): ReactNode => {
+    if (n.kind === "kit") return renderRailKit(n.kit);
+    const open = expanded[n.key] ?? true;
+    return (
+      <Box key={n.key} style={{ marginBottom: 4 }}>
+        <Box as="button" className="ds-grouphead" aria-expanded={open} title={`${n.level === "tech" ? "technology" : "visual language"}: ${n.label}`} onClick={() => setExpanded((e) => ({ ...e, [n.key]: !(e[n.key] ?? true) }))}>
+          <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
+          <Text as="span" mono size="xxs" style={{ flex: 1, textAlign: "left", letterSpacing: ".07em", textTransform: "uppercase" }}>{n.label}</Text>
+          <Text mono size="xxs" tone="dim">{n.count}</Text>
+        </Box>
+        {open && <Box className="ds-groupkids">{n.children.map(renderRailNode)}</Box>}
+      </Box>
+    );
+  };
 
   // The live preview node, guarded — a specimen that throws surfaces the error card, not a crash.
   let previewEl: ReactNode = null, previewErr: string | null = null;
@@ -202,35 +254,7 @@ export function DesignStudio() {
             <Text mono size="xxs" tone="dim">{kitComps.length} comps</Text>
           </Box>
           <Box className="ds-scroll" style={{ flex: 1, padding: "8px 8px 16px" }}>
-            {kits.map((k) => {
-              const open = !!expanded[k.id];
-              const inKit = components.filter((c) => c.kitId === k.id);
-              const rows = inKit.filter(match);
-              return (
-                <Box key={k.id} style={{ marginBottom: 4 }}>
-                  <Box as="button" className={`ds-kithead${k.id === kitId ? " active" : ""}`} onClick={() => setExpanded((e) => ({ ...e, [k.id]: !e[k.id] }))}>
-                    <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
-                    <ColorSwatch color={k.dot} size={7} />
-                    <Text as="span" weight={500} style={{ flex: 1, textAlign: "left" }}>{k.name}</Text>
-                    <Text mono size="xxs" tone="dim">{inKit.length}</Text>
-                  </Box>
-                  {open && (
-                    <Box style={{ margin: "2px 0 6px", paddingLeft: 6 }}>
-                      {rows.map((c) => (
-                        <Box as="button" key={c.id} className={`ds-comprow${c.id === compId && k.id === kitId ? " on" : ""}`} onClick={() => selectComp(c)}>
-                          <RoleDot role={c.role} size={7} glow={3} />
-                          <Text as="span" style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</Text>
-                          <Text mono size="xxs" tone="dim" style={{ padding: "1px 5px", background: "var(--bg-soft)", borderRadius: 4 }}>×{c.used}</Text>
-                        </Box>
-                      ))}
-                      {open && rows.length === 0 && query && (
-                        <Text size={11} tone="dim" as="div" style={{ padding: "6px 10px", fontStyle: "italic" }}>no matches</Text>
-                      )}
-                    </Box>
-                  )}
-                </Box>
-              );
-            })}
+            {railTree.map(renderRailNode)}
           </Box>
         </Box>
         <Box className="ds-handle" {...rail.handleProps} />

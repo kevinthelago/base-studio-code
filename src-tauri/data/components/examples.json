@@ -1,6 +1,6 @@
 {
   "order": 1,
-  "kit": { "id": "examples", "name": "examples", "stack": "React · demo", "dot": "var(--state-wait)", "builtin": true },
+  "kit": { "id": "examples", "name": "examples", "tech": "react", "style": "demo", "stack": "React · demo", "dot": "var(--state-wait)", "builtin": true },
   "components": [
     {
       "id": "personaspanel", "name": "PersonasPanel", "kitId": "examples", "role": "page", "version": "1.0.0", "used": 1,
