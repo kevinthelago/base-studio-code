@@ -27,7 +27,7 @@
 //! codec. Each cohesive cluster of `Store` methods (and its serde row types) lives in its own module
 //! and hangs its methods off `Store` via a split inherent `impl` (Rust allows this within a crate):
 //! `schema` (DDL + migrations), `issues`, `features`, `repos`, `fleet`, `deploy` (deploy + deps),
-//! `mcp`, `blueprint`, `assignments` (automations + startup scripts), `discovery`, `triage`, and
+//! `market`, `mcp`, `blueprint`, `assignments` (automations + startup scripts), `discovery`, `triage`, and
 //! `lessons` (self-correction lessons, #1362). Each type is re-exported here so the crate's public
 //! API stays flat (`plandb::PlanIssue`, `plandb::Store`, …).
 
@@ -44,6 +44,7 @@ mod features;
 mod fleet;
 mod issues;
 mod lessons;
+mod market;
 mod mcp;
 mod repos;
 mod schema;

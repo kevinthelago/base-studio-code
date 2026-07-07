@@ -187,6 +187,23 @@ USAGE:
 registry needs a \"url\". A rejected write leaves the stored manifest untouched. --force skips.",
     },
     CmdDoc {
+        name: "market",
+        summary: "the Market stage's scored assessment (one blob)",
+        usage: "\
+USAGE:
+  bsc plan market set [--force]   # replace the assessment from a market-assessment JSON on stdin
+  bsc plan market get             # print the stored assessment
+
+The Market stage's structured artifact (#2430) — the `marketDefined` gate reads it. Shape:
+{ \"summary\", \"scores\": { problemSeverity | problemFrequency | reachableMarket | competitiveGap |
+timing | moat: { \"score\": 1-5, \"rationale\", \"sources\": [\"...\"] } }, \"sizing\"?, \"competitors\"?,
+\"verdict\": { \"recommendation\": go|caution|no-go, \"rationale\" } }.
+`set` validates before storing (#2395): EXACTLY the six rubric dimensions, each an integer score
+1-5 with a non-empty rationale and ≥1 fetched source (citation discipline — an uncited score is
+rejected). A rejected write leaves the stored assessment untouched; a successful set echoes the
+\"N of 6 dimensions scored, cited\" readiness. --force stores a work-in-progress blob unvalidated.",
+    },
+    CmdDoc {
         name: "mcp",
         summary: "catalog MCP servers scoped to the project",
         usage: "\
@@ -446,6 +463,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "fleet" => fleet::cmd_fleet(&args),
         "deploy" => nouns::cmd_deploy(&args),
         "deps" => nouns::cmd_deps(&args),
+        "market" => nouns::cmd_market(&args),
         "mcp" => nouns::cmd_mcp(&args),
         "blueprint" => nouns::cmd_blueprint(&args),
         "discovery" => nouns::cmd_discovery(&args),
@@ -585,8 +603,8 @@ mod tests {
         // Every top-level command appears in the compact menu.
         for c in [
             "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
-            "fleet", "deploy", "deps", "mcp", "blueprint", "discovery", "confirm", "skip", "integration",
-            "lesson", "triage", "stage", "automations", "startup", "github-context",
+            "fleet", "deploy", "deps", "market", "mcp", "blueprint", "discovery", "confirm", "skip",
+            "integration", "lesson", "triage", "stage", "automations", "startup", "github-context",
         ] {
             assert!(ov.contains(c), "overview lists {c}");
         }
@@ -629,6 +647,43 @@ mod tests {
         })
         .unwrap();
         assert_eq!(s.deploy_get().unwrap().unwrap()["services"][0]["id"], serde_json::json!("eno"));
+    }
+
+    #[test]
+    fn market_validated_set_rejects_before_persisting_and_force_bypasses() {
+        // The same keep-previous-value contract (#2395) through the market seam (#2430).
+        let s = Store::open_in_memory().unwrap();
+        let cell = || serde_json::json!({ "score": 3, "rationale": "cited", "sources": ["https://x.example"] });
+        let good = serde_json::json!({
+            "summary": "good",
+            "scores": {
+                "problemSeverity": cell(), "problemFrequency": cell(), "reachableMarket": cell(),
+                "competitiveGap": cell(), "timing": cell(), "moat": cell()
+            },
+            "verdict": { "recommendation": "go", "rationale": "gap is real" }
+        });
+        validated_set(&good, false, crate::validate::validate_market_config, |v| {
+            s.market_set(v).map_err(|e| e.to_string())
+        })
+        .unwrap();
+        // An uncited partial rubric is rejected with a field-level message; the good blob survives.
+        let bad = serde_json::json!({
+            "summary": "bad",
+            "scores": { "timing": { "score": 9, "rationale": "", "sources": [] } },
+            "verdict": { "recommendation": "maybe" }
+        });
+        let err = validated_set(&bad, false, crate::validate::validate_market_config, |v| {
+            s.market_set(v).map_err(|e| e.to_string())
+        })
+        .unwrap_err();
+        assert!(err.contains("scores.timing.score") && err.contains("verdict.recommendation"), "field-level: {err}");
+        assert_eq!(s.market_get().unwrap().unwrap()["summary"], serde_json::json!("good"), "good blob kept");
+        // --force stores the work-in-progress blob unvalidated.
+        validated_set(&bad, true, crate::validate::validate_market_config, |v| {
+            s.market_set(v).map_err(|e| e.to_string())
+        })
+        .unwrap();
+        assert_eq!(s.market_get().unwrap().unwrap()["summary"], serde_json::json!("bad"));
     }
 
     #[test]
