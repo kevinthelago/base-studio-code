@@ -538,16 +538,35 @@ pub fn market_readiness(v: &Value) -> String {
 
 // ── transformations (`bsc plan transformation add/update`) — the modification list (#2509) ──────
 
-/// The transformation verb taxonomy — each verb has a known recipe + verification pattern (#2509).
-/// (Slice b externalizes the verb + recipe taxonomies to `@data`; until then this is the vocabulary.)
-const TRANSFORMATION_VERBS: &[&str] = &[
-    "rename", "extract", "split", "merge", "move", "replace", "upgrade", "restyle", "remove",
-    "optimize", "harden",
-];
+/// The transformation taxonomy — the same file the frontend imports as
+/// `@data/transformations/taxonomy.json` (#2509 slice b), embedded at compile time (the
+/// `DEPLOY_TAXONOMY_JSON`/`MARKET_RUBRIC_JSON` pattern) so the verb + recipe vocabularies have one
+/// source of truth. Each verb carries a known recipe + verification pattern; the recipes are the
+/// composite transforms that GENERATE list entries (the codified refactor workflow + the
+/// migrate-to-kit flagship).
+const TRANSFORMATION_TAXONOMY_JSON: &str =
+    include_str!("../../../src-tauri/data/transformations/taxonomy.json");
 
-/// The recipes a transformation's `provenance.recipe` may name — the composite transforms that
-/// GENERATE list entries (the codified refactor workflow + the migrate-to-kit flagship).
-const TRANSFORMATION_RECIPES: &[&str] = &["migrate-to-kit", "extract-and-abstract"];
+/// The `id`s of one taxonomy section (`verbs` / `recipes`), in file order.
+fn transformation_taxonomy_ids(key: &str) -> Vec<String> {
+    let v: Value = serde_json::from_str(TRANSFORMATION_TAXONOMY_JSON).unwrap_or(Value::Null);
+    v[key]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|x| x["id"].as_str().map(String::from)).collect())
+        .unwrap_or_default()
+}
+
+/// The taxonomy's verb ids (rename … harden) a transformation's `verb` must name.
+fn transformation_verbs() -> &'static Vec<String> {
+    static VERBS: OnceLock<Vec<String>> = OnceLock::new();
+    VERBS.get_or_init(|| transformation_taxonomy_ids("verbs"))
+}
+
+/// The taxonomy's recipe ids a transformation's `provenance.recipe` may name.
+fn transformation_recipes() -> &'static Vec<String> {
+    static RECIPES: OnceLock<Vec<String>> = OnceLock::new();
+    RECIPES.get_or_init(|| transformation_taxonomy_ids("recipes"))
+}
 
 /// Validate ONE transformation row against the #2509 contract — the unit behind the bottom-up
 /// confirm queue. Required: `verb` from the taxonomy; a non-empty `title`; a `target` object with a
@@ -601,12 +620,14 @@ fn transformation_errors(at: &str, v: &Value, errs: &mut Vec<String>) {
         return;
     }
     match str_of(v, "verb") {
-        Some(verb) if TRANSFORMATION_VERBS.contains(&verb) => {}
+        Some(verb) if transformation_verbs().iter().any(|w| w == verb) => {}
         Some(verb) => errs.push(format!(
             r#"{at}verb: unknown verb "{verb}" — the taxonomy is {}"#,
-            quote_str_list(TRANSFORMATION_VERBS)
+            quote_list(transformation_verbs())
         )),
-        None => errs.push(format!(r#"{at}verb: missing — one of {}"#, quote_str_list(TRANSFORMATION_VERBS))),
+        None => {
+            errs.push(format!(r#"{at}verb: missing — one of {}"#, quote_list(transformation_verbs())))
+        }
     }
     if str_of(v, "title").is_none() {
         errs.push(format!("{at}title: missing non-empty title — the queue item's one-line name"));
@@ -660,10 +681,10 @@ fn transformation_errors(at: &str, v: &Value, errs: &mut Vec<String>) {
         } else {
             if present(p, "recipe") {
                 match str_of(p, "recipe") {
-                    Some(r) if TRANSFORMATION_RECIPES.contains(&r) => {}
+                    Some(r) if transformation_recipes().iter().any(|k| k == r) => {}
                     _ => errs.push(format!(
                         "{at}provenance.recipe: unknown recipe — expected {}",
-                        quote_str_list(TRANSFORMATION_RECIPES)
+                        quote_list(transformation_recipes())
                     )),
                 }
             }
@@ -682,11 +703,6 @@ fn transformation_errors(at: &str, v: &Value, errs: &mut Vec<String>) {
             "{at}spec: must be an object when present (the optional KitNode render spec the pane previews)"
         ));
     }
-}
-
-/// `"a" | "b" | …` over a static vocabulary (the `&'static str` sibling of [`quote_list`]).
-fn quote_str_list(items: &[&str]) -> String {
-    items.iter().map(|s| format!("\"{s}\"")).collect::<Vec<_>>().join(" | ")
 }
 
 /// Require `val` to be an array of non-empty strings; when `required`, it must also be present and
@@ -1450,6 +1466,44 @@ mod tests {
         let mut t = good_transformation();
         t.as_object_mut().unwrap().remove("id");
         assert!(validate_transformation_update("anything", &t).is_ok());
+    }
+
+    #[test]
+    fn transformation_taxonomy_embeds_the_shared_vocabulary() {
+        // The embedded file is the SAME @data/transformations/taxonomy.json the frontend loads for
+        // verbMeta/tierLabel (#2509 slice b) — pin the vocabulary: 11 verbs (in enum order),
+        // 2 recipes, 4 tiers (primitives → composites → layouts → pages), and that every verb
+        // carries the display + verification metadata both sides read.
+        assert_eq!(
+            transformation_verbs().as_slice(),
+            ["rename", "extract", "split", "merge", "move", "replace", "upgrade", "restyle", "remove", "optimize", "harden"]
+        );
+        assert_eq!(transformation_recipes().as_slice(), ["migrate-to-kit", "extract-and-abstract"]);
+        let v: Value = serde_json::from_str(TRANSFORMATION_TAXONOMY_JSON).unwrap();
+        for verb in v["verbs"].as_array().unwrap() {
+            for field in ["label", "blurb", "verification"] {
+                assert!(
+                    verb[field].as_str().is_some_and(|s| !s.trim().is_empty()),
+                    "verb {} carries a non-empty {field}",
+                    verb["id"]
+                );
+            }
+        }
+        for recipe in v["recipes"].as_array().unwrap() {
+            assert!(
+                recipe["steps"].as_array().is_some_and(|s| !s.is_empty()),
+                "recipe {} carries its canonical steps",
+                recipe["id"]
+            );
+        }
+        let tiers = v["tiers"].as_array().expect("tiers array");
+        assert_eq!(tiers.len(), 4, "the four composition tiers");
+        let labels: Vec<&str> = tiers.iter().filter_map(|t| t["label"].as_str()).collect();
+        assert_eq!(labels, ["primitives", "composites", "layouts", "pages"]);
+        for (i, t) in tiers.iter().enumerate() {
+            assert_eq!(t["tier"].as_i64(), Some(i as i64), "tiers are 0..3 in order");
+            assert!(t["blurb"].as_str().is_some_and(|s| !s.trim().is_empty()));
+        }
     }
 
     #[test]

@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   transformationsConfirmed, tierGroups, nextPendingTier, tierLabel,
-  coerceTransformationRows, specNodeCount, type TransformationRow,
+  coerceTransformationRows, specNodeCount, TRANSFORMATION_TAXONOMY, verbMeta,
+  type TransformationRow,
 } from "./transformations";
 
 /** A minimal valid row; override per test. */
@@ -81,7 +82,7 @@ describe("nextPendingTier", () => {
   });
 });
 
-describe("tierLabel", () => {
+describe("tierLabel — driven by the @data taxonomy tiers (#2509 slice b)", () => {
   it("names the floor primitives, the top pages, and the middle composites", () => {
     expect(tierLabel(0, 2)).toBe("Tier 0 · primitives");
     expect(tierLabel(1, 2)).toBe("Tier 1 · composites");
@@ -90,6 +91,64 @@ describe("tierLabel", () => {
 
   it("a single-tier queue reads as primitives (tier 0 always wins the floor name)", () => {
     expect(tierLabel(0, 0)).toBe("Tier 0 · primitives");
+  });
+
+  it("a four-tier queue surfaces the taxonomy's full ladder (layouts between composites and pages)", () => {
+    expect(tierLabel(1, 3)).toBe("Tier 1 · composites");
+    expect(tierLabel(2, 3)).toBe("Tier 2 · layouts");
+    expect(tierLabel(3, 3)).toBe("Tier 3 · pages");
+  });
+
+  it("clamps a deep middle tier to the last middle label (never pages before the top)", () => {
+    expect(tierLabel(3, 5)).toBe("Tier 3 · layouts");
+    expect(tierLabel(5, 5)).toBe("Tier 5 · pages");
+  });
+});
+
+describe("TRANSFORMATION_TAXONOMY — the @data drift guard (#2509 slice b)", () => {
+  it("carries exactly the 11 verbs of the plandb enum, in enum order", () => {
+    // MUST match crates/plandb/src/validate.rs's embedded vocabulary (the same file) — the CLI
+    // rejects any verb outside this set at set-time.
+    expect(TRANSFORMATION_TAXONOMY.verbs.map((v) => v.id)).toEqual([
+      "rename", "extract", "split", "merge", "move", "replace",
+      "upgrade", "restyle", "remove", "optimize", "harden",
+    ]);
+  });
+
+  it("every verb carries label + blurb (the chip tooltip) + verification hint", () => {
+    for (const v of TRANSFORMATION_TAXONOMY.verbs) {
+      expect(v.label.trim().length, `${v.id} label`).toBeGreaterThan(0);
+      expect(v.blurb.trim().length, `${v.id} blurb`).toBeGreaterThan(0);
+      expect(v.verification.trim().length, `${v.id} verification`).toBeGreaterThan(0);
+    }
+  });
+
+  it("carries the two recipes, each with its canonical steps", () => {
+    expect(TRANSFORMATION_TAXONOMY.recipes.map((r) => r.id)).toEqual([
+      "migrate-to-kit", "extract-and-abstract",
+    ]);
+    for (const r of TRANSFORMATION_TAXONOMY.recipes) {
+      expect(r.steps.length, `${r.id} steps`).toBeGreaterThan(0);
+    }
+  });
+
+  it("carries the four composition tiers 0..3: primitives · composites · layouts · pages", () => {
+    expect(TRANSFORMATION_TAXONOMY.tiers.map((t) => [t.tier, t.label])).toEqual([
+      [0, "primitives"], [1, "composites"], [2, "layouts"], [3, "pages"],
+    ]);
+  });
+});
+
+describe("verbMeta", () => {
+  it("resolves a taxonomy verb's display metadata from the data file", () => {
+    const m = verbMeta("replace");
+    expect(m.label).toBe("Replace");
+    expect(m.blurb.length).toBeGreaterThan(0);
+    expect(m.verification.length).toBeGreaterThan(0);
+  });
+
+  it("echoes an unknown id back bare (a stale taxonomy never crashes the pane)", () => {
+    expect(verbMeta("polish")).toEqual({ id: "polish", label: "polish", blurb: "", verification: "" });
   });
 });
 
