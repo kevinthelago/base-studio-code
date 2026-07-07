@@ -78,6 +78,10 @@
 /* Selection must NOT touch the background (#2491) — the node keeps its elevated surface; the solid
    accent ring + border alone carry the selected state. */
 .ds-node.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 10px 30px rgba(0,0,0,.4); }
+/* Related nodes (#2523) — a softer, thinner ring than .on; still no background change (the #2491 rule).
+   .on wins over .related (the selection is never also "related" to itself). */
+.ds-node.related { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 6px 20px rgba(0,0,0,.3); }
+.ds-edge path { transition: stroke .12s, fill .12s; }
 
 /* ── inspector bits ── */
 .ds-inspbox { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }

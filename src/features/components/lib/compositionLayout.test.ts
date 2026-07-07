@@ -1,13 +1,43 @@
 import { describe, it, expect } from "vitest";
 import {
-  layoutComposition, buildComposesEdges, TIER_INDEX, DEFAULT_METRICS, NODE_W, NODE_H,
+  layoutComposition, buildComposesEdges, selectionNeighborhood, TIER_INDEX, DEFAULT_METRICS, NODE_W, NODE_H,
 } from "./compositionLayout";
+import type { GraphEdge } from "@/shared/lib/graph/types";
 import type { ComponentRecord, Role } from "./model";
 
 const mk = (name: string, role: Role, used = 0, composes: string[] = []): ComponentRecord => ({
   id: name.toLowerCase(), name, kitId: "k", role, version: "1.0.0", used, tags: [],
   variants: ["default"], composes, props: [], whenUse: [], whenNot: [],
   src: `${name}.tsx`, srcText: "", builtin: true,
+});
+
+describe("selectionNeighborhood (#2523)", () => {
+  // a→b, a→c, d→a (so `a` is incident to all three; b/c are downstream, d is upstream).
+  const edges: GraphEdge[] = [
+    { id: "a->b", from: "a", to: "b" },
+    { id: "a->c", from: "a", to: "c" },
+    { id: "d->a", from: "d", to: "a" },
+    { id: "e->f", from: "e", to: "f" }, // an unrelated edge, never incident to `a`
+  ];
+
+  it("collects the edges touching the selection (from OR to) and the far-end nodes", () => {
+    const { incidentEdges, relatedNodes } = selectionNeighborhood(edges, "a");
+    expect([...incidentEdges].sort()).toEqual(["a->b", "a->c", "d->a"]);
+    expect([...relatedNodes].sort()).toEqual(["b", "c", "d"]);
+    expect(relatedNodes.has("a")).toBe(false); // the selection is never its own relation
+    expect(relatedNodes.has("f")).toBe(false); // the unrelated edge contributes nothing
+  });
+
+  it("is empty when nothing is selected", () => {
+    const { incidentEdges, relatedNodes } = selectionNeighborhood(edges, "");
+    expect(incidentEdges.size).toBe(0);
+    expect(relatedNodes.size).toBe(0);
+  });
+
+  it("a self-loop never marks the selection as related to itself", () => {
+    const { relatedNodes } = selectionNeighborhood([{ id: "a->a", from: "a", to: "a" }], "a");
+    expect(relatedNodes.size).toBe(0);
+  });
 });
 
 describe("buildComposesEdges", () => {
