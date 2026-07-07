@@ -220,3 +220,28 @@ export interface HookTelemetryFrame {
  *  on mobile — there is no inbound counterpart. Replayed on connect. */
 export const tunnelSetHookTelemetry = (telemetry: HookTelemetryFrame): Promise<void> =>
   invoke("tunnel_set_hook_telemetry", { telemetry });
+
+// ── Generic store projections (#2497) ────────────────────────────────────────
+
+/** The registered `store_state` domain vocabulary (#2497). Mirrors Rust
+ *  `bsc_tunnel::protocol::store_domains::ALL`. The frame itself is domain-agnostic —
+ *  these constants only name the projections the desktop publishes so both repos
+ *  spell them identically. */
+export const STORE_DOMAINS = [
+  "glance", "plan", "org", "blueprints", "skills",
+  "components", "themes", "automations", "mcp", "alerts",
+] as const;
+
+/** A registered store_state domain. */
+export type StoreDomain = (typeof STORE_DOMAINS)[number];
+
+/** Push one store domain's projection to connected mobile clients — the single entry point
+ *  for the generic `store_state` frame (#2497). `rev` must increase monotonically per domain
+ *  (mobile drops stale frames); `json` is the opaque serialized projection. Stored Rust-side
+ *  (last per domain) and replayed on connect.
+ *
+ *  The bespoke pushes (`tunnelSetFleetState` / `tunnelSetAutomations` / `tunnelSetMcpState` /
+ *  `tunnelSetHookTelemetry`) stay wire-compatible alongside this; retiring them onto
+ *  store_state domains is a follow-up once mobile consumes the new frames. */
+export const tunnelSetStoreState = (domain: string, rev: number, json: string): Promise<void> =>
+  invoke("tunnel_set_store_state", { domain, rev, json });
