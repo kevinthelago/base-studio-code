@@ -50,7 +50,7 @@ function recordBlueprintKit(get: () => AppStore, projectId: string, blueprintId:
 }
 
 type PlanSlice = Pick<AppStore,
-  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "markStageConfirmedLocal" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "markStageSkippedLocal" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
+  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "markStageConfirmedLocal" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planMarketConfig" | "setPlanMarketConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "markStageSkippedLocal" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
@@ -145,6 +145,9 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       planDeployConfig: {},
       setPlanDeployConfig: (projectId, cfg) =>
         set((s) => ({ planDeployConfig: setMapEntry(s.planDeployConfig, projectId, cfg) })),
+      planMarketConfig: {},
+      setPlanMarketConfig: (projectId, cfg) =>
+        set((s) => ({ planMarketConfig: setMapEntry(s.planMarketConfig, projectId, cfg) })),
       planSourceConfig: {},
       setPlanSourceConfig: (projectId, cfg) =>
         set((s) => ({ planSourceConfig: setMapEntry(s.planSourceConfig, projectId, cfg) })),
@@ -308,6 +311,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           planConfirmedStages: drop(s.planConfirmedStages),
           planAuthoredBlueprint: drop(s.planAuthoredBlueprint),
           planDeployConfig:      drop(s.planDeployConfig),
+          planMarketConfig:      drop(s.planMarketConfig),
           planSourceConfig:      drop(s.planSourceConfig),
           planIntegrationConfig: drop(s.planIntegrationConfig),
           reposPublic:           drop(s.reposPublic),
@@ -509,6 +513,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           planConfirmedStages: omitKey(s.planConfirmedStages),
           planAuthoredBlueprint: omitKey(s.planAuthoredBlueprint),
           planDeployConfig:      omitKey(s.planDeployConfig),
+          planMarketConfig:      omitKey(s.planMarketConfig),
           planSourceConfig:      omitKey(s.planSourceConfig),
           planIntegrationConfig: omitKey(s.planIntegrationConfig),
           reposPublic:           omitKey(s.reposPublic),

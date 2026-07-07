@@ -67,6 +67,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             planConfirmedStages:  byKey(s.planConfirmedStages),
             planAuthoredBlueprint:  byKey(s.planAuthoredBlueprint),
             planDeployConfig:       byKey(s.planDeployConfig),
+            planMarketConfig:       byKey(s.planMarketConfig),
             planSkippedStages:    byKey(s.planSkippedStages),
             planAutomations:        byKey(s.planAutomations),
             planStageConfig:        byKey(s.planStageConfig),
@@ -97,7 +98,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         }),
       resetProjectData: () =>
         set({
-          planStages: {}, planConfirmedStages: {}, planAuthoredBlueprint: {}, planSkippedStages: {}, planDeployConfig: {},
+          planStages: {}, planConfirmedStages: {}, planAuthoredBlueprint: {}, planSkippedStages: {}, planDeployConfig: {}, planMarketConfig: {},
           planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stageRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {},
           issueLinks: {}, autoTriage: {}, autoKitDispatch: {}, projectStartupPromptDoc: {},
@@ -210,6 +211,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             planConfirmedStages:    byKey(s.planConfirmedStages),
             planAuthoredBlueprint:  byKey(s.planAuthoredBlueprint),
             planDeployConfig:       byKey(s.planDeployConfig),
+            planMarketConfig:       byKey(s.planMarketConfig),
             planSkippedStages:      byKey(s.planSkippedStages),
             planAutomations:        byKey(s.planAutomations),
             planStageConfig:        byKey(s.planStageConfig),
