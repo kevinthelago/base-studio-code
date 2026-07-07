@@ -1,0 +1,16 @@
+{
+  "dimensions": [
+    { "id": "problemSeverity", "label": "Problem severity", "blurb": "How painful the problem is for those who have it — revealed pain from reviews, threads, and issue trackers" },
+    { "id": "problemFrequency", "label": "Problem frequency", "blurb": "How often the problem recurs — a daily pain beats an annual one" },
+    { "id": "reachableMarket", "label": "Reachable market", "blurb": "How many buyers can realistically be reached — bottom-up TAM/SAM/SOM from public statistics" },
+    { "id": "competitiveGap", "label": "Competitive gap", "blurb": "How badly incumbents serve the job, and why they structurally won't fix it — the gap statement" },
+    { "id": "timing", "label": "Timing", "blurb": "Why now — category trajectory, funding flow, regulatory or platform drivers" },
+    { "id": "moat", "label": "Moat", "blurb": "What defends the position once built — data, distribution, switching costs" }
+  ],
+  "weights": {
+    "greenfield": { "problemSeverity": 0.2, "problemFrequency": 0.15, "reachableMarket": 0.25, "competitiveGap": 0.15, "timing": 0.15, "moat": 0.1 },
+    "transform": { "problemSeverity": 0.25, "problemFrequency": 0.2, "reachableMarket": 0.1, "competitiveGap": 0.2, "timing": 0.1, "moat": 0.15 },
+    "harden": { "problemSeverity": 0.3, "problemFrequency": 0.25, "reachableMarket": 0.05, "competitiveGap": 0.15, "timing": 0.1, "moat": 0.15 },
+    "maintain": { "problemSeverity": 0.25, "problemFrequency": 0.3, "reachableMarket": 0.05, "competitiveGap": 0.15, "timing": 0.1, "moat": 0.15 }
+  }
+}
