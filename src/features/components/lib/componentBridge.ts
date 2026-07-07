@@ -53,7 +53,9 @@ export async function loadKits(): Promise<Kit[] | null> {
     const rows = JSON.parse(out.trim() || "[]") as Partial<Kit>[];
     return (rows ?? [])
       .filter((k): k is Kit => typeof k.id === "string" && !!k.id && !!k.name)
-      .map((k) => ({ id: k.id, name: k.name!, stack: k.stack ?? "", dot: k.dot ?? "var(--fg-muted)", builtin: k.builtin, seedHash: k.seedHash }));
+      // tech/style (#2487) ride VERBATIM — an absent field must stay absent (never defaulted), so a
+      // pre-#2487 copy still hashes to its recorded seedHash and the #2483 reconcile can refresh it.
+      .map((k) => ({ id: k.id, name: k.name!, tech: k.tech, style: k.style, stack: k.stack ?? "", dot: k.dot ?? "var(--fg-muted)", builtin: k.builtin, seedHash: k.seedHash }));
   } catch {
     return null;
   }

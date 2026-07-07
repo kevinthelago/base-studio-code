@@ -160,6 +160,20 @@ pub(crate) fn cmd_deps(args: &Args) -> Result<(), String> {
     )
 }
 
+/// `market` — the Market stage's scored assessment (one blob, #2430): the structured artifact
+/// behind the `marketDefined` gate. Validated at set-time (#2395): all six rubric dimensions scored
+/// 1-5 with a rationale + ≥1 fetched source each (citation discipline), plus a go|caution|no-go
+/// verdict; the echo mirrors the pane's "N of 6 dimensions scored, cited" readiness.
+pub(crate) fn cmd_market(args: &Args) -> Result<(), String> {
+    cmd_blob_noun(
+        args, "market", "market assessment JSON", "(no market assessment)",
+        crate::validate::validate_market_config,
+        |s, v| s.market_set(v).map_err(|e| e.to_string()),
+        |s| s.market_get().map_err(|e| e.to_string()),
+        |v| format!("market set{}", crate::validate::market_readiness(v)),
+    )
+}
+
 /// `mcp` — catalog MCP servers scoped to the project (durable in plan.db).
 pub(crate) fn cmd_mcp(args: &Args) -> Result<(), String> {
     let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
