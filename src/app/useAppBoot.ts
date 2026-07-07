@@ -19,6 +19,7 @@ const METRICS_GRACE_MS = 5000;
 export function useAppBoot() {
   const accent = useAppStore((s) => s.accent);
   const kitTheme = useAppStore((s) => s.kitTheme);
+  const kitThemes = useAppStore((s) => s.kitThemes);
   const hasHydrated = useAppStore((s) => s.hasHydrated);
   const setBscBaseDir = useAppStore((s) => s.setBscBaseDir);
 
@@ -35,7 +36,9 @@ export function useAppBoot() {
   // Apply the chosen kit theme (#1852 Phase 3) to the semantic component tokens at the document root,
   // live on change and after rehydrate. A theme sets --card-*/--btn-*/--field-*/--chip-* overrides;
   // switching clears the prior theme's set first, so `default` restores the stylesheet look.
-  useEffect(() => { applyThemeToRoot(kitTheme); }, [kitTheme]);
+  // `kitThemes` is read as a dep (#2488) so the vars re-apply after the theme STORE hydrates — the
+  // chosen theme may be designer-edited (or designer-authored) and differ from the packaged fallback.
+  useEffect(() => { void kitThemes; applyThemeToRoot(kitTheme); }, [kitTheme, kitThemes]);
 
   // Startup timing trace (#perf): mark the gate commit, then the first paint of the
   // real UI once the store rehydrates — logStartupTrace emits the breakdown once.
@@ -77,6 +80,10 @@ export function useAppBoot() {
     // `bsc ui usage` store — the edges a kit change fans out over. No-op keeping the cache when
     // the bridge is absent.
     void useAppStore.getState().hydrateKitUsage();
+    // Kit themes (#2488): hydrate the designer-writable theme collection from the global `bsc ui
+    // theme` store — the Settings picker, the Design Studio preview switcher, and every ThemeScope
+    // resolve against it. No-op keeping the packaged registry when the bridge is absent.
+    void useAppStore.getState().hydrateThemes();
     // Project relationships (#2253): hydrate the Glance L1 network edges from the global `bsc project
     // link` store so the desktop, live sessions, and a restart share ONE set. A no-op when the bridge
     // is absent (keeps the persisted cache).

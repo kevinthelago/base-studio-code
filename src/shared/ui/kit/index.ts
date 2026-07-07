@@ -3,6 +3,11 @@
 // scoped wrapper. See also `@/shared/ui/spec` (the SPEC axis — KitNode + KitRenderer).
 
 export type { KitTheme } from "./theme";
-export { KIT_THEMES, DEFAULT_THEME, KIT_TOKENS, themeById, themeVars, applyThemeToRoot } from "./theme";
+export {
+  KIT_THEMES, DEFAULT_THEME, KIT_TOKENS, themeById, themeVars, applyThemeToRoot,
+  // #2488: the designer-writable theme store's sync hooks — the components slice hydrate pushes the
+  // store collection in; every themeById/themeVars/ThemeScope consumer then resolves against it.
+  setActiveKitThemes, activeKitThemes, kitTokens,
+} from "./theme";
 export { ThemeScope } from "./ThemeScope";
 export type { ThemeScopeProps } from "./ThemeScope";
