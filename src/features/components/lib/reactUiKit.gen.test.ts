@@ -5,7 +5,7 @@ import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "./reactUiKit";
 
 // The `react-ui` kit is GENERATED from the shared-UI manifest (slice 1), then COMMITTED as data
 // (#2305 slice 1b) — a self-contained, gist-distributable JSON file under src-tauri/data/components/
-// that the frontend seed + the `bsc component` store read. This test is the generator + the drift
+// that the frontend seed + the `bsc ui` store read. This test is the generator + the drift
 // guard: `UPDATE_KITS=1 npx vitest run reactUiKit.gen` (re)writes the file; CI asserts it stays in
 // sync with the manifest, so the JSON can't silently drift from the registry.
 const FILE = join(process.cwd(), "src-tauri/data/components/react-ui.json");
