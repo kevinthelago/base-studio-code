@@ -3264,6 +3264,111 @@
       "builtin": true
     },
     {
+      "id": "tree",
+      "name": "Tree",
+      "kitId": "react-ui",
+      "role": "layout",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "layout",
+        "page",
+        "tree"
+      ],
+      "variants": [
+        "indented",
+        "layered"
+      ],
+      "composes": [
+        "MasterDetail",
+        "GraphCanvas",
+        "Box",
+        "Row",
+        "Stack",
+        "Text",
+        "IconButton"
+      ],
+      "props": [
+        {
+          "name": "nodes",
+          "type": "T[]",
+          "req": true,
+          "desc": "The tree roots — a recursive forest of TreeNodeData ({ id, label, meta?, children? }). Ids must be unique."
+        },
+        {
+          "name": "variant",
+          "type": "\"indented\" | \"layered\"",
+          "req": false,
+          "desc": "indented → collapsible rows + detail; layered → top-down pan/zoom chart."
+        },
+        {
+          "name": "detail",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Detail panel for the selected node — a node, or a render fn of the selected TreeNodeData. Indented: the detail column; layered: the canvas inspector."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Optional toolbar — full-width above (indented) / in the canvas toolbar row before the zoom cluster (layered)."
+        },
+        {
+          "name": "selectedId",
+          "type": "string",
+          "req": false,
+          "desc": "Controlled selection — the selected node id (pair with onSelect). Omit for uncontrolled (defaultSelectedId)."
+        },
+        {
+          "name": "onSelect",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Fires with the clicked node's id (both selection modes)."
+        },
+        {
+          "name": "defaultCollapsedIds",
+          "type": "T[]",
+          "req": false,
+          "desc": "Indented: branch ids that start collapsed (expansion is uncontrolled). Default: all expanded."
+        },
+        {
+          "name": "onToggle",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Fires (id, expanded) when a branch expands/collapses."
+        },
+        {
+          "name": "indent",
+          "type": "number",
+          "req": false,
+          "desc": "Indented: px of indentation per depth level."
+        },
+        {
+          "name": "railWidth",
+          "type": "number",
+          "req": false,
+          "desc": "Indented: rail width in px (the starting width when resizable)."
+        },
+        {
+          "name": "resizable",
+          "type": "boolean",
+          "req": false,
+          "desc": "Indented: opt into a drag-resizable rail (MasterDetail's .resize-x splitter)."
+        }
+      ],
+      "whenUse": [
+        "Deep / navigational tree data (file systems, category hierarchies) — variant=\"indented\": collapsible depth-indented rows + a detail panel.",
+        "A presentational top-down hierarchy (org chart, ownership map) — variant=\"layered\" rides the shared graph stack (layerDag + edge grammar + GraphCanvas pan/zoom)."
+      ],
+      "whenNot": [
+        "A flat list beside a detail — use MasterDetail.",
+        "A general (multi-parent / cyclic) graph — use GraphCanvas with layerDag directly."
+      ],
+      "src": "shared/ui/layouts/Tree.tsx",
+      "srcText": "import { Tree } from \"@/shared/ui/layouts/Tree\";\n\n<Tree\n  nodes={[{ id: \"src\", label: \"src\", children: [\n    { id: \"app\", label: \"app\" },\n  ] }]}\n  detail={(n) => <NodeDetail node={n}/>}\n  onSelect={setSelected}\n/>",
+      "builtin": true
+    },
+    {
       "id": "labelchip",
       "name": "LabelChip",
       "kitId": "react-ui",

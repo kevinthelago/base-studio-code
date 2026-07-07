@@ -9,6 +9,7 @@ built in slices 1–2 are:
 | **SplitView** (#2197 s2) | `src/shared/ui/layouts/SplitView.tsx` | flex **primary** + fixed, resizable **secondary** (trailing), optional toolbar |
 | **GraphCanvas** (#2208) | `src/shared/ui/layouts/GraphCanvas.tsx` | toolbar + optional rail + pan/zoom **canvas** + optional inspector |
 | **PaneGrid** (#2197 s2) | `src/shared/ui/layouts/PaneGrid.tsx` | CSS-grid of N equal panes (the console); `hidden` keeps a grid mounted display:none |
+| **Tree** (#2476) | `src/shared/ui/layouts/Tree.tsx` | tree-shaped data, one recursive `nodes` prop, two variants — **indented** (collapsible depth-indented rows in a MasterDetail rail + detail panel, for deep/navigational trees) and **layered** (top-down org-chart on the shared graph stack: `layoutTree` = layerDag + orderLayers, shared edge grammar, GraphCanvas pan/zoom) |
 
 The initial sweep found the epic's page inventory was aspirational — most non-list pages are a
 different shape. This doc is the page-by-page decision table: current shape → decision → one-line
