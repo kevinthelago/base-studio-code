@@ -50,6 +50,7 @@ describe("GraphCanvas (#2208)", () => {
     expect(worldLayer.style.width).toBe("800px");
     expect(worldLayer.style.height).toBe("600px");
     expect(worldLayer.style.transform).toBe("translate(0px,0px) scale(1)");
+    expect(worldLayer.style.userSelect).toBe("none"); // no text-selecting nodes/edges on drag (#2527)
   });
 
   it("omits the rail and inspector when not provided", () => {
