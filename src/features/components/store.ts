@@ -69,6 +69,16 @@ export interface ComponentsSlice {
   kitDispatches: Dispatch[];
   /** Dismiss a queued dispatch (once delivered / acknowledged), keyed by (projectKey, change.id). */
   dismissKitDispatch: (projectKey: string, changeId: string) => void;
+
+  /** The library id the designer AI most-recently touched (#2525) — a component/kit/theme id from a
+   *  `bsc ui set/remove` mutation the `useUiActivity` poll observed. The Design Studio live-focuses it
+   *  (pulsing `.working` node + auto-pan). `null` when idle or the designer session ended. */
+  aiFocusedId: string | null;
+  /** Record a designer `ui-touch` (#2525): set {@link aiFocusedId} to the touched id AND re-pull the
+   *  touched collection so the AI's edit appears live (hydrate is otherwise one-shot at boot) —
+   *  `hydrateComponents` always, plus `hydrateThemes` for a `theme` touch. A `null` id clears the
+   *  focus (session end) without re-hydrating. */
+  setAiFocused: (id: string | null, collection?: string) => void;
 }
 
 export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSlice> = (set, get) => ({
@@ -186,4 +196,14 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
 
   dismissKitDispatch: (projectKey, changeId) =>
     set((s) => ({ kitDispatches: s.kitDispatches.filter((d) => !(d.projectKey === projectKey && d.change.id === changeId)) })),
+
+  aiFocusedId: null,
+
+  setAiFocused: (id, collection) => {
+    set({ aiFocusedId: id });
+    if (!id) return; // a clear (session end) — no re-pull
+    // Re-hydrate the touched collection so the AI's edit shows without a relaunch (#2483/#2514/#2525).
+    void get().hydrateComponents();
+    if (collection === "theme") void get().hydrateThemes();
+  },
 });

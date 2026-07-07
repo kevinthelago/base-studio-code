@@ -81,6 +81,8 @@ pub fn canonical_stream(name: &str) -> Option<&'static str> {
         "done" => Some("done"),
         "coord" => Some("coord"),
         "perm" | "perms" | "deny" | "denials" => Some("perm"),
+        // UI-design activity (#2525): `bsc logs tail ui` — the designer session's `ui-touch` stream.
+        "ui" => Some("ui"),
         _ => None,
     }
 }
@@ -472,6 +474,13 @@ mod tests {
         // Unknown alias / missing file ⇒ empty, never a panic.
         assert!(tail_raw(&d, "nope", 5, false).is_empty());
         assert!(tail_raw(&d, "hooks", 5, false).is_empty()); // hooks.log absent
+        // UI-activity stream (#2525): `bsc logs tail ui` reads ui-activity.log oldest-first (the
+        // Design Studio replays it chronologically to find the most-recent touch).
+        assert_eq!(canonical_stream("ui"), Some("ui"));
+        std::fs::write(d.join("ui-activity.log"), "2026-06-26T10:00:00Z\tp\tui-touch\tcomponent\tbutton\n2026-06-26T10:00:01Z\tp\tui-touch\ttheme\tneon\n").unwrap();
+        let ui = tail_raw(&d, "ui", 5, true);
+        assert_eq!(ui.len(), 2);
+        assert!(ui[0].ends_with("component\tbutton") && ui[1].ends_with("theme\tneon"));
         let _ = std::fs::remove_dir_all(&d);
     }
 

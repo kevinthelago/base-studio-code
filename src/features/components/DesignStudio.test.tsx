@@ -8,7 +8,7 @@ import { useAppStore } from "@/store";
 
 /** Reset the library slice to the seed before each test (the store is a singleton). */
 beforeEach(() => {
-  useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, kitThemes: SEED_THEMES });
+  useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, kitThemes: SEED_THEMES, aiFocusedId: null });
 });
 
 /** The rail entry for a component (its name also renders on the graph node + inspector header). */
@@ -63,6 +63,26 @@ describe("DesignStudio (#2308)", () => {
     expect(container.querySelector("g.ds-edge.on")).toBeTruthy();    // an incident edge draws accent
     // A node with no edge to Chip carries neither state.
     expect(graphNode("Grid").className).not.toMatch(/\b(on|related)\b/);
+  });
+
+  it("pulses the AI-touched node as .working, distinct from the user's selection (#2525)", () => {
+    const kitComps = SEED_COMPONENTS.filter((c) => c.kitId === SEED_KITS[0].id);
+    const selDefault = kitComps[0];                                  // the default selection
+    const working = kitComps.find((c) => c.id !== selDefault.id)!;   // a DIFFERENT node the AI touched
+    useAppStore.setState({ aiFocusedId: working.id });
+    render(<DesignStudio />);
+    const node = graphNode(working.name);
+    expect(node.className).toMatch(/\bworking\b/);                   // the AI-focus pulse ring
+    expect(node.className).not.toMatch(/\bon\b/);                    // NOT the user's selection state
+  });
+
+  it("the user's .on selection WINS over .working when the AI touches the same node (#2525 precedence)", () => {
+    const selDefault = SEED_COMPONENTS.filter((c) => c.kitId === SEED_KITS[0].id)[0];
+    useAppStore.setState({ aiFocusedId: selDefault.id });            // AI touches the selected node
+    render(<DesignStudio />);
+    const node = graphNode(selDefault.name);
+    expect(node.className).toMatch(/\bon\b/);                        // selection wins visually
+    expect(node.className).not.toMatch(/\bworking\b/);               // no competing pulse on it
   });
 
   it("switching kits re-scopes the graph and selects the kit's first component", () => {

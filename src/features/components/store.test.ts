@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { useAppStore } from "@/store";
 import type { ComponentRecord, Kit } from "./lib/model";
 import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
@@ -45,6 +45,46 @@ describe("components store slice (#2281)", () => {
     expect(useAppStore.getState().components.some((c) => c.id === "my-widget")).toBe(true);
     expect(pushC).not.toHaveBeenCalledWith(expect.objectContaining({ id: "my-widget" }));
     expect(pushK).not.toHaveBeenCalled(); // every kit already present → nothing to re-seed
+  });
+});
+
+describe("designer AI live-focus (#2525)", () => {
+  // The real hydrate actions, captured so a test that swaps in vi.fn() spies restores them after —
+  // otherwise the mocked no-op actions leak into the later hydrate tests (the store is a singleton).
+  const realHydrateComponents = useAppStore.getState().hydrateComponents;
+  const realHydrateThemes = useAppStore.getState().hydrateThemes;
+  beforeEach(() => {
+    useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, aiFocusedId: null });
+    vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    useAppStore.setState({ hydrateComponents: realHydrateComponents, hydrateThemes: realHydrateThemes });
+  });
+
+  it("setAiFocused records the touched id AND re-hydrates so the AI's edit shows without a relaunch", () => {
+    const hydrateComponents = vi.fn();
+    const hydrateThemes = vi.fn();
+    useAppStore.setState({ hydrateComponents, hydrateThemes });
+
+    // A component touch: focus the id + re-pull the components (not themes).
+    useAppStore.getState().setAiFocused("chip", "component");
+    expect(useAppStore.getState().aiFocusedId).toBe("chip");
+    expect(hydrateComponents).toHaveBeenCalledTimes(1);
+    expect(hydrateThemes).not.toHaveBeenCalled();
+
+    // A theme touch: focus + re-pull BOTH (components load kits; themes reload the palette set).
+    useAppStore.getState().setAiFocused("neon", "theme");
+    expect(useAppStore.getState().aiFocusedId).toBe("neon");
+    expect(hydrateComponents).toHaveBeenCalledTimes(2);
+    expect(hydrateThemes).toHaveBeenCalledTimes(1);
+  });
+
+  it("setAiFocused(null) clears the focus WITHOUT re-hydrating (session end)", () => {
+    const hydrateComponents = vi.fn();
+    useAppStore.setState({ hydrateComponents, aiFocusedId: "chip" });
+    useAppStore.getState().setAiFocused(null);
+    expect(useAppStore.getState().aiFocusedId).toBeNull();
+    expect(hydrateComponents).not.toHaveBeenCalled();
   });
 });
 
