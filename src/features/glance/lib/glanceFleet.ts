@@ -63,18 +63,25 @@ export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): Glanc
 
 /**
  * Whether a fleet node has a LIVE terminal session — the check that decides if clicking it morphs the
- * node into its in-graph terminal (#2534). True when the node's identity pane id
- * (`<project>:<stream>` / `<project>:director`) is in the launched roster, OR has an authoritative live
- * pane status ("run"/"on"). The status branch is what makes the DIRECTOR live: it's a session, not a
- * stream, so it never enters the roster — yet it has a terminal, and EVERY node with a terminal gets
- * the morph. Pure — the workspace passes its live store maps in. ("idle"/absent status = no session.)
+ * node into its in-graph terminal (#2534). EVERY node with a terminal gets the morph, so liveness is
+ * the union of three signals:
+ *   1. the launched `roster` (`fleetPaneStreams`) — workers, always true once launched;
+ *   2. `claudeActive` (`paneClaudeActive`) — a live claude session, set true when claude starts and
+ *      false when it exits, so it stays true ACROSS idle turns. This is what makes the DIRECTOR work
+ *      (#2539): the director isn't a stream, so it's never in the roster, and it sits at "idle" between
+ *      prompts — its transient `paneStatus` alone missed it exactly when the user clicked it;
+ *   3. a live `paneStatus` ("run"/"on") — covers the brief window before claudeActive is set, and any
+ *      non-claude session.
+ * Pure — the workspace passes its live store maps in. (Absent from all three = no session.)
  */
 export function nodeHasLiveSession(
   paneId: string,
   roster: Record<string, unknown>,
   paneStatus: Record<string, string | undefined>,
+  claudeActive: Record<string, boolean> = {},
 ): boolean {
   if (roster[paneId]) return true;
+  if (claudeActive[paneId]) return true;
   const st = paneStatus[paneId];
   return st === "run" || st === "on";
 }
