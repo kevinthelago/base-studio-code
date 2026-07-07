@@ -83,6 +83,10 @@ export function kitFromManifest(m: ExtensionManifest): { ok: true; kit: Kit; com
   const name = str(rawKit.name) || str(m.name);
   if (!id || !name) return { ok: false, error: "kit has no id or name" };
   const kit: Kit = { id, name, stack: str(rawKit.stack, "imported"), dot: str(rawKit.dot, "var(--accent)") };
+  // The rail-hierarchy axes (#2487) ride when the payload declares them — tech normalized to its
+  // lowercase-slug form; an absent axis stays ABSENT (the kit groups into the "other" bucket).
+  if (str(rawKit.tech).trim()) kit.tech = str(rawKit.tech).trim().toLowerCase();
+  if (str(rawKit.style).trim()) kit.style = str(rawKit.style).trim();
   const components = (Array.isArray(p.components) ? p.components : [])
     .map((c) => coerceComponent(c, id))
     .filter((c): c is ComponentRecord => c !== null);
