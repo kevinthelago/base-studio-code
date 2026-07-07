@@ -37,6 +37,23 @@ describe("component specimens (#2305 slice 3b)", () => {
     }
   });
 
+  it("renders a bespoke schematic for every Pages-tier composition + variant, both themes (#2505)", () => {
+    const pages = reactUi.filter((c) => c.role === "page");
+    // The six page compositions must all be present, and each must render a bespoke schematic
+    // (never the fallback placeholder) for every registered variant, in both preview themes.
+    expect(pages.map((c) => c.name).sort()).toEqual(
+      ["CollectionPage", "DashboardPage", "NetworkPage", "PipelinePage", "TablePage", "TreeExplorerPage"]);
+    for (const c of pages) {
+      for (const variant of c.variants) {
+        for (const theme of ["dark", "light"] as const) {
+          const { container, unmount } = render(<>{renderSpecimen(c, variant, theme)}</>);
+          expect(container.textContent ?? "", `${c.name} · ${variant} · ${theme}`).not.toContain("rendered in-app");
+          unmount();
+        }
+      }
+    }
+  });
+
   it("renders a live schematic for every Layouts-tier template + variant (#2197 slice 3)", () => {
     const layouts = reactUi.filter((c) => c.role === "layout" && (c.tags ?? []).includes("page"));
     // The six page-skeleton templates must all be present and each must render a bespoke schematic

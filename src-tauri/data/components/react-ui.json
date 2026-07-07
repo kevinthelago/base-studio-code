@@ -3930,6 +3930,595 @@
       "src": "shared/ui/charts/telemetry.tsx",
       "srcText": "import { SplitBar } from \"@/shared/ui/charts/telemetry\";\n\n<SplitBar label={…} a={…} b={…} aLabel={…} bLabel={…} />",
       "builtin": true
+    },
+    {
+      "id": "tablepage",
+      "name": "TablePage",
+      "kitId": "react-ui",
+      "role": "page",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "page",
+        "table",
+        "records"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "SplitView",
+        "DataTableRow",
+        "KeyValueList",
+        "EmptyState",
+        "SectionHeader",
+        "Box",
+        "Stack",
+        "Text"
+      ],
+      "props": [
+        {
+          "name": "title",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "Page title (the header bar)."
+        },
+        {
+          "name": "hint",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Dimmed inline hint after the title."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Right-aligned header controls (search, filters, actions)."
+        },
+        {
+          "name": "columns",
+          "type": "T[]",
+          "req": true,
+          "desc": "TablePageColumn[] — { key, label, width? }; order is display order, `key` addresses the row cells."
+        },
+        {
+          "name": "rows",
+          "type": "T[]",
+          "req": true,
+          "desc": "TablePageRow[] — { id, cells: Record<key, ReactNode> }, in display order."
+        },
+        {
+          "name": "selectedId",
+          "type": "string",
+          "req": false,
+          "desc": "Controlled selection — the selected row id (pair with onSelect). Omit for uncontrolled."
+        },
+        {
+          "name": "defaultSelectedId",
+          "type": "string",
+          "req": false,
+          "desc": "Uncontrolled: the initially selected row id."
+        },
+        {
+          "name": "onSelect",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Fires with the clicked row's id (both selection modes)."
+        },
+        {
+          "name": "detail",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Detail panel override — a render fn of the selected row. Default: a KeyValueList of the row's cells."
+        },
+        {
+          "name": "detailWidth",
+          "type": "number",
+          "req": false,
+          "desc": "Detail (SplitView secondary) width in px."
+        }
+      ],
+      "whenUse": [
+        "A complete records browser: columnar rows from typed columns × rows, with a selected-record inspector.",
+        "Any dataset whose fields align under fixed column labels (runs, issues, sessions)."
+      ],
+      "whenNot": [
+        "Card-styled list items with rich slots — use CollectionPage.",
+        "Just the row primitive inside your own frame — use DataTableRow directly."
+      ],
+      "src": "shared/ui/pages/TablePage.tsx",
+      "srcText": "import { TablePage } from \"@/shared/ui/pages/TablePage\";\n\n<TablePage\n  title=\"Sessions\" hint=\"today\"\n  columns={[\n    { key: \"name\", label: \"Session\" },\n    { key: \"state\", label: \"State\", width: \"90px\" },\n  ]}\n  rows={sessions.map((s) => ({ id: s.id, cells: { name: s.name, state: s.state } }))}\n  onSelect={setSelected}\n/>",
+      "builtin": true,
+      "shapes": [
+        "table"
+      ]
+    },
+    {
+      "id": "treeexplorerpage",
+      "name": "TreeExplorerPage",
+      "kitId": "react-ui",
+      "role": "page",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "page",
+        "tree",
+        "explorer"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "Tree",
+        "KeyValueList",
+        "EmptyState",
+        "SectionHeader",
+        "Box",
+        "Stack",
+        "Text"
+      ],
+      "props": [
+        {
+          "name": "title",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "Page title (the header bar)."
+        },
+        {
+          "name": "hint",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Dimmed inline hint after the title."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Right-aligned header controls (search, filters, actions)."
+        },
+        {
+          "name": "nodes",
+          "type": "T[]",
+          "req": true,
+          "desc": "The tree roots — a recursive forest of TreeNodeData ({ id, label, meta?, children? }). Ids must be unique."
+        },
+        {
+          "name": "selectedId",
+          "type": "string",
+          "req": false,
+          "desc": "Controlled selection — the selected node id (pair with onSelect). Omit for uncontrolled."
+        },
+        {
+          "name": "defaultSelectedId",
+          "type": "string",
+          "req": false,
+          "desc": "Uncontrolled: the initially selected node id."
+        },
+        {
+          "name": "onSelect",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Fires with the clicked node's id (both selection modes)."
+        },
+        {
+          "name": "defaultCollapsedIds",
+          "type": "T[]",
+          "req": false,
+          "desc": "Branch ids that start collapsed (expansion is uncontrolled). Default: all expanded."
+        },
+        {
+          "name": "detail",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Detail panel override — a render fn of the selected node. Default: the node's facts as a KeyValueList."
+        },
+        {
+          "name": "nodeFacts",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Extra KeyValueItem[] appended to the default detail, derived from the selected node."
+        },
+        {
+          "name": "railWidth",
+          "type": "number",
+          "req": false,
+          "desc": "Rail width in px."
+        }
+      ],
+      "whenUse": [
+        "A complete hierarchy explorer: collapsible indented rows beside a node-facts detail panel.",
+        "Deep navigational trees (file systems, category hierarchies) that deserve a whole page."
+      ],
+      "whenNot": [
+        "A presentational top-down chart — use Tree variant=\"layered\" (or NetworkPage for general graphs).",
+        "Just the tree rail inside your own frame — use Tree directly."
+      ],
+      "src": "shared/ui/pages/TreeExplorerPage.tsx",
+      "srcText": "import { TreeExplorerPage } from \"@/shared/ui/pages/TreeExplorerPage\";\n\n<TreeExplorerPage\n  title=\"Project files\" hint=\"src/\"\n  nodes={[{ id: \"src\", label: \"src\", children: [\n    { id: \"app\", label: \"app\", meta: \"12 files\" },\n  ] }]}\n  onSelect={setSelected}\n/>",
+      "builtin": true,
+      "shapes": [
+        "tree"
+      ]
+    },
+    {
+      "id": "pipelinepage",
+      "name": "PipelinePage",
+      "kitId": "react-ui",
+      "role": "page",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "page",
+        "linked-list",
+        "workflow"
+      ],
+      "variants": [
+        "horizontal",
+        "vertical"
+      ],
+      "composes": [
+        "Sequence",
+        "Chip",
+        "KeyValueList",
+        "SectionHeader",
+        "Box",
+        "Row",
+        "Stack",
+        "Text"
+      ],
+      "props": [
+        {
+          "name": "title",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "Page title (the header bar)."
+        },
+        {
+          "name": "hint",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Dimmed inline hint after the title."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Right-aligned header controls (search, filters, actions)."
+        },
+        {
+          "name": "steps",
+          "type": "T[]",
+          "req": true,
+          "desc": "PipelineStep[] — ordered SequenceStep ({ id, label, status?, hint? }) plus { description?, facts? }; array order IS the pipeline."
+        },
+        {
+          "name": "orientation",
+          "type": "\"horizontal\" | \"vertical\"",
+          "req": false,
+          "desc": "horizontal → stepper strip above the detail; vertical → timeline rail beside it."
+        },
+        {
+          "name": "selectedId",
+          "type": "string",
+          "req": false,
+          "desc": "Controlled selection — the selected step id (pair with onSelect). Omit for uncontrolled."
+        },
+        {
+          "name": "defaultSelectedId",
+          "type": "string",
+          "req": false,
+          "desc": "Uncontrolled: the initially selected step id."
+        },
+        {
+          "name": "onSelect",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Fires with the clicked step's id (both selection modes)."
+        },
+        {
+          "name": "detail",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Detail panel override — a render fn of the selected step. Default: heading + status Chip + description + facts KeyValueList."
+        }
+      ],
+      "whenUse": [
+        "A complete pipeline/workflow page: the status-colored step strip driving a focused-step detail (status Chip + description + facts).",
+        "Deploy pipelines, wizards, and timelines where prev→next order is the page's subject."
+      ],
+      "whenNot": [
+        "An arbitrary node/edge graph — use NetworkPage.",
+        "Just the step strip inside your own frame — use Sequence directly."
+      ],
+      "src": "shared/ui/pages/PipelinePage.tsx",
+      "srcText": "import { PipelinePage } from \"@/shared/ui/pages/PipelinePage\";\n\n<PipelinePage\n  title=\"Deploy\" hint=\"release 1.0.5\"\n  steps={[\n    { id: \"build\", label: \"Build\", status: \"complete\", facts: [{ k: \"took\", v: \"41s\" }] },\n    { id: \"test\", label: \"Test\", status: \"active\", description: \"Running the vitest suite.\" },\n    { id: \"ship\", label: \"Ship\" },\n  ]}\n/>",
+      "builtin": true,
+      "shapes": [
+        "linked-list"
+      ]
+    },
+    {
+      "id": "networkpage",
+      "name": "NetworkPage",
+      "kitId": "react-ui",
+      "role": "page",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "page",
+        "graph",
+        "network"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "GraphCanvas",
+        "IconButton",
+        "KeyValueList",
+        "Box",
+        "Spacer",
+        "Stack",
+        "Text"
+      ],
+      "props": [
+        {
+          "name": "title",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "Page title (the toolbar row)."
+        },
+        {
+          "name": "hint",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Dimmed inline hint after the title."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Extra toolbar controls, before the zoom cluster."
+        },
+        {
+          "name": "nodes",
+          "type": "T[]",
+          "req": true,
+          "desc": "NetworkNodeData[] — { id, label, meta? }. Ids must be unique."
+        },
+        {
+          "name": "edges",
+          "type": "T[]",
+          "req": true,
+          "desc": "NetworkEdgeData[] — directed { from, to, id? }; cycles are fine (layering breaks them, drawing keeps them)."
+        },
+        {
+          "name": "selectedId",
+          "type": "string",
+          "req": false,
+          "desc": "Controlled selection — the selected node id (pair with onSelect). Omit for uncontrolled."
+        },
+        {
+          "name": "defaultSelectedId",
+          "type": "string",
+          "req": false,
+          "desc": "Uncontrolled: the initially selected node id."
+        },
+        {
+          "name": "onSelect",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Fires with the clicked node's id (both selection modes)."
+        },
+        {
+          "name": "detail",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Detail panel override — a render fn of the selected node. Default: label + facts (id · meta · in/out degree) as a KeyValueList."
+        },
+        {
+          "name": "inspectorWidth",
+          "type": "number",
+          "req": false,
+          "desc": "Inspector width in px when a node is selected."
+        }
+      ],
+      "whenUse": [
+        "A complete graph workspace: pan/zoom node cards + directional edges from typed { nodes, edges }, with a selected-node inspector.",
+        "Dependency / coordination networks laid out by the shared graph stack (cycles tolerated)."
+      ],
+      "whenNot": [
+        "A strict single-parent hierarchy — use TreeExplorerPage (or Tree layered).",
+        "A custom world (bespoke nodes, drag) — use GraphCanvas + the shared graph libs directly."
+      ],
+      "src": "shared/ui/pages/NetworkPage.tsx",
+      "srcText": "import { NetworkPage } from \"@/shared/ui/pages/NetworkPage\";\n\n<NetworkPage\n  title=\"Streams\" hint=\"dependency graph\"\n  nodes={[{ id: \"api\", label: \"api\" }, { id: \"ui\", label: \"ui\", meta: \"3 issues\" }]}\n  edges={[{ from: \"api\", to: \"ui\" }]}\n  onSelect={setSelected}\n/>",
+      "builtin": true,
+      "shapes": [
+        "graph"
+      ]
+    },
+    {
+      "id": "dashboardpage",
+      "name": "DashboardPage",
+      "kitId": "react-ui",
+      "role": "page",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "page",
+        "dashboard",
+        "analytics"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "StatCard",
+        "Spark",
+        "LineArea",
+        "Donut",
+        "Legend",
+        "ActivityFeed",
+        "Card",
+        "Grid",
+        "Row",
+        "Stack",
+        "Box",
+        "SectionHeader"
+      ],
+      "props": [
+        {
+          "name": "title",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "Page title (the header bar)."
+        },
+        {
+          "name": "hint",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Dimmed inline hint after the title."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Right-aligned header controls (range toggle, filters)."
+        },
+        {
+          "name": "stats",
+          "type": "T[]",
+          "req": true,
+          "desc": "DashboardStat[] — { k, v, sub?, tone?, trend?, trendColor? }, in display order."
+        },
+        {
+          "name": "trend",
+          "type": "object",
+          "req": false,
+          "desc": "The trend chart card — { title, hint?, labels, series: LineSeries[] }. Omit to drop the card."
+        },
+        {
+          "name": "breakdown",
+          "type": "object",
+          "req": false,
+          "desc": "The breakdown donut card — { title, hint?, slices: DonutSlice[] }. Omit to drop the card."
+        },
+        {
+          "name": "activity",
+          "type": "object",
+          "req": false,
+          "desc": "The activity column — { hint, items: ActivityItem[], tone }. Omit to drop the column."
+        }
+      ],
+      "whenUse": [
+        "A complete metrics board: KPI stat tiles (inline Spark trends), a LineArea trend card, a Donut breakdown card, and an activity column.",
+        "Project / fleet health overviews rendered entirely from typed stats + series + slices + events."
+      ],
+      "whenNot": [
+        "One metric or one chart — use StatCard / a chart primitive in a Card.",
+        "Records the user drills into — use TablePage or CollectionPage."
+      ],
+      "src": "shared/ui/pages/DashboardPage.tsx",
+      "srcText": "import { DashboardPage } from \"@/shared/ui/pages/DashboardPage\";\n\n<DashboardPage\n  title=\"Fleet\" hint=\"last 7 days\"\n  stats={[{ k: \"landed\", v: 12, tone: \"success\", trend: [3, 5, 4, 8, 12] }]}\n  trend={{ title: \"Throughput\", labels: days, series: [{ name: \"landed\", color: \"var(--success)\", data }] }}\n  breakdown={{ title: \"By state\", slices: [{ name: \"landed\", value: 12, color: \"var(--success)\" }] }}\n  activity={{ hint: \"all repos\", items, tone: EVENT_TONE }}\n/>",
+      "builtin": true
+    },
+    {
+      "id": "collectionpage",
+      "name": "CollectionPage",
+      "kitId": "react-ui",
+      "role": "page",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "page",
+        "list",
+        "master-detail"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [
+        "MasterDetail",
+        "CardListRow",
+        "Chip",
+        "KeyValueList",
+        "EmptyState",
+        "SectionHeader",
+        "Box",
+        "Stack",
+        "Text"
+      ],
+      "props": [
+        {
+          "name": "title",
+          "type": "ReactNode",
+          "req": true,
+          "desc": "Page title (the header bar)."
+        },
+        {
+          "name": "hint",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Dimmed inline hint after the title."
+        },
+        {
+          "name": "toolbar",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "Right-aligned header controls (search, filters, actions)."
+        },
+        {
+          "name": "items",
+          "type": "T[]",
+          "req": true,
+          "desc": "CollectionItem[] — { id, title, subtitle?, badge?, badgeTone?, meta?, facts? }, in display order."
+        },
+        {
+          "name": "selectedId",
+          "type": "string",
+          "req": false,
+          "desc": "Controlled selection — the selected item id (pair with onSelect). Omit for uncontrolled."
+        },
+        {
+          "name": "defaultSelectedId",
+          "type": "string",
+          "req": false,
+          "desc": "Uncontrolled: the initially selected item id."
+        },
+        {
+          "name": "onSelect",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Fires with the clicked item's id (both selection modes)."
+        },
+        {
+          "name": "detail",
+          "type": "(…) => void",
+          "req": false,
+          "desc": "Detail panel override — a render fn of the selected item. Default: title + subtitle + facts KeyValueList."
+        },
+        {
+          "name": "railWidth",
+          "type": "number",
+          "req": false,
+          "desc": "Rail width in px."
+        }
+      ],
+      "whenUse": [
+        "A complete master→detail collection page: CardListRow items (badge Chip, subtitle, trailing meta) beside an item-facts detail.",
+        "Libraries and registries (personas, skills, servers) whose items carry rich row slots."
+      ],
+      "whenNot": [
+        "Field-aligned columnar records — use TablePage.",
+        "Just the list rail inside your own frame — use MasterDetail + CardListRow directly."
+      ],
+      "src": "shared/ui/pages/CollectionPage.tsx",
+      "srcText": "import { CollectionPage } from \"@/shared/ui/pages/CollectionPage\";\n\n<CollectionPage\n  title=\"Personas\" hint=\"library\"\n  items={personas.map((p) => ({\n    id: p.id, title: p.name, subtitle: p.summary,\n    badge: p.role, facts: [{ k: \"model\", v: p.model }],\n  }))}\n  onSelect={setSelected}\n/>",
+      "builtin": true,
+      "shapes": [
+        "list"
+      ]
     }
   ]
 }
