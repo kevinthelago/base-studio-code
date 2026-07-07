@@ -45,6 +45,11 @@ describe("UI kit manifest — integrity", () => {
     const total = Object.values(groups).reduce((n, g) => n + g.length, 0);
     expect(total).toBe(UI_KIT.length);
   });
+
+  it("carries the pages tier (#2505) — the six complete page compositions in their own group", () => {
+    expect(primitivesByGroup().pages.map((p) => p.name).sort()).toEqual(
+      ["CollectionPage", "DashboardPage", "NetworkPage", "PipelinePage", "TablePage", "TreeExplorerPage"]);
+  });
 });
 
 describe("UI kit manifest — sync with the render-map registry", () => {
