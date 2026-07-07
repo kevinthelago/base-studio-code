@@ -58,8 +58,6 @@ export function SettingsWorkspace() {
                 fontSize: 11.5,
                 color: on ? "var(--fg)" : "var(--fg-muted)",
                 cursor: "pointer",
-                borderLeft: on ? "2px solid var(--accent)" : "2px solid transparent",
-                paddingLeft: on ? 10 : 12,
               }}>{it.label}</Box>
             );
           })}
