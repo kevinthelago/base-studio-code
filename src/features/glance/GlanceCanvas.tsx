@@ -42,6 +42,9 @@ interface CanvasProps {
   onHoverEdge: (id: string | null) => void;
   onSelectNode: (id: string) => void;
   onSelectEdge: (id: string) => void;
+  /** The graph's current zoom (`vp.view.scale`) — threaded to the terminal morph so its corner-resize
+   *  converts a screen-pixel drag into world units. */
+  zoom?: number;
   /** A live agent's terminal morphed open IN the graph (#2534) — rendered as an oversized node at its
    *  node's world coords. Null = none open. */
   chat?: { nodeId: string; paneId: string; name: string; role?: string } | null;
@@ -166,7 +169,7 @@ export function GlanceCanvas(p: CanvasProps) {
       {/* A live agent's terminal, morphed open IN the graph (#2534): an oversized node grown at the
           clicked node's world coords, so it pans/zooms/scales with the canvas. No portal, no scrim. */}
       {chatNode && p.chat && p.onCloseChat && (
-        <GlanceStreamMorph node={chatNode} paneId={p.chat.paneId} name={p.chat.name} role={p.chat.role} onClose={p.onCloseChat} />
+        <GlanceStreamMorph node={chatNode} paneId={p.chat.paneId} name={p.chat.name} role={p.chat.role} zoom={p.zoom} onClose={p.onCloseChat} />
       )}
 
       {/* The PREVIEW node, morphed open into the finished application IN the graph (#2623). */}
