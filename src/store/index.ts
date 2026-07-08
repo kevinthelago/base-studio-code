@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { bscJson, bscWrite } from "@/shared/lib/core/bsc";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { persistStorage } from "@/shared/lib/core/storage";
+import { grandfatherTriaged } from "./triagedMigration";
 import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
 import {  refreshBuiltIns, type Blueprint } from "@/features/planner/stages/blueprints";
 import { reconcileBuiltInProfiles } from "@/features/agents/lib/agentProfiles";
@@ -55,6 +56,23 @@ export const useAppStore = create<AppStore>()(
     {
       name: "app-state",
       storage: createJSONStorage(() => persistStorage),
+      version: 1,
+      // #2548: one-time grandfather. The Glance triaged filter (#2541) is forward-looking, so on an
+      // upgrade from persist v0 an existing user's already-worked projects (published + fleeted) carry
+      // no `triagedProjects` marker and vanish from Glance. Backfill it once from the persisted board +
+      // fleets. A fresh install starts at v1 with no persisted state, so this never runs for it and the
+      // strict rule holds (a new draft/published project stays hidden until it's actually triaged).
+      migrate: (persisted, version) => {
+        const s = (persisted ?? {}) as Partial<AppStore> & {
+          githubState?: { records?: { title?: string }[] };
+          planFleet?: Record<string, { streams?: unknown[] } | undefined>;
+          triagedProjects?: Record<string, number>;
+        };
+        if (version < 1 && Object.keys(s.triagedProjects ?? {}).length === 0) {
+          s.triagedProjects = grandfatherTriaged(s.githubState?.records, s.planFleet, Date.now());
+        }
+        return s as AppStore;
+      },
       // Exclude transient UI-only state from the persisted snapshot.
       partialize: (s) => ({
         activeWorkspace:    s.activeWorkspace,
