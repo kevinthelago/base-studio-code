@@ -128,6 +128,19 @@ pub fn flatten_tokens() -> Vec<Value> {
             }
         }
     }
+    // Domain / categorical tokens (#2607) — data-viz palettes (graph status/kind/category/edge). Part
+    // of the contract vocabulary (a kit consumes, a theme binds) but NOT components: `family` is the
+    // group, `default` is the literal `value` (like base tokens), no `component`/`variant`.
+    for g in d.get("domain").and_then(Value::as_array).into_iter().flatten() {
+        let group = g.get("group").and_then(Value::as_str).unwrap_or_default();
+        for t in g.get("tokens").and_then(Value::as_array).into_iter().flatten() {
+            out.push(serde_json::json!({
+                "name": t.get("name"), "type": t.get("type"),
+                "default": t.get("value"), "governs": t.get("governs"),
+                "family": group, "key": t.get("key"),
+            }));
+        }
+    }
     out
 }
 

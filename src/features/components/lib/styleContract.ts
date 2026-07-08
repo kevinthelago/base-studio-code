@@ -47,11 +47,30 @@ export interface StyleComponent {
   variants: StyleVariant[];
 }
 
+/** A domain / categorical token — a data-viz palette entry (graph status/kind/category/edge, #2607).
+ *  Part of the contract vocabulary a kit consumes and a theme binds, but NOT a component: it carries
+ *  a literal `value` (a concrete hue like base tokens), grouped by `group`, not owned by a component. */
+export interface DomainToken {
+  key: string;
+  name: string;
+  type: TokenType;
+  value: string;
+  governs: string;
+}
+
+export interface DomainGroup {
+  group: string;
+  governs: string;
+  tokens: DomainToken[];
+}
+
 export interface StyleDescriptor {
   version: number;
   note: string;
   base: BaseToken[];
   components: StyleComponent[];
+  /** Domain / categorical palettes (graph, …) — optional so older descriptors still parse (#2607). */
+  domain?: DomainGroup[];
 }
 
 /** A flat, uniform view of every token in the descriptor — the shape `bsc ui tokens` will serialise
@@ -78,6 +97,10 @@ export function flattenTokens(d: StyleDescriptor): FlatToken[] {
     for (const v of c.variants)
       for (const t of v.tokens) out.push({ name: t.name, type: t.type, default: t.default, governs: t.governs, family: c.component, component: c.component, variant: v.variant, key: t.key });
   }
+  // Domain / categorical tokens — one row per token, family = the group (e.g. "graph-health"). They
+  // are contract vocabulary (discoverable via `bsc ui tokens`) but not components, so no `component`.
+  for (const g of d.domain ?? [])
+    for (const t of g.tokens) out.push({ name: t.name, type: t.type, default: t.value, governs: t.governs, family: g.group, key: t.key });
   return out;
 }
 
@@ -101,6 +124,11 @@ export function emitTokensContractCss(d: StyleDescriptor): string {
   for (const c of d.components) {
     for (const t of c.tokens) L.push(`  ${t.name}: ${t.default};`);
     for (const v of c.variants) for (const t of v.tokens) L.push(`  ${t.name}: ${t.default};`);
+  }
+  if (d.domain?.length) {
+    L.push("");
+    L.push("  /* domain / categorical tokens — data-viz palettes (graph status/kind/category/edge); the contract vocabulary a kit consumes and a theme binds (#2607) */");
+    for (const g of d.domain) for (const t of g.tokens) L.push(`  ${t.name}: ${t.value};`);
   }
   L.push("}");
   return L.join("\n") + "\n";
