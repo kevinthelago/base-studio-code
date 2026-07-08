@@ -45,4 +45,11 @@ describe("buildGlanceData", () => {
     expect(g.rawNodes).toHaveLength(0);
     expect(g.rawEdges).toHaveLength(0);
   });
+
+  it("carries a project's LIFECYCLE category onto the node — no more hash-per-id tier (#2583)", () => {
+    const g = buildGlanceData([{ id: "p", name: "P", category: "transform" }]);
+    expect(g.rawNodes[0].category).toBe("transform");
+    // the same project id always yields the same node (was hash-derived role before) — deterministic
+    expect(buildGlanceData([{ id: "p", name: "P", category: "transform" }]).rawNodes[0]).toEqual(g.rawNodes[0]);
+  });
 });

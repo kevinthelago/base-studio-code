@@ -14,6 +14,11 @@ import { orderLayers } from "@/shared/lib/graph/order";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 
 export type GRole = "infra" | "service" | "data" | "client";
+/** A project's LIFECYCLE category (#2583) — what KIND of work it is, the app's real project vocabulary
+ *  (mirrors `BlueprintCategory`). Drives a project (L0) node's accent colour + chip, REPLACING the
+ *  microservices-tier `role` (which was hash-assigned per id and collided with the health palette). A
+ *  fleet-drill (L1) node has no category and keeps its function-group `role` colouring. */
+export type GCategory = "greenfield" | "transform" | "harden" | "maintain" | "data";
 /** Axis 1 — HEALTH (#2541): the top-left dot colour + the attention/propagation signal. An escalation
  *  ladder that rolls UP the dependency chain (a node shows the worst of itself + everything it depends
  *  on). `idle`/`healthy` never propagate — only `warning`/`error` do. Sourced from the worst unresolved
@@ -58,6 +63,9 @@ export interface GRawNode {
   /** Display name (defaults to id). */
   slug?: string;
   role: GRole;
+  /** Lifecycle category (#2583) — set for PROJECT (L0) nodes; drives the accent colour + chip in place
+   *  of `role`. Absent for fleet-drill (L1) nodes, which keep their function-group `role` colouring. */
+  category?: GCategory;
   /** Axis 1 — the node's OWN health (before the dependency rollup). #2541. */
   health: GHealth;
   /** Axis 2 — the lifecycle word shown bottom-right. #2541. */
@@ -119,6 +127,16 @@ export interface GraphModel {
 /** Role → accent colour (drives the node left-border + role chip + legend). */
 export const ROLE_COLOR: Record<GRole, string> = {
   infra: "#5b9dff", service: "#4fd6a0", data: "#b98bff", client: "#f2b155",
+};
+/** Lifecycle category → accent colour + label (#2583) — drives a PROJECT (L0) node's border + chip +
+ *  legend. A palette DELIBERATELY distinct from the health colours (blue/green/orange/red) so the
+ *  category channel and the health dot never blur. */
+export const CATEGORY_META: Record<GCategory, { label: string; color: string }> = {
+  greenfield: { label: "greenfield", color: "#16b3a7" }, // teal — creating from a pitch
+  transform:  { label: "transform",  color: "#7b74f2" }, // indigo — restructuring existing repos
+  harden:     { label: "harden",     color: "#b8862f" }, // bronze — improving/securing in place
+  maintain:   { label: "maintain",   color: "#8b93a7" }, // slate — keeping it running
+  data:       { label: "data",       color: "#d05fa8" }, // magenta — a data migration
 };
 /** Axis 1 — HEALTH → the top-left dot colour + whether it pulses (#2541). Blue = at rest, green =
  *  active & fine, orange = warning, red = error/fatal (pulses; the node to look at). */

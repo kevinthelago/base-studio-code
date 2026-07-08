@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useGlanceProjects, mergeGlanceProjects, applyLiveness, applyFaultHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged } from "./useGlanceProjects";
+import { useGlanceProjects, mergeGlanceProjects, applyLiveness, applyFaultHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged, resolveProjectCategory } from "./useGlanceProjects";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
 import type { MinimalGhProject } from "@/shared/lib/github/githubState";
 import type { ProjectLite } from "./glanceData";
@@ -146,6 +146,20 @@ describe("mergeGlanceProjects — draft/published dedup (#2339/#2409); GitHub no
     const merged = mergeGlanceProjects({}, [], [{ key: "Beautiful_Emails", title: "Beautiful Emails" }]);
     expect(merged).toHaveLength(1);
     expect(merged[0].id).toBe("Beautiful_Emails"); // no canonical folder exists → keep the legacy key
+  });
+
+  it("carries a draft's declared lifecycle category onto the node (#2583)", () => {
+    const merged = mergeGlanceProjects({ x: { title: "X", pitch: "", createdAt: 1, category: "harden" } }, []);
+    expect(merged[0].category).toBe("harden");
+  });
+});
+
+describe("resolveProjectCategory — lifecycle category, replacing the hash tier (#2583)", () => {
+  it("prefers a declared category, then the blueprint category, then the status heuristic", () => {
+    expect(resolveProjectCategory("harden", "greenfield", false)).toBe("harden");   // declared wins
+    expect(resolveProjectCategory(undefined, "transform", true)).toBe("transform");  // blueprint next
+    expect(resolveProjectCategory(undefined, undefined, true)).toBe("greenfield");   // a draft is being created
+    expect(resolveProjectCategory(undefined, undefined, false)).toBe("maintain");    // a published/worked project is in upkeep
   });
 });
 
