@@ -2,6 +2,9 @@
 // project-scoped pane (#2314) and the full-page Design Studio workspace (#2308).
 export { PlannerComponentsPane } from "./PlannerComponentsPane";
 export { DesignStudio } from "./DesignStudio";
+// #2658: the blueprint-download reconciliation confirm-list (generate + register missing categories).
+export { DesignReconcileModal, type DesignReconcileModalProps } from "./DesignReconcileModal";
+export { generateCategoryColors } from "./lib/designGenBridge";
 export { createComponentsSlice, type ComponentsSlice } from "./store";
 export {
   ROLE_COLOR, ROLES, matchesQuery, resolveComposes, resolveUsedBy,
