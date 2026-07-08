@@ -194,6 +194,24 @@ user is actually looking at instead of `default` blind. It prints the bare id (f
 `bsc ui theme get default` prints the shape to author against — palettes only: override the semantic
 tokens, never a spec's structure.",
     },
+    CmdDoc {
+        name: "generate",
+        summary: "generate coherent palette VALUES from a seed — the no-holes engine (#2634)",
+        usage: "\
+USAGE:
+  bsc ui generate categorical --count <n> [--seed <hue>] [--pretty]  # N evenly-spaced OKLCH categorical hues
+  bsc ui generate next --existing <h1,h2,…> [--pretty]               # ONE hue in the largest gap (fill a new slot)
+  bsc ui generate status [--pretty]                                  # health status → semantic-token mapping
+
+The DETERMINISTIC palette generator — the \"data generates design\" engine: a seed + a category count
+(or the hues already in use) → coherent token VALUES, so a growing vocabulary is filled on-brand with
+NO holes. `categorical` spaces N hues evenly around the wheel from --seed (default the brand accent
+hue) at a fixed lightness/chroma. `next` places one hue in the LARGEST circular gap among --existing —
+maximally distinct from what's there (the literal no-holes primitive). `status` maps
+idle/healthy/warning/error to the semantic base tokens (var(--info)/--success/--accent/--danger) so
+status colours compose with the theme. Pure output (JSON; --pretty indents) — it PRODUCES values, it
+does NOT write/apply them (that wiring is the reconciliation slice).",
+    },
 ];
 
 /// The merged command catalog (#2469): the contract verbs first, then the component-library verbs
@@ -231,6 +249,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("release") => cmd_kit(&args[1..], prog),
         Some("emit-css") => cmd_emit_css(&args[1..]),
         Some("theme") => cmd_theme(&args[1..], prog),
+        Some("generate") => cmd_generate(&args[1..], prog),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
         // ours so the error shows the MERGED overview, not the component-only one.
@@ -242,6 +261,71 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             print!("{}", bsc_cli_util::help_overview(prog, TAGLINE, &merged));
             Ok(())
         }
+    }
+}
+
+/// `bsc ui generate …` (#2634) — the deterministic palette generator: a seed + a category count (or
+/// the hues in use) → coherent token VALUES, filling a growing vocabulary on-brand with no holes.
+/// Pure JSON output; it does NOT write/apply (that is the reconciliation slice).
+fn cmd_generate(args: &[String], prog: &str) -> Result<(), String> {
+    let sub = args.first().map(String::as_str);
+    let rest = args.get(1..).unwrap_or(&[]);
+    let pretty = rest.iter().any(|a| a == "--pretty");
+    let emit = |v: &serde_json::Value| -> Result<(), String> {
+        let s = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
+        println!("{}", s.map_err(|e| e.to_string())?);
+        Ok(())
+    };
+    match sub {
+        Some("categorical") => {
+            let (mut count, mut seed) = (0usize, crate::GEN_SEED_HUE);
+            let mut it = rest.iter();
+            while let Some(a) = it.next() {
+                match a.as_str() {
+                    "--count" => count = it.next().and_then(|s| s.parse().ok()).ok_or("usage: --count <n>")?,
+                    "--seed" => seed = it.next().and_then(|s| s.parse().ok()).ok_or("usage: --seed <hue>")?,
+                    "--pretty" => {}
+                    other => return Err(format!("unknown flag '{other}'")),
+                }
+            }
+            if count == 0 {
+                return Err("usage: bsc ui generate categorical --count <n> [--seed <hue>]".into());
+            }
+            emit(&serde_json::json!({ "seed": seed, "count": count, "colors": crate::generate_categorical(seed, count) }))
+        }
+        Some("next") => {
+            let mut existing: Vec<f64> = Vec::new();
+            let mut it = rest.iter();
+            while let Some(a) = it.next() {
+                match a.as_str() {
+                    "--existing" => {
+                        let raw = it.next().ok_or("usage: --existing <h1,h2,…>")?;
+                        existing = raw
+                            .split(',')
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                            .map(|s| s.parse::<f64>().map_err(|_| format!("bad hue '{s}'")))
+                            .collect::<Result<_, _>>()?;
+                    }
+                    "--pretty" => {}
+                    other => return Err(format!("unknown flag '{other}'")),
+                }
+            }
+            let hue = crate::next_distinct_hue(&existing);
+            emit(&serde_json::json!({ "hue": hue, "color": crate::categorical_color(hue) }))
+        }
+        Some("status") => {
+            let rows: Vec<serde_json::Value> = crate::status_palette()
+                .into_iter()
+                .map(|(k, v)| serde_json::json!({ "status": k, "value": v }))
+                .collect();
+            emit(&serde_json::json!(rows))
+        }
+        None | Some("help") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "generate"));
+            Ok(())
+        }
+        Some(other) => Err(format!("unknown generate command '{other}' — want: categorical | next | status")),
     }
 }
 
@@ -1198,6 +1282,24 @@ mod tests {
         let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMMANDS);
         assert!(ov.contains("schema") && ov.contains("validate") && ov.contains("theme") && ov.contains("release"));
         assert!(ov.contains("emit-css"), "the #2489 emission verb is listed");
+        assert!(ov.contains("generate"), "the #2634 palette generator is listed");
+    }
+
+    #[test]
+    fn generate_produces_palettes_and_rejects_bad_shapes() {
+        // happy paths — categorical / next / status all succeed and are pure output.
+        assert!(run(vec!["generate".into(), "categorical".into(), "--count".into(), "6".into()], "bsc ui").is_ok());
+        assert!(run(vec!["generate".into(), "categorical".into(), "--count".into(), "4".into(), "--seed".into(), "200".into(), "--pretty".into()], "bsc ui").is_ok());
+        assert!(run(vec!["generate".into(), "next".into(), "--existing".into(), "0,90,180".into()], "bsc ui").is_ok());
+        assert!(run(vec!["generate".into(), "next".into()], "bsc ui").is_ok(), "no --existing → the seed, still ok");
+        assert!(run(vec!["generate".into(), "status".into()], "bsc ui").is_ok());
+        assert!(run(vec!["generate".into()], "bsc ui").is_ok(), "bare verb prints help");
+        // bad shapes error crisply, never panic.
+        assert!(run(vec!["generate".into(), "categorical".into()], "bsc ui").is_err(), "missing --count");
+        assert!(run(vec!["generate".into(), "categorical".into(), "--count".into(), "x".into()], "bsc ui").is_err(), "non-numeric count");
+        assert!(run(vec!["generate".into(), "next".into(), "--existing".into(), "0,bad".into()], "bsc ui").is_err(), "bad hue");
+        assert!(run(vec!["generate".into(), "categorical".into(), "--count".into(), "2".into(), "--frob".into()], "bsc ui").is_err(), "unknown flag");
+        assert!(run(vec!["generate".into(), "bogus".into()], "bsc ui").is_err(), "unknown subcommand");
     }
 
     #[test]
