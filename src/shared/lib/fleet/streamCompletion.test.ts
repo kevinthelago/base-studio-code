@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { doneIssueRefs, streamComplete, pruneCompletedStreams, completedWorkerPanes } from "./streamCompletion";
+import { doneIssueRefs, streamComplete, pruneCompletedStreams, completedWorkerPanes, projectComplete } from "./streamCompletion";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 
@@ -8,6 +8,14 @@ const issue = (ref: string, status?: PlanIssue["status"]): PlanIssue => ({
 });
 const stream = (id: string, issues: string[]): AgentStream => ({
   id, name: id, repo: "o/r", owns: [], issues, dependsOn: [],
+});
+
+describe("projectComplete (#2619 — the application-complete banner signal)", () => {
+  it("is true only when there are issues and every one is complete/verified", () => {
+    expect(projectComplete([issue("A", "complete"), issue("B", "verified")])).toBe(true);
+    expect(projectComplete([issue("A", "complete"), issue("B")])).toBe(false); // one still open
+    expect(projectComplete([])).toBe(false);                                   // nothing planned yet ≠ complete
+  });
 });
 
 describe("doneIssueRefs (#1004)", () => {

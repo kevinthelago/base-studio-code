@@ -13,6 +13,16 @@ export function doneIssueRefs(issues: PlanIssue[]): Set<string> {
 }
 
 /**
+ * Whether a project's BUILD is complete (#2619) — it has planned issues and EVERY one is done
+ * (`complete` = landed, `verified` = accepted). The signal the "application complete" banner fires on:
+ * all the planned work has landed, so the user can do a verify/preview run. An empty issue set is not
+ * "complete" (nothing was planned yet). Pure.
+ */
+export function projectComplete(issues: PlanIssue[]): boolean {
+  return issues.length > 0 && issues.every((i) => i.status === "complete" || i.status === "verified");
+}
+
+/**
  * A stream is complete when it owns at least one issue and EVERY one is done — so a relaunch puts its
  * worker into maintenance, not back to building (it already finished). A stream that owns no issues is
  * never "complete" (there's no

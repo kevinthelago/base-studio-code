@@ -26,6 +26,9 @@
 .ds-center { flex: 1; min-width: 0; background: var(--bg-canvas, var(--bg)); }
 .ds-handle { width: 5px; flex: none; cursor: col-resize; z-index: 4; position: relative; }
 .ds-handle:hover { background: var(--accent-soft); }
+/* Horizontal splitter (#2624) — row-resize divider between the graph and the docked designer terminal. */
+.ds-handle-h { height: 5px; flex: none; cursor: row-resize; z-index: 4; position: relative; }
+.ds-handle-h:hover { background: var(--accent-soft); }
 .ds-colhead { height: 38px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--border-soft, var(--border)); }
 .ds-eyebrow { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; color: var(--fg-dim); text-transform: uppercase; }
 .ds-scroll { overflow-y: auto; }
@@ -96,8 +99,10 @@
 /* ── designer session panel (#2471/#2597) — the ALWAYS-ON terminal docked at the bottom of the
    center column, below the composition graph. Fixed height so the graph (pane) keeps priority; the
    hook's ResizeObserver re-fits xterm when the center width changes. */
-.ds-terminal { flex: none; height: 240px; min-height: 150px; display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
-.ds-termhost { flex: 1; min-height: 0; padding: 4px 8px; background: #181a1f; /* TERM_THEME background */ }
+/* height is inline (drag-driven, #2624); min-width:0 + overflow:hidden let the terminal SHRINK so it
+   never pins the center column's width — the rail/inspector panes keep priority when resized. */
+.ds-terminal { flex: none; height: 240px; min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
+.ds-termhost { flex: 1; min-height: 0; min-width: 0; padding: 4px 8px; background: #181a1f; /* TERM_THEME background */ }
 
 /* loading preview (#2302) — a component's skeleton in the Studio rides the app's ONE shimmer
    keyframe (`skeleton-shimmer`, tokens.css), so the loading state uses the same motion vocabulary as
