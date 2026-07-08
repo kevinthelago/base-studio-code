@@ -15,7 +15,7 @@ const REST_N = 0.14, REST_E = 0.06;
 // Project-network (L0) legend rows. The accent buckets are the LIFECYCLE categories (#2583 — what KIND
 // of work each project is), NOT the old microservices tiers; EDGE labels come from EDGE_META so the
 // legend + connect picker stay in sync (#2561).
-const CATEGORY_ORDER: GCategory[] = ["greenfield", "transform", "harden", "maintain", "data"];
+const CATEGORY_ORDER: GCategory[] = ["greenfield", "transform", "harden", "maintain", "data", "script"];
 const ROLE_ROWS_L0: [string, string][] = CATEGORY_ORDER.map((c) => [CATEGORY_META[c].label, CATEGORY_META[c].color]);
 const EDGE_ROWS_L0: [string, string, string][] = [
   [EDGE_META.api.label, EDGE_META.api.color, EDGE_META.api.dash],
