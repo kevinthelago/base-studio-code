@@ -166,6 +166,60 @@ pub fn resolve_component_token(component: &str, variant: Option<&str>, key: &str
     })
 }
 
+/// A component's base token KEYS — the short keys a NEW variant may set — e.g. `btn` → [bg, bg-hover,
+/// border, fg, radius]. From the descriptor's per-component base tokens (not its variant tokens).
+pub fn component_token_keys(component: &str) -> Vec<String> {
+    style_descriptor()
+        .get("components")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|c| c.get("component").and_then(Value::as_str) == Some(component))
+        .and_then(|c| c.get("tokens").and_then(Value::as_array))
+        .map(|ts| ts.iter().filter_map(|t| t.get("key").and_then(Value::as_str).map(str::to_owned)).collect())
+        .unwrap_or_default()
+}
+
+/// Validate a NEW variant NAME (#2569 security). The name becomes a CSS selector / data-attribute value
+/// when the frontend compiles the variant, so it needs a STRICTER grammar than a token value: lowercase,
+/// starts with a letter, then `[a-z0-9-]`, no leading/trailing/double hyphen — a safe CSS identifier an
+/// LLM cannot inject a selector through.
+pub fn sanitize_variant_name(name: &str) -> Result<(), String> {
+    let ok = !name.is_empty()
+        && name.starts_with(|c: char| c.is_ascii_lowercase())
+        && !name.ends_with('-')
+        && !name.contains("--")
+        && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "variant name '{name}' must be a safe CSS identifier: lowercase [a-z][a-z0-9-]*, no leading/trailing/double hyphen"
+        ))
+    }
+}
+
+/// Validate a NEW variant's token bundle (#2569): at least one token, every key a base token key of the
+/// component, and every value passing the closed grammar. Flat error list (empty = valid).
+pub fn validate_variant_tokens(component: &str, tokens: &serde_json::Map<String, Value>) -> Vec<String> {
+    let keys: std::collections::HashSet<String> = component_token_keys(component).into_iter().collect();
+    let names = token_names();
+    let mut errs = Vec::new();
+    if tokens.is_empty() {
+        errs.push("a variant must set at least one token (--set <key>=<value>)".to_string());
+    }
+    for (key, value) in tokens {
+        if !keys.contains(key) {
+            errs.push(format!("'{key}' is not a token of component '{component}' — see `bsc ui component {component} list-tokens`"));
+        }
+        let s = value.as_str().map_or_else(|| value.to_string(), str::to_owned);
+        if let Err(e) = validate_value(&s, &names) {
+            errs.push(e);
+        }
+    }
+    errs
+}
+
 /// Every `--custom-property` referenced in a value (for the closed grammar's known-token check).
 fn referenced_vars(value: &str) -> Vec<String> {
     value
@@ -412,6 +466,24 @@ mod tests {
         let errs = validate_theme_vars(&bad);
         assert!(errs.iter().any(|e| e.contains("--not-a-token")), "flags the unknown token: {errs:?}");
         assert!(errs.iter().any(|e| e.contains("disallowed")), "flags the injection: {errs:?}");
+    }
+
+    #[test]
+    fn variant_authoring_validates_name_keys_and_values() {
+        assert_eq!(component_token_keys("btn"), vec!["bg", "bg-hover", "border", "fg", "radius"]);
+        assert!(sanitize_variant_name("danger-outline").is_ok());
+        for bad in ["Danger", "1x", "a--b", "a-", "a b", "a}b", ""] {
+            assert!(sanitize_variant_name(bad).is_err(), "'{bad}' rejected");
+        }
+        let good: serde_json::Map<String, Value> =
+            serde_json::from_str(r#"{"bg":"var(--danger)","fg":"var(--fg)"}"#).unwrap();
+        assert!(validate_variant_tokens("btn", &good).is_empty());
+        let bad: serde_json::Map<String, Value> =
+            serde_json::from_str(r#"{"nope":"var(--fg)","bg":"red; }"}"#).unwrap();
+        let errs = validate_variant_tokens("btn", &bad);
+        assert!(errs.iter().any(|e| e.contains("'nope'")), "flags the bad key: {errs:?}");
+        assert!(errs.iter().any(|e| e.contains("disallowed")), "flags the injection: {errs:?}");
+        assert!(!validate_variant_tokens("btn", &serde_json::Map::new()).is_empty(), "empty bundle rejected");
     }
 
     #[test]
