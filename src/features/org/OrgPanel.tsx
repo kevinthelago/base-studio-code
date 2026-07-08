@@ -61,9 +61,11 @@ export function OrgPanel() {
   const vp = useGraphViewport({ w: CANVAS_W, h: CANVAS_H }, { min: 0.4, max: 1.5, fitPad: 20, maxFitScale: 1.5 });
   const scale = vp.view.scale;
 
-  // Restore this org's saved zoom (or fit) when the org changes.
+  // Restore this org's saved zoom (or fit) when the org changes. zoomToCentered (NOT zoomTo) re-centers
+  // the world at the saved scale — zoomTo anchors about the viewport center starting from the fresh
+  // mount's {0,0,1} origin, which leaves the world hanging off the bottom of the viewport (#2545).
   useEffect(() => {
-    if (savedZoom) vp.zoomTo(savedZoom);
+    if (savedZoom) vp.zoomToCentered(savedZoom);
     else vp.fit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
