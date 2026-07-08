@@ -81,6 +81,20 @@ variants (e.g. btn → tokens [bg, bg-hover, border, fg, radius], variants [prim
 designer scans before descending to per-component token edits. --pretty indents.",
     },
     CmdDoc {
+        name: "component",
+        summary: "address ONE component's tokens by short key (+variant) — the ergonomic set-token (#2569)",
+        usage: "\
+USAGE:
+  bsc ui component <name> list-tokens [--variant <v>] [--pretty]
+  bsc ui component <name> set-token <key> <value> [--variant <v>] [--theme <id>]
+
+Edit a component's semantic tokens by their SHORT key (from `bsc ui components`) instead of the full
+custom-property name: `bsc ui component btn set-token bg @accent` resolves `--btn-bg` and sets it on a
+theme (--theme, default `default`), validated + live exactly like `theme set-token`. --variant targets a
+variant's tokens (`--variant primary` → `--btn-primary-bg`). The rung-2 ergonomic form: DISCOVER keys
+with `bsc ui components`, EDIT them here — never type the `--<comp>[-<variant>]-<key>` convention.",
+    },
+    CmdDoc {
         name: "release",
         summary: "the global released-kit store — immutable id@version artifacts blueprints pin (#2465)",
         usage: "\
@@ -174,6 +188,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("validate") => cmd_validate(&args[1..]),
         Some("tokens") => cmd_tokens(&args[1..]),
         Some("components") => cmd_components(&args[1..]),
+        Some("component") => cmd_component(&args[1..], prog),
         Some("release") => cmd_kit(&args[1..], prog),
         Some("emit-css") => cmd_emit_css(&args[1..]),
         Some("theme") => cmd_theme(&args[1..], prog),
@@ -375,6 +390,108 @@ fn load_theme_for_edit(store: &bsc_json_store::Store, id: &str) -> Result<serde_
     crate::theme_by_id(id).ok_or_else(|| format!("unknown theme '{id}' — see `bsc ui theme list`"))
 }
 
+/// The core of a per-token theme edit (#2568): validate the token is contract-defined + the value
+/// against the closed grammar, load the theme (a built-in materializes), set the var, write it back,
+/// and emit the live-focus `ui-touch`. Shared by `theme set-token` and `component set-token`. The
+/// caller has already gated on the `ui` write scope.
+fn write_theme_token(dir: &Option<String>, id: &str, token: &str, raw_value: &str) -> Result<serde_json::Value, String> {
+    if !token.starts_with("--") {
+        return Err(format!("token must be a --custom-property, e.g. --card-bg (got '{token}'); see `bsc ui tokens`"));
+    }
+    let names = crate::token_names();
+    if !names.contains(token) {
+        return Err(format!("'{token}' is not a token the contract defines — see `bsc ui tokens`"));
+    }
+    let value = expand_token_ref(raw_value);
+    crate::validate_value(&value, &names)?;
+    let store = theme_store(dir)?;
+    let mut theme = load_theme_for_edit(&store, id)?;
+    let obj = theme.as_object_mut().ok_or_else(|| format!("theme '{id}' is not an object"))?;
+    let vars = obj
+        .entry("vars")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| format!("theme '{id}' vars is not an object"))?;
+    vars.insert(token.to_string(), serde_json::Value::String(value.clone()));
+    let json = serde_json::to_string(&theme).map_err(|e| format!("set-token: {e}"))?;
+    store.set(id, &json)?;
+    bsc_util::emit_ui_activity("theme", id); // Design Studio live-focus (#2525)
+    Ok(serde_json::json!({ "id": id, "token": token, "value": value }))
+}
+
+/// `bsc ui component <name> …` (#2569 rung 2) — address a component's tokens by their SHORT key (+
+/// optional variant), the ergonomic form over `theme set-token`: the CLI resolves
+/// `--<name>[-<variant>]-<key>` from the descriptor, so the LLM discovers keys with `bsc ui components`
+/// and edits them here, never typing the naming convention.
+fn cmd_component(args: &[String], prog: &str) -> Result<(), String> {
+    let (mut variant, mut theme, mut dir, mut pretty) =
+        (None::<String>, None::<String>, None::<String>, false);
+    let mut positional: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--variant" => variant = it.next().cloned(),
+            "--theme" => theme = it.next().cloned(),
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            // Everything else is positional — including a set-token <value> that starts with `--`.
+            _ => positional.push(a.clone()),
+        }
+    }
+    let name = positional
+        .first()
+        .map(String::as_str)
+        .ok_or("usage: bsc ui component <name> list-tokens | set-token <key> <value>")?;
+    if name == "help" || positional.get(1).map(String::as_str) == Some("help") {
+        print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "component"));
+        return Ok(());
+    }
+    let d = crate::style_descriptor();
+    let exists = d
+        .get("components")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|c| c.get("component").and_then(serde_json::Value::as_str) == Some(name));
+    if !exists {
+        return Err(format!("unknown component '{name}' — see `bsc ui components`"));
+    }
+    let emit = |v: &serde_json::Value| -> Result<(), String> {
+        let s = if pretty { serde_json::to_string_pretty(v) } else { serde_json::to_string(v) };
+        println!("{}", s.map_err(|e| e.to_string())?);
+        Ok(())
+    };
+    match positional.get(1).map(String::as_str).unwrap_or("list-tokens") {
+        "list-tokens" => {
+            let rows: Vec<serde_json::Value> = crate::flatten_tokens()
+                .into_iter()
+                .filter(|t| t.get("component").and_then(serde_json::Value::as_str) == Some(name))
+                .filter(|t| match variant.as_deref() {
+                    None => true, // no --variant → all of the component's tokens (base + variants)
+                    Some(v) => t.get("variant").and_then(serde_json::Value::as_str) == Some(v),
+                })
+                .collect();
+            emit(&serde_json::Value::Array(rows))
+        }
+        "set-token" => {
+            bsc_cli_util::require_write_scope("ui")?;
+            let key = positional
+                .get(2)
+                .ok_or("usage: bsc ui component <name> set-token <key> <value> [--variant <v>] [--theme <id>]")?;
+            let value = positional
+                .get(3)
+                .ok_or("usage: bsc ui component <name> set-token <key> <value> [--variant <v>] [--theme <id>]")?;
+            let token = crate::resolve_component_token(name, variant.as_deref(), key).ok_or_else(|| {
+                let vsuffix = variant.as_deref().map(|v| format!(" (variant '{v}')")).unwrap_or_default();
+                format!("component '{name}' has no token '{key}'{vsuffix} — see `bsc ui component {name} list-tokens`")
+            })?;
+            let theme_id = theme.as_deref().unwrap_or("default");
+            emit(&write_theme_token(&dir, theme_id, &token, value)?)
+        }
+        other => Err(format!("unknown component command '{other}' — want: list-tokens | set-token <key> <value>")),
+    }
+}
+
 /// `bsc ui theme …` (#1852 Phase 3 + #2488) — the kit THEME collection. Reads (`list`/`get`) merge the
 /// packaged built-ins under the store; the mutations (`set`/`remove`) persist to the theme store and
 /// are gated by the session's runtime `ui` scope (#2470) BEFORE any store is touched — the same
@@ -490,28 +607,7 @@ fn cmd_theme(args: &[String], prog: &str) -> Result<(), String> {
             let id = positional.get(1).ok_or("usage: bsc ui theme set-token <id> <token> <value>")?;
             let token = positional.get(2).ok_or("usage: bsc ui theme set-token <id> <token> <value>")?;
             let raw_value = positional.get(3).ok_or("usage: bsc ui theme set-token <id> <token> <value>")?;
-            if !token.starts_with("--") {
-                return Err(format!("token must be a --custom-property, e.g. --card-bg (got '{token}'); see `bsc ui tokens`"));
-            }
-            let names = crate::token_names();
-            if !names.contains(token.as_str()) {
-                return Err(format!("'{token}' is not a token the contract defines — see `bsc ui tokens`"));
-            }
-            let value = expand_token_ref(raw_value);
-            crate::validate_value(&value, &names)?;
-            let store = theme_store(&dir)?;
-            let mut theme = load_theme_for_edit(&store, id)?;
-            let obj = theme.as_object_mut().ok_or_else(|| format!("theme '{id}' is not an object"))?;
-            let vars = obj
-                .entry("vars")
-                .or_insert_with(|| serde_json::json!({}))
-                .as_object_mut()
-                .ok_or_else(|| format!("theme '{id}' vars is not an object"))?;
-            vars.insert(token.to_string(), serde_json::Value::String(value.clone()));
-            let json = serde_json::to_string(&theme).map_err(|e| format!("set-token: {e}"))?;
-            store.set(id, &json)?;
-            bsc_util::emit_ui_activity("theme", id); // Design Studio live-focus (#2525)
-            emit(&serde_json::json!({ "id": id, "token": token, "value": value }))
+            emit(&write_theme_token(&dir, id, token, raw_value)?)
         }
         "unset-token" => {
             bsc_cli_util::require_write_scope("ui")?;
@@ -1084,6 +1180,53 @@ mod tests {
         assert!(run(vec!["tokens".into()], "bsc ui").is_ok());
         assert!(run(vec!["components".into()], "bsc ui").is_ok());
         assert!(run(vec!["theme".into(), "validate".into(), "default".into(), "--dir".into(), dir], "bsc ui").is_ok());
+        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+    }
+
+    #[test]
+    fn component_set_token_resolves_short_keys_and_edits_a_theme() {
+        let _guard = SCOPES_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        let dir = tmp_store_dir("component");
+        let store = bsc_json_store::Store::new(dir.clone(), "theme");
+        let run_comp = |rest: &[&str]| {
+            let mut args = vec!["component".to_string()];
+            args.extend(rest.iter().map(|s| s.to_string()));
+            args.extend(["--dir".to_string(), dir.clone()]);
+            run(args, "bsc ui")
+        };
+        let stored = |id: &str| -> serde_json::Value {
+            serde_json::from_str(&store.get(id).unwrap().unwrap()).unwrap()
+        };
+        // reads: a component's tokens, filtered by variant.
+        assert!(run(vec!["component".into(), "btn".into(), "list-tokens".into(), "--pretty".into()], "bsc ui").is_ok());
+        assert!(run(vec!["component".into(), "btn".into(), "list-tokens".into(), "--variant".into(), "primary".into()], "bsc ui").is_ok());
+        // set a component token by its SHORT key → resolves --btn-bg on the default theme.
+        run_comp(&["btn", "set-token", "bg", "@accent"]).unwrap();
+        assert_eq!(stored("default")["vars"]["--btn-bg"], "var(--accent)");
+        // a VARIANT key resolves --btn-primary-bg.
+        run_comp(&["btn", "set-token", "bg", "#101010", "--variant", "primary"]).unwrap();
+        assert_eq!(stored("default")["vars"]["--btn-primary-bg"], "#101010");
+        // --theme targets a named theme.
+        run_comp(&["card", "set-token", "radius", "12px", "--theme", "soft"]).unwrap();
+        assert_eq!(stored("soft")["vars"]["--card-radius"], "12px");
+        // rejections: unknown component, unknown key, injection value.
+        assert!(run_comp(&["nope", "list-tokens"]).is_err(), "unknown component");
+        assert!(run_comp(&["btn", "set-token", "nope", "red"]).is_err(), "unknown key");
+        assert!(run_comp(&["btn", "set-token", "bg", "red; }"]).is_err(), "injection value");
+        // help resolves + the merged tree lists it.
+        assert!(run(vec!["component".into(), "help".into()], "bsc ui").is_ok());
+        assert!(bsc_cli_util::help_overview("bsc ui", TAGLINE, &merged_commands()).contains("component"));
+    }
+
+    #[test]
+    fn component_set_token_refuses_under_a_read_ui_scope() {
+        let _guard = SCOPES_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
+        let err = run(vec!["component".into(), "btn".into(), "set-token".into(), "bg".into(), "red".into()], "bsc ui").unwrap_err();
+        assert!(err.contains("'ui'") || err.contains("read-only"), "refuses at the gate: {err}");
+        // list-tokens stays open read-scoped.
+        assert!(run(vec!["component".into(), "btn".into(), "list-tokens".into()], "bsc ui").is_ok());
         std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
     }
 }

@@ -151,6 +151,21 @@ pub fn token_names() -> std::collections::HashSet<String> {
         .collect()
 }
 
+/// Resolve a component's SHORT token key (+ optional variant) to its full custom-property name — e.g.
+/// (`btn`, `Some("primary")`, `bg`) → `--btn-primary-bg`, (`card`, `None`, `radius`) → `--card-radius`.
+/// `None` when the descriptor has no such token, so `bsc ui component <c> set-token <key>` addresses
+/// tokens by the discoverable keys `bsc ui components` reports — never the naming convention itself.
+pub fn resolve_component_token(component: &str, variant: Option<&str>, key: &str) -> Option<String> {
+    flatten_tokens().into_iter().find_map(|row| {
+        let same_comp = row.get("component").and_then(Value::as_str) == Some(component);
+        let same_key = row.get("key").and_then(Value::as_str) == Some(key);
+        let same_variant = row.get("variant").and_then(Value::as_str) == variant;
+        (same_comp && same_key && same_variant)
+            .then(|| row.get("name").and_then(Value::as_str).map(str::to_owned))
+            .flatten()
+    })
+}
+
 /// Every `--custom-property` referenced in a value (for the closed grammar's known-token check).
 fn referenced_vars(value: &str) -> Vec<String> {
     value
@@ -397,6 +412,17 @@ mod tests {
         let errs = validate_theme_vars(&bad);
         assert!(errs.iter().any(|e| e.contains("--not-a-token")), "flags the unknown token: {errs:?}");
         assert!(errs.iter().any(|e| e.contains("disallowed")), "flags the injection: {errs:?}");
+    }
+
+    #[test]
+    fn resolve_component_token_maps_short_keys_to_full_names() {
+        assert_eq!(resolve_component_token("card", None, "radius").as_deref(), Some("--card-radius"));
+        assert_eq!(resolve_component_token("btn", Some("primary"), "bg").as_deref(), Some("--btn-primary-bg"));
+        assert_eq!(resolve_component_token("btn", None, "bg").as_deref(), Some("--btn-bg"));
+        // a base token addressed AS a variant, or an absent key/component, does not resolve.
+        assert!(resolve_component_token("btn", Some("primary"), "radius").is_none());
+        assert!(resolve_component_token("card", None, "nope").is_none());
+        assert!(resolve_component_token("nope", None, "bg").is_none());
     }
 
     #[test]
