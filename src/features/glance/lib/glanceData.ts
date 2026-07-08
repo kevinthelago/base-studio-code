@@ -3,18 +3,15 @@
 // SAMPLE until a real cross-project dependency model exists (epic #2205, slice 4). Isolated here so
 // wiring real edges later is a drop-in — the page + graph core never change.
 import sampleGraphEmbedded from "@data/glance/sample-graph.json";
-import type { GRawNode, GRawEdge, GRole, GHealth, GActivity } from "./glanceGraph";
+import type { GRawNode, GRawEdge, GRole, GCategory, GHealth, GActivity } from "./glanceGraph";
 import type { ProjectLink } from "./projectLinks";
-import { hashAbs } from "./hash";
 
 export interface GlanceData { rawNodes: GRawNode[]; rawEdges: GRawEdge[]; sample: boolean }
 
 /** A minimal project as the adapter needs it — id + display name, plus the two axes the caller has
  *  resolved (#2541): `health` (idle/healthy/warning/error) and `activity` (the lifecycle word), with an
  *  optional `reason` (the fault title) shown when health is degraded. */
-export interface ProjectLite { id: string; name: string; role?: GRole; health?: GHealth; activity?: GActivity; reason?: string; faults?: number }
-
-const ROLES: GRole[] = ["infra", "service", "data", "client"];
+export interface ProjectLite { id: string; name: string; role?: GRole; category?: GCategory; health?: GHealth; activity?: GActivity; reason?: string; faults?: number }
 
 /** The packaged SAMPLE project network — the spec's example (roles · edge kinds · a dependency CYCLE:
  *  reporting → analytics → reporting · hazards). No longer an auto-fallback for an empty app (#2272 — an
@@ -36,7 +33,10 @@ export function buildGlanceData(projects: ProjectLite[], links: ProjectLink[] = 
   const rawNodes: GRawNode[] = projects.map((p) => ({
     id: p.id,
     slug: p.name || p.id,
-    role: p.role ?? ROLES[hashAbs(p.id) % ROLES.length],
+    // Colour a project by its LIFECYCLE category (#2583), resolved by the caller. `role` is retained only
+    // as a benign default (the canvas colours L0 nodes by `category`); the old hash-per-id tier is GONE.
+    role: p.role ?? "service",
+    category: p.category,
     health: p.health ?? "idle",     // #2541 axis 1 — resolved by the caller from faults/liveness
     activity: p.activity ?? "idle", // #2551 axis 2 — RESTING default; `building` is derived from live agents, not a fallback
     reason: p.reason,                  // the fault title shown when health is degraded
