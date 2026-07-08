@@ -33,6 +33,7 @@ import { buildGraph, focusSets, HEALTH_META, ROLE_COLOR, EDGE_META, NW, NH, type
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
 import { useProjectComplete } from "./lib/useProjectComplete";
+import { usePreviewReview } from "./usePreviewReview";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import { useGlanceProjects, applyFaultHealth } from "./lib/useGlanceProjects";
 import { useGlanceFaults } from "./lib/useGlanceFaults";
@@ -152,6 +153,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       .then((src) => { if (src) setPreviewSource(key, src); })
       .finally(() => setPreviewBuilding(key, false));
   }, [setPreviewBuilding, setPreviewSource]);
+  // The reviewer loop for the open preview (#2623 slice 5b): capture a shot → Claude review → confirm-gated inbox.
+  const previewReview = usePreviewReview(drill);
   const fleetData = useMemo(() => {
     if (!drillNode) return null;
     const base = effectiveFleet && effectiveFleet.streams.length > 0
@@ -388,6 +391,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
             source: previewSources[drill] ?? null,
             building: !!previewBuilding[drill],
             onBuild: () => buildPreview(drill),
+            review: previewReview,
           } : null}
           onClosePreview={() => setPreviewOpen(false)}
         />
