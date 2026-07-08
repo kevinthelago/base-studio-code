@@ -47,7 +47,7 @@ interface CanvasProps {
   onCloseChat?: () => void;
   /** The PREVIEW node morphed open (#2623) — the finished app rendered IN the graph, at its node's
    *  world coords. `source` is null until the verify-build produces one. Null = none open. */
-  preview?: { nodeId: string; name: string; source: PreviewSource | null } | null;
+  preview?: { nodeId: string; name: string; source: PreviewSource | null; building?: boolean; onBuild?: () => void } | null;
   onClosePreview?: () => void;
 }
 
@@ -170,7 +170,7 @@ export function GlanceCanvas(p: CanvasProps) {
 
       {/* The PREVIEW node, morphed open into the finished application IN the graph (#2623). */}
       {previewNode && p.preview && p.onClosePreview && (
-        <GlancePreviewMorph node={previewNode} source={p.preview.source} name={p.preview.name} onClose={p.onClosePreview} />
+        <GlancePreviewMorph node={previewNode} source={p.preview.source} name={p.preview.name} building={p.preview.building} onBuild={p.preview.onBuild} onClose={p.onClosePreview} />
       )}
     </>
   );
