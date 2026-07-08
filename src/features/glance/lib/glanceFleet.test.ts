@@ -16,10 +16,10 @@ describe("buildFleetData (glance drill)", () => {
     expect(workers.length).toBeGreaterThanOrEqual(2);
     expect(workers.length).toBeLessThanOrEqual(4);
 
-    // each worker takes direction from the director (api) and is read by the reviewer (data)
+    // each worker is managed by the director and overseen by the reviewer (Org archetypes, #2561)
     for (const w of workers) {
-      expect(a.rawEdges).toContainEqual({ from: w.id, to: "director", kind: "api" });
-      expect(a.rawEdges).toContainEqual({ from: "reviewer", to: w.id, kind: "data" });
+      expect(a.rawEdges).toContainEqual({ from: w.id, to: "director", kind: "api", archetype: "manages" });
+      expect(a.rawEdges).toContainEqual({ from: "reviewer", to: w.id, kind: "data", archetype: "oversees" });
     }
   });
 
@@ -35,7 +35,7 @@ describe("buildFleetData (glance drill)", () => {
 
 describe("buildRealFleetData (glance drill — real fleet)", () => {
   const personas: Persona[] = [
-    { id: "p-worker", name: "Worker", blurb: "", role: "worker", startPrompt: "", skills: [] },
+    { id: "p-worker", name: "Backend Engineer", blurb: "", role: "worker", startPrompt: "", skills: ["rust", "api"], model: "claude-sonnet-5", responsibilities: ["owns the API"] },
     { id: "p-reviewer", name: "Reviewer", blurb: "", role: "reviewer", startPrompt: "", skills: [] },
   ];
   const fleet = {
@@ -59,12 +59,26 @@ describe("buildRealFleetData (glance drill — real fleet)", () => {
     expect(byId.qa.roleLabel).toBe("reviewer");
     expect(byId.director.role).toBe("infra");// director hub added
     expect(byId.director.roleLabel).toBe("director");
-    // director hub: each stream depends on the director
-    expect(d.rawEdges).toContainEqual({ from: "api", to: "director", kind: "api" });
-    // dependsOn: ui depends on api
-    expect(d.rawEdges).toContainEqual({ from: "ui", to: "api", kind: "api" });
-    // coordination edge producer→consumer (api→ui handoff) ⇒ consumer depends on producer (deduped w/ dependsOn)
-    expect(d.rawEdges.filter((e) => e.from === "ui" && e.to === "api")).toHaveLength(1);
+    // director hub: each stream is MANAGED by the director (Org archetype #2561)
+    expect(d.rawEdges).toContainEqual({ from: "api", to: "director", kind: "api", archetype: "manages" });
+    // dependsOn + the handoff both resolve to a single ui→api PEERS edge (deduped)
+    expect(d.rawEdges.filter((e) => e.from === "ui" && e.to === "api")).toEqual([{ from: "ui", to: "api", kind: "api", archetype: "peers" }]);
+  });
+
+  it("surfaces each stream's persona on its node (#2561): name · model · skills · responsibilities", () => {
+    const d = buildRealFleetData(fleet, personas);
+    const api = d.rawNodes.find((n) => n.id === "api")!;
+    expect(api.persona).toEqual({ name: "Backend Engineer", role: "worker", model: "claude-sonnet-5", skills: ["rust", "api"], responsibilities: ["owns the API"] });
+    // a persona with no model/responsibilities resolves to empty arrays, not undefined holes
+    const qa = d.rawNodes.find((n) => n.id === "qa")!;
+    expect(qa.persona).toMatchObject({ name: "Reviewer", role: "reviewer", skills: [], responsibilities: [] });
+  });
+
+  it("tags the coordination edge with its Org archetype (review→oversees, handoff→peers)", () => {
+    const withReview = { ...fleet, edges: [{ id: "e2", from: "api", to: "qa", kind: "review", hardness: "blocking", via: "direct" }] } as unknown as FleetPlan;
+    const d = buildRealFleetData(withReview, personas);
+    // review edge producer(api)→consumer(qa) becomes qa→api, archetype OVERSEES
+    expect(d.rawEdges).toContainEqual({ from: "qa", to: "api", kind: "data", archetype: "oversees" });
   });
 });
 

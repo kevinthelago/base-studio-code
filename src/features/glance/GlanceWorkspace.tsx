@@ -236,7 +236,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       // The infinite viewport grid (#2418, the same graph paper org uses) — 28px tiles; the color
       // matches the old in-world grid (12% fg dots at 0.6 layer opacity ⇒ ~7.2% fg).
       grid gridSize={28} gridColor="color-mix(in oklch, var(--fg) 7.2%, transparent)"
-      overlays={<GlanceOverlays />}
+      overlays={<GlanceOverlays drill={!!drill} archetypes={drill ? Array.from(new Set(model.edges.map((e) => e.archetype).filter((a): a is string => !!a))) : []} />}
       railResizable railWidth={266} railMin={200} railMax={420}
       inspectorResizable inspectorWidth={340} inspectorMin={280} inspectorMax={520}
       // Click the empty canvas → clear the selection + any cycle highlight (#2232).
