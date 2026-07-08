@@ -21,6 +21,10 @@ export interface KitTheme {
   id: string;
   label: string;
   description: string;
+  /** The SURFACE the theme sits on (#2545). Absent ⇒ `"dark"` (the historical base). The Design
+   *  Studio preview reads this to pick its sandbox surface, so light/dark is theme data (seeded in
+   *  `@data/ui/themes.json`, then served by `bsc ui theme`) rather than a hardcoded toggle. */
+  base?: "dark" | "light";
   /** Semantic-token overrides — CSS var name → value. Empty for the base look. */
   vars: Record<string, string>;
 }

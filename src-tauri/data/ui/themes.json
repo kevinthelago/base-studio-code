@@ -1,11 +1,19 @@
 {
   "version": 1,
-  "note": "The kit theme registry (#1852 Phase 3) — the ONE source of truth for the SDK's THEME axis. A theme is a map of overrides for the semantic component tokens (`--card-*`/`--btn-*`/`--field-*`/`--chip-*`, defined in src/styles/tokens.css). Applying a theme sets those CSS custom properties — globally on :root (via appearance/useAppBoot, same mechanism as the accent) or scoped on a subtree (via <ThemeScope>, for a coexisting themed card or an isolated live preview). This file is read by BOTH faces: the frontend (`src/shared/ui/kit/theme.ts` loads it + applies it) AND `bsc ui theme list|get` (crates/bsc-ui embeds it), so a live agent can enumerate + read themes from its own shell. `default` (empty overrides) is the base look; the rest retint the same components without touching any card's spec/structure. Values reference base tokens so a theme composes with light/dark + the chosen accent.",
+  "note": "The kit theme registry (#1852 Phase 3) — the ONE source of truth for the SDK's THEME axis. A theme is a map of overrides for the semantic component tokens (`--card-*`/`--btn-*`/`--field-*`/`--chip-*`, defined in src/styles/tokens.css), plus an optional `base` (\"dark\"|\"light\") naming the SURFACE the theme sits on. Applying a theme sets the token overrides — globally on :root (via appearance/useAppBoot, same mechanism as the accent) or scoped on a subtree (via <ThemeScope>, for a coexisting themed card or an isolated live preview); the Design Studio preview additionally reads `base` to pick its sandbox surface (retiring the old hardcoded dark/light toggle — the surface is theme data now, seeded here and thereafter served by `bsc ui theme`). This file is read by BOTH faces: the frontend (`src/shared/ui/kit/theme.ts` loads it + applies it) AND `bsc ui theme list|get` (crates/bsc-ui embeds it), so a live agent can enumerate + read themes from its own shell. `dark` (empty overrides) is the base look; `light` is the same look on the light surface; the rest retint the same components without touching any card's spec/structure. Values reference base tokens so a theme composes with the chosen accent.",
   "themes": [
     {
       "id": "default",
-      "label": "Default",
-      "description": "The base look — no overrides.",
+      "label": "Dark",
+      "description": "The base look on the dark surface — no overrides.",
+      "base": "dark",
+      "vars": {}
+    },
+    {
+      "id": "light",
+      "label": "Light",
+      "description": "The base look on the light surface — no overrides.",
+      "base": "light",
       "vars": {}
     },
     {

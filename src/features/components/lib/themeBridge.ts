@@ -26,6 +26,10 @@ export async function loadThemes(): Promise<KitThemeRecord[] | null> {
         id: t.id,
         label: t.label,
         description: t.description ?? "",
+        // `base` is seed-relevant content and must ride WITHOUT normalizing (#2514 round-trip
+        // contract): absent stays absent (never defaulted) so a base-less theme still hashes to its
+        // stamp. Spread so the key is omitted entirely when the source row has no `base`.
+        ...(t.base !== undefined ? { base: t.base } : {}),
         vars: t.vars,
         builtin: t.builtin,
         seedHash: t.seedHash, // #2483 — must ride or the refresh baseline is lost on write-through
