@@ -100,4 +100,22 @@ mod tests {
             assert!(seed.contains(needle), "designer seed must mention `{needle}`");
         }
     }
+
+    /// The graduated `bsc ui` ladder (#2585): the seed must teach the discover→tune→author flow —
+    /// the discovery verbs, the per-rung edit verbs, and the ladder mental model itself — or the
+    /// designer LLM never learns the runtime design loop exists.
+    #[test]
+    fn packaged_designer_spec_teaches_the_graduated_ui_ladder() {
+        let seed = crate::platform::config::embedded_str("designer/claude.md");
+        for needle in [
+            "ladder",            // the mental model
+            "bsc ui tokens",     // discover: the palette
+            "bsc ui components", // discover: per-component token keys
+            "set-token",         // rungs 1–2: tune a token live
+            "define-variant",    // rung 3: author a new look as data
+            "highest rung",      // default-to-the-highest-rung rule
+        ] {
+            assert!(seed.contains(needle), "designer seed must teach the ladder term `{needle}`");
+        }
+    }
 }
