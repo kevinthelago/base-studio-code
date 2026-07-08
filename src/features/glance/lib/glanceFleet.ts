@@ -9,6 +9,7 @@ import { hashAbs } from "./hash";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 import { positionComms, type Org, type Position, type Relationship } from "@/features/org";
+import type { BlueprintTeam } from "@/features/planner/stages/blueprintTypes";
 
 /** Session-role → Glance colour bucket, grouped by agent FUNCTION (#2561): ORCHESTRATE (planner ·
  *  director) = infra, BUILD (worker) = service, VERIFY (reviewer · tester · juror) = data, FLOW (issuer ·
@@ -43,10 +44,20 @@ function nodePersona(p: Persona | undefined): GRawNode["persona"] {
  * model lets the drill derive each agent's communication surface (`positionComms`) from ONE source of
  * truth — the foundation for later authoring the fleet as an Org. Pure + exported for testing.
  */
-export function fleetToOrg(fleet: FleetPlan): Org {
+export function fleetToOrg(fleet: FleetPlan, team?: BlueprintTeam): Org {
   const positions: Position[] = fleet.streams.map((s) => ({ nodeId: s.id, kind: "agent", personaId: s.persona, label: s.name || s.id }));
   if (fleet.director?.enabled) positions.push({ nodeId: "director", kind: "agent", personaId: "director", label: "director" });
   const posIds = new Set(positions.map((p) => p.nodeId));
+  // Authored-team archetype overlay (#2572): a `persona→persona` pair the blueprint team wired with an
+  // archetype OVERRIDES the coordination-derived archetype for that pair — so the authored design's
+  // semantics drive the drill wherever the team authored them. Empty (no team) ⇒ pure derived, unchanged.
+  const authored = teamArchetypeByPersonaPair(team);
+  const personaOf = new Map<string, string | undefined>(fleet.streams.map((s) => [s.id, s.persona]));
+  personaOf.set("director", "director");
+  const archOf = (from: string, to: string, derived: string): string => {
+    const pf = personaOf.get(from), pt = personaOf.get(to);
+    return (pf && pt && authored.get(`${pf}|${pt}`)) || derived;
+  };
   const relationships: Relationship[] = [];
   const seen = new Set<string>();
   const rel = (from: string, to: string, archetype: string) => {
@@ -56,10 +67,31 @@ export function fleetToOrg(fleet: FleetPlan): Org {
     seen.add(k);
     relationships.push({ id: `r${relationships.length}`, archetype, from, to });
   };
-  if (fleet.director?.enabled) for (const s of fleet.streams) rel("director", s.id, "manages"); // manager → report
-  for (const e of fleet.edges ?? []) rel(e.from, e.to, KIND_TO_ARCHETYPE[e.kind] ?? "peers");   // producer → consumer
-  for (const s of fleet.streams) for (const dep of s.dependsOn) rel(dep, s.id, "peers");         // upstream ↔ dependent
+  if (fleet.director?.enabled) for (const s of fleet.streams) rel("director", s.id, archOf("director", s.id, "manages")); // manager → report
+  for (const e of fleet.edges ?? []) rel(e.from, e.to, archOf(e.from, e.to, KIND_TO_ARCHETYPE[e.kind] ?? "peers"));        // producer → consumer
+  for (const s of fleet.streams) for (const dep of s.dependsOn) rel(dep, s.id, archOf(dep, s.id, "peers"));                // upstream ↔ dependent
   return { id: "fleet", name: "Fleet", positions, relationships };
+}
+
+/** A `personaFrom|personaTo → archetype` lookup from a blueprint {@link BlueprintTeam}'s authored
+ *  relationships (#2572) — so the fleet projection can override a coordination pair's archetype with the
+ *  team's authored one when the two streams' personas match (direction included). Empty for no team. */
+function teamArchetypeByPersonaPair(team?: BlueprintTeam): Map<string, string> {
+  const m = new Map<string, string>();
+  if (!team) return m;
+  const personaOf = new Map(team.positions.map((p) => [p.nodeId, p.personaId]));
+  for (const r of team.relationships) {
+    const pf = personaOf.get(r.from), pt = personaOf.get(r.to);
+    if (pf && pt) m.set(`${pf}|${pt}`, r.archetype);
+  }
+  return m;
+}
+
+/** Convert a blueprint {@link BlueprintTeam} into a standalone {@link Org} (#2572) — the team is already
+ *  `{positions, relationships}`, so this just stamps the library-identity fields. Exported for phase 2
+ *  (rendering the drill from the authored team directly). */
+export function teamToOrg(team: BlueprintTeam): Org {
+  return { id: "team", name: "Team", positions: team.positions, relationships: team.relationships };
 }
 
 /** A minimal persona for a node with no matching persona entry (e.g. the director hub) — so its comms
@@ -108,8 +140,8 @@ export function buildOrgFleetData(org: Org, personas: Persona[]): GlanceData {
 /** Build a project's REAL fleet as a Glance graph — project the {@link FleetPlan} into an Org (#2563) and
  *  render from it (#2565), so the drill's nodes / edges / comms all flow from ONE source (the Org). The
  *  layout is topology-identical to the pre-#2565 inline builder. Returns `sample:false`. */
-export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): GlanceData {
-  return buildOrgFleetData(fleetToOrg(fleet), personas);
+export function buildRealFleetData(fleet: FleetPlan, personas: Persona[], team?: BlueprintTeam): GlanceData {
+  return buildOrgFleetData(fleetToOrg(fleet, team), personas);
 }
 
 /** Pare an org {@link positionComms} summary down to the glance node's {@link GNodeComm} shape (labels +
