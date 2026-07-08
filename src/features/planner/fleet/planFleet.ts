@@ -175,10 +175,12 @@ function coerceNum(v: unknown): number {
  * Parse the FleetPlan JSON (the planner writes it to plan.db, #1805; surfaced by the poll
  * as stem {@link FLEET_KEY}) into a {@link FleetPlan}. Tolerant of partial/malformed
  * input: returns `null` only when the text is blank or not a JSON object; otherwise
- * fills sensible defaults. Streams missing `id` or `repo` are dropped; `dependsOn`
+ * fills sensible defaults. A stream missing an `id` (genuinely unkeyable) is dropped; a repo-less
+ * stream DEFAULTS to the project's sole repo (`repos`, when there's exactly one) and otherwise stays
+ * VISIBLE with an empty `repo` so it isn't silently hidden from the plan (#2611). `dependsOn`
  * accepts either `dependsOn` or `depends_on`.
  */
-export function parseFleetFile(raw: string): FleetPlan | null {
+export function parseFleetFile(raw: string, repos: string[] = []): FleetPlan | null {
   if (!raw || !raw.trim()) return null;
   let obj: unknown;
   try { obj = JSON.parse(raw); } catch { return null; }
@@ -191,8 +193,14 @@ export function parseFleetFile(raw: string): FleetPlan | null {
     if (!s || typeof s !== "object") continue;
     const so = s as Record<string, unknown>;
     const id   = typeof so.id === "string" ? so.id.trim() : "";
-    const repo = typeof so.repo === "string" ? so.repo.trim() : "";
-    if (!id || !repo) continue;  // id + repo are the minimum a stream needs
+    if (!id) continue;  // no id ⇒ genuinely unkeyable, drop
+    // #2611: default a repo-less stream to the project's SOLE repo (the common single-repo case). If the
+    // repo still can't be resolved (multi-repo / unassigned), KEEP the stream with an empty repo so it
+    // stays VISIBLE in the planner graph flagged as needing a repo — silently dropping it hid streams
+    // from the plan AND from launch. The launch path (usePlanPublish) skips a repo-less stream so it
+    // never aborts the fleet or spawns a broken worktree.
+    let repo = typeof so.repo === "string" ? so.repo.trim() : "";
+    if (!repo && repos.length === 1) repo = repos[0];
     const prompt = typeof so.prompt === "string" && so.prompt.trim() ? so.prompt.trim() : undefined;
     // MCP servers (catalog names) the planner assigned to this worker (#1054); undefined when none
     // so the field round-trips cleanly. Carried through to fleetStartProject's per-worker resolution.

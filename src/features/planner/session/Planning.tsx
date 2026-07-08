@@ -247,9 +247,11 @@ export function Planning({ visible }: { visible: boolean }) {
     const raw = savedSections[FLEET_KEY] ?? "";
     if (raw === fleetSyncedRef.current) return;
     fleetSyncedRef.current = raw;
-    const fleet = parseFleetFile(raw);
+    // Pass the project's linked repos so a repo-less stream defaults to the sole repo (#2611) instead
+    // of silently vanishing from the plan.
+    const fleet = parseFleetFile(raw, effectiveRepos);
     if (fleet) useAppStore.getState().setPlanFleet(effectiveProjectId, fleet);
-  }, [savedSections, effectiveProjectId]);
+  }, [savedSections, effectiveProjectId, effectiveRepos]);
 
   // Backfill durable confirmations for an already-published project (#2259). A project published
   // BEFORE #2256 has no plan.db confirmations to rehydrate, so it would ask to reconfirm every stage
