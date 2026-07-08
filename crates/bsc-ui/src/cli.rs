@@ -103,6 +103,17 @@ a live `[data-variant]` CSS rule. Guarded: the variant NAME must be a safe CSS i
 key must be one of the component's tokens, and every value passes the closed value grammar.",
     },
     CmdDoc {
+        name: "variants",
+        summary: "list EVERY stored variant definition (what the frontend compiles into live CSS, #2569)",
+        usage: "\
+USAGE:
+  bsc ui variants [--component <c>] [--pretty]
+
+Every variant an LLM has authored with `component … define-variant`, across all components — the flat
+list the desktop reads to compile each into a `[data-variant]` CSS rule (the runtime render path).
+--component filters to one component; --pretty indents.",
+    },
+    CmdDoc {
         name: "release",
         summary: "the global released-kit store — immutable id@version artifacts blueprints pin (#2465)",
         usage: "\
@@ -197,6 +208,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("tokens") => cmd_tokens(&args[1..]),
         Some("components") => cmd_components(&args[1..]),
         Some("component") => cmd_component(&args[1..], prog),
+        Some("variants") => cmd_variants(&args[1..]),
         Some("release") => cmd_kit(&args[1..], prog),
         Some("emit-css") => cmd_emit_css(&args[1..]),
         Some("theme") => cmd_theme(&args[1..], prog),
@@ -560,6 +572,33 @@ fn cmd_component(args: &[String], prog: &str) -> Result<(), String> {
              define-variant <variant> --set <key>=<value> | list-variants | remove-variant <variant>"
         )),
     }
+}
+
+/// `bsc ui variants` (#2569) — every stored variant definition across all components. The flat list the
+/// desktop reads (`hydrateVariants`) to compile into live `[data-variant]` CSS. Read-only.
+fn cmd_variants(args: &[String]) -> Result<(), String> {
+    let (mut component, mut dir, mut pretty) = (None::<String>, None::<String>, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--component" => component = it.next().cloned(),
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let defs: Vec<serde_json::Value> = variant_store(&dir)?
+        .list()
+        .iter()
+        .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+        .filter(|v| {
+            component.as_deref().is_none_or(|c| v.get("component").and_then(serde_json::Value::as_str) == Some(c))
+        })
+        .collect();
+    let out = if pretty { serde_json::to_string_pretty(&defs) } else { serde_json::to_string(&defs) };
+    println!("{}", out.map_err(|e| e.to_string())?);
+    Ok(())
 }
 
 /// `bsc ui theme …` (#1852 Phase 3 + #2488) — the kit THEME collection. Reads (`list`/`get`) merge the
@@ -1350,5 +1389,26 @@ mod tests {
         let err = run(vec!["component".into(), "btn".into(), "define-variant".into(), "x".into(), "--set".into(), "bg=@danger".into()], "bsc ui").unwrap_err();
         assert!(err.contains("'ui'") || err.contains("read-only"), "refuses at the gate: {err}");
         std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+    }
+
+    #[test]
+    fn variants_lists_every_stored_definition_for_the_frontend() {
+        let _guard = SCOPES_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        let dir = tmp_store_dir("variants-global");
+        let comp = |rest: &[&str]| {
+            let mut a = vec!["component".to_string()];
+            a.extend(rest.iter().map(|s| s.to_string()));
+            a.extend(["--dir".to_string(), dir.clone()]);
+            run(a, "bsc ui")
+        };
+        comp(&["btn", "define-variant", "danger-outline", "--set", "bg=@danger"]).unwrap();
+        comp(&["card", "define-variant", "flush", "--set", "radius=0px"]).unwrap();
+        // `bsc ui variants` reads the whole store; --component filters. Reads stay open (no write scope).
+        assert!(run(vec!["variants".into(), "--dir".into(), dir.clone(), "--pretty".into()], "bsc ui").is_ok());
+        assert!(run(vec!["variants".into(), "--component".into(), "btn".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        assert!(run(vec!["variants".into(), "--nope".into()], "bsc ui").is_err(), "unknown flag rejected");
+        assert!(bsc_cli_util::help_overview("bsc ui", TAGLINE, &merged_commands()).contains("variants"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

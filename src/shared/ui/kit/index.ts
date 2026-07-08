@@ -11,3 +11,7 @@ export {
 } from "./theme";
 export { ThemeScope } from "./ThemeScope";
 export type { ThemeScopeProps } from "./ThemeScope";
+// #2569: data-defined component variants — compile the designer-authored variant store into a managed
+// `<style>` of `.<component>.<variant>` rules (the render path for `bsc ui component … define-variant`).
+export type { VariantDef } from "./variants";
+export { compileVariantsCss, applyVariantsToRoot } from "./variants";
