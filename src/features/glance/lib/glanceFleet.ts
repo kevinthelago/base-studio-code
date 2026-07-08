@@ -22,12 +22,6 @@ const ROLE_TO_GROLE: Record<string, GRole> = {
 };
 const gRole = (role?: string): GRole => (role && ROLE_TO_GROLE[role]) || "service";
 
-/** Fleet coordination edge kind → Glance edge kind (contract "surface"). Kept for the hard/soft +
- *  colour-fallback; the ARCHETYPE (below) is what the drill actually labels + colours the edge by. */
-const KIND_TO_GKIND: Record<string, GEdgeKind> = {
-  handoff: "api", blocking: "data", sequence: "api", review: "data", notify: "events", shared: "events", mutex: "data",
-};
-
 /** Fleet coordination kind → Org relationship ARCHETYPE (#2561, interim map until fleets are authored as
  *  Orgs). The archetype names the relationship (Oversees a review, Stewards a shared resource, Peers on a
  *  handoff) and expands into the communication forms shown in the edge inspector. The director hub is a
@@ -72,54 +66,50 @@ export function fleetToOrg(fleet: FleetPlan): Org {
  *  surface still renders. */
 const fallbackPersona = (name: string, role: string): NonNullable<GRawNode["persona"]> => ({ name, role, skills: [], responsibilities: [] });
 
-/** Build a project's REAL fleet as a Glance graph from its {@link FleetPlan}: streams → nodes (role +
- *  persona via their persona id), an optional director hub, and the typed coordination edges + plain
- *  `dependsOn` → the dependency edges, each tagged with its Org relationship archetype (#2561). Direction:
- *  a fleet edge runs producer→consumer, so the CONSUMER depends on the producer (the Glance "from depends
- *  on to" convention). Returns `sample:false`. */
-export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): GlanceData {
+/** Org relationship archetype → a representative Glance edge `kind` (#2565). For a fleet-drill (L1) edge
+ *  the `kind` is largely vestigial — the edge is coloured + labelled by its ARCHETYPE now (#2561), and
+ *  `kind` drives only the `hard` flag (unshown at L1); the archetype is the real identity. */
+const ARCHETYPE_TO_KIND: Record<string, GEdgeKind> = {
+  manages: "api", oversees: "data", consults: "events", peers: "api", serves: "events", stewards: "data",
+};
+
+/**
+ * Render a Glance fleet graph FROM an {@link Org} (#2565) — the ONE source that drives the drill's nodes,
+ * edges, AND comms. Positions → nodes (persona resolved + its communication surface via `positionComms`);
+ * relationships → edges. Direction: a Glance edge is "from depends on to" — the INVERSE of an org
+ * relationship's archetype-native direction (a report depends on its manager, a consumer on its producer)
+ * — so each relationship maps to a Glance edge REVERSED. Pure + exported: the org may be projected from a
+ * running fleet (below) or, later, sourced from a blueprint's authored `team`.
+ */
+export function buildOrgFleetData(org: Org, personas: Persona[]): GlanceData {
   const personaById = new Map(personas.map((p) => [p.id, p]));
-  const rawNodes: GRawNode[] = fleet.streams.map((s) => {
-    // Each stream is a unique node; its ROLE + persona come from its persona id (default worker when
-    // unset/unknown). The `role` category drives colour; `roleLabel` + `persona` ride for the card/inspector.
-    const persona = s.persona ? personaById.get(s.persona) : undefined;
-    const streamRole = persona?.role ?? "worker";
-    // Rests at idle (#2551) — a planned stream isn't "building" until its session is actually live.
-    return { id: s.id, slug: s.name || s.id, role: gRole(streamRole), roleLabel: streamRole, health: "idle" as const, activity: "idle" as const, persona: nodePersona(persona) };
+  const rawNodes: GRawNode[] = org.positions.map((pos) => {
+    const persona = pos.personaId ? personaById.get(pos.personaId) : undefined;
+    const role = persona?.role ?? (pos.nodeId === "director" ? "director" : "worker");
+    const p = nodePersona(persona) ?? fallbackPersona(pos.label ?? persona?.name ?? pos.nodeId, role);
+    p.comms = projectComms(org, pos, personas); // who this agent talks to + how (#2563)
+    // Rests at idle (#2551) — a planned position isn't "building" until its session is actually live.
+    return { id: pos.nodeId, slug: pos.label ?? persona?.name ?? pos.nodeId, role: gRole(role), roleLabel: role, health: "idle" as const, activity: "idle" as const, persona: p };
   });
   const ids = new Set(rawNodes.map((n) => n.id));
   const rawEdges: GRawEdge[] = [];
   const seen = new Set<string>();
-  const add = (from: string, to: string, kind: GEdgeKind, archetype: string) => {
-    if (from === to || !ids.has(from) || !ids.has(to)) return;
+  for (const r of org.relationships) {
+    const from = r.to, to = r.from; // REVERSE: Glance "from depends on to" is the inverse of the org edge
+    if (from === to || !ids.has(from) || !ids.has(to)) continue;
     const k = `${from}|${to}`;
-    if (seen.has(k)) return;
+    if (seen.has(k)) continue;
     seen.add(k);
-    rawEdges.push({ from, to, kind, archetype });
-  };
-
-  // director hub — every stream is MANAGED by the director (drawn as the foundational node)
-  if (fleet.director?.enabled && !ids.has("director")) {
-    rawNodes.push({ id: "director", slug: "director", role: "infra", roleLabel: "director", health: "idle", activity: "idle", persona: nodePersona(personaById.get("director")) ?? fallbackPersona("director", "director") });
-    ids.add("director");
-    for (const s of fleet.streams) add(s.id, "director", "api", "manages");
+    rawEdges.push({ from, to, kind: ARCHETYPE_TO_KIND[r.archetype] ?? "api", archetype: r.archetype });
   }
-  // typed relationship edges — producer→consumer becomes consumer-depends-on-producer
-  for (const e of fleet.edges ?? []) add(e.to, e.from, KIND_TO_GKIND[e.kind] ?? "api", KIND_TO_ARCHETYPE[e.kind] ?? "peers");
-  // plain dependsOn sequencing — a lateral peer seam
-  for (const s of fleet.streams) for (const dep of s.dependsOn) add(s.id, dep, "api", "peers");
-
-  // Communication surface (#2563): project the fleet into an Org and derive each agent's "who I talk to
-  // and how" (`positionComms`) — the forms sent/received per relationship — attaching it to the node's
-  // persona for the inspector. The Glance EDGES above are untouched; the org drives the comms only.
-  const org = fleetToOrg(fleet);
-  for (const n of rawNodes) {
-    if (!n.persona) continue;
-    const pos = org.positions.find((p) => p.nodeId === n.id);
-    n.persona.comms = pos ? projectComms(org, pos, personas) : [];
-  }
-
   return { rawNodes, rawEdges, sample: false };
+}
+
+/** Build a project's REAL fleet as a Glance graph — project the {@link FleetPlan} into an Org (#2563) and
+ *  render from it (#2565), so the drill's nodes / edges / comms all flow from ONE source (the Org). The
+ *  layout is topology-identical to the pre-#2565 inline builder. Returns `sample:false`. */
+export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): GlanceData {
+  return buildOrgFleetData(fleetToOrg(fleet), personas);
 }
 
 /** Pare an org {@link positionComms} summary down to the glance node's {@link GNodeComm} shape (labels +

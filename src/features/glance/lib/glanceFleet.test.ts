@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { buildFleetData, buildRealFleetData, fleetToOrg, nodeHasLiveSession } from "./glanceFleet";
+import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, nodeHasLiveSession } from "./glanceFleet";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
+import type { Org } from "@/features/org";
 
 describe("buildFleetData (glance drill)", () => {
   it("builds a deterministic sample fleet: director + reviewer + 2–4 workers, all edges wired", () => {
@@ -68,7 +69,8 @@ describe("buildRealFleetData (glance drill — real fleet)", () => {
   it("surfaces each stream's persona on its node (#2561): name · model · skills · responsibilities", () => {
     const d = buildRealFleetData(fleet, personas);
     const api = d.rawNodes.find((n) => n.id === "api")!;
-    expect(api.persona).toEqual({ name: "Backend Engineer", role: "worker", model: "claude-sonnet-5", skills: ["rust", "api"], responsibilities: ["owns the API"] });
+    expect(api.persona).toMatchObject({ name: "Backend Engineer", role: "worker", model: "claude-sonnet-5", skills: ["rust", "api"], responsibilities: ["owns the API"] });
+    expect(api.persona!.comms!.length).toBeGreaterThan(0); // its communication surface is attached (#2563)
     // a persona with no model/responsibilities resolves to empty arrays, not undefined holes
     const qa = d.rawNodes.find((n) => n.id === "qa")!;
     expect(qa.persona).toMatchObject({ name: "Reviewer", role: "reviewer", skills: [], responsibilities: [] });
@@ -134,6 +136,39 @@ describe("buildRealFleetData attaches each agent's communication surface (#2563)
     const directive = fromDir!.receives.find((f) => f.label === "Directive");
     expect(directive).toBeTruthy();
     expect(directive!.transport).toBe("bsc-assign");
+  });
+});
+
+describe("buildOrgFleetData (#2565 — render the drill FROM an Org)", () => {
+  const personas: Persona[] = [{ id: "p-worker", name: "Backend Engineer", blurb: "", role: "worker", startPrompt: "", skills: [] }];
+  const org: Org = {
+    id: "o", name: "O",
+    positions: [
+      { nodeId: "api", kind: "agent", personaId: "p-worker", label: "API" },
+      { nodeId: "director", kind: "agent", personaId: "director", label: "director" },
+    ],
+    relationships: [{ id: "r0", archetype: "manages", from: "director", to: "api" }],
+  };
+
+  it("maps positions→nodes (persona + comms) and REVERSES each relationship into a dependency edge", () => {
+    const d = buildOrgFleetData(org, personas);
+    expect(d.rawNodes.map((n) => n.id).sort()).toEqual(["api", "director"]);
+    const api = d.rawNodes.find((n) => n.id === "api")!;
+    expect(api.roleLabel).toBe("worker");
+    expect(api.persona!.name).toBe("Backend Engineer");
+    expect(api.persona!.comms!.length).toBeGreaterThan(0);
+    // director MANAGES api ⇒ the Glance dependency edge is api → director (a report depends on its manager)
+    expect(d.rawEdges).toEqual([{ from: "api", to: "director", kind: "api", archetype: "manages" }]);
+  });
+
+  it("buildRealFleetData routes through it — topology-preserving (director stays the foundational hub)", () => {
+    const fleet = {
+      recommended: 1, reasoning: "",
+      streams: [{ id: "api", name: "API", repo: "r", owns: [], issues: [], dependsOn: [], persona: "p-worker" }],
+      director: { enabled: true },
+    } as unknown as FleetPlan;
+    const d = buildRealFleetData(fleet, personas);
+    expect(d.rawEdges).toContainEqual({ from: "api", to: "director", kind: "api", archetype: "manages" });
   });
 });
 
