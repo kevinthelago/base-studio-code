@@ -2,8 +2,10 @@ import type { ButtonHTMLAttributes } from "react";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** Background style — the `.btn` family. `default` = the quiet bg-elev secondary · `primary` =
-   *  the accent call-to-action · `ghost` = transparent. */
-  variant?: "default" | "primary" | "ghost";
+   *  the accent call-to-action · `ghost` = transparent. A DATA-DEFINED variant (#2569, authored via
+   *  `bsc ui component btn define-variant`) is any other lowercase string: it rides the same
+   *  class-name path (`.btn.<variant>`) that `applyVariantsToRoot`'s compiled CSS targets. */
+  variant?: "default" | "primary" | "ghost" | (string & {});
   /** Danger color modifier (composes with `default`/`ghost`). */
   danger?: boolean;
   /** Hit size: `md` = 28px (default) · `sm` = 24px. */

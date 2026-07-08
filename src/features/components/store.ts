@@ -14,9 +14,9 @@ import { kitUsageId, makeChange, planPropagation, dispatchKey } from "./lib/prop
 import { SEED_COMPONENTS, SEED_KITS, reconcileComponents, reconcileKits } from "./lib/seed";
 import { SEED_THEMES, reconcileThemes, orderThemes, type KitThemeRecord } from "./lib/themes";
 import { loadComponents, loadKits, pushComponent, dropComponent, pushKit, dropKit } from "./lib/componentBridge";
-import { loadThemes, pushTheme, dropTheme } from "./lib/themeBridge";
+import { loadThemes, pushTheme, dropTheme, loadVariants } from "./lib/themeBridge";
 import { loadKitUsage, pushKitUsage, dropKitUsage } from "./lib/kitUsageBridge";
-import { setActiveKitThemes } from "@/shared/ui/kit";
+import { setActiveKitThemes, applyVariantsToRoot } from "@/shared/ui/kit";
 
 export interface ComponentsSlice {
   /** The proven-component library — the typed seed until the global store lands, then its contents. */
@@ -38,6 +38,10 @@ export interface ComponentsSlice {
    *  built-ins via the #2483 seed refresh (theme notices ride the same `seedNotices` surface) and
    *  syncs the result into the shared theme resolvers. */
   hydrateThemes: () => Promise<void>;
+  /** Hydrate the data-defined component variants from the global `bsc ui variants` store (#2569) and
+   *  compile them into the live managed `<style>` — so an LLM-authored variant renders without a
+   *  relaunch. Re-run on boot and on a `ui-touch` "variant" write. No-op when the bridge is unreachable. */
+  hydrateVariants: () => Promise<void>;
   /** Built-ins kept through a seed divergence (#2483): the user's customized copy survived an
    *  upstream update, or a retired built-in was kept because it was customized. Recomputed on each
    *  hydrate (not persisted); rendered by the Design Studio's SeedNoticesCard. */
@@ -123,6 +127,11 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     for (const id of rt.drops) void dropTheme(id);
   },
 
+  hydrateVariants: async () => {
+    const defs = await loadVariants();
+    if (defs) applyVariantsToRoot(defs); // bridge unreachable (null) → keep the current managed <style>
+  },
+
   seedNotices: [],
 
   dismissSeedNotice: (type, id) =>
@@ -205,5 +214,6 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     // Re-hydrate the touched collection so the AI's edit shows without a relaunch (#2483/#2514/#2525).
     void get().hydrateComponents();
     if (collection === "theme") void get().hydrateThemes();
+    if (collection === "variant") void get().hydrateVariants();
   },
 });

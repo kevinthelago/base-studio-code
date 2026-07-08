@@ -84,6 +84,9 @@ export function useAppBoot() {
     // theme` store — the Settings picker, the Design Studio preview switcher, and every ThemeScope
     // resolve against it. No-op keeping the packaged registry when the bridge is absent.
     void useAppStore.getState().hydrateThemes();
+    // Data-defined component variants (#2569): compile the designer-authored `bsc ui variants` store
+    // into the managed `<style>` so an LLM-authored variant renders on boot (re-applied on ui-touch).
+    void useAppStore.getState().hydrateVariants();
     // Project relationships (#2253): hydrate the Glance L1 network edges from the global `bsc project
     // link` store so the desktop, live sessions, and a restart share ONE set. A no-op when the bridge
     // is absent (keeps the persisted cache).

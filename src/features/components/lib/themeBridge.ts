@@ -5,6 +5,23 @@
 // seed rather than blanking it; the writes are fire-and-forget.
 import { bsc, bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import type { KitThemeRecord } from "./themes";
+import type { VariantDef } from "@/shared/ui/kit";
+
+/** Load every stored component-variant definition via `bsc ui variants` (#2569); `null` when the bridge
+ *  is unreachable (an old bundled `bsc` without the verb) so the app keeps whatever it already applied.
+ *  Defensive shape gate: a row must carry string `component`/`variant` and an object `tokens`. */
+export async function loadVariants(): Promise<VariantDef[] | null> {
+  try {
+    const out = await bsc(null, ["ui", "variants"]);
+    const rows = JSON.parse(out.trim() || "[]") as Partial<VariantDef>[];
+    return (rows ?? []).filter(
+      (v): v is VariantDef =>
+        typeof v.component === "string" && typeof v.variant === "string" && !!v.tokens && typeof v.tokens === "object",
+    );
+  } catch {
+    return null;
+  }
+}
 
 /** Load every theme via `bsc ui theme list --full`; `null` when unreachable.
  *
