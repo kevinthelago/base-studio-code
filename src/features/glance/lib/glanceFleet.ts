@@ -9,55 +9,73 @@ import { hashAbs } from "./hash";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 
-/** Session-role → Glance node-role palette: the director/planner are the infra hub, workers are
- *  services, the quality roles (reviewer/tester/juror) are data, intake roles are clients. */
+/** Session-role → Glance colour bucket, grouped by agent FUNCTION (#2561): ORCHESTRATE (planner ·
+ *  director) = infra, BUILD (worker) = service, VERIFY (reviewer · tester · juror) = data, FLOW (issuer ·
+ *  triage · documentor · designer — intake, routing, docs, UI) = client. The bucket drives the colour;
+ *  the real session role rides as `roleLabel` + the legend reads the function-group names at L1. */
 const ROLE_TO_GROLE: Record<string, GRole> = {
-  director: "infra", planner: "infra",
+  planner: "infra", director: "infra",
   worker: "service",
   reviewer: "data", tester: "data", juror: "data",
-  issuer: "client", triage: "client",
+  issuer: "client", triage: "client", documentor: "client", designer: "client",
 };
 const gRole = (role?: string): GRole => (role && ROLE_TO_GROLE[role]) || "service";
 
-/** Fleet coordination edge kind → Glance edge kind (contract "surface"). */
+/** Fleet coordination edge kind → Glance edge kind (contract "surface"). Kept for the hard/soft +
+ *  colour-fallback; the ARCHETYPE (below) is what the drill actually labels + colours the edge by. */
 const KIND_TO_GKIND: Record<string, GEdgeKind> = {
   handoff: "api", blocking: "data", sequence: "api", review: "data", notify: "events", shared: "events", mutex: "data",
 };
 
-/** Build a project's REAL fleet as a Glance graph from its {@link FleetPlan}: streams → nodes (role via
- *  their persona), an optional director hub, and the typed coordination edges + plain `dependsOn` → the
- *  dependency edges. Direction: a fleet edge runs producer→consumer, so the CONSUMER depends on the
- *  producer (the Glance "from depends on to" convention). Returns `sample:false`. */
+/** Fleet coordination kind → Org relationship ARCHETYPE (#2561, interim map until fleets are authored as
+ *  Orgs). The archetype names the relationship (Oversees a review, Stewards a shared resource, Peers on a
+ *  handoff) and expands into the communication forms shown in the edge inspector. The director hub is a
+ *  `manages` relationship; plain `dependsOn` is a lateral `peers` seam. */
+const KIND_TO_ARCHETYPE: Record<string, string> = {
+  handoff: "peers", blocking: "peers", sequence: "peers", review: "oversees", notify: "peers", shared: "peers", mutex: "stewards",
+};
+
+/** Resolve the persona surfaced on a fleet node (#2561): who is at this terminal. */
+function nodePersona(p: Persona | undefined): GRawNode["persona"] {
+  return p ? { name: p.name, role: p.role, model: p.model, skills: p.skills ?? [], responsibilities: p.responsibilities ?? [] } : undefined;
+}
+
+/** Build a project's REAL fleet as a Glance graph from its {@link FleetPlan}: streams → nodes (role +
+ *  persona via their persona id), an optional director hub, and the typed coordination edges + plain
+ *  `dependsOn` → the dependency edges, each tagged with its Org relationship archetype (#2561). Direction:
+ *  a fleet edge runs producer→consumer, so the CONSUMER depends on the producer (the Glance "from depends
+ *  on to" convention). Returns `sample:false`. */
 export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): GlanceData {
-  const roleOf = new Map(personas.map((p) => [p.id, p.role]));
+  const personaById = new Map(personas.map((p) => [p.id, p]));
   const rawNodes: GRawNode[] = fleet.streams.map((s) => {
-    // Each stream is a unique node; its ROLE comes from its persona (default worker when unset/unknown),
-    // and both the mapped colour category and the real role label ride on the node.
-    const streamRole = (s.persona ? roleOf.get(s.persona) : undefined) ?? "worker";
+    // Each stream is a unique node; its ROLE + persona come from its persona id (default worker when
+    // unset/unknown). The `role` category drives colour; `roleLabel` + `persona` ride for the card/inspector.
+    const persona = s.persona ? personaById.get(s.persona) : undefined;
+    const streamRole = persona?.role ?? "worker";
     // Rests at idle (#2551) — a planned stream isn't "building" until its session is actually live.
-    return { id: s.id, slug: s.name || s.id, role: gRole(streamRole), roleLabel: streamRole, health: "idle" as const, activity: "idle" as const };
+    return { id: s.id, slug: s.name || s.id, role: gRole(streamRole), roleLabel: streamRole, health: "idle" as const, activity: "idle" as const, persona: nodePersona(persona) };
   });
   const ids = new Set(rawNodes.map((n) => n.id));
   const rawEdges: GRawEdge[] = [];
   const seen = new Set<string>();
-  const add = (from: string, to: string, kind: GEdgeKind) => {
+  const add = (from: string, to: string, kind: GEdgeKind, archetype: string) => {
     if (from === to || !ids.has(from) || !ids.has(to)) return;
     const k = `${from}|${to}`;
     if (seen.has(k)) return;
     seen.add(k);
-    rawEdges.push({ from, to, kind });
+    rawEdges.push({ from, to, kind, archetype });
   };
 
-  // director hub — every stream depends on its direction (drawn as the foundational node)
+  // director hub — every stream is MANAGED by the director (drawn as the foundational node)
   if (fleet.director?.enabled && !ids.has("director")) {
-    rawNodes.push({ id: "director", slug: "director", role: "infra", roleLabel: "director", health: "idle", activity: "idle" });
+    rawNodes.push({ id: "director", slug: "director", role: "infra", roleLabel: "director", health: "idle", activity: "idle", persona: nodePersona(personaById.get("director")) });
     ids.add("director");
-    for (const s of fleet.streams) add(s.id, "director", "api");
+    for (const s of fleet.streams) add(s.id, "director", "api", "manages");
   }
   // typed relationship edges — producer→consumer becomes consumer-depends-on-producer
-  for (const e of fleet.edges ?? []) add(e.to, e.from, KIND_TO_GKIND[e.kind] ?? "api");
-  // plain dependsOn sequencing
-  for (const s of fleet.streams) for (const dep of s.dependsOn) add(s.id, dep, "api");
+  for (const e of fleet.edges ?? []) add(e.to, e.from, KIND_TO_GKIND[e.kind] ?? "api", KIND_TO_ARCHETYPE[e.kind] ?? "peers");
+  // plain dependsOn sequencing — a lateral peer seam
+  for (const s of fleet.streams) for (const dep of s.dependsOn) add(s.id, dep, "api", "peers");
 
   return { rawNodes, rawEdges, sample: false };
 }
@@ -90,8 +108,8 @@ export function buildFleetData(project: ProjectLite): GlanceData {
   for (let i = 1; i <= workers; i++) {
     const id = `worker-${i}`;
     rawNodes.push({ id, slug: `worker ${i}`, role: "service", roleLabel: "worker", health: hashAbs(id + project.id) % 2 ? "healthy" : "idle", activity: "building" });
-    rawEdges.push({ from: id, to: "director", kind: "api" });   // worker takes direction from the director
-    rawEdges.push({ from: "reviewer", to: id, kind: "data" });  // reviewer reads the worker's output
+    rawEdges.push({ from: id, to: "director", kind: "api", archetype: "manages" });   // the director manages the worker
+    rawEdges.push({ from: "reviewer", to: id, kind: "data", archetype: "oversees" }); // the reviewer oversees the worker's output
   }
   return { rawNodes, rawEdges, sample: true };
 }

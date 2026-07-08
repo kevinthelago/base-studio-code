@@ -6,13 +6,25 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, NW, NH, type GraphModel, type GHealth } from "./lib/glanceGraph";
+import { archetypeById, hueColor } from "@/features/org";
 
 const ERR = "#f2555f";
 const HEALTH_ROWS: GHealth[] = ["idle", "healthy", "warning", "error"];
 
 const REST_N = 0.14, REST_E = 0.06;
-const ROLE_ROWS: [string, string][] = [["infra", ROLE_COLOR.infra], ["service", ROLE_COLOR.service], ["data", ROLE_COLOR.data], ["client", ROLE_COLOR.client]];
-const EDGE_ROWS: [string, string, string][] = [["api contract", EDGE_META.api.color, ""], ["data read", EDGE_META.data.color, ""], ["event stream", EDGE_META.events.color, "6 5"], ["cycle", "#f2555f", "7 6"]];
+// Project-network (L0) legend rows. ROLE = the project accent buckets; EDGE labels come from EDGE_META
+// so the legend + connect picker stay in sync (#2561).
+const ROLE_ROWS_L0: [string, string][] = [["infra", ROLE_COLOR.infra], ["service", ROLE_COLOR.service], ["data", ROLE_COLOR.data], ["client", ROLE_COLOR.client]];
+const EDGE_ROWS_L0: [string, string, string][] = [
+  [EDGE_META.api.label, EDGE_META.api.color, EDGE_META.api.dash],
+  [EDGE_META.data.label, EDGE_META.data.color, EDGE_META.data.dash],
+  [EDGE_META.events.label, EDGE_META.events.color, EDGE_META.events.dash],
+  ["cycle", "#f2555f", "7 6"],
+];
+// Fleet-drill (L1) legend: the role colour buckets read as agent FUNCTION groups; the edge rows are the
+// Org relationship archetypes actually present in the drilled fleet (#2561).
+const ROLE_ROWS_L1: [string, string][] = [["orchestrate", ROLE_COLOR.infra], ["build", ROLE_COLOR.service], ["verify", ROLE_COLOR.data], ["flow", ROLE_COLOR.client]];
+const ARCH_DASH: Record<string, string> = { solid: "", dashed: "6 5", dotted: "2 4", gated: "", resource: "4 4" };
 
 interface CanvasProps {
   model: GraphModel;
@@ -50,8 +62,11 @@ export function GlanceCanvas(p: CanvasProps) {
       <svg width={model.worldW} height={model.worldH} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>
         {model.edges.map((e) => {
           const meta = EDGE_META[e.kind];
+          // A fleet-drill (L1) edge colours by its Org relationship archetype hue (#2561); a project
+          // (L0) edge keeps the kind colour.
+          const arch = e.archetype ? archetypeById(e.archetype) : undefined;
           const inFocus = focus ? focus.edges.has(e.id) : true;
-          const color = e.isCycle ? "#f2555f" : meta.color;
+          const color = e.isCycle ? "#f2555f" : arch ? hueColor(arch.hue) : meta.color;
           const width = (e.isCycle ? 2.3 : meta.w) + (inFocus && focus ? 0.7 : 0);
           const dash = e.isCycle ? "7 6" : meta.dash;
           const opacity = e.isCycle ? (focus ? (inFocus ? 1 : 0.4) : 0.95) : (focus ? (inFocus ? 1 : REST_E) : 0.82);
@@ -129,13 +144,26 @@ export function GlanceCanvas(p: CanvasProps) {
   );
 }
 
-/** The fixed hint + legend overlays — drawn over the canvas, not transformed. */
-export function GlanceOverlays() {
+/** The fixed hint + legend overlays — drawn over the canvas, not transformed. Drill-aware (#2561): the
+ *  ROLE + EDGE columns speak the fleet's Org grammar (agent FUNCTION groups + relationship archetypes)
+ *  when a project is drilled, and the project-network vocabulary at the root. `archetypes` are the
+ *  distinct archetype ids present in the drilled fleet. */
+export function GlanceOverlays({ drill = false, archetypes = [] }: { drill?: boolean; archetypes?: string[] } = {}) {
+  const roleRows = drill ? ROLE_ROWS_L1 : ROLE_ROWS_L0;
+  const edgeRows: [string, string, string][] = drill
+    ? [
+        ...archetypes.map((a): [string, string, string] => {
+          const ar = archetypeById(a);
+          return ar ? [ar.label, hueColor(ar.hue), ARCH_DASH[ar.style] ?? ""] : [a, "var(--fg-muted)", ""];
+        }),
+        ["cycle", "#f2555f", "7 6"],
+      ]
+    : EDGE_ROWS_L0;
   return (
     <>
       {/* hint */}
       <Box style={{ position: "absolute", left: 16, bottom: 16, pointerEvents: "none" }}>
-        <Text as="div" mono size={10.5} tone="dim" style={{ lineHeight: 1.7 }}>drag to pan · scroll to zoom<br />click node → enter · click edge → contract</Text>
+        <Text as="div" mono size={10.5} tone="dim" style={{ lineHeight: 1.7 }}>drag to pan · scroll to zoom<br />click node → {drill ? "open agent" : "enter"} · click edge → {drill ? "relationship" : "contract"}</Text>
       </Box>
 
       {/* legend */}
@@ -153,9 +181,9 @@ export function GlanceOverlays() {
           </Box>
         </Box>
         <Box>
-          <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", marginBottom: 8 }}>ROLE</Text>
+          <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", marginBottom: 8 }}>{drill ? "FUNCTION" : "ROLE"}</Text>
           <Box style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {ROLE_ROWS.map(([label, color]) => (
+            {roleRows.map(([label, color]) => (
               <Box key={label} style={{ display: "flex", alignItems: "center", gap: 7 }}>
                 <Box style={{ width: 9, height: 3, borderRadius: 2, background: color }} />
                 <Text as="span" mono size={10} tone="muted">{label}</Text>
@@ -164,9 +192,9 @@ export function GlanceOverlays() {
           </Box>
         </Box>
         <Box>
-          <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", marginBottom: 8 }}>EDGE</Text>
+          <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", marginBottom: 8 }}>{drill ? "RELATIONSHIP" : "EDGE"}</Text>
           <Box style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {EDGE_ROWS.map(([label, color, dash]) => (
+            {edgeRows.map(([label, color, dash]) => (
               <Box key={label} style={{ display: "flex", alignItems: "center", gap: 7 }}>
                 <svg width={14} height={2} style={{ flex: "none", overflow: "visible" }}><line x1={0} y1={1} x2={14} y2={1} stroke={color} strokeWidth={2} strokeDasharray={dash} /></svg>
                 <Text as="span" mono size={10} style={{ color: label === "cycle" ? "#f2848b" : "var(--fg-muted)" }}>{label}</Text>
