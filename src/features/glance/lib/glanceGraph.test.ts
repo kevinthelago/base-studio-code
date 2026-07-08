@@ -128,6 +128,27 @@ describe("rollUpHealth (#2541) — warnings/errors propagate up the dependency c
     expect(r.get("b")!.health).toBe("error"); // b depends on a (error) → inherits
   });
 
+  it("is cycle-safe on a LONGER loop (a→b→c→a, the #2578 N-cycle vision)", () => {
+    const r = rollUpHealth(
+      [{ id: "a", health: "warning" }, { id: "b", health: "idle" }, { id: "c", health: "idle" }],
+      [{ from: "a", to: "b" }, { from: "b", to: "c" }, { from: "c", to: "a" }],
+    );
+    // every node transitively reaches a's warning around the loop — and it terminates
+    expect(r.get("a")!.health).toBe("warning");
+    expect(r.get("b")!.health).toBe("warning");
+    expect(r.get("c")!.health).toBe("warning");
+  });
+
+  it("buildGraph flags a cyclical iterates loop as a cycle and still lays out (#2578)", () => {
+    const g = buildGraph(
+      [{ id: "aud", role: "data", health: "idle", activity: "review" }, { id: "rev", role: "data", health: "idle", activity: "review" }],
+      [{ from: "aud", to: "rev", kind: "data", archetype: "iterates" }, { from: "rev", to: "aud", kind: "data", archetype: "iterates" }],
+    );
+    expect(g.edges.every((e) => e.isCycle)).toBe(true);
+    expect(g.cycleNodeIds.has("aud") && g.cycleNodeIds.has("rev")).toBe(true);
+    expect(g.nodes.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y))).toBe(true);
+  });
+
   it("buildGraph stamps rollupHealth + healthInherited onto every node", () => {
     const g = buildGraph(
       [{ id: "dep", role: "data", health: "error", activity: "building" }, { id: "app", role: "client", health: "idle", activity: "building" }],

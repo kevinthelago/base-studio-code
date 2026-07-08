@@ -16,5 +16,8 @@
     "blurb": "Peer ↔ peer: lateral coordination against shared contracts (planning-time seams, not runtime blocking)." },
   { "id": "stewards", "label": "Stewards", "style": "resource", "hue": 20,  "fromLabel": "owner",    "toLabel": "resource",
     "forward": ["directive"], "backward": ["request"],
-    "blurb": "Owner → resource: the steward is the only position that changes the shared resource; others request changes through it." }
+    "blurb": "Owner → resource: the steward is the only position that changes the shared resource; others request changes through it." },
+  { "id": "iterates", "label": "Iterates", "style": "dashed",   "hue": 300, "fromLabel": "auditor",   "toLabel": "subject", "bidirectional": true, "cyclical": true,
+    "forward": ["finding"], "backward": ["revision"],
+    "blurb": "Auditor ⟳ subject: a standing feedback loop — the auditor raises findings, the subject revises, repeat until it converges. The one archetype that DELIBERATELY closes a cycle, for experimental optimize/validate loops (not a dependency hazard)." }
 ]
