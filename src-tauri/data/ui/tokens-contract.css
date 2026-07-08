@@ -40,4 +40,23 @@
   --chip-bg: var(--bg-elev2);
   --chip-fg: var(--fg-muted);
   --chip-border: var(--border-soft);
+
+  /* domain / categorical tokens — data-viz palettes (graph status/kind/category/edge); the contract vocabulary a kit consumes and a theme binds (#2607) */
+  --graph-health-idle: #5b9dff;
+  --graph-health-healthy: #4fd6a0;
+  --graph-health-warning: #f2b155;
+  --graph-health-error: #f2555f;
+  --graph-kind-infra: #5b9dff;
+  --graph-kind-service: #4fd6a0;
+  --graph-kind-data: #b98bff;
+  --graph-kind-client: #f2b155;
+  --graph-category-greenfield: #16b3a7;
+  --graph-category-transform: #7b74f2;
+  --graph-category-harden: #b8862f;
+  --graph-category-maintain: #8b93a7;
+  --graph-category-data: #d05fa8;
+  --graph-category-script: #d0a92e;
+  --graph-edge-api: #5b9dff;
+  --graph-edge-data: #b98bff;
+  --graph-edge-events: #4fd6a0;
 }
