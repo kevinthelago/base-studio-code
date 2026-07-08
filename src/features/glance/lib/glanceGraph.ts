@@ -85,6 +85,10 @@ export interface GRawNode {
   /** The agent identity at this node (#2561) — set for fleet-drill (L1) nodes, absent for project (L0)
    *  nodes. The inspector renders it as the persona card. */
   persona?: GNodePersona;
+  /** The PREVIEW node (#2623) — not an agent: the surface that renders the finished application in the
+   *  graph when the project is complete. Clicking it morphs open the app preview (`GlancePreviewMorph`)
+   *  the way an agent node morphs open its terminal. The canvas renders it distinctly (▷). */
+  preview?: boolean;
 }
 /** A dependency edge: `from` depends on `to`, over a contract of `kind`. Optional stable `id` (a
  *  user-drawn project link carries its own; sample/derived edges fall back to a positional id).
