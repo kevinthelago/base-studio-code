@@ -90,6 +90,124 @@ pub fn theme_css(id: &str) -> Result<String, String> {
     Ok(css)
 }
 
+// ── the STYLE DESCRIPTOR — the design-system token contract's source of truth (#2567/#2568) ──────────
+
+/// The style descriptor (#2567), embedded from the ONE source of truth
+/// (`src-tauri/data/ui/style-descriptor.json`) — the same file the frontend's `styleContract.ts`
+/// generates `tokens-contract.css` from. `bsc ui tokens`/`components` enumerate it as the addressable
+/// design surface for the designer LLM (#2568), so discovery and CSS emission share one SoT.
+pub const STYLE_DESCRIPTOR_JSON: &str =
+    include_str!("../../../src-tauri/data/ui/style-descriptor.json");
+
+/// The parsed descriptor (valid JSON, guarded by a test).
+pub fn style_descriptor() -> Value {
+    serde_json::from_str(STYLE_DESCRIPTOR_JSON).expect("embedded style-descriptor.json is valid JSON")
+}
+
+/// One flat token row (base → component → per-variant), preserving descriptor order. Each row is
+/// `{ name, type, default, governs, family }` (+ `component`/`variant`/`key` for component tokens) —
+/// the shape `bsc ui tokens` serialises. `family` is "base" for the palette, else the component name.
+pub fn flatten_tokens() -> Vec<Value> {
+    let d = style_descriptor();
+    let mut out = Vec::new();
+    for b in d.get("base").and_then(Value::as_array).into_iter().flatten() {
+        out.push(serde_json::json!({
+            "name": b.get("name"), "type": b.get("type"),
+            "default": b.get("value"), "governs": b.get("governs"), "family": "base",
+        }));
+    }
+    for c in d.get("components").and_then(Value::as_array).into_iter().flatten() {
+        let cname = c.get("component").and_then(Value::as_str).unwrap_or_default();
+        for t in c.get("tokens").and_then(Value::as_array).into_iter().flatten() {
+            out.push(comp_token_row(t, cname, None));
+        }
+        for v in c.get("variants").and_then(Value::as_array).into_iter().flatten() {
+            let vname = v.get("variant").and_then(Value::as_str);
+            for t in v.get("tokens").and_then(Value::as_array).into_iter().flatten() {
+                out.push(comp_token_row(t, cname, vname));
+            }
+        }
+    }
+    out
+}
+
+fn comp_token_row(t: &Value, component: &str, variant: Option<&str>) -> Value {
+    let mut o = serde_json::json!({
+        "name": t.get("name"), "type": t.get("type"), "default": t.get("default"),
+        "governs": t.get("governs"), "family": component, "component": component, "key": t.get("key"),
+    });
+    if let (Some(obj), Some(v)) = (o.as_object_mut(), variant) {
+        obj.insert("variant".into(), Value::String(v.to_string()));
+    }
+    o
+}
+
+/// Every token NAME the descriptor defines (base + component + per-variant) — the set a theme may
+/// override and a value may reference through the closed grammar.
+pub fn token_names() -> std::collections::HashSet<String> {
+    flatten_tokens()
+        .iter()
+        .filter_map(|t| t.get("name").and_then(Value::as_str).map(str::to_owned))
+        .collect()
+}
+
+/// Every `--custom-property` referenced in a value (for the closed grammar's known-token check).
+fn referenced_vars(value: &str) -> Vec<String> {
+    value
+        .match_indices("--")
+        .map(|(i, _)| {
+            value[i..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-').collect::<String>()
+        })
+        .filter(|s| s.len() > 2)
+        .collect()
+}
+
+/// The CLOSED VALUE GRAMMAR (#2568) — the guard on every designer-authored token value. It is a SAFETY
+/// grammar, not a full CSS type system: it makes an LLM-authored value unable to break out of its
+/// declaration or inject CSS, and requires every referenced token to be one the contract defines. A
+/// value may be a `var(--x)` reference (callers expand the `@x` shorthand first), a hex colour, a
+/// dimension, or a `color-mix()`/`oklch()`/`rgb()` over those. It REJECTS any declaration-ending or
+/// injection sequence (`;` `{` `}` `url(` `expression(` comments `@import` …) and any character outside
+/// the safe set. `names` is [`token_names`].
+pub fn validate_value(value: &str, names: &std::collections::HashSet<String>) -> Result<(), String> {
+    let v = value.trim();
+    if v.is_empty() {
+        return Err("value is empty".into());
+    }
+    for bad in [";", "{", "}", "url(", "expression(", "/*", "*/", "</", "\\", "@import", "@", "javascript:"] {
+        if v.contains(bad) {
+            return Err(format!("value '{v}' contains the disallowed sequence '{bad}'"));
+        }
+    }
+    if let Some(c) = v.chars().find(|c| !(c.is_ascii_alphanumeric() || " \t-._,()%#".contains(*c))) {
+        return Err(format!("value '{v}' contains the disallowed character '{c}'"));
+    }
+    for r in referenced_vars(v) {
+        if !names.contains(&r) {
+            return Err(format!("value '{v}' references '{r}', which the token contract does not define"));
+        }
+    }
+    Ok(())
+}
+
+/// Validate a theme's `vars` map against the token contract + the value grammar (#2568): every key must
+/// be a token the contract defines and every value must pass [`validate_value`]. Flat error list (empty
+/// = valid) — the shape `bsc ui theme validate` prints.
+pub fn validate_theme_vars(vars: &serde_json::Map<String, Value>) -> Vec<String> {
+    let names = token_names();
+    let mut errs = Vec::new();
+    for (name, value) in vars {
+        if !names.contains(name) {
+            errs.push(format!("overrides '{name}', which the token contract does not define"));
+        }
+        let s = value.as_str().map_or_else(|| value.to_string(), str::to_owned);
+        if let Err(e) = validate_value(&s, &names) {
+            errs.push(e);
+        }
+    }
+    errs
+}
+
 /// Structurally validate a KitNode tree against the contract — the EXACT rules the frontend
 /// `validateKitNode` enforces, so a spec valid here is valid there. Returns the flat list of
 /// human-readable errors (empty = valid).
@@ -231,6 +349,54 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn style_descriptor_flattens_and_covers_the_contract() {
+        let flat = flatten_tokens();
+        let base: Vec<_> = flat.iter().filter(|t| t["family"] == "base").collect();
+        assert!(!base.is_empty() && base.iter().all(|t| t.get("component").is_none()), "base rows carry no component");
+        // The btn `primary` variant token carries component + variant + key so
+        // `component btn set-token bg --variant primary` resolves to --btn-primary-bg (#2569).
+        let primary = flat.iter().find(|t| t["name"] == "--btn-primary-bg").unwrap();
+        assert_eq!(primary["component"], "btn");
+        assert_eq!(primary["variant"], "primary");
+        assert_eq!(primary["key"], "bg");
+        // Every descriptor token is DECLARED in the generated contract — the Rust parser's precondition,
+        // mirrored from the frontend styleContract.gen test.
+        let defined: std::collections::HashSet<&str> = TOKENS_CONTRACT_CSS
+            .lines()
+            .filter_map(|l| {
+                let t = l.trim();
+                t.starts_with("--").then(|| t.split(':').next().unwrap().trim())
+            })
+            .collect();
+        for name in token_names() {
+            assert!(defined.contains(name.as_str()), "{name} is declared in tokens-contract.css");
+        }
+    }
+
+    #[test]
+    fn value_grammar_accepts_safe_forms_and_rejects_injection() {
+        let names = token_names();
+        for ok in ["var(--accent)", "#1a120a", "14px", "color-mix(in oklch, var(--bg-panel), var(--accent) 7%)", "black"] {
+            assert!(validate_value(ok, &names).is_ok(), "{ok} is a safe value");
+        }
+        for bad in ["red; color: blue", "var(--x)}", "url(evil.png)", "expression(alert(1))", "@import x", "a/*b*/", "var(--nope)"] {
+            assert!(validate_value(bad, &names).is_err(), "{bad} must be rejected");
+        }
+    }
+
+    #[test]
+    fn theme_vars_validation_flags_unknown_tokens_and_bad_values() {
+        let good: serde_json::Map<String, Value> =
+            serde_json::from_str(r#"{"--card-bg":"var(--bg-elev)","--card-radius":"14px"}"#).unwrap();
+        assert!(validate_theme_vars(&good).is_empty(), "a clean vars map validates");
+        let bad: serde_json::Map<String, Value> =
+            serde_json::from_str(r#"{"--not-a-token":"var(--accent)","--card-bg":"red; }"}"#).unwrap();
+        let errs = validate_theme_vars(&bad);
+        assert!(errs.iter().any(|e| e.contains("--not-a-token")), "flags the unknown token: {errs:?}");
+        assert!(errs.iter().any(|e| e.contains("disallowed")), "flags the injection: {errs:?}");
     }
 
     #[test]
