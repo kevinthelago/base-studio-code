@@ -71,14 +71,23 @@ This is the surface a designer edits — pick a token here, then `bsc ui theme s
     },
     CmdDoc {
         name: "components",
-        summary: "list the style-bearing components + the tokens/variants each exposes (#2568)",
+        summary: "list the style-bearing components + the tokens/variants each exposes, or --coverage a token's reach (#2568/#2588)",
         usage: "\
 USAGE:
   bsc ui components [--pretty]
+  bsc ui components --coverage [--dir <path>] [--pretty]
 
 Lists each style-bearing component with what a designer can address on it: its token keys and its
 variants (e.g. btn → tokens [bg, bg-hover, border, fg, radius], variants [primary]). The index a
-designer scans before descending to per-component token edits. --pretty indents.",
+designer scans before descending to per-component token edits. --pretty indents.
+
+--coverage instead REPORTS a token's REACH (#2588): it walks a source tree (--dir, default `.`;
+recursing .tsx/.ts/.css/.jsx/.js, skipping node_modules/.git/target/dist/build/.claude) and counts,
+per component + per token, how many surfaces CONSUME the token as `var(--<token>` — so a token
+change's reach is a number, not a guess. It emits { component, tokensConsumed, tokensTotal, totalRefs }
+rollups + { token, refs } rows, plus a `zeroConsumers` list that flags every token NO surface reads
+(setting one is a no-op in that tree). A token DEFINITION (`--x:` in :root) is deliberately not counted
+— only consumers move when the value changes. Compact JSON by default; --pretty indents for reading.",
     },
     CmdDoc {
         name: "component",
@@ -286,11 +295,24 @@ fn cmd_tokens(args: &[String]) -> Result<(), String> {
 }
 
 /// `bsc ui components` (#2568) — the style-bearing component index: each component's token keys +
-/// variants, the map a designer scans before descending to per-component token edits.
+/// variants, the map a designer scans before descending to per-component token edits. With
+/// `--coverage` it instead reports each token's REACH over a source tree (#2588, see
+/// [`cmd_components_coverage`]).
 fn cmd_components(args: &[String]) -> Result<(), String> {
-    let pretty = args.iter().any(|a| a == "--pretty");
-    if let Some(bad) = args.iter().find(|a| a.starts_with("--") && a.as_str() != "--pretty") {
-        return Err(format!("unknown flag '{bad}'"));
+    let (mut pretty, mut coverage) = (false, false);
+    let mut dir = None::<String>;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--pretty" => pretty = true,
+            "--coverage" => coverage = true,
+            "--dir" => dir = it.next().cloned(),
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    if coverage {
+        return cmd_components_coverage(dir.as_deref().unwrap_or("."), pretty);
     }
     let d = crate::style_descriptor();
     let comps: Vec<serde_json::Value> = d
@@ -317,6 +339,142 @@ fn cmd_components(args: &[String]) -> Result<(), String> {
         })
         .collect();
     let out = if pretty { serde_json::to_string_pretty(&comps) } else { serde_json::to_string(&comps) };
+    println!("{}", out.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// The source-file extensions the coverage scan reads (#2588) and the directory names it skips
+/// (vendored / build output / VCS / this tool's own worktrees) — the set that keeps a "reach" number
+/// about the app's OWN source, not third-party or generated code.
+const COVERAGE_EXTS: &[&str] = &["tsx", "ts", "css", "jsx", "js"];
+const COVERAGE_SKIP_DIRS: &[&str] = &["node_modules", ".git", "target", "dist", "build", ".claude"];
+
+/// Count the CONSUMER references to one token in `text` (#2588): occurrences of the `var(--<name>`
+/// form where the character after the name is NOT an identifier char — so `var(--btn-bg` counts
+/// `var(--btn-bg)` / `var(--btn-bg, #000)` but NOT `var(--btn-bg-hover)`. A DEFINITION (`--x:` in a
+/// :root block) has no `var(` prefix, so it is never matched — correct, because a definition is not a
+/// consumer and does not move when the token's value changes. Pure → unit-tested directly.
+fn count_token_consumers(text: &str, token: &str) -> usize {
+    let needle = format!("var({token}");
+    let bytes = text.as_bytes();
+    text.match_indices(&needle)
+        .filter(|(i, _)| {
+            let after = *i + needle.len();
+            bytes.get(after).is_none_or(|b| !(b.is_ascii_alphanumeric() || *b == b'-'))
+        })
+        .count()
+}
+
+/// Recursively gather the text of every UI source file under `dir` for the coverage scan (#2588):
+/// files with a [`COVERAGE_EXTS`] extension, skipping the [`COVERAGE_SKIP_DIRS`]. Unreadable
+/// (non-UTF-8 / binary) files are skipped, not fatal; symlinked dirs are not followed (neither
+/// `is_dir` nor `is_file`), so the walk cannot loop.
+fn collect_source_files_into(dir: &std::path::Path, out: &mut Vec<String>) -> Result<(), String> {
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let ft = entry.file_type().map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if ft.is_dir() && !COVERAGE_SKIP_DIRS.contains(&name.as_ref()) {
+            collect_source_files_into(&path, out)?;
+        } else if ft.is_file() {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
+            if COVERAGE_EXTS.contains(&ext) {
+                if let Ok(text) = std::fs::read_to_string(&path) {
+                    out.push(text);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The per-token consumer counts from a source-tree scan (#2588), keyed by token name. Factored out of
+/// [`cmd_components_coverage`] so a test drives it against a temp dir without shelling out: it walks
+/// `dir` ([`collect_source_files_into`]) and, per file, tallies each token's `var(--<name>` consumers
+/// ([`count_token_consumers`]). Every token in `tokens` is present in the result (0 when unused).
+fn coverage_scan(
+    dir: &std::path::Path,
+    tokens: &[String],
+) -> Result<std::collections::HashMap<String, usize>, String> {
+    let mut files: Vec<String> = Vec::new();
+    collect_source_files_into(dir, &mut files)?;
+    let mut counts: std::collections::HashMap<String, usize> =
+        tokens.iter().map(|t| (t.clone(), 0usize)).collect();
+    for text in &files {
+        for token in tokens {
+            let n = count_token_consumers(text, token);
+            if let Some(c) = counts.get_mut(token) {
+                *c += n;
+            }
+        }
+    }
+    Ok(counts)
+}
+
+/// `bsc ui components --coverage [--dir <path>]` (#2588) — make a token's REACH a number, not a guess.
+/// Walks a source tree and, per contract token, counts the `var(--<name>` CONSUMER references, grouped
+/// by owning component (`family`: "base" for the palette, else the component), with per-component
+/// rollups and a `zeroConsumers` list flagging tokens no surface reads — setting one is a no-op there.
+/// JSON for machine use (compact by default; `--pretty` indents for a readable view, the sibling idiom).
+fn cmd_components_coverage(dir: &str, pretty: bool) -> Result<(), String> {
+    // Every contract token paired with its owning component (the grouping key), in descriptor order.
+    let contract: Vec<(String, String)> = crate::flatten_tokens()
+        .into_iter()
+        .filter_map(|t| {
+            let name = t.get("name").and_then(serde_json::Value::as_str)?.to_string();
+            let comp = t.get("family").and_then(serde_json::Value::as_str).unwrap_or("base").to_string();
+            Some((name, comp))
+        })
+        .collect();
+    let names: Vec<String> = contract.iter().map(|(n, _)| n.clone()).collect();
+    let counts = coverage_scan(std::path::Path::new(dir), &names)?;
+
+    // Component grouping, first-seen order preserved from the descriptor.
+    let mut order: Vec<String> = Vec::new();
+    for (_, comp) in &contract {
+        if !order.contains(comp) {
+            order.push(comp.clone());
+        }
+    }
+    let mut components: Vec<serde_json::Value> = Vec::new();
+    let mut zero_consumers: Vec<String> = Vec::new();
+    let (mut total_consumed, mut grand_refs) = (0usize, 0usize);
+    for comp in &order {
+        let toks: Vec<&(String, String)> = contract.iter().filter(|(_, c)| c == comp).collect();
+        let mut token_rows: Vec<serde_json::Value> = Vec::new();
+        let (mut consumed, mut comp_refs) = (0usize, 0usize);
+        for (name, _) in &toks {
+            let refs = *counts.get(name).unwrap_or(&0);
+            if refs == 0 {
+                zero_consumers.push(name.clone());
+            } else {
+                consumed += 1;
+                comp_refs += refs;
+            }
+            token_rows.push(serde_json::json!({ "token": name, "refs": refs }));
+        }
+        total_consumed += consumed;
+        grand_refs += comp_refs;
+        components.push(serde_json::json!({
+            "component": comp,
+            "tokensConsumed": consumed,
+            "tokensTotal": toks.len(),
+            "totalRefs": comp_refs,
+            "tokens": token_rows,
+        }));
+    }
+    let report = serde_json::json!({
+        "dir": dir,
+        "tokensTotal": contract.len(),
+        "tokensConsumed": total_consumed,
+        "totalRefs": grand_refs,
+        "components": components,
+        "zeroConsumers": zero_consumers,
+    });
+    let out = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
     println!("{}", out.map_err(|e| e.to_string())?);
     Ok(())
 }
@@ -1410,5 +1568,68 @@ mod tests {
         assert!(run(vec!["variants".into(), "--nope".into()], "bsc ui").is_err(), "unknown flag rejected");
         assert!(bsc_cli_util::help_overview("bsc ui", TAGLINE, &merged_commands()).contains("variants"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── token REACH coverage (#2588) ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn count_token_consumers_is_prefix_safe_and_ignores_definitions() {
+        // A prefix token must NOT swallow a longer sibling: `var(--btn-bg` counts `var(--btn-bg)` and
+        // `var(--btn-bg, …)` but NOT `var(--btn-bg-hover)`.
+        let css = ".a{ background: var(--btn-bg); } .b{ background: var(--btn-bg-hover); } .c{ x: var(--btn-bg, #000); }";
+        assert_eq!(count_token_consumers(css, "--btn-bg"), 2, "the two --btn-bg uses, not the -hover one");
+        assert_eq!(count_token_consumers(css, "--btn-bg-hover"), 1);
+        // A DEFINITION is not a consumer — `--card-bg:` lacks the `var(` prefix, so it is never counted.
+        let def = ":root { --card-bg: black; } .card { background: var(--card-bg); }";
+        assert_eq!(count_token_consumers(def, "--card-bg"), 1, "only the var() consumer, not the definition");
+        assert_eq!(count_token_consumers("nothing here", "--card-bg"), 0);
+    }
+
+    #[test]
+    fn coverage_counts_var_consumers_flags_zero_and_skips_vendored() {
+        // A scratch source tree: real token consumers across a couple of files + a node_modules copy
+        // that MUST be ignored, so the reported reach reflects only the app's own source (#2588).
+        let dir = std::env::temp_dir().join(format!("bsc-ui-coverage-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let src = dir.join("src");
+        std::fs::create_dir_all(src.join("styles")).unwrap();
+        std::fs::write(src.join("Card.tsx"), "const s = { background: 'var(--card-bg)' };\n").unwrap();
+        std::fs::write(
+            src.join("styles/app.css"),
+            ".card { background: var(--card-bg); }\n.btn { background: var(--btn-bg, #000); border-color: var(--btn-bg); }\n",
+        )
+        .unwrap();
+        // A vendored copy under node_modules that would inflate the count if the walk didn't skip it.
+        let vendored = src.join("node_modules/pkg");
+        std::fs::create_dir_all(&vendored).unwrap();
+        std::fs::write(vendored.join("evil.css"), ".x { background: var(--card-bg); color: var(--card-bg); }\n").unwrap();
+
+        let tokens: Vec<String> =
+            ["--card-bg", "--btn-bg", "--chip-border"].iter().map(|s| (*s).to_string()).collect();
+        let counts = coverage_scan(&dir, &tokens).unwrap();
+        // (a) counts are right — 2 --card-bg (Card.tsx + app.css); node_modules is NOT counted.
+        assert_eq!(counts["--card-bg"], 2, "card-bg counted in src only, not node_modules");
+        assert_eq!(counts["--btn-bg"], 2, "both --btn-bg consumers in app.css");
+        // (b) a token with no `var(--…)` reference is a zero-consumer.
+        assert_eq!(counts["--chip-border"], 0, "chip-border is never consumed here");
+
+        // (c) the full CLI path builds the grouped report + zeroConsumers over the real contract, and
+        // an unknown flag / unexpected positional is rejected.
+        let d = dir.to_string_lossy().into_owned();
+        assert!(run(vec!["components".into(), "--coverage".into(), "--dir".into(), d.clone()], "bsc ui").is_ok());
+        assert!(run(vec!["components".into(), "--coverage".into(), "--dir".into(), d, "--pretty".into()], "bsc ui").is_ok());
+        assert!(run(vec!["components".into(), "--coverage".into(), "--bogus".into()], "bsc ui").is_err());
+        assert!(run(vec!["components".into(), "stray".into()], "bsc ui").is_err());
+        // A missing --dir is a hard error (the walk cannot read it), never a silent empty report.
+        assert!(run(vec!["components".into(), "--coverage".into(), "--dir".into(), dir.join("does-not-exist").to_string_lossy().into_owned()], "bsc ui").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn coverage_help_documents_the_reach_report() {
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "components");
+        for needle in ["--coverage", "--dir", "var(--<token>", "zeroConsumers", "node_modules"] {
+            assert!(d.contains(needle), "components help mentions {needle}");
+        }
     }
 }
