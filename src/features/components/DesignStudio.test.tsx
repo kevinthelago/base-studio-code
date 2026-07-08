@@ -22,7 +22,8 @@ const graphNode = (name: string) =>
 describe("DesignStudio (#2308)", () => {
   it("renders the toolbar, kit switcher, and the composition graph as the one-and-only center view (#2453)", () => {
     render(<DesignStudio />);
-    expect(screen.getByText("Design Studio")).toBeTruthy();          // toolbar title
+    // The toolbar title was removed (#2608) — the kit switcher leads the toolbar now.
+    expect(screen.queryByText("Design Studio")).toBeNull();
     for (const k of SEED_KITS) expect(screen.getAllByText(k.name).length).toBeGreaterThan(0); // toolbar kit chip
     expect(screen.getByText(/Composition graph · react-ui/)).toBeTruthy(); // graph mounts with the workspace
     // The Library/Graph toggle is gone — there is no alternate center mode.
