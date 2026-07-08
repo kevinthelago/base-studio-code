@@ -32,3 +32,38 @@ vi.mock("@tauri-apps/plugin-store", () => ({
     delete: vi.fn().mockResolvedValue(undefined),
   }),
 }));
+
+// xterm can't initialize in jsdom (open() needs real DOM measurements) — stub it globally so any
+// component that hosts a terminal (the planner + the Design Studio's always-on designer pane, #2585)
+// renders in tests. A test that asserts terminal wiring can still override this per-file.
+vi.mock("@xterm/xterm", () => {
+  class Terminal {
+    cols = 80;
+    rows = 24;
+    options: Record<string, unknown> = {};
+    loadAddon = vi.fn();
+    open = vi.fn();
+    write = vi.fn();
+    onData = vi.fn(() => ({ dispose: vi.fn() }));
+    focus = vi.fn();
+    dispose = vi.fn();
+  }
+  return { Terminal };
+});
+vi.mock("@xterm/addon-fit", () => {
+  class FitAddon {
+    fit = vi.fn();
+  }
+  return { FitAddon };
+});
+vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+
+// jsdom lacks ResizeObserver; components that observe element size (xterm hosts, graph canvases)
+// construct one at mount. A no-op stub keeps those renders from throwing.
+if (!(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
+  (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
