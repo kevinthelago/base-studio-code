@@ -72,7 +72,7 @@ This is the surface a designer edits — pick a token here, then `bsc ui theme s
     },
     CmdDoc {
         name: "components",
-        summary: "list the style-bearing components + the tokens/variants each exposes, or --coverage a token's reach (#2568/#2588)",
+        summary: "list the style-bearing components + the tokens/variants each exposes, or --coverage a token's reach + leaks (#2568/#2588/#2600)",
         usage: "\
 USAGE:
   bsc ui components [--pretty]
@@ -88,7 +88,10 @@ per component + per token, how many surfaces CONSUME the token as `var(--<token>
 change's reach is a number, not a guess. It emits { component, tokensConsumed, tokensTotal, totalRefs }
 rollups + { token, refs } rows, plus a `zeroConsumers` list that flags every token NO surface reads
 (setting one is a no-op in that tree). A token DEFINITION (`--x:` in :root) is deliberately not counted
-— only consumers move when the value changes. Compact JSON by default; --pretty indents for reading.",
+— only consumers move when the value changes. It ALSO reports `leakCandidates` (#2600): per file, the
+count of hardcoded color literals (6/8-digit hex or rgb()/hsl()) a token change CAN'T reach — the
+migration's targets, most-first — plus a `leakTotal`. (Heuristic: the 6/8-hex rule skips issue refs
+like `#219`; it won't catch named colors.) Compact JSON by default; --pretty indents for reading.",
     },
     CmdDoc {
         name: "component",
@@ -372,11 +375,40 @@ fn count_token_consumers(text: &str, token: &str) -> usize {
         .count()
 }
 
-/// Recursively gather the text of every UI source file under `dir` for the coverage scan (#2588):
-/// files with a [`COVERAGE_EXTS`] extension, skipping the [`COVERAGE_SKIP_DIRS`]. Unreadable
-/// (non-UTF-8 / binary) files are skipped, not fatal; symlinked dirs are not followed (neither
-/// `is_dir` nor `is_file`), so the walk cannot loop.
-fn collect_source_files_into(dir: &std::path::Path, out: &mut Vec<String>) -> Result<(), String> {
+/// Count hardcoded COLOR literals in `text` (#2600) — the leak candidates a token change can't reach:
+/// a 6- or 8-digit hex (`#rrggbb` / `#rrggbbaa`) or a `rgb(` / `rgba(` / `hsl(` / `hsla(` function. The
+/// 6/8-hex requirement deliberately skips 3-4 digit issue refs (`#219`, `#773`), and a `var(--x)` token
+/// use carries no `#` / `rgb(`, so tokenized surfaces aren't counted. A heuristic (it won't catch a
+/// named color, and it does count a literal that sits in a comment or a fallback), but honest + stable —
+/// it POINTS at the files to migrate; the per-file ranking is what matters. Pure → unit-tested directly.
+fn count_color_literals(text: &str) -> usize {
+    let bytes = text.as_bytes();
+    let mut n = 0usize;
+    // Hex: `#` + a run of exactly 6 or 8 hex digits (a 3-4 digit issue ref has too few to match; a
+    // 7/9+ run is not a valid color, so it's skipped rather than miscounted).
+    for (i, _) in text.match_indices('#') {
+        let hexlen = bytes[i + 1..].iter().take_while(|b| b.is_ascii_hexdigit()).count();
+        if hexlen == 6 || hexlen == 8 {
+            n += 1;
+        }
+    }
+    // Functional notations — distinct substrings, so `rgb(` does not double-count inside `rgba(`.
+    for f in ["rgb(", "rgba(", "hsl(", "hsla("] {
+        n += text.matches(f).count();
+    }
+    n
+}
+
+/// Recursively gather `(relative-path, text)` for every UI source file under `root` for the coverage
+/// scan (#2588/#2600): files with a [`COVERAGE_EXTS`] extension, skipping the [`COVERAGE_SKIP_DIRS`].
+/// The path is relative to `root`, forward-slashed, so leak-candidate rows read the same on every OS.
+/// Unreadable (non-UTF-8 / binary) files are skipped, not fatal; symlinked dirs are not followed
+/// (neither `is_dir` nor `is_file`), so the walk cannot loop.
+fn collect_source_files_into(
+    root: &std::path::Path,
+    dir: &std::path::Path,
+    out: &mut Vec<(String, String)>,
+) -> Result<(), String> {
     let entries = std::fs::read_dir(dir).map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -385,12 +417,13 @@ fn collect_source_files_into(dir: &std::path::Path, out: &mut Vec<String>) -> Re
         let name = entry.file_name();
         let name = name.to_string_lossy();
         if ft.is_dir() && !COVERAGE_SKIP_DIRS.contains(&name.as_ref()) {
-            collect_source_files_into(&path, out)?;
+            collect_source_files_into(root, &path, out)?;
         } else if ft.is_file() {
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
             if COVERAGE_EXTS.contains(&ext) {
                 if let Ok(text) = std::fs::read_to_string(&path) {
-                    out.push(text);
+                    let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+                    out.push((rel, text));
                 }
             }
         }
@@ -406,11 +439,11 @@ fn coverage_scan(
     dir: &std::path::Path,
     tokens: &[String],
 ) -> Result<std::collections::HashMap<String, usize>, String> {
-    let mut files: Vec<String> = Vec::new();
-    collect_source_files_into(dir, &mut files)?;
+    let mut files: Vec<(String, String)> = Vec::new();
+    collect_source_files_into(dir, dir, &mut files)?;
     let mut counts: std::collections::HashMap<String, usize> =
         tokens.iter().map(|t| (t.clone(), 0usize)).collect();
-    for text in &files {
+    for (_, text) in &files {
         for token in tokens {
             let n = count_token_consumers(text, token);
             if let Some(c) = counts.get_mut(token) {
@@ -419,6 +452,24 @@ fn coverage_scan(
         }
     }
     Ok(counts)
+}
+
+/// The hardcoded-color LEAK candidates under `dir` (#2600): each source file's raw color-literal count
+/// ([`count_color_literals`]), keeping only files with at least one, most-first (ties by path). These
+/// are the surfaces a token change CAN'T reach — the migration's concrete targets, so the coverage
+/// report points at the work instead of the maintainer grepping by hand.
+fn leak_scan(dir: &std::path::Path) -> Result<Vec<(String, usize)>, String> {
+    let mut files: Vec<(String, String)> = Vec::new();
+    collect_source_files_into(dir, dir, &mut files)?;
+    let mut rows: Vec<(String, usize)> = files
+        .into_iter()
+        .filter_map(|(path, text)| {
+            let n = count_color_literals(&text);
+            (n > 0).then_some((path, n))
+        })
+        .collect();
+    rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    Ok(rows)
 }
 
 /// `bsc ui components --coverage [--dir <path>]` (#2588) — make a token's REACH a number, not a guess.
@@ -473,6 +524,12 @@ fn cmd_components_coverage(dir: &str, pretty: bool) -> Result<(), String> {
             "tokens": token_rows,
         }));
     }
+    // Leak candidates (#2600): the hardcoded colors a token change can't reach, per file — the
+    // migration's targets, so the report points at the work instead of an ad-hoc grep.
+    let leaks = leak_scan(std::path::Path::new(dir))?;
+    let leak_total: usize = leaks.iter().map(|(_, n)| n).sum();
+    let leak_candidates: Vec<serde_json::Value> =
+        leaks.iter().map(|(file, count)| serde_json::json!({ "file": file, "count": count })).collect();
     let report = serde_json::json!({
         "dir": dir,
         "tokensTotal": contract.len(),
@@ -480,6 +537,8 @@ fn cmd_components_coverage(dir: &str, pretty: bool) -> Result<(), String> {
         "totalRefs": grand_refs,
         "components": components,
         "zeroConsumers": zero_consumers,
+        "leakTotal": leak_total,
+        "leakCandidates": leak_candidates,
     });
     let out = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
     println!("{}", out.map_err(|e| e.to_string())?);
@@ -1771,10 +1830,41 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // ── leak candidates — hardcoded colors a token change can't reach (#2600) ─────────────────────
+
+    #[test]
+    fn count_color_literals_counts_hex6_8_and_rgb_not_issue_refs_or_tokens() {
+        // 6-/8-digit hex + rgb/rgba/hsl/hsla are colors; 3-4 digit issue refs and var(--x) are not.
+        let t = "c:#e5c07b; d:#0a0b0c1a; a:rgb(1,2,3); b:rgba(0,0,0,.5); e:hsl(1,2%,3%); see #219 and #2372; tok:var(--accent); short:#fff";
+        // #e5c07b(6) + #0a0b0c1a(8) + rgb( + rgba( + hsl( = 5; #219/#2372/#fff too short; var() has no #/rgb(.
+        assert_eq!(count_color_literals(t), 5);
+        assert_eq!(count_color_literals("just var(--fg) and #12 here"), 0);
+        // `rgb(` is not double-counted inside `rgba(`.
+        assert_eq!(count_color_literals("rgba(1,2,3,4)"), 1);
+    }
+
+    #[test]
+    fn leak_scan_ranks_files_by_hardcoded_colors_and_skips_vendored() {
+        let dir = std::env::temp_dir().join(format!("bsc-ui-leaks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("a")).unwrap();
+        std::fs::create_dir_all(dir.join("node_modules")).unwrap();
+        std::fs::write(dir.join("Big.tsx"), "color:#e5c07b; bg:#123456; edge:rgba(0,0,0,.5);\n").unwrap(); // 3
+        std::fs::write(dir.join("a/Small.css"), ".x{ color:#ffffff; }\n").unwrap(); // 1
+        std::fs::write(dir.join("Clean.tsx"), "color:var(--fg); ref:#219;\n").unwrap(); // 0 → excluded
+        std::fs::write(dir.join("node_modules/vendor.css"), "a:#000000;b:#111111;c:#222222;\n").unwrap(); // skipped
+        let rows = leak_scan(&dir).unwrap();
+        // Only files with >0, sorted most-first; node_modules skipped; the zero-leak file excluded.
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], ("Big.tsx".to_string(), 3));
+        assert_eq!(rows[1], ("a/Small.css".to_string(), 1)); // forward-slashed relative path on every OS
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn coverage_help_documents_the_reach_report() {
         let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "components");
-        for needle in ["--coverage", "--dir", "var(--<token>", "zeroConsumers", "node_modules"] {
+        for needle in ["--coverage", "--dir", "var(--<token>", "zeroConsumers", "node_modules", "leakCandidates"] {
             assert!(d.contains(needle), "components help mentions {needle}");
         }
     }
