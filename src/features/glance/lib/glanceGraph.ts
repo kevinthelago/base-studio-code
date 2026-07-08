@@ -18,7 +18,7 @@ export type GRole = "infra" | "service" | "data" | "client";
  *  (mirrors `BlueprintCategory`). Drives a project (L0) node's accent colour + chip, REPLACING the
  *  microservices-tier `role` (which was hash-assigned per id and collided with the health palette). A
  *  fleet-drill (L1) node has no category and keeps its function-group `role` colouring. */
-export type GCategory = "greenfield" | "transform" | "harden" | "maintain" | "data";
+export type GCategory = "greenfield" | "transform" | "harden" | "maintain" | "data" | "script";
 /** Axis 1 — HEALTH (#2541): the top-left dot colour + the attention/propagation signal. An escalation
  *  ladder that rolls UP the dependency chain (a node shows the worst of itself + everything it depends
  *  on). `idle`/`healthy` never propagate — only `warning`/`error` do. Sourced from the worst unresolved
@@ -137,6 +137,7 @@ export const CATEGORY_META: Record<GCategory, { label: string; color: string }> 
   harden:     { label: "harden",     color: "#b8862f" }, // bronze — improving/securing in place
   maintain:   { label: "maintain",   color: "#8b93a7" }, // slate — keeping it running
   data:       { label: "data",       color: "#d05fa8" }, // magenta — a data migration
+  script:     { label: "script",     color: "#d0a92e" }, // gold — a single-purpose invocable function (#2596)
 };
 /** Axis 1 — HEALTH → the top-left dot colour + whether it pulses (#2541). Blue = at rest, green =
  *  active & fine, orange = warning, red = error/fatal (pulses; the node to look at). */
