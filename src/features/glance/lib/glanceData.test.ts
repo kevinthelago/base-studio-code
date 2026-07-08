@@ -21,7 +21,7 @@ describe("SAMPLE_GRAPH (loaded from @data/glance/sample-graph.json)", () => {
   it("carries only valid role / health / activity / edge-kind tokens (#2541)", () => {
     const roles = ["infra", "service", "data", "client"];
     const healths = ["idle", "healthy", "warning", "error"];
-    const activities = ["planning", "building", "waiting", "review", "live"];
+    const activities = ["idle", "planning", "building", "waiting", "review", "live"];
     const kinds = ["api", "data", "events"];
     for (const n of SAMPLE_GRAPH.rawNodes) {
       expect(roles).toContain(n.role);

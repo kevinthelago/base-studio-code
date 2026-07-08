@@ -9,7 +9,7 @@ export {
 export { buildGlanceData, SAMPLE_GRAPH, type GlanceData, type ProjectLite } from "./lib/glanceData";
 // #2498: the mobile store projector mirrors the SAME project/fault/fleet sources the Glance
 // workspace reads, so the data hooks are public API alongside the graph model.
-export { useGlanceProjects, applyFaultHealth, applyLiveness, mergeGlanceProjects } from "./lib/useGlanceProjects";
+export { useGlanceProjects, applyFaultHealth, applyLiveness, applyRunningActivity, deriveBuildingKeys, mergeGlanceProjects } from "./lib/useGlanceProjects";
 export { useGlanceFaults, type GlanceFault } from "./lib/useGlanceFaults";
 export { applyStallHealth, projectKeyOfSession, STALL_WARN_MS, type WaitLite } from "./lib/agentStall";
 export { useProjectFleet } from "./lib/useProjectFleet";
