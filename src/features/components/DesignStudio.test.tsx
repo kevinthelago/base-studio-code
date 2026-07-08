@@ -160,6 +160,15 @@ describe("DesignStudio (#2308)", () => {
     expect(screen.queryByRole("button", { name: /Generate variants/ })).toBeNull();
   });
 
+  it("the designer chat box is resizable and doesn't pin the panes (#2624)", () => {
+    const { container } = render(<DesignStudio />);
+    // A row-resize handle sits between the graph and the terminal.
+    expect(container.querySelector(".ds-handle-h")).toBeTruthy();
+    // The terminal carries an inline (drag-driven) height so the graph keeps priority.
+    const panel = screen.getByTestId("designer-terminal") as HTMLElement;
+    expect(panel.style.height).not.toBe("");
+  });
+
   it("carries NO decorative motion classes — the #2344 animation pass was removed (un-animated until the design system lands)", () => {
     const { container } = render(<DesignStudio />);
     // Inspector preview + rail: no keyed enter/drill/stagger classes.

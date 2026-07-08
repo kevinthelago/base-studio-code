@@ -1,0 +1,15 @@
+{
+  "op": "smooth_union",
+  "k": 2.0,
+  "nodes": [
+    {
+      "op": "difference",
+      "base": { "op": "box", "size": [40, 24, 4] },
+      "tools": [
+        { "op": "translate", "by": [14, 0, 0], "node": { "op": "cylinder", "r": 2.5, "h": 12 } },
+        { "op": "translate", "by": [-14, 0, 0], "node": { "op": "cylinder", "r": 2.5, "h": 12 } }
+      ]
+    },
+    { "op": "translate", "by": [0, -8, 6], "node": { "op": "box", "size": [40, 4, 16] } }
+  ]
+}
