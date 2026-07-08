@@ -1,6 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { parseFleetFile } from "./planFleet";
+import { parseFleetFile, withDerivedStreamIssues } from "./planFleet";
 import { DEFAULT_FLOW } from "./agentFlow";
+
+describe("withDerivedStreamIssues (#2615 — a worker launches with its real issues, not a placeholder)", () => {
+  const streams = [{ id: "api", issues: [] }, { id: "ui", issues: ["#9"] }, { id: "docs", issues: [] }];
+  const issues = [
+    { ref: "#1", stream: "api" }, { ref: "#2", stream: "api" },
+    { ref: "#3", stream: "ui" },  // ui already lists its own — must NOT be overridden
+    { ref: "#4" },                // no owning stream — ignored
+    { stream: "api" },            // no ref — ignored
+  ];
+  it("derives an empty stream's issues from the issues that name it; keeps a populated stream's own", () => {
+    const out = withDerivedStreamIssues(streams, issues);
+    expect(out.find(s => s.id === "api")!.issues).toEqual(["#1", "#2"]); // derived from issue.stream
+    expect(out.find(s => s.id === "ui")!.issues).toEqual(["#9"]);        // authored list wins, untouched
+    expect(out.find(s => s.id === "docs")!.issues).toEqual([]);          // no matching issues → stays empty
+  });
+});
 
 describe("parseFleetFile", () => {
   it("parses a full fleet, defaulting list fields", () => {

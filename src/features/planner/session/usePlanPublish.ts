@@ -18,6 +18,7 @@ import { buildWorkerScope, toWorkerUiPairing } from "../fleet/workerScope";
 import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 import { type PlanIssue } from "../issues/planIssues";
 import { pruneCompletedStreams, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
+import { withDerivedStreamIssues } from "../fleet/planFleet";
 import { recoverIssues, type GitHubIssueLike } from "../issues/recoverIssues";
 import { publishFleetRoster } from "@/shared/lib/fleet/fleetRoster";
 import { canLaunchTriage, publishBlockReason } from "@/shared/lib/github/projectSync";
@@ -153,7 +154,11 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       // #2611: a stream with no resolvable repo stays VISIBLE in the plan but can't spawn a worktree —
       // skip it here (rather than aborting the fail-closed launch on a broken ensure_worktree) and
       // surface which streams still need a repo assigned, so the gap is seen, not swallowed.
-      const launchable = [...active, ...maintenance].filter(st => st.repo);
+      // #2615: a stream can reach launch with an empty `issues[]` even though issues name it as their
+      // owning `stream` — enrich each stream's issue list from the plan.db issues so a worker launches
+      // with its concrete task list (feeding BOTH the scope below and the kickoff via fleetStartProject),
+      // not the "(none yet — ask the director)" placeholder. A stream that already lists issues is kept.
+      const launchable = withDerivedStreamIssues([...active, ...maintenance].filter(st => st.repo), dbIssues);
       const noRepo = [...active, ...maintenance].filter(st => !st.repo);
       const launchPlan = { ...fullPlan, streams: launchable };
       if (launchPlan.streams.length === 0 && !launchPlan.director.enabled) {
