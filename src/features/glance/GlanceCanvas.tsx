@@ -62,13 +62,14 @@ export function GlanceCanvas(p: CanvasProps) {
       <svg width={model.worldW} height={model.worldH} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>
         {model.edges.map((e) => {
           const meta = EDGE_META[e.kind];
-          // A fleet-drill (L1) edge colours by its Org relationship archetype hue (#2561); a project
-          // (L0) edge keeps the kind colour.
+          // A fleet-drill (L1) edge is fully styled by its Org relationship archetype (#2561/#2565) —
+          // colour by hue, dash by the archetype's style — so `kind` is vestigial at L1; a project (L0)
+          // edge keeps the kind colour + dash.
           const arch = e.archetype ? archetypeById(e.archetype) : undefined;
           const inFocus = focus ? focus.edges.has(e.id) : true;
           const color = e.isCycle ? "#f2555f" : arch ? hueColor(arch.hue) : meta.color;
-          const width = (e.isCycle ? 2.3 : meta.w) + (inFocus && focus ? 0.7 : 0);
-          const dash = e.isCycle ? "7 6" : meta.dash;
+          const width = (e.isCycle ? 2.3 : arch ? 1.8 : meta.w) + (inFocus && focus ? 0.7 : 0);
+          const dash = e.isCycle ? "7 6" : arch ? (ARCH_DASH[arch.style] ?? "") : meta.dash;
           const opacity = e.isCycle ? (focus ? (inFocus ? 1 : 0.4) : 0.95) : (focus ? (inFocus ? 1 : REST_E) : 0.82);
           return (
             <g key={e.id} opacity={opacity} onMouseEnter={() => p.onHoverEdge(e.id)} onMouseLeave={() => p.onHoverEdge(null)} onClick={click(() => p.onSelectEdge(e.id))} style={{ cursor: "pointer", transition: "opacity .18s" }}>
