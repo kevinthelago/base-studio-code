@@ -11,7 +11,7 @@
 // hierarchy layout lives in `lib/compositionLayout`, #2455), and `useDragResize` — so it stays
 // on-architecture and the planner Kickoff pane is untouched. Data comes from the global store via the
 // `bsc ui` bridge.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
 import { KitChangesCard, SeedNoticesCard } from "./KitChangesCard";
@@ -26,7 +26,6 @@ import { useDragResize } from "@/shared/hooks/useDragResize";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
-import { slugify } from "@/shared/lib/core/format";
 import { layoutComposition, selectionNeighborhood, NODE_W, NODE_H, type CompositionLayout } from "./lib/compositionLayout";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
@@ -49,8 +48,6 @@ const VP: Record<Viewport, { w: string; label: string }> = {
   md: { w: "640px", label: "768 · tablet" },
   auto: { w: "100%", label: "fluid · fills panel" },
 };
-/** Optimistic delay before generated variants appear (the store generate loop isn't wired yet). */
-const GEN_MS = 1600;
 
 // The role dot + kit chip live in kitChrome.tsx (#2420) — shared with the Planner Components pane.
 
@@ -76,33 +73,17 @@ export function DesignStudio() {
   const theme: PreviewTheme = kitThemes.find((t) => t.id === kitTheme)?.base ?? "dark";
   const [vp, setVpKind] = useState<Viewport>("auto");
   const [query, setQuery] = useState("");
-  const [prompt, setPrompt] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({ [kits[0]?.id ?? ""]: true }));
-  const [generating, setGenerating] = useState(false);
-  const [genStep, setGenStep] = useState(1);
-  const [genVariants, setGenVariants] = useState<Record<string, string[]>>({});
-  const [candidates, setCandidates] = useState<string[] | null>(null);
   const [renderKey, setRenderKey] = useState(0); // bumped by "Retry render" after a preview error
   const [shareOpen, setShareOpen] = useState(false); // the share/import kits modal (#2305 slice 1c)
-  // The designer session panel (#2471): `designerBooted` mounts the terminal on FIRST open and keeps
-  // it mounted thereafter — collapsing only flips `designerOpen` (CSS-hide), so the PTY survives.
-  const [designerOpen, setDesignerOpen] = useState(false);
-  const [designerBooted, setDesignerBooted] = useState(false);
-  const toggleDesigner = () => {
-    setDesignerBooted(true);
-    setDesignerOpen((v) => !v);
-  };
-  // Live-focus (#2525): poll the designer activity stream ONLY once the session is booted (the PTY
-  // survives collapse, so the AI may be working while the panel is hidden — keep polling). Clear the
-  // focus when the Design Studio (and its designer session) unmounts.
-  useUiActivity(designerBooted);
+  // Live-focus (#2525): the designer session is ALWAYS mounted (#2585), so poll its activity stream
+  // for the whole Design Studio lifecycle; clear the focus when the studio unmounts.
+  useUiActivity(true);
   useEffect(() => () => useAppStore.getState().setAiFocused(null), []);
 
   const rail = useDragResize({ initial: 266, min: 200, max: 400, axis: "x" });
   // The inspector carries the full library detail (#2453), so it defaults — and is allowed — wider.
   const insp = useDragResize({ initial: 420, min: 300, max: 680, axis: "x", invert: true });
-  const genTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  useEffect(() => () => genTimers.current.forEach(clearTimeout), []);
 
   const match = (c: ComponentRecord) => matchesQuery(c, query);
   const kit = kits.find((k) => k.id === kitId) ?? kits[0];
@@ -111,39 +92,19 @@ export function DesignStudio() {
   const selById = components.find((c) => c.id === compId && c.kitId === kitId);
   const sel = selById && match(selById) ? selById : kitComps.filter(match)[0] ?? null;
 
-  const allVariants = sel ? [...sel.variants, ...(genVariants[sel.id] ?? [])] : [];
+  const allVariants = sel ? sel.variants : [];
   const activeVariant = allVariants.includes(variant) ? variant : allVariants[0] ?? "default";
   const composes = sel ? resolveComposes(sel, components) : [];
 
   const selectKit = (id: string) => {
     const first = components.find((c) => c.kitId === id && match(c)) ?? firstFor(id);
     setKitId(id); setCompId(first?.id ?? ""); setVariant(first?.variants[0] ?? "default");
-    setExpanded((e) => ({ ...e, [id]: true })); setTab("overview"); setCandidates(null);
+    setExpanded((e) => ({ ...e, [id]: true })); setTab("overview");
   };
   const selectComp = (c: ComponentRecord) => {
     if (c.kitId !== kitId) setKitId(c.kitId);
-    setCompId(c.id); setVariant(c.variants[0] ?? "default"); setTab("overview"); setCandidates(null);
+    setCompId(c.id); setVariant(c.variants[0] ?? "default"); setTab("overview");
   };
-
-  const generate = () => {
-    if (generating || !prompt.trim() || !sel) return;
-    const slug = slugify(prompt).split("-").filter(Boolean).slice(0, 2).join("-") || "variant";
-    const existing = new Set(allVariants);
-    const name = existing.has(slug) ? `${slug}-2` : slug;
-    setGenerating(true); setGenStep(1); setCandidates(null);
-    genTimers.current.forEach(clearTimeout);
-    genTimers.current = [
-      setTimeout(() => setGenStep(2), GEN_MS * 0.25),
-      setTimeout(() => setGenStep(3), GEN_MS * 0.5),
-      setTimeout(() => setGenStep(4), GEN_MS * 0.72),
-      setTimeout(() => {
-        setGenVariants((g) => ({ ...g, [sel.id]: [...(g[sel.id] ?? []), name] }));
-        setCandidates([...sel.variants, name].slice(-4));
-        setGenerating(false); setPrompt("");
-      }, GEN_MS),
-    ];
-  };
-  const accept = (name: string) => { setVariant(name); setCandidates(null); };
 
   // ── graph layout (#2455) — hierarchical top-down: composers above, dependencies below, role-tier
   // banding for edge-less nodes, `used`-desc ordering within a row. Pure model: lib/compositionLayout.
@@ -254,7 +215,6 @@ export function DesignStudio() {
           </Box>
         </Box>
         <Box style={{ display: "flex", alignItems: "center", gap: 7, flex: "none" }}>
-          <Box as="button" className={`ds-act${designerOpen ? " accent" : ""}`} title="Open the designer session — a restricted terminal that works the UI kits via bsc ui (#2471)" aria-expanded={designerOpen} onClick={toggleDesigner}><Text as="span">✦</Text> Designer</Box>
           <Box as="button" className="ds-act" title="Share or import a kit (gist / share code)" onClick={() => setShareOpen(true)}><Text as="span" tone="dim">⇅</Text> Share</Box>
           <Box as="button" className="ds-act accent" title="Add a new component"><Text as="span">＋</Text> Component</Box>
         </Box>
@@ -288,9 +248,11 @@ export function DesignStudio() {
         </Box>
         <Box className="ds-handle" {...rail.handleProps} />
 
-        {/* center — the composition graph is the one-and-only center view (#2453) */}
+        {/* center — the composition graph, with the ALWAYS-ON designer session docked below it (#2585):
+            the graph flexes; the terminal is a fixed-height bottom strip, so the panes keep priority. */}
         <Box className="ds-col ds-center">
           <GraphView graph={graph} comps={kitComps} selId={sel?.id ?? ""} workingId={aiFocusedId ?? ""} kitName={kit.name} gvp={gvp} onSelect={selectComp} />
+          <DesignerTerminal />
         </Box>
         <Box className="ds-handle" {...insp.handleProps} />
 
@@ -301,14 +263,9 @@ export function DesignStudio() {
           vp={vp} setVpKind={setVpKind}
           kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
           previewEl={previewEl} previewErr={previewErr} onRetry={() => setRenderKey((k) => k + 1)}
-          generating={generating} genStep={genStep} candidates={candidates} onAccept={accept}
-          prompt={prompt} setPrompt={setPrompt} onGenerate={generate}
           composes={composes} onSelect={selectComp}
         />
       </Box>
-
-      {/* ── designer session (#2471) — mounted on first open, CSS-hidden on collapse (PTY survives) ── */}
-      {designerBooted && <DesignerTerminal open={designerOpen} />}
     </Box>
   );
 }
@@ -417,8 +374,6 @@ interface InspProps {
    *  The selected theme drives both the retint (`vars`) and the sandbox surface (`base`). */
   kitTheme: string; setKitTheme: (id: string) => void; kitThemes: KitThemeRecord[];
   previewEl: ReactNode; previewErr: string | null; onRetry: () => void;
-  generating: boolean; genStep: number; candidates: string[] | null; onAccept: (v: string) => void;
-  prompt: string; setPrompt: (v: string) => void; onGenerate: () => void;
   composes: ReturnType<typeof resolveComposes>; onSelect: (c: ComponentRecord) => void;
 }
 function Inspector(p: InspProps) {
@@ -467,15 +422,6 @@ function Inspector(p: InspProps) {
               </select>
             </Box>
             <Box className="ds-surface">
-              {p.generating && (
-                <Box className="ds-overlay" style={{ background: "color-mix(in srgb, var(--bg) 72%, transparent)", backdropFilter: "blur(2px)" }}>
-                  <Box style={{ textAlign: "center" }}>
-                    <Box className="ds-spinner" />
-                    <Text weight={500} size={13} as="div" style={{ marginBottom: 4 }}>Generating variants…</Text>
-                    <Text mono size="xxs" tone="dim" as="div" style={{ animation: "ds-pulse 1.4s infinite" }}>rendering candidate {p.genStep} / 4</Text>
-                  </Box>
-                </Box>
-              )}
               {p.previewErr ? (
                 <Box className="ds-overlay" style={{ padding: 24 }}>
                   <Box style={{ maxWidth: 400, width: "100%", background: "var(--bg-elev, var(--bg-soft))", border: "1px solid color-mix(in srgb, var(--danger) 40%, var(--border))", borderRadius: 12, overflow: "hidden" }}>
@@ -528,30 +474,6 @@ function Inspector(p: InspProps) {
             </Box>
           </Box>
 
-          {/* design bar — the generate-variants loop */}
-          <Box className="ds-designbar">
-            {p.candidates && p.candidates.length > 0 && (
-              <Box className="ds-candstrip">
-                {p.candidates.map((v) => (
-                  <Box key={v} className="ds-cand">
-                    <Box style={{ height: 78, display: "flex", alignItems: "center", justifyContent: "center", borderBottom: "1px solid var(--border-soft, var(--border))", overflow: "hidden" }}>
-                      <Box style={{ transform: "scale(.62)" }}>{renderSpecimen(sel, v, "dark")}</Box>
-                    </Box>
-                    <Box style={{ padding: "6px 9px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                      <Text mono size="xxs" tone="muted">{v}</Text>
-                      <Box as="button" onClick={() => p.onAccept(v)} style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: 5, border: "1px solid color-mix(in srgb, var(--success) 45%, transparent)", background: "color-mix(in srgb, var(--success) 14%, transparent)", color: "var(--success)", cursor: "pointer" }}>accept</Box>
-                    </Box>
-                  </Box>
-                ))}
-              </Box>
-            )}
-            <Box className="ds-designrow">
-              <Box className="ds-spark">✦</Box>
-              {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline prompt box for the generate loop */}
-              <input value={p.prompt} onChange={(e) => p.setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") p.onGenerate(); }} disabled={p.generating} placeholder="Describe a change or a new variant — “add a loading state”, “tighter, pill-shaped”…" aria-label="Describe a variant" />
-              <Button variant="primary" size="sm" onClick={p.onGenerate} disabled={p.generating || !p.prompt.trim()}>{p.generating ? "generating…" : "✦ Generate variants"}</Button>
-            </Box>
-          </Box>
         </>
       )}
     </Box>
