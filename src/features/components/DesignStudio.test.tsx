@@ -38,7 +38,7 @@ describe("DesignStudio (#2308)", () => {
     expect(screen.getByLabelText("Theme")).toBeTruthy();             // the single Theme dropdown (#2545)
     expect(screen.getByText("⤢ fluid")).toBeTruthy();
     expect(screen.getByText("Props / API")).toBeTruthy();            // Overview is the default tab
-    // The per-component generate-variants chat was removed (#2585) — the designer session drives edits.
+    // The per-component generate-variants chat was removed (#2597) — the designer session drives edits.
     expect(screen.queryByLabelText("Describe a variant")).toBeNull();
   });
 
@@ -147,7 +147,7 @@ describe("DesignStudio (#2308)", () => {
     expect(container.querySelector('[data-kit-theme="light"]')).toBeTruthy();
   });
 
-  it("docks the designer session ALWAYS-ON in the center column, with no toggle and no generate chat (#2585)", () => {
+  it("docks the designer session ALWAYS-ON in the center column, with no toggle and no generate chat (#2597)", () => {
     render(<DesignStudio />);
     // The panel is present from the first render — no ✦ Designer toggle button gates it.
     const panel = screen.getByTestId("designer-terminal");

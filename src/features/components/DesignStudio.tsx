@@ -76,7 +76,7 @@ export function DesignStudio() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({ [kits[0]?.id ?? ""]: true }));
   const [renderKey, setRenderKey] = useState(0); // bumped by "Retry render" after a preview error
   const [shareOpen, setShareOpen] = useState(false); // the share/import kits modal (#2305 slice 1c)
-  // Live-focus (#2525): the designer session is ALWAYS mounted (#2585), so poll its activity stream
+  // Live-focus (#2525): the designer session is ALWAYS mounted (#2597), so poll its activity stream
   // for the whole Design Studio lifecycle; clear the focus when the studio unmounts.
   useUiActivity(true);
   useEffect(() => () => useAppStore.getState().setAiFocused(null), []);
@@ -248,7 +248,7 @@ export function DesignStudio() {
         </Box>
         <Box className="ds-handle" {...rail.handleProps} />
 
-        {/* center — the composition graph, with the ALWAYS-ON designer session docked below it (#2585):
+        {/* center — the composition graph, with the ALWAYS-ON designer session docked below it (#2597):
             the graph flexes; the terminal is a fixed-height bottom strip, so the panes keep priority. */}
         <Box className="ds-col ds-center">
           <GraphView graph={graph} comps={kitComps} selId={sel?.id ?? ""} workingId={aiFocusedId ?? ""} kitName={kit.name} gvp={gvp} onSelect={selectComp} />

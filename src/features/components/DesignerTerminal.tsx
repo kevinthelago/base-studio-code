@@ -1,4 +1,4 @@
-// DesignerTerminal (#2471/#2585) — the Design Studio's ALWAYS-ON bottom panel hosting the dedicated,
+// DesignerTerminal (#2471/#2597) — the Design Studio's ALWAYS-ON bottom panel hosting the dedicated,
 // heavily-restricted designer session (see useDesignerTerminal for the launch wiring). Kept in its
 // own component so the DesignStudio diff stays small. It is docked at the bottom of the center column
 // and mounted for the whole Design Studio lifecycle; unmounting (leaving the Studio) runs the hook's
