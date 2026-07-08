@@ -246,6 +246,20 @@ export interface BlueprintUiKit {
   themeId?: string;
 }
 
+/** A blueprint's DESIGN contribution (#2646, epic #2606) — the categorical dimensions it introduces
+ *  that need design-token backing (a `simulation` node-kind, say), plus an optional theme by reference.
+ *  Downloading a blueprint RECONCILES this against the local design contract: categories the contract
+ *  doesn't define are surfaced (a dedicated confirm-list, 5b) and filled by the generator (#2636), so a
+ *  shared blueprint brings its look with NO holes. Deliberately the opposite of embedding: categories
+ *  are KEYS (the generator derives on-brand colours), `theme` is a `bsc ui theme` id (never the vars). */
+export interface BlueprintDesign {
+  /** Categorical keys the blueprint introduces — reconciled against the contract's graph-category group;
+   *  any the contract doesn't define is a gap the generator fills (5b). */
+  categories?: string[];
+  /** Optional theme by reference — a `bsc ui theme` id (mirrors the uiKit pin's `themeId`; absent ⇒ default). */
+  theme?: string;
+}
+
 export interface Blueprint {
   id: string;
   name: string;
@@ -285,6 +299,10 @@ export interface Blueprint {
    *  `id@version` artifact in the global kit store; see {@link BlueprintUiKit}. Absent ⇒ no pin
    *  (existing blueprints are unaffected); a NEW blueprint default-pins the packaged kit. */
   uiKit?: BlueprintUiKit;
+  /** The blueprint's DESIGN contribution (#2646) — the categorical keys it introduces + an optional
+   *  theme ref; reconciled against the local design contract on download. Absent ⇒ nothing to reconcile
+   *  (existing blueprints unaffected). See {@link BlueprintDesign}. */
+  design?: BlueprintDesign;
   /** Lifecycle intent (#645). Absent ⇒ greenfield (the create-a-project default). */
   category?: BlueprintCategory;
   /** Create (from a pitch) vs operate (against existing repos). Absent ⇒ create. */
