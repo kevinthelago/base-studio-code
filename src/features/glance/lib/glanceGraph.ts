@@ -28,6 +28,16 @@ export type GHealth = "idle" | "healthy" | "warning" | "error";
 export type GActivity = "idle" | "planning" | "building" | "waiting" | "review" | "live";
 export type GEdgeKind = "api" | "data" | "events";
 
+/** The agent identity behind a fleet node (#2561) — the persona surfaced on the drill node + inspector,
+ *  so the user sees WHO is at that terminal (name · role · model · skills · charter), not just a role. */
+export interface GNodePersona {
+  name: string;
+  role: string;
+  model?: string;
+  skills: string[];
+  responsibilities: string[];
+}
+
 /** Severity rank for the health rollup — only `warning`/`error` (rank ≥ 1) propagate up dependency
  *  edges; `idle` and `healthy` are both "no problem" (rank 0) and stay put. */
 export const HEALTH_RANK: Record<GHealth, number> = { idle: 0, healthy: 0, warning: 1, error: 2 };
@@ -54,10 +64,16 @@ export interface GRawNode {
   /** Unresolved runtime-fault count for the project (#2265), from `bsc errors` — surfaced in the
    *  inspector. The count's worst LEVEL drives `health` (#2541); absent/0 ⇒ healthy/idle. */
   faults?: number;
+  /** The agent identity at this node (#2561) — set for fleet-drill (L1) nodes, absent for project (L0)
+   *  nodes. The inspector renders it as the persona card. */
+  persona?: GNodePersona;
 }
 /** A dependency edge: `from` depends on `to`, over a contract of `kind`. Optional stable `id` (a
- *  user-drawn project link carries its own; sample/derived edges fall back to a positional id). */
-export interface GRawEdge { from: string; to: string; kind: GEdgeKind; id?: string }
+ *  user-drawn project link carries its own; sample/derived edges fall back to a positional id).
+ *  `archetype` (#2561) is the Org relationship archetype id for a fleet-drill (L1) edge — Manages /
+ *  Oversees / Peers / … — which drives the edge colour + the communication forms shown in the inspector;
+ *  absent for project (L0) edges, which keep the `kind` vocabulary. */
+export interface GRawEdge { from: string; to: string; kind: GEdgeKind; id?: string; archetype?: string }
 
 export interface GNode extends GRawNode {
   slug: string; layer: number; x: number; y: number;
@@ -73,6 +89,9 @@ export interface GEdge {
   /** A hard dependency (api/data) blocks the consumer on a breaking change; events are soft. */
   hard: boolean;
   isCycle: boolean;
+  /** Org relationship archetype id for a fleet-drill (L1) edge (#2561) — drives colour + the inspector's
+   *  communication forms. Absent for project (L0) edges. */
+  archetype?: string;
   /** SVG path + arrowhead in world coordinates. */
   d: string; arrow: string;
 }
@@ -203,7 +222,7 @@ export function buildGraph(rawNodes: GRawNode[], rawEdges: GRawEdge[]): GraphMod
 
   const edges: GEdge[] = rawEdges
     .filter((e) => byId[e.from] && byId[e.to] && e.from !== e.to)
-    .map((e, i) => ({ id: e.id ?? "e" + i, from: e.from, to: e.to, kind: e.kind, hard: e.kind !== "events", isCycle: false, d: "", arrow: "" }));
+    .map((e, i) => ({ id: e.id ?? "e" + i, from: e.from, to: e.to, kind: e.kind, archetype: e.archetype, hard: e.kind !== "events", isCycle: false, d: "", arrow: "" }));
 
   // Cycle detection: mutual pairs (a→b AND b→a) — the shared graph-core primitive (#2217).
   const { pairs: cyclePairs, edgeIds: cycleEdge, nodeIds: cycleNodeIds } = mutualPairs(edges);

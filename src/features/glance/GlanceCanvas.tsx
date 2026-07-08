@@ -6,6 +6,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, NW, NH, type GraphModel, type GHealth } from "./lib/glanceGraph";
+import { archetypeById, hueColor } from "@/features/org";
 
 const ERR = "#f2555f";
 const HEALTH_ROWS: GHealth[] = ["idle", "healthy", "warning", "error"];
@@ -50,8 +51,11 @@ export function GlanceCanvas(p: CanvasProps) {
       <svg width={model.worldW} height={model.worldH} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>
         {model.edges.map((e) => {
           const meta = EDGE_META[e.kind];
+          // A fleet-drill (L1) edge colours by its Org relationship archetype hue (#2561); a project
+          // (L0) edge keeps the kind colour.
+          const arch = e.archetype ? archetypeById(e.archetype) : undefined;
           const inFocus = focus ? focus.edges.has(e.id) : true;
-          const color = e.isCycle ? "#f2555f" : meta.color;
+          const color = e.isCycle ? "#f2555f" : arch ? hueColor(arch.hue) : meta.color;
           const width = (e.isCycle ? 2.3 : meta.w) + (inFocus && focus ? 0.7 : 0);
           const dash = e.isCycle ? "7 6" : meta.dash;
           const opacity = e.isCycle ? (focus ? (inFocus ? 1 : 0.4) : 0.95) : (focus ? (inFocus ? 1 : REST_E) : 0.82);

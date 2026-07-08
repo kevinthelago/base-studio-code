@@ -12,7 +12,8 @@ import { IconButton } from "@/shared/ui/controls/IconButton";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { StatTile } from "@/shared/ui/data/StatTile";
-import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, type GraphModel, type GNode } from "./lib/glanceGraph";
+import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, type GraphModel, type GNode, type GEdge } from "./lib/glanceGraph";
+import { archetypeById, formById, hueColor } from "@/features/org";
 
 const FAULT_COLOR = "#f2555f";
 
@@ -71,8 +72,9 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
     const deps = model.edges.filter((e) => e.from === n.id);
     const rdeps = model.edges.filter((e) => e.to === n.id);
     const inCycle = model.cycleNodeIds.has(n.id);
-    const kindOf = (k: string, isCycle: boolean) => (isCycle ? "cycle" : EDGE_META[k as keyof typeof EDGE_META].label.split(" ")[0]);
-    const colorOf = (k: string, isCycle: boolean) => (isCycle ? "#f2555f" : EDGE_META[k as keyof typeof EDGE_META].color);
+    // An L1 (fleet) edge labels + colours by its Org archetype (Manages/Oversees/Peers…); an L0 edge by kind.
+    const kindOf = (e: GEdge) => (e.isCycle ? "cycle" : e.archetype ? (archetypeById(e.archetype)?.label ?? e.archetype) : EDGE_META[e.kind].label.split(" ")[0]);
+    const colorOf = (e: GEdge) => (e.isCycle ? "#f2555f" : e.archetype ? hueColor(archetypeById(e.archetype)?.hue ?? 0) : EDGE_META[e.kind].color);
 
     return (
       <Box style={PANEL}>
@@ -110,6 +112,30 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
             </Row>
           )}
 
+          {/* PERSONA (#2561): the agent identity at this fleet node — who is at the terminal (name · model ·
+              skills · charter), the "quick means" to see the assigned persona alongside its role. */}
+          {n.persona && (
+            <>
+              {LABEL("PERSONA")}
+              <Box style={{ background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 8, padding: "11px 12px" }}>
+                <Row justify="between" align="center">
+                  <Text as="span" mono size={13} weight={600}>{n.persona.name}</Text>
+                  {n.persona.model && <Text as="span" mono size={10} tone="dim">{n.persona.model}</Text>}
+                </Row>
+                <Text as="div" size={10.5} tone="dim" style={{ marginTop: 3 }}>
+                  role {n.persona.role} · {n.persona.skills.length} skill{n.persona.skills.length === 1 ? "" : "s"}
+                </Text>
+                {n.persona.responsibilities.length > 0 && (
+                  <Box style={{ marginTop: 8 }}>
+                    {n.persona.responsibilities.map((r, i) => (
+                      <Text key={i} as="div" size={11} tone="muted" style={{ lineHeight: 1.5 }}>• {r}</Text>
+                    ))}
+                  </Box>
+                )}
+              </Box>
+            </>
+          )}
+
           {/* FAULT-health (#2265): unresolved runtime faults + the per-project auto-triage toggle. Only
               shown on the project network (onToggleAutoTriage supplied) — a drilled fleet node has neither. */}
           {onToggleAutoTriage && (
@@ -140,13 +166,13 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
           {LABEL("AGENTS")}
           <Text as="div" size={11.5} tone="muted" style={{ lineHeight: 1.5 }}>Click this project to drill into its live agent network (director · workers · triage).</Text>
 
-          {LABEL("DEPENDS ON")}
+          {LABEL(n.persona ? "RELATES TO" : "DEPENDS ON")}
           {deps.length === 0 ? <Text as="div" mono size={11} tone="dim">— foundational, no upstream deps</Text>
-            : deps.map((e) => <DepRow key={e.id} node={model.nodes.find((x) => x.id === e.to)!} kind={kindOf(e.kind, e.isCycle)} color={colorOf(e.kind, e.isCycle)} onClick={() => onSelectNode(e.to)} />)}
+            : deps.map((e) => <DepRow key={e.id} node={model.nodes.find((x) => x.id === e.to)!} kind={kindOf(e)} color={colorOf(e)} onClick={() => onSelectNode(e.to)} />)}
 
-          {LABEL("DEPENDED ON BY")}
+          {LABEL(n.persona ? "RELATED FROM" : "DEPENDED ON BY")}
           {rdeps.length === 0 ? <Text as="div" mono size={11} tone="dim">— leaf, nothing depends on it</Text>
-            : rdeps.map((e) => <DepRow key={e.id} node={model.nodes.find((x) => x.id === e.from)!} kind={kindOf(e.kind, e.isCycle)} color={colorOf(e.kind, e.isCycle)} onClick={() => onSelectNode(e.from)} />)}
+            : rdeps.map((e) => <DepRow key={e.id} node={model.nodes.find((x) => x.id === e.from)!} kind={kindOf(e)} color={colorOf(e)} onClick={() => onSelectNode(e.from)} />)}
 
           {/* Open the agent's REAL live PTY stream in the dock (#2369) — only for a live drilled agent. */}
           {onOpenStream && (
@@ -161,13 +187,17 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
     const e = model.edges.find((x) => x.id === selId);
     if (!e) return null;
     const meta = EDGE_META[e.kind];
-    const kindColor = e.isCycle ? "#f2555f" : meta.color;
+    // A fleet-drill (L1) edge is an Org RELATIONSHIP (archetype → communication forms); an L0 edge is a
+    // project contract. Resolve the archetype so the chip/colour/forms speak the org grammar (#2561).
+    const arch = e.archetype ? archetypeById(e.archetype) : undefined;
+    const kindColor = e.isCycle ? "#f2555f" : arch ? hueColor(arch.hue) : meta.color;
+    const chipLabel = e.isCycle ? "cycle" : arch ? arch.label : meta.label;
     const from = model.nodes.find((x) => x.id === e.from)!, to = model.nodes.find((x) => x.id === e.to)!;
     return (
       <Box style={PANEL}>
-        <Header title="CONTRACT INSPECTOR" onClose={onClose} />
+        <Header title={arch ? "RELATIONSHIP" : "CONTRACT INSPECTOR"} onClose={onClose} />
         <Box style={{ flex: 1, overflowY: "auto", padding: "18px 16px" }}>
-          <Text as="span" mono size={11} style={{ color: e.isCycle ? "#f2848b" : kindColor, background: `color-mix(in oklch, ${kindColor} 12%, transparent)`, border: `1px solid color-mix(in oklch, ${kindColor} 32%, transparent)`, borderRadius: 6, padding: "5px 10px" }}>{e.isCycle ? "cycle" : meta.label}</Text>
+          <Text as="span" mono size={11} style={{ color: e.isCycle ? "#f2848b" : kindColor, background: `color-mix(in oklch, ${kindColor} 12%, transparent)`, border: `1px solid color-mix(in oklch, ${kindColor} 32%, transparent)`, borderRadius: 6, padding: "5px 10px" }}>{chipLabel}</Text>
 
           {e.isCycle && (
             <Row gap={9} align="start" style={{ marginTop: 14, background: CYCLE_BG, border: `1px solid ${CYCLE_BD}`, borderRadius: 8, padding: "11px 12px" }}>
@@ -193,17 +223,43 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
             <Text as="span" mono size={11} style={{ color: e.hard ? "#f2b155" : "var(--fg-muted)" }}>{e.hard ? "hard" : "soft"}</Text>
           </Box>
 
-          {LABEL("SURFACE")}
-          <Box style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "12px 13px" }}>
-            <Text as="span" mono size={11.5} tone="muted" style={{ lineHeight: 1.7 }}>{meta.surface}</Text>
-          </Box>
+          {arch ? (
+            <>
+              {/* The Org communication FORMS this archetype expands into (#2561) — what flows each way and
+                  the `bsc-*` transport that carries it at runtime. */}
+              {LABEL("COMMUNICATION")}
+              <Box style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 12px" }}>
+                {[...arch.forward.map((id) => ({ id, dir: "→" })), ...arch.backward.map((id) => ({ id, dir: "←" }))].map(({ id, dir }, i) => {
+                  const f = formById(id);
+                  if (!f) return null;
+                  return (
+                    <Row key={`${id}-${i}`} gap={8} align="center" style={{ padding: "5px 0" }}>
+                      <Text as="span" mono size={11} tone="dim" style={{ width: 12 }}>{dir}</Text>
+                      <Text as="span" mono size={11.5} weight={500} style={{ flex: 1 }}>{f.label}</Text>
+                      {f.transport && <Text as="span" mono size={10} style={{ color: kindColor }}>{f.transport}</Text>}
+                    </Row>
+                  );
+                })}
+              </Box>
 
-          {LABEL("DESCRIPTION")}
-          <Text as="div" size={12} style={{ lineHeight: 1.6, color: "var(--fg-muted)" }}>
-            {e.isCycle
-              ? `${from.slug} and ${to.slug} depend on each other. This back-edge closes the loop — treat as a release-ordering hazard.`
-              : `${from.slug} consumes ${to.slug} over a ${meta.label.toLowerCase()}. ${e.hard ? "Hard dependency: a breaking change here blocks the consumer." : "Soft dependency: degrades gracefully."}`}
-          </Text>
+              {LABEL("DESCRIPTION")}
+              <Text as="div" size={12} style={{ lineHeight: 1.6, color: "var(--fg-muted)" }}>{arch.blurb}</Text>
+            </>
+          ) : (
+            <>
+              {LABEL("SURFACE")}
+              <Box style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "12px 13px" }}>
+                <Text as="span" mono size={11.5} tone="muted" style={{ lineHeight: 1.7 }}>{meta.surface}</Text>
+              </Box>
+
+              {LABEL("DESCRIPTION")}
+              <Text as="div" size={12} style={{ lineHeight: 1.6, color: "var(--fg-muted)" }}>
+                {e.isCycle
+                  ? `${from.slug} and ${to.slug} depend on each other. This back-edge closes the loop — treat as a release-ordering hazard.`
+                  : `${from.slug} consumes ${to.slug} over a ${meta.label.toLowerCase()}. ${e.hard ? "Hard dependency: a breaking change here blocks the consumer." : "Soft dependency: degrades gracefully."}`}
+              </Text>
+            </>
+          )}
 
           {onRemoveEdge && (
             <Box style={{ marginTop: 22 }}>
