@@ -380,7 +380,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       {/* keyed so drilling in/out remounts + replays the shared transition (graphCanvas.css, #2418) */}
       <Box key={drill ?? "network"} className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>
         <GlanceCanvas
-          model={model} dragMoved={vp.dragMoved}
+          model={model} dragMoved={vp.dragMoved} zoom={vp.view.scale}
           focus={focus} selNodeId={selNodeId} selEdgeId={selEdgeId}
           onHoverNode={setHoverNode} onHoverEdge={setHoverEdge} onSelectNode={onNodeClick} onSelectEdge={pickEdge}
           // The live-agent terminal morphs open IN the graph, as an oversized node (#2534).
