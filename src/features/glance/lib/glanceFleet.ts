@@ -170,6 +170,26 @@ export function buildRealFleetData(fleet: FleetPlan, personas: Persona[], team?:
   return buildOrgFleetData(fleetToOrg(fleet, team), personas);
 }
 
+/** The fleet-drill's PREVIEW node id (#2623) — a reserved, non-agent node, so it never collides with a
+ *  stream id (stream ids are slugs; this carries the structural `:` + reserved tail, like `:director`). */
+export const PREVIEW_NODE_ID = "__preview__";
+
+/**
+ * Add the PREVIEW node to a fleet-drill graph when the project is COMPLETE (#2623) — the surface the user
+ * clicks to render the finished application in the graph (it morphs open the app preview the way an agent
+ * node morphs open its terminal). Not an agent: no persona/edges, marked `preview`, and rendered
+ * distinctly by the canvas. Idempotent (never doubles) and a no-op while the project is still building, so
+ * the node appears exactly when there's something to preview. Pure.
+ */
+export function withPreviewNode(data: GlanceData, complete: boolean): GlanceData {
+  if (!complete || data.rawNodes.some((n) => n.preview)) return data;
+  const preview: GRawNode = {
+    id: PREVIEW_NODE_ID, slug: "preview", role: "client", roleLabel: "preview",
+    health: "healthy", activity: "live", preview: true,
+  };
+  return { ...data, rawNodes: [...data.rawNodes, preview] };
+}
+
 /** Pare an org {@link positionComms} summary down to the glance node's {@link GNodeComm} shape (labels +
  *  transports only) — keeping the glance model decoupled from the Org form types. */
 function projectComms(org: Org, pos: Position, personas: Persona[]): GNodeComm[] {

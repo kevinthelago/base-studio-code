@@ -30,7 +30,9 @@ import { GlanceInspector } from "./GlanceInspector";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";
 import { buildGraph, focusSets, HEALTH_META, ROLE_COLOR, EDGE_META, NW, NH, type GEdgeKind } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
-import { buildFleetData, buildRealFleetData, nodeHasLiveSession } from "./lib/glanceFleet";
+import { buildFleetData, buildRealFleetData, nodeHasLiveSession, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
+import { useProjectComplete } from "./lib/useProjectComplete";
+import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import { useGlanceProjects, applyFaultHealth } from "./lib/useGlanceProjects";
 import { useGlanceFaults } from "./lib/useGlanceFaults";
 import { applyStallHealth } from "./lib/agentStall";
@@ -107,6 +109,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const [sel, setSel] = useState<{ type: "node" | "edge"; id: string } | null>(null);
   // The drilled agent whose live PTY stream is open in the bottom dock (#2369). Null = closed.
   const [chatNode, setChatNode] = useState<string | null>(null);
+  // The PREVIEW node morphed open (#2623) — the finished app rendered in the graph. Closed by default.
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [hoverNode, setHoverNode] = useState<string | null>(null);
   const [hoverEdge, setHoverEdge] = useState<string | null>(null);
   const [showCycle, setShowCycle] = useState(false);
@@ -132,11 +136,16 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     const bpId = drill ? projectBlueprintId[drill] : undefined;
     return bpId ? blueprints.find((b) => b.id === bpId)?.team : undefined;
   }, [drill, projectBlueprintId, blueprints]);
+  // Whether the drilled project's build is COMPLETE (#2623) — drives the ▷ preview node in the drill.
+  const drillComplete = useProjectComplete(drill);
   const fleetData = useMemo(() => {
     if (!drillNode) return null;
-    if (effectiveFleet && effectiveFleet.streams.length > 0) return buildRealFleetData(effectiveFleet, personas, drillTeam);
-    return buildFleetData({ id: drillNode.id, name: drillNode.slug });
-  }, [drillNode, effectiveFleet, personas, drillTeam]);
+    const base = effectiveFleet && effectiveFleet.streams.length > 0
+      ? buildRealFleetData(effectiveFleet, personas, drillTeam)
+      : buildFleetData({ id: drillNode.id, name: drillNode.slug });
+    // Add the preview node when the project has finished building (idempotent, no-op while building).
+    return withPreviewNode(base, drillComplete);
+  }, [drillNode, effectiveFleet, personas, drillTeam, drillComplete]);
   const fleetModel = useMemo(() => (fleetData ? buildGraph(fleetData.rawNodes, fleetData.rawEdges) : null), [fleetData]);
   // The ACTIVE graph — the drilled fleet, else the project network. Everything downstream (canvas,
   // sidebar, focus, cycles, viewport) reads these, so the whole page swaps its graph on drill.
@@ -183,15 +192,22 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     }
     // Inside a fleet: opening a LIVE agent morphs its node into the live terminal; a non-live agent has
     // no session to open, so it just selects → inspector.
-    if (drill) { if (isLiveAgent(id)) setChatNode(id); else pickNode(id); }
+    if (drill) {
+      if (id === PREVIEW_NODE_ID) setPreviewOpen(true);       // the ▷ preview node → render the app (#2623)
+      else if (isLiveAgent(id)) setChatNode(id);
+      else pickNode(id);
+    }
     else { setDrill(id); setSel(null); setShowCycle(false); }
   };
-  const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); setChatNode(null); };
+  const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); setChatNode(null); setPreviewOpen(false); };
 
   // The dock shows ONLY while the open node is still a live agent in the CURRENT fleet — so drilling
   // out (or a nav-history back/forward that swaps `drill`) closes it by derivation, no reset effect.
   const chatPaneId = drill && chatNode && isLiveAgent(chatNode) ? fleetPaneId(drill, chatNode) : null;
   const chatMeta = chatPaneId ? model.nodes.find((n) => n.id === chatNode) : null;
+  // The preview morph shows only while the drill still HAS a preview node — drilling out / to an incomplete
+  // project closes it by derivation. `source` is null until the verify-build produces one (#2623 slice 3).
+  const previewOn = previewOpen && !!drill && model.nodes.some((n) => n.preview);
 
   // On opening a live agent's terminal (#2534): bring its node into view and ensure a readable zoom, so
   // the in-graph terminal lands legible (option A: it scales with the graph). centerOn is the
@@ -353,6 +369,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           // The live-agent terminal morphs open IN the graph, as an oversized node (#2534).
           chat={chatPaneId && chatNode ? { nodeId: chatNode, paneId: chatPaneId, name: chatMeta?.slug ?? "agent", role: chatMeta?.roleLabel } : null}
           onCloseChat={() => setChatNode(null)}
+          preview={previewOn ? { nodeId: PREVIEW_NODE_ID, name: drillNode?.slug ?? "app", source: null as PreviewSource | null } : null}
+          onClosePreview={() => setPreviewOpen(false)}
         />
       </Box>
     </GraphCanvas>

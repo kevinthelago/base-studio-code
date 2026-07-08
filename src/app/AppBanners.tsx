@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import { LifeBuoy, RotateCcw, Trash2, ShieldAlert } from "lucide-react";
+import { LifeBuoy, RotateCcw, Trash2, ShieldAlert, PartyPopper } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { bscJson } from "@/shared/lib/core/bsc";
+import { usePoll } from "@/shared/hooks/usePoll";
+import { projectComplete } from "@/shared/lib/fleet/streamCompletion";
+import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { useAppStore } from "@/store";
 import {
   discoverSessions, reconcileSessions, type RecoverableSession,
@@ -323,6 +326,66 @@ export function SandboxSetupBanner() {
 }
 
 /**
+ * Application-complete banner (#2619). When the active project's FLEET has finished — it has planned
+ * issues and EVERY one is done (`complete`/`verified`, {@link projectComplete}) — announce it, so the
+ * user knows the build landed and can do a verify/preview run. Polls the active project's plan.db
+ * issues only while it HAS a fleet and hasn't been acknowledged this session (so it never nags a
+ * still-building or already-seen project). The CTA opens the finished project — the entry point the
+ * verify preview + reviewer loop (#…) will grow into. Acknowledging (✕ or the CTA) hides it for the
+ * session, keyed per project so a different project can still announce its own completion.
+ */
+const COMPLETE_POLL_MS = 20000;
+
+function ProjectCompleteBanner() {
+  const activeProjectId = useAppStore((s) => s.activeProjectId);
+  const activeProjectName = useAppStore((s) => s.activeProjectName);
+  const planFleet = useAppStore((s) => s.planFleet);
+  const setGlanceDrill = useAppStore((s) => s.setGlanceDrill);
+  const setWorkspace = useAppStore((s) => s.setWorkspace);
+  const [acked, setAcked] = useState<Set<string>>(() => new Set());
+  const [completeKey, setCompleteKey] = useState<string | null>(null);
+
+  const key = activeProjectId ?? "";
+  // Only a project that was actually BUILT (has a fleet) and hasn't been acknowledged this session.
+  const enabled = !!key && (planFleet[key]?.streams.length ?? 0) > 0 && !acked.has(key);
+
+  usePoll(async (isCancelled) => {
+    if (!enabled) return;
+    const issues = await bscJson<PlanIssue[]>(key, ["plan", "list", "--full", "--json"], []);
+    if (isCancelled()) return;
+    setCompleteKey(projectComplete(issues) ? key : null);
+  }, COMPLETE_POLL_MS, [enabled, key]);
+
+  const ack = useCallback((k: string) => setAcked((s) => new Set(s).add(k)), []);
+
+  if (!enabled || completeKey !== key) return null;
+  const name = activeProjectName || key;
+
+  return (
+    <Banner
+      variant="bar"
+      tone="accent"
+      role="status"
+      lead={<PartyPopper size={15} style={{ color: "var(--accent)", flexShrink: 0 }} />}
+      onDismiss={() => ack(key)}
+      right={
+        <Button
+          variant="primary"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          onClick={() => { setGlanceDrill(key); setWorkspace("glance"); ack(key); }}
+        >
+          Preview &amp; review
+        </Button>
+      }
+    >
+      <Box as="span" style={{ flex: 1, minWidth: 0 }}>
+        <b>{name} is complete</b> — every planned issue landed. Preview and review your app.
+      </Box>
+    </Banner>
+  );
+}
+
+/**
  * The app-shell alerts, floated in a FIXED top-right overlay (`.app-banner-stack`) so they never push
  * the shell down or cram the UI. Each adapter gates its own visibility (an empty stack is inert —
  * `pointer-events: none`). Multi-item alerts (quarantine, session recovery) collapse to ONE summary
@@ -335,6 +398,7 @@ export function AppBanners() {
       <SessionRecoveryBanner />
       <QuarantineBanner />
       <SandboxSetupBanner />
+      <ProjectCompleteBanner />
     </Box>
   );
 }

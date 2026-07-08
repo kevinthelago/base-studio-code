@@ -780,6 +780,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-cad"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-cli-util"
 version = "0.1.0"
 dependencies = [
