@@ -34,7 +34,7 @@ export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): Glanc
     // Each stream is a unique node; its ROLE comes from its persona (default worker when unset/unknown),
     // and both the mapped colour category and the real role label ride on the node.
     const streamRole = (s.persona ? roleOf.get(s.persona) : undefined) ?? "worker";
-    return { id: s.id, slug: s.name || s.id, role: gRole(streamRole), roleLabel: streamRole, status: "planning" };
+    return { id: s.id, slug: s.name || s.id, role: gRole(streamRole), roleLabel: streamRole, health: "idle" as const, activity: "building" as const };
   });
   const ids = new Set(rawNodes.map((n) => n.id));
   const rawEdges: GRawEdge[] = [];
@@ -49,7 +49,7 @@ export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): Glanc
 
   // director hub — every stream depends on its direction (drawn as the foundational node)
   if (fleet.director?.enabled && !ids.has("director")) {
-    rawNodes.push({ id: "director", slug: "director", role: "infra", roleLabel: "director", status: "building" });
+    rawNodes.push({ id: "director", slug: "director", role: "infra", roleLabel: "director", health: "healthy", activity: "building" });
     ids.add("director");
     for (const s of fleet.streams) add(s.id, "director", "api");
   }
@@ -82,13 +82,13 @@ export function nodeHasLiveSession(paneId: string, livePaneIds: ReadonlySet<stri
 export function buildFleetData(project: ProjectLite): GlanceData {
   const workers = 2 + (hashAbs(project.id) % 3); // 2..4
   const rawNodes: GRawNode[] = [
-    { id: "director", slug: "director", role: "infra", roleLabel: "director", status: "building" },
-    { id: "reviewer", slug: "reviewer", role: "data", roleLabel: "reviewer", status: "review" },
+    { id: "director", slug: "director", role: "infra", roleLabel: "director", health: "healthy", activity: "building" },
+    { id: "reviewer", slug: "reviewer", role: "data", roleLabel: "reviewer", health: "idle", activity: "review" },
   ];
   const rawEdges: GRawEdge[] = [];
   for (let i = 1; i <= workers; i++) {
     const id = `worker-${i}`;
-    rawNodes.push({ id, slug: `worker ${i}`, role: "service", roleLabel: "worker", status: hashAbs(id + project.id) % 2 ? "building" : "idle" });
+    rawNodes.push({ id, slug: `worker ${i}`, role: "service", roleLabel: "worker", health: hashAbs(id + project.id) % 2 ? "healthy" : "idle", activity: "building" });
     rawEdges.push({ from: id, to: "director", kind: "api" });   // worker takes direction from the director
     rawEdges.push({ from: "reviewer", to: id, kind: "data" });  // reviewer reads the worker's output
   }

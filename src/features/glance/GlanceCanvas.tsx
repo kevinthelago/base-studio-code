@@ -5,7 +5,10 @@
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { GlanceStreamMorph } from "./GlanceStreamMorph";
-import { ROLE_COLOR, STATUS_META, EDGE_META, NW, NH, type GraphModel } from "./lib/glanceGraph";
+import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, NW, NH, type GraphModel, type GHealth } from "./lib/glanceGraph";
+
+const ERR = "#f2555f";
+const HEALTH_ROWS: GHealth[] = ["idle", "healthy", "warning", "error"];
 
 const REST_N = 0.14, REST_E = 0.06;
 const ROLE_ROWS: [string, string][] = [["infra", ROLE_COLOR.infra], ["service", ROLE_COLOR.service], ["data", ROLE_COLOR.data], ["client", ROLE_COLOR.client]];
@@ -65,41 +68,54 @@ export function GlanceCanvas(p: CanvasProps) {
 
       {/* nodes */}
       {model.nodes.map((n) => {
-        const role = ROLE_COLOR[n.role], st = STATUS_META[n.status];
+        const role = ROLE_COLOR[n.role];
+        // Axis 1 — HEALTH (#2541): the top-left dot renders the ROLLED-UP health (worst of self + deps).
+        const health = HEALTH_META[n.rollupHealth];
+        const inherited = n.healthInherited;                 // lit only by a downstream dep → muted, no pulse
+        const isError = n.rollupHealth === "error";
+        const degraded = isError || n.rollupHealth === "warning";
+        // Axis 2 — ACTIVITY (#2541): the bottom-right word — but when this node's OWN health is degraded,
+        // swap in the REASON (the fault title) so the user sees WHY the dot changed.
+        const ownDegraded = n.health === "warning" || n.health === "error";
+        const bottomText = ownDegraded && n.reason ? n.reason : ACTIVITY_META[n.activity].label;
+        const bottomColor = degraded ? health.color : "var(--fg-muted)";
+        const bottomPulse = !degraded && ACTIVITY_META[n.activity].pulse;
+
         const selected = p.selNodeId === n.id;
         const inFocus = focus ? focus.nodes.has(n.id) : true;
         const isCycle = model.cycleNodeIds.has(n.id);
-        const border = selected ? "var(--accent)" : isCycle ? "color-mix(in oklch, #f2555f 55%, transparent)" : (focus && inFocus ? "var(--border)" : "var(--border-soft)");
-        const faults = n.faults ?? 0; // #2265: unresolved runtime-fault count → corner badge
+        // ERROR highlights the whole node red (#2541) — the origin (own error) full-strength, an inherited
+        // (downstream) error softer, so the eye lands on the source. Beats the cycle tint; selection wins.
+        const border = selected ? "var(--accent)"
+          : isError ? (inherited ? `color-mix(in oklch, ${ERR} 42%, transparent)` : ERR)
+          : isCycle ? `color-mix(in oklch, ${ERR} 55%, transparent)`
+          : (focus && inFocus ? "var(--border)" : "var(--border-soft)");
+        const boxShadow = selected ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)"
+          : isError && !inherited ? `0 0 0 3px color-mix(in oklch, ${ERR} 22%, transparent), 0 2px 8px rgba(0,0,0,.45)`
+          : "0 2px 8px rgba(0,0,0,.45)";
         return (
           <Box key={n.id} data-glance-node={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
             style={{ position: "absolute", left: n.x, top: n.y, width: NW, height: NH, cursor: "pointer",
-              zIndex: selected ? 6 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: "opacity .18s ease" }}>
+              zIndex: selected ? 6 : isError && !inherited ? 5 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: "opacity .18s ease" }}>
             <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${border}`,
               borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
-              boxShadow: selected ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)" : "0 2px 8px rgba(0,0,0,.45)", transition: "border-color .15s, box-shadow .15s" }}>
+              boxShadow, transition: "border-color .15s, box-shadow .15s" }}>
               <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Box style={{ width: 8, height: 8, borderRadius: "50%", background: st.color, flex: "none",
-                  boxShadow: st.pulse ? `0 0 8px ${st.color}` : "none", animation: st.pulse ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }} />
+                {/* Axis-1 health dot. Error pulses at the ORIGIN; an inherited dot is dimmed (no pulse). */}
+                <Box title={`${n.rollupHealth}${inherited ? " (downstream)" : ""}`}
+                  style={{ width: 8, height: 8, borderRadius: "50%", background: health.color, flex: "none", opacity: inherited ? 0.5 : 1,
+                    boxShadow: health.pulse && !inherited ? `0 0 8px ${health.color}` : "none", animation: health.pulse && !inherited ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }} />
                 <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
               </Box>
               <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
                 <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: role }}>{n.roleLabel ?? n.role}</Text>
                 <Box style={{ flex: 1 }} />
-                <Text as="span" mono size={10} weight={500} style={{ color: st.color }}>{st.label}</Text>
+                {/* Axis-2 activity word, or the fault reason when degraded. */}
+                <Text as="span" mono size={10} weight={500} title={ownDegraded && n.reason ? n.reason : undefined}
+                  style={{ color: bottomColor, maxWidth: 108, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    animation: bottomPulse ? "glance-softpulse 1.4s ease-in-out infinite" : "none" }}>{bottomText}</Text>
               </Box>
             </Box>
-            {/* FAULT badge (#2265): unresolved runtime faults, top-right corner. Orthogonal to the
-                liveness status dot (#2263), so it never fights the status/role coloring. */}
-            {faults > 0 && (
-              <Box title={`${faults} unresolved runtime fault${faults === 1 ? "" : "s"}`}
-                style={{ position: "absolute", top: -7, right: -7, minWidth: 18, height: 18, padding: "0 5px",
-                  display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 9,
-                  background: "#f2555f", color: "#fff", fontFamily: "var(--mono)", fontSize: 10.5, fontWeight: 700,
-                  border: "1.5px solid var(--bg-elev)", boxShadow: "0 0 8px rgba(242,85,95,.55)", zIndex: 7 }}>
-                {faults > 99 ? "99+" : faults}
-              </Box>
-            )}
           </Box>
         );
       })}
@@ -125,6 +141,17 @@ export function GlanceOverlays() {
       {/* legend */}
       <Box style={{ position: "absolute", right: 16, bottom: 16, background: "color-mix(in oklch, var(--bg-elev) 85%, transparent)", backdropFilter: "blur(8px)",
         border: "1px solid var(--border)", borderRadius: 9, padding: "12px 14px", pointerEvents: "none", display: "flex", gap: 22 }}>
+        <Box>
+          <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", marginBottom: 8 }}>HEALTH</Text>
+          <Box style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {HEALTH_ROWS.map((h) => (
+              <Box key={h} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                <Box style={{ width: 8, height: 8, borderRadius: "50%", background: HEALTH_META[h].color, flex: "none" }} />
+                <Text as="span" mono size={10} tone="muted">{HEALTH_META[h].label}</Text>
+              </Box>
+            ))}
+          </Box>
+        </Box>
         <Box>
           <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", marginBottom: 8 }}>ROLE</Text>
           <Box style={{ display: "flex", flexDirection: "column", gap: 6 }}>

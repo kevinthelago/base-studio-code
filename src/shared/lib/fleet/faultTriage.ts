@@ -124,9 +124,17 @@ export function planFaultDispatch(
   };
 }
 
-/** Count of unresolved faults in a list — the number the Glance node fault-badge shows. */
+/** Count of unresolved faults in a list — the number the Glance inspector shows. */
 export function unresolvedCount(faults: FaultLite[]): number {
   return faults.reduce((n, f) => (f.resolvedAt ? n : n + 1), 0);
+}
+
+/** The single worst OPEN fault — highest severity, then highest volume, then a stable fingerprint tie-
+ *  break — or null when nothing is open. Drives the Glance health dot's colour + reason text (#2541). */
+export function worstFault(faults: FaultLite[]): FaultLite | null {
+  return faults
+    .filter((f) => !f.resolvedAt)
+    .sort((a, b) => rank(b.level) - rank(a.level) || b.count - a.count || a.fingerprint.localeCompare(b.fingerprint))[0] ?? null;
 }
 
 /** The director-facing message routing this cycle's faults. One paste covers the batch; the director

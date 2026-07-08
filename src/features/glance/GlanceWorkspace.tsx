@@ -21,19 +21,26 @@ import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Screen } from "@/app/chrome/Screen";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { Fleet } from "@/features/planner/fleet/Fleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";
-import { buildGraph, focusSets, STATUS_META, ROLE_COLOR, EDGE_META, NW, NH, type GEdgeKind } from "./lib/glanceGraph";
+import { buildGraph, focusSets, HEALTH_META, ROLE_COLOR, EDGE_META, NW, NH, type GEdgeKind } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession } from "./lib/glanceFleet";
-import { useGlanceProjects } from "./lib/useGlanceProjects";
+import { useGlanceProjects, applyFaultHealth } from "./lib/useGlanceProjects";
 import { useGlanceFaults } from "./lib/useGlanceFaults";
+import { applyStallHealth } from "./lib/agentStall";
+import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
 import { useProjectFleet } from "./lib/useProjectFleet";
 import "./glance.css";
+
+// The agent-health watchdog (#2541) polls the coord log on a slow cadence — a stall is a minutes-scale
+// event, so per-second rebuilds aren't worth it.
+const STALL_POLL_MS = 15_000;
 
 const GLANCE_TABS: TabItem[] = [
   { id: "network", label: "Network", hint: "projects · dependencies" },
@@ -70,12 +77,21 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // Per-project auto-triage toggle (#2265) — gates the fault→fix loop; surfaced in the node inspector.
   const autoTriage = useAppStore((s) => s.autoTriage);
   const setAutoTriage = useAppStore((s) => s.setAutoTriage);
-  // FAULT-health (#2265): unresolved runtime-fault count per project (from `bsc errors`), merged onto
-  // each node so its card shows a fault badge. Orthogonal to the liveness status (#2263).
-  const faultCounts = useGlanceFaults(useMemo(() => projectsBase.map((p) => p.id), [projectsBase]));
+  // HEALTH axis (#2541, was #2265): the worst unresolved fault per project (from `bsc errors`) overlaid
+  // onto each node — escalating health to warning/error and carrying the fault title as the reason.
+  const faults = useGlanceFaults(useMemo(() => projectsBase.map((p) => p.id), [projectsBase]));
+  // Agent-health watchdog (#2541): `coord.state.waiting` carries each parked `bsc-wait` + its epoch; a
+  // wait overstaying the threshold escalates its project to a warning. `now` ticks on the same slow
+  // cadence (kept out of render — `Date.now()` is impure) so a threshold crossing surfaces without a
+  // coord change.
+  const coord = useCoordLog({ ms: STALL_POLL_MS });
+  const [now, setNow] = useState(0);
+  usePoll(async (isCancelled) => { if (!isCancelled()) setNow(Date.now()); }, STALL_POLL_MS, []);
+  // Overlay order: base (merge+liveness) → STALL (waiting/warn) → FAULT (error) last, so a real error
+  // beats a stall and both beat the resting state.
   const projects = useMemo(
-    () => projectsBase.map((p) => ({ ...p, faults: faultCounts[p.id] })),
-    [projectsBase, faultCounts],
+    () => applyFaultHealth(applyStallHealth(projectsBase, coord.state.waiting, now), faults),
+    [projectsBase, coord.state.waiting, faults, now],
   );
   // L0 — the project-network graph (nodes = real projects, edges = the user-drawn relationships #2253).
   const projectData = useMemo(() => buildGlanceData(projects, projectLinks), [projects, projectLinks]);
@@ -274,7 +290,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           </Row>
           <Box style={{ flex: 1, overflowY: "auto", padding: "0 8px 8px" }}>
             {sidebar.map((n) => {
-              const st = STATUS_META[n.status];
+              const st = HEALTH_META[n.rollupHealth];
               const on = selNodeId === n.id || hoverNode === n.id;
               return (
                 <Row key={n.id} gap={9} align="center" onClick={() => onNodeClick(n.id)} onMouseEnter={() => setHoverNode(n.id)} onMouseLeave={() => setHoverNode(null)}

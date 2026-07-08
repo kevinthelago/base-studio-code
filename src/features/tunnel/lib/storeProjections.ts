@@ -8,7 +8,7 @@
 // Deliberately OUT (maintainer): telemetry/analytics — skill telemetry counters, hook
 // analytics, usage charts. Mobile is state + alerts, not dashboards.
 
-import type { ProjectLite } from "@/features/glance";
+import type { ProjectLite, GlanceFault, GHealth } from "@/features/glance";
 import type { ProjectLink } from "@/features/glance/lib/projectLinks";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Org } from "@/features/org";
@@ -43,14 +43,19 @@ export interface GlancePayload {
 export function buildGlancePayload(input: {
   projects: ProjectLite[];
   links: ProjectLink[];
-  faults: Record<string, number>;
+  faults: Record<string, GlanceFault>;
   drill: string | null;
   drillFleet: FleetPlan | null;
 }): GlancePayload {
   return {
-    projects: input.projects.map((p) =>
-      input.faults[p.id] ? { ...p, faults: input.faults[p.id] } : p,
-    ),
+    // Mirror the desktop HEALTH overlay (#2541): a project's worst open fault escalates its health to
+    // warning/error and carries the fault title as the reason (matches `applyFaultHealth`).
+    projects: input.projects.map((p) => {
+      const f = input.faults[p.id];
+      if (!f) return p;
+      const health: GHealth = f.level === "warn" ? "warning" : "error";
+      return { ...p, health, reason: f.title, faults: f.count };
+    }),
     links: input.links,
     drill: input.drill,
     drillFleet: input.drill ? input.drillFleet : null,
