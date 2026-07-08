@@ -87,12 +87,20 @@ designer scans before descending to per-component token edits. --pretty indents.
 USAGE:
   bsc ui component <name> list-tokens [--variant <v>] [--pretty]
   bsc ui component <name> set-token <key> <value> [--variant <v>] [--theme <id>]
+  bsc ui component <name> define-variant <variant> --set <key>=<value> [--set …]
+  bsc ui component <name> list-variants [--pretty]
+  bsc ui component <name> remove-variant <variant>
 
 Edit a component's semantic tokens by their SHORT key (from `bsc ui components`) instead of the full
 custom-property name: `bsc ui component btn set-token bg @accent` resolves `--btn-bg` and sets it on a
 theme (--theme, default `default`), validated + live exactly like `theme set-token`. --variant targets a
 variant's tokens (`--variant primary` → `--btn-primary-bg`). The rung-2 ergonomic form: DISCOVER keys
-with `bsc ui components`, EDIT them here — never type the `--<comp>[-<variant>]-<key>` convention.",
+with `bsc ui components`, EDIT them here — never type the `--<comp>[-<variant>]-<key>` convention.
+
+define-variant AUTHORS a NEW variant as data (#2569 rung 3): a token bundle
+(`--set bg=@danger --set fg=@fg`) stored under `<component>:<variant>`, which the frontend compiles into
+a live `[data-variant]` CSS rule. Guarded: the variant NAME must be a safe CSS identifier, every --set
+key must be one of the component's tokens, and every value passes the closed value grammar.",
     },
     CmdDoc {
         name: "release",
@@ -423,9 +431,23 @@ fn write_theme_token(dir: &Option<String>, id: &str, token: &str, raw_value: &st
 /// optional variant), the ergonomic form over `theme set-token`: the CLI resolves
 /// `--<name>[-<variant>]-<key>` from the descriptor, so the LLM discovers keys with `bsc ui components`
 /// and edits them here, never typing the naming convention.
+/// The variant store's location (#2569): `--dir` → `$BSC_UI_VARIANT_DIR` →
+/// `~/.base-studio-code/variants/` — a designer-writable store of NEW component variants (a token bundle
+/// per `<component>:<variant>` id) the frontend compiles into live CSS. Parallel to the theme store.
+const VARIANT_DIR_ENV: &str = "BSC_UI_VARIANT_DIR";
+fn variant_store(dir: &Option<String>) -> Result<bsc_json_store::Store, String> {
+    let dir = bsc_cli_util::resolve_store_path(dir, VARIANT_DIR_ENV, || {
+        bsc_util::bsc_base_dir()
+            .map(|b| b.join("variants"))
+            .ok_or_else(|| "could not resolve a home directory; set HOME/USERPROFILE".to_string())
+    })?;
+    Ok(bsc_json_store::Store::new(dir, "variant"))
+}
+
 fn cmd_component(args: &[String], prog: &str) -> Result<(), String> {
     let (mut variant, mut theme, mut dir, mut pretty) =
         (None::<String>, None::<String>, None::<String>, false);
+    let mut sets: Vec<String> = Vec::new();
     let mut positional: Vec<String> = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -433,6 +455,11 @@ fn cmd_component(args: &[String], prog: &str) -> Result<(), String> {
             "--variant" => variant = it.next().cloned(),
             "--theme" => theme = it.next().cloned(),
             "--dir" => dir = it.next().cloned(),
+            "--set" => {
+                if let Some(kv) = it.next() {
+                    sets.push(kv.clone());
+                }
+            }
             "--pretty" => pretty = true,
             // Everything else is positional — including a set-token <value> that starts with `--`.
             _ => positional.push(a.clone()),
@@ -488,7 +515,50 @@ fn cmd_component(args: &[String], prog: &str) -> Result<(), String> {
             let theme_id = theme.as_deref().unwrap_or("default");
             emit(&write_theme_token(&dir, theme_id, &token, value)?)
         }
-        other => Err(format!("unknown component command '{other}' — want: list-tokens | set-token <key> <value>")),
+        // Rung 3 (#2569): AUTHOR a NEW variant as data — a token bundle stored under `<component>:<name>`,
+        // validated (safe-identifier name + component keys + closed value grammar) + live via ui-touch.
+        // The frontend compiles the stored bundle into a `[data-variant]` CSS rule (follow-up).
+        "define-variant" => {
+            bsc_cli_util::require_write_scope("ui")?;
+            let variant_name =
+                positional.get(2).ok_or("usage: bsc ui component <name> define-variant <variant> --set <key>=<value> …")?;
+            crate::sanitize_variant_name(variant_name)?;
+            let mut tokens = serde_json::Map::new();
+            for kv in &sets {
+                let (k, v) = kv.split_once('=').ok_or_else(|| format!("--set expects <key>=<value> (got '{kv}')"))?;
+                tokens.insert(k.trim().to_string(), serde_json::Value::String(expand_token_ref(v.trim())));
+            }
+            let errs = crate::validate_variant_tokens(name, &tokens);
+            if !errs.is_empty() {
+                return Err(errs.join("\n"));
+            }
+            let id = format!("{name}:{variant_name}");
+            let rec = serde_json::json!({ "id": id, "component": name, "variant": variant_name, "tokens": tokens });
+            variant_store(&dir)?.set(&id, &serde_json::to_string(&rec).map_err(|e| e.to_string())?)?;
+            bsc_util::emit_ui_activity("variant", &id); // Design Studio live-focus (#2525)
+            emit(&rec)
+        }
+        "list-variants" => {
+            let defs: Vec<serde_json::Value> = variant_store(&dir)?
+                .list()
+                .iter()
+                .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+                .filter(|v| v.get("component").and_then(serde_json::Value::as_str) == Some(name))
+                .collect();
+            emit(&serde_json::Value::Array(defs))
+        }
+        "remove-variant" => {
+            bsc_cli_util::require_write_scope("ui")?;
+            let variant_name = positional.get(2).ok_or("usage: bsc ui component <name> remove-variant <variant>")?;
+            let id = format!("{name}:{variant_name}");
+            variant_store(&dir)?.remove(&id)?;
+            bsc_util::emit_ui_activity("variant", &id);
+            emit(&serde_json::json!({ "removed": id }))
+        }
+        other => Err(format!(
+            "unknown component command '{other}' — want: list-tokens | set-token <key> <value> | \
+             define-variant <variant> --set <key>=<value> | list-variants | remove-variant <variant>"
+        )),
     }
 }
 
@@ -1227,6 +1297,58 @@ mod tests {
         assert!(err.contains("'ui'") || err.contains("read-only"), "refuses at the gate: {err}");
         // list-tokens stays open read-scoped.
         assert!(run(vec!["component".into(), "btn".into(), "list-tokens".into()], "bsc ui").is_ok());
+        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+    }
+
+    #[test]
+    fn define_variant_authors_a_new_variant_as_data() {
+        let _guard = SCOPES_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        let act = std::env::temp_dir().join(format!("bsc-ui-var-{}.log", std::process::id()));
+        let _ = std::fs::remove_file(&act);
+        std::env::set_var("BSC_UI_ACTIVITY_LOG", &act);
+        std::env::set_var("BSC_AUDIT_PANE", "design-studio:designer");
+
+        let dir = tmp_store_dir("variant");
+        let store = bsc_json_store::Store::new(dir.clone(), "variant");
+        let run_comp = |rest: &[&str]| {
+            let mut args = vec!["component".to_string()];
+            args.extend(rest.iter().map(|s| s.to_string()));
+            args.extend(["--dir".to_string(), dir.clone()]);
+            run(args, "bsc ui")
+        };
+        // author a NEW btn variant from a token bundle (@shorthand expands, name is a safe identifier).
+        run_comp(&["btn", "define-variant", "danger-outline", "--set", "bg=@danger", "--set", "fg=@fg", "--set", "border=@danger"]).unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("btn:danger-outline").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["component"], "btn");
+        assert_eq!(rec["variant"], "danger-outline");
+        assert_eq!(rec["tokens"]["bg"], "var(--danger)");
+        run_comp(&["btn", "list-variants", "--pretty"]).unwrap();
+        run_comp(&["btn", "remove-variant", "danger-outline"]).unwrap();
+        assert!(store.get("btn:danger-outline").unwrap().is_none());
+
+        // rejections — none of these write or emit.
+        assert!(run_comp(&["btn", "define-variant", "Danger", "--set", "bg=@danger"]).is_err(), "unsafe name");
+        assert!(run_comp(&["btn", "define-variant", "x", "--set", "nope=@danger"]).is_err(), "unknown key");
+        assert!(run_comp(&["btn", "define-variant", "x", "--set", "bg=red; }"]).is_err(), "injection value");
+        assert!(run_comp(&["btn", "define-variant", "x"]).is_err(), "empty bundle");
+
+        // one ui-touch for the define + one for the remove (both `btn:…`); the rejects emit nothing.
+        let text = std::fs::read_to_string(&act).unwrap();
+        let touches = text.lines().filter(|l| l.contains("\tui-touch\tvariant\tbtn:")).count();
+        assert_eq!(touches, 2, "define + remove each emit a ui-touch: {text:?}");
+
+        std::env::remove_var("BSC_UI_ACTIVITY_LOG");
+        std::env::remove_var("BSC_AUDIT_PANE");
+        let _ = std::fs::remove_file(&act);
+    }
+
+    #[test]
+    fn define_variant_refuses_under_a_read_ui_scope() {
+        let _guard = SCOPES_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
+        let err = run(vec!["component".into(), "btn".into(), "define-variant".into(), "x".into(), "--set".into(), "bg=@danger".into()], "bsc ui").unwrap_err();
+        assert!(err.contains("'ui'") || err.contains("read-only"), "refuses at the gate: {err}");
         std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
     }
 }
