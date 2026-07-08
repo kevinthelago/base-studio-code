@@ -93,8 +93,9 @@ describe("UiKitPickerCard (#2465)", () => {
     // The registry's themes render; picking one records its id on the pin.
     fireEvent.click(screen.getByText("High contrast"));
     expect((onChange.mock.calls[0][0] as Blueprint).uiKit).toEqual({ ...packagedUiKitPin(), themeId: "contrast" });
-    // Picking Default stores NO themeId — absent = default, the canonical form the packaged pin uses.
-    fireEvent.click(screen.getByText("Default"));
+    // Picking Dark (the base theme, id `default`) stores NO themeId — absent = default, the canonical
+    // form the packaged pin uses.
+    fireEvent.click(screen.getByText("Dark"));
     expect((onChange.mock.calls[1][0] as Blueprint).uiKit).toEqual(packagedUiKitPin());
     // No theme row without a pin.
     render(<UiKitPickerCard bp={bp()} onChange={() => {}} />);
