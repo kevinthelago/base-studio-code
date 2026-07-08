@@ -35,7 +35,7 @@ describe("DesignStudio (#2308)", () => {
   it("the inspector carries the library detail: live preview + Overview/Source/Usage tabs + design bar", () => {
     render(<DesignStudio />);
     expect(screen.getByText("Live preview")).toBeTruthy();           // preview + its switchers
-    expect(screen.getByText("◐ dark")).toBeTruthy();
+    expect(screen.getByLabelText("Theme")).toBeTruthy();             // the single Theme dropdown (#2545)
     expect(screen.getByText("⤢ fluid")).toBeTruthy();
     expect(screen.getByText("Props / API")).toBeTruthy();            // Overview is the default tab
     expect(screen.getByLabelText("Describe a variant")).toBeTruthy(); // generate-variants design bar
@@ -112,12 +112,16 @@ describe("DesignStudio (#2308)", () => {
     expect(screen.getByText("✗ When NOT to use")).toBeTruthy();
   });
 
-  it("the preview kit-THEME switcher applies the selected theme's vars to the specimen frame (#2488)", () => {
+  it("the ONE preview Theme switcher applies the selected theme's vars to the specimen frame (#2488)", () => {
     const { container } = render(<DesignStudio />);
-    const sel = screen.getByLabelText("Kit theme") as HTMLSelectElement;
+    const sel = screen.getByLabelText("Theme") as HTMLSelectElement;
     // Fed by the hydrated theme collection, defaulting to the base look.
     expect(sel.value).toBe("default");
     expect(Array.from(sel.options).map((o) => o.value)).toEqual(SEED_THEMES.map((t) => t.id));
+    // Dark + Light lead the list as the packaged defaults (#2545).
+    expect(Array.from(sel.options).map((o) => o.textContent)).toEqual(
+      expect.arrayContaining(["◈ Dark", "◈ Light"]),
+    );
     // No overrides on the frame under `default`.
     const defaultFrame = container.querySelector('[data-kit-theme="default"]') as HTMLElement;
     expect(defaultFrame).toBeTruthy();
@@ -127,8 +131,19 @@ describe("DesignStudio (#2308)", () => {
     const frame = container.querySelector('[data-kit-theme="soft"]') as HTMLElement;
     expect(frame).toBeTruthy();
     expect(frame.style.getPropertyValue("--card-radius")).toBe("14px");
-    // The dark/light SURFACE toggle is a separate, composing axis — it stays.
-    expect(screen.getByText("◐ dark")).toBeTruthy();
+  });
+
+  it("the Theme dropdown is the ONLY theme control — the old dark/light surface toggle is gone (#2545)", () => {
+    const { container } = render(<DesignStudio />);
+    // The hardcoded SegmentedControl surface toggle no longer renders.
+    expect(screen.queryByText("◐ dark")).toBeNull();
+    expect(screen.queryByText("◑ light")).toBeNull();
+    // Selecting a light-`base` theme propagates through the single control to the specimen frame —
+    // the one dropdown now drives the surface (no separate toggle to keep in sync).
+    const sel = screen.getByLabelText("Theme") as HTMLSelectElement;
+    fireEvent.change(sel, { target: { value: "light" } });
+    expect(sel.value).toBe("light");
+    expect(container.querySelector('[data-kit-theme="light"]')).toBeTruthy();
   });
 
   it("the generate bar is disabled until a prompt is entered", () => {

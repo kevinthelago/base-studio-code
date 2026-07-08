@@ -65,10 +65,13 @@ export function DesignStudio() {
   const [compId, setCompId] = useState(() => firstFor(kits[0]?.id ?? "")?.id ?? "");
   const [tab, setTab] = useState<Tab>("overview");
   const [variant, setVariant] = useState(() => firstFor(kits[0]?.id ?? "")?.variants[0] ?? "default");
-  const [theme, setTheme] = useState<PreviewTheme>("dark");
-  // The kit-THEME axis of the preview (#2488) — orthogonal to the dark/light SURFACE toggle above:
-  // the surface picks the sandbox palette, the kit theme overrides the semantic component tokens.
+  // The preview's THEME axis (#2488) — ONE control now (#2545): the selected theme drives both the
+  // component retint (its `vars`, via <ThemeScope>) AND the sandbox SURFACE (its `base`, below). The
+  // old hardcoded dark/light SegmentedControl is retired — light/dark is theme data served through
+  // the same `bsc ui theme` collection, so the picker grows as themes are authored.
   const [kitTheme, setKitTheme] = useState<string>(DEFAULT_THEME);
+  // The sandbox surface for `renderSpecimen`, read off the selected theme's `base` (absent ⇒ dark).
+  const theme: PreviewTheme = kitThemes.find((t) => t.id === kitTheme)?.base ?? "dark";
   const [vp, setVpKind] = useState<Viewport>("auto");
   const [query, setQuery] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -289,7 +292,7 @@ export function DesignStudio() {
         <Inspector
           width={insp.size} sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
           allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
-          theme={theme} setTheme={setTheme} vp={vp} setVpKind={setVpKind}
+          vp={vp} setVpKind={setVpKind}
           kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
           previewEl={previewEl} previewErr={previewErr} onRetry={() => setRenderKey((k) => k + 1)}
           generating={generating} genStep={genStep} candidates={candidates} onAccept={accept}
@@ -403,8 +406,9 @@ function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect }: G
 interface InspProps {
   width: number; sel: ComponentRecord | null; kitName: string; tab: Tab; setTab: (t: Tab) => void;
   allVariants: string[]; activeVariant: string; setVariant: (v: string) => void;
-  theme: PreviewTheme; setTheme: (t: PreviewTheme) => void; vp: Viewport; setVpKind: (v: Viewport) => void;
-  /** The preview's kit-THEME axis (#2488): the hydrated theme collection + the applied selection. */
+  vp: Viewport; setVpKind: (v: Viewport) => void;
+  /** The preview's THEME axis (#2488/#2545): the hydrated theme collection + the applied selection.
+   *  The selected theme drives both the retint (`vars`) and the sandbox surface (`base`). */
   kitTheme: string; setKitTheme: (id: string) => void; kitThemes: KitThemeRecord[];
   previewEl: ReactNode; previewErr: string | null; onRetry: () => void;
   generating: boolean; genStep: number; candidates: string[] | null; onAccept: (v: string) => void;
@@ -439,15 +443,15 @@ function Inspector(p: InspProps) {
             <Box className="ds-prevctl">
               <Text className="ds-eyebrow" as="span">Live preview</Text>
               <SegmentedControl label="" options={p.allVariants.map((v) => ({ label: v, on: v === p.activeVariant, onClick: () => p.setVariant(v) }))} />
-              <SegmentedControl label="" options={(["dark", "light"] as PreviewTheme[]).map((th) => ({ label: th === "dark" ? "◐ dark" : "◑ light", on: th === p.theme, onClick: () => p.setTheme(th) }))} />
               <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === p.vp, onClick: () => p.setVpKind(k) }))} />
-              {/* kit-THEME switcher (#2488): the hydrated theme collection (designer-authored included);
-                  composes with the SURFACE toggle above — a compact select since the set is open-ended. */}
+              {/* THEME switcher (#2488/#2545): the ONE theme control — the hydrated theme collection
+                  (light/dark + designer-authored), driving both the surface (`base`) and the retint
+                  (`vars`). A compact select since the set is open-ended and grows via `bsc ui theme`. */}
               {/* eslint-disable-next-line no-restricted-syntax -- compact toolbar select over a dynamic set (SelectField imposes a labelled field layout) */}
               <select
                 className="sel"
-                aria-label="Kit theme"
-                title="Kit theme — semantic-token palette applied to the specimen (bsc ui theme)"
+                aria-label="Theme"
+                title="Theme — surface + semantic-token palette applied to the specimen (bsc ui theme)"
                 value={p.kitTheme}
                 onChange={(e) => p.setKitTheme(e.target.value)}
               >
