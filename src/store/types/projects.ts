@@ -4,6 +4,7 @@ import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet"
 import type { ProjectLink } from "@/features/glance/lib/projectLinks";
 import type { GEdgeKind, GRole, GCategory, GHealth, GActivity } from "@/features/glance/lib/glanceGraph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
+import type { ReviewFinding } from "@/shared/lib/preview/previewReview";
 
 /** Projects slice of {@link AppStore}. */
 export interface ProjectsState {
@@ -22,6 +23,11 @@ export interface ProjectsState {
   setPreviewSource: (key: string, source: PreviewSource) => void;
   previewBuilding: Record<string, boolean>;
   setPreviewBuilding: (key: string, building: boolean) => void;
+  // Preview REVIEW findings (#2623 slice 5b, transient): what the reviewer (Claude) flagged about the
+  // running preview, per project key, in the confirm-gated inbox (pending → user confirms/dismisses;
+  // confirmed ones route to the fleet, 5d). Not persisted — findings belong to a live preview session.
+  reviewFindings: Record<string, ReviewFinding[]>;
+  setReviewFindings: (key: string, findings: ReviewFinding[]) => void;
   // Org drill target (#2492): the pool nodeId whose sub-graph is open in the Org designer, or null for
   // the parent graph. Transient like glanceDrill and lifted into the store for the same reason — the
   // app-wide navigation history (mouse back/forward) steps drill in/out. See useNavHistory.

@@ -9,13 +9,21 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { previewRender, type PreviewSource } from "@/shared/lib/preview/previewSource";
+import type { ReviewFinding, ReviewSeverity } from "@/shared/lib/preview/previewReview";
+import type { PreviewReview } from "./usePreviewReview";
 import { NW, NH } from "./lib/glanceGraph";
+
+const SEV_COLOR: Record<ReviewSeverity, string> = {
+  blocker: "var(--danger, #e5484d)",
+  issue: "var(--warning, #f5a623)",
+  polish: "var(--fg-muted)",
+};
 
 const EXIT_MS = 420;
 /** ~4× a node — the app wants room. World units (renders at world-size × zoom). */
 const CARD_W = 720, CARD_H = 460;
 
-export function GlancePreviewMorph({ node, source, name, building, onBuild, onClose }: {
+export function GlancePreviewMorph({ node, source, name, building, onBuild, review, onClose }: {
   /** The preview node's world box (origin + return). */
   node: { x: number; y: number };
   /** What the verify-build produced, or null while the app hasn't been built yet. */
@@ -25,6 +33,8 @@ export function GlancePreviewMorph({ node, source, name, building, onBuild, onCl
   building?: boolean;
   /** Kick the verify-build (#2623) — resolve the stack, build + serve, produce a PreviewSource. */
   onBuild?: () => void;
+  /** The reviewer loop (#2623 slice 5b) — capture a shot, review it, confirm/dismiss its findings. */
+  review?: PreviewReview;
   onClose: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -89,6 +99,20 @@ export function GlancePreviewMorph({ node, source, name, building, onBuild, onCl
         <Box style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderBottom: "1px solid var(--border)", flex: "none" }}>
           <Text as="span" style={{ color: "var(--accent)" }}>▷</Text>
           <Text as="span" mono size={12} weight={600} style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name} · preview</Text>
+          {source && review?.canCapture ? (
+            <Box
+              as="button"
+              onClick={() => { if (!review.busy) void review.captureAndReview(); }}
+              title="Capture this view and review it with Claude"
+              style={{
+                background: "none", border: "1px solid var(--border)", borderRadius: 5, padding: "2px 8px",
+                color: review.busy ? "var(--fg-muted)" : "var(--accent)", cursor: review.busy ? "default" : "pointer",
+                fontSize: 11, whiteSpace: "nowrap",
+              }}
+            >
+              {review.busy ? "…reviewing" : "◉ Review"}
+            </Box>
+          ) : null}
           <Box as="button" onClick={close} title="Close (Esc)" style={{ background: "none", border: "none", color: "var(--fg-muted)", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>✕</Box>
         </Box>
         <Box style={{ flex: 1, minHeight: 0, position: "relative", background: "var(--bg)" }}>
@@ -124,7 +148,47 @@ export function GlancePreviewMorph({ node, source, name, building, onBuild, onCl
             </Box>
           )}
         </Box>
+        {review && (review.findings.length > 0 || review.error) ? (
+          <ReviewStrip review={review} />
+        ) : null}
       </Box>
     </Box>
   );
+}
+
+/** The confirm-gated review inbox — pending findings (confirm/dismiss) + a confirmed tally — as a strip
+ *  under the preview. Routing confirmed findings to the fleet is slice 5d. */
+function ReviewStrip({ review }: { review: PreviewReview }) {
+  return (
+    <Box style={{ flex: "none", maxHeight: 132, overflowY: "auto", borderTop: "1px solid var(--border)", background: "var(--bg-elevated, var(--bg))" }}>
+      {review.error ? (
+        <Text as="div" size={11.5} style={{ color: "var(--danger, #e5484d)", padding: "6px 10px" }}>{review.error}</Text>
+      ) : null}
+      {review.pending.map((f) => (
+        <Box key={f.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 10px", borderBottom: "1px solid var(--border)" }}>
+          <SevDot f={f} />
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <Text as="div" size={12} weight={600}>{f.title}</Text>
+            {f.detail ? <Text as="div" size={11.5} tone="muted" style={{ lineHeight: 1.5 }}>{f.detail}</Text> : null}
+          </Box>
+          <Box as="button" onClick={() => review.confirm(f.id)} title="Confirm — route this to the fleet"
+            style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 13 }}>✓</Box>
+          <Box as="button" onClick={() => review.dismiss(f.id)} title="Dismiss"
+            style={{ background: "none", border: "none", color: "var(--fg-muted)", cursor: "pointer", fontSize: 13 }}>✕</Box>
+        </Box>
+      ))}
+      {review.confirmed.length > 0 ? (
+        <Text as="div" size={11.5} tone="muted" style={{ padding: "6px 10px" }}>
+          ✓ {review.confirmed.length} confirmed — ready to route to the fleet
+        </Text>
+      ) : null}
+      {review.pending.length === 0 && review.confirmed.length === 0 && !review.error ? (
+        <Text as="div" size={11.5} tone="muted" style={{ padding: "6px 10px" }}>No findings — this screen looks good.</Text>
+      ) : null}
+    </Box>
+  );
+}
+
+function SevDot({ f }: { f: ReviewFinding }) {
+  return <Box aria-hidden title={f.severity} style={{ flex: "none", width: 8, height: 8, marginTop: 4, borderRadius: "50%", background: SEV_COLOR[f.severity] }} />;
 }
