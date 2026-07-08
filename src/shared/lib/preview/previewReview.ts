@@ -29,7 +29,7 @@ export interface ReviewFinding {
   severity: ReviewSeverity;
   title: string;
   detail: string;
-  status: "pending" | "confirmed" | "dismissed";
+  status: "pending" | "confirmed" | "dismissed" | "routed";
 }
 
 const SEVERITY_RANK: Record<ReviewSeverity, number> = { polish: 1, issue: 2, blocker: 3 };
@@ -76,9 +76,15 @@ export function pendingFindings(findings: ReviewFinding[]): ReviewFinding[] {
   return findings.filter((f) => f.status === "pending").sort((a, b) => rank(b.severity) - rank(a.severity));
 }
 
-/** The user-confirmed findings — the ONLY ones eligible to dispatch to the fleet. */
+/** The user-confirmed findings — the ONLY ones eligible to dispatch to the fleet. Once routed they move
+ *  to `routed` (see {@link routedFindings}) so they drop out here and can't be dispatched twice. */
 export function confirmedFindings(findings: ReviewFinding[]): ReviewFinding[] {
   return findings.filter((f) => f.status === "confirmed").sort((a, b) => rank(b.severity) - rank(a.severity));
+}
+
+/** Findings already routed to the fleet (dispatched) — surfaced as a tally, never re-dispatched. */
+export function routedFindings(findings: ReviewFinding[]): ReviewFinding[] {
+  return findings.filter((f) => f.status === "routed");
 }
 
 /** The system prompt for the one-shot review call — a terse UI reviewer that MUST answer as strict JSON. */
