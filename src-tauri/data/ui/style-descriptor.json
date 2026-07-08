@@ -13,6 +13,9 @@
     { "name": "--fg-dim", "type": "color", "value": "oklch(0.46 0.008 250)", "governs": "dim / de-emphasised text" },
     { "name": "--accent", "type": "color", "value": "oklch(0.80 0.14 70)", "governs": "the brand accent — primary button, focus" },
     { "name": "--accent-dim", "type": "color", "value": "oklch(0.55 0.10 70)", "governs": "the dimmed accent — field focus border" },
+    { "name": "--success", "type": "color", "value": "oklch(0.74 0.13 145)", "governs": "success / positive state colour" },
+    { "name": "--info", "type": "color", "value": "oklch(0.72 0.10 230)", "governs": "informational state colour" },
+    { "name": "--danger", "type": "color", "value": "oklch(0.68 0.18 25)", "governs": "danger / destructive / error state colour" },
     { "name": "--r-md", "type": "dimension", "value": "6px", "governs": "medium corner radius" },
     { "name": "--r-lg", "type": "dimension", "value": "10px", "governs": "large corner radius" }
   ],
