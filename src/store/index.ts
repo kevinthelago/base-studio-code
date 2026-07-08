@@ -2,7 +2,8 @@ import { create } from "zustand";
 import { bscJson, bscWrite } from "@/shared/lib/core/bsc";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { persistStorage } from "@/shared/lib/core/storage";
-import { grandfatherTriaged } from "./triagedMigration";
+import { grandfatherTriaged, grandfatherLocalPublished } from "./triagedMigration";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
 import {  refreshBuiltIns, type Blueprint } from "@/features/planner/stages/blueprints";
 import { reconcileBuiltInProfiles } from "@/features/agents/lib/agentProfiles";
@@ -246,6 +247,25 @@ export const useAppStore = create<AppStore>()(
         // demos + stale generated profiles, keep the user's customs (the unified role→profile model).
         if (state?.agentProfiles) {
           state.agentProfiles = reconcileBuiltInProfiles(state.agentProfiles);
+        }
+        // #2548 follow-up: the one-time triaged grandfather backfilled from the PERSISTED github board +
+        // fleets, but both are empty when the user is logged out / after a state reset — so an existing
+        // user's on-disk published projects still vanished from the Glance network (only the demo loaded).
+        // REPAIR once: when `triagedProjects` is still empty, grandfather from the RELIABLE local published
+        // inventory (`list_local_projects`), plus a re-derive from any github board / fleets now present.
+        // The empty-guard makes it self-limiting — a backfill makes triagedProjects non-empty, so it never
+        // re-runs, preserving the forward-looking rule (a genuinely new draft stays hidden until triaged).
+        if (state && Object.keys(state.triagedProjects ?? {}).length === 0) {
+          void safeInvoke<{ key: string; title: string; published: boolean }[]>("list_local_projects", undefined, []).then((list) => {
+            const keys = (Array.isArray(list) ? list : []).filter((p) => p?.published).map((p) => p.key);
+            useAppStore.setState((s) => {
+              if (Object.keys(s.triagedProjects).length > 0) return {}; // something already stamped meanwhile — leave it
+              const now = Date.now();
+              const seeded = grandfatherTriaged(s.githubState?.records, s.planFleet, now);
+              const merged = grandfatherLocalPublished(keys, seeded, now);
+              return Object.keys(merged).length ? { triagedProjects: merged } : {};
+            });
+          });
         }
         // Hydrate user blueprints from their on-disk dir (#blueprints) over the `bsc` bridge
         // (`bsc blueprint list --full`, #2143): union them in (so one that survived a store reset or a
