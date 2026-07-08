@@ -4,6 +4,7 @@ import {
   setFindingStatus,
   pendingFindings,
   confirmedFindings,
+  routedFindings,
   parseFindings,
   reviewDispatchPrompt,
   findingKey,
@@ -60,6 +61,12 @@ describe("previewReview — the confirm-gated reviewer core (#2623 slice 5)", ()
       const next = setFindingStatus(findings, "c", "confirmed");
       expect(next.find((x) => x.id === "c")?.status).toBe("confirmed");
       expect(findings.find((x) => x.id === "c")?.status).toBe("pending"); // original untouched
+    });
+
+    it("a routed finding drops out of confirmed and lists as routed (no re-dispatch)", () => {
+      const routed = setFindingStatus(findings, "b", "routed");
+      expect(confirmedFindings(routed).map((x) => x.id)).toEqual(["a"]); // b left the confirmed pool
+      expect(routedFindings(routed).map((x) => x.id)).toEqual(["b"]);
     });
   });
 

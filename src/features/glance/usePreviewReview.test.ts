@@ -4,6 +4,7 @@ import { useAppStore } from "@/store";
 import { usePreviewReview } from "./usePreviewReview";
 import { grabFrame, stopCapture } from "@/shared/lib/preview/captureFrame";
 import { reviewShot } from "@/shared/lib/preview/reviewShot";
+import { injectPrompt } from "@/shared/lib/fleet/paneInject";
 import type { ReviewFinding } from "@/shared/lib/preview/previewReview";
 
 vi.mock("@/shared/lib/preview/captureFrame", () => ({
@@ -13,6 +14,7 @@ vi.mock("@/shared/lib/preview/captureFrame", () => ({
   stopCapture: vi.fn(),
 }));
 vi.mock("@/shared/lib/preview/reviewShot", () => ({ reviewShot: vi.fn() }));
+vi.mock("@/shared/lib/fleet/paneInject", () => ({ injectPrompt: vi.fn(async () => {}) }));
 
 const finding = (over: Partial<ReviewFinding>): ReviewFinding => ({
   id: "f0", shotId: "proj:0", severity: "issue", title: "Overlap", detail: "", status: "pending", ...over,
@@ -64,5 +66,34 @@ describe("usePreviewReview (#2623 slice 5b — capture → review → inbox)", (
     const { result } = renderHook(() => usePreviewReview(null));
     await act(async () => { await result.current.captureAndReview(); });
     expect(reviewShot).not.toHaveBeenCalled();
+  });
+
+  describe("dispatch — route confirmed findings to the director (5d)", () => {
+    it("injects the dispatch prompt into <key>:director and marks findings routed", async () => {
+      useAppStore.setState({ findFleetTabIdx: () => 0 }); // a live fleet exists
+      const { result } = renderHook(() => usePreviewReview("proj"));
+      await act(async () => { await result.current.captureAndReview(); });
+      act(() => result.current.confirm("f0"));
+      await act(async () => { await result.current.dispatch(); });
+
+      const [pane, text] = vi.mocked(injectPrompt).mock.calls[0];
+      expect(pane).toBe("proj:director");
+      expect(text).toContain("preview-review");
+      expect(text).toContain("Overlap");
+      expect(result.current.confirmed).toHaveLength(0); // left the confirmed pool
+      expect(result.current.routed.map((f) => f.id)).toEqual(["f0"]);
+    });
+
+    it("refuses to route with no running fleet, surfacing an error and keeping the finding confirmed", async () => {
+      useAppStore.setState({ findFleetTabIdx: () => -1 });
+      const { result } = renderHook(() => usePreviewReview("proj"));
+      await act(async () => { await result.current.captureAndReview(); });
+      act(() => result.current.confirm("f0"));
+      await act(async () => { await result.current.dispatch(); });
+
+      expect(injectPrompt).not.toHaveBeenCalled();
+      expect(result.current.error).toMatch(/No running fleet/);
+      expect(result.current.confirmed.map((f) => f.id)).toEqual(["f0"]); // still confirmed, not lost
+    });
   });
 });
