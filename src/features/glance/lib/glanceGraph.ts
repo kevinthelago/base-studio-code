@@ -128,11 +128,16 @@ export const ACTIVITY_META: Record<GActivity, { label: string; pulse: boolean }>
   review: { label: "in review", pulse: false },
   live: { label: "live", pulse: true },
 };
-/** Edge kind → label · colour · dash · default line width · the contract "surface" blurb. */
+/** Project-network (L0) edge kind → label · colour · dash · line width · the relationship "surface"
+ *  blurb (#2561 relabel). The relationships a user draws between PROJECTS — a build/runtime **dependency**,
+ *  a **data flow** (one project consumes another's data — connectors/pipelines/migration), or an async
+ *  **event stream** — NOT the microservice "API contract" framing this replaced. (The internal key `api`
+ *  is kept for data/persist stability; only the user-facing label reads "depends on".) Fleet-drill (L1)
+ *  edges speak the Org archetype grammar instead — see `glanceFleet`. */
 export const EDGE_META: Record<GEdgeKind, { label: string; color: string; dash: string; w: number; surface: string }> = {
-  api: { label: "API contract", color: "#5b9dff", dash: "", w: 1.8, surface: "REST + gRPC · versioned" },
-  data: { label: "data read", color: "#b98bff", dash: "", w: 1.8, surface: "read replica · schema-locked" },
-  events: { label: "event stream", color: "#4fd6a0", dash: "6 5", w: 1.7, surface: "events-bus topic · at-least-once" },
+  api: { label: "depends on", color: "#5b9dff", dash: "", w: 1.8, surface: "build & runtime dependency" },
+  data: { label: "data flow", color: "#b98bff", dash: "", w: 1.8, surface: "consumes a data feed · schema-locked" },
+  events: { label: "event stream", color: "#4fd6a0", dash: "6 5", w: 1.7, surface: "async messages · at-least-once" },
 };
 
 // Node box + spacing in world (design) coordinates.

@@ -9,13 +9,15 @@ import { hashAbs } from "./hash";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 
-/** Session-role → Glance node-role palette: the director/planner are the infra hub, workers are
- *  services, the quality roles (reviewer/tester/juror) are data, intake roles are clients. */
+/** Session-role → Glance colour bucket, grouped by agent FUNCTION (#2561): ORCHESTRATE (planner ·
+ *  director) = infra, BUILD (worker) = service, VERIFY (reviewer · tester · juror) = data, FLOW (issuer ·
+ *  triage · documentor · designer — intake, routing, docs, UI) = client. The bucket drives the colour;
+ *  the real session role rides as `roleLabel` + the legend reads the function-group names at L1. */
 const ROLE_TO_GROLE: Record<string, GRole> = {
-  director: "infra", planner: "infra",
+  planner: "infra", director: "infra",
   worker: "service",
   reviewer: "data", tester: "data", juror: "data",
-  issuer: "client", triage: "client",
+  issuer: "client", triage: "client", documentor: "client", designer: "client",
 };
 const gRole = (role?: string): GRole => (role && ROLE_TO_GROLE[role]) || "service";
 
