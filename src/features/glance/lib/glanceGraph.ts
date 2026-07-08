@@ -28,6 +28,13 @@ export type GHealth = "idle" | "healthy" | "warning" | "error";
 export type GActivity = "idle" | "planning" | "building" | "waiting" | "review" | "live";
 export type GEdgeKind = "api" | "data" | "events";
 
+/** One communication form on a fleet node's comms surface (#2563) — a typed interaction + its `bsc-*`
+ *  runtime transport, pared from the Org model so the glance node model stays decoupled from it. */
+export interface GNodeCommForm { label: string; transport?: string }
+/** A fleet node's communication surface with ONE counterpart (#2563), derived from the fleet-as-Org
+ *  projection: the archetype, the other agent, and the forms this node SENDS / RECEIVES across it. */
+export interface GNodeComm { withName: string; archetypeLabel: string; hue: number; sends: GNodeCommForm[]; receives: GNodeCommForm[] }
+
 /** The agent identity behind a fleet node (#2561) — the persona surfaced on the drill node + inspector,
  *  so the user sees WHO is at that terminal (name · role · model · skills · charter), not just a role. */
 export interface GNodePersona {
@@ -36,6 +43,9 @@ export interface GNodePersona {
   model?: string;
   skills: string[];
   responsibilities: string[];
+  /** The agent's communication surface (#2563) — who it talks to and how, one entry per relationship,
+   *  derived from the fleet-as-Org projection. Absent until computed (fleet drill only). */
+  comms?: GNodeComm[];
 }
 
 /** Severity rank for the health rollup — only `warning`/`error` (rank ≥ 1) propagate up dependency

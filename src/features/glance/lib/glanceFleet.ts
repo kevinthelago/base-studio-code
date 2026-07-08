@@ -3,11 +3,12 @@
 // wired by coordination edges), so the drill reads as one recursive graph zooming in. The topology is a
 // deterministic SAMPLE per project until a real per-project fleet-plan feed lands (mirrors glanceData's
 // sample project topology) — isolated here so wiring the real fleet later is a drop-in.
-import type { GRawNode, GRawEdge, GRole, GEdgeKind } from "./glanceGraph";
+import type { GRawNode, GRawEdge, GRole, GEdgeKind, GNodeComm } from "./glanceGraph";
 import type { GlanceData, ProjectLite } from "./glanceData";
 import { hashAbs } from "./hash";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
+import { positionComms, type Org, type Position, type Relationship } from "@/features/org";
 
 /** Session-role → Glance colour bucket, grouped by agent FUNCTION (#2561): ORCHESTRATE (planner ·
  *  director) = infra, BUILD (worker) = service, VERIFY (reviewer · tester · juror) = data, FLOW (issuer ·
@@ -40,6 +41,37 @@ function nodePersona(p: Persona | undefined): GRawNode["persona"] {
   return p ? { name: p.name, role: p.role, model: p.model, skills: p.skills ?? [], responsibilities: p.responsibilities ?? [] } : undefined;
 }
 
+/**
+ * Project a {@link FleetPlan} into a real {@link Org} (#2563) — the "fleet as Org" bridge. Streams (+ an
+ * enabled director) become POSITIONS (personas referenced by id); coordination becomes RELATIONSHIPS
+ * tagged with their archetype, in ARCHETYPE-NATIVE direction: the director MANAGES each stream, a typed
+ * edge maps its kind (producer→consumer), a plain `dependsOn` is a lateral peer seam. Reusing the Org
+ * model lets the drill derive each agent's communication surface (`positionComms`) from ONE source of
+ * truth — the foundation for later authoring the fleet as an Org. Pure + exported for testing.
+ */
+export function fleetToOrg(fleet: FleetPlan): Org {
+  const positions: Position[] = fleet.streams.map((s) => ({ nodeId: s.id, kind: "agent", personaId: s.persona, label: s.name || s.id }));
+  if (fleet.director?.enabled) positions.push({ nodeId: "director", kind: "agent", personaId: "director", label: "director" });
+  const posIds = new Set(positions.map((p) => p.nodeId));
+  const relationships: Relationship[] = [];
+  const seen = new Set<string>();
+  const rel = (from: string, to: string, archetype: string) => {
+    if (from === to || !posIds.has(from) || !posIds.has(to)) return;
+    const k = `${from}|${to}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    relationships.push({ id: `r${relationships.length}`, archetype, from, to });
+  };
+  if (fleet.director?.enabled) for (const s of fleet.streams) rel("director", s.id, "manages"); // manager → report
+  for (const e of fleet.edges ?? []) rel(e.from, e.to, KIND_TO_ARCHETYPE[e.kind] ?? "peers");   // producer → consumer
+  for (const s of fleet.streams) for (const dep of s.dependsOn) rel(dep, s.id, "peers");         // upstream ↔ dependent
+  return { id: "fleet", name: "Fleet", positions, relationships };
+}
+
+/** A minimal persona for a node with no matching persona entry (e.g. the director hub) — so its comms
+ *  surface still renders. */
+const fallbackPersona = (name: string, role: string): NonNullable<GRawNode["persona"]> => ({ name, role, skills: [], responsibilities: [] });
+
 /** Build a project's REAL fleet as a Glance graph from its {@link FleetPlan}: streams → nodes (role +
  *  persona via their persona id), an optional director hub, and the typed coordination edges + plain
  *  `dependsOn` → the dependency edges, each tagged with its Org relationship archetype (#2561). Direction:
@@ -68,7 +100,7 @@ export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): Glanc
 
   // director hub — every stream is MANAGED by the director (drawn as the foundational node)
   if (fleet.director?.enabled && !ids.has("director")) {
-    rawNodes.push({ id: "director", slug: "director", role: "infra", roleLabel: "director", health: "idle", activity: "idle", persona: nodePersona(personaById.get("director")) });
+    rawNodes.push({ id: "director", slug: "director", role: "infra", roleLabel: "director", health: "idle", activity: "idle", persona: nodePersona(personaById.get("director")) ?? fallbackPersona("director", "director") });
     ids.add("director");
     for (const s of fleet.streams) add(s.id, "director", "api", "manages");
   }
@@ -77,7 +109,29 @@ export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): Glanc
   // plain dependsOn sequencing — a lateral peer seam
   for (const s of fleet.streams) for (const dep of s.dependsOn) add(s.id, dep, "api", "peers");
 
+  // Communication surface (#2563): project the fleet into an Org and derive each agent's "who I talk to
+  // and how" (`positionComms`) — the forms sent/received per relationship — attaching it to the node's
+  // persona for the inspector. The Glance EDGES above are untouched; the org drives the comms only.
+  const org = fleetToOrg(fleet);
+  for (const n of rawNodes) {
+    if (!n.persona) continue;
+    const pos = org.positions.find((p) => p.nodeId === n.id);
+    n.persona.comms = pos ? projectComms(org, pos, personas) : [];
+  }
+
   return { rawNodes, rawEdges, sample: false };
+}
+
+/** Pare an org {@link positionComms} summary down to the glance node's {@link GNodeComm} shape (labels +
+ *  transports only) — keeping the glance model decoupled from the Org form types. */
+function projectComms(org: Org, pos: Position, personas: Persona[]): GNodeComm[] {
+  return positionComms(org, pos, personas).map((c) => ({
+    withName: c.counterpartName,
+    archetypeLabel: c.archetypeLabel,
+    hue: c.hue,
+    sends: c.sends.map((f) => ({ label: f.label, transport: f.transport })),
+    receives: c.receives.map((f) => ({ label: f.label, transport: f.transport })),
+  }));
 }
 
 /**
