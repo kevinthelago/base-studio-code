@@ -25,7 +25,7 @@ import { PROJECTS_QUERY, type GhProject } from "@/features/planner/list/publishe
 import { projectSlug } from "@/shared/lib/core/projectPaths";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
-import type { GRole, GHealth, GActivity } from "./glanceGraph";
+import type { GRole, GCategory, GHealth, GActivity } from "./glanceGraph";
 import type { ProjectLite } from "./glanceData";
 import type { GlanceFault } from "./useGlanceFaults";
 import { projectKeyOfSession } from "./agentStall";
@@ -35,7 +35,7 @@ import { projectKeyOfSession } from "./agentStall";
 
 /** Store shapes the merge reads — mirrored structurally so the pure fn stays decoupled from the slices.
  *  A draft MAY declare curated axes (#2284/#2541) — a demo/tagged project keeps its authored colouring. */
-type DraftMap = Record<string, { title: string; pitch: string; createdAt: number; role?: GRole; health?: GHealth; activity?: GActivity; reason?: string }>;
+type DraftMap = Record<string, { title: string; pitch: string; createdAt: number; role?: GRole; category?: GCategory; health?: GHealth; activity?: GActivity; reason?: string }>;
 
 /** Stable empty published set — a fresh `[]` each render would needlessly re-run the merge memo. */
 const NO_PUBLISHED: GhProject[] = [];
@@ -76,7 +76,7 @@ export function mergeGlanceProjects(
     // agents → building (#2551), bsc-wait → waiting, faults → warning/error (#2541). A declared value
     // wins so a demo/tagged project keeps its curated colouring.
     byKey.set(id, {
-      id, name: d.title, role: d.role,
+      id, name: d.title, role: d.role, category: d.category,
       health: d.health ?? "idle",
       activity: d.activity ?? "idle",
       reason: d.reason,
@@ -103,7 +103,7 @@ export function mergeGlanceProjects(
     const key = draftKeyByTitle.get(tk) ?? lp.key;
     const prior = byKey.get(key);
     const d = drafts[key];
-    byKey.set(key, { id: key, name: lp.title, role: prior?.role, health: d?.health ?? "idle", activity: d?.activity ?? "idle", reason: d?.reason });
+    byKey.set(key, { id: key, name: lp.title, role: prior?.role, category: prior?.category ?? d?.category, health: d?.health ?? "idle", activity: d?.activity ?? "idle", reason: d?.reason });
     draftKeyByTitle.set(tk, key);
   }
   for (const p of published) {
@@ -114,7 +114,7 @@ export function mergeGlanceProjects(
     const titleKey = projectSlug(p.title);
     const key = draftKeyByTitle.get(titleKey) ?? titleKey;
     const prior = byKey.get(key);
-    byKey.set(key, { id: key, name: p.title, role: prior?.role, health: prior?.health ?? "idle", activity: prior?.activity ?? "idle", reason: prior?.reason });
+    byKey.set(key, { id: key, name: p.title, role: prior?.role, category: prior?.category, health: prior?.health ?? "idle", activity: prior?.activity ?? "idle", reason: prior?.reason });
   }
   return [...byKey.values()];
 }
@@ -215,6 +215,22 @@ export function filterTriaged(projects: ProjectLite[], triaged: Record<string, n
   return projects.filter((p) => triaged[p.id] !== undefined);
 }
 
+/**
+ * Resolve a project's LIFECYCLE category (#2583) — what KIND of work it is, the app's real project
+ * vocabulary that REPLACES the meaningless hash-per-id microservices tier. Priority: a curated/declared
+ * category (a demo/tagged project) wins, else the seeding blueprint's category (`projectBlueprintId` →
+ * `blueprint.category`), else a status heuristic — a draft is being CREATED (greenfield), a published /
+ * already-worked project is in upkeep (maintain). Always yields a category so no L0 node falls back to
+ * the old tier colouring. Pure.
+ */
+export function resolveProjectCategory(
+  declared: GCategory | undefined,
+  blueprintCategory: GCategory | undefined,
+  isDraft: boolean,
+): GCategory {
+  return declared ?? blueprintCategory ?? (isDraft ? "greenfield" : "maintain");
+}
+
 export function useGlanceProjects(enabled = true): ProjectLite[] {
   const drafts = useAppStore((s) => s.localDraftProjects);
   const triagedProjects = useAppStore((s) => s.triagedProjects);
@@ -224,6 +240,11 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   const paneStatus = useAppStore((s) => s.paneStatus);
   const githubState = useAppStore((s) => s.githubState);
   const setGithubState = useAppStore((s) => s.setGithubState);
+  // Lifecycle category (#2583): which blueprint seeded each project → its category, so a project node is
+  // coloured by what KIND of work it is (greenfield / transform / harden / maintain / data).
+  const projectBlueprintId = useAppStore((s) => s.projectBlueprintId);
+  const blueprints = useAppStore((s) => s.blueprints);
+  const catByBlueprint = useMemo(() => new Map(blueprints.map((b) => [b.id, b.category])), [blueprints]);
   const liveKeys = useProjectLiveness(enabled);
 
   // The local published inventory (#2445): the on-disk hubs carrying `.published`, so a published
@@ -288,11 +309,17 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
     // `waiting`/warn and faults → error are overlaid later in the workspace.)
     () => applyRunningActivity(
       applyLiveness(
-        filterTriaged(mergeGlanceProjects(drafts, effectivePublished, localPublished), triagedProjects),
+        filterTriaged(
+          mergeGlanceProjects(drafts, effectivePublished, localPublished).map((p) => ({
+            ...p,
+            category: resolveProjectCategory(p.category, catByBlueprint.get(projectBlueprintId[p.id]), drafts[p.id] !== undefined),
+          })),
+          triagedProjects,
+        ),
         liveKeys,
       ),
       buildingKeys,
     ),
-    [drafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys],
+    [drafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, catByBlueprint, projectBlueprintId],
   );
 }

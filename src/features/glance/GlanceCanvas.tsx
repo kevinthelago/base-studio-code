@@ -5,16 +5,18 @@
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { GlanceStreamMorph } from "./GlanceStreamMorph";
-import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, NW, NH, type GraphModel, type GHealth } from "./lib/glanceGraph";
+import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, NW, NH, type GraphModel, type GHealth, type GCategory } from "./lib/glanceGraph";
 import { archetypeById, hueColor } from "@/features/org";
 
 const ERR = "#f2555f";
 const HEALTH_ROWS: GHealth[] = ["idle", "healthy", "warning", "error"];
 
 const REST_N = 0.14, REST_E = 0.06;
-// Project-network (L0) legend rows. ROLE = the project accent buckets; EDGE labels come from EDGE_META
-// so the legend + connect picker stay in sync (#2561).
-const ROLE_ROWS_L0: [string, string][] = [["infra", ROLE_COLOR.infra], ["service", ROLE_COLOR.service], ["data", ROLE_COLOR.data], ["client", ROLE_COLOR.client]];
+// Project-network (L0) legend rows. The accent buckets are the LIFECYCLE categories (#2583 — what KIND
+// of work each project is), NOT the old microservices tiers; EDGE labels come from EDGE_META so the
+// legend + connect picker stay in sync (#2561).
+const CATEGORY_ORDER: GCategory[] = ["greenfield", "transform", "harden", "maintain", "data"];
+const ROLE_ROWS_L0: [string, string][] = CATEGORY_ORDER.map((c) => [CATEGORY_META[c].label, CATEGORY_META[c].color]);
 const EDGE_ROWS_L0: [string, string, string][] = [
   [EDGE_META.api.label, EDGE_META.api.color, EDGE_META.api.dash],
   [EDGE_META.data.label, EDGE_META.data.color, EDGE_META.data.dash],
@@ -87,7 +89,10 @@ export function GlanceCanvas(p: CanvasProps) {
 
       {/* nodes */}
       {model.nodes.map((n) => {
-        const role = ROLE_COLOR[n.role];
+        // A PROJECT (L0) node is accented by its LIFECYCLE category (#2583); a fleet-drill (L1) node has
+        // no category and keeps its function-group `role` colour.
+        const cat = n.category ? CATEGORY_META[n.category] : undefined;
+        const role = cat ? cat.color : ROLE_COLOR[n.role];
         // Axis 1 — HEALTH (#2541): the top-left dot renders the ROLLED-UP health (worst of self + deps).
         const health = HEALTH_META[n.rollupHealth];
         const inherited = n.healthInherited;                 // lit only by a downstream dep → muted, no pulse
@@ -134,7 +139,7 @@ export function GlanceCanvas(p: CanvasProps) {
                 <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
               </Box>
               <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
-                <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: role }}>{n.roleLabel ?? n.role}</Text>
+                <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: role }}>{cat ? cat.label : (n.roleLabel ?? n.role)}</Text>
                 <Box style={{ flex: 1 }} />
                 {/* Axis-2 activity word, or the fault reason when degraded. */}
                 <Text as="span" mono size={10} weight={500} title={ownDegraded && n.reason ? n.reason : undefined}
@@ -192,7 +197,7 @@ export function GlanceOverlays({ drill = false, archetypes = [] }: { drill?: boo
           </Box>
         </Box>
         <Box>
-          <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", marginBottom: 8 }}>{drill ? "FUNCTION" : "ROLE"}</Text>
+          <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", marginBottom: 8 }}>{drill ? "FUNCTION" : "LIFECYCLE"}</Text>
           <Box style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {roleRows.map(([label, color]) => (
               <Box key={label} style={{ display: "flex", alignItems: "center", gap: 7 }}>
