@@ -1,30 +1,18 @@
-/* ===== the semantic token contract (#1852/#2489) — the CSS layer every kit component consumes.
-   Emitted into a generated app as `tokens.css` by `bsc ui emit-css`. STYLESHEET ORDER (the contract):
-
-     1. tokens.css  — THIS file: base palette defaults + the semantic component tokens. READ-ONLY
-                      for build agents: never edit it, never hand-roll palette values in component
-                      styles — components consume ONLY the semantic tokens below.
-     2. theme.css   — the chosen theme's semantic-token overrides (`bsc ui emit-css --theme <id>`).
-                      THE app's palette. Re-theming the app = replacing this one file.
-     3. app styles  — the components; they reference the semantic tokens (--card-*/--btn-*/
-                      --field-*/--chip-*), never raw colors.
-
-   The base tokens are self-contained defaults an app MAY override with its own brand palette; the
-   semantic component tokens default to them, so an app with no theme.css (or the `default` theme)
-   renders the base look and a theme retints every card/button/field/chip with zero component
-   changes. One source of truth: src-tauri/data/ui/tokens-contract.css, embedded by `bsc ui`. ===== */
+/* GENERATED from src-tauri/data/ui/style-descriptor.json — DO NOT EDIT BY HAND.
+   Regenerate: `UPDATE_KITS=1 npx vitest run styleContract.gen`.
+   The design-system STYLE DESCRIPTOR (#2567) — the authoritative source of truth for the semantic token contract. `tokens-contract.css` is GENERATED from this file (styleContract.ts + the styleContract.gen drift test), and `bsc ui tokens` reads it to enumerate the addressable surface for an LLM. Each token carries a stable custom-property name, a type, a default, and a `governs` blurb. Component tokens are grouped by component (+ per-variant), so `bsc ui component <name> set-token <key>` resolves `--<component>[-<variant>]-<key>`. Additive-first: a new token defaults to today's value so landing it is a zero-visual-change commit. STYLESHEET ORDER stays the contract: tokens.css (this, generated) -> theme.css (a theme's overrides) -> app styles (components reference ONLY these semantic tokens, never raw colors). */
 :root {
   /* base palette — the app-level defaults the semantic layer (and the themes) compose from */
-  --bg-canvas:  oklch(0.13 0.005 250);
-  --bg-panel:   oklch(0.17 0.005 250);
-  --bg-elev:    oklch(0.21 0.006 250);
-  --bg-elev2:   oklch(0.26 0.006 250);
-  --border:     oklch(0.30 0.006 250);
-  --border-soft:oklch(0.24 0.006 250);
-  --fg:         oklch(0.94 0.004 250);
-  --fg-muted:   oklch(0.66 0.008 250);
-  --fg-dim:     oklch(0.46 0.008 250);
-  --accent:     oklch(0.80 0.14 70);
+  --bg-canvas: oklch(0.13 0.005 250);
+  --bg-panel: oklch(0.17 0.005 250);
+  --bg-elev: oklch(0.21 0.006 250);
+  --bg-elev2: oklch(0.26 0.006 250);
+  --border: oklch(0.30 0.006 250);
+  --border-soft: oklch(0.24 0.006 250);
+  --fg: oklch(0.94 0.004 250);
+  --fg-muted: oklch(0.66 0.008 250);
+  --fg-dim: oklch(0.46 0.008 250);
+  --accent: oklch(0.80 0.14 70);
   --accent-dim: oklch(0.55 0.10 70);
   --r-md: 6px;
   --r-lg: 10px;
