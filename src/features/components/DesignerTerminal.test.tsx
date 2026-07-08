@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { DesignerTerminal } from "./DesignerTerminal";
 import { DESIGNER_PANE_ID, DESIGNER_ALLOWED_COMMANDS } from "./useDesignerTerminal";
@@ -65,7 +65,7 @@ afterEach(() => cleanup());
 
 describe("useDesignerTerminal launch wiring (#2471)", () => {
   it("sets up the workspace, writes the RESTRICTED role-gated settings, then launches at the workspace cwd", async () => {
-    render(<DesignerTerminal open />);
+    render(<DesignerTerminal />);
 
     await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
 
@@ -110,21 +110,20 @@ describe("useDesignerTerminal launch wiring (#2471)", () => {
       if (cmd === "setup_designer_workspace") throw new Error("boom");
       return null as never;
     });
-    render(<DesignerTerminal open />);
+    render(<DesignerTerminal />);
     await waitFor(() => expect(callsTo("setup_designer_workspace")).toHaveLength(1));
     expect(callsTo("ensure_session_settings")).toHaveLength(0);
     expect(callsTo("pty_create")).toHaveLength(0);
   });
 
-  it("collapsing hides the panel WITHOUT killing the PTY; unmounting kills it", async () => {
-    const { rerender, unmount } = render(<DesignerTerminal open />);
+  it("stays mounted and visible (always-on, no collapse); only unmounting kills the PTY (#2585)", async () => {
+    const { unmount } = render(<DesignerTerminal />);
     await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
 
-    // Collapse = the same mounted component with open:false — CSS-hidden, session alive.
-    rerender(<DesignerTerminal open={false} />);
+    // The panel is always visible — there is no display:none collapse state anymore.
     const panel = screen.getByTestId("designer-terminal");
     expect(panel).toBeInTheDocument();
-    expect(panel.style.display).toBe("none");
+    expect(panel.style.display).not.toBe("none");
     expect(callsTo("pty_kill")).toHaveLength(0);
 
     // Only a real unmount (leaving the Design Studio) tears the session down.
@@ -134,29 +133,20 @@ describe("useDesignerTerminal launch wiring (#2471)", () => {
   });
 });
 
-describe("DesignStudio designer panel toggle (#2471)", () => {
+describe("DesignStudio always-on designer panel (#2585)", () => {
   beforeEach(() => {
     useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS });
   });
 
-  it("the toolbar ✦ Designer button opens the panel; a second click collapses it but keeps it mounted", async () => {
+  it("mounts the designer session immediately, docked in the center column, with no toggle button", async () => {
     render(<DesignStudio />);
-    // Not booted until the first open — no terminal, no PTY.
-    expect(screen.queryByTestId("designer-terminal")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: /Designer/ }));
+    // Present from the first render — no ✦ Designer button gates it; the panel is docked in the
+    // center column (below the graph), not a full-width overlay, and it spawns exactly one PTY.
     const panel = screen.getByTestId("designer-terminal");
+    expect(panel).toBeInTheDocument();
     expect(panel.style.display).not.toBe("none");
+    expect(screen.queryByRole("button", { name: /Designer/ })).toBeNull();
+    expect(panel.closest(".ds-center")).toBeTruthy();
     await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
-
-    // Collapse: still mounted (PTY survives), just hidden; no pty_kill.
-    fireEvent.click(screen.getByRole("button", { name: /Designer/ }));
-    expect(screen.getByTestId("designer-terminal").style.display).toBe("none");
-    expect(callsTo("pty_kill")).toHaveLength(0);
-
-    // Reopen: same mounted panel, no second session spawn.
-    fireEvent.click(screen.getByRole("button", { name: /Designer/ }));
-    expect(screen.getByTestId("designer-terminal").style.display).not.toBe("none");
-    expect(callsTo("pty_create")).toHaveLength(1);
   });
 });
