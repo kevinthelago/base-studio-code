@@ -24,6 +24,7 @@
 
 use bsc_cli_util::CmdDoc;
 use std::io::Read;
+use std::path::{Path, PathBuf};
 
 const TAGLINE: &str =
     "the UI design surface — the KitNode contract + themes (#1852) and the component library (#2469)";
@@ -163,6 +164,7 @@ at emission time (never snapshotted), and an unknown id errors listing the avail
         usage: "\
 USAGE:
   bsc ui theme list [--full] [--pretty]      # every theme's { id, label, description }; --full = complete objects
+  bsc ui theme active [--json]               # the RUNNING app's active theme id (read-only); --json → { active, source }
   bsc ui theme get <id> [--pretty]           # one theme verbatim (id, label, description, vars), or null
   bsc ui theme set [--file PATH] [--pretty]  # theme JSON (object or array) on stdin or --file; upsert by id
   bsc ui theme remove <id> [--pretty]        # delete a stored theme (packaged built-ins stay embedded)
@@ -181,6 +183,11 @@ theme picker reads. Themes live in the designer-writable store at ~/.base-studio
 BSC_UI_THEME_DIR override, #2488); the reads MERGE the packaged built-ins in, so every theme is always
 visible and removing a built-in's stored copy falls back to the embedded one. `set`/`remove` are
 ui-scope MUTATIONS (#2470): they refuse when the session's $BSC_SCOPES grants only `ui: read`.
+`active` is READ-ONLY (#2589): it reports the id of the theme the RUNNING app currently has active —
+the persisted zustand `kitTheme` in the app's `app-state.json` — so a designer tunes the theme the
+user is actually looking at instead of `default` blind. It prints the bare id (falling back to
+`default` when the app hasn't run / set one), or with `--json` a `{ active, source }` object whose
+`source` is the app-state path it read (else `default`); it NEVER writes app-state.json.
 `bsc ui theme get default` prints the shape to author against — palettes only: override the semantic
 tokens, never a spec's structure.",
     },
@@ -759,6 +766,56 @@ fn cmd_variants(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// The Tauri app identifier (`tauri.conf.json` `identifier`) — the app-config-dir segment
+/// tauri-plugin-store's default store lives under. The persisted app-state file the running app
+/// writes is `<OS app-config dir>/<APP_IDENTIFIER>/<APP_STATE_FILE>`.
+const APP_IDENTIFIER: &str = "com.basestudio.code";
+/// The persisted app-state store filename (the frontend's `load("app-state.json")`, #2589).
+const APP_STATE_FILE: &str = "app-state.json";
+/// Override for the persisted app-state path (#2589): point `theme active` at an explicit file so a
+/// unit test — or an out-of-tree caller — can read it without the real Tauri config dir.
+const APP_STATE_ENV: &str = "BSC_UI_APP_STATE";
+
+/// Resolve the running app's persisted `app-state.json` (#2589): `$BSC_UI_APP_STATE` (an explicit
+/// file) wins, else the tauri-plugin-store default under the OS app-config dir for the app
+/// identifier — `%APPDATA%\<id>` (Windows), `~/Library/Application Support/<id>` (macOS), or
+/// `$XDG_CONFIG_HOME`/`~/.config` `/<id>` (Linux). `None` only when neither an override nor a
+/// home/config dir can be resolved (the caller then falls back to `"default"`, never errors).
+fn app_state_path() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os(APP_STATE_ENV).filter(|v| !v.is_empty()) {
+        return Some(PathBuf::from(p));
+    }
+    let config_dir = if cfg!(windows) {
+        std::env::var_os("APPDATA").map(PathBuf::from).filter(|p| !p.as_os_str().is_empty())
+    } else if cfg!(target_os = "macos") {
+        bsc_util::home_dir().map(|h| h.join("Library").join("Application Support"))
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|p| !p.as_os_str().is_empty())
+            .or_else(|| bsc_util::home_dir().map(|h| h.join(".config")))
+    }?;
+    Some(config_dir.join(APP_IDENTIFIER).join(APP_STATE_FILE))
+}
+
+/// Decode the persisted app-state's active kit theme (#2589). The tauri-plugin-store file is a JSON
+/// object whose `"app-state"` value is itself a STRINGIFIED `{ state, version }` snapshot (zustand
+/// persist double-encodes), so the active id is `.["app-state"]` → parse → `.state.kitTheme`. Pure +
+/// total: returns `None` — never an error — when the file isn't the expected shape or `kitTheme` is
+/// unset, so the caller falls back to `"default"`.
+fn decode_active_theme(contents: &str) -> Option<String> {
+    let file: serde_json::Value = serde_json::from_str(contents).ok()?;
+    let inner = file.get("app-state")?.as_str()?;
+    let snapshot: serde_json::Value = serde_json::from_str(inner).ok()?;
+    snapshot.get("state")?.get("kitTheme")?.as_str().map(String::from)
+}
+
+/// Read + decode the active theme id from an app-state.json PATH (#2589): the file's contents through
+/// [`decode_active_theme`], or `None` when the file is missing/unreadable/not the expected shape.
+fn read_active_theme(path: &Path) -> Option<String> {
+    decode_active_theme(&std::fs::read_to_string(path).ok()?)
+}
+
 /// `bsc ui theme …` (#1852 Phase 3 + #2488) — the kit THEME collection. Reads (`list`/`get`) merge the
 /// packaged built-ins under the store; the mutations (`set`/`remove`) persist to the theme store and
 /// are gated by the session's runtime `ui` scope (#2470) BEFORE any store is touched — the same
@@ -767,7 +824,7 @@ fn cmd_variants(args: &[String]) -> Result<(), String> {
 /// (`theme set help`) is documentation, never a mutation — it must stay reachable read-scoped.
 fn cmd_theme(args: &[String], prog: &str) -> Result<(), String> {
     let (mut dir, mut file) = (None::<String>, None::<String>);
-    let (mut pretty, mut full) = (false, false);
+    let (mut pretty, mut full, mut json) = (false, false, false);
     let mut positional: Vec<String> = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -776,6 +833,8 @@ fn cmd_theme(args: &[String], prog: &str) -> Result<(), String> {
             "--file" => file = it.next().cloned(),
             "--pretty" => pretty = true,
             "--full" => full = true,
+            // `theme active [--json]` (#2589): emit the { active, source } object instead of the bare id.
+            "--json" => json = true,
             // Everything else is positional — including a `--card-bg` TOKEN arg for set-token/unset-token
             // (a CSS custom property, not a flag). Unknown flags therefore surface as a usage error at
             // the verb, not a generic "unknown flag".
@@ -807,6 +866,24 @@ fn cmd_theme(args: &[String], prog: &str) -> Result<(), String> {
                     .map(|t| serde_json::json!({ "id": t.get("id"), "label": t.get("label"), "description": t.get("description") }))
                     .collect();
                 emit(&serde_json::Value::Array(lean))
+            }
+        }
+        // READ-ONLY (#2589): report the RUNNING app's active kit theme — the persisted zustand
+        // `kitTheme` — so a designer tunes the theme the user is actually looking at, not `default`
+        // blind. Never touches app-state.json (the app clobbers it on save) and never errors: a
+        // missing file / absent key / unset value all fall back to the bare id `default`.
+        "active" => {
+            let (active, source) = match app_state_path().and_then(|p| {
+                read_active_theme(&p).map(|id| (id, p.to_string_lossy().into_owned()))
+            }) {
+                Some(pair) => pair,
+                None => ("default".to_string(), "default".to_string()),
+            };
+            if json {
+                emit(&serde_json::json!({ "active": active, "source": source }))
+            } else {
+                println!("{active}");
+                Ok(())
             }
         }
         "get" => {
@@ -909,7 +986,7 @@ fn cmd_theme(args: &[String], prog: &str) -> Result<(), String> {
             }
         }
         other => Err(format!(
-            "unknown theme command '{other}' — want: list | get <id> | set | remove <id> | \
+            "unknown theme command '{other}' — want: list | active | get <id> | set | remove <id> | \
              set-token <id> <token> <value> | unset-token <id> <token> | validate <id>"
         )),
     }
@@ -1238,6 +1315,75 @@ mod tests {
         // `bsc ui theme help` (top-level dispatch) and the trailing per-verb forms all resolve.
         assert!(run(vec!["theme".into(), "help".into()], "bsc ui").is_ok());
         assert!(run(vec!["theme".into(), "list".into(), "help".into()], "bsc ui").is_ok());
+    }
+
+    // ── `theme active` — read the running app's active theme (#2589) ──────────────────────────────
+
+    /// Serializes the tests that set `$BSC_UI_APP_STATE` (the `theme active` override): they mutate the
+    /// shared process environment, so an unguarded pair could race. Poisoning is ignored.
+    static APP_STATE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn theme_active_help_is_documented() {
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "theme");
+        for needle in ["active", "read-only", "kitTheme", "--json", "app-state.json"] {
+            assert!(d.contains(needle), "theme help mentions {needle}");
+        }
+    }
+
+    #[test]
+    fn decode_active_theme_reads_the_double_encoded_snapshot() {
+        // The persisted file: top-level "app-state" is a STRINGIFIED { state, version } snapshot, and
+        // the active id is that inner snapshot's `.state.kitTheme`.
+        let inner = serde_json::json!({ "state": { "kitTheme": "neon" }, "version": 1 }).to_string();
+        let file = serde_json::json!({ "app-state": inner }).to_string();
+        assert_eq!(decode_active_theme(&file).as_deref(), Some("neon"));
+    }
+
+    #[test]
+    fn decode_active_theme_is_none_for_absent_key_or_malformed() {
+        // Absent kitTheme → None (the verb falls back to "default"), never an error.
+        let inner = serde_json::json!({ "state": { "activeWorkspace": "x" }, "version": 1 }).to_string();
+        assert_eq!(decode_active_theme(&serde_json::json!({ "app-state": inner }).to_string()), None);
+        // Missing the "app-state" key entirely → None.
+        assert_eq!(decode_active_theme(&serde_json::json!({ "other": 1 }).to_string()), None);
+        // The "app-state" value is not a stringified snapshot (an object, not a string) → None.
+        let obj = serde_json::json!({ "app-state": { "state": { "kitTheme": "x" } } }).to_string();
+        assert_eq!(decode_active_theme(&obj), None);
+        // Not JSON at all → None (total, never panics).
+        assert_eq!(decode_active_theme("}{ not json"), None);
+        // kitTheme present but not a string → None.
+        let inner = serde_json::json!({ "state": { "kitTheme": 42 }, "version": 1 }).to_string();
+        assert_eq!(decode_active_theme(&serde_json::json!({ "app-state": inner }).to_string()), None);
+    }
+
+    #[test]
+    fn read_active_theme_handles_a_fixture_and_a_missing_file() {
+        // (a) a fixture app-state.json with a known kitTheme → returns it.
+        let path = std::env::temp_dir().join(format!("bsc-ui-app-state-{}.json", std::process::id()));
+        let inner = serde_json::json!({ "state": { "kitTheme": "contrast" }, "version": 1 }).to_string();
+        std::fs::write(&path, serde_json::json!({ "app-state": inner }).to_string()).unwrap();
+        assert_eq!(read_active_theme(&path).as_deref(), Some("contrast"));
+        // (b) a missing file → None → the verb falls back to "default".
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(read_active_theme(&path), None);
+    }
+
+    #[test]
+    fn theme_active_reads_the_override_and_falls_back_to_default() {
+        let _guard = APP_STATE_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // Point the read at a fixture via the $BSC_UI_APP_STATE override (no real config dir needed).
+        let path = std::env::temp_dir().join(format!("bsc-ui-active-{}.json", std::process::id()));
+        let inner = serde_json::json!({ "state": { "kitTheme": "soft" }, "version": 1 }).to_string();
+        std::fs::write(&path, serde_json::json!({ "app-state": inner }).to_string()).unwrap();
+        std::env::set_var(APP_STATE_ENV, &path);
+        // Bare id + the --json object both succeed and never error.
+        assert!(run(vec!["theme".into(), "active".into()], "bsc ui").is_ok());
+        assert!(run(vec!["theme".into(), "active".into(), "--json".into(), "--pretty".into()], "bsc ui").is_ok());
+        // A missing file → still Ok (falls back to "default"), never an error.
+        std::fs::remove_file(&path).unwrap();
+        assert!(run(vec!["theme".into(), "active".into(), "--json".into()], "bsc ui").is_ok());
+        std::env::remove_var(APP_STATE_ENV);
     }
 
     #[test]
