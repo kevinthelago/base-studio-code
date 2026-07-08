@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useGlanceProjects, mergeGlanceProjects, applyLiveness, applyFaultHealth, filterTriaged } from "./useGlanceProjects";
+import { useGlanceProjects, mergeGlanceProjects, applyLiveness, applyFaultHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged } from "./useGlanceProjects";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
 import type { MinimalGhProject } from "@/shared/lib/github/githubState";
 import type { ProjectLite } from "./glanceData";
@@ -32,7 +32,7 @@ describe("useGlanceProjects — declared role/health/activity (#2284/#2541)", ()
     expect(result.current.find((p) => p.id === "billing-svc")).toMatchObject({ role: "service", health: "warning", activity: "waiting" });
   });
 
-  it("derives activity when NOT declared (planning with no fleet, building once a fleet exists); health rests at idle", () => {
+  it("rests both axes at idle when NOT declared — building comes from running agents, not a fallback (#2551)", () => {
     useAppStore.setState({
       localDraftProjects: {
         plain: { title: "Plain", pitch: "", createdAt: 1 },
@@ -50,9 +50,9 @@ describe("useGlanceProjects — declared role/health/activity (#2284/#2541)", ()
     const { result } = renderHook(() => useGlanceProjects());
     const plain = result.current.find((p) => p.id === "plain");
     const fleeted = result.current.find((p) => p.id === "fleeted");
-    expect(plain).toMatchObject({ health: "idle", activity: "planning" });
+    expect(plain).toMatchObject({ health: "idle", activity: "idle" });
     expect(plain?.role).toBeUndefined(); // derived downstream in buildGlanceData (hash), not here
-    expect(fleeted).toMatchObject({ health: "idle", activity: "building" });
+    expect(fleeted).toMatchObject({ health: "idle", activity: "idle" }); // a PLANNED (not launched) fleet is still idle
   });
 });
 
@@ -98,32 +98,32 @@ describe("mergeGlanceProjects — draft/published dedup (#2339/#2409); GitHub no
     const drafts = { "p-abc123": { title: "Billing Service", pitch: "", createdAt: 1, role: "service" as const } };
     const published = [gh("PVT_node1", "Billing Service", false)];
 
-    const merged = mergeGlanceProjects(drafts, {}, published);
+    const merged = mergeGlanceProjects(drafts, published);
 
     const billing = merged.filter((p) => p.name === "Billing Service");
     expect(billing).toHaveLength(1);
     expect(billing[0].id).toBe("p-abc123");   // collapsed onto the draft's key
     expect(billing[0].role).toBe("service");  // draft-declared role survives the collapse
     // GitHub board status is NOT read (#2541) — the node keeps its derived activity, never "done".
-    expect(billing[0].activity).toBe("planning"); // draft has no fleet → planning default
+    expect(billing[0].activity).toBe("idle"); // rests at idle (#2551) — building is derived, not defaulted
   });
 
   it("keys a draft-less published project by its name-derived slug, with derived axes (#2409/#2541)", () => {
     const published = [gh("PVT_node1", "Billing Service", true)]; // closed board — but status is NOT read
 
-    const merged = mergeGlanceProjects({}, {}, published);
+    const merged = mergeGlanceProjects({}, published);
 
     expect(merged).toHaveLength(1);
     expect(merged[0].id).toBe("billing-service"); // projectSlug(title) — never the node id
     expect(merged[0].health).toBe("idle");
-    expect(merged[0].activity).toBe("building");  // a published hub is a working project
+    expect(merged[0].activity).toBe("idle");  // rests at idle (#2551) until a runtime signal lights it up
   });
 
   it("collapses a slug-keyed draft with its published board on the SAME key (#2409)", () => {
     const drafts = { "billing-service": { title: "Billing Service", pitch: "", createdAt: 1 } };
     const published = [gh("PVT_node1", "Billing Service", true)];
 
-    const merged = mergeGlanceProjects(drafts, {}, published);
+    const merged = mergeGlanceProjects(drafts, published);
 
     expect(merged).toHaveLength(1);
     expect(merged[0].id).toBe("billing-service");
@@ -147,6 +147,31 @@ describe("applyLiveness — heartbeat → 'live' activity + healthy (#2263/#2541
   it("returns the input untouched when nothing is live (liveness lapsed ⇒ prior axes intact)", () => {
     const out = applyLiveness(projects, new Set());
     expect(out).toEqual(projects);
+  });
+});
+
+describe("deriveBuildingKeys / applyRunningActivity — running agents → building (#2551)", () => {
+  const projects: ProjectLite[] = [
+    { id: "alpha", name: "Alpha", health: "idle", activity: "idle" },
+    { id: "beta", name: "Beta", health: "idle", activity: "idle" },
+  ];
+
+  it("deriveBuildingKeys reads the roster + run/on pane statuses, keyed by the project prefix", () => {
+    const keys = deriveBuildingKeys(
+      { "alpha:auth": {} },                                  // a launched worker stream → alpha
+      { "beta:director": "run", "gamma:web": "idle" },       // director running → beta; idle → ignored
+    );
+    expect([...keys].sort()).toEqual(["alpha", "beta"]);
+  });
+
+  it("applyRunningActivity marks a project with a live agent as building + healthy, leaves the rest idle", () => {
+    const out = applyRunningActivity(projects, new Set(["alpha"]));
+    expect(out.find((p) => p.id === "alpha")).toMatchObject({ activity: "building", health: "healthy" });
+    expect(out.find((p) => p.id === "beta")).toEqual(projects[1]); // nothing running → stays idle
+  });
+
+  it("no running agents → the input is returned untouched", () => {
+    expect(applyRunningActivity(projects, new Set())).toBe(projects);
   });
 });
 
@@ -198,7 +223,7 @@ describe("useGlanceProjects — wires 'live' from project_liveness (#2263)", () 
 
     const { result } = renderHook(() => useGlanceProjects());
     await waitFor(() => expect(result.current.length).toBe(1));
-    expect(result.current[0].activity).toBe("planning"); // no fleet → planning, never flips to live
+    expect(result.current[0].activity).toBe("idle"); // no running agents → idle, never flips to live
   });
 });
 
@@ -325,14 +350,14 @@ describe("local published inventory seeds Glance (#2445)", () => {
   });
 
   it("merge seeds a node for a local published hub — keyed by the HUB folder key — when GitHub is absent", () => {
-    const merged = mergeGlanceProjects({}, {}, [], [{ key: "acme-crm", title: "Acme CRM" }]);
+    const merged = mergeGlanceProjects({}, [], [{ key: "acme-crm", title: "Acme CRM" }]);
     expect(merged).toHaveLength(1);
-    // The hub key IS the drill / fleetPaneStreams key — never a fabricated one. Working project → building.
-    expect(merged[0]).toMatchObject({ id: "acme-crm", name: "Acme CRM", activity: "building", health: "idle" });
+    // The hub key IS the drill / fleetPaneStreams key — never a fabricated one. Rests at idle (#2551).
+    expect(merged[0]).toMatchObject({ id: "acme-crm", name: "Acme CRM", activity: "idle", health: "idle" });
   });
 
   it("a GitHub record OVERLAYS the local node — collapsing onto a LEGACY hub key via slug(title)", () => {
-    const merged = mergeGlanceProjects({}, {}, [gh("PVT_1", "Acme CRM", true)], [{ key: "p-legacy1", title: "Acme CRM" }]);
+    const merged = mergeGlanceProjects({}, [gh("PVT_1", "Acme CRM", true)], [{ key: "p-legacy1", title: "Acme CRM" }]);
     expect(merged).toHaveLength(1);
     expect(merged[0].id).toBe("p-legacy1"); // stayed on the hub key (what the drill resolves)
   });

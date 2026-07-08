@@ -28,6 +28,7 @@ import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import type { GRole, GHealth, GActivity } from "./glanceGraph";
 import type { ProjectLite } from "./glanceData";
 import type { GlanceFault } from "./useGlanceFaults";
+import { projectKeyOfSession } from "./agentStall";
 
 // #2541 — GitHub board status NO LONGER drives a Glance node's status. The old `ghStatus` (open ⇒
 // planning, shipped ⇒ done) is gone; health + activity are derived from runtime signals only.
@@ -35,7 +36,6 @@ import type { GlanceFault } from "./useGlanceFaults";
 /** Store shapes the merge reads — mirrored structurally so the pure fn stays decoupled from the slices.
  *  A draft MAY declare curated axes (#2284/#2541) — a demo/tagged project keeps its authored colouring. */
 type DraftMap = Record<string, { title: string; pitch: string; createdAt: number; role?: GRole; health?: GHealth; activity?: GActivity; reason?: string }>;
-type FleetMap = Record<string, { streams: unknown[] } | undefined>;
 
 /** Stable empty published set — a fresh `[]` each render would needlessly re-run the merge memo. */
 const NO_PUBLISHED: GhProject[] = [];
@@ -63,7 +63,6 @@ let localPublishedCache: LocalPublishedLite[] | null = null;
  */
 export function mergeGlanceProjects(
   drafts: DraftMap,
-  planFleet: FleetMap,
   published: GhProject[],
   localPublished: LocalPublishedLite[] = [],
 ): ProjectLite[] {
@@ -72,14 +71,14 @@ export function mergeGlanceProjects(
   const draftKeyByTitle = new Map<string, string>();
   // Drafts first; a published project on the same plan key overrides it below.
   for (const [id, d] of Object.entries(drafts)) {
-    // A draft may DECLARE its Glance axes (#2284/#2541 — health + activity + reason); else derive: role
-    // in buildGlanceData, activity from whether it has a planned fleet, health resting at idle (the
-    // runtime overlays — liveness #2263, faults #2541 — light it up). A declared value wins so a
-    // demo/tagged project keeps its curated colouring.
+    // A draft may DECLARE its Glance axes (#2284/#2541 — health + activity + reason); else both axes
+    // REST at idle (#2551) and the runtime overlays light them up: liveness → live (#2263), running
+    // agents → building (#2551), bsc-wait → waiting, faults → warning/error (#2541). A declared value
+    // wins so a demo/tagged project keeps its curated colouring.
     byKey.set(id, {
       id, name: d.title, role: d.role,
       health: d.health ?? "idle",
-      activity: d.activity ?? ((planFleet[id]?.streams.length ?? 0) > 0 ? "building" : "planning"),
+      activity: d.activity ?? "idle",
       reason: d.reason,
     });
     draftKeyByTitle.set(projectSlug(d.title), id);
@@ -87,12 +86,12 @@ export function mergeGlanceProjects(
   // Local published hubs (#2445) — the OFFLINE seed: a published project always has a node, keyed by
   // its hub folder key (what the drill resolves), even when the GitHub set is absent (logged out /
   // fetch not landed). A GitHub record below OVERLAYS it. GitHub board status NO LONGER sets the node
-  // status (#2541) — a published hub is a working project, so its default activity is `building`; a
+  // status (#2541) and a published hub RESTS at idle (#2551) until a runtime overlay lights it up; a
   // draft-declared axis still wins for curated colouring.
   for (const lp of localPublished) {
     const prior = byKey.get(lp.key);
     const d = drafts[lp.key];
-    byKey.set(lp.key, { id: lp.key, name: lp.title, role: prior?.role, health: d?.health ?? "idle", activity: d?.activity ?? "building", reason: d?.reason });
+    byKey.set(lp.key, { id: lp.key, name: lp.title, role: prior?.role, health: d?.health ?? "idle", activity: d?.activity ?? "idle", reason: d?.reason });
     draftKeyByTitle.set(projectSlug(lp.title), lp.key);
   }
   for (const p of published) {
@@ -103,7 +102,7 @@ export function mergeGlanceProjects(
     const titleKey = projectSlug(p.title);
     const key = draftKeyByTitle.get(titleKey) ?? titleKey;
     const prior = byKey.get(key);
-    byKey.set(key, { id: key, name: p.title, role: prior?.role, health: prior?.health ?? "idle", activity: prior?.activity ?? "building", reason: prior?.reason });
+    byKey.set(key, { id: key, name: p.title, role: prior?.role, health: prior?.health ?? "idle", activity: prior?.activity ?? "idle", reason: prior?.reason });
   }
   return [...byKey.values()];
 }
@@ -124,6 +123,31 @@ const LIVENESS_POLL_MS = 10_000;
 export function applyLiveness(projects: ProjectLite[], liveKeys: ReadonlySet<string>): ProjectLite[] {
   if (liveKeys.size === 0) return projects;
   return projects.map((p) => (liveKeys.has(p.id) ? { ...p, activity: "live", health: p.health === "idle" ? "healthy" : p.health } : p));
+}
+
+/**
+ * Overlay RUNNING-AGENT activity onto the node set (#2551) — the `building` state. A project with a live
+ * agent PTY reads activity `building` + health `healthy` (active & fine). This is what makes `building`
+ * mean agents are ACTUALLY running — NOT a resting default — so a triaged project with nothing running
+ * stays `idle`. Applied after liveness so active agent work (the more current signal) wins over a bare
+ * `live` app. The fault overlay still escalates health to warning/error on top. Pure.
+ */
+export function applyRunningActivity(projects: ProjectLite[], buildingKeys: ReadonlySet<string>): ProjectLite[] {
+  if (buildingKeys.size === 0) return projects;
+  return projects.map((p) => (buildingKeys.has(p.id) ? { ...p, activity: "building", health: p.health === "idle" ? "healthy" : p.health } : p));
+}
+
+/** The set of project keys with a LIVE agent session (#2551): any launched roster pane (`fleetPaneStreams`,
+ *  keyed `<key>:<stream>`) or any pane with an authoritative `run`/`on` status (covers the director, a
+ *  session not a stream). The project key is the pane id's prefix (before the first ':'). Pure. */
+export function deriveBuildingKeys(
+  fleetPaneStreams: Record<string, unknown>,
+  paneStatus: Record<string, string | undefined>,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const paneId of Object.keys(fleetPaneStreams)) keys.add(projectKeyOfSession(paneId));
+  for (const [paneId, st] of Object.entries(paneStatus)) if (st === "run" || st === "on") keys.add(projectKeyOfSession(paneId));
+  return keys;
 }
 
 /**
@@ -181,8 +205,11 @@ export function filterTriaged(projects: ProjectLite[], triaged: Record<string, n
 
 export function useGlanceProjects(enabled = true): ProjectLite[] {
   const drafts = useAppStore((s) => s.localDraftProjects);
-  const planFleet = useAppStore((s) => s.planFleet);
   const triagedProjects = useAppStore((s) => s.triagedProjects);
+  // Running-agent signals (#2551): the launched roster + authoritative pane statuses → the `building`
+  // activity. A project with a live agent pane reads `building`; nothing running → it rests at `idle`.
+  const fleetPaneStreams = useAppStore((s) => s.fleetPaneStreams);
+  const paneStatus = useAppStore((s) => s.paneStatus);
   const githubState = useAppStore((s) => s.githubState);
   const setGithubState = useAppStore((s) => s.setGithubState);
   const liveKeys = useProjectLiveness(enabled);
@@ -241,13 +268,19 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
     return filterRecordsToLocal(githubState.records, locals).map(minimalToGhProject);
   }, [published.data, githubState, drafts, localPublished]);
 
+  const buildingKeys = useMemo(() => deriveBuildingKeys(fleetPaneStreams, paneStatus), [fleetPaneStreams, paneStatus]);
   return useMemo(
-    // Merge first (drafts + local published + GitHub published), FILTER to triaged/working projects
-    // (#2541 — a draft/plan never shows), then overlay live heartbeats as the `"live"` activity (#2263).
-    () => applyLiveness(
-      filterTriaged(mergeGlanceProjects(drafts, planFleet, effectivePublished, localPublished), triagedProjects),
-      liveKeys,
+    // Merge (drafts + local published + GitHub published), FILTER to triaged/working projects (#2541 —
+    // a draft/plan never shows), then overlay activity from real signals: liveness → `live` (#2263),
+    // running agents → `building` (#2551); a project with nothing running RESTS at `idle`. (Stall →
+    // `waiting`/warn and faults → error are overlaid later in the workspace.)
+    () => applyRunningActivity(
+      applyLiveness(
+        filterTriaged(mergeGlanceProjects(drafts, effectivePublished, localPublished), triagedProjects),
+        liveKeys,
+      ),
+      buildingKeys,
     ),
-    [drafts, planFleet, effectivePublished, localPublished, triagedProjects, liveKeys],
+    [drafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys],
   );
 }
