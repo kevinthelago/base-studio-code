@@ -82,6 +82,7 @@ export const useAppStore = create<AppStore>()(
         terminalFontSize: s.terminalFontSize,
         accent:          s.accent,
         kitTheme:        s.kitTheme,
+        designContributions: s.designContributions, // #2656: downloaded-blueprint design overlays survive restart
         keybindings:     s.keybindings,
         paneViews:       s.paneViews,
         paneNames:       s.paneNames,

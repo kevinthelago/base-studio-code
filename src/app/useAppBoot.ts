@@ -6,6 +6,7 @@ import { log } from "@/shared/lib/core/log";
 import { useAppStore } from "@/store";
 import { accentVars } from "@/features/settings";
 import { applyThemeToRoot } from "@/shared/ui/kit/theme";
+import { applyContributionsToRoot } from "@/shared/ui/kit";
 
 /** Delay (ms after hydration) before the perf monitor + store-write diagnostics start, so they don't
  *  load the cold-start window (#1033). Metrics during boot have no diagnostic value. */
@@ -87,6 +88,9 @@ export function useAppBoot() {
     // Data-defined component variants (#2569): compile the designer-authored `bsc ui variants` store
     // into the managed `<style>` so an LLM-authored variant renders on boot (re-applied on ui-touch).
     void useAppStore.getState().hydrateVariants();
+    // Design contributions (#2656): apply the persisted downloaded-blueprint token overlays on boot, so
+    // a shared blueprint's look restyles the app immediately (compose-don't-mutate, #2650).
+    applyContributionsToRoot(useAppStore.getState().designContributions);
     // Project relationships (#2253): hydrate the Glance L1 network edges from the global `bsc project
     // link` store so the desktop, live sessions, and a restart share ONE set. A no-op when the bridge
     // is absent (keeps the persisted cache).
