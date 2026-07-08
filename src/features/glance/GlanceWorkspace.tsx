@@ -6,7 +6,8 @@
 // clearly-marked SAMPLE until a real cross-project dependency model lands (epic slice 4). Clicking a
 // project will drill to its live agent network (L2, later slice) — for now it opens the inspector. The
 // pan/zoom shell is the shared GraphCanvas template + useGraphViewport (#2208, epic #2197 slice 2).
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { demoSnapshot } from "@/store/demoSnapshot";
 import { Stack } from "@/shared/ui/layout/Stack";
@@ -138,6 +139,19 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   }, [drill, projectBlueprintId, blueprints]);
   // Whether the drilled project's build is COMPLETE (#2623) — drives the ▷ preview node in the drill.
   const drillComplete = useProjectComplete(drill);
+  // The verify-build state (#2623): the built PreviewSource + in-flight flag; the morph's "Build to
+  // preview" button kicks the Rust `verify_build`, which resolves the stack, builds + serves, and returns
+  // a PreviewSource (null until the backend command lands — the invoke degrades gracefully).
+  const previewSources = useAppStore((s) => s.previewSources);
+  const previewBuilding = useAppStore((s) => s.previewBuilding);
+  const setPreviewSource = useAppStore((s) => s.setPreviewSource);
+  const setPreviewBuilding = useAppStore((s) => s.setPreviewBuilding);
+  const buildPreview = useCallback((key: string) => {
+    setPreviewBuilding(key, true);
+    void safeInvoke<PreviewSource | null>("verify_build", { projectKey: key }, null)
+      .then((src) => { if (src) setPreviewSource(key, src); })
+      .finally(() => setPreviewBuilding(key, false));
+  }, [setPreviewBuilding, setPreviewSource]);
   const fleetData = useMemo(() => {
     if (!drillNode) return null;
     const base = effectiveFleet && effectiveFleet.streams.length > 0
@@ -369,7 +383,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           // The live-agent terminal morphs open IN the graph, as an oversized node (#2534).
           chat={chatPaneId && chatNode ? { nodeId: chatNode, paneId: chatPaneId, name: chatMeta?.slug ?? "agent", role: chatMeta?.roleLabel } : null}
           onCloseChat={() => setChatNode(null)}
-          preview={previewOn ? { nodeId: PREVIEW_NODE_ID, name: drillNode?.slug ?? "app", source: null as PreviewSource | null } : null}
+          preview={previewOn && drill ? {
+            nodeId: PREVIEW_NODE_ID, name: drillNode?.slug ?? "app",
+            source: previewSources[drill] ?? null,
+            building: !!previewBuilding[drill],
+            onBuild: () => buildPreview(drill),
+          } : null}
           onClosePreview={() => setPreviewOpen(false)}
         />
       </Box>

@@ -6,6 +6,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { Button } from "@/shared/ui/controls/Button";
 import { previewRender, type PreviewSource } from "@/shared/lib/preview/previewSource";
 import { NW, NH } from "./lib/glanceGraph";
 
@@ -13,12 +14,16 @@ const EXIT_MS = 420;
 /** ~4× a node — the app wants room. World units (renders at world-size × zoom). */
 const CARD_W = 720, CARD_H = 460;
 
-export function GlancePreviewMorph({ node, source, name, onClose }: {
+export function GlancePreviewMorph({ node, source, name, building, onBuild, onClose }: {
   /** The preview node's world box (origin + return). */
   node: { x: number; y: number };
   /** What the verify-build produced, or null while the app hasn't been built yet. */
   source: PreviewSource | null;
   name: string;
+  /** A verify-build is in flight. */
+  building?: boolean;
+  /** Kick the verify-build (#2623) — resolve the stack, build + serve, produce a PreviewSource. */
+  onBuild?: () => void;
   onClose: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -97,7 +102,18 @@ export function GlancePreviewMorph({ node, source, name, onClose }: {
           ) : render?.mode === "stream" ? (
             <Placeholder>Native preview streaming isn't wired yet — the app runs as a window; its frames will stream here.</Placeholder>
           ) : (
-            <Placeholder>Run the <b>verify build</b> to render your finished app here.</Placeholder>
+            <Box style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 24 }}>
+              <Text as="div" size={12.5} tone="muted" style={{ textAlign: "center", maxWidth: 340, lineHeight: 1.6 }}>
+                {building ? "Building your app — this runs its real build, then serves it here." : "Your finished application renders here."}
+              </Text>
+              {building ? (
+                <Box aria-hidden bg="color-mix(in oklch, var(--accent), transparent 75%)" radius={2} style={{ height: 3, width: 160, overflow: "hidden" }}>
+                  <Box bg="var(--accent)" style={{ height: "100%", width: "30%", animation: "scan 1.1s linear infinite" }} />
+                </Box>
+              ) : onBuild ? (
+                <Button variant="primary" onClick={onBuild}>▷ Build to preview</Button>
+              ) : null}
+            </Box>
           )}
         </Box>
       </Box>
