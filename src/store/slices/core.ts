@@ -10,7 +10,7 @@ import { projectLinkId } from "@/features/glance/lib/projectLinks";
 import { loadProjectLinks, pushProjectLink, dropProjectLink } from "@/features/glance/lib/projectLinksBridge";
 
 type CoreSlice = Pick<AppStore,
-  "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "glanceDrill" | "setGlanceDrill" | "previewSources" | "setPreviewSource" | "previewBuilding" | "setPreviewBuilding" | "orgDrill" | "setOrgDrill" | "projectLinks" | "addProjectLink" | "removeProjectLink" | "hydrateProjectLinks" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject" | "triagedProjects" | "markProjectTriaged"
+  "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "glanceDrill" | "setGlanceDrill" | "previewSources" | "setPreviewSource" | "previewBuilding" | "setPreviewBuilding" | "reviewFindings" | "setReviewFindings" | "orgDrill" | "setOrgDrill" | "projectLinks" | "addProjectLink" | "removeProjectLink" | "hydrateProjectLinks" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject" | "triagedProjects" | "markProjectTriaged"
 >;
 
 export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) => ({
@@ -41,6 +41,9 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
       setPreviewSource: (key, source) => set((s) => ({ previewSources: { ...s.previewSources, [key]: source } })),
       previewBuilding: {},
       setPreviewBuilding: (key, building) => set((s) => ({ previewBuilding: { ...s.previewBuilding, [key]: building } })),
+      // Preview-review findings per project (#2623 slice 5b, transient) — the confirm-gated inbox.
+      reviewFindings: {},
+      setReviewFindings: (key, findings) => set((s) => ({ reviewFindings: { ...s.reviewFindings, [key]: findings } })),
       orgDrill: null,
       setOrgDrill: (id) => set({ orgDrill: id }),
 
