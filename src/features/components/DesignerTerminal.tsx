@@ -7,10 +7,10 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { useDesignerTerminal } from "./useDesignerTerminal";
 
-export function DesignerTerminal() {
+export function DesignerTerminal({ height }: { height?: number }) {
   const { containerRef } = useDesignerTerminal(true);
   return (
-    <Box className="ds-terminal" data-testid="designer-terminal">
+    <Box className="ds-terminal" data-testid="designer-terminal" style={height !== undefined ? { height } : undefined}>
       <Box className="ds-colhead">
         <Text className="ds-eyebrow" as="span">✦ Designer session · UI kits via bsc ui</Text>
         <Text mono size="xxs" tone="dim">design-studio · restricted</Text>
