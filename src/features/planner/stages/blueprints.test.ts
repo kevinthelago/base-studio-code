@@ -45,6 +45,24 @@ describe("blueprints — seed library", () => {
     expect(STAGE_DEFS.ui.deps).toContain("features");
   });
 
+  it("adds the Serverless Function blueprint — a lean 'script' category, GitHub deploy, no UI (#2596)", () => {
+    const bp = makeBlueprints().find((b) => b.id === "serverless-function")!;
+    expect(bp).toBeTruthy();
+    expect(bp.category).toBe("script");
+    const keys = bp.sections.map((s) => s.key);
+    // the lean spec replaces discovery; deployment (GitHub) + streams stay; UI + market are dropped
+    expect(keys).toEqual(["function_spec", "features", "deployment", "streams"]);
+    for (const dropped of ["ui", "test_ui", "market", "discovery"]) expect(keys).not.toContain(dropped);
+  });
+
+  it("the function_spec stage is a lean, user-confirmed (gateless) spec stage (#2596)", () => {
+    const def = STAGE_DEFS.function_spec;
+    expect(def).toBeTruthy();
+    expect(def.gateRule).toBeUndefined();                       // gateless → completes on the USER's confirm
+    expect(def.prompt.toLowerCase()).toContain("trigger");      // the invocation trigger is the heart of the spec
+    expect(def.directive?.toLowerCase()).toContain("function.md");
+  });
+
   it("test_ui teaches the data-shape layout picker (#2475)", () => {
     const def = STAGE_DEFS.test_ui;
     expect(def).toBeTruthy();

@@ -158,7 +158,7 @@ export type BlueprintOrigin = "built-in" | "local" | "forked" | "imported";
 /** Lifecycle intent of a blueprint (#645) — what part of a project's life it serves.
  *  Greenfield = create from a pitch; transform = restructure existing repos; harden =
  *  improve quality in place; maintain = ongoing upkeep. Drives library grouping/labels. */
-export type BlueprintCategory = "greenfield" | "transform" | "harden" | "maintain" | "data";
+export type BlueprintCategory = "greenfield" | "transform" | "harden" | "maintain" | "data" | "script";
 
 /** Whether a blueprint starts from a pitch (create) or runs against existing repos
  *  (operate) — selects the planner intro at launch. */
