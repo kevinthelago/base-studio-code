@@ -34,7 +34,7 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 }));
 
 // xterm can't initialize in jsdom (open() needs real DOM measurements) — stub it globally so any
-// component that hosts a terminal (the planner + the Design Studio's always-on designer pane, #2585)
+// component that hosts a terminal (the planner + the Design Studio's always-on designer pane, #2597)
 // renders in tests. A test that asserts terminal wiring can still override this per-file.
 vi.mock("@xterm/xterm", () => {
   class Terminal {

@@ -94,7 +94,7 @@
    was the only animated page; a motion vocabulary is deferred until the design system is in place.
    The functional loading indicators stay (ds-spin/ds-pulse above + ds-skel below). */
 
-/* ── designer session panel (#2471/#2585) — the ALWAYS-ON terminal docked at the bottom of the
+/* ── designer session panel (#2471/#2597) — the ALWAYS-ON terminal docked at the bottom of the
    center column, below the composition graph. Fixed height so the graph (pane) keeps priority; the
    hook's ResizeObserver re-fits xterm when the center width changes. */
 .ds-terminal { flex: none; height: 240px; min-height: 150px; display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
