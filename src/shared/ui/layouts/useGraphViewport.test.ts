@@ -3,7 +3,7 @@
 // plus the wheel-listener lifecycle owned by the `setVp` ref callback (#2454).
 import { describe, it, expect } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useGraphViewport, zoomAboutPoint, fitView, centerView, type GraphView } from "./useGraphViewport";
+import { useGraphViewport, zoomAboutPoint, fitView, centerView, centeredView, type GraphView } from "./useGraphViewport";
 
 const V0: GraphView = { tx: 0, ty: 0, scale: 1 };
 
@@ -56,6 +56,36 @@ describe("fitView (#2208)", () => {
     // A huge world would want a tiny scale, but min floors it.
     const v = fitView(10000, 10000, 400, 400, 0.4, 1.5, 20, 1.5);
     expect(v.scale).toBe(0.4);
+  });
+});
+
+describe("centeredView (#2545)", () => {
+  it("centers the world at an explicit scale", () => {
+    // 800×600 world, 1000×600 viewport, scale 0.5 → world renders 400×300, centered.
+    const v = centeredView(800, 600, 1000, 600, 0.5, 0.28, 2.6);
+    expect(v.scale).toBe(0.5);
+    expect(v.tx).toBe((1000 - 400) / 2); // 300
+    expect(v.ty).toBe((600 - 300) / 2);  // 150
+  });
+
+  it("clamps the scale to [min,max]", () => {
+    expect(centeredView(100, 100, 400, 400, 99, 0.4, 1.5).scale).toBe(1.5);
+    expect(centeredView(100, 100, 400, 400, 0.01, 0.4, 1.5).scale).toBe(0.4);
+  });
+
+  it("keeps a tall world vertically on-screen where a zoom-about-center replay from origin would not (#2545)", () => {
+    // The org bug: an 800-tall world in a 600-tall viewport, saved zoom 0.7. Restoring via zoomTo
+    // replays zoomAboutPoint from the fresh mount's {0,0,1} origin about the viewport center...
+    const W = 800, H = 800, CW = 900, CH = 600, saved = 0.7;
+    const viaZoomTo = zoomAboutPoint({ tx: 0, ty: 0, scale: 1 }, saved, CW / 2, CH / 2, 0.28, 2.6);
+    const worldBottomZoomTo = viaZoomTo.ty + H * viaZoomTo.scale;
+    expect(worldBottomZoomTo).toBeGreaterThan(CH); // overflows the bottom (y+) — the reported bug
+
+    // ...whereas centeredView frames it symmetrically, so top and bottom overhang are equal.
+    const centered = centeredView(W, H, CW, CH, saved, 0.28, 2.6);
+    const topGap = centered.ty;
+    const bottomGap = CH - (centered.ty + H * centered.scale);
+    expect(topGap).toBeCloseTo(bottomGap, 6);
   });
 });
 
@@ -134,6 +164,20 @@ describe("useGraphViewport wheel listener lifecycle (#2454)", () => {
     act(() => result.current.setVp(null));
     act(() => { wheel(el); });
     expect(result.current.view.scale).toBe(1);
+  });
+
+  it("zoomToCentered is a no-op before the viewport mounts, then centers the world at the saved scale (#2545)", () => {
+    const { result } = renderHook(() => useGraphViewport({ w: 800, h: 800 }, { min: 0.4, max: 1.5 }));
+    // No viewport element yet → the restore call must not move the view (stays at the origin).
+    act(() => result.current.zoomToCentered(0.7));
+    expect(result.current.view).toEqual({ tx: 0, ty: 0, scale: 1 });
+    // Attached: jsdom clientWidth/Height are 0 → centeredView gives tx = (0 - w*s)/2 = -w*s/2.
+    const el = document.createElement("div");
+    act(() => result.current.setVp(el));
+    act(() => result.current.zoomToCentered(0.7));
+    expect(result.current.view.scale).toBe(0.7);
+    expect(result.current.view.tx).toBe(-800 * 0.7 / 2);
+    expect(result.current.view.ty).toBe(-800 * 0.7 / 2);
   });
 
   it("centerOn pans the given world point toward the viewport center, keeping zoom (#2525)", () => {
