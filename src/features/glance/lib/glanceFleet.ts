@@ -70,6 +70,25 @@ export function fleetToOrg(fleet: FleetPlan, team?: BlueprintTeam): Org {
   if (fleet.director?.enabled) for (const s of fleet.streams) rel("director", s.id, archOf("director", s.id, "manages")); // manager → report
   for (const e of fleet.edges ?? []) rel(e.from, e.to, archOf(e.from, e.to, KIND_TO_ARCHETYPE[e.kind] ?? "peers"));        // producer → consumer
   for (const s of fleet.streams) for (const dep of s.dependsOn) rel(dep, s.id, archOf(dep, s.id, "peers"));                // upstream ↔ dependent
+
+  // Phase 2 (#2575): ADD the team's authored relationships that have no derived edge, INSTANTIATED onto
+  // the streams by persona — a team rel posA→posB becomes every {posA-persona stream} × {posB-persona
+  // stream} pair with the team's archetype. `rel` dedups vs the derived edges above (a pair with both
+  // keeps its slice-3-overlaid archetype), so this only ADDS authored relationships the coordination
+  // didn't wire. Nodes stay the fleet streams (identity + liveness preserved).
+  if (team) {
+    const streamsByPersona = new Map<string, string[]>();
+    for (const s of fleet.streams) if (s.persona) {
+      const arr = streamsByPersona.get(s.persona);
+      if (arr) arr.push(s.id); else streamsByPersona.set(s.persona, [s.id]);
+    }
+    const personaOfPos = new Map(team.positions.map((p) => [p.nodeId, p.personaId]));
+    for (const tr of team.relationships) {
+      const pa = personaOfPos.get(tr.from), pb = personaOfPos.get(tr.to);
+      if (!pa || !pb) continue;
+      for (const sa of streamsByPersona.get(pa) ?? []) for (const sb of streamsByPersona.get(pb) ?? []) rel(sa, sb, tr.archetype);
+    }
+  }
   return { id: "fleet", name: "Fleet", positions, relationships };
 }
 
