@@ -19,6 +19,21 @@ const POLL_MS = 30000;
 
 interface Pr { number: number; head: { ref: string; sha: string }; }
 
+// Fleet panes use STABLE IDENTITY ids (#1176) — a worker is `<projectKey>:<streamId>`, its director is
+// `<projectKey>:director` (project keys are `[A-Za-z0-9-]`, so the first `:` splits off the key). A legacy
+// fleet uses positional `t{n}p{m}` ids (director = p0 of the tab). The old `slice(0, indexOf("p"))` math
+// silently mis-resolved an identity id (the `p` in e.g. "my**p**roject") to a garbage pane, so the director
+// never received the green-PR MERGE nudge and merged nothing (#2604). Both helpers handle either shape.
+
+/** A fleet pane's project GROUP — its stable-identity project key, or a positional pane's tab prefix. */
+export function ciGroupKey(paneId: string): string {
+  return paneId.includes(":") ? paneId.split(":")[0] : paneId.slice(0, paneId.indexOf("p") + 1);
+}
+/** The DIRECTOR pane id for a worker pane — `<projectKey>:director`, or p0 of a legacy positional tab. */
+export function ciDirectorPaneFor(paneId: string): string {
+  return paneId.includes(":") ? `${paneId.split(":")[0]}:director` : `${paneId.slice(0, paneId.indexOf("p"))}p0`;
+}
+
 export function useCiWatcher(): void {
   // Per (repo#pr@sha) last CI state, so we inject once per transition into a terminal state
   // (a re-pushed fix gets a new sha -> a fresh key -> delivered again on its result).
@@ -35,21 +50,18 @@ export function useCiWatcher(): void {
       const entries = Object.entries(streams);
       if (!token || entries.length === 0) return;
 
-      // The tab prefix "t{n}p" groups a director (p0) with its workers; a tab is in watchdog
-      // mode when its director pane's mode === "watchdog".
-      const tabPrefix = (paneId: string): string => paneId.slice(0, paneId.indexOf("p") + 1);
-      const watchdogTabs = new Set<string>();
+      // A project's director is in watchdog mode when its pane's mode === "watchdog"; group by project key.
+      const watchdogGroups = new Set<string>();
       for (const [paneId, mode] of Object.entries(directorModes)) {
-        if (mode === "watchdog") watchdogTabs.add(tabPrefix(paneId));
+        if (mode === "watchdog") watchdogGroups.add(ciGroupKey(paneId));
       }
 
       // ── Watchdog path (#378): no worker PRs in a self-merge fleet — watch develop's CI
       // instead and nudge the director to revert + ping the owner when it goes red.
       const developRepos = new Map<string, string>(); // repo -> watchdog director paneId
       for (const [paneId, st] of entries) {
-        const pref = tabPrefix(paneId);
-        if (!watchdogTabs.has(pref)) continue;
-        if (!developRepos.has(st.repo)) developRepos.set(st.repo, pref + "0");
+        if (!watchdogGroups.has(ciGroupKey(paneId))) continue;
+        if (!developRepos.has(st.repo)) developRepos.set(st.repo, ciDirectorPaneFor(paneId));
       }
       for (const [repo, directorPane] of developRepos) {
         const checks = await safeInvoke<{ check_runs: CheckRun[] } | null>("github_request", { token, path: `repos/${repo}/commits/develop/check-runs` }, null);
@@ -72,8 +84,8 @@ export function useCiWatcher(): void {
       const paneByRepoBranch = new Map<string, string>();
       const repos = new Set<string>();
       for (const [paneId, st] of entries) {
-        // A worker whose tab's director is a watchdog has no PR to watch — skip it.
-        if (watchdogTabs.has(tabPrefix(paneId))) continue;
+        // A worker whose project's director is a watchdog has no PR to watch — skip it.
+        if (watchdogGroups.has(ciGroupKey(paneId))) continue;
         paneByRepoBranch.set(st.repo + "#" + st.branch, paneId);
         repos.add(st.repo);
       }
@@ -98,8 +110,8 @@ export function useCiWatcher(): void {
             injectPrompt(paneId, ciWorkerPrompt(pr.number, state, failing)).catch(() => {}),
           ];
           if (state === "passed") {
-            // The director for this worker is pane 0 of the same tab (t<n>p0).
-            const directorPane = paneId.slice(0, paneId.indexOf("p")) + "p0";
+            // The director for this worker's PROJECT — its stable identity `<projectKey>:director` (#2604).
+            const directorPane = ciDirectorPaneFor(paneId);
             if (useAppStore.getState().paneDirectorDrive[directorPane]) {
               writes.push(injectPrompt(directorPane, ciDirectorMergePrompt(pr.number, pr.head.ref)).catch(() => {}));
             }
