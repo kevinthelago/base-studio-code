@@ -36,6 +36,8 @@ import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecor
 import { useUiActivity } from "./lib/uiActivity";
 import { groupKits, type KitTreeNode } from "./lib/kitGroups";
 import { renderSpecimen, type PreviewTheme } from "./specimens";
+import { SPECIMEN_FIXTURES } from "./specimenFixtures";
+import type { PrimitiveName } from "@/shared/ui/manifest";
 import { ThemeScope, DEFAULT_THEME } from "@/shared/ui/kit";
 import type { KitThemeRecord } from "./lib/themes";
 import "./designStudio.css";
@@ -217,10 +219,14 @@ export function DesignStudio() {
   };
 
   // The live preview node, guarded — a specimen that throws surfaces the error card, not a crash.
+  // Prefer the REAL component (specimenFixtures via the registry, #2555); fall back to the specimens.tsx
+  // mock for any primitive/variant not yet ported (a fixture returns null to defer).
   let previewEl: ReactNode = null, previewErr: string | null = null;
   if (sel) {
-    try { void renderKey; previewEl = renderSpecimen(sel, activeVariant, theme); }
-    catch (e) { previewErr = e instanceof Error ? e.message : String(e); }
+    try {
+      void renderKey;
+      previewEl = SPECIMEN_FIXTURES[sel.name as PrimitiveName]?.(activeVariant) ?? renderSpecimen(sel, activeVariant, theme);
+    } catch (e) { previewErr = e instanceof Error ? e.message : String(e); }
   }
 
   return (
