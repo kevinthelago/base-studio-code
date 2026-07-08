@@ -23,6 +23,9 @@ const CARD: React.CSSProperties = { flex: 1, background: "var(--bg-soft)", borde
 // The section micro-label, on the shared SectionLabel (#2420) with this inspector's tracking/rhythm.
 const LABEL = (t: string) => <SectionLabel size={9.5} style={{ letterSpacing: "1px", margin: "20px 0 9px" }}>{t}</SectionLabel>;
 const CYCLE_BG = "rgba(242,85,95,.08)", CYCLE_BD = "rgba(242,85,95,.28)";
+// Iteration-loop (cyclical archetype, #2578) accents — violet, so a deliberate loop reads distinct from
+// the red mutual-dependency hazard.
+const LOOP_FG = "#c77dff", LOOP_TX = "#d9b3ff", LOOP_BG = "rgba(199,125,255,.08)", LOOP_BD = "rgba(199,125,255,.30)";
 
 interface InspectorProps {
   model: GraphModel;
@@ -72,6 +75,9 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
     const deps = model.edges.filter((e) => e.from === n.id);
     const rdeps = model.edges.filter((e) => e.to === n.id);
     const inCycle = model.cycleNodeIds.has(n.id);
+    // A deliberate iteration LOOP (all this node's cycle edges cyclical, #2578) vs a mutual-dependency
+    // HAZARD — the note is positive (a converging feedback loop) rather than a deadlock warning.
+    const cycleLoop = inCycle && !model.edges.some((e) => e.isCycle && (e.from === n.id || e.to === n.id) && !archetypeById(e.archetype ?? "")?.cyclical);
     // An L1 (fleet) edge labels + colours by its Org archetype (Manages/Oversees/Peers…); an L0 edge by kind.
     const kindOf = (e: GEdge) => (e.isCycle ? "cycle" : e.archetype ? (archetypeById(e.archetype)?.label ?? e.archetype) : EDGE_META[e.kind].label.split(" ")[0]);
     const colorOf = (e: GEdge) => (e.isCycle ? "#f2555f" : e.archetype ? hueColor(archetypeById(e.archetype)?.hue ?? 0) : EDGE_META[e.kind].color);
@@ -105,11 +111,15 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
               : <Box />}
           </Grid>
 
-          {inCycle && (
-            <Row gap={9} align="start" style={{ marginTop: 14, background: CYCLE_BG, border: `1px solid ${CYCLE_BD}`, borderRadius: 8, padding: "10px 12px" }}>
-              <Text as="span" style={{ color: "#f2555f", flex: "none" }}>▲</Text>
-              <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: "#f3a4a9" }}>In a cross-project dependency cycle — coordinate release order before shipping to avoid a deadlock.</Text>
-            </Row>
+          {inCycle && (cycleLoop
+            ? <Row gap={9} align="start" style={{ marginTop: 14, background: LOOP_BG, border: `1px solid ${LOOP_BD}`, borderRadius: 8, padding: "10px 12px" }}>
+                <Text as="span" style={{ color: LOOP_FG, flex: "none" }}>⟳</Text>
+                <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: LOOP_TX }}>In a deliberate iteration loop — cycles with its counterpart (findings ⟳ revisions) until it converges. Not a hazard.</Text>
+              </Row>
+            : <Row gap={9} align="start" style={{ marginTop: 14, background: CYCLE_BG, border: `1px solid ${CYCLE_BD}`, borderRadius: 8, padding: "10px 12px" }}>
+                <Text as="span" style={{ color: "#f2555f", flex: "none" }}>▲</Text>
+                <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: "#f3a4a9" }}>In a cross-project dependency cycle — coordinate release order before shipping to avoid a deadlock.</Text>
+              </Row>
           )}
 
           {/* PERSONA (#2561): the agent identity at this fleet node — who is at the terminal (name · model ·
@@ -216,16 +226,25 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
     // A fleet-drill (L1) edge is an Org RELATIONSHIP (archetype → communication forms); an L0 edge is a
     // project contract. Resolve the archetype so the chip/colour/forms speak the org grammar (#2561).
     const arch = e.archetype ? archetypeById(e.archetype) : undefined;
-    const kindColor = e.isCycle ? "#f2555f" : arch ? hueColor(arch.hue) : meta.color;
-    const chipLabel = e.isCycle ? "cycle" : arch ? arch.label : meta.label;
+    // A cyclical archetype (iterates, #2578) is a deliberate LOOP — keep the archetype label + hue, not
+    // the red "cycle" hazard chip.
+    const loop = e.isCycle && !!arch?.cyclical;
+    const kindColor = loop ? hueColor(arch!.hue) : e.isCycle ? "#f2555f" : arch ? hueColor(arch.hue) : meta.color;
+    const chipLabel = loop ? arch!.label : e.isCycle ? "cycle" : arch ? arch.label : meta.label;
     const from = model.nodes.find((x) => x.id === e.from)!, to = model.nodes.find((x) => x.id === e.to)!;
     return (
       <Box style={PANEL}>
         <Header title={arch ? "RELATIONSHIP" : "CONTRACT INSPECTOR"} onClose={onClose} />
         <Box style={{ flex: 1, overflowY: "auto", padding: "18px 16px" }}>
-          <Text as="span" mono size={11} style={{ color: e.isCycle ? "#f2848b" : kindColor, background: `color-mix(in oklch, ${kindColor} 12%, transparent)`, border: `1px solid color-mix(in oklch, ${kindColor} 32%, transparent)`, borderRadius: 6, padding: "5px 10px" }}>{chipLabel}</Text>
+          <Text as="span" mono size={11} style={{ color: loop ? kindColor : e.isCycle ? "#f2848b" : kindColor, background: `color-mix(in oklch, ${kindColor} 12%, transparent)`, border: `1px solid color-mix(in oklch, ${kindColor} 32%, transparent)`, borderRadius: 6, padding: "5px 10px" }}>{chipLabel}</Text>
 
-          {e.isCycle && (
+          {loop && (
+            <Row gap={9} align="start" style={{ marginTop: 14, background: LOOP_BG, border: `1px solid ${LOOP_BD}`, borderRadius: 8, padding: "11px 12px" }}>
+              <Text as="span" style={{ color: LOOP_FG, flex: "none" }}>⟳</Text>
+              <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: LOOP_TX }}>An iteration loop — {from.slug} and {to.slug} cycle deliberately (findings ⟳ revisions) until it converges. Not a dependency hazard.</Text>
+            </Row>
+          )}
+          {e.isCycle && !loop && (
             <Row gap={9} align="start" style={{ marginTop: 14, background: CYCLE_BG, border: `1px solid ${CYCLE_BD}`, borderRadius: 8, padding: "11px 12px" }}>
               <Text as="span" style={{ color: "#f2555f", flex: "none" }}>▲</Text>
               <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: "#f3a4a9" }}>This edge closes a cycle. Two projects depend on each other — releasing either in isolation can deadlock the other.</Text>

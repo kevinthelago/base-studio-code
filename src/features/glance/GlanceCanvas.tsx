@@ -67,7 +67,10 @@ export function GlanceCanvas(p: CanvasProps) {
           // edge keeps the kind colour + dash.
           const arch = e.archetype ? archetypeById(e.archetype) : undefined;
           const inFocus = focus ? focus.edges.has(e.id) : true;
-          const color = e.isCycle ? "#f2555f" : arch ? hueColor(arch.hue) : meta.color;
+          // A cyclical archetype (iterates, #2578) is a DELIBERATE loop — keep the archetype's hue (not
+          // the red hazard tint) but the animated cycle dash, so it reads as an intentional iteration loop.
+          const loop = e.isCycle && !!arch?.cyclical;
+          const color = loop ? hueColor(arch!.hue) : e.isCycle ? "#f2555f" : arch ? hueColor(arch.hue) : meta.color;
           const width = (e.isCycle ? 2.3 : arch ? 1.8 : meta.w) + (inFocus && focus ? 0.7 : 0);
           const dash = e.isCycle ? "7 6" : arch ? (ARCH_DASH[arch.style] ?? "") : meta.dash;
           const opacity = e.isCycle ? (focus ? (inFocus ? 1 : 0.4) : 0.95) : (focus ? (inFocus ? 1 : REST_E) : 0.82);
@@ -100,11 +103,18 @@ export function GlanceCanvas(p: CanvasProps) {
         const selected = p.selNodeId === n.id;
         const inFocus = focus ? focus.nodes.has(n.id) : true;
         const isCycle = model.cycleNodeIds.has(n.id);
+        // A node in a mutual-dependency HAZARD cycle tints red; a node in an intentional iteration LOOP
+        // (all its cycle edges cyclical, #2578) tints with the loop archetype's hue instead — not a fault.
+        const hazardCycle = isCycle && model.edges.some((e) => e.isCycle && (e.from === n.id || e.to === n.id) && !archetypeById(e.archetype ?? "")?.cyclical);
+        const loopHue = isCycle && !hazardCycle
+          ? hueColor(archetypeById(model.edges.find((e) => e.isCycle && (e.from === n.id || e.to === n.id) && archetypeById(e.archetype ?? "")?.cyclical)?.archetype ?? "")?.hue ?? 300)
+          : undefined;
         // ERROR highlights the whole node red (#2541) — the origin (own error) full-strength, an inherited
         // (downstream) error softer, so the eye lands on the source. Beats the cycle tint; selection wins.
         const border = selected ? "var(--accent)"
           : isError ? (inherited ? `color-mix(in oklch, ${ERR} 42%, transparent)` : ERR)
-          : isCycle ? `color-mix(in oklch, ${ERR} 55%, transparent)`
+          : hazardCycle ? `color-mix(in oklch, ${ERR} 55%, transparent)`
+          : loopHue ? `color-mix(in oklch, ${loopHue} 55%, transparent)`
           : (focus && inFocus ? "var(--border)" : "var(--border-soft)");
         const boxShadow = selected ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)"
           : isError && !inherited ? `0 0 0 3px color-mix(in oklch, ${ERR} 22%, transparent), 0 2px 8px rgba(0,0,0,.45)`

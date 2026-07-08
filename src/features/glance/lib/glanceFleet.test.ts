@@ -25,6 +25,14 @@ describe("buildFleetData (glance drill)", () => {
     }
   });
 
+  it("seeds an auditor ⟳ reviewer iteration loop (#2578) — both directions, so it reads as a cycle", () => {
+    const a = buildFleetData({ id: "proj-x", name: "X" });
+    expect(a.rawNodes.map((n) => n.id)).toContain("auditor");
+    // both directions present + archetype `iterates` → mutualPairs will flag it as a loop
+    expect(a.rawEdges).toContainEqual({ from: "auditor", to: "reviewer", kind: "data", archetype: "iterates" });
+    expect(a.rawEdges).toContainEqual({ from: "reviewer", to: "auditor", kind: "data", archetype: "iterates" });
+  });
+
   it("varies the worker count by project id", () => {
     const counts = new Set(
       ["a", "bb", "ccc", "dddd", "project-network", "ledger-svc"].map(
@@ -246,6 +254,30 @@ describe("fleetToOrg phase-2 team instantiation (#2575)", () => {
     const org = fleetToOrg(fleet, team);
     // the single reviewer oversees BOTH workers
     expect(org.relationships.filter((r) => r.archetype === "oversees" && r.from === "qa").map((r) => r.to).sort()).toEqual(["w1", "w2"]);
+  });
+});
+
+describe("buildOrgFleetData cyclical archetype (#2578 — iteration loops)", () => {
+  it("emits BOTH directions for a cyclical (iterates) relationship, one for every other archetype", () => {
+    const org: Org = {
+      id: "o", name: "O",
+      positions: [
+        { nodeId: "aud", kind: "agent", personaId: "persona-auditor", label: "auditor" },
+        { nodeId: "wrk", kind: "agent", personaId: "persona-worker", label: "worker" },
+        { nodeId: "dir", kind: "agent", personaId: "persona-director", label: "director" },
+      ],
+      relationships: [
+        { id: "r0", archetype: "iterates", from: "aud", to: "wrk" }, // a LOOP → both directions
+        { id: "r1", archetype: "manages", from: "dir", to: "wrk" },  // a DAG edge → one reversed edge
+      ],
+    };
+    const data = buildOrgFleetData(org, []);
+    const iter = data.rawEdges.filter((e) => e.archetype === "iterates");
+    // the loop produced a mutual pair (aud↔wrk) — the shared cycle primitive will render it bowed
+    expect(iter).toHaveLength(2);
+    expect(new Set(iter.map((e) => `${e.from}->${e.to}`))).toEqual(new Set(["aud->wrk", "wrk->aud"]));
+    // the DAG archetype stays a single (reversed) edge
+    expect(data.rawEdges.filter((e) => e.archetype === "manages")).toHaveLength(1);
   });
 });
 

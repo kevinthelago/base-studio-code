@@ -8,7 +8,7 @@ import type { GlanceData, ProjectLite } from "./glanceData";
 import { hashAbs } from "./hash";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
-import { positionComms, type Org, type Position, type Relationship } from "@/features/org";
+import { archetypeById, positionComms, type Org, type Position, type Relationship } from "@/features/org";
 import type { BlueprintTeam } from "@/features/planner/stages/blueprintTypes";
 
 /** Session-role → Glance colour bucket, grouped by agent FUNCTION (#2561): ORCHESTRATE (planner ·
@@ -146,12 +146,19 @@ export function buildOrgFleetData(org: Org, personas: Persona[]): GlanceData {
   const rawEdges: GRawEdge[] = [];
   const seen = new Set<string>();
   for (const r of org.relationships) {
-    const from = r.to, to = r.from; // REVERSE: Glance "from depends on to" is the inverse of the org edge
-    if (from === to || !ids.has(from) || !ids.has(to)) continue;
-    const k = `${from}|${to}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    rawEdges.push({ from, to, kind: ARCHETYPE_TO_KIND[r.archetype] ?? "api", archetype: r.archetype });
+    // A CYCLICAL archetype (iterates, #2578) is a deliberate feedback LOOP — emit BOTH directions so the
+    // shared graph-core cycle primitive (`mutualPairs`) detects it and renders it as a bowed loop; every
+    // other archetype maps to ONE reversed edge (Glance "from depends on to" inverts the org direction).
+    const dirs: [string, string][] = archetypeById(r.archetype)?.cyclical
+      ? [[r.to, r.from], [r.from, r.to]]
+      : [[r.to, r.from]];
+    for (const [from, to] of dirs) {
+      if (from === to || !ids.has(from) || !ids.has(to)) continue;
+      const k = `${from}|${to}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      rawEdges.push({ from, to, kind: ARCHETYPE_TO_KIND[r.archetype] ?? "api", archetype: r.archetype });
+    }
   }
   return { rawNodes, rawEdges, sample: false };
 }
@@ -189,17 +196,23 @@ export function nodeHasLiveSession(paneId: string, livePaneIds: ReadonlySet<stri
   return livePaneIds.has(paneId);
 }
 
-/** Build a project's fleet as a Glance graph: a director (infra hub), 2–4 workers (service), and a
- *  reviewer (data). Edges are "depends on": each worker depends on the director's direction (api), the
- *  reviewer reads each worker's output (data) — so the layout flows director → workers → reviewer. All
+/** Build a project's fleet as a Glance graph: a director (infra hub), 2–4 workers (service), a reviewer
+ *  (data), and an auditor (data) in a CYCLICAL loop with the reviewer (#2578). Edges are "depends on":
+ *  each worker depends on the director's direction (api), the reviewer oversees each worker's output
+ *  (data), and the auditor ⟳ reviewer edge is a deliberate iteration loop (findings ⟳ revisions). All
  *  clearly `sample` until a real fleet feed replaces it. */
 export function buildFleetData(project: ProjectLite): GlanceData {
   const workers = 2 + (hashAbs(project.id) % 3); // 2..4
   const rawNodes: GRawNode[] = [
     { id: "director", slug: "director", role: "infra", roleLabel: "director", health: "healthy", activity: "building" },
     { id: "reviewer", slug: "reviewer", role: "data", roleLabel: "reviewer", health: "idle", activity: "review" },
+    { id: "auditor", slug: "auditor", role: "data", roleLabel: "auditor", health: "idle", activity: "review" },
   ];
-  const rawEdges: GRawEdge[] = [];
+  // The auditor ⟳ reviewer iteration loop (#2578): both directions so `mutualPairs` reads it as a cycle.
+  const rawEdges: GRawEdge[] = [
+    { from: "auditor", to: "reviewer", kind: "data", archetype: "iterates" },
+    { from: "reviewer", to: "auditor", kind: "data", archetype: "iterates" },
+  ];
   for (let i = 1; i <= workers; i++) {
     const id = `worker-${i}`;
     rawNodes.push({ id, slug: `worker ${i}`, role: "service", roleLabel: "worker", health: hashAbs(id + project.id) % 2 ? "healthy" : "idle", activity: "building" });
