@@ -15,7 +15,7 @@ import { StatTile } from "@/shared/ui/data/StatTile";
 import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, type GraphModel, type GNode, type GEdge } from "./lib/glanceGraph";
 import { archetypeById, formById, hueColor } from "@/features/org";
 
-const FAULT_COLOR = "#f2555f";
+const FAULT_COLOR = "var(--graph-health-error)";
 
 // Fills its (drag-resizable) wrapper column in GraphCanvas — the width is owned by the layout, not here.
 const PANEL: React.CSSProperties = { flex: 1, minWidth: 0, background: "var(--bg-elev)", borderLeft: "1px solid var(--border)", display: "flex", flexDirection: "column", zIndex: 15 };
@@ -80,7 +80,7 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
     const cycleLoop = inCycle && !model.edges.some((e) => e.isCycle && (e.from === n.id || e.to === n.id) && !archetypeById(e.archetype ?? "")?.cyclical);
     // An L1 (fleet) edge labels + colours by its Org archetype (Manages/Oversees/Peers…); an L0 edge by kind.
     const kindOf = (e: GEdge) => (e.isCycle ? "cycle" : e.archetype ? (archetypeById(e.archetype)?.label ?? e.archetype) : EDGE_META[e.kind].label.split(" ")[0]);
-    const colorOf = (e: GEdge) => (e.isCycle ? "#f2555f" : e.archetype ? hueColor(archetypeById(e.archetype)?.hue ?? 0) : EDGE_META[e.kind].color);
+    const colorOf = (e: GEdge) => (e.isCycle ? "var(--graph-health-error)" : e.archetype ? hueColor(archetypeById(e.archetype)?.hue ?? 0) : EDGE_META[e.kind].color);
 
     return (
       <Box style={PANEL}>
@@ -117,7 +117,7 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
                 <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: LOOP_TX }}>In a deliberate iteration loop — cycles with its counterpart (findings ⟳ revisions) until it converges. Not a hazard.</Text>
               </Row>
             : <Row gap={9} align="start" style={{ marginTop: 14, background: CYCLE_BG, border: `1px solid ${CYCLE_BD}`, borderRadius: 8, padding: "10px 12px" }}>
-                <Text as="span" style={{ color: "#f2555f", flex: "none" }}>▲</Text>
+                <Text as="span" style={{ color: "var(--graph-health-error)", flex: "none" }}>▲</Text>
                 <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: "#f3a4a9" }}>In a cross-project dependency cycle — coordinate release order before shipping to avoid a deadlock.</Text>
               </Row>
           )}
@@ -229,7 +229,7 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
     // A cyclical archetype (iterates, #2578) is a deliberate LOOP — keep the archetype label + hue, not
     // the red "cycle" hazard chip.
     const loop = e.isCycle && !!arch?.cyclical;
-    const kindColor = loop ? hueColor(arch!.hue) : e.isCycle ? "#f2555f" : arch ? hueColor(arch.hue) : meta.color;
+    const kindColor = loop ? hueColor(arch!.hue) : e.isCycle ? "var(--graph-health-error)" : arch ? hueColor(arch.hue) : meta.color;
     const chipLabel = loop ? arch!.label : e.isCycle ? "cycle" : arch ? arch.label : meta.label;
     const from = model.nodes.find((x) => x.id === e.from)!, to = model.nodes.find((x) => x.id === e.to)!;
     return (
@@ -246,7 +246,7 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
           )}
           {e.isCycle && !loop && (
             <Row gap={9} align="start" style={{ marginTop: 14, background: CYCLE_BG, border: `1px solid ${CYCLE_BD}`, borderRadius: 8, padding: "11px 12px" }}>
-              <Text as="span" style={{ color: "#f2555f", flex: "none" }}>▲</Text>
+              <Text as="span" style={{ color: "var(--graph-health-error)", flex: "none" }}>▲</Text>
               <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: "#f3a4a9" }}>This edge closes a cycle. Two projects depend on each other — releasing either in isolation can deadlock the other.</Text>
             </Row>
           )}
@@ -265,7 +265,7 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
 
           <Box style={{ ...CARD, marginTop: 16, flex: "unset" }}>
             <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: ".8px", marginBottom: 6 }}>STRENGTH</Text>
-            <Text as="span" mono size={11} style={{ color: e.hard ? "#f2b155" : "var(--fg-muted)" }}>{e.hard ? "hard" : "soft"}</Text>
+            <Text as="span" mono size={11} style={{ color: e.hard ? "var(--graph-health-warning)" : "var(--fg-muted)" }}>{e.hard ? "hard" : "soft"}</Text>
           </Box>
 
           {arch ? (
