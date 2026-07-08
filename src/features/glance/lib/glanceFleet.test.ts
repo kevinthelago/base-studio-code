@@ -208,6 +208,47 @@ describe("fleetToOrg team overlay + teamToOrg (#2572 — author the fleet as an 
   });
 });
 
+describe("fleetToOrg phase-2 team instantiation (#2575)", () => {
+  it("ADDS an authored team relationship that has NO derived edge, instantiated onto the streams by persona", () => {
+    const fleet = {
+      recommended: 2, reasoning: "",
+      streams: [
+        { id: "api", name: "API", repo: "r", owns: [], issues: [], dependsOn: [], persona: "p-a" },
+        { id: "web", name: "Web", repo: "r", owns: [], issues: [], dependsOn: [], persona: "p-b" },
+      ],
+      director: { enabled: false },
+    } as unknown as FleetPlan;
+    const team = {
+      positions: [{ nodeId: "n1", kind: "agent", personaId: "p-a" }, { nodeId: "n2", kind: "agent", personaId: "p-b" }],
+      relationships: [{ id: "tr", archetype: "oversees", from: "n1", to: "n2" }],
+    } as unknown as BlueprintTeam;
+    const org = fleetToOrg(fleet, team);
+    // there was no derived edge between api & web; the authored oversees relationship is added
+    expect(org.relationships).toContainEqual(expect.objectContaining({ from: "api", to: "web", archetype: "oversees" }));
+    // without the team, no such edge exists
+    expect(fleetToOrg(fleet).relationships.some((r) => r.from === "api" && r.to === "web")).toBe(false);
+  });
+
+  it("instantiates a team relationship across a POOLED persona (one team position → many streams)", () => {
+    const fleet = {
+      recommended: 3, reasoning: "",
+      streams: [
+        { id: "w1", name: "W1", repo: "r", owns: [], issues: [], dependsOn: [], persona: "p-worker" },
+        { id: "w2", name: "W2", repo: "r", owns: [], issues: [], dependsOn: [], persona: "p-worker" },
+        { id: "qa", name: "QA", repo: "r", owns: [], issues: [], dependsOn: [], persona: "p-rev" },
+      ],
+      director: { enabled: false },
+    } as unknown as FleetPlan;
+    const team = {
+      positions: [{ nodeId: "rev", kind: "agent", personaId: "p-rev" }, { nodeId: "wk", kind: "agent", personaId: "p-worker" }],
+      relationships: [{ id: "tr", archetype: "oversees", from: "rev", to: "wk" }],
+    } as unknown as BlueprintTeam;
+    const org = fleetToOrg(fleet, team);
+    // the single reviewer oversees BOTH workers
+    expect(org.relationships.filter((r) => r.archetype === "oversees" && r.from === "qa").map((r) => r.to).sort()).toEqual(["w1", "w2"]);
+  });
+});
+
 describe("nodeHasLiveSession (#2534/#2542 — a fleet-tab cell morphs)", () => {
   // A launched build tab: the director + workers are all cells (paneIds), so all are openable.
   const live = new Set(["proj:director", "proj:foundation", "proj:pages-a"]);
