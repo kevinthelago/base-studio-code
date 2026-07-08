@@ -8,11 +8,14 @@ import { useAppStore } from "@/store";
 import { resolveLlmConfig } from "@/shared/lib/core/llmConfig";
 import { startPreviewCapture, grabFrame, stopCapture, screenCaptureAvailable } from "@/shared/lib/preview/captureFrame";
 import { reviewShot } from "@/shared/lib/preview/reviewShot";
+import { injectPrompt } from "@/shared/lib/fleet/paneInject";
 import {
   mergeFindings,
   setFindingStatus,
   pendingFindings,
   confirmedFindings,
+  routedFindings,
+  reviewDispatchPrompt,
   type PreviewShot,
   type ReviewFinding,
 } from "@/shared/lib/preview/previewReview";
@@ -20,20 +23,30 @@ import {
 const EMPTY: ReviewFinding[] = [];
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+/** A readable screen label from a shot id (`<key>:<seq>` → "Screen N") for the dispatch prose. */
+function screenLabel(shotId: string): string {
+  const seq = Number(shotId.split(":").pop());
+  return Number.isFinite(seq) ? `Screen ${seq + 1}` : shotId;
+}
+
 export interface PreviewReview {
   findings: ReviewFinding[];
   pending: ReviewFinding[];
   confirmed: ReviewFinding[];
+  /** Findings already routed to the fleet (a tally; they don't re-dispatch). */
+  routed: ReviewFinding[];
   /** Screen capture is available in this webview (gate the capture button). */
   canCapture: boolean;
   /** A capture + review is in flight. */
   busy: boolean;
-  /** The last capture/review failure, or null. */
+  /** The last capture/review/dispatch failure, or null. */
   error: string | null;
   /** Capture the current preview frame and review it — folds new findings into the inbox. */
   captureAndReview: () => Promise<void>;
   confirm: (id: string) => void;
   dismiss: (id: string) => void;
+  /** Route all confirmed findings to the project's director (bsc-issue → bsc-assign) and mark them routed. */
+  dispatch: () => Promise<void>;
 }
 
 export function usePreviewReview(projectKey: string | null): PreviewReview {
@@ -74,15 +87,38 @@ export function usePreviewReview(projectKey: string | null): PreviewReview {
     store.setReviewFindings(projectKey, setFindingStatus(store.reviewFindings[projectKey] ?? [], id, status));
   }, [projectKey]);
 
+  const dispatch = useCallback(async () => {
+    if (!projectKey) return;
+    const store = useAppStore.getState();
+    const confirmed = confirmedFindings(store.reviewFindings[projectKey] ?? []);
+    if (confirmed.length === 0) return;
+    // The director is where the fleet's coordination runs — no live fleet, nowhere to route.
+    if (store.findFleetTabIdx(projectKey) < 0) {
+      setError("No running fleet — launch it first so the director can pick up the review.");
+      return;
+    }
+    setError(null);
+    try {
+      await injectPrompt(`${projectKey}:director`, reviewDispatchPrompt(confirmed, screenLabel));
+      let next = store.reviewFindings[projectKey] ?? [];
+      for (const f of confirmed) next = setFindingStatus(next, f.id, "routed");
+      store.setReviewFindings(projectKey, next);
+    } catch (e) {
+      setError(errText(e));
+    }
+  }, [projectKey]);
+
   return {
     findings,
     pending: pendingFindings(findings),
     confirmed: confirmedFindings(findings),
+    routed: routedFindings(findings),
     canCapture: screenCaptureAvailable(),
     busy,
     error,
     captureAndReview,
     confirm: useCallback((id: string) => setStatus(id, "confirmed"), [setStatus]),
     dismiss: useCallback((id: string) => setStatus(id, "dismissed"), [setStatus]),
+    dispatch,
   };
 }
