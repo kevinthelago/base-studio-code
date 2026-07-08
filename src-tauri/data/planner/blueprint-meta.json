@@ -1,11 +1,12 @@
 {
   "_comment": "Blueprint library metadata (#2027 P1) — the lifecycle categories and their display label+hue. The built-in blueprints themselves live one per file in @data/blueprints/. Loaded by blueprints.ts, which keeps only the types + logic.",
-  "categories": ["greenfield", "transform", "harden", "maintain", "data"],
+  "categories": ["greenfield", "transform", "harden", "maintain", "data", "script"],
   "categoryMeta": {
     "greenfield": { "label": "Greenfield", "h": 145 },
     "transform":  { "label": "Transform",  "h": 230 },
     "harden":     { "label": "Harden",     "h": 25 },
     "maintain":   { "label": "Maintain",   "h": 70 },
-    "data":       { "label": "Data",       "h": 280 }
+    "data":       { "label": "Data",       "h": 280 },
+    "script":     { "label": "Script",     "h": 50 }
   }
 }

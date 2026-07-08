@@ -1,12 +1,12 @@
 // ── Blueprint display helpers (#…): a hued icon tile keyed by lifecycle category, a visibility
 // pill (draft / private gist / public gist), and a shortened gist link. ────────────────────────
-import { Layers, GitFork, Shield, Wrench, Database } from "lucide-react";
+import { Layers, GitFork, Shield, Wrench, Database, Zap } from "lucide-react";
 import { timeAgoMs, truncate } from "@/shared/lib/core/format";
 import { CATEGORY_META, type Blueprint, type BlueprintGist, type BlueprintCategory, type BlueprintStage } from "../stages/blueprints";
 import type { DraftRow } from "./drafts";
 
 export const CAT_ICON: Record<BlueprintCategory, typeof Layers> = {
-  greenfield: Layers, transform: GitFork, harden: Shield, maintain: Wrench, data: Database,
+  greenfield: Layers, transform: GitFork, harden: Shield, maintain: Wrench, data: Database, script: Zap,
 };
 export function catHue(cat: BlueprintCategory): string {
   return `oklch(0.75 0.13 ${CATEGORY_META[cat]?.h ?? 70})`;
