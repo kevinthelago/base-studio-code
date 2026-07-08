@@ -33,3 +33,21 @@ export function grandfatherTriaged(
   }
   return out;
 }
+
+/**
+ * Grandfather LOCAL published hubs into the triaged set (#2548 follow-up). The persist migration reads the
+ * PERSISTED `githubState.records` + `planFleet`, but both are empty when the user is logged out or after a
+ * state reset — so an existing user's on-disk published projects still vanished from Glance. The on-disk
+ * published inventory (`list_local_projects`) is the RELIABLE "already worked" set. Stamp each local
+ * published hub key not already marked, preserving existing timestamps. Keyed by the hub FOLDER key —
+ * exactly the key the Glance node + `filterTriaged` resolve against. Pure + deterministic.
+ */
+export function grandfatherLocalPublished(
+  localPublishedKeys: string[],
+  existing: Record<string, number>,
+  now: number,
+): Record<string, number> {
+  const out = { ...existing };
+  for (const key of localPublishedKeys) if (key && out[key] === undefined) out[key] = now;
+  return out;
+}
