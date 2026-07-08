@@ -35,6 +35,11 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
     for (const needle of ["bsc ui", "bsc ui schema", "bsc ui validate", "bsc component", "composes"]) {
       expect(designer.startPrompt).toContain(needle);
     }
+    // ...and teach the graduated bsc ui ladder (#2585): the discover verbs, the per-rung edit
+    // verbs, and the default-to-the-highest-rung rule that makes the runtime design loop reachable.
+    for (const needle of ["ladder", "highest rung", "bsc ui tokens", "bsc ui components", "set-token", "define-variant"]) {
+      expect(designer.startPrompt).toContain(needle);
+    }
   });
 
   it("the issuer persona (#2509) decomposes a modification into transformations at intake", () => {
