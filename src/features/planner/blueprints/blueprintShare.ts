@@ -3,7 +3,7 @@
 // manifest (fresh uids, defensive field coercion — never trusts the payload shape).
 // Pure; pairs with lib/gist/manifest.ts.
 
-import { type Blueprint, type BlueprintStage, type BlueprintTeam, type BlueprintUiKit, type FleetPolicy, uid, dedupeSections } from "../stages/blueprints";
+import { type Blueprint, type BlueprintStage, type BlueprintTeam, type BlueprintUiKit, type BlueprintDesign, type FleetPolicy, uid, dedupeSections } from "../stages/blueprints";
 import { flowOrUndefined } from "../fleet/agentFlow";
 import { wrapExtension, type ExtensionManifest } from "@/features/planner/lib/gist/manifest";
 import { type SkillPayload } from "./blueprintSkills";
@@ -167,6 +167,11 @@ export function coerceBlueprint(
   // every import/share/poll round-trip would silently strip the default per-stream profile+flow,
   // reverting the blueprint's fleet to launch defaults.
   const fleetPolicy = coerceFleetPolicy(o.fleetPolicy);
+  // Design contribution (#2606) — the categories the blueprint introduces + a preferred theme ref.
+  // SAME whitelist discipline (#2450): without explicit coercion `design` would be silently stripped
+  // on every import/share/poll round-trip and the download-reconciliation confirm-list (#2658) would
+  // never fire — a silent hole, exactly what the "fall loudly" principle forbids.
+  const design = coerceDesign(o.design);
   return {
     id, name, desc: str(o.desc), sections,
     // Blueprint-wide attached capabilities (#897) + lifecycle metadata, preserved on import.
@@ -184,7 +189,20 @@ export function coerceBlueprint(
     ...(fleetPolicy ? { fleetPolicy } : {}),
     ...(team ? { team } : {}),
     ...(uiKit ? { uiKit } : {}),
+    ...(design ? { design } : {}),
   };
+}
+
+/** Coerce a blueprint's design contribution (#2606) from an untrusted payload — the categories it
+ *  introduces + a preferred theme ref. Returns undefined when neither is present, so an all-default
+ *  blueprint stays `design`-less (and reconcile is a no-op). Mirrors coerceUiKit/coerceTeam. */
+function coerceDesign(raw: unknown): BlueprintDesign | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  const categories = strArr(o.categories);
+  const theme = str(o.theme);
+  if (!categories.length && !theme) return undefined;
+  return { ...(categories.length ? { categories } : {}), ...(theme ? { theme } : {}) };
 }
 
 /** Wrap a blueprint in the extension envelope for export / share / publish. When `bundledSkills`

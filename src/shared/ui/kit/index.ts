@@ -21,3 +21,7 @@ export type { DesignContributionOverlay } from "./contributions";
 export {
   compileContributionsCss, applyContributionsToRoot, contributionFromCategories, graphCategoryToken,
 } from "./contributions";
+// #2646: the PURE reconcile diff — a downloaded blueprint's design contribution vs the local contract.
+// The confirm-list (#2658) generates + registers a contribution for whatever the contract can't cover.
+export type { DesignContribution, DesignReconcile } from "./reconcile";
+export { reconcileDesign, KNOWN_GRAPH_CATEGORIES } from "./reconcile";
