@@ -38,8 +38,12 @@ export interface GraphViewport {
   centerOn: (wx: number, wy: number) => void;
   /** Zoom by a factor around the viewport center (the +/- buttons). */
   zoomBy: (factor: number) => void;
-  /** Set an absolute zoom around the viewport center (e.g. restoring a saved level). */
+  /** Set an absolute zoom around the viewport center (e.g. Glance's zoom-to-100% snap). */
   zoomTo: (scale: number) => void;
+  /** Set an absolute zoom with the world re-centered — the correct "restore a saved zoom" move, since
+   *  it never depends on the pre-restore pan (which is the origin on a fresh mount). No-op before the
+   *  viewport element mounts. (#2545) */
+  zoomToCentered: (scale: number) => void;
   /** True during a pan-drag so the click that ends it doesn't select a node/edge. */
   dragMoved: React.MutableRefObject<boolean>;
   /** The `transform` style to spread onto the world layer. */
@@ -57,12 +61,22 @@ export function zoomAboutPoint(v: GraphView, ns: number, mx: number, my: number,
 }
 
 /**
+ * Center a `w`×`h` world in a `cw`×`ch` viewport at an explicit `scale` (clamped to [min,max]). Pure —
+ * exported for testing. Restoring a saved zoom goes through here, not `zoomAboutPoint`, so the world
+ * stays centered instead of drifting off-screen when replayed from the origin view (#2545).
+ */
+export function centeredView(w: number, h: number, cw: number, ch: number, scale: number, min: number, max: number): GraphView {
+  const s = clamp(scale, min, max);
+  return { scale: s, tx: (cw - w * s) / 2, ty: (ch - h * s) / 2 };
+}
+
+/**
  * Fit a `w`×`h` world into a `cw`×`ch` viewport: the largest scale (clamped to [min, maxFitScale] and
  * then [min,max]) that leaves `fitPad` px per side, centered. Pure — exported for testing.
  */
 export function fitView(w: number, h: number, cw: number, ch: number, min: number, max: number, fitPad: number, maxFitScale: number): GraphView {
-  const s = clamp(Math.min((cw - fitPad * 2) / w, (ch - fitPad * 2) / h, maxFitScale), min, max);
-  return { scale: s, tx: (cw - w * s) / 2, ty: (ch - h * s) / 2 };
+  const s = Math.min((cw - fitPad * 2) / w, (ch - fitPad * 2) / h, maxFitScale);
+  return centeredView(w, h, cw, ch, s, min, max);
 }
 
 /**
@@ -122,6 +136,14 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
     zoomAbout(scale, el.clientWidth / 2, el.clientHeight / 2);
   }, [zoomAbout]);
 
+  /** Set an absolute zoom with the world re-centered (restoring a saved level, #2545). */
+  const zoomToCentered = useCallback((scale: number) => {
+    const el = vpRef.current;
+    if (!el) return;
+    const { w, h } = worldRef.current;
+    setView(centeredView(w, h, el.clientWidth, el.clientHeight, scale, min, max));
+  }, [min, max]);
+
   // Wheel → zoom (native non-passive listener so we can preventDefault the page scroll).
   const onWheel = useCallback((e: WheelEvent) => {
     const el = vpRef.current;
@@ -168,7 +190,7 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
   }, [onWheel]);
 
   return {
-    view, setVp, onCanvasDown, fit, centerOn, zoomBy, zoomTo, dragMoved,
+    view, setVp, onCanvasDown, fit, centerOn, zoomBy, zoomTo, zoomToCentered, dragMoved,
     worldTransform: { transform: `translate(${view.tx}px,${view.ty}px) scale(${view.scale})`, transformOrigin: "0 0" },
   };
 }
