@@ -12,7 +12,7 @@ import { IconButton } from "@/shared/ui/controls/IconButton";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { StatTile } from "@/shared/ui/data/StatTile";
-import { ROLE_COLOR, STATUS_META, EDGE_META, type GraphModel, type GNode } from "./lib/glanceGraph";
+import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, type GraphModel, type GNode } from "./lib/glanceGraph";
 
 const FAULT_COLOR = "#f2555f";
 
@@ -65,7 +65,8 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
   if (selType === "node" && selId) {
     const n = model.nodes.find((x) => x.id === selId);
     if (!n) return null;
-    const st = STATUS_META[n.status];
+    const health = HEALTH_META[n.rollupHealth];   // axis 1 — rolled-up health (dot colour)
+    const activity = ACTIVITY_META[n.activity];   // axis 2 — the lifecycle word
     const faults = n.faults ?? 0;
     const deps = model.edges.filter((e) => e.from === n.id);
     const rdeps = model.edges.filter((e) => e.to === n.id);
@@ -79,17 +80,27 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
         <Box style={{ flex: 1, overflowY: "auto", padding: "18px 16px" }}>
           <Text as="div" mono size={19} weight={700} style={{ letterSpacing: "-.4px" }}>{n.slug}</Text>
 
-          {/* STATUS / ROLE as the shared metric tile (#2420) — custom value nodes keep the dot + pill. */}
+          {/* HEALTH (axis 1) / ACTIVITY (axis 2) / ROLE as shared metric tiles (#2420/#2541). The health
+              value is the ROLLED-UP health; an inherited (downstream) health is flagged so the user
+              knows the cause is a dependency, not this node. */}
           <Grid cols={2} gap={8} style={{ marginTop: 16 }}>
-            <StatTile k="STATUS" v={
+            <StatTile k="HEALTH" v={
               <Row gap={7} align="center">
-                <StatusDot color={st.color} size={9} style={{ boxShadow: st.pulse ? `0 0 8px ${st.color}` : "none" }} />
-                <Text as="span" mono size={12.5} weight={500} style={{ color: st.color }}>{st.label}</Text>
+                <StatusDot color={health.color} size={9} style={{ boxShadow: health.pulse ? `0 0 8px ${health.color}` : "none" }} />
+                <Text as="span" mono size={12.5} weight={500} style={{ color: health.color }}>{n.rollupHealth}{n.healthInherited ? " · downstream" : ""}</Text>
               </Row>
             } />
+            <StatTile k="ACTIVITY" v={
+              <Text as="span" mono size={12.5} weight={500} tone="muted">{activity.label}</Text>
+            } />
+          </Grid>
+          <Grid cols={2} gap={8} style={{ marginTop: 8 }}>
             <StatTile k="ROLE" v={
               <Text as="span" mono size={11} style={{ color: ROLE_COLOR[n.role], background: `color-mix(in oklch, ${ROLE_COLOR[n.role]} 12%, transparent)`, border: `1px solid color-mix(in oklch, ${ROLE_COLOR[n.role]} 30%, transparent)`, borderRadius: 5, padding: "3px 8px" }}>{n.roleLabel ?? n.role}</Text>
             } />
+            {n.reason
+              ? <StatTile k="REASON" v={<Text as="span" mono size={11} style={{ color: health.color, lineHeight: 1.4 }}>{n.reason}</Text>} />
+              : <Box />}
           </Grid>
 
           {inCycle && (

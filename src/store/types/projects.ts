@@ -2,7 +2,7 @@
 // assignment, planning-session context, triage + fleet launch. Split from store/types (#1634).
 import type { FleetPlan, AgentStream } from "@/features/planner/fleet/planFleet";
 import type { ProjectLink } from "@/features/glance/lib/projectLinks";
-import type { GEdgeKind, GRole, GStatus } from "@/features/glance/lib/glanceGraph";
+import type { GEdgeKind, GRole, GHealth, GActivity } from "@/features/glance/lib/glanceGraph";
 
 /** Projects slice of {@link AppStore}. */
 export interface ProjectsState {
@@ -52,15 +52,23 @@ export interface ProjectsState {
    *  (minted `p-…` id / title-sanitized) for grandfathered drafts. The record's `title` is
    *  display-only: renaming edits it in place (`updateDraftProject`) and never moves the
    *  on-disk hub (the folder keeps its birth-slug). */
-  /** `role`/`status` (#2284) are OPTIONAL Glance-node hints: when set they give the project's node its
-   *  curated colour/state on the Glance network (`infra/service/data/client` · `building/blocked/…`),
-   *  else `useGlanceProjects` derives them. Lets a project (or a loaded demo) declare its own coloring. */
-  localDraftProjects: Record<string, { title: string; pitch: string; createdAt: number; role?: GRole; status?: GStatus }>;
-  addDraftProject: (key: string, draft: { title: string; pitch: string; createdAt: number; role?: GRole; status?: GStatus }) => void;
+  /** `role`/`health`/`activity` (#2284/#2541) are OPTIONAL Glance-node hints: when set they give the
+   *  project's node its curated colour/state on the Glance network (`infra/service/data/client` ·
+   *  health `idle/healthy/warning/error` · activity `building/waiting/review/…`), else
+   *  `useGlanceProjects` derives them. Lets a project (or a loaded demo) declare its own colouring. */
+  localDraftProjects: Record<string, { title: string; pitch: string; createdAt: number; role?: GRole; health?: GHealth; activity?: GActivity; reason?: string }>;
+  addDraftProject: (key: string, draft: { title: string; pitch: string; createdAt: number; role?: GRole; health?: GHealth; activity?: GActivity; reason?: string }) => void;
   /** Patch a draft record in place (#1222) — persists a title edit so it survives a reopen;
    *  keyed by the FROZEN key so the on-disk folder doesn't move. No-ops if the draft is gone. */
   updateDraftProject: (key: string, patch: Partial<{ title: string; pitch: string }>) => void;
   removeDraftProject: (key: string) => void;
+  /** TRIAGED projects (#2541): the durable set of projects whose triage/fleet has been launched — the
+   *  drafted→triaged transition. Keyed by the plan key → the ms epoch it was first triaged. This is what
+   *  gates the Glance network: a project appears there only once it's WORKING (`useGlanceProjects` filters
+   *  to these keys), so a mere draft/plan never shows. Stamped by `triageStartProject`/`fleetStartProject`. */
+  triagedProjects: Record<string, number>;
+  /** Mark a project triaged (idempotent — keeps the first timestamp). */
+  markProjectTriaged: (key: string) => void;
   /**
    * Move every per-project store entry from `oldKey` to `newKey` (#2409) — the store half of the
    * one-time hub relink (`relink_project_hub`) that migrates a legacy-keyed project onto its

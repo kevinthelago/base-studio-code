@@ -21,18 +21,20 @@ import { githubGraphql } from "@/shared/lib/github/github";
 import { useGithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { toMinimalGhProjects, minimalToGhProject, filterRecordsToLocal } from "@/shared/lib/github/githubState";
 import { fetchProjectsWithProbe } from "@/shared/lib/github/githubProbe";
-import { PROJECTS_QUERY, projStatus, type GhProject } from "@/features/planner/list/published/publishedModel";
+import { PROJECTS_QUERY, type GhProject } from "@/features/planner/list/published/publishedModel";
 import { projectSlug } from "@/shared/lib/core/projectPaths";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
-import type { GRole, GStatus } from "./glanceGraph";
+import type { GRole, GHealth, GActivity } from "./glanceGraph";
 import type { ProjectLite } from "./glanceData";
+import type { GlanceFault } from "./useGlanceFaults";
 
-/** A published project's status → a Glance node status: shipped ⇒ done, open ⇒ planning. */
-const ghStatus = (p: GhProject): GStatus => (projStatus(p) === "shipped" ? "done" : "planning");
+// #2541 — GitHub board status NO LONGER drives a Glance node's status. The old `ghStatus` (open ⇒
+// planning, shipped ⇒ done) is gone; health + activity are derived from runtime signals only.
 
-/** Store shapes the merge reads — mirrored structurally so the pure fn stays decoupled from the slices. */
-type DraftMap = Record<string, { title: string; pitch: string; createdAt: number; role?: GRole; status?: GStatus }>;
+/** Store shapes the merge reads — mirrored structurally so the pure fn stays decoupled from the slices.
+ *  A draft MAY declare curated axes (#2284/#2541) — a demo/tagged project keeps its authored colouring. */
+type DraftMap = Record<string, { title: string; pitch: string; createdAt: number; role?: GRole; health?: GHealth; activity?: GActivity; reason?: string }>;
 type FleetMap = Record<string, { streams: unknown[] } | undefined>;
 
 /** Stable empty published set — a fresh `[]` each render would needlessly re-run the merge memo. */
@@ -70,34 +72,38 @@ export function mergeGlanceProjects(
   const draftKeyByTitle = new Map<string, string>();
   // Drafts first; a published project on the same plan key overrides it below.
   for (const [id, d] of Object.entries(drafts)) {
-    // A draft may DECLARE its Glance role/status (#2284); else derive (role in buildGlanceData; status
-    // from whether it has a planned fleet). A declared value wins so a demo/tagged project keeps its
-    // curated coloring.
+    // A draft may DECLARE its Glance axes (#2284/#2541 — health + activity + reason); else derive: role
+    // in buildGlanceData, activity from whether it has a planned fleet, health resting at idle (the
+    // runtime overlays — liveness #2263, faults #2541 — light it up). A declared value wins so a
+    // demo/tagged project keeps its curated colouring.
     byKey.set(id, {
       id, name: d.title, role: d.role,
-      status: d.status ?? ((planFleet[id]?.streams.length ?? 0) > 0 ? "planning" : "idle"),
+      health: d.health ?? "idle",
+      activity: d.activity ?? ((planFleet[id]?.streams.length ?? 0) > 0 ? "building" : "planning"),
+      reason: d.reason,
     });
     draftKeyByTitle.set(projectSlug(d.title), id);
   }
   // Local published hubs (#2445) — the OFFLINE seed: a published project always has a node, keyed by
   // its hub folder key (what the drill resolves), even when the GitHub set is absent (logged out /
-  // fetch not landed). A GitHub record below OVERLAYS it — same key directly (#2409 name-derived
-  // keys) or via the slug(title) bridge registered here (legacy-keyed hubs) — carrying the real
-  // open/shipped status. A draft-declared status (#2284) still wins for curated coloring.
+  // fetch not landed). A GitHub record below OVERLAYS it. GitHub board status NO LONGER sets the node
+  // status (#2541) — a published hub is a working project, so its default activity is `building`; a
+  // draft-declared axis still wins for curated colouring.
   for (const lp of localPublished) {
     const prior = byKey.get(lp.key);
-    byKey.set(lp.key, { id: lp.key, name: lp.title, role: prior?.role, status: drafts[lp.key]?.status ?? "planning" });
+    const d = drafts[lp.key];
+    byKey.set(lp.key, { id: lp.key, name: lp.title, role: prior?.role, health: d?.health ?? "idle", activity: d?.activity ?? "building", reason: d?.reason });
     draftKeyByTitle.set(projectSlug(lp.title), lp.key);
   }
   for (const p of published) {
     // The plan key derives from the name (#2409): a matching draft's key (covers grandfathered
     // legacy-keyed drafts) else `projectSlug(title)` — the key `planFleet` + the drill resolve
-    // against (NEVER the node id).
+    // against (NEVER the node id). Preserve any axis already set by a collapsed draft/local hub; the
+    // GitHub record contributes only name (+ dedup), never status (#2541).
     const titleKey = projectSlug(p.title);
     const key = draftKeyByTitle.get(titleKey) ?? titleKey;
-    // Published carries the real open/shipped status; keep any draft-declared role so curated coloring
-    // survives the collapse-onto-draft (published projects don't carry a role).
-    byKey.set(key, { id: key, name: p.title, role: byKey.get(key)?.role, status: ghStatus(p) });
+    const prior = byKey.get(key);
+    byKey.set(key, { id: key, name: p.title, role: prior?.role, health: prior?.health ?? "idle", activity: prior?.activity ?? "building", reason: prior?.reason });
   }
   return [...byKey.values()];
 }
@@ -110,14 +116,29 @@ interface ProjectLiveness { projectKey: string; live: boolean }
 const LIVENESS_POLL_MS = 10_000;
 
 /**
- * Overlay backend liveness onto the merged node set (#2263): a project whose key is in `liveKeys`
- * resolves to the `"live"` (pulsing) status; every other project keeps its merged status (so liveness
- * lapsing naturally RESETS to the prior status on the next poll). Additive + pure — the merge itself is
- * untouched, so a parallel fault-health change (#2265) to `mergeGlanceProjects` merges cleanly.
+ * Overlay backend liveness onto the merged node set (#2263/#2541): a project whose key is in `liveKeys`
+ * is detected RUNNING → activity `"live"` and health `"healthy"` (a running app is active & fine — the
+ * fault overlay below can still escalate it to warning/error). Every other project keeps its merged
+ * axes, so liveness lapsing naturally RESETS on the next poll. Additive + pure.
  */
 export function applyLiveness(projects: ProjectLite[], liveKeys: ReadonlySet<string>): ProjectLite[] {
   if (liveKeys.size === 0) return projects;
-  return projects.map((p) => (liveKeys.has(p.id) ? { ...p, status: "live" as GStatus } : p));
+  return projects.map((p) => (liveKeys.has(p.id) ? { ...p, activity: "live", health: p.health === "idle" ? "healthy" : p.health } : p));
+}
+
+/**
+ * Overlay the fault summary onto the node set (#2541) — the HEALTH axis. A project with an open fault
+ * escalates to `warning` (warn) or `error` (error/fatal), carrying the worst fault's title as the
+ * `reason` (shown bottom-right in place of the activity word) and its count. Applied LAST so a fault
+ * beats a healthy/live resting state — a live app that's throwing errors still reads red. Pure.
+ */
+export function applyFaultHealth(projects: ProjectLite[], faults: Record<string, GlanceFault>): ProjectLite[] {
+  return projects.map((p) => {
+    const f = faults[p.id];
+    if (!f) return p;
+    const health: GHealth = f.level === "warn" ? "warning" : "error";
+    return { ...p, health, reason: f.title, faults: f.count };
+  });
 }
 
 /** Poll the backend for the set of currently-live project keys (#2263). Polling also DRIVES backend
@@ -148,9 +169,20 @@ function sameKeys(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   return true;
 }
 
+/**
+ * Keep only TRIAGED projects (#2541) — the drafted→triaged gate. A project appears on the Glance
+ * network ONLY once its triage/fleet has been launched (its key is in `triaged`), so a mere draft or a
+ * published-but-never-worked hub is filtered out. "Once the nodes are here, it's because they're
+ * working." Pure + exported for direct testing.
+ */
+export function filterTriaged(projects: ProjectLite[], triaged: Record<string, number>): ProjectLite[] {
+  return projects.filter((p) => triaged[p.id] !== undefined);
+}
+
 export function useGlanceProjects(enabled = true): ProjectLite[] {
   const drafts = useAppStore((s) => s.localDraftProjects);
   const planFleet = useAppStore((s) => s.planFleet);
+  const triagedProjects = useAppStore((s) => s.triagedProjects);
   const githubState = useAppStore((s) => s.githubState);
   const setGithubState = useAppStore((s) => s.setGithubState);
   const liveKeys = useProjectLiveness(enabled);
@@ -210,9 +242,12 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   }, [published.data, githubState, drafts, localPublished]);
 
   return useMemo(
-    // Merge first (drafts + local published + GitHub published), then overlay live heartbeats as the
-    // `"live"` status (#2263).
-    () => applyLiveness(mergeGlanceProjects(drafts, planFleet, effectivePublished, localPublished), liveKeys),
-    [drafts, planFleet, effectivePublished, localPublished, liveKeys],
+    // Merge first (drafts + local published + GitHub published), FILTER to triaged/working projects
+    // (#2541 — a draft/plan never shows), then overlay live heartbeats as the `"live"` activity (#2263).
+    () => applyLiveness(
+      filterTriaged(mergeGlanceProjects(drafts, planFleet, effectivePublished, localPublished), triagedProjects),
+      liveKeys,
+    ),
+    [drafts, planFleet, effectivePublished, localPublished, triagedProjects, liveKeys],
   );
 }
