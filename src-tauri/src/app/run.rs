@@ -74,6 +74,7 @@ pub fn run() {
         // Runtime fault-ingest collector (#2261): the loopback receiver a generated app POSTs
         // faults/heartbeats to. Started (bound + accept loop spawned) in `setup` below.
         .manage(collector::CollectorState::new())
+        .manage(project::preview::PreviewServers::default())
         .manage(UncleanShutdown(unclean_shutdown))
         .setup(move |app| {
             // Install the dual-sink GraphLogger (#1389) in place of tauri-plugin-log — FIRST, so the
@@ -284,6 +285,7 @@ pub fn run() {
             project::ui_skeleton::sync_design_to_skeleton,
             project::hub::project_dir_path,
             project::hub::repo_dir_path,
+            project::preview::verify_build,
             observability::logs::append_coord_woke,
             observability::collector::collector_info,
             observability::collector::project_liveness,
