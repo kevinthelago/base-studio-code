@@ -25,6 +25,10 @@ const ROLE_PROFILE: Record<SessionRole, string> = {
   issuer: "pf_review",
   juror: "pf_review",
   documentor: "pf_auto",
+  // Marketer (#2431): like the documentor it must actually WRITE (its marketing-content carve-out), so
+  // it launches under the write-permitting Autonomous profile; the role gate + bsc-scope hook confine
+  // its writes to the marketing globs.
+  marketer: "pf_auto",
   planner: "sys_planner",
   // Designer (#2471): the Design Studio's UI-kit session. Read-only review is the closest packaged
   // floor; its real launch path (`useDesignerTerminal`) renders the role gate + `restrictedAllow`
