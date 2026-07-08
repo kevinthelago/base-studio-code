@@ -249,6 +249,37 @@ describe("embedded team (#2450)", () => {
   });
 });
 
+describe("design contribution (#2606)", () => {
+  // Same whitelist discipline as team/uiKit (#2450): `design` must be explicitly coerced or it's
+  // silently stripped on every import/share round-trip → the reconciliation confirm-list (#2658) would
+  // never fire. These guard that it survives.
+  it("coerceBlueprint preserves design; a blueprint without one stays without the key", () => {
+    const withDesign = coerceBlueprint({
+      id: "x", name: "Designed", design: { categories: ["simulation", "analysis"], theme: "warm" },
+      sections: [{ key: "discovery", name: "Discovery" }],
+    });
+    expect(withDesign!.design).toEqual({ categories: ["simulation", "analysis"], theme: "warm" });
+    const without = coerceBlueprint({ id: "x", name: "Plain", sections: [{ key: "discovery", name: "Discovery" }] });
+    expect("design" in without!).toBe(false);
+  });
+
+  it("drops an empty/garbage design, keeps a categories-only or theme-only one", () => {
+    expect("design" in coerceBlueprint({ id: "x", name: "n", design: {}, sections: [{ key: "d", name: "D" }] })!).toBe(false);
+    expect("design" in coerceBlueprint({ id: "x", name: "n", design: "junk", sections: [{ key: "d", name: "D" }] })!).toBe(false);
+    expect(coerceBlueprint({ id: "x", name: "n", design: { categories: ["sim"] }, sections: [{ key: "d", name: "D" }] })!.design)
+      .toEqual({ categories: ["sim"] });
+    expect(coerceBlueprint({ id: "x", name: "n", design: { theme: "warm" }, sections: [{ key: "d", name: "D" }] })!.design)
+      .toEqual({ theme: "warm" });
+  });
+
+  it("round-trips design through the share manifest (export/import)", () => {
+    const bp: Blueprint = { ...sample(), design: { categories: ["simulation"], theme: "cool" } };
+    const back = manifestToBlueprint(blueprintToManifest(bp));
+    expect(back.ok).toBe(true);
+    if (back.ok) expect(back.blueprint.design).toEqual({ categories: ["simulation"], theme: "cool" });
+  });
+});
+
 describe("blueprint CRUD store actions (#598)", () => {
   it("importBlueprint adds under a fresh id with fresh section uids", () => {
     useAppStore.setState({ blueprints: makeBlueprints(), activeBlueprintId: "default" });
