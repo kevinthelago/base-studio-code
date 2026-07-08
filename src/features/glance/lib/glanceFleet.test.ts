@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, teamToOrg, nodeHasLiveSession } from "./glanceFleet";
+import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, teamToOrg, nodeHasLiveSession, withPreviewNode, PREVIEW_NODE_ID } from "./glanceFleet";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 import type { Org } from "@/features/org";
@@ -278,6 +278,23 @@ describe("buildOrgFleetData cyclical archetype (#2578 — iteration loops)", () 
     expect(new Set(iter.map((e) => `${e.from}->${e.to}`))).toEqual(new Set(["aud->wrk", "wrk->aud"]));
     // the DAG archetype stays a single (reversed) edge
     expect(data.rawEdges.filter((e) => e.archetype === "manages")).toHaveLength(1);
+  });
+});
+
+describe("withPreviewNode (#2623 — the finished-app preview node)", () => {
+  const base = { rawNodes: [{ id: "api", role: "service" as const, health: "idle" as const, activity: "idle" as const }], rawEdges: [], sample: false };
+
+  it("adds a distinct preview node ONLY when the project is complete", () => {
+    expect(withPreviewNode(base, false).rawNodes.some((n) => n.preview)).toBe(false); // still building → no node
+    const done = withPreviewNode(base, true);
+    const preview = done.rawNodes.find((n) => n.preview);
+    expect(preview).toMatchObject({ id: PREVIEW_NODE_ID, preview: true, activity: "live" });
+    expect(done.rawNodes).toHaveLength(2); // the agent + the preview node
+  });
+
+  it("is idempotent — never adds a second preview node", () => {
+    const once = withPreviewNode(base, true);
+    expect(withPreviewNode(once, true).rawNodes.filter((n) => n.preview)).toHaveLength(1);
   });
 });
 
