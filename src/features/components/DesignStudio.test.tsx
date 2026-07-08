@@ -32,13 +32,14 @@ describe("DesignStudio (#2308)", () => {
     expect(screen.getByText(`${firstReactUi.name}.tsx`)).toBeTruthy(); // inspector names the selection
   });
 
-  it("the inspector carries the library detail: live preview + Overview/Source/Usage tabs + design bar", () => {
+  it("the inspector carries the library detail: live preview + Overview/Source/Usage tabs", () => {
     render(<DesignStudio />);
     expect(screen.getByText("Live preview")).toBeTruthy();           // preview + its switchers
     expect(screen.getByLabelText("Theme")).toBeTruthy();             // the single Theme dropdown (#2545)
     expect(screen.getByText("⤢ fluid")).toBeTruthy();
     expect(screen.getByText("Props / API")).toBeTruthy();            // Overview is the default tab
-    expect(screen.getByLabelText("Describe a variant")).toBeTruthy(); // generate-variants design bar
+    // The per-component generate-variants chat was removed (#2585) — the designer session drives edits.
+    expect(screen.queryByLabelText("Describe a variant")).toBeNull();
   });
 
   it("selecting a component from the rail drives the inspector", () => {
@@ -146,13 +147,16 @@ describe("DesignStudio (#2308)", () => {
     expect(container.querySelector('[data-kit-theme="light"]')).toBeTruthy();
   });
 
-  it("the generate bar is disabled until a prompt is entered", () => {
+  it("docks the designer session ALWAYS-ON in the center column, with no toggle and no generate chat (#2585)", () => {
     render(<DesignStudio />);
-    const gen = screen.getByRole("button", { name: /Generate variants/ }) as HTMLButtonElement;
-    expect(gen.disabled).toBe(true);
-    const input = screen.getByLabelText("Describe a variant");
-    fireEvent.change(input, { target: { value: "a loading state" } });
-    expect(gen.disabled).toBe(false);
+    // The panel is present from the first render — no ✦ Designer toggle button gates it.
+    const panel = screen.getByTestId("designer-terminal");
+    expect(panel).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Designer/ })).toBeNull();
+    // It's docked inside the center column (below the graph), not a full-width overlay.
+    expect(panel.closest(".ds-center")).toBeTruthy();
+    // The per-component generate-variants chat is gone.
+    expect(screen.queryByRole("button", { name: /Generate variants/ })).toBeNull();
   });
 
   it("carries NO decorative motion classes — the #2344 animation pass was removed (un-animated until the design system lands)", () => {
