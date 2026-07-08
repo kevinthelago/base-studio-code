@@ -50,6 +50,10 @@ const GLANCE_TABS: TabItem[] = [
 export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const planFleet = useAppStore((s) => s.planFleet);
   const personas = useAppStore((s) => s.personas);
+  // The blueprint LIBRARY + the drilled project's blueprint id (#2572) — so the fleet drill can overlay
+  // the project blueprint's authored TEAM relationships (an Org) onto the derived coordination.
+  const blueprints = useAppStore((s) => s.blueprints);
+  const projectBlueprintId = useAppStore((s) => s.projectBlueprintId);
   // Launched-fleet panes (#2542): the set of pane ids that are live CELLS of an open tab — a durable,
   // symmetric "this agent has a terminal in the fleet" signal for BOTH workers AND the DIRECTOR. The
   // earlier per-pane runtime signals (roster / status / paneClaudeActive) covered workers but never the
@@ -123,11 +127,16 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const effectiveFleet = storeFleet && storeFleet.streams.length > 0 ? storeFleet : loadedFleet;
 
   const drillNode = drill ? projectModel.nodes.find((n) => n.id === drill) ?? null : null;
+  // The drilled project's authored team (#2572): its blueprint's `team` (positions + relationships).
+  const drillTeam = useMemo(() => {
+    const bpId = drill ? projectBlueprintId[drill] : undefined;
+    return bpId ? blueprints.find((b) => b.id === bpId)?.team : undefined;
+  }, [drill, projectBlueprintId, blueprints]);
   const fleetData = useMemo(() => {
     if (!drillNode) return null;
-    if (effectiveFleet && effectiveFleet.streams.length > 0) return buildRealFleetData(effectiveFleet, personas);
+    if (effectiveFleet && effectiveFleet.streams.length > 0) return buildRealFleetData(effectiveFleet, personas, drillTeam);
     return buildFleetData({ id: drillNode.id, name: drillNode.slug });
-  }, [drillNode, effectiveFleet, personas]);
+  }, [drillNode, effectiveFleet, personas, drillTeam]);
   const fleetModel = useMemo(() => (fleetData ? buildGraph(fleetData.rawNodes, fleetData.rawEdges) : null), [fleetData]);
   // The ACTIVE graph — the drilled fleet, else the project network. Everything downstream (canvas,
   // sidebar, focus, cycles, viewport) reads these, so the whole page swaps its graph on drill.
