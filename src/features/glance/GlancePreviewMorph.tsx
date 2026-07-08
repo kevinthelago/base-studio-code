@@ -2,8 +2,9 @@
 // graph. Mirrors GlanceStreamMorph (#2534): a world-layer child at the node's world coords that pans /
 // zooms / scales WITH the graph, no portal, no scrim. Where the stream morph hosts the agent terminal,
 // this hosts the finished app — a sandboxed iframe for a web/bundle (incl. a wgpu/wasm build) PreviewSource,
+// a "running in its own window" state for a native app (launched on the desktop via WSLg/host, slice 4),
 // or a placeholder until the verify-build (slice 3) produces one. Esc / outside-click / ✕ shrinks it back.
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
@@ -99,8 +100,15 @@ export function GlancePreviewMorph({ node, source, name, building, onBuild, onCl
               srcDoc={render.srcDoc}
               style={{ width: "100%", height: "100%", border: "none", background: "#fff" }}
             />
-          ) : render?.mode === "stream" ? (
-            <Placeholder>Native preview streaming isn't wired yet — the app runs as a window; its frames will stream here.</Placeholder>
+          ) : render?.mode === "external" ? (
+            <Box style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24 }}>
+              <Text as="div" size={22} aria-hidden>▶</Text>
+              <Text as="div" size={13} weight={600} style={{ textAlign: "center" }}>{render.label} is running</Text>
+              <Text as="div" size={12.5} tone="muted" style={{ textAlign: "center", maxWidth: 320, lineHeight: 1.6 }}>
+                It's a native app, so it opened in its own window on your desktop. Interact with it there; close its window when you're done.
+              </Text>
+              {onBuild ? <Button variant="ghost" onClick={onBuild}>↻ Rebuild &amp; relaunch</Button> : null}
+            </Box>
           ) : (
             <Box style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 24 }}>
               <Text as="div" size={12.5} tone="muted" style={{ textAlign: "center", maxWidth: 340, lineHeight: 1.6 }}>
@@ -117,14 +125,6 @@ export function GlancePreviewMorph({ node, source, name, building, onBuild, onCl
           )}
         </Box>
       </Box>
-    </Box>
-  );
-}
-
-function Placeholder({ children }: { children: ReactNode }) {
-  return (
-    <Box style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <Text as="div" size={12.5} tone="muted" style={{ textAlign: "center", maxWidth: 340, lineHeight: 1.6 }}>{children}</Text>
     </Box>
   );
 }
