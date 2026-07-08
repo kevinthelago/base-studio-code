@@ -42,7 +42,10 @@
 .ds-grouphead:hover { background: var(--bg-soft); color: var(--fg); }
 .ds-groupkids { margin: 2px 0 6px; padding-left: 8px; border-left: 1px solid var(--border-soft, var(--border)); }
 .ds-caret { display: inline-block; width: 12px; color: var(--fg-dim); font-size: 10px; transition: transform .15s; }
-.ds-comprow { width: 100%; display: flex; align-items: center; gap: 9px; height: 29px; padding: 0 9px 0 12px; border: none; border-radius: 7px; cursor: pointer; font-size: 12.5px; background: transparent; color: var(--fg-muted); }
+/* Left padding aligns the RoleDot under the kit head's swatch (the row has no caret column, so it
+   needs the header's caret width added back): wrapper paddingLeft 6 + 22 = 28px, matching .ds-kithead's
+   8px padding + 12px caret + 8px gap. Keeps the dot/label column flush under the kit above it. */
+.ds-comprow { width: 100%; display: flex; align-items: center; gap: 8px; height: 29px; padding: 0 9px 0 22px; border: none; border-radius: 7px; cursor: pointer; font-size: 12.5px; background: transparent; color: var(--fg-muted); }
 .ds-comprow:hover { background: var(--bg-soft); }
 .ds-comprow.on { background: var(--accent-soft); color: var(--fg); }
 
