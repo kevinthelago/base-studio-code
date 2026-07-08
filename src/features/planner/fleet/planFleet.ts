@@ -153,6 +153,27 @@ export function emptyFleet(): FleetPlan {
   return { recommended: 0, reasoning: "", streams: [], director: { enabled: false, drive: DEFAULT_DIRECTOR_DRIVE } };
 }
 
+/**
+ * Enrich each stream's `issues` from the plan.db issues that name it as their owning `stream` (#2615),
+ * when the stream itself carries none. `AgentStream.issues` and `PlanIssue.stream` are meant to MIRROR
+ * each other, but a stream can reach launch with an empty `issues[]` — so a worker gets a placeholder
+ * kickoff instead of its real work. Deriving from the issues at launch means a worker always launches
+ * with its concrete task list. A stream that already lists its issues is untouched (its authored order
+ * wins). Pure + generic over the issue shape (`{ ref, stream }`) so it's unit-testable.
+ */
+export function withDerivedStreamIssues<T extends { id: string; issues: string[] }>(
+  streams: T[],
+  issues: ReadonlyArray<{ ref?: string; stream?: string }>,
+): T[] {
+  const byStream = new Map<string, string[]>();
+  for (const iss of issues) {
+    if (!iss.stream || !iss.ref) continue;
+    const arr = byStream.get(iss.stream);
+    if (arr) arr.push(iss.ref); else byStream.set(iss.stream, [iss.ref]);
+  }
+  return streams.map((s) => (s.issues.length > 0 ? s : { ...s, issues: byStream.get(s.id) ?? [] }));
+}
+
 /** Coerce a JSON value into a string[]. Accepts an array (strings kept, others
  *  stringified) or a single comma-separated string; anything else → []. */
 function toStringArray(v: unknown): string[] {
