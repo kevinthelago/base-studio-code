@@ -178,11 +178,17 @@ function ReviewStrip({ review }: { review: PreviewReview }) {
         </Box>
       ))}
       {review.confirmed.length > 0 ? (
+        <Box style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px" }}>
+          <Text as="span" size={11.5} tone="muted" style={{ flex: 1 }}>✓ {review.confirmed.length} confirmed</Text>
+          <Button variant="primary" onClick={() => { void review.dispatch(); }}>→ Route to fleet</Button>
+        </Box>
+      ) : null}
+      {review.routed.length > 0 ? (
         <Text as="div" size={11.5} tone="muted" style={{ padding: "6px 10px" }}>
-          ✓ {review.confirmed.length} confirmed — ready to route to the fleet
+          ✦ {review.routed.length} routed to the fleet — the director will pick them up.
         </Text>
       ) : null}
-      {review.pending.length === 0 && review.confirmed.length === 0 && !review.error ? (
+      {review.pending.length === 0 && review.confirmed.length === 0 && review.routed.length === 0 && !review.error ? (
         <Text as="div" size={11.5} tone="muted" style={{ padding: "6px 10px" }}>No findings — this screen looks good.</Text>
       ) : null}
     </Box>
