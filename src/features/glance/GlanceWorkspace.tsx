@@ -21,6 +21,7 @@ import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Screen } from "@/app/chrome/Screen";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
+import { usePoll } from "@/shared/hooks/usePoll";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { Fleet } from "@/features/planner/fleet/Fleet";
@@ -32,8 +33,14 @@ import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession } from "./lib/glanceFleet";
 import { useGlanceProjects, applyFaultHealth } from "./lib/useGlanceProjects";
 import { useGlanceFaults } from "./lib/useGlanceFaults";
+import { applyStallHealth } from "./lib/agentStall";
+import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
 import { useProjectFleet } from "./lib/useProjectFleet";
 import "./glance.css";
+
+// The agent-health watchdog (#2541) polls the coord log on a slow cadence — a stall is a minutes-scale
+// event, so per-second rebuilds aren't worth it.
+const STALL_POLL_MS = 15_000;
 
 const GLANCE_TABS: TabItem[] = [
   { id: "network", label: "Network", hint: "projects · dependencies" },
@@ -67,9 +74,20 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const setAutoTriage = useAppStore((s) => s.setAutoTriage);
   // HEALTH axis (#2541, was #2265): the worst unresolved fault per project (from `bsc errors`) overlaid
   // onto each node — escalating health to warning/error and carrying the fault title as the reason.
-  // Applied last so a fault beats a healthy/live resting state.
   const faults = useGlanceFaults(useMemo(() => projectsBase.map((p) => p.id), [projectsBase]));
-  const projects = useMemo(() => applyFaultHealth(projectsBase, faults), [projectsBase, faults]);
+  // Agent-health watchdog (#2541): `coord.state.waiting` carries each parked `bsc-wait` + its epoch; a
+  // wait overstaying the threshold escalates its project to a warning. `now` ticks on the same slow
+  // cadence (kept out of render — `Date.now()` is impure) so a threshold crossing surfaces without a
+  // coord change.
+  const coord = useCoordLog({ ms: STALL_POLL_MS });
+  const [now, setNow] = useState(0);
+  usePoll(async (isCancelled) => { if (!isCancelled()) setNow(Date.now()); }, STALL_POLL_MS, []);
+  // Overlay order: base (merge+liveness) → STALL (waiting/warn) → FAULT (error) last, so a real error
+  // beats a stall and both beat the resting state.
+  const projects = useMemo(
+    () => applyFaultHealth(applyStallHealth(projectsBase, coord.state.waiting, now), faults),
+    [projectsBase, coord.state.waiting, faults, now],
+  );
   // L0 — the project-network graph (nodes = real projects, edges = the user-drawn relationships #2253).
   const projectData = useMemo(() => buildGlanceData(projects, projectLinks), [projects, projectLinks]);
   const projectModel = useMemo(() => buildGraph(projectData.rawNodes, projectData.rawEdges), [projectData]);
