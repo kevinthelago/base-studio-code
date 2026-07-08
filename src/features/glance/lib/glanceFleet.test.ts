@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, nodeHasLiveSession } from "./glanceFleet";
+import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, teamToOrg, nodeHasLiveSession } from "./glanceFleet";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 import type { Org } from "@/features/org";
+import type { BlueprintTeam } from "@/features/planner/stages/blueprintTypes";
 
 describe("buildFleetData (glance drill)", () => {
   it("builds a deterministic sample fleet: director + reviewer + 2–4 workers, all edges wired", () => {
@@ -169,6 +170,41 @@ describe("buildOrgFleetData (#2565 — render the drill FROM an Org)", () => {
     } as unknown as FleetPlan;
     const d = buildRealFleetData(fleet, personas);
     expect(d.rawEdges).toContainEqual({ from: "api", to: "director", kind: "api", archetype: "manages" });
+  });
+});
+
+describe("fleetToOrg team overlay + teamToOrg (#2572 — author the fleet as an Org)", () => {
+  const fleet = {
+    recommended: 2, reasoning: "",
+    streams: [
+      { id: "api", name: "API", repo: "r", owns: [], issues: [], dependsOn: [], persona: "p-a" },
+      { id: "web", name: "Web", repo: "r", owns: [], issues: [], dependsOn: ["api"], persona: "p-b" },
+    ],
+    director: { enabled: false },
+  } as unknown as FleetPlan;
+  const team = {
+    positions: [
+      { nodeId: "n1", kind: "agent", personaId: "p-a" },
+      { nodeId: "n2", kind: "agent", personaId: "p-b" },
+    ],
+    relationships: [{ id: "tr", archetype: "oversees", from: "n1", to: "n2" }],
+  } as unknown as BlueprintTeam;
+
+  it("no team ⇒ the coordination-derived archetype (peers) stands", () => {
+    const org = fleetToOrg(fleet);
+    expect(org.relationships.find((r) => r.from === "api" && r.to === "web")?.archetype).toBe("peers");
+  });
+
+  it("the authored team archetype (oversees) OVERRIDES the derived one for the matching persona pair + direction", () => {
+    const org = fleetToOrg(fleet, team);
+    expect(org.relationships.find((r) => r.from === "api" && r.to === "web")?.archetype).toBe("oversees");
+  });
+
+  it("teamToOrg wraps a team's positions + relationships into a standalone Org", () => {
+    const org = teamToOrg(team);
+    expect(org.positions).toBe(team.positions);
+    expect(org.relationships).toBe(team.relationships);
+    expect(org.name).toBe("Team");
   });
 });
 
