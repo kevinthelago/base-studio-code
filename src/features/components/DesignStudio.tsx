@@ -194,10 +194,6 @@ export function DesignStudio() {
     <Box className="ds-root">
       {/* ── toolbar ── */}
       <Box className="ds-toolbar">
-        <Box style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}>
-          <Text weight={600} size={13.5} style={{ letterSpacing: "-.01em" }}>Design Studio</Text>
-        </Box>
-        <Box className="ds-sep" />
         <Box style={{ display: "flex", alignItems: "center", gap: 6, flex: "none" }}>
           <Text mono size="xxs" tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase", marginRight: 2 }}>Kit</Text>
           {kits.map((k) => (
