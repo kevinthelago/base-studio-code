@@ -51,6 +51,10 @@ export interface RelationshipArchetype {
   backward: string[];
   /** A symmetric relationship (peer/consult) — the canvas draws a double-headed arrow. */
   bidirectional?: boolean;
+  /** A CYCLICAL relationship (#2578) — the two positions form a deliberate feedback LOOP (auditor ⟳
+   *  subject), so it is allowed to close a cycle in the graph and renders as an intentional iteration
+   *  loop rather than the red mutual-dependency HAZARD. Only `iterates` carries this today. */
+  cyclical?: boolean;
   blurb: string;
 }
 

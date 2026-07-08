@@ -23,6 +23,19 @@ describe("org vocabulary (#2193)", () => {
       }
     }
   });
+
+  it("the `iterates` archetype (#2578) is the one CYCLICAL feedback loop, with finding ⟳ revision forms", () => {
+    const iterates = archetypeById("iterates")!;
+    expect(iterates.cyclical).toBe(true);
+    expect(iterates.bidirectional).toBe(true);
+    expect(iterates.forward).toContain("finding");
+    expect(iterates.backward).toContain("revision");
+    // its forms resolve and carry the runtime transports that drive the loop
+    expect(formById("finding")!.transport).toBe("bsc-issue");
+    expect(formById("revision")!.transport).toBe("bsc-landed");
+    // it is the ONLY cyclical archetype — every other relationship stays acyclic (a DAG edge).
+    expect(RELATIONSHIP_ARCHETYPES.filter((a) => a.cyclical).map((a) => a.id)).toEqual(["iterates"]);
+  });
 });
 
 describe("built-in orgs (#2193)", () => {
