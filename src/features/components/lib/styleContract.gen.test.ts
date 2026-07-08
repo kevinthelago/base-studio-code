@@ -44,5 +44,10 @@ describe("tokens-contract.css ↔ style-descriptor.json (#2567)", () => {
     const accent = flat.find((t) => t.name === "--accent")!;
     expect(accent.family).toBe("base");
     expect(accent.component).toBeUndefined();
+    // domain / categorical tokens (#2607) flatten with family = the group, a key, and NO component —
+    // they're contract vocabulary a kit consumes, not a component surface.
+    const err = flat.find((t) => t.name === "--graph-health-error");
+    expect(err).toMatchObject({ family: "graph-health", key: "error" });
+    expect(err?.component).toBeUndefined();
   });
 });
