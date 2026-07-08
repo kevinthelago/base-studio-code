@@ -150,16 +150,29 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       // maintenance set drives a maintenance scope banner (buildWorkerScope) so they stand by, not rebuild.
       const { active, maintenance } = pruneCompletedStreams(fullPlan.streams, doneIssueRefs(dbIssues));
       const maintenanceIds = new Set(maintenance.map(s => s.id));
-      const launchPlan = { ...fullPlan, streams: [...active, ...maintenance] };
+      // #2611: a stream with no resolvable repo stays VISIBLE in the plan but can't spawn a worktree —
+      // skip it here (rather than aborting the fail-closed launch on a broken ensure_worktree) and
+      // surface which streams still need a repo assigned, so the gap is seen, not swallowed.
+      const launchable = [...active, ...maintenance].filter(st => st.repo);
+      const noRepo = [...active, ...maintenance].filter(st => !st.repo);
+      const launchPlan = { ...fullPlan, streams: launchable };
       if (launchPlan.streams.length === 0 && !launchPlan.director.enabled) {
-        setTriageError("No workers to launch.");
+        setTriageError(noRepo.length > 0
+          ? `No workers to launch — ${noRepo.length} stream${noRepo.length === 1 ? "" : "s"} (${noRepo.map(s => s.id).join(", ")}) need a repo assigned.`
+          : "No workers to launch.");
         return;
       }
-      if (maintenance.length > 0) {
-        setTriageNote(`${maintenance.length} completed worker${maintenance.length === 1 ? "" : "s"} `
-          + `(${maintenance.map(s => s.id).join(", ")}) relaunching into maintenance`
-          + (active.length > 0 ? `; ${active.length} active.` : "."));
+      const launchNotes: string[] = [];
+      if (noRepo.length > 0) {
+        launchNotes.push(`${noRepo.length} stream${noRepo.length === 1 ? "" : "s"} `
+          + `(${noRepo.map(s => s.id).join(", ")}) skipped — no repo assigned`);
       }
+      if (maintenance.length > 0) {
+        launchNotes.push(`${maintenance.length} completed worker${maintenance.length === 1 ? "" : "s"} `
+          + `(${maintenance.map(s => s.id).join(", ")}) relaunching into maintenance`
+          + (active.length > 0 ? `; ${active.length} active` : ""));
+      }
+      if (launchNotes.length > 0) setTriageNote(launchNotes.join(". ") + ".");
       // The project's {kit, theme} pairing (#2489): plan.db's `ui` blob (the planner's per-project
       // record, `bsc plan ui set` in the Test UI stage) with the project blueprint's pin filling
       // whatever it doesn't set — inlined into every worker's scope as the UI-palette lock block

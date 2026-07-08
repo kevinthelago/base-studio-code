@@ -27,9 +27,25 @@ describe("parseFleetFile", () => {
     });
   });
 
-  it("drops streams missing id or repo", () => {
+  it("drops a stream with no id, but KEEPS a repo-less stream visible (#2611 — no silent hiding)", () => {
     const raw = JSON.stringify({ streams: [{ name: "no id", repo: "own/web" }, { id: "no-repo" }, { id: "ok", repo: "own/api" }] });
-    expect(parseFleetFile(raw)?.streams.map(s => s.id)).toEqual(["ok"]);
+    // the id-less stream is dropped (unkeyable); the repo-less one STAYS (repo "") so it shows in the plan
+    const streams = parseFleetFile(raw)!.streams;
+    expect(streams.map(s => s.id)).toEqual(["no-repo", "ok"]);
+    expect(streams.find(s => s.id === "no-repo")!.repo).toBe("");
+  });
+
+  it("defaults a repo-less stream to the project's SOLE repo (#2611)", () => {
+    const raw = JSON.stringify({ streams: [{ id: "a" }, { id: "b", repo: "own/api" }] });
+    const streams = parseFleetFile(raw, ["own/web"])!.streams;
+    expect(streams.find(s => s.id === "a")!.repo).toBe("own/web"); // defaulted to the one linked repo
+    expect(streams.find(s => s.id === "b")!.repo).toBe("own/api"); // an explicit repo is untouched
+  });
+
+  it("keeps a repo-less stream empty (visible) when the repo can't be defaulted (0 or >1 repos)", () => {
+    const raw = JSON.stringify({ streams: [{ id: "a" }] });
+    expect(parseFleetFile(raw, [])!.streams[0].repo).toBe("");                     // no repos → can't default
+    expect(parseFleetFile(raw, ["own/web", "own/api"])!.streams[0].repo).toBe(""); // ambiguous → don't guess
   });
 
   it("carries a stream's assigned MCP servers, undefined when none (#1054)", () => {
