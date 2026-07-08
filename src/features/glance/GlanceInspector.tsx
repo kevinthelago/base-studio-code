@@ -136,6 +136,32 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
             </>
           )}
 
+          {/* COMMUNICATION SURFACE (#2563): who this agent talks to and how — one card per relationship
+              from the fleet-as-Org projection, with the forms it SENDS (→) / RECEIVES (←) + transports. */}
+          {n.persona?.comms && n.persona.comms.length > 0 && (
+            <>
+              {LABEL("COMMUNICATION")}
+              <Box style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {n.persona.comms.map((c, i) => (
+                  <Box key={i} style={{ background: "var(--bg-soft)", border: `1px solid color-mix(in oklch, ${hueColor(c.hue)} 30%, transparent)`, borderRadius: 8, padding: "9px 11px" }}>
+                    <Row justify="between" align="center">
+                      <Text as="span" mono size={11.5} weight={600}>{c.withName}</Text>
+                      <Text as="span" mono size={9.5} style={{ color: hueColor(c.hue), textTransform: "uppercase", letterSpacing: ".5px" }}>{c.archetypeLabel}</Text>
+                    </Row>
+                    {([["→", c.sends], ["←", c.receives]] as const).map(([dir, forms]) => forms.length > 0 && (
+                      <Row key={dir} gap={6} align="baseline" style={{ marginTop: 5 }}>
+                        <Text as="span" mono size={10} tone="dim" style={{ width: 12, flex: "none" }}>{dir}</Text>
+                        <Text as="span" mono size={10} tone="muted" style={{ lineHeight: 1.5 }}>
+                          {forms.map((f) => f.label + (f.transport ? ` (${f.transport})` : "")).join(" · ")}
+                        </Text>
+                      </Row>
+                    ))}
+                  </Box>
+                ))}
+              </Box>
+            </>
+          )}
+
           {/* FAULT-health (#2265): unresolved runtime faults + the per-project auto-triage toggle. Only
               shown on the project network (onToggleAutoTriage supplied) — a drilled fleet node has neither. */}
           {onToggleAutoTriage && (
