@@ -116,7 +116,7 @@ describe("useDesignerTerminal launch wiring (#2471)", () => {
     expect(callsTo("pty_create")).toHaveLength(0);
   });
 
-  it("stays mounted and visible (always-on, no collapse); only unmounting kills the PTY (#2585)", async () => {
+  it("stays mounted and visible (always-on, no collapse); only unmounting kills the PTY (#2597)", async () => {
     const { unmount } = render(<DesignerTerminal />);
     await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
 
@@ -133,7 +133,7 @@ describe("useDesignerTerminal launch wiring (#2471)", () => {
   });
 });
 
-describe("DesignStudio always-on designer panel (#2585)", () => {
+describe("DesignStudio always-on designer panel (#2597)", () => {
   beforeEach(() => {
     useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS });
   });
