@@ -212,6 +212,22 @@ idle/healthy/warning/error to the semantic base tokens (var(--info)/--success/--
 status colours compose with the theme. Pure output (JSON; --pretty indents) — it PRODUCES values, it
 does NOT write/apply them (that wiring is the reconciliation slice).",
     },
+    CmdDoc {
+        name: "resolve",
+        summary: "resolve a theme against a kit's tokens + report misses/holes — fall loudly (#2637)",
+        usage: "\
+USAGE:
+  bsc ui resolve --theme <id> [--dir <src>] [--pretty]
+
+The RESOLVER as a LOUD diagnostic: theming is a CSS cascade that silently falls back, so this makes the
+composition explicit. It resolves each token against the precedence bound-theme > contract-default (the
+user/generated layers enter in later slices) and reports `themeMisses` — a consumed token the theme
+leaves at its contract default — and `uncontracted` — a consumed token the contract does NOT define, so
+the design system can't govern it (the fall-loudly gap: it may be app-live legacy or a typo, but a theme
+can't reach it). With --dir it scans a KIT's source for the `var(--<token>` it consumes (its addressable
+surface); without, it resolves the whole contract. `complete` is true when nothing is uncontracted.
+Compact JSON by default; --pretty indents.",
+    },
 ];
 
 /// The merged command catalog (#2469): the contract verbs first, then the component-library verbs
@@ -250,6 +266,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("emit-css") => cmd_emit_css(&args[1..]),
         Some("theme") => cmd_theme(&args[1..], prog),
         Some("generate") => cmd_generate(&args[1..], prog),
+        Some("resolve") => cmd_resolve(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
         // ours so the error shows the MERGED overview, not the component-only one.
@@ -327,6 +344,103 @@ fn cmd_generate(args: &[String], prog: &str) -> Result<(), String> {
         }
         Some(other) => Err(format!("unknown generate command '{other}' — want: categorical | next | status")),
     }
+}
+
+/// Collect the distinct tokens a source text CONSUMES via `var(--<name>` (#2637) — a kit's addressable
+/// surface. Sorted (BTreeSet) for deterministic output. Used by `bsc ui resolve --dir`.
+fn consumed_tokens_in(text: &str, out: &mut std::collections::BTreeSet<String>) {
+    for (i, _) in text.match_indices("var(--") {
+        // "var(" is 4 bytes (ASCII), so the "--name" starts at i+4.
+        let name: String = text[i + 4..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .collect();
+        // A trailing `-` means the scan stopped at a non-name char mid-token — a DYNAMIC construction
+        // like `var(--graph-${key})`; that prefix isn't a real token, so skip it (a valid custom
+        // property never ends in `-`).
+        if name.len() > 2 && !name.ends_with('-') {
+            out.insert(name);
+        }
+    }
+}
+
+/// Split a consumed token set against a theme's `overrides` + the `contract` (#2637): returns
+/// (themeMisses, uncontracted). A token the theme overrides resolves from the theme (neither list); one
+/// the contract defines but the theme doesn't → a MISS (uses the default); one the contract lacks →
+/// UNCONTRACTED (the design system can't govern it — the loud gap). Pure → unit-tested.
+fn resolve_diagnostics(
+    consumed: &[String],
+    overrides: &std::collections::HashSet<String>,
+    contract: &std::collections::HashSet<String>,
+) -> (Vec<String>, Vec<String>) {
+    let (mut misses, mut uncontracted) = (Vec::new(), Vec::new());
+    for token in consumed {
+        if overrides.contains(token) {
+            // resolved from the theme — governed, no diagnostic
+        } else if contract.contains(token) {
+            misses.push(token.clone());
+        } else {
+            uncontracted.push(token.clone());
+        }
+    }
+    (misses, uncontracted)
+}
+
+/// `bsc ui resolve --theme <id> [--dir <path>]` (#2637) — the RESOLVER as a loud diagnostic report:
+/// resolve each token against bound-theme > contract-default and surface `themeMisses` + `uncontracted`
+/// (the fall-loudly gap) + `complete`. `--dir` scans a kit's source for its consumed tokens; otherwise
+/// the whole contract is resolved. Pure output (JSON); it does not write/apply anything.
+fn cmd_resolve(args: &[String]) -> Result<(), String> {
+    let (mut theme_id, mut dir, mut pretty) = (None::<String>, None::<String>, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--theme" => theme_id = it.next().cloned(),
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let theme_id = theme_id.ok_or("usage: bsc ui resolve --theme <id> [--dir <path>]")?;
+    let theme = crate::theme_by_id(&theme_id).ok_or_else(|| format!("unknown theme '{theme_id}'"))?;
+    let overrides: std::collections::HashSet<String> = theme
+        .get("vars")
+        .and_then(serde_json::Value::as_object)
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
+    let contract: std::collections::HashSet<String> = crate::flatten_tokens()
+        .iter()
+        .filter_map(|t| t.get("name").and_then(serde_json::Value::as_str).map(str::to_owned))
+        .collect();
+    // The consumed surface: a kit's source (--dir), else the whole contract.
+    let consumed: Vec<String> = if let Some(d) = &dir {
+        let mut files: Vec<(String, String)> = Vec::new();
+        let p = std::path::Path::new(d);
+        collect_source_files_into(p, p, &mut files)?;
+        let mut set = std::collections::BTreeSet::new();
+        for (_, text) in &files {
+            consumed_tokens_in(text, &mut set);
+        }
+        set.into_iter().collect()
+    } else {
+        let mut v: Vec<String> = contract.iter().cloned().collect();
+        v.sort();
+        v
+    };
+    let (misses, uncontracted) = resolve_diagnostics(&consumed, &overrides, &contract);
+    let report = serde_json::json!({
+        "theme": theme_id,
+        "mode": if dir.is_some() { "dir" } else { "contract" },
+        "consumed": consumed.len(),
+        "overridden": consumed.len() - misses.len() - uncontracted.len(),
+        "themeMisses": misses,
+        "uncontracted": uncontracted,
+        "complete": uncontracted.is_empty(),
+    });
+    let out = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
+    println!("{}", out.map_err(|e| e.to_string())?);
+    Ok(())
 }
 
 fn cmd_schema(args: &[String]) -> Result<(), String> {
@@ -1283,6 +1397,7 @@ mod tests {
         assert!(ov.contains("schema") && ov.contains("validate") && ov.contains("theme") && ov.contains("release"));
         assert!(ov.contains("emit-css"), "the #2489 emission verb is listed");
         assert!(ov.contains("generate"), "the #2634 palette generator is listed");
+        assert!(ov.contains("resolve"), "the #2637 resolver/diagnostic is listed");
     }
 
     #[test]
@@ -1300,6 +1415,50 @@ mod tests {
         assert!(run(vec!["generate".into(), "next".into(), "--existing".into(), "0,bad".into()], "bsc ui").is_err(), "bad hue");
         assert!(run(vec!["generate".into(), "categorical".into(), "--count".into(), "2".into(), "--frob".into()], "bsc ui").is_err(), "unknown flag");
         assert!(run(vec!["generate".into(), "bogus".into()], "bsc ui").is_err(), "unknown subcommand");
+    }
+
+    // ── resolver + loud diagnostics (#2637) ──────────────────────────────────────────────────────
+
+    #[test]
+    fn resolve_diagnostics_splits_theme_default_and_uncontracted() {
+        use std::collections::HashSet;
+        let contract: HashSet<String> = ["--card-bg", "--btn-border", "--fg"].iter().map(|s| s.to_string()).collect();
+        let overrides: HashSet<String> = ["--card-bg"].iter().map(|s| s.to_string()).collect();
+        let consumed = vec!["--card-bg".to_string(), "--btn-border".to_string(), "--nope-xyz".to_string()];
+        let (misses, unc) = resolve_diagnostics(&consumed, &overrides, &contract);
+        assert_eq!(misses, vec!["--btn-border"], "in contract but not the theme → default (a miss)");
+        assert_eq!(unc, vec!["--nope-xyz"], "not in the contract → uncontracted (the loud gap)");
+        // --card-bg is overridden by the theme → governed, in neither list.
+    }
+
+    #[test]
+    fn consumed_tokens_in_extracts_distinct_var_names() {
+        let mut set = std::collections::BTreeSet::new();
+        consumed_tokens_in(
+            "a{ background: var(--card-bg) } b{ x: var(--btn-bg, #000) } c{ y: color-mix(in oklch, var(--fg) 50%, transparent) } d{ var(--card-bg) again } e{ dyn: `var(--graph-${key})` }",
+            &mut set,
+        );
+        assert!(set.contains("--card-bg") && set.contains("--btn-bg") && set.contains("--fg"));
+        assert_eq!(set.len(), 3, "distinct names only; --card-bg not double-counted, dynamic `--graph-${{…}}` skipped: {set:?}");
+    }
+
+    #[test]
+    fn resolve_cli_reports_and_rejects_bad_shapes() {
+        // A fixture kit source: two contract tokens + one UNCONTRACTED token.
+        let dir = std::env::temp_dir().join(format!("bsc-ui-resolve-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Kit.tsx"), "a{ background: var(--card-bg) } b{ color: var(--btn-border) } c{ border: var(--nope-xyz) }\n").unwrap();
+        let d = dir.to_string_lossy().into_owned();
+        assert!(run(vec!["resolve".into(), "--theme".into(), "soft".into(), "--dir".into(), d.clone()], "bsc ui").is_ok());
+        assert!(run(vec!["resolve".into(), "--theme".into(), "default".into()], "bsc ui").is_ok(), "whole-contract mode");
+        assert!(run(vec!["resolve".into(), "--theme".into(), "soft".into(), "--dir".into(), d, "--pretty".into()], "bsc ui").is_ok());
+        // errors: missing --theme, unknown theme, unknown flag, unreadable dir.
+        assert!(run(vec!["resolve".into()], "bsc ui").is_err(), "missing --theme");
+        assert!(run(vec!["resolve".into(), "--theme".into(), "no-such-theme".into()], "bsc ui").is_err());
+        assert!(run(vec!["resolve".into(), "--theme".into(), "soft".into(), "--frob".into()], "bsc ui").is_err());
+        assert!(run(vec!["resolve".into(), "--theme".into(), "soft".into(), "--dir".into(), dir.join("nope").to_string_lossy().into_owned()], "bsc ui").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
