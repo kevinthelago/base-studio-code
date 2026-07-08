@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFleetData, buildRealFleetData, nodeHasLiveSession } from "./glanceFleet";
+import { buildFleetData, buildRealFleetData, fleetToOrg, nodeHasLiveSession } from "./glanceFleet";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 
@@ -79,6 +79,61 @@ describe("buildRealFleetData (glance drill — real fleet)", () => {
     const d = buildRealFleetData(withReview, personas);
     // review edge producer(api)→consumer(qa) becomes qa→api, archetype OVERSEES
     expect(d.rawEdges).toContainEqual({ from: "qa", to: "api", kind: "data", archetype: "oversees" });
+  });
+});
+
+describe("fleetToOrg (#2563 — the fleet-as-Org projection)", () => {
+  const fleet = {
+    recommended: 2, reasoning: "",
+    streams: [
+      { id: "api", name: "API", repo: "r", owns: [], issues: [], dependsOn: [], persona: "p-worker" },
+      { id: "ui", name: "UI", repo: "r", owns: [], issues: [], dependsOn: ["api"], persona: "p-worker" },
+    ],
+    director: { enabled: true },
+    edges: [{ id: "e1", from: "api", to: "ui", kind: "handoff", hardness: "blocking", via: "direct" }],
+  } as unknown as FleetPlan;
+
+  it("projects streams (+ director) into positions and coordination into archetype relationships", () => {
+    const org = fleetToOrg(fleet);
+    expect(org.positions.map((p) => p.nodeId).sort()).toEqual(["api", "director", "ui"]);
+    expect(org.positions.find((p) => p.nodeId === "api")).toMatchObject({ kind: "agent", personaId: "p-worker" });
+    // the director MANAGES each stream
+    expect(org.relationships).toContainEqual(expect.objectContaining({ from: "director", to: "api", archetype: "manages" }));
+    expect(org.relationships).toContainEqual(expect.objectContaining({ from: "director", to: "ui", archetype: "manages" }));
+    // the handoff + dependsOn between api and ui collapse to ONE peers seam
+    expect(org.relationships.filter((r) => r.from === "api" && r.to === "ui")).toEqual([expect.objectContaining({ archetype: "peers" })]);
+  });
+
+  it("omits the director position + manages relationships when there is no director", () => {
+    const org = fleetToOrg({ ...fleet, director: { enabled: false } });
+    expect(org.positions.some((p) => p.nodeId === "director")).toBe(false);
+    expect(org.relationships.some((r) => r.archetype === "manages")).toBe(false);
+  });
+});
+
+describe("buildRealFleetData attaches each agent's communication surface (#2563)", () => {
+  const personas: Persona[] = [{ id: "p-worker", name: "Backend Engineer", blurb: "", role: "worker", startPrompt: "", skills: [] }];
+  const fleet = {
+    recommended: 1, reasoning: "",
+    streams: [{ id: "api", name: "API", repo: "r", owns: [], issues: [], dependsOn: [], persona: "p-worker" }],
+    director: { enabled: true },
+  } as unknown as FleetPlan;
+
+  it("the director's persona lists a Manages relationship to each stream, SENDING a Directive", () => {
+    const d = buildRealFleetData(fleet, personas);
+    const toApi = d.rawNodes.find((n) => n.id === "director")!.persona!.comms!.find((c) => c.withName === "API");
+    expect(toApi).toBeTruthy();
+    expect(toApi!.archetypeLabel).toBe("Manages");
+    expect(toApi!.sends.map((f) => f.label)).toContain("Directive");
+  });
+
+  it("the worker's persona lists the same relationship from its side — RECEIVING the Directive (with its bsc-* transport)", () => {
+    const d = buildRealFleetData(fleet, personas);
+    const fromDir = d.rawNodes.find((n) => n.id === "api")!.persona!.comms!.find((c) => c.withName === "director");
+    expect(fromDir).toBeTruthy();
+    const directive = fromDir!.receives.find((f) => f.label === "Directive");
+    expect(directive).toBeTruthy();
+    expect(directive!.transport).toBe("bsc-assign");
   });
 });
 
