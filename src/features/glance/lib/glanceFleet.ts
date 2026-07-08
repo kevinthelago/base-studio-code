@@ -34,7 +34,8 @@ export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): Glanc
     // Each stream is a unique node; its ROLE comes from its persona (default worker when unset/unknown),
     // and both the mapped colour category and the real role label ride on the node.
     const streamRole = (s.persona ? roleOf.get(s.persona) : undefined) ?? "worker";
-    return { id: s.id, slug: s.name || s.id, role: gRole(streamRole), roleLabel: streamRole, health: "idle" as const, activity: "building" as const };
+    // Rests at idle (#2551) — a planned stream isn't "building" until its session is actually live.
+    return { id: s.id, slug: s.name || s.id, role: gRole(streamRole), roleLabel: streamRole, health: "idle" as const, activity: "idle" as const };
   });
   const ids = new Set(rawNodes.map((n) => n.id));
   const rawEdges: GRawEdge[] = [];
@@ -49,7 +50,7 @@ export function buildRealFleetData(fleet: FleetPlan, personas: Persona[]): Glanc
 
   // director hub — every stream depends on its direction (drawn as the foundational node)
   if (fleet.director?.enabled && !ids.has("director")) {
-    rawNodes.push({ id: "director", slug: "director", role: "infra", roleLabel: "director", health: "healthy", activity: "building" });
+    rawNodes.push({ id: "director", slug: "director", role: "infra", roleLabel: "director", health: "idle", activity: "idle" });
     ids.add("director");
     for (const s of fleet.streams) add(s.id, "director", "api");
   }

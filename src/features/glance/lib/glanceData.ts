@@ -37,8 +37,8 @@ export function buildGlanceData(projects: ProjectLite[], links: ProjectLink[] = 
     id: p.id,
     slug: p.name || p.id,
     role: p.role ?? ROLES[hashAbs(p.id) % ROLES.length],
-    health: p.health ?? "idle",       // #2541 axis 1 — resolved by the caller from faults/liveness
-    activity: p.activity ?? "building", // #2541 axis 2 — the lifecycle word (post-triage default)
+    health: p.health ?? "idle",     // #2541 axis 1 — resolved by the caller from faults/liveness
+    activity: p.activity ?? "idle", // #2551 axis 2 — RESTING default; `building` is derived from live agents, not a fallback
     reason: p.reason,                  // the fault title shown when health is degraded
     faults: p.faults,                  // #2265: unresolved runtime-fault count (inspector)
   }));
