@@ -135,14 +135,17 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const model = fleetModel ?? projectModel;
 
   const vp = useGraphViewport({ w: model.worldW, h: model.worldH });
-  // Fit when the graph changes (a drill in/out swaps `model`) OR the Network page (re)mounts. `fit` is a
-  // stable callback, so this doesn't re-fit every render (the earlier `[model, vp]` dep did).
+  // Fit only when a node is OPENED/closed — i.e. the DRILL target changes (L0 network ⇄ an L1 fleet) —
+  // plus on mount and page change (#2554). Keying on `drill`, NOT `model`: `model` gets a fresh
+  // reference on every data poll (the liveness/fault/stall overlays recompute it), and depending on it
+  // re-fit the graph every few seconds, wiping out the user's pan/zoom. `fit` reads the current world
+  // via a ref, so the deferred call still fits the freshly-swapped graph.
   const { fit } = vp;
   useEffect(() => {
     if (page !== "network") return;
     const id = requestAnimationFrame(() => fit());
     return () => cancelAnimationFrame(id);
-  }, [model, fit, page]);
+  }, [drill, fit, page]);
 
   const selNodeId = sel?.type === "node" ? sel.id : null;
   const selEdgeId = sel?.type === "edge" ? sel.id : null;
