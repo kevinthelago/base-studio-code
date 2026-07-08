@@ -11,7 +11,9 @@
 .glance-card {
   overflow: hidden;
   background: var(--bg-panel); border: 1px solid var(--border); border-radius: 12px;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
+  /* A subtle graph-level lift, NOT a floating-modal drop (#2659): the panel reads as embedded in the
+     graph (which it is — it pans/zooms with the world layer), not a screen hovering on top. */
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .32);
   transition: left .4s cubic-bezier(.22, .61, .36, 1), top .4s cubic-bezier(.22, .61, .36, 1),
               width .4s cubic-bezier(.22, .61, .36, 1), height .4s cubic-bezier(.22, .61, .36, 1),
               border-color .4s;
