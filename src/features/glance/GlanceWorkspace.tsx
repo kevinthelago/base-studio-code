@@ -302,7 +302,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
             <Box as="button" onClick={() => { setShowCycle((v) => !v); setSel(null); }}
               style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", borderRadius: 7, padding: "6px 11px",
                 background: showCycle ? "rgba(242,85,95,.18)" : "rgba(242,85,95,.08)", border: `1px solid ${showCycle ? "rgba(242,85,95,.55)" : "rgba(242,85,95,.3)"}` }}>
-              <Text as="span" style={{ color: "#f2555f" }}>▲</Text>
+              <Text as="span" style={{ color: "var(--graph-health-error)" }}>▲</Text>
               <Text as="span" mono size={11} weight={600} style={{ color: "#f2848b" }}>{model.cyclePairs.length} cycle</Text>
             </Box>
           )}
@@ -327,7 +327,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
                   <Text as="span" mono size={12} style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
                   {(n.faults ?? 0) > 0 && (
                     <Text as="span" mono size={9.5} weight={700} title={`${n.faults} unresolved runtime faults`}
-                      style={{ flex: "none", color: "#fff", background: "#f2555f", borderRadius: 8, padding: "1px 5px", minWidth: 15, textAlign: "center" }}>
+                      style={{ flex: "none", color: "#fff", background: "var(--graph-health-error)", borderRadius: 8, padding: "1px 5px", minWidth: 15, textAlign: "center" }}>
                       {(n.faults ?? 0) > 99 ? "99+" : n.faults}
                     </Text>
                   )}
@@ -339,7 +339,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           {model.cyclePairs.length > 0 && (
             <Box style={{ borderTop: "1px solid var(--border)", padding: "12px 16px" }}>
               <Row gap={7} align="center" style={{ marginBottom: 9 }}>
-                <Text as="span" style={{ color: "#f2555f" }}>▲</Text>
+                <Text as="span" style={{ color: "var(--graph-health-error)" }}>▲</Text>
                 <Text as="span" mono size={11} style={{ letterSpacing: "1px", color: "#f2848b" }}>COORDINATION HAZARDS</Text>
               </Row>
               {model.cyclePairs.map(([a, b]) => (
