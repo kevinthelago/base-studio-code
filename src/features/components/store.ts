@@ -16,7 +16,7 @@ import { SEED_THEMES, reconcileThemes, orderThemes, type KitThemeRecord } from "
 import { loadComponents, loadKits, pushComponent, dropComponent, pushKit, dropKit } from "./lib/componentBridge";
 import { loadThemes, pushTheme, dropTheme, loadVariants } from "./lib/themeBridge";
 import { loadKitUsage, pushKitUsage, dropKitUsage } from "./lib/kitUsageBridge";
-import { setActiveKitThemes, applyVariantsToRoot } from "@/shared/ui/kit";
+import { setActiveKitThemes, applyVariantsToRoot, applyContributionsToRoot, type DesignContributionOverlay } from "@/shared/ui/kit";
 
 export interface ComponentsSlice {
   /** The proven-component library — the typed seed until the global store lands, then its contents. */
@@ -42,6 +42,15 @@ export interface ComponentsSlice {
    *  compile them into the live managed `<style>` — so an LLM-authored variant renders without a
    *  relaunch. Re-run on boot and on a `ui-touch` "variant" write. No-op when the bridge is unreachable. */
   hydrateVariants: () => Promise<void>;
+
+  /** Design contributions (#2656) — the token overlays downloaded blueprints contribute (their
+   *  reconciled + generated categories, #2646/#2650/#2636). PERSISTED + applied on boot: a
+   *  compose-don't-mutate layer the running app follows, never written into the shared contract. */
+  designContributions: DesignContributionOverlay[];
+  /** Register/replace a blueprint's contribution (upsert by `source`) + apply it live. */
+  addDesignContribution: (overlay: DesignContributionOverlay) => void;
+  /** Drop a source's contribution + re-apply the rest (e.g. the blueprint is removed). */
+  removeDesignContribution: (source: string) => void;
   /** Built-ins kept through a seed divergence (#2483): the user's customized copy survived an
    *  upstream update, or a retired built-in was kept because it was customized. Recomputed on each
    *  hydrate (not persisted); rendered by the Design Studio's SeedNoticesCard. */
@@ -131,6 +140,20 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     const defs = await loadVariants();
     if (defs) applyVariantsToRoot(defs); // bridge unreachable (null) → keep the current managed <style>
   },
+
+  designContributions: [],
+  addDesignContribution: (overlay) =>
+    set((s) => {
+      const next = [...s.designContributions.filter((o) => o.source !== overlay.source), overlay];
+      applyContributionsToRoot(next);
+      return { designContributions: next };
+    }),
+  removeDesignContribution: (source) =>
+    set((s) => {
+      const next = s.designContributions.filter((o) => o.source !== source);
+      applyContributionsToRoot(next);
+      return { designContributions: next };
+    }),
 
   seedNotices: [],
 
