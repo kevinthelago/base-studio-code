@@ -8,7 +8,7 @@ import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, NW, NH, type GraphModel, type GHealth, type GCategory } from "./lib/glanceGraph";
 import { archetypeById, hueColor } from "@/features/org";
 
-const ERR = "#f2555f";
+const ERR = "var(--graph-health-error)";
 const HEALTH_ROWS: GHealth[] = ["idle", "healthy", "warning", "error"];
 
 const REST_N = 0.14, REST_E = 0.06;
@@ -21,7 +21,7 @@ const EDGE_ROWS_L0: [string, string, string][] = [
   [EDGE_META.api.label, EDGE_META.api.color, EDGE_META.api.dash],
   [EDGE_META.data.label, EDGE_META.data.color, EDGE_META.data.dash],
   [EDGE_META.events.label, EDGE_META.events.color, EDGE_META.events.dash],
-  ["cycle", "#f2555f", "7 6"],
+  ["cycle", "var(--graph-health-error)", "7 6"],
 ];
 // Fleet-drill (L1) legend: the role colour buckets read as agent FUNCTION groups; the edge rows are the
 // Org relationship archetypes actually present in the drilled fleet (#2561).
@@ -72,16 +72,18 @@ export function GlanceCanvas(p: CanvasProps) {
           // A cyclical archetype (iterates, #2578) is a DELIBERATE loop — keep the archetype's hue (not
           // the red hazard tint) but the animated cycle dash, so it reads as an intentional iteration loop.
           const loop = e.isCycle && !!arch?.cyclical;
-          const color = loop ? hueColor(arch!.hue) : e.isCycle ? "#f2555f" : arch ? hueColor(arch.hue) : meta.color;
+          const color = loop ? hueColor(arch!.hue) : e.isCycle ? "var(--graph-health-error)" : arch ? hueColor(arch.hue) : meta.color;
           const width = (e.isCycle ? 2.3 : arch ? 1.8 : meta.w) + (inFocus && focus ? 0.7 : 0);
           const dash = e.isCycle ? "7 6" : arch ? (ARCH_DASH[arch.style] ?? "") : meta.dash;
           const opacity = e.isCycle ? (focus ? (inFocus ? 1 : 0.4) : 0.95) : (focus ? (inFocus ? 1 : REST_E) : 0.82);
           return (
             <g key={e.id} opacity={opacity} onMouseEnter={() => p.onHoverEdge(e.id)} onMouseLeave={() => p.onHoverEdge(null)} onClick={click(() => p.onSelectEdge(e.id))} style={{ cursor: "pointer", transition: "opacity .18s" }}>
               <path d={e.d} stroke="transparent" strokeWidth={16} fill="none" />
-              <path d={e.d} stroke={color} strokeWidth={width} strokeDasharray={dash} fill="none" strokeLinecap="round"
-                style={e.isCycle ? { animation: "glance-dashmove .75s linear infinite" } : undefined} />
-              <path d={e.arrow} fill={color} />
+              {/* stroke/fill via `style` (not the SVG attribute) so the `var(--graph-*)` token RESOLVES —
+                  CSS custom properties don't resolve in SVG presentation attributes (#2618). */}
+              <path d={e.d} strokeWidth={width} strokeDasharray={dash} fill="none" strokeLinecap="round"
+                style={{ stroke: color, ...(e.isCycle ? { animation: "glance-dashmove .75s linear infinite" } : {}) }} />
+              <path d={e.arrow} style={{ fill: color }} />
             </g>
           );
         })}
@@ -172,7 +174,7 @@ export function GlanceOverlays({ drill = false, archetypes = [] }: { drill?: boo
           const ar = archetypeById(a);
           return ar ? [ar.label, hueColor(ar.hue), ARCH_DASH[ar.style] ?? ""] : [a, "var(--fg-muted)", ""];
         }),
-        ["cycle", "#f2555f", "7 6"],
+        ["cycle", "var(--graph-health-error)", "7 6"],
       ]
     : EDGE_ROWS_L0;
   return (
@@ -212,7 +214,7 @@ export function GlanceOverlays({ drill = false, archetypes = [] }: { drill?: boo
           <Box style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {edgeRows.map(([label, color, dash]) => (
               <Box key={label} style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                <svg width={14} height={2} style={{ flex: "none", overflow: "visible" }}><line x1={0} y1={1} x2={14} y2={1} stroke={color} strokeWidth={2} strokeDasharray={dash} /></svg>
+                <svg width={14} height={2} style={{ flex: "none", overflow: "visible" }}><line x1={0} y1={1} x2={14} y2={1} strokeWidth={2} strokeDasharray={dash} style={{ stroke: color }} /></svg>
                 <Text as="span" mono size={10} style={{ color: label === "cycle" ? "#f2848b" : "var(--fg-muted)" }}>{label}</Text>
               </Box>
             ))}

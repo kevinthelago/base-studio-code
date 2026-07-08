@@ -126,26 +126,26 @@ export interface GraphModel {
 
 /** Role → accent colour (drives the node left-border + role chip + legend). */
 export const ROLE_COLOR: Record<GRole, string> = {
-  infra: "#5b9dff", service: "#4fd6a0", data: "#b98bff", client: "#f2b155",
+  infra: "var(--graph-kind-infra)", service: "var(--graph-kind-service)", data: "var(--graph-kind-data)", client: "var(--graph-kind-client)",
 };
 /** Lifecycle category → accent colour + label (#2583) — drives a PROJECT (L0) node's border + chip +
  *  legend. A palette DELIBERATELY distinct from the health colours (blue/green/orange/red) so the
  *  category channel and the health dot never blur. */
 export const CATEGORY_META: Record<GCategory, { label: string; color: string }> = {
-  greenfield: { label: "greenfield", color: "#16b3a7" }, // teal — creating from a pitch
-  transform:  { label: "transform",  color: "#7b74f2" }, // indigo — restructuring existing repos
-  harden:     { label: "harden",     color: "#b8862f" }, // bronze — improving/securing in place
-  maintain:   { label: "maintain",   color: "#8b93a7" }, // slate — keeping it running
-  data:       { label: "data",       color: "#d05fa8" }, // magenta — a data migration
-  script:     { label: "script",     color: "#d0a92e" }, // gold — a single-purpose invocable function (#2596)
+  greenfield: { label: "greenfield", color: "var(--graph-category-greenfield)" }, // teal — creating from a pitch
+  transform:  { label: "transform",  color: "var(--graph-category-transform)" }, // indigo — restructuring existing repos
+  harden:     { label: "harden",     color: "var(--graph-category-harden)" }, // bronze — improving/securing in place
+  maintain:   { label: "maintain",   color: "var(--graph-category-maintain)" }, // slate — keeping it running
+  data:       { label: "data",       color: "var(--graph-category-data)" }, // magenta — a data migration
+  script:     { label: "script",     color: "var(--graph-category-script)" }, // gold — a single-purpose invocable function (#2596)
 };
 /** Axis 1 — HEALTH → the top-left dot colour + whether it pulses (#2541). Blue = at rest, green =
  *  active & fine, orange = warning, red = error/fatal (pulses; the node to look at). */
 export const HEALTH_META: Record<GHealth, { label: string; color: string; pulse: boolean }> = {
-  idle: { label: "idle", color: "#5b9dff", pulse: false },
-  healthy: { label: "healthy", color: "#4fd6a0", pulse: false },
-  warning: { label: "warning", color: "#f2b155", pulse: false },
-  error: { label: "error", color: "#f2555f", pulse: true },
+  idle: { label: "idle", color: "var(--graph-health-idle)", pulse: false },
+  healthy: { label: "healthy", color: "var(--graph-health-healthy)", pulse: false },
+  warning: { label: "warning", color: "var(--graph-health-warning)", pulse: false },
+  error: { label: "error", color: "var(--graph-health-error)", pulse: true },
 };
 /** Axis 2 — ACTIVITY → the bottom-right lifecycle word (#2541). Colour is the health axis's job; this
  *  is just the label + whether it animates (a live app / building fleet reads as active). */
@@ -164,9 +164,9 @@ export const ACTIVITY_META: Record<GActivity, { label: string; pulse: boolean }>
  *  is kept for data/persist stability; only the user-facing label reads "depends on".) Fleet-drill (L1)
  *  edges speak the Org archetype grammar instead — see `glanceFleet`. */
 export const EDGE_META: Record<GEdgeKind, { label: string; color: string; dash: string; w: number; surface: string }> = {
-  api: { label: "depends on", color: "#5b9dff", dash: "", w: 1.8, surface: "build & runtime dependency" },
-  data: { label: "data flow", color: "#b98bff", dash: "", w: 1.8, surface: "consumes a data feed · schema-locked" },
-  events: { label: "event stream", color: "#4fd6a0", dash: "6 5", w: 1.7, surface: "async messages · at-least-once" },
+  api: { label: "depends on", color: "var(--graph-edge-api)", dash: "", w: 1.8, surface: "build & runtime dependency" },
+  data: { label: "data flow", color: "var(--graph-edge-data)", dash: "", w: 1.8, surface: "consumes a data feed · schema-locked" },
+  events: { label: "event stream", color: "var(--graph-edge-events)", dash: "6 5", w: 1.7, surface: "async messages · at-least-once" },
 };
 
 // Node box + spacing in world (design) coordinates.
