@@ -1,0 +1,18 @@
+[package]
+name = "bsc-cad"
+version = "0.1.0"
+edition = "2021"
+description = "Rust-native mesh/SDF geometry kernel (#2621) — a declarative implicit CSG op-tree evaluated as a signed-distance field, polygonized (surface nets) to a watertight mesh, exported to binary STL. Metric (mm). Tauri-free; the `bsc-cad` CLI meshes a spec.json. Foundation for the Design Studio's AI-authored 3D objects; icebox #2620 splits it into its own package."
+
+# The kernel is a plain library (no Tauri, no external geometry deps) so the CLI here, the future
+# `bsc cad` subcommand, and a WASM build can all reuse it.
+[lib]
+name = "bsc_cad"
+
+[[bin]]
+name = "bsc-cad"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
