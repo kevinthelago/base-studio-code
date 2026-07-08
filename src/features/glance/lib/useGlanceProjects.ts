@@ -88,11 +88,23 @@ export function mergeGlanceProjects(
   // fetch not landed). A GitHub record below OVERLAYS it. GitHub board status NO LONGER sets the node
   // status (#2541) and a published hub RESTS at idle (#2551) until a runtime overlay lights it up; a
   // draft-declared axis still wins for curated colouring.
+  // Collapse the LEGACY + name-slug hub FOLDERS of the SAME project into ONE node (#2409 grandfathering
+  // leaves both on disk with the same title — e.g. `Beautiful_Emails` + `beautiful-emails`): group by the
+  // canonical `projectSlug(title)`, preferring the folder whose key already IS that slug (what planFleet +
+  // the drill resolve against), so a project isn't DUPLICATED on the network.
+  const localByTitleKey = new Map<string, LocalPublishedLite>();
   for (const lp of localPublished) {
-    const prior = byKey.get(lp.key);
-    const d = drafts[lp.key];
-    byKey.set(lp.key, { id: lp.key, name: lp.title, role: prior?.role, health: d?.health ?? "idle", activity: d?.activity ?? "idle", reason: d?.reason });
-    draftKeyByTitle.set(projectSlug(lp.title), lp.key);
+    const tk = projectSlug(lp.title);
+    const cur = localByTitleKey.get(tk);
+    if (!cur || (lp.key === tk && cur.key !== tk)) localByTitleKey.set(tk, lp);
+  }
+  for (const [tk, lp] of localByTitleKey) {
+    // Collapse onto a matching draft (a legacy-keyed draft) if one exists; else key by the chosen folder.
+    const key = draftKeyByTitle.get(tk) ?? lp.key;
+    const prior = byKey.get(key);
+    const d = drafts[key];
+    byKey.set(key, { id: key, name: lp.title, role: prior?.role, health: d?.health ?? "idle", activity: d?.activity ?? "idle", reason: d?.reason });
+    draftKeyByTitle.set(tk, key);
   }
   for (const p of published) {
     // The plan key derives from the name (#2409): a matching draft's key (covers grandfathered

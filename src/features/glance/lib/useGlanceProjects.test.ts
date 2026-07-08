@@ -128,6 +128,25 @@ describe("mergeGlanceProjects — draft/published dedup (#2339/#2409); GitHub no
     expect(merged).toHaveLength(1);
     expect(merged[0].id).toBe("billing-service");
   });
+
+  it("collapses a legacy + name-slug local hub folder of the SAME project to ONE node, keyed canonically", () => {
+    // #2409 grandfathering leaves BOTH hub folders on disk with the same title; the local-inventory seed
+    // must not render the project twice. The canonical name-slug folder wins the node id.
+    const localPublished = [
+      { key: "Beautiful_Emails", title: "Beautiful Emails" },
+      { key: "beautiful-emails", title: "Beautiful Emails" },
+    ];
+    const merged = mergeGlanceProjects({}, [], localPublished);
+    const emails = merged.filter((p) => p.name === "Beautiful Emails");
+    expect(emails).toHaveLength(1);
+    expect(emails[0].id).toBe("beautiful-emails"); // the canonical projectSlug folder, not the legacy one
+  });
+
+  it("keeps a legacy-only local hub (no name-slug folder) under its own key", () => {
+    const merged = mergeGlanceProjects({}, [], [{ key: "Beautiful_Emails", title: "Beautiful Emails" }]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe("Beautiful_Emails"); // no canonical folder exists → keep the legacy key
+  });
 });
 
 describe("applyLiveness — heartbeat → 'live' activity + healthy (#2263/#2541)", () => {
