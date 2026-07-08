@@ -6,7 +6,7 @@ import { mergeRoleDefaults, roleCapability, type RoleCapability } from "./roleMo
 // #2027 P1). The role gate is least-privilege; a JSON edit that WIDENS a role's access (e.g. gives a
 // reviewer git:write, or hands a non-planner default write globs) must trip a test here, not ship.
 describe("role capability table (loaded from @data/permissions/role-capabilities.json)", () => {
-  it("has exactly the 10 roles with their intended github/git/code/net/ui tiers", () => {
+  it("has exactly the 11 roles with their intended github/git/code/net/ui tiers", () => {
     const tiers = Object.fromEntries(
       Object.values(ROLE_DEFAULTS).map((c) => [c.role, `${c.github}/${c.git}/${c.code}/${c.net}/${c.ui}`]),
     );
@@ -28,20 +28,30 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
       // store is its one write grant (`ui: write`, #2470), and its whole command surface is
       // `bsc ui`, granted at launch via the restricted allow-list.
       designer:   "none/none/none/none/write",
+      // Marketer (#2431): read-only on git/GitHub, code:none — writes come solely from its
+      // marketing-content carve-out (asserted below), never a code tier.
+      marketer:   "read/read/none/read/read",
     });
   });
 
-  it("only the planner + documentor ship default write globs; every other role starts empty (no code writes)", () => {
+  it("only the planner + documentor + marketer ship default write globs; every other role starts empty (no code writes)", () => {
     expect(PLANNER_WRITE_GLOBS).toBe(ROLE_DEFAULTS.planner.writeGlobs); // same array — derived, not duplicated
     expect(PLANNER_WRITE_GLOBS).toEqual(["*.md", "*.json", "prompts/*.md", "prompts/*", "discovery/*.md", "discovery/*"]);
-    // The documentor ships DOC_GLOBS by default (its prose-doc carve-out, #1555) — the only non-planner
-    // role that launches with a write boundary, and strictly markdown/docs (no code extensions).
+    // The documentor ships DOC_GLOBS by default (its prose-doc carve-out, #1555) — strictly markdown/docs.
     expect(DOC_GLOBS).toBe(ROLE_DEFAULTS.documentor.writeGlobs); // same array — derived, not duplicated
     // No `docs/**`: that would grant code files under docs/ (e.g. docs/gen.ts) — the boundary is
     // markdown/prose only (#2326). `**/*.md` already covers every markdown file, incl. docs/*.md.
     expect(DOC_GLOBS).toEqual(["*.md", "**/*.md", "README*", "**/README*", "CHANGELOG*"]);
+    // The marketer ships a marketing-content carve-out (#2431) — markdown/mdx under marketing/·content/
+    // plus README/CHANGELOG. STRICTLY markdown/mdx (no open dirs, so no code extension can slip in),
+    // so `code: "none"` stays honest.
+    expect(ROLE_DEFAULTS.marketer.writeGlobs).toEqual([
+      "marketing/**/*.md", "marketing/**/*.mdx", "content/**/*.md", "content/**/*.mdx",
+      "README*", "**/README*", "CHANGELOG*", "**/CHANGELOG*",
+    ]);
+    expect(ROLE_DEFAULTS.marketer.writeGlobs.every((g) => /\.(md|mdx)$|README|CHANGELOG/.test(g))).toBe(true);
     for (const c of Object.values(ROLE_DEFAULTS)) {
-      if (c.role !== "planner" && c.role !== "documentor") expect(c.writeGlobs).toEqual([]);
+      if (c.role !== "planner" && c.role !== "documentor" && c.role !== "marketer") expect(c.writeGlobs).toEqual([]);
     }
   });
 

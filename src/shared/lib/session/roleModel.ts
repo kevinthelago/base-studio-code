@@ -53,7 +53,13 @@ export type SessionRole =
   // the `bsc ui` CLI (kits live in the store, not files) — `none` on every axis: no git, no
   // GitHub, no file writes, no web. Launched with `restrictedAllow`, so the baseline command
   // tiers are suppressed and only `bsc ui` (+ the deprecated `bsc component` alias) auto-runs.
-  | "designer";
+  | "designer"
+  // Marketer (#2431): the opt-in marketing persona's role — takes the market-research stage's
+  // artifacts and drafts in-repo collateral (landing/README copy, launch posts, SEO content,
+  // release announcements). Least-privilege like `documentor`: `code: "none"` with a marketing-content
+  // write carve-out (markdown/mdx under `marketing/`/`content/` + README/CHANGELOG), so it can never
+  // touch feature code; outward (third-party) publishing is out of v1.
+  | "marketer";
 
 /** Access to a capability: none < read < write. */
 export type AccessTier = "none" | "read" | "write";
@@ -124,11 +130,12 @@ export function roleCapability(role: SessionRole, override: Partial<RoleCapabili
 }
 
 /** The `code: "none"` roles that carry an explicit, scoped write carve-out (a narrow allow layered
- *  onto an otherwise write-denied capability): the **director** (its commons globs, #851) and the
- *  **documentor** (its DOC_GLOBS prose docs, #1555). Every OTHER `code: "none"` role (triage, tester,
- *  reviewer, juror, issuer) stays fully write-denied even if handed globs — the stewardship can't be
- *  accidentally granted to a non-carve-out role. */
-const CARVE_OUT_ROLES: ReadonlySet<SessionRole> = new Set<SessionRole>(["director", "documentor"]);
+ *  onto an otherwise write-denied capability): the **director** (its commons globs, #851), the
+ *  **documentor** (its DOC_GLOBS prose docs, #1555), and the **marketer** (its marketing-content globs,
+ *  #2431). Every OTHER `code: "none"` role (triage, tester, reviewer, juror, issuer, designer) stays
+ *  fully write-denied even if handed globs — the stewardship can't be accidentally granted to a
+ *  non-carve-out role. */
+const CARVE_OUT_ROLES: ReadonlySet<SessionRole> = new Set<SessionRole>(["director", "documentor", "marketer"]);
 
 /**
  * Whether a capability has an explicit, scoped write carve-out (#851 / #1555): a `code: "none"` role
