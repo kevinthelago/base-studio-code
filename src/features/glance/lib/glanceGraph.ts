@@ -20,10 +20,12 @@ export type GRole = "infra" | "service" | "data" | "client";
  *  `bsc errors` FaultLevel; this REPLACES the old separate fault badge. */
 export type GHealth = "idle" | "healthy" | "warning" | "error";
 /** Axis 2 — ACTIVITY (#2541): the bottom-right lifecycle word — what the project is doing right now.
- *  `planning` surfaces ONLY when the user has re-opened the planner on an already-triaged project (a
- *  re-edit state, never the default). `waiting` = an EXPECTED blocked state (an agent parked for the
- *  user, `bsc-wait`) — calm, not alarming; it lives here, not on the health axis. */
-export type GActivity = "planning" | "building" | "waiting" | "review" | "live";
+ *  `idle` is the RESTING default (#2551): a triaged project with nothing running reads idle, NOT
+ *  building — `building` means agents are ACTUALLY running (derived from live sessions, never a
+ *  fallback). `planning` surfaces ONLY when the user has re-opened the planner on an already-triaged
+ *  project (a re-edit state). `waiting` = an EXPECTED blocked state (an agent parked for the user,
+ *  `bsc-wait`) — calm, not alarming; it lives here, not on the health axis. */
+export type GActivity = "idle" | "planning" | "building" | "waiting" | "review" | "live";
 export type GEdgeKind = "api" | "data" | "events";
 
 /** Severity rank for the health rollup — only `warning`/`error` (rank ≥ 1) propagate up dependency
@@ -100,6 +102,7 @@ export const HEALTH_META: Record<GHealth, { label: string; color: string; pulse:
 /** Axis 2 — ACTIVITY → the bottom-right lifecycle word (#2541). Colour is the health axis's job; this
  *  is just the label + whether it animates (a live app / building fleet reads as active). */
 export const ACTIVITY_META: Record<GActivity, { label: string; pulse: boolean }> = {
+  idle: { label: "idle", pulse: false },
   planning: { label: "planning", pulse: false },
   building: { label: "building", pulse: true },
   waiting: { label: "waiting", pulse: false },
