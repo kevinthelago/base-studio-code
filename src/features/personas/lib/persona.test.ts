@@ -11,10 +11,11 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
 
   it("assembles the full packaged set from the @data/personas JSON, ordered", () => {
     const built = makeBuiltinPersonas();
-    // The ten packaged personas are all present, one per role (documentor #1555, designer #2471).
+    // The packaged personas are all present, one per role (documentor #1555, designer #2471) plus the
+    // auditor persona (#2578 — a juror in a standing iteration loop).
     for (const id of [
       "persona-planner", "persona-worker", "persona-director", "persona-triage", "persona-reviewer",
-      "persona-tester", "persona-issuer", "persona-juror", "persona-documentor", "persona-designer",
+      "persona-tester", "persona-issuer", "persona-juror", "persona-auditor", "persona-documentor", "persona-designer",
     ]) {
       expect(built.some((p) => p.id === id)).toBe(true);
     }
