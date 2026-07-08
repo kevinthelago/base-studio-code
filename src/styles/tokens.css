@@ -16,6 +16,26 @@
   --violet:     oklch(0.72 0.12 300);
   --danger:     oklch(0.68 0.18 25);
 
+  /* domain / categorical — the graph data-viz palette (#2607); consumed by the glance kit,
+     bindable by a theme. Kept in lockstep with style-descriptor.json (styleDescriptor.appTokens test). */
+  --graph-health-idle: #5b9dff;
+  --graph-health-healthy: #4fd6a0;
+  --graph-health-warning: #f2b155;
+  --graph-health-error: #f2555f;
+  --graph-kind-infra: #5b9dff;
+  --graph-kind-service: #4fd6a0;
+  --graph-kind-data: #b98bff;
+  --graph-kind-client: #f2b155;
+  --graph-category-greenfield: #16b3a7;
+  --graph-category-transform: #7b74f2;
+  --graph-category-harden: #b8862f;
+  --graph-category-maintain: #8b93a7;
+  --graph-category-data: #d05fa8;
+  --graph-category-script: #d0a92e;
+  --graph-edge-api: #5b9dff;
+  --graph-edge-data: #b98bff;
+  --graph-edge-events: #4fd6a0;
+
   /* session-state + provider hues + accent helpers (used by the console pane chrome and the
      planner focused pane) — oklch, aligned to the app palette. Formerly scoped to the dropped
      .console-theme reskin; live in :root so they're defined app-wide. */

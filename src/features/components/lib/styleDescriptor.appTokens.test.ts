@@ -37,6 +37,9 @@ describe("style descriptor ↔ the app's live tokens.css (#2567)", () => {
         ...c.tokens.map((t) => ({ name: t.name, value: t.default })),
         ...c.variants.flatMap((v) => v.tokens.map((t) => ({ name: t.name, value: t.default }))),
       ]),
+      // Domain / categorical tokens (#2607) are app-live too — a kit consumes them, so they must be
+      // declared in tokens.css with the descriptor's literal value or `bsc ui tokens` would lie.
+      ...(d.domain ?? []).flatMap((g) => g.tokens.map((t) => ({ name: t.name, value: t.value }))),
     ];
     const missing = expected.filter((e) => !live.has(e.name)).map((e) => e.name);
     const mismatched = expected
