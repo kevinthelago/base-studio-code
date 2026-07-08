@@ -83,6 +83,14 @@ describe("GlanceStreamMorph (#2401/#2534)", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("reveals a corner resize handle only once expanded (#2659)", () => {
+    vi.useFakeTimers();
+    render(<GlanceStreamMorph node={NODE} paneId="proj:api-client" name="api-client" onClose={() => {}} />);
+    expect(screen.queryByLabelText("Resize terminal")).toBeNull(); // collapsed into the node → no handle
+    act(() => { vi.advanceTimersByTime(20); });                    // flush the grow rAF → expanded
+    expect(screen.getByLabelText("Resize terminal")).toBeInTheDocument();
+  });
+
   it("hides the chat input while the CLI is running, showing it at rest (#2534)", () => {
     // At rest (no "run" status) the message input is present.
     const { rerender } = render(<GlanceStreamMorph node={NODE} paneId="proj:api-client" name="api-client" onClose={() => {}} />);
