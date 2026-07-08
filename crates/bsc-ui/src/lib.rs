@@ -365,10 +365,108 @@ fn walk(node: &Value, path: &str, nodes: &Value, errors: &mut Vec<String>) {
     }
 }
 
+// ── palette generator (#2634) — the "data generates design" engine + the no-holes guarantee ─────────
+// Pure + DETERMINISTIC (no RNG): a seed + a category count (or the hues already in use) → coherent
+// token VALUES, so a growing vocabulary (a new kit/blueprint category) is filled with an on-brand
+// colour instead of leaving a theme with a hole. This layer only PRODUCES values; writing/applying
+// them is the reconciliation slice.
+
+/// The brand-anchored default seed hue — the `--accent` hue (70°, amber) — so a fresh categorical
+/// scale reads as part of the same identity.
+pub const GEN_SEED_HUE: f64 = 70.0;
+/// The categorical scale's fixed lightness + chroma: equal across the set so only the HUE distinguishes
+/// categories (the standard data-viz technique), tuned to read on the app's dark canvas.
+pub const GEN_LIGHTNESS: f64 = 0.72;
+pub const GEN_CHROMA: f64 = 0.15;
+
+/// Format one categorical colour at the fixed scale L/C and the given hue.
+pub fn categorical_color(hue: f64) -> String {
+    format!("oklch({GEN_LIGHTNESS:.2} {GEN_CHROMA:.2} {:.1})", hue.rem_euclid(360.0))
+}
+
+/// Generate `count` maximally-distinct categorical colours (#2634): evenly-spaced OKLCH hues from
+/// `seed_hue`, so N categories are equally vivid and equally spaced around the wheel. Deterministic.
+pub fn generate_categorical(seed_hue: f64, count: usize) -> Vec<String> {
+    if count == 0 {
+        return Vec::new();
+    }
+    let step = 360.0 / count as f64;
+    (0..count).map(|i| categorical_color(seed_hue + i as f64 * step)).collect()
+}
+
+/// Fill ONE new categorical slot coherently (#2634) — the literal no-holes primitive: place the new
+/// hue at the midpoint of the LARGEST circular gap among the hues already in use, so it is as distinct
+/// as possible from every existing colour. Deterministic; returns [`GEN_SEED_HUE`] when none exist.
+pub fn next_distinct_hue(existing: &[f64]) -> f64 {
+    let mut hs: Vec<f64> = existing.iter().map(|h| h.rem_euclid(360.0)).collect();
+    if hs.is_empty() {
+        return GEN_SEED_HUE;
+    }
+    hs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let (mut best_mid, mut best_gap) = (hs[0], -1.0_f64);
+    for i in 0..hs.len() {
+        let a = hs[i];
+        // The wrap segment closes the circle: last hue → first hue + 360°.
+        let b = if i + 1 < hs.len() { hs[i + 1] } else { hs[0] + 360.0 };
+        let gap = b - a;
+        if gap > best_gap {
+            best_gap = gap;
+            best_mid = ((a + b) / 2.0).rem_euclid(360.0);
+        }
+    }
+    best_mid
+}
+
+/// The STATUS palette (#2634): health/state keys → the SEMANTIC base tokens, so status colours compose
+/// with the active theme rather than freezing a raw hue. `warning` rides `--accent` (the app's amber) —
+/// there is no dedicated warning base token.
+pub fn status_palette() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("idle", "var(--info)"),
+        ("healthy", "var(--success)"),
+        ("warning", "var(--accent)"),
+        ("error", "var(--danger)"),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    // ── palette generator (#2634) ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn generate_categorical_is_deterministic_and_evenly_spaced() {
+        assert_eq!(generate_categorical(GEN_SEED_HUE, 6), generate_categorical(GEN_SEED_HUE, 6),
+            "same seed+count → same palette (deterministic, shareable)");
+        let a = generate_categorical(GEN_SEED_HUE, 6);
+        assert_eq!(a.len(), 6);
+        assert!(a.iter().all(|c| c.starts_with("oklch(0.72 0.15 ")), "fixed L/C, only hue varies: {a:?}");
+        // Evenly spaced: 4 hues 90° apart from a 0° seed.
+        assert_eq!(generate_categorical(0.0, 4), vec![
+            "oklch(0.72 0.15 0.0)", "oklch(0.72 0.15 90.0)",
+            "oklch(0.72 0.15 180.0)", "oklch(0.72 0.15 270.0)",
+        ]);
+        assert!(generate_categorical(GEN_SEED_HUE, 0).is_empty());
+    }
+
+    #[test]
+    fn next_distinct_hue_lands_in_the_largest_gap() {
+        assert_eq!(next_distinct_hue(&[]), GEN_SEED_HUE, "no existing → the brand seed");
+        assert_eq!(next_distinct_hue(&[0.0]), 180.0, "one hue → its opposite");
+        assert_eq!(next_distinct_hue(&[0.0, 90.0]), 225.0, "largest gap 90→360, mid 225");
+        assert_eq!(next_distinct_hue(&[90.0, 0.0]), 225.0, "order-independent");
+        assert_eq!(next_distinct_hue(&[350.0, 10.0]), 180.0, "wraps mod 360 — opposite the 350/10 cluster");
+    }
+
+    #[test]
+    fn status_palette_maps_to_semantic_tokens() {
+        let p = status_palette();
+        assert_eq!(p.iter().find(|(k, _)| *k == "error").map(|(_, v)| *v), Some("var(--danger)"));
+        assert_eq!(p.iter().find(|(k, _)| *k == "healthy").map(|(_, v)| *v), Some("var(--success)"));
+        assert!(p.iter().all(|(_, v)| v.starts_with("var(--")), "status → semantic tokens, never raw hues: {p:?}");
+    }
 
     #[test]
     fn contract_is_valid() {
