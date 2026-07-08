@@ -84,6 +84,9 @@ export function DesignStudio() {
   const rail = useDragResize({ initial: 266, min: 200, max: 400, axis: "x" });
   // The inspector carries the full library detail (#2453), so it defaults — and is allowed — wider.
   const insp = useDragResize({ initial: 420, min: 300, max: 680, axis: "x", invert: true });
+  // The always-on designer terminal's height (#2624) — a row-resize handle above it; `invert` because
+  // the terminal sits AFTER the handle, so dragging up grows it. The graph (flex:1) keeps priority.
+  const term = useDragResize({ initial: 240, min: 140, max: 560, axis: "y", invert: true });
 
   const match = (c: ComponentRecord) => matchesQuery(c, query);
   const kit = kits.find((k) => k.id === kitId) ?? kits[0];
@@ -248,7 +251,8 @@ export function DesignStudio() {
             the graph flexes; the terminal is a fixed-height bottom strip, so the panes keep priority. */}
         <Box className="ds-col ds-center">
           <GraphView graph={graph} comps={kitComps} selId={sel?.id ?? ""} workingId={aiFocusedId ?? ""} kitName={kit.name} gvp={gvp} onSelect={selectComp} />
-          <DesignerTerminal />
+          <Box className="ds-handle-h" {...term.handleProps} />
+          <DesignerTerminal height={term.size} />
         </Box>
         <Box className="ds-handle" {...insp.handleProps} />
 
