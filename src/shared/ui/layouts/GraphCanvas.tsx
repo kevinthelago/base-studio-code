@@ -1,10 +1,13 @@
 // GraphCanvas — the Layouts-tier template for a pan/zoom graph page (#2208, epic #2197 slice 2). The
-// standardized shell every graph workspace shares: a full-width TOOLBAR, an optional left RAIL, the
-// pan/zoom CANVAS (the viewport-clip element + the transformed "world" layer), and an optional
-// INSPECTOR column. It owns the frame — the viewport ref/wheel/pan wiring, the world-layer transform,
-// overflow/cursor — so a graph page brings only its world content (grid/edges/nodes), its toolbar
-// controls, and its rail/inspector. The viewport itself is created by the page via useGraphViewport
-// and passed in as `vp`, so the page keeps its own fit/persist effects and the toolbar can read zoom.
+// standardized shell every graph workspace shares: an optional left RAIL and right INSPECTOR that run
+// FULL HEIGHT, flanking a content column whose TOOLBAR sits only over the CANVAS (the viewport-clip
+// element + the transformed "world" layer), with an optional bottom DOCK strip below the canvas. The
+// rail/inspector are full-height siblings of the content column — the toolbar spans the canvas, not
+// the rail/inspector (#2754, matching the Designs workbench). It owns the frame — the viewport
+// ref/wheel/pan wiring, the world-layer transform, overflow/cursor — so a graph page brings only its
+// world content (grid/edges/nodes), its toolbar controls, and its rail/inspector. The viewport itself
+// is created by the page via useGraphViewport and passed in as `vp`, so the page keeps its own
+// fit/persist effects and the toolbar can read zoom.
 //
 // Consumers: Org designer (features/org) and Glance (features/glance). Sits on the layout primitives
 // (Box/Row/Stack) + shared controls in the same inline-style/token idiom.
@@ -31,6 +34,10 @@ export interface GraphCanvasProps {
   rail?: ReactNode;
   /** Optional inspector column on the right (feature-styled full node). */
   inspector?: ReactNode;
+  /** Optional strip docked BELOW the canvas (inside the content column, `flex: none`), e.g. a docked
+   *  session terminal (#2755). The caller owns its height + any resize handle — GraphCanvas just gives
+   *  it the slot. Nothing renders here when absent. */
+  dock?: ReactNode;
   /** Fixed overlays drawn over the canvas but NOT transformed (hints, legends). */
   overlays?: ReactNode;
   /** Dotted graph-paper backdrop. An INFINITE grid on the viewport (not the world box), so it always
@@ -60,7 +67,7 @@ export interface GraphCanvasProps {
 }
 
 export function GraphCanvas({
-  vp, world, toolbar, children, rail, inspector, overlays,
+  vp, world, toolbar, children, rail, inspector, dock, overlays,
   grid = false, gridSize = 24, gridColor = "color-mix(in oklch, var(--fg) 8%, transparent)",
   canvasBackground, className,
   railResizable = false, railWidth = 260, railMin = 200, railMax = 460,
@@ -84,20 +91,23 @@ export function GraphCanvas({
   const inspDrag = useDragResize({ initial: inspectorWidth, min: inspectorMin, max: inspectorMax, axis: "x", invert: true });
   const paneBox = (size: number): CSSProperties => ({ flex: `0 0 ${size}px`, width: size, minWidth: 0, display: "flex", overflow: "hidden" });
   return (
-    <Stack gap={0} className={className} style={{ flex: 1, minHeight: 0 }}>
-      {/* ── toolbar ── */}
-      <Row gap={16} align="center" style={{ height: 52, flex: "none", padding: "0 16px", borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)" }}>
-        {toolbar}
-      </Row>
+    // rail · content-column · inspector — the rail/inspector run FULL HEIGHT (siblings of the content
+    // column) so the toolbar spans only the canvas, not the whole page (#2754).
+    <Row gap={0} align="stretch" className={className} style={{ flex: 1, minHeight: 0 }}>
+      {rail && (railResizable ? (
+        <>
+          <Box style={paneBox(railDrag.size)}>{rail}</Box>
+          <Box className="resize-x" {...railDrag.handleProps} title="Drag to resize" />
+        </>
+      ) : rail)}
 
-      {/* ── body: rail · canvas · inspector (rail/inspector optionally drag-resizable) ── */}
-      <Row gap={0} align="stretch" style={{ flex: 1, minHeight: 0 }}>
-        {rail && (railResizable ? (
-          <>
-            <Box style={paneBox(railDrag.size)}>{rail}</Box>
-            <Box className="resize-x" {...railDrag.handleProps} title="Drag to resize" />
-          </>
-        ) : rail)}
+      {/* ── content column: toolbar (over the canvas only) · canvas · optional dock ── */}
+      <Stack gap={0} style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+        {/* ── toolbar ── */}
+        <Row gap={16} align="center" style={{ height: 52, flex: "none", padding: "0 16px", borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)" }}>
+          {toolbar}
+        </Row>
+
         {/* The pan/zoom viewport: a raw div for the native wheel listener + backdrop mousedown. */}
         <div ref={setVp} onMouseDown={onCanvasDown}
           onClick={onBackgroundClick ? (e) => {
@@ -106,7 +116,7 @@ export function GraphCanvas({
             if ((e.target as HTMLElement).closest("[data-node]")) return;
             onBackgroundClick();
           } : undefined}
-          style={{ position: "relative", flex: 1, overflow: "hidden", cursor: "grab", minWidth: 0, background: canvasBackground ?? "var(--bg)" }}>
+          style={{ position: "relative", flex: 1, overflow: "hidden", cursor: "grab", minWidth: 0, minHeight: 0, background: canvasBackground ?? "var(--bg)" }}>
           {gridStyle && <div style={gridStyle} />}
           {/* No text selection of node labels / edges on click or drag (#2527) — shared here so every
               graph (Org · Glance · Design Studio) is covered in one place. Inspector/toolbar text (outside
@@ -120,14 +130,19 @@ export function GraphCanvas({
           </Box>
           {overlays}
         </div>
-        {inspector && (inspectorResizable ? (
-          <>
-            <Box className="resize-x" {...inspDrag.handleProps} title="Drag to resize" />
-            <Box style={paneBox(inspDrag.size)}>{inspector}</Box>
-          </>
-        ) : inspector)}
-      </Row>
-    </Stack>
+
+        {/* ── dock: an optional strip below the canvas (e.g. a docked session terminal #2755). The
+            caller owns its height + any resize handle; GraphCanvas just gives it a flex:none slot. ── */}
+        {dock && <Box style={{ flex: "none" }}>{dock}</Box>}
+      </Stack>
+
+      {inspector && (inspectorResizable ? (
+        <>
+          <Box className="resize-x" {...inspDrag.handleProps} title="Drag to resize" />
+          <Box style={paneBox(inspDrag.size)}>{inspector}</Box>
+        </>
+      ) : inspector)}
+    </Row>
   );
 }
 
