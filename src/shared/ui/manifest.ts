@@ -656,7 +656,7 @@ export const UI_KIT: PrimitiveSpec[] = [
   },
   {
     name: "GraphCanvas", group: "layouts", importPath: "@/shared/ui/layouts/GraphCanvas",
-    description: "The pan/zoom graph page skeleton — a full-width TOOLBAR, an optional left RAIL, the pan/zoom CANVAS (viewport-clip + transformed world layer), and an optional INSPECTOR. Owns the viewport ref/wheel/pan wiring + world transform.",
+    description: "The pan/zoom graph page skeleton — a full-height left RAIL and right INSPECTOR flanking a content column whose TOOLBAR sits only over the pan/zoom CANVAS (viewport-clip + transformed world layer), with an optional bottom DOCK strip. Owns the viewport ref/wheel/pan wiring + world transform.",
     props: [
       { name: "vp", type: "object", required: true, description: "The viewport created by the page's useGraphViewport()." },
       { name: "world", type: "object", required: true, description: "World (design-space) size { w, h } — drives the world layer's box." },
@@ -664,6 +664,7 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "children", type: "node", required: true, description: "World-layer content: grid, SVG edges, node cards — positioned in world coords." },
       { name: "rail", type: "node", description: "Optional left rail/sidebar (feature-styled full node)." },
       { name: "inspector", type: "node", description: "Optional inspector column on the right (feature-styled full node)." },
+      { name: "dock", type: "node", description: "Optional strip docked below the canvas (inside the content column, flex:none) — e.g. a docked session terminal. Caller owns its height/handle." },
       { name: "overlays", type: "node", description: "Fixed overlays drawn over the canvas but NOT transformed (hints, legends)." },
       { name: "grid", type: "boolean", default: false, description: "Dotted graph-paper backdrop — an infinite grid on the viewport that tracks zoom + pan." },
       { name: "gridSize", type: "number", default: 24, description: "Grid tile size in world px (scaled by zoom on screen)." },
