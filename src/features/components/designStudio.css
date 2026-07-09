@@ -18,21 +18,13 @@
 .ds-act:hover { border-color: var(--fg-dim); color: var(--fg); }
 
 /* ── body + columns ── */
-/* overflow:hidden so nothing can ever spill past the body and push a pane off-screen (#2703). */
-.ds-body { flex: 1; min-height: 0; display: flex; position: relative; overflow: hidden; }
+.ds-body { flex: 1; min-height: 0; display: flex; position: relative; }
 .ds-col { display: flex; flex-direction: column; min-height: 0; }
 .ds-rail { flex: none; min-width: 200px; border-right: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
 .ds-insp { flex: none; min-width: 300px; border-left: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
-/* The middle column must yield to the side panes on resize (#2695): min-width/height:0 lets it shrink
-   below its content, and overflow:hidden clips that content (graph toolbar, terminal) instead of letting
-   its min-content push/scroll the rail + inspector. */
-.ds-center { flex: 1; min-width: 0; min-height: 0; overflow: hidden; background: var(--bg-canvas, var(--bg)); }
-/* The graph canvas fills the center and must shrink with it — the shared GraphCanvas root sets flex/
-   min-height inline but no min-width, so its toolbar's min-content would otherwise floor the column.
-   overflow:hidden also forces its automatic min-size to 0, and `> *` releases the two inner rows (the
-   toolbar "header" + the graph row) so the header can shrink instead of flooring the width (#2703). */
-.ds-graphcanvas { min-width: 0; min-height: 0; overflow: hidden; }
-.ds-graphcanvas > * { min-width: 0; }
+/* The graph takes the full width when nothing is focused (details pane hidden, #2705); min-width:0 lets
+   it shrink to make room for the details pane when a node IS focused. */
+.ds-center { flex: 1; min-width: 0; background: var(--bg-canvas, var(--bg)); }
 .ds-handle { width: 5px; flex: none; cursor: col-resize; z-index: 4; position: relative; }
 .ds-handle:hover { background: var(--accent-soft); }
 /* Horizontal splitter (#2624) — row-resize divider between the graph and the docked designer terminal. */
@@ -41,17 +33,6 @@
 .ds-colhead { height: 38px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--border-soft, var(--border)); }
 .ds-eyebrow { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; color: var(--fg-dim); text-transform: uppercase; }
 .ds-scroll { overflow-y: auto; }
-
-/* ── collapsible kits LIST (#2691) ── */
-/* The details/inspector pane is always inline; only the kits list collapses, reclaiming its width for
-   the graph. The collapse/expand toggle rides ON the pane — « in the rail header, » on the slim strip
-   — so the affordance always moves with the pane and can never be covered (the bug in the removed
-   overlay-drawer approach). */
-.ds-railtoggle { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-soft); color: var(--fg-muted); font-size: 13px; line-height: 1; cursor: pointer; }
-.ds-railtoggle:hover { border-color: var(--fg-dim); color: var(--fg); }
-/* the collapsed strip — a slim vertical bar carrying the » expand button + a rotated label */
-.ds-railstrip { flex: none; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 8px 0; border-right: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
-.ds-striplabel { writing-mode: vertical-rl; font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--fg-dim); user-select: none; }
 
 /* ── rail tree ── */
 .ds-kithead { width: 100%; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border: none; background: transparent; border-radius: 7px; cursor: pointer; color: var(--fg); font-size: 12.5px; }
@@ -131,7 +112,7 @@
 /* height is inline (drag-driven, #2624); min-width:0 + overflow:hidden let the terminal SHRINK so it
    never pins the center column's width — the rail/inspector panes keep priority when resized. */
 .ds-terminal { flex: none; height: 240px; min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
-.ds-termhost { flex: 1; min-height: 0; min-width: 0; overflow: hidden; padding: 4px 8px; background: #181a1f; /* TERM_THEME background — overflow:hidden so xterm's fixed-width canvas can't floor the column (#2703) */ }
+.ds-termhost { flex: 1; min-height: 0; min-width: 0; padding: 4px 8px; background: #181a1f; /* TERM_THEME background */ }
 
 /* loading preview (#2302) — a component's skeleton in the Studio rides the app's ONE shimmer
    keyframe (`skeleton-shimmer`, tokens.css), so the loading state uses the same motion vocabulary as
