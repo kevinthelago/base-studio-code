@@ -1,37 +1,18 @@
 // CoreSlice — the residual of the former `automations` grab-bag after the automations CRUD moved
-// to the Automations feature slice (@/features/automations/store, #1309). Still a mix: the API-tier
-// LLM provider config and active-project / draft state. A candidate for a further split (settings vs
-// projects) in a later pass. Typed Pick<AppStore, …>.
+// to the Automations feature slice (@/features/automations/store, #1309) and the API-tier LLM
+// provider config moved to the LlmSettings slice (#2715). Now: active-project / draft state + the
+// projects-page view state. Typed Pick<AppStore, …>.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import { setMapEntry, deleteMapEntry } from "../updateHelpers";
-import { modelOnProviderSwitch, DEFAULT_ANTHROPIC_MODEL, DEFAULT_LOCAL_BASE_URL } from "@/shared/lib/core/llmConfig";
 import { projectLinkId } from "@/features/glance/lib/projectLinks";
 import { loadProjectLinks, pushProjectLink, dropProjectLink } from "@/features/glance/lib/projectLinksBridge";
 
 type CoreSlice = Pick<AppStore,
-  "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "glanceDrill" | "setGlanceDrill" | "previewSources" | "setPreviewSource" | "previewBuilding" | "setPreviewBuilding" | "reviewFindings" | "setReviewFindings" | "teamsDrill" | "setTeamsDrill" | "projectLinks" | "addProjectLink" | "removeProjectLink" | "hydrateProjectLinks" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject" | "triagedProjects" | "markProjectTriaged"
+  "projectsPageMode" | "setProjectsPageMode" | "glanceDrill" | "setGlanceDrill" | "previewSources" | "setPreviewSource" | "previewBuilding" | "setPreviewBuilding" | "reviewFindings" | "setReviewFindings" | "teamsDrill" | "setTeamsDrill" | "projectLinks" | "addProjectLink" | "removeProjectLink" | "hydrateProjectLinks" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject" | "triagedProjects" | "markProjectTriaged"
 >;
 
 export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) => ({
-      claudeApiKey: "",
-      setClaudeApiKey: (key) => set({ claudeApiKey: key }),
-
-      // API-tier LLM provider config (#1085). claudeApiKey is the anthropic key.
-      llmProvider: "anthropic",
-      // Switch the model field to the new provider's default when it still holds another provider's
-      // default (a hosted `claude-*` model can't run on Ollama, and vice-versa) — a model the user
-      // typed is preserved. So picking Ollama lands on `qwen3-coder` instead of a 404 on the Claude id.
-      setLlmProvider: (p) => set((s) => ({ llmProvider: p, llmModel: modelOnProviderSwitch(p, s.llmModel) })),
-      llmModel: DEFAULT_ANTHROPIC_MODEL,
-      setLlmModel: (m) => set({ llmModel: m }),
-      openaiKey: "",
-      setOpenaiKey: (k) => set({ openaiKey: k }),
-      geminiKey: "",
-      setGeminiKey: (k) => set({ geminiKey: k }),
-      localBaseUrl: DEFAULT_LOCAL_BASE_URL,
-      setLocalBaseUrl: (u) => set({ localBaseUrl: u }),
-
       projectsPageMode: "projects",
       setProjectsPageMode: (v) => set({ projectsPageMode: v }),
       glanceDrill: null,
