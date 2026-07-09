@@ -28,6 +28,23 @@ export function nodeBox(pos: Position): Box {
   return { x: pos.x ?? 0, y: pos.y ?? 0, w, h };
 }
 
+/** The tight bounding box around every placed node in `positions` (design-space), or null when there are
+ *  none. Framing (fit / saved-zoom restore) centers on THIS — where the nodes actually are — instead of
+ *  the fixed CANVAS box, so the graph isn't parked high / clipped when the layout fills only part of (or
+ *  overflows) the canvas (#2673). Pure. */
+export function contentBounds(positions: Position[]): Box | null {
+  if (positions.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of positions) {
+    const b = nodeBox(p);
+    minX = Math.min(minX, b.x);
+    minY = Math.min(minY, b.y);
+    maxX = Math.max(maxX, b.x + b.w);
+    maxY = Math.max(maxY, b.y + b.h);
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
 export interface EdgeGeometry {
   /** SVG cubic-bezier path `d`. */
   d: string;
