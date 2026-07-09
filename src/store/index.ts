@@ -12,7 +12,7 @@ import { createMcpSlice } from "@/features/mcp/store";
 import { createPersonasSlice } from "@/features/personas/store";
 import { reconcilePersonas } from "@/features/personas/lib/persona";
 import { createOrgSlice } from "@/features/org/store";
-import { createComponentsSlice } from "@/features/components/store";
+import { createComponentsSlice } from "@/features/designs/store";
 import { reconcileOrgs } from "@/features/org/lib/org";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
@@ -230,11 +230,14 @@ export const useAppStore = create<AppStore>()(
         if (state && (state.projectsPageMode as string) === "fleet") state.projectsPageMode = "projects";
         // Design Studio moved from its own rail Workspace to a Planner tab (#move-to-planner). A user whose
         // last workspace was "design" would otherwise land on a removed screen — redirect to Planner on its
-        // Design Studio page.
+        // Designs page.
         if (state && (state.activeWorkspace as string) === "design") {
           state.activeWorkspace = "projects";
-          state.projectsPageMode = "design";
+          state.projectsPageMode = "designs";
         }
+        // The Designs page-mode key was renamed "design" → "designs" (#2701, feature-folder rename to
+        // match the on-screen "Designs" tab). A user whose last page-mode was "design" now opens "designs".
+        if (state && (state.projectsPageMode as string) === "design") state.projectsPageMode = "designs";
         // The Security workspace's key was renamed "agents" → "security" (#2702, naming realignment).
         // A user whose last workspace was "agents" would otherwise land on a removed key.
         if (state && (state.activeWorkspace as string) === "agents") state.activeWorkspace = "security";

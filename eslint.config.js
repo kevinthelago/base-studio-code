@@ -8,11 +8,11 @@ import reactRefresh from "eslint-plugin-react-refresh";
 // (`@/features/<x>/<anything deeper>`: lib/*, components, subdirs). `import type` stays allowed (erased
 // at build; a type-only coupling doesn't wire runtime). Own-feature modules DO use the
 // `@/features/<self>/...` alias (the repo's alias-over-`../../` convention), so this is enforced
-// PER-FEATURE: each feature forbids only the OTHER features' internals. Tests are exempt. `components/**`
+// PER-FEATURE: each feature forbids only the OTHER features' internals. Tests are exempt. `designs/**`
 // and `glance/**` are exempt AS IMPORTERS while a parallel session restructures them
 // (#2197/#2214/#2372) — remove them from EXEMPT_IMPORTERS to fold them in once that lands.
-const FEATURES = ["agents", "automations", "components", "github", "glance", "mcp", "org", "personas", "planner", "settings", "skills", "tunnel"];
-const EXEMPT_IMPORTERS = ["components", "glance"];
+const FEATURES = ["agents", "automations", "designs", "github", "glance", "mcp", "org", "personas", "planner", "settings", "skills", "tunnel"];
+const EXEMPT_IMPORTERS = ["designs", "glance"];
 const BOUNDARY_MSG =
   "Import another feature through its barrel (@/features/<x>), not its internals (#1545): a feature's " +
   "public API is its index.ts; deeper paths (lib/*, components, subdirs) are private. `import type` is allowed.";
