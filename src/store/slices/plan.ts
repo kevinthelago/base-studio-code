@@ -11,7 +11,8 @@ import { emptyFleet } from "@/features/planner/fleet/planFleet";
 import { defaultStageConfig, discoveryOnlyStageConfig } from "@/features/planner/stages/planStages";
 import { seedDataModels, emptyDataModel } from "@/features/planner/data/dataModel";
 import { normalizeFlow, resolveFlow } from "@/features/planner/fleet/agentFlow";
-import { setMapEntry, deleteMapEntry } from "../updateHelpers";
+import { setMapEntry } from "../updateHelpers";
+import { dropProjectScoped } from "./projectScopedMaps";
 /** The `repoPublic` key for one repo within a project (#1227): `<projectKey>::<repoFullName>`,
  *  the repo-scoped convention used elsewhere (e.g. repoStartupPromptDoc). */
 export function repoVisibilityKey(projectKey: string, repoId: string): string {
@@ -32,12 +33,6 @@ export function resolveRepoPublic(
   const k = repoVisibilityKey(projectKey, repoId);
   if (k in repoPublic) return repoPublic[k];
   return reposPublic[projectKey] ?? false;
-}
-
-/** Drop every per-repo entry for `projectKey` from a `<projectKey>::<repoId>`-keyed map (#1227). */
-function dropRepoScoped<T>(m: Record<string, T>, projectKey: string): Record<string, T> {
-  const prefix = `${projectKey}::`;
-  return Object.fromEntries(Object.entries(m).filter(([k]) => !k.startsWith(prefix)));
 }
 
 /** Record the project→kit consumer-index edge for a blueprint bind (#2277). If the blueprint declares a
@@ -305,32 +300,12 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         // every other origin/target (incl. the locked blueprint-author) is refused.
         const current = get().blueprints.find((b) => b.id === get().projectBlueprintId[projectId]);
         if (!canSwitchBlueprint(current, bp)) return;
-        const drop = <T,>(m: Record<string, T>): Record<string, T> => deleteMapEntry(m, projectId);
-        // Full reset: wipe ALL of the project's planning state (everything clearPlan
-        // drops) so no section reads as completed afterwards, then re-seed the stage
-        // config from the new blueprint + record it (#664).
+        // Full reset: wipe ALL of the project's planning state (everything the `applyBlueprint` op
+        // set in projectScopedMaps.ts drops — #2712) so no section reads as completed afterwards,
+        // then re-seed the stage config from the new blueprint + record it (#664). planStageConfig
+        // / projectBlueprintId are re-seeded (not dropped) so they are excluded from the op set.
         set((s) => ({
-          planStages:          drop(s.planStages),
-          planConfirmedStages: drop(s.planConfirmedStages),
-          planAuthoredBlueprint: drop(s.planAuthoredBlueprint),
-          planDeployConfig:      drop(s.planDeployConfig),
-          planMarketConfig:      drop(s.planMarketConfig),
-          planTransformations:   drop(s.planTransformations),
-          planSourceConfig:      drop(s.planSourceConfig),
-          planIntegrationConfig: drop(s.planIntegrationConfig),
-          reposPublic:           drop(s.reposPublic),
-          repoPublic:            dropRepoScoped(s.repoPublic, projectId),
-          planInjectionAck:      drop(s.planInjectionAck),
-          planSkippedStages:   drop(s.planSkippedStages),
-          planAutomations:       drop(s.planAutomations),
-          planFleet:             drop(s.planFleet),
-          issueLinks:            drop(s.issueLinks),
-          uiScreens:             drop(s.uiScreens),
-          uiApproved:            drop(s.uiApproved),
-          stagePreview:          drop(s.stagePreview),
-          stageRuns:     drop(s.stageRuns),
-          pinnedContext:         drop(s.pinnedContext),
-          projectLocalRepos:     drop(s.projectLocalRepos),
+          ...dropProjectScoped(s, "applyBlueprint", projectId),
           planStageConfig:    setMapEntry(s.planStageConfig, projectId, blueprintToStageConfig(bp)),
           projectBlueprintId: setMapEntry(s.projectBlueprintId, projectId, blueprintId),
         }));
@@ -509,38 +484,11 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         }),
       clearPlanFleet: (projectId) =>
         set((s) => ({ planFleet: setMapEntry(s.planFleet, projectId, emptyFleet()) })),
+      // Drop the single `key` from every map in the `clearPlan` op set (projectScopedMaps.ts,
+      // #2712): the plan section maps, plan-config, rendered artifacts + pipeline run states, pinned
+      // context, and the project's repo links (clear means clear — the repos stage resets, #664).
       clearPlan: (key) =>
-        set((s) => {
-          const omitKey = <T,>(m: Record<string, T>): Record<string, T> => deleteMapEntry(m, key);
-          return {
-          planStages:          omitKey(s.planStages),
-          planConfirmedStages: omitKey(s.planConfirmedStages),
-          planAuthoredBlueprint: omitKey(s.planAuthoredBlueprint),
-          planDeployConfig:      omitKey(s.planDeployConfig),
-          planMarketConfig:      omitKey(s.planMarketConfig),
-          planTransformations:   omitKey(s.planTransformations),
-          planSourceConfig:      omitKey(s.planSourceConfig),
-          planIntegrationConfig: omitKey(s.planIntegrationConfig),
-          reposPublic:           omitKey(s.reposPublic),
-          repoPublic:            dropRepoScoped(s.repoPublic, key),
-          planInjectionAck:      omitKey(s.planInjectionAck),
-          planSkippedStages:   omitKey(s.planSkippedStages),
-          planAutomations:       omitKey(s.planAutomations),
-          planStageConfig:       omitKey(s.planStageConfig),
-          projectBlueprintId:    omitKey(s.projectBlueprintId),
-          uiScreens:             omitKey(s.uiScreens),
-          uiApproved:            omitKey(s.uiApproved),
-          planFleet:             omitKey(s.planFleet),
-          issueLinks:            omitKey(s.issueLinks),
-          // rendered artifacts + planning context — the UI preview is "the ui" that must
-          // also clear, plus pipeline run states and pinned context (#651).
-          stagePreview:          omitKey(s.stagePreview),
-          stageRuns:     omitKey(s.stageRuns),
-          pinnedContext:         omitKey(s.pinnedContext),
-          // clear means clear: unlink the project's repos so the repos stage resets (#664).
-          projectLocalRepos:     omitKey(s.projectLocalRepos),
-          };
-        }),
+        set((s) => dropProjectScoped(s, "clearPlan", key)),
 
   });
 };
