@@ -1,4 +1,4 @@
-import { useRef, Suspense } from "react";
+import { Suspense } from "react";
 import { Titlebar } from "@/app/chrome/Titlebar";
 import { Rail } from "@/app/chrome/Rail";
 import { workspaceLabel } from "@/app/registry";
@@ -7,6 +7,7 @@ import { StatusBar } from "@/app/chrome/StatusBar";
 import { ErrorBoundary } from "@/app/safety/ErrorBoundary";
 import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
+import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { useHotkeys } from "./useHotkeys";
 import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
@@ -65,10 +66,9 @@ export default function App() {
   // layout change (PTY teardown), reorder, tear-off — all behind useConsoleTabs (#app-shell).
   const consoleTabs = useConsoleTabs();
 
-  // Lazy-mount Projects on first visit, then keep it mounted so its local state + PTY survive
-  // (the heavy planner chunk thus loads on first navigation, not at boot — #perf).
-  const projectsEverShown = useRef(false);
-  if (activeWorkspace === "projects") projectsEverShown.current = true;
+  // Projects lazy-mounts on first visit, then stays mounted so its local state + PTY survive a
+  // screen switch (the heavy planner chunk thus loads on first navigation, not at boot — #perf).
+  // Kept-mounted via <KeptMountedPage> below.
   // Design Studio is no longer a rail Workspace — it's a Planner tab (projectsPageMode "designs"), mounted
   // by ProjectsWorkspace, so it rides Projects' keep-mounted treatment and its designer PTY (#2585) still
   // survives screen switches.
@@ -137,11 +137,9 @@ export default function App() {
           )}
           {/* Projects lazy-mounts on first visit, then stays mounted so its local state + PTY
               sessions survive screen switches (CSS hides it when inactive). */}
-          {projectsEverShown.current && (
-            <Box style={{ display: activeWorkspace === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
-              <Suspense fallback={<WorkspaceFallback />}><ProjectsWorkspace /></Suspense>
-            </Box>
-          )}
+          <KeptMountedPage active={activeWorkspace === "projects"} fallback={<WorkspaceFallback />}>
+            <ProjectsWorkspace />
+          </KeptMountedPage>
           {/* The remaining screens mount only while active — their chunks load on first nav. */}
           <Suspense fallback={<WorkspaceFallback />}>
             {activeWorkspace === "glance"     && <GlanceWorkspace />}
