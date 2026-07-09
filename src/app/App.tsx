@@ -25,7 +25,7 @@ import { useNavHistory } from "@/shared/hooks/useNavHistory";
 import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, SettingsWorkspace,
-  ProjectsWorkspace, SkillsWorkspace, AgentsWorkspace, GlanceWorkspace, DesignWorkspace, WorkspaceFallback,
+  ProjectsWorkspace, SkillsWorkspace, AgentsWorkspace, GlanceWorkspace, WorkspaceFallback,
 } from "@/app/lazyWorkspaces";
 
 // ── App shell ─────────────────────────────────────────────────────────────────
@@ -69,11 +69,9 @@ export default function App() {
   // (the heavy planner chunk thus loads on first navigation, not at boot — #perf).
   const projectsEverShown = useRef(false);
   if (activeWorkspace === "projects") projectsEverShown.current = true;
-  // Design Studio lazy-mounts on first visit, then stays mounted so the always-on designer PTY
-  // (#2585) survives screen switches instead of being killed + cold-restarted each visit — the same
-  // treatment as Projects/planner (#2612).
-  const designEverShown = useRef(false);
-  if (activeWorkspace === "design") designEverShown.current = true;
+  // Design Studio is no longer a rail Workspace — it's a Planner tab (projectsPageMode "design"), mounted
+  // by ProjectsWorkspace, so it rides Projects' keep-mounted treatment and its designer PTY (#2585) still
+  // survives screen switches.
 
   // The "you are here" position crumb: the screen's canonical name (from the registry — the same
   // source the rail nav uses, so they can't drift) followed by any in-screen detail (the active
@@ -142,14 +140,6 @@ export default function App() {
           {projectsEverShown.current && (
             <Box style={{ display: activeWorkspace === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
               <Suspense fallback={<WorkspaceFallback />}><ProjectsWorkspace /></Suspense>
-            </Box>
-          )}
-          {/* Design Studio lazy-mounts on first visit, then stays mounted (CSS-hidden when inactive)
-              so its always-on designer PTY (#2585) survives screen switches — like Projects (#2612).
-              The Component Library pane fills its container, so it keeps the flex-fill wrapper (#2303). */}
-          {designEverShown.current && (
-            <Box style={{ display: activeWorkspace === "design" ? "flex" : "none", flex: 1, minHeight: 0 }}>
-              <Suspense fallback={<WorkspaceFallback />}><DesignWorkspace /></Suspense>
             </Box>
           )}
           {/* The remaining screens mount only while active — their chunks load on first nav. */}

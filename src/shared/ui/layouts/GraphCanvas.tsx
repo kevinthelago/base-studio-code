@@ -111,7 +111,11 @@ export function GraphCanvas({
           {/* No text selection of node labels / edges on click or drag (#2527) — shared here so every
               graph (Org · Glance · Design Studio) is covered in one place. Inspector/toolbar text (outside
               the world layer) stays selectable. */}
-          <Box style={{ position: "absolute", left: 0, top: 0, width: world.w, height: world.h, userSelect: "none", ...worldTransform, willChange: "transform" }}>
+          {/* NO `will-change: transform` here (#graph-zoom-blur): it pins the world layer to a GPU
+              texture rasterized at 100%, so zooming IN just stretches that texture → blurry cards/text
+              (the HTML node divs; the SVG edges are vector, so they stayed crisp). Without it the
+              browser re-rasterizes the layer at the settled zoom, so text is sharp at every level. */}
+          <Box style={{ position: "absolute", left: 0, top: 0, width: world.w, height: world.h, userSelect: "none", ...worldTransform }}>
             {children}
           </Box>
           {overlays}

@@ -15,4 +15,5 @@
 //! store's records.
 
 pub mod cli;
+pub mod graph_health;
 pub mod usage;
