@@ -83,12 +83,29 @@ describe("GlanceStreamMorph (#2401/#2534)", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("reveals a corner resize handle only once expanded (#2659)", () => {
+  it("reveals edge + corner resize handles only once expanded (#2659/#2662)", () => {
     vi.useFakeTimers();
-    render(<GlanceStreamMorph node={NODE} paneId="proj:api-client" name="api-client" onClose={() => {}} />);
-    expect(screen.queryByLabelText("Resize terminal")).toBeNull(); // collapsed into the node → no handle
+    const { container } = render(<GlanceStreamMorph node={NODE} paneId="proj:api-client" name="api-client" onClose={() => {}} />);
+    expect(screen.queryByLabelText("Resize se")).toBeNull();       // collapsed into the node → no handles
     act(() => { vi.advanceTimersByTime(20); });                    // flush the grow rAF → expanded
-    expect(screen.getByLabelText("Resize terminal")).toBeInTheDocument();
+    // All four edges + four corners are grabbable (a standard resize affordance, #2662).
+    for (const dir of ["n", "s", "e", "w", "nw", "ne", "sw", "se"]) {
+      expect(screen.getByLabelText(`Resize ${dir}`)).toBeInTheDocument();
+    }
+    expect(container.querySelectorAll('[aria-label^="Resize "]')).toHaveLength(8);
+  });
+
+  it("reports its expanded world box up, and clears it on close (#2662)", () => {
+    vi.useFakeTimers();
+    const onRect = vi.fn();
+    render(<GlanceStreamMorph node={NODE} paneId="proj:api-client" name="api-client" onRect={onRect} onClose={() => {}} />);
+    act(() => { vi.advanceTimersByTime(20); });                    // expand → reports a rect
+    const reported = onRect.mock.calls.map((c) => c[0]).filter(Boolean);
+    expect(reported.length).toBeGreaterThan(0);
+    expect(reported[reported.length - 1]).toMatchObject({ w: expect.any(Number), h: expect.any(Number) });
+    onRect.mockClear();
+    fireEvent.keyDown(window, { key: "Escape" });                 // close → releases the neighbours
+    expect(onRect).toHaveBeenCalledWith(null);
   });
 
   it("hides the chat input while the CLI is running, showing it at rest (#2534)", () => {
