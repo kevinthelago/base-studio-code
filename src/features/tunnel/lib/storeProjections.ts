@@ -22,6 +22,7 @@ import type { KitThemeRecord } from "@/features/components/lib/themes";
 import type { Automation, AutomationRun } from "@/features/automations/lib/scheduler";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
 import type { Hook } from "@/features/mcp/lib/hooks";
+import type { AgentProfile, AuditRecord } from "@/features/agents";
 import type { AlertEvent } from "./alerts";
 
 // ── glance ───────────────────────────────────────────────────────────────────────
@@ -36,8 +37,16 @@ export interface GlancePayload {
   links: ProjectLink[];
   /** The drilled project key (L1 fleet view), or null at the L0 network. Synced drill state. */
   drill: string | null;
-  /** The drilled project's fleet plan (streams/director/edges), when loaded. */
+  /** The drilled project's fleet plan (streams/director/edges) — derived from {@link fleets}; kept
+   *  for the mobile L1 view. Null at the network level or when the drilled fleet isn't loaded. */
   drillFleet: FleetPlan | null;
+  /** Every project whose fleet is currently loaded, keyed by project key (#2530) — so ANY project
+   *  node can drill into its agents on mobile, not only the currently-drilled one. */
+  fleets: Record<string, FleetPlan>;
+  /** persona id → resolved session role (#2530) — a stream carries a persona id but no role, and the
+   *  glance payload has no personas, so mobile defaulted every agent node to `worker`. This map lets
+   *  mobile colour each stream's node by its real role. */
+  personaRoles: Record<string, string>;
 }
 
 export function buildGlancePayload(input: {
@@ -45,7 +54,10 @@ export function buildGlancePayload(input: {
   links: ProjectLink[];
   faults: Record<string, GlanceFault>;
   drill: string | null;
-  drillFleet: FleetPlan | null;
+  /** All loaded fleets, keyed by project key (the projector merges the on-demand drilled fleet in). */
+  fleets: Record<string, FleetPlan>;
+  /** The persona library — only `id` + `role` are read (start prompts stay desktop-side). */
+  personas: { id: string; role: string }[];
 }): GlancePayload {
   return {
     // Mirror the desktop HEALTH overlay (#2541): a project's worst open fault escalates its health to
@@ -58,7 +70,9 @@ export function buildGlancePayload(input: {
     }),
     links: input.links,
     drill: input.drill,
-    drillFleet: input.drill ? input.drillFleet : null,
+    fleets: input.fleets,
+    drillFleet: input.drill ? input.fleets[input.drill] ?? null : null,
+    personaRoles: Object.fromEntries(input.personas.map((p) => [p.id, p.role])),
   };
 }
 
@@ -313,6 +327,63 @@ export function buildMcpPayload(input: {
       id: s.id, name: s.name, enabled: s.enabled, transport: s.transport,
       projects: s.projects, url: s.url, installed: installed.has(s.id),
     })),
+  };
+}
+
+// ── security (#2530) ───────────────────────────────────────────────────────────────
+// The least-privilege picture the mobile Security page (#223) renders, READ-ONLY: the agent
+// profiles (#289 — the permission CONFIG: base policy · command allowlist · per-tool tri-states ·
+// write-path scope · network HOST allowlist), the per-pane role + profile assignments, and recent
+// audit activity (bsc-audit, #257). No secrets cross — `net` is a host allowlist (not credentials),
+// and audit records are `{ ts, pane, tool, target }`.
+
+/** Recent audit records included in the security payload (the desktop log itself keeps more). */
+export const SECURITY_AUDIT_CAP = 200;
+
+export interface SecurityProfileCard {
+  id: string;
+  name: string;
+  category: string;
+  desc: string;
+  /** Base policy for anything not explicitly listed (deny | ask | allow). */
+  mode: string;
+  commands: string[];
+  /** tool → tier (read/edit/bash/… → deny|ask|allow). */
+  tools: Record<string, string>;
+  paths: { allow: string[]; deny: string[] };
+  /** Allowed network hosts — NOT credentials. */
+  net: string[];
+  builtin?: boolean;
+}
+
+export interface SecurityPayload {
+  profiles: SecurityProfileCard[];
+  /** paneId → the SessionRole it launched under. Transient — empty before any fleet launch. */
+  paneRoles: Record<string, string>;
+  /** paneId → assigned agent-profile id. */
+  paneProfiles: Record<string, string>;
+  /** Recent audit records (bsc-audit, #257), newest first, capped at {@link SECURITY_AUDIT_CAP}. */
+  audit: AuditRecord[];
+}
+
+export function buildSecurityPayload(input: {
+  profiles: AgentProfile[];
+  paneRoles: Record<string, string>;
+  paneProfiles: Record<string, string>;
+  audit: AuditRecord[];
+}): SecurityPayload {
+  return {
+    profiles: input.profiles.map((p) => ({
+      id: p.id, name: p.name, category: p.category, desc: p.desc, mode: p.mode,
+      commands: p.commands,
+      tools: Object.fromEntries(Object.entries(p.tools)),
+      paths: { allow: p.paths.allow, deny: p.paths.deny },
+      net: p.net.allow,
+      builtin: p.builtin,
+    })),
+    paneRoles: input.paneRoles,
+    paneProfiles: input.paneProfiles,
+    audit: input.audit.slice(0, SECURITY_AUDIT_CAP),
   };
 }
 
