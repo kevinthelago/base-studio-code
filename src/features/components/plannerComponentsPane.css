@@ -14,9 +14,6 @@
 
 /* search */
 .pcp-search { flex: none; padding: 11px 16px 9px; }
-.pcp-searchbox { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 11px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; }
-.pcp-searchbox input { flex: 1; background: none; border: none; color: var(--fg); font-size: 12px; font-family: inherit; }
-.pcp-searchbox input:focus { outline: none; }
 
 /* list */
 .pcp-scroll { flex: 1; min-height: 0; overflow-y: auto; }

@@ -21,6 +21,7 @@ import { DesignerTerminal } from "./DesignerTerminal";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
+import { SearchField } from "@/shared/ui/controls/SearchField";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Code } from "@/shared/ui/data/Code";
@@ -255,12 +256,14 @@ export function DesignStudio() {
               </Box>
               {/* search — sits under the rail header */}
               <Box style={{ flex: "none", padding: "8px 8px 0" }}>
-                <Box className="ds-search">
-                  <Text tone="dim" size={13}>⌕</Text>
-                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke bare search box (Field imposes a labelled layout) */}
-                  <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search components…" aria-label="Search components" />
-                  <Text as="span" className="ds-kbd">⌘K</Text>
-                </Box>
+                <SearchField
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Search components…"
+                  aria-label="Search components"
+                  style={{ width: "100%", maxWidth: 420 }}
+                  trailing={<Text as="span" className="ds-kbd">⌘K</Text>}
+                />
               </Box>
               <Box className="ds-scroll" style={{ flex: 1, padding: "8px 8px 16px" }}>
                 {railTree.map(renderRailNode)}
