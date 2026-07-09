@@ -229,7 +229,7 @@ export const tunnelSetHookTelemetry = (telemetry: HookTelemetryFrame): Promise<v
  *  spell them identically. */
 export const STORE_DOMAINS = [
   "glance", "plan", "org", "blueprints", "skills",
-  "components", "themes", "automations", "mcp", "alerts",
+  "components", "themes", "automations", "mcp", "alerts", "security",
 ] as const;
 
 /** A registered store_state domain. */
