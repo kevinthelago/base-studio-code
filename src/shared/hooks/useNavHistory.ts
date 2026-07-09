@@ -10,8 +10,8 @@ import type { Workspace } from "@/app/registry";
 
 interface NavLoc {
   workspace: Workspace;
-  /** The Planner workspace's page (Projects ↔ Org); null on every other workspace. */
-  page: "projects" | "org" | null;
+  /** The Planner workspace's page (Projects ↔ Org ↔ Designs ↔ Themes); null on every other workspace. */
+  page: "projects" | "org" | "design" | "themes" | null;
   /** The Glance drill target; null outside Glance. */
   drill: string | null;
   /** The Org designer's pool drill; null unless the Planner's Org page is showing. */

@@ -197,9 +197,10 @@ export function orgSlug(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "org";
 }
 
-/** A blank user org — the "new org" template. */
+/** A blank user team — the "new team" template (the data entity is still an `Org`; the display noun is
+ *  "team", #org→team-rename). */
 export function blankOrg(id: string): Org {
-  return { id, name: "New org", blurb: "", positions: [], relationships: [] };
+  return { id, name: "New team", blurb: "", positions: [], relationships: [] };
 }
 
 /** Merge the packaged built-ins with the persisted set: every built-in is present (re-seeded if

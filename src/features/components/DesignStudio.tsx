@@ -1,7 +1,9 @@
 // Design Studio (#2308) — the full-page component workbench, the standalone Rail workspace body (#2303).
 // An IDE-style page over the SAME global component library the planner's condensed `PlannerComponentsPane`
-// (#2314) browses: a toolbar (kit switcher · search · ＋Kit/＋Component), a resizable kits→components tree
-// rail, the composition GRAPH as the one-and-only center view (#2453 — the former Library center mode is
+// (#2314) browses. It's a Page in the Planner Screen (the PageTabs strip is its header — no page toolbar):
+// a resizable kits→components tree rail (the kit switcher + the search box under its header), the
+// composition GRAPH as the one-and-only center view — its header holds fit + Share (#2453 — the former
+// Library center mode is
 // folded into the inspector), and a resizable inspector carrying the full per-component detail: live
 // preview (variant / theme / viewport switchers + the render-error card), Overview / Source / Usage tabs,
 // and the generate-variants design bar.
@@ -27,10 +29,11 @@ import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 import { layoutComposition, selectionNeighborhood, NODE_W, NODE_H, type CompositionLayout } from "./lib/compositionLayout";
+import { analyzeGraphHealth, HEALTH_SEVERITY, type HealthCategory } from "./lib/graphHealth";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
-import { RoleDot, KitChip } from "./kitChrome";
+import { RoleDot } from "./kitChrome";
 import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecord, type Kit } from "./lib/model";
 import { useUiActivity } from "./lib/uiActivity";
 import { groupKits, type KitTreeNode } from "./lib/kitGroups";
@@ -112,6 +115,17 @@ export function DesignStudio() {
   // ── graph layout (#2455) — hierarchical top-down: composers above, dependencies below, role-tier
   // banding for edge-less nodes, `used`-desc ordering within a row. Pure model: lib/compositionLayout.
   const graph = useMemo(() => layoutComposition(kitComps), [kitComps]);
+  // Graph health (#2680) — the same taxonomy `bsc ui doctor` reports (lib/graphHealth), mirrored to
+  // badge dead/duplicated nodes. `nodeHealth` maps each flagged node to its MOST-SEVERE category.
+  const healthFindings = useMemo(() => analyzeGraphHealth(kitComps), [kitComps]);
+  const nodeHealth = useMemo(() => {
+    const m = new Map<string, HealthCategory>();
+    for (const f of healthFindings) for (const id of f.nodeIds) {
+      const cur = m.get(id);
+      if (!cur || HEALTH_SEVERITY[f.category] > HEALTH_SEVERITY[cur]) m.set(id, f.category);
+    }
+    return m;
+  }, [healthFindings]);
 
   const gvp = useGraphViewport(graph.world);
   const gvpFit = gvp.fit;
@@ -140,7 +154,7 @@ export function DesignStudio() {
     const rows = inKit.filter(match);
     return (
       <Box key={k.id} style={{ marginBottom: 4 }}>
-        <Box as="button" className={`ds-kithead${k.id === kitId ? " active" : ""}`} title={label ? `${label} · ${k.name} — ${k.stack}` : k.stack} onClick={() => setExpanded((e) => ({ ...e, [k.id]: !e[k.id] }))}>
+        <Box as="button" className={`ds-kithead${k.id === kitId ? " active" : ""}`} title={label ? `${label} · ${k.name} — ${k.stack}` : k.stack} onClick={() => { setKitId(k.id); setExpanded((e) => ({ ...e, [k.id]: !e[k.id] })); }}>
           <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
           <ColorSwatch color={k.dot} size={7} />
           <Text as="span" weight={500} style={{ flex: 1, textAlign: "left" }}>{label ?? k.name}</Text>
@@ -195,30 +209,9 @@ export function DesignStudio() {
 
   return (
     <Box className="ds-root">
-      {/* ── toolbar ── */}
-      <Box className="ds-toolbar">
-        <Box style={{ display: "flex", alignItems: "center", gap: 6, flex: "none" }}>
-          <Text mono size="xxs" tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase", marginRight: 2 }}>Kit</Text>
-          {kits.map((k) => (
-            <KitChip key={k.id} kit={k} on={k.id === kitId} className="ds-kitchip" title={k.stack} onClick={() => selectKit(k.id)}>
-              <Text mono size="xxs" style={{ opacity: .7 }}>{components.filter((c) => c.kitId === k.id).length}</Text>
-            </KitChip>
-          ))}
-        </Box>
-        <Box style={{ flex: 1, display: "flex", justifyContent: "center", minWidth: 80 }}>
-          <Box className="ds-search">
-            <Text tone="dim" size={13}>⌕</Text>
-            {/* eslint-disable-next-line no-restricted-syntax -- bespoke bare search box (Field imposes a labelled layout) */}
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search components by intent — “confirm dialog”, “data table”…" aria-label="Search components" />
-            <Text as="span" className="ds-kbd">⌘K</Text>
-          </Box>
-        </Box>
-        <Box style={{ display: "flex", alignItems: "center", gap: 7, flex: "none" }}>
-          <Box as="button" className="ds-act" title="Share or import a kit (gist / share code)" onClick={() => setShareOpen(true)}><Text as="span" tone="dim">⇅</Text> Share</Box>
-          <Box as="button" className="ds-act accent" title="Add a new component"><Text as="span">＋</Text> Component</Box>
-        </Box>
-      </Box>
-
+      {/* The page-level toolbar was removed when the studio became a Planner tab (the PageTabs strip is
+          its header now). Kit switching lives in the rail — click a kit head to activate it; search sits
+          under the rail header; Share moved to the graph header. */}
       {shareOpen && (
         <KitShareModal
           kit={kit ?? null}
@@ -241,6 +234,15 @@ export function DesignStudio() {
             <Text className="ds-eyebrow" as="span">Kits · Components</Text>
             <Text mono size="xxs" tone="dim">{kitComps.length} comps</Text>
           </Box>
+          {/* search — moved out of the toolbar (#task) to sit under the rail header */}
+          <Box style={{ flex: "none", padding: "8px 8px 0" }}>
+            <Box className="ds-search">
+              <Text tone="dim" size={13}>⌕</Text>
+              {/* eslint-disable-next-line no-restricted-syntax -- bespoke bare search box (Field imposes a labelled layout) */}
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search components…" aria-label="Search components" />
+              <Text as="span" className="ds-kbd">⌘K</Text>
+            </Box>
+          </Box>
           <Box className="ds-scroll" style={{ flex: 1, padding: "8px 8px 16px" }}>
             {railTree.map(renderRailNode)}
           </Box>
@@ -250,7 +252,7 @@ export function DesignStudio() {
         {/* center — the composition graph, with the ALWAYS-ON designer session docked below it (#2597):
             the graph flexes; the terminal is a fixed-height bottom strip, so the panes keep priority. */}
         <Box className="ds-col ds-center">
-          <GraphView graph={graph} comps={kitComps} selId={sel?.id ?? ""} workingId={aiFocusedId ?? ""} kitName={kit.name} gvp={gvp} onSelect={selectComp} />
+          <GraphView graph={graph} comps={kitComps} selId={sel?.id ?? ""} workingId={aiFocusedId ?? ""} kitName={kit.name} gvp={gvp} onSelect={selectComp} onShare={() => setShareOpen(true)} health={nodeHealth} findingsCount={healthFindings.length} />
           <Box className="ds-handle-h" {...term.handleProps} />
           <DesignerTerminal height={term.size} />
         </Box>
@@ -293,8 +295,21 @@ interface GraphProps {
   /** The AI-touched node (#2525) — pulses as `.working`, distinct from the user's `.on` selection. */
   workingId: string; kitName: string;
   gvp: ReturnType<typeof useGraphViewport>; onSelect: (c: ComponentRecord) => void;
+  /** Open the share/import kits modal — the Share action lives in the graph header (right of fit). */
+  onShare: () => void;
+  /** Graph-health badges (#2680): node id → its most-severe finding category, + the total count. */
+  health: Map<string, HealthCategory>; findingsCount: number;
 }
-function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect }: GraphProps) {
+
+/** The health badge glyph + tooltip per category (#2680) — mirrors `bsc ui doctor`. */
+const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string }> = {
+  cycle: { glyph: "⟳", label: "on a composes cycle" },
+  "dangling-branch": { glyph: "⚠", label: "unused branch (nothing composes it, used = 0)" },
+  duplicate: { glyph: "⧉", label: "duplicate (same intrinsic / identical source)" },
+  orphan: { glyph: "○", label: "orphan — isolated & unused" },
+};
+
+function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect, onShare, health, findingsCount }: GraphProps) {
   // The pan/zoom shell is the shared GraphCanvas template (#2208) — viewport ref/wheel/pan + the world
   // transform + the infinite dotted grid all live there; this brings only the toolbar + world content.
   const EDGE_COLOR = "var(--border-strong, #3a434d)";
@@ -314,9 +329,15 @@ function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect }: G
       toolbar={
         <>
           <Text className="ds-eyebrow" as="span">Composition graph · {kitName}</Text>
+          {findingsCount > 0 && (
+            <Text as="span" className="ds-healthcount" title="Graph-health findings — the same set `bsc ui doctor` reports (#2680)">
+              ⚠ {findingsCount} health finding{findingsCount === 1 ? "" : "s"}
+            </Text>
+          )}
           <Box style={{ flex: 1 }} />
           <ZoomControls vp={gvp} step={1.15} />
           <Box as="button" className="ds-act" onClick={() => gvp.fit()}>fit</Box>
+          <Box as="button" className="ds-act" title="Share or import a kit (gist / share code)" onClick={onShare}><Text as="span" tone="dim">⇅</Text> Share</Box>
         </>
       }
     >
@@ -347,8 +368,12 @@ function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect }: G
         // added then), so a user's active selection is never overridden; a DIFFERENT touched node
         // pulses (and composes with `.related` — `.working` is placed after `.related` in the CSS).
         const working = c.id === workingId && c.id !== selId ? " working" : "";
+        const badge = health.get(c.id); // graph-health category (#2680), if any
         return (
-          <Box key={c.id} data-node onClick={() => onSelect(c)} className={`ds-node${state}${working}`} style={{ left: pos.x, top: pos.y, width: NODE_W }}>
+          <Box key={c.id} data-node onClick={() => onSelect(c)} className={`ds-node${state}${working}${badge ? " unhealthy" : ""}`} style={{ left: pos.x, top: pos.y, width: NODE_W }}>
+            {badge && (
+              <Text as="span" className={`ds-health ds-health-${badge}`} title={`${badge} — ${HEALTH_BADGE[badge].label}`}>{HEALTH_BADGE[badge].glyph}</Text>
+            )}
             <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
               <RoleDot role={c.role} /><Text weight={600} size={13}>{c.name}</Text>
             </Box>
