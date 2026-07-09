@@ -6,7 +6,7 @@ import { grandfatherTriaged, grandfatherLocalPublished } from "./triagedMigratio
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
 import {  refreshBuiltIns, type Blueprint } from "@/features/planner/stages/blueprints";
-import { reconcileBuiltInProfiles } from "@/features/agents/lib/agentProfiles";
+import { reconcileBuiltInProfiles } from "@/features/security/lib/agentProfiles";
 import { migrateLegacyExtensions } from "@/features/mcp/lib/migrateExtensions";
 import { createMcpSlice } from "@/features/mcp/store";
 import { createPersonasSlice } from "@/features/personas/store";
@@ -235,6 +235,9 @@ export const useAppStore = create<AppStore>()(
           state.activeWorkspace = "projects";
           state.projectsPageMode = "design";
         }
+        // The Security workspace's key was renamed "agents" → "security" (#2702, naming realignment).
+        // A user whose last workspace was "agents" would otherwise land on a removed key.
+        if (state && (state.activeWorkspace as string) === "agents") state.activeWorkspace = "security";
         // Refresh BUILT-IN blueprints from code on every load (#677). They're code-owned
         // templates, but `blueprints` is persisted — so improvements to a built-in (the
         // `optional` UI stage, enabled repos, updated prompts, …) would never reach a user

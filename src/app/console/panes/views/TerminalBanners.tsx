@@ -66,7 +66,7 @@ export function TerminalBanners({
         }}>
           <Text as="span">⟳</Text>
           <Text tone="muted" style={{ flex: 1 }}>
-            Permissions changed on the Agents page — <b style={{ color: "var(--fg)" }}>relaunch this console</b> to apply.
+            Permissions changed on the Security page — <b style={{ color: "var(--fg)" }}>relaunch this console</b> to apply.
           </Text>
           <IconButton aria-label="Dismiss" size="sm" onClick={() => useAppStore.getState().clearPanePermsStale(paneId)} />
         </Row>

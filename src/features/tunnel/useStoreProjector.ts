@@ -20,7 +20,7 @@ import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { useGlanceProjects, useGlanceFaults, useProjectFleet } from "@/features/glance";
 import { loadPendingLessons } from "@/features/skills";
 import { resolveAllInstalledMcp } from "@/features/mcp";
-import { parseAuditLog, type AuditRecord } from "@/features/agents";
+import { parseAuditLog, type AuditRecord } from "@/features/security";
 import type { Lesson } from "@/features/skills/lib/lessons";
 import {
   buildGlancePayload, buildOrgPayload, buildBlueprintsPayload, buildSkillsPayload,

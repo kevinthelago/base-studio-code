@@ -34,7 +34,7 @@ describe("Rail", () => {
     const security = container.querySelector('.rail button[title="Security"]') as HTMLElement;
     expect(security).toBeTruthy();
     fireEvent.click(security);
-    expect(onNavigate).toHaveBeenCalledWith("agents");
+    expect(onNavigate).toHaveBeenCalledWith("security");
   });
 
   it("no longer exposes Design Studio as a rail destination (#move-to-planner — it's a Planner tab now)", () => {

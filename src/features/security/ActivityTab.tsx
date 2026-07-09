@@ -1,4 +1,4 @@
-// Agents — Activity tab (#1643 split from AgentsWorkspace).
+// Security — Activity tab (#1643 split from SecurityWorkspace).
 //
 // The per-pane tool-attempt feed (#257): summary cards, decision + console filters,
 // and the table of allow/ask/block rows. Row derivation + filtering + counts are pure

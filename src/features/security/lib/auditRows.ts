@@ -4,7 +4,7 @@
 // renders: each row carries the resolving console name, the pane's profile, the
 // display kind/target, and the derived allow/ask/block decision (per the pane's
 // resolved policy — profile ∪ role, the same rules the launch gate applies). Plus
-// the toolbar filter + decision counts. Pure — split out of AgentsWorkspace so the
+// the toolbar filter + decision counts. Pure — split out of SecurityWorkspace so the
 // transforms are React-free + unit-testable.
 
 import { roleCapability, roleWriteRules, type SessionRole } from "@/shared/lib/session/sessionRoles";

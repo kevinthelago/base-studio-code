@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { AgentsWorkspace } from "./";
+import { SecurityWorkspace } from "./";
 import { useAppStore } from "@/store";
 
 /**
@@ -49,7 +49,7 @@ describe("Agents · Flow tab (#199)", () => {
       `${TS}\tt0p0\tblocked\tsession:t0p1`,
       `${TS}\tt0p1\tblocked\tsession:t0p0`,
     ]);
-    const { container } = render(<AgentsWorkspace />);
+    const { container } = render(<SecurityWorkspace />);
     openFlow(container);
 
     await waitFor(() => {
@@ -65,7 +65,7 @@ describe("Agents · Flow tab (#199)", () => {
       `${TS}\tt0p0\tblocked\t#1`,
       `${TS}\tx\tmerged\t#1`, // #1 lands -> t0p0 is ready
     ]);
-    const { container, findByText } = render(<AgentsWorkspace />);
+    const { container, findByText } = render(<SecurityWorkspace />);
     openFlow(container);
 
     const wake = await findByText("Wake");

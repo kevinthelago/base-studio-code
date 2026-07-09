@@ -9,7 +9,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import type { StatusMeta } from "@/shared/data/fleet";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
-import type { AgentProfile } from "@/features/agents";
+import type { AgentProfile } from "@/features/security";
 import { Modal } from "./WorkerDetailModal";
 import type { WorkerModal } from "./workerDetail.helpers";
 
