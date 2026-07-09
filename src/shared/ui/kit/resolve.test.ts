@@ -29,11 +29,11 @@ describe("resolveTheme / themeHoles (#2637)", () => {
     expect(def.holes).toEqual([]);
     expect(Object.keys(def.provenance)).toEqual([]); // default carries empty vars
 
-    const soft = resolveTheme("soft");
-    expect(Object.keys(soft.provenance).length).toBeGreaterThan(0);
-    expect(Object.values(soft.provenance).every((v) => v === "theme")).toBe(true);
-    expect(soft.holes).toEqual([]); // built-in themes are clean
+    const nord = resolveTheme("nord");
+    expect(Object.keys(nord.provenance).length).toBeGreaterThan(0);
+    expect(Object.values(nord.provenance).every((v) => v === "theme")).toBe(true);
+    expect(nord.holes).toEqual([]); // built-in themes are clean
     // the applied vars are exactly the theme's override set (byte-identical to themeVars → zero visual)
-    expect(Object.keys(soft.vars as Record<string, unknown>).length).toBe(Object.keys(soft.provenance).length);
+    expect(Object.keys(nord.vars as Record<string, unknown>).length).toBe(Object.keys(nord.provenance).length);
   });
 });

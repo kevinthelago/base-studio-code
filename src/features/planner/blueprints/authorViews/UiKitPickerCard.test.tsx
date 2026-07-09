@@ -89,27 +89,27 @@ describe("UiKitPickerCard (#2465)", () => {
   it("theme picker (#2489): marks the pin's theme active and records a pick on the pin", () => {
     wire([packagedManifest]);
     const onChange = vi.fn();
-    render(<UiKitPickerCard bp={bp({ ...packagedUiKitPin(), themeId: "soft" })} onChange={onChange} />);
+    render(<UiKitPickerCard bp={bp({ ...packagedUiKitPin(), themeId: "nord" })} onChange={onChange} />);
     // The registry's themes render; picking one records its id on the pin.
-    fireEvent.click(screen.getByText("High contrast"));
-    expect((onChange.mock.calls[0][0] as Blueprint).uiKit).toEqual({ ...packagedUiKitPin(), themeId: "contrast" });
+    fireEvent.click(screen.getByText("Dracula"));
+    expect((onChange.mock.calls[0][0] as Blueprint).uiKit).toEqual({ ...packagedUiKitPin(), themeId: "dracula" });
     // Picking Dark (the base theme, id `default`) stores NO themeId — absent = default, the canonical
     // form the packaged pin uses.
     fireEvent.click(screen.getByText("Dark"));
     expect((onChange.mock.calls[1][0] as Blueprint).uiKit).toEqual(packagedUiKitPin());
     // No theme row without a pin.
     render(<UiKitPickerCard bp={bp()} onChange={() => {}} />);
-    expect(screen.queryAllByText("Warm").length).toBe(1); // only the pinned card's row rendered one
+    expect(screen.queryAllByText("Gruvbox").length).toBe(1); // only the pinned card's row rendered one
   });
 
   it("the chosen theme RIDES a kit swap (#2489): re-pinning to a stored kit keeps themeId", async () => {
     const other = { id: "acme/neon", version: "2.0.0", sha256: "f".repeat(64), kind: "component-kit" as const, source: "https://gist.github.com/acme/0123456789abcdef" };
     wire([packagedManifest, other]);
     const onChange = vi.fn();
-    render(<UiKitPickerCard bp={bp({ ...packagedUiKitPin(), themeId: "warm" })} onChange={onChange} />);
+    render(<UiKitPickerCard bp={bp({ ...packagedUiKitPin(), themeId: "nord" })} onChange={onChange} />);
     fireEvent.click(await screen.findByText("+ acme/neon@2.0.0"));
     expect((onChange.mock.calls[0][0] as Blueprint).uiKit).toEqual({
-      id: "acme/neon", version: "2.0.0", hash: "f".repeat(64), source: other.source, themeId: "warm",
+      id: "acme/neon", version: "2.0.0", hash: "f".repeat(64), source: other.source, themeId: "nord",
     });
   });
 });

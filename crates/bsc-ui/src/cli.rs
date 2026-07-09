@@ -1450,14 +1450,14 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("Kit.tsx"), "a{ background: var(--card-bg) } b{ color: var(--btn-border) } c{ border: var(--nope-xyz) }\n").unwrap();
         let d = dir.to_string_lossy().into_owned();
-        assert!(run(vec!["resolve".into(), "--theme".into(), "soft".into(), "--dir".into(), d.clone()], "bsc ui").is_ok());
+        assert!(run(vec!["resolve".into(), "--theme".into(), "nord".into(), "--dir".into(), d.clone()], "bsc ui").is_ok());
         assert!(run(vec!["resolve".into(), "--theme".into(), "default".into()], "bsc ui").is_ok(), "whole-contract mode");
-        assert!(run(vec!["resolve".into(), "--theme".into(), "soft".into(), "--dir".into(), d, "--pretty".into()], "bsc ui").is_ok());
+        assert!(run(vec!["resolve".into(), "--theme".into(), "nord".into(), "--dir".into(), d, "--pretty".into()], "bsc ui").is_ok());
         // errors: missing --theme, unknown theme, unknown flag, unreadable dir.
         assert!(run(vec!["resolve".into()], "bsc ui").is_err(), "missing --theme");
         assert!(run(vec!["resolve".into(), "--theme".into(), "no-such-theme".into()], "bsc ui").is_err());
-        assert!(run(vec!["resolve".into(), "--theme".into(), "soft".into(), "--frob".into()], "bsc ui").is_err());
-        assert!(run(vec!["resolve".into(), "--theme".into(), "soft".into(), "--dir".into(), dir.join("nope").to_string_lossy().into_owned()], "bsc ui").is_err());
+        assert!(run(vec!["resolve".into(), "--theme".into(), "nord".into(), "--frob".into()], "bsc ui").is_err());
+        assert!(run(vec!["resolve".into(), "--theme".into(), "nord".into(), "--dir".into(), dir.join("nope").to_string_lossy().into_owned()], "bsc ui").is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1465,7 +1465,7 @@ mod tests {
     fn emit_css_prints_default_and_named_theme_and_writes_the_two_file_layout() {
         // stdout runs (default + named) succeed; the unknown id is a hard error listing the ids.
         assert!(run(vec!["emit-css".into()], "bsc ui").is_ok());
-        assert!(run(vec!["emit-css".into(), "--theme".into(), "soft".into()], "bsc ui").is_ok());
+        assert!(run(vec!["emit-css".into(), "--theme".into(), "nord".into()], "bsc ui").is_ok());
         let err = run(vec!["emit-css".into(), "--theme".into(), "nope".into()], "bsc ui").unwrap_err();
         assert!(err.contains("unknown theme 'nope'") && err.contains("default"), "{err}");
         // Bad shapes error crisply.
@@ -1475,11 +1475,11 @@ mod tests {
         // --out writes the real two-file layout: tokens.css (the contract) + theme.css (the palette).
         let dir = std::env::temp_dir().join(format!("bsc-ui-emit-css-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        run(vec!["emit-css".into(), "--theme".into(), "contrast".into(), "--out".into(), dir.to_string_lossy().into_owned()], "bsc ui").unwrap();
+        run(vec!["emit-css".into(), "--theme".into(), "nord".into(), "--out".into(), dir.to_string_lossy().into_owned()], "bsc ui").unwrap();
         let tokens = std::fs::read_to_string(dir.join("tokens.css")).unwrap();
         let theme = std::fs::read_to_string(dir.join("theme.css")).unwrap();
         assert_eq!(tokens, crate::TOKENS_CONTRACT_CSS, "tokens.css is the contract layer verbatim");
-        assert!(theme.contains("theme: contrast") && theme.contains("--card-radius: 4px;"), "theme.css carries the chosen theme's overrides");
+        assert!(theme.contains("theme: nord") && theme.contains("--bg-canvas: #2e3440;"), "theme.css carries the chosen theme's overrides");
         // An unknown theme with --out writes NOTHING (resolve-first).
         let dir2 = dir.join("never");
         assert!(run(vec!["emit-css".into(), "--theme".into(), "nope".into(), "--out".into(), dir2.to_string_lossy().into_owned()], "bsc ui").is_err());
@@ -1681,9 +1681,9 @@ mod tests {
     fn read_active_theme_handles_a_fixture_and_a_missing_file() {
         // (a) a fixture app-state.json with a known kitTheme → returns it.
         let path = std::env::temp_dir().join(format!("bsc-ui-app-state-{}.json", std::process::id()));
-        let inner = serde_json::json!({ "state": { "kitTheme": "contrast" }, "version": 1 }).to_string();
+        let inner = serde_json::json!({ "state": { "kitTheme": "nord" }, "version": 1 }).to_string();
         std::fs::write(&path, serde_json::json!({ "app-state": inner }).to_string()).unwrap();
-        assert_eq!(read_active_theme(&path).as_deref(), Some("contrast"));
+        assert_eq!(read_active_theme(&path).as_deref(), Some("nord"));
         // (b) a missing file → None → the verb falls back to "default".
         let _ = std::fs::remove_file(&path);
         assert_eq!(read_active_theme(&path), None);
@@ -1694,7 +1694,7 @@ mod tests {
         let _guard = APP_STATE_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         // Point the read at a fixture via the $BSC_UI_APP_STATE override (no real config dir needed).
         let path = std::env::temp_dir().join(format!("bsc-ui-active-{}.json", std::process::id()));
-        let inner = serde_json::json!({ "state": { "kitTheme": "soft" }, "version": 1 }).to_string();
+        let inner = serde_json::json!({ "state": { "kitTheme": "nord" }, "version": 1 }).to_string();
         std::fs::write(&path, serde_json::json!({ "app-state": inner }).to_string()).unwrap();
         std::env::set_var(APP_STATE_ENV, &path);
         // Bare id + the --json object both succeed and never error.
@@ -1717,12 +1717,12 @@ mod tests {
         }
         // A stored copy WINS by id (a designer-edited built-in shows the edit) and keeps store order
         // first; embedded built-ins the store lacks are appended.
-        let edited = serde_json::json!({ "id": "soft", "label": "Softer", "description": "d", "vars": {} });
+        let edited = serde_json::json!({ "id": "nord", "label": "Nordic", "description": "d", "vars": {} });
         let user = serde_json::json!({ "id": "neon", "label": "Neon", "description": "d", "vars": {} });
         let merged = merge_with_embedded(vec![edited.clone(), user.clone()]);
         assert_eq!(merged[0], edited, "store copy of a built-in wins");
         assert_eq!(merged[1], user, "user themes ride verbatim");
-        assert_eq!(merged.iter().filter(|t| t["id"] == "soft").count(), 1, "no duplicate for an overridden built-in");
+        assert_eq!(merged.iter().filter(|t| t["id"] == "nord").count(), 1, "no duplicate for an overridden built-in");
         assert!(merged.iter().any(|t| t["id"] == "default"), "missing built-ins appended");
     }
 
@@ -1941,8 +1941,8 @@ mod tests {
         run_comp(&["btn", "set-token", "bg", "#101010", "--variant", "primary"]).unwrap();
         assert_eq!(stored("default")["vars"]["--btn-primary-bg"], "#101010");
         // --theme targets a named theme.
-        run_comp(&["card", "set-token", "radius", "12px", "--theme", "soft"]).unwrap();
-        assert_eq!(stored("soft")["vars"]["--card-radius"], "12px");
+        run_comp(&["card", "set-token", "radius", "12px", "--theme", "nord"]).unwrap();
+        assert_eq!(stored("nord")["vars"]["--card-radius"], "12px");
         // rejections: unknown component, unknown key, injection value.
         assert!(run_comp(&["nope", "list-tokens"]).is_err(), "unknown component");
         assert!(run_comp(&["btn", "set-token", "nope", "red"]).is_err(), "unknown key");
