@@ -20,17 +20,32 @@ const graphNode = (name: string) =>
   screen.getAllByText(name).map((el) => el.closest(".ds-node")).find(Boolean) as HTMLElement;
 
 describe("DesignStudio (#2308)", () => {
-  it("renders the toolbar, kit switcher, and the composition graph as the one-and-only center view (#2453)", () => {
+  it("renders the page-navigation pills and the Design Studio workbench by default (#2668)", () => {
     render(<DesignStudio />);
-    // The toolbar title was removed (#2608) — the kit switcher leads the toolbar now.
-    expect(screen.queryByText("Design Studio")).toBeNull();
-    for (const k of SEED_KITS) expect(screen.getAllByText(k.name).length).toBeGreaterThan(0); // toolbar kit chip
-    expect(screen.getByText(/Composition graph · react-ui/)).toBeTruthy(); // graph mounts with the workspace
+    // The top bar navigates PAGES via pills now (#2668); kit navigation moved into the Design Studio rail.
+    for (const label of ["Preview", "Design Studio", "Theme Studio"]) {
+      expect(screen.getByRole("button", { name: label })).toBeTruthy();
+    }
+    // The Design Studio page is the default — the composition graph mounts.
+    expect(screen.getByText(/Composition graph · react-ui/)).toBeTruthy();
     // The Library/Graph toggle is gone — there is no alternate center mode.
     expect(screen.queryByText("▦ Library")).toBeNull();
     expect(screen.queryByText("⬡ Graph")).toBeNull();
     const firstReactUi = SEED_COMPONENTS.find((c) => c.kitId === "react-ui")!;
     expect(screen.getByText(`${firstReactUi.name}.tsx`)).toBeTruthy(); // inspector names the selection
+  });
+
+  it("the top-bar pills switch pages — Theme Studio and Preview (#2668)", () => {
+    render(<DesignStudio />);
+    expect(screen.getByText(/Composition graph/)).toBeTruthy();          // default: the workbench
+    fireEvent.click(screen.getByRole("button", { name: "Theme Studio" }));
+    expect(screen.getByRole("heading", { name: "Theme Studio" })).toBeTruthy();
+    expect(screen.getByText(/Domain palette/)).toBeTruthy();
+    expect(screen.queryByText(/Composition graph/)).toBeNull();          // the workbench page unmounted
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(screen.getByText(/full-surface live preview/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Design Studio" }));
+    expect(screen.getByText(/Composition graph/)).toBeTruthy();          // back to the workbench
   });
 
   it("the inspector carries the library detail: live preview + Overview/Source/Usage tabs", () => {
@@ -87,15 +102,15 @@ describe("DesignStudio (#2308)", () => {
     expect(node.className).not.toMatch(/\bworking\b/);               // no competing pulse on it
   });
 
-  it("switching kits re-scopes the graph and selects the kit's first component", () => {
+  it("switching kits via the rail re-scopes the graph and selects the kit's first component", () => {
     // The packaged seed is the one react-ui kit (#2506 retired the examples kit), so switching is
     // exercised against a second, user-authored kit in the store.
     const vueKit: Kit = { id: "vue-kit", name: "vue-kit", tech: "vue", style: "material", stack: "Vue · TypeScript", dot: "var(--accent)" };
     const vueComp = { ...SEED_COMPONENTS[0], id: "vue-button", name: "VueButton", kitId: "vue-kit" };
     useAppStore.setState({ kits: [...SEED_KITS, vueKit], components: [...SEED_COMPONENTS, vueComp] });
     render(<DesignStudio />);
-    // The kit chip in the toolbar switches the active kit.
-    fireEvent.click(screen.getAllByText("vue-kit")[0].closest("button")!);
+    // Kit navigation is the rail now (#2668) — the vue kit's single-kit style header is labelled "material".
+    fireEvent.click(screen.getByText("material").closest("button")!);
     expect(screen.getByText(/Composition graph · vue-kit/)).toBeTruthy();
     expect(screen.getByText("VueButton.tsx")).toBeTruthy();
   });
@@ -148,14 +163,16 @@ describe("DesignStudio (#2308)", () => {
     expect(container.querySelector('[data-kit-theme="light"]')).toBeTruthy();
   });
 
-  it("docks the designer session ALWAYS-ON in the center column, with no toggle and no generate chat (#2597)", () => {
+  it("docks the designer session ALWAYS-ON at the shell level, so its PTY survives page switches (#2597/#2668)", () => {
     render(<DesignStudio />);
     // The panel is present from the first render — no ✦ Designer toggle button gates it.
     const panel = screen.getByTestId("designer-terminal");
     expect(panel).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Designer/ })).toBeNull();
-    // It's docked inside the center column (below the graph), not a full-width overlay.
-    expect(panel.closest(".ds-center")).toBeTruthy();
+    // Docked at the shell (#2668) — a sibling of the switchable page (inside .ds-root, NOT the page
+    // content), so switching pages never unmounts (and kills) the PTY.
+    expect(panel.closest(".ds-root")).toBeTruthy();
+    expect(panel.closest(".ds-pagewrap")).toBeNull();
     // The per-component generate-variants chat is gone.
     expect(screen.queryByRole("button", { name: /Generate variants/ })).toBeNull();
   });
