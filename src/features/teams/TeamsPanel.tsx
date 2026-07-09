@@ -1,10 +1,12 @@
 // Team designer (#2193, interactive #2199) — the persona-relationship graph, mounted as the Team tab of
 // the Planner workspace. Navigation is IN the graph (#2742): the TOP level is a Teams overview (every
 // team a clickable card, the rail lists the teams); clicking a card enters that team's position graph;
-// a breadcrumb (Teams › team › pool) climbs back up. The old header org-switcher dropdown is gone.
-// Per team: toolbar (breadcrumb · relationship palette · auto-organize/fit/zoom) · left rail (positions
-// by department, or teams at the top level) · canvas (pan/zoom/node-drag) · inspector (position identity
-// / relationship). Driven by the real org/persona/skill stores; pure model + geometry live in lib/*.
+// a breadcrumb (Teams › team) climbs back up. The old header org-switcher dropdown is gone. The team is
+// AI-configured now (#2750): the user inspects + deletes, but no longer creates teams/positions or wires
+// relationships by hand (no create buttons, no click-to-connect palette). Per team: toolbar (breadcrumb ·
+// auto-organize/fit/zoom) · left rail (positions by department, or teams at the top level) · canvas
+// (pan/zoom/node-drag) · inspector (position identity / relationship). Driven by the real org/persona/
+// skill stores; pure model + geometry live in lib/*.
 // The pan/zoom shell is the shared GraphCanvas template + useGraphViewport (#2208, epic #2197 slice 2).
 import departmentsEmbedded from "@data/teams/departments.json";
 import { useEffect, useRef, useState } from "react";
@@ -15,7 +17,6 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
-import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { IconBox } from "@/shared/ui/data/IconBox";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
@@ -24,11 +25,11 @@ import { TeamsCanvas, OrgLegend, type Selection } from "./TeamsCanvas";
 import { TeamsOverview } from "./TeamsOverview";
 import { TeamsInspector } from "./TeamsInspector";
 import { TeamsContextMenu } from "./TeamsContextMenu";
-import { RELATIONSHIP_ARCHETYPES, type Position } from "./lib/team";
+import { type Position } from "./lib/team";
 import { autoLayout, nodeBox, contentBounds, CANVAS_W, CANVAS_H, type Box as GBox } from "./lib/orgLayout";
 import { teamsBounds } from "./lib/teamsLayout";
-import { detectPools, collapseOrg, poolSubgraph, poolLayoutSizes, applyPoolLayout, organizeDrilledPool, type Pool } from "./lib/orgPools";
-import { positionDisplay, hueColor } from "./lib/orgView";
+import { detectPools, collapseOrg, poolLayoutSizes, applyPoolLayout } from "./lib/orgPools";
+import { positionDisplay } from "./lib/orgView";
 import { overlayFile } from "@/shared/lib/core/configOverrides";
 
 /** Department display order in the left rail (positionDisplay assigns each a dept) — from
@@ -38,11 +39,8 @@ const DEPT_ORDER: string[] = overlayFile("teams/departments.json", departmentsEm
 export function TeamsPanel() {
   const orgs = useAppStore((s) => s.teams);
   const personas = useAppStore((s) => s.personas);
-  const addOrg = useAppStore((s) => s.addOrg);
   const updateOrg = useAppStore((s) => s.updateOrg);
-  const addRelationship = useAppStore((s) => s.addRelationship);
   const updateRelationship = useAppStore((s) => s.updateRelationship);
-  const addPosition = useAppStore((s) => s.addPosition);
   const updatePosition = useAppStore((s) => s.updatePosition);
   const removePosition = useAppStore((s) => s.removePosition);
   const removeRelationship = useAppStore((s) => s.removeRelationship);
@@ -58,22 +56,13 @@ export function TeamsPanel() {
   const [sel, setSel] = useState<Selection>({ type: "node", id: "" });
   // Right-click context menu (#2385): the cursor position + the target it was opened on.
   const [menu, setMenu] = useState<{ x: number; y: number; target: Selection } | null>(null);
-  // Click-to-connect: a chosen archetype + the pending source node; two node clicks make an edge.
-  const [connect, setConnect] = useState<{ archetype: string; from: string | null } | null>(null);
-  // Drill state: the pool nodeId whose OWN graph is showing (null = the collapsed parent graph),
-  // held in the STORE (#2492) so the app-wide nav history (mouse back/forward,
-  // useNavHistory) can step drill in/out — same treatment as glanceDrill.
-  const drill = useAppStore((s) => s.teamsDrill);
-  const setDrill = useAppStore((s) => s.setTeamsDrill);
 
-  // The nodes of whatever view is showing (the collapsed graph, or a drilled pool's members) — computed
-  // on demand for framing. fit + the saved-zoom restore center on THESE, not the fixed 1120×800 canvas,
-  // so the graph opens centered instead of parked high / clipped at the top (#2673). Mirrors `view` below.
+  // The nodes of the collapsed graph — computed on demand for framing. fit + the saved-zoom restore
+  // center on THESE, not the fixed 1120×800 canvas, so the graph opens centered instead of parked high
+  // / clipped at the top (#2673). Mirrors `view` below. (The pool-member drill was dropped, #2750.)
   const framedPositions = (): Position[] => {
     if (!org) return [];
-    const pls = detectPools(org, personas);
-    const active = drill ? pls.find((p) => p.nodeId === drill) ?? null : null;
-    return active ? poolSubgraph(org, active).positions : collapseOrg(org, pls).org.positions;
+    return collapseOrg(org, detectPools(org, personas)).org.positions;
   };
   // What the viewport fits/centers on — the team cards at the top level (#2742), else the framed
   // positions of the entered team (mirrors `atTeams`/`view` below, read fresh each fit).
@@ -95,15 +84,6 @@ export function TeamsPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
-  // Re-fit when drilling into / out of a pool (skip the very first run so it doesn't clobber the
-  // org-change zoom restore above).
-  const drilledOnce = useRef(false);
-  useEffect(() => {
-    if (!drilledOnce.current) { drilledOnce.current = true; return; }
-    vp.fit();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drill]);
-
   // Persist zoom, debounced so a wheel-zoom gesture doesn't spam the store.
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
@@ -113,17 +93,17 @@ export function TeamsPanel() {
   }, [scale, orgId, setOrgZoom]);
 
   // Enter a team's position graph (a card / rail click); `toTeams` climbs back to the overview.
-  const enterTeam = (id: string) => { setOrgId(id); setDrill(null); setConnect(null); setSel({ type: "node", id: "" }); };
-  const toTeams = () => { setOrgId(null); setDrill(null); setConnect(null); setSel({ type: "node", id: "" }); };
+  const enterTeam = (id: string) => { setOrgId(id); setSel({ type: "node", id: "" }); };
+  const toTeams = () => { setOrgId(null); setSel({ type: "node", id: "" }); };
 
-  // No teams at all → the first-run empty state.
+  // No teams at all → the first-run empty state. Teams are configured by the AI (the planner), not
+  // created by the user (#2750), so there is no create action here — just the explanatory message.
   if (orgs.length === 0) {
     return (
       <EmptyState
         icon="◆" iconVariant="dashed"
         title="No team yet"
-        description="A team wires personas into positions and relationships — create one to start designing."
-        actions={<Button onClick={() => enterTeam(addOrg())}>+ new team</Button>}
+        description="A team wires personas into positions and relationships — the planner configures one as it plans your project."
       />
     );
   }
@@ -146,7 +126,6 @@ export function TeamsPanel() {
               <Text as="span" mono size={10.5} tone="dim">{orgs.length} team{orgs.length === 1 ? "" : "s"} · click one to open</Text>
             </Row>
             <Box style={{ flex: 1 }} />
-            <Button variant="ghost" onClick={() => enterTeam(addOrg())}>＋ New team</Button>
             <Button variant="ghost" onClick={vp.fit}>Fit</Button>
             <ZoomControls vp={vp} />
           </>
@@ -155,7 +134,6 @@ export function TeamsPanel() {
           <Stack gap={0} style={{ flex: 1, minWidth: 0, borderRight: "1px solid var(--border-soft)", background: "var(--bg-elev)", minHeight: 0 }}>
             <Row align="center" justify="between" style={{ padding: "13px 15px 11px", borderBottom: "1px solid var(--border-soft)" }}>
               <SectionLabel size={9.5}>Teams</SectionLabel>
-              <Button variant="ghost" onClick={() => enterTeam(addOrg())}>＋ new</Button>
             </Row>
             <Box style={{ overflowY: "auto", padding: "8px 8px 20px", flex: 1 }}>
               {orgs.map((o) => (
@@ -171,65 +149,31 @@ export function TeamsPanel() {
         }
       >
         <Box className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>
-          <TeamsOverview teams={orgs} personas={personas} onEnter={enterTeam} onAdd={() => enterTeam(addOrg())} />
+          <TeamsOverview teams={orgs} personas={personas} onEnter={enterTeam} />
         </Box>
       </GraphCanvas>
     );
   }
 
-  const onSelectNode = (nodeId: string) => {
-    if (connect) {
-      if (!connect.from) { setConnect({ ...connect, from: nodeId }); return; }
-      if (connect.from !== nodeId) {
-        const id = `rel-${connect.from}-${nodeId}-${connect.archetype}`;
-        if (!org.relationships.some((r) => r.id === id)) {
-          addRelationship(org.id, { id, archetype: connect.archetype, from: connect.from, to: nodeId });
-        }
-        setSel({ type: "edge", id });
-      }
-      setConnect(null);
-      return;
-    }
-    setSel({ type: "node", id: nodeId });
-  };
-
-  const addNode = () => {
-    const nodeId = `pos-${Date.now().toString(36)}`;
-    // Drop the new node into clear space below the current graph so it never lands on top of another;
-    // the user can then wire it up and hit "Auto organize" to let the layout re-settle everything.
-    const maxY = org.positions.reduce((m, p) => Math.max(m, p.y ?? 0), 0);
-    const x = 60 + (org.positions.length % 4) * 220;
-    const y = org.positions.length ? maxY + 150 : 48;
-    addPosition(org.id, { nodeId, kind: "agent", personaId: personas[0]?.id, x, y });
-    setSel({ type: "node", id: nodeId });
-  };
+  // Selecting a node just focuses it — the click-to-connect relationship builder was removed (#2750;
+  // the AI configures teams, the user only inspects/deletes).
+  const onSelectNode = (nodeId: string) => setSel({ type: "node", id: nodeId });
 
   // Pools (#2199): homogeneous swarms of a `pooled` persona collapse to one stacked card. The canvas
-  // shows either the COLLAPSED parent graph, or — when a pool is open — that pool's OWN sub-graph.
+  // shows the COLLAPSED parent graph (the pool-member drill was dropped, #2750 — a swarm is already
+  // fully represented by its ×N stacked card).
   const pools = detectPools(org, personas);
-  const activePool: Pool | null = drill ? pools.find((p) => p.nodeId === drill) ?? null : null;
   const collapsed = collapseOrg(org, pools);
-  const view = activePool
-    ? { org: poolSubgraph(org, activePool), poolInfo: {} as Record<string, Pool> }
-    : collapsed;
-  const activePoolName = activePool ? positionDisplay({ nodeId: activePool.nodeId, kind: "agent", personaId: activePool.personaId }, personas).name : "";
+  const view = collapsed;
 
-  // Auto-organize lays out the graph being RENDERED (#2451). Parent view → the COLLAPSED org, so the
-  // pool node participates (with its stacked-card footprint) and lands ON a hierarchy row; the result
-  // writes back through applyPoolLayout — non-pooled nodes directly, each pool's members translated as
-  // a cluster so their centroid (where the stack renders) is the pool's laid-out spot (#2439). Drilled
-  // into a pool → only the members re-arrange; the boundary context stays fixed.
+  // Auto-organize lays out the graph being RENDERED (#2451): the COLLAPSED org, so the pool node
+  // participates (with its stacked-card footprint) and lands ON a hierarchy row; the result writes back
+  // through applyPoolLayout — non-pooled nodes directly, each pool's members translated as a cluster so
+  // their centroid (where the stack renders) is the pool's laid-out spot (#2439).
   const autoOrganize = () => {
-    if (activePool) {
-      updateOrg(org.id, { positions: organizeDrilledPool(org, activePool) });
-      return;
-    }
     const layout = autoLayout(collapsed.org, poolLayoutSizes(pools));
     updateOrg(org.id, { positions: applyPoolLayout(org, pools, layout) });
   };
-
-  const onDrillPool = (poolNodeId: string) => { setDrill(poolNodeId); setSel({ type: "node", id: "" }); };
-  const exitPool = () => { setDrill(null); setSel({ type: "node", id: "" }); };
 
   // Left rail: positions grouped by department, in canonical order.
   const byDept = new Map<string, typeof org.positions>();
@@ -259,38 +203,15 @@ export function TeamsPanel() {
       onBackgroundClick={() => setSel({ type: "node", id: "" })}
       toolbar={
         <>
-          {/* Breadcrumb (#2742) — Teams › ‹team› › ‹pool›; each crumb climbs a level (replaces the
-              header org-switcher dropdown, which is gone; teams are entered from the graph now). */}
+          {/* Breadcrumb (#2742) — Teams › ‹team›; the Teams crumb climbs back to the overview (replaces
+              the header org-switcher dropdown, which is gone; teams are entered from the graph now).
+              The pool crumb was dropped with the pool-member drill (#2750). */}
           <Row gap={7} align="center">
             <IconBox size={22} radius={6} fontSize={12} background="var(--bg-soft)" border="1px solid var(--border)" color="var(--accent)">◆</IconBox>
             <Button variant="ghost" onClick={toTeams}>Teams</Button>
             <Text as="span" tone="dim">›</Text>
-            {activePool ? (
-              <>
-                <Button variant="ghost" onClick={exitPool}>{org.name}</Button>
-                <Text as="span" tone="dim">›</Text>
-                <Text as="span" mono size={11} weight={600}>{activePoolName} pool · ×{activePool.count}</Text>
-              </>
-            ) : (
-              <>
-                <Text as="span" weight={600} size={14}>{org.name}</Text>
-                <Text as="span" mono size={10.5} tone="dim" style={{ marginLeft: 2 }}>{org.positions.length} positions · {pools.length} pool{pools.length === 1 ? "" : "s"}</Text>
-              </>
-            )}
-          </Row>
-          <Box style={{ width: 1, height: 22, background: "var(--border)" }} />
-          <Row gap={10} align="center" style={{ minWidth: 0 }}>
-            <SectionLabel size={9.5} style={{ flex: "none" }}>{connect ? (connect.from ? "pick a target" : "pick a source") : "Click to connect"}</SectionLabel>
-            <Row gap={6}>
-              {RELATIONSHIP_ARCHETYPES.map((a) => (
-                <Box as="button" key={a.id} onClick={() => setConnect(connect?.archetype === a.id ? null : { archetype: a.id, from: null })}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 500,
-                    color: "var(--fg-muted)", background: connect?.archetype === a.id ? "color-mix(in oklch, var(--accent) 16%, transparent)" : "var(--bg-soft)",
-                    border: `1px solid ${connect?.archetype === a.id ? "var(--accent)" : "var(--border)"}`, padding: "3px 9px 3px 7px", borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap" }}>
-                  <StatusDot color={hueColor(a.hue)} size={8} />{a.label}
-                </Box>
-              ))}
-            </Row>
+            <Text as="span" weight={600} size={14}>{org.name}</Text>
+            <Text as="span" mono size={10.5} tone="dim" style={{ marginLeft: 2 }}>{org.positions.length} positions · {pools.length} pool{pools.length === 1 ? "" : "s"}</Text>
           </Row>
           <Box style={{ flex: 1 }} />
           <Button variant="ghost" onClick={autoOrganize}>⤢ Auto organize</Button>
@@ -302,7 +223,6 @@ export function TeamsPanel() {
         <Stack gap={0} style={{ flex: 1, minWidth: 0, borderRight: "1px solid var(--border-soft)", background: "var(--bg-elev)", minHeight: 0 }}>
           <Row align="center" justify="between" style={{ padding: "13px 15px 11px", borderBottom: "1px solid var(--border-soft)" }}>
             <SectionLabel size={9.5}>Positions</SectionLabel>
-            <Button variant="ghost" onClick={addNode}>＋ new</Button>
           </Row>
           <Box style={{ overflowY: "auto", padding: "8px 8px 20px", flex: 1 }}>
             {depts.map((dept) => (
@@ -339,14 +259,13 @@ export function TeamsPanel() {
         />
       ) : undefined}
     >
-      {/* keyed so drilling in/out remounts + replays the shared transition (graphCanvas.css, #2418) */}
-      <Box key={drill ?? "__root__"} className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>
+      {/* keyed to the team so entering/leaving replays the shared transition (graphCanvas.css, #2418) */}
+      <Box key={org.id} className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>
         <TeamsCanvas
-          org={view.org} personas={personas} sel={sel} scale={scale} connecting={!!connect}
+          org={view.org} personas={personas} sel={sel} scale={scale} connecting={false}
           dragMoved={vp.dragMoved} poolInfo={view.poolInfo}
           onSelectNode={onSelectNode} onSelectEdge={(id) => setSel({ type: "edge", id })}
           onMoveNode={(nodeId, x, y) => updatePosition(org.id, nodeId, { x, y })}
-          onDrillPool={onDrillPool}
           onMovePool={(poolNodeId, dx, dy) => {
             // The pool node is synthetic (rendered at its members' centroid) — commit a stack drag by
             // shifting EVERY member by the delta, so the centroid lands at the drop point and the
