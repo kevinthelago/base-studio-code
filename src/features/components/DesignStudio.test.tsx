@@ -230,6 +230,20 @@ describe("half-screen overlay drawers (#2682)", () => {
     expect(container.querySelector(".ds-insp")!.className).not.toContain("open");
   });
 
+  it("trips at a half-window body width the old fixed 900px threshold missed (#2688 regression)", () => {
+    // Default panels are 266 + 420; the graph needs ~380 after them, so overlays engage below ~1076px.
+    // 950px is a realistic half-screen body — ABOVE the old magic 900 (which never fired) yet still too
+    // squeezed for the 3-column layout, so the derived threshold must flip to overlay mode here.
+    const { container } = render(<DesignStudio />);
+    setWidth(950);
+    expect(container.querySelector(".ds-body--narrow")).toBeTruthy();
+    expect(container.querySelectorAll(".ds-drawertoggle").length).toBe(2);
+    // …and a genuinely wide body (room for the graph after both panels) stays the 3-column IDE.
+    setWidth(1400);
+    expect(container.querySelector(".ds-body--narrow")).toBeNull();
+    expect(container.querySelectorAll(".ds-drawertoggle").length).toBe(0);
+  });
+
   it("a toggle opens its drawer + a dismiss scrim; the scrim closes it", () => {
     const { container } = render(<DesignStudio />);
     setWidth(700);

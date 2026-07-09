@@ -52,11 +52,13 @@ const VP: Record<Viewport, { w: string; label: string }> = {
   auto: { w: "100%", label: "fluid · fills panel" },
 };
 
-// Half-screen threshold (#2682): below this body width the rail + inspector stop taking flex space
-// and float as overlay drawers over the graph, so the graph keeps a usable width. It's tuned so a
-// window snapped to half a 1080p+ monitor lands in overlay mode while a wide window keeps the
-// classic 3-column IDE. (rail-min 200 + insp-min 300 + a comfortable graph + handles ≈ this.)
-const NARROW_W = 900;
+// Half-screen switch (#2682/#2688): the studio floats the rail + inspector as overlay drawers once the
+// body can no longer give the graph at least GRAPH_MIN px AFTER both inline panels. Deriving the
+// threshold from the LIVE panel sizes (not a magic width) is what makes it fire reliably at a
+// half-window — a fixed number (the original 900) lands right where a half-screen body sits and never
+// trips. The two col-resize handles are ~10px total.
+const GRAPH_MIN = 380;
+const HANDLES_W = 10;
 
 // The role dot + kit chip live in kitChrome.tsx (#2420) — shared with the Planner Components pane.
 
@@ -97,20 +99,23 @@ export function DesignStudio() {
   // the terminal sits AFTER the handle, so dragging up grows it. The graph (flex:1) keeps priority.
   const term = useDragResize({ initial: 240, min: 140, max: 560, axis: "y", invert: true });
 
-  // Half-screen friendly (#2682): a ResizeObserver on the body switches to overlay-drawer mode below
-  // NARROW_W. In that mode the rail + inspector float over the graph (absolute, out of flow) and are
-  // toggled one-at-a-time from `drawer`; the graph keeps full width. The app has no other responsive
-  // machinery, so this is measured locally rather than via a media query (the app rail already eats
-  // part of the viewport, so the studio's own width is what matters).
+  // Half-screen friendly (#2682/#2688): a ResizeObserver measures the body; `narrow` is DERIVED each
+  // render from the live width vs the current panel sizes, so it tracks panel drags and fires reliably
+  // at a half-window (a fixed px threshold lands right where a half-screen body sits and misses). In
+  // narrow mode the rail + inspector float over the graph (absolute, out of flow), toggled one-at-a-
+  // time from `drawer`; the graph keeps full width. Measured locally (not a media query) since the app
+  // rail already eats part of the viewport — the studio's own width is what matters. Start at Infinity
+  // so the first paint is wide until the observer reports the real width.
   const bodyRef = useRef<HTMLDivElement>(null);
-  const [narrow, setNarrow] = useState(false);
+  const [bodyW, setBodyW] = useState(Infinity);
   const [drawer, setDrawer] = useState<null | "rail" | "insp">(null);
   useEffect(() => {
     const el = bodyRef.current; if (!el) return;
-    const ro = new ResizeObserver((entries) => setNarrow(entries[0].contentRect.width < NARROW_W));
+    const ro = new ResizeObserver((entries) => setBodyW(entries[0].contentRect.width));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  const narrow = bodyW < rail.size + insp.size + GRAPH_MIN + HANDLES_W;
   useEffect(() => { if (!narrow) setDrawer(null); }, [narrow]); // back to wide → panels are inline again
 
   const match = (c: ComponentRecord) => matchesQuery(c, query);
