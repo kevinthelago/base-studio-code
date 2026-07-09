@@ -10,9 +10,6 @@
 /* The former page toolbar (kit switcher · search · actions) was removed when the studio became a
    Planner tab; the search box now lives under the rail header and .ds-act drives the graph-header
    fit/Share buttons. */
-.ds-search { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 420px; height: 32px; padding: 0 11px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; }
-.ds-search input { flex: 1; background: none; border: none; color: var(--fg); font-size: 12.5px; font-family: inherit; }
-.ds-search input:focus { outline: none; }
 .ds-kbd { font-family: var(--mono); font-size: 9.5px; color: var(--fg-dim); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
 .ds-act { height: 32px; padding: 0 11px; display: flex; align-items: center; gap: 6px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; color: var(--fg-muted); font-size: 12px; cursor: pointer; }
 .ds-act:hover { border-color: var(--fg-dim); color: var(--fg); }
