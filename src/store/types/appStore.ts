@@ -11,7 +11,7 @@
 //  - Skills library/groups      → SkillsSlice    (@/features/skills/store)
 import type { McpSlice } from "@/features/mcp/store";
 import type { PersonasSlice } from "@/features/personas/store";
-import type { OrgSlice } from "@/features/org/store";
+import type { OrgSlice } from "@/features/teams/store";
 import type { ComponentsSlice } from "@/features/components/store";
 import type { SkillsSlice } from "@/features/skills/store";
 import type { AutomationsSlice } from "@/features/automations/store";

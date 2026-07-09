@@ -1,4 +1,4 @@
-// Org designer (#2193, interactive #2199) — the persona-relationship graph, mounted as the Org tab of
+// Team designer (#2193, interactive #2199) — the persona-relationship graph, mounted as the Team tab of
 // the Planner workspace. Toolbar (org switch · relationship palette · auto-organize/fit/zoom) · left
 // rail (positions by department) · canvas (pan/zoom/node-drag) · inspector (position identity /
 // relationship). Driven by the real org/persona/skill stores; pure model + geometry live in lib/*.
@@ -18,10 +18,10 @@ import { IconBox } from "@/shared/ui/data/IconBox";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
-import { OrgCanvas, OrgLegend, type Selection } from "./OrgCanvas";
-import { OrgInspector } from "./OrgInspector";
-import { OrgContextMenu } from "./OrgContextMenu";
-import { RELATIONSHIP_ARCHETYPES, type Position } from "./lib/org";
+import { TeamsCanvas, OrgLegend, type Selection } from "./TeamsCanvas";
+import { TeamsInspector } from "./TeamsInspector";
+import { TeamsContextMenu } from "./TeamsContextMenu";
+import { RELATIONSHIP_ARCHETYPES, type Position } from "./lib/team";
 import { autoLayout, nodeBox, contentBounds, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
 import { detectPools, collapseOrg, poolSubgraph, poolLayoutSizes, applyPoolLayout, organizeDrilledPool, type Pool } from "./lib/orgPools";
 import { positionDisplay, hueColor } from "./lib/orgView";
@@ -31,8 +31,8 @@ import { overlayFile } from "@/shared/lib/core/configOverrides";
  *  `@data/org/departments.json` (#2419, beside the org vocabulary); config-dir-overlaid (#2047). */
 const DEPT_ORDER: string[] = overlayFile("org/departments.json", departmentsEmbedded);
 
-export function OrgPanel() {
-  const orgs = useAppStore((s) => s.orgs);
+export function TeamsPanel() {
+  const orgs = useAppStore((s) => s.teams);
   const personas = useAppStore((s) => s.personas);
   const addOrg = useAppStore((s) => s.addOrg);
   const updateOrg = useAppStore((s) => s.updateOrg);
@@ -42,11 +42,11 @@ export function OrgPanel() {
   const updatePosition = useAppStore((s) => s.updatePosition);
   const removePosition = useAppStore((s) => s.removePosition);
   const removeRelationship = useAppStore((s) => s.removeRelationship);
-  const setOrgZoom = useAppStore((s) => s.setOrgZoom);
+  const setOrgZoom = useAppStore((s) => s.setTeamsZoom);
 
   const [orgId, setOrgId] = useState<string>(orgs[0]?.id ?? "");
   const org = orgs.find((o) => o.id === orgId) ?? orgs[0];
-  const savedZoom = useAppStore((s) => s.orgZoom[orgId]);
+  const savedZoom = useAppStore((s) => s.teamsZoom[orgId]);
   // Open with nothing selected (the empty sentinel — inspector empty, no dimming; see onBackgroundClick).
   const [sel, setSel] = useState<Selection>({ type: "node", id: "" });
   // Right-click context menu (#2385): the cursor position + the target it was opened on.
@@ -56,8 +56,8 @@ export function OrgPanel() {
   // Drill state: the pool nodeId whose OWN graph is showing (null = the collapsed parent graph),
   // held in the STORE (#2492) so the app-wide nav history (mouse back/forward,
   // useNavHistory) can step drill in/out — same treatment as glanceDrill.
-  const drill = useAppStore((s) => s.orgDrill);
-  const setDrill = useAppStore((s) => s.setOrgDrill);
+  const drill = useAppStore((s) => s.teamsDrill);
+  const setDrill = useAppStore((s) => s.setTeamsDrill);
 
   // The nodes of whatever view is showing (the collapsed graph, or a drilled pool's members) — computed
   // on demand for framing. fit + the saved-zoom restore center on THESE, not the fixed 1120×800 canvas,
@@ -268,7 +268,7 @@ export function OrgPanel() {
         </Stack>
       }
       inspector={hasSel ? (
-        <OrgInspector
+        <TeamsInspector
           org={org} orgs={orgs} personas={personas} sel={sel}
           onSelectNode={(id) => setSel({ type: "node", id })}
           onChangeArchetype={(relId, a) => updateRelationship(org.id, relId, { archetype: a })}
@@ -281,7 +281,7 @@ export function OrgPanel() {
     >
       {/* keyed so drilling in/out remounts + replays the shared transition (graphCanvas.css, #2418) */}
       <Box key={drill ?? "__root__"} className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>
-        <OrgCanvas
+        <TeamsCanvas
           org={view.org} personas={personas} sel={sel} scale={scale} connecting={!!connect}
           dragMoved={vp.dragMoved} poolInfo={view.poolInfo}
           onSelectNode={onSelectNode} onSelectEdge={(id) => setSel({ type: "edge", id })}
@@ -305,7 +305,7 @@ export function OrgPanel() {
       </Box>
     </GraphCanvas>
     {menu && (
-      <OrgContextMenu
+      <TeamsContextMenu
         x={menu.x} y={menu.y}
         deleteLabel={menu.target.type === "node" ? "Delete position" : "Delete relationship"}
         onDelete={() => {

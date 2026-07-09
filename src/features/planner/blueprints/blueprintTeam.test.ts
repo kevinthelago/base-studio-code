@@ -1,13 +1,13 @@
 // Blueprint team (#2450) — fork-on-attach isolation + the immutable edit helpers.
 import { describe, it, expect } from "vitest";
-import { BUILTIN_ORGS, type Org } from "@/features/org";
+import { BUILTIN_ORGS, type Team } from "@/features/teams";
 import {
   blankTeam, forkTeamFromOrg, teamAsOrg,
   teamAddPosition, teamUpdatePosition, teamRemovePosition,
   teamAddRelationship, teamUpdateRelationship, teamRemoveRelationship, teamApplyLayout,
 } from "./blueprintTeam";
 
-const libOrg = (): Org => ({
+const libOrg = (): Team => ({
   id: "org-lib", name: "Library org", blurb: "the archetype",
   positions: [
     { nodeId: "n1", kind: "agent", personaId: "persona-director", x: 10, y: 20 },
@@ -77,7 +77,7 @@ describe("blueprintTeam helpers", () => {
     expect(blankTeam()).toEqual({ positions: [], relationships: [] });
   });
 
-  it("teamAsOrg wraps the team as a synthetic Org lens (shared arrays, synthetic identity)", () => {
+  it("teamAsOrg wraps the team as a synthetic Team lens (shared arrays, synthetic identity)", () => {
     const team = forkTeamFromOrg(libOrg());
     const asOrg = teamAsOrg(team, "My blueprint");
     expect(asOrg.name).toBe("My blueprint");

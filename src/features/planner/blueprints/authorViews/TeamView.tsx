@@ -1,10 +1,10 @@
 // Blueprint Author — TEAM (#2450). The blueprint's own org configuration, authored in two steps:
 // 1 · ARCHETYPE PICKER — fork a library org (or start blank) into `bp.team` (fork-on-attach: a
 //     structuredClone at the boundary, so the library org is never mutated — see blueprintTeam.ts).
-// 2 · TEAM EDITOR — the org designer canvas (OrgCanvas + OrgInspector via the org feature barrel,
+// 2 · TEAM EDITOR — the org designer canvas (TeamsCanvas + TeamsInspector via the org feature barrel,
 //     inside the shared GraphCanvas pan/zoom shell) bound to `bp.team`: positions list, click-to-
 //     connect relationships, node drag, auto-organize. Every edit flows back through `onChange`
-//     like every other author view. Scoped down from OrgPanel: no pools/drill, no context menu,
+//     like every other author view. Scoped down from TeamsPanel: no pools/drill, no context menu,
 //     no persisted zoom — deletion lives in the inspector's two-step confirm.
 import { useEffect, useState } from "react";
 import { useAppStore } from "@/store";
@@ -21,10 +21,10 @@ import { Chip } from "@/shared/ui/data/Chip";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import {
-  OrgCanvas, OrgLegend, OrgInspector, RELATIONSHIP_ARCHETYPES,
+  TeamsCanvas, OrgLegend, TeamsInspector, RELATIONSHIP_ARCHETYPES,
   autoLayout, positionDisplay, hueColor, CANVAS_W, CANVAS_H,
-  type Org, type Selection,
-} from "@/features/org";
+  type Team, type Selection,
+} from "@/features/teams";
 import type { BlueprintTeam } from "@/features/planner/stages/blueprints";
 import {
   blankTeam, forkTeamFromOrg, teamAsOrg,
@@ -33,11 +33,11 @@ import {
 } from "../blueprintTeam";
 import { Lbl, type AuthorViewProps } from "./shared";
 
-/** No selection sentinel (matches OrgPanel): inspector hidden, no dimming. */
+/** No selection sentinel (matches TeamsPanel): inspector hidden, no dimming. */
 const NO_SEL: Selection = { type: "node", id: "" };
 
 /** Step 1 — pick the team's starting point: a library org (forked in) or a blank canvas. */
-function ArchetypePicker({ orgs, onPick }: { orgs: Org[]; onPick: (team: BlueprintTeam) => void }) {
+function ArchetypePicker({ orgs, onPick }: { orgs: Team[]; onPick: (team: BlueprintTeam) => void }) {
   return (
     <Stack gap={10}>
       <Text as="div" size={12} tone="muted" style={{ lineHeight: 1.5 }}>
@@ -84,8 +84,8 @@ function TeamEditor({ team, onTeam, onReset }: {
   onReset: () => void;
 }) {
   const personas = useAppStore((s) => s.personas);
-  const orgs = useAppStore((s) => s.orgs);
-  // The synthetic Org lens over the team — the org machinery (geometry/derivation) reads it as-is.
+  const orgs = useAppStore((s) => s.teams);
+  // The synthetic Team lens over the team — the org machinery (geometry/derivation) reads it as-is.
   const asOrg = teamAsOrg(team);
 
   const [sel, setSel] = useState<Selection>(NO_SEL);
@@ -114,7 +114,7 @@ function TeamEditor({ team, onTeam, onReset }: {
 
   const addNode = () => {
     const nodeId = `pos-${Date.now().toString(36)}`;
-    // Drop the new node into clear space below the current graph (mirrors OrgPanel.addNode).
+    // Drop the new node into clear space below the current graph (mirrors TeamsPanel.addNode).
     const maxY = team.positions.reduce((m, p) => Math.max(m, p.y ?? 0), 0);
     const x = 60 + (team.positions.length % 4) * 220;
     const y = team.positions.length ? maxY + 150 : 48;
@@ -186,7 +186,7 @@ function TeamEditor({ team, onTeam, onReset }: {
           </Stack>
         }
         inspector={hasSel ? (
-          <OrgInspector
+          <TeamsInspector
             org={asOrg} orgs={[asOrg, ...orgs]} personas={personas} sel={sel}
             onSelectNode={(id) => setSel({ type: "node", id })}
             onChangeArchetype={(relId, a) => onTeam(teamUpdateRelationship(team, relId, { archetype: a }))}
@@ -197,7 +197,7 @@ function TeamEditor({ team, onTeam, onReset }: {
           />
         ) : undefined}
       >
-        <OrgCanvas
+        <TeamsCanvas
           org={asOrg} personas={personas} sel={sel} scale={vp.view.scale} connecting={!!connect}
           dragMoved={vp.dragMoved}
           onSelectNode={onSelectNode} onSelectEdge={(id) => setSel({ type: "edge", id })}
@@ -211,7 +211,7 @@ function TeamEditor({ team, onTeam, onReset }: {
 /** The Team author view (#2450): fork an org archetype into `bp.team`, then edit it on the org
  *  designer canvas. Emits the whole blueprint via `onChange` like every other author view. */
 export function TeamView({ bp, onChange }: AuthorViewProps) {
-  const orgs = useAppStore((s) => s.orgs);
+  const orgs = useAppStore((s) => s.teams);
   const setTeam = (team: BlueprintTeam | undefined) => onChange({ ...bp, team });
   return (
     <Stack gap={18}>

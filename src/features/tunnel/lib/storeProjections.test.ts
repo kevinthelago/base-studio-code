@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import type { ProjectLite } from "@/features/glance";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
-import type { Org } from "@/features/org";
+import type { Team } from "@/features/teams";
 import type { Persona } from "@/features/personas";
 import type { Blueprint } from "@/features/planner/stages/blueprintTypes";
 import type { SkillDef } from "@/features/skills/lib/skillsModel";
@@ -79,7 +79,7 @@ describe("buildGlancePayload", () => {
 
 describe("buildOrgPayload", () => {
   it("keeps the org graphs whole and pares personas to refs (no start prompts)", () => {
-    const org: Org = {
+    const org: Team = {
       id: "o1", name: "Pipeline",
       positions: [{ nodeId: "n1", kind: "agent", personaId: "p1" }],
       relationships: [{ id: "r1", archetype: "delegates", from: "n1", to: "n1" }],

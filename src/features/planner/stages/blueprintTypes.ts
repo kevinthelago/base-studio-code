@@ -9,7 +9,7 @@ import { type StageGate, type Requirement } from "./stageGate";
 import { type AgentFlow } from "../fleet/agentFlow";
 // Type-only cross-feature import (allowed by the #1545 boundary): the blueprint team (#2450)
 // reuses the org feature's graph shape rather than redeclaring it.
-import type { Position, Relationship } from "@/features/org";
+import type { Position, Relationship } from "@/features/teams";
 
 // ── Substeps ─────────────────────────────────────────────────────────────────
 // A discrete step WITHIN a stage. The conductor injects ONE substep's prompt at a time and

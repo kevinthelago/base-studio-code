@@ -13,7 +13,7 @@ import { Toggle } from "@/shared/ui/controls/Toggle";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { StatTile } from "@/shared/ui/data/StatTile";
 import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, type GraphModel, type GNode, type GEdge } from "./lib/glanceGraph";
-import { archetypeById, formById, hueColor } from "@/features/org";
+import { archetypeById, formById, hueColor } from "@/features/teams";
 
 const FAULT_COLOR = "var(--graph-health-error)";
 

@@ -11,7 +11,7 @@
 import type { ProjectLite, GlanceFault, GHealth } from "@/features/glance";
 import type { ProjectLink } from "@/features/glance/lib/projectLinks";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
-import type { Org } from "@/features/org";
+import type { Team } from "@/features/teams";
 import type { Persona } from "@/features/personas";
 import type { Blueprint, BlueprintTeam } from "@/features/planner/stages/blueprintTypes";
 import type { SkillDef } from "@/features/skills/lib/skillsModel";
@@ -91,11 +91,11 @@ export interface PersonaRef {
 }
 
 export interface OrgPayload {
-  orgs: Org[];
+  orgs: Team[];
   personas: PersonaRef[];
 }
 
-export function buildOrgPayload(input: { orgs: Org[]; personas: Persona[] }): OrgPayload {
+export function buildOrgPayload(input: { orgs: Team[]; personas: Persona[] }): OrgPayload {
   return {
     orgs: input.orgs,
     personas: input.personas.map((p) => ({
