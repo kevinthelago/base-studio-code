@@ -21,7 +21,7 @@ const graphNode = (name: string) =>
 
 describe("DesignStudio (#2308)", () => {
   it("renders the kits→components rail and the composition graph as the one-and-only center view (#2453)", () => {
-    render(<DesignStudio />);
+    const { container } = render(<DesignStudio />);
     // The page toolbar was removed (#move-to-planner) — the studio is a Planner tab, so the PageTabs
     // strip is its header. No "Design Studio" heading, no kit-switcher chip row.
     expect(screen.queryByText("Design Studio")).toBeNull();
@@ -31,12 +31,14 @@ describe("DesignStudio (#2308)", () => {
     // The Library/Graph toggle is gone — there is no alternate center mode.
     expect(screen.queryByText("▦ Library")).toBeNull();
     expect(screen.queryByText("⬡ Graph")).toBeNull();
-    const firstReactUi = SEED_COMPONENTS.find((c) => c.kitId === "react-ui")!;
-    expect(screen.getByText(`${firstReactUi.name}.tsx`)).toBeTruthy(); // inspector names the selection
+    // Nothing is focused on mount → the details pane is hidden, the graph gets the full width (#2705).
+    expect(container.querySelector(".ds-insp")).toBeNull();
+    expect(screen.queryByText("Live preview")).toBeNull();
   });
 
   it("the inspector carries the library detail: live preview + Overview/Source/Usage tabs", () => {
     render(<DesignStudio />);
+    fireEvent.click(graphNode("Chip"));                              // focus a node to reveal the details pane
     expect(screen.getByText("Live preview")).toBeTruthy();           // preview + its switchers
     expect(screen.getByLabelText("Theme")).toBeTruthy();             // the single Theme dropdown (#2545)
     expect(screen.getByText("⤢ fluid")).toBeTruthy();
@@ -82,36 +84,42 @@ describe("DesignStudio (#2308)", () => {
 
   it("the user's .on selection WINS over .working when the AI touches the same node (#2525 precedence)", () => {
     const selDefault = SEED_COMPONENTS.filter((c) => c.kitId === SEED_KITS[0].id)[0];
-    useAppStore.setState({ aiFocusedId: selDefault.id });            // AI touches the selected node
+    useAppStore.setState({ aiFocusedId: selDefault.id });            // AI touches a node…
     render(<DesignStudio />);
+    fireEvent.click(graphNode(selDefault.name));                     // …and the user focuses that SAME node
     const node = graphNode(selDefault.name);
     expect(node.className).toMatch(/\bon\b/);                        // selection wins visually
     expect(node.className).not.toMatch(/\bworking\b/);               // no competing pulse on it
   });
 
-  it("switching kits via the rail kit head re-scopes the graph and selects the kit's first component", () => {
+  it("switching kits via the rail kit head re-scopes the graph and focuses nothing (details stay hidden)", () => {
     // The packaged seed is the one react-ui kit (#2506 retired the examples kit), so switching is
     // exercised against a second, user-authored kit in the store.
     const vueKit: Kit = { id: "vue-kit", name: "vue-kit", tech: "vue", style: "material", stack: "Vue · TypeScript", dot: "var(--accent)" };
     const vueComp = { ...SEED_COMPONENTS[0], id: "vue-button", name: "VueButton", kitId: "vue-kit" };
     useAppStore.setState({ kits: [...SEED_KITS, vueKit], components: [...SEED_COMPONENTS, vueComp] });
-    render(<DesignStudio />);
+    const { container } = render(<DesignStudio />);
     // The toolbar switcher is gone (#move-to-planner) — clicking a rail kit head activates that kit. The
     // vue kit's head is labelled with its style ("material") under the single-kit style merge (#2506).
     fireEvent.click(screen.getByText("material").closest("button.ds-kithead")!);
     expect(screen.getByText(/Composition graph · vue-kit/)).toBeTruthy();
+    expect(container.querySelector(".ds-insp")).toBeNull();          // switching focuses nothing (#2705)
+    // …then picking a component from the new kit reveals its details.
+    fireEvent.click(railRow("VueButton"));
     expect(screen.getByText("VueButton.tsx")).toBeTruthy();
   });
 
   it("the Source tab shows the component's path + source text", () => {
     render(<DesignStudio />);
     const firstReactUi = SEED_COMPONENTS.find((c) => c.kitId === "react-ui")!;
+    fireEvent.click(graphNode(firstReactUi.name));                   // focus it to reveal the details pane
     fireEvent.click(screen.getByRole("tab", { name: "Source" }));
     expect(screen.getByText(firstReactUi.src)).toBeTruthy();
   });
 
   it("shows the when-to-use / when-not guidance on the Usage tab", () => {
     render(<DesignStudio />);
+    fireEvent.click(graphNode("Chip"));                              // focus a node to reveal the details pane
     fireEvent.click(screen.getByRole("tab", { name: "Usage" }));
     expect(screen.getByText("✓ When to use")).toBeTruthy();
     expect(screen.getByText("✗ When NOT to use")).toBeTruthy();
@@ -119,6 +127,7 @@ describe("DesignStudio (#2308)", () => {
 
   it("the ONE preview Theme switcher applies the selected theme's vars to the specimen frame (#2488)", () => {
     const { container } = render(<DesignStudio />);
+    fireEvent.click(graphNode("Chip"));                              // focus a node to reveal the details pane
     const sel = screen.getByLabelText("Theme") as HTMLSelectElement;
     // Fed by the hydrated theme collection, defaulting to the base look.
     expect(sel.value).toBe("default");
@@ -140,6 +149,7 @@ describe("DesignStudio (#2308)", () => {
 
   it("the Theme dropdown is the ONLY theme control — the old dark/light surface toggle is gone (#2545)", () => {
     const { container } = render(<DesignStudio />);
+    fireEvent.click(graphNode("Chip"));                              // focus a node to reveal the details pane
     // The hardcoded SegmentedControl surface toggle no longer renders.
     expect(screen.queryByText("◐ dark")).toBeNull();
     expect(screen.queryByText("◑ light")).toBeNull();
@@ -192,50 +202,44 @@ describe("DesignStudio (#2308)", () => {
   });
 });
 
-describe("collapsible kits list (#2691)", () => {
-  it("the details/inspector pane is ALWAYS inline — no toggle for it, present at any time", () => {
+describe("selection-driven details pane (#2705)", () => {
+  /** The pan/zoom canvas viewport (the element that fires onBackgroundClick). */
+  const canvas = (c: HTMLElement) => c.querySelector('div[style*="cursor: grab"]') as HTMLElement;
+
+  it("hidden on mount — nothing is focused, so the graph gets the full width", () => {
     const { container } = render(<DesignStudio />);
-    // Inspector is rendered inline from the first paint, whatever the list state.
+    expect(container.querySelector(".ds-insp")).toBeNull();
+    expect(screen.queryByText("Live preview")).toBeNull();
+    // Only the rail's own resize splitter is present (no details splitter yet).
+    expect(container.querySelectorAll(".ds-handle").length).toBe(1);
+  });
+
+  it("focusing a graph node reveals the details pane (with its resize splitter)", () => {
+    const { container } = render(<DesignStudio />);
+    fireEvent.click(graphNode("Chip"));
     expect(container.querySelector(".ds-insp")).toBeTruthy();
-    expect(screen.getByText("Live preview")).toBeTruthy();
-    // The list is expanded by default: full rail + its search + the resize handles.
-    expect(container.querySelector(".ds-rail")).toBeTruthy();
-    expect(container.querySelector(".ds-railstrip")).toBeNull();
-    expect(screen.getByLabelText("Search components")).toBeTruthy();
-    expect(container.querySelectorAll(".ds-handle").length).toBe(2);
+    expect(screen.getByText("Chip.tsx")).toBeTruthy();
+    expect(graphNode("Chip").className).toContain("on");
+    expect(container.querySelectorAll(".ds-handle").length).toBe(2); // rail + details splitters
   });
 
-  it("collapsing the list hides it behind a slim strip whose expand toggle rides with the pane", () => {
+  it("focusing a component from the rail also reveals the details pane", () => {
     const { container } = render(<DesignStudio />);
-    fireEvent.click(screen.getByLabelText("Collapse list"));
-    // The full rail + its search + its drag handle are gone; the slim strip takes their place.
-    expect(container.querySelector(".ds-rail")).toBeNull();
-    expect(container.querySelector(".ds-railstrip")).toBeTruthy();
-    expect(screen.queryByLabelText("Search components")).toBeNull();
-    expect(container.querySelectorAll(".ds-handle").length).toBe(1); // only the inspector splitter remains
-    // The expand affordance lives ON the strip (never covered) — and the inspector is still inline.
-    const expand = screen.getByLabelText("Show list");
-    expect(expand.closest(".ds-railstrip")).toBeTruthy();
+    expect(container.querySelector(".ds-insp")).toBeNull();
+    fireEvent.click(railRow("Chip"));
     expect(container.querySelector(".ds-insp")).toBeTruthy();
+    expect(screen.getByText("Chip.tsx")).toBeTruthy();
   });
 
-  it("expanding from the strip restores the full list", () => {
+  it("clicking the canvas background unfocuses the node and hides the details pane", () => {
     const { container } = render(<DesignStudio />);
-    fireEvent.click(screen.getByLabelText("Collapse list"));
-    fireEvent.click(screen.getByLabelText("Show list"));
-    expect(container.querySelector(".ds-railstrip")).toBeNull();
-    expect(container.querySelector(".ds-rail")).toBeTruthy();
-    expect(screen.getByLabelText("Search components")).toBeTruthy();
-    expect(container.querySelectorAll(".ds-handle").length).toBe(2);
-  });
-
-  // The graph canvas must carry the shrink-scoping class so its CSS (min-width:0) lets the middle yield
-  // to the side panes on resize (#2695). jsdom can't measure flex layout, so this guards the CSS hook.
-  it("the graph canvas carries the .ds-graphcanvas shrink hook inside the (clipping) center column", () => {
-    const { container } = render(<DesignStudio />);
-    const gc = container.querySelector(".ds-graphcanvas");
-    expect(gc).toBeTruthy();
-    expect(gc!.closest(".ds-center")).toBeTruthy();
+    fireEvent.click(graphNode("Chip"));                              // focus → details shown
+    expect(container.querySelector(".ds-insp")).toBeTruthy();
+    fireEvent.click(canvas(container));                              // click the empty canvas → unfocus
+    expect(container.querySelector(".ds-insp")).toBeNull();          // details pane gone
+    expect(screen.queryByText("Chip.tsx")).toBeNull();
+    expect(graphNode("Chip").className).not.toContain("on");         // node no longer selected
+    expect(container.querySelectorAll(".ds-handle").length).toBe(1); // details splitter removed too
   });
 });
 
