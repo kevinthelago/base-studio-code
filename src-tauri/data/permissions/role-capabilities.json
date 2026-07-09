@@ -11,6 +11,7 @@
     "juror":     { "role": "juror",     "github": "read",  "git": "read",  "code": "none",  "net": "read", "ui": "read", "writeGlobs": [] },
     "documentor": { "role": "documentor", "github": "read", "git": "read", "code": "none", "net": "read", "ui": "read", "writeGlobs": ["*.md", "**/*.md", "README*", "**/README*", "CHANGELOG*"] },
     "designer":  { "role": "designer",  "github": "none",  "git": "none",  "code": "none",  "net": "none", "ui": "write", "writeGlobs": [] },
+    "architect": { "role": "architect", "github": "none",  "git": "none",  "code": "none",  "net": "none", "ui": "none",  "writeGlobs": [] },
     "marketer":  { "role": "marketer",  "github": "read",  "git": "read",  "code": "none",  "net": "read", "ui": "read", "writeGlobs": ["marketing/**/*.md", "marketing/**/*.mdx", "content/**/*.md", "content/**/*.mdx", "README*", "**/README*", "CHANGELOG*", "**/CHANGELOG*"] }
   },
   "dbOwnedPlanFiles": ["deploy.md", "deploy.json", "phases.json", "issues.json", "fleet.json", "repos.json", "features.json"],

@@ -34,6 +34,10 @@ const ROLE_PROFILE: Record<SessionRole, string> = {
   // floor; its real launch path (`useDesignerTerminal`) renders the role gate + `restrictedAllow`
   // directly, so this mapping only backs the generic role→profile surfaces.
   designer: "pf_review",
+  // Architect (#2755): the Teams Studio's team-authoring session. Same as the designer — read-only
+  // review is the closest packaged floor; its real launch path (`useArchitectTerminal`) renders the
+  // role gate + `restrictedAllow` directly, so this mapping only backs the generic role→profile surfaces.
+  architect: "pf_review",
 };
 
 /** The default profile id for a role (or the Sandboxed default when there's no role). */
