@@ -1,4 +1,4 @@
-// Org designer — the small reusable pieces extracted from the Claude Design prototype (#2193), built on
+// Team designer — the small reusable pieces extracted from the Claude Design prototype (#2193), built on
 // the shared UI kit (Chip/Box/Row/Text) so they read as one system with the rest of the app. Used by
 // both the canvas node cards and the right-hand inspector.
 import { Chip } from "@/shared/ui/data/Chip";
@@ -7,7 +7,7 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { formColor, formArrow } from "./lib/orgView";
-import type { CommunicationForm } from "./lib/org";
+import type { CommunicationForm } from "./lib/team";
 
 // The role-capability tier row lives in the shared kit since #2420 — `RoleTierChips`
 // (@/shared/ui/data/RoleTierChips); the local `TierChips` duplicate (zero call sites) was deleted.
