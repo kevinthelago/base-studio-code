@@ -6,7 +6,7 @@
 // by department, or teams at the top level) · canvas (pan/zoom/node-drag) · inspector (position identity
 // / relationship). Driven by the real org/persona/skill stores; pure model + geometry live in lib/*.
 // The pan/zoom shell is the shared GraphCanvas template + useGraphViewport (#2208, epic #2197 slice 2).
-import departmentsEmbedded from "@data/org/departments.json";
+import departmentsEmbedded from "@data/teams/departments.json";
 import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "@/store";
 import { Stack } from "@/shared/ui/layout/Stack";
@@ -32,8 +32,8 @@ import { positionDisplay, hueColor } from "./lib/orgView";
 import { overlayFile } from "@/shared/lib/core/configOverrides";
 
 /** Department display order in the left rail (positionDisplay assigns each a dept) — from
- *  `@data/org/departments.json` (#2419, beside the org vocabulary); config-dir-overlaid (#2047). */
-const DEPT_ORDER: string[] = overlayFile("org/departments.json", departmentsEmbedded);
+ *  `@data/teams/departments.json` (#2419, beside the teams vocabulary); config-dir-overlaid (#2047). */
+const DEPT_ORDER: string[] = overlayFile("teams/departments.json", departmentsEmbedded);
 
 export function TeamsPanel() {
   const orgs = useAppStore((s) => s.teams);
