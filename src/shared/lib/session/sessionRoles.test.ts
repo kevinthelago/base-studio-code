@@ -190,9 +190,10 @@ describe("roleDeniedCommands (launch wiring)", () => {
       "bsc component set", "bsc component remove", "bsc component kit set", "bsc component kit remove",
     ];
 
-    it("ui: read (every shipped role but the designer) denies exactly the mutating verbs, leaving reads alone", () => {
+    it("ui: read (every shipped role but the designer + architect) denies exactly the mutating verbs, leaving reads alone", () => {
       for (const cap of Object.values(ROLE_DEFAULTS)) {
-        if (cap.role === "designer") continue; // ui:"write" by design (#2471) — asserted in its own suite
+        if (cap.role === "designer") continue;  // ui:"write" by design (#2471) — asserted in its own suite
+        if (cap.role === "architect") continue; // ui:"none" by design (#2755) — asserted in its own suite
         const denies = roleDeniedCommands(cap);
         for (const verb of UI_MUTATING) expect(denies).toContain(verb);
         expect(denies).not.toContain("bsc ui");        // reads stay (list/get/kit list…)
@@ -332,9 +333,10 @@ describe("roleWriteRules (write-tool guard)", () => {
 });
 
 describe("network gate (#1107)", () => {
-  it("net defaults to read for every role but the designer — web tools stay allowed (no behavior change)", () => {
+  it("net defaults to read for every role but the designer + architect — web tools stay allowed (no behavior change)", () => {
     for (const role of Object.keys(ROLE_DEFAULTS) as SessionRole[]) {
-      if (role === "designer") continue; // net:"none" by design (#2471) — asserted in its own suite
+      if (role === "designer") continue;  // net:"none" by design (#2471) — asserted in its own suite
+      if (role === "architect") continue; // net:"none" by design (#2755) — asserted in its own suite
       expect(ROLE_DEFAULTS[role].net).toBe("read");
       expect(roleDeniedTools(ROLE_DEFAULTS[role])).not.toContain("WebFetch");
     }
@@ -604,6 +606,77 @@ describe("designer role (#2471)", () => {
     expect(p.deny_tools).toEqual(["write_file", "edit_file"]);
     expect(p.deny_bash).toContain("git");
     expect(p.deny_bash).toContain("gh");
+    expect(p.write_globs).toEqual([]);
+  });
+});
+
+// #2755 — the architect role: the Teams Studio's team-authoring session. `none` on EVERY axis, `ui`
+// included (unlike the designer's ui:"write" — it never touches the UI-kit store). Its one command
+// surface (`bsc teams` + `bsc persona`) is granted at launch via the restricted allow-list
+// (`restrictedAllow`, settings.rs), not by the role gate. The Teams graph stays the read-only viewer.
+describe("architect role (#2755)", () => {
+  const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+  const architect = ROLE_DEFAULTS.architect;
+
+  it("is none on EVERY axis — no git, no GitHub, no code, no net, and ui:none (not a UI-kit session)", () => {
+    expect(architect.git).toBe("none");
+    expect(architect.github).toBe("none");
+    expect(architect.code).toBe("none");
+    expect(architect.net).toBe("none");
+    expect(architect.ui).toBe("none");
+    expect(sessionScopes(architect)).toEqual({ ui: "none" });
+    expect(architect.writeGlobs).toEqual([]);
+  });
+
+  it("roleDeniedCommands denies git, gh, AND the ui-kit store (bsc ui + the alias) outright", () => {
+    const denies = roleDeniedCommands(architect);
+    expect(denies).toContain("git");
+    expect(denies).toContain("gh");
+    // ui:"none" denies the whole `bsc ui` tool (and its deprecated `bsc component` alias) — the
+    // architect never edits UI kits; that's the designer's job.
+    expect(denies).toContain("bsc ui");
+    expect(denies).toContain("bsc component");
+    // The `none` tiers deny the bare tool — the granular write-prefix lists are the read-tier form.
+    expect(denies).not.toContain("git push");
+    expect(denies).not.toContain("gh pr create");
+    expect(denies).not.toContain("bsc ui set"); // subsumed by the whole-tool deny, not emitted redundantly
+    // Its OWN surface (bsc teams / bsc persona) is not role-gate-denied — it's granted via restrictedAllow.
+    expect(denies).not.toContain("bsc teams");
+    expect(denies).not.toContain("bsc persona");
+  });
+
+  it("roleDeniedTools denies the web tools (net:none) — no live injection surface", () => {
+    expect(roleDeniedTools(architect)).toEqual(["WebFetch", "WebSearch"]);
+  });
+
+  it("every file-write tool is denied outright, with NO carve-out (teams/personas live in the stores)", () => {
+    const rules = roleWriteRules(architect);
+    expect(rules.deny).toEqual(WRITE_TOOLS);
+    expect(rules.allow).toEqual([]);
+    expect(hasScopedWriteCarveOut(architect)).toBe(false);
+    // Even handed globs, the architect stays fully write-denied (not a carve-out role).
+    const withGlobs = roleCapability("architect", { writeGlobs: ["**"] });
+    expect(hasScopedWriteCarveOut(withGlobs)).toBe(false);
+    expect(roleWriteRules(withGlobs).deny).toEqual(WRITE_TOOLS);
+    expect(canWritePath(withGlobs, "src/App.tsx")).toBe(false);
+  });
+
+  it("checkCommand blocks every git/gh invocation, reads included", () => {
+    expect(checkCommand(architect, "git status").allowed).toBe(false);
+    expect(checkCommand(architect, "git push").allowed).toBe(false);
+    expect(checkCommand(architect, "gh issue list").allowed).toBe(false);
+    expect(checkCommand(architect, "gh pr create -t x").allowed).toBe(false);
+    // Non-git/gh commands pass this gate — the restricted allow-list narrows them to bsc teams/persona.
+    expect(checkCommand(architect, "bsc teams list").allowed).toBe(true);
+    expect(checkCommand(architect, "bsc persona list").allowed).toBe(true);
+  });
+
+  it("bscAgentPerms renders the same wall for the bsc-agent runtime", () => {
+    const p = bscAgentPerms(architect);
+    expect(p.deny_tools).toEqual(["write_file", "edit_file"]);
+    expect(p.deny_bash).toContain("git");
+    expect(p.deny_bash).toContain("gh");
+    expect(p.deny_bash).toContain("bsc ui"); // ui:none flows through to the agent runtime too
     expect(p.write_globs).toEqual([]);
   });
 });
