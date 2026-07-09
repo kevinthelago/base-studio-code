@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nodeBox, edgeGeometry, styleDash, autoLayout, layerNodes, NODE_SIZE, CANVAS_W, CANVAS_H, AUTO_ROW } from "./orgLayout";
+import { nodeBox, edgeGeometry, styleDash, autoLayout, layerNodes, contentBounds, NODE_SIZE, CANVAS_W, CANVAS_H, AUTO_ROW } from "./orgLayout";
 import { anchor } from "@/shared/lib/graph/edgePath";
 import { BUILTIN_ORGS, type Org, type Position } from "./org";
 
@@ -45,6 +45,41 @@ describe("orgLayout geometry (#2193)", () => {
   });
 
   // clampZoom was deleted (#2418): it had no callers — useGraphViewport owns zoom clamping.
+});
+
+describe("contentBounds (#2673 — frame the nodes, not the fixed canvas)", () => {
+  it("returns null when there are no positions", () => {
+    expect(contentBounds([])).toBeNull();
+  });
+
+  it("is the tight box around the placed nodes, including each node's size", () => {
+    const positions: Position[] = [
+      { nodeId: "a", kind: "agent", x: 100, y: 50 },     // → box 100,50 .. 290,146
+      { nodeId: "r", kind: "resource", x: 400, y: 300 }, // → box 400,300 .. 556,382
+    ];
+    expect(contentBounds(positions)).toEqual({
+      x: 100, y: 50,
+      w: 556 - 100, // rightmost edge − leftmost x
+      h: 382 - 50,  // bottommost edge − topmost y
+    });
+  });
+
+  it("wraps a single node exactly (origin + its kind's size)", () => {
+    expect(contentBounds([{ nodeId: "a", kind: "agent", x: 10, y: 20 }]))
+      .toEqual({ x: 10, y: 20, w: NODE_SIZE.agent.w, h: NODE_SIZE.agent.h });
+  });
+
+  it("is far smaller than / offset within the fixed canvas for a real fleet (the bug's precondition)", () => {
+    const fleet = BUILTIN_ORGS.find((o) => o.id === "org-default-fleet")!;
+    const laid = autoLayout(fleet);
+    const positions: Position[] = fleet.positions.map((p) => ({ ...p, ...laid[p.nodeId] }));
+    const b = contentBounds(positions)!;
+    // The content does NOT fill the 1120×800 canvas — so centering the canvas box parks it high (#2673).
+    expect(b.w).toBeLessThan(CANVAS_W);
+    expect(b.h).toBeLessThan(CANVAS_H);
+    expect(b.x).toBeGreaterThanOrEqual(0);
+    expect(b.y).toBeGreaterThanOrEqual(0);
+  });
 });
 
 describe("layerNodes — shared layerDag parity (#2418)", () => {

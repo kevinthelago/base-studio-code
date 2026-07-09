@@ -20,8 +20,8 @@ import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { OrgCanvas, OrgLegend, type Selection } from "./OrgCanvas";
 import { OrgInspector } from "./OrgInspector";
 import { OrgContextMenu } from "./OrgContextMenu";
-import { RELATIONSHIP_ARCHETYPES } from "./lib/org";
-import { autoLayout, nodeBox, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
+import { RELATIONSHIP_ARCHETYPES, type Position } from "./lib/org";
+import { autoLayout, nodeBox, contentBounds, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
 import { detectPools, collapseOrg, poolSubgraph, poolLayoutSizes, applyPoolLayout, organizeDrilledPool, type Pool } from "./lib/orgPools";
 import { positionDisplay, hueColor } from "./lib/orgView";
 import { overlayFile } from "@/shared/lib/core/configOverrides";
@@ -58,7 +58,20 @@ export function OrgPanel() {
   const drill = useAppStore((s) => s.orgDrill);
   const setDrill = useAppStore((s) => s.setOrgDrill);
 
-  const vp = useGraphViewport({ w: CANVAS_W, h: CANVAS_H }, { min: 0.4, max: 1.5, fitPad: 20, maxFitScale: 1.5 });
+  // The nodes of whatever view is showing (the collapsed graph, or a drilled pool's members) — computed
+  // on demand for framing. fit + the saved-zoom restore center on THESE, not the fixed 1120×800 canvas,
+  // so the graph opens centered instead of parked high / clipped at the top (#2673). Mirrors `view` below.
+  const framedPositions = (): Position[] => {
+    if (!org) return [];
+    const pls = detectPools(org, personas);
+    const active = drill ? pls.find((p) => p.nodeId === drill) ?? null : null;
+    return active ? poolSubgraph(org, active).positions : collapseOrg(org, pls).org.positions;
+  };
+
+  const vp = useGraphViewport(
+    { w: CANVAS_W, h: CANVAS_H },
+    { min: 0.4, max: 1.5, fitPad: 20, maxFitScale: 1.5, contentBounds: () => contentBounds(framedPositions()) },
+  );
   const scale = vp.view.scale;
 
   // Restore this org's saved zoom (or fit) when the org changes. zoomToCentered (NOT zoomTo) re-centers

@@ -3,7 +3,7 @@
 // plus the wheel-listener lifecycle owned by the `setVp` ref callback (#2454).
 import { describe, it, expect } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useGraphViewport, zoomAboutPoint, fitView, centerView, centeredView, type GraphView } from "./useGraphViewport";
+import { useGraphViewport, zoomAboutPoint, fitView, centerView, centeredView, fitBox, centeredBox, type GraphView } from "./useGraphViewport";
 
 const V0: GraphView = { tx: 0, ty: 0, scale: 1 };
 
@@ -86,6 +86,40 @@ describe("centeredView (#2545)", () => {
     const topGap = centered.ty;
     const bottomGap = CH - (centered.ty + H * centered.scale);
     expect(topGap).toBeCloseTo(bottomGap, 6);
+  });
+});
+
+describe("centeredBox / fitBox (#2673 — frame the content box, not a nominal origin box)", () => {
+  it("centeredBox offsets by the box origin so an off-origin box lands centered", () => {
+    // A box at (100,200) sized 400×300 in a 1000×600 viewport at scale 1: its extent centers to
+    // (600/2, 300/2) then shifts back by the origin. tx = (1000-400)/2 - 100 = 200; ty = (600-300)/2 - 200 = -50.
+    const v = centeredBox({ x: 100, y: 200, w: 400, h: 300 }, 1000, 600, 1, 0.28, 2.6);
+    expect(v.tx).toBeCloseTo(200, 6);
+    expect(v.ty).toBeCloseTo(-50, 6);
+    // The box's CENTER maps to the viewport center under the resulting view.
+    expect((100 + 400 / 2) * v.scale + v.tx).toBeCloseTo(1000 / 2, 6);
+    expect((200 + 300 / 2) * v.scale + v.ty).toBeCloseTo(600 / 2, 6);
+  });
+
+  it("centeredView is the box-at-origin case of centeredBox (unchanged behavior)", () => {
+    expect(centeredView(800, 600, 1000, 600, 0.5, 0.28, 2.6))
+      .toEqual(centeredBox({ x: 0, y: 0, w: 800, h: 600 }, 1000, 600, 0.5, 0.28, 2.6));
+  });
+
+  it("fitBox centers content regardless of where it sits — the org 'parked high' regression", () => {
+    // Content biased into the upper part of a big canvas (like the org fleet ~978×536 in 1120×800): fitting
+    // the CANVAS box leaves it high, but fitting the CONTENT box centers it. Its center lands at the
+    // viewport center, so top and bottom margins are equal.
+    const content = { x: 60, y: 48, w: 978, h: 536 };
+    const CW = 900, CH = 600;
+    const v = fitBox(content, CW, CH, 0.4, 1.5, 20, 1.5);
+    const cx = content.x + content.w / 2, cy = content.y + content.h / 2;
+    expect(cx * v.scale + v.tx).toBeCloseTo(CW / 2, 6);
+    expect(cy * v.scale + v.ty).toBeCloseTo(CH / 2, 6);
+    const topMargin = content.y * v.scale + v.ty;
+    const bottomMargin = CH - ((content.y + content.h) * v.scale + v.ty);
+    expect(topMargin).toBeCloseTo(bottomMargin, 6); // symmetric — not parked high
+    expect(topMargin).toBeGreaterThan(0);           // fully on-screen (no top clipping)
   });
 });
 
@@ -178,6 +212,26 @@ describe("useGraphViewport wheel listener lifecycle (#2454)", () => {
     expect(result.current.view.scale).toBe(0.7);
     expect(result.current.view.tx).toBe(-800 * 0.7 / 2);
     expect(result.current.view.ty).toBe(-800 * 0.7 / 2);
+  });
+
+  it("fit/zoomToCentered frame the contentBounds provider's box when given, not the world (#2673)", () => {
+    const bounds = { x: 100, y: 0, w: 200, h: 200 };
+    const { result } = renderHook(() => useGraphViewport({ w: 800, h: 800 }, { min: 0.4, max: 1.5, contentBounds: () => bounds }));
+    const el = document.createElement("div"); // jsdom clientWidth/Height = 0
+    act(() => result.current.setVp(el));
+    act(() => result.current.zoomToCentered(0.7));
+    // centeredBox(bounds, 0, 0, 0.7): tx = -bounds.w·s/2 - bounds.x·s ; ty = -bounds.h·s/2 - bounds.y·s.
+    expect(result.current.view.scale).toBe(0.7);
+    expect(result.current.view.tx).toBeCloseTo(-200 * 0.7 / 2 - 100 * 0.7, 6); // -140, not the world's -280
+    expect(result.current.view.ty).toBeCloseTo(-200 * 0.7 / 2 - 0, 6);         // -70
+  });
+
+  it("falls back to the world box when the contentBounds provider returns null (#2673)", () => {
+    const { result } = renderHook(() => useGraphViewport({ w: 800, h: 800 }, { min: 0.4, max: 1.5, contentBounds: () => null }));
+    const el = document.createElement("div");
+    act(() => result.current.setVp(el));
+    act(() => result.current.zoomToCentered(0.7));
+    expect(result.current.view.tx).toBe(-800 * 0.7 / 2); // world box, exactly as the #2545 path
   });
 
   it("centerOn pans the given world point toward the viewport center, keeping zoom (#2525)", () => {
