@@ -14,7 +14,9 @@ import {
   buildGlancePayload, buildOrgPayload, buildBlueprintsPayload, buildSkillsPayload,
   buildComponentsPayload, buildThemesPayload, buildAutomationsPayload, buildMcpPayload,
   buildAlertsPayload, AUTOMATION_RUNS_CAP,
+  buildSecurityPayload, SECURITY_AUDIT_CAP,
 } from "./storeProjections";
+import type { AgentProfile } from "@/features/agents";
 
 // ── fixtures ─────────────────────────────────────────────────────────────────────
 
@@ -33,6 +35,7 @@ describe("buildGlancePayload", () => {
     { id: "demo", name: "Demo", role: "service", health: "healthy", activity: "building" },
     { id: "other", name: "Other", role: "client", health: "idle", activity: "building" },
   ];
+  const personas = [{ id: "backend-dev", role: "worker" }, { id: "lead", role: "director" }];
 
   it("overlays the fault health (error + reason + count) onto its project and passes links/drill through (#2541)", () => {
     const out = buildGlancePayload({
@@ -40,20 +43,37 @@ describe("buildGlancePayload", () => {
       links: [{ id: "demo>other:api", from: "demo", to: "other", kind: "api" }],
       faults: { demo: { level: "error", title: "boom", count: 3 } },
       drill: "demo",
-      drillFleet: fleet,
+      fleets: { demo: fleet },
+      personas,
     });
     expect(out.projects[0]).toMatchObject({ id: "demo", health: "error", reason: "boom", faults: 3 });
     expect(out.projects[1].faults).toBeUndefined();
     expect(out.projects[1].health).toBe("idle"); // no fault → untouched
     expect(out.links).toHaveLength(1);
     expect(out.drill).toBe("demo");
+    // The L1 fleet is DERIVED from the fleets map at the drilled key.
     expect(out.drillFleet).toBe(fleet);
   });
 
-  it("carries no fleet at the L0 network (drill null)", () => {
-    const out = buildGlancePayload({ projects, links: [], faults: {}, drill: null, drillFleet: fleet });
+  it("carries no L1 fleet at the L0 network (drill null), but still ships the loaded fleets (#2530)", () => {
+    const out = buildGlancePayload({ projects, links: [], faults: {}, drill: null, fleets: { demo: fleet }, personas });
     expect(out.drill).toBeNull();
     expect(out.drillFleet).toBeNull();
+    expect(out.fleets).toEqual({ demo: fleet }); // present so a node can drill without being the active one
+  });
+
+  it("ships EVERY loaded project's fleet so any node drills, not just the drilled one (#2530)", () => {
+    const other: FleetPlan = { recommended: 1, reasoning: "one lane", streams: [], director: { enabled: false } };
+    const out = buildGlancePayload({ projects, links: [], faults: {}, drill: "other", fleets: { demo: fleet, other }, personas });
+    expect(Object.keys(out.fleets).sort()).toEqual(["demo", "other"]);
+    expect(out.drillFleet).toBe(other); // drilled 'other' resolves from the map
+  });
+
+  it("resolves persona id → role so mobile colours agents by their real role, not the worker default (#2530)", () => {
+    const out = buildGlancePayload({ projects, links: [], faults: {}, drill: "demo", fleets: { demo: fleet }, personas });
+    expect(out.personaRoles).toEqual({ "backend-dev": "worker", lead: "director" });
+    // a stream's persona id resolves to its role through the map
+    expect(out.personaRoles[fleet.streams[0].persona!]).toBe("worker");
   });
 });
 
@@ -217,5 +237,43 @@ describe("buildAlertsPayload", () => {
   it("wraps the inbox", () => {
     const inbox = [{ id: "i", kind: "gate-ready" as const, text: "t", at: 1 }];
     expect(buildAlertsPayload(inbox)).toEqual({ alerts: inbox });
+  });
+});
+
+describe("buildSecurityPayload (#2530)", () => {
+  const profile: AgentProfile = {
+    id: "pf_worker", name: "Worker", color: "#fff", category: "user", desc: "builds",
+    mode: "ask", commands: ["git *"],
+    tools: { read: "allow", grep: "allow", glob: "allow", edit: "ask", write: "ask", bash: "ask", web: "deny", task: "deny" },
+    paths: { allow: ["src/**"], deny: [".env"] },
+    net: { allow: ["api.github.com"] },
+    builtin: true,
+  };
+
+  it("pares profiles to permission config, passes assignments through, and caps the audit", () => {
+    const audit = Array.from({ length: SECURITY_AUDIT_CAP + 5 }, (_, i) => ({ ts: `t${i}`, pane: "man:1", toolName: "Bash", target: `cmd ${i}` }));
+    const out = buildSecurityPayload({
+      profiles: [profile],
+      paneRoles: { "demo:auth": "worker" },
+      paneProfiles: { "demo:auth": "pf_worker" },
+      audit,
+    });
+    expect(out.profiles[0]).toEqual({
+      id: "pf_worker", name: "Worker", category: "user", desc: "builds", mode: "ask",
+      commands: ["git *"], tools: profile.tools,
+      paths: { allow: ["src/**"], deny: [".env"] }, net: ["api.github.com"], builtin: true,
+    });
+    expect(out.paneRoles).toEqual({ "demo:auth": "worker" });
+    expect(out.paneProfiles).toEqual({ "demo:auth": "pf_worker" });
+    expect(out.audit).toHaveLength(SECURITY_AUDIT_CAP); // capped
+    expect(out.audit[0].target).toBe("cmd 0");          // newest-first order preserved
+  });
+
+  it("crosses no secrets — the app-role-only fields (session/surface) stay off the wire; net is hosts only", () => {
+    const out = buildSecurityPayload({ profiles: [{ ...profile, session: "planner", surface: "Project Planner" }], paneRoles: {}, paneProfiles: {}, audit: [] });
+    const json = JSON.stringify(out);
+    expect(json).not.toContain("session");
+    expect(json).not.toContain("surface");
+    expect(out.profiles[0].net).toEqual(["api.github.com"]); // a host allowlist, not credentials
   });
 });

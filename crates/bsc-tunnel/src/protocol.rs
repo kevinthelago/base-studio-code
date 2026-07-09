@@ -54,10 +54,12 @@ pub mod store_domains {
     pub const MCP: &str = "mcp";
     /// Alerts / notifications feed.
     pub const ALERTS: &str = "alerts";
+    /// Least-privilege security picture: agent profiles + per-pane assignments + audit (#2530).
+    pub const SECURITY: &str = "security";
 
-    /// Every registered domain (the initial vocabulary).
-    pub const ALL: [&str; 10] = [
-        GLANCE, PLAN, ORG, BLUEPRINTS, SKILLS, COMPONENTS, THEMES, AUTOMATIONS, MCP, ALERTS,
+    /// Every registered domain.
+    pub const ALL: [&str; 11] = [
+        GLANCE, PLAN, ORG, BLUEPRINTS, SKILLS, COMPONENTS, THEMES, AUTOMATIONS, MCP, ALERTS, SECURITY,
     ];
 }
 

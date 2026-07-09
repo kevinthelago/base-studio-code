@@ -11,18 +11,21 @@
 // from the focus queue's awaiting set. The planner contributes gate-ready + planner-waiting
 // from its own transitions. All converge on the alert hub (inbox domain + FCM push).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/store";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
+import { bscJson } from "@/shared/lib/core/bsc";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { useGlanceProjects, useGlanceFaults, useProjectFleet } from "@/features/glance";
 import { loadPendingLessons } from "@/features/skills";
 import { resolveAllInstalledMcp } from "@/features/mcp";
+import { parseAuditLog, type AuditRecord } from "@/features/agents";
 import type { Lesson } from "@/features/skills/lib/lessons";
 import {
   buildGlancePayload, buildOrgPayload, buildBlueprintsPayload, buildSkillsPayload,
   buildComponentsPayload, buildThemesPayload, buildAutomationsPayload, buildMcpPayload,
+  buildSecurityPayload,
 } from "./lib/storeProjections";
 import { publishTunnelDomain, resetTunnelDomains } from "./lib/tunnelDomains";
 import { recordTunnelAlerts, seedTunnelAlerts } from "./lib/alertHub";
@@ -30,6 +33,9 @@ import { coordAlerts, promptAlerts, type AwaitingPane } from "./lib/alerts";
 
 const LESSONS_POLL_MS = 15_000;
 const COORD_POLL_MS = 2_000;
+// The audit log is a CLI read (no store slice); poll it modestly for the mobile mirror — the
+// desktop Agents page polls faster (3s) but only while its Activity tab is open (#2530).
+const AUDIT_POLL_MS = 15_000;
 
 export function useStoreProjector(): void {
   const tunnelRunning = useAppStore((s) => s.tunnelRunning);
@@ -42,24 +48,31 @@ export function useStoreProjector(): void {
     wasRunning.current = tunnelRunning;
   }, [tunnelRunning]);
 
-  // ── glance — projects + links + faults + drill (+ the drilled fleet) ──────────
+  // Personas: read once, shared by the glance payload (stream-role resolution, #2530) + the org payload.
+  const personas = useAppStore((s) => s.personas);
+
+  // ── glance — projects + links + faults + drill + PER-PROJECT fleets + stream roles (#2530) ──
   const projects = useGlanceProjects(tunnelRunning);
   const faults = useGlanceFaults(tunnelRunning ? projects.map((p) => p.id) : []);
   const links = useAppStore((s) => s.projectLinks);
   const drill = useAppStore((s) => s.glanceDrill);
   const planFleet = useAppStore((s) => s.planFleet);
-  // The active project's fleet is already mirrored in the store; any other drilled project's
-  // is loaded from its own plan.db — the same preference the Glance workspace applies.
+  // The active project's fleet is already mirrored in the store; any other drilled project's is
+  // loaded from its own plan.db — the same preference the Glance workspace applies. Ship EVERY loaded
+  // fleet keyed by project (not just the drilled one) so any project node drills on mobile (#2530),
+  // merging the on-demand drilled fleet in when the store doesn't already hold it.
   const drillFleetLoaded = useProjectFleet(tunnelRunning ? drill : null);
-  const drillFleet = drill ? planFleet[drill] ?? drillFleetLoaded : null;
+  const fleets = useMemo(
+    () => (drill && drillFleetLoaded && !planFleet[drill] ? { ...planFleet, [drill]: drillFleetLoaded } : planFleet),
+    [planFleet, drill, drillFleetLoaded],
+  );
   useEffect(() => {
     if (!tunnelRunning) return;
-    publishTunnelDomain("glance", buildGlancePayload({ projects, links, faults, drill, drillFleet }));
-  }, [tunnelRunning, projects, links, faults, drill, drillFleet]);
+    publishTunnelDomain("glance", buildGlancePayload({ projects, links, faults, drill, fleets, personas }));
+  }, [tunnelRunning, projects, links, faults, drill, fleets, personas]);
 
   // ── org — the org library + pared persona refs ────────────────────────────────
   const orgs = useAppStore((s) => s.orgs);
-  const personas = useAppStore((s) => s.personas);
   useEffect(() => {
     if (!tunnelRunning) return;
     publishTunnelDomain("org", buildOrgPayload({ orgs, personas }));
@@ -122,6 +135,24 @@ export function useStoreProjector(): void {
     const installedIds = resolveAllInstalledMcp(mcpServers).map((s) => s.id);
     publishTunnelDomain("mcp", buildMcpPayload({ servers: mcpServers, installedIds }));
   }, [tunnelRunning, mcpServers]);
+
+  // ── security — least-privilege profiles + per-pane assignments + recent audit (#2530) ──
+  // Profiles + assignments are live store slices; the audit log is a CLI read (no store slice),
+  // polled like lessons/coord — the SAME `bsc logs tail audit --json` the desktop Agents page uses.
+  const agentProfiles = useAppStore((s) => s.agentProfiles);
+  const paneRoles = useAppStore((s) => s.paneRoles);
+  const paneProfiles = useAppStore((s) => s.paneProfiles);
+  const [audit, setAudit] = useState<AuditRecord[]>([]);
+  usePoll(async (isCancelled) => {
+    if (!tunnelRunning) { setAudit([]); return; } // React bails when already []
+    const lines = await bscJson<string[]>(null, ["logs", "tail", "audit", "--limit", "300", "--json"], []);
+    if (isCancelled()) return;
+    setAudit(parseAuditLog(lines.join("\n")));
+  }, AUDIT_POLL_MS, [tunnelRunning]);
+  useEffect(() => {
+    if (!tunnelRunning) return;
+    publishTunnelDomain("security", buildSecurityPayload({ profiles: agentProfiles, paneRoles, paneProfiles, audit }));
+  }, [tunnelRunning, agentProfiles, paneRoles, paneProfiles, audit]);
 
   // ── alerts — coord-log events + the focus queue's awaiting set ────────────────
   // Coord entries carry their own `at`, so re-derivation is idempotent (the hub dedups by id).
