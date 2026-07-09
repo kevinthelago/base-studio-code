@@ -1,7 +1,10 @@
 // Team designer (#2193, interactive #2199) — the persona-relationship graph, mounted as the Team tab of
-// the Planner workspace. Toolbar (org switch · relationship palette · auto-organize/fit/zoom) · left
-// rail (positions by department) · canvas (pan/zoom/node-drag) · inspector (position identity /
-// relationship). Driven by the real org/persona/skill stores; pure model + geometry live in lib/*.
+// the Planner workspace. Navigation is IN the graph (#2742): the TOP level is a Teams overview (every
+// team a clickable card, the rail lists the teams); clicking a card enters that team's position graph;
+// a breadcrumb (Teams › team › pool) climbs back up. The old header org-switcher dropdown is gone.
+// Per team: toolbar (breadcrumb · relationship palette · auto-organize/fit/zoom) · left rail (positions
+// by department, or teams at the top level) · canvas (pan/zoom/node-drag) · inspector (position identity
+// / relationship). Driven by the real org/persona/skill stores; pure model + geometry live in lib/*.
 // The pan/zoom shell is the shared GraphCanvas template + useGraphViewport (#2208, epic #2197 slice 2).
 import departmentsEmbedded from "@data/org/departments.json";
 import { useEffect, useRef, useState } from "react";
@@ -11,7 +14,6 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
-import { Dropdown } from "@/shared/ui/controls/Dropdown";
 import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { IconBox } from "@/shared/ui/data/IconBox";
@@ -19,10 +21,12 @@ import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { TeamsCanvas, OrgLegend, type Selection } from "./TeamsCanvas";
+import { TeamsOverview } from "./TeamsOverview";
 import { TeamsInspector } from "./TeamsInspector";
 import { TeamsContextMenu } from "./TeamsContextMenu";
 import { RELATIONSHIP_ARCHETYPES, type Position } from "./lib/team";
-import { autoLayout, nodeBox, contentBounds, CANVAS_W, CANVAS_H } from "./lib/orgLayout";
+import { autoLayout, nodeBox, contentBounds, CANVAS_W, CANVAS_H, type Box as GBox } from "./lib/orgLayout";
+import { teamsBounds } from "./lib/teamsLayout";
 import { detectPools, collapseOrg, poolSubgraph, poolLayoutSizes, applyPoolLayout, organizeDrilledPool, type Pool } from "./lib/orgPools";
 import { positionDisplay, hueColor } from "./lib/orgView";
 import { overlayFile } from "@/shared/lib/core/configOverrides";
@@ -44,9 +48,12 @@ export function TeamsPanel() {
   const removeRelationship = useAppStore((s) => s.removeRelationship);
   const setOrgZoom = useAppStore((s) => s.setTeamsZoom);
 
-  const [orgId, setOrgId] = useState<string>(orgs[0]?.id ?? "");
-  const org = orgs.find((o) => o.id === orgId) ?? orgs[0];
-  const savedZoom = useAppStore((s) => s.teamsZoom[orgId]);
+  // The ENTERED team (#2742) — null = the top-level Teams overview, where the graph shows every team as
+  // a card and the user drills IN by clicking one (no header dropdown). `atTeams` also catches a stale
+  // id whose team was deleted, so we never render a missing team.
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const org = orgId ? orgs.find((o) => o.id === orgId) : undefined;
+  const savedZoom = useAppStore((s) => s.teamsZoom[orgId ?? ""]);
   // Open with nothing selected (the empty sentinel — inspector empty, no dimming; see onBackgroundClick).
   const [sel, setSel] = useState<Selection>({ type: "node", id: "" });
   // Right-click context menu (#2385): the cursor position + the target it was opened on.
@@ -68,10 +75,14 @@ export function TeamsPanel() {
     const active = drill ? pls.find((p) => p.nodeId === drill) ?? null : null;
     return active ? poolSubgraph(org, active).positions : collapseOrg(org, pls).org.positions;
   };
+  // What the viewport fits/centers on — the team cards at the top level (#2742), else the framed
+  // positions of the entered team (mirrors `atTeams`/`view` below, read fresh each fit).
+  const framedBounds = (): GBox | null =>
+    !org ? teamsBounds(orgs.length + 1) : contentBounds(framedPositions());
 
   const vp = useGraphViewport(
     { w: CANVAS_W, h: CANVAS_H },
-    { min: 0.4, max: 1.5, fitPad: 20, maxFitScale: 1.5, contentBounds: () => contentBounds(framedPositions()) },
+    { min: 0.4, max: 1.5, fitPad: 20, maxFitScale: 1.5, contentBounds: framedBounds },
   );
   const scale = vp.view.scale;
 
@@ -97,18 +108,72 @@ export function TeamsPanel() {
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
     clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => setOrgZoom(orgId, scale), 400);
+    saveTimer.current = setTimeout(() => setOrgZoom(orgId ?? "", scale), 400);
     return () => clearTimeout(saveTimer.current);
   }, [scale, orgId, setOrgZoom]);
 
-  if (!org) {
+  // Enter a team's position graph (a card / rail click); `toTeams` climbs back to the overview.
+  const enterTeam = (id: string) => { setOrgId(id); setDrill(null); setConnect(null); setSel({ type: "node", id: "" }); };
+  const toTeams = () => { setOrgId(null); setDrill(null); setConnect(null); setSel({ type: "node", id: "" }); };
+
+  // No teams at all → the first-run empty state.
+  if (orgs.length === 0) {
     return (
       <EmptyState
         icon="◆" iconVariant="dashed"
         title="No team yet"
         description="A team wires personas into positions and relationships — create one to start designing."
-        actions={<Button onClick={() => setOrgId(addOrg())}>+ new team</Button>}
+        actions={<Button onClick={() => enterTeam(addOrg())}>+ new team</Button>}
       />
+    );
+  }
+
+  // ── TOP LEVEL (#2742): the Teams overview — every team is a card you click to enter; the left rail
+  // lists the teams. This replaced the header org-switcher dropdown. `!org` also covers a stale/deleted
+  // id, and narrows `org` to a real Team for the per-team code below.
+  if (!org) {
+    return (
+      <GraphCanvas
+        vp={vp}
+        world={{ w: CANVAS_W, h: CANVAS_H }}
+        grid
+        railResizable railWidth={260} railMin={200} railMax={420}
+        toolbar={
+          <>
+            <Row gap={9} align="center">
+              <IconBox size={22} radius={6} fontSize={12} background="var(--bg-soft)" border="1px solid var(--border)" color="var(--accent)">◆</IconBox>
+              <Text as="span" weight={600} size={14}>Teams</Text>
+              <Text as="span" mono size={10.5} tone="dim">{orgs.length} team{orgs.length === 1 ? "" : "s"} · click one to open</Text>
+            </Row>
+            <Box style={{ flex: 1 }} />
+            <Button variant="ghost" onClick={() => enterTeam(addOrg())}>＋ New team</Button>
+            <Button variant="ghost" onClick={vp.fit}>Fit</Button>
+            <ZoomControls vp={vp} />
+          </>
+        }
+        rail={
+          <Stack gap={0} style={{ flex: 1, minWidth: 0, borderRight: "1px solid var(--border-soft)", background: "var(--bg-elev)", minHeight: 0 }}>
+            <Row align="center" justify="between" style={{ padding: "13px 15px 11px", borderBottom: "1px solid var(--border-soft)" }}>
+              <SectionLabel size={9.5}>Teams</SectionLabel>
+              <Button variant="ghost" onClick={() => enterTeam(addOrg())}>＋ new</Button>
+            </Row>
+            <Box style={{ overflowY: "auto", padding: "8px 8px 20px", flex: 1 }}>
+              {orgs.map((o) => (
+                <Row key={o.id} gap={9} align="center" className="teams-railrow" onClick={() => enterTeam(o.id)}
+                  style={{ padding: "8px 9px", borderRadius: 8, cursor: "pointer" }}>
+                  <IconBox size={20} radius={6} fontSize={11} color="var(--accent)" background="var(--bg-soft)">◆</IconBox>
+                  <Text as="span" size={12.5} weight={500} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</Text>
+                  <Text as="span" mono size={9} tone="dim">{o.positions.length}</Text>
+                </Row>
+              ))}
+            </Box>
+          </Stack>
+        }
+      >
+        <Box className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>
+          <TeamsOverview teams={orgs} personas={personas} onEnter={enterTeam} onAdd={() => enterTeam(addOrg())} />
+        </Box>
+      </GraphCanvas>
     );
   }
 
@@ -194,28 +259,23 @@ export function TeamsPanel() {
       onBackgroundClick={() => setSel({ type: "node", id: "" })}
       toolbar={
         <>
-          <Row gap={9} align="center">
+          {/* Breadcrumb (#2742) — Teams › ‹team› › ‹pool›; each crumb climbs a level (replaces the
+              header org-switcher dropdown, which is gone; teams are entered from the graph now). */}
+          <Row gap={7} align="center">
             <IconBox size={22} radius={6} fontSize={12} background="var(--bg-soft)" border="1px solid var(--border)" color="var(--accent)">◆</IconBox>
-            {orgs.length > 1 ? (
-              <Dropdown
-                aria-label="Switch org"
-                variant="ghost"
-                size="md"
-                value={org.id}
-                onChange={(id) => { setOrgId(id); setDrill(null); setSel({ type: "node", id: "" }); }}
-                options={orgs.map((o) => ({ value: o.id, label: o.name }))}
-              />
-            ) : (
-              <Text as="span" weight={600} size={14}>{org.name}</Text>
-            )}
+            <Button variant="ghost" onClick={toTeams}>Teams</Button>
+            <Text as="span" tone="dim">›</Text>
             {activePool ? (
               <>
-                <Text as="span" tone="dim" style={{ margin: "0 1px" }}>▸</Text>
+                <Button variant="ghost" onClick={exitPool}>{org.name}</Button>
+                <Text as="span" tone="dim">›</Text>
                 <Text as="span" mono size={11} weight={600}>{activePoolName} pool · ×{activePool.count}</Text>
-                <Button variant="ghost" onClick={exitPool}>← back</Button>
               </>
             ) : (
-              <Text as="span" mono size={10.5} tone="dim">team · {org.positions.length} positions · {pools.length} pool{pools.length === 1 ? "" : "s"}</Text>
+              <>
+                <Text as="span" weight={600} size={14}>{org.name}</Text>
+                <Text as="span" mono size={10.5} tone="dim" style={{ marginLeft: 2 }}>{org.positions.length} positions · {pools.length} pool{pools.length === 1 ? "" : "s"}</Text>
+              </>
             )}
           </Row>
           <Box style={{ width: 1, height: 22, background: "var(--border)" }} />
