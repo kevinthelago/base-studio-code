@@ -11,9 +11,9 @@ import { migrateLegacyExtensions } from "@/features/mcp/lib/migrateExtensions";
 import { createMcpSlice } from "@/features/mcp/store";
 import { createPersonasSlice } from "@/features/personas/store";
 import { reconcilePersonas } from "@/features/personas/lib/persona";
-import { createOrgSlice } from "@/features/org/store";
+import { createOrgSlice } from "@/features/teams/store";
 import { createComponentsSlice } from "@/features/designs/store";
-import { reconcileOrgs } from "@/features/org/lib/org";
+import { reconcileOrgs } from "@/features/teams/lib/team";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
 
@@ -189,10 +189,10 @@ export const useAppStore = create<AppStore>()(
         skillGroups:           s.skillGroups,
         sessionSkillGroups:    s.sessionSkillGroups,
         personas:              s.personas,   // #2094: the agent-identity library (built-ins reconciled on load)
-        orgs:                  s.orgs,       // #2193: the persona-relationship graph library (reconciled on load)
+        teams:                 s.teams,      // #2193/#2700: the persona-relationship graph (team) library (reconciled on load)
         demoActive:            s.demoActive, // #2272: a loaded demo state + its pre-demo backup survive restart
         demoBackup:            s.demoBackup,
-        orgZoom:               s.orgZoom,    // #2199: per-org canvas zoom (view state)
+        teamsZoom:             s.teamsZoom,  // #2199/#2700: per-team canvas zoom (view state)
         components:            s.components, // #2269: the proven-component library (seed until the bsc store lands)
         kits:                  s.kits,       // #2269: the component kits (technology-scoped namespaces)
         kitUsage:              s.kitUsage,   // #2277: the consumer index (project→kit) — a fast-first-paint cache
@@ -224,8 +224,10 @@ export const useAppStore = create<AppStore>()(
         // The Blueprints page-mode was folded into the Planner tab's blueprint rail (#blueprints);
         // a user whose last mode was it would otherwise land on a blank canvas.
         if (state && (state.projectsPageMode as string) === "blueprints") state.projectsPageMode = "projects";
-        // Personas was folded into Org (#2199) — a last-mode of "personas" now opens Org.
-        if (state && (state.projectsPageMode as string) === "personas") state.projectsPageMode = "org";
+        // Personas was folded into the Teams page (#2199) — a last-mode of "personas" now opens Teams.
+        if (state && (state.projectsPageMode as string) === "personas") state.projectsPageMode = "teams";
+        // The Teams page-mode id was renamed "org" → "teams" (#2700) — map a last-mode of "org" forward.
+        if (state && (state.projectsPageMode as string) === "org") state.projectsPageMode = "teams";
         // The Fleet page-mode was folded into Glance (#2223/#2228) — a last-mode of "fleet" opens Projects.
         if (state && (state.projectsPageMode as string) === "fleet") state.projectsPageMode = "projects";
         // Design Studio moved from its own rail Workspace to a Planner tab (#move-to-planner). A user whose
@@ -251,9 +253,19 @@ export const useAppStore = create<AppStore>()(
         // built-in, restore built-in identity, and keep user edits + user-authored personas. Same
         // code-owned-template discipline as the blueprints refresh below.
         if (state?.personas) state.personas = reconcilePersonas(state.personas);
-        // Same discipline for the org library (#2193): re-seed dropped built-ins, restore built-in
-        // identity, keep user edits + user-authored orgs.
-        if (state?.orgs) state.orgs = reconcileOrgs(state.orgs);
+        // #2700: the org feature was renamed "teams" — its persisted store fields `orgs`/`orgZoom` are now
+        // `teams`/`teamsZoom`. Map an existing on-disk snapshot's old keys onto the new ones so a user's
+        // saved teams + per-team zoom survive the rename (the JSON shape is unchanged; only key names moved).
+        if (state) {
+          const legacy = state as unknown as Record<string, unknown>;
+          if (legacy.orgs !== undefined && legacy.teams === undefined) legacy.teams = legacy.orgs;
+          if (legacy.orgZoom !== undefined && legacy.teamsZoom === undefined) legacy.teamsZoom = legacy.orgZoom;
+          delete legacy.orgs;
+          delete legacy.orgZoom;
+        }
+        // Same discipline for the team library (#2193): re-seed dropped built-ins, restore built-in
+        // identity, keep user edits + user-authored teams.
+        if (state?.teams) state.teams = reconcileOrgs(state.teams);
         if (state?.blueprints) {
           state.blueprints = refreshBuiltIns(state.blueprints);
         }

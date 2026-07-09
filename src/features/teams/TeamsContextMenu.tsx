@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 
-export function OrgContextMenu({
+export function TeamsContextMenu({
   x, y, deleteLabel, onDelete, onClose,
 }: {
   x: number;

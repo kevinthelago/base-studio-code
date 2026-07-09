@@ -1,10 +1,10 @@
-// Org view models (#2193) — pure presentation helpers that turn the org graph + the persona library +
+// Team view models (#2193) — pure presentation helpers that turn the org graph + the persona library +
 // the vocabulary into the shapes the canvas + inspector render. React-free + unit-testable; the design
 // prototype's per-role glyph/department metadata lives here (presentation only, not in the data model).
 import type { SessionRole } from "@/shared/lib/session/sessionRoles";
 import { roleCapability } from "@/shared/lib/session/sessionRoles";
 import type { Persona } from "@/features/personas";
-import { archetypeById, deriveCommunication, type CommunicationForm, type Org, type Position } from "./org";
+import { archetypeById, deriveCommunication, type CommunicationForm, type Team, type Position } from "./team";
 
 /** Per-role display metadata — the department bucket (left-rail grouping) + a glyph. Presentation-only
  *  (the role gate itself carries no glyph); a role not listed falls back to a neutral default. */
@@ -85,7 +85,7 @@ export interface CommSummary {
 /** The per-relationship communication summary for a position — `deriveCommunication` grouped by
  *  counterpart+archetype, so the inspector shows one card per relationship (head = who, then the forms
  *  sent/received). This is the auto-derived "who I talk to and how", the generate-from-facets payoff. */
-export function positionComms(org: Org, pos: Position, personas: Persona[]): CommSummary[] {
+export function positionComms(org: Team, pos: Position, personas: Persona[]): CommSummary[] {
   const byKey = new Map<string, CommSummary>();
   for (const edge of deriveCommunication(org, pos.nodeId)) {
     const key = `${edge.withNode}:${edge.archetype}`;
