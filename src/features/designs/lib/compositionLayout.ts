@@ -140,24 +140,7 @@ export function layoutComposition(
   return { pos, edges, world: { w, h }, depth };
 }
 
-/** The selection neighborhood of a node in the composition graph (#2523): the edges touching it and
- *  the nodes on the far end of those edges. Pure — GraphView highlights the incident edges in accent
- *  and softly rings the related nodes. Empty when `selId` is falsy (nothing selected). */
-export interface SelectionNeighborhood {
-  /** Edge ids incident to the selected node (`from === selId || to === selId`). */
-  incidentEdges: Set<string>;
-  /** Node ids directly connected to the selected node — the selection itself is never included. */
-  relatedNodes: Set<string>;
-}
-
-export function selectionNeighborhood(edges: readonly GraphEdge[], selId: string): SelectionNeighborhood {
-  const incidentEdges = new Set<string>();
-  const relatedNodes = new Set<string>();
-  if (!selId) return { incidentEdges, relatedNodes };
-  for (const e of edges) {
-    if (e.from === selId) { incidentEdges.add(e.id); relatedNodes.add(e.to); }
-    else if (e.to === selId) { incidentEdges.add(e.id); relatedNodes.add(e.from); }
-  }
-  relatedNodes.delete(selId); // a self-loop must not mark the selection as its own relation
-  return { incidentEdges, relatedNodes };
-}
+// `selectionNeighborhood` (#2523) was promoted to a shared graph util (#2719) — it's a pure,
+// layout-agnostic edge/node query, not composition-specific. Re-exported here so the existing
+// intra-feature importers (DesignsWorkbench, this feature's tests) don't churn.
+export { selectionNeighborhood, type SelectionNeighborhood } from "@/shared/lib/graph/selectionNeighborhood";
