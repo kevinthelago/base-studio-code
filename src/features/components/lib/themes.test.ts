@@ -26,24 +26,24 @@ describe("reconcileThemes — the #2483 refresh reused for themes", () => {
   });
 
   it("refreshes a pristine stale built-in copy and keeps a current one", () => {
-    const soft = SEED_THEMES.find((t) => t.id === "soft")!;
+    const soft = SEED_THEMES.find((t) => t.id === "nord")!;
     // Yesterday's pristine copy: different vars, self-consistently stamped.
     const stale = stampSeedHash({ ...soft, vars: { "--card-radius": "9px" }, seedHash: undefined });
-    const r = reconcileThemes([...SEED_THEMES.filter((t) => t.id !== "soft"), stale]);
-    expect(r.records.find((t) => t.id === "soft")).toEqual(soft); // refreshed to the new seed copy
+    const r = reconcileThemes([...SEED_THEMES.filter((t) => t.id !== "nord"), stale]);
+    expect(r.records.find((t) => t.id === "nord")).toEqual(soft); // refreshed to the new seed copy
     expect(r.pushes).toEqual([soft]);
     expect(r.notices).toEqual([]);
   });
 
   it("keeps a designer-EDITED built-in with an updated-upstream notice named by its label", () => {
-    const soft = SEED_THEMES.find((t) => t.id === "soft")!;
+    const soft = SEED_THEMES.find((t) => t.id === "nord")!;
     // A designer edit: content diverged from the recorded (stale) baseline stamp.
     const edited: KitThemeRecord = { ...soft, vars: { "--card-bg": "black" }, seedHash: "00000000" };
-    const r = reconcileThemes([...SEED_THEMES.filter((t) => t.id !== "soft"), edited]);
-    expect(r.records.find((t) => t.id === "soft")).toEqual(edited); // store wins
+    const r = reconcileThemes([...SEED_THEMES.filter((t) => t.id !== "nord"), edited]);
+    expect(r.records.find((t) => t.id === "nord")).toEqual(edited); // store wins
     expect(r.pushes).toEqual([]);
     expect(r.notices).toEqual([
-      { kind: "updated-upstream", type: "theme", id: "soft", name: soft.label },
+      { kind: "updated-upstream", type: "theme", id: "nord", name: soft.label },
     ]);
   });
 

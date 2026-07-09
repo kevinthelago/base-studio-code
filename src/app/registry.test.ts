@@ -14,7 +14,7 @@ describe("screen registry (#nav-pass)", () => {
     // and WORKSPACES must match it at runtime — so the rail nav + titlebar always have a name.
     const all: Record<Workspace, true> = {
       console: true, glance: true, projects: true, github: true, agents: true,
-      mcp: true, skills: true, design: true, automation: true, settings: true,
+      mcp: true, skills: true, automation: true, settings: true,
     };
     expect(new Set(WORKSPACES.map((s) => s.key))).toEqual(new Set(Object.keys(all)));
   });

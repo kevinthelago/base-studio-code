@@ -4,11 +4,11 @@ import { ThemeScope } from "./ThemeScope";
 
 describe("ThemeScope", () => {
   it("applies the theme's token overrides to a wrapper and renders children", () => {
-    const { getByText, container } = render(<ThemeScope theme="soft">child</ThemeScope>);
+    const { getByText, container } = render(<ThemeScope theme="nord">child</ThemeScope>);
     expect(getByText("child")).toBeInTheDocument();
-    const wrap = container.querySelector('[data-kit-theme="soft"]') as HTMLElement;
+    const wrap = container.querySelector('[data-kit-theme="nord"]') as HTMLElement;
     expect(wrap).toBeTruthy();
-    expect(wrap.style.getPropertyValue("--card-radius")).toBe("14px");
+    expect(wrap.style.getPropertyValue("--accent")).toBe("#88c0d0");
   });
 
   it("scopes to a subtree without overrides for the default theme", () => {

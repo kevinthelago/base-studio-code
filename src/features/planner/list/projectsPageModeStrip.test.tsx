@@ -4,10 +4,12 @@ import { PROJECT_MODES } from "./projectModes";
 // #548 / #1876: the Projects page modes — formerly the `ProjectsPageModeStrip`, now the data behind
 // the shared <Screen> tab bar (`PROJECT_MODES`, rendered in features/planner/index.tsx).
 describe("Projects page modes (#548, #1876)", () => {
-  it("offers Projects · Org in that order", () => {
+  it("offers Projects · Teams · Designs · Themes in that order", () => {
     // The Data Models page was archived with the data-platform panes (5def26b7, v1.0.5 prep).
-    // Personas (#2094) was folded into Org (#2199); Fleet analytics moved to Glance (#2223/#2228).
-    expect(PROJECT_MODES.map((m) => m.label)).toEqual(["Projects", "Org"]);
+    // Personas (#2094) was folded into the Team graph (#2199); Fleet analytics moved to Glance (#2223/#2228).
+    // "Org" was renamed "Team" (human-readable) — the tab id stays "org". Design Studio (#move-to-planner)
+    // folded in from its standalone rail Workspace, renamed "Designs"; Themes (#themes-tab) split out of it.
+    expect(PROJECT_MODES.map((m) => m.label)).toEqual(["Projects", "Teams", "Designs", "Themes"]);
   });
 
   it("does not include the retired Blueprints / Summary / Data Models / Personas / Fleet modes", () => {
