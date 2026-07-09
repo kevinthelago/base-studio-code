@@ -27,9 +27,11 @@ import { Chip } from "@/shared/ui/data/Chip";
 import { Code } from "@/shared/ui/data/Code";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
-import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
+import { useGraphPage } from "@/shared/ui/layouts/useGraphPage";
+import type { GraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
-import { layoutComposition, selectionNeighborhood, NODE_W, NODE_H, type CompositionLayout } from "./lib/compositionLayout";
+import { selectionNeighborhood } from "@/shared/lib/graph/selectionNeighborhood";
+import { layoutComposition, NODE_W, NODE_H, type CompositionLayout } from "./lib/compositionLayout";
 import { analyzeGraphHealth, HEALTH_SEVERITY, type HealthCategory } from "./lib/graphHealth";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
@@ -133,9 +135,7 @@ export function DesignsWorkbench() {
     return m;
   }, [healthFindings]);
 
-  const gvp = useGraphViewport(graph.world);
-  const gvpFit = gvp.fit;
-  useEffect(() => { gvpFit(); }, [kitId, gvpFit]); // re-fit on mount + whenever the kit switches
+  const gvp = useGraphPage(graph.world, [kitId]); // re-fit on mount + whenever the kit switches
   // Auto-pan the AI-touched node into view (#2525) — center it, keeping zoom (least-disruptive). Only
   // when the node lives in the CURRENT kit's graph; a touch in another kit just doesn't pan.
   const gvpCenter = gvp.centerOn;
@@ -264,7 +264,7 @@ interface GraphProps {
   comps: ComponentRecord[]; selId: string;
   /** The AI-touched node (#2525) — pulses as `.working`, distinct from the user's `.on` selection. */
   workingId: string; kitName: string;
-  gvp: ReturnType<typeof useGraphViewport>; onSelect: (c: ComponentRecord) => void;
+  gvp: GraphViewport; onSelect: (c: ComponentRecord) => void;
   /** Open the share/import kits modal — the Share action lives in the graph header (right of fit). */
   onShare: () => void;
   /** Graph-health badges (#2680): node id → its most-severe finding category, + the total count. */
