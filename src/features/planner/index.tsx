@@ -1,6 +1,7 @@
-import { lazy, Suspense, useRef } from "react";
+import { lazy, Suspense } from "react";
 import { useAppStore } from "@/store";
 import { Screen } from "@/app/chrome/Screen";
+import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
@@ -73,14 +74,6 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
   // is the SOLE owner of the single designer PTY — the two never fight over pty_create/pty_kill.
   const designDetached = !tabs.some((t) => t.id === "design");
 
-  const planningEverShown = useRef(false);
-  if (projectsView === "planning") planningEverShown.current = true;
-  // Design Studio (#move-to-planner) — mounted once on first open in the main window, then kept mounted
-  // so its always-on designer PTY survives a page switch (like Planning). Not while torn off (the
-  // detached window owns it then, #tearoff).
-  const designEverShown = useRef(false);
-  if (mode === "design" && !pageOverride && !designDetached) designEverShown.current = true;
-
   // Single source of truth for the session identity, frozen at session start.
   // Remounting Planning only when this changes means publish assigning a project
   // id (or a title edit) no longer tears down the active session. Every entry path
@@ -129,12 +122,10 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
             <ProjectsList />
           ) : (
             <>
-              {/* Planning — mounted once on first visit, then CSS-hidden */}
-              {planningEverShown.current && (
-                <Box style={{ display: projectsView === "planning" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
-                  <Planning key={planningKey} visible={projectsView === "planning"} />
-                </Box>
-              )}
+              {/* Planning — mounted once on first visit, then CSS-hidden (not lazy → no fallback) */}
+              <KeptMountedPage active={projectsView === "planning"}>
+                <Planning key={planningKey} visible={projectsView === "planning"} />
+              </KeptMountedPage>
               <Box style={{ display: projectsView !== "planning" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
                 <ProjectsList />
               </Box>
@@ -154,11 +145,14 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
           <Suspense fallback={<Box style={{ flex: 1 }} />}><DesignStudioPage /></Suspense>
         </Box>
       )}
-      {!pageOverride && designEverShown.current && !designDetached && (
-        <Box style={{ display: mode === "design" ? "flex" : "none", flex: 1, minHeight: 0 }}>
-          <Suspense fallback={<Box style={{ flex: 1 }} />}><DesignStudioPage /></Suspense>
-        </Box>
-      )}
+      <KeptMountedPage
+        active={mode === "design"}
+        gate={!pageOverride && !designDetached}
+        fallback={<Box style={{ flex: 1 }} />}
+        style={{ flexDirection: "row" }}
+      >
+        <DesignStudioPage />
+      </KeptMountedPage>
 
       {/* Themes (#themes-tab) — the theme (style) collection. No live PTY, so it just renders when active
           in either window (main or torn-off); nothing to keep mounted or guard against double-ownership. */}
