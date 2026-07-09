@@ -24,6 +24,7 @@ import { tintBg } from "./skillStyles";
 import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "./SkillsViews";
 import { Checkbox } from "@/shared/ui/controls/Checkbox";
 import { Button } from "@/shared/ui/controls/Button";
+import { SearchField } from "@/shared/ui/controls/SearchField";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
@@ -210,11 +211,12 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
           {/* Command bar */}
           <Row gap={10} style={{ padding: "10px 18px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
-            <Row gap={8} style={{ flex: 1, maxWidth: 440, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
-              <Text as="span" tone="dim" size={13}>⌕</Text>
-              {/* eslint-disable-next-line no-restricted-syntax -- inline borderless search box inside a toolbar Row; TextField's .field wrapper doesn't fit */}
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, description, tools…" style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--fg)", fontSize: 12.5 }} />
-            </Row>
+            <SearchField
+              value={query}
+              onChange={setQuery}
+              placeholder="Search name, description, tools…"
+              style={{ flex: 1, maxWidth: 440, height: 30, background: "var(--bg-canvas)", borderRadius: "var(--r-md)" }}
+            />
             <Text as="span" mono size={11} tone="muted">{filtered.length} <Text as="span" tone="dim">of {kpis.total}</Text></Text>
             <Box as="span" style={{ flex: 1 }} />
             <Row gap={6} style={{ position: "relative" }}>
