@@ -12,7 +12,7 @@ import { Github } from "@/shared/ui/icons";
 /** Every top-level Workspace key (a rail destination). The store's `activeWorkspace` is one of these. */
 // "design" (Design Studio) was removed as a rail Workspace — it's a single page, now a Planner tab
 // (projectsPageMode "design"). A persisted `activeWorkspace: "design"` is migrated to projects+design mode.
-export type Workspace = "console" | "glance" | "automation" | "mcp" | "github" | "projects" | "skills" | "agents" | "settings";
+export type Workspace = "console" | "glance" | "automation" | "mcp" | "github" | "projects" | "skills" | "security" | "settings";
 
 export interface WorkspaceMeta {
   key: Workspace;
@@ -31,7 +31,7 @@ export const WORKSPACES: WorkspaceMeta[] = [
   { key: "automation", label: "Automations", Icon: Zap },
   { key: "mcp",        label: "MCP",         Icon: Server },
   { key: "github",     label: "GitHub",      Icon: Github },
-  { key: "agents",     label: "Security",    Icon: ShieldCheck },
+  { key: "security",     label: "Security",    Icon: ShieldCheck },
   { key: "settings",   label: "Settings",    Icon: Settings },
 ];
 

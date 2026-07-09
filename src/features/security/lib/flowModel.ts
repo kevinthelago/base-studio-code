@@ -1,7 +1,7 @@
 // Agents — Flow-tab derivation + status colors (#199 / #1643).
 //
 // The fleet's live work-flow on the Agents screen: which sessions are parked on a
-// dependency. Pure summary + color helpers, split out of AgentsWorkspace so they're
+// dependency. Pure summary + color helpers, split out of SecurityWorkspace so they're
 // React-free + testable.
 
 import type { BlockedView, Waiter } from "@/shared/lib/fleet/coordination";

@@ -1,4 +1,4 @@
-// Agents — Assignments tab (#1643 split from AgentsWorkspace).
+// Security — Assignments tab (#1643 split from SecurityWorkspace).
 //
 // The always-present application sessions + the per-pane console assignments, each
 // pane showing its resolved command allowlist (guaranteed ∪ profile ∪ project ∪

@@ -3,7 +3,7 @@
 // Structure/Context/Relationships) and the thin projectPaneData composition can
 // all share it without a circular import back through projectPaneData.
 
-import type { AgentProfile } from "@/features/agents";
+import type { AgentProfile } from "@/features/security";
 import type { FleetPlan } from "../fleet/planFleet";
 import type { PlanIssue } from "../issues/planIssues";
 import type { Section } from "../github/ghStructure";

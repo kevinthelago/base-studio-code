@@ -1,4 +1,4 @@
-// Agents — Flow tab (#1643 split from AgentsWorkspace).
+// Security — Flow tab (#1643 split from SecurityWorkspace).
 //
 // The fleet's live work-flow: which sessions are parked on a dependency (#199) — each
 // cross-referenced with the permission profile the session runs under. Coord state is
