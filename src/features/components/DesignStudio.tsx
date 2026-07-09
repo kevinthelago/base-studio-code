@@ -93,9 +93,9 @@ export function DesignStudio() {
   const insp = useDragResize({ initial: 420, min: 300, max: 680, axis: "x", invert: true });
   // The always-on designer terminal's height (#2624) — a row-resize handle above it; `invert` because
   // the terminal sits AFTER the handle, so dragging up grows it. The graph (flex:1) keeps priority.
-  // min:0 so the terminal can be dragged fully away — the middle (graph + terminal) must always yield
-  // to the side panes on resize; it never imposes a floor (#2695).
-  const term = useDragResize({ initial: 240, min: 0, max: 560, axis: "y", invert: true });
+  // A small 40px floor (#2697) so the terminal can shrink close to nothing — the middle still yields
+  // to the side panes on resize — but never fully disappears, keeping the divider obvious.
+  const term = useDragResize({ initial: 240, min: 40, max: 560, axis: "y", invert: true });
 
   // Half-screen friendly (#2691): the DETAILS/inspector pane is always inline; only the kits LIST
   // collapses, reclaiming ~rail.size px for the graph. The toggle lives ON the pane (« in the rail
