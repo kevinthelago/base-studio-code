@@ -5,6 +5,10 @@
 // carrying its identity + badges (default / built-in / surface), a LIVE sample (a Card + Buttons + Chips
 // under <ThemeScope>) that shows the retint, and its semantic-token overrides. Like the studio treats
 // the component library, this is a browser — themes are authored by the designer session, not edited here.
+//
+// SEPARATED BY DESIGN GROUP (#2749) — themes are grouped by their required `tech` (the design group),
+// one section per group, mirroring how the Designs rail groups kits by their `tech` axis. React is
+// the only design group today, so every packaged palette sits under `react`.
 import { useMemo } from "react";
 import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
@@ -15,20 +19,22 @@ import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { ThemeScope, DEFAULT_THEME } from "@/shared/ui/kit";
-import { orderThemes, type KitThemeRecord } from "./lib/themes";
+import { groupThemes, type KitThemeRecord } from "./lib/themes";
 import "./themesGallery.css";
 
 export function ThemesGallery() {
   const kitThemes = useAppStore((s) => s.kitThemes);
-  // The pickers' canonical order (packaged first, `default` leading; then authored, by label).
-  const themes = useMemo(() => orderThemes(kitThemes), [kitThemes]);
+  // One section per design group (#2749) — themes ordered packaged-first within each; groups by
+  // first appearance, the defensive missing-`tech` bucket last.
+  const groups = useMemo(() => groupThemes(kitThemes), [kitThemes]);
+  const total = kitThemes.length;
 
-  if (!themes.length) {
+  if (!total) {
     return (
       <EmptyState
         icon="◈" iconVariant="dashed"
         title="No themes yet"
-        description={<>A <b style={{ color: "var(--fg)" }}>theme</b> is a palette of semantic-token overrides — the <b style={{ color: "var(--fg)" }}>style</b> axis over your kits. Author one from the Designs studio's designer session (<Text as="code" mono>bsc ui theme</Text>).</>}
+        description={<>A <b style={{ color: "var(--fg)" }}>theme</b> is a palette of semantic-token overrides — the <b style={{ color: "var(--fg)" }}>style</b> axis over your kits, bound to one <b style={{ color: "var(--fg)" }}>design group</b>. Author one from the Designs studio's designer session (<Text as="code" mono>bsc ui theme</Text>).</>}
         style={{ height: "100%" }}
       />
     );
@@ -38,16 +44,24 @@ export function ThemesGallery() {
     <Box className="themes-root">
       <Box className="themes-head">
         <Eyebrow size={10}>Themes</Eyebrow>
-        <Text mono size="xxs" tone="dim">{themes.length} theme{themes.length === 1 ? "" : "s"}</Text>
+        <Text mono size="xxs" tone="dim">{total} theme{total === 1 ? "" : "s"} · {groups.length} group{groups.length === 1 ? "" : "s"}</Text>
         <Box style={{ flex: 1 }} />
         <Text size={11.5} tone="dim">Authored by the designer session · <Text as="code" mono size="xxs">bsc ui theme</Text></Text>
       </Box>
       <Box className="themes-scroll">
-        <Box className="themes-grid">
-          {themes.map((t) => (
-            <ThemeCard key={t.id} theme={t} isDefault={t.id === DEFAULT_THEME} />
-          ))}
-        </Box>
+        {groups.map((g) => (
+          <Box key={g.tech} className="themes-group" data-tech={g.tech}>
+            <Box className="themes-grouphead">
+              <Text as="span" mono size="xxs" className="themes-grouplabel">{g.label}</Text>
+              <Text mono size="xxs" tone="dim">{g.themes.length}</Text>
+            </Box>
+            <Box className="themes-grid">
+              {g.themes.map((t) => (
+                <ThemeCard key={t.id} theme={t} isDefault={t.id === DEFAULT_THEME} />
+              ))}
+            </Box>
+          </Box>
+        ))}
       </Box>
     </Box>
   );

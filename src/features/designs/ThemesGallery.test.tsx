@@ -27,6 +27,14 @@ describe("ThemesGallery (#themes-tab)", () => {
     expect(screen.getAllByText(/Base look — no token overrides/).length).toBeGreaterThanOrEqual(2);
   });
 
+  it("separates themes under their design-group header (#2749)", () => {
+    render(<ThemesGallery />);
+    // Every packaged theme is in the react design group → one "react" section header renders.
+    expect(screen.getByText("react")).toBeTruthy();
+    // The header carries the section's theme count.
+    expect(screen.getByText(String(SEED_THEMES.length))).toBeTruthy();
+  });
+
   it("shows an empty state when there are no themes", () => {
     useAppStore.setState({ kitThemes: [] });
     render(<ThemesGallery />);
