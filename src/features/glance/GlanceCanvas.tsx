@@ -10,7 +10,7 @@ import { GlancePreviewMorph } from "./GlancePreviewMorph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
 import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory } from "./lib/glanceGraph";
-import { pushAway, type MorphRect } from "./lib/glancePush";
+import { relaxAroundPanel, type MorphRect } from "./lib/glancePush";
 import { archetypeById, hueColor } from "@/features/org";
 
 const ERR = "var(--graph-health-error)";
@@ -69,20 +69,16 @@ export function GlanceCanvas(p: CanvasProps) {
   // backdrop deselect (Glance nodes aren't [data-node]) (#2232).
   const click = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); if (!p.dragMoved.current) fn(); };
 
-  // The open terminal panel's world box (#2662, reported by the morph) — every neighbour node that
-  // overlaps it gets pushed clear (its edges follow), so the panel makes room in the graph.
+  // The open terminal panel's world box (#2662, reported by the morph) — a d3-force relaxation (#2666)
+  // shifts every neighbour that overlaps it out of the way while link springs keep the cluster's relative
+  // distances, so the graph parts COHERENTLY (not node-by-node). Edges of shifted nodes follow.
   const [morphRect, setMorphRect] = useState<MorphRect | null>(null);
   const nodeById = useMemo(() => new Map(model.nodes.map((n) => [n.id, n])), [model.nodes]);
   const pushMap = useMemo(() => {
-    const m = new Map<string, { dx: number; dy: number }>();
-    if (!morphRect) return m;
-    for (const n of model.nodes) {
-      if (n.id === p.chat?.nodeId) continue;               // the grown node lives UNDER the panel
-      const d = pushAway(n.x, n.y, morphRect);
-      if (d.dx || d.dy) m.set(n.id, d);
-    }
-    return m;
-  }, [morphRect, model.nodes, p.chat?.nodeId]);
+    if (!morphRect) return new Map<string, { dx: number; dy: number }>();
+    const links = model.edges.map((e) => ({ source: e.from, target: e.to }));
+    return relaxAroundPanel(model.nodes, links, morphRect, p.chat?.nodeId);
+  }, [morphRect, model.nodes, model.edges, p.chat?.nodeId]);
 
   return (
     <>
