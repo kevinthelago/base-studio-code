@@ -18,9 +18,8 @@
 // The generic console TerminalView is deliberately NOT reused (pane-system baggage); collapsing the
 // panel only CSS-hides the mounted host, so the PTY survives — this hook tears the session down
 // only when the Design Studio itself unmounts.
-import { type RefObject, type MutableRefObject } from "react";
+import { type RefObject } from "react";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
-import type { Terminal } from "@xterm/xterm";
 import { useAppStore } from "@/store";
 import {
   roleCapability,
@@ -46,8 +45,6 @@ export const DESIGNER_ALLOWED_COMMANDS = ["bsc ui", "bsc component"];
 export interface DesignerTerminalHandle {
   /** Host element for the xterm canvas — attach to the terminal container div. */
   containerRef: RefObject<HTMLDivElement | null>;
-  /** The live xterm instance (null before mount / after unmount). */
-  termRef: MutableRefObject<Terminal | null>;
 }
 
 /** The designer persona's start prompt — the store copy (user edits win), else the packaged seed. */
@@ -61,7 +58,7 @@ export function useDesignerTerminal(visible: boolean): DesignerTerminalHandle {
   // ResizeObserver, refit, cleanup) lives in the shared hook; this wrapper owns only the DESIGNER
   // launch path + the tunnel-roster registration. pty_kill runs only in the shared cleanup — panel
   // collapse merely hides the host, so the session keeps running.
-  const { containerRef, termRef } = useScreenSession({
+  const { containerRef } = useScreenSession({
     paneId:    DESIGNER_PANE_ID,
     termTheme: TERM_THEME,
     visible,
@@ -122,5 +119,5 @@ export function useDesignerTerminal(visible: boolean): DesignerTerminalHandle {
     },
   });
 
-  return { containerRef, termRef };
+  return { containerRef };
 }
