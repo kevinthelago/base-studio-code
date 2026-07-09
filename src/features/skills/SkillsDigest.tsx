@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
+import { Button } from "@/shared/ui/controls/Button";
 import { Card } from "@/shared/ui/data/Card";
 import { StatTile } from "@/shared/ui/data/StatTile";
 import { SkeletonChart } from "@/shared/ui/feedback/Skeleton";
@@ -34,11 +35,10 @@ export function SkillsDigest({ merged, stats, kpis, statsLoaded, digestOpen, onT
   return (
     <Box bg="var(--bg-canvas)" style={{ borderBottom: "1px solid var(--border-soft)"}}>
       <Row gap={18} style={{ padding: "9px 18px", fontSize: 11.5, color: "var(--fg-muted)" }}>
-        {/* eslint-disable-next-line no-restricted-syntax -- bespoke borderless disclosure toggle (chevron + label), not a .btn control */}
-        <button onClick={onToggle} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 11, padding: 0 }}>
+        <Button variant="ghost" size="sm" onClick={onToggle} style={{ border: "none", padding: 0, height: "auto", color: "var(--fg-dim)", fontSize: 11 }}>
           <Text as="span" size={9} style={{ display: "inline-block", transform: digestOpen ? "rotate(90deg)" : "none" }}>▸</Text>
           <Text as="span" mono size={9.5} style={{ textTransform: "uppercase", letterSpacing: ".08em" }}>Fleet digest · 7d</Text>
-        </button>
+        </Button>
         <Box as="span"><b className="mono" style={{ color: "var(--fg)" }}>{kpis.total}</b> skills</Box>
         <Box as="span"><b className="mono" style={{ color: "var(--fg)" }}>{merged.filter((s) => s.enabled).length}</b> enabled</Box>
         <Text as="span" tone="accent">★ <b className="mono" style={{ color: "var(--fg)" }}>{kpis.pinned}</b></Text>
