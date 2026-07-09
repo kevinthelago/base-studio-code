@@ -1,5 +1,5 @@
 // Team feature store slice (#2193) — the persona-relationship graph library, a WRITE-THROUGH cache over
-// the global org store (`~/.base-studio-code/teams/`, reached via `bsc org` — see orgBridge.ts). The
+// the global teams store (`~/.base-studio-code/orgs/`, reached via `bsc teams` — see orgBridge.ts). The
 // desktop Team designer, live sessions, and the planner share ONE store. On boot `hydrateOrgs` loads
 // through the bridge + reconciles the packaged built-ins; every mutation below pushes through. The
 // persisted `teams` in app-state is just a fast first-paint cache; hydrate is authoritative.

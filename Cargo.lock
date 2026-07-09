@@ -739,9 +739,9 @@ dependencies = [
  "bsc-component",
  "bsc-data",
  "bsc-files",
- "bsc-org",
  "bsc-persona",
  "bsc-project",
+ "bsc-teams",
  "bsc-todo",
  "bsc-ui",
  "bsc-util",
@@ -852,14 +852,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bsc-org"
-version = "0.1.0"
-dependencies = [
- "bsc-cli-util",
- "bsc-json-store",
-]
-
-[[package]]
 name = "bsc-persona"
 version = "0.1.0"
 dependencies = [
@@ -884,6 +876,14 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "bsc-teams"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-json-store",
 ]
 
 [[package]]
