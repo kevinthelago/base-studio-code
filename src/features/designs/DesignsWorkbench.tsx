@@ -22,6 +22,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
+import { SearchField } from "@/shared/ui/controls/SearchField";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Code } from "@/shared/ui/data/Code";
 import { useDragResize } from "@/shared/hooks/useDragResize";
@@ -54,7 +55,7 @@ const VP: Record<Viewport, { w: string; label: string }> = {
 
 // The role dot + kit chip live in kitChrome.tsx (#2420) — shared with the Planner Components pane.
 
-export function DesignStudio() {
+export function DesignsWorkbench() {
   const components = useAppStore((s) => s.components);
   const kits = useAppStore((s) => s.kits);
   // The hydrated kit-THEME collection (#2488) — feeds the preview's palette switcher.
@@ -241,12 +242,13 @@ export function DesignStudio() {
           </Box>
           {/* search — sits under the rail header */}
           <Box style={{ flex: "none", padding: "8px 8px 0" }}>
-            <Box className="ds-search">
-              <Text tone="dim" size={13}>⌕</Text>
-              {/* eslint-disable-next-line no-restricted-syntax -- bespoke bare search box (Field imposes a labelled layout) */}
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search components…" aria-label="Search components" />
-              <Text as="span" className="ds-kbd">⌘K</Text>
-            </Box>
+            <SearchField
+              value={query}
+              onChange={setQuery}
+              placeholder="Search components…"
+              aria-label="Search components"
+              style={{ width: "100%", maxWidth: 420 }}
+            />
           </Box>
           <Box className="ds-scroll" style={{ flex: 1, padding: "8px 8px 16px" }}>
             {railTree.map(renderRailNode)}

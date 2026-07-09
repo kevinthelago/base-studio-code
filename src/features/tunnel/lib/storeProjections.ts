@@ -17,8 +17,8 @@ import type { Blueprint, BlueprintTeam } from "@/features/planner/stages/bluepri
 import type { SkillDef } from "@/features/skills/lib/skillsModel";
 import type { SkillGroup } from "@/features/skills/lib/skillGroups";
 import type { Lesson } from "@/features/skills/lib/lessons";
-import type { Kit, ComponentRecord, KitConsumer } from "@/features/components";
-import type { KitThemeRecord } from "@/features/components/lib/themes";
+import type { Kit, ComponentRecord, KitConsumer } from "@/features/designs";
+import type { KitThemeRecord } from "@/features/designs/lib/themes";
 import type { Automation, AutomationRun } from "@/features/automations/lib/scheduler";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
 import type { Hook } from "@/features/mcp/lib/hooks";

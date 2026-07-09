@@ -17,6 +17,6 @@ export const PROJECT_MODES: TabItem[] = [
   // The Design Studio was a standalone rail Workspace; it's a single page, so it folded in here as a
   // Planner tab (its own rail destination was removed). Labelled "Designs" — it owns the kit/component
   // (STRUCTURE) axis; the THEME (STYLE) axis lives in its own "Themes" tab below (epic #2606).
-  { id: "design",     label: "Designs",     hint: "the kit & component workbench (the structure axis)" },
+  { id: "designs",    label: "Designs",     hint: "the kit & component workbench (the structure axis)" },
   { id: "themes",     label: "Themes",      hint: "the theme collection — palettes of token overrides (the style axis)" },
 ];

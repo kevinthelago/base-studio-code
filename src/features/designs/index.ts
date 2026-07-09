@@ -1,7 +1,7 @@
 // Public API of the components feature (#2269) — the proven-component library: the planner's
 // project-scoped pane (#2314) and the full-page Design Studio workspace (#2308).
 export { PlannerComponentsPane } from "./PlannerComponentsPane";
-export { DesignStudio } from "./DesignStudio";
+export { DesignsWorkbench } from "./DesignsWorkbench";
 // #themes-tab: the Planner "Themes" page — a browser of the theme (style) collection, split out of the
 // Designs studio so the theme axis has its own home (kit=structure vs theme=style, epic #2606).
 export { ThemesGallery } from "./ThemesGallery";

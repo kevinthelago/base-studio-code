@@ -9,6 +9,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
+import { SearchField } from "@/shared/ui/controls/SearchField";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
 import { Code } from "@/shared/ui/data/Code";
 import type { ComponentRecord, Kit } from "./lib/model";
@@ -79,10 +80,15 @@ export function KitShareModal({ kit, components, onClose, onImported }: Props) {
           {tab === "import" ? (
             <Box style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
               <Text size={12} tone="muted" style={{ lineHeight: 1.5 }}>Paste a <b style={{ color: "var(--fg)" }}>gist URL</b> or a <b style={{ color: "var(--fg)" }}>share code</b>. A kit is a single portable file — no account needed to import.</Text>
-              <Box style={{ display: "flex", alignItems: "center", height: 34, padding: "0 11px", background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 8 }}>
-                {/* eslint-disable-next-line no-restricted-syntax -- bespoke bare paste box */}
-                <input value={ref} onChange={(e) => setRef(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void doImport(); }} placeholder="https://gist.github.com/…  or a share code" aria-label="Kit gist URL or share code" style={{ flex: 1, background: "none", border: "none", color: "var(--fg)", fontSize: 12.5, fontFamily: "inherit", outline: "none" }} />
-              </Box>
+              <SearchField
+                value={ref}
+                onChange={setRef}
+                onKeyDown={(e) => { if (e.key === "Enter") void doImport(); }}
+                placeholder="https://gist.github.com/…  or a share code"
+                aria-label="Kit gist URL or share code"
+                icon={null}
+                style={{ height: 34 }}
+              />
               {error && <InlineError>{error}</InlineError>}
               <Box style={{ display: "flex", justifyContent: "flex-end" }}>
                 <Button variant="primary" size="sm" onClick={doImport} disabled={busy || !ref.trim()}>{busy ? "importing…" : "Import kit"}</Button>
