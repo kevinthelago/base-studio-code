@@ -22,6 +22,11 @@ describe("generateCategoryColors (#2658)", () => {
     const [scope, args] = vi.mocked(bsc).mock.calls[0];
     expect(scope).toBeNull();
     expect(args.slice(0, 4)).toEqual(["ui", "generate", "next", "--existing"]);
+    // #2663: the seed set is the contract's SIX real graph-category hues, parsed from the descriptor
+    // (not a fictional even-spacing), and every entry is a finite number.
+    const seed = args[4].split(",");
+    expect(seed).toHaveLength(6);
+    for (const h of seed) expect(Number.isFinite(Number(h))).toBe(true);
   });
 
   it("feeds each freshly-placed hue back into the next call's --existing set (no self-collision)", async () => {
