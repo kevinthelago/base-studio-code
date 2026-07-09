@@ -1,0 +1,8 @@
+/* Teams overview cards (#2742) — hover affordance for the top-level team cards (they're clickable to
+   enter a team). The feature is otherwise inline-styled; this is the one interaction the inline path
+   can't express cleanly. */
+.teams-card { transition: border-color .12s, box-shadow .12s, background .12s; }
+.teams-card:hover { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 16%, transparent), 0 6px 18px rgba(0, 0, 0, .35); }
+.teams-card--add:hover { background: color-mix(in oklch, var(--accent) 8%, transparent); color: var(--fg); }
+/* the left-rail team rows at the Teams level — hover cue since a click enters the team */
+.teams-railrow:hover { background: color-mix(in oklch, var(--accent) 8%, transparent); }
