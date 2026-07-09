@@ -1,7 +1,8 @@
-// Teams overview (#2742) — the TOP graph level: each team is a clickable card, plus a trailing
-// "＋ New team" card. Clicking a card enters that team (the per-team position graph). This is what
-// replaced the header org-switcher dropdown — navigation happens IN the graph now. Renders the
-// world-layer content inside GraphCanvas's transformed world box, like TeamsCanvas does for positions.
+// Teams overview (#2742) — the TOP graph level: each team is a clickable card. Clicking a card enters
+// that team (the per-team position graph). This is what replaced the header org-switcher dropdown —
+// navigation happens IN the graph now. Teams are configured by the AI, not created by the user, so
+// there is no "＋ New team" card (#2750). Renders the world-layer content inside GraphCanvas's
+// transformed world box, like TeamsCanvas does for positions.
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
@@ -16,13 +17,11 @@ interface Props {
   personas: Persona[];
   /** Enter a team's position graph (a card click). */
   onEnter: (teamId: string) => void;
-  /** Create a new team and enter it (the trailing card). */
-  onAdd: () => void;
 }
 
-export function TeamsOverview({ teams, personas, onEnter, onAdd }: Props) {
-  // One grid cell per team + one for the "new team" card.
-  const cells = teamsGrid(teams.length + 1);
+export function TeamsOverview({ teams, personas, onEnter }: Props) {
+  // One grid cell per team (teams are AI-configured — there is no "new team" card, #2750).
+  const cells = teamsGrid(teams.length);
 
   return (
     <>
@@ -51,23 +50,6 @@ export function TeamsOverview({ teams, personas, onEnter, onAdd }: Props) {
           </div>
         );
       })}
-
-      {/* trailing "＋ New team" card */}
-      {(() => {
-        const b = cells[teams.length];
-        return (
-          // eslint-disable-next-line no-restricted-syntax -- data-node marks the card as owning its press (no background pan/deselect)
-          <div key="__add__" data-node="__add__" onPointerDown={(e) => e.stopPropagation()} onClick={onAdd}
-            style={{ position: "absolute", left: b.x, top: b.y, width: b.w, height: b.h, cursor: "pointer" }}>
-            <Box className="teams-card teams-card--add" style={{ width: "100%", height: "100%", boxSizing: "border-box",
-              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 14,
-              background: "color-mix(in oklch, var(--fg) 2%, transparent)", border: "1.5px dashed var(--border)", color: "var(--fg-muted)" }}>
-              <Text as="span" size={22} style={{ lineHeight: 1 }}>＋</Text>
-              <Text as="span" size={12.5} weight={500}>New team</Text>
-            </Box>
-          </div>
-        );
-      })()}
     </>
   );
 }
