@@ -619,10 +619,10 @@ mod tests {
 
     #[test]
     fn theme_css_emits_a_named_theme_s_vars_verbatim() {
-        let css = theme_css("contrast").unwrap();
-        assert!(css.contains("theme: contrast"));
+        let css = theme_css("nord").unwrap();
+        assert!(css.contains("theme: nord"));
         // Every var of the theme appears as a CSS declaration.
-        let t = theme_by_id("contrast").unwrap();
+        let t = theme_by_id("nord").unwrap();
         for (name, value) in t["vars"].as_object().unwrap() {
             let line = format!("{name}: {};", value.as_str().unwrap());
             assert!(css.contains(&line), "theme.css carries `{line}`");
@@ -635,7 +635,7 @@ mod tests {
     fn theme_css_unknown_id_errors_listing_available_ids() {
         let err = theme_css("nope").unwrap_err();
         assert!(err.contains("unknown theme 'nope'"), "{err}");
-        for id in ["default", "soft", "contrast", "warm"] {
+        for id in ["default", "light", "nord", "monokai"] {
             assert!(err.contains(id), "error lists available id {id}: {err}");
         }
     }
