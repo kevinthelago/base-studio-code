@@ -285,10 +285,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       onBackgroundClick={() => { setSel(null); setShowCycle(false); }}
       toolbar={
         <>
-          <Row gap={9} align="baseline">
-            <Text as="span" mono size={16} weight={700} style={{ letterSpacing: "-.5px" }}>glance</Text>
-            <Text as="span" mono size={11} tone="dim">{drill ? `${drillNode?.slug ?? "project"} · fleet` : "project network"}</Text>
-          </Row>
+          {/* The 'glance' wordmark + 'project network' subtitle were redundant chrome — the Rail already
+              names the workspace and the graph IS the project network — so dropped (#2692). The L1 drill
+              breadcrumb (which project's fleet you're in) stays; the '← projects' button exits it. */}
+          {drill && <Text as="span" mono size={11} tone="dim">{`${drillNode?.slug ?? "project"} · fleet`}</Text>}
           {drill && <Button variant="ghost" onClick={exitDrill}>← projects</Button>}
           {/* eslint-disable-next-line no-restricted-syntax -- compact search input; a full Field is overkill in the toolbar */}
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter projects…" className="input"
