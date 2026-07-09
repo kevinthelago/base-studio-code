@@ -1,0 +1,88 @@
+// The Design Studio rail tree (#2717) — extracted from DesignStudio.tsx, mirroring how `GraphView` and
+// `Inspector` are their own components. Renders the kits→components tree: technology → style group
+// headers (default OPEN) down to the collapsible kit heads and their search-filtered component rows.
+// Pure presentational — all selection/expand state lives in the parent (`DesignStudio`) and is threaded
+// through props; the class names + structure (`ds-grouphead`/`ds-kithead`/`ds-comprow`) are unchanged.
+import { type ReactNode } from "react";
+import { Box } from "@/shared/ui/layout/Box";
+import { Text } from "@/shared/ui/typography/Text";
+import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
+import { RoleDot } from "./kitChrome";
+import type { ComponentRecord, Kit } from "./lib/model";
+import type { KitTreeNode } from "./lib/kitGroups";
+
+interface RailTreeProps {
+  /** The technology → style rail hierarchy (from `groupKits`). */
+  railTree: KitTreeNode[];
+  /** Per-key expand state (kit id or group key → open) + its setter. */
+  expanded: Record<string, boolean>;
+  setExpanded: (updater: (e: Record<string, boolean>) => Record<string, boolean>) => void;
+  /** The active kit (its head shows `.active`). */
+  kitId: string;
+  setKitId: (id: string) => void;
+  /** The focused component id (its row shows `.on` when in the active kit). */
+  compId: string | null;
+  /** The full component library (rows are filtered per-kit by `match`). */
+  components: ComponentRecord[];
+  /** The search-filter predicate (`matchesQuery(c, query)`). */
+  match: (c: ComponentRecord) => boolean;
+  /** Focus a component row. */
+  selectComp: (c: ComponentRecord) => void;
+  /** The current search query — drives the "no matches" placeholder. */
+  query: string;
+}
+
+export function RailTree({ railTree, expanded, setExpanded, kitId, setKitId, compId, components, match, selectComp, query }: RailTreeProps) {
+  // One rail kit entry: the collapsible kit head + its (search-filtered) component rows. Under the
+  // #2506 single-kit style merge this IS the style header — `label` shows the style name instead of
+  // the kit name (the kit identity stays in the tooltip), and no separate kit row renders.
+  const renderRailKit = (k: Kit, label?: string) => {
+    const open = !!expanded[k.id];
+    const inKit = components.filter((c) => c.kitId === k.id);
+    const rows = inKit.filter(match);
+    return (
+      <Box key={k.id} style={{ marginBottom: 4 }}>
+        <Box as="button" className={`ds-kithead${k.id === kitId ? " active" : ""}`} title={label ? `${label} · ${k.name} — ${k.stack}` : k.stack} onClick={() => { setKitId(k.id); setExpanded((e) => ({ ...e, [k.id]: !e[k.id] })); }}>
+          <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
+          <ColorSwatch color={k.dot} size={7} />
+          <Text as="span" weight={500} style={{ flex: 1, textAlign: "left" }}>{label ?? k.name}</Text>
+          <Text mono size="xxs" tone="dim">{inKit.length}</Text>
+        </Box>
+        {open && (
+          <Box style={{ margin: "2px 0 6px", paddingLeft: 6 }}>
+            {rows.map((c) => (
+              <Box as="button" key={c.id} className={`ds-comprow${c.id === compId && k.id === kitId ? " on" : ""}`} onClick={() => selectComp(c)}>
+                <RoleDot role={c.role} size={7} glow={3} />
+                <Text as="span" style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</Text>
+                <Text mono size="xxs" tone="dim" style={{ padding: "1px 5px", background: "var(--bg-soft)", borderRadius: 4 }}>×{c.used}</Text>
+              </Box>
+            ))}
+            {open && rows.length === 0 && query && (
+              <Text size={11} tone="dim" as="div" style={{ padding: "6px 10px", fontStyle: "italic" }}>no matches</Text>
+            )}
+          </Box>
+        )}
+      </Box>
+    );
+  };
+  // A rail tree node: a kit entry, or a collapsible tech/style group header (default OPEN — its
+  // expand state shares the `expanded` record under the group's stable key). A single-kit style
+  // group (#2506) renders as the kit entry labelled with the style — the style header IS the kit.
+  const renderRailNode = (n: KitTreeNode): ReactNode => {
+    if (n.kind === "kit") return renderRailKit(n.kit);
+    if (n.kit) return renderRailKit(n.kit, n.label);
+    const open = expanded[n.key] ?? true;
+    return (
+      <Box key={n.key} style={{ marginBottom: 4 }}>
+        <Box as="button" className="ds-grouphead" aria-expanded={open} title={`${n.level === "tech" ? "technology" : "visual language"}: ${n.label}`} onClick={() => setExpanded((e) => ({ ...e, [n.key]: !(e[n.key] ?? true) }))}>
+          <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
+          <Text as="span" mono size="xxs" style={{ flex: 1, textAlign: "left", letterSpacing: ".07em", textTransform: "uppercase" }}>{n.label}</Text>
+          <Text mono size="xxs" tone="dim">{n.count}</Text>
+        </Box>
+        {open && <Box className="ds-groupkids">{n.children.map(renderRailNode)}</Box>}
+      </Box>
+    );
+  };
+
+  return <>{railTree.map(renderRailNode)}</>;
+}
