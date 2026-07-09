@@ -14,10 +14,10 @@ import { IconBox } from "@/shared/ui/data/IconBox";
 import { SectionLabel, type SectionLabelProps } from "@/shared/ui/layout/SectionLabel";
 import { PersonaEditor } from "@/features/personas";
 import type { Persona } from "@/features/personas";
-import { RELATIONSHIP_ARCHETYPES, archetypeById, formById, type Org } from "./lib/org";
+import { RELATIONSHIP_ARCHETYPES, archetypeById, formById, type Team } from "./lib/team";
 import { positionDisplay, positionComms, hueColor } from "./lib/orgView";
 import { FormChip, FormLane } from "./components";
-import type { Selection } from "./OrgCanvas";
+import type { Selection } from "./TeamsCanvas";
 
 /** The inspector's block header — the shared SectionLabel (`right` slot, #2420) at the org
  *  designer's `.ulabel` size, with the block's standard 9px bottom gap baked in. */
@@ -26,9 +26,9 @@ function BlockLabel(props: Omit<SectionLabelProps, "size" | "style">) {
 }
 
 interface InspectorProps {
-  org: Org;
+  org: Team;
   /** Every org — to count how many positions share a persona (the "used in N" note). */
-  orgs: Org[];
+  orgs: Team[];
   personas: Persona[];
   sel: Selection;
   onSelectNode: (nodeId: string) => void;
@@ -47,7 +47,7 @@ interface InspectorProps {
 const PANEL: React.CSSProperties = { flex: 1, minWidth: 0, borderLeft: "1px solid var(--border-soft)", overflowY: "auto" };
 const BLOCK: React.CSSProperties = { padding: "15px 17px", borderBottom: "1px solid var(--border-soft)" };
 
-export function OrgInspector({ org, orgs, personas, sel, onSelectNode, onChangeArchetype, onChangePersona, onChangeLabel, onDeletePosition, onDeleteRelationship }: InspectorProps) {
+export function TeamsInspector({ org, orgs, personas, sel, onSelectNode, onChangeArchetype, onChangePersona, onChangeLabel, onDeletePosition, onDeleteRelationship }: InspectorProps) {
   if (sel.type === "node") {
     const pos = org.positions.find((p) => p.nodeId === sel.id);
     if (!pos) return <Box style={PANEL} />;

@@ -1,4 +1,4 @@
-// Org canvas geometry (#2193) — pure math for the relationship graph, ported from the Claude Design
+// Team canvas geometry (#2193) — pure math for the relationship graph, ported from the Claude Design
 // prototype. Kept React-free so it's unit-testable and the canvas component stays a thin renderer.
 // The graph lives in a fixed 1120×800 design space; the canvas scales it by a zoom factor.
 import { forceSimulation, forceLink, forceManyBody, forceX, forceCollide, type SimulationNodeDatum } from "d3-force";
@@ -7,7 +7,7 @@ import { layerDag } from "@/shared/lib/graph/layers";
 import { findBackEdges } from "@/shared/lib/graph/cycles";
 import { orderLayers } from "@/shared/lib/graph/order";
 import type { GraphEdge } from "@/shared/lib/graph/types";
-import type { Org, Position, PositionKind } from "./org";
+import type { Team, Position, PositionKind } from "./team";
 
 /** The fixed design coordinate space every node's x/y is authored in. */
 export const CANVAS_W = 1120;
@@ -56,7 +56,7 @@ export interface EdgeGeometry {
 /** The bezier path + label point between two boxes, bowed by `bow` px off the straight line so parallel
  *  edges fan apart. The end is pulled back 9px to leave room for the arrowhead. Ported from `_geom`. */
 export function edgeGeometry(A: Box, B: Box, bow = 0): EdgeGeometry {
-  // The shared graph line-type (#2222); Org keeps its own arrowhead markers, so it only takes the
+  // The shared graph line-type (#2222); Team keeps its own arrowhead markers, so it only takes the
   // curve + the label midpoint. Byte-identical to the previous inline geometry.
   const { d, labelX, labelY } = graphEdge(A, B, { bow });
   return { d, lx: labelX, ly: labelY };
@@ -107,7 +107,7 @@ interface LayerResult { layer: Map<string, number>; order: Map<number, string[]>
  *  Acyclic layer assignments are identical to the old private layerer; a cycle now breaks by DROPPING
  *  the DFS back-edge (the forward edge still layers parent-above-child) instead of the old zero-the-
  *  on-stack-parent artifact. */
-export function layerNodes(org: Org): LayerResult {
+export function layerNodes(org: Team): LayerResult {
   const ids = org.positions.map((p) => p.nodeId);
   const idSet = new Set(ids);
   // The hierarchy sub-graph: only top-down archetypes drive layering; parent → child is exactly
@@ -148,7 +148,7 @@ interface SimNode extends SimulationNodeDatum { id: string; w: number; h: number
  *  `sizes` optionally overrides a node's box per nodeId (#2451): a synthetic pool node in a collapsed
  *  org renders as a STACKED card (agent card + shadow-stack overhang), so the collision pass must see
  *  that real footprint — not the plain agent size its `kind` implies. */
-export function autoLayout(org: Org, sizes?: Record<string, { w: number; h: number }>): Record<string, { x: number; y: number }> {
+export function autoLayout(org: Team, sizes?: Record<string, { w: number; h: number }>): Record<string, { x: number; y: number }> {
   const { layer, order } = layerNodes(org);
   const rowY = (l: number) => 60 + l * AUTO_ROW;
 

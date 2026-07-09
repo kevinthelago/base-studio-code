@@ -8,7 +8,7 @@ import { flowOrUndefined } from "../fleet/agentFlow";
 import { wrapExtension, type ExtensionManifest } from "@/features/planner/lib/gist/manifest";
 import { type SkillPayload } from "./blueprintSkills";
 // Type-only cross-feature imports (allowed by the #1545 boundary) — the team's node/edge shapes.
-import type { Position, Relationship } from "@/features/org";
+import type { Position, Relationship } from "@/features/teams";
 
 const str = (v: unknown, d = ""): string => (typeof v === "string" ? v : d);
 const strArr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
