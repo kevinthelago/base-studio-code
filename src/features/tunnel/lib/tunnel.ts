@@ -29,7 +29,7 @@ export type PaneStatus = "running" | "idle" | "awaiting_input" | "error";
 /** What kind of session a mirrored pane is (#2497). The wire vocabulary is fixed —
  *  the fleet DIRECTOR rides as `worker` (a fleet session) and manual/positional console
  *  panes are `console`. Optional on the wire for backward compatibility (absent ⇒ console). */
-export type PaneKind = "console" | "worker" | "planner" | "designer" | "triage";
+export type PaneKind = "console" | "worker" | "planner" | "designer" | "architect" | "triage";
 
 /** One mirrored pane in the list the mobile client renders (`pane_list`). */
 export interface PaneDescriptor {

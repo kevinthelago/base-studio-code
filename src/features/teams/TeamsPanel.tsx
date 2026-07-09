@@ -25,6 +25,8 @@ import { TeamsCanvas, OrgLegend, type Selection } from "./TeamsCanvas";
 import { TeamsOverview } from "./TeamsOverview";
 import { TeamsInspector } from "./TeamsInspector";
 import { TeamsContextMenu } from "./TeamsContextMenu";
+import { ArchitectTerminal } from "./ArchitectTerminal";
+import { useDragResize } from "@/shared/hooks/useDragResize";
 import { type Position } from "./lib/team";
 import { autoLayout, nodeBox, contentBounds, CANVAS_W, CANVAS_H, type Box as GBox } from "./lib/orgLayout";
 import { teamsBounds } from "./lib/teamsLayout";
@@ -74,6 +76,12 @@ export function TeamsPanel() {
     { min: 0.4, max: 1.5, fitPad: 20, maxFitScale: 1.5, contentBounds: framedBounds },
   );
   const scale = vp.view.scale;
+
+  // The docked team-architect session's height (#2755) — a row-resize handle above it; `invert`
+  // because the terminal sits AFTER the handle, so dragging up grows it. Declared before the early
+  // returns (rules of hooks); only the entered-team view actually renders the dock. Mirrors the
+  // Design Studio's terminal dock (DesignsWorkbench).
+  const term = useDragResize({ initial: 240, min: 140, max: 560, axis: "y", invert: true });
 
   // Restore this org's saved zoom (or fit) when the org changes. zoomToCentered (NOT zoomTo) re-centers
   // the world at the saved scale — zoomTo anchors about the viewport center starting from the fresh
@@ -199,6 +207,16 @@ export function TeamsPanel() {
       grid
       railResizable railWidth={260} railMin={200} railMax={420}
       inspectorResizable inspectorWidth={344} inspectorMin={280} inspectorMax={560}
+      // The always-on team-architect session (#2755), docked below the graph while a team is entered.
+      // The Teams graph stays the read-only viewer; the architect creates/refines teams + personas via
+      // `bsc teams` / `bsc persona`. Kept OUT of the top-level Teams overview (only meaningful inside a
+      // team). GraphCanvas gives the dock a `flex: none` slot; we own its height + a `.resize-y` handle.
+      dock={
+        <Box style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <Box className="resize-y" {...term.handleProps} title="Drag to resize" />
+          <ArchitectTerminal height={term.size} />
+        </Box>
+      }
       // Click the empty canvas → clear the selection (the empty sentinel; inspector empties, no dimming).
       onBackgroundClick={() => setSel({ type: "node", id: "" })}
       toolbar={
