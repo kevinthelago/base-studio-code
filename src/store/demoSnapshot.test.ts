@@ -26,7 +26,7 @@ describe("curated demo snapshot (#2282)", () => {
     expect((snap.projectLinks ?? []).length).toBeGreaterThan(10);
     expect(Object.keys(snap.planFleet ?? {}).length).toBeGreaterThan(0);
     expect((snap.personas ?? []).length).toBeGreaterThan(0);
-    expect((snap.orgs ?? []).length).toBeGreaterThan(0);
+    expect((snap.teams ?? []).length).toBeGreaterThan(0);
     expect((snap.skills ?? []).length).toBeGreaterThan(0);
     expect((snap.blueprints ?? []).length).toBeGreaterThan(0);
     expect((snap.automations ?? []).length).toBeGreaterThan(0);
@@ -55,7 +55,7 @@ describe("curated demo snapshot (#2282)", () => {
     // skill groups reference real skills.
     for (const g of snap.skillGroups ?? []) for (const s of g.skillIds) expect(skillIds.has(s)).toBe(true);
     // org agent positions reference real personas.
-    for (const org of snap.orgs ?? []) {
+    for (const org of snap.teams ?? []) {
       for (const pos of org.positions) {
         if (pos.kind === "agent") expect(personaIds.has(pos.personaId ?? "")).toBe(true);
       }

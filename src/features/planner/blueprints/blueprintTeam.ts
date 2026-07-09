@@ -9,7 +9,7 @@
 // `onChange`, like every other author view.
 
 // Type-only cross-feature imports (allowed by the #1545 boundary).
-import type { Org, Position, Relationship } from "@/features/org";
+import type { Team, Position, Relationship } from "@/features/teams";
 import type { BlueprintTeam } from "../stages/blueprintTypes";
 
 /** A blank team — the "start from scratch" archetype choice. */
@@ -20,14 +20,14 @@ export function blankTeam(): BlueprintTeam {
 /** Fork a library org into a blueprint team: a DEEP COPY of its graph (positions + relationships
  *  + layout coords), dropping the org-library identity (`id`/`name`/`blurb`/`builtin`). The clone
  *  is the isolation boundary — neither side can reach the other's objects afterwards. */
-export function forkTeamFromOrg(org: Pick<Org, "positions" | "relationships">): BlueprintTeam {
+export function forkTeamFromOrg(org: Pick<Team, "positions" | "relationships">): BlueprintTeam {
   return structuredClone({ positions: org.positions, relationships: org.relationships });
 }
 
-/** Wrap a blueprint's team as a synthetic {@link Org} so the org feature's pure machinery
+/** Wrap a blueprint's team as a synthetic {@link Team} so the org feature's pure machinery
  *  (canvas geometry, `deriveCommunication`, `autoLayout`, the inspector) can read it unchanged.
  *  The wrapper SHARES the team's arrays — it is a read lens, never a mutation target. */
-export function teamAsOrg(team: BlueprintTeam, name = "Blueprint team"): Org {
+export function teamAsOrg(team: BlueprintTeam, name = "Blueprint team"): Team {
   return { id: "__blueprint-team__", name, positions: team.positions, relationships: team.relationships };
 }
 

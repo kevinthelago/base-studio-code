@@ -22,7 +22,7 @@ export const DEMOABLE_KEYS = [
   // Projects + the Glance project-network graph
   "localDraftProjects", "triagedProjects", "projectLinks", "issueLinks", "hiddenProjectIds", "achievements",
   // Libraries (built-ins are reconciled on load; these carry the user/demo additions + selection)
-  "blueprints", "activeBlueprintId", "skills", "skillGroups", "personas", "orgs", "orgZoom",
+  "blueprints", "activeBlueprintId", "skills", "skillGroups", "personas", "teams", "teamsZoom",
   "dataModels", "activeDataModelId", "mcpServers", "hooks",
   // Automations
   "schedules", "commands", "automations",

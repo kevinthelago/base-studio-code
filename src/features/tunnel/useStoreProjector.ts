@@ -72,11 +72,12 @@ export function useStoreProjector(): void {
   }, [tunnelRunning, projects, links, faults, drill, fleets, personas]);
 
   // ── org — the org library + pared persona refs ────────────────────────────────
-  const orgs = useAppStore((s) => s.orgs);
+  const teams = useAppStore((s) => s.teams);
   useEffect(() => {
     if (!tunnelRunning) return;
-    publishTunnelDomain("org", buildOrgPayload({ orgs, personas }));
-  }, [tunnelRunning, orgs, personas]);
+    // Wire domain + payload field stay "org"/`orgs` (mobile tunnel contract, #2700); only the store read renamed.
+    publishTunnelDomain("org", buildOrgPayload({ orgs: teams, personas }));
+  }, [tunnelRunning, teams, personas]);
 
   // ── blueprints — library cards + the active blueprint's team graph ────────────
   const blueprints = useAppStore((s) => s.blueprints);

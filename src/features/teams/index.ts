@@ -1,8 +1,8 @@
-// Org feature (#2193) — the persona-relationship graph: positions wired by relationship archetypes
+// Team feature (#2193) — the persona-relationship graph: positions wired by relationship archetypes
 // that expand into communication forms. Public API barrel.
-export { OrgPanel } from "./OrgPanel";
-export { OrgCanvas, OrgLegend, type Selection } from "./OrgCanvas";
-export { OrgInspector } from "./OrgInspector";
+export { TeamsPanel } from "./TeamsPanel";
+export { TeamsCanvas, OrgLegend, type Selection } from "./TeamsCanvas";
+export { TeamsInspector } from "./TeamsInspector";
 export { FormChip, FormLane } from "./components";
 export { createOrgSlice, type OrgSlice } from "./store";
 export {
@@ -18,6 +18,6 @@ export {
   BUILTIN_ORGS, RELATIONSHIP_ARCHETYPES, COMMUNICATION_FORMS,
   makeBuiltinOrgs, reconcileOrgs, blankOrg, orgSlug, orgIssues, deriveCommunication,
   archetypeById, formById,
-  type Org, type Position, type Relationship, type RelationshipArchetype,
+  type Team, type Position, type Relationship, type RelationshipArchetype,
   type CommunicationForm, type CommEdge, type PositionKind,
-} from "./lib/org";
+} from "./lib/team";

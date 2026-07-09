@@ -16,7 +16,6 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Button } from "@/shared/ui/controls/Button";
-import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Screen } from "@/app/chrome/Screen";
@@ -29,7 +28,7 @@ import { Fleet } from "@/features/planner/fleet/Fleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";
-import { buildGraph, focusSets, HEALTH_META, ROLE_COLOR, EDGE_META, NW, NH, type GEdgeKind } from "./lib/glanceGraph";
+import { buildGraph, focusSets, HEALTH_META, ROLE_COLOR, NW, NH } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
 import { useProjectComplete } from "./lib/useProjectComplete";
@@ -80,7 +79,6 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const setWorkspace = useAppStore((s) => s.setWorkspace);
   const loadDemoState = useAppStore((s) => s.loadDemoState);
   const projectLinks = useAppStore((s) => s.projectLinks);
-  const addProjectLink = useAppStore((s) => s.addProjectLink);
   const removeProjectLink = useAppStore((s) => s.removeProjectLink);
   // Per-project auto-triage toggle (#2265) — gates the fault→fix loop; surfaced in the node inspector.
   const autoTriage = useAppStore((s) => s.autoTriage);
@@ -117,8 +115,6 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const [hoverEdge, setHoverEdge] = useState<string | null>(null);
   const [showCycle, setShowCycle] = useState(false);
   const [search, setSearch] = useState("");
-  // Connect-mode (#2253): a chosen edge kind + the pending source project; two node clicks draw a link.
-  const [connect, setConnect] = useState<{ kind: GEdgeKind; from: string | null } | null>(null);
   // Drill (#…): clicking a project on the Network graph animates INTO that project's fleet-relationship
   // graph — the SAME canvas, a different graph (L0 project network → L1 agent fleet). `drill` is the
   // drilled project node id, held in the STORE so the app-wide nav history (mouse back/forward) can
@@ -198,15 +194,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // node — workers AND the director — gets the morph (#2534/#2542). Drilled only.
   const isLiveAgent = (nodeId: string) =>
     !!drill && nodeHasLiveSession(fleetPaneId(drill, nodeId), livePaneIds);
-  // On the L0 network: connect-mode wires two projects; otherwise a click drills into the fleet. Inside a
-  // fleet a click checks in on a LIVE agent (morph → terminal, #2401) or selects a non-live one.
+  // On the L0 network: a click drills into that project's fleet. Inside a fleet a click checks in on a
+  // LIVE agent (morph → terminal, #2401) or selects a non-live one. (Project links are LLM-authored, not
+  // drawn by hand — the manual connect-mode was removed, #2737 direction.)
   const onNodeClick = (id: string) => {
-    if (!drill && connect) {
-      if (!connect.from) { setConnect({ ...connect, from: id }); return; }
-      if (connect.from !== id) addProjectLink(connect.from, id, connect.kind);
-      setConnect(null);
-      return;
-    }
     // Inside a fleet: opening a LIVE agent morphs its node into the live terminal; a non-live agent has
     // no session to open, so it just selects → inspector.
     if (drill) {
@@ -293,22 +284,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           {/* eslint-disable-next-line no-restricted-syntax -- compact search input; a full Field is overkill in the toolbar */}
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter projects…" className="input"
             style={{ width: 240, fontFamily: "var(--mono)", fontSize: 12, background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 11px" }} />
-          {/* connect-mode palette (#2253) — pick a kind, then click source → target to draw a project link */}
-          {!drill && (
-            <Row gap={8} align="center" style={{ minWidth: 0 }}>
-              <SectionLabel size={9.5} style={{ flex: "none" }}>{connect ? (connect.from ? "pick a target" : "pick a source") : "connect"}</SectionLabel>
-              <Row gap={6}>
-                {(["api", "data", "events"] as GEdgeKind[]).map((k) => (
-                  <Box as="button" key={k} onClick={() => setConnect(connect?.kind === k ? null : { kind: k, from: null })}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 500,
-                      color: "var(--fg-muted)", background: connect?.kind === k ? "color-mix(in oklch, var(--accent) 16%, transparent)" : "var(--bg-soft)",
-                      border: `1px solid ${connect?.kind === k ? "var(--accent)" : "var(--border)"}`, padding: "3px 9px 3px 7px", borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap" }}>
-                    <StatusDot color={EDGE_META[k].color} size={8} />{EDGE_META[k].label}
-                  </Box>
-                ))}
-              </Row>
-            </Row>
-          )}
+          {/* Manual connect-mode was removed (#2737 direction): project links are LLM-authored, not drawn
+              by hand. The graph is configured by the planner/agents, never wired manually here. */}
           <Box style={{ flex: 1 }} />
           {drill
             ? (data.sample

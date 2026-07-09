@@ -11,9 +11,9 @@ import { migrateLegacyExtensions } from "@/features/mcp/lib/migrateExtensions";
 import { createMcpSlice } from "@/features/mcp/store";
 import { createPersonasSlice } from "@/features/personas/store";
 import { reconcilePersonas } from "@/features/personas/lib/persona";
-import { createOrgSlice } from "@/features/org/store";
+import { createOrgSlice } from "@/features/teams/store";
 import { createComponentsSlice } from "@/features/designs/store";
-import { reconcileOrgs } from "@/features/org/lib/org";
+import { reconcileOrgs } from "@/features/teams/lib/team";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
 
@@ -33,141 +33,6 @@ export { PROJECT_INIT_PROMPT, TRIAGE_PROMPT, buildTriagePrompt } from "./constan
 export type { GithubUser, PerfConfig, LogConfig, ToolPermissions, ConfigProfile, AutomationSuggestion, GithubRepo } from "./types";
 
 import { newTabId } from "./helpers";
-
-// ── onRehydrateStorage migrations ─────────────────────────────────────────────
-// Each is a one-time, hydration-time migration extracted verbatim from the persist
-// `onRehydrateStorage` callback (#2713). They run in the SAME order from that callback;
-// none of them changed logic — the split is purely mechanical for readability.
-
-/** Back-fill stable identity onto tabs persisted before these fields existed. #463: a stable `id`
- *  (detached set / re-dock / order key off it). #457: the project-tab identity (projectKey/kind/seq),
- *  derived once from the frozen name so the next fleet/triage launch can find-and-reuse the tab
- *  instead of forking a duplicate. Both are one-time legacy upgrades and no-ops thereafter. */
-function backfillTabIdentity(state: AppStore | undefined) {
-  if (state?.tabs) {
-    state.tabs = state.tabs.map((t) => {
-      let next = t.id ? t : { ...t, id: newTabId() };
-      if (!next.projectKey && !next.kind) {
-        const ident = deriveTabIdentity(next.name);
-        if (ident) next = { ...next, ...ident };
-      }
-      return next;
-    });
-  }
-}
-
-/** One-time page-mode / workspace redirects for folded-away or renamed destinations, so a user whose
- *  last mode/workspace was removed never lands on a blank canvas. */
-function migratePageModes(state: AppStore | undefined) {
-  // The Blueprints page-mode was folded into the Planner tab's blueprint rail (#blueprints);
-  // a user whose last mode was it would otherwise land on a blank canvas.
-  if (state && (state.projectsPageMode as string) === "blueprints") state.projectsPageMode = "projects";
-  // Personas was folded into Org (#2199) — a last-mode of "personas" now opens Org.
-  if (state && (state.projectsPageMode as string) === "personas") state.projectsPageMode = "org";
-  // The Fleet page-mode was folded into Glance (#2223/#2228) — a last-mode of "fleet" opens Projects.
-  if (state && (state.projectsPageMode as string) === "fleet") state.projectsPageMode = "projects";
-  // Design Studio moved from its own rail Workspace to a Planner tab (#move-to-planner). A user whose
-  // last workspace was "design" would otherwise land on a removed screen — redirect to Planner on its
-  // Designs page.
-  if (state && (state.activeWorkspace as string) === "design") {
-    state.activeWorkspace = "projects";
-    state.projectsPageMode = "designs";
-  }
-  // The Designs page-mode key was renamed "design" → "designs" (#2701, feature-folder rename to
-  // match the on-screen "Designs" tab). A user whose last page-mode was "design" now opens "designs".
-  if (state && (state.projectsPageMode as string) === "design") state.projectsPageMode = "designs";
-  // The Security workspace's key was renamed "agents" → "security" (#2702, naming realignment).
-  // A user whose last workspace was "agents" would otherwise land on a removed key.
-  if (state && (state.activeWorkspace as string) === "agents") state.activeWorkspace = "security";
-}
-
-/** Reconcile the persisted code-owned-template libraries with their current packaged built-ins:
- *  re-seed dropped built-ins + restore built-in identity while keeping user edits/authored entries
- *  (personas #2094, orgs #2193, blueprints #677, permission profiles). */
-function reconcileLibraries(state: AppStore | undefined) {
-  // Reconcile the persona library with the packaged built-ins (#2094): re-seed any dropped
-  // built-in, restore built-in identity, and keep user edits + user-authored personas. Same
-  // code-owned-template discipline as the blueprints refresh below.
-  if (state?.personas) state.personas = reconcilePersonas(state.personas);
-  // Same discipline for the org library (#2193): re-seed dropped built-ins, restore built-in
-  // identity, keep user edits + user-authored orgs.
-  if (state?.orgs) state.orgs = reconcileOrgs(state.orgs);
-  // Refresh BUILT-IN blueprints from code on every load (#677). They're code-owned templates, but
-  // `blueprints` is persisted — so improvements to a built-in (the `optional` UI stage, enabled
-  // repos, updated prompts, …) would never reach a user who seeded their store before the change.
-  // We replace each persisted built-in with its current definition (by id) and add any new
-  // built-ins; user-created / forked / imported blueprints are left untouched.
-  if (state?.blueprints) {
-    state.blueprints = refreshBuiltIns(state.blueprints);
-  }
-  // Same idea for permission profiles: refresh the built-ins from the role JSON, drop retired
-  // demos + stale generated profiles, keep the user's customs (the unified role→profile model).
-  if (state?.agentProfiles) {
-    state.agentProfiles = reconcileBuiltInProfiles(state.agentProfiles);
-  }
-}
-
-/** #2548 follow-up: the one-time triaged grandfather backfilled from the PERSISTED github board +
- *  fleets, but both are empty when the user is logged out / after a state reset — so an existing
- *  user's on-disk published projects still vanished from the Glance network (only the demo loaded).
- *  REPAIR once: when `triagedProjects` is still empty, grandfather from the RELIABLE local published
- *  inventory (`list_local_projects`), plus a re-derive from any github board / fleets now present.
- *  The empty-guard makes it self-limiting — a backfill makes triagedProjects non-empty, so it never
- *  re-runs, preserving the forward-looking rule (a genuinely new draft stays hidden until triaged). */
-function grandfatherTriagedOnBoot(state: AppStore | undefined) {
-  if (state && Object.keys(state.triagedProjects ?? {}).length === 0) {
-    void safeInvoke<{ key: string; title: string; published: boolean }[]>("list_local_projects", undefined, []).then((list) => {
-      const keys = (Array.isArray(list) ? list : []).filter((p) => p?.published).map((p) => p.key);
-      useAppStore.setState((s) => {
-        if (Object.keys(s.triagedProjects).length > 0) return {}; // something already stamped meanwhile — leave it
-        const now = Date.now();
-        const seeded = grandfatherTriaged(s.githubState?.records, s.planFleet, now);
-        const merged = grandfatherLocalPublished(keys, seeded, now);
-        return Object.keys(merged).length ? { triagedProjects: merged } : {};
-      });
-    });
-  }
-}
-
-/** Hydrate user blueprints from their on-disk dir (#blueprints) over the `bsc` bridge
- *  (`bsc blueprint list --full`, #2143): union them in (so one that survived a store reset or a
- *  fresh download appears), and migrate any persisted-but-not-yet-on-disk user blueprint forward
- *  to the dir (`bsc blueprint set`). The dir is the durable home; the persisted list is a cache;
- *  built-ins stay code-owned. Blueprints are GLOBAL (no project key) → `null`. `bscJson` degrades
- *  to `[]` when the bridge is unreachable — safe here: an empty list simply unions nothing (the
- *  `if (fromDir.length)` guard), so it never blanks the seeded/persisted set. Async — runs after
- *  hydration settles. */
-function hydrateBlueprintsFromDisk() {
-  void bscJson<unknown[]>(null, ["blueprint", "list", "--full"], []).then((rows) => {
-    const coerce = (b: unknown): Blueprint | undefined =>
-      b && typeof (b as Blueprint).id === "string" && Array.isArray((b as Blueprint).sections)
-        ? (b as Blueprint)
-        : undefined;
-    const fromDir = rows.map(coerce).filter((b): b is Blueprint => !!b && b.origin !== "built-in");
-    const onDiskIds = new Set(fromDir.map((b) => b.id));
-    if (fromDir.length) {
-      useAppStore.setState((s) => {
-        const byId = new Map(s.blueprints.map((b) => [b.id, b]));
-        for (const b of fromDir) byId.set(b.id, b); // the dir wins for user blueprints
-        return { blueprints: [...byId.values()] };
-      });
-    }
-    for (const b of useAppStore.getState().blueprints) {
-      if (b.origin !== "built-in" && !onDiskIds.has(b.id)) {
-        void bscWrite(null, ["blueprint", "set"], b);
-      }
-    }
-  });
-}
-
-/** Refresh the packaged skills (#677-style): replace the code-owned set from code and prune any
- *  retired packaged skill, so a store seeded with the old dev-workflow skills picks up the
- *  compliance/standards library on next load. */
-function refreshPackagedSkillsOnBoot(state: AppStore | undefined) {
-  if (state?.skills) {
-    state.skills = refreshPackagedSkills(state.skills);
-  }
-}
 
 export const useAppStore = create<AppStore>()(
   persist(
@@ -324,10 +189,10 @@ export const useAppStore = create<AppStore>()(
         skillGroups:           s.skillGroups,
         sessionSkillGroups:    s.sessionSkillGroups,
         personas:              s.personas,   // #2094: the agent-identity library (built-ins reconciled on load)
-        orgs:                  s.orgs,       // #2193: the persona-relationship graph library (reconciled on load)
+        teams:                 s.teams,      // #2193/#2700: the persona-relationship graph (team) library (reconciled on load)
         demoActive:            s.demoActive, // #2272: a loaded demo state + its pre-demo backup survive restart
         demoBackup:            s.demoBackup,
-        orgZoom:               s.orgZoom,    // #2199: per-org canvas zoom (view state)
+        teamsZoom:             s.teamsZoom,  // #2199/#2700: per-team canvas zoom (view state)
         components:            s.components, // #2269: the proven-component library (seed until the bsc store lands)
         kits:                  s.kits,       // #2269: the component kits (technology-scoped namespaces)
         kitUsage:              s.kitUsage,   // #2277: the consumer index (project→kit) — a fast-first-paint cache
@@ -338,15 +203,130 @@ export const useAppStore = create<AppStore>()(
       // until the persisted state is in — otherwise screens flash from defaults
       // (e.g. GitHub "not connected" → connected) on every load.
       onRehydrateStorage: () => (state) => {
-        backfillTabIdentity(state);
+        // Back-fill stable identity onto tabs persisted before these fields existed.
+        // #463: a stable `id` (detached set / re-dock / order key off it). #457: the
+        // project-tab identity (projectKey/kind/seq), derived once from the frozen name
+        // so the next fleet/triage launch can find-and-reuse the tab instead of forking
+        // a duplicate. Both are one-time legacy upgrades and no-ops thereafter.
+        if (state?.tabs) {
+          state.tabs = state.tabs.map((t) => {
+            let next = t.id ? t : { ...t, id: newTabId() };
+            if (!next.projectKey && !next.kind) {
+              const ident = deriveTabIdentity(next.name);
+              if (ident) next = { ...next, ...ident };
+            }
+            return next;
+          });
+        }
         // Migrate the legacy unified `extensions` list → split `mcpServers` / `hooks` slices and
         // the renamed MCP route key (#mcp-hooks-split). One-time; no-op once migrated.
         migrateLegacyExtensions(state);
-        migratePageModes(state);
-        reconcileLibraries(state);
-        grandfatherTriagedOnBoot(state);
-        hydrateBlueprintsFromDisk();
-        refreshPackagedSkillsOnBoot(state);
+        // The Blueprints page-mode was folded into the Planner tab's blueprint rail (#blueprints);
+        // a user whose last mode was it would otherwise land on a blank canvas.
+        if (state && (state.projectsPageMode as string) === "blueprints") state.projectsPageMode = "projects";
+        // Personas was folded into the Teams page (#2199) — a last-mode of "personas" now opens Teams.
+        if (state && (state.projectsPageMode as string) === "personas") state.projectsPageMode = "teams";
+        // The Teams page-mode id was renamed "org" → "teams" (#2700) — map a last-mode of "org" forward.
+        if (state && (state.projectsPageMode as string) === "org") state.projectsPageMode = "teams";
+        // The Fleet page-mode was folded into Glance (#2223/#2228) — a last-mode of "fleet" opens Projects.
+        if (state && (state.projectsPageMode as string) === "fleet") state.projectsPageMode = "projects";
+        // Design Studio moved from its own rail Workspace to a Planner tab (#move-to-planner). A user whose
+        // last workspace was "design" would otherwise land on a removed screen — redirect to Planner on its
+        // Designs page.
+        if (state && (state.activeWorkspace as string) === "design") {
+          state.activeWorkspace = "projects";
+          state.projectsPageMode = "designs";
+        }
+        // The Designs page-mode key was renamed "design" → "designs" (#2701, feature-folder rename to
+        // match the on-screen "Designs" tab). A user whose last page-mode was "design" now opens "designs".
+        if (state && (state.projectsPageMode as string) === "design") state.projectsPageMode = "designs";
+        // The Security workspace's key was renamed "agents" → "security" (#2702, naming realignment).
+        // A user whose last workspace was "agents" would otherwise land on a removed key.
+        if (state && (state.activeWorkspace as string) === "agents") state.activeWorkspace = "security";
+        // Refresh BUILT-IN blueprints from code on every load (#677). They're code-owned
+        // templates, but `blueprints` is persisted — so improvements to a built-in (the
+        // `optional` UI stage, enabled repos, updated prompts, …) would never reach a user
+        // who seeded their store before the change. We replace each persisted built-in with
+        // its current definition (by id) and add any new built-ins; user-created / forked /
+        // imported blueprints are left untouched.
+        // Reconcile the persona library with the packaged built-ins (#2094): re-seed any dropped
+        // built-in, restore built-in identity, and keep user edits + user-authored personas. Same
+        // code-owned-template discipline as the blueprints refresh below.
+        if (state?.personas) state.personas = reconcilePersonas(state.personas);
+        // #2700: the org feature was renamed "teams" — its persisted store fields `orgs`/`orgZoom` are now
+        // `teams`/`teamsZoom`. Map an existing on-disk snapshot's old keys onto the new ones so a user's
+        // saved teams + per-team zoom survive the rename (the JSON shape is unchanged; only key names moved).
+        if (state) {
+          const legacy = state as unknown as Record<string, unknown>;
+          if (legacy.orgs !== undefined && legacy.teams === undefined) legacy.teams = legacy.orgs;
+          if (legacy.orgZoom !== undefined && legacy.teamsZoom === undefined) legacy.teamsZoom = legacy.orgZoom;
+          delete legacy.orgs;
+          delete legacy.orgZoom;
+        }
+        // Same discipline for the team library (#2193): re-seed dropped built-ins, restore built-in
+        // identity, keep user edits + user-authored teams.
+        if (state?.teams) state.teams = reconcileOrgs(state.teams);
+        if (state?.blueprints) {
+          state.blueprints = refreshBuiltIns(state.blueprints);
+        }
+        // Same idea for permission profiles: refresh the built-ins from the role JSON, drop retired
+        // demos + stale generated profiles, keep the user's customs (the unified role→profile model).
+        if (state?.agentProfiles) {
+          state.agentProfiles = reconcileBuiltInProfiles(state.agentProfiles);
+        }
+        // #2548 follow-up: the one-time triaged grandfather backfilled from the PERSISTED github board +
+        // fleets, but both are empty when the user is logged out / after a state reset — so an existing
+        // user's on-disk published projects still vanished from the Glance network (only the demo loaded).
+        // REPAIR once: when `triagedProjects` is still empty, grandfather from the RELIABLE local published
+        // inventory (`list_local_projects`), plus a re-derive from any github board / fleets now present.
+        // The empty-guard makes it self-limiting — a backfill makes triagedProjects non-empty, so it never
+        // re-runs, preserving the forward-looking rule (a genuinely new draft stays hidden until triaged).
+        if (state && Object.keys(state.triagedProjects ?? {}).length === 0) {
+          void safeInvoke<{ key: string; title: string; published: boolean }[]>("list_local_projects", undefined, []).then((list) => {
+            const keys = (Array.isArray(list) ? list : []).filter((p) => p?.published).map((p) => p.key);
+            useAppStore.setState((s) => {
+              if (Object.keys(s.triagedProjects).length > 0) return {}; // something already stamped meanwhile — leave it
+              const now = Date.now();
+              const seeded = grandfatherTriaged(s.githubState?.records, s.planFleet, now);
+              const merged = grandfatherLocalPublished(keys, seeded, now);
+              return Object.keys(merged).length ? { triagedProjects: merged } : {};
+            });
+          });
+        }
+        // Hydrate user blueprints from their on-disk dir (#blueprints) over the `bsc` bridge
+        // (`bsc blueprint list --full`, #2143): union them in (so one that survived a store reset or a
+        // fresh download appears), and migrate any persisted-but-not-yet-on-disk user blueprint forward
+        // to the dir (`bsc blueprint set`). The dir is the durable home; the persisted list is a cache;
+        // built-ins stay code-owned. Blueprints are GLOBAL (no project key) → `null`. `bscJson` degrades
+        // to `[]` when the bridge is unreachable — safe here: an empty list simply unions nothing (the
+        // `if (fromDir.length)` guard), so it never blanks the seeded/persisted set. Async — runs after
+        // hydration settles.
+        void bscJson<unknown[]>(null, ["blueprint", "list", "--full"], []).then((rows) => {
+          const coerce = (b: unknown): Blueprint | undefined =>
+            b && typeof (b as Blueprint).id === "string" && Array.isArray((b as Blueprint).sections)
+              ? (b as Blueprint)
+              : undefined;
+          const fromDir = rows.map(coerce).filter((b): b is Blueprint => !!b && b.origin !== "built-in");
+          const onDiskIds = new Set(fromDir.map((b) => b.id));
+          if (fromDir.length) {
+            useAppStore.setState((s) => {
+              const byId = new Map(s.blueprints.map((b) => [b.id, b]));
+              for (const b of fromDir) byId.set(b.id, b); // the dir wins for user blueprints
+              return { blueprints: [...byId.values()] };
+            });
+          }
+          for (const b of useAppStore.getState().blueprints) {
+            if (b.origin !== "built-in" && !onDiskIds.has(b.id)) {
+              void bscWrite(null, ["blueprint", "set"], b);
+            }
+          }
+        });
+        // Same for the packaged skills (#677-style): replace the code-owned set from
+        // code and prune any retired packaged skill, so a store seeded with the old
+        // dev-workflow skills picks up the compliance/standards library on next load.
+        if (state?.skills) {
+          state.skills = refreshPackagedSkills(state.skills);
+        }
         // Release the gate once hydration settles — on success or error — so the
         // shell never hangs on a blank canvas (on error the store keeps defaults).
         (state ?? useAppStore.getState()).setHasHydrated(true);

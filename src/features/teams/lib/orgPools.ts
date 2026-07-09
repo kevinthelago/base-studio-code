@@ -1,4 +1,4 @@
-// Org pools (#2199, #2436) — consolidating a swarm of agents into ONE stacked node so large graphs
+// Team pools (#2199, #2436) — consolidating a swarm of agents into ONE stacked node so large graphs
 // stay readable. A POOL is ≥2 positions on the same STACKABLE persona: `pooled`, or worker-role by
 // default (explicit `pooled:false` opts out) — the org graph is the SCAFFOLD (director · reviewer ·
 // auditor · intake · anchors) plus a stacked engineer slot per worker persona; the planner owns how
@@ -8,7 +8,7 @@
 // `homogeneous` flag records whether members are truly interchangeable (identical external relationship
 // signatures) so the UI can mark mixed-wiring stacks. Edges among members (a peer mesh) are internal —
 // they show on drill-in. Pure model (React-free) so it's unit-testable, canvas stays thin.
-import type { Org, Position, Relationship } from "./org";
+import type { Team, Position, Relationship } from "./team";
 import { autoLayout, NODE_SIZE } from "./orgLayout";
 import { BUILTIN_PERSONAS, type Persona } from "@/features/personas";
 
@@ -40,7 +40,7 @@ export interface Pool {
 /** The external relationship signature of a position: every edge to a node OUTSIDE `memberSet`, as a
  *  sorted `dir|archetype|counterpart` string. Members with equal signatures are interchangeable; edges
  *  among members (a peer mesh) are excluded. */
-function externalSignature(org: Org, nodeId: string, memberSet: Set<string>): string {
+function externalSignature(org: Team, nodeId: string, memberSet: Set<string>): string {
   const parts: string[] = [];
   for (const r of org.relationships) {
     if (r.from === nodeId && !memberSet.has(r.to)) parts.push(`out|${r.archetype}|${r.to}`);
@@ -54,7 +54,7 @@ function externalSignature(org: Org, nodeId: string, memberSet: Set<string>): st
  *  (e.g. Fleet Alpha's engineers — one overseen by the reviewer, one by the auditor — now stack, with
  *  both oversee edges unioned onto the stack node). Non-worker singletons (the scaffold) never stack.
  *  Deterministic (positions in author order). */
-export function detectPools(org: Org, personas: Persona[]): Pool[] {
+export function detectPools(org: Team, personas: Persona[]): Pool[] {
   const stackable = new Set(personas.filter(isStackable).map((p) => p.id));
   const byPersona = new Map<string, Position[]>();
   for (const p of org.positions) {
@@ -75,7 +75,7 @@ export function detectPools(org: Org, personas: Persona[]): Pool[] {
 
 export interface CollapsedOrg {
   /** The parent graph with each pool's members replaced by one synthetic pool node. */
-  org: Org;
+  org: Team;
   /** Pool metadata keyed by the synthetic pool nodeId — the canvas renders these as stacked cards. */
   poolInfo: Record<string, Pool>;
 }
@@ -85,7 +85,7 @@ const avg = (xs: number[]): number => (xs.length ? xs.reduce((a, b) => a + b, 0)
 /** Collapse an org for the parent view: each pool's members become ONE synthetic pool position at the
  *  members' centroid; external edges are rerouted to the pool node and deduped (by from|to|archetype);
  *  internal edges (both endpoints inside one pool) are dropped. A no-op when there are no pools. */
-export function collapseOrg(org: Org, pools: Pool[]): CollapsedOrg {
+export function collapseOrg(org: Team, pools: Pool[]): CollapsedOrg {
   if (!pools.length) return { org, poolInfo: {} };
   const memberToPool = new Map<string, Pool>();
   for (const pool of pools) for (const m of pool.memberNodeIds) memberToPool.set(m, pool);
@@ -118,7 +118,7 @@ export function collapseOrg(org: Org, pools: Pool[]): CollapsedOrg {
 /** The pool's OWN graph, shown when you drill in: the members, every edge touching a member (the internal
  *  peer mesh + their edges out), and the boundary neighbor nodes those edges reach (context). Positions
  *  are the members' real stored coords, so drilling reads as zooming into that cluster. */
-export function poolSubgraph(org: Org, pool: Pool): Org {
+export function poolSubgraph(org: Team, pool: Pool): Team {
   const memberSet = new Set(pool.memberNodeIds);
   const relationships = org.relationships.filter((r) => memberSet.has(r.from) || memberSet.has(r.to));
   const nodeIds = new Set<string>(pool.memberNodeIds);
@@ -135,7 +135,7 @@ export function poolSubgraph(org: Org, pool: Pool): Org {
 // through the pool abstraction — translate each member cluster so its centroid is the pool's
 // laid-out spot, preserving the members' relative arrangement for drill-in (#2439).
 
-/** The stacked card's shadow-card offset (design px) — OrgCanvas renders the outermost shadow card
+/** The stacked card's shadow-card offset (design px) — TeamsCanvas renders the outermost shadow card
  *  at `translate(POOL_STACK_OFFSET, POOL_STACK_OFFSET)`, so a pool's true render footprint is the
  *  agent card plus this overhang in each axis. The layout must see THAT size (via `poolLayoutSizes`)
  *  so collision spaces the stack like the card the user actually sees. */
@@ -162,7 +162,7 @@ const SPREAD_Y = 44;
  *  preserving the members' relative arrangement (the #2439 drill-in contract). A coincident/unplaced
  *  member cluster gets a small deterministic spread around the spot instead (see above). Pure +
  *  deterministic; returns a fresh positions array. */
-export function applyPoolLayout(org: Org, pools: Pool[], layout: Record<string, { x: number; y: number }>): Position[] {
+export function applyPoolLayout(org: Team, pools: Pool[], layout: Record<string, { x: number; y: number }>): Position[] {
   const moved = new Map<string, { x: number; y: number }>();
   for (const pool of pools) {
     const target = layout[pool.nodeId];
@@ -195,11 +195,11 @@ export function applyPoolLayout(org: Org, pools: Pool[], layout: Record<string, 
  *  layering members against pinned boundary nodes because the members are one persona (a flat
  *  row/grid near their old spot reads well) and "context stays put" is the simplest honest contract
  *  from inside a drill. Returns the full org's positions with only the members changed. */
-export function organizeDrilledPool(org: Org, pool: Pool): Position[] {
+export function organizeDrilledPool(org: Team, pool: Pool): Position[] {
   const memberSet = new Set(pool.memberNodeIds);
   const members = org.positions.filter((p) => memberSet.has(p.nodeId));
   if (!members.length) return org.positions;
-  const sub: Org = {
+  const sub: Team = {
     ...org,
     positions: members,
     relationships: org.relationships.filter((r) => memberSet.has(r.from) && memberSet.has(r.to)),

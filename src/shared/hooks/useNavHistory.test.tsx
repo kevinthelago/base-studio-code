@@ -24,33 +24,33 @@ describe("useNavHistory", () => {
       activeWorkspace: "projects",
       projectsPageMode: "projects",
       glanceDrill: null,
-      orgDrill: null,
+      teamsDrill: null,
     });
   });
 
-  it("mouse back exits an org pool drill; forward re-enters it (#2492)", () => {
-    useAppStore.setState({ projectsPageMode: "org" });
+  it("mouse back exits a team pool drill; forward re-enters it (#2492)", () => {
+    useAppStore.setState({ projectsPageMode: "teams" });
     const hook = renderHook(() => useNavHistory());
-    act(() => { useAppStore.getState().setOrgDrill("pool:engineer"); });
-    expect(useAppStore.getState().orgDrill).toBe("pool:engineer");
+    act(() => { useAppStore.getState().setTeamsDrill("pool:engineer"); });
+    expect(useAppStore.getState().teamsDrill).toBe("pool:engineer");
 
     back();
-    expect(useAppStore.getState().orgDrill).toBeNull();
-    expect(useAppStore.getState().projectsPageMode).toBe("org"); // still on the Org page
+    expect(useAppStore.getState().teamsDrill).toBeNull();
+    expect(useAppStore.getState().projectsPageMode).toBe("teams"); // still on the Teams page
 
     forward();
-    expect(useAppStore.getState().orgDrill).toBe("pool:engineer");
+    expect(useAppStore.getState().teamsDrill).toBe("pool:engineer");
     hook.unmount();
   });
 
-  it("planner page switches join the history (Projects ↔ Org)", () => {
+  it("planner page switches join the history (Projects ↔ Teams)", () => {
     const hook = renderHook(() => useNavHistory());
-    act(() => { useAppStore.getState().setProjectsPageMode("org"); });
-    act(() => { useAppStore.getState().setOrgDrill("pool:x"); });
+    act(() => { useAppStore.getState().setProjectsPageMode("teams"); });
+    act(() => { useAppStore.getState().setTeamsDrill("pool:x"); });
 
     back(); // drill out
-    expect(useAppStore.getState().orgDrill).toBeNull();
-    expect(useAppStore.getState().projectsPageMode).toBe("org");
+    expect(useAppStore.getState().teamsDrill).toBeNull();
+    expect(useAppStore.getState().projectsPageMode).toBe("teams");
     back(); // page back
     expect(useAppStore.getState().projectsPageMode).toBe("projects");
     hook.unmount();
@@ -83,7 +83,7 @@ describe("useNavHistory", () => {
     const hook = renderHook(() => useNavHistory());
     act(() => { useAppStore.getState().setWorkspace("glance"); });
     // A stale org drill set while Glance is showing is not a location change on Glance...
-    act(() => { useAppStore.getState().setOrgDrill("pool:stale"); });
+    act(() => { useAppStore.getState().setTeamsDrill("pool:stale"); });
     back(); // ...so one back returns to the planner, not to a phantom drill entry.
     expect(useAppStore.getState().activeWorkspace).toBe("projects");
     hook.unmount();
