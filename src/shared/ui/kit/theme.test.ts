@@ -44,7 +44,7 @@ describe("applyThemeToRoot", () => {
 });
 
 describe("the hydrated active set (#2488)", () => {
-  const neon = { id: "neon", label: "Neon", description: "glow", vars: { "--card-bg": "black" } };
+  const neon = { id: "neon", tech: "react", label: "Neon", description: "glow", vars: { "--card-bg": "black" } };
 
   it("defaults to the packaged registry and resets on an empty sync", () => {
     expect(activeKitThemes()).toEqual(KIT_THEMES);
@@ -64,13 +64,13 @@ describe("the hydrated active set (#2488)", () => {
   });
 
   it("a hydrated EDIT of a built-in wins over the packaged copy", () => {
-    const nordEdit = { id: "nord", label: "Nord", description: "d", vars: { "--card-radius": "9px" } };
+    const nordEdit = { id: "nord", tech: "react", label: "Nord", description: "d", vars: { "--card-radius": "9px" } };
     setActiveKitThemes([...KIT_THEMES.filter((t) => t.id !== "nord"), nordEdit]);
     expect((themeVars("nord") as Record<string, string>)["--card-radius"]).toBe("9px");
   });
 
   it("kitTokens unions active + packaged, so applyThemeToRoot clears store-theme tokens on switch", () => {
-    const shadowed = { id: "shadowy", label: "S", description: "", vars: { "--chip-fg": "red" } };
+    const shadowed = { id: "shadowy", tech: "react", label: "S", description: "", vars: { "--chip-fg": "red" } };
     setActiveKitThemes([...KIT_THEMES, shadowed]);
     expect(kitTokens()).toEqual(expect.arrayContaining([...KIT_TOKENS, "--chip-fg"]));
     const el = document.createElement("div");

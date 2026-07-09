@@ -260,7 +260,7 @@ describe("kit-theme collection slice (#2488)", () => {
   });
 
   it("orders the hydrated collection: packaged registry order first, authored themes after", async () => {
-    const neon: KitThemeRecord = { id: "neon", label: "Neon", description: "", vars: { "--chip-bg": "red" } };
+    const neon: KitThemeRecord = { id: "neon", tech: "react", label: "Neon", description: "", vars: { "--chip-bg": "red" } };
     // A filesystem-order shuffle: the authored theme first, built-ins reversed.
     vi.spyOn(themeBridge, "loadThemes").mockResolvedValueOnce([neon, ...[...SEED_THEMES].reverse()]);
     await useAppStore.getState().hydrateThemes();
