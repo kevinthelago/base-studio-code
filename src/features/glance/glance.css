@@ -14,6 +14,8 @@
   /* A subtle graph-level lift, NOT a floating-modal drop (#2659): the panel reads as embedded in the
      graph (which it is — it pans/zooms with the world layer), not a screen hovering on top. */
   box-shadow: 0 6px 20px rgba(0, 0, 0, .32);
+  /* The .4s cubic-bezier here is mirrored by MORPH_EASE in GlanceCanvas.tsx — the neighbour nodes part
+     off the SAME curve/duration, so the panel grow + the graph parting are one motion (#2671). Keep in sync. */
   transition: left .4s cubic-bezier(.22, .61, .36, 1), top .4s cubic-bezier(.22, .61, .36, 1),
               width .4s cubic-bezier(.22, .61, .36, 1), height .4s cubic-bezier(.22, .61, .36, 1),
               border-color .4s;
