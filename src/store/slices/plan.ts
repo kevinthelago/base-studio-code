@@ -76,6 +76,20 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
     set({ planFleet: setMapEntry(get().planFleet, projectId, next) });
     void bscWrite(projectId, ["plan", "fleet", "set"], next);
   };
+  // Shallow-merge a patch into exactly one stream (by id), leaving the rest of the fleet untouched.
+  // The shared body of every single-field stream setter (profile/model/strategy/persona) — a no-op
+  // when the project has no fleet yet. NOT for add/remove (they mutate the stream list) or flow
+  // (its value derives from the stream's own current flow, not a plain field patch).
+  const patchStream = (
+    projectId: string,
+    streamId: string,
+    patch: Partial<AppStore["planFleet"][string]["streams"][number]>,
+  ) =>
+    mutateFleet(projectId, (cur) => {
+      if (!cur) return null;
+      const streams = cur.streams.map((x) => (x.id === streamId ? { ...x, ...patch } : x));
+      return { ...cur, streams };
+    });
   return ({
       configProfiles: [],
       addConfigProfile: (profile) =>
@@ -433,11 +447,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           return { ...cur, streams: cur.streams.filter((x) => x.id !== id) };
         }),
       setPlanAgentStreamProfile: (projectId, streamId, profileId) =>
-        mutateFleet(projectId, (cur) => {
-          if (!cur) return null;
-          const streams = cur.streams.map((x) => (x.id === streamId ? { ...x, profile: profileId ?? undefined } : x));
-          return { ...cur, streams };
-        }),
+        patchStream(projectId, streamId, { profile: profileId ?? undefined }),
       setPlanAgentStreamFlow: (projectId, streamId, patch) =>
         mutateFleet(projectId, (cur) => {
           if (!cur) return null;
@@ -446,27 +456,12 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           return { ...cur, streams };
         }),
       setPlanAgentStreamModel: (projectId, streamId, model) =>
-        mutateFleet(projectId, (cur) => {
-          if (!cur) return null;
-          const streams = cur.streams.map((x) =>
-            x.id === streamId ? { ...x, model: model ?? undefined } : x);
-          return { ...cur, streams };
-        }),
+        patchStream(projectId, streamId, { model: model ?? undefined }),
       setPlanAgentStreamStrategy: (projectId, streamId, strategy) =>
-        mutateFleet(projectId, (cur) => {
-          if (!cur) return null;
-          const streams = cur.streams.map((x) =>
-            x.id === streamId ? { ...x, strategy } : x);
-          return { ...cur, streams };
-        }),
+        patchStream(projectId, streamId, { strategy }),
       // #2094: the persona a stream launches as — resolved at fleet launch to role/prompt/skills/model.
       setPlanAgentStreamPersona: (projectId, streamId, personaId) =>
-        mutateFleet(projectId, (cur) => {
-          if (!cur) return null;
-          const streams = cur.streams.map((x) =>
-            x.id === streamId ? { ...x, persona: personaId ?? undefined } : x);
-          return { ...cur, streams };
-        }),
+        patchStream(projectId, streamId, { persona: personaId ?? undefined }),
       setPlanFleetMeta: (projectId, recommended, reasoning, strategy) =>
         mutateFleet(projectId, (raw) => {
           const cur = raw ?? emptyFleet();
