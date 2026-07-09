@@ -6,7 +6,7 @@ import {
 } from "./team";
 
 describe("org vocabulary (#2193)", () => {
-  it("loads the communication forms + archetypes from @data/org", () => {
+  it("loads the communication forms + archetypes from @data/teams", () => {
     expect(COMMUNICATION_FORMS.length).toBeGreaterThanOrEqual(8);
     expect(RELATIONSHIP_ARCHETYPES.length).toBeGreaterThanOrEqual(6);
     // A blocking escalation and an authoritative directive exist, with their runtime semantics intact.
@@ -39,7 +39,7 @@ describe("org vocabulary (#2193)", () => {
 });
 
 describe("built-in orgs (#2193)", () => {
-  it("assembles the Default fleet from @data/org/orgs, flagged builtin + well-formed", () => {
+  it("assembles the Default fleet from @data/teams/orgs, flagged builtin + well-formed", () => {
     const built = makeBuiltinOrgs();
     const fleet = built.find((o) => o.id === "org-default-fleet")!;
     expect(fleet).toBeTruthy();

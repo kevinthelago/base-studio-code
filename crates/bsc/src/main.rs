@@ -19,7 +19,8 @@ const COMMANDS: &[(&str, &str)] = &[
     ("compliance", "compliance standards corpus"),
     ("blueprint", "user blueprint store"),
     ("persona", "user persona store: agent identities (prompt + skills + model over a role)"),
-    ("org", "user org store: persona-relationship graph (positions + relationships)"),
+    ("teams", "user teams store: persona-relationship graph (positions + relationships)"),
+    ("org", "DEPRECATED (#2700) → use `bsc teams` (the store, renamed org → teams)"),
     ("component", "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)"),
     ("ui", "UI design surface: KitNode contract + themes (#1852) + the component library (#2469) + the released-kit store (release, #2465)"),
     ("logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control"),
@@ -55,7 +56,14 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "compliance" => compliance::cli::run(rest, "bsc compliance"),
         "blueprint" => bsc_blueprint::cli::run(rest, "bsc blueprint"),
         "persona" => bsc_persona::cli::run(rest, "bsc persona"),
-        "org" => bsc_org::cli::run(rest, "bsc org"),
+        "teams" => bsc_teams::cli::run(rest, "bsc teams"),
+        // Deprecated alias (#2700, the #2469 `bsc component` → `bsc ui` pattern): `bsc org` still routes
+        // to the SAME teams store handler — live agent sessions call it, so it must keep working. The
+        // pointer goes to STDERR so stdout stays clean JSON for pipes.
+        "org" => {
+            eprintln!("`bsc org` is deprecated; use `bsc teams`");
+            bsc_teams::cli::run(rest, "bsc org")
+        }
         // Deprecated alias (#2469, the #1721 `bsc plan integration` pattern): the component verbs
         // moved under `bsc ui`. Same behavior via the same delegate; the pointer goes to STDERR so
         // stdout stays clean JSON for pipes.
@@ -131,5 +139,21 @@ mod tests {
         // Help paths — no store required. The alias still works (delegating + warning on stderr).
         assert!(dispatch("ui", vec!["help".into()]).is_ok());
         assert!(dispatch("component", vec!["help".into()]).is_ok());
+    }
+
+    #[test]
+    fn top_help_marks_org_deprecated_and_points_at_teams() {
+        let h = top_help();
+        assert!(h.contains("DEPRECATED (#2700)"), "the org row carries the deprecation pointer");
+        assert!(h.contains("`bsc teams`"), "... aimed at the renamed teams store");
+        assert!(h.contains("user teams store"), "the teams row describes the store");
+    }
+
+    #[test]
+    fn teams_and_the_org_alias_both_dispatch() {
+        // #2700: `bsc teams` is the primary verb; `bsc org` stays a deprecated alias onto the same
+        // store handler (delegating + warning on stderr). Help paths — no store required.
+        assert!(dispatch("teams", vec!["help".into()]).is_ok());
+        assert!(dispatch("org", vec!["help".into()]).is_ok());
     }
 }
