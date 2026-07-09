@@ -5,6 +5,7 @@
 // look with NO holes. This module is the DIFF only — no download/confirm/generation wiring. Kept in
 // shared/ (feature-agnostic, structural inputs) so the planner + a future reconciliation UI both use it.
 import DESCRIPTOR from "@data/ui/style-descriptor.json";
+import { slugify } from "@/shared/lib/core/format";
 
 interface DomainDescriptor {
   domain?: { group: string; tokens?: { key: string }[] }[];
@@ -36,11 +37,19 @@ export interface DesignReconcile {
 }
 
 /** Diff a blueprint's design contribution against the local contract (#2646). Pure. `known` defaults to
- *  the contract's graph-category keys; missing categories are deduped + sorted. */
+ *  the contract's graph-category keys; missing categories are slugified, deduped + sorted.
+ *
+ *  Each category is normalized to a slug FIRST (#2663) so the token derived downstream —
+ *  `--graph-category-<key>` — is always a valid custom property. A non-slug key like `"Simulation"` or
+ *  `"ui_ux"` would otherwise be dropped SILENTLY when `compileContributionsCss` rejects it against
+ *  `SAFE_TOKEN` — a hole the fall-loudly principle forbids. Slugging here also means a capitalized KNOWN
+ *  category (e.g. `"Greenfield"`) matches the contract instead of being wrongly flagged missing. Empty
+ *  slugs (e.g. from `"!!!"`) are dropped. */
 export function reconcileDesign(
   design: DesignContribution | undefined,
   known: ReadonlySet<string> = KNOWN_GRAPH_CATEGORIES,
 ): DesignReconcile {
-  const missingCategories = [...new Set((design?.categories ?? []).filter((c) => !known.has(c)))].sort();
+  const categories = (design?.categories ?? []).map((c) => slugify(c)).filter(Boolean);
+  const missingCategories = [...new Set(categories.filter((c) => !known.has(c)))].sort();
   return { missingCategories, themeRef: design?.theme, complete: missingCategories.length === 0 };
 }

@@ -7,20 +7,25 @@
 // generator must NOT silently degrade to a hole — this THROWS, and the confirm-list surfaces the failure
 // (an error banner) instead of registering a partial/empty contribution. Silent failure is the enemy.
 import { bsc } from "@/shared/lib/core/bsc";
-import { KNOWN_GRAPH_CATEGORIES } from "@/shared/ui/kit";
+import DESCRIPTOR from "@data/ui/style-descriptor.json";
+import { hueOfColor } from "./colorHue";
 
-/** The brand-accent seed hue the contract's categorical palette was generated from (bsc-ui S3, #2636):
- *  the known category colours sit evenly spaced from here, so we seed the generator with those hues to
- *  keep NEW categories visually distinct from the contract's existing ones. */
-const SEED_HUE = 70;
-
-/** Reconstruct the hues the contract's existing categories occupy — evenly spaced from the seed, the
- *  same layout `bsc ui generate categorical` produced them with (#2636). Feeding these as the "already
- *  used" set steers each new hue into an empty gap rather than colliding with a built-in category. */
-function knownCategoryHues(): number[] {
-  const n = KNOWN_GRAPH_CATEGORIES.size || 1;
-  return Array.from({ length: n }, (_, i) => (SEED_HUE + (i * 360) / n) % 360);
+interface DomainDescriptor {
+  domain?: { group: string; tokens?: { value?: string }[] }[];
 }
+
+/** The hues the contract's existing graph-category colours ACTUALLY occupy — parsed from their real
+ *  values in the style descriptor (#2663), not reconstructed from an assumed even-spacing layout the
+ *  contract never used (the built-ins are hand-authored hex at unrelated OKLCH hues). Feeding these real
+ *  hues as the generator's "already used" set is what keeps a new category visually distinct from the
+ *  built-ins. Computed once; a value that doesn't parse is skipped. */
+const KNOWN_CATEGORY_HUES: number[] = (() => {
+  const d = DESCRIPTOR as DomainDescriptor;
+  const group = (d.domain ?? []).find((g) => g.group === "graph-category");
+  return (group?.tokens ?? [])
+    .map((t) => (t.value ? hueOfColor(t.value) : null))
+    .filter((h): h is number => h != null);
+})();
 
 /**
  * Generate a distinct colour for each `missing` category via the deterministic generator (#2636),
@@ -33,7 +38,7 @@ function knownCategoryHues(): number[] {
  *   surfaces it rather than shipping a silent hole.
  */
 export async function generateCategoryColors(missing: string[]): Promise<Record<string, string>> {
-  const used = knownCategoryHues();
+  const used = [...KNOWN_CATEGORY_HUES];
   const out: Record<string, string> = {};
   for (const cat of missing) {
     const raw = (await bsc(null, ["ui", "generate", "next", "--existing", used.join(",")])).trim();

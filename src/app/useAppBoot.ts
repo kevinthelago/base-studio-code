@@ -21,6 +21,7 @@ export function useAppBoot() {
   const accent = useAppStore((s) => s.accent);
   const kitTheme = useAppStore((s) => s.kitTheme);
   const kitThemes = useAppStore((s) => s.kitThemes);
+  const designContributions = useAppStore((s) => s.designContributions);
   const hasHydrated = useAppStore((s) => s.hasHydrated);
   const setBscBaseDir = useAppStore((s) => s.setBscBaseDir);
 
@@ -40,6 +41,12 @@ export function useAppBoot() {
   // `kitThemes` is read as a dep (#2488) so the vars re-apply after the theme STORE hydrates — the
   // chosen theme may be designer-edited (or designer-authored) and differ from the packaged fallback.
   useEffect(() => { void kitThemes; applyThemeToRoot(kitTheme); }, [kitTheme, kitThemes]);
+
+  // Apply the persisted downloaded-blueprint design overlays (#2656/#2663), live on add/remove AND after
+  // the store rehydrates. Keyed on `designContributions` (NOT the one-shot mount effect) because persist
+  // hydration is async: a mount-time read sees the default [] and would never re-apply the restored
+  // overlays. Mirrors applyThemeToRoot above (compose-don't-mutate — a managed :root <style>).
+  useEffect(() => { applyContributionsToRoot(designContributions); }, [designContributions]);
 
   // Startup timing trace (#perf): mark the gate commit, then the first paint of the
   // real UI once the store rehydrates — logStartupTrace emits the breakdown once.
@@ -88,9 +95,8 @@ export function useAppBoot() {
     // Data-defined component variants (#2569): compile the designer-authored `bsc ui variants` store
     // into the managed `<style>` so an LLM-authored variant renders on boot (re-applied on ui-touch).
     void useAppStore.getState().hydrateVariants();
-    // Design contributions (#2656): apply the persisted downloaded-blueprint token overlays on boot, so
-    // a shared blueprint's look restyles the app immediately (compose-don't-mutate, #2650).
-    applyContributionsToRoot(useAppStore.getState().designContributions);
+    // (Design contributions are applied by the `designContributions`-keyed effect above, #2663 — a
+    // one-shot mount read here saw the pre-hydration default [] and never re-applied the restored set.)
     // Project relationships (#2253): hydrate the Glance L1 network edges from the global `bsc project
     // link` store so the desktop, live sessions, and a restart share ONE set. A no-op when the bridge
     // is absent (keeps the persisted cache).
