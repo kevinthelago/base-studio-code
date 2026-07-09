@@ -6,7 +6,7 @@ import { mergeRoleDefaults, roleCapability, type RoleCapability } from "./roleMo
 // #2027 P1). The role gate is least-privilege; a JSON edit that WIDENS a role's access (e.g. gives a
 // reviewer git:write, or hands a non-planner default write globs) must trip a test here, not ship.
 describe("role capability table (loaded from @data/permissions/role-capabilities.json)", () => {
-  it("has exactly the 11 roles with their intended github/git/code/net/ui tiers", () => {
+  it("has exactly the 12 roles with their intended github/git/code/net/ui tiers", () => {
     const tiers = Object.fromEntries(
       Object.values(ROLE_DEFAULTS).map((c) => [c.role, `${c.github}/${c.git}/${c.code}/${c.net}/${c.ui}`]),
     );
@@ -28,6 +28,10 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
       // store is its one write grant (`ui: write`, #2470), and its whole command surface is
       // `bsc ui`, granted at launch via the restricted allow-list.
       designer:   "none/none/none/none/write",
+      // Architect (#2755): the Teams Studio's team-authoring session — `none` on EVERY axis, `ui`
+      // included (unlike the designer it is not a UI-kit session). Its whole command surface is
+      // `bsc teams` + `bsc persona`, granted at launch via the restricted allow-list.
+      architect:  "none/none/none/none/none",
       // Marketer (#2431): read-only on git/GitHub, code:none — writes come solely from its
       // marketing-content carve-out (asserted below), never a code tier.
       marketer:   "read/read/none/read/read",

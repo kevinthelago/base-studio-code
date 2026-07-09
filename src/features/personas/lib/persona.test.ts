@@ -12,18 +12,30 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
   it("assembles the full packaged set from the @data/personas JSON, ordered", () => {
     const built = makeBuiltinPersonas();
     // The packaged personas are all present, one per role (documentor #1555, designer #2471) plus the
-    // auditor persona (#2578 — a juror in a standing iteration loop) and the marketer (#2431).
+    // auditor persona (#2578 — a juror in a standing iteration loop), the marketer (#2431), and the
+    // team architect (#2755 — the Teams Studio's teams/personas authoring session).
     for (const id of [
       "persona-planner", "persona-worker", "persona-director", "persona-triage", "persona-reviewer",
-      "persona-tester", "persona-issuer", "persona-juror", "persona-auditor", "persona-marketer", "persona-documentor", "persona-designer",
+      "persona-tester", "persona-issuer", "persona-juror", "persona-auditor", "persona-marketer", "persona-documentor", "persona-designer", "persona-architect",
     ]) {
       expect(built.some((p) => p.id === id)).toBe(true);
     }
-    // Ordered by each def's `order` field: planner leads, designer trails.
+    // Ordered by each def's `order` field: planner leads, architect trails (order 11, after designer).
     expect(built[0]?.id).toBe("persona-planner");
-    expect(built[built.length - 1]?.id).toBe("persona-designer");
+    expect(built[built.length - 1]?.id).toBe("persona-architect");
     // `order`/`protocolFile` are load-time-only — they must not leak onto the assembled Persona.
     expect(built.every((p) => !("order" in p) && !("protocolFile" in p))).toBe(true);
+  });
+
+  it("the architect persona (#2755) rides the architect role and kicks off onto bsc teams + bsc persona", () => {
+    const architect = makeBuiltinPersonas().find((p) => p.id === "persona-architect")!;
+    expect(architect.role).toBe("architect");
+    expect(architect.builtin).toBe(true);
+    // The start prompt IS the session kickoff (baked into the launch arg by useArchitectTerminal):
+    // it must anchor the session to its two command surfaces and the discover-before-write loop.
+    for (const needle of ["bsc teams", "bsc persona", "bsc teams list", "bsc persona list"]) {
+      expect(architect.startPrompt).toContain(needle);
+    }
   });
 
   it("the designer persona (#2471) rides the designer role and kicks off onto the bsc ui surface", () => {
