@@ -86,7 +86,7 @@ export const createOrgSlice: StateCreator<AppStore, [], [], OrgSlice> = (set, ge
     },
 
     addOrg: () => {
-      const id = mintOrgId(get().orgs, "new org");
+      const id = mintOrgId(get().orgs, "new team");
       const org = blankOrg(id);
       set((s) => ({ orgs: [...s.orgs, org] }));
       void pushOrg(org);

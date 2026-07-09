@@ -133,6 +133,26 @@ The consumer index a kit CHANGE fans out over (#2277): who to notify when a comp
 changes. A flat edge store at ~/.base-studio-code/kit-usage.json (like `bsc project link`). Recorded at
 planning (a project seeded from a kit-bearing blueprint uses that kit).",
     },
+    CmdDoc {
+        name: "doctor",
+        summary: "graph-health report — orphans, unused/dangling branches, duplicates, cycles (#2678)",
+        usage: "\
+USAGE:
+  bsc ui doctor [--kit K] [--json] [--pretty]     # the health report (read-only)
+  bsc ui doctor --fix [--kit K] [--yes]           # prune the safe dead roots (dry-run unless --yes)
+
+Traverses each kit's composition graph (nodes = components, edges = `composes`) and reports the
+dead/duplicated design a growing kit accumulates: CYCLE (a composes loop), DANGLING-BRANCH (an unused
+root that still pulls in dependencies), DUPLICATE (two components wrapping the same intrinsic, or
+byte-identical source), and ORPHAN (an isolated, never-referenced primitive/composite). \"Unused\" =
+no composer AND used = 0; a page/layout with used > 0 is a legit entry point, never flagged. Ranked
+most-severe-first; --kit scopes to one kit; --json emits the findings array (LLM-consumable).
+
+--fix prunes ONLY the safe set — the ROOT of each orphan/dangling-branch finding (never a used > 0
+node, never a duplicate or a cycle). It is a DRY RUN by default (prints what WOULD be removed); pass
+--yes to apply. Branch descendants are left for the next pass (one might be shared) — re-run to clean
+them. #2678/#2679.",
+    },
 ];
 
 const KIT_COMMANDS: &[CmdDoc] = &[
@@ -261,6 +281,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 cmd_shapes(&args[1..])
             }
         }
+        // `doctor` (#2678) is a custom read — the graph-health analyzer over the component store.
+        Some("doctor") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "doctor"));
+                Ok(())
+            } else {
+                cmd_doctor(&args[1..])
+            }
+        }
         // `list --shape <shape>` (#2475) filters to one shape's ideal components — intercepted here
         // (the shared store CLI rejects unknown flags); a plain `list` still delegates unchanged.
         Some("list") if args.iter().any(|a| a == "--shape") => cmd_list_shape(&args[1..]),
@@ -374,6 +403,113 @@ fn cmd_list_shape(args: &[String]) -> Result<(), String> {
     };
     let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
     println!("{}", json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `doctor [--kit K] [--json] [--pretty]` (#2678) — the graph-health report. Reads the component
+/// store, runs the pure analyzer ([`crate::graph_health::analyze`]), and prints the ranked findings
+/// as JSON (`--json`, LLM-consumable) or a human summary. `--kit` scopes the OUTPUT to one kit (the
+/// analyzer always groups by kit, so edges never cross kits regardless).
+fn cmd_doctor(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut kit, mut json, mut pretty) = (None::<String>, None::<String>, false, false);
+    let (mut fix, mut yes) = (false, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--kit" => kit = it.next().cloned(),
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            "--fix" => fix = true,
+            "--yes" => yes = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    // The write path (`--fix --yes`) removes records, so honor the runtime `ui` write-scope (#2470) —
+    // a read-scoped session may run the report but not prune. A dry run stays read-only.
+    if fix && yes {
+        bsc_cli_util::require_write_scope("ui")?;
+    }
+    let store = open_component_store(&dir)?;
+    let comps: Vec<serde_json::Value> = store
+        .list()
+        .iter()
+        .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+        .filter(|v| match &kit {
+            Some(k) => v.get("kitId").and_then(serde_json::Value::as_str) == Some(k.as_str()),
+            None => true,
+        })
+        .collect();
+
+    if fix {
+        return doctor_fix(&store, &comps, yes);
+    }
+
+    let findings = crate::graph_health::analyze(&comps);
+
+    if json {
+        let arr: Vec<serde_json::Value> = findings.iter().map(crate::graph_health::Finding::to_value).collect();
+        let out = if pretty {
+            serde_json::to_string_pretty(&arr)
+        } else {
+            serde_json::to_string(&arr)
+        };
+        println!("{}", out.map_err(|e| e.to_string())?);
+        return Ok(());
+    }
+
+    // Human summary — one line per finding, most-severe first.
+    if findings.is_empty() {
+        let scope = kit.as_deref().map(|k| format!(" for kit '{k}'")).unwrap_or_default();
+        println!("✓ design graph is healthy{scope} — no orphans, dead branches, duplicates, or cycles.");
+        return Ok(());
+    }
+    println!("{} finding(s), most-severe first:", findings.len());
+    for f in &findings {
+        println!("  [{}] {} — {}", f.category, f.kit, f.why);
+        println!("        → {}", f.suggested_action);
+    }
+    Ok(())
+}
+
+/// The `doctor --fix` action (#2679) — prune the safe dead roots. Dry run unless `apply`. Confirm-
+/// gated by construction: the removal set is `graph_health::prunable` (orphan/dead-root only, never a
+/// `used > 0` node, never a duplicate/cycle). Duplicates present in the graph are surfaced as a
+/// manual note so `--fix` never hides that there's more to reconcile by hand.
+fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply: bool) -> Result<(), String> {
+    let prunable = crate::graph_health::prunable(comps);
+    let dup_kinds = crate::graph_health::analyze(comps)
+        .iter()
+        .filter(|f| f.category == "duplicate" || f.category == "cycle")
+        .count();
+
+    if prunable.is_empty() {
+        println!("✓ nothing safe to prune — no orphans or dead branch roots.");
+        if dup_kinds > 0 {
+            println!("  ({dup_kinds} duplicate/cycle finding(s) remain — reconcile by hand; see `bsc ui doctor`).");
+        }
+        return Ok(());
+    }
+
+    if !apply {
+        println!("DRY RUN — {} node(s) WOULD be removed (pass --yes to apply):", prunable.len());
+        for p in &prunable {
+            println!("  - {} ({}) — {}", p.name, p.id, p.reason);
+        }
+        if dup_kinds > 0 {
+            println!("  ({dup_kinds} duplicate/cycle finding(s) are NOT auto-pruned — reconcile by hand).");
+        }
+        return Ok(());
+    }
+
+    let mut removed = 0usize;
+    for p in &prunable {
+        store.remove(&p.id)?;
+        println!("removed {} ({})", p.name, p.id);
+        removed += 1;
+    }
+    println!("pruned {removed} node(s). Re-run `bsc ui doctor` — removing a root can newly orphan its children.");
     Ok(())
 }
 
@@ -611,7 +747,7 @@ mod tests {
         // `bsc ui` composes this catalog (#2469): every store verb is present, and the usage text
         // teaches the CANONICAL `bsc ui …` form (the `bsc component` alias is deprecated).
         let names: Vec<&str> = command_docs().iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["list", "shapes", "get", "set", "remove", "kit", "eslint-preset", "usage"]);
+        assert_eq!(names, vec!["list", "shapes", "get", "set", "remove", "kit", "eslint-preset", "usage", "doctor"]);
         for c in command_docs() {
             assert!(!c.usage.contains("bsc component"), "{}'s usage teaches `bsc ui`, not the alias", c.name);
         }

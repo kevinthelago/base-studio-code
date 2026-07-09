@@ -105,9 +105,9 @@ export function OrgPanel() {
     return (
       <EmptyState
         icon="◆" iconVariant="dashed"
-        title="No org yet"
-        description="An org wires personas into positions and relationships — create one to start designing."
-        actions={<Button onClick={() => setOrgId(addOrg())}>+ new org</Button>}
+        title="No team yet"
+        description="A team wires personas into positions and relationships — create one to start designing."
+        actions={<Button onClick={() => setOrgId(addOrg())}>+ new team</Button>}
       />
     );
   }
@@ -215,7 +215,7 @@ export function OrgPanel() {
                 <Button variant="ghost" onClick={exitPool}>← back</Button>
               </>
             ) : (
-              <Text as="span" mono size={10.5} tone="dim">org · {org.positions.length} positions · {pools.length} pool{pools.length === 1 ? "" : "s"}</Text>
+              <Text as="span" mono size={10.5} tone="dim">team · {org.positions.length} positions · {pools.length} pool{pools.length === 1 ? "" : "s"}</Text>
             )}
           </Row>
           <Box style={{ width: 1, height: 22, background: "var(--border)" }} />
