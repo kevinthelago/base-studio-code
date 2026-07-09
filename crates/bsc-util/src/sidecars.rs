@@ -81,8 +81,10 @@ pub const SIDECARS: &[Sidecar] = &[
         advertise: true,
     },
     Sidecar {
-        name: "org", context_env: None,
-        blurb: "the user org library: the persona-relationship graph (positions wired by relationships)",
+        // #2700: renamed org → teams. `bsc org` still works as a deprecated alias (bsc/src/main.rs), but
+        // the agent inventory advertises the new primary verb `bsc teams`.
+        name: "teams", context_env: None,
+        blurb: "the user teams library: the persona-relationship graph (positions wired by relationships)",
         advertise: true,
     },
     Sidecar {
@@ -163,7 +165,7 @@ mod tests {
         let advertised: Vec<&str> = SIDECARS.iter().filter(|s| s.advertise).map(|s| s.name).collect();
         assert_eq!(
             advertised,
-            ["plan", "errors", "todo", "data", "skill", "logs", "compliance", "blueprint", "persona", "org", "component", "ui", "project", "files"],
+            ["plan", "errors", "todo", "data", "skill", "logs", "compliance", "blueprint", "persona", "teams", "component", "ui", "project", "files"],
             "the advertised set + order is what the agent prompt block renders (as `bsc <sub>`)",
         );
     }

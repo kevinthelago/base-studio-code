@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import departments from "@data/org/departments.json";
+import departments from "@data/teams/departments.json";
 import { ROLE_META } from "./orgView";
 
-// Guard for the externalized left-rail department order (@data/org/departments.json, #2419).
-describe("org departments (loaded from @data/org/departments.json)", () => {
+// Guard for the externalized left-rail department order (@data/teams/departments.json, #2419).
+describe("team departments (loaded from @data/teams/departments.json)", () => {
   it("is a unique list of non-empty names", () => {
     expect(departments.length).toBeGreaterThan(0);
     expect(new Set(departments).size).toBe(departments.length);

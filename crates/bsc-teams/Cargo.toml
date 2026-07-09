@@ -1,0 +1,17 @@
+[package]
+name = "bsc-teams"
+version = "0.1.0"
+edition = "2021"
+description = "User teams store (file CRUD over ~/.base-studio-code/orgs/) for base-studio-code (#2193, #2700) — the persona-relationship graph: positions connected by relationship archetypes that expand into communication forms. A thin teams-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's teams bridge and the session-facing `bsc teams` CLI (with the deprecated `bsc org` alias). The on-disk store dir stays `orgs/` so existing saved data is not orphaned."
+
+# The core lib (no Tauri, no SQLite) so the tiny CLI reuses it without dragging the whole desktop app
+# in. The hyphenated package name maps to the `bsc_teams` crate name.
+[lib]
+name = "bsc_teams"
+
+[dependencies]
+# The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the
+# org-specific nouns + lean `list` fields via a CliSpec.
+bsc-json-store = { path = "../bsc-json-store" }
+# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog.
+bsc-cli-util = { path = "../bsc-cli-util" }
