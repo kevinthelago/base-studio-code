@@ -52,10 +52,6 @@ const VP: Record<Viewport, { w: string; label: string }> = {
   auto: { w: "100%", label: "fluid · fills panel" },
 };
 
-// Collapsed width of the kits list (#2691) — the slim strip that carries the expand toggle so the
-// affordance always rides WITH the pane and is never covered.
-const RAIL_STRIP_W = 34;
-
 // The role dot + kit chip live in kitChrome.tsx (#2420) — shared with the Planner Components pane.
 
 export function DesignStudio() {
@@ -68,7 +64,9 @@ export function DesignStudio() {
 
   const firstFor = (kitId: string) => components.find((c) => c.kitId === kitId);
   const [kitId, setKitId] = useState(() => kits[0]?.id ?? "");
-  const [compId, setCompId] = useState(() => firstFor(kits[0]?.id ?? "")?.id ?? "");
+  // The FOCUSED component (#2705) — null when nothing is focused, which hides the details pane and
+  // gives the graph full width. Focusing a node (or a rail row) sets it; clicking the canvas clears it.
+  const [compId, setCompId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [variant, setVariant] = useState(() => firstFor(kits[0]?.id ?? "")?.variants[0] ?? "default");
   // The preview's THEME axis (#2488) — ONE control now (#2545): the selected theme drives both the
@@ -93,37 +91,31 @@ export function DesignStudio() {
   const insp = useDragResize({ initial: 420, min: 300, max: 680, axis: "x", invert: true });
   // The always-on designer terminal's height (#2624) — a row-resize handle above it; `invert` because
   // the terminal sits AFTER the handle, so dragging up grows it. The graph (flex:1) keeps priority.
-  // A small 40px floor (#2697) so the terminal can shrink close to nothing — the middle still yields
-  // to the side panes on resize — but never fully disappears, keeping the divider obvious.
-  const term = useDragResize({ initial: 240, min: 40, max: 560, axis: "y", invert: true });
-
-  // Half-screen friendly (#2691): the DETAILS/inspector pane is always inline; only the kits LIST
-  // collapses, reclaiming ~rail.size px for the graph. The toggle lives ON the pane (« in the rail
-  // header, » on the collapsed strip) so it always moves with the pane and can never be covered — the
-  // failure mode of the earlier overlay-drawer approach (#2682/#2688), now removed. Manual + width-
-  // agnostic: predictable, no ResizeObserver.
-  const [railOpen, setRailOpen] = useState(true);
+  const term = useDragResize({ initial: 240, min: 140, max: 560, axis: "y", invert: true });
 
   const match = (c: ComponentRecord) => matchesQuery(c, query);
   const kit = kits.find((k) => k.id === kitId) ?? kits[0];
   const kitComps = useMemo(() => components.filter((c) => c.kitId === kitId), [components, kitId]);
-  // The shown component: the selection when still visible under the current search, else the first match.
-  const selById = components.find((c) => c.id === compId && c.kitId === kitId);
-  const sel = selById && match(selById) ? selById : kitComps.filter(match)[0] ?? null;
+  // The FOCUSED component (#2705) — strictly the one the user picked, in the current kit. No fallback
+  // to "the first" — when nothing is focused `sel` is null, so the details pane is hidden and the graph
+  // takes the full width.
+  const sel = compId ? components.find((c) => c.id === compId && c.kitId === kitId) ?? null : null;
 
   const allVariants = sel ? sel.variants : [];
   const activeVariant = allVariants.includes(variant) ? variant : allVariants[0] ?? "default";
   const composes = sel ? resolveComposes(sel, components) : [];
 
   const selectKit = (id: string) => {
-    const first = components.find((c) => c.kitId === id && match(c)) ?? firstFor(id);
-    setKitId(id); setCompId(first?.id ?? ""); setVariant(first?.variants[0] ?? "default");
-    setExpanded((e) => ({ ...e, [id]: true })); setTab("overview");
+    // Switching kit re-scopes the graph but focuses nothing — the details pane stays hidden until the
+    // user picks a node in the new kit.
+    setKitId(id); setCompId(null); setExpanded((e) => ({ ...e, [id]: true })); setTab("overview");
   };
   const selectComp = (c: ComponentRecord) => {
     if (c.kitId !== kitId) setKitId(c.kitId);
     setCompId(c.id); setVariant(c.variants[0] ?? "default"); setTab("overview");
   };
+  // Clicking anything other than a node (the canvas background) unfocuses → hides the details pane.
+  const deselect = () => setCompId(null);
 
   // ── graph layout (#2455) — hierarchical top-down: composers above, dependencies below, role-tier
   // banding for edge-less nodes, `used`-desc ordering within a row. Pure model: lib/compositionLayout.
@@ -241,61 +233,55 @@ export function DesignStudio() {
 
       {/* ── body ── */}
       <Box className="ds-body">
-        {/* left LIST — the only collapsible pane (#2691). Its collapse/expand toggle rides ON the pane
-            (« in the header when open, » on the slim strip when collapsed) so it's never covered. */}
-        {railOpen ? (
-          <>
-            <Box className="ds-col ds-rail" style={{ width: rail.size, flexBasis: rail.size }}>
-              <Box className="ds-colhead">
-                <Text className="ds-eyebrow" as="span">Kits · Components</Text>
-                <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Text mono size="xxs" tone="dim">{kitComps.length} comps</Text>
-                  <Box as="button" className="ds-railtoggle" title="Collapse list" aria-label="Collapse list" onClick={() => setRailOpen(false)}>«</Box>
-                </Box>
-              </Box>
-              {/* search — sits under the rail header */}
-              <Box style={{ flex: "none", padding: "8px 8px 0" }}>
-                <Box className="ds-search">
-                  <Text tone="dim" size={13}>⌕</Text>
-                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke bare search box (Field imposes a labelled layout) */}
-                  <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search components…" aria-label="Search components" />
-                  <Text as="span" className="ds-kbd">⌘K</Text>
-                </Box>
-              </Box>
-              <Box className="ds-scroll" style={{ flex: 1, padding: "8px 8px 16px" }}>
-                {railTree.map(renderRailNode)}
-              </Box>
-            </Box>
-            <Box className="ds-handle" {...rail.handleProps} />
-          </>
-        ) : (
-          <Box className="ds-railstrip" style={{ width: RAIL_STRIP_W, flexBasis: RAIL_STRIP_W }}>
-            <Box as="button" className="ds-railtoggle" title="Show list" aria-label="Show list" onClick={() => setRailOpen(true)}>»</Box>
-            <Text as="span" className="ds-striplabel">Kits · Components</Text>
+        {/* left rail — the kits · components list */}
+        <Box className="ds-col ds-rail" style={{ width: rail.size, flexBasis: rail.size }}>
+          <Box className="ds-colhead">
+            <Text className="ds-eyebrow" as="span">Kits · Components</Text>
+            <Text mono size="xxs" tone="dim">{kitComps.length} comps</Text>
           </Box>
-        )}
+          {/* search — sits under the rail header */}
+          <Box style={{ flex: "none", padding: "8px 8px 0" }}>
+            <Box className="ds-search">
+              <Text tone="dim" size={13}>⌕</Text>
+              {/* eslint-disable-next-line no-restricted-syntax -- bespoke bare search box (Field imposes a labelled layout) */}
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search components…" aria-label="Search components" />
+              <Text as="span" className="ds-kbd">⌘K</Text>
+            </Box>
+          </Box>
+          <Box className="ds-scroll" style={{ flex: 1, padding: "8px 8px 16px" }}>
+            {railTree.map(renderRailNode)}
+          </Box>
+        </Box>
+        <Box className="ds-handle" {...rail.handleProps} />
 
         {/* center — the composition graph, with the ALWAYS-ON designer session docked below it (#2597):
-            the graph flexes; the terminal is a fixed-height bottom strip, so the panes keep priority. */}
+            the graph flexes; the terminal is a fixed-height bottom strip, so the panes keep priority.
+            Clicking the canvas background (not a node) unfocuses → hides the details pane (#2705). */}
         <Box className="ds-col ds-center">
           <GraphView
             graph={graph} comps={kitComps} selId={sel?.id ?? ""} workingId={aiFocusedId ?? ""} kitName={kit.name} gvp={gvp} onSelect={selectComp}
             onShare={() => setShareOpen(true)} health={nodeHealth} findingsCount={healthFindings.length}
+            onDeselect={deselect}
           />
           <Box className="ds-handle-h" {...term.handleProps} />
           <DesignerTerminal height={term.size} />
         </Box>
-        <Box className="ds-handle" {...insp.handleProps} />
 
-        {/* inspector — the DETAILS pane, ALWAYS inline (#2691) */}
-        <Inspector
-          width={insp.size} sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
-          allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
-          vp={vp} setVpKind={setVpKind}
-          kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
-          previewEl={previewEl} previewErr={previewErr} onRetry={() => setRenderKey((k) => k + 1)}
-          composes={composes} onSelect={selectComp}
-        />
+        {/* details pane — rendered ONLY when a component is focused (#2705); clicking the canvas
+            unfocuses and this (with its resize splitter) disappears, giving the graph the full width. */}
+        {sel && (
+          <>
+            <Box className="ds-handle" {...insp.handleProps} />
+            <Inspector
+              width={insp.size} sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
+              allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
+              vp={vp} setVpKind={setVpKind}
+              kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
+              previewEl={previewEl} previewErr={previewErr} onRetry={() => setRenderKey((k) => k + 1)}
+              composes={composes} onSelect={selectComp}
+            />
+          </>
+        )}
       </Box>
     </Box>
   );
@@ -328,6 +314,8 @@ interface GraphProps {
   onShare: () => void;
   /** Graph-health badges (#2680): node id → its most-severe finding category, + the total count. */
   health: Map<string, HealthCategory>; findingsCount: number;
+  /** Clicking the canvas background (not a node) unfocuses → hides the details pane (#2705). */
+  onDeselect: () => void;
 }
 
 /** The health badge glyph + tooltip per category (#2680) — mirrors `bsc ui doctor`. */
@@ -338,7 +326,7 @@ const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string }> = {
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
 };
 
-function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect, onShare, health, findingsCount }: GraphProps) {
+function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect, onShare, health, findingsCount, onDeselect }: GraphProps) {
   // The pan/zoom shell is the shared GraphCanvas template (#2208) — viewport ref/wheel/pan + the world
   // transform + the infinite dotted grid all live there; this brings only the toolbar + world content.
   const EDGE_COLOR = "var(--border-strong, #3a434d)";
@@ -353,7 +341,7 @@ function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect, onS
     <GraphCanvas
       vp={gvp}
       world={graph.world}
-      className="ds-graphcanvas"
+      onBackgroundClick={onDeselect}
       grid gridSize={22} gridColor="var(--border-soft, var(--border))"
       canvasBackground="var(--bg-canvas, var(--bg))"
       toolbar={
