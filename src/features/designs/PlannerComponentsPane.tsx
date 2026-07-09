@@ -64,9 +64,9 @@ export function PlannerComponentsPane() {
     [inKit],
   );
 
-  // The Design Studio is now a Planner tab (#move-to-planner): open the Planner Workspace on its "design"
+  // The Design Studio is now a Planner tab (#move-to-planner): open the Planner Workspace on its "designs"
   // page rather than a standalone rail Workspace.
-  const openInStudio = () => { setWorkspace("projects"); setProjectsPageMode("design"); };
+  const openInStudio = () => { setWorkspace("projects"); setProjectsPageMode("designs"); };
 
   if (!kit) {
     return (

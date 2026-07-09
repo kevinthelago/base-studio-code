@@ -54,7 +54,7 @@ const VP: Record<Viewport, { w: string; label: string }> = {
 
 // The role dot + kit chip live in kitChrome.tsx (#2420) — shared with the Planner Components pane.
 
-export function DesignStudio() {
+export function DesignsWorkbench() {
   const components = useAppStore((s) => s.components);
   const kits = useAppStore((s) => s.kits);
   // The hydrated kit-THEME collection (#2488) — feeds the preview's palette switcher.

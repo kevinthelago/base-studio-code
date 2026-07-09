@@ -14,7 +14,7 @@ export const SkillsWorkspace      = lazy(() => import("@/features/skills").then(
 export const SecurityWorkspace      = lazy(() => import("@/features/security").then((m) => ({ default: m.SecurityWorkspace })));
 export const GlanceWorkspace      = lazy(() => import("@/features/glance").then((m) => ({ default: m.GlanceWorkspace })));
 // Design Studio (#2303/#2308) is no longer a rail Workspace — it moved into the Planner Screen as the
-// "design" page (lazy-loaded there, in features/planner/index.tsx), so it's not lazy-mounted here.
+// "designs" page (lazy-loaded there, in features/planner/index.tsx), so it's not lazy-mounted here.
 
 /** Lightweight placeholder shown while a lazy screen's chunk loads. */
 export function WorkspaceFallback() {

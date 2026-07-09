@@ -34,7 +34,7 @@ import {
 } from "@/shared/lib/session/sessionRoles";
 import { BUILTIN_PERSONAS } from "@/features/personas";
 // Deep import of the planner's pure terminal-theme leaf (no React, no planner state): pulling the
-// whole planner barrel here would cycle (planner → FocusedBodies → @/features/components → Design
+// whole planner barrel here would cycle (planner → FocusedBodies → @/features/designs → Design
 // Studio → planner). `components` is an exempt importer (#2197) while its restructure lands.
 import { TERM_THEME } from "@/features/planner/session/planningTerminal";
 

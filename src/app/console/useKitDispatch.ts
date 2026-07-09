@@ -16,7 +16,7 @@ import type { AppStore } from "@/store/types";
 import {
   planKitDrain, deliveryKey, kitDispatchPrompt, kitUpdateIssue, DEFAULT_KIT_DRAIN,
   type Dispatch, type KitDelivery,
-} from "@/features/components";
+} from "@/features/designs";
 
 // Slow cadence — kit changes aren't a real-time signal, and each tick is pure store reads (no bsc exec).
 const POLL_MS = 30_000;
