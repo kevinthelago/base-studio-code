@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "The kit theme registry (#1852 Phase 3) — the ONE source of truth for the SDK's THEME axis. A theme is a map of overrides for the semantic component tokens (`--card-*`/`--btn-*`/`--field-*`/`--chip-*`, defined in src/styles/tokens.css), plus an optional `base` (\"dark\"|\"light\") naming the SURFACE the theme sits on. Applying a theme sets the token overrides — globally on :root (via appearance/useAppBoot, same mechanism as the accent) or scoped on a subtree (via <ThemeScope>, for a coexisting themed card or an isolated live preview); the Design Studio preview additionally reads `base` to pick its sandbox surface (retiring the old hardcoded dark/light toggle — the surface is theme data now, seeded here and thereafter served by `bsc ui theme`). This file is read by BOTH faces: the frontend (`src/shared/ui/kit/theme.ts` loads it + applies it) AND `bsc ui theme list|get` (crates/bsc-ui embeds it), so a live agent can enumerate + read themes from its own shell. `dark` (empty overrides) is the base look; `light` is the same look on the light surface; the rest retint the same components without touching any card's spec/structure. Values reference base tokens so a theme composes with the chosen accent.",
+  "note": "The kit theme registry (#1852 Phase 3) — the ONE source of truth for the SDK's THEME axis. A theme is a map of overrides for the contracted tokens (the base palette `--bg-*`/`--fg-*`/`--border*`/`--accent*` and the semantic component tokens `--card-*`/`--btn-*`/`--field-*`/`--chip-*`, all defined in src-tauri/data/ui/tokens-contract.css), plus an optional `base` (\"dark\"|\"light\") naming the SURFACE the theme sits on. Applying a theme sets the token overrides — globally on :root (via appearance/useAppBoot, same mechanism as the accent) or scoped on a subtree (via <ThemeScope>, for a coexisting themed card or an isolated live preview); the Design Studio preview additionally reads `base` to pick its sandbox surface. This file is read by BOTH faces: the frontend (`src/shared/ui/kit/theme.ts` loads it + applies it) AND `bsc ui theme list|get` (crates/bsc-ui embeds it), so a live agent can enumerate + read themes from its own shell. `Dark` (empty overrides) is the base look; `Light` is the same look on the light surface; the named palettes are recognizable, permissively-licensed open-source color schemes (Nord, Dracula, Solarized, Gruvbox, Tokyo Night, Monokai) that rebind the WHOLE base palette — every value is a literal color so a palette composes cleanly over the contract without depending on the chosen accent.",
   "themes": [
     {
       "id": "default",
@@ -17,42 +17,157 @@
       "vars": {}
     },
     {
-      "id": "soft",
-      "label": "Soft",
-      "description": "Lifted, rounder cards with a gentler border — a calmer, less boxy surface.",
+      "id": "nord",
+      "label": "Nord",
+      "description": "An arctic, north-bluish palette — cool Polar Night surfaces with Frost accents.",
+      "base": "dark",
       "vars": {
-        "--card-bg": "var(--bg-elev)",
-        "--card-border": "var(--border)",
-        "--card-radius": "14px",
-        "--card-pad": "18px",
-        "--btn-radius": "8px",
-        "--field-radius": "8px"
+        "--bg-canvas": "#2e3440",
+        "--bg-panel": "#323947",
+        "--bg-elev": "#3b4252",
+        "--bg-elev2": "#434c5e",
+        "--border": "#4c566a",
+        "--border-soft": "#3b4252",
+        "--fg": "#eceff4",
+        "--fg-muted": "#d8dee9",
+        "--fg-dim": "#7b8698",
+        "--accent": "#88c0d0",
+        "--accent-dim": "#5e81ac",
+        "--success": "#a3be8c",
+        "--info": "#81a1c1",
+        "--danger": "#bf616a"
       }
     },
     {
-      "id": "contrast",
-      "label": "High contrast",
-      "description": "Flat, square, strong borders — maximum legibility.",
+      "id": "dracula",
+      "label": "Dracula",
+      "description": "The classic dark theme — deep slate surfaces with vivid purple, pink, and green.",
+      "base": "dark",
       "vars": {
-        "--card-border": "var(--fg-dim)",
-        "--card-radius": "4px",
-        "--btn-border": "var(--fg-dim)",
-        "--btn-radius": "4px",
-        "--field-border": "var(--fg-dim)",
-        "--field-radius": "4px",
-        "--chip-border": "var(--fg-dim)"
+        "--bg-canvas": "#282a36",
+        "--bg-panel": "#2d2f3d",
+        "--bg-elev": "#343746",
+        "--bg-elev2": "#44475a",
+        "--border": "#44475a",
+        "--border-soft": "#383b4c",
+        "--fg": "#f8f8f2",
+        "--fg-muted": "#c8cad6",
+        "--fg-dim": "#6272a4",
+        "--accent": "#bd93f9",
+        "--accent-dim": "#7d5bbe",
+        "--success": "#50fa7b",
+        "--info": "#8be9fd",
+        "--danger": "#ff5555"
       }
     },
     {
-      "id": "warm",
-      "label": "Warm",
-      "description": "Accent-tinted panels, borders, and chips — the surface picks up the accent hue.",
+      "id": "solarized-dark",
+      "label": "Solarized Dark",
+      "description": "Ethan Schoonover's precision palette — teal-tinted dark surfaces with a blue accent.",
+      "base": "dark",
       "vars": {
-        "--card-bg": "color-mix(in oklch, var(--bg-panel), var(--accent) 7%)",
-        "--card-border": "color-mix(in oklch, var(--border-soft), var(--accent) 24%)",
-        "--btn-bg": "color-mix(in oklch, var(--bg-elev), var(--accent) 7%)",
-        "--field-bg": "color-mix(in oklch, var(--bg-canvas), var(--accent) 6%)",
-        "--chip-bg": "color-mix(in oklch, var(--bg-elev2), var(--accent) 10%)"
+        "--bg-canvas": "#002b36",
+        "--bg-panel": "#073642",
+        "--bg-elev": "#0a4451",
+        "--bg-elev2": "#0f5162",
+        "--border": "#586e75",
+        "--border-soft": "#0a3d49",
+        "--fg": "#93a1a1",
+        "--fg-muted": "#839496",
+        "--fg-dim": "#586e75",
+        "--accent": "#268bd2",
+        "--accent-dim": "#1a6da8",
+        "--success": "#859900",
+        "--info": "#2aa198",
+        "--danger": "#dc322f"
+      }
+    },
+    {
+      "id": "solarized-light",
+      "label": "Solarized Light",
+      "description": "Solarized on its light surface — warm cream panels with the same blue accent.",
+      "base": "light",
+      "vars": {
+        "--bg-canvas": "#fdf6e3",
+        "--bg-panel": "#eee8d5",
+        "--bg-elev": "#e7e0cc",
+        "--bg-elev2": "#ddd6c1",
+        "--border": "#93a1a1",
+        "--border-soft": "#d6cfb8",
+        "--fg": "#586e75",
+        "--fg-muted": "#657b83",
+        "--fg-dim": "#93a1a1",
+        "--accent": "#268bd2",
+        "--accent-dim": "#1a6da8",
+        "--success": "#859900",
+        "--info": "#2aa198",
+        "--danger": "#dc322f"
+      }
+    },
+    {
+      "id": "gruvbox",
+      "label": "Gruvbox",
+      "description": "Retro-groove warmth — soft dark browns with earthy yellow, green, and orange.",
+      "base": "dark",
+      "vars": {
+        "--bg-canvas": "#282828",
+        "--bg-panel": "#32302f",
+        "--bg-elev": "#3c3836",
+        "--bg-elev2": "#504945",
+        "--border": "#665c54",
+        "--border-soft": "#3c3836",
+        "--fg": "#ebdbb2",
+        "--fg-muted": "#d5c4a1",
+        "--fg-dim": "#a89984",
+        "--accent": "#fabd2f",
+        "--accent-dim": "#d79921",
+        "--success": "#b8bb26",
+        "--info": "#83a598",
+        "--danger": "#fb4934"
+      }
+    },
+    {
+      "id": "tokyo-night",
+      "label": "Tokyo Night",
+      "description": "A calm, deep-blue night palette with soft neon blue, cyan, and magenta.",
+      "base": "dark",
+      "vars": {
+        "--bg-canvas": "#1a1b26",
+        "--bg-panel": "#1f2335",
+        "--bg-elev": "#292e42",
+        "--bg-elev2": "#343a52",
+        "--border": "#414868",
+        "--border-soft": "#292e42",
+        "--fg": "#c0caf5",
+        "--fg-muted": "#a9b1d6",
+        "--fg-dim": "#565f89",
+        "--accent": "#7aa2f7",
+        "--accent-dim": "#5a7fd6",
+        "--success": "#9ece6a",
+        "--info": "#7dcfff",
+        "--danger": "#f7768e"
+      }
+    },
+    {
+      "id": "monokai",
+      "label": "Monokai",
+      "description": "The iconic editor palette — near-black surfaces with signature lime green and pink.",
+      "base": "dark",
+      "vars": {
+        "--bg-canvas": "#272822",
+        "--bg-panel": "#2d2e27",
+        "--bg-elev": "#3e3d32",
+        "--bg-elev2": "#49483e",
+        "--border": "#5a5950",
+        "--border-soft": "#3e3d32",
+        "--fg": "#f8f8f2",
+        "--fg-muted": "#c9cabd",
+        "--fg-dim": "#75715e",
+        "--accent": "#a6e22e",
+        "--accent-dim": "#74a018",
+        "--success": "#a6e22e",
+        "--info": "#66d9ef",
+        "--danger": "#f92672"
       }
     }
   ]

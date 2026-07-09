@@ -15,11 +15,11 @@ describe("kit theme registry", () => {
 
   it("themeById falls back to default for an unknown id", () => {
     expect(themeById("nope").id).toBe(DEFAULT_THEME);
-    expect(themeById("soft").id).toBe("soft");
+    expect(themeById("nord").id).toBe("nord");
   });
 
   it("themeVars returns the override map; default is empty", () => {
-    expect((themeVars("soft") as Record<string, string>)["--card-radius"]).toBe("14px");
+    expect((themeVars("nord") as Record<string, string>)["--accent"]).toBe("#88c0d0");
     expect(themeVars("default")).toEqual({});
   });
 
@@ -33,13 +33,13 @@ describe("kit theme registry", () => {
 describe("applyThemeToRoot", () => {
   it("sets a theme's vars, then clears them when switching back to default", () => {
     const el = document.createElement("div");
-    applyThemeToRoot("soft", el);
-    expect(el.style.getPropertyValue("--card-radius")).toBe("14px");
-    expect(el.style.getPropertyValue("--card-bg")).toBe("var(--bg-elev)");
+    applyThemeToRoot("nord", el);
+    expect(el.style.getPropertyValue("--accent")).toBe("#88c0d0");
+    expect(el.style.getPropertyValue("--bg-canvas")).toBe("#2e3440");
     // Switching to default (no overrides) must REMOVE the prior theme's props, not leave them stale.
     applyThemeToRoot("default", el);
-    expect(el.style.getPropertyValue("--card-radius")).toBe("");
-    expect(el.style.getPropertyValue("--card-bg")).toBe("");
+    expect(el.style.getPropertyValue("--accent")).toBe("");
+    expect(el.style.getPropertyValue("--bg-canvas")).toBe("");
   });
 });
 
@@ -64,9 +64,9 @@ describe("the hydrated active set (#2488)", () => {
   });
 
   it("a hydrated EDIT of a built-in wins over the packaged copy", () => {
-    const softEdit = { id: "soft", label: "Soft", description: "d", vars: { "--card-radius": "9px" } };
-    setActiveKitThemes([...KIT_THEMES.filter((t) => t.id !== "soft"), softEdit]);
-    expect((themeVars("soft") as Record<string, string>)["--card-radius"]).toBe("9px");
+    const nordEdit = { id: "nord", label: "Nord", description: "d", vars: { "--card-radius": "9px" } };
+    setActiveKitThemes([...KIT_THEMES.filter((t) => t.id !== "nord"), nordEdit]);
+    expect((themeVars("nord") as Record<string, string>)["--card-radius"]).toBe("9px");
   });
 
   it("kitTokens unions active + packaged, so applyThemeToRoot clears store-theme tokens on switch", () => {

@@ -246,17 +246,17 @@ describe("kit-theme collection slice (#2488)", () => {
   });
 
   it("hydrateThemes keeps a designer-edited built-in — themeById serves the edit — with a theme notice", async () => {
-    const soft = SEED_THEMES.find((t) => t.id === "soft")!;
+    const soft = SEED_THEMES.find((t) => t.id === "nord")!;
     const edited: KitThemeRecord = { ...soft, vars: { "--card-bg": "black" }, seedHash: "00000000" };
-    vi.spyOn(themeBridge, "loadThemes").mockResolvedValueOnce([...SEED_THEMES.filter((t) => t.id !== "soft"), edited]);
+    vi.spyOn(themeBridge, "loadThemes").mockResolvedValueOnce([...SEED_THEMES.filter((t) => t.id !== "nord"), edited]);
     const push = vi.spyOn(themeBridge, "pushTheme").mockResolvedValue(undefined);
     await useAppStore.getState().hydrateThemes();
-    expect(useAppStore.getState().kitThemes.find((t) => t.id === "soft")).toEqual(edited);
+    expect(useAppStore.getState().kitThemes.find((t) => t.id === "nord")).toEqual(edited);
     expect(push).not.toHaveBeenCalled();
     expect(useAppStore.getState().seedNotices).toEqual([
-      { kind: "updated-upstream", type: "theme", id: "soft", name: soft.label },
+      { kind: "updated-upstream", type: "theme", id: "nord", name: soft.label },
     ]);
-    expect(themeById("soft").vars).toEqual({ "--card-bg": "black" });
+    expect(themeById("nord").vars).toEqual({ "--card-bg": "black" });
   });
 
   it("orders the hydrated collection: packaged registry order first, authored themes after", async () => {
@@ -268,15 +268,15 @@ describe("kit-theme collection slice (#2488)", () => {
   });
 
   it("theme notices survive a later hydrateComponents (the two hydrates race on boot)", async () => {
-    const soft = SEED_THEMES.find((t) => t.id === "soft")!;
+    const soft = SEED_THEMES.find((t) => t.id === "nord")!;
     const edited: KitThemeRecord = { ...soft, vars: { "--card-bg": "black" }, seedHash: "00000000" };
-    vi.spyOn(themeBridge, "loadThemes").mockResolvedValueOnce([...SEED_THEMES.filter((t) => t.id !== "soft"), edited]);
+    vi.spyOn(themeBridge, "loadThemes").mockResolvedValueOnce([...SEED_THEMES.filter((t) => t.id !== "nord"), edited]);
     await useAppStore.getState().hydrateThemes();
     vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce(SEED_COMPONENTS);
     vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
     await useAppStore.getState().hydrateComponents();
     expect(useAppStore.getState().seedNotices).toEqual([
-      { kind: "updated-upstream", type: "theme", id: "soft", name: soft.label },
+      { kind: "updated-upstream", type: "theme", id: "nord", name: soft.label },
     ]);
   });
 

@@ -128,11 +128,11 @@ describe("DesignStudio (#2308)", () => {
     const defaultFrame = container.querySelector('[data-kit-theme="default"]') as HTMLElement;
     expect(defaultFrame).toBeTruthy();
     expect(defaultFrame.style.getPropertyValue("--card-radius")).toBe("");
-    // Switching applies the theme's semantic-token overrides to the specimen frame via ThemeScope.
-    fireEvent.change(sel, { target: { value: "soft" } });
-    const frame = container.querySelector('[data-kit-theme="soft"]') as HTMLElement;
+    // Switching applies the theme's palette-token overrides to the specimen frame via ThemeScope.
+    fireEvent.change(sel, { target: { value: "nord" } });
+    const frame = container.querySelector('[data-kit-theme="nord"]') as HTMLElement;
     expect(frame).toBeTruthy();
-    expect(frame.style.getPropertyValue("--card-radius")).toBe("14px");
+    expect(frame.style.getPropertyValue("--accent")).toBe("#88c0d0");
   });
 
   it("the Theme dropdown is the ONLY theme control — the old dark/light surface toggle is gone (#2545)", () => {
