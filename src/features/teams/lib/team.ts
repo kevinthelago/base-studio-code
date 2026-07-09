@@ -4,9 +4,9 @@
 // interaction topology + coordination prose composable DATA (continuing #2185 / #2027) instead of
 // prose hardcoded in fleet/*-protocol.md. Pure model (no React/Tauri) so it's unit-testable and the
 // store seeds from it directly. The closed vocabulary (forms + archetypes) is externalized to
-// @data/org/*; the built-in orgs to @data/org/orgs/*.json — overlay-editable + in the config bundle.
-import formsEmbedded from "@data/org/communication-forms.json";
-import archetypesEmbedded from "@data/org/archetypes.json";
+// @data/teams/*; the built-in orgs to @data/teams/orgs/*.json — overlay-editable + in the config bundle.
+import formsEmbedded from "@data/teams/communication-forms.json";
+import archetypesEmbedded from "@data/teams/archetypes.json";
 import { overlayFile, overlayGlob } from "@/shared/lib/core/configOverrides";
 
 /** The canonical orientation a form typically flows (a HINT; an archetype's lane placement wins). */
@@ -99,7 +99,7 @@ export interface Team {
   builtin?: boolean;
 }
 
-/** A packaged org definition (@data/org/orgs/*.json) — an {@link Team} plus a load-time-only `order`. */
+/** A packaged org definition (@data/teams/orgs/*.json) — an {@link Team} plus a load-time-only `order`. */
 interface OrgDef extends Omit<Team, "builtin"> {
   order?: number;
 }
@@ -107,11 +107,11 @@ interface OrgDef extends Omit<Team, "builtin"> {
 // ── The closed vocabulary (externalized, config-dir-overlaid, in the config bundle) ──────────────
 /** Every communication form, cheapest-authority first. */
 export const COMMUNICATION_FORMS: CommunicationForm[] =
-  overlayFile("org/communication-forms.json", formsEmbedded as CommunicationForm[]);
+  overlayFile("teams/communication-forms.json", formsEmbedded as CommunicationForm[]);
 
 /** Every relationship archetype. */
 export const RELATIONSHIP_ARCHETYPES: RelationshipArchetype[] =
-  overlayFile("org/archetypes.json", archetypesEmbedded as RelationshipArchetype[]);
+  overlayFile("teams/archetypes.json", archetypesEmbedded as RelationshipArchetype[]);
 
 const FORM_BY_ID = new Map(COMMUNICATION_FORMS.map((f) => [f.id, f]));
 const ARCHETYPE_BY_ID = new Map(RELATIONSHIP_ARCHETYPES.map((a) => [a.id, a]));
@@ -122,12 +122,12 @@ export const formById = (id: string): CommunicationForm | undefined => FORM_BY_I
 export const archetypeById = (id: string): RelationshipArchetype | undefined => ARCHETYPE_BY_ID.get(id);
 
 // ── Built-in orgs ────────────────────────────────────────────────────────────────────────────────
-const orgModules = import.meta.glob<{ default: OrgDef }>("@data/org/orgs/*.json", { eager: true });
+const orgModules = import.meta.glob<{ default: OrgDef }>("@data/teams/orgs/*.json", { eager: true });
 
 /** Assemble the packaged org library from the per-org JSON defs: overlay the config-dir copies, order
  *  them, strip the load-time `order`, and stamp `builtin`. */
 export function makeBuiltinOrgs(): Team[] {
-  return overlayGlob<OrgDef>("org/orgs", orgModules)
+  return overlayGlob<OrgDef>("teams/orgs", orgModules)
     .map(([, def]) => def)
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map(({ order: _order, ...o }) => ({
