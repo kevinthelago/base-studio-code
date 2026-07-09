@@ -23,6 +23,7 @@ import { createPlanSlice } from "./slices/plan";
 import { createProjectsSlice } from "./slices/projects";
 import { createAutomationsSlice } from "@/features/automations/store";
 import { createCoreSlice } from "./slices/core";
+import { createLlmSettingsSlice } from "./slices/llmSettings";
 import { createGithubSlice } from "@/features/github/store";
 import { createShellSlice } from "./slices/shell";
 import { createTunnelSlice } from "@/features/tunnel/store";
@@ -43,6 +44,7 @@ export const useAppStore = create<AppStore>()(
       ...createTunnelSlice(set, get, store),
 
       ...createCoreSlice(set, get, store),
+      ...createLlmSettingsSlice(set, get, store),
       ...createAutomationsSlice(set, get, store),
       ...createProjectsSlice(set, get, store),
 
