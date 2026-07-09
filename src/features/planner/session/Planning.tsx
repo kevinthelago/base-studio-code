@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { SplitView } from "@/shared/ui/layouts/SplitView";
@@ -65,6 +66,8 @@ import { PublishProgressView } from "./PublishProgressView";
 import { PlanningDialogs } from "./PlanningDialogs";
 
 export function Planning({ visible }: { visible: boolean }) {
+  // Subscribe to exactly the fields this component reads (#2714) — a memoized `useShallow`
+  // selector, so unrelated store writes no longer re-render the whole planning surface.
   const {
     setProjectsView,
     planningPitch, planningRepo, planningTitle, setPlanningTitle,
@@ -96,7 +99,42 @@ export function Planning({ visible }: { visible: boolean }) {
     setPlanAgentStreamPersona,
     commands, schedules,
     confirmPlanStage,
-  } = useAppStore();
+  } = useAppStore(useShallow(s => ({
+    setProjectsView: s.setProjectsView,
+    planningPitch: s.planningPitch, planningRepo: s.planningRepo,
+    planningTitle: s.planningTitle, setPlanningTitle: s.setPlanningTitle,
+    planningSessionKey: s.planningSessionKey,
+    activeProjectId: s.activeProjectId, activeProjectName: s.activeProjectName,
+    activeProjectNumber: s.activeProjectNumber,
+    githubToken: s.githubToken,
+    activeProjectRepos: s.activeProjectRepos,
+    projectLocalRepos: s.projectLocalRepos,
+    planStages: s.planStages, planConfirmedStages: s.planConfirmedStages,
+    planAuthoredBlueprint: s.planAuthoredBlueprint, importBlueprint: s.importBlueprint,
+    setAuthoredBlueprint: s.setAuthoredBlueprint,
+    planDeployConfig: s.planDeployConfig, setPlanDeployConfig: s.setPlanDeployConfig,
+    planMarketConfig: s.planMarketConfig,
+    planTransformations: s.planTransformations,
+    planSourceConfig: s.planSourceConfig, planIntegrationConfig: s.planIntegrationConfig,
+    reposPublic: s.reposPublic, repoPublic: s.repoPublic,
+    injectionHardGate: s.injectionHardGate, planInjectionAck: s.planInjectionAck,
+    acknowledgePlanInjections: s.acknowledgePlanInjections,
+    planSkippedStages: s.planSkippedStages, skipPlanStage: s.skipPlanStage,
+    planFleet: s.planFleet,
+    planFleetTopology: s.planFleetTopology, setPlanFleetTopology: s.setPlanFleetTopology,
+    planFleetDirectorDrive: s.planFleetDirectorDrive, setPlanFleetDirectorDrive: s.setPlanFleetDirectorDrive,
+    pinnedContext: s.pinnedContext,
+    blueprints: s.blueprints, planStageConfig: s.planStageConfig,
+    projectBlueprintId: s.projectBlueprintId, setProjectBlueprintId: s.setProjectBlueprintId,
+    uiScreens: s.uiScreens, uiApproved: s.uiApproved, planAutomations: s.planAutomations,
+    setPlanAgentStreamFlow: s.setPlanAgentStreamFlow, setPlanAgentStreamModel: s.setPlanAgentStreamModel,
+    addProjectRepo: s.addProjectRepo, fleetStartProject: s.fleetStartProject,
+    agentProfiles: s.agentProfiles,
+    personas: s.personas,
+    setPlanAgentStreamPersona: s.setPlanAgentStreamPersona,
+    commands: s.commands, schedules: s.schedules,
+    confirmPlanStage: s.confirmPlanStage,
+  })));
   const autoPlanWithClaude = useAppStore(s => s.autoPlanWithClaude);
   const autoCompleteGates = useAppStore(s => s.autoCompleteGates);
   const allowGateOverride = useAppStore(s => s.allowGateOverride);
