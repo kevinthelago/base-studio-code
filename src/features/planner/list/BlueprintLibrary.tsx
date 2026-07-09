@@ -164,8 +164,11 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
       icon: preview.icon, h: preview.h, origin: "imported", tags: ["imported"],
       gist: { state: "synced", id: gId, author: preview.author, rev: preview.rev ?? "r1", public: true, updatedAt: opts.updatedAt },
     };
-    importBlueprint(bp);
-    reconcileImportedDesign(bp.id, bp.name, bp.design);
+    // importBlueprint mints a FRESH id (it never reuses the manifest's bp.id) — key the design
+    // contribution off that stored id, not the pre-import id (#2663), so removeDesignContribution(b.id)
+    // on delete matches and a second same-manifest-id import can't clobber the first's overlay.
+    const newId = importBlueprint(bp);
+    reconcileImportedDesign(newId, bp.name, bp.design);
     setImportOpen(false);
   }
 
