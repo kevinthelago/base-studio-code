@@ -61,14 +61,6 @@
 .posture i.deny  { background: color-mix(in oklch, var(--danger), transparent 25%); }
 .posture i.off   { background: var(--bg-elev2); }
 
-.fbadge {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 1px 6px; border-radius: 4px;
-  font-family: var(--mono); font-size: 9px; line-height: 1.6;
-  background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--fg-muted);
-}
-.fbadge.hard { color: var(--accent); border-color: color-mix(in oklch, var(--accent), transparent 65%); }
-
 .preset {
   padding: 2px 9px; border-radius: 99px;
   font-family: var(--mono); font-size: 9.5px; cursor: pointer;
@@ -202,19 +194,6 @@
 }
 
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-
-/* ----------------------------------------------------------------
-   Footer advance bar (#652)
-   ---------------------------------------------------------------- */
-.advance-bar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--border-soft);
-  background: var(--bg-panel);
-}
 
 /* The empty-state helper was retired (#2420) — use the shared <EmptyState>. */
 
