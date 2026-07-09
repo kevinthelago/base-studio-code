@@ -34,6 +34,12 @@ vi.mock("@/features/mcp", () => ({
 vi.mock("@/shared/lib/fleet/useCoordLog", () => ({
   readCoordState: vi.fn().mockResolvedValue(null),
 }));
+// The security audit poll reads the CLI (`bsc logs tail audit`); stub it (preserving the module's
+// other exports the store uses) so the poll is deterministic — profiles/assignments publish on mount.
+vi.mock("@/shared/lib/core/bsc", async (orig) => ({
+  ...(await orig<typeof import("@/shared/lib/core/bsc")>()),
+  bscJson: vi.fn().mockResolvedValue([]),
+}));
 
 import { useStoreProjector } from "./useStoreProjector";
 import { publishTunnelDomain, resetTunnelDomains } from "./lib/tunnelDomains";
@@ -56,9 +62,10 @@ describe("useStoreProjector", () => {
     useAppStore.setState({ tunnelRunning: true });
     renderHook(() => useStoreProjector());
     // `plan` is planner-published (usePlannerTunnelSync) and `alerts` flows through the hub —
-    // everything else projects straight from the store on mount.
+    // everything else projects straight from the store on mount (security too — its audit poll
+    // enriches later, but profiles/assignments publish immediately, #2530).
     expect(publishedDomains()).toEqual(new Set([
-      "glance", "org", "blueprints", "skills", "components", "themes", "automations", "mcp",
+      "glance", "org", "blueprints", "skills", "components", "themes", "automations", "mcp", "security",
     ]));
     expect(resetTunnelDomains).toHaveBeenCalledTimes(1); // fresh run → re-send cache cleared
   });
