@@ -248,7 +248,6 @@ export function DesignsWorkbench() {
               placeholder="Search components…"
               aria-label="Search components"
               style={{ width: "100%", maxWidth: 420 }}
-              trailing={<Text as="span" className="ds-kbd">⌘K</Text>}
             />
           </Box>
           <Box className="ds-scroll" style={{ flex: 1, padding: "8px 8px 16px" }}>
