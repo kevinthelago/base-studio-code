@@ -25,7 +25,7 @@ import { useNavHistory } from "@/shared/hooks/useNavHistory";
 import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, SettingsWorkspace,
-  ProjectsWorkspace, SkillsWorkspace, AgentsWorkspace, GlanceWorkspace, WorkspaceFallback,
+  ProjectsWorkspace, SkillsWorkspace, SecurityWorkspace, GlanceWorkspace, WorkspaceFallback,
 } from "@/app/lazyWorkspaces";
 
 // ── App shell ─────────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ export default function App() {
             {activeWorkspace === "automation" && <AutomationsWorkspace />}
             {activeWorkspace === "mcp" && <McpWorkspace />}
             {activeWorkspace === "skills"     && <SkillsWorkspace />}
-            {activeWorkspace === "agents"     && <AgentsWorkspace />}
+            {activeWorkspace === "security"     && <SecurityWorkspace />}
             {activeWorkspace === "settings"   && <SettingsWorkspace />}
           </Suspense>
           </ErrorBoundary>

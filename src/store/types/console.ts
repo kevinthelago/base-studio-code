@@ -7,7 +7,7 @@ import type { ReaperConfig } from "@/app/console/lib/idleReaper";
 import type { QueuedPane, FocusTarget } from "@/app/console/lib/focusQueue";
 import type { SessionRole } from "@/shared/lib/session/sessionRoles";
 import type { AgentFlow } from "@/features/planner/fleet/agentFlow";
-import type { AgentProfile } from "@/features/agents/lib/agentProfiles";
+import type { AgentProfile } from "@/features/security/lib/agentProfiles";
 import type { DirectorMode } from "@/features/planner/lib/integrationStrategy";
 import type { DirectorDrive } from "@/features/planner/fleet/directorDrive";
 

@@ -16,7 +16,7 @@ import {
   buildAlertsPayload, AUTOMATION_RUNS_CAP,
   buildSecurityPayload, SECURITY_AUDIT_CAP,
 } from "./storeProjections";
-import type { AgentProfile } from "@/features/agents";
+import type { AgentProfile } from "@/features/security";
 
 // ── fixtures ─────────────────────────────────────────────────────────────────────
 

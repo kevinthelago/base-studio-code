@@ -23,7 +23,7 @@ import { ProfilesTab } from "./ProfilesTab";
 import { AssignmentsTab } from "./AssignmentsTab";
 import { ActivityTab } from "./ActivityTab";
 import { FlowTab } from "./FlowTab";
-import "./agents.css";
+import "./security.css";
 
 // Re-exported for tests + back-compat: the pane-profile picker + app-session label
 // helpers used to live here; they moved to ./AssignmentsTab and ./lib/appSession (#1643).
@@ -35,7 +35,7 @@ export { type AgentProfile, type Tier, type ToolKey, PROFILES } from "./lib/agen
 export { resolveProfileSettings } from "./lib/profileEnforcement";
 export { parseAuditLog, type AuditRecord } from "./lib/auditLog";
 
-export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
+export function SecurityWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const [selectedId, setSelectedId] = useState("sys_planner");
   const [actDecision, setActDecision] = useState<DecFilter>("all");
   const [actConsole, setActConsole] = useState("all");
@@ -76,7 +76,7 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
     { id: "activity", label: "Activity", count: auditRows.length },
     { id: "flow", label: "Flow", hint: "· coordination" },
   ], [roles.length, profiles.length, consoles.length, auditRows.length]);
-  const { tabs: agentTabs, activeId, select, reorder, tearOff } = usePageTabs("agents", agentDefs);
+  const { tabs: agentTabs, activeId, select, reorder, tearOff } = usePageTabs("security", agentDefs);
   const tab = pageOverride ?? activeId; // active section
 
   usePoll(async (isCancelled) => {
@@ -207,7 +207,7 @@ export function AgentsWorkspace({ pageOverride }: { pageOverride?: string } = {}
       onReorder={reorder}
       onTearOff={tearOff}
       pageOverride={pageOverride}
-      className="agents-page"
+      className="security-page"
       bodyClassName="body"
       overlay={<>{promptDialog}{confirmDialog}</>}
     >

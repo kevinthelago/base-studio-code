@@ -2,7 +2,7 @@
 //
 // Each workspace tab is a "console"; each live (non-disabled) pane is a row. An
 // unassigned pane shows the safe default (Sandboxed) but is only ENFORCED once a
-// profile is assigned to it. Pure — split out of AgentsWorkspace so the derivation is
+// profile is assigned to it. Pure — split out of SecurityWorkspace so the derivation is
 // unit-testable and React-free.
 
 import type { ConsoleSession, ConsolePane } from "./agentProfiles";
