@@ -18,12 +18,9 @@
 // The generic console TerminalView is deliberately NOT reused (pane-system baggage); collapsing the
 // panel only CSS-hides the mounted host, so the PTY survives — this hook tears the session down
 // only when the Design Studio itself unmounts.
-import { useEffect, useRef, type RefObject, type MutableRefObject } from "react";
-import { safeInvoke, fireInvoke } from "@/shared/lib/core/safeInvoke";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import "@xterm/xterm/css/xterm.css";
+import { type RefObject, type MutableRefObject } from "react";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import type { Terminal } from "@xterm/xterm";
 import { useAppStore } from "@/store";
 import {
   roleCapability,
@@ -32,6 +29,7 @@ import {
   roleWriteRules,
   sessionScopes,
 } from "@/shared/lib/session/sessionRoles";
+import { useScreenSession } from "@/shared/lib/session/useScreenSession";
 import { BUILTIN_PERSONAS } from "@/features/personas";
 // Deep import of the planner's pure terminal-theme leaf (no React, no planner state): pulling the
 // whole planner barrel here would cycle (planner → FocusedBodies → @/features/components → Design
@@ -59,49 +57,17 @@ function designerStartPrompt(): string {
 }
 
 export function useDesignerTerminal(visible: boolean): DesignerTerminalHandle {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const termRef      = useRef<Terminal | null>(null);
-  const fitRef       = useRef<FitAddon | null>(null);
-  const unlistenData = useRef<UnlistenFn | null>(null);
-  const unlistenExit = useRef<UnlistenFn | null>(null);
+  // The whole xterm + PTY lifecycle (terminal literal, subscribe-before-create ordering,
+  // ResizeObserver, refit, cleanup) lives in the shared hook; this wrapper owns only the DESIGNER
+  // launch path + the tunnel-roster registration. pty_kill runs only in the shared cleanup — panel
+  // collapse merely hides the host, so the session keeps running.
+  const { containerRef, termRef } = useScreenSession({
+    paneId:    DESIGNER_PANE_ID,
+    termTheme: TERM_THEME,
+    visible,
+    exitBanner: "\r\n\x1b[33m[designer session ended — reopen the panel to restart]\x1b[0m\r\n",
 
-  // Mount xterm.js and spawn the designer PTY (once per Design Studio lifecycle). pty_kill runs
-  // only in this cleanup — panel collapse merely hides the host, so the session keeps running.
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const term = new Terminal({
-      theme: TERM_THEME,
-      fontFamily: '"JetBrains Mono", monospace',
-      fontSize: 12,
-      lineHeight: 1.4,
-      cursorBlink: true,
-      cursorStyle: "bar",
-      scrollback: 10000,
-    });
-
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(el);
-    termRef.current = term;
-    fitRef.current  = fitAddon;
-
-    term.onData((data) => {
-      fireInvoke("pty_write", { paneId: DESIGNER_PANE_ID, data }, console.error);
-    });
-
-    requestAnimationFrame(async () => {
-      fitAddon.fit();
-
-      // Subscribe before creating the PTY so we never miss early output.
-      unlistenData.current = await listen<string>(`pty_data_${DESIGNER_PANE_ID}`, (ev) => {
-        term.write(ev.payload);
-      });
-      unlistenExit.current = await listen<unknown>(`pty_exit_${DESIGNER_PANE_ID}`, () => {
-        term.write("\r\n\x1b[33m[designer session ended — reopen the panel to restart]\x1b[0m\r\n");
-      });
-
+    launch: async (term) => {
       // The workspace: ~/.base-studio-code/design-studio/ + its designer-spec CLAUDE.md.
       const paths = await safeInvoke<{ design_dir: string } | null>(
         "setup_designer_workspace", undefined, null,
@@ -149,46 +115,12 @@ export function useDesignerTerminal(visible: boolean): DesignerTerminalHandle {
         id: DESIGNER_PANE_ID, cwd: paths.design_dir, name: "Design Studio",
         status: "running", kind: "designer",
       }]);
-    });
+    },
 
-    const ro = new ResizeObserver(() => {
-      // A hidden (collapsed) panel is display:none → zero client size, skipped here.
-      const { clientWidth, clientHeight } = el;
-      if (clientWidth === 0 || clientHeight === 0) return;
-      fitAddon.fit();
-      fireInvoke("pty_resize", { paneId: DESIGNER_PANE_ID, cols: term.cols, rows: term.rows }, console.error);
-    });
-    ro.observe(el);
-
-    return () => {
-      unlistenData.current?.();
-      unlistenExit.current?.();
-      ro.disconnect();
-      term.dispose();
-      termRef.current = null;
-      fitRef.current  = null;
+    onUnmount: () => {
       useAppStore.getState().registerTunnelPanes("designer", []); // roster (#2497)
-      fireInvoke("pty_kill", { paneId: DESIGNER_PANE_ID }, console.error);
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Re-fit when the panel becomes visible (hidden → shown): the collapsed host is display:none, so
-  // the mount-time fit measured nothing. Mirror the planner's refit (frame + short delay + fonts).
-  useEffect(() => {
-    if (!visible) return;
-    const refit = (focusToo: boolean) => {
-      const fit = fitRef.current, term = termRef.current, el = containerRef.current;
-      if (!fit || !term || !el || el.clientWidth === 0 || el.clientHeight === 0) return;
-      fit.fit();
-      fireInvoke("pty_resize", { paneId: DESIGNER_PANE_ID, cols: term.cols, rows: term.rows }, console.error);
-      if (focusToo) term.focus();
-    };
-    let cancelled = false;
-    const raf = requestAnimationFrame(() => refit(true));
-    const delayed = setTimeout(() => refit(false), 120);
-    document.fonts?.ready?.then(() => { if (!cancelled) refit(false); }).catch(() => {});
-    return () => { cancelled = true; cancelAnimationFrame(raf); clearTimeout(delayed); };
-  }, [visible]);
+    },
+  });
 
   return { containerRef, termRef };
 }
