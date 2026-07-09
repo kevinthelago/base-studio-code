@@ -12,6 +12,9 @@ import { clamp } from "@/shared/lib/core/math";
 
 export interface GraphView { tx: number; ty: number; scale: number }
 
+/** A design-space box (top-left + size) — the content bounds a graph frames on fit/restore. */
+export interface GraphBox { x: number; y: number; w: number; h: number }
+
 export interface GraphViewportOpts {
   /** Min zoom. Default 0.28. */
   min?: number;
@@ -21,6 +24,11 @@ export interface GraphViewportOpts {
   fitPad?: number;
   /** Cap on the scale `fit()` will zoom UP to (so a small graph isn't blown up). Default 1.05. */
   maxFitScale?: number;
+  /** Optional provider of the ACTUAL content bounding box (design-space), read live at fit/restore time.
+   *  When set, `fit()` and `zoomToCentered()` frame THIS box instead of the nominal world — so a graph
+   *  whose nodes fill only part of (or overflow) the world box is still centered on the nodes, not on
+   *  empty canvas (#2673). Return null to fall back to the world box (e.g. an empty graph). */
+  contentBounds?: () => GraphBox | null;
 }
 
 /** The value returned by useGraphViewport — also the prop the GraphCanvas template + ZoomControls take. */
@@ -61,22 +69,34 @@ export function zoomAboutPoint(v: GraphView, ns: number, mx: number, my: number,
 }
 
 /**
- * Center a `w`×`h` world in a `cw`×`ch` viewport at an explicit `scale` (clamped to [min,max]). Pure —
- * exported for testing. Restoring a saved zoom goes through here, not `zoomAboutPoint`, so the world
- * stays centered instead of drifting off-screen when replayed from the origin view (#2545).
+ * Center a box `b` (design-space {x,y,w,h}) in a `cw`×`ch` viewport at an explicit `scale` (clamped to
+ * [min,max]). Pure — exported for testing. Framing goes through here so the box's OWN extent is centered
+ * and its origin offset out — i.e. the graph is centered on where its content actually is (#2673), not on
+ * a nominal box pinned at the origin (which parked the org graph high / clipped it at the top).
  */
-export function centeredView(w: number, h: number, cw: number, ch: number, scale: number, min: number, max: number): GraphView {
+export function centeredBox(b: GraphBox, cw: number, ch: number, scale: number, min: number, max: number): GraphView {
   const s = clamp(scale, min, max);
-  return { scale: s, tx: (cw - w * s) / 2, ty: (ch - h * s) / 2 };
+  return { scale: s, tx: (cw - b.w * s) / 2 - b.x * s, ty: (ch - b.h * s) / 2 - b.y * s };
 }
 
 /**
- * Fit a `w`×`h` world into a `cw`×`ch` viewport: the largest scale (clamped to [min, maxFitScale] and
- * then [min,max]) that leaves `fitPad` px per side, centered. Pure — exported for testing.
+ * Fit a box `b` into a `cw`×`ch` viewport: the largest scale (clamped to [min, maxFitScale] then
+ * [min,max]) that leaves `fitPad` px per side, centered on the box. Pure — exported for testing.
  */
+export function fitBox(b: GraphBox, cw: number, ch: number, min: number, max: number, fitPad: number, maxFitScale: number): GraphView {
+  const s = Math.min((cw - fitPad * 2) / b.w, (ch - fitPad * 2) / b.h, maxFitScale);
+  return centeredBox(b, cw, ch, s, min, max);
+}
+
+/** Center a `w`×`h` world — the box-at-origin case of {@link centeredBox}. Kept for callers that frame
+ *  the nominal world (Glance) + the #2545 restore tests. */
+export function centeredView(w: number, h: number, cw: number, ch: number, scale: number, min: number, max: number): GraphView {
+  return centeredBox({ x: 0, y: 0, w, h }, cw, ch, scale, min, max);
+}
+
+/** Fit a `w`×`h` world — the box-at-origin case of {@link fitBox}. */
 export function fitView(w: number, h: number, cw: number, ch: number, min: number, max: number, fitPad: number, maxFitScale: number): GraphView {
-  const s = Math.min((cw - fitPad * 2) / w, (ch - fitPad * 2) / h, maxFitScale);
-  return centeredView(w, h, cw, ch, s, min, max);
+  return fitBox({ x: 0, y: 0, w, h }, cw, ch, min, max, fitPad, maxFitScale);
 }
 
 /**
@@ -99,20 +119,27 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
   useEffect(() => { viewRef.current = view; }, [view]);
   const worldRef = useRef(world);
   useEffect(() => { worldRef.current = world; }, [world.w, world.h]);
+  // Latest content-bounds provider (read live at fit/restore time). Seeded from the first render and
+  // refreshed every commit — this hook is called before the consumer's own effects, so the ref is current
+  // before a mount/org-change restore effect reads it (#2673).
+  const boundsRef = useRef(opts.contentBounds);
+  useEffect(() => { boundsRef.current = opts.contentBounds; });
   // Set true during a pan-drag so the click that ends it doesn't select a node/edge.
   const dragMoved = useRef(false);
+
+  /** The box to frame: the live content bounds when a provider gives them, else the nominal world. */
+  const frameBox = (): GraphBox => boundsRef.current?.() ?? { x: 0, y: 0, ...worldRef.current };
 
   /** Zoom to `ns` keeping the world point under (mx,my) — viewport-relative client coords — fixed. */
   const zoomAbout = useCallback((ns: number, mx: number, my: number) => {
     setView((v) => zoomAboutPoint(v, ns, mx, my, min, max));
   }, [min, max]);
 
-  /** Fit the whole world in the viewport and center it. */
+  /** Fit the content (or the world, absent a content-bounds provider) in the viewport and center it. */
   const fit = useCallback(() => {
     const el = vpRef.current;
     if (!el) return;
-    const { w, h } = worldRef.current;
-    setView(fitView(w, h, el.clientWidth, el.clientHeight, min, max, fitPad, maxFitScale));
+    setView(fitBox(frameBox(), el.clientWidth, el.clientHeight, min, max, fitPad, maxFitScale));
   }, [min, max, fitPad, maxFitScale]);
 
   /** Pan world point (wx,wy) to the viewport center, keeping the current zoom (#2525). */
@@ -136,12 +163,11 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
     zoomAbout(scale, el.clientWidth / 2, el.clientHeight / 2);
   }, [zoomAbout]);
 
-  /** Set an absolute zoom with the world re-centered (restoring a saved level, #2545). */
+  /** Set an absolute zoom with the content (or world) re-centered (restoring a saved level, #2545/#2673). */
   const zoomToCentered = useCallback((scale: number) => {
     const el = vpRef.current;
     if (!el) return;
-    const { w, h } = worldRef.current;
-    setView(centeredView(w, h, el.clientWidth, el.clientHeight, scale, min, max));
+    setView(centeredBox(frameBox(), el.clientWidth, el.clientHeight, scale, min, max));
   }, [min, max]);
 
   // Wheel → zoom (native non-passive listener so we can preventDefault the page scroll).
