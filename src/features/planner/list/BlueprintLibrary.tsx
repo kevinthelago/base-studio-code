@@ -5,7 +5,7 @@ import { projectSlug } from "@/shared/lib/core/projectPaths";
 import { AUTHORING_BLUEPRINT_ID, uid, type Blueprint, type BlueprintStage, type BlueprintDesign } from "../stages/blueprints";
 import { ImportModal, type PreviewBlueprint } from "../blueprints/BlueprintModals";
 import { BlueprintImportModal } from "../blueprints/BlueprintImportModal";
-import { DesignReconcileModal } from "@/features/components";
+import { DesignReconcileModal } from "@/features/designs";
 import { reconcileDesign } from "@/shared/ui/kit";
 import { DEFAULT_GIST_SOURCE } from "../blueprints/blueprintCatalog";
 import { manifestToBlueprint, bundledSkillsFromManifest } from "../blueprints/blueprintShare";

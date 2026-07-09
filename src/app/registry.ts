@@ -11,7 +11,7 @@ import { Github } from "@/shared/ui/icons";
 
 /** Every top-level Workspace key (a rail destination). The store's `activeWorkspace` is one of these. */
 // "design" (Design Studio) was removed as a rail Workspace — it's a single page, now a Planner tab
-// (projectsPageMode "design"). A persisted `activeWorkspace: "design"` is migrated to projects+design mode.
+// (projectsPageMode "designs"). A persisted `activeWorkspace: "design"` is migrated to projects+designs mode.
 export type Workspace = "console" | "glance" | "automation" | "mcp" | "github" | "projects" | "skills" | "security" | "settings";
 
 export interface WorkspaceMeta {

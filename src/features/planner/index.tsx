@@ -35,15 +35,15 @@ export {
   briefKey, pendingBriefPrompt, DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
 } from "./fleet/directorDrive";
 
-// Design Studio (#move-to-planner) — a single-page workspace folded in as the "design" Planner tab.
+// Design Studio (#move-to-planner) — a single-page workspace folded in as the "designs" Planner tab.
 // LAZY to break the planner↔components import cycle (components reaches planner for the gist helpers +
 // the designer-terminal theme); the chunk loads on first open, then the page stays mounted (below) so
 // its always-on designer PTY survives a page switch — the same treatment Planning gets.
-const DesignStudioPage = lazy(() => import("@/features/components").then((m) => ({ default: m.DesignStudio })));
+const DesignsWorkbenchPage = lazy(() => import("@/features/designs").then((m) => ({ default: m.DesignsWorkbench })));
 // Themes (#themes-tab) — the sibling STYLE surface. A read-only gallery with NO live PTY, so (unlike the
 // Designs studio) it renders freely in any window and needs no single-owner gating. Lazy for the same
 // cycle-break + on-first-open chunk load.
-const ThemesPage = lazy(() => import("@/features/components").then((m) => ({ default: m.ThemesGallery })));
+const ThemesPage = lazy(() => import("@/features/designs").then((m) => ({ default: m.ThemesGallery })));
 
 export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   // Re-resolve the active project's repos + plan on tab open / project change.
@@ -69,10 +69,10 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
   });
   // A torn-off section window forces that one mode (and the bar is hidden).
   const mode = pageOverride ?? activeId;
-  // Design Studio tear-off (#tearoff): "design" drops out of the visible `tabs` while it's torn into
+  // Design Studio tear-off (#tearoff): "designs" drops out of the visible `tabs` while it's torn into
   // its own window. The main window then RELEASES the page (unmounts it, below) so the detached window
   // is the SOLE owner of the single designer PTY — the two never fight over pty_create/pty_kill.
-  const designDetached = !tabs.some((t) => t.id === "design");
+  const designDetached = !tabs.some((t) => t.id === "designs");
 
   // Single source of truth for the session identity, frozen at session start.
   // Remounting Planning only when this changes means publish assigning a project
@@ -136,22 +136,22 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
 
       {/* Design Studio (#move-to-planner) — the folded-in page, and it can TEAR OFF (#tearoff). Exactly
           ONE window mounts it at a time so they never fight over the single designer PTY: the detached
-          window (pageOverride==="design") owns it while torn off; otherwise the main window keeps it
+          window (pageOverride==="designs") owns it while torn off; otherwise the main window keeps it
           mounted (CSS-hidden) so the PTY survives a page switch, releasing it (designDetached) for the
           detached window. pty_create reconnects to a live session and `claude --continue` rehydrates a
           killed one, so the handoff is seamless either way. */}
-      {pageOverride === "design" && (
+      {pageOverride === "designs" && (
         <Box style={{ display: "flex", flex: 1, minHeight: 0 }}>
-          <Suspense fallback={<Box style={{ flex: 1 }} />}><DesignStudioPage /></Suspense>
+          <Suspense fallback={<Box style={{ flex: 1 }} />}><DesignsWorkbenchPage /></Suspense>
         </Box>
       )}
       <KeptMountedPage
-        active={mode === "design"}
+        active={mode === "designs"}
         gate={!pageOverride && !designDetached}
         fallback={<Box style={{ flex: 1 }} />}
         style={{ flexDirection: "row" }}
       >
-        <DesignStudioPage />
+        <DesignsWorkbenchPage />
       </KeptMountedPage>
 
       {/* Themes (#themes-tab) — the theme (style) collection. No live PTY, so it just renders when active

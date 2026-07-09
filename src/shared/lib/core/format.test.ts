@@ -108,7 +108,7 @@ describe("slugify", () => {
     expect(slugify("ab cd", 3)).toBe("ab-");
   });
 
-  it("supports the DesignStudio first-two-words derivation", () => {
+  it("supports the DesignsWorkbench first-two-words derivation", () => {
     expect(slugify("A Sleek Primary Button!").split("-").filter(Boolean).slice(0, 2).join("-")).toBe("a-sleek");
   });
 });
