@@ -9,7 +9,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
-import { RELATIONSHIP_ARCHETYPES, archetypeById, type Org } from "./lib/org";
+import { RELATIONSHIP_ARCHETYPES, archetypeById, type Team } from "./lib/team";
 import { CANVAS_W, CANVAS_H, nodeBox, edgeGeometry, styleDash } from "./lib/orgLayout";
 import { positionDisplay, hueColor, type PositionDisplay } from "./lib/orgView";
 import { Chip } from "@/shared/ui/data/Chip";
@@ -19,7 +19,7 @@ import type { Persona } from "@/features/personas";
 export interface Selection { type: "node" | "edge"; id: string }
 
 interface CanvasProps {
-  org: Org;
+  org: Team;
   personas: Persona[];
   sel: Selection;
   /** Current viewport scale — converts a client-pixel drag delta into design-space. */
@@ -70,7 +70,7 @@ function AgentFace({ d, isSel }: { d: PositionDisplay; isSel: boolean }) {
 }
 
 /** The world-layer content — placed inside GraphCanvas's transformed world box. */
-export function OrgCanvas(props: CanvasProps) {
+export function TeamsCanvas(props: CanvasProps) {
   const { org, personas, sel, scale, connecting, dragMoved, poolInfo,
     onSelectNode, onSelectEdge, onMoveNode, onDrillPool, onMovePool, onContext } = props;
   /** Right-click a node/edge → open the context menu at the cursor (delete). */

@@ -10,8 +10,8 @@ import type { ReviewFinding } from "@/shared/lib/preview/previewReview";
 export interface ProjectsState {
   // Projects (transient). "designs" is the Designs studio page (#move-to-planner) — formerly its own rail
   // Workspace, folded in as a Planner tab; "themes" is the sibling theme (style) collection (#themes-tab).
-  projectsPageMode: "projects" | "org" | "designs" | "themes";
-  setProjectsPageMode: (v: "projects" | "org" | "designs" | "themes") => void;
+  projectsPageMode: "projects" | "teams" | "designs" | "themes";
+  setProjectsPageMode: (v: "projects" | "teams" | "designs" | "themes") => void;
   // Glance drill target (#…): the project whose fleet graph is open on the Glance Network page, or null
   // for the project network. Lifted into the store (transient, not persisted) so the app-wide navigation
   // history (mouse back/forward) can drive it alongside the active workspace. See useNavHistory.
@@ -29,11 +29,11 @@ export interface ProjectsState {
   // confirmed ones route to the fleet, 5d). Not persisted — findings belong to a live preview session.
   reviewFindings: Record<string, ReviewFinding[]>;
   setReviewFindings: (key: string, findings: ReviewFinding[]) => void;
-  // Org drill target (#2492): the pool nodeId whose sub-graph is open in the Org designer, or null for
+  // Teams drill target (#2492): the pool nodeId whose sub-graph is open in the Teams designer, or null for
   // the parent graph. Transient like glanceDrill and lifted into the store for the same reason — the
   // app-wide navigation history (mouse back/forward) steps drill in/out. See useNavHistory.
-  orgDrill: string | null;
-  setOrgDrill: (id: string | null) => void;
+  teamsDrill: string | null;
+  setTeamsDrill: (id: string | null) => void;
   // Project↔project relationships (#2253, part of #2205) — the user-drawn edges of the Glance L1 network.
   // A write-through cache over the global `bsc project link` store (agent-reachable): `addProjectLink`
   // (idempotent, deterministic id) + `removeProjectLink` push through the bridge; `hydrateProjectLinks`

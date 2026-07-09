@@ -8,7 +8,7 @@ import type { GlanceData, ProjectLite } from "./glanceData";
 import { hashAbs } from "./hash";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
-import { archetypeById, positionComms, type Org, type Position, type Relationship } from "@/features/org";
+import { archetypeById, positionComms, type Team, type Position, type Relationship } from "@/features/teams";
 import type { BlueprintTeam } from "@/features/planner/stages/blueprintTypes";
 
 /** Session-role → Glance colour bucket, grouped by agent FUNCTION (#2561): ORCHESTRATE (planner ·
@@ -44,7 +44,7 @@ function nodePersona(p: Persona | undefined): GRawNode["persona"] {
  * model lets the drill derive each agent's communication surface (`positionComms`) from ONE source of
  * truth — the foundation for later authoring the fleet as an Org. Pure + exported for testing.
  */
-export function fleetToOrg(fleet: FleetPlan, team?: BlueprintTeam): Org {
+export function fleetToOrg(fleet: FleetPlan, team?: BlueprintTeam): Team {
   const positions: Position[] = fleet.streams.map((s) => ({ nodeId: s.id, kind: "agent", personaId: s.persona, label: s.name || s.id }));
   if (fleet.director?.enabled) positions.push({ nodeId: "director", kind: "agent", personaId: "director", label: "director" });
   const posIds = new Set(positions.map((p) => p.nodeId));
@@ -109,7 +109,7 @@ function teamArchetypeByPersonaPair(team?: BlueprintTeam): Map<string, string> {
 /** Convert a blueprint {@link BlueprintTeam} into a standalone {@link Org} (#2572) — the team is already
  *  `{positions, relationships}`, so this just stamps the library-identity fields. Exported for phase 2
  *  (rendering the drill from the authored team directly). */
-export function teamToOrg(team: BlueprintTeam): Org {
+export function teamToOrg(team: BlueprintTeam): Team {
   return { id: "team", name: "Team", positions: team.positions, relationships: team.relationships };
 }
 
@@ -132,7 +132,7 @@ const ARCHETYPE_TO_KIND: Record<string, GEdgeKind> = {
  * — so each relationship maps to a Glance edge REVERSED. Pure + exported: the org may be projected from a
  * running fleet (below) or, later, sourced from a blueprint's authored `team`.
  */
-export function buildOrgFleetData(org: Org, personas: Persona[]): GlanceData {
+export function buildOrgFleetData(org: Team, personas: Persona[]): GlanceData {
   const personaById = new Map(personas.map((p) => [p.id, p]));
   const rawNodes: GRawNode[] = org.positions.map((pos) => {
     const persona = pos.personaId ? personaById.get(pos.personaId) : undefined;
@@ -192,7 +192,7 @@ export function withPreviewNode(data: GlanceData, complete: boolean): GlanceData
 
 /** Pare an org {@link positionComms} summary down to the glance node's {@link GNodeComm} shape (labels +
  *  transports only) — keeping the glance model decoupled from the Org form types. */
-function projectComms(org: Org, pos: Position, personas: Persona[]): GNodeComm[] {
+function projectComms(org: Team, pos: Position, personas: Persona[]): GNodeComm[] {
   return positionComms(org, pos, personas).map((c) => ({
     withName: c.counterpartName,
     archetypeLabel: c.archetypeLabel,

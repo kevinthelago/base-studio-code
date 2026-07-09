@@ -5,9 +5,9 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { TeamView } from "./TeamView";
 import { useAppStore } from "@/store";
 import type { Blueprint, BlueprintTeam } from "@/features/planner/stages/blueprints";
-import type { Org } from "@/features/org";
+import type { Team } from "@/features/teams";
 
-const libOrg: Org = {
+const libOrg: Team = {
   id: "org-test", name: "Test archetype", blurb: "a two-agent fleet",
   positions: [
     { nodeId: "n1", kind: "agent", label: "Director", x: 40, y: 40 },
@@ -21,7 +21,7 @@ const bp = (team?: BlueprintTeam): Blueprint => ({
 });
 
 beforeEach(() => {
-  useAppStore.setState({ orgs: [libOrg] });
+  useAppStore.setState({ teams: [libOrg] });
 });
 
 describe("TeamView — archetype picker (fork-on-attach, #2450)", () => {
@@ -79,7 +79,7 @@ describe("TeamView — team editor", () => {
     const next = onChange.mock.calls[0][0] as Blueprint;
     expect(next.team!.positions).toHaveLength(3);
     expect(next.team!.positions[2].kind).toBe("agent");
-    expect(useAppStore.getState().orgs[0].positions).toHaveLength(2); // library untouched
+    expect(useAppStore.getState().teams[0].positions).toHaveLength(2); // library untouched
   });
 
   it("auto-organize stamps layout coords onto every position via onChange", () => {
