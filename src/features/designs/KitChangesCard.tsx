@@ -5,13 +5,38 @@
 // clears the entry; until then this is where a change lands. Self-contained: reads the store directly and
 // renders nothing when the queue is empty, so it's safe to drop into the Design Studio unconditionally.
 import { useMemo } from "react";
+import type { ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
 import type { KitChange } from "./lib/propagation";
 import type { SeedNotice } from "./lib/seedRefresh";
+
+/** The shared notice-card shell (#2720): the outer soft-bg container + the padded header row
+ *  (uppercase-mono eyebrow · chip · spacer · muted note). {@link SeedNoticesCard} and
+ *  {@link KitChangesCard} are visibly siblings built from it; each still renders nothing when its
+ *  queue is empty (the callers guard that). */
+function NoticeCard({ eyebrow, chip, note, children }: { eyebrow: string; chip: ReactNode; note: string; children: ReactNode }) {
+  return (
+    <Box
+      style={{
+        margin: "10px 14px 0", border: "1px solid var(--border)", borderRadius: 10,
+        background: "var(--bg-soft)", overflow: "hidden", flex: "none",
+      }}
+    >
+      <Box style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
+        <Eyebrow size={9} style={{ letterSpacing: ".06em" }}>{eyebrow}</Eyebrow>
+        {chip}
+        <Box style={{ flex: 1 }} />
+        <Text size={11} tone="muted">{note}</Text>
+      </Box>
+      {children}
+    </Box>
+  );
+}
 
 const CLASS_COLOR: Record<KitChange["class"], string> = {
   breaking: "var(--danger)",
@@ -32,18 +57,11 @@ export function SeedNoticesCard() {
   const dismiss = useAppStore((s) => s.dismissSeedNotice);
   if (notices.length === 0) return null;
   return (
-    <Box
-      style={{
-        margin: "10px 14px 0", border: "1px solid var(--border)", borderRadius: 10,
-        background: "var(--bg-soft)", overflow: "hidden", flex: "none",
-      }}
+    <NoticeCard
+      eyebrow="Built-in updates"
+      chip={<Chip color="var(--state-wait)">{notices.length} kept</Chip>}
+      note="customized built-ins are never overwritten"
     >
-      <Box style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
-        <Text mono size="xxs" tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase" }}>Built-in updates</Text>
-        <Chip color="var(--state-wait)">{notices.length} kept</Chip>
-        <Box style={{ flex: 1 }} />
-        <Text size={11} tone="muted">customized built-ins are never overwritten</Text>
-      </Box>
       <Box style={{ display: "flex", flexDirection: "column" }}>
         {notices.map((n) => (
           <Box key={`${n.type}:${n.id}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--border-soft, var(--border))" }}>
@@ -55,7 +73,7 @@ export function SeedNoticesCard() {
           </Box>
         ))}
       </Box>
-    </Box>
+    </NoticeCard>
   );
 }
 
@@ -79,18 +97,11 @@ export function KitChangesCard() {
   if (groups.length === 0) return null;
 
   return (
-    <Box
-      style={{
-        margin: "10px 14px 0", border: "1px solid var(--border)", borderRadius: 10,
-        background: "var(--bg-soft)", overflow: "hidden", flex: "none",
-      }}
+    <NoticeCard
+      eyebrow="Kit changes"
+      chip={<Chip color="var(--accent)">{dispatches.length} pending</Chip>}
+      note="notify-only until a consumer opts into auto-dispatch"
     >
-      <Box style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
-        <Text mono size="xxs" tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase" }}>Kit changes</Text>
-        <Chip color="var(--accent)">{dispatches.length} pending</Chip>
-        <Box style={{ flex: 1 }} />
-        <Text size={11} tone="muted">notify-only until a consumer opts into auto-dispatch</Text>
-      </Box>
       <Box style={{ display: "flex", flexDirection: "column" }}>
         {groups.map(({ change, projects }) => (
           <Box key={change.id} style={{ padding: "10px 12px", borderBottom: "1px solid var(--border-soft, var(--border))" }}>
@@ -125,6 +136,6 @@ export function KitChangesCard() {
           </Box>
         ))}
       </Box>
-    </Box>
+    </NoticeCard>
   );
 }
