@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { describe, it, expect, beforeEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { DesignStudio } from "./DesignStudio";
 import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
 import { SEED_THEMES } from "./lib/themes";
@@ -192,91 +192,40 @@ describe("DesignStudio (#2308)", () => {
   });
 });
 
-describe("half-screen overlay drawers (#2682)", () => {
-  // The setup polyfill is a no-op; install a controllable ResizeObserver so we can drive the body
-  // width and exercise the narrow → overlay-drawer switch.
-  const RealRO = globalThis.ResizeObserver;
-  let triggers: Array<(w: number) => void>;
-  beforeEach(() => {
-    triggers = [];
-    globalThis.ResizeObserver = class {
-      constructor(private cb: ResizeObserverCallback) {
-        triggers.push((w) => this.cb([{ contentRect: { width: w } } as ResizeObserverEntry], this));
-      }
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    } as unknown as typeof ResizeObserver;
-  });
-  afterEach(() => { globalThis.ResizeObserver = RealRO; });
-
-  const setWidth = (w: number) => act(() => triggers.forEach((t) => t(w)));
-
-  it("wide by default: inline columns with drag handles, no drawer toggles", () => {
+describe("collapsible kits list (#2691)", () => {
+  it("the details/inspector pane is ALWAYS inline — no toggle for it, present at any time", () => {
     const { container } = render(<DesignStudio />);
-    expect(container.querySelector(".ds-body--narrow")).toBeNull();
-    expect(container.querySelectorAll(".ds-drawertoggle").length).toBe(0);
-    expect(container.querySelectorAll(".ds-handle").length).toBe(2); // the two col-resize splitters
+    // Inspector is rendered inline from the first paint, whatever the list state.
+    expect(container.querySelector(".ds-insp")).toBeTruthy();
+    expect(screen.getByText("Live preview")).toBeTruthy();
+    // The list is expanded by default: full rail + its search + the resize handles.
+    expect(container.querySelector(".ds-rail")).toBeTruthy();
+    expect(container.querySelector(".ds-railstrip")).toBeNull();
+    expect(screen.getByLabelText("Search components")).toBeTruthy();
+    expect(container.querySelectorAll(".ds-handle").length).toBe(2);
   });
 
-  it("below the threshold: floats the panels, drops the drag handles, and adds the toolbar toggles", () => {
+  it("collapsing the list hides it behind a slim strip whose expand toggle rides with the pane", () => {
     const { container } = render(<DesignStudio />);
-    setWidth(700);
-    expect(container.querySelector(".ds-body--narrow")).toBeTruthy();
-    expect(container.querySelectorAll(".ds-drawertoggle").length).toBe(2); // rail + inspector toggles
-    expect(container.querySelectorAll(".ds-handle").length).toBe(0);       // col splitters removed
-    // The panels start closed (no `.open`) so the graph keeps full width.
-    expect(container.querySelector(".ds-rail")!.className).not.toContain("open");
-    expect(container.querySelector(".ds-insp")!.className).not.toContain("open");
+    fireEvent.click(screen.getByLabelText("Collapse list"));
+    // The full rail + its search + its drag handle are gone; the slim strip takes their place.
+    expect(container.querySelector(".ds-rail")).toBeNull();
+    expect(container.querySelector(".ds-railstrip")).toBeTruthy();
+    expect(screen.queryByLabelText("Search components")).toBeNull();
+    expect(container.querySelectorAll(".ds-handle").length).toBe(1); // only the inspector splitter remains
+    // The expand affordance lives ON the strip (never covered) — and the inspector is still inline.
+    const expand = screen.getByLabelText("Show list");
+    expect(expand.closest(".ds-railstrip")).toBeTruthy();
+    expect(container.querySelector(".ds-insp")).toBeTruthy();
   });
 
-  it("trips at a half-window body width the old fixed 900px threshold missed (#2688 regression)", () => {
-    // Default panels are 266 + 420; the graph needs ~380 after them, so overlays engage below ~1076px.
-    // 950px is a realistic half-screen body — ABOVE the old magic 900 (which never fired) yet still too
-    // squeezed for the 3-column layout, so the derived threshold must flip to overlay mode here.
+  it("expanding from the strip restores the full list", () => {
     const { container } = render(<DesignStudio />);
-    setWidth(950);
-    expect(container.querySelector(".ds-body--narrow")).toBeTruthy();
-    expect(container.querySelectorAll(".ds-drawertoggle").length).toBe(2);
-    // …and a genuinely wide body (room for the graph after both panels) stays the 3-column IDE.
-    setWidth(1400);
-    expect(container.querySelector(".ds-body--narrow")).toBeNull();
-    expect(container.querySelectorAll(".ds-drawertoggle").length).toBe(0);
-  });
-
-  it("a toggle opens its drawer + a dismiss scrim; the scrim closes it", () => {
-    const { container } = render(<DesignStudio />);
-    setWidth(700);
-    const railToggle = container.querySelector(".ds-drawertoggle") as HTMLElement;
-    fireEvent.click(railToggle);
-    expect(container.querySelector(".ds-rail")!.className).toContain("open");
-    const scrim = container.querySelector(".ds-scrim") as HTMLElement;
-    expect(scrim).toBeTruthy();
-    fireEvent.click(scrim);
-    expect(container.querySelector(".ds-rail")!.className).not.toContain("open");
-    expect(container.querySelector(".ds-scrim")).toBeNull();
-  });
-
-  it("only one drawer is open at a time — opening the inspector closes the rail", () => {
-    const { container } = render(<DesignStudio />);
-    setWidth(700);
-    const [railToggle, inspToggle] = [...container.querySelectorAll(".ds-drawertoggle")] as HTMLElement[];
-    fireEvent.click(railToggle);
-    expect(container.querySelector(".ds-rail")!.className).toContain("open");
-    fireEvent.click(inspToggle);
-    expect(container.querySelector(".ds-insp")!.className).toContain("open");
-    expect(container.querySelector(".ds-rail")!.className).not.toContain("open");
-  });
-
-  it("returning to a wide width restores the inline layout and clears any open drawer", () => {
-    const { container } = render(<DesignStudio />);
-    setWidth(700);
-    fireEvent.click(container.querySelector(".ds-drawertoggle") as HTMLElement); // open the rail drawer
-    expect(container.querySelector(".ds-rail")!.className).toContain("open");
-    setWidth(1200);
-    expect(container.querySelector(".ds-body--narrow")).toBeNull();
-    expect(container.querySelectorAll(".ds-drawertoggle").length).toBe(0);
-    expect(container.querySelector(".ds-rail")!.className).not.toContain("open");
+    fireEvent.click(screen.getByLabelText("Collapse list"));
+    fireEvent.click(screen.getByLabelText("Show list"));
+    expect(container.querySelector(".ds-railstrip")).toBeNull();
+    expect(container.querySelector(".ds-rail")).toBeTruthy();
+    expect(screen.getByLabelText("Search components")).toBeTruthy();
     expect(container.querySelectorAll(".ds-handle").length).toBe(2);
   });
 });
