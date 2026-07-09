@@ -11,7 +11,7 @@
 //   • IMPORTANCE ORDERING — within a row, nodes sort by the `used` count (the cross-codebase reuse
 //     signal) descending, name as the stable tiebreak. Ordering only; no size/emphasis scaling.
 //
-// Pure and React-free; DesignStudio's graph memo is a single call to `layoutComposition`.
+// Pure and React-free; DesignsWorkbench's graph memo is a single call to `layoutComposition`.
 import { layerDag } from "@/shared/lib/graph/layers";
 import type { GraphEdge } from "@/shared/lib/graph/types";
 import type { ComponentRecord, Role } from "./model";

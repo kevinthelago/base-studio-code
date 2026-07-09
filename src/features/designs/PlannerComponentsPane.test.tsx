@@ -47,7 +47,7 @@ describe("PlannerComponentsPane (#2314)", () => {
     fireEvent.click(screen.getByText("Button").closest("button")!);
     fireEvent.click(screen.getByRole("button", { name: /Open in studio/ }));
     expect(useAppStore.getState().activeWorkspace).toBe("projects");
-    expect(useAppStore.getState().projectsPageMode).toBe("design");
+    expect(useAppStore.getState().projectsPageMode).toBe("designs");
   });
 
   it("search filters the component list", () => {
