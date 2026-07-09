@@ -11,24 +11,24 @@ import type { Workspace } from "@/app/registry";
 interface NavLoc {
   workspace: Workspace;
   /** The Planner workspace's page (Projects ↔ Org ↔ Designs ↔ Themes); null on every other workspace. */
-  page: "projects" | "org" | "design" | "themes" | null;
+  page: "projects" | "teams" | "design" | "themes" | null;
   /** The Glance drill target; null outside Glance. */
   drill: string | null;
   /** The Org designer's pool drill; null unless the Planner's Org page is showing. */
-  orgDrill: string | null;
+  teamsDrill: string | null;
 }
 const eq = (a: NavLoc, b: NavLoc) =>
-  a.workspace === b.workspace && a.page === b.page && a.drill === b.drill && a.orgDrill === b.orgDrill;
+  a.workspace === b.workspace && a.page === b.page && a.drill === b.drill && a.teamsDrill === b.teamsDrill;
 
 export function useNavHistory() {
   const workspace = useAppStore((s) => s.activeWorkspace);
   const pageMode = useAppStore((s) => s.projectsPageMode);
   const glanceDrill = useAppStore((s) => s.glanceDrill);
-  const orgDrill = useAppStore((s) => s.orgDrill);
+  const teamsDrill = useAppStore((s) => s.teamsDrill);
   const setWorkspace = useAppStore((s) => s.setWorkspace);
   const setProjectsPageMode = useAppStore((s) => s.setProjectsPageMode);
   const setGlanceDrill = useAppStore((s) => s.setGlanceDrill);
-  const setOrgDrill = useAppStore((s) => s.setOrgDrill);
+  const setTeamsDrill = useAppStore((s) => s.setTeamsDrill);
 
   // Each facet only matters where it is visible; elsewhere a location carries null so history doesn't
   // split on a stale value held by another workspace/page.
@@ -36,7 +36,7 @@ export function useNavHistory() {
     workspace,
     page: workspace === "projects" ? pageMode : null,
     drill: workspace === "glance" ? glanceDrill : null,
-    orgDrill: workspace === "projects" && pageMode === "org" ? orgDrill : null,
+    teamsDrill: workspace === "projects" && pageMode === "teams" ? teamsDrill : null,
   };
 
   const stack = useRef<NavLoc[]>([loc]);
@@ -57,7 +57,7 @@ export function useNavHistory() {
     stack.current.push(loc);
     idx.current = stack.current.length - 1;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loc.workspace, loc.page, loc.drill, loc.orgDrill]);
+  }, [loc.workspace, loc.page, loc.drill, loc.teamsDrill]);
 
   // Bind the mouse back/forward buttons (X1 = button 3, X2 = button 4). Refs keep the listener stable.
   useEffect(() => {
@@ -70,7 +70,7 @@ export function useNavHistory() {
       setWorkspace(target.workspace);
       if (target.page) setProjectsPageMode(target.page);
       setGlanceDrill(target.workspace === "glance" ? target.drill : null);
-      setOrgDrill(target.orgDrill);
+      setTeamsDrill(target.teamsDrill);
     };
     const onMouseUp = (e: MouseEvent) => {
       if (e.button === 3) { e.preventDefault(); go(-1); }
@@ -86,5 +86,5 @@ export function useNavHistory() {
       window.removeEventListener("mousedown", suppress);
       window.removeEventListener("auxclick", suppress);
     };
-  }, [setWorkspace, setProjectsPageMode, setGlanceDrill, setOrgDrill]);
+  }, [setWorkspace, setProjectsPageMode, setGlanceDrill, setTeamsDrill]);
 }

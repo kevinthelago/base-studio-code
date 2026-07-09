@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, teamToOrg, nodeHasLiveSession, withPreviewNode, PREVIEW_NODE_ID } from "./glanceFleet";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
-import type { Org } from "@/features/org";
+import type { Team } from "@/features/teams";
 import type { BlueprintTeam } from "@/features/planner/stages/blueprintTypes";
 
 describe("buildFleetData (glance drill)", () => {
@@ -150,7 +150,7 @@ describe("buildRealFleetData attaches each agent's communication surface (#2563)
 
 describe("buildOrgFleetData (#2565 — render the drill FROM an Org)", () => {
   const personas: Persona[] = [{ id: "p-worker", name: "Backend Engineer", blurb: "", role: "worker", startPrompt: "", skills: [] }];
-  const org: Org = {
+  const org: Team = {
     id: "o", name: "O",
     positions: [
       { nodeId: "api", kind: "agent", personaId: "p-worker", label: "API" },
@@ -259,7 +259,7 @@ describe("fleetToOrg phase-2 team instantiation (#2575)", () => {
 
 describe("buildOrgFleetData cyclical archetype (#2578 — iteration loops)", () => {
   it("emits BOTH directions for a cyclical (iterates) relationship, one for every other archetype", () => {
-    const org: Org = {
+    const org: Team = {
       id: "o", name: "O",
       positions: [
         { nodeId: "aud", kind: "agent", personaId: "persona-auditor", label: "auditor" },

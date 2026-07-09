@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   BUILTIN_ORGS, COMMUNICATION_FORMS, RELATIONSHIP_ARCHETYPES,
   makeBuiltinOrgs, reconcileOrgs, blankOrg, orgSlug, orgIssues, deriveCommunication,
-  archetypeById, formById, type Org,
-} from "./org";
+  archetypeById, formById, type Team,
+} from "./team";
 
 describe("org vocabulary (#2193)", () => {
   it("loads the communication forms + archetypes from @data/org", () => {
@@ -44,7 +44,7 @@ describe("built-in orgs (#2193)", () => {
     const fleet = built.find((o) => o.id === "org-default-fleet")!;
     expect(fleet).toBeTruthy();
     expect(fleet.builtin).toBe(true);
-    // `order` is load-time-only — it must not leak onto the assembled Org.
+    // `order` is load-time-only — it must not leak onto the assembled Team.
     expect("order" in fleet).toBe(false);
     // The graph is structurally clean: no dangling edges, no unknown archetypes.
     expect(orgIssues(fleet)).toEqual([]);
@@ -79,7 +79,7 @@ describe("deriveCommunication (#2193)", () => {
 
 describe("orgIssues (#2193)", () => {
   it("flags a dangling edge and an unknown archetype", () => {
-    const bad: Org = {
+    const bad: Team = {
       id: "x", name: "x",
       positions: [{ nodeId: "a", kind: "agent" }],
       relationships: [
@@ -113,7 +113,7 @@ describe("reconcileOrgs (#2193)", () => {
   });
 
   it("preserves user edits to a built-in but restores builtin identity", () => {
-    const persisted: Org[] = [
+    const persisted: Team[] = [
       { id: "org-default-fleet", name: "My fleet", positions: [], relationships: [], builtin: false },
     ];
     const fleet = reconcileOrgs(persisted).find((o) => o.id === "org-default-fleet")!;
@@ -122,7 +122,7 @@ describe("reconcileOrgs (#2193)", () => {
   });
 
   it("keeps user-authored orgs as non-builtin", () => {
-    const persisted: Org[] = [{ id: "org-mine", name: "Mine", positions: [], relationships: [] }];
+    const persisted: Team[] = [{ id: "org-mine", name: "Mine", positions: [], relationships: [] }];
     const mine = reconcileOrgs(persisted).find((o) => o.id === "org-mine")!;
     expect(mine.builtin).toBe(false);
   });

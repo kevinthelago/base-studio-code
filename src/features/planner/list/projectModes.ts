@@ -11,9 +11,9 @@ export const PROJECT_MODES: TabItem[] = [
   // The standalone Personas tab was folded into Org (#2199): a persona is edited in the Org inspector
   // (PersonaEditor) as the identity behind a position, so a separate library tab was redundant.
   // The persona-relationship graph — your AI agent TEAM: personas as positions, wired by relationship
-  // archetypes, grouped by department. Labelled "Teams" (human-readable) over the opaque "Org"; the tab
-  // id stays "org" so the store key / persist migration / graph state are untouched.
-  { id: "org",        label: "Teams",       hint: "your agent teams — personas as positions, wired into a relationship graph" },
+  // archetypes, grouped by department. The tab id is "teams" to match the label (#2700; a persist
+  // migration maps the former "org" id forward).
+  { id: "teams",      label: "Teams",       hint: "your agent teams — personas as positions, wired into a relationship graph" },
   // The Design Studio was a standalone rail Workspace; it's a single page, so it folded in here as a
   // Planner tab (its own rail destination was removed). Labelled "Designs" — it owns the kit/component
   // (STRUCTURE) axis; the THEME (STYLE) axis lives in its own "Themes" tab below (epic #2606).

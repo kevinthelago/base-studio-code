@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { OrgInspector } from "./OrgInspector";
-import { RELATIONSHIP_ARCHETYPES, type Org } from "./lib/org";
+import { TeamsInspector } from "./TeamsInspector";
+import { RELATIONSHIP_ARCHETYPES, type Team } from "./lib/team";
 
-const org: Org = {
+const org: Team = {
   id: "o1",
   name: "Test org",
   positions: [
@@ -18,11 +18,11 @@ const baseProps = {
   onSelectNode: () => {}, onChangeArchetype: () => {}, onChangePersona: () => {}, onChangeLabel: () => {},
 };
 
-describe("OrgInspector — manual delete overrides (#2383)", () => {
+describe("TeamsInspector — manual delete overrides (#2383)", () => {
   it("deletes the selected position via the two-step confirm (cascades to its relationships)", () => {
     const onDeletePosition = vi.fn();
     render(
-      <OrgInspector {...baseProps} sel={{ type: "node", id: "n1" }}
+      <TeamsInspector {...baseProps} sel={{ type: "node", id: "n1" }}
         onDeletePosition={onDeletePosition} onDeleteRelationship={() => {}} />,
     );
     const btn = screen.getByRole("button", { name: /Delete position/ });
@@ -35,7 +35,7 @@ describe("OrgInspector — manual delete overrides (#2383)", () => {
   it("deletes the selected relationship via the two-step confirm", () => {
     const onDeleteRelationship = vi.fn();
     render(
-      <OrgInspector {...baseProps} sel={{ type: "edge", id: "r1" }}
+      <TeamsInspector {...baseProps} sel={{ type: "edge", id: "r1" }}
         onDeletePosition={() => {}} onDeleteRelationship={onDeleteRelationship} />,
     );
     const btn = screen.getByRole("button", { name: /Delete relationship/ });

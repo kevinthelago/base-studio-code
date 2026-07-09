@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { detectPools, collapseOrg, poolSubgraph, poolLayoutSizes, applyPoolLayout, organizeDrilledPool, POOL_STACK_OFFSET } from "./orgPools";
 import { autoLayout, AUTO_ROW, NODE_SIZE } from "./orgLayout";
-import type { Org } from "./org";
+import type { Team } from "./team";
 import type { Persona } from "@/features/personas";
 
 const personas: Persona[] = [
@@ -11,7 +11,7 @@ const personas: Persona[] = [
 ];
 
 /** A director managing 3 identical workers (peer mesh among them) — a homogeneous pool. */
-const swarm: Org = {
+const swarm: Team = {
   id: "swarm", name: "Swarm",
   positions: [
     { nodeId: "director", kind: "agent", personaId: "p-director", x: 400, y: 40 },
@@ -41,7 +41,7 @@ describe("detectPools (#2199)", () => {
     // Pre-#2436 this blocked the stack, so real orgs' engineers never collapsed; now the engineers
     // stack anyway (the org view is the scaffold + the engineer slot) with `homogeneous:false` — the
     // drill-in shows who has which edge.
-    const hetero: Org = {
+    const hetero: Team = {
       ...swarm,
       positions: [...swarm.positions, { nodeId: "reviewer", kind: "agent", personaId: "p-reviewer", x: 0, y: 0 }],
       relationships: [...swarm.relationships, { id: "ov", archetype: "oversees", from: "reviewer", to: "w1" }],
@@ -67,7 +67,7 @@ describe("detectPools (#2199)", () => {
       { id: "persona-director", name: "Director", blurb: "", role: "director", startPrompt: "", skills: [] },
       { id: "persona-worker", name: "Worker", blurb: "", role: "worker", startPrompt: "", skills: [] }, // no `pooled`
     ];
-    const org: Org = {
+    const org: Team = {
       id: "s", name: "s",
       positions: [
         { nodeId: "director", kind: "agent", personaId: "persona-director" },
@@ -86,14 +86,14 @@ describe("detectPools (#2199)", () => {
     const notPooled = personas.map((p) => (p.id === "p-worker" ? { ...p, pooled: false } : p));
     expect(detectPools(swarm, notPooled)).toHaveLength(0);
     // one worker only → no pool even when pooled
-    const single: Org = { ...swarm, positions: swarm.positions.slice(0, 2), relationships: [swarm.relationships[0]] };
+    const single: Team = { ...swarm, positions: swarm.positions.slice(0, 2), relationships: [swarm.relationships[0]] };
     expect(detectPools(single, personas)).toHaveLength(0);
   });
 
   it("never stacks the scaffold: a non-worker persona placed twice stays two singletons", () => {
     // Two reviewer positions (not pooled, not worker-role) — leadership/quality roles are the
     // scaffold and must stay individually visible.
-    const org: Org = {
+    const org: Team = {
       id: "s", name: "s",
       positions: [
         { nodeId: "r1", kind: "agent", personaId: "p-reviewer" },
@@ -155,7 +155,7 @@ describe("auto-organize lays out the COLLAPSED graph (#2451)", () => {
   /** The #2436 mixed-wiring shape: one engineer managed by the director, the other overseen by a
    *  reviewer the director manages — the members land on DIFFERENT hierarchy layers in the full org,
    *  so the old full-org layout put their centroid (= the rendered stack) BETWEEN rows. */
-  const mixed: Org = {
+  const mixed: Team = {
     id: "mixed", name: "Mixed",
     positions: [
       { nodeId: "director", kind: "agent", personaId: "p-director", x: 400, y: 40 },
@@ -222,7 +222,7 @@ describe("applyPoolLayout (#2451)", () => {
     // w3 nudged to 701 → member centroid x = 400.333… → a fractional shared delta. Every member
     // rounds with the same fractional part, so pairwise offsets survive the rounding untouched
     // (the #2439 drill-in contract).
-    const org: Org = { ...swarm, positions: swarm.positions.map((p) => (p.nodeId === "w3" ? { ...p, x: 701, y: 340 } : p)) };
+    const org: Team = { ...swarm, positions: swarm.positions.map((p) => (p.nodeId === "w3" ? { ...p, x: 701, y: 340 } : p)) };
     const layout = { director: { x: 0, y: 0 }, "pool:p-worker": { x: 511, y: 487 } };
     const positions = applyPoolLayout(org, detectPools(org, personas), layout);
     const at = (id: string) => positions.find((p) => p.nodeId === id)!;
@@ -235,7 +235,7 @@ describe("applyPoolLayout (#2451)", () => {
   });
 
   it("spreads a degenerate (all-unplaced) cluster deterministically around the pool spot", () => {
-    const org: Org = { ...swarm, positions: swarm.positions.map((p) => ({ ...p, x: undefined, y: undefined })) };
+    const org: Team = { ...swarm, positions: swarm.positions.map((p) => ({ ...p, x: undefined, y: undefined })) };
     const layout = { director: { x: 60, y: 48 }, "pool:p-worker": { x: 300, y: 260 } };
     const positions = applyPoolLayout(org, detectPools(org, personas), layout);
     const members = positions.filter((p) => p.personaId === "p-worker");

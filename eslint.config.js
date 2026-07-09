@@ -11,7 +11,7 @@ import reactRefresh from "eslint-plugin-react-refresh";
 // PER-FEATURE: each feature forbids only the OTHER features' internals. Tests are exempt. `components/**`
 // and `glance/**` are exempt AS IMPORTERS while a parallel session restructures them
 // (#2197/#2214/#2372) — remove them from EXEMPT_IMPORTERS to fold them in once that lands.
-const FEATURES = ["agents", "automations", "components", "github", "glance", "mcp", "org", "personas", "planner", "settings", "skills", "tunnel"];
+const FEATURES = ["agents", "automations", "components", "github", "glance", "mcp", "teams", "personas", "planner", "settings", "skills", "tunnel"];
 const EXEMPT_IMPORTERS = ["components", "glance"];
 const BOUNDARY_MSG =
   "Import another feature through its barrel (@/features/<x>), not its internals (#1545): a feature's " +

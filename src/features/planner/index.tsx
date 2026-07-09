@@ -7,7 +7,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { ProjectsEmpty } from "./list/Empty";
 import { ProjectsList } from "./list/ProjectsList";
 import { Planning } from "./session/Planning";
-import { OrgPanel } from "@/features/org";
+import { TeamsPanel } from "@/features/teams";
 import { useProjectScan } from "./list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
 import "./projectsScreen.css";
@@ -112,11 +112,11 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
       {/* Fleet analytics moved to Glance (#2223/#2228). The console fleet launch (fleetStartProject) is
           unaffected — that's a separate build-tab flow, not this page mode. */}
 
-      {/* Org — the persona-relationship graph (#2193); also the persona editor (the Personas tab was
+      {/* Teams — the persona-relationship graph (#2193); also the persona editor (the Personas tab was
           folded in here, #2199). Authoring, not a live PTY, so torn-off windows never force this mode. */}
-      {mode === "org" && !pageOverride && (
+      {mode === "teams" && !pageOverride && (
         <Stack style={{ flex: 1, minHeight: 0 }}>
-          <OrgPanel />
+          <TeamsPanel />
         </Stack>
       )}
 

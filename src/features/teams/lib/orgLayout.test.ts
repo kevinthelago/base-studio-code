@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { nodeBox, edgeGeometry, styleDash, autoLayout, layerNodes, contentBounds, NODE_SIZE, CANVAS_W, CANVAS_H, AUTO_ROW } from "./orgLayout";
 import { anchor } from "@/shared/lib/graph/edgePath";
-import { BUILTIN_ORGS, type Org, type Position } from "./org";
+import { BUILTIN_ORGS, type Team, type Position } from "./team";
 
 describe("orgLayout geometry (#2193)", () => {
   it("nodeBox uses the position's x/y + the size for its kind", () => {
@@ -85,7 +85,7 @@ describe("contentBounds (#2673 — frame the nodes, not the fixed canvas)", () =
 describe("layerNodes — shared layerDag parity (#2418)", () => {
   /** The pre-#2418 PRIVATE longest-path layerer, kept verbatim as the parity oracle. On an acyclic
    *  hierarchy the shared `layerDag` path must assign identical layers. */
-  const oldLayers = (org: Org): Map<string, number> => {
+  const oldLayers = (org: Team): Map<string, number> => {
     const HIER = new Set(["manages", "serves", "oversees", "stewards"]);
     const ids = org.positions.map((p) => p.nodeId);
     const parents = new Map<string, string[]>(ids.map((n) => [n, []]));
@@ -119,7 +119,7 @@ describe("layerNodes — shared layerDag parity (#2418)", () => {
   });
 
   it("matches on a multi-level hierarchy with lateral (non-hierarchy) edges mixed in", () => {
-    const org: Org = {
+    const org: Team = {
       id: "x", name: "x",
       positions: ["boss", "lead", "a", "b", "res"].map((nodeId) => ({ nodeId, kind: "agent" as const })),
       relationships: [
@@ -142,7 +142,7 @@ describe("layerNodes — shared layerDag parity (#2418)", () => {
   it("breaks a 2-cycle by dropping the DFS back-edge — the forward edge still layers", () => {
     // The old cycle break zeroed the on-stack parent (an order artifact: a landed BELOW b). The shared
     // path drops the closing edge instead, so `a manages b` wins: a above (layer 0), b below (layer 1).
-    const org: Org = {
+    const org: Team = {
       id: "c", name: "c",
       positions: [{ nodeId: "a", kind: "agent" }, { nodeId: "b", kind: "agent" }],
       relationships: [
@@ -158,7 +158,7 @@ describe("layerNodes — shared layerDag parity (#2418)", () => {
 
   it("orders each layer by the barycenter of its cross-layer hierarchy neighbors", () => {
     // Two managers over crossed reports: m2→r1, m1→r2 seeds crossed; the sweep untangles it.
-    const org: Org = {
+    const org: Team = {
       id: "o", name: "o",
       positions: ["m1", "m2", "r1", "r2"].map((nodeId) => ({ nodeId, kind: "agent" as const })),
       relationships: [
@@ -185,7 +185,7 @@ describe("autoLayout (#2199)", () => {
   });
 
   it("layers a manager above the reports it manages", () => {
-    const org: Org = {
+    const org: Team = {
       id: "x", name: "x",
       positions: [
         { nodeId: "boss", kind: "agent" }, { nodeId: "a", kind: "agent" }, { nodeId: "b", kind: "agent" },
@@ -221,7 +221,7 @@ describe("autoLayout (#2199)", () => {
   });
 
   it("does not choke on a cycle", () => {
-    const org: Org = {
+    const org: Team = {
       id: "c", name: "c",
       positions: [{ nodeId: "a", kind: "agent" }, { nodeId: "b", kind: "agent" }],
       relationships: [
@@ -236,7 +236,7 @@ describe("autoLayout (#2199)", () => {
 
 describe("autoLayout per-node size overrides (#2451)", () => {
   it("keeps an overridden (taller) node's CENTER on its hierarchy row", () => {
-    const org: Org = {
+    const org: Team = {
       id: "x", name: "x",
       positions: [{ nodeId: "boss", kind: "agent" }, { nodeId: "a", kind: "agent" }],
       relationships: [{ id: "e1", archetype: "manages", from: "boss", to: "a" }],
@@ -252,7 +252,7 @@ describe("autoLayout per-node size overrides (#2451)", () => {
   it("collision spaces nodes by their OVERRIDDEN boxes (the stacked-card footprint)", () => {
     // Two disconnected same-layer nodes seeded ~AUTO_COL apart — narrower than the overridden card,
     // so only an override-aware collision pass can separate them.
-    const org: Org = {
+    const org: Team = {
       id: "x", name: "x",
       positions: [{ nodeId: "wide", kind: "agent" }, { nodeId: "b", kind: "agent" }],
       relationships: [],

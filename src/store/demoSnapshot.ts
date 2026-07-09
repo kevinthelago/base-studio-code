@@ -35,7 +35,7 @@ import automationsData from "@data/demo/automations.json";
 import { SAMPLE_GRAPH, type GRole, type GCategory, type GHealth, type GActivity } from "@/features/glance";
 import { projectLinkId, type ProjectLink } from "@/features/glance/lib/projectLinks";
 import type { Persona } from "@/features/personas/lib/persona";
-import type { Org } from "@/features/org/lib/org";
+import type { Team } from "@/features/teams/lib/team";
 import type { SkillDef } from "@/features/skills/lib/skillsModel";
 import type { SkillGroup } from "@/features/skills/lib/skillGroups";
 import { makeBlueprints, type Blueprint } from "@/features/planner/stages/blueprints";
@@ -114,9 +114,9 @@ function demoPersonas(): Persona[] {
   return clone(personasData) as Persona[];
 }
 
-// ── Org — the persona-relationship graph (`@data/demo/org.json`) ─────────────────────────────────
-function demoOrg(): Org {
-  return clone(orgData) as Org;
+// ── Team — the persona-relationship graph (`@data/demo/org.json`) ─────────────────────────────────
+function demoOrg(): Team {
+  return clone(orgData) as Team;
 }
 
 // ── Blueprint — the reusable template that seeds the platform's projects ─────────────────────────
@@ -203,8 +203,8 @@ export function demoSnapshot(): AppStateSnapshot {
     skills: demoSkills(),
     skillGroups: demoSkillGroups(),
     personas: demoPersonas(),
-    orgs: [org],
-    orgZoom: { [org.id]: 1 },
+    teams: [org],
+    teamsZoom: { [org.id]: 1 },
     blueprints: [demoBlueprint()],
     activeBlueprintId: DEMO_BLUEPRINT_ID,
 
