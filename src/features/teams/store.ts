@@ -1,23 +1,23 @@
-// Org feature store slice (#2193) — the persona-relationship graph library, a WRITE-THROUGH cache over
-// the global org store (`~/.base-studio-code/orgs/`, reached via `bsc org` — see orgBridge.ts). The
-// desktop Org designer, live sessions, and the planner share ONE store. On boot `hydrateOrgs` loads
+// Team feature store slice (#2193) — the persona-relationship graph library, a WRITE-THROUGH cache over
+// the global teams store (`~/.base-studio-code/orgs/`, reached via `bsc teams` — see orgBridge.ts). The
+// desktop Team designer, live sessions, and the planner share ONE store. On boot `hydrateOrgs` loads
 // through the bridge + reconciles the packaged built-ins; every mutation below pushes through. The
-// persisted `orgs` in app-state is just a fast first-paint cache; hydrate is authoritative.
+// persisted `teams` in app-state is just a fast first-paint cache; hydrate is authoritative.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import {
   BUILTIN_ORGS, blankOrg, orgSlug, reconcileOrgs,
-  type Org, type Position, type Relationship,
-} from "./lib/org";
+  type Team, type Position, type Relationship,
+} from "./lib/team";
 import { loadOrgs, pushOrg, dropOrg } from "./lib/orgBridge";
 
 export interface OrgSlice {
   /** The org library — packaged built-ins (reconciled on load) + user-authored. */
-  orgs: Org[];
+  teams: Team[];
   /** Last canvas zoom per org id (view state, persisted) so reopening an org restores its framing. */
-  orgZoom: Record<string, number>;
+  teamsZoom: Record<string, number>;
   /** Remember an org's canvas zoom. */
-  setOrgZoom: (orgId: string, zoom: number) => void;
+  setTeamsZoom: (orgId: string, zoom: number) => void;
   /** Hydrate the library from the global org store on boot (#2193): load via the bridge, reconcile the
    *  packaged built-ins, and push any newly-seeded built-in back so the store has it. No-op (keeps the
    *  seeded set) when the bridge is unreachable — tests, the web shell, or an old binary. */
@@ -26,9 +26,9 @@ export interface OrgSlice {
   addOrg: () => string;
   /** Clone any org (incl. a built-in) into a new editable user org; returns the new id. */
   cloneOrg: (id: string) => string;
-  /** Patch an org's editable fields. Built-ins keep their builtin identity; only user orgs can be
+  /** Patch an org's editable fields. Built-ins keep their builtin identity; only user teams can be
    *  deleted. */
-  updateOrg: (id: string, patch: Partial<Omit<Org, "id" | "builtin">>) => void;
+  updateOrg: (id: string, patch: Partial<Omit<Team, "id" | "builtin">>) => void;
   /** Remove a USER org (built-ins are not deletable — no-op). */
   removeOrg: (id: string) => void;
   /** Add a position (node) to an org. */
@@ -46,7 +46,7 @@ export interface OrgSlice {
 }
 
 /** Mint a fresh, collision-free user-org id from a name (or a generic seed). */
-function mintOrgId(existing: Org[], name: string): string {
+function mintOrgId(existing: Team[], name: string): string {
   const base = `org-${orgSlug(name)}`;
   if (!existing.some((o) => o.id === base)) return base;
   let n = 2;
@@ -56,10 +56,10 @@ function mintOrgId(existing: Org[], name: string): string {
 
 export const createOrgSlice: StateCreator<AppStore, [], [], OrgSlice> = (set, get) => {
   /** Patch one org in place, push the result through the bridge. Central so every mutation converges. */
-  const mutate = (id: string, fn: (o: Org) => Org) => {
-    let updated: Org | undefined;
+  const mutate = (id: string, fn: (o: Team) => Team) => {
+    let updated: Team | undefined;
     set((s) => ({
-      orgs: s.orgs.map((o) => {
+      teams: s.teams.map((o) => {
         if (o.id !== id) return o;
         updated = fn(o);
         return updated;
@@ -69,16 +69,16 @@ export const createOrgSlice: StateCreator<AppStore, [], [], OrgSlice> = (set, ge
   };
 
   return {
-    orgs: BUILTIN_ORGS,
-    orgZoom: {},
+    teams: BUILTIN_ORGS,
+    teamsZoom: {},
 
-    setOrgZoom: (orgId, zoom) => set((s) => ({ orgZoom: { ...s.orgZoom, [orgId]: zoom } })),
+    setTeamsZoom: (orgId, zoom) => set((s) => ({ teamsZoom: { ...s.teamsZoom, [orgId]: zoom } })),
 
     hydrateOrgs: async () => {
       const loaded = await loadOrgs();
       if (!loaded) return; // bridge unreachable — keep the seeded built-ins
       const reconciled = reconcileOrgs(loaded);
-      set({ orgs: reconciled });
+      set({ teams: reconciled });
       // Persist any built-in the store didn't have yet (first run / a new packaged org), so the store —
       // the source of truth a session/planner reads — carries the full library.
       const had = new Set(loaded.map((o) => o.id));
@@ -86,20 +86,20 @@ export const createOrgSlice: StateCreator<AppStore, [], [], OrgSlice> = (set, ge
     },
 
     addOrg: () => {
-      const id = mintOrgId(get().orgs, "new team");
+      const id = mintOrgId(get().teams, "new team");
       const org = blankOrg(id);
-      set((s) => ({ orgs: [...s.orgs, org] }));
+      set((s) => ({ teams: [...s.teams, org] }));
       void pushOrg(org);
       return id;
     },
 
     cloneOrg: (id) => {
-      const src = get().orgs.find((o) => o.id === id);
+      const src = get().teams.find((o) => o.id === id);
       if (!src) return id;
       const name = `${src.name} copy`;
-      const newId = mintOrgId(get().orgs, name);
-      const clone: Org = { ...src, id: newId, name, builtin: false };
-      set((s) => ({ orgs: [...s.orgs, clone] }));
+      const newId = mintOrgId(get().teams, name);
+      const clone: Team = { ...src, id: newId, name, builtin: false };
+      set((s) => ({ teams: [...s.teams, clone] }));
       void pushOrg(clone);
       return newId;
     },
@@ -107,9 +107,9 @@ export const createOrgSlice: StateCreator<AppStore, [], [], OrgSlice> = (set, ge
     updateOrg: (id, patch) => mutate(id, (o) => ({ ...o, ...patch, id: o.id, builtin: o.builtin })),
 
     removeOrg: (id) => {
-      const target = get().orgs.find((o) => o.id === id);
+      const target = get().teams.find((o) => o.id === id);
       if (!target || target.builtin) return; // built-ins are not deletable
-      set((s) => ({ orgs: s.orgs.filter((o) => o.id !== id) }));
+      set((s) => ({ teams: s.teams.filter((o) => o.id !== id) }));
       void dropOrg(id);
     },
 

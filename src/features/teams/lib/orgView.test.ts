@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { BUILTIN_ORGS, type Org } from "./org";
+import { BUILTIN_ORGS, type Team } from "./team";
 import { positionDisplay, positionComms, tierChips, formArrow, formColor } from "./orgView";
-import { formById } from "./org";
+import { formById } from "./team";
 import type { Persona } from "@/features/personas";
 
 const personas: Persona[] = [
@@ -66,7 +66,7 @@ describe("form presentation helpers (#2193)", () => {
 // A hand-built org with an unplaced/labelless node still renders without throwing.
 describe("positionDisplay resilience", () => {
   it("falls back to the nodeId when a persona is missing", () => {
-    const org: Org = { id: "x", name: "x", positions: [{ nodeId: "ghost", kind: "agent", personaId: "nope" }], relationships: [] };
+    const org: Team = { id: "x", name: "x", positions: [{ nodeId: "ghost", kind: "agent", personaId: "nope" }], relationships: [] };
     expect(positionDisplay(org.positions[0], personas).name).toBe("ghost");
   });
 });

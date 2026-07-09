@@ -1,12 +1,12 @@
-// Org relationships (#2193) — the persona-relationship graph. A PERSONA is a job POSITION; an ORG
+// Team relationships (#2193) — the persona-relationship graph. A PERSONA is a job POSITION; an ORG
 // wires positions together with RELATIONSHIPS, each an archetype (Manages / Serves / Oversees /
 // Consults / Peers / Stewards) that expands into directed COMMUNICATION FORMS. This makes a fleet's
 // interaction topology + coordination prose composable DATA (continuing #2185 / #2027) instead of
 // prose hardcoded in fleet/*-protocol.md. Pure model (no React/Tauri) so it's unit-testable and the
 // store seeds from it directly. The closed vocabulary (forms + archetypes) is externalized to
-// @data/org/*; the built-in orgs to @data/org/orgs/*.json — overlay-editable + in the config bundle.
-import formsEmbedded from "@data/org/communication-forms.json";
-import archetypesEmbedded from "@data/org/archetypes.json";
+// @data/teams/*; the built-in orgs to @data/teams/orgs/*.json — overlay-editable + in the config bundle.
+import formsEmbedded from "@data/teams/communication-forms.json";
+import archetypesEmbedded from "@data/teams/archetypes.json";
 import { overlayFile, overlayGlob } from "@/shared/lib/core/configOverrides";
 
 /** The canonical orientation a form typically flows (a HINT; an archetype's lane placement wins). */
@@ -88,8 +88,8 @@ export interface Relationship {
 }
 
 /** An org — a named composition of positions wired by relationships (like a blueprint composes stages).
- *  The unit the `bsc org` store round-trips and the Org designer edits. */
-export interface Org {
+ *  The unit the `bsc org` store round-trips and the Team designer edits. */
+export interface Team {
   id: string;
   name: string;
   blurb?: string;
@@ -99,19 +99,19 @@ export interface Org {
   builtin?: boolean;
 }
 
-/** A packaged org definition (@data/org/orgs/*.json) — an {@link Org} plus a load-time-only `order`. */
-interface OrgDef extends Omit<Org, "builtin"> {
+/** A packaged org definition (@data/teams/orgs/*.json) — an {@link Team} plus a load-time-only `order`. */
+interface OrgDef extends Omit<Team, "builtin"> {
   order?: number;
 }
 
 // ── The closed vocabulary (externalized, config-dir-overlaid, in the config bundle) ──────────────
 /** Every communication form, cheapest-authority first. */
 export const COMMUNICATION_FORMS: CommunicationForm[] =
-  overlayFile("org/communication-forms.json", formsEmbedded as CommunicationForm[]);
+  overlayFile("teams/communication-forms.json", formsEmbedded as CommunicationForm[]);
 
 /** Every relationship archetype. */
 export const RELATIONSHIP_ARCHETYPES: RelationshipArchetype[] =
-  overlayFile("org/archetypes.json", archetypesEmbedded as RelationshipArchetype[]);
+  overlayFile("teams/archetypes.json", archetypesEmbedded as RelationshipArchetype[]);
 
 const FORM_BY_ID = new Map(COMMUNICATION_FORMS.map((f) => [f.id, f]));
 const ARCHETYPE_BY_ID = new Map(RELATIONSHIP_ARCHETYPES.map((a) => [a.id, a]));
@@ -122,12 +122,12 @@ export const formById = (id: string): CommunicationForm | undefined => FORM_BY_I
 export const archetypeById = (id: string): RelationshipArchetype | undefined => ARCHETYPE_BY_ID.get(id);
 
 // ── Built-in orgs ────────────────────────────────────────────────────────────────────────────────
-const orgModules = import.meta.glob<{ default: OrgDef }>("@data/org/orgs/*.json", { eager: true });
+const orgModules = import.meta.glob<{ default: OrgDef }>("@data/teams/orgs/*.json", { eager: true });
 
 /** Assemble the packaged org library from the per-org JSON defs: overlay the config-dir copies, order
  *  them, strip the load-time `order`, and stamp `builtin`. */
-export function makeBuiltinOrgs(): Org[] {
-  return overlayGlob<OrgDef>("org/orgs", orgModules)
+export function makeBuiltinOrgs(): Team[] {
+  return overlayGlob<OrgDef>("teams/orgs", orgModules)
     .map(([, def]) => def)
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map(({ order: _order, ...o }) => ({
@@ -139,7 +139,7 @@ export function makeBuiltinOrgs(): Org[] {
 }
 
 /** The packaged orgs (currently the Default fleet), so the designer is populated on day one. */
-export const BUILTIN_ORGS: Org[] = makeBuiltinOrgs();
+export const BUILTIN_ORGS: Team[] = makeBuiltinOrgs();
 
 // ── Derivation: the communication summary the UI shows (the generate-from-facets payoff) ─────────
 /** One derived communication edge for a position: a form flowing IN or OUT, the other node, and the
@@ -155,7 +155,7 @@ export interface CommEdge {
 /** Derive a position's full communication surface from the org's relationships — every form flowing in
  *  and out across its edges. This is the auto-generated "who I talk to and how" the panel/prompt read
  *  from, so the topology has one source of truth (the graph), never hand-written per persona. */
-export function deriveCommunication(org: Org, nodeId: string): CommEdge[] {
+export function deriveCommunication(org: Team, nodeId: string): CommEdge[] {
   const out: CommEdge[] = [];
   for (const rel of org.relationships) {
     const arch = archetypeById(rel.archetype);
@@ -180,7 +180,7 @@ export function deriveCommunication(org: Org, nodeId: string): CommEdge[] {
 // ── Validation ───────────────────────────────────────────────────────────────────────────────────
 /** Structural problems in an org: an edge to/from a missing node, or an unknown archetype. Empty means
  *  the graph is well-formed. The designer surfaces these; tests assert built-ins are clean. */
-export function orgIssues(org: Org): string[] {
+export function orgIssues(org: Team): string[] {
   const issues: string[] = [];
   const nodes = new Set(org.positions.map((p) => p.nodeId));
   for (const r of org.relationships) {
@@ -197,9 +197,9 @@ export function orgSlug(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "org";
 }
 
-/** A blank user team — the "new team" template (the data entity is still an `Org`; the display noun is
+/** A blank user team — the "new team" template (the data entity is still an `Team`; the display noun is
  *  "team", #org→team-rename). */
-export function blankOrg(id: string): Org {
+export function blankOrg(id: string): Team {
   return { id, name: "New team", blurb: "", positions: [], relationships: [] };
 }
 
@@ -207,9 +207,9 @@ export function blankOrg(id: string): Org {
  *  dropped), user edits to a built-in are kept, and user-authored orgs are preserved. Keyed by id;
  *  built-in identity is restored so a stale persisted `builtin:false` can't make a packaged org
  *  deletable. Mirrors `reconcilePersonas`. */
-export function reconcileOrgs(persisted: Org[]): Org[] {
+export function reconcileOrgs(persisted: Team[]): Team[] {
   const byId = new Map(persisted.map((o) => [o.id, o]));
-  const out: Org[] = BUILTIN_ORGS.map((base) => {
+  const out: Team[] = BUILTIN_ORGS.map((base) => {
     const saved = byId.get(base.id);
     byId.delete(base.id);
     return saved ? { ...base, ...saved, id: base.id, builtin: true } : base;

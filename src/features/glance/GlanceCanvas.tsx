@@ -11,7 +11,7 @@ import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
 import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory } from "./lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
-import { archetypeById, hueColor } from "@/features/org";
+import { archetypeById, hueColor } from "@/features/teams";
 
 const ERR = "var(--graph-health-error)";
 const HEALTH_ROWS: GHealth[] = ["idle", "healthy", "warning", "error"];
