@@ -11,6 +11,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
+import { Dropdown } from "@/shared/ui/controls/Dropdown";
 import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { IconBox } from "@/shared/ui/data/IconBox";
@@ -196,11 +197,14 @@ export function OrgPanel() {
           <Row gap={9} align="center">
             <IconBox size={22} radius={6} fontSize={12} background="var(--bg-soft)" border="1px solid var(--border)" color="var(--accent)">◆</IconBox>
             {orgs.length > 1 ? (
-              // eslint-disable-next-line no-restricted-syntax -- compact inline org switch; a full Field is overkill in the toolbar
-              <select value={org.id} onChange={(e) => { setOrgId(e.target.value); setDrill(null); setSel({ type: "node", id: "" }); }}
-                className="input" style={{ fontWeight: 600, fontSize: 14, background: "transparent", border: "none", cursor: "pointer", padding: "2px 4px" }}>
-                {orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
+              <Dropdown
+                aria-label="Switch org"
+                variant="ghost"
+                size="md"
+                value={org.id}
+                onChange={(id) => { setOrgId(id); setDrill(null); setSel({ type: "node", id: "" }); }}
+                options={orgs.map((o) => ({ value: o.id, label: o.name }))}
+              />
             ) : (
               <Text as="span" weight={600} size={14}>{org.name}</Text>
             )}
