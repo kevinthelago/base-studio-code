@@ -133,7 +133,7 @@ export function Tree({
             const a = layout.pos.get(e.from), b = layout.pos.get(e.to);
             if (!a || !b) return null;
             // The shared line-type (#2222) with perimeter-anchor routing — the reading that works for
-            // a layered TOP-DOWN flow (the side-port router is horizontal-only; see DesignStudio).
+            // a layered TOP-DOWN flow (the side-port router is horizontal-only; see DesignsWorkbench).
             const g = graphEdge({ ...a, w: TREE_NODE_W, h: TREE_NODE_H }, { ...b, w: TREE_NODE_W, h: TREE_NODE_H });
             return (
               <g key={e.id}>
