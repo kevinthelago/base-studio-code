@@ -22,7 +22,13 @@
 .ds-col { display: flex; flex-direction: column; min-height: 0; }
 .ds-rail { flex: none; min-width: 200px; border-right: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
 .ds-insp { flex: none; min-width: 300px; border-left: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
-.ds-center { flex: 1; min-width: 0; background: var(--bg-canvas, var(--bg)); }
+/* The middle column must yield to the side panes on resize (#2695): min-width/height:0 lets it shrink
+   below its content, and overflow:hidden clips that content (graph toolbar, terminal) instead of letting
+   its min-content push/scroll the rail + inspector. */
+.ds-center { flex: 1; min-width: 0; min-height: 0; overflow: hidden; background: var(--bg-canvas, var(--bg)); }
+/* The graph canvas fills the center and must shrink with it — the shared GraphCanvas root sets flex/
+   min-height inline but no min-width, so its toolbar's min-content would otherwise floor the column. */
+.ds-graphcanvas { min-width: 0; min-height: 0; }
 .ds-handle { width: 5px; flex: none; cursor: col-resize; z-index: 4; position: relative; }
 .ds-handle:hover { background: var(--accent-soft); }
 /* Horizontal splitter (#2624) — row-resize divider between the graph and the docked designer terminal. */

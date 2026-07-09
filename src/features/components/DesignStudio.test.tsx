@@ -228,6 +228,15 @@ describe("collapsible kits list (#2691)", () => {
     expect(screen.getByLabelText("Search components")).toBeTruthy();
     expect(container.querySelectorAll(".ds-handle").length).toBe(2);
   });
+
+  // The graph canvas must carry the shrink-scoping class so its CSS (min-width:0) lets the middle yield
+  // to the side panes on resize (#2695). jsdom can't measure flex layout, so this guards the CSS hook.
+  it("the graph canvas carries the .ds-graphcanvas shrink hook inside the (clipping) center column", () => {
+    const { container } = render(<DesignStudio />);
+    const gc = container.querySelector(".ds-graphcanvas");
+    expect(gc).toBeTruthy();
+    expect(gc!.closest(".ds-center")).toBeTruthy();
+  });
 });
 
 describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit style header IS the kit", () => {
