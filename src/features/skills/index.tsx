@@ -24,6 +24,7 @@ import { tintBg } from "./skillStyles";
 import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "./SkillsViews";
 import { Checkbox } from "@/shared/ui/controls/Checkbox";
 import { Button } from "@/shared/ui/controls/Button";
+import { SearchField } from "@/shared/ui/controls/SearchField";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
@@ -210,17 +211,17 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
           {/* Command bar */}
           <Row gap={10} style={{ padding: "10px 18px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
-            <Row gap={8} style={{ flex: 1, maxWidth: 440, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
-              <Text as="span" tone="dim" size={13}>⌕</Text>
-              {/* eslint-disable-next-line no-restricted-syntax -- inline borderless search box inside a toolbar Row; TextField's .field wrapper doesn't fit */}
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, description, tools…" style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--fg)", fontSize: 12.5 }} />
-            </Row>
+            <SearchField
+              value={query}
+              onChange={setQuery}
+              placeholder="Search name, description, tools…"
+              style={{ flex: 1, maxWidth: 440, height: 30, background: "var(--bg-canvas)", borderRadius: "var(--r-md)" }}
+            />
             <Text as="span" mono size={11} tone="muted">{filtered.length} <Text as="span" tone="dim">of {kpis.total}</Text></Text>
             <Box as="span" style={{ flex: 1 }} />
             <Row gap={6} style={{ position: "relative" }}>
               <Text as="span" mono size={10} tone="dim" style={{ textTransform: "uppercase" }}>Sort</Text>
-              {/* eslint-disable-next-line no-restricted-syntax -- bespoke dropdown trigger with a custom popover menu, not a .btn control */}
-              <button onClick={() => setSortOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 6, height: 28, padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", fontSize: 11.5, color: "var(--fg)", cursor: "pointer" }}>{sort} <Text as="span" tone="dim" size={9}>▾</Text></button>
+              <Button onClick={() => setSortOpen((v) => !v)} style={{ padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border)", fontSize: 11.5, color: "var(--fg)" }}>{sort} <Text as="span" tone="dim" size={9}>▾</Text></Button>
               {sortOpen && (
                 <Box pad={4} bg="var(--bg-elev)" border radius="md" style={{ position: "absolute", top: 34, right: 0, zIndex: 40, minWidth: 184, boxShadow: "0 14px 36px rgba(0,0,0,.45)"}}>
                   {SORTS.map((o) => <Row key={o} onClick={() => { setSort(o); setSortOpen(false); }} gap={8} style={{ padding: "6px 9px", borderRadius: 4, fontSize: 11.5, cursor: "pointer", color: sort === o ? "var(--fg)" : "var(--fg-muted)", background: sort === o ? "var(--bg-elev2)" : "transparent" }}><Box as="span" style={{ flex: 1 }}>{o}</Box><Text as="span" tone="accent">{sort === o ? "✓" : ""}</Text></Row>)}
@@ -232,8 +233,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                 <Row key={d} onClick={() => setDensity(d)} style={{ padding: "0 11px", fontSize: 11, cursor: "pointer", background: density === d ? "var(--bg-elev2)" : "transparent", color: density === d ? "var(--fg)" : "var(--fg-dim)", borderRight: i < 3 ? "1px solid var(--border)" : "none" }}>{lbl}</Row>
               ))}
             </Row>
-            {/* eslint-disable-next-line no-restricted-syntax -- bespoke toggle button with active-state inline styling, not a .btn control */}
-            <button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} style={{ height: 28, padding: "0 12px", borderRadius: "var(--r-md)", fontSize: 11.5, cursor: "pointer", border: "1px solid " + (selectMode ? "var(--accent-dim)" : "var(--border)"), background: selectMode ? tintBg("var(--accent)", 86) : "var(--bg-canvas)", color: selectMode ? "var(--accent)" : "var(--fg)" }}>{selectMode ? "✓ Selecting" : "☑ Select"}</button>
+            <Button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} style={{ fontSize: 11.5, border: "1px solid " + (selectMode ? "var(--accent-dim)" : "var(--border)"), background: selectMode ? tintBg("var(--accent)", 86) : "var(--bg-canvas)", color: selectMode ? "var(--accent)" : "var(--fg)" }}>{selectMode ? "✓ Selecting" : "☑ Select"}</Button>
           </Row>
 
           {/* Body */}

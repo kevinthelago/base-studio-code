@@ -29,7 +29,7 @@ import { StreamsBody } from "../bodies/StreamsBody";
 import type { FleetHandlers, McpHandlers } from "../bodies/focusedHandlers";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 // The Planner Components pane (#2314) — the body of the `test_ui` stage.
-import { PlannerComponentsPane } from "@/features/components";
+import { PlannerComponentsPane } from "@/features/designs";
 
 // Re-export the shared body types so existing `from "./FocusedBodies"` imports keep resolving
 // (ProjectPane imports `AuthoringWiring`).

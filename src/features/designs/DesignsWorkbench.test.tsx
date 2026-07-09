@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { DesignStudio } from "./DesignStudio";
+import { DesignsWorkbench } from "./DesignsWorkbench";
 import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
 import { SEED_THEMES } from "./lib/themes";
 import type { Kit } from "./lib/model";
@@ -19,9 +19,9 @@ const railRow = (name: string) =>
 const graphNode = (name: string) =>
   screen.getAllByText(name).map((el) => el.closest(".ds-node")).find(Boolean) as HTMLElement;
 
-describe("DesignStudio (#2308)", () => {
+describe("DesignsWorkbench (#2308)", () => {
   it("renders the kits→components rail and the composition graph as the one-and-only center view (#2453)", () => {
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     // The page toolbar was removed (#move-to-planner) — the studio is a Planner tab, so the PageTabs
     // strip is its header. No "Design Studio" heading, no kit-switcher chip row.
     expect(screen.queryByText("Design Studio")).toBeNull();
@@ -37,7 +37,7 @@ describe("DesignStudio (#2308)", () => {
   });
 
   it("the inspector carries the library detail: live preview + Overview/Source/Usage tabs", () => {
-    render(<DesignStudio />);
+    render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));                              // focus a node to reveal the details pane
     expect(screen.getByText("Live preview")).toBeTruthy();           // preview + its switchers
     expect(screen.getByLabelText("Theme")).toBeTruthy();             // the single Theme dropdown (#2545)
@@ -48,20 +48,20 @@ describe("DesignStudio (#2308)", () => {
   });
 
   it("selecting a component from the rail drives the inspector", () => {
-    render(<DesignStudio />);
+    render(<DesignsWorkbench />);
     fireEvent.click(railRow("Chip"));
     expect(screen.getByText("Chip.tsx")).toBeTruthy();               // the selection followed
   });
 
   it("clicking a graph node drives the inspector", () => {
-    render(<DesignStudio />);
+    render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));
     expect(screen.getByText("Chip.tsx")).toBeTruthy();
     expect(graphNode("Chip").className).toContain("on");             // the node highlights
   });
 
   it("selecting a node highlights its edges + softly rings its related nodes (#2523)", () => {
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));                              // Chip composes StatusDot
     expect(graphNode("Chip").className).toContain("on");             // the selection: full ring
     expect(graphNode("StatusDot").className).toContain("related");   // its dependency: soft ring
@@ -76,7 +76,7 @@ describe("DesignStudio (#2308)", () => {
     const selDefault = kitComps[0];                                  // the default selection
     const working = kitComps.find((c) => c.id !== selDefault.id)!;   // a DIFFERENT node the AI touched
     useAppStore.setState({ aiFocusedId: working.id });
-    render(<DesignStudio />);
+    render(<DesignsWorkbench />);
     const node = graphNode(working.name);
     expect(node.className).toMatch(/\bworking\b/);                   // the AI-focus pulse ring
     expect(node.className).not.toMatch(/\bon\b/);                    // NOT the user's selection state
@@ -85,7 +85,7 @@ describe("DesignStudio (#2308)", () => {
   it("the user's .on selection WINS over .working when the AI touches the same node (#2525 precedence)", () => {
     const selDefault = SEED_COMPONENTS.filter((c) => c.kitId === SEED_KITS[0].id)[0];
     useAppStore.setState({ aiFocusedId: selDefault.id });            // AI touches a node…
-    render(<DesignStudio />);
+    render(<DesignsWorkbench />);
     fireEvent.click(graphNode(selDefault.name));                     // …and the user focuses that SAME node
     const node = graphNode(selDefault.name);
     expect(node.className).toMatch(/\bon\b/);                        // selection wins visually
@@ -98,7 +98,7 @@ describe("DesignStudio (#2308)", () => {
     const vueKit: Kit = { id: "vue-kit", name: "vue-kit", tech: "vue", style: "material", stack: "Vue · TypeScript", dot: "var(--accent)" };
     const vueComp = { ...SEED_COMPONENTS[0], id: "vue-button", name: "VueButton", kitId: "vue-kit" };
     useAppStore.setState({ kits: [...SEED_KITS, vueKit], components: [...SEED_COMPONENTS, vueComp] });
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     // The toolbar switcher is gone (#move-to-planner) — clicking a rail kit head activates that kit. The
     // vue kit's head is labelled with its style ("material") under the single-kit style merge (#2506).
     fireEvent.click(screen.getByText("material").closest("button.ds-kithead")!);
@@ -110,7 +110,7 @@ describe("DesignStudio (#2308)", () => {
   });
 
   it("the Source tab shows the component's path + source text", () => {
-    render(<DesignStudio />);
+    render(<DesignsWorkbench />);
     const firstReactUi = SEED_COMPONENTS.find((c) => c.kitId === "react-ui")!;
     fireEvent.click(graphNode(firstReactUi.name));                   // focus it to reveal the details pane
     fireEvent.click(screen.getByRole("tab", { name: "Source" }));
@@ -118,7 +118,7 @@ describe("DesignStudio (#2308)", () => {
   });
 
   it("shows the when-to-use / when-not guidance on the Usage tab", () => {
-    render(<DesignStudio />);
+    render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));                              // focus a node to reveal the details pane
     fireEvent.click(screen.getByRole("tab", { name: "Usage" }));
     expect(screen.getByText("✓ When to use")).toBeTruthy();
@@ -126,7 +126,7 @@ describe("DesignStudio (#2308)", () => {
   });
 
   it("the ONE preview Theme switcher applies the selected theme's vars to the specimen frame (#2488)", () => {
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));                              // focus a node to reveal the details pane
     const sel = screen.getByLabelText("Theme") as HTMLSelectElement;
     // Fed by the hydrated theme collection, defaulting to the base look.
@@ -148,7 +148,7 @@ describe("DesignStudio (#2308)", () => {
   });
 
   it("the Theme dropdown is the ONLY theme control — the old dark/light surface toggle is gone (#2545)", () => {
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));                              // focus a node to reveal the details pane
     // The hardcoded SegmentedControl surface toggle no longer renders.
     expect(screen.queryByText("◐ dark")).toBeNull();
@@ -162,7 +162,7 @@ describe("DesignStudio (#2308)", () => {
   });
 
   it("docks the designer session ALWAYS-ON in the center column, with no toggle and no generate chat (#2597)", () => {
-    render(<DesignStudio />);
+    render(<DesignsWorkbench />);
     // The panel is present from the first render — no ✦ Designer toggle button gates it.
     const panel = screen.getByTestId("designer-terminal");
     expect(panel).toBeTruthy();
@@ -174,7 +174,7 @@ describe("DesignStudio (#2308)", () => {
   });
 
   it("the designer chat box is resizable and doesn't pin the panes (#2624)", () => {
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     // A row-resize handle sits between the graph and the terminal.
     expect(container.querySelector(".ds-handle-h")).toBeTruthy();
     // The terminal carries an inline (drag-driven) height so the graph keeps priority.
@@ -183,7 +183,7 @@ describe("DesignStudio (#2308)", () => {
   });
 
   it("carries NO decorative motion classes — the #2344 animation pass was removed (un-animated until the design system lands)", () => {
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     // Inspector preview + rail: no keyed enter/drill/stagger classes.
     expect(container.querySelector(".ds-preview-enter")).toBeNull();
     expect(container.querySelector(".ds-view-enter")).toBeNull();
@@ -194,7 +194,7 @@ describe("DesignStudio (#2308)", () => {
   });
 
   it("the inspector shows the composes graph for a component that has dependencies", () => {
-    render(<DesignStudio />);
+    render(<DesignsWorkbench />);
     // EmptyState composes Button + Card — its inspector renders the "depends on" composes graph.
     fireEvent.click(railRow("EmptyState"));
     expect(screen.getByText("EmptyState.tsx")).toBeTruthy(); // selection followed
@@ -207,7 +207,7 @@ describe("selection-driven details pane (#2705)", () => {
   const canvas = (c: HTMLElement) => c.querySelector('div[style*="cursor: grab"]') as HTMLElement;
 
   it("hidden on mount — nothing is focused, so the graph gets the full width", () => {
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     expect(container.querySelector(".ds-insp")).toBeNull();
     expect(screen.queryByText("Live preview")).toBeNull();
     // Only the rail's own resize splitter is present (no details splitter yet).
@@ -215,7 +215,7 @@ describe("selection-driven details pane (#2705)", () => {
   });
 
   it("focusing a graph node reveals the details pane (with its resize splitter)", () => {
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));
     expect(container.querySelector(".ds-insp")).toBeTruthy();
     expect(screen.getByText("Chip.tsx")).toBeTruthy();
@@ -224,7 +224,7 @@ describe("selection-driven details pane (#2705)", () => {
   });
 
   it("focusing a component from the rail also reveals the details pane", () => {
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     expect(container.querySelector(".ds-insp")).toBeNull();
     fireEvent.click(railRow("Chip"));
     expect(container.querySelector(".ds-insp")).toBeTruthy();
@@ -232,7 +232,7 @@ describe("selection-driven details pane (#2705)", () => {
   });
 
   it("clicking the canvas background unfocuses the node and hides the details pane", () => {
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));                              // focus → details shown
     expect(container.querySelector(".ds-insp")).toBeTruthy();
     fireEvent.click(canvas(container));                              // click the empty canvas → unfocus
@@ -250,7 +250,7 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
   };
 
   it("the packaged single-kit library renders grouped at BOTH levels: react (tech) → studio (the kit) → components", () => {
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     // Level 1 — the technology group header (no #2487 auto-flatten anymore).
     const heads = [...container.querySelectorAll(".ds-grouphead")];
     expect(heads.map((h) => h.textContent)).toEqual([expect.stringContaining("react")]);
@@ -267,7 +267,7 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
 
   it("a multi-tech library nests one collapsible tech group per technology, each style header a kit", () => {
     useAppStore.setState({ kits: [...SEED_KITS, vueKit] });
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     const heads = [...container.querySelectorAll(".ds-grouphead")];
     expect(heads.map((h) => h.textContent)).toEqual([
       expect.stringContaining("react"), expect.stringContaining("vue"),
@@ -281,7 +281,7 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
 
   it("collapsing a tech group hides its kits (and their components); re-expanding restores them", () => {
     useAppStore.setState({ kits: [...SEED_KITS, vueKit] });
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     const reactHead = container.querySelector(".ds-grouphead") as HTMLElement;
     fireEvent.click(reactHead); // collapse the react group — only the vue style/kit head remains
     expect(reactHead.getAttribute("aria-expanded")).toBe("false");
@@ -292,13 +292,13 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
 
   it("a component under the grouped rail is still fully driveable — selecting it follows in the inspector", () => {
     useAppStore.setState({ kits: [...SEED_KITS, vueKit] });
-    render(<DesignStudio />);
+    render(<DesignsWorkbench />);
     fireEvent.click(railRow("Chip"));
     expect(screen.getByText("Chip.tsx")).toBeTruthy();
   });
 
   it("search still filters the component rows under the grouped rail", () => {
-    render(<DesignStudio />);
+    render(<DesignsWorkbench />);
     fireEvent.change(screen.getByLabelText("Search components"), { target: { value: "chip" } });
     expect(railRow("Chip")).toBeTruthy();
     expect(screen.queryAllByText("Box").map((el) => el.closest("button.ds-comprow")).find(Boolean)).toBeUndefined();
@@ -307,7 +307,7 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
   it("kits missing tech/style group gracefully (a trailing 'other' bucket) — the rail never crashes", () => {
     const bare: Kit = { id: "bare", name: "bare-kit", stack: "?", dot: "var(--accent)" };
     useAppStore.setState({ kits: [...SEED_KITS, bare] });
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     // react + the trailing missing-field tech bucket; the bare kit merges into its "other" style head.
     const heads = [...container.querySelectorAll(".ds-grouphead")];
     expect(heads.map((h) => h.textContent)).toEqual([
@@ -319,7 +319,7 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
   it("SEVERAL kits sharing one (tech, style) still nest kit rows beneath the style group", () => {
     const twin: Kit = { id: "react-ui-2", name: "react-ui-2", tech: "react", style: "studio", stack: "React", dot: "var(--accent)" };
     useAppStore.setState({ kits: [...SEED_KITS, twin] });
-    const { container } = render(<DesignStudio />);
+    const { container } = render(<DesignsWorkbench />);
     // tech header + style header + two real kit heads (named by KIT, the style header stays a group).
     expect([...container.querySelectorAll(".ds-grouphead")].map((h) => h.textContent)).toEqual([
       expect.stringContaining("react"), expect.stringContaining("studio"),

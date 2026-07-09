@@ -6,7 +6,7 @@ import type { Team } from "@/features/teams";
 import type { Persona } from "@/features/personas";
 import type { Blueprint } from "@/features/planner/stages/blueprintTypes";
 import type { SkillDef } from "@/features/skills/lib/skillsModel";
-import type { Kit, ComponentRecord } from "@/features/components";
+import type { Kit, ComponentRecord } from "@/features/designs";
 import type { Automation } from "@/features/automations/lib/scheduler";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
 import type { Hook } from "@/features/mcp/lib/hooks";

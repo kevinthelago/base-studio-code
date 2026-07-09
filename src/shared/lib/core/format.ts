@@ -83,7 +83,7 @@ export function truncate(s: string, max: number, keep = max): string {
 /**
  * Kebab-case slug: lowercase, every run of non-alphanumerics collapsed to a single `-`,
  * edge dashes stripped, optionally capped at `max` characters (#2421 — the one home for the
- * planner/source/DesignStudio copies). Returns `""` for input with no alphanumerics — callers
+ * planner/source/DesignsWorkbench copies). Returns `""` for input with no alphanumerics — callers
  * that need a fallback apply their own (`slugify(x, 40) || "source"`).
  *
  * NOT {@link sanitizeProjectKey} (../core/projectPaths.ts): that mirrors the Rust backend
