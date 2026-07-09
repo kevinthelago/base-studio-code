@@ -8,9 +8,10 @@ import type { ReviewFinding } from "@/shared/lib/preview/previewReview";
 
 /** Projects slice of {@link AppStore}. */
 export interface ProjectsState {
-  // Projects (transient)
-  projectsPageMode: "projects" | "org";
-  setProjectsPageMode: (v: "projects" | "org") => void;
+  // Projects (transient). "design" is the Designs studio page (#move-to-planner) — formerly its own rail
+  // Workspace, folded in as a Planner tab; "themes" is the sibling theme (style) collection (#themes-tab).
+  projectsPageMode: "projects" | "org" | "design" | "themes";
+  setProjectsPageMode: (v: "projects" | "org" | "design" | "themes") => void;
   // Glance drill target (#…): the project whose fleet graph is open on the Glance Network page, or null
   // for the project network. Lifted into the store (transient, not persisted) so the app-wide navigation
   // history (mouse back/forward) can drive it alongside the active workspace. See useNavHistory.
