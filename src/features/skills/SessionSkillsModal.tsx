@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/store";
 import { Toggle } from "@/shared/ui/controls/Toggle";
+import { Button } from "@/shared/ui/controls/Button";
 import { SearchField } from "@/shared/ui/controls/SearchField";
 import { ModalCard } from "@/shared/ui/overlay/ModalCard";
 import { Box } from "@/shared/ui/layout/Box";
@@ -135,8 +136,7 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
                 <Row key={t} onClick={() => setTab(t)} style={{ padding: "0 11px", fontSize: 11, cursor: "pointer", background: tab === t ? "var(--bg-elev2)" : "transparent", color: tab === t ? "var(--fg)" : "var(--fg-dim)", borderRight: i === 0 ? "1px solid var(--border)" : "none" }}>{lbl}</Row>
               ))}
             </Row>
-            {/* eslint-disable-next-line no-restricted-syntax -- bespoke 30px toolbar button with custom inline styling, not a .btn control */}
-            <button onClick={() => resetSessionSkills(sessionKey)} style={{ height: 30, padding: "0 11px", borderRadius: "var(--r-md)", border: "1px solid var(--border)", background: "var(--bg-elev)", color: "var(--fg-muted)", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>↺ Reset all</button>
+            <Button onClick={() => resetSessionSkills(sessionKey)} style={{ height: 30, padding: "0 11px", border: "1px solid var(--border)", background: "var(--bg-elev)", color: "var(--fg-muted)", whiteSpace: "nowrap" }}>↺ Reset all</Button>
           </Row>
           {/* quick-add a task group */}
           {skillGroups.length > 0 && (
@@ -156,8 +156,7 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
         <>
           <Text as="span" size={11} tone="dim" style={{ lineHeight: 1.4 }}>Written as <Text as="span" mono tone="muted">.claude/skills/&lt;slug&gt;/SKILL.md</Text> on next relaunch.</Text>
           <Box as="span" style={{ flex: 1 }} />
-          {/* eslint-disable-next-line no-restricted-syntax -- bespoke accent-filled footer CTA with custom inline styling, not a .btn control */}
-          <button onClick={onClose} style={{ height: 31, padding: "0 16px", borderRadius: "var(--r-md)", border: "1px solid var(--accent-dim)", background: "var(--accent)", color: "var(--bg-canvas)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Done</button>
+          <Button variant="primary" onClick={onClose} style={{ height: 31, padding: "0 16px", border: "1px solid var(--accent-dim)", color: "var(--bg-canvas)", fontSize: 12 }}>Done</Button>
         </>
       }
     >
