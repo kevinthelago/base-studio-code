@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react";
 import { useAppStore } from "@/store";
 import { Toggle } from "@/shared/ui/controls/Toggle";
+import { SearchField } from "@/shared/ui/controls/SearchField";
 import { ModalCard } from "@/shared/ui/overlay/ModalCard";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
@@ -123,11 +124,12 @@ export function SessionSkillsModal({ sessionKey, projectId, sessionLabel, onClos
             <Text as="span" size={11.5} tone="muted"><b className="mono" style={{ color: "var(--fg)" }}>{availCount}</b> available · <b className="mono" style={{ color: "var(--accent)" }}>{overrides.length}</b> overrides</Text>
           </Row>
           <Row gap={10} style={{ marginTop: 13 }}>
-            <Row gap={8} style={{ flex: 1, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
-              <Text as="span" tone="dim" size={13}>⌕</Text>
-              {/* eslint-disable-next-line no-restricted-syntax -- inline borderless search box inside a toolbar Row; TextField's .field wrapper doesn't fit */}
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search skills…" style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--fg)", fontSize: 12.5 }} />
-            </Row>
+            <SearchField
+              value={query}
+              onChange={setQuery}
+              placeholder="Search skills…"
+              style={{ flex: 1, height: 30, background: "var(--bg-canvas)", borderRadius: "var(--r-md)" }}
+            />
             <Row align="stretch" style={{ height: 30, border: "1px solid var(--border)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
               {([["assigned", `Assigned (${availCount})`], ["all", `All (${skills.length})`]] as const).map(([t, lbl], i) => (
                 <Row key={t} onClick={() => setTab(t)} style={{ padding: "0 11px", fontSize: 11, cursor: "pointer", background: tab === t ? "var(--bg-elev2)" : "transparent", color: tab === t ? "var(--fg)" : "var(--fg-dim)", borderRight: i === 0 ? "1px solid var(--border)" : "none" }}>{lbl}</Row>

@@ -21,7 +21,6 @@
 .auto-workspace .sched-row .l1 { display:flex; align-items:center; gap:8px; }
 .auto-workspace .sched-row .dot { width:7px; height:7px; border-radius:50%; background:var(--success); flex:0 0 7px; }
 .auto-workspace .sched-row .dot.off { background:var(--fg-dim); }
-.auto-workspace .sched-row .sid { font-family:var(--mono); font-size:10px; color:var(--fg-dim); }
 .auto-workspace .sched-row .spacer { flex:1; }
 .auto-workspace .sched-row .name { font-family:var(--sans); font-size:12.5px; color:var(--fg-muted); margin-top:4px; font-weight:500; }
 .auto-workspace .sched-row.on .name { color:var(--fg); }
@@ -100,6 +99,4 @@
 .auto-workspace .hist-row .sched { color:var(--fg); font-weight:500; }
 .auto-workspace .hist-row .target { color:var(--fg-muted); }
 .auto-workspace .hist-row .dur { color:var(--fg-dim); }
-.auto-workspace .hist-row .trig { color:var(--info); font-size:10px; }
 .auto-workspace .hist-row .out { color:var(--fg-muted); font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.auto-workspace .hist-row .sid { color:var(--fg-dim); font-size:10px; }

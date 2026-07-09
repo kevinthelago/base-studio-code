@@ -11,6 +11,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { Toggle } from "@/shared/ui/controls/Toggle";
+import { SearchField } from "@/shared/ui/controls/SearchField";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { RoleDot, KitChip } from "./kitChrome";
@@ -109,12 +110,14 @@ export function PlannerComponentsPane() {
         <>
           {/* search */}
           <Box className="pcp-search">
-            <Box className="pcp-searchbox">
-              <Text tone="dim" size={13}>⌕</Text>
-              {/* eslint-disable-next-line no-restricted-syntax -- bespoke bare search box (Field imposes a labelled layout) */}
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search components this app needs…" aria-label="Search components" />
-              <Text mono size="xxs" tone="dim">{list.length}/{inKit.length}</Text>
-            </Box>
+            <SearchField
+              value={query}
+              onChange={setQuery}
+              placeholder="Search components this app needs…"
+              aria-label="Search components"
+              inputStyle={{ fontSize: 12 }}
+              trailing={<Text mono size="xxs" tone="dim">{list.length}/{inKit.length}</Text>}
+            />
           </Box>
 
           {/* list */}
