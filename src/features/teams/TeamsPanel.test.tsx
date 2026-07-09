@@ -6,6 +6,12 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { TeamsPanel } from "./TeamsPanel";
 import { useAppStore } from "@/store";
 import { nodeBox } from "./lib/orgLayout";
+import { positionDisplay } from "./lib/orgView";
+
+/** Select an existing position by clicking its LEFT-RAIL row (not the canvas [data-node] card) — the
+ *  pattern that replaced the removed "＋ new" add button (#2750). */
+const selectRailPosition = (name: string) =>
+  fireEvent.click(screen.getAllByText(name).find((el) => !el.closest("[data-node]")) as HTMLElement);
 
 // The drill lives in the store since #2492 (nav-history integration) — reset it so a drill from one
 // test can't leak a drilled canvas into the next render. Also start at the overview (orgId is local).
@@ -18,23 +24,22 @@ const enter = (name: string) => fireEvent.click(teamCard(name));
 const FLEET = "Fleet Alpha";
 
 describe("Teams overview — the top navigation level (#2742)", () => {
-  it("opens on the Teams overview: team cards + a New team card, and NO org dropdown", () => {
+  it("opens on the Teams overview: team cards, no create card, and NO org dropdown (#2750)", () => {
     render(<TeamsPanel />);
     expect(screen.queryByRole("combobox")).toBeNull();            // the header org-switcher is gone
     expect(teamCard(FLEET)).toBeTruthy();                          // each team is a card
-    expect(screen.getByText("New team")).toBeTruthy();            // + the trailing New team card
+    expect(screen.queryByText("New team")).toBeNull();            // teams are AI-configured — no create card
     expect(screen.getAllByText("Teams").length).toBeGreaterThan(0); // breadcrumb/rail title
   });
 
   it("clicking a team card enters it (per-team toolbar), and the Teams crumb climbs back", () => {
     render(<TeamsPanel />);
     enter(FLEET);
-    // Inside the team: the position actions appear; the overview's New team card is gone.
+    // Inside the team: the position actions appear.
     expect(screen.getByText("⤢ Auto organize")).toBeTruthy();
-    expect(screen.queryByText("New team")).toBeNull();
     // Climb back via the "Teams" breadcrumb crumb → the overview returns.
     fireEvent.click(screen.getByText("Teams"));
-    expect(screen.getByText("New team")).toBeTruthy();
+    expect(teamCard(FLEET)).toBeTruthy();
     expect(screen.queryByText("⤢ Auto organize")).toBeNull();
   });
 });
@@ -57,30 +62,21 @@ describe("TeamsPanel initial selection (#2333)", () => {
     render(<TeamsPanel />);
     enter(FLEET);
     expect(screen.queryByText("Persona")).toBeNull();
-    fireEvent.click(screen.getByText("＋ new"));                   // add a position → selects it
+    // Select an existing position from the rail (the "＋ new" add button is gone, #2750) → inspector.
+    const org = useAppStore.getState().teams.find((o) => o.name === FLEET)!;
+    const agent = org.positions.find((p) => p.kind === "agent")!;
+    selectRailPosition(positionDisplay(agent, useAppStore.getState().personas).name);
     expect(screen.getByText("Persona")).toBeTruthy();
   });
 });
 
-describe("pool card gesture — drag moves the stack, click drills (#2439)", () => {
+describe("pool card gesture — drag moves the stack (#2439); the member drill was dropped (#2750)", () => {
   // Fleet Alpha's two engineers stack (#2436), so the entered panel renders one pool card. The card
-  // is the [data-node] wrapper around the drill hint.
-  const poolCard = (): HTMLElement => {
-    const hint = screen.getByText(/click to open/i);
-    return hint.closest("[data-node]") as HTMLElement;
-  };
+  // is the [data-node] wrapper around the ×N badge (the drill hint text was dropped, #2750).
+  const poolCard = (): HTMLElement =>
+    screen.getByText(/^×\d+$/).closest("[data-node]") as HTMLElement;
 
-  it("a plain click drills into the pool (unchanged)", () => {
-    render(<TeamsPanel />);
-    enter(FLEET);
-    const card = poolCard();
-    fireEvent.pointerDown(card, { clientX: 100, clientY: 100 });
-    fireEvent.pointerUp(card, { clientX: 101, clientY: 101 }); // < DRAG_THRESHOLD → click
-    // Now in the pool sub-graph — the breadcrumb shows the pool crumb (× count).
-    expect(screen.getByText(/pool · ×/)).toBeTruthy();
-  });
-
-  it("a drag shifts every member by the same delta and does NOT drill", () => {
+  it("a drag shifts every member by the same delta", () => {
     render(<TeamsPanel />);
     enter(FLEET);
     const orgBefore = useAppStore.getState().teams[0];
@@ -93,7 +89,6 @@ describe("pool card gesture — drag moves the stack, click drills (#2439)", () 
     fireEvent.pointerMove(card, { clientX: 160, clientY: 140 }); // > DRAG_THRESHOLD → drag
     fireEvent.pointerUp(card, { clientX: 160, clientY: 140 });
 
-    expect(screen.queryByText(/pool · ×/)).toBeNull(); // a drag never drills
     const after = useAppStore.getState().teams[0];
     const deltas = members.map((m) => {
       const b = before.get(m)!;
@@ -112,8 +107,6 @@ describe("pool card gesture — drag moves the stack, click drills (#2439)", () 
 });
 
 describe("auto-organize lays out the rendered graph (#2451)", () => {
-  const poolCard = (): HTMLElement =>
-    screen.getByText(/click to open/i).closest("[data-node]") as HTMLElement;
   const workers = () =>
     useAppStore.getState().teams[0].positions.filter((p) => p.personaId === "persona-worker");
 
@@ -131,25 +124,25 @@ describe("auto-organize lays out the rendered graph (#2451)", () => {
     });
     for (const d of deltas) expect(d).toEqual(deltas[0]);
   });
+});
 
-  it("drilled view: auto-organize moves ONLY the members — boundary/parent nodes stay fixed", () => {
+describe("per-agent origin border (#2750)", () => {
+  it("a planner-origin position renders a DASHED node border (app-origin stays solid)", () => {
+    const org = useAppStore.getState().teams.find((o) => o.name === FLEET)!;
+    // A non-pooled agent (persona-worker stacks into a pool card) so it renders as its own node.
+    const agent = org.positions.find((p) => p.kind === "agent" && p.personaId !== "persona-worker")!;
+    useAppStore.setState({
+      teams: useAppStore.getState().teams.map((o) =>
+        o.id === org.id
+          ? { ...o, positions: o.positions.map((p) => (p.nodeId === agent.nodeId ? { ...p, origin: "planner" as const } : p)) }
+          : o,
+      ),
+    });
     render(<TeamsPanel />);
     enter(FLEET);
-    const card = poolCard();
-    fireEvent.pointerDown(card, { clientX: 100, clientY: 100 });
-    fireEvent.pointerUp(card, { clientX: 100, clientY: 100 });
-    expect(screen.getByText(/pool · ×/)).toBeTruthy();
-
-    const memberIds = new Set(workers().map((p) => p.nodeId));
-    const othersBefore = useAppStore.getState().teams[0].positions
-      .filter((p) => !memberIds.has(p.nodeId))
-      .map((p) => ({ nodeId: p.nodeId, x: p.x, y: p.y }));
-
-    fireEvent.click(screen.getByText("⤢ Auto organize"));
-
-    const after = useAppStore.getState().teams[0].positions;
-    for (const o of othersBefore) {
-      expect(after.find((p) => p.nodeId === o.nodeId)).toMatchObject({ x: o.x, y: o.y });
-    }
+    const name = positionDisplay({ ...agent, origin: "planner" }, useAppStore.getState().personas).name;
+    const card = screen.getAllByText(name).map((el) => el.closest("[data-node]")).find(Boolean) as HTMLElement;
+    const dashed = Array.from(card.querySelectorAll<HTMLElement>("*")).some((el) => el.style.borderStyle === "dashed");
+    expect(dashed).toBe(true);
   });
 });
