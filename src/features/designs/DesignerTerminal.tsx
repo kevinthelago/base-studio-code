@@ -5,6 +5,7 @@
 // cleanup and kills the PTY.
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { useDesignerTerminal } from "./useDesignerTerminal";
 
 export function DesignerTerminal({ height }: { height?: number }) {
@@ -12,7 +13,7 @@ export function DesignerTerminal({ height }: { height?: number }) {
   return (
     <Box className="ds-terminal" data-testid="designer-terminal" style={height !== undefined ? { height } : undefined}>
       <Box className="ds-colhead">
-        <Text className="ds-eyebrow" as="span">✦ Designer session · UI kits via bsc ui</Text>
+        <Eyebrow size={9.5}>✦ Designer session · UI kits via bsc ui</Eyebrow>
         <Text mono size="xxs" tone="dim">design-studio · restricted</Text>
       </Box>
       {/* eslint-disable-next-line no-restricted-syntax -- xterm mounts onto a real DOM node via ref (primitives aren't forwardRef) */}

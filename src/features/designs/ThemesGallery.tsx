@@ -9,6 +9,7 @@ import { useMemo } from "react";
 import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Card } from "@/shared/ui/data/Card";
 import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
@@ -36,7 +37,7 @@ export function ThemesGallery() {
   return (
     <Box className="themes-root">
       <Box className="themes-head">
-        <Text className="themes-eyebrow" as="span">Themes</Text>
+        <Eyebrow size={10}>Themes</Eyebrow>
         <Text mono size="xxs" tone="dim">{themes.length} theme{themes.length === 1 ? "" : "s"}</Text>
         <Box style={{ flex: 1 }} />
         <Text size={11.5} tone="dim">Authored by the designer session · <Text as="code" mono size="xxs">bsc ui theme</Text></Text>

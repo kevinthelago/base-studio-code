@@ -27,7 +27,6 @@
 .ds-handle-h { height: 5px; flex: none; cursor: row-resize; z-index: 4; position: relative; }
 .ds-handle-h:hover { background: var(--accent-soft); }
 .ds-colhead { height: 38px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--border-soft, var(--border)); }
-.ds-eyebrow { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; color: var(--fg-dim); text-transform: uppercase; }
 .ds-scroll { overflow-y: auto; }
 
 /* ── rail tree ── */
