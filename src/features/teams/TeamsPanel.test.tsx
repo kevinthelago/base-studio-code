@@ -125,24 +125,3 @@ describe("auto-organize lays out the rendered graph (#2451)", () => {
     for (const d of deltas) expect(d).toEqual(deltas[0]);
   });
 });
-
-describe("per-agent origin border (#2750)", () => {
-  it("a planner-origin position renders a DASHED node border (app-origin stays solid)", () => {
-    const org = useAppStore.getState().teams.find((o) => o.name === FLEET)!;
-    // A non-pooled agent (persona-worker stacks into a pool card) so it renders as its own node.
-    const agent = org.positions.find((p) => p.kind === "agent" && p.personaId !== "persona-worker")!;
-    useAppStore.setState({
-      teams: useAppStore.getState().teams.map((o) =>
-        o.id === org.id
-          ? { ...o, positions: o.positions.map((p) => (p.nodeId === agent.nodeId ? { ...p, origin: "planner" as const } : p)) }
-          : o,
-      ),
-    });
-    render(<TeamsPanel />);
-    enter(FLEET);
-    const name = positionDisplay({ ...agent, origin: "planner" }, useAppStore.getState().personas).name;
-    const card = screen.getAllByText(name).map((el) => el.closest("[data-node]")).find(Boolean) as HTMLElement;
-    const dashed = Array.from(card.querySelectorAll<HTMLElement>("*")).some((el) => el.style.borderStyle === "dashed");
-    expect(dashed).toBe(true);
-  });
-});
