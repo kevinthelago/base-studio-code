@@ -33,6 +33,27 @@
 .ds-eyebrow { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; color: var(--fg-dim); text-transform: uppercase; }
 .ds-scroll { overflow-y: auto; }
 
+/* ── half-screen / overlay-drawer mode (#2682) ── */
+/* Below NARROW_W the JS drops the drag handles and adds `.ds-body--narrow`; the rail + inspector stop
+   taking flex space and float as overlay drawers over the graph (which then fills the whole body). The
+   drawers slide in from their edge when the JS adds `.open`; a `.ds-scrim` behind an open one dismisses
+   it. The graph never reflows, so no re-fit is needed when a drawer toggles. */
+.ds-body--narrow .ds-rail,
+.ds-body--narrow .ds-insp {
+  position: absolute; top: 0; bottom: 0; z-index: 30; max-width: 88%;
+  transition: transform .22s ease; will-change: transform;
+}
+.ds-body--narrow .ds-rail { left: 0; transform: translateX(-100%); box-shadow: 8px 0 28px rgba(0,0,0,.45); }
+.ds-body--narrow .ds-insp { right: 0; transform: translateX(100%); box-shadow: -8px 0 28px rgba(0,0,0,.45); }
+.ds-body--narrow .ds-rail.open,
+.ds-body--narrow .ds-insp.open { transform: none; }
+.ds-scrim { position: absolute; inset: 0; z-index: 25; background: color-mix(in srgb, var(--bg) 55%, transparent); }
+/* the drawer-toggle buttons live in the graph toolbar (narrow only) */
+.ds-drawertoggle.on { border-color: var(--accent); color: var(--fg); background: var(--accent-soft); }
+@media (prefers-reduced-motion: reduce) {
+  .ds-body--narrow .ds-rail, .ds-body--narrow .ds-insp { transition: none; }
+}
+
 /* ── rail tree ── */
 .ds-kithead { width: 100%; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border: none; background: transparent; border-radius: 7px; cursor: pointer; color: var(--fg); font-size: 12.5px; }
 .ds-kithead.active { background: var(--bg-soft); }

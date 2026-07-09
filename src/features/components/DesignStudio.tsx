@@ -11,7 +11,7 @@
 // hierarchy layout lives in `lib/compositionLayout`, #2455), and `useDragResize` — so it stays
 // on-architecture and the planner Kickoff pane is untouched. Data comes from the global store via the
 // `bsc ui` bridge.
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
 import { KitChangesCard, SeedNoticesCard } from "./KitChangesCard";
@@ -48,6 +48,12 @@ const VP: Record<Viewport, { w: string; label: string }> = {
   md: { w: "640px", label: "768 · tablet" },
   auto: { w: "100%", label: "fluid · fills panel" },
 };
+
+// Half-screen threshold (#2682): below this body width the rail + inspector stop taking flex space
+// and float as overlay drawers over the graph, so the graph keeps a usable width. It's tuned so a
+// window snapped to half a 1080p+ monitor lands in overlay mode while a wide window keeps the
+// classic 3-column IDE. (rail-min 200 + insp-min 300 + a comfortable graph + handles ≈ this.)
+const NARROW_W = 900;
 
 // The role dot + kit chip live in kitChrome.tsx (#2420) — shared with the Planner Components pane.
 
@@ -87,6 +93,22 @@ export function DesignStudio() {
   // The always-on designer terminal's height (#2624) — a row-resize handle above it; `invert` because
   // the terminal sits AFTER the handle, so dragging up grows it. The graph (flex:1) keeps priority.
   const term = useDragResize({ initial: 240, min: 140, max: 560, axis: "y", invert: true });
+
+  // Half-screen friendly (#2682): a ResizeObserver on the body switches to overlay-drawer mode below
+  // NARROW_W. In that mode the rail + inspector float over the graph (absolute, out of flow) and are
+  // toggled one-at-a-time from `drawer`; the graph keeps full width. The app has no other responsive
+  // machinery, so this is measured locally rather than via a media query (the app rail already eats
+  // part of the viewport, so the studio's own width is what matters).
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  const [drawer, setDrawer] = useState<null | "rail" | "insp">(null);
+  useEffect(() => {
+    const el = bodyRef.current; if (!el) return;
+    const ro = new ResizeObserver((entries) => setNarrow(entries[0].contentRect.width < NARROW_W));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  useEffect(() => { if (!narrow) setDrawer(null); }, [narrow]); // back to wide → panels are inline again
 
   const match = (c: ComponentRecord) => matchesQuery(c, query);
   const kit = kits.find((k) => k.id === kitId) ?? kits[0];
@@ -233,10 +255,11 @@ export function DesignStudio() {
       {/* built-in seed-refresh notices (#2483) — customized built-ins kept through a seed divergence */}
       <SeedNoticesCard />
 
-      {/* ── body ── */}
-      <Box className="ds-body">
-        {/* left rail */}
-        <Box className="ds-col ds-rail" style={{ width: rail.size, flexBasis: rail.size }}>
+      {/* ── body ── (measured for the #2682 overlay-drawer switch; a raw div so it can carry the ref) */}
+      {/* eslint-disable-next-line no-restricted-syntax -- measured mount: ResizeObserver needs the DOM ref */}
+      <div ref={bodyRef} className={`ds-body${narrow ? " ds-body--narrow" : ""}`}>
+        {/* left rail — inline column when wide; an overlay drawer (`.ds-rail`, `.open`) when narrow */}
+        <Box className={`ds-col ds-rail${narrow && drawer === "rail" ? " open" : ""}`} style={{ width: rail.size, flexBasis: rail.size }}>
           <Box className="ds-colhead">
             <Text className="ds-eyebrow" as="span">Kits · Components</Text>
             <Text mono size="xxs" tone="dim">{kitComps.length} comps</Text>
@@ -245,27 +268,38 @@ export function DesignStudio() {
             {railTree.map(renderRailNode)}
           </Box>
         </Box>
-        <Box className="ds-handle" {...rail.handleProps} />
+        {!narrow && <Box className="ds-handle" {...rail.handleProps} />}
 
         {/* center — the composition graph, with the ALWAYS-ON designer session docked below it (#2597):
-            the graph flexes; the terminal is a fixed-height bottom strip, so the panes keep priority. */}
+            the graph flexes; the terminal is a fixed-height bottom strip, so the panes keep priority.
+            When narrow, the graph toolbar carries the drawer toggles (rail on the left, inspector on
+            the right) — the panels float over the graph instead of squeezing it (#2682). */}
         <Box className="ds-col ds-center">
-          <GraphView graph={graph} comps={kitComps} selId={sel?.id ?? ""} workingId={aiFocusedId ?? ""} kitName={kit.name} gvp={gvp} onSelect={selectComp} />
+          <GraphView
+            graph={graph} comps={kitComps} selId={sel?.id ?? ""} workingId={aiFocusedId ?? ""} kitName={kit.name} gvp={gvp} onSelect={selectComp}
+            narrow={narrow} drawer={drawer}
+            onToggleRail={() => setDrawer((d) => (d === "rail" ? null : "rail"))}
+            onToggleInsp={() => setDrawer((d) => (d === "insp" ? null : "insp"))}
+          />
           <Box className="ds-handle-h" {...term.handleProps} />
           <DesignerTerminal height={term.size} />
         </Box>
-        <Box className="ds-handle" {...insp.handleProps} />
+        {!narrow && <Box className="ds-handle" {...insp.handleProps} />}
 
-        {/* inspector */}
+        {/* inspector — inline column when wide; an overlay drawer when narrow */}
         <Inspector
           width={insp.size} sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
+          extraClass={narrow && drawer === "insp" ? "open" : ""}
           allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
           vp={vp} setVpKind={setVpKind}
           kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
           previewEl={previewEl} previewErr={previewErr} onRetry={() => setRenderKey((k) => k + 1)}
           composes={composes} onSelect={selectComp}
         />
-      </Box>
+
+        {/* click-away scrim behind an open drawer (narrow only) — dismisses the drawer */}
+        {narrow && drawer && <Box className="ds-scrim" onClick={() => setDrawer(null)} aria-hidden />}
+      </div>
     </Box>
   );
 }
@@ -293,8 +327,10 @@ interface GraphProps {
   /** The AI-touched node (#2525) — pulses as `.working`, distinct from the user's `.on` selection. */
   workingId: string; kitName: string;
   gvp: ReturnType<typeof useGraphViewport>; onSelect: (c: ComponentRecord) => void;
+  /** Overlay-drawer mode (#2682): when narrow, the toolbar shows the rail/inspector drawer toggles. */
+  narrow: boolean; drawer: null | "rail" | "insp"; onToggleRail: () => void; onToggleInsp: () => void;
 }
-function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect }: GraphProps) {
+function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect, narrow, drawer, onToggleRail, onToggleInsp }: GraphProps) {
   // The pan/zoom shell is the shared GraphCanvas template (#2208) — viewport ref/wheel/pan + the world
   // transform + the infinite dotted grid all live there; this brings only the toolbar + world content.
   const EDGE_COLOR = "var(--border-strong, #3a434d)";
@@ -313,10 +349,20 @@ function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect }: G
       canvasBackground="var(--bg-canvas, var(--bg))"
       toolbar={
         <>
+          {narrow && (
+            <Box as="button" className={`ds-act ds-drawertoggle${drawer === "rail" ? " on" : ""}`} title="Kits · Components" aria-pressed={drawer === "rail"} onClick={onToggleRail}>
+              <Text as="span">☰</Text> Kits
+            </Box>
+          )}
           <Text className="ds-eyebrow" as="span">Composition graph · {kitName}</Text>
           <Box style={{ flex: 1 }} />
           <ZoomControls vp={gvp} step={1.15} />
           <Box as="button" className="ds-act" onClick={() => gvp.fit()}>fit</Box>
+          {narrow && (
+            <Box as="button" className={`ds-act ds-drawertoggle${drawer === "insp" ? " on" : ""}`} title="Inspector" aria-pressed={drawer === "insp"} onClick={onToggleInsp}>
+              <Text as="span">ⓘ</Text> Details
+            </Box>
+          )}
         </>
       }
     >
@@ -368,6 +414,8 @@ function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect }: G
 // the generate-variants design bar.
 interface InspProps {
   width: number; sel: ComponentRecord | null; kitName: string; tab: Tab; setTab: (t: Tab) => void;
+  /** Extra root class — carries the `.open` overlay-drawer state in narrow mode (#2682). */
+  extraClass?: string;
   allVariants: string[]; activeVariant: string; setVariant: (v: string) => void;
   vp: Viewport; setVpKind: (v: Viewport) => void;
   /** The preview's THEME axis (#2488/#2545): the hydrated theme collection + the applied selection.
@@ -380,7 +428,7 @@ function Inspector(p: InspProps) {
   const sel = p.sel;
   // The width splitter is the parent's handle (it drives `width`); the inspector just fills it.
   return (
-    <Box className="ds-col ds-insp" style={{ width: p.width, flexBasis: p.width }}>
+    <Box className={`ds-col ds-insp${p.extraClass ? ` ${p.extraClass}` : ""}`} style={{ width: p.width, flexBasis: p.width }}>
       <Box className="ds-colhead">
         <Text className="ds-eyebrow" as="span">Inspector</Text>
         <Text size={10} tone="dim" style={{ display: "flex", alignItems: "center", gap: 5 }}><StatusDot color="var(--success)" size={6} />editable</Text>
