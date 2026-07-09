@@ -32,12 +32,12 @@ import { graphEdge } from "@/shared/lib/graph/edgePath";
 import { layoutComposition, selectionNeighborhood, NODE_W, NODE_H, type CompositionLayout } from "./lib/compositionLayout";
 import { analyzeGraphHealth, HEALTH_SEVERITY, type HealthCategory } from "./lib/graphHealth";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
-import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { RoleDot } from "./kitChrome";
-import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecord, type Kit } from "./lib/model";
+import { RailTree } from "./RailTree";
+import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecord } from "./lib/model";
 import { useUiActivity } from "./lib/uiActivity";
-import { groupKits, type KitTreeNode } from "./lib/kitGroups";
+import { groupKits } from "./lib/kitGroups";
 import { renderSpecimen, type PreviewTheme } from "./specimens";
 import { SPECIMEN_FIXTURES } from "./specimenFixtures";
 import type { PrimitiveName } from "@/shared/ui/manifest";
@@ -151,57 +151,6 @@ export function DesignStudio() {
 
   if (!kit) return <StudioEmpty />;
 
-  // One rail kit entry: the collapsible kit head + its (search-filtered) component rows. Under the
-  // #2506 single-kit style merge this IS the style header — `label` shows the style name instead of
-  // the kit name (the kit identity stays in the tooltip), and no separate kit row renders.
-  const renderRailKit = (k: Kit, label?: string) => {
-    const open = !!expanded[k.id];
-    const inKit = components.filter((c) => c.kitId === k.id);
-    const rows = inKit.filter(match);
-    return (
-      <Box key={k.id} style={{ marginBottom: 4 }}>
-        <Box as="button" className={`ds-kithead${k.id === kitId ? " active" : ""}`} title={label ? `${label} · ${k.name} — ${k.stack}` : k.stack} onClick={() => { setKitId(k.id); setExpanded((e) => ({ ...e, [k.id]: !e[k.id] })); }}>
-          <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
-          <ColorSwatch color={k.dot} size={7} />
-          <Text as="span" weight={500} style={{ flex: 1, textAlign: "left" }}>{label ?? k.name}</Text>
-          <Text mono size="xxs" tone="dim">{inKit.length}</Text>
-        </Box>
-        {open && (
-          <Box style={{ margin: "2px 0 6px", paddingLeft: 6 }}>
-            {rows.map((c) => (
-              <Box as="button" key={c.id} className={`ds-comprow${c.id === compId && k.id === kitId ? " on" : ""}`} onClick={() => selectComp(c)}>
-                <RoleDot role={c.role} size={7} glow={3} />
-                <Text as="span" style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</Text>
-                <Text mono size="xxs" tone="dim" style={{ padding: "1px 5px", background: "var(--bg-soft)", borderRadius: 4 }}>×{c.used}</Text>
-              </Box>
-            ))}
-            {open && rows.length === 0 && query && (
-              <Text size={11} tone="dim" as="div" style={{ padding: "6px 10px", fontStyle: "italic" }}>no matches</Text>
-            )}
-          </Box>
-        )}
-      </Box>
-    );
-  };
-  // A rail tree node: a kit entry, or a collapsible tech/style group header (default OPEN — its
-  // expand state shares the `expanded` record under the group's stable key). A single-kit style
-  // group (#2506) renders as the kit entry labelled with the style — the style header IS the kit.
-  const renderRailNode = (n: KitTreeNode): ReactNode => {
-    if (n.kind === "kit") return renderRailKit(n.kit);
-    if (n.kit) return renderRailKit(n.kit, n.label);
-    const open = expanded[n.key] ?? true;
-    return (
-      <Box key={n.key} style={{ marginBottom: 4 }}>
-        <Box as="button" className="ds-grouphead" aria-expanded={open} title={`${n.level === "tech" ? "technology" : "visual language"}: ${n.label}`} onClick={() => setExpanded((e) => ({ ...e, [n.key]: !(e[n.key] ?? true) }))}>
-          <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
-          <Text as="span" mono size="xxs" style={{ flex: 1, textAlign: "left", letterSpacing: ".07em", textTransform: "uppercase" }}>{n.label}</Text>
-          <Text mono size="xxs" tone="dim">{n.count}</Text>
-        </Box>
-        {open && <Box className="ds-groupkids">{n.children.map(renderRailNode)}</Box>}
-      </Box>
-    );
-  };
-
   // The live preview node, guarded — a specimen that throws surfaces the error card, not a crash.
   // Prefer the REAL component (specimenFixtures via the registry, #2555); fall back to the specimens.tsx
   // mock for any primitive/variant not yet ported (a fixture returns null to defer).
@@ -251,7 +200,11 @@ export function DesignStudio() {
             />
           </Box>
           <Box className="ds-scroll" style={{ flex: 1, padding: "8px 8px 16px" }}>
-            {railTree.map(renderRailNode)}
+            <RailTree
+              railTree={railTree} expanded={expanded} setExpanded={setExpanded}
+              kitId={kitId} setKitId={setKitId} compId={compId}
+              components={components} match={match} selectComp={selectComp} query={query}
+            />
           </Box>
         </Box>
         <Box className="ds-handle" {...rail.handleProps} />
