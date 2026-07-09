@@ -100,7 +100,7 @@ base-studio-code/
 │   ├── features/            # ONE FOLDER PER FEATURE = UI + lib/ (pure domain) + store.ts (its slice)
 │   │   │                    #   + index.ts (public API barrel). Import UI via @/features/<x>; import
 │   │   │                    #   the pure domain via @/features/<x>/lib/* (keeps React out of non-UI).
-│   │   ├── skills/ · mcp/ · automations/ · github/ · tunnel/ · agents/ · settings/
+│   │   ├── skills/ · mcp/ · automations/ · github/ · tunnel/ · security/ · settings/
 │   │   └── planner/         #   the flagship (session/, pane/, bodies/, blueprints/, stages/, …, lib/)
 │   ├── shared/              # feature-agnostic; no feature imports it
 │   │   ├── lib/             #   core (log/perf/llm), session, fleet, security, cleanup
@@ -232,7 +232,7 @@ Role gate #219: `git: read`, `github: read`, `code: none`. It reads for context 
 6. **Publish** (`handlePublish`): repos, project board, one milestone per phase, one GitHub issue per `PlanIssue` (body = acceptance + owns + deps, pinned to its milestone), `stream:<id>` labels.
 
 ### Per-agent configuration set during planning
-- **Profiles** (#289, `src/features/agents/`): a least-privilege `AgentProfile` (commands / tools / write-paths / net) per stream, applied at launch.
+- **Profiles** (#289, `src/features/security/`): a least-privilege `AgentProfile` (commands / tools / write-paths / net) per stream, applied at launch.
 - **Flows** (#297, `src/features/planner/fleet/agentFlow.ts`): `autonomy` (continuous/checkpoint/confirm) + `push` (auto-pr/push-confirm/commit-only/none) + `trigger` + `gate` — drives each agent's git/gh permissions, kickoff prose, and pause-visibility.
 
 ### Session roles + the CLAUDE.md model (and a known issue)

@@ -1,4 +1,4 @@
-// Agents — Profiles tab (#1643 split from AgentsWorkspace).
+// Security — Profiles tab (#1643 split from SecurityWorkspace).
 //
 // The roles list (application + custom) + the selected profile's policy editor: base
 // policy, shell allowlist, per-tool tri-states, filesystem + network scope, and the

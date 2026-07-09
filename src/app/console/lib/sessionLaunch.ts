@@ -15,7 +15,7 @@ import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/sk
 import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
 import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes } from "@/shared/lib/session/sessionRoles";
-import { resolveProfileSettings } from "@/features/agents";
+import { resolveProfileSettings } from "@/features/security";
 import { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner";
 import type { ConsoleProvider, ProviderLaunchConfig } from "@/app/console/lib/providers";
 import type { AppStore } from "@/store/types";

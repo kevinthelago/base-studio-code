@@ -22,7 +22,7 @@ import type { KitThemeRecord } from "@/features/components/lib/themes";
 import type { Automation, AutomationRun } from "@/features/automations/lib/scheduler";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
 import type { Hook } from "@/features/mcp/lib/hooks";
-import type { AgentProfile, AuditRecord } from "@/features/agents";
+import type { AgentProfile, AuditRecord } from "@/features/security";
 import type { AlertEvent } from "./alerts";
 
 // ── glance ───────────────────────────────────────────────────────────────────────

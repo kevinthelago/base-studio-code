@@ -3,7 +3,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import { unlock } from "@/shared/lib/core/achievements";
-import { type AgentProfile, PROFILES } from "@/features/agents/lib/agentProfiles";
+import { type AgentProfile, PROFILES } from "@/features/security/lib/agentProfiles";
 import { DEFAULT_ACCENT } from "@/features/settings/lib/appearance";
 import { DEFAULT_THEME } from "@/shared/ui/kit/theme";
 import { enqueue as enqueueFocusQueue, removeFromQueue, nextInCycle, reconcileQueue, shouldFocus, DEFAULT_FOCUS_TARGET } from "@/app/console/lib/focusQueue";
