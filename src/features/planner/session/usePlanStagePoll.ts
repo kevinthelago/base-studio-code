@@ -10,8 +10,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { bscJson, bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import { hashString } from "@/shared/lib/core/hashString";
 import { useAppStore, type AutomationSuggestion } from "@/store";
-import { type PlanIssue } from "../issues/planIssues";
-import { type PlanFeature } from "../issues/featureList";
 import { FLEET_KEY } from "../fleet/planFleet";
 import { FEATURES_KEY, canonicalTopicKey } from "../stages/planTopics";
 import { reconcileConfirmations, reconcileSkips, type ConfirmRow } from "../stages/confirmReconcile";
@@ -88,22 +86,130 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
           await invoke("sync_sandbox_plan_db", { key: effectiveProjectId }).catch(() => { /* no in-distro db yet — ignore */ });
         }
 
-        // Issues are owned by plan.db now (#plan-db) — the canonical store, not an issues.json
-        // file. Read them straight from the DB and reflect into the "issues" section so every
-        // downstream consumer (publish, structure card, grading, the mobile mirror) is unchanged.
-        try {
-          const dbIssues = await bscJson<PlanIssue[]>(effectiveProjectId, ["plan", "list", "--full", "--json"], []);
-          const json = JSON.stringify(dbIssues ?? []);
-          if (json !== (saved["issues"] ?? "")) store.setPlanStage(effectiveProjectId, "issues", json);
-        } catch { /* plan.db not created until the planner adds its first issue — ignore */ }
-
-        // Features are DB-owned too (#plan-db) — titles-first roster in plan.db, not a features.json
-        // file. Reflect them into the "features" section so the Features board + gate read unchanged.
-        try {
-          const dbFeatures = await bscJson<PlanFeature[]>(effectiveProjectId, ["plan", "feature", "list", "--json"], []);
-          const json = JSON.stringify(dbFeatures ?? []);
-          if (json !== (saved[FEATURES_KEY] ?? "")) store.setPlanStage(effectiveProjectId, FEATURES_KEY, json);
-        } catch { /* plan.db not created until the planner registers its first feature — ignore */ }
+        // Every DB-owned artifact is reflected the SAME way: read it from plan.db, stringify it, and —
+        // only when the serialized blob changed since the last tick — apply it to the store. The
+        // per-artifact specifics (its `bsc plan` subcommand, its change-guard, its coercion, and its
+        // store setter) live as one row per artifact in the descriptor TABLE below; `reflectArtifact`
+        // runs one row. Semantics are identical to the former hand-rolled per-artifact blocks: the
+        // stringify-compare change-guard, the silent "not created yet" try/catch, the same fetch/
+        // stringify fallbacks, coercers, setters, and order. Three artifacts (repos / deps / mcp) don't
+        // fit the shape (loop / one-time legacy import / per-name set) and stay as bespoke blocks below.
+        interface ArtifactDescriptor {
+          /** `bsc plan …` args producing the artifact's JSON. */
+          args: string[];
+          /** bscJson fallback (empty output / bridge absent → this). */
+          fetchFallback: unknown;
+          /** Skip the whole reflect on a null/empty read (the artifacts the old code wrapped in `if (db)`). */
+          requireTruthy?: boolean;
+          /** `db ?? this` before JSON.stringify (the non-`requireTruthy` artifacts' `?? []`). */
+          stringifyFallback?: unknown;
+          /** Current guard value — a per-project applied-ref, or the store-owned section blob. */
+          applied: () => string | undefined;
+          /** Record the applied guard value (no-op when the store write is itself the record). */
+          setApplied: (raw: string) => void;
+          /** Reflect the read into the store. */
+          apply: (db: unknown, raw: string) => void;
+        }
+        const reflectArtifact = async (d: ArtifactDescriptor): Promise<void> => {
+          try {
+            const db = await bscJson<unknown>(effectiveProjectId, d.args, d.fetchFallback);
+            if (d.requireTruthy && !db) return;
+            const raw = JSON.stringify(db ?? d.stringifyFallback);
+            if (raw !== d.applied()) {
+              d.setApplied(raw);
+              d.apply(db, raw);
+            }
+          } catch { /* plan.db not created yet — ignore */ }
+        };
+        // One row per DB-owned artifact, in the same order the old blocks ran. (The bespoke shapes —
+        // repos / deps / mcp — run just after as their own blocks; they're order-independent of these.)
+        const ARTIFACTS: ArtifactDescriptor[] = [
+          // Issues (#plan-db) → the "issues" section, so publish / structure card / grading / mobile mirror read unchanged.
+          {
+            args: ["plan", "list", "--full", "--json"], fetchFallback: [], stringifyFallback: [],
+            applied: () => saved["issues"] ?? "", setApplied: () => undefined,
+            apply: (_db, raw) => store.setPlanStage(effectiveProjectId, "issues", raw),
+          },
+          // Features (#plan-db) → the "features" section (board + gate).
+          {
+            args: ["plan", "feature", "list", "--json"], fetchFallback: [], stringifyFallback: [],
+            applied: () => saved[FEATURES_KEY] ?? "", setApplied: () => undefined,
+            apply: (_db, raw) => store.setPlanStage(effectiveProjectId, FEATURES_KEY, raw),
+          },
+          // Fleet (#1018/#1805, plan.db is the SOLE fleet source) → the "fleet" section (parseFleetFile → setPlanFleet).
+          {
+            args: ["plan", "fleet", "get", "--full", "--json"], fetchFallback: null, requireTruthy: true,
+            applied: () => saved[FLEET_KEY] ?? "", setApplied: () => undefined,
+            apply: (_db, raw) => store.setPlanStage(effectiveProjectId, FLEET_KEY, raw),
+          },
+          // Deploy config (#1020) → coerced through parseDeployConfigTag into planDeployConfig (the `deploy` gate).
+          {
+            args: ["plan", "deploy", "get", "--json"], fetchFallback: null, requireTruthy: true,
+            applied: () => deployAppliedRef.current[effectiveProjectId],
+            setApplied: (raw) => { deployAppliedRef.current[effectiveProjectId] = raw; },
+            apply: (_db, raw) => {
+              const cfg = parseDeployConfigTag(raw, publishRepos);
+              if (cfg) store.setPlanDeployConfig(effectiveProjectId, cfg);
+            },
+          },
+          // Market assessment (#2430) → coerced into planMarketConfig (the `marketDefined` gate + Market body).
+          {
+            args: ["plan", "market", "get", "--json"], fetchFallback: null, requireTruthy: true,
+            applied: () => marketAppliedRef.current[effectiveProjectId],
+            setApplied: (raw) => { marketAppliedRef.current[effectiveProjectId] = raw; },
+            apply: (db) => {
+              const cfg = coerceMarketConfig(db);
+              if (cfg) store.setPlanMarketConfig(effectiveProjectId, cfg);
+            },
+          },
+          // Transformations (#2509) → coerced rows into planTransformations (the bottom-up confirm queue + gate).
+          {
+            args: ["plan", "transformation", "list", "--json"], fetchFallback: [], stringifyFallback: [],
+            applied: () => transformationsAppliedRef.current[effectiveProjectId],
+            setApplied: (raw) => { transformationsAppliedRef.current[effectiveProjectId] = raw; },
+            apply: (db) => store.setPlanTransformations(effectiveProjectId, coerceTransformationRows(db)),
+          },
+          // Automations (#2009) → full replace of planAutomations (the `automations` gate).
+          {
+            args: ["plan", "automations", "list", "--json"], fetchFallback: [], stringifyFallback: [],
+            applied: () => autoAppliedRef.current[effectiveProjectId],
+            setApplied: (raw) => { autoAppliedRef.current[effectiveProjectId] = raw; },
+            apply: (db) => store.setPlanAutomations(effectiveProjectId, (db as AutomationSuggestion[] | null) ?? []),
+          },
+          // Startup scripts (#2010) → per-repo dev/triage startup prompt docs (each `path` resolved to a unified-store relpath).
+          {
+            args: ["plan", "startup", "list", "--json"], fetchFallback: [], stringifyFallback: [],
+            applied: () => startupAppliedRef.current[effectiveProjectId],
+            setApplied: (raw) => { startupAppliedRef.current[effectiveProjectId] = raw; },
+            apply: (db) => {
+              const key = sanitizeProjectKey(effectiveProjectId);
+              for (const sc of (db as StartupScriptRow[] | null) ?? []) {
+                const relpath = scriptDocRelpath(key, sc.path);
+                if (sc.mode === "triage") store.setRepoTriagePromptDoc(effectiveProjectId, sc.repo, relpath);
+                else                      store.setRepoStartupPromptDoc(effectiveProjectId, sc.repo, relpath);
+              }
+            },
+          },
+          // Authored blueprint (#1022/#923) → coerced into the in-progress blueprint, binding pinned to the
+          // authoring lifecycle. Guard is the module-lifetime lastBpJsonRef (reset on project switch above).
+          {
+            args: ["plan", "blueprint", "get", "--json"], fetchFallback: null, requireTruthy: true,
+            applied: () => lastBpJsonRef.current,
+            setApplied: (raw) => { lastBpJsonRef.current = raw; },
+            apply: (db) => {
+              try {
+                const parsed = coerceBlueprint(db, { allowEmptySections: true });
+                if (parsed) {
+                  store.setAuthoredBlueprint(effectiveProjectId, parsed);
+                  if (store.projectBlueprintId[effectiveProjectId] !== AUTHORING_BLUEPRINT_ID) {
+                    store.setProjectBlueprintId(effectiveProjectId, AUTHORING_BLUEPRINT_ID);
+                  }
+                }
+              } catch { /* mid-write / invalid shape — ignore, the planner re-writes */ }
+            },
+          },
+        ];
+        for (const d of ARTIFACTS) await reflectArtifact(d);
 
         // Linked repos are DB-owned too (#1012) — restore them from the hub's plan.db into the store
         // so a zustand/app-state reset can't lose the links (the store-only persistence proved fragile).
@@ -111,66 +217,6 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
           const dbRepos = await bscJson<string[]>(effectiveProjectId, ["plan", "repo", "list", "--json"], []);
           for (const r of dbRepos ?? []) store.addProjectRepo(effectiveProjectId, r);
         } catch { /* plan.db not created until the first repo is linked — ignore */ }
-
-        // Fleet (streams + per-stream permissions/flows + director/topology) is DB-owned too (#1018) —
-        // plan.db is the SOLE fleet source (#1805): there is no fleet.json reader anymore. Reflect the
-        // fleet from plan.db into the "fleet" section so the fleet sync effect (parseFleetFile →
-        // setPlanFleet) reads it unchanged. `fleet get --full` returns the whole FleetPlan blob (the
-        // same shape the old `plan_get_fleet` command wrapped). Guard on a non-null fleet so an empty
-        // DB doesn't churn the section.
-        try {
-          const dbFleet = await bscJson<unknown | null>(effectiveProjectId, ["plan", "fleet", "get", "--full", "--json"], null);
-          if (dbFleet) {
-            const json = JSON.stringify(dbFleet);
-            if (json !== (saved[FLEET_KEY] ?? "")) store.setPlanStage(effectiveProjectId, FLEET_KEY, json);
-          }
-        } catch { /* plan.db not created until the planner sets the fleet — ignore */ }
-
-        // Deploy config is DB-owned (#1020) — coerce the stored blob through the same parseDeployConfigTag
-        // the old <deploy_config> tag used and push it into planDeployConfig, so the `deploy` gate clears
-        // from the plan. Skip an unchanged blob so we don't churn the store every tick.
-        try {
-          const dbDeploy = await bscJson<unknown | null>(effectiveProjectId, ["plan", "deploy", "get", "--json"], null);
-          if (dbDeploy) {
-            const raw = JSON.stringify(dbDeploy);
-            if (raw !== deployAppliedRef.current[effectiveProjectId]) {
-              deployAppliedRef.current[effectiveProjectId] = raw;
-              const cfg = parseDeployConfigTag(raw, publishRepos);
-              if (cfg) store.setPlanDeployConfig(effectiveProjectId, cfg);
-            }
-          }
-        } catch { /* plan.db not created until the planner sets deploy — ignore */ }
-
-        // Market assessment is DB-owned (#2430) — the planner records the scored rubric with
-        // `bsc plan market set` (validated at write). Coerce the stored blob and push it into
-        // planMarketConfig so the `marketDefined` gate signal + the Market body read it. Skip an
-        // unchanged blob so we don't churn the store every tick.
-        try {
-          const dbMarket = await bscJson<unknown | null>(effectiveProjectId, ["plan", "market", "get", "--json"], null);
-          if (dbMarket) {
-            const raw = JSON.stringify(dbMarket);
-            if (raw !== marketAppliedRef.current[effectiveProjectId]) {
-              marketAppliedRef.current[effectiveProjectId] = raw;
-              const cfg = coerceMarketConfig(dbMarket);
-              if (cfg) store.setPlanMarketConfig(effectiveProjectId, cfg);
-            }
-          }
-        } catch { /* plan.db not created until the planner sets the market assessment — ignore */ }
-
-        // Transformations are DB-owned (#2509) — the planner decomposes the modification request
-        // with `bsc plan transformation add` (validated at write, #2395). Coerce the stored rows and
-        // push them into planTransformations so the `transformationsConfirmed` gate signal + the
-        // Transformations body (the bottom-up confirm queue) read them. Skip an unchanged list so we
-        // don't churn the store every tick — which also protects an optimistic confirm flip until
-        // the DB write lands.
-        try {
-          const dbTransforms = await bscJson<unknown>(effectiveProjectId, ["plan", "transformation", "list", "--json"], []);
-          const raw = JSON.stringify(dbTransforms ?? []);
-          if (raw !== transformationsAppliedRef.current[effectiveProjectId]) {
-            transformationsAppliedRef.current[effectiveProjectId] = raw;
-            store.setPlanTransformations(effectiveProjectId, coerceTransformationRows(dbTransforms));
-          }
-        } catch { /* plan.db not created until the planner adds a transformation — ignore */ }
 
         // Dependency manifest is DB-owned (#1191) — the planner records it with `bsc-plan deps set`
         // (was a raw `dependencies.json`). Reflect the stored blob into the DEPENDENCIES section so the
@@ -214,61 +260,6 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
           }
           if (toDownload.length) void enqueueMcpDownloads(toDownload);
         } catch { /* plan.db not created until the planner assigns an MCP server — ignore */ }
-
-        // Automations are DB-owned (#2009) — the planner assigns them with `bsc plan automations add`
-        // (replacing the <automation_assign> stream tag). Reflect the stored list into planAutomations
-        // (a full replace, which the `automations` gate reads). Guard on the serialized list so an
-        // unchanged set doesn't churn the store every tick.
-        try {
-          const dbAutos = await bscJson<AutomationSuggestion[]>(effectiveProjectId, ["plan", "automations", "list", "--json"], []);
-          const raw = JSON.stringify(dbAutos ?? []);
-          if (raw !== autoAppliedRef.current[effectiveProjectId]) {
-            autoAppliedRef.current[effectiveProjectId] = raw;
-            store.setPlanAutomations(effectiveProjectId, dbAutos ?? []);
-          }
-        } catch { /* plan.db not created until the planner assigns an automation — ignore */ }
-
-        // Startup scripts are DB-owned (#2010) — the planner assigns per-repo kickoff/triage prompt
-        // docs with `bsc plan startup add` (replacing the <startup_script> stream tag). Resolve each
-        // `path` to a unified-store relpath and auto-assign it as that repo's dev/triage startup doc,
-        // so opening the repo's console or triage pane launches with it. Guard on the serialized list.
-        try {
-          const dbStartup = await bscJson<StartupScriptRow[]>(effectiveProjectId, ["plan", "startup", "list", "--json"], []);
-          const raw = JSON.stringify(dbStartup ?? []);
-          if (raw !== startupAppliedRef.current[effectiveProjectId]) {
-            startupAppliedRef.current[effectiveProjectId] = raw;
-            const key = sanitizeProjectKey(effectiveProjectId);
-            for (const sc of dbStartup ?? []) {
-              const relpath = scriptDocRelpath(key, sc.path);
-              if (sc.mode === "triage") store.setRepoTriagePromptDoc(effectiveProjectId, sc.repo, relpath);
-              else                      store.setRepoStartupPromptDoc(effectiveProjectId, sc.repo, relpath);
-            }
-          }
-        } catch { /* plan.db not created until the planner assigns a startup script — ignore */ }
-
-        // Authored blueprint is DB-owned (#1022) — the authoring planner records it with `bsc-plan
-        // blueprint set`; coerce the stored JSON into the in-progress blueprint (the same coerceBlueprint
-        // the import path uses) so the authoring panes render the stages it designed. Guard on the JSON
-        // changing so a 2s re-read can't clobber a live UI edit, and pin the binding to the authoring
-        // lifecycle so it can't revert to default on restart (#923).
-        try {
-          const dbBp = await bscJson<unknown | null>(effectiveProjectId, ["plan", "blueprint", "get", "--json"], null);
-          if (dbBp) {
-            const raw = JSON.stringify(dbBp);
-            if (raw !== lastBpJsonRef.current) {
-              lastBpJsonRef.current = raw;
-              try {
-                const parsed = coerceBlueprint(dbBp, { allowEmptySections: true });
-                if (parsed) {
-                  store.setAuthoredBlueprint(effectiveProjectId, parsed);
-                  if (store.projectBlueprintId[effectiveProjectId] !== AUTHORING_BLUEPRINT_ID) {
-                    store.setProjectBlueprintId(effectiveProjectId, AUTHORING_BLUEPRINT_ID);
-                  }
-                }
-              } catch { /* mid-write / invalid shape — ignore, the planner re-writes */ }
-            }
-          }
-        } catch { /* plan.db not created until the planner sets the blueprint — ignore */ }
 
         // Section files: a planner launched INSIDE the WSL2 cage (#1988) writes them into the distro
         // hub, so read from there (via `read_sandbox_plan_stages`) when this session is sandboxed
