@@ -2,6 +2,9 @@
 // project-scoped pane (#2314) and the full-page Design Studio workspace (#2308).
 export { PlannerComponentsPane } from "./PlannerComponentsPane";
 export { DesignStudio } from "./DesignStudio";
+// #themes-tab: the Planner "Themes" page — a browser of the theme (style) collection, split out of the
+// Designs studio so the theme axis has its own home (kit=structure vs theme=style, epic #2606).
+export { ThemesGallery } from "./ThemesGallery";
 // #2658: the blueprint-download reconciliation confirm-list (generate + register missing categories).
 export { DesignReconcileModal, type DesignReconcileModalProps } from "./DesignReconcileModal";
 export { generateCategoryColors } from "./lib/designGenBridge";

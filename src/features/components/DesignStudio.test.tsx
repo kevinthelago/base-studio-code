@@ -20,12 +20,14 @@ const graphNode = (name: string) =>
   screen.getAllByText(name).map((el) => el.closest(".ds-node")).find(Boolean) as HTMLElement;
 
 describe("DesignStudio (#2308)", () => {
-  it("renders the toolbar, kit switcher, and the composition graph as the one-and-only center view (#2453)", () => {
+  it("renders the kits→components rail and the composition graph as the one-and-only center view (#2453)", () => {
     render(<DesignStudio />);
-    // The toolbar title was removed (#2608) — the kit switcher leads the toolbar now.
+    // The page toolbar was removed (#move-to-planner) — the studio is a Planner tab, so the PageTabs
+    // strip is its header. No "Design Studio" heading, no kit-switcher chip row.
     expect(screen.queryByText("Design Studio")).toBeNull();
-    for (const k of SEED_KITS) expect(screen.getAllByText(k.name).length).toBeGreaterThan(0); // toolbar kit chip
-    expect(screen.getByText(/Composition graph · react-ui/)).toBeTruthy(); // graph mounts with the workspace
+    // The kit is named in the graph header; the rail (Kits · Components) leads the page.
+    expect(screen.getByText(/Composition graph · react-ui/)).toBeTruthy(); // graph mounts with the page
+    expect(screen.getByText(/Kits.*Components/)).toBeTruthy();              // the rail header leads the page
     // The Library/Graph toggle is gone — there is no alternate center mode.
     expect(screen.queryByText("▦ Library")).toBeNull();
     expect(screen.queryByText("⬡ Graph")).toBeNull();
@@ -87,15 +89,16 @@ describe("DesignStudio (#2308)", () => {
     expect(node.className).not.toMatch(/\bworking\b/);               // no competing pulse on it
   });
 
-  it("switching kits re-scopes the graph and selects the kit's first component", () => {
+  it("switching kits via the rail kit head re-scopes the graph and selects the kit's first component", () => {
     // The packaged seed is the one react-ui kit (#2506 retired the examples kit), so switching is
     // exercised against a second, user-authored kit in the store.
     const vueKit: Kit = { id: "vue-kit", name: "vue-kit", tech: "vue", style: "material", stack: "Vue · TypeScript", dot: "var(--accent)" };
     const vueComp = { ...SEED_COMPONENTS[0], id: "vue-button", name: "VueButton", kitId: "vue-kit" };
     useAppStore.setState({ kits: [...SEED_KITS, vueKit], components: [...SEED_COMPONENTS, vueComp] });
     render(<DesignStudio />);
-    // The kit chip in the toolbar switches the active kit.
-    fireEvent.click(screen.getAllByText("vue-kit")[0].closest("button")!);
+    // The toolbar switcher is gone (#move-to-planner) — clicking a rail kit head activates that kit. The
+    // vue kit's head is labelled with its style ("material") under the single-kit style merge (#2506).
+    fireEvent.click(screen.getByText("material").closest("button.ds-kithead")!);
     expect(screen.getByText(/Composition graph · vue-kit/)).toBeTruthy();
     expect(screen.getByText("VueButton.tsx")).toBeTruthy();
   });
@@ -128,11 +131,11 @@ describe("DesignStudio (#2308)", () => {
     const defaultFrame = container.querySelector('[data-kit-theme="default"]') as HTMLElement;
     expect(defaultFrame).toBeTruthy();
     expect(defaultFrame.style.getPropertyValue("--card-radius")).toBe("");
-    // Switching applies the theme's semantic-token overrides to the specimen frame via ThemeScope.
-    fireEvent.change(sel, { target: { value: "soft" } });
-    const frame = container.querySelector('[data-kit-theme="soft"]') as HTMLElement;
+    // Switching applies the theme's palette-token overrides to the specimen frame via ThemeScope.
+    fireEvent.change(sel, { target: { value: "nord" } });
+    const frame = container.querySelector('[data-kit-theme="nord"]') as HTMLElement;
     expect(frame).toBeTruthy();
-    expect(frame.style.getPropertyValue("--card-radius")).toBe("14px");
+    expect(frame.style.getPropertyValue("--accent")).toBe("#88c0d0");
   });
 
   it("the Theme dropdown is the ONLY theme control — the old dark/light surface toggle is gone (#2545)", () => {

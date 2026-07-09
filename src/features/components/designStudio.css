@@ -6,17 +6,16 @@
 
 .ds-root { display: flex; flex-direction: column; height: 100%; width: 100%; min-height: 0; background: var(--bg-canvas, var(--bg)); color: var(--fg); font-size: 13px; }
 
-/* ── toolbar ── */
-.ds-toolbar { height: 52px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 14px; border-bottom: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); position: relative; z-index: 5; }
-.ds-kitchip { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12px; cursor: pointer; white-space: nowrap; border: 1px solid var(--border); background: var(--bg-soft); color: var(--fg-muted); }
-.ds-kitchip.on { border-color: var(--accent-dim, var(--accent)); background: var(--accent-soft); color: var(--fg); font-weight: 600; }
+/* ── search (rail header) + graph-header actions ── */
+/* The former page toolbar (kit switcher · search · actions) was removed when the studio became a
+   Planner tab; the search box now lives under the rail header and .ds-act drives the graph-header
+   fit/Share buttons. */
 .ds-search { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 420px; height: 32px; padding: 0 11px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; }
 .ds-search input { flex: 1; background: none; border: none; color: var(--fg); font-size: 12.5px; font-family: inherit; }
 .ds-search input:focus { outline: none; }
 .ds-kbd { font-family: var(--mono); font-size: 9.5px; color: var(--fg-dim); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
 .ds-act { height: 32px; padding: 0 11px; display: flex; align-items: center; gap: 6px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; color: var(--fg-muted); font-size: 12px; cursor: pointer; }
 .ds-act:hover { border-color: var(--fg-dim); color: var(--fg); }
-.ds-act.accent { background: var(--accent-soft); border-color: var(--accent-dim, var(--accent)); color: var(--accent); font-weight: 500; }
 
 /* ── body + columns ── */
 .ds-body { flex: 1; min-height: 0; display: flex; position: relative; }
@@ -105,6 +104,15 @@
   50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent), 0 6px 20px rgba(0,0,0,.3); }
 }
 .ds-edge path { transition: stroke .12s, fill .12s; }
+
+/* Graph-health badges (#2680) — a corner glyph on a node the analyzer flagged (mirrors `bsc ui
+   doctor`). Colored by severity: cycle/duplicate = danger, dangling = warn, orphan = dim. */
+.ds-node.unhealthy { border-style: dashed; }
+.ds-health { position: absolute; top: -8px; right: -8px; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; border-radius: 50%; background: var(--bg-elev, var(--bg-soft)); border: 1px solid var(--border); z-index: 2; }
+.ds-health-cycle, .ds-health-duplicate { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); }
+.ds-health-dangling-branch { color: var(--state-wait, var(--warning)); border-color: color-mix(in srgb, var(--state-wait, var(--warning)) 55%, var(--border)); }
+.ds-health-orphan { color: var(--fg-dim); }
+.ds-healthcount { font-family: var(--mono); font-size: 10px; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius: 5px; padding: 1px 7px; margin-left: 8px; white-space: nowrap; }
 
 /* ── inspector bits ── */
 .ds-inspbox { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }

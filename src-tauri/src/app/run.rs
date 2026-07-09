@@ -84,6 +84,16 @@ pub fn run() {
             let app_log = logs::app_log_file(app.handle())
                 .unwrap_or_else(|| bsc_base_dir().join("base-studio-code.log"));
             graph_log::install(scope_registry.clone(), app_log.clone());
+            // Force the main window's taskbar/title icon from the icon Tauri embedded from
+            // `bundle.icon` (#2683). A bundled/installed build shows the app icon via the exe's Windows
+            // resource, but under `tauri dev` the debug exe doesn't reliably apply it, so the taskbar
+            // shows a blank square while developing. Re-applying the already-embedded icon at startup
+            // makes dev match the shipped build — no new asset, and it's a no-op elsewhere.
+            if let (Some(win), Some(icon)) = (app.get_webview_window("main"), app.default_window_icon().cloned()) {
+                if let Err(e) = win.set_icon(icon) {
+                    log::warn!("[startup] could not apply window icon: {e}");
+                }
+            }
             // External-write watch: a `bsc log set` from a console session rewrites `log-scopes.json`;
             // poll its mtime and reload the in-memory graph live (cheap stat; read only on a change).
             let reg_poll = scope_registry.clone();
