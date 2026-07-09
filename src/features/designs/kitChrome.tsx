@@ -1,6 +1,6 @@
-// kitChrome (#2420) — the small chrome bits Design Studio and the Planner Components pane both
-// hand-rolled: the role-colored dot and the kit-switcher chip. Shared WITHIN the feature (the two
-// surfaces are different densities of the same library, so the vocabulary must match).
+// kitChrome (#2420) — the small chrome bits this feature hand-rolled: the role-colored dot and the
+// kit-switcher chip. Shared WITHIN the feature. `RoleDot` is used by both Design Studio and the
+// Planner Components pane; `KitChip` is now used only by the Planner Components pane.
 import type { ReactNode, CSSProperties } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
@@ -19,12 +19,12 @@ export function RoleDot({ role, size = 8, glow, style }: { role: Role; size?: nu
   );
 }
 
-/** The kit-switcher chip: the kit's color swatch + name (+ optional trailing count). The two
- *  surfaces keep their own density via their CSS class (`ds-kitchip` / `pcp-kitchip`). */
+/** The kit-switcher chip: the kit's color swatch + name (+ optional trailing count). The caller
+ *  supplies its own density via the `className` (the Planner Components pane passes `pcp-kitchip`). */
 export function KitChip({ kit, on, className, title, onClick, children }: {
   kit: Kit;
   on: boolean;
-  /** The surface's chip class — `ds-kitchip` (studio toolbar) or `pcp-kitchip` (planner pane). */
+  /** The surface's chip class — e.g. `pcp-kitchip` (planner pane). */
   className: string;
   title?: string;
   onClick?: () => void;
