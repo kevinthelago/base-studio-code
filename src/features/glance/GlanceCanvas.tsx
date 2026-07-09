@@ -10,11 +10,16 @@ import { GlancePreviewMorph } from "./GlancePreviewMorph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
 import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory } from "./lib/glanceGraph";
-import { relaxAroundPanel, type MorphRect } from "./lib/glancePush";
+import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { archetypeById, hueColor } from "@/features/org";
 
 const ERR = "var(--graph-health-error)";
 const HEALTH_ROWS: GHealth[] = ["idle", "healthy", "warning", "error"];
+
+// The neighbour-parting motion is driven off the SAME easing + duration as the panel's grow (the
+// `.glance-card` transition in glance.css) — keep these in sync — so the panel growing and the graph
+// parting read as one coordinated motion instead of two clocks racing (the old .2s vs .4s mismatch).
+const MORPH_EASE = ".4s cubic-bezier(.22, .61, .36, 1)";
 
 const REST_N = 0.14, REST_E = 0.06;
 // Project-network (L0) legend rows. The accent buckets are the LIFECYCLE categories (#2583 — what KIND
@@ -69,16 +74,15 @@ export function GlanceCanvas(p: CanvasProps) {
   // backdrop deselect (Glance nodes aren't [data-node]) (#2232).
   const click = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); if (!p.dragMoved.current) fn(); };
 
-  // The open terminal panel's world box (#2662, reported by the morph) — a d3-force relaxation (#2666)
-  // shifts every neighbour that overlaps it out of the way while link springs keep the cluster's relative
-  // distances, so the graph parts COHERENTLY (not node-by-node). Edges of shifted nodes follow.
+  // The open terminal panel's world box (#2662, reported by the morph) — the graph PARTS around it in
+  // four rigid curtains (#2671): every neighbour clears the panel by construction (no clipping) and each
+  // curtain keeps its spacing (no node-into-node clipping). Edges of shifted nodes follow.
   const [morphRect, setMorphRect] = useState<MorphRect | null>(null);
   const nodeById = useMemo(() => new Map(model.nodes.map((n) => [n.id, n])), [model.nodes]);
   const pushMap = useMemo(() => {
     if (!morphRect) return new Map<string, { dx: number; dy: number }>();
-    const links = model.edges.map((e) => ({ source: e.from, target: e.to }));
-    return relaxAroundPanel(model.nodes, links, morphRect, p.chat?.nodeId);
-  }, [morphRect, model.nodes, model.edges, p.chat?.nodeId]);
+    return partAroundPanel(model.nodes, morphRect, p.chat?.nodeId);
+  }, [morphRect, model.nodes, p.chat?.nodeId]);
 
   return (
     <>
@@ -114,8 +118,9 @@ export function GlanceCanvas(p: CanvasProps) {
             }
           }
           // Ease the path only while a panel is open (WebView2/Chromium animates `d`); off otherwise so
-          // normal graph updates (drill/layout) don't animate.
-          const pathTween = morphRect ? "d .2s ease" : undefined;
+          // normal graph updates (drill/layout) don't animate. Matched to the panel's grow (MORPH_EASE)
+          // so a re-routed edge tracks its parting endpoints in lockstep with the panel (#2671).
+          const pathTween = morphRect ? `d ${MORPH_EASE}` : undefined;
           return (
             <g key={e.id} opacity={opacity} onMouseEnter={() => p.onHoverEdge(e.id)} onMouseLeave={() => p.onHoverEdge(null)} onClick={click(() => p.onSelectEdge(e.id))} style={{ cursor: "pointer", transition: "opacity .18s" }}>
               <path d={d} stroke="transparent" strokeWidth={16} fill="none" />
@@ -173,7 +178,8 @@ export function GlanceCanvas(p: CanvasProps) {
           <Box key={n.id} data-glance-node={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
             style={{ position: "absolute", left: n.x, top: n.y, width: NW, height: NH, cursor: "pointer",
               transform: push ? `translate(${push.dx}px, ${push.dy}px)` : undefined,
-              zIndex: selected ? 6 : isError && !inherited ? 5 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: "opacity .18s ease, transform .2s ease" }}>
+              // Part in lockstep with the panel's grow (MORPH_EASE), so the two are one motion (#2671).
+              zIndex: selected ? 6 : isError && !inherited ? 5 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: `opacity .18s ease, transform ${MORPH_EASE}` }}>
             <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${border}`,
               borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
               boxShadow, transition: "border-color .15s, box-shadow .15s" }}>
