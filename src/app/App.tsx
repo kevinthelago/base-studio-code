@@ -69,7 +69,7 @@ export default function App() {
   // (the heavy planner chunk thus loads on first navigation, not at boot — #perf).
   const projectsEverShown = useRef(false);
   if (activeWorkspace === "projects") projectsEverShown.current = true;
-  // Design Studio is no longer a rail Workspace — it's a Planner tab (projectsPageMode "design"), mounted
+  // Design Studio is no longer a rail Workspace — it's a Planner tab (projectsPageMode "designs"), mounted
   // by ProjectsWorkspace, so it rides Projects' keep-mounted treatment and its designer PTY (#2585) still
   // survives screen switches.
 

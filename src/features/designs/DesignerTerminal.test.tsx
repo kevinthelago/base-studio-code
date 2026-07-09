@@ -3,7 +3,7 @@ import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { DesignerTerminal } from "./DesignerTerminal";
 import { DESIGNER_PANE_ID, DESIGNER_ALLOWED_COMMANDS } from "./useDesignerTerminal";
-import { DesignStudio } from "./DesignStudio";
+import { DesignsWorkbench } from "./DesignsWorkbench";
 import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
 import { useAppStore } from "@/store";
 
@@ -133,13 +133,13 @@ describe("useDesignerTerminal launch wiring (#2471)", () => {
   });
 });
 
-describe("DesignStudio always-on designer panel (#2597)", () => {
+describe("DesignsWorkbench always-on designer panel (#2597)", () => {
   beforeEach(() => {
     useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS });
   });
 
   it("mounts the designer session immediately, docked in the center column, with no toggle button", async () => {
-    render(<DesignStudio />);
+    render(<DesignsWorkbench />);
     // Present from the first render — no ✦ Designer button gates it; the panel is docked in the
     // center column (below the graph), not a full-width overlay, and it spawns exactly one PTY.
     const panel = screen.getByTestId("designer-terminal");
