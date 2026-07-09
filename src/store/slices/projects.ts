@@ -5,7 +5,7 @@ import type { AppStore } from "../types";
 import type { Tab } from "@/app/chrome/Tabstrip";
 import type { Workspace } from "@/app/chrome/Rail";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
-import { newTabId, buildAssignments, buildStreamPrompt, activateAutomations } from "../helpers";
+import { newTabId, buildAssignments, buildStreamPrompt, activateAutomations, gridLayout } from "../helpers";
 import { buildTriagePrompt, renderTriageDelta } from "../constants";
 import { invoke } from "@tauri-apps/api/core";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
@@ -30,7 +30,8 @@ import { resolveStartupPrompt } from "@/shared/lib/session/assignments";
 import { effectiveSessionSkills, expandGroups } from "@/features/skills/lib/skills";
 import { resolveStrategy, strategySettings } from "@/features/planner/lib/integrationStrategy";
 import { scriptDocRelpath } from "@/features/planner/session/planningSession";
-import { setMapEntry, deleteMapEntry, deleteMapEntries } from "../updateHelpers";
+import { setMapEntry, deleteMapEntry } from "../updateHelpers";
+import { deleteProjectScoped, rekeyProjectScoped } from "./projectScopedMaps";
 import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 import { bscJson } from "@/shared/lib/core/bsc";
 
@@ -46,14 +47,9 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // GitHub node id. Each is dropped as-is (the node-id → key alias is retired; the key is
           // derivable from the name, so there is nothing to resolve through).
           const keySet = new Set(keys.filter(Boolean) as string[]);
-          // Drop entries whose key is the project key. `m ?? {}` guards a slice that's
-          // missing/null in a long-lived persisted store — `Object.entries(undefined)`
-          // would throw and (without a boundary) crash the whole app on delete (#874).
-          const byKey = <T,>(m: Record<string, T>): Record<string, T> =>
-            deleteMapEntries(m ?? {}, keySet);
-          // Drop repo-scoped entries (`<projectKey>::<repo>`) for this project.
-          const byRepoKey = <T,>(m: Record<string, T>): Record<string, T> =>
-            Object.fromEntries(Object.entries(m ?? {}).filter(([k]) => !keySet.has(k.split("::")[0])));
+          // Every per-project + repo-scoped map to drop is registered in projectScopedMaps.ts
+          // (#2712) — `deleteProjectScoped` drops `keySet` from exactly the maps in the `"delete"`
+          // op set (guarding each `?? {}` for a missing/null persisted slice, #874).
           // Clear the active project AND the planning session when the deleted project is either.
           // The Planning pane is mounted once (only CSS-hidden); if `planningSessionKey` still points
           // at the deleted project, its `effectiveProjectId` keeps resolving there and it renders
@@ -63,21 +59,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             (s.activeProjectId != null && keySet.has(s.activeProjectId)) ||
             (!!s.planningSessionKey && keySet.has(s.planningSessionKey));
           return {
-            planStages:           byKey(s.planStages),
-            planConfirmedStages:  byKey(s.planConfirmedStages),
-            planAuthoredBlueprint:  byKey(s.planAuthoredBlueprint),
-            planDeployConfig:       byKey(s.planDeployConfig),
-            planMarketConfig:       byKey(s.planMarketConfig),
-            planTransformations:    byKey(s.planTransformations),
-            planSkippedStages:    byKey(s.planSkippedStages),
-            planAutomations:        byKey(s.planAutomations),
-            planStageConfig:        byKey(s.planStageConfig),
-            projectBlueprintId:     byKey(s.projectBlueprintId),
-            uiScreens:              byKey(s.uiScreens),
-            uiApproved:             byKey(s.uiApproved),
-            planFleet:              byKey(s.planFleet),
-            pinnedContext:          byKey(s.pinnedContext),
-            issueLinks:             byKey(s.issueLinks),
+            ...deleteProjectScoped(s, keySet),
             // Drop the deleted project id from every extension's scope list. `projects` may be
             // undefined (a def added without it, or persisted data predating the field) — guard,
             // or `.filter` throws and crashes the app on delete (#791).
@@ -85,14 +67,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             hooks:                  (s.hooks ?? []).map((e) => ({ ...e, projects: (e.projects ?? []).filter((p) => !keySet.has(p)) })),
             // …and from every skill's scope list.
             skills:                 (s.skills ?? []).map((sk) => ({ ...sk, projects: (sk.projects ?? []).filter((p) => !keySet.has(p)) })),
-            projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
-            autoTriage:             byKey(s.autoTriage),
-            triagedProjects:        byKey(s.triagedProjects),
-            autoKitDispatch:        byKey(s.autoKitDispatch),
-            projectLocalRepos:      byKey(s.projectLocalRepos),
-        localDraftProjects:     byKey(s.localDraftProjects),
-            repoStartupPromptDoc:   byRepoKey(s.repoStartupPromptDoc),
-            repoTriagePromptDoc:    byRepoKey(s.repoTriagePromptDoc),
             ...(clearActive
               ? { activeProjectId: null, activeProjectName: "", activeProjectRepo: "", activeProjectNumber: 0, activeProjectRepos: [], planningSessionKey: "", projectsView: "list" as const }
               : {}),
@@ -182,26 +156,9 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
       rekeyProjectData: (oldKey, newKey) =>
         set((s) => {
           if (!oldKey || !newKey || oldKey === newKey) return {};
-          // Move a per-project map entry `oldKey` → `newKey`; drop the old entry when the target
-          // already exists. `m ?? {}` guards persisted stores predating a slice (#874).
-          const byKey = <T,>(m: Record<string, T>): Record<string, T> => {
-            const src = m ?? {};
-            if (!(oldKey in src)) return src;
-            const { [oldKey]: moved, ...rest } = src;
-            return newKey in src ? rest : { ...rest, [newKey]: moved };
-          };
-          // Repo-scoped (`<key>::<repo>`) maps: re-prefix each entry, target-wins on collision.
-          const byRepoKey = <T,>(m: Record<string, T>): Record<string, T> => {
-            const src = m ?? {};
-            const out: Record<string, T> = {};
-            for (const [k, v] of Object.entries(src)) {
-              const idx = k.indexOf("::");
-              if (idx < 0 || k.slice(0, idx) !== oldKey) { out[k] = v; continue; }
-              const nk = newKey + k.slice(idx);
-              if (!(nk in src)) out[nk] = v;
-            }
-            return out;
-          };
+          // Every per-project + repo-scoped map to move is registered in projectScopedMaps.ts
+          // (#2712) — `rekeyProjectScoped` moves `oldKey` → `newKey` (target-wins) across exactly
+          // the maps in the `"rekey"` op set, guarding `?? {}` per persisted slice (#874).
           // Extension/skill scope lists: swap the key in place (dedup if both forms were present).
           const scoped = <E extends { projects?: string[] }>(list: E[]): E[] =>
             (list ?? []).map((e) => ({
@@ -209,34 +166,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
               projects: [...new Set((e.projects ?? []).map((p) => (p === oldKey ? newKey : p)))],
             }));
           return {
-            planStages:             byKey(s.planStages),
-            planConfirmedStages:    byKey(s.planConfirmedStages),
-            planAuthoredBlueprint:  byKey(s.planAuthoredBlueprint),
-            planDeployConfig:       byKey(s.planDeployConfig),
-            planMarketConfig:       byKey(s.planMarketConfig),
-            planTransformations:    byKey(s.planTransformations),
-            planSkippedStages:      byKey(s.planSkippedStages),
-            planAutomations:        byKey(s.planAutomations),
-            planStageConfig:        byKey(s.planStageConfig),
-            projectBlueprintId:     byKey(s.projectBlueprintId),
-            uiScreens:              byKey(s.uiScreens),
-            uiApproved:             byKey(s.uiApproved),
-            planFleet:              byKey(s.planFleet),
-            planFleetTopology:      byKey(s.planFleetTopology),
-            planFleetDirectorDrive: byKey(s.planFleetDirectorDrive),
-            planSourceConfig:       byKey(s.planSourceConfig),
-            planIntegrationConfig:  byKey(s.planIntegrationConfig),
-            loadVerified:           byKey(s.loadVerified),
-            pinnedContext:          byKey(s.pinnedContext),
-            issueLinks:             byKey(s.issueLinks),
-            projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
-            autoTriage:             byKey(s.autoTriage),
-            triagedProjects:        byKey(s.triagedProjects),
-            autoKitDispatch:        byKey(s.autoKitDispatch),
-            projectLocalRepos:      byKey(s.projectLocalRepos),
-            localDraftProjects:     byKey(s.localDraftProjects),
-            repoStartupPromptDoc:   byRepoKey(s.repoStartupPromptDoc),
-            repoTriagePromptDoc:    byRepoKey(s.repoTriagePromptDoc),
+            ...rekeyProjectScoped(s, oldKey, newKey),
             mcpServers:             scoped(s.mcpServers),
             hooks:                  scoped(s.hooks),
             skills:                 scoped(s.skills),
@@ -318,8 +248,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
           const addedAutos = activateAutomations(s, projectId, tabName);
           const count = Math.min(repos.length, 16);
-          const cols = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 2 : count <= 9 ? 3 : 4;
-          const rows = Math.ceil(count / cols);
+          const { cols, rows } = gridLayout(count);
           const layout = `${cols}×${rows}`;
           const newPaneCwds     = { ...s.paneCwds };
           const newPaneInitCmds = { ...s.paneInitCmds };
@@ -548,8 +477,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             // one repo — the old shared-cwd hazard is gone.
             const resume = existingIdx >= 0;
             const count = chunk.length;
-            const cols = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 2 : count <= 9 ? 3 : 4;
-            const rows = Math.ceil(count / cols);
+            const { cols, rows } = gridLayout(count);
             const layout = `${cols}×${rows}`;
             const paneCount = cols * rows;
             const tabPaneNames: Record<number, string> = {};
