@@ -20,6 +20,7 @@ import { KitChangesCard, SeedNoticesCard } from "./KitChangesCard";
 import { DesignerTerminal } from "./DesignerTerminal";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Button } from "@/shared/ui/controls/Button";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { SearchField } from "@/shared/ui/controls/SearchField";
@@ -186,7 +187,7 @@ export function DesignsWorkbench() {
         {/* left rail — the kits · components list */}
         <Box className="ds-col ds-rail" style={{ width: rail.size, flexBasis: rail.size }}>
           <Box className="ds-colhead">
-            <Text className="ds-eyebrow" as="span">Kits · Components</Text>
+            <Eyebrow size={9.5}>Kits · Components</Eyebrow>
             <Text mono size="xxs" tone="dim">{kitComps.length} comps</Text>
           </Box>
           {/* search — sits under the rail header */}
@@ -301,7 +302,7 @@ function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect, onS
       canvasBackground="var(--bg-canvas, var(--bg))"
       toolbar={
         <>
-          <Text className="ds-eyebrow" as="span">Composition graph · {kitName}</Text>
+          <Eyebrow size={9.5}>Composition graph · {kitName}</Eyebrow>
           {findingsCount > 0 && (
             <Text as="span" className="ds-healthcount" title="Graph-health findings — the same set `bsc ui doctor` reports (#2680)">
               ⚠ {findingsCount} health finding{findingsCount === 1 ? "" : "s"}
@@ -380,7 +381,7 @@ function Inspector(p: InspProps) {
   return (
     <Box className="ds-col ds-insp" style={{ width: p.width, flexBasis: p.width }}>
       <Box className="ds-colhead">
-        <Text className="ds-eyebrow" as="span">Inspector</Text>
+        <Eyebrow size={9.5}>Inspector</Eyebrow>
         <Text size={10} tone="dim" style={{ display: "flex", alignItems: "center", gap: 5 }}><StatusDot color="var(--success)" size={6} />editable</Text>
       </Box>
       {!sel ? (
@@ -400,7 +401,7 @@ function Inspector(p: InspProps) {
           {/* live preview — folded in from the removed Library center view (#2453) */}
           <Box className="ds-preview">
             <Box className="ds-prevctl">
-              <Text className="ds-eyebrow" as="span">Live preview</Text>
+              <Eyebrow size={9.5}>Live preview</Eyebrow>
               <SegmentedControl label="" options={p.allVariants.map((v) => ({ label: v, on: v === p.activeVariant, onClick: () => p.setVariant(v) }))} />
               <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === p.vp, onClick: () => p.setVpKind(k) }))} />
               {/* THEME switcher (#2488/#2545): the ONE theme control — the hydrated theme collection
