@@ -79,6 +79,22 @@ describe("SkillsWorkspace — left-nav Groups section (#skills-groups-nav)", () 
     expect(st.skills.length).toBe(4);
     confirmSpy.mockRestore();
   });
+
+  it("the Groups section is collapsible — clicking its header hides/reveals the rows (#2803)", () => {
+    render(<SkillsWorkspace />);
+    expect(screen.getByText("Release day")).toBeTruthy();  // sections default open
+    fireEvent.click(screen.getByText("⬡ Groups"));          // collapse
+    expect(screen.queryByText("Release day")).toBeNull();
+    fireEvent.click(screen.getByText("⬡ Groups"));          // expand again
+    expect(screen.getByText("Release day")).toBeTruthy();
+  });
+
+  it("'＋ New group' opens the dialog WITHOUT collapsing the section (stop-propagation, #2803)", () => {
+    render(<SkillsWorkspace />);
+    fireEvent.click(screen.getByText("＋ New group"));
+    expect(screen.getByText("New task group")).toBeTruthy(); // dialog opened
+    expect(screen.getByText("Release day")).toBeTruthy();    // section stayed open
+  });
 });
 
 describe("SkillsWorkspace — distinct grouped / kind sections", () => {
