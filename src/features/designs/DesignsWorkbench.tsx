@@ -21,7 +21,6 @@ import { KitShareModal } from "./KitShareModal";
 import { KitChangesCard, SeedNoticesCard } from "./KitChangesCard";
 import { DesignerTerminal } from "./DesignerTerminal";
 import { Box } from "@/shared/ui/layout/Box";
-import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Button } from "@/shared/ui/controls/Button";
@@ -31,6 +30,7 @@ import { Chip } from "@/shared/ui/data/Chip";
 import { Code } from "@/shared/ui/data/Code";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
+import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { useGraphPage } from "@/shared/ui/layouts/useGraphPage";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 import { selectionNeighborhood } from "@/shared/lib/graph/selectionNeighborhood";
@@ -226,13 +226,10 @@ export function DesignsWorkbench() {
           </>
         }
         rail={
-          <Stack gap={0} style={{ flex: 1, minWidth: 0, borderRight: "1px solid var(--border)", background: "var(--bg-elev, var(--bg-soft))", minHeight: 0 }}>
-            <Box className="ds-colhead">
-              <Eyebrow size={9.5}>Kits · Components</Eyebrow>
-              <Text mono size="xxs" tone="dim">{kitComps.length} comps</Text>
-            </Box>
-            {/* search — sits under the rail header */}
-            <Box style={{ flex: "none", padding: "8px 8px 0" }}>
+          <GraphRail
+            label="Kits · Components"
+            count={`${kitComps.length} comps`}
+            tools={
               <SearchField
                 value={query}
                 onChange={setQuery}
@@ -240,15 +237,14 @@ export function DesignsWorkbench() {
                 aria-label="Search components"
                 style={{ width: "100%", maxWidth: 420 }}
               />
-            </Box>
-            <Box className="ds-scroll" style={{ flex: 1, padding: "8px 8px 16px" }}>
-              <RailTree
-                railTree={railTree} expanded={expanded} setExpanded={setExpanded}
-                kitId={kitId} setKitId={setKitId} compId={compId}
-                components={components} match={match} selectComp={selectComp} query={query}
-              />
-            </Box>
-          </Stack>
+            }
+          >
+            <RailTree
+              railTree={railTree} expanded={expanded} setExpanded={setExpanded}
+              kitId={kitId} setKitId={setKitId} compId={compId}
+              components={components} match={match} selectComp={selectComp} query={query}
+            />
+          </GraphRail>
         }
         // Details pane — rendered ONLY when a component is focused (#2705); clicking the canvas unfocuses
         // and the inspector (with its splitter) disappears, giving the graph the full width.
