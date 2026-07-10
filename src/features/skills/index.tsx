@@ -29,6 +29,8 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
+import { RailRow } from "@/shared/ui/layouts/RailRow";
+import { RailGroupHeader } from "@/shared/ui/layouts/RailGroupHeader";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
@@ -238,45 +240,51 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
           {/* Body */}
           <Row align="stretch" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-            {/* Facet column */}
-            <Box bg="var(--bg-canvas)" style={{ flex: "0 0 200px", overflowY: "auto", borderRight: "1px solid var(--border-soft)", padding: "14px 14px 40px 18px" }}>
+            {/* Facet column — the left-nav filter panel. Its section headers + rows render through the
+                shared RailRow / RailGroupHeader nav primitives (#2789), the same components the graph
+                rails (Teams · Designs · Algorithms) use, for one consistent left-pane look. */}
+            <Box bg="var(--bg-canvas)" style={{ flex: "0 0 200px", overflowY: "auto", borderRight: "1px solid var(--border-soft)", padding: "14px 10px 40px 10px" }}>
               {/* Groups — the task-group selector (single-select, like the old quick-filter). */}
               <Box style={{ marginBottom: 18 }}>
-                <Row gap={6} style={{ marginBottom: 8 }}>
-                  <Text as="span" mono size={9.5} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".08em" }}>⬡ Groups</Text>
-                  <Box as="span" style={{ flex: 1 }} />
-                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke borderless text link in a facet header, not a .btn control */}
-                  <button onClick={() => setAddGroupOpen(true)} title="New group" style={{ background: "none", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 11, padding: 0 }}>＋ New group</button>
-                </Row>
+                <RailGroupHeader
+                  action={
+                    // eslint-disable-next-line no-restricted-syntax -- bespoke borderless text link in a facet header, not a .btn control
+                    <button onClick={() => setAddGroupOpen(true)} title="New group" style={{ background: "none", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 11, padding: 0 }}>＋ New group</button>
+                  }
+                >
+                  ⬡ Groups
+                </RailGroupHeader>
                 {/* "All" / clear row */}
-                <Row onClick={() => setGroupFilter(null)} gap={8} style={{ padding: "3px 0", cursor: "pointer" }}>
-                  <Text as="span" size={11} style={{ width: 13, textAlign: "center", color: !groupFilter ? "var(--accent)" : "var(--fg-dim)" }}>≡</Text>
-                  <Text as="span" size={12} style={{ color: !groupFilter ? "var(--fg)" : "var(--fg-muted)", fontWeight: !groupFilter ? 600 : 400 }}>All</Text>
-                  <Box as="span" style={{ flex: 1 }} />
-                  <Text as="span" mono size={10} tone="dim">{merged.length}</Text>
-                </Row>
+                <RailRow active={!groupFilter} onClick={() => setGroupFilter(null)}
+                  leading={<Box as="span" style={{ width: 13, textAlign: "center", color: !groupFilter ? "var(--accent)" : "var(--fg-dim)" }}>≡</Box>}
+                  trailing={<Text as="span" mono size={10} tone="dim">{merged.length}</Text>}>
+                  All
+                </RailRow>
                 {skillGroups.map((g) => { const active = groupFilter === g.id; return (
-                  <Row key={g.id} data-group-id={g.id} onClick={() => setGroupFilter((v) => (v === g.id ? null : g.id))} gap={8} style={{ padding: "3px 0", cursor: "pointer" }}>
-                    <Text as="span" size={11} style={{ width: 13, textAlign: "center", color: g.hue }}>⬡</Text>
-                    <Text as="span" size={12} style={{ color: active ? g.hue : "var(--fg)", fontWeight: active ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</Text>
-                    {active && <Text as="span" tone="danger" size={11} title="Delete group" onClick={(e: React.MouseEvent) => { e.stopPropagation(); if (confirm("Delete this group? Skills are not deleted.")) { removeSkillGroup(g.id); setGroupFilter(null); } }} style={{ cursor: "pointer" }}>✕</Text>}
-                    <Box as="span" style={{ flex: 1 }} />
-                    <Text as="span" mono size={10} tone="dim">{groupSkillCount(g, skills)}</Text>
-                  </Row>
+                  <RailRow key={g.id} data-group-id={g.id} active={active}
+                    onClick={() => setGroupFilter((v) => (v === g.id ? null : g.id))}
+                    leading={<Box as="span" style={{ width: 13, textAlign: "center", color: g.hue }}>⬡</Box>}
+                    trailing={<>
+                      {active && <Text as="span" tone="danger" size={11} title="Delete group" onClick={(e: React.MouseEvent) => { e.stopPropagation(); if (confirm("Delete this group? Skills are not deleted.")) { removeSkillGroup(g.id); setGroupFilter(null); } }} style={{ cursor: "pointer" }}>✕</Text>}
+                      <Text as="span" mono size={10} tone="dim">{groupSkillCount(g, skills)}</Text>
+                    </>}>
+                    {g.name}
+                  </RailRow>
                 ); })}
                 {skillGroups.length === 0 && <Text as="div" size={10.5} tone="dim" style={{ padding: "2px 0", lineHeight: 1.4 }}>No groups yet — bundle related skills into a group.</Text>}
               </Box>
               {facetDefs.map((f) => (
                 <Box key={f.key} style={{ marginBottom: 18 }}>
-                  <Text as="div" mono size={9.5} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>{f.title}</Text>
+                  <RailGroupHeader>{f.title}</RailGroupHeader>
                   {f.options.map((o) => { const on = facetSel[f.key]?.has(o.value) ?? false; return (
-                    <Row key={o.value} onClick={() => toggleFacet(f.key, o.value)} gap={8} style={{ padding: "3px 0", cursor: "pointer" }}>
-                      <Checkbox checked={on} />
-                      {o.glyph && <Text as="span" mono size={11} style={{ color: o.color, width: 13, textAlign: "center" }}>{o.glyph}</Text>}
-                      <Text as="span" size={12} style={{ color: "var(--fg)", textTransform: "capitalize" }}>{o.label}</Text>
-                      <Box as="span" style={{ flex: 1 }} />
-                      <Text as="span" mono size={10} tone="dim">{o.count}</Text>
-                    </Row>
+                    <RailRow key={o.value} onClick={() => toggleFacet(f.key, o.value)}
+                      leading={<>
+                        <Checkbox checked={on} />
+                        {o.glyph && <Box as="span" style={{ fontFamily: "var(--mono)", fontSize: 11, color: o.color, width: 13, textAlign: "center" }}>{o.glyph}</Box>}
+                      </>}
+                      trailing={<Text as="span" mono size={10} tone="dim">{o.count}</Text>}>
+                      <Box as="span" style={{ textTransform: "capitalize" }}>{o.label}</Box>
+                    </RailRow>
                   ); })}
                 </Box>
               ))}
