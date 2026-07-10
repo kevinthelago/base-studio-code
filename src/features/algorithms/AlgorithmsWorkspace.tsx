@@ -9,6 +9,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Button } from "@/shared/ui/controls/Button";
+import { TextField } from "@/shared/ui/controls/Field";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { AlgorithmsCanvas } from "./AlgorithmsCanvas";
@@ -18,6 +19,8 @@ import {
   KNOWLEDGE, KIND_ORDER, KIND_META, TECHS, TECH_META, NODE_W, NODE_H, layoutKnowledge, neighborsOf, nodeIndex,
   type KnowledgeKind, type Tech,
 } from "./lib/knowledge";
+import { runExtract } from "./lib/extractionBridge";
+import { sitesByConcept, siteCounts, duplicateConcepts, type ExtractResult } from "./lib/extraction";
 import "./algorithms.css";
 
 export function AlgorithmsWorkspace() {
@@ -28,6 +31,10 @@ export function AlgorithmsWorkspace() {
   const [selected, setSelected] = useState<string | null>(null);
   const [activeKinds, setActiveKinds] = useState<Set<KnowledgeKind>>(() => new Set(KIND_ORDER));
   const [activeTech, setActiveTech] = useState<Tech>(TECHS[0]);
+  // The extracted-from-code reality lift (#2777) — `null` until a scan runs (or the bridge is absent),
+  // in which case NO dedup badges show.
+  const [extract, setExtract] = useState<ExtractResult | null>(null);
+  const [scanPath, setScanPath] = useState("");
 
   const lit = useMemo(() => (selected ? neighborsOf(graph, selected) : null), [graph, selected]);
   // The concept ids that carry an implementation in the active tech — drives the node "</>" badge.
@@ -35,6 +42,20 @@ export function AlgorithmsWorkspace() {
     () => new Set(graph.implementations.filter((im) => im.tech === activeTech).map((im) => im.concept)),
     [graph.implementations, activeTech],
   );
+  // The extraction lens (#2777): concept → real-site count + the >1-site (duplicate) set drive the node
+  // dedup badge; the selected concept's sites feed the inspector's "Implementations found" list.
+  const siteCountMap = useMemo(() => (extract ? siteCounts(extract) : null), [extract]);
+  const dupConcepts = useMemo(() => (extract ? duplicateConcepts(extract) : null), [extract]);
+  const selectedSites = useMemo(
+    () => (extract && selected ? sitesByConcept(extract).get(selected) ?? [] : []),
+    [extract, selected],
+  );
+
+  const runScan = () => {
+    const dir = scanPath.trim();
+    if (!dir) return;
+    runExtract(dir, activeTech).then(setExtract);
+  };
 
   const vp = useGraphViewport(layout.world, { contentBounds: () => layout.bounds });
   // Frame the content on first mount (the ref callback has set the viewport element by commit time).
@@ -83,6 +104,17 @@ export function AlgorithmsWorkspace() {
         })}
       </Row>
       <Box style={{ flex: 1 }} />
+      <Row gap={6} align="center" title="Scan a directory — count real implementations per concept (#2777)">
+        <TextField
+          value={scanPath}
+          onChange={setScanPath}
+          placeholder="path to scan…"
+          aria-label="Path to scan"
+          style={{ width: 180 }}
+          onKeyDown={(e) => { if (e.key === "Enter") runScan(); }}
+        />
+        <Button size="sm" onClick={runScan}>Scan</Button>
+      </Row>
       <ZoomControls vp={vp} />
       <Button size="sm" variant="ghost" onClick={vp.fit}>Fit</Button>
     </>
@@ -97,12 +129,12 @@ export function AlgorithmsWorkspace() {
       rail={<AlgorithmsRail graph={graph} selected={selected} onSelect={selectFromRail} />}
       railResizable
       railWidth={230}
-      inspector={<AlgorithmsInspector graph={graph} selected={selected ? byId.get(selected) ?? null : null} activeTech={activeTech} onSelectNode={setSelected} />}
+      inspector={<AlgorithmsInspector graph={graph} selected={selected ? byId.get(selected) ?? null : null} activeTech={activeTech} sites={selectedSites} onSelectNode={setSelected} />}
       inspectorResizable
       inspectorWidth={340}
       onBackgroundClick={() => setSelected(null)}
     >
-      <AlgorithmsCanvas graph={graph} layout={layout} selected={selected} lit={lit} activeKinds={activeKinds} implConcepts={implConcepts} onSelect={setSelected} />
+      <AlgorithmsCanvas graph={graph} layout={layout} selected={selected} lit={lit} activeKinds={activeKinds} implConcepts={implConcepts} siteCounts={siteCountMap ?? undefined} dupConcepts={dupConcepts ?? undefined} onSelect={setSelected} />
     </GraphCanvas>
   );
 }

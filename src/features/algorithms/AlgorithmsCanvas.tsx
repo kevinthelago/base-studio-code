@@ -33,10 +33,15 @@ interface CanvasProps {
   activeKinds: Set<KnowledgeKind>;
   /** Concept ids with an implementation in the active tech (#2770) — badged with a "</>" corner. */
   implConcepts?: Set<string>;
+  /** concept id → count of REAL implementation sites `bsc graph extract` found (#2777). A concept with
+   *  `>= 1` gets a bottom-right count badge, painted a WARNING tone when it's in `dupConcepts`. */
+  siteCounts?: Map<string, number>;
+  /** The concept ids implemented at >1 site (#2777) — the dedup warning set. */
+  dupConcepts?: Set<string>;
   onSelect: (id: string) => void;
 }
 
-export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, implConcepts, onSelect }: CanvasProps) {
+export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, implConcepts, siteCounts, dupConcepts, onSelect }: CanvasProps) {
   // Edge geometry is a function of the (stable) layout only — compute once. `bow` separates parallel
   // edges between the same pair so multiple relationships don't overdraw.
   const geoms = useMemo<EdgeGeom[]>(() => {
@@ -96,6 +101,8 @@ export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, im
         if (!p) return null;
         const active = nodeActive(n.id, n.kind);
         const meta = n.complexity ?? KIND_META[n.kind].label;
+        const siteCount = siteCounts?.get(n.id) ?? 0;
+        const dup = !!dupConcepts?.has(n.id);
         return (
           <Box
             key={n.id}
@@ -107,6 +114,18 @@ export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, im
             <Box as="span" className="algo-name">{n.name}</Box>
             <Box as="span" className="algo-meta">{meta}</Box>
             {implConcepts?.has(n.id) && <Box as="span" className="algo-impl-badge mono" title="Has an implementation in the active language">{"</>"}</Box>}
+            {siteCount >= 1 && (
+              <Box
+                as="span"
+                className="algo-dedup-badge mono"
+                style={dup ? { color: "var(--state-wait)", borderColor: "var(--state-wait)" } : undefined}
+                title={dup
+                  ? `${siteCount} implementations found in code — duplicated across ${siteCount} sites`
+                  : `${siteCount} implementation found in code`}
+              >
+                {siteCount}
+              </Box>
+            )}
           </Box>
         );
       })}
