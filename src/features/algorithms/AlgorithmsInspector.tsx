@@ -14,16 +14,20 @@ import {
   implsForConcept, implFor, implById, usedByImpl,
   type KnowledgeGraph, type KnowledgeNode, type KnowledgeRel, type Tech, type AlgoImpl,
 } from "./lib/knowledge";
+import type { ExtractSite } from "./lib/extraction";
 
 const REL_ORDER: KnowledgeRel[] = ["operates-on", "composes", "variant-of", "generates", "related-to"];
 
 const PANEL = { width: "100%", height: "100%", borderLeft: "1px solid var(--border)", overflowY: "auto", background: "var(--bg-panel)" } as const;
 
-export function AlgorithmsInspector({ graph, selected, activeTech, onSelectNode }: {
+export function AlgorithmsInspector({ graph, selected, activeTech, sites, onSelectNode }: {
   graph: KnowledgeGraph;
   selected: KnowledgeNode | null;
   /** The implementation tech (#2770) whose code + composition the impl section shows. */
   activeTech: Tech;
+  /** The REAL implementation sites `bsc graph extract` found for the selected concept (#2777) — listed
+   *  below the relationships when non-empty; nothing when absent (no scan run, or none found). */
+  sites?: ExtractSite[];
   onSelectNode: (id: string) => void;
 }) {
   if (!selected) {
@@ -94,6 +98,23 @@ export function AlgorithmsInspector({ graph, selected, activeTech, onSelectNode 
                 </Stack>
               );
             })}
+          </Stack>
+        )}
+
+        {sites && sites.length > 0 && (
+          <Stack gap={6}>
+            <Eyebrow size={10}>Implementations found · {sites.length}</Eyebrow>
+            <Stack gap={4}>
+              {sites.map((s, i) => (
+                <Row key={`${s.file}:${s.line}:${i}`} gap={6} align="center" style={{ minWidth: 0 }}>
+                  <Text as="span" mono size="xxs" tone="accent" style={{ flex: "none" }}>{s.tech}</Text>
+                  <Text as="span" mono size="xxs" tone="dim" title={`${s.file}:${s.line}`}
+                    style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {s.file}:{s.line}
+                  </Text>
+                </Row>
+              ))}
+            </Stack>
           </Stack>
         )}
 

@@ -64,6 +64,30 @@
   pointer-events: none;
 }
 
+/* The extracted-from-code implementation-count badge (#2777) — how many REAL implementations
+   `bsc graph extract` found for this concept. Sits BOTTOM-right (distinct from the top-right "</>"
+   impl badge) so both can show at once. Neutral by default; the Canvas paints it a WARNING tone via
+   inline style when the concept is a DUPLICATE (>1 site) — the headline dedup signal. */
+.algo-dedup-badge {
+  position: absolute;
+  bottom: 5px;
+  right: 7px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--fg-dim);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
 /* Left-rail concept rows (#2773) — grouped by kind, click selects + centers. */
 .algo-railrow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; background: transparent; cursor: pointer; }
 .algo-railrow:hover { background: var(--bg-soft); }
