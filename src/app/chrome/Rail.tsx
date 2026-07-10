@@ -17,7 +17,6 @@ export function Rail({ active, onNavigate }: RailProps) {
   const destinations = WORKSPACES.filter((w) => w.key !== "console" || showConsolePage);
   return (
     <Box className="rail">
-      <Box className="logo">b.</Box>
       {destinations.map(({ key, Icon, label }) => (
         // eslint-disable-next-line no-restricted-syntax -- bespoke rail nav button (styled by the `.rail button` CSS selector, not the .btn kit)
         <button
