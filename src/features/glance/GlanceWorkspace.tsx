@@ -23,6 +23,8 @@ import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
+import { RailRow } from "@/shared/ui/layouts/RailRow";
+import { SearchField } from "@/shared/ui/controls/SearchField";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { Fleet } from "@/features/planner/fleet/Fleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
@@ -281,10 +283,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
               breadcrumb (which project's fleet you're in) stays; the '← projects' button exits it. */}
           {drill && <Text as="span" mono size={11} tone="dim">{`${drillNode?.slug ?? "project"} · fleet`}</Text>}
           {drill && <Button variant="ghost" onClick={exitDrill}>← projects</Button>}
-          {/* eslint-disable-next-line no-restricted-syntax -- compact search input; a full Field is overkill in the toolbar */}
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter projects…" className="input"
-            style={{ width: 240, fontFamily: "var(--mono)", fontSize: 12, background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 11px" }} />
-          {/* Manual connect-mode was removed (#2737 direction): project links are LLM-authored, not drawn
+          {/* The project filter moved into the rail's search slot (#2797) — every graph nav menu now leads
+              with a search box. Manual connect-mode was removed (#2737): links are LLM-authored, not drawn
               by hand. The graph is configured by the planner/agents, never wired manually here. */}
           <Box style={{ flex: 1 }} />
           {drill
@@ -305,10 +305,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         </>
       }
       rail={
+        // Headerless graph-nav menu (#2797): the project/agent filter leads the rail as a search box;
+        // the coordination-hazards footer stays pinned below.
         <GraphRail
-          label={drill ? "AGENTS" : "PROJECTS"}
-          count={model.nodes.length}
-          bodyPad="0 8px 8px"
+          tools={<SearchField value={search} onChange={setSearch} placeholder={drill ? "Filter agents…" : "Filter projects…"} aria-label="Filter projects" style={{ width: "100%" }} />}
           footer={model.cyclePairs.length > 0 ? (
             <Box style={{ borderTop: "1px solid var(--border)", padding: "12px 16px" }}>
               <Row gap={7} align="center" style={{ marginBottom: 9 }}>
@@ -327,20 +327,22 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         >
           {sidebar.map((n) => {
             const st = HEALTH_META[n.rollupHealth];
-            const on = selNodeId === n.id || hoverNode === n.id;
             return (
-              <Row key={n.id} gap={9} align="center" onClick={() => onNodeClick(n.id)} onMouseEnter={() => setHoverNode(n.id)} onMouseLeave={() => setHoverNode(null)}
-                style={{ padding: "8px 9px", borderRadius: 7, cursor: "pointer", background: on ? "var(--bg-soft)" : "transparent", border: `1px solid ${on ? "var(--border)" : "transparent"}` }}>
-                <StatusDot color={st.color} size={7} style={{ boxShadow: st.pulse ? `0 0 7px ${st.color}` : "none" }} />
-                <Text as="span" mono size={12} style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
-                {(n.faults ?? 0) > 0 && (
-                  <Text as="span" mono size={9.5} weight={700} title={`${n.faults} unresolved runtime faults`}
-                    style={{ flex: "none", color: "#fff", background: "var(--graph-health-error)", borderRadius: 8, padding: "1px 5px", minWidth: 15, textAlign: "center" }}>
-                    {(n.faults ?? 0) > 99 ? "99+" : n.faults}
-                  </Text>
-                )}
-                <Box style={{ width: 8, height: 3, borderRadius: 2, background: ROLE_COLOR[n.role], flex: "none" }} />
-              </Row>
+              <RailRow key={n.id} active={selNodeId === n.id}
+                onClick={() => onNodeClick(n.id)}
+                onMouseEnter={() => setHoverNode(n.id)} onMouseLeave={() => setHoverNode(null)}
+                leading={<StatusDot color={st.color} size={7} style={{ boxShadow: st.pulse ? `0 0 7px ${st.color}` : "none" }} />}
+                trailing={<>
+                  {(n.faults ?? 0) > 0 && (
+                    <Text as="span" mono size={9.5} weight={700} title={`${n.faults} unresolved runtime faults`}
+                      style={{ flex: "none", color: "#fff", background: "var(--graph-health-error)", borderRadius: 8, padding: "1px 5px", minWidth: 15, textAlign: "center" }}>
+                      {(n.faults ?? 0) > 99 ? "99+" : n.faults}
+                    </Text>
+                  )}
+                  <Box style={{ width: 8, height: 3, borderRadius: 2, background: ROLE_COLOR[n.role], flex: "none" }} />
+                </>}>
+                {n.slug}
+              </RailRow>
             );
           })}
         </GraphRail>

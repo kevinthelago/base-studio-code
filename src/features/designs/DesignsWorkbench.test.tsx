@@ -25,9 +25,11 @@ describe("DesignsWorkbench (#2308)", () => {
     // The page toolbar was removed (#move-to-planner) — the studio is a Planner tab, so the PageTabs
     // strip is its header. No "Design Studio" heading, no kit-switcher chip row.
     expect(screen.queryByText("Design Studio")).toBeNull();
-    // The kit is named in the graph header; the rail (Kits · Components) leads the page.
+    // The kit is named in the graph header; the rail is now HEADERLESS (#2797) and leads with a search
+    // box (the label bar was dropped — the PageTabs strip already titles the studio).
     expect(screen.getByText(/Composition graph · react-ui/)).toBeTruthy(); // graph mounts with the page
-    expect(screen.getByText(/Kits.*Components/)).toBeTruthy();              // the rail header leads the page
+    expect(screen.getByLabelText("Search components")).toBeTruthy();       // the rail's search box leads it
+    expect(screen.queryByText(/Kits.*Components/)).toBeNull();             // no label header anymore
     // The Library/Graph toggle is gone — there is no alternate center mode.
     expect(screen.queryByText("▦ Library")).toBeNull();
     expect(screen.queryByText("⬡ Graph")).toBeNull();
