@@ -3,3 +3,4 @@
 // concepts without reaching into internals.
 export { AlgorithmsWorkspace } from "./AlgorithmsWorkspace";
 export * from "./lib/knowledge";
+export * from "./lib/extraction";
