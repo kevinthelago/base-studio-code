@@ -88,6 +88,20 @@
   pointer-events: none;
 }
 
+/* The intent-vs-reality drift indicator (#2781) — a concept whose DECLARED composition (seed
+   `composes` edges) diverges from its EXTRACTED calls (real code). Sits TOP-LEFT — visually distinct
+   from the top-right "</>" impl badge and the bottom-right dedup count — in a WARNING tone. A gentle
+   "review this" nudge, not an error; only painted once a scan has run. */
+.algo-drift-badge {
+  position: absolute;
+  top: 5px;
+  left: 9px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--state-wait, var(--danger));
+  pointer-events: none;
+}
+
 /* Left-rail concept rows (#2773) — grouped by kind, click selects + centers. */
 .algo-railrow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; background: transparent; cursor: pointer; }
 .algo-railrow:hover { background: var(--bg-soft); }
