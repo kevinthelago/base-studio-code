@@ -11,6 +11,7 @@ import { bscJson } from "@/shared/lib/core/bsc";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { usePoll } from "@/shared/hooks/usePoll";
+import { useDragResize } from "@/shared/hooks/useDragResize";
 import { useAppStore } from "@/store";
 import {
   blankSkill, deriveSkillKpis, groupSkillCount, type SkillDef,
@@ -87,6 +88,8 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const [groupFilter, setGroupFilter] = useState<string | null>(null);     // selected task group id
   const [facetSel, setFacetSel] = useState<FacetSelection>({});
   const railSections = useRailSections();                                  // collapsible sidebar sections (#2803)
+  // Drag-resizable left rail (#2816), same pattern as the graph rails (GraphCanvas railResizable).
+  const railDrag = useDragResize({ initial: 200, min: 180, max: 420, axis: "x" });
   const drawer = useDraft<SkillDef>({
     items: skills,
     newDraft: () => ({ ...blankSkill(), id: DRAFT_ID }),
@@ -213,9 +216,10 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
         // Unified layout (#2813): the search + collapsible facets live in the LEFT RAIL; a slim header
         // sits OVER THE LIST (digest stats + sort/density/Select) — no full-width top header.
         <Row align="stretch" className="skills-main" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-            {/* Left rail — search over the collapsible Groups + facet sections (the graph-rail pattern). */}
+            {/* Left rail — DRAG-RESIZABLE (#2816), the same pattern GraphCanvas uses (railResizable): a
+                sized wrapper + a `.resize-x` splitter. GraphRail fills the wrapper (its default flex:1). */}
+            <Box style={{ flex: `0 0 ${railDrag.size}px`, width: railDrag.size, minWidth: 0, display: "flex", overflow: "hidden" }}>
             <GraphRail
-              style={{ flex: "0 0 200px" }}
               bodyPad="12px 10px 20px"
               tools={
                 <SearchField value={query} onChange={setQuery} placeholder="Search name, description, tools…" aria-label="Search skills" style={{ width: "100%" }} />
@@ -268,11 +272,14 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                 </RailSection>
               ))}
             </GraphRail>
+            </Box>
+            <Box className="resize-x" {...railDrag.handleProps} title="Drag to resize" />
 
             {/* Main column: the header OVER THE LIST (digest stats + controls), then the list (#2813).
                 A query container so the header can drop the digest first when this column narrows. */}
             <Stack className="skills-listcol" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-              <Row className="skills-listhead" gap={12} align="center" style={{ padding: "8px 16px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
+              {/* Header like the graph toolbar (#2816): 52px, elevated bg, soft border. */}
+              <Row className="skills-listhead" gap={16} align="center" style={{ height: 52, flex: "none", padding: "0 16px", background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)" }}>
                 {/* Digest stats — the FIRST to hide when the header narrows (container query in skills.css). */}
                 <Box className="skills-listhead-digest" style={{ minWidth: 0, overflow: "hidden" }}>
                   <SkillsDigestBar merged={merged} stats={stats} kpis={kpis} digestOpen={digestOpen} onToggle={() => setDigestOpen((v) => !v)} />
