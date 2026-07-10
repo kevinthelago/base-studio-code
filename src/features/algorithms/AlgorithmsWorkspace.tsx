@@ -13,8 +13,9 @@ import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { AlgorithmsCanvas } from "./AlgorithmsCanvas";
 import { AlgorithmsInspector } from "./AlgorithmsInspector";
+import { AlgorithmsRail } from "./AlgorithmsRail";
 import {
-  KNOWLEDGE, KIND_ORDER, KIND_META, TECHS, TECH_META, layoutKnowledge, neighborsOf, nodeIndex,
+  KNOWLEDGE, KIND_ORDER, KIND_META, TECHS, TECH_META, NODE_W, NODE_H, layoutKnowledge, neighborsOf, nodeIndex,
   type KnowledgeKind, type Tech,
 } from "./lib/knowledge";
 import "./algorithms.css";
@@ -45,6 +46,13 @@ export function AlgorithmsWorkspace() {
       if (next.has(k)) next.delete(k); else next.add(k);
       return next;
     });
+
+  // Rail selection also pans the node to center (the rail is navigation, not just selection).
+  const selectFromRail = (id: string) => {
+    setSelected(id);
+    const p = layout.pos.get(id);
+    if (p) vp.centerOn(p.x + NODE_W / 2, p.y + NODE_H / 2);
+  };
 
   const toolbar = (
     <>
@@ -86,6 +94,9 @@ export function AlgorithmsWorkspace() {
       world={layout.world}
       grid
       toolbar={toolbar}
+      rail={<AlgorithmsRail graph={graph} selected={selected} onSelect={selectFromRail} />}
+      railResizable
+      railWidth={230}
       inspector={<AlgorithmsInspector graph={graph} selected={selected ? byId.get(selected) ?? null : null} activeTech={activeTech} onSelectNode={setSelected} />}
       inspectorResizable
       inspectorWidth={340}

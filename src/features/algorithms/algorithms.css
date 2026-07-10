@@ -63,3 +63,8 @@
   opacity: 0.85;
   pointer-events: none;
 }
+
+/* Left-rail concept rows (#2773) — grouped by kind, click selects + centers. */
+.algo-railrow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; background: transparent; cursor: pointer; }
+.algo-railrow:hover { background: var(--bg-soft); }
+.algo-railrow.on { background: var(--bg-soft); border-color: var(--accent); }

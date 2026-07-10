@@ -160,10 +160,13 @@ mod tests {
 
     #[test]
     fn path_walks_the_fractal_thread_and_handles_edges() {
-        assert_eq!(
-            path("fibonacci", "mandelbrot"),
-            Some(vec!["fibonacci".into(), "golden-ratio".into(), "self-similarity".into(), "mandelbrot".into()]),
-        );
+        // Two equal-length shortest paths exist (via golden-ratio OR recursion; BFS picks recursion
+        // since composes-edges sort first) — assert the INVARIANT hops, not the ambiguous middle.
+        let p = path("fibonacci", "mandelbrot").expect("mandelbrot is reachable from fibonacci");
+        assert_eq!(p.len(), 4);
+        assert_eq!(p[0], "fibonacci");
+        assert_eq!(p[2], "self-similarity");
+        assert_eq!(p[3], "mandelbrot");
         assert_eq!(path("heap", "heap"), Some(vec!["heap".into()]));
         assert_eq!(path("heap", "nope"), None);
     }
