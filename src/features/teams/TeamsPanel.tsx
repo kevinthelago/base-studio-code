@@ -11,15 +11,14 @@
 import departmentsEmbedded from "@data/teams/departments.json";
 import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "@/store";
-import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
-import { SectionLabel } from "@/shared/ui/layout/SectionLabel";
 import { IconBox } from "@/shared/ui/data/IconBox";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
+import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { TeamsCanvas, OrgLegend, type Selection } from "./TeamsCanvas";
 import { TeamsOverview } from "./TeamsOverview";
@@ -152,21 +151,16 @@ export function TeamsPanel() {
           </>
         }
         rail={
-          <Stack gap={0} style={{ flex: 1, minWidth: 0, borderRight: "1px solid var(--border-soft)", background: "var(--bg-elev)", minHeight: 0 }}>
-            <Row align="center" justify="between" style={{ padding: "13px 15px 11px", borderBottom: "1px solid var(--border-soft)" }}>
-              <SectionLabel size={9.5}>Teams</SectionLabel>
-            </Row>
-            <Box style={{ overflowY: "auto", padding: "8px 8px 20px", flex: 1 }}>
-              {orgs.map((o) => (
-                <Row key={o.id} gap={9} align="center" className="teams-railrow" onClick={() => enterTeam(o.id)}
-                  style={{ padding: "8px 9px", borderRadius: 8, cursor: "pointer" }}>
-                  <IconBox size={20} radius={6} fontSize={11} color="var(--accent)" background="var(--bg-soft)">◆</IconBox>
-                  <Text as="span" size={12.5} weight={500} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</Text>
-                  <Text as="span" mono size={9} tone="dim">{o.positions.length}</Text>
-                </Row>
-              ))}
-            </Box>
-          </Stack>
+          <GraphRail label="Teams" count={orgs.length} bodyPad="8px 8px 20px">
+            {orgs.map((o) => (
+              <Row key={o.id} gap={9} align="center" className="teams-railrow" onClick={() => enterTeam(o.id)}
+                style={{ padding: "8px 9px", borderRadius: 8, cursor: "pointer" }}>
+                <IconBox size={20} radius={6} fontSize={11} color="var(--accent)" background="var(--bg-soft)">◆</IconBox>
+                <Text as="span" size={12.5} weight={500} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</Text>
+                <Text as="span" mono size={9} tone="dim">{o.positions.length}</Text>
+              </Row>
+            ))}
+          </GraphRail>
         }
       >
         <Box className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>
@@ -246,32 +240,27 @@ export function TeamsPanel() {
         </>
       }
       rail={
-        <Stack gap={0} style={{ flex: 1, minWidth: 0, borderRight: "1px solid var(--border-soft)", background: "var(--bg-elev)", minHeight: 0 }}>
-          <Row align="center" justify="between" style={{ padding: "13px 15px 11px", borderBottom: "1px solid var(--border-soft)" }}>
-            <SectionLabel size={9.5}>Positions</SectionLabel>
-          </Row>
-          <Box style={{ overflowY: "auto", padding: "8px 8px 20px", flex: 1 }}>
-            {depts.map((dept) => (
-              <Box key={dept}>
-                <Text as="div" size={9} tone="dim" style={{ margin: "10px 6px 5px", letterSpacing: ".11em", textTransform: "uppercase", fontWeight: 600 }}>{dept}</Text>
-                {byDept.get(dept)!.map((p) => {
-                  const d = positionDisplay(p, personas);
-                  const on = sel.type === "node" && sel.id === p.nodeId;
-                  return (
-                    <Row key={p.nodeId} gap={9} align="center" onClick={() => onSelectNode(p.nodeId)}
-                      style={{ padding: "7px 9px", borderRadius: 8, cursor: "pointer",
-                        background: on ? "color-mix(in oklch, var(--accent) 10%, transparent)" : "transparent",
-                        border: `1px solid ${on ? "var(--accent)" : "transparent"}` }}>
-                      <IconBox size={20} radius={6} fontSize={11} color="var(--accent)" background="var(--bg-soft)">{d.glyph}</IconBox>
-                      <Text as="span" size={12.5} weight={500} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</Text>
-                      {d.role && <Text as="span" mono size={9} tone="dim" style={{ textTransform: "uppercase" }}>{d.role}</Text>}
-                    </Row>
-                  );
-                })}
-              </Box>
-            ))}
-          </Box>
-        </Stack>
+        <GraphRail label="Positions" count={org.positions.length} bodyPad="8px 8px 20px">
+          {depts.map((dept) => (
+            <Box key={dept}>
+              <Text as="div" size={9} tone="dim" style={{ margin: "10px 6px 5px", letterSpacing: ".11em", textTransform: "uppercase", fontWeight: 600 }}>{dept}</Text>
+              {byDept.get(dept)!.map((p) => {
+                const d = positionDisplay(p, personas);
+                const on = sel.type === "node" && sel.id === p.nodeId;
+                return (
+                  <Row key={p.nodeId} gap={9} align="center" onClick={() => onSelectNode(p.nodeId)}
+                    style={{ padding: "7px 9px", borderRadius: 8, cursor: "pointer",
+                      background: on ? "color-mix(in oklch, var(--accent) 10%, transparent)" : "transparent",
+                      border: `1px solid ${on ? "var(--accent)" : "transparent"}` }}>
+                    <IconBox size={20} radius={6} fontSize={11} color="var(--accent)" background="var(--bg-soft)">{d.glyph}</IconBox>
+                    <Text as="span" size={12.5} weight={500} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</Text>
+                    {d.role && <Text as="span" mono size={9} tone="dim" style={{ textTransform: "uppercase" }}>{d.role}</Text>}
+                  </Row>
+                );
+              })}
+            </Box>
+          ))}
+        </GraphRail>
       }
       inspector={hasSel ? (
         <TeamsInspector
