@@ -128,7 +128,7 @@ describe("implementation tier (#2770)", () => {
     const nodeIds = new Set(KNOWLEDGE.nodes.map((n) => n.id));
     const implIds = new Set(KNOWLEDGE.implementations.map((i) => i.id));
     expect(implIds.size).toBe(KNOWLEDGE.implementations.length); // ids are unique
-    expect(KNOWLEDGE.implementations.length).toBe(10);
+    expect(KNOWLEDGE.implementations.length).toBe(32);
     for (const im of KNOWLEDGE.implementations) {
       expect(nodeIds.has(im.concept)).toBe(true); // every impl targets a REAL node id
       expect(TECHS).toContain(im.tech);
@@ -138,6 +138,33 @@ describe("implementation tier (#2770)", () => {
         expect(implIds.has(c)).toBe(true); // every composes id is a REAL impl id
         expect(implById(KNOWLEDGE, c)!.tech).toBe(im.tech); // and of the SAME tech
       }
+    }
+  });
+
+  it("every algorithm-kind concept carries BOTH a TypeScript and a Rust fundamental (#2783)", () => {
+    const algos = KNOWLEDGE.nodes.filter((n) => n.kind === "algorithm");
+    // The seeded fundamentals: 16 algorithm nodes × 2 techs = 32 implementations.
+    expect(algos.length).toBe(16);
+    for (const node of algos) {
+      const ts = implFor(KNOWLEDGE, node.id, "typescript");
+      const rs = implFor(KNOWLEDGE, node.id, "rust");
+      expect(ts, `${node.id} is missing its TypeScript fundamental`).toBeDefined();
+      expect(rs, `${node.id} is missing its Rust fundamental`).toBeDefined();
+      // Each fundamental's `composes` ids resolve to REAL impls of the SAME tech.
+      for (const c of ts!.composes) {
+        const dep = implById(KNOWLEDGE, c);
+        expect(dep, `${ts!.id} composes a missing impl ${c}`).toBeDefined();
+        expect(dep!.tech).toBe("typescript");
+      }
+      for (const c of rs!.composes) {
+        const dep = implById(KNOWLEDGE, c);
+        expect(dep, `${rs!.id} composes a missing impl ${c}`).toBeDefined();
+        expect(dep!.tech).toBe("rust");
+      }
+    }
+    // No orphan implementation targets a non-algorithm node.
+    for (const im of KNOWLEDGE.implementations) {
+      expect(nodeIndex(KNOWLEDGE.nodes).get(im.concept)?.kind).toBe("algorithm");
     }
   });
 });
