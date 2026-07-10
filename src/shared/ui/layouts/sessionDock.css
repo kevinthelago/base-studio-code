@@ -1,0 +1,7 @@
+/* SessionDock (#2808) — the shared docked-session terminal panel used by the three graph-view session
+   terminals (Designer/Architect/Librarian). Replaces the byte-identical per-feature classes
+   (.ds-terminal/.teams-terminal/.algo-terminal + their -colhead/-termhost). The `.ds-colhead` class
+   stays in designStudio.css — it is ALSO the Designs inspector header, not just the terminal. */
+.session-dock { flex: none; height: 240px; min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
+.session-dock-head { height: 38px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--border-soft, var(--border)); }
+.session-dock-host { flex: 1; min-height: 0; min-width: 0; padding: 4px 8px; background: #181a1f; /* TERM_THEME background */ }

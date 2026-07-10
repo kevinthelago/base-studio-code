@@ -7,15 +7,11 @@
 /* Base typography for the studio, applied to the GraphCanvas root via `className="ds-graph"`. */
 .ds-graph { font-size: 13px; color: var(--fg); }
 
-/* ── search (rail header) + graph-header actions ── */
-/* The former page toolbar (kit switcher · search · actions) was removed when the studio became a
-   Planner tab; the search box now lives under the rail header and .ds-act drives the graph-header
-   fit/Share buttons. */
-.ds-act { height: 32px; padding: 0 11px; display: flex; align-items: center; gap: 6px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; color: var(--fg-muted); font-size: 12px; cursor: pointer; }
-.ds-act:hover { border-color: var(--fg-dim); color: var(--fg); }
+/* The graph-header fit/Share buttons now use the shared `<Button variant="ghost">` (#2808), matching
+   the Teams/Algorithms/Glance toolbars; the former bespoke `.ds-act` rules were removed. */
 
-/* ── shared column header (the DesignerTerminal dock + the details inspector; the rail uses GraphRail's
-   own header now, #2767). The shell COLUMNS + rail scaffold are GraphCanvas's / GraphRail's. ── */
+/* ── the details-inspector column header (the DesignerTerminal dock moved to the shared SessionDock,
+   #2808; the rail uses GraphRail's own header, #2767). Shell COLUMNS are GraphCanvas's / GraphRail's. ── */
 .ds-colhead { height: 38px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--border-soft, var(--border)); }
 
 /* ── rail tree ── The kit heads, component rows, and tech/style group headers now render through the
@@ -82,10 +78,8 @@
 /* ── designer session panel (#2471/#2597) — the ALWAYS-ON terminal docked at the bottom of the
    center column, below the composition graph. Fixed height so the graph (pane) keeps priority; the
    hook's ResizeObserver re-fits xterm when the center width changes. */
-/* height is inline (drag-driven, #2624); min-width:0 + overflow:hidden let the terminal SHRINK so it
-   never pins the center column's width — the rail/inspector panes keep priority when resized. */
-.ds-terminal { flex: none; height: 240px; min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
-.ds-termhost { flex: 1; min-height: 0; min-width: 0; padding: 4px 8px; background: #181a1f; /* TERM_THEME background */ }
+/* The designer-session dock now renders through the shared SessionDock (#2808); its former
+   `.ds-terminal`/`.ds-termhost` rules were removed with that extraction. */
 
 /* loading preview (#2302) — a component's skeleton in the Studio rides the app's ONE shimmer
    keyframe (`skeleton-shimmer`, tokens.css), so the loading state uses the same motion vocabulary as
