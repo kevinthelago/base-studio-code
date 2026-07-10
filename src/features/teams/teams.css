@@ -6,10 +6,5 @@
 .teams-card--add:hover { background: color-mix(in oklch, var(--accent) 8%, transparent); color: var(--fg); }
 /* The left-rail team + position rows now render through the shared RailRow primitive (#2789). */
 
-/* The docked team-architect session (#2755) — the always-on bottom strip below the team graph, hosting
-   the ArchitectTerminal (a restricted `bsc teams`/`bsc persona` claude session). Mirrors the Design
-   Studio's ds-terminal/ds-colhead/ds-termhost. The caller (TeamsPanel) owns the height + resize handle
-   (a shared `.resize-y` splitter above it); these classes just style the panel + its xterm host. */
-.teams-terminal { flex: none; height: 240px; min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
-.teams-colhead { height: 38px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--border-soft, var(--border)); }
-.teams-termhost { flex: 1; min-height: 0; min-width: 0; padding: 4px 8px; background: #181a1f; /* TERM_THEME background */ }
+/* The docked team-architect session (#2755) now renders through the shared SessionDock (#2808); its
+   former `.teams-terminal`/`.teams-colhead`/`.teams-termhost` rules were removed with that extraction. */
