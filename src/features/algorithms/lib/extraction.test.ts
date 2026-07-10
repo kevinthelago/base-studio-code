@@ -1,7 +1,7 @@
 // The extracted-from-code implementation model (#2777): grouping matched sites by concept, counting
 // them, and deriving the >1-site (duplicate) set. Pure — no bridge, hand-built ExtractResult.
 import { describe, it, expect } from "vitest";
-import { sitesByConcept, siteCounts, duplicateConcepts, type ExtractResult } from "./extraction";
+import { sitesByConcept, siteCounts, duplicateConcepts, callsFor, type ExtractResult } from "./extraction";
 
 const RESULT: ExtractResult = {
   matched: [
@@ -21,6 +21,11 @@ const RESULT: ExtractResult = {
         { concept: "merge-sort", tech: "rust", name: "merge_sort", file: "crates/sort/src/merge.rs", line: 12 },
       ],
     },
+  ],
+  calls: [
+    { from: "merge-sort", to: "merge", tech: "typescript" },
+    { from: "merge-sort", to: "merge", tech: "rust" },
+    { from: "quick-sort", to: "merge", tech: "typescript" },
   ],
 };
 
@@ -47,10 +52,21 @@ describe("extraction model (#2777)", () => {
     expect(d.size).toBe(1);
   });
 
+  it("callsFor returns a concept's OUTBOUND call edges only (#2779)", () => {
+    const ms = callsFor(RESULT, "merge-sort");
+    expect(ms).toHaveLength(2); // both tech edges out of merge-sort
+    expect(ms.every((c) => c.from === "merge-sort" && c.to === "merge")).toBe(true);
+    expect(ms.map((c) => c.tech)).toEqual(["typescript", "rust"]); // order preserved
+    // A concept with a single outbound edge, and one with none.
+    expect(callsFor(RESULT, "quick-sort")).toEqual([{ from: "quick-sort", to: "merge", tech: "typescript" }]);
+    expect(callsFor(RESULT, "merge")).toEqual([]); // merge is only a callee here, never a caller
+  });
+
   it("degrades to empty maps for an all-empty result", () => {
-    const empty: ExtractResult = { matched: [], unmatched: [], duplicates: [] };
+    const empty: ExtractResult = { matched: [], unmatched: [], duplicates: [], calls: [] };
     expect(sitesByConcept(empty).size).toBe(0);
     expect(siteCounts(empty).size).toBe(0);
     expect(duplicateConcepts(empty).size).toBe(0);
+    expect(callsFor(empty, "merge-sort")).toEqual([]);
   });
 });

@@ -27,12 +27,24 @@ export interface DuplicateGroup {
   sites: ExtractSite[];
 }
 
-/** The full `bsc graph extract` result: sites matched to a concept, sites that matched none, and the
- *  duplicate groups (the concepts carrying >1 matched site). */
+/** One concept→concept CALL edge `bsc graph extract` lifted from real code (#2779): the function
+ *  mapping onto `from` calls the function mapping onto `to`, in language `tech`. This is the reverse
+ *  of the `implements` join — real-code COMPOSITION (who invokes whom), overlaid on the curated spine. */
+export interface CallEdge {
+  from: string;
+  to: string;
+  tech: string;
+}
+
+/** The full `bsc graph extract` result: sites matched to a concept, sites that matched none, the
+ *  duplicate groups (concepts carrying >1 matched site), and the extracted concept→concept call edges. */
 export interface ExtractResult {
   matched: ExtractSite[];
   unmatched: ExtractSite[];
   duplicates: DuplicateGroup[];
+  /** Concept→concept call edges lifted from real code (#2779). Empty when none were found (or when
+   *  the bundled `bsc` predates the verb — the bridge defaults it to `[]` so old output still parses). */
+  calls: CallEdge[];
 }
 
 /** Matched sites grouped by their `concept` id (insertion order preserved). Unmatched sites — and any
@@ -61,4 +73,10 @@ export function siteCounts(r: ExtractResult): Map<string, number> {
  *  the badge paints and the headline dedup signal. */
 export function duplicateConcepts(r: ExtractResult): Set<string> {
   return new Set(r.duplicates.map((d) => d.concept));
+}
+
+/** The OUTBOUND extracted call edges of a concept (#2779) — the concepts its real-code implementation
+ *  invokes/composes. Empty when the concept makes no extracted concept→concept call. */
+export function callsFor(r: ExtractResult, conceptId: string): CallEdge[] {
+  return r.calls.filter((c) => c.from === conceptId);
 }
