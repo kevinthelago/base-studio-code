@@ -20,7 +20,7 @@ import {
   type KnowledgeKind, type Tech,
 } from "./lib/knowledge";
 import { runExtract } from "./lib/extractionBridge";
-import { sitesByConcept, siteCounts, duplicateConcepts, type ExtractResult } from "./lib/extraction";
+import { sitesByConcept, siteCounts, duplicateConcepts, callsFor, type ExtractResult } from "./lib/extraction";
 import "./algorithms.css";
 
 export function AlgorithmsWorkspace() {
@@ -48,6 +48,12 @@ export function AlgorithmsWorkspace() {
   const dupConcepts = useMemo(() => (extract ? duplicateConcepts(extract) : null), [extract]);
   const selectedSites = useMemo(
     () => (extract && selected ? sitesByConcept(extract).get(selected) ?? [] : []),
+    [extract, selected],
+  );
+  // The selected concept's outbound extracted call edges (#2779) — feeds the inspector's "Calls (from
+  // code)" section. `extract.calls` is already tech-scoped to the scan's tech.
+  const selectedCalls = useMemo(
+    () => (extract && selected ? callsFor(extract, selected) : []),
     [extract, selected],
   );
 
@@ -129,12 +135,12 @@ export function AlgorithmsWorkspace() {
       rail={<AlgorithmsRail graph={graph} selected={selected} onSelect={selectFromRail} />}
       railResizable
       railWidth={230}
-      inspector={<AlgorithmsInspector graph={graph} selected={selected ? byId.get(selected) ?? null : null} activeTech={activeTech} sites={selectedSites} onSelectNode={setSelected} />}
+      inspector={<AlgorithmsInspector graph={graph} selected={selected ? byId.get(selected) ?? null : null} activeTech={activeTech} sites={selectedSites} calls={selectedCalls} onSelectNode={setSelected} />}
       inspectorResizable
       inspectorWidth={340}
       onBackgroundClick={() => setSelected(null)}
     >
-      <AlgorithmsCanvas graph={graph} layout={layout} selected={selected} lit={lit} activeKinds={activeKinds} implConcepts={implConcepts} siteCounts={siteCountMap ?? undefined} dupConcepts={dupConcepts ?? undefined} onSelect={setSelected} />
+      <AlgorithmsCanvas graph={graph} layout={layout} selected={selected} lit={lit} activeKinds={activeKinds} implConcepts={implConcepts} siteCounts={siteCountMap ?? undefined} dupConcepts={dupConcepts ?? undefined} extractedCalls={extract?.calls} onSelect={setSelected} />
     </GraphCanvas>
   );
 }

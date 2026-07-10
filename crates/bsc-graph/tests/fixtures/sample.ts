@@ -1,5 +1,8 @@
-// Fixture for the tree-sitter extractor (#2775). Names chosen to exercise concept mapping:
-// quickSort / mergeSort / binarySearch resolve to seed concepts; helperThing does not.
+// Fixture for the tree-sitter extractor (#2775) + call-graph extraction (#2779). Names chosen to
+// exercise concept mapping: quickSort / mergeSort / binarySearch / merge resolve to seed concepts;
+// helperThing does not. mergeSort's body now actually calls merge(...) so the extractor lifts a
+// concept→concept call edge merge-sort → merge (real-code composition); the recursive self-calls and
+// the .slice()/.filter() member calls are NOT concept→concept edges and are dropped.
 
 export function quickSort<T>(xs: T[]): T[] {
   if (xs.length <= 1) return xs.slice();
@@ -9,12 +12,23 @@ export function quickSort<T>(xs: T[]): T[] {
   return [...quickSort(left), pivot, ...quickSort(right)];
 }
 
+function merge<T>(left: T[], right: T[]): T[] {
+  const out: T[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < left.length && j < right.length) {
+    if (left[i] <= right[j]) out.push(left[i++]);
+    else out.push(right[j++]);
+  }
+  return [...out, ...left.slice(i), ...right.slice(j)];
+}
+
 export const mergeSort = <T>(xs: T[]): T[] => {
   if (xs.length <= 1) return xs.slice();
   const mid = xs.length >> 1;
   const left = mergeSort(xs.slice(0, mid));
   const right = mergeSort(xs.slice(mid));
-  return [...left, ...right];
+  return merge(left, right);
 };
 
 function binarySearch<T>(xs: T[], target: T): number {

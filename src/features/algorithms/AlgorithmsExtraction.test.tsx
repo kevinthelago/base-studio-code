@@ -1,12 +1,12 @@
 // The extraction UI surface (#2777, Phase 2 slice 2): the node dedup badge on the canvas + the
 // "Implementations found" list in the inspector. Both are driven purely by injected extraction data —
 // with none, NO badges render (the degraded default), which the existing Workspace tests rely on.
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { AlgorithmsCanvas } from "./AlgorithmsCanvas";
 import { AlgorithmsInspector } from "./AlgorithmsInspector";
 import { KNOWLEDGE, KIND_ORDER, layoutKnowledge, nodeIndex } from "./lib/knowledge";
-import type { ExtractSite } from "./lib/extraction";
+import type { ExtractSite, CallEdge } from "./lib/extraction";
 
 const layout = layoutKnowledge(KNOWLEDGE.nodes);
 const allKinds = new Set(KIND_ORDER);
@@ -62,5 +62,43 @@ describe("AlgorithmsInspector implementations-found list (#2777)", () => {
   it("renders nothing when there are no sites", () => {
     render(<AlgorithmsInspector graph={KNOWLEDGE} selected={mergeSort} activeTech="typescript" sites={[]} onSelectNode={() => {}} />);
     expect(screen.queryByText(/Implementations found/)).toBeNull();
+  });
+});
+
+describe("AlgorithmsCanvas call-graph overlay (#2779)", () => {
+  it("draws an accent overlay edge per extracted call", () => {
+    const calls: CallEdge[] = [{ from: "merge-sort", to: "merge", tech: "typescript" }];
+    const { container } = renderCanvas({ extractedCalls: calls });
+    const overlay = container.querySelectorAll('[data-call-edge]');
+    expect(overlay.length).toBe(1);
+    expect(overlay[0].getAttribute("data-call-edge")).toBe("merge-sort->merge");
+    // The overlay is painted the accent tone (distinct from the seed relationship edges).
+    expect(overlay[0].querySelector("path")?.getAttribute("stroke")).toBe("var(--accent)");
+  });
+
+  it("renders NO overlay when there are no extracted calls", () => {
+    const { container } = renderCanvas();
+    expect(container.querySelectorAll('[data-call-edge]').length).toBe(0);
+  });
+});
+
+describe("AlgorithmsInspector calls-from-code list (#2779)", () => {
+  const mergeSort = nodeIndex(KNOWLEDGE.nodes).get("merge-sort")!;
+  const calls: CallEdge[] = [{ from: "merge-sort", to: "merge", tech: "typescript" }];
+
+  it("lists each callee concept (by name) with its tech and jumps to it on click", () => {
+    const onSelectNode = vi.fn();
+    render(<AlgorithmsInspector graph={KNOWLEDGE} selected={mergeSort} activeTech="typescript" calls={calls} onSelectNode={onSelectNode} />);
+    expect(screen.getByText(/Calls \(from code\) · 1/)).toBeTruthy();
+    // The callee name "Merge" renders (it also appears in the composes relationship row, hence getAll).
+    expect(screen.getAllByText("Merge").length).toBeGreaterThan(0);
+    // The lowercase tech label is unique to the calls row — click it to fire the jump to the callee.
+    fireEvent.click(screen.getByText("typescript"));
+    expect(onSelectNode).toHaveBeenCalledWith("merge");
+  });
+
+  it("renders nothing when there are no calls", () => {
+    render(<AlgorithmsInspector graph={KNOWLEDGE} selected={mergeSort} activeTech="typescript" calls={[]} onSelectNode={() => {}} />);
+    expect(screen.queryByText(/Calls \(from code\)/)).toBeNull();
   });
 });
