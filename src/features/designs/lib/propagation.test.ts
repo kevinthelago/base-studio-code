@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   classifyChange, makeChange, changeId, planPropagation, dedupeDispatches, dispatchKey,
-  planKitDrain, deliveryKey, kitDispatchPrompt, kitUpdateIssue,
+  planKitDrain, deliveryKey, kitDispatchPrompt,
   type KitConsumer, type Dispatch, type KitChange, type ChangeClass,
 } from "./propagation";
 import { SEED_COMPONENTS } from "./seed";
@@ -50,9 +50,9 @@ describe("kit-change propagation (#2277)", () => {
       expect(planPropagation(breaking, consumers).map((x) => x.projectKey)).toEqual(["a", "b", "c"]);
     });
 
-    it("breaking + auto → assign (live) or issue (dormant); un-opted-in → notify", () => {
+    it("breaking + auto → assign (live OR dormant — liveness gates delivery, not the kind); un-opted-in → notify", () => {
       const byProj = Object.fromEntries(planPropagation(breaking, consumers).map((d) => [d.projectKey, d.kind]));
-      expect(byProj).toEqual({ a: "assign", b: "issue", c: "notify" });
+      expect(byProj).toEqual({ a: "assign", b: "assign", c: "notify" });
     });
 
     it("additive/fix are notify-only even when opted in (no wide blast of issues)", () => {
@@ -80,9 +80,13 @@ describe("kit-change propagation (#2277)", () => {
       expect(planKitDrain([disp("a", breaking)], [], { enabled: false, live: true, maxPerCycle: 3 }).deliver).toEqual([]);
     });
 
-    it("rail: a live consumer → assign, a dormant one → issue", () => {
-      expect(planKitDrain([disp("a", breaking)], [], { enabled: true, live: true, maxPerCycle: 3 }).deliver[0].rail).toBe("assign");
-      expect(planKitDrain([disp("a", breaking)], [], { enabled: true, live: false, maxPerCycle: 3 }).deliver[0].rail).toBe("issue");
+    it("assign-only rail: a live consumer delivers assign; a dormant one HOLDS (delivers nothing), no issue", () => {
+      const live = planKitDrain([disp("a", breaking)], [], { enabled: true, live: true, maxPerCycle: 3 });
+      expect(live.deliver[0].rail).toBe("assign");
+      // No live fleet ⇒ nothing delivered and nothing marked delivered — the queue carries forward.
+      const dormant = planKitDrain([disp("a", breaking)], [], { enabled: true, live: false, maxPerCycle: 3 });
+      expect(dormant.deliver).toEqual([]);
+      expect(dormant.nextDelivered).toEqual([]);
     });
 
     it("only BREAKING changes auto-fire; additive/fix stay surface-only", () => {
@@ -104,14 +108,18 @@ describe("kit-change propagation (#2277)", () => {
     });
   });
 
-  it("kitUpdateIssue + kitDispatchPrompt carry the change + migration", () => {
+  it("kitDispatchPrompt routes to bsc-assign + the run-the-command instruction, with the migration note", () => {
     const ch = makeChange(clone({ version: "2.4.0" }), button, {
       class: "breaking", summary: "Button variant renamed", migration: "rename `type` → `variant`",
     });
-    const iss = kitUpdateIssue(ch);
-    expect(iss.title).toContain("Button");
-    expect(iss.body).toContain("Migration");
-    expect(iss.body).toContain("rename `type`");
-    expect(kitDispatchPrompt(ch)).toContain("bsc-assign");
+    const prompt = kitDispatchPrompt(ch);
+    expect(prompt).toContain("bsc-assign");
+    expect(prompt).toContain("bsc ui emit sync"); // adoption = re-run the command, not hand-edit
+    expect(prompt).toContain("rename `type`"); // the migration note rides along
+    expect(prompt).toContain("call sites"); // breaking ⇒ reconcile call sites too
+    // A non-breaking change omits the call-site reconciliation line.
+    const additive = kitDispatchPrompt(makeChange(clone({ version: "2.4.0", variants: [...button.variants, "loading"] }), button));
+    expect(additive).toContain("bsc ui emit sync");
+    expect(additive).not.toContain("call sites");
   });
 });
