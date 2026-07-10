@@ -20,7 +20,9 @@ import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { RailRow } from "@/shared/ui/layouts/RailRow";
-import { RailGroupHeader } from "@/shared/ui/layouts/RailGroupHeader";
+import { RailSection } from "@/shared/ui/layouts/RailSection";
+import { SearchField } from "@/shared/ui/controls/SearchField";
+import { useRailSections } from "@/shared/hooks/useRailSections";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { TeamsCanvas, OrgLegend, type Selection } from "./TeamsCanvas";
 import { TeamsOverview } from "./TeamsOverview";
@@ -95,6 +97,13 @@ export function TeamsPanel() {
     </Box>
   );
 
+  // Rail search + section-collapse (#2797) — one query filters the visible rail (teams at the top
+  // level, positions inside a team); dept sections default open. Shared across both graph levels.
+  const [query, setQuery] = useState("");
+  const railSections = useRailSections();
+  const q = query.trim().toLowerCase();
+  const railMatch = (name: string) => !q || name.toLowerCase().includes(q);
+
   // Restore this org's saved zoom (or fit) when the org changes. zoomToCentered (NOT zoomTo) re-centers
   // the world at the saved scale — zoomTo anchors about the viewport center starting from the fresh
   // mount's {0,0,1} origin, which leaves the world hanging off the bottom of the viewport (#2545).
@@ -153,8 +162,11 @@ export function TeamsPanel() {
           </>
         }
         rail={
-          <GraphRail label="Teams" count={orgs.length} bodyPad="8px 8px 20px">
-            {orgs.map((o) => (
+          <GraphRail
+            bodyPad="8px 8px 20px"
+            tools={<SearchField value={query} onChange={setQuery} placeholder="Search teams…" aria-label="Search teams" style={{ width: "100%" }} />}
+          >
+            {orgs.filter((o) => railMatch(o.name)).map((o) => (
               <RailRow key={o.id} onClick={() => enterTeam(o.id)}
                 leading={<IconBox size={20} radius={6} fontSize={11} color="var(--accent)" background="var(--bg-soft)">◆</IconBox>}
                 trailing={<Text as="span" mono size={9} tone="dim">{o.positions.length}</Text>}>
@@ -241,23 +253,31 @@ export function TeamsPanel() {
         </>
       }
       rail={
-        <GraphRail label="Positions" count={org.positions.length} bodyPad="8px 8px 20px">
-          {depts.map((dept) => (
-            <Box key={dept}>
-              <RailGroupHeader style={{ margin: "10px 0 3px" }}>{dept}</RailGroupHeader>
-              {byDept.get(dept)!.map((p) => {
-                const d = positionDisplay(p, personas);
-                const on = sel.type === "node" && sel.id === p.nodeId;
-                return (
-                  <RailRow key={p.nodeId} active={on} onClick={() => onSelectNode(p.nodeId)}
-                    leading={<IconBox size={20} radius={6} fontSize={11} color="var(--accent)" background="var(--bg-soft)">{d.glyph}</IconBox>}
-                    trailing={d.role ? <Text as="span" mono size={9} tone="dim" style={{ textTransform: "uppercase" }}>{d.role}</Text> : undefined}>
-                    {d.name}
-                  </RailRow>
-                );
-              })}
-            </Box>
-          ))}
+        <GraphRail
+          bodyPad="8px 8px 20px"
+          tools={<SearchField value={query} onChange={setQuery} placeholder="Search positions…" aria-label="Search positions" style={{ width: "100%" }} />}
+        >
+          {depts.map((dept) => {
+            const rows = byDept.get(dept)!
+              .map((p) => ({ p, d: positionDisplay(p, personas) }))
+              .filter(({ d }) => railMatch(d.name));
+            if (!rows.length) return null;
+            return (
+              <RailSection key={dept} label={dept} count={rows.length}
+                open={railSections.isOpen(dept)} onToggle={() => railSections.toggle(dept)}>
+                {rows.map(({ p, d }) => {
+                  const on = sel.type === "node" && sel.id === p.nodeId;
+                  return (
+                    <RailRow key={p.nodeId} active={on} onClick={() => onSelectNode(p.nodeId)}
+                      leading={<IconBox size={20} radius={6} fontSize={11} color="var(--accent)" background="var(--bg-soft)">{d.glyph}</IconBox>}
+                      trailing={d.role ? <Text as="span" mono size={9} tone="dim" style={{ textTransform: "uppercase" }}>{d.role}</Text> : undefined}>
+                      {d.name}
+                    </RailRow>
+                  );
+                })}
+              </RailSection>
+            );
+          })}
         </GraphRail>
       }
       inspector={hasSel ? (

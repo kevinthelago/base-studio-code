@@ -22,6 +22,18 @@ describe("GraphRail", () => {
     expect(screen.getByText("0")).toBeInTheDocument();
   });
 
+  it("renders headerless when no label is given — the search leads, no label bar (#2797)", () => {
+    render(
+      <GraphRail tools={<input aria-label="Search nodes" />}>
+        <div>row-a</div>
+      </GraphRail>,
+    );
+    // No label ⇒ no SectionLabel header box; the tools (search) + rows still render.
+    expect(screen.getByLabelText("Search nodes")).toBeInTheDocument();
+    expect(screen.getByText("row-a")).toBeInTheDocument();
+    expect(document.querySelector(".mono")).toBeNull(); // the SectionLabel header is gone
+  });
+
   it("renders the optional tools strip (e.g. a search field) and the pinned footer", () => {
     render(
       <GraphRail
