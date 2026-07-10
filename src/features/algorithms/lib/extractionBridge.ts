@@ -23,7 +23,14 @@ export async function runExtract(dir: string, tech?: Tech): Promise<ExtractResul
     ) {
       return null;
     }
-    return { matched: parsed.matched, unmatched: parsed.unmatched, duplicates: parsed.duplicates };
+    // `calls` (#2779) is additive — an OLD bundled `bsc` omits it, so default to `[]` rather than
+    // rejecting the whole payload, keeping the page working against a pre-call-graph binary.
+    return {
+      matched: parsed.matched,
+      unmatched: parsed.unmatched,
+      duplicates: parsed.duplicates,
+      calls: Array.isArray(parsed.calls) ? parsed.calls : [],
+    };
   } catch {
     return null;
   }

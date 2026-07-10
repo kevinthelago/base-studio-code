@@ -10,6 +10,7 @@ import {
   KIND_META, REL_META, NODE_W, NODE_H, edgeId,
   type KnowledgeGraph, type KnowledgeKind, type KnowledgeLayout,
 } from "./lib/knowledge";
+import type { CallEdge } from "./lib/extraction";
 
 interface EdgeGeom {
   id: string;
@@ -21,6 +22,15 @@ interface EdgeGeom {
   arrowStart?: string;
   labelX: number;
   labelY: number;
+}
+
+/** Geometry for one extracted call-graph overlay edge (#2779). */
+interface CallGeom {
+  id: string;
+  from: string;
+  to: string;
+  d: string;
+  arrow: string;
 }
 
 interface CanvasProps {
@@ -38,10 +48,13 @@ interface CanvasProps {
   siteCounts?: Map<string, number>;
   /** The concept ids implemented at >1 site (#2777) — the dedup warning set. */
   dupConcepts?: Set<string>;
+  /** Concept→concept call edges lifted from real code (#2779) — drawn as a DISTINCT accent overlay
+   *  over the seed relationship edges (real-code composition, not the curated ontology). */
+  extractedCalls?: CallEdge[];
   onSelect: (id: string) => void;
 }
 
-export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, implConcepts, siteCounts, dupConcepts, onSelect }: CanvasProps) {
+export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, implConcepts, siteCounts, dupConcepts, extractedCalls, onSelect }: CanvasProps) {
   // Edge geometry is a function of the (stable) layout only — compute once. `bow` separates parallel
   // edges between the same pair so multiple relationships don't overdraw.
   const geoms = useMemo<EdgeGeom[]>(() => {
@@ -67,6 +80,23 @@ export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, im
     });
   }, [graph.edges, layout.pos]);
 
+  // The extracted call-graph overlay (#2779) — same `graphEdge` grammar as the seed edges, but bowed
+  // aside so a call edge doesn't overdraw the seed relationship between the same pair (e.g. the
+  // `merge-sort composes merge` seed edge). Painted accent + dashed by the render below.
+  const callGeoms = useMemo<CallGeom[]>(() => {
+    if (!extractedCalls?.length) return [];
+    return extractedCalls.flatMap((c) => {
+      const a = layout.pos.get(c.from), b = layout.pos.get(c.to);
+      if (!a || !b) return [];
+      const g = graphEdge(
+        { x: a.x, y: a.y, w: NODE_W, h: NODE_H },
+        { x: b.x, y: b.y, w: NODE_W, h: NODE_H },
+        { routing: "anchor", bow: 30 },
+      );
+      return [{ id: `call~${c.from}~${c.to}~${c.tech}`, from: c.from, to: c.to, d: g.d, arrow: g.arrow }];
+    });
+  }, [extractedCalls, layout.pos]);
+
   const byId = useMemo(() => new Map(graph.nodes.map((n) => [n.id, n])), [graph.nodes]);
   const nodeActive = (id: string, kind: KnowledgeKind) =>
     activeKinds.has(kind) && (!lit || lit.nodes.has(id));
@@ -91,6 +121,18 @@ export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, im
                   {REL_META[g.rel].label}
                 </text>
               )}
+            </g>
+          );
+        })}
+
+        {/* The extracted call-graph overlay (#2779) — accent + dashed, drawn ON TOP of the seed edges.
+            Follows the selection focus: full-strength when it touches the lit set, dimmed otherwise. */}
+        {callGeoms.map((g) => {
+          const isLit = !lit || lit.nodes.has(g.from) || lit.nodes.has(g.to);
+          return (
+            <g key={g.id} data-call-edge={`${g.from}->${g.to}`} style={{ opacity: isLit ? 1 : 0.14, transition: "opacity 0.16s ease" }}>
+              <path d={g.d} fill="none" stroke="var(--accent)" strokeWidth={1.5} strokeDasharray="5 4" />
+              <path d={g.arrow} fill="var(--accent)" />
             </g>
           );
         })}
