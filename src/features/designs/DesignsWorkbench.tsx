@@ -70,8 +70,8 @@ export function DesignsWorkbench() {
 
   const firstFor = (kitId: string) => components.find((c) => c.kitId === kitId);
   const [kitId, setKitId] = useState(() => kits[0]?.id ?? "");
-  // The FOCUSED component (#2705) — null when nothing is focused, which hides the details pane and
-  // gives the graph full width. Focusing a node (or a rail row) sets it; clicking the canvas clears it.
+  // The FOCUSED component — null when nothing is focused → the Inspector shows its empty state (#2818,
+  // superseding #2705's hide-when-empty). Focusing a node (or a rail row) sets it; clicking the canvas clears it.
   const [compId, setCompId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [variant, setVariant] = useState(() => firstFor(kits[0]?.id ?? "")?.variants[0] ?? "default");
@@ -100,9 +100,8 @@ export function DesignsWorkbench() {
   const match = (c: ComponentRecord) => matchesQuery(c, query);
   const kit = kits.find((k) => k.id === kitId) ?? kits[0];
   const kitComps = useMemo(() => components.filter((c) => c.kitId === kitId), [components, kitId]);
-  // The FOCUSED component (#2705) — strictly the one the user picked, in the current kit. No fallback
-  // to "the first" — when nothing is focused `sel` is null, so the details pane is hidden and the graph
-  // takes the full width.
+  // The FOCUSED component — strictly the one the user picked, in the current kit. No fallback to "the
+  // first"; when nothing is focused `sel` is null → the Inspector renders its empty state (#2818).
   const sel = compId ? components.find((c) => c.id === compId && c.kitId === kitId) ?? null : null;
 
   const allVariants = sel ? sel.variants : [];
@@ -110,15 +109,16 @@ export function DesignsWorkbench() {
   const composes = sel ? resolveComposes(sel, components) : [];
 
   const selectKit = (id: string) => {
-    // Switching kit re-scopes the graph but focuses nothing — the details pane stays hidden until the
-    // user picks a node in the new kit.
+    // Switching kit re-scopes the graph but focuses nothing — the Inspector shows its empty state
+    // until the user picks a node in the new kit.
     setKitId(id); setCompId(null); setExpanded((e) => ({ ...e, [id]: true })); setTab("overview");
   };
   const selectComp = (c: ComponentRecord) => {
     if (c.kitId !== kitId) setKitId(c.kitId);
     setCompId(c.id); setVariant(c.variants[0] ?? "default"); setTab("overview");
   };
-  // Clicking anything other than a node (the canvas background) unfocuses → hides the details pane.
+  // Clicking anything other than a node (the canvas background) unfocuses → the Inspector returns to
+  // its empty state (#2818).
   const deselect = () => setCompId(null);
 
   // ── graph layout (#2455) — hierarchical top-down: composers above, dependencies below, role-tier
@@ -247,9 +247,11 @@ export function DesignsWorkbench() {
             />
           </GraphRail>
         }
-        // Details pane — rendered ONLY when a component is focused (#2705); clicking the canvas unfocuses
-        // and the inspector (with its splitter) disappears, giving the graph the full width.
-        inspector={sel ? (
+        // Details pane — ALWAYS visible (#2818): the Inspector renders its own "select a component"
+        // empty state when nothing is focused (`sel` null); focusing a graph node or a rail row fills
+        // it, and clicking the canvas background clears the selection back to that empty state (the pane
+        // stays put). Supersedes the #2705 hide-when-empty behavior.
+        inspector={
           <Inspector
             sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
             allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
@@ -258,7 +260,7 @@ export function DesignsWorkbench() {
             previewEl={previewEl} previewErr={previewErr} onRetry={() => setRenderKey((k) => k + 1)}
             composes={composes} onSelect={selectComp}
           />
-        ) : undefined}
+        }
       >
         <svg width={graph.world.w} height={graph.world.h} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
           {orderedEdges.map((e) => {

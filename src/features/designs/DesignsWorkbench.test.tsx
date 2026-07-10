@@ -33,9 +33,10 @@ describe("DesignsWorkbench (#2308)", () => {
     // The Library/Graph toggle is gone — there is no alternate center mode.
     expect(screen.queryByText("▦ Library")).toBeNull();
     expect(screen.queryByText("⬡ Graph")).toBeNull();
-    // Nothing is focused on mount → the details pane is hidden, the graph gets the full width (#2705).
-    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();
-    expect(screen.queryByText("Live preview")).toBeNull();
+    // Nothing is focused on mount → the Inspector is present but shows its empty state (#2818).
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();
+    expect(screen.getByText(/Select a component/)).toBeTruthy();
+    expect(screen.queryByText("Live preview")).toBeNull();          // no live preview until one is focused
   });
 
   it("the inspector carries the library detail: live preview + Overview/Source/Usage tabs", () => {
@@ -100,12 +101,12 @@ describe("DesignsWorkbench (#2308)", () => {
     const vueKit: Kit = { id: "vue-kit", name: "vue-kit", tech: "vue", style: "material", stack: "Vue · TypeScript", dot: "var(--accent)" };
     const vueComp = { ...SEED_COMPONENTS[0], id: "vue-button", name: "VueButton", kitId: "vue-kit" };
     useAppStore.setState({ kits: [...SEED_KITS, vueKit], components: [...SEED_COMPONENTS, vueComp] });
-    const { container } = render(<DesignsWorkbench />);
+    render(<DesignsWorkbench />);
     // The toolbar switcher is gone (#move-to-planner) — clicking a rail kit head activates that kit. The
     // vue kit's head is labelled with its style ("material") under the single-kit style merge (#2506).
     fireEvent.click(screen.getByText("material").closest("button.ds-kithead")!);
     expect(screen.getByText(/Composition graph · vue-kit/)).toBeTruthy();
-    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();          // switching focuses nothing (#2705)
+    expect(screen.getByText(/Select a component/)).toBeTruthy();          // switching focuses nothing → empty state (#2818)
     // …then picking a component from the new kit reveals its details.
     fireEvent.click(railRow("VueButton"));
     expect(screen.getByText("VueButton.tsx")).toBeTruthy();
@@ -204,44 +205,47 @@ describe("DesignsWorkbench (#2308)", () => {
   });
 });
 
-describe("selection-driven details pane (#2705)", () => {
+describe("always-visible details pane, selection-driven CONTENT (#2818, was #2705)", () => {
   /** The pan/zoom canvas viewport (the element that fires onBackgroundClick). */
   const canvas = (c: HTMLElement) => c.querySelector('div[style*="cursor: grab"]') as HTMLElement;
 
-  it("hidden on mount — nothing is focused, so the graph gets the full width", () => {
+  it("empty state on mount — the Inspector is present, prompting a selection (#2818)", () => {
     const { container } = render(<DesignsWorkbench />);
-    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();
-    expect(screen.queryByText("Live preview")).toBeNull();
-    // Only the rail's own resize splitter is present (no details splitter yet).
-    expect(container.querySelectorAll(".resize-x").length).toBe(1);
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();
+    expect(screen.getByText(/Select a component/)).toBeTruthy();
+    expect(screen.queryByText("Live preview")).toBeNull();          // no preview until a component is focused
+    // The Inspector is always visible now, so its resize splitter is always present (rail + details).
+    expect(container.querySelectorAll(".resize-x").length).toBe(2);
   });
 
-  it("focusing a graph node reveals the details pane (with its resize splitter)", () => {
+  it("focusing a graph node fills the always-visible Inspector", () => {
     const { container } = render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));
     expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();
     expect(screen.getByText("Chip.tsx")).toBeTruthy();
+    expect(screen.queryByText(/Select a component/)).toBeNull();     // filled — the prompt is gone
     expect(graphNode("Chip").className).toContain("on");
     expect(container.querySelectorAll(".resize-x").length).toBe(2); // rail + details splitters
   });
 
-  it("focusing a component from the rail also reveals the details pane", () => {
+  it("focusing a component from the rail also fills the Inspector", () => {
     const { container } = render(<DesignsWorkbench />);
-    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();
+    expect(screen.getByText(/Select a component/)).toBeTruthy();     // empty state first
     fireEvent.click(railRow("Chip"));
     expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();
     expect(screen.getByText("Chip.tsx")).toBeTruthy();
   });
 
-  it("clicking the canvas background unfocuses the node and hides the details pane", () => {
+  it("clicking the canvas background unfocuses the node → the Inspector returns to its empty state", () => {
     const { container } = render(<DesignsWorkbench />);
-    fireEvent.click(graphNode("Chip"));                              // focus → details shown
-    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();
+    fireEvent.click(graphNode("Chip"));                              // focus → filled
+    expect(screen.getByText("Chip.tsx")).toBeTruthy();
     fireEvent.click(canvas(container));                              // click the empty canvas → unfocus
-    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();          // details pane gone
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();         // pane STAYS (#2818)
+    expect(screen.getByText(/Select a component/)).toBeTruthy();     // back to the empty state
     expect(screen.queryByText("Chip.tsx")).toBeNull();
     expect(graphNode("Chip").className).not.toContain("on");         // node no longer selected
-    expect(container.querySelectorAll(".resize-x").length).toBe(1); // details splitter removed too
+    expect(container.querySelectorAll(".resize-x").length).toBe(2); // Inspector (always on) keeps its splitter
   });
 });
 
