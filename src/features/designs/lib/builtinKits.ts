@@ -39,6 +39,10 @@ interface KitFile {
   version?: string;
   kit: Kit;
   components: ComponentRecord[];
+  /** The transitive non-component support closure (#2798) — `{ <path rel. to src/> : <source> }` the
+   *  vendored-source emit (②·2, epic #2793) vendors as a `_kit/` runtime. ARTIFACT-ONLY: the seed
+   *  ignores it (the store is a lean contract catalog), so it never rides into `~/.base-studio-code`. */
+  runtime?: Record<string, string>;
 }
 
 const kitModules = import.meta.glob<{ default: KitFile }>("@data/components/*.json", { eager: true });
