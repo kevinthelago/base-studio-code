@@ -31,10 +31,12 @@ interface CanvasProps {
   lit: { nodes: Set<string>; edges: Set<string> } | null;
   /** Kinds currently shown at full strength; a node of another kind is dimmed. */
   activeKinds: Set<KnowledgeKind>;
+  /** Concept ids with an implementation in the active tech (#2770) — badged with a "</>" corner. */
+  implConcepts?: Set<string>;
   onSelect: (id: string) => void;
 }
 
-export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, onSelect }: CanvasProps) {
+export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, implConcepts, onSelect }: CanvasProps) {
   // Edge geometry is a function of the (stable) layout only — compute once. `bow` separates parallel
   // edges between the same pair so multiple relationships don't overdraw.
   const geoms = useMemo<EdgeGeom[]>(() => {
@@ -104,6 +106,7 @@ export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, on
           >
             <Box as="span" className="algo-name">{n.name}</Box>
             <Box as="span" className="algo-meta">{meta}</Box>
+            {implConcepts?.has(n.id) && <Box as="span" className="algo-impl-badge mono" title="Has an implementation in the active language">{"</>"}</Box>}
           </Box>
         );
       })}

@@ -2,7 +2,8 @@
 // neighbor/relation lookups, and BFS pathfinding.
 import { describe, it, expect } from "vitest";
 import {
-  KNOWLEDGE, KIND_ORDER, layoutKnowledge, neighborsOf, relationsOf, pathBetween, nodeIndex, edgeId,
+  KNOWLEDGE, KIND_ORDER, TECHS, TECH_META, layoutKnowledge, neighborsOf, relationsOf, pathBetween,
+  nodeIndex, edgeId, implsForConcept, implFor, implById, techsWithImpl, usedByImpl,
 } from "./knowledge";
 
 describe("KNOWLEDGE seed", () => {
@@ -87,5 +88,52 @@ describe("pathBetween (undirected BFS)", () => {
   it("returns [id] for a node to itself and null for an unknown id", () => {
     expect(pathBetween(KNOWLEDGE, "heap", "heap")).toEqual(["heap"]);
     expect(pathBetween(KNOWLEDGE, "heap", "nope")).toBeNull();
+  });
+});
+
+describe("implementation tier (#2770)", () => {
+  it("implFor / implsForConcept / techsWithImpl resolve per-tech implementations", () => {
+    const ts = implFor(KNOWLEDGE, "merge-sort", "typescript");
+    expect(ts?.id).toBe("merge-sort.ts");
+    // The flagship "builds on" edge — merge-sort.ts composes the merge.ts primitive.
+    expect(ts?.composes).toEqual(["merge.ts"]);
+    expect(implFor(KNOWLEDGE, "merge-sort", "rust")?.composes).toEqual(["merge.rs"]);
+
+    // A node with no implementation in a tier returns undefined / empty.
+    expect(implFor(KNOWLEDGE, "array", "typescript")).toBeUndefined();
+    expect(implsForConcept(KNOWLEDGE, "array")).toEqual([]);
+
+    expect(implsForConcept(KNOWLEDGE, "merge-sort").map((i) => i.tech).sort()).toEqual(["rust", "typescript"]);
+    expect(techsWithImpl(KNOWLEDGE, "merge-sort")).toEqual(["typescript", "rust"]); // in TECHS order
+    expect(techsWithImpl(KNOWLEDGE, "array")).toEqual([]);
+  });
+
+  it("implById resolves an id and misses cleanly", () => {
+    expect(implById(KNOWLEDGE, "bfs.rs")?.tech).toBe("rust");
+    expect(implById(KNOWLEDGE, "nope.ts")).toBeUndefined();
+  });
+
+  it("usedByImpl is the reverse of composes", () => {
+    expect(usedByImpl(KNOWLEDGE, "merge.ts").map((i) => i.id)).toEqual(["merge-sort.ts"]);
+    expect(usedByImpl(KNOWLEDGE, "merge.rs").map((i) => i.id)).toEqual(["merge-sort.rs"]);
+    // A top-level impl no one composes has no reverse edges.
+    expect(usedByImpl(KNOWLEDGE, "merge-sort.ts")).toEqual([]);
+  });
+
+  it("seed integrity: unique ids, real concept targets, canonical id, same-tech composes", () => {
+    const nodeIds = new Set(KNOWLEDGE.nodes.map((n) => n.id));
+    const implIds = new Set(KNOWLEDGE.implementations.map((i) => i.id));
+    expect(implIds.size).toBe(KNOWLEDGE.implementations.length); // ids are unique
+    expect(KNOWLEDGE.implementations.length).toBe(10);
+    for (const im of KNOWLEDGE.implementations) {
+      expect(nodeIds.has(im.concept)).toBe(true); // every impl targets a REAL node id
+      expect(TECHS).toContain(im.tech);
+      expect(im.id).toBe(`${im.concept}.${TECH_META[im.tech].ext}`); // id = <concept>.<ext>
+      expect(im.code.trim().length).toBeGreaterThan(0);
+      for (const c of im.composes) {
+        expect(implIds.has(c)).toBe(true); // every composes id is a REAL impl id
+        expect(implById(KNOWLEDGE, c)!.tech).toBe(im.tech); // and of the SAME tech
+      }
+    }
   });
 });
