@@ -194,6 +194,7 @@ describe("roleDeniedCommands (launch wiring)", () => {
       for (const cap of Object.values(ROLE_DEFAULTS)) {
         if (cap.role === "designer") continue;  // ui:"write" by design (#2471) — asserted in its own suite
         if (cap.role === "architect") continue; // ui:"none" by design (#2755) — asserted in its own suite
+        if (cap.role === "librarian") continue; // ui:"none" by design (#2787) — restricted knowledge-store session, like the architect
         const denies = roleDeniedCommands(cap);
         for (const verb of UI_MUTATING) expect(denies).toContain(verb);
         expect(denies).not.toContain("bsc ui");        // reads stay (list/get/kit list…)
@@ -337,6 +338,7 @@ describe("network gate (#1107)", () => {
     for (const role of Object.keys(ROLE_DEFAULTS) as SessionRole[]) {
       if (role === "designer") continue;  // net:"none" by design (#2471) — asserted in its own suite
       if (role === "architect") continue; // net:"none" by design (#2755) — asserted in its own suite
+      if (role === "librarian") continue; // net:"none" by design (#2787) — restricted knowledge-store session, like the architect
       expect(ROLE_DEFAULTS[role].net).toBe("read");
       expect(roleDeniedTools(ROLE_DEFAULTS[role])).not.toContain("WebFetch");
     }
