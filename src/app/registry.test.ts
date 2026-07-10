@@ -13,7 +13,7 @@ describe("screen registry (#nav-pass)", () => {
     // This literal must enumerate every Workspace key (a missing/extra one is a compile error),
     // and WORKSPACES must match it at runtime — so the rail nav + titlebar always have a name.
     const all: Record<Workspace, true> = {
-      console: true, glance: true, algorithms: true, projects: true, github: true, security: true,
+      console: true, glance: true, projects: true, github: true, security: true,
       mcp: true, skills: true, automation: true, settings: true,
     };
     expect(new Set(WORKSPACES.map((s) => s.key))).toEqual(new Set(Object.keys(all)));

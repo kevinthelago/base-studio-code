@@ -19,4 +19,7 @@ export const PROJECT_MODES: TabItem[] = [
   // (STRUCTURE) axis; the THEME (STYLE) axis lives in its own "Themes" tab below (epic #2606).
   { id: "designs",    label: "Designs",     hint: "the kit & component workbench (the structure axis)" },
   { id: "themes",     label: "Themes",      hint: "the theme collection — palettes of token overrides (the style axis)" },
+  // The Algorithms knowledge graph (#2760/#2761) — a single read-only page, so it folded in here as a
+  // Planner tab (its own rail destination was removed, #2785), like Designs/Themes.
+  { id: "algorithms", label: "Algorithms",  hint: "the algorithms knowledge graph — concepts, structures, and how they relate" },
 ];

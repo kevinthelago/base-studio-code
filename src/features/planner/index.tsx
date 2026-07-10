@@ -44,6 +44,9 @@ const DesignsWorkbenchPage = lazy(() => import("@/features/designs").then((m) =>
 // Designs studio) it renders freely in any window and needs no single-owner gating. Lazy for the same
 // cycle-break + on-first-open chunk load.
 const ThemesPage = lazy(() => import("@/features/designs").then((m) => ({ default: m.ThemesGallery })));
+// Algorithms (#2785) — the knowledge graph, folded in from its own rail Workspace. A read-only graph
+// viewer with NO live PTY, so (like Themes) it renders freely in any window with no single-owner gating.
+const AlgorithmsPage = lazy(() => import("@/features/algorithms").then((m) => ({ default: m.AlgorithmsWorkspace })));
 
 export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   // Re-resolve the active project's repos + plan on tab open / project change.
@@ -159,6 +162,14 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
       {mode === "themes" && (
         <Box style={{ display: "flex", flex: 1, minHeight: 0 }}>
           <Suspense fallback={<Box style={{ flex: 1 }} />}><ThemesPage /></Suspense>
+        </Box>
+      )}
+
+      {/* Algorithms (#2785) — the read-only knowledge graph. No live PTY, so like Themes it renders when
+          active in either window; nothing to keep mounted or guard against double-ownership. */}
+      {mode === "algorithms" && (
+        <Box style={{ display: "flex", flex: 1, minHeight: 0 }}>
+          <Suspense fallback={<Box style={{ flex: 1 }} />}><AlgorithmsPage /></Suspense>
         </Box>
       )}
     </Screen>

@@ -9,8 +9,9 @@ import { AlgorithmsWorkspace } from "./AlgorithmsWorkspace";
 describe("AlgorithmsWorkspace", () => {
   it("renders the graph, the rail, and the empty-inspector legend", () => {
     render(<AlgorithmsWorkspace />);
-    expect(screen.getByText(/concepts ·/)).toBeTruthy();       // toolbar count (unique)
-    // "Concepts" is both the GraphRail header (#2773) and the concept kind-filter chip — so it repeats.
+    expect(screen.getByText(/nodes ·/)).toBeTruthy();          // read-only toolbar count "N nodes · M relationships" (#2785)
+    // "Concepts" is a node KIND now (the rail header is "Nodes", #2785) — it shows as a rail kind-group
+    // header and in the inspector's Kinds legend, so it still repeats.
     expect(screen.getAllByText("Concepts").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Merge Sort").length).toBeGreaterThan(0); // rail + canvas
     expect(screen.getByText("operates on")).toBeTruthy();      // inspector legend (unique)

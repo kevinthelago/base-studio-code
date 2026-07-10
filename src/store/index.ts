@@ -242,6 +242,13 @@ export const useAppStore = create<AppStore>()(
         // The Designs page-mode key was renamed "design" → "designs" (#2701, feature-folder rename to
         // match the on-screen "Designs" tab). A user whose last page-mode was "design" now opens "designs".
         if (state && (state.projectsPageMode as string) === "design") state.projectsPageMode = "designs";
+        // Algorithms moved from its own rail Workspace to a Planner tab (#2785). A user whose last
+        // workspace was "algorithms" would otherwise land on a removed screen — redirect to Planner on
+        // its Algorithms page.
+        if (state && (state.activeWorkspace as string) === "algorithms") {
+          state.activeWorkspace = "projects";
+          state.projectsPageMode = "algorithms";
+        }
         // The Security workspace's key was renamed "agents" → "security" (#2702, naming realignment).
         // A user whose last workspace was "agents" would otherwise land on a removed key.
         if (state && (state.activeWorkspace as string) === "agents") state.activeWorkspace = "security";
