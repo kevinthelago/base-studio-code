@@ -17,6 +17,17 @@
 import type { ComponentRecord, Kit } from "./model";
 import { stampSeedHash } from "./seedRefresh";
 
+/** Drop the verbatim implementation `source` (#2794) when seeding the mutable component STORE: it
+ *  belongs only in the packaged/released kit ARTIFACT (the vendored-source emit path, epic #2793), so
+ *  the store stays a lean contract catalog. Also keeps the #2483 `seedHash` stable — it hashes the same
+ *  source-free record as before this field existed, so existing installs don't spuriously re-seed. */
+function withoutSource(c: ComponentRecord): ComponentRecord {
+  if (c.source === undefined) return c;
+  const lean = { ...c };
+  delete lean.source;
+  return lean;
+}
+
 /** One packaged kit file under `@data/components/*.json`. */
 interface KitFile {
   /** Ascending display order in the library (absent sorts as 0). Stripped on assembly. */
@@ -42,6 +53,6 @@ export function makeBuiltinKits(): { kits: Kit[]; components: ComponentRecord[] 
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   return {
     kits: files.map((f) => stampSeedHash({ ...f.kit, builtin: true })),
-    components: files.flatMap((f) => f.components.map((c) => stampSeedHash({ ...c, builtin: true }))),
+    components: files.flatMap((f) => f.components.map((c) => stampSeedHash({ ...withoutSource(c), builtin: true }))),
   };
 }
