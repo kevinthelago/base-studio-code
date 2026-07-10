@@ -30,7 +30,9 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { RailRow } from "@/shared/ui/layouts/RailRow";
-import { RailGroupHeader } from "@/shared/ui/layouts/RailGroupHeader";
+import { RailSection } from "@/shared/ui/layouts/RailSection";
+import { GraphRail } from "@/shared/ui/layouts/GraphRail";
+import { useRailSections } from "@/shared/hooks/useRailSections";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { Screen } from "@/app/chrome/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
@@ -84,6 +86,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [groupFilter, setGroupFilter] = useState<string | null>(null);     // selected task group id
   const [facetSel, setFacetSel] = useState<FacetSelection>({});
+  const railSections = useRailSections();                                  // collapsible sidebar sections (#2803)
   const drawer = useDraft<SkillDef>({
     items: skills,
     newDraft: () => ({ ...blankSkill(), id: DRAFT_ID }),
@@ -240,20 +243,29 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
           {/* Body */}
           <Row align="stretch" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-            {/* Facet column — the left-nav filter panel. Its section headers + rows render through the
-                shared RailRow / RailGroupHeader nav primitives (#2789), the same components the graph
-                rails (Teams · Designs · Algorithms) use, for one consistent left-pane look. */}
-            <Box bg="var(--bg-canvas)" style={{ flex: "0 0 200px", overflowY: "auto", borderRight: "1px solid var(--border-soft)", padding: "14px 10px 40px 10px" }}>
-              {/* Groups — the task-group selector (single-select, like the old quick-filter). */}
-              <Box style={{ marginBottom: 18 }}>
-                <RailGroupHeader
-                  action={
-                    // eslint-disable-next-line no-restricted-syntax -- bespoke borderless text link in a facet header, not a .btn control
-                    <button onClick={() => setAddGroupOpen(true)} title="New group" style={{ background: "none", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 11, padding: 0 }}>＋ New group</button>
-                  }
-                >
-                  ⬡ Groups
-                </RailGroupHeader>
+            {/* Facet column — the left-nav filter panel, folded onto the same headerless GraphRail +
+                collapsible RailSection pattern as the graph rails (#2803): a fixed-width elevated column
+                whose Groups + facet sections collapse. The library SEARCH stays the page command bar
+                above (it filters the grid); this sidebar is the filter facets. */}
+            <GraphRail
+              style={{ flex: "0 0 200px" }}
+              bodyPad="12px 10px 20px"
+              footer={(activeFacetCount > 0 || query || groupFilter) ? (
+                <Box style={{ borderTop: "1px solid var(--border-soft)", padding: "10px 12px" }}>
+                  <Box as="button" onClick={clearFilters} style={{ fontSize: 11, color: "var(--fg-muted)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>clear all filters</Box>
+                </Box>
+              ) : undefined}
+            >
+              {/* Groups — the task-group selector (single-select). Collapsible; the "＋ New group" action
+                  is a stop-propagation span so clicking it opens the dialog without toggling the section. */}
+              <RailSection
+                label="⬡ Groups"
+                open={railSections.isOpen("groups")}
+                onToggle={() => railSections.toggle("groups")}
+                action={
+                  <Box as="span" onClick={(e: React.MouseEvent) => { e.stopPropagation(); setAddGroupOpen(true); }} title="New group" style={{ color: "var(--fg-dim)", cursor: "pointer", fontSize: 11 }}>＋ New group</Box>
+                }
+              >
                 {/* "All" / clear row */}
                 <RailRow active={!groupFilter} onClick={() => setGroupFilter(null)}
                   leading={<Box as="span" style={{ width: 13, textAlign: "center", color: !groupFilter ? "var(--accent)" : "var(--fg-dim)" }}>≡</Box>}
@@ -272,10 +284,10 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                   </RailRow>
                 ); })}
                 {skillGroups.length === 0 && <Text as="div" size={10.5} tone="dim" style={{ padding: "2px 0", lineHeight: 1.4 }}>No groups yet — bundle related skills into a group.</Text>}
-              </Box>
+              </RailSection>
               {facetDefs.map((f) => (
-                <Box key={f.key} style={{ marginBottom: 18 }}>
-                  <RailGroupHeader>{f.title}</RailGroupHeader>
+                <RailSection key={f.key} label={f.title} count={f.options.length}
+                  open={railSections.isOpen(f.key)} onToggle={() => railSections.toggle(f.key)}>
                   {f.options.map((o) => { const on = facetSel[f.key]?.has(o.value) ?? false; return (
                     <RailRow key={o.value} onClick={() => toggleFacet(f.key, o.value)}
                       leading={<>
@@ -286,12 +298,9 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                       <Box as="span" style={{ textTransform: "capitalize" }}>{o.label}</Box>
                     </RailRow>
                   ); })}
-                </Box>
+                </RailSection>
               ))}
-              {(activeFacetCount > 0 || query || groupFilter) &&
-                // eslint-disable-next-line no-restricted-syntax -- bespoke borderless underlined text link, not a .btn control
-                <button onClick={clearFilters} style={{ fontSize: 11, color: "var(--fg-muted)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>clear all filters</button>}
-            </Box>
+            </GraphRail>
 
             {/* Main */}
             <Box style={{ flex: 1, minWidth: 0, overflowY: "auto", paddingBottom: 60 }}>
