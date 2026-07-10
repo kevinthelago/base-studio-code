@@ -2,6 +2,14 @@
    (the "analytics-specific helpers" block). Scoped under .skills-workspace so they
    don't leak globally; .card/.tag/.kbd/.btn/.hint come from styles/tokens.css. */
 
+/* Unified Library layout (#2813): the list column is a size-query container so the over-the-list
+   header can DROP THE DIGEST FIRST when the column narrows, keeping the sort/density/Select controls.
+   The container is the list column (not the whole page), so the breakpoint tracks the real header room. */
+.skills-listcol { container-type: inline-size; }
+@container (max-width: 760px) {
+  .skills-listhead-digest { display: none; }
+}
+
 .skills-workspace {
   flex: 1;
   display: flex;
