@@ -1,0 +1,38 @@
+/* Algorithms knowledge-graph page (#2761). Only layout-specific rules live here; colors + primitives
+   come from tokens.css. Mirrors the Glance/Teams canvas idiom (absolute world-positioned node cards +
+   an SVG edge layer under them). */
+
+.algo-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 10px;
+  background: var(--bg-elev, var(--bg-soft));
+  cursor: pointer;
+  overflow: hidden;
+  transition: opacity 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+.algo-node:hover { border-color: var(--fg-dim); }
+.algo-node.on { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
+.algo-node.dim { opacity: 0.22; }
+.algo-node .algo-name { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.algo-node .algo-meta { font-size: 10.5px; color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* The edge label pill — only shown for lit (selected-neighbor) edges to keep the graph readable. */
+.algo-edgelabel {
+  font-size: 9.5px;
+  fill: var(--fg-muted);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+/* Inspector relationship rows. */
+.algo-relrow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border: 1px solid var(--border-soft, var(--border)); border-radius: 8px; background: var(--bg-soft); cursor: pointer; text-align: left; }
+.algo-relrow:hover { border-color: var(--fg-dim); }

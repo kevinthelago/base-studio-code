@@ -6,7 +6,7 @@ import { useAppStore } from "@/store";
 // The rail's top→bottom order is product-defined (#872); lock it so a stray reorder is caught.
 // Buttons carry the screen label as their `title`. Console is opt-in (#2372) — hidden by default.
 const FULL = [
-  "Console", "Glance", "Planner", "Skills", "Automations", "MCP",
+  "Console", "Glance", "Algorithms", "Planner", "Skills", "Automations", "MCP",
   "GitHub", "Security", "Settings",
 ];
 const NO_CONSOLE = FULL.filter((l) => l !== "Console");
