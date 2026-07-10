@@ -157,18 +157,84 @@ impl EmitKit {
     }
 
     /// Render one file's final content: rewrite every first-party `@/…` import to a relative path and
-    /// prepend the provenance stamp.
+    /// prepend the provenance stamp — which embeds a `sha256` of the rewritten BODY, the fingerprint
+    /// `emit sync` diffs to tell a MANAGED file (untouched since emit) from a DIVERGED one (hand-edited).
     fn render(&self, path: &str) -> String {
         let source = self.source_by_path.get(path).map(String::as_str).unwrap_or("");
         let dir = dir_of(path);
-        let rewritten = rewrite_imports(source, dir, &|spec| {
+        let body = rewrite_imports(source, dir, &|spec| {
             self.resolve(spec).map(|t| rel_import(dir, &strip_ext(&t)))
         });
-        format!(
-            "// vendored from {}@{} — `bsc ui emit` (regenerate to update; do not hand-edit)\n{}",
-            self.id, self.version, rewritten
-        )
+        let hash = crate::kit::sha256_hex(body.as_bytes());
+        format!("{}\n{body}", stamp_line(&self.id, &self.version, &hash))
     }
+
+    /// Re-render the file at `path` (a `src/`-relative path) if the current kit still has it as a
+    /// component or runtime module; `None` when the kit no longer carries it (a removed/renamed source).
+    pub fn render_path(&self, path: &str) -> Option<String> {
+        self.source_by_path.contains_key(path).then(|| self.render(path))
+    }
+
+    /// Classify a vendored file at `path` (its `src/`-relative path) against the CURRENT kit, given its
+    /// on-disk `content` — the pure core of `emit sync`. MANAGED (body hash == the stamp's) re-renders
+    /// to `UpToDate`/`Rewrite`; a body that no longer matches the stamp is `Diverged` (hand-edited →
+    /// never clobbered); a stamped path the kit dropped is `Unknown`; an unstamped file is `NotVendored`.
+    pub fn classify(&self, path: &str, content: &str) -> SyncVerdict {
+        let Some(stamp) = parse_stamp(content) else {
+            return SyncVerdict::NotVendored;
+        };
+        if crate::kit::sha256_hex(body_of(content).as_bytes()) != stamp.body_sha256 {
+            return SyncVerdict::Diverged; // hand-edited since emit — fall loudly, don't overwrite
+        }
+        match self.render_path(path) {
+            None => SyncVerdict::Unknown,
+            Some(fresh) if fresh == content => SyncVerdict::UpToDate,
+            Some(fresh) => SyncVerdict::Rewrite(fresh),
+        }
+    }
+}
+
+/// The provenance stamp line embedding the kit ref + the body's sha256.
+fn stamp_line(id: &str, version: &str, body_sha256: &str) -> String {
+    format!("// vendored from {id}@{version} (sha256:{body_sha256}) — `bsc ui emit sync` to update, do not hand-edit")
+}
+
+/// The kit ref + stamped body-hash parsed from a vendored file's first line. `None` when the first
+/// line isn't an emit stamp (an un-vendored file — `emit sync` leaves it alone).
+#[derive(Debug, PartialEq)]
+pub struct Stamp {
+    pub kit_ref: String,
+    pub body_sha256: String,
+}
+
+/// Parse the provenance stamp from a vendored file's content (its first line).
+pub fn parse_stamp(content: &str) -> Option<Stamp> {
+    let first = content.lines().next()?;
+    let rest = first.strip_prefix("// vendored from ")?;
+    let (kit_ref, after) = rest.split_once(" (sha256:")?;
+    let hash = after.split_once(')').map(|(h, _)| h)?;
+    Some(Stamp { kit_ref: kit_ref.to_string(), body_sha256: hash.to_string() })
+}
+
+/// The body of a vendored file — everything after the first (stamp) line, which is what the stamp's
+/// sha256 covers.
+fn body_of(content: &str) -> &str {
+    content.find('\n').map(|i| &content[i + 1..]).unwrap_or("")
+}
+
+/// The verdict for one file under `emit sync` — the pure classification the CLI acts on.
+#[derive(Debug)]
+pub enum SyncVerdict {
+    /// Managed + identical to a fresh render — nothing to do.
+    UpToDate,
+    /// Managed but the kit moved — the fresh content to overwrite it with (atomic upgrade).
+    Rewrite(String),
+    /// Hand-edited since emit — skipped, never clobbered (fall loudly).
+    Diverged,
+    /// Stamped, but its path is no longer in the kit (a removed/renamed source).
+    Unknown,
+    /// No provenance stamp — not a vendored kit file, left untouched.
+    NotVendored,
 }
 
 /// The directory portion of a `src/`-relative path (`shared/ui/data/Card.tsx` → `shared/ui/data`;
@@ -339,8 +405,8 @@ mod tests {
         assert!(card.contains("from \"../../lib/core/format\""), "runtime edge → _kit path: {card}");
         assert!(card.contains("from \"react\""), "external import left as-is");
         assert!(!card.contains("@/"), "no first-party alias survives in the emitted file");
-        // Provenance stamped.
-        assert!(card.starts_with("// vendored from acme/kit@2.1.0 —"), "provenance header: {card}");
+        // Provenance stamped, with the body hash the sync divergence check keys on.
+        assert!(card.starts_with("// vendored from acme/kit@2.1.0 (sha256:"), "provenance header: {card}");
         // The external dep is reported.
         assert_eq!(plan.external_deps, vec!["react".to_string()]);
     }
@@ -358,6 +424,56 @@ mod tests {
     fn unknown_component_errors_with_help() {
         let err = fixture().plan_component("nope").unwrap_err();
         assert!(err.contains("unknown component 'nope'"), "{err}");
+    }
+
+    #[test]
+    fn stamp_round_trips_and_classify_reports_managed_up_to_date() {
+        let kit = fixture();
+        let card = kit.render_path("shared/ui/data/Card.tsx").unwrap();
+        // The stamp parses back to the kit ref + a hash that IS the body's hash (a managed file).
+        let stamp = parse_stamp(&card).expect("card is stamped");
+        assert_eq!(stamp.kit_ref, "acme/kit@2.1.0");
+        assert_eq!(stamp.body_sha256, crate::kit::sha256_hex(body_of(&card).as_bytes()));
+        // A freshly-emitted file is UpToDate against the same kit — sync rewrites nothing.
+        assert!(matches!(kit.classify("shared/ui/data/Card.tsx", &card), SyncVerdict::UpToDate));
+    }
+
+    #[test]
+    fn classify_flags_a_hand_edited_file_diverged_and_never_rewrites_it() {
+        let kit = fixture();
+        let card = kit.render_path("shared/ui/data/Card.tsx").unwrap();
+        // Hand-edit the BODY (append a line) — the body hash no longer matches the stamp.
+        let edited = format!("{card}\n// a human tweaked this");
+        assert!(matches!(kit.classify("shared/ui/data/Card.tsx", &edited), SyncVerdict::Diverged));
+        // An unstamped file is simply not ours.
+        assert!(matches!(kit.classify("shared/ui/data/Card.tsx", "export const X = 1;"), SyncVerdict::NotVendored));
+    }
+
+    #[test]
+    fn classify_rewrites_a_managed_file_when_the_kit_moved_and_flags_a_dropped_path_unknown() {
+        // Emit `card` from v1, then classify it against a v2 kit whose card source CHANGED. The file is
+        // still MANAGED (body untouched), so the moved kit → a Rewrite with the fresh content.
+        let v1 = fixture();
+        let card_v1 = v1.render_path("shared/ui/data/Card.tsx").unwrap();
+        let v2 = {
+            let json = serde_json::json!({
+                "id": "acme/kit", "version": "3.0.0",
+                "components": [{ "id": "card", "src": "shared/ui/data/Card.tsx",
+                    "source": "export const Card = () => \"v2\";" }],
+                "runtime": {}
+            });
+            EmitKit::from_artifact(&json.to_string()).unwrap()
+        };
+        match v2.classify("shared/ui/data/Card.tsx", &card_v1) {
+            SyncVerdict::Rewrite(fresh) => {
+                assert!(fresh.contains("v2"), "rewrites to the current kit's source");
+                assert!(fresh.starts_with("// vendored from acme/kit@3.0.0"), "re-stamped to the new version");
+            }
+            other => panic!("expected Rewrite, got {other:?}"),
+        }
+        // A managed file whose path the kit dropped is Unknown (nothing to re-render).
+        let orphan = v1.render_path("shared/lib/core/format.ts").unwrap();
+        assert!(matches!(v2.classify("shared/lib/core/format.ts", &orphan), SyncVerdict::Unknown));
     }
 
     #[test]
