@@ -19,6 +19,8 @@ import { IconBox } from "@/shared/ui/data/IconBox";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
+import { RailRow } from "@/shared/ui/layouts/RailRow";
+import { RailGroupHeader } from "@/shared/ui/layouts/RailGroupHeader";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { TeamsCanvas, OrgLegend, type Selection } from "./TeamsCanvas";
 import { TeamsOverview } from "./TeamsOverview";
@@ -153,12 +155,11 @@ export function TeamsPanel() {
         rail={
           <GraphRail label="Teams" count={orgs.length} bodyPad="8px 8px 20px">
             {orgs.map((o) => (
-              <Row key={o.id} gap={9} align="center" className="teams-railrow" onClick={() => enterTeam(o.id)}
-                style={{ padding: "8px 9px", borderRadius: 8, cursor: "pointer" }}>
-                <IconBox size={20} radius={6} fontSize={11} color="var(--accent)" background="var(--bg-soft)">◆</IconBox>
-                <Text as="span" size={12.5} weight={500} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</Text>
-                <Text as="span" mono size={9} tone="dim">{o.positions.length}</Text>
-              </Row>
+              <RailRow key={o.id} onClick={() => enterTeam(o.id)}
+                leading={<IconBox size={20} radius={6} fontSize={11} color="var(--accent)" background="var(--bg-soft)">◆</IconBox>}
+                trailing={<Text as="span" mono size={9} tone="dim">{o.positions.length}</Text>}>
+                {o.name}
+              </RailRow>
             ))}
           </GraphRail>
         }
@@ -243,19 +244,16 @@ export function TeamsPanel() {
         <GraphRail label="Positions" count={org.positions.length} bodyPad="8px 8px 20px">
           {depts.map((dept) => (
             <Box key={dept}>
-              <Text as="div" size={9} tone="dim" style={{ margin: "10px 6px 5px", letterSpacing: ".11em", textTransform: "uppercase", fontWeight: 600 }}>{dept}</Text>
+              <RailGroupHeader style={{ margin: "10px 0 3px" }}>{dept}</RailGroupHeader>
               {byDept.get(dept)!.map((p) => {
                 const d = positionDisplay(p, personas);
                 const on = sel.type === "node" && sel.id === p.nodeId;
                 return (
-                  <Row key={p.nodeId} gap={9} align="center" onClick={() => onSelectNode(p.nodeId)}
-                    style={{ padding: "7px 9px", borderRadius: 8, cursor: "pointer",
-                      background: on ? "color-mix(in oklch, var(--accent) 10%, transparent)" : "transparent",
-                      border: `1px solid ${on ? "var(--accent)" : "transparent"}` }}>
-                    <IconBox size={20} radius={6} fontSize={11} color="var(--accent)" background="var(--bg-soft)">{d.glyph}</IconBox>
-                    <Text as="span" size={12.5} weight={500} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</Text>
-                    {d.role && <Text as="span" mono size={9} tone="dim" style={{ textTransform: "uppercase" }}>{d.role}</Text>}
-                  </Row>
+                  <RailRow key={p.nodeId} active={on} onClick={() => onSelectNode(p.nodeId)}
+                    leading={<IconBox size={20} radius={6} fontSize={11} color="var(--accent)" background="var(--bg-soft)">{d.glyph}</IconBox>}
+                    trailing={d.role ? <Text as="span" mono size={9} tone="dim" style={{ textTransform: "uppercase" }}>{d.role}</Text> : undefined}>
+                    {d.name}
+                  </RailRow>
                 );
               })}
             </Box>

@@ -102,12 +102,8 @@
   pointer-events: none;
 }
 
-/* Left-rail node rows (#2773) — grouped by kind, click selects + centers. `color: var(--fg)` because
-   these are <button> elements: without it the row text falls back to the UA button color instead of the
-   theme foreground, which read wrong in the left pane (#2787). */
-.algo-railrow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; background: transparent; color: var(--fg); cursor: pointer; }
-.algo-railrow:hover { background: var(--bg-soft); }
-.algo-railrow.on { background: var(--bg-soft); border-color: var(--accent); }
+/* Left-rail node rows now render through the shared RailRow / RailGroupHeader primitives (#2789);
+   the former bespoke `.algo-railrow` rules were removed with that migration. */
 
 /* The docked knowledge-librarian session (#2787) — mirrors the Teams Studio terminal dock. The caller
    (AlgorithmsWorkspace) owns the height + a shared `.resize-y` splitter above it. */

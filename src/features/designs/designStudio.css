@@ -18,23 +18,12 @@
    own header now, #2767). The shell COLUMNS + rail scaffold are GraphCanvas's / GraphRail's. ── */
 .ds-colhead { height: 38px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--border-soft, var(--border)); }
 
-/* ── rail tree ── */
-.ds-kithead { width: 100%; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border: none; background: transparent; border-radius: 7px; cursor: pointer; color: var(--fg); font-size: 12.5px; }
-.ds-kithead.active { background: var(--bg-soft); }
-.ds-kithead:hover { background: var(--bg-soft); }
-/* hierarchy group headers (#2487/#2506) — the rail is ALWAYS technology → style (lib/kitGroups):
-   tech levels render .ds-grouphead; a single-kit style header renders as the kit head itself (the
-   .ds-kithead family) labelled with the style — only a multi-kit style nests bare kit rows. */
-.ds-grouphead { width: 100%; display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px; border: none; background: transparent; border-radius: 7px; cursor: pointer; color: var(--fg-muted); }
-.ds-grouphead:hover { background: var(--bg-soft); color: var(--fg); }
+/* ── rail tree ── The kit heads, component rows, and tech/style group headers now render through the
+   shared RailRow / RailGroupHeader nav primitives (#2789), so their former bespoke style rules
+   (.ds-kithead / .ds-comprow / .ds-grouphead / .ds-caret) were removed — the `ds-*` classes survive
+   only as selector/test hooks on the shared elements. `.ds-groupkids` (the tree's left-border indent
+   guide) is structural and stays. */
 .ds-groupkids { margin: 2px 0 6px; padding-left: 8px; border-left: 1px solid var(--border-soft, var(--border)); }
-.ds-caret { display: inline-block; width: 12px; color: var(--fg-dim); font-size: 10px; transition: transform .15s; }
-/* Left padding aligns the RoleDot under the kit head's swatch (the row has no caret column, so it
-   needs the header's caret width added back): wrapper paddingLeft 6 + 22 = 28px, matching .ds-kithead's
-   8px padding + 12px caret + 8px gap. Keeps the dot/label column flush under the kit above it. */
-.ds-comprow { width: 100%; display: flex; align-items: center; gap: 8px; height: 29px; padding: 0 9px 0 22px; border: none; border-radius: 7px; cursor: pointer; font-size: 12.5px; background: transparent; color: var(--fg-muted); }
-.ds-comprow:hover { background: var(--bg-soft); }
-.ds-comprow.on { background: var(--accent-soft); color: var(--fg); }
 
 /* ── preview (lives in the inspector, #2453) ── */
 .ds-preview { flex: none; height: 34%; min-height: 200px; display: flex; flex-direction: column; border-top: 1px solid var(--border-soft, var(--border)); border-bottom: 1px solid var(--border); }
