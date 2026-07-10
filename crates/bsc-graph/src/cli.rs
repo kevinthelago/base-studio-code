@@ -58,7 +58,8 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         }
         // `extract <dir> [--tech typescript|rust]` — parse real code (#2775, Phase 2), extract
         // function definitions, and map each onto a seed concept. `matched` = fns with a concept,
-        // `unmatched` = fns without, `duplicates` = concepts implemented at more than one site.
+        // `unmatched` = fns without, `duplicates` = concepts implemented at more than one site,
+        // `calls` = concept→concept call edges lifted from real code (#2779).
         "extract" => {
             let dir = positional
                 .get(1)
@@ -88,7 +89,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                     serde_json::json!({ "concept": concept, "count": sites.len(), "sites": sites })
                 })
                 .collect();
-            emit(&serde_json::json!({ "matched": matched, "unmatched": unmatched, "duplicates": duplicates }))
+            // Concept→concept call edges lifted from real code (#2779) — a caller function that maps
+            // onto a concept invoking a callee that maps onto a concept. Tech-filtered like the fns.
+            let calls: Vec<Value> = crate::extract::extract_calls(std::path::Path::new(dir))
+                .into_iter()
+                .filter(|c| tech.as_deref().is_none_or(|t| c.tech == t))
+                .map(|c| serde_json::json!({ "from": c.from, "to": c.to, "tech": c.tech }))
+                .collect();
+            emit(&serde_json::json!({ "matched": matched, "unmatched": unmatched, "duplicates": duplicates, "calls": calls }))
         }
         "help" | "-h" | "--help" => {
             print!("{}", help(prog));
@@ -111,7 +119,7 @@ fn help(prog: &str) -> String {
          {prog} neighbors <id> [--pretty]               # a concept's relationships (rel + direction + other node)\n  \
          {prog} path <a> <b> [--pretty]                 # shortest relationship chain between two concepts\n  \
          {prog} impl <concept> --tech <t> [--pretty]    # the concept's per-tech implementation (#2770), or null\n  \
-         {prog} extract <dir> [--tech T] [--pretty]     # parse real code (#2775): matched/unmatched fns + concept duplicates\n\n\
+         {prog} extract <dir> [--tech T] [--pretty]     # parse real code (#2775): matched/unmatched fns + concept duplicates + call edges (#2779)\n\n\
          Node kinds: data-structure · algorithm · concept · output.\n\
          Relationships: operates-on · composes · variant-of · generates · related-to.\n\
          Implementation techs (#2770): typescript · rust — each `implements` a concept and `composes` other same-tech impls.\n\

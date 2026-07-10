@@ -14,13 +14,13 @@ import {
   implsForConcept, implFor, implById, usedByImpl,
   type KnowledgeGraph, type KnowledgeNode, type KnowledgeRel, type Tech, type AlgoImpl,
 } from "./lib/knowledge";
-import type { ExtractSite } from "./lib/extraction";
+import type { ExtractSite, CallEdge } from "./lib/extraction";
 
 const REL_ORDER: KnowledgeRel[] = ["operates-on", "composes", "variant-of", "generates", "related-to"];
 
 const PANEL = { width: "100%", height: "100%", borderLeft: "1px solid var(--border)", overflowY: "auto", background: "var(--bg-panel)" } as const;
 
-export function AlgorithmsInspector({ graph, selected, activeTech, sites, onSelectNode }: {
+export function AlgorithmsInspector({ graph, selected, activeTech, sites, calls, onSelectNode }: {
   graph: KnowledgeGraph;
   selected: KnowledgeNode | null;
   /** The implementation tech (#2770) whose code + composition the impl section shows. */
@@ -28,6 +28,9 @@ export function AlgorithmsInspector({ graph, selected, activeTech, sites, onSele
   /** The REAL implementation sites `bsc graph extract` found for the selected concept (#2777) — listed
    *  below the relationships when non-empty; nothing when absent (no scan run, or none found). */
   sites?: ExtractSite[];
+  /** The extracted OUTBOUND call edges of the selected concept (#2779) — the concepts its real-code
+   *  implementation invokes; listed as a "Calls (from code)" section when non-empty. */
+  calls?: CallEdge[];
   onSelectNode: (id: string) => void;
 }) {
   if (!selected) {
@@ -61,6 +64,7 @@ export function AlgorithmsInspector({ graph, selected, activeTech, sites, onSele
   const relations = relationsOf(graph, selected.id);
   const allImpls = implsForConcept(graph, selected.id);
   const impl = implFor(graph, selected.id, activeTech);
+  const byId = nodeIndex(graph.nodes);
   return (
     <Box style={PANEL}>
       <Stack gap={12} style={{ padding: 16 }}>
@@ -98,6 +102,25 @@ export function AlgorithmsInspector({ graph, selected, activeTech, sites, onSele
                 </Stack>
               );
             })}
+          </Stack>
+        )}
+
+        {calls && calls.length > 0 && (
+          <Stack gap={6}>
+            <Eyebrow size={10}>Calls (from code) · {calls.length}</Eyebrow>
+            <Stack gap={4}>
+              {calls.map((c, i) => {
+                const target = byId.get(c.to);
+                return (
+                  <Box as="button" key={`${c.to}:${c.tech}:${i}`} className="algo-relrow" onClick={() => onSelectNode(c.to)}>
+                    <Text as="span" tone="accent" size={11}>{"→"}</Text>
+                    <Box style={{ width: 8, height: 8, borderRadius: 2, background: target ? KIND_META[target.kind].color : "var(--accent)", flex: "none" }} />
+                    <Text as="span" size={12} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{target?.name ?? c.to}</Text>
+                    <Text as="span" mono size="xxs" tone="accent">{c.tech}</Text>
+                  </Box>
+                );
+              })}
+            </Stack>
           </Stack>
         )}
 
