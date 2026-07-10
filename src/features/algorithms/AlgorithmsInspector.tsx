@@ -1,6 +1,8 @@
 // The right inspector of the Algorithms knowledge graph (#2761) — the selected concept's identity,
 // complexity, summary, tags, and its relationships grouped by kind (each a clickable jump to the
 // neighbor). Empty state shows the relationship legend so the graph reads without a selection.
+// When the concept carries a per-tech implementation (#2770), the active tech's code + its
+// "builds on" (composes) and "used by" (reverse) impls render below the relationships.
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
@@ -8,17 +10,20 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Chip } from "@/shared/ui/data/Chip";
 import {
-  KIND_META, REL_META, relationsOf,
-  type KnowledgeGraph, type KnowledgeNode, type KnowledgeRel,
+  KIND_META, REL_META, TECH_META, relationsOf, nodeIndex,
+  implsForConcept, implFor, implById, usedByImpl,
+  type KnowledgeGraph, type KnowledgeNode, type KnowledgeRel, type Tech, type AlgoImpl,
 } from "./lib/knowledge";
 
 const REL_ORDER: KnowledgeRel[] = ["operates-on", "composes", "variant-of", "generates", "related-to"];
 
 const PANEL = { width: "100%", height: "100%", borderLeft: "1px solid var(--border)", overflowY: "auto", background: "var(--bg-panel)" } as const;
 
-export function AlgorithmsInspector({ graph, selected, onSelectNode }: {
+export function AlgorithmsInspector({ graph, selected, activeTech, onSelectNode }: {
   graph: KnowledgeGraph;
   selected: KnowledgeNode | null;
+  /** The implementation tech (#2770) whose code + composition the impl section shows. */
+  activeTech: Tech;
   onSelectNode: (id: string) => void;
 }) {
   if (!selected) {
@@ -50,6 +55,8 @@ export function AlgorithmsInspector({ graph, selected, onSelectNode }: {
   }
 
   const relations = relationsOf(graph, selected.id);
+  const allImpls = implsForConcept(graph, selected.id);
+  const impl = implFor(graph, selected.id, activeTech);
   return (
     <Box style={PANEL}>
       <Stack gap={12} style={{ padding: 16 }}>
@@ -89,7 +96,66 @@ export function AlgorithmsInspector({ graph, selected, onSelectNode }: {
             })}
           </Stack>
         )}
+
+        {allImpls.length > 0 && (
+          <Stack gap={10}>
+            <Eyebrow size={10}>Implementation · {TECH_META[activeTech].label}</Eyebrow>
+            {impl
+              ? <ImplSection graph={graph} impl={impl} onSelectNode={onSelectNode} />
+              : <Text size={12} tone="dim">No {TECH_META[activeTech].label} implementation yet.</Text>}
+          </Stack>
+        )}
       </Stack>
     </Box>
+  );
+}
+
+/** The active-tech implementation: name, code, "Builds on" (composes), and "Used by" (reverse). */
+function ImplSection({ graph, impl, onSelectNode }: {
+  graph: KnowledgeGraph;
+  impl: AlgoImpl;
+  onSelectNode: (id: string) => void;
+}) {
+  const byId = nodeIndex(graph.nodes);
+  const buildsOn = impl.composes
+    .map((id) => implById(graph, id))
+    .filter((im): im is AlgoImpl => !!im);
+  const usedBy = usedByImpl(graph, impl.id);
+  const conceptName = (im: AlgoImpl) => byId.get(im.concept)?.name ?? im.concept;
+  return (
+    <Stack gap={8}>
+      <Row gap={6} align="center" style={{ minWidth: 0 }}>
+        <Text mono size="xxs" tone="accent">{"</>"}</Text>
+        <Text weight={600} size={12.5} style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{impl.name}</Text>
+      </Row>
+      {impl.summary && <Text size={12} tone="muted">{impl.summary}</Text>}
+      <Box as="pre" className="algo-code mono">{impl.code}</Box>
+
+      {buildsOn.length > 0 && (
+        <Stack gap={4}>
+          <Text mono size="xxs" tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase" }}>Builds on</Text>
+          {buildsOn.map((sub) => (
+            <Box as="button" key={sub.id} className="algo-relrow" onClick={() => onSelectNode(sub.concept)}>
+              <Text as="span" tone="dim" size={11}>{"↳"}</Text>
+              <Text as="span" size={12} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{conceptName(sub)}</Text>
+              <Text as="span" mono size="xxs" tone="dim">{sub.id}</Text>
+            </Box>
+          ))}
+        </Stack>
+      )}
+
+      {usedBy.length > 0 && (
+        <Stack gap={4}>
+          <Text mono size="xxs" tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase" }}>Used by</Text>
+          {usedBy.map((up) => (
+            <Box as="button" key={up.id} className="algo-relrow" onClick={() => onSelectNode(up.concept)}>
+              <Text as="span" tone="dim" size={11}>{"↰"}</Text>
+              <Text as="span" size={12} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{conceptName(up)}</Text>
+              <Text as="span" mono size="xxs" tone="dim">{up.id}</Text>
+            </Box>
+          ))}
+        </Stack>
+      )}
+    </Stack>
   );
 }

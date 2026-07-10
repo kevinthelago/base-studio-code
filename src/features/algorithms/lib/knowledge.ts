@@ -36,9 +36,43 @@ export interface KnowledgeEdge {
   rel: KnowledgeRel;
 }
 
+/** The languages a concept can carry a per-tech implementation in (#2770). */
+export type Tech = "typescript" | "rust";
+
+/** The implementation techs, in display order. */
+export const TECHS: Tech[] = ["typescript", "rust"];
+
+/** Per-tech display label + file extension (the impl id suffix: `<concept>.<ext>`). */
+export const TECH_META: Record<Tech, { label: string; ext: string }> = {
+  typescript: { label: "TypeScript", ext: "ts" },
+  rust: { label: "Rust", ext: "rs" },
+};
+
+/**
+ * A per-tech implementation of a concept (#2770) — the second tier over the shared concept spine.
+ * Mirrors the Designs component/kit system: a language-specific, shareable component that `implements`
+ * one concept and `composes` OTHER implementations of the SAME tech to build more complicated
+ * algorithms (e.g. `merge-sort.ts` composes `merge.ts`). `id` is `<concept>.<ext>` (ext = ts | rs).
+ */
+export interface AlgoImpl {
+  /** `<concept>.<ext>` — e.g. "merge-sort.ts". */
+  id: string;
+  /** The concept node id this implements (a real node in `nodes`). */
+  concept: string;
+  tech: Tech;
+  name: string;
+  summary?: string;
+  /** OTHER implementation ids of the same tech this builds on (the "builds on" edges). */
+  composes: string[];
+  /** A real, concise implementation in `tech`. */
+  code: string;
+}
+
 export interface KnowledgeGraph {
   nodes: KnowledgeNode[];
   edges: KnowledgeEdge[];
+  /** The per-tech implementation tier (#2770). Empty when the seed carries no implementations. */
+  implementations: AlgoImpl[];
 }
 
 /** Left→right column order; every node lands in exactly one column by `kind`. */
@@ -71,10 +105,15 @@ const PAD = 48;
 /** The packaged seed graph — every node stamped `provenance: "seed"` (the JSON stays clean; Phase 2's
  *  extracted nodes carry `"extracted"`). This is the ONE source of truth, also embedded by `bsc graph`. */
 export const KNOWLEDGE: KnowledgeGraph = (() => {
-  const raw = RAW as unknown as { nodes: Omit<KnowledgeNode, "provenance">[]; edges: KnowledgeEdge[] };
+  const raw = RAW as unknown as {
+    nodes: Omit<KnowledgeNode, "provenance">[];
+    edges: KnowledgeEdge[];
+    implementations?: AlgoImpl[];
+  };
   return {
     nodes: raw.nodes.map((n) => ({ ...n, provenance: "seed" as const })),
     edges: raw.edges,
+    implementations: raw.implementations ?? [],
   };
 })();
 
@@ -178,4 +217,31 @@ export function pathBetween(graph: KnowledgeGraph, a: string, b: string): string
     }
   }
   return null;
+}
+
+// ── The per-tech implementation tier (#2770) — pure lookups over `graph.implementations`. ──
+
+/** Every implementation of a concept (any tech), in seed order. */
+export function implsForConcept(graph: KnowledgeGraph, conceptId: string): AlgoImpl[] {
+  return graph.implementations.filter((im) => im.concept === conceptId);
+}
+
+/** The implementation of a concept in a given tech, or `undefined` if none is seeded. */
+export function implFor(graph: KnowledgeGraph, conceptId: string, tech: Tech): AlgoImpl | undefined {
+  return graph.implementations.find((im) => im.concept === conceptId && im.tech === tech);
+}
+
+/** An implementation by its id (e.g. "merge-sort.ts"), or `undefined`. */
+export function implById(graph: KnowledgeGraph, id: string): AlgoImpl | undefined {
+  return graph.implementations.find((im) => im.id === id);
+}
+
+/** The techs that carry an implementation of a concept, in {@link TECHS} order. */
+export function techsWithImpl(graph: KnowledgeGraph, conceptId: string): Tech[] {
+  return TECHS.filter((t) => graph.implementations.some((im) => im.concept === conceptId && im.tech === t));
+}
+
+/** The implementations that `compose` `implId` — the reverse of `composes` ("used by"). */
+export function usedByImpl(graph: KnowledgeGraph, implId: string): AlgoImpl[] {
+  return graph.implementations.filter((im) => im.composes.includes(implId));
 }

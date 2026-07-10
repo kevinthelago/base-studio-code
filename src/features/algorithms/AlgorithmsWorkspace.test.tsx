@@ -19,4 +19,14 @@ describe("AlgorithmsWorkspace (#2761)", () => {
     expect(screen.getByText(/Split, sort halves, merge/)).toBeTruthy();
     expect(screen.getByText("O(n log n)")).toBeTruthy();
   });
+
+  it("shows the active-tech implementation + its builds-on for a selected concept (#2770)", () => {
+    render(<AlgorithmsWorkspace />);
+    fireEvent.click(screen.getByText("Merge Sort"));
+    // TypeScript is the default tech — the impl section shows the TS code that calls merge...
+    expect(screen.getByText((c) => c.includes("return merge(left, right, cmp);"))).toBeTruthy();
+    // ...and lists the merge primitive it builds on.
+    expect(screen.getByText("Builds on")).toBeTruthy();
+    expect(screen.getByText("merge.ts")).toBeTruthy();
+  });
 });

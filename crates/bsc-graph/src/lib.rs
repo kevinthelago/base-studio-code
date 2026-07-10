@@ -27,6 +27,35 @@ pub fn edges() -> Vec<Value> {
     graph().get("edges").and_then(Value::as_array).cloned().unwrap_or_default()
 }
 
+/// The implementation objects (#2770) — the per-tech tier over the concept spine. Each `implements`
+/// one concept in one tech (typescript | rust) and `composes` other implementations of the same tech.
+pub fn implementations() -> Vec<Value> {
+    graph().get("implementations").and_then(Value::as_array).cloned().unwrap_or_default()
+}
+
+/// The implementation of `concept` in `tech` (matching on both fields), or None.
+pub fn implementation(concept: &str, tech: &str) -> Option<Value> {
+    implementations().into_iter().find(|im| {
+        im.get("concept").and_then(Value::as_str) == Some(concept)
+            && im.get("tech").and_then(Value::as_str) == Some(tech)
+    })
+}
+
+/// The techs that carry an implementation of `concept`, in seed order (deduplicated).
+pub fn techs_with_impl(concept: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for im in implementations() {
+        if im.get("concept").and_then(Value::as_str) == Some(concept) {
+            if let Some(t) = im.get("tech").and_then(Value::as_str) {
+                if !out.iter().any(|x| x == t) {
+                    out.push(t.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
 /// A node by id, or None.
 pub fn node(id: &str) -> Option<Value> {
     nodes().into_iter().find(|n| n.get("id").and_then(Value::as_str) == Some(id))
@@ -137,5 +166,42 @@ mod tests {
         );
         assert_eq!(path("heap", "heap"), Some(vec!["heap".into()]));
         assert_eq!(path("heap", "nope"), None);
+    }
+
+    #[test]
+    fn implementation_lookup_reads_the_per_tech_tier() {
+        assert_eq!(implementations().len(), 10);
+
+        let ms = implementation("merge-sort", "rust").expect("merge-sort has a rust impl");
+        assert_eq!(ms["id"], "merge-sort.rs");
+        let composes: Vec<&str> =
+            ms["composes"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(composes.contains(&"merge.rs"), "merge_sort builds on the merge primitive");
+
+        // Unknown tech / concept → None.
+        assert!(implementation("merge-sort", "cobol").is_none());
+        assert!(implementation("array", "rust").is_none());
+    }
+
+    #[test]
+    fn techs_with_impl_lists_the_seeded_languages() {
+        assert_eq!(techs_with_impl("merge-sort"), vec!["typescript".to_string(), "rust".to_string()]);
+        assert!(techs_with_impl("array").is_empty());
+    }
+
+    #[test]
+    fn every_impl_targets_a_known_concept_and_composes_real_impls() {
+        let node_ids: std::collections::HashSet<String> =
+            nodes().iter().filter_map(|n| n.get("id").and_then(Value::as_str).map(str::to_owned)).collect();
+        let impl_ids: std::collections::HashSet<String> =
+            implementations().iter().filter_map(|i| i.get("id").and_then(Value::as_str).map(str::to_owned)).collect();
+        for im in implementations() {
+            let concept = im.get("concept").and_then(Value::as_str).expect("impl.concept is a string");
+            assert!(node_ids.contains(concept), "impl concept '{concept}' is a known node");
+            for c in im.get("composes").and_then(Value::as_array).into_iter().flatten() {
+                let cid = c.as_str().expect("composes id is a string");
+                assert!(impl_ids.contains(cid), "composes id '{cid}' is a known impl");
+            }
+        }
     }
 }

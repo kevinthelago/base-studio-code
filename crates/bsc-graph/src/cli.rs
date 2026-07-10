@@ -14,17 +14,33 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Ok(())
     };
     match verb {
-        // `list [--kind K]` — every node, or one kind's column.
+        // `list [--kind K] [--tech T]` — every node, one kind's column, and/or only concepts that
+        // carry an implementation in tech T (#2770).
         "list" => {
             let kind = flag_value(&args, "--kind");
+            let tech = flag_value(&args, "--tech");
             let nodes: Vec<Value> = crate::nodes()
                 .into_iter()
                 .filter(|n| match &kind {
                     Some(k) => n.get("kind").and_then(Value::as_str) == Some(k.as_str()),
                     None => true,
                 })
+                .filter(|n| match &tech {
+                    Some(t) => {
+                        let id = n.get("id").and_then(Value::as_str).unwrap_or_default();
+                        crate::techs_with_impl(id).iter().any(|x| x == t)
+                    }
+                    None => true,
+                })
                 .collect();
             emit(&Value::Array(nodes))
+        }
+        // `impl <concept> --tech <t>` — the concept's implementation in a tech (#2770), or null.
+        "impl" => {
+            let concept = positional.get(1).ok_or("usage: bsc graph impl <concept> --tech <t>")?;
+            let tech = flag_value(&args, "--tech").ok_or("usage: bsc graph impl <concept> --tech <t>")?;
+            let found = crate::implementation(concept, &tech).unwrap_or(Value::Null);
+            emit(&found)
         }
         // `neighbors <id>` — the concept's relationships, each with the other endpoint + direction.
         "neighbors" => {
@@ -44,7 +60,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             print!("{}", help(prog));
             Ok(())
         }
-        other => Err(format!("unknown graph command '{other}' — want: list | neighbors <id> | path <a> <b>\n\n{}", help(prog))),
+        other => Err(format!("unknown graph command '{other}' — want: list | neighbors <id> | path <a> <b> | impl <concept> --tech <t>\n\n{}", help(prog))),
     }
 }
 
@@ -57,11 +73,13 @@ fn help(prog: &str) -> String {
     format!(
         "{prog} — the Algorithms knowledge graph (#2761)\n\n\
          USAGE:\n  \
-         {prog} list [--kind K] [--pretty]   # every concept, or one kind's column\n  \
-         {prog} neighbors <id> [--pretty]    # a concept's relationships (rel + direction + other node)\n  \
-         {prog} path <a> <b> [--pretty]      # shortest relationship chain between two concepts\n\n\
+         {prog} list [--kind K] [--tech T] [--pretty]   # every concept; filter by kind and/or a tech that implements it\n  \
+         {prog} neighbors <id> [--pretty]               # a concept's relationships (rel + direction + other node)\n  \
+         {prog} path <a> <b> [--pretty]                 # shortest relationship chain between two concepts\n  \
+         {prog} impl <concept> --tech <t> [--pretty]    # the concept's per-tech implementation (#2770), or null\n\n\
          Node kinds: data-structure · algorithm · concept · output.\n\
          Relationships: operates-on · composes · variant-of · generates · related-to.\n\
-         The graph is the curated ontology (Graph 1); Phase 2 (#2745) adds the extracted-code join.\n",
+         Implementation techs (#2770): typescript · rust — each `implements` a concept and `composes` other same-tech impls.\n\
+         The graph is the curated ontology (Graph 1) + the per-tech implementation tier; Phase 2 (#2745) adds the extracted-code join.\n",
     )
 }
