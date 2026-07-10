@@ -25,6 +25,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("ui", "UI design surface: KitNode contract + themes (#1852) + the component library (#2469) + the released-kit store (release, #2465)"),
     ("logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control"),
     ("files", "file-ops toolkit: read/write/edit/list/info"),
+    ("graph", "algorithms knowledge graph: concepts + relationships (list · neighbors · path)"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
     ("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance"),
     ("hook", "internal PreToolUse deny hooks (run by Claude Code, not by hand)"),
@@ -74,6 +75,7 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "ui" => bsc_ui::cli::run(rest, "bsc ui"),
         "logs" => logs::cli::run(rest, "bsc logs"),
         "files" => bsc_files::cli::run(rest, "bsc files"),
+        "graph" => bsc_graph::cli::run(rest, "bsc graph"),
         #[cfg(feature = "data")]
         "data" => bsc_data::cli::run(rest, "bsc data"),
         "mcp" => run_mcp(rest),

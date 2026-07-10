@@ -739,6 +739,7 @@ dependencies = [
  "bsc-component",
  "bsc-data",
  "bsc-files",
+ "bsc-graph",
  "bsc-persona",
  "bsc-project",
  "bsc-teams",
@@ -826,6 +827,13 @@ dependencies = [
  "bsc-cli-util",
  "ignore",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-graph"
+version = "0.1.0"
+dependencies = [
  "serde_json",
 ]
 

@@ -32,6 +32,8 @@ bsc-component = { path = "../bsc-component" }
 bsc-ui = { path = "../bsc-ui" }
 logs = { path = "../logs" }
 bsc-files = { path = "../bsc-files" }
+# `bsc graph` — the Algorithms knowledge graph (#2761): concepts + relationships, queryable read-only.
+bsc-graph = { path = "../bsc-graph" }
 plandb = { path = "../plandb" }
 errordb = { path = "../errordb" }
 # `bsc todo` — the two-scope agent todo store (#1872): global runbook here, feature scope in plandb.
