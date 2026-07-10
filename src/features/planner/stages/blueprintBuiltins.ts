@@ -39,6 +39,11 @@ export const BLUEPRINT_CATEGORIES: BlueprintCategory[] = blueprintMeta.categorie
 export const CATEGORY_META: Record<BlueprintCategory, { label: string; h: number }> =
   blueprintMeta.categoryMeta as Record<BlueprintCategory, { label: string; h: number }>;
 
+/** The packaged library kit id (= `REACT_UI_KIT_ID`) a greenfield app is built on — stamped as a
+ *  built-in blueprint's consumer `kit` so `recordBlueprintKit` files the `kit_usage` edge (#2277/#2810).
+ *  A literal (not a `@/features/designs` import) to keep `planner` decoupled from `designs`. */
+const PACKAGED_KIT_ID = "react-ui";
+
 /** Dedup a blueprint's section list by stage key — a hand-edited or imported blueprint could carry
  *  two sections with the same key; keep the first so the focused pane / gates resolve a single stage. */
 export function dedupeSections(sections: BlueprintStage[]): BlueprintStage[] {
@@ -76,8 +81,16 @@ export function makeBlueprints(): Blueprint[] {
   return overlayGlob("blueprints", blueprintModules)
     .map(([, def]) => def)
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-    .map(({ order: _order, sections, ...meta }) => ({
-      ...meta,
-      sections: dedupeSections(sections.map((s) => mkStage(s.key, { optional: s.optional }))),
-    }));
+    .map(({ order: _order, sections, ...meta }) => {
+      // A GREENFIELD blueprint ships a fresh UI on the packaged kit, so record it as the app's consumer
+      // `kit` (#2277/#2810): `recordBlueprintKit` then files the `kit_usage` edge at every bind, so a kit
+      // change fans out to the project. An explicit `kit` in the def wins; operate-on-existing-repo
+      // categories (transform/harden/maintain/data/script) aren't tied to a shared kit → no key added.
+      const kit = meta.kit ?? (meta.category === "greenfield" ? PACKAGED_KIT_ID : undefined);
+      return {
+        ...meta,
+        ...(kit ? { kit } : {}),
+        sections: dedupeSections(sections.map((s) => mkStage(s.key, { optional: s.optional }))),
+      };
+    });
 }

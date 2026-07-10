@@ -17,6 +17,21 @@ const sig = (over: Parameters<typeof buildPlanStageState>[0] = {}) =>
 const setEnabled = (secs: BlueprintStage[], key: string, enabled: boolean): BlueprintStage[] =>
   secs.map((s) => (s.key === key ? { ...s, enabled } : s));
 
+describe("greenfield blueprints declare their consumer kit (#2810)", () => {
+  const bps = makeBlueprints();
+
+  it("greenfield built-ins auto-record kit=react-ui so the kit_usage edge fills at bind", () => {
+    const greenfield = bps.filter((b) => b.category === "greenfield");
+    expect(greenfield.length).toBeGreaterThan(0);
+    expect(greenfield.every((b) => b.kit === "react-ui")).toBe(true);
+  });
+
+  it("a non-greenfield (operate-on-existing / data / script) built-in isn't auto-tied to a shared kit", () => {
+    const other = bps.find((b) => b.category !== "greenfield");
+    if (other) expect(other.kit).toBeUndefined();
+  });
+});
+
 describe("blueprints — seed library", () => {
   it("seeds the starter blueprints with a 'default'", () => {
     const bps = makeBlueprints();
