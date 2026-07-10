@@ -221,8 +221,9 @@ export function DesignsWorkbench() {
             )}
             <Box style={{ flex: 1 }} />
             <ZoomControls vp={gvp} step={1.15} />
-            <Box as="button" className="ds-act" onClick={() => gvp.fit()}>fit</Box>
-            <Box as="button" className="ds-act" title="Share or import a kit (gist / share code)" onClick={() => setShareOpen(true)}><Text as="span" tone="dim">⇅</Text> Share</Box>
+            {/* The shared ghost Button (#2808), matching the Teams/Algorithms/Glance toolbars. */}
+            <Button variant="ghost" onClick={() => gvp.fit()}>fit</Button>
+            <Button variant="ghost" title="Share or import a kit (gist / share code)" onClick={() => setShareOpen(true)}><Text as="span" tone="dim">⇅</Text> Share</Button>
           </>
         }
         rail={
