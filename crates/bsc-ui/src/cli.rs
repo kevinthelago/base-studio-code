@@ -235,14 +235,20 @@ Compact JSON by default; --pretty indents.",
 USAGE:
   bsc ui emit component <id> <dir>   # a component + its transitive composes + the _kit runtime it needs
   bsc ui emit kit <dir>              # the whole kit
+  bsc ui emit sync <dir>             # re-emit MANAGED files whose kit source moved; warn on hand-edited
 
 Writes REAL, compilable source into <dir> (mirroring the src/ layout), every first-party `@/…` import
 rewritten to a resolvable relative path — so the emitted tree builds with NO alias config and NO
 network. Resolves against the EMBEDDED kit artifact (the packaged `bsc/react-ui`), so it works inside
 the sealed sandbox where the mutable stores aren't reachable. Each file is provenance-stamped
-(`// vendored from bsc/react-ui@<version>`), the marker a later `sync` keys on. Prints a JSON summary
-{ emitted, dir, files, externalDeps }, where `externalDeps` lists the npm packages (react, d3-*) the
-vendored code imports and the app must declare — the closure vendors first-party source only.",
+(`// vendored from bsc/react-ui@<version> (sha256:…)`), the fingerprint `sync` keys on. `component`/`kit`
+print { emitted, dir, files, externalDeps } — `externalDeps` lists the npm packages (react, d3-*) the
+vendored code imports and the app must declare (the closure vendors first-party source only).
+
+`sync` is the ADOPT step (the atomic-upgrade model — re-run the command, don't hand-edit): it re-emits
+every MANAGED file (unchanged since it was emitted — its body still matches the stamp's sha256) from
+the current kit, and WARNS + skips every DIVERGED (hand-edited) file rather than clobbering it. Prints
+{ dir, synced, upToDate, diverged, unknown }.",
     },
 ];
 
@@ -478,10 +484,45 @@ fn cmd_emit(args: &[String], prog: &str) -> Result<(), String> {
             let dir = args.get(1).ok_or("usage: bsc ui emit kit <dir>")?;
             write_plan(&crate::emit::EmitKit::packaged().plan_kit(), dir)
         }
-        Some(other) => {
-            Err(format!("unknown emit command '{other}' — want: component <id> <dir> | kit <dir>"))
+        Some("sync") => {
+            let dir = args.get(1).ok_or("usage: bsc ui emit sync <dir>")?;
+            cmd_sync(dir)
+        }
+        Some(other) => Err(format!(
+            "unknown emit command '{other}' — want: component <id> <dir> | kit <dir> | sync <dir>"
+        )),
+    }
+}
+
+/// `bsc ui emit sync <dir>` (#2804) — the ADOPT step: re-emit every MANAGED vendored kit file (one
+/// untouched since it was emitted) from the current embedded artifact, and WARN + skip every DIVERGED
+/// (hand-edited) one instead of clobbering it (fall loudly). This is how a kit change is adopted — by
+/// re-running the command, never by hand-editing — so a worker the director routes just runs this.
+/// Prints `{ dir, synced, upToDate, diverged, unknown }`.
+fn cmd_sync(dir: &str) -> Result<(), String> {
+    let kit = crate::emit::EmitKit::packaged();
+    let mut files: Vec<(String, String)> = Vec::new();
+    collect_source_files_into(Path::new(dir), Path::new(dir), &mut files)?;
+    let (mut synced, mut up_to_date, mut diverged, mut unknown) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for (rel, content) in &files {
+        match kit.classify(rel, content) {
+            crate::emit::SyncVerdict::NotVendored => {}
+            crate::emit::SyncVerdict::UpToDate => up_to_date.push(rel.clone()),
+            crate::emit::SyncVerdict::Diverged => diverged.push(rel.clone()),
+            crate::emit::SyncVerdict::Unknown => unknown.push(rel.clone()),
+            crate::emit::SyncVerdict::Rewrite(fresh) => {
+                let out = Path::new(dir).join(rel);
+                std::fs::write(&out, &fresh).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
+                synced.push(rel.clone());
+            }
         }
     }
+    let summary = serde_json::json!({
+        "dir": dir, "synced": synced, "upToDate": up_to_date, "diverged": diverged, "unknown": unknown,
+    });
+    println!("{}", serde_json::to_string(&summary).map_err(|e| e.to_string())?);
+    Ok(())
 }
 
 /// Write every planned file under `dir` (creating parent dirs) and print the JSON summary
@@ -1578,9 +1619,30 @@ mod tests {
     #[test]
     fn emit_help_documents_both_forms() {
         let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "emit");
-        for needle in ["emit component", "emit kit", "externalDeps", "sandbox", "vendored from"] {
+        for needle in ["emit component", "emit kit", "emit sync", "externalDeps", "diverged", "sandbox", "vendored from"] {
             assert!(d.contains(needle), "emit help mentions {needle}");
         }
+    }
+
+    #[test]
+    fn emit_sync_round_trips_up_to_date_and_flags_hand_edits_diverged() {
+        // Emit `card`, then sync the same dir — every file is up-to-date (nothing rewritten).
+        let dir = std::env::temp_dir().join(format!("bsc-ui-sync-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let d = dir.to_string_lossy().into_owned();
+        run(vec!["emit".into(), "component".into(), "card".into(), d.clone()], "bsc ui").unwrap();
+        run(vec!["emit".into(), "sync".into(), d.clone()], "bsc ui").unwrap(); // a no-op adopt — must not error
+        let card_path = dir.join("shared/ui/data/Card.tsx");
+        let before = std::fs::read_to_string(&card_path).unwrap();
+        run(vec!["emit".into(), "sync".into(), d.clone()], "bsc ui").unwrap();
+        assert_eq!(std::fs::read_to_string(&card_path).unwrap(), before, "a managed, current file is untouched by sync");
+        // Hand-edit the body → sync must NOT clobber it (diverged, fall loudly).
+        std::fs::write(&card_path, format!("{before}\n// human tweak")).unwrap();
+        run(vec!["emit".into(), "sync".into(), d], "bsc ui").unwrap();
+        assert!(std::fs::read_to_string(&card_path).unwrap().contains("// human tweak"), "a diverged file is left as-is");
+        // Bad shape: sync needs a dir.
+        assert!(run(vec!["emit".into(), "sync".into()], "bsc ui").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
