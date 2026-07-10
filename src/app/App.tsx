@@ -26,7 +26,7 @@ import { useNavHistory } from "@/shared/hooks/useNavHistory";
 import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, SettingsWorkspace,
-  ProjectsWorkspace, SkillsWorkspace, SecurityWorkspace, GlanceWorkspace, WorkspaceFallback,
+  ProjectsWorkspace, SkillsWorkspace, SecurityWorkspace, GlanceWorkspace, AlgorithmsWorkspace, WorkspaceFallback,
 } from "@/app/lazyWorkspaces";
 
 // ── App shell ─────────────────────────────────────────────────────────────────
@@ -143,6 +143,7 @@ export default function App() {
           {/* The remaining screens mount only while active — their chunks load on first nav. */}
           <Suspense fallback={<WorkspaceFallback />}>
             {activeWorkspace === "glance"     && <GlanceWorkspace />}
+            {activeWorkspace === "algorithms" && <AlgorithmsWorkspace />}
             {activeWorkspace === "github"     && <GitHubWorkspace />}
             {activeWorkspace === "automation" && <AutomationsWorkspace />}
             {activeWorkspace === "mcp" && <McpWorkspace />}
