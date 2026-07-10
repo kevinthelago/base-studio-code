@@ -12,9 +12,11 @@ import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Button } from "@/shared/ui/controls/Button";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
+import { useDragResize } from "@/shared/hooks/useDragResize";
 import { AlgorithmsCanvas } from "./AlgorithmsCanvas";
 import { AlgorithmsInspector } from "./AlgorithmsInspector";
 import { AlgorithmsRail } from "./AlgorithmsRail";
+import { LibrarianTerminal } from "./LibrarianTerminal";
 import {
   KNOWLEDGE, KIND_ORDER, TECHS, NODE_W, NODE_H, layoutKnowledge, neighborsOf, nodeIndex,
 } from "./lib/knowledge";
@@ -51,6 +53,10 @@ export function AlgorithmsWorkspace() {
     if (p) vp.centerOn(p.x + NODE_W / 2, p.y + NODE_H / 2);
   };
 
+  // The always-on librarian session's dock height (#2787) — a row-resize handle above it; `invert`
+  // because the terminal sits AFTER the handle, so dragging up grows it. Mirrors the Teams dock (#2759).
+  const term = useDragResize({ initial: 240, min: 140, max: 560, axis: "y", invert: true });
+
   // Read-only header (#2785): the title + node/relationship count, then the standard graph nav
   // (zoom/fit). The former kind-filter, language, and scan controls were removed — the page is a viewer.
   const toolbar = (
@@ -76,6 +82,14 @@ export function AlgorithmsWorkspace() {
       inspectorResizable
       inspectorWidth={340}
       onBackgroundClick={() => setSelected(null)}
+      // The always-on knowledge-librarian session (#2787), docked below the graph; the caller owns its
+      // height + a `.resize-y` handle (GraphCanvas gives it a flex:none slot), mirroring Teams (#2759).
+      dock={
+        <Box style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <Box className="resize-y" {...term.handleProps} title="Drag to resize" />
+          <LibrarianTerminal height={term.size} />
+        </Box>
+      }
     >
       <AlgorithmsCanvas graph={graph} layout={layout} selected={selected} lit={lit} activeKinds={ALL_KINDS} implConcepts={implConcepts} onSelect={setSelected} />
     </GraphCanvas>
