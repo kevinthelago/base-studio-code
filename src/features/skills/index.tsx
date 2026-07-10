@@ -39,7 +39,7 @@ import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { LessonsTab } from "./LessonsTab";
 import { NewGroupDialog } from "./NewGroupDialog";
 import { SkillDrawer } from "./SkillDrawer";
-import { SkillsDigest } from "./SkillsDigest";
+import { SkillsDigestBar, SkillsDigestPanel } from "./SkillsDigest";
 import { RunsTab } from "./RunsTab";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import type { GhProjectRef as GhProject } from "@/shared/lib/github/types";
@@ -210,61 +210,28 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
 
       {mode === "library" && (
-        <Stack style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-          {/* KPI digest (collapsible) */}
-          <SkillsDigest merged={merged} stats={stats} kpis={kpis} statsLoaded={statsLoaded} digestOpen={digestOpen} onToggle={() => setDigestOpen((v) => !v)} />
-
-          {/* Command bar */}
-          <Row gap={10} style={{ padding: "10px 18px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
-            <SearchField
-              value={query}
-              onChange={setQuery}
-              placeholder="Search name, description, tools…"
-              style={{ flex: 1, maxWidth: 440, height: 30, background: "var(--bg-canvas)", borderRadius: "var(--r-md)" }}
-            />
-            <Text as="span" mono size={11} tone="muted">{filtered.length} <Text as="span" tone="dim">of {kpis.total}</Text></Text>
-            <Box as="span" style={{ flex: 1 }} />
-            <Row gap={6} style={{ position: "relative" }}>
-              <Text as="span" mono size={10} tone="dim" style={{ textTransform: "uppercase" }}>Sort</Text>
-              <Button onClick={() => setSortOpen((v) => !v)} style={{ padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border)", fontSize: 11.5, color: "var(--fg)" }}>{sort} <Text as="span" tone="dim" size={9}>▾</Text></Button>
-              {sortOpen && (
-                <Box pad={4} bg="var(--bg-elev)" border radius="md" style={{ position: "absolute", top: 34, right: 0, zIndex: 40, minWidth: 184, boxShadow: "0 14px 36px rgba(0,0,0,.45)"}}>
-                  {SORTS.map((o) => <Row key={o} onClick={() => { setSort(o); setSortOpen(false); }} gap={8} style={{ padding: "6px 9px", borderRadius: 4, fontSize: 11.5, cursor: "pointer", color: sort === o ? "var(--fg)" : "var(--fg-muted)", background: sort === o ? "var(--bg-elev2)" : "transparent" }}><Box as="span" style={{ flex: 1 }}>{o}</Box><Text as="span" tone="accent">{sort === o ? "✓" : ""}</Text></Row>)}
-                </Box>
-              )}
-            </Row>
-            <Row align="stretch" style={{ height: 28, border: "1px solid var(--border)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
-              {([["list", "☰ List"], ["cards", "▦ Cards"], ["grouped", "⬡ Group"], ["kind", "⊟ Kind"]] as const).map(([d, lbl], i) => (
-                <Row key={d} onClick={() => setDensity(d)} style={{ padding: "0 11px", fontSize: 11, cursor: "pointer", background: density === d ? "var(--bg-elev2)" : "transparent", color: density === d ? "var(--fg)" : "var(--fg-dim)", borderRight: i < 3 ? "1px solid var(--border)" : "none" }}>{lbl}</Row>
-              ))}
-            </Row>
-            <Button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} style={{ fontSize: 11.5, border: "1px solid " + (selectMode ? "var(--accent-dim)" : "var(--border)"), background: selectMode ? tintBg("var(--accent)", 86) : "var(--bg-canvas)", color: selectMode ? "var(--accent)" : "var(--fg)" }}>{selectMode ? "✓ Selecting" : "☑ Select"}</Button>
-          </Row>
-
-          {/* Body */}
-          <Row align="stretch" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-            {/* Facet column — the left-nav filter panel, folded onto the same headerless GraphRail +
-                collapsible RailSection pattern as the graph rails (#2803): a fixed-width elevated column
-                whose Groups + facet sections collapse. The library SEARCH stays the page command bar
-                above (it filters the grid); this sidebar is the filter facets. */}
+        // Unified layout (#2813): the search + collapsible facets live in the LEFT RAIL; a slim header
+        // sits OVER THE LIST (digest stats + sort/density/Select) — no full-width top header.
+        <Row align="stretch" className="skills-main" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+            {/* Left rail — search over the collapsible Groups + facet sections (the graph-rail pattern). */}
             <GraphRail
               style={{ flex: "0 0 200px" }}
               bodyPad="12px 10px 20px"
+              tools={
+                <SearchField value={query} onChange={setQuery} placeholder="Search name, description, tools…" aria-label="Search skills" style={{ width: "100%" }} />
+              }
               footer={(activeFacetCount > 0 || query || groupFilter) ? (
                 <Box style={{ borderTop: "1px solid var(--border-soft)", padding: "10px 12px" }}>
                   <Box as="button" onClick={clearFilters} style={{ fontSize: 11, color: "var(--fg-muted)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>clear all filters</Box>
                 </Box>
               ) : undefined}
             >
-              {/* Groups — the task-group selector (single-select). Collapsible; the "＋ New group" action
-                  is a stop-propagation span so clicking it opens the dialog without toggling the section. */}
+              {/* Groups — the task-group selector (single-select), collapsible (#2813: the ＋New group
+                  action was removed; groups are still created from the grouped-density empty-state hint). */}
               <RailSection
                 label="⬡ Groups"
                 open={railSections.isOpen("groups")}
                 onToggle={() => railSections.toggle("groups")}
-                action={
-                  <Box as="span" onClick={(e: React.MouseEvent) => { e.stopPropagation(); setAddGroupOpen(true); }} title="New group" style={{ color: "var(--fg-dim)", cursor: "pointer", fontSize: 11 }}>＋ New group</Box>
-                }
               >
                 {/* "All" / clear row */}
                 <RailRow active={!groupFilter} onClick={() => setGroupFilter(null)}
@@ -302,8 +269,37 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
               ))}
             </GraphRail>
 
-            {/* Main */}
-            <Box style={{ flex: 1, minWidth: 0, overflowY: "auto", paddingBottom: 60 }}>
+            {/* Main column: the header OVER THE LIST (digest stats + controls), then the list (#2813).
+                A query container so the header can drop the digest first when this column narrows. */}
+            <Stack className="skills-listcol" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+              <Row className="skills-listhead" gap={12} align="center" style={{ padding: "8px 16px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
+                {/* Digest stats — the FIRST to hide when the header narrows (container query in skills.css). */}
+                <Box className="skills-listhead-digest" style={{ minWidth: 0, overflow: "hidden" }}>
+                  <SkillsDigestBar merged={merged} stats={stats} kpis={kpis} digestOpen={digestOpen} onToggle={() => setDigestOpen((v) => !v)} />
+                </Box>
+                <Box as="span" style={{ flex: 1 }} />
+                {/* Controls — always kept. */}
+                <Text as="span" mono size={11} tone="muted" style={{ flex: "none" }}>{filtered.length} <Text as="span" tone="dim">of {kpis.total}</Text></Text>
+                <Row gap={6} style={{ position: "relative", flex: "none" }}>
+                  <Text as="span" mono size={10} tone="dim" style={{ textTransform: "uppercase" }}>Sort</Text>
+                  <Button onClick={() => setSortOpen((v) => !v)} style={{ padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border)", fontSize: 11.5, color: "var(--fg)" }}>{sort} <Text as="span" tone="dim" size={9}>▾</Text></Button>
+                  {sortOpen && (
+                    <Box pad={4} bg="var(--bg-elev)" border radius="md" style={{ position: "absolute", top: 34, right: 0, zIndex: 40, minWidth: 184, boxShadow: "0 14px 36px rgba(0,0,0,.45)"}}>
+                      {SORTS.map((o) => <Row key={o} onClick={() => { setSort(o); setSortOpen(false); }} gap={8} style={{ padding: "6px 9px", borderRadius: 4, fontSize: 11.5, cursor: "pointer", color: sort === o ? "var(--fg)" : "var(--fg-muted)", background: sort === o ? "var(--bg-elev2)" : "transparent" }}><Box as="span" style={{ flex: 1 }}>{o}</Box><Text as="span" tone="accent">{sort === o ? "✓" : ""}</Text></Row>)}
+                    </Box>
+                  )}
+                </Row>
+                <Row align="stretch" style={{ height: 28, border: "1px solid var(--border)", borderRadius: "var(--r-md)", overflow: "hidden", flex: "none" }}>
+                  {([["list", "☰ List"], ["cards", "▦ Cards"], ["grouped", "⬡ Group"], ["kind", "⊟ Kind"]] as const).map(([d, lbl], i) => (
+                    <Row key={d} onClick={() => setDensity(d)} style={{ padding: "0 11px", fontSize: 11, cursor: "pointer", background: density === d ? "var(--bg-elev2)" : "transparent", color: density === d ? "var(--fg)" : "var(--fg-dim)", borderRight: i < 3 ? "1px solid var(--border)" : "none" }}>{lbl}</Row>
+                  ))}
+                </Row>
+                <Button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} style={{ fontSize: 11.5, flex: "none", border: "1px solid " + (selectMode ? "var(--accent-dim)" : "var(--border)"), background: selectMode ? tintBg("var(--accent)", 86) : "var(--bg-canvas)", color: selectMode ? "var(--accent)" : "var(--fg)" }}>{selectMode ? "✓ Selecting" : "☑ Select"}</Button>
+              </Row>
+              {/* The expandable "Fleet digest" panel drops below the header when open (#2813). */}
+              {digestOpen && <SkillsDigestPanel merged={merged} kpis={kpis} statsLoaded={statsLoaded} />}
+              {/* The list */}
+              <Box style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", paddingBottom: 60 }}>
               {selectMode && (
                 <Row gap={10} wrap style={{ margin: "12px 18px", padding: "9px 13px", background: tintBg("var(--accent)", 90), border: "1px solid var(--accent-dim)", borderRadius: "var(--r-lg)" }}>
                   <Text as="span" mono size={12} weight={600} tone="accent">{selected.size} selected</Text>
@@ -356,9 +352,9 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                 <SkillsGroupedView sections={groupedSections} showNoGroupsHint={groupedNoGroups}
                   onNewGroup={() => setAddGroupOpen(true)} h={rowHandlers} />
               )}
-            </Box>
+              </Box>
+            </Stack>
           </Row>
-        </Stack>
       )}
 
       {mode === "lessons" && (
