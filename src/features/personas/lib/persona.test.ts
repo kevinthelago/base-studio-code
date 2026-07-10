@@ -12,17 +12,18 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
   it("assembles the full packaged set from the @data/personas JSON, ordered", () => {
     const built = makeBuiltinPersonas();
     // The packaged personas are all present, one per role (documentor #1555, designer #2471) plus the
-    // auditor persona (#2578 — a juror in a standing iteration loop), the marketer (#2431), and the
-    // team architect (#2755 — the Teams Studio's teams/personas authoring session).
+    // auditor persona (#2578 — a juror in a standing iteration loop), the marketer (#2431), the team
+    // architect (#2755 — the Teams Studio's teams/personas authoring session), and the knowledge
+    // librarian (#2787 — the Algorithms tab's knowledge-store session).
     for (const id of [
       "persona-planner", "persona-worker", "persona-director", "persona-triage", "persona-reviewer",
-      "persona-tester", "persona-issuer", "persona-juror", "persona-auditor", "persona-marketer", "persona-documentor", "persona-designer", "persona-architect",
+      "persona-tester", "persona-issuer", "persona-juror", "persona-auditor", "persona-marketer", "persona-documentor", "persona-designer", "persona-architect", "persona-librarian",
     ]) {
       expect(built.some((p) => p.id === id)).toBe(true);
     }
-    // Ordered by each def's `order` field: planner leads, architect trails (order 11, after designer).
+    // Ordered by each def's `order` field: planner leads, the librarian trails (order 12, after architect).
     expect(built[0]?.id).toBe("persona-planner");
-    expect(built[built.length - 1]?.id).toBe("persona-architect");
+    expect(built[built.length - 1]?.id).toBe("persona-librarian");
     // `order`/`protocolFile` are load-time-only — they must not leak onto the assembled Persona.
     expect(built.every((p) => !("order" in p) && !("protocolFile" in p))).toBe(true);
   });

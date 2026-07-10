@@ -2,9 +2,28 @@
 // select→inspector interaction. NB: node names now appear in BOTH the rail and the canvas (and a
 // selected concept also in the inspector), and complexities like "O(n log n)" repeat across cards —
 // so use getAllByText for anything that isn't inspector-unique.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AlgorithmsWorkspace } from "./AlgorithmsWorkspace";
+
+// The page docks the librarian session (#2787), which mounts an xterm terminal — stub xterm (it can't
+// initialize in jsdom) + the layout globals useScreenSession needs, so rendering the page doesn't crash.
+vi.mock("@xterm/xterm", () => {
+  class Terminal {
+    cols = 80; rows = 24; options: Record<string, unknown> = {};
+    loadAddon = vi.fn(); open = vi.fn(); write = vi.fn();
+    onData = vi.fn(() => ({ dispose: vi.fn() })); focus = vi.fn(); dispose = vi.fn();
+  }
+  return { Terminal };
+});
+vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit = vi.fn(); } }));
+vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+
+beforeAll(() => {
+  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => { cb(0); return 0; });
+  vi.stubGlobal("cancelAnimationFrame", () => {});
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+});
 
 describe("AlgorithmsWorkspace", () => {
   it("renders the graph, the rail, and the empty-inspector legend", () => {
