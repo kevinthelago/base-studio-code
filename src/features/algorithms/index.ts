@@ -4,3 +4,4 @@
 export { AlgorithmsWorkspace } from "./AlgorithmsWorkspace";
 export * from "./lib/knowledge";
 export * from "./lib/extraction";
+export * from "./lib/compositionDiff";

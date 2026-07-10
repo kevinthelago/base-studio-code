@@ -15,12 +15,13 @@ import {
   type KnowledgeGraph, type KnowledgeNode, type KnowledgeRel, type Tech, type AlgoImpl,
 } from "./lib/knowledge";
 import type { ExtractSite, CallEdge } from "./lib/extraction";
+import type { ConceptDiff } from "./lib/compositionDiff";
 
 const REL_ORDER: KnowledgeRel[] = ["operates-on", "composes", "variant-of", "generates", "related-to"];
 
 const PANEL = { width: "100%", height: "100%", borderLeft: "1px solid var(--border)", overflowY: "auto", background: "var(--bg-panel)" } as const;
 
-export function AlgorithmsInspector({ graph, selected, activeTech, sites, calls, onSelectNode }: {
+export function AlgorithmsInspector({ graph, selected, activeTech, sites, calls, diff, onSelectNode }: {
   graph: KnowledgeGraph;
   selected: KnowledgeNode | null;
   /** The implementation tech (#2770) whose code + composition the impl section shows. */
@@ -31,6 +32,9 @@ export function AlgorithmsInspector({ graph, selected, activeTech, sites, calls,
   /** The extracted OUTBOUND call edges of the selected concept (#2779) — the concepts its real-code
    *  implementation invokes; listed as a "Calls (from code)" section when non-empty. */
   calls?: CallEdge[];
+  /** The selected concept's intent-vs-reality composition diff (#2781) — present only when a scan has
+   *  run AND the concept carries an implementation; drives the "Composition check" section. */
+  diff?: ConceptDiff;
   onSelectNode: (id: string) => void;
 }) {
   if (!selected) {
@@ -121,6 +125,36 @@ export function AlgorithmsInspector({ graph, selected, activeTech, sites, calls,
                 );
               })}
             </Stack>
+          </Stack>
+        )}
+
+        {diff && (
+          <Stack gap={6}>
+            <Eyebrow size={10}>Composition check</Eyebrow>
+            {diff.matched.length === 0 && diff.missing.length === 0 && diff.extra.length === 0 ? (
+              <Text size={12} tone="dim">Matches its declared composition.</Text>
+            ) : (
+              <Stack gap={4}>
+                {diff.matched.map((id) => (
+                  <Box as="button" key={`ck-match-${id}`} className="algo-relrow" onClick={() => onSelectNode(id)} title="Declared + found in code">
+                    <Text as="span" tone="success" size={11}>{"✓"}</Text>
+                    <Text as="span" size={12} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{byId.get(id)?.name ?? id}</Text>
+                  </Box>
+                ))}
+                {diff.missing.map((id) => (
+                  <Box as="button" key={`ck-miss-${id}`} className="algo-relrow" onClick={() => onSelectNode(id)} title="Declared, not observed in code — abstract concepts aren't literally called">
+                    <Text as="span" tone="muted" size={11}>{"⚠"}</Text>
+                    <Text as="span" tone="muted" size={12} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{byId.get(id)?.name ?? id}</Text>
+                  </Box>
+                ))}
+                {diff.extra.map((id) => (
+                  <Box as="button" key={`ck-extra-${id}`} className="algo-relrow" onClick={() => onSelectNode(id)} title="Found in code, not declared">
+                    <Text as="span" tone="accent" size={11}>{"+"}</Text>
+                    <Text as="span" size={12} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{byId.get(id)?.name ?? id}</Text>
+                  </Box>
+                ))}
+              </Stack>
+            )}
           </Stack>
         )}
 
