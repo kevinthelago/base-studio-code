@@ -78,10 +78,21 @@ export function TeamsPanel() {
   const scale = vp.view.scale;
 
   // The docked team-architect session's height (#2755) — a row-resize handle above it; `invert`
-  // because the terminal sits AFTER the handle, so dragging up grows it. Declared before the early
-  // returns (rules of hooks); only the entered-team view actually renders the dock. Mirrors the
-  // Design Studio's terminal dock (DesignsWorkbench).
+  // because the terminal sits AFTER the handle, so dragging up grows it. Mirrors the Design Studio's
+  // terminal dock (DesignsWorkbench).
   const term = useDragResize({ initial: 240, min: 140, max: 560, axis: "y", invert: true });
+
+  // The always-on architect session, docked below the graph on BOTH graph levels (#2759). Passing the
+  // SAME element to the overview AND the entered-team GraphCanvas — which React reconciles as ONE
+  // instance (the GraphCanvas sits at index 0 of each return's fragment) — keeps the terminal (and its
+  // PTY) mounted across the overview↔team switch, so the session is never torn down when you navigate
+  // levels. GraphCanvas gives the dock a `flex: none` slot; we own its height + a `.resize-y` handle.
+  const dock = (
+    <Box style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <Box className="resize-y" {...term.handleProps} title="Drag to resize" />
+      <ArchitectTerminal height={term.size} />
+    </Box>
+  );
 
   // Restore this org's saved zoom (or fit) when the org changes. zoomToCentered (NOT zoomTo) re-centers
   // the world at the saved scale — zoomTo anchors about the viewport center starting from the fresh
@@ -121,11 +132,13 @@ export function TeamsPanel() {
   // id, and narrows `org` to a real Team for the per-team code below.
   if (!org) {
     return (
+      <>
       <GraphCanvas
         vp={vp}
         world={{ w: CANVAS_W, h: CANVAS_H }}
         grid
         railResizable railWidth={260} railMin={200} railMax={420}
+        dock={dock}
         toolbar={
           <>
             <Row gap={9} align="center">
@@ -160,6 +173,7 @@ export function TeamsPanel() {
           <TeamsOverview teams={orgs} personas={personas} onEnter={enterTeam} />
         </Box>
       </GraphCanvas>
+      </>
     );
   }
 
@@ -207,16 +221,10 @@ export function TeamsPanel() {
       grid
       railResizable railWidth={260} railMin={200} railMax={420}
       inspectorResizable inspectorWidth={344} inspectorMin={280} inspectorMax={560}
-      // The always-on team-architect session (#2755), docked below the graph while a team is entered.
-      // The Teams graph stays the read-only viewer; the architect creates/refines teams + personas via
-      // `bsc teams` / `bsc persona`. Kept OUT of the top-level Teams overview (only meaningful inside a
-      // team). GraphCanvas gives the dock a `flex: none` slot; we own its height + a `.resize-y` handle.
-      dock={
-        <Box style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <Box className="resize-y" {...term.handleProps} title="Drag to resize" />
-          <ArchitectTerminal height={term.size} />
-        </Box>
-      }
+      // The always-on team-architect session (#2755/#2759) — the SHARED `dock` element, present on BOTH
+      // graph levels so it persists across the overview↔team switch. The Teams graph stays the read-only
+      // viewer; the architect creates/refines teams + personas via `bsc teams` / `bsc persona`.
+      dock={dock}
       // Click the empty canvas → clear the selection (the empty sentinel; inspector empties, no dimming).
       onBackgroundClick={() => setSel({ type: "node", id: "" })}
       toolbar={
