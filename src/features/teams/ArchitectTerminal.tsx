@@ -1,8 +1,10 @@
 // ArchitectTerminal (#2755) — the Teams Studio's docked bottom panel hosting the dedicated,
 // heavily-restricted team-architect session (see useArchitectTerminal for the launch wiring). A mirror
 // of the Design Studio's DesignerTerminal. Kept in its own component so the TeamsPanel diff stays
-// small. It is docked below the team graph and mounted while a team is entered; unmounting (leaving
-// the team back to the Teams overview) runs the hook's cleanup and kills the PTY.
+// small. It is docked below the graph on BOTH levels — the Teams overview AND an entered team — and,
+// because TeamsPanel passes the SAME dock element to one reconciled GraphCanvas, it stays mounted
+// across the overview↔team switch (#2759). Only leaving the Teams tab entirely unmounts it, which runs
+// the hook's cleanup and kills the PTY.
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";

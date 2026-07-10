@@ -8,8 +8,9 @@ import { useAppStore } from "@/store";
 
 /**
  * #2755 — the Teams Studio's team-architect session: launch wiring (workspace → restricted settings →
- * pty_create with the persona kickoff BAKED into the launch arg) and the dock placement (present inside
- * an entered team, absent on the top-level Teams overview). A mirror of DesignerTerminal.test.tsx.
+ * pty_create with the persona kickoff BAKED into the launch arg). #2759 — the dock is now present on
+ * BOTH graph levels (the Teams overview AND an entered team) and PERSISTS across the switch (one PTY,
+ * the same DOM node, never killed on navigation). A mirror of DesignerTerminal.test.tsx.
  */
 
 // xterm can't initialize in jsdom (open() needs real DOM measurements) — stub it (same pattern as
@@ -118,7 +119,7 @@ describe("useArchitectTerminal launch wiring (#2755)", () => {
     expect(callsTo("pty_create")).toHaveLength(0);
   });
 
-  it("only unmounting (leaving the team) kills the PTY", async () => {
+  it("only unmounting (leaving the Teams tab) kills the PTY", async () => {
     const { unmount } = render(<ArchitectTerminal />);
     await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
     expect(callsTo("pty_kill")).toHaveLength(0);
@@ -128,20 +129,37 @@ describe("useArchitectTerminal launch wiring (#2755)", () => {
   });
 });
 
-describe("TeamsPanel architect dock placement (#2755)", () => {
+describe("TeamsPanel architect dock — present on ALL graph levels (#2759)", () => {
   /** Enter a team from the Teams overview by clicking its card (the [data-node] wrapper). */
   const enter = (name: string) =>
     fireEvent.click(screen.getAllByText(name).map((el) => el.closest("[data-node]")).find(Boolean) as HTMLElement);
+  /** Climb back to the overview via the "Teams" breadcrumb crumb. */
+  const toTeams = () => fireEvent.click(screen.getByText("Teams"));
 
-  it("is absent on the top-level Teams overview and present once a team is entered", async () => {
+  it("is present on the top-level Teams overview (not only inside a team)", async () => {
     render(<TeamsPanel />);
-    // The overview only shows team cards — no docked architect session there.
-    expect(screen.queryByTestId("architect-terminal")).toBeNull();
-
-    // Enter the first seeded team → the architect dock mounts and spawns its session.
-    const team = useAppStore.getState().teams[0].name;
-    enter(team);
+    // The overview now docks the architect session too — a team is created/refined from here.
     expect(screen.getByTestId("architect-terminal")).toBeInTheDocument();
     await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
+  });
+
+  it("persists across the overview↔team switch — the SAME node, one PTY, never killed on navigation", async () => {
+    render(<TeamsPanel />);
+    const onOverview = screen.getByTestId("architect-terminal");
+    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
+
+    // Enter a team → React reconciles ONE GraphCanvas/terminal, so the dock is the SAME DOM node
+    // (a remount would give a fresh node and a second pty_create).
+    const team = useAppStore.getState().teams[0].name;
+    enter(team);
+    expect(screen.getByTestId("architect-terminal")).toBe(onOverview);
+
+    // Climb back to the overview → still the same node.
+    toTeams();
+    expect(screen.getByTestId("architect-terminal")).toBe(onOverview);
+
+    // The session launched EXACTLY once and was never torn down while navigating levels.
+    expect(callsTo("pty_create")).toHaveLength(1);
+    expect(callsTo("pty_kill")).toHaveLength(0);
   });
 });
