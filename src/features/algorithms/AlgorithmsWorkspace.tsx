@@ -21,6 +21,7 @@ import {
 } from "./lib/knowledge";
 import { runExtract } from "./lib/extractionBridge";
 import { sitesByConcept, siteCounts, duplicateConcepts, callsFor, type ExtractResult } from "./lib/extraction";
+import { composeDiff, driftConcepts } from "./lib/compositionDiff";
 import "./algorithms.css";
 
 export function AlgorithmsWorkspace() {
@@ -56,6 +57,12 @@ export function AlgorithmsWorkspace() {
     () => (extract && selected ? callsFor(extract, selected) : []),
     [extract, selected],
   );
+  // The intent-vs-reality composition diff (#2781): declared `composes` edges vs extracted `calls`.
+  // Only implemented concepts get a diff; `driftSet` are those whose observed composition diverged —
+  // the canvas paints them a drift badge, and the selected concept's diff feeds the inspector.
+  const diffs = useMemo(() => (extract ? composeDiff(graph, extract) : null), [extract, graph]);
+  const driftSet = useMemo(() => (diffs ? driftConcepts(diffs) : null), [diffs]);
+  const selectedDiff = selected && diffs ? diffs.get(selected) : undefined;
 
   const runScan = () => {
     const dir = scanPath.trim();
@@ -135,12 +142,12 @@ export function AlgorithmsWorkspace() {
       rail={<AlgorithmsRail graph={graph} selected={selected} onSelect={selectFromRail} />}
       railResizable
       railWidth={230}
-      inspector={<AlgorithmsInspector graph={graph} selected={selected ? byId.get(selected) ?? null : null} activeTech={activeTech} sites={selectedSites} calls={selectedCalls} onSelectNode={setSelected} />}
+      inspector={<AlgorithmsInspector graph={graph} selected={selected ? byId.get(selected) ?? null : null} activeTech={activeTech} sites={selectedSites} calls={selectedCalls} diff={selectedDiff} onSelectNode={setSelected} />}
       inspectorResizable
       inspectorWidth={340}
       onBackgroundClick={() => setSelected(null)}
     >
-      <AlgorithmsCanvas graph={graph} layout={layout} selected={selected} lit={lit} activeKinds={activeKinds} implConcepts={implConcepts} siteCounts={siteCountMap ?? undefined} dupConcepts={dupConcepts ?? undefined} extractedCalls={extract?.calls} onSelect={setSelected} />
+      <AlgorithmsCanvas graph={graph} layout={layout} selected={selected} lit={lit} activeKinds={activeKinds} implConcepts={implConcepts} siteCounts={siteCountMap ?? undefined} dupConcepts={dupConcepts ?? undefined} driftConcepts={driftSet ?? undefined} extractedCalls={extract?.calls} onSelect={setSelected} />
     </GraphCanvas>
   );
 }

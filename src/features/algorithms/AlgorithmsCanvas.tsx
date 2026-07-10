@@ -48,13 +48,17 @@ interface CanvasProps {
   siteCounts?: Map<string, number>;
   /** The concept ids implemented at >1 site (#2777) — the dedup warning set. */
   dupConcepts?: Set<string>;
+  /** Concept ids whose DECLARED composition diverges from their EXTRACTED calls (#2781) — painted a
+   *  subtle top-left "review" drift indicator, distinct from the bottom-right dedup count. Only
+   *  populated once a scan has run, so its presence alone gates the badge. */
+  driftConcepts?: Set<string>;
   /** Concept→concept call edges lifted from real code (#2779) — drawn as a DISTINCT accent overlay
    *  over the seed relationship edges (real-code composition, not the curated ontology). */
   extractedCalls?: CallEdge[];
   onSelect: (id: string) => void;
 }
 
-export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, implConcepts, siteCounts, dupConcepts, extractedCalls, onSelect }: CanvasProps) {
+export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, implConcepts, siteCounts, dupConcepts, driftConcepts, extractedCalls, onSelect }: CanvasProps) {
   // Edge geometry is a function of the (stable) layout only — compute once. `bow` separates parallel
   // edges between the same pair so multiple relationships don't overdraw.
   const geoms = useMemo<EdgeGeom[]>(() => {
@@ -145,6 +149,7 @@ export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, im
         const meta = n.complexity ?? KIND_META[n.kind].label;
         const siteCount = siteCounts?.get(n.id) ?? 0;
         const dup = !!dupConcepts?.has(n.id);
+        const drift = !!driftConcepts?.has(n.id);
         return (
           <Box
             key={n.id}
@@ -156,6 +161,16 @@ export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, im
             <Box as="span" className="algo-name">{n.name}</Box>
             <Box as="span" className="algo-meta">{meta}</Box>
             {implConcepts?.has(n.id) && <Box as="span" className="algo-impl-badge mono" title="Has an implementation in the active language">{"</>"}</Box>}
+            {drift && (
+              <Box
+                as="span"
+                className="algo-drift-badge"
+                data-drift={n.id}
+                title="Declared composition differs from the code — review"
+              >
+                {"⚠"}
+              </Box>
+            )}
             {siteCount >= 1 && (
               <Box
                 as="span"
