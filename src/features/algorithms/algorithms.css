@@ -10,7 +10,6 @@
   gap: 2px;
   padding: 8px 12px;
   border: 1px solid var(--border);
-  border-left-width: 3px;
   border-radius: 10px;
   background: var(--bg-elev, var(--bg-soft));
   cursor: pointer;
@@ -33,8 +32,9 @@
   stroke-linejoin: round;
 }
 
-/* Inspector relationship rows. */
-.algo-relrow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border: 1px solid var(--border-soft, var(--border)); border-radius: 8px; background: var(--bg-soft); cursor: pointer; text-align: left; }
+/* Inspector relationship rows. `color: var(--fg)` because these are <button> elements — without it the
+   row text falls back to the UA button color instead of the theme foreground (#2787). */
+.algo-relrow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border: 1px solid var(--border-soft, var(--border)); border-radius: 8px; background: var(--bg-soft); color: var(--fg); cursor: pointer; text-align: left; }
 .algo-relrow:hover { border-color: var(--fg-dim); }
 
 /* Implementation-tier (#2770): the per-tech code block in the inspector. */
@@ -102,7 +102,15 @@
   pointer-events: none;
 }
 
-/* Left-rail concept rows (#2773) — grouped by kind, click selects + centers. */
-.algo-railrow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; background: transparent; cursor: pointer; }
+/* Left-rail node rows (#2773) — grouped by kind, click selects + centers. `color: var(--fg)` because
+   these are <button> elements: without it the row text falls back to the UA button color instead of the
+   theme foreground, which read wrong in the left pane (#2787). */
+.algo-railrow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; background: transparent; color: var(--fg); cursor: pointer; }
 .algo-railrow:hover { background: var(--bg-soft); }
 .algo-railrow.on { background: var(--bg-soft); border-color: var(--accent); }
+
+/* The docked knowledge-librarian session (#2787) — mirrors the Teams Studio terminal dock. The caller
+   (AlgorithmsWorkspace) owns the height + a shared `.resize-y` splitter above it. */
+.algo-terminal { flex: none; height: 240px; min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
+.algo-colhead { height: 38px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--border-soft, var(--border)); }
+.algo-termhost { flex: 1; min-height: 0; min-width: 0; padding: 4px 8px; background: #181a1f; /* TERM_THEME background */ }

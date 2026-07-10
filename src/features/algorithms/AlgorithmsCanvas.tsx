@@ -155,7 +155,7 @@ export function AlgorithmsCanvas({ graph, layout, selected, lit, activeKinds, im
             key={n.id}
             data-node={n.id}
             className={`algo-node${n.id === selected ? " on" : ""}${active ? "" : " dim"}`}
-            style={{ left: p.x, top: p.y, width: NODE_W, height: NODE_H, borderLeftColor: KIND_META[n.kind].color }}
+            style={{ left: p.x, top: p.y, width: NODE_W, height: NODE_H }}
             onClick={(e) => { e.stopPropagation(); onSelect(n.id); }}
           >
             <Box as="span" className="algo-name">{n.name}</Box>

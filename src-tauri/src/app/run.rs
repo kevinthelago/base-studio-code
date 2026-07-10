@@ -230,6 +230,7 @@ pub fn run() {
             session::settings::ensure_session_settings,
             session::designer::setup_designer_workspace,
             session::architect::setup_architect_workspace,
+            session::librarian::setup_librarian_workspace,
             session::sandbox::wsl_sandbox_status,
             session::sandbox::provision_sandbox,
             session::sandbox::sandbox_run,

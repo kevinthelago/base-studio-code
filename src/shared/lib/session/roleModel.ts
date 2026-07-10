@@ -60,6 +60,12 @@ export type SessionRole =
   // are suppressed and only `bsc teams` + `bsc persona` auto-run. The Teams graph stays the read-only
   // viewer; the architect creates/refines teams + personas via those two CLIs.
   | "architect"
+  // Librarian (#2787): the Algorithms tab's heavily-restricted knowledge-store session. Like the
+  // designer/architect it is `none` on every axis (no git, no GitHub, no file writes, no web) and
+  // `ui: none`. Launched with `restrictedAllow`, so the baseline command tiers are suppressed and only
+  // `bsc graph` auto-runs. The Algorithms graph stays the read-only viewer; the librarian stores +
+  // curates the knowledge graph (nodes, relationships, the reality lens) via that one CLI.
+  | "librarian"
   // Marketer (#2431): the opt-in marketing persona's role — takes the market-research stage's
   // artifacts and drafts in-repo collateral (landing/README copy, launch posts, SEO content,
   // release announcements). Least-privilege like `documentor`: `code: "none"` with a marketing-content

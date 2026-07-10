@@ -38,6 +38,10 @@ const ROLE_PROFILE: Record<SessionRole, string> = {
   // review is the closest packaged floor; its real launch path (`useArchitectTerminal`) renders the
   // role gate + `restrictedAllow` directly, so this mapping only backs the generic role→profile surfaces.
   architect: "pf_review",
+  // Librarian (#2787): the Algorithms tab's knowledge-store session. Same as the designer/architect —
+  // read-only review is the closest packaged floor; its real launch path (`useLibrarianTerminal`)
+  // renders the role gate + `restrictedAllow` directly, so this mapping only backs the generic surfaces.
+  librarian: "pf_review",
 };
 
 /** The default profile id for a role (or the Sandboxed default when there's no role). */
