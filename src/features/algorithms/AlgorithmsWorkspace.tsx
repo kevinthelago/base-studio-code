@@ -14,8 +14,8 @@ import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { AlgorithmsCanvas } from "./AlgorithmsCanvas";
 import { AlgorithmsInspector } from "./AlgorithmsInspector";
 import {
-  KNOWLEDGE, KIND_ORDER, KIND_META, layoutKnowledge, neighborsOf, nodeIndex,
-  type KnowledgeKind,
+  KNOWLEDGE, KIND_ORDER, KIND_META, TECHS, TECH_META, layoutKnowledge, neighborsOf, nodeIndex,
+  type KnowledgeKind, type Tech,
 } from "./lib/knowledge";
 import "./algorithms.css";
 
@@ -26,8 +26,14 @@ export function AlgorithmsWorkspace() {
 
   const [selected, setSelected] = useState<string | null>(null);
   const [activeKinds, setActiveKinds] = useState<Set<KnowledgeKind>>(() => new Set(KIND_ORDER));
+  const [activeTech, setActiveTech] = useState<Tech>(TECHS[0]);
 
   const lit = useMemo(() => (selected ? neighborsOf(graph, selected) : null), [graph, selected]);
+  // The concept ids that carry an implementation in the active tech — drives the node "</>" badge.
+  const implConcepts = useMemo(
+    () => new Set(graph.implementations.filter((im) => im.tech === activeTech).map((im) => im.concept)),
+    [graph.implementations, activeTech],
+  );
 
   const vp = useGraphViewport(layout.world, { contentBounds: () => layout.bounds });
   // Frame the content on first mount (the ref callback has set the viewport element by commit time).
@@ -56,6 +62,18 @@ export function AlgorithmsWorkspace() {
           );
         })}
       </Row>
+      <Row gap={4} align="center" title="Implementation language (#2770)">
+        {TECHS.map((t) => {
+          const on = t === activeTech;
+          return (
+            <Box as="button" key={t} onClick={() => setActiveTech(t)} title={`${TECH_META[t].label} implementations`}
+              style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 9px", borderRadius: 7, border: "1px solid var(--border)", background: on ? "var(--accent)" : "transparent", color: on ? "var(--on-accent, #fff)" : "var(--fg-dim)", cursor: "pointer", fontSize: 11.5, fontWeight: on ? 600 : 400 }}>
+              {TECH_META[t].label}
+              <Text as="span" mono size="xxs" style={{ opacity: 0.75 }}>.{TECH_META[t].ext}</Text>
+            </Box>
+          );
+        })}
+      </Row>
       <Box style={{ flex: 1 }} />
       <ZoomControls vp={vp} />
       <Button size="sm" variant="ghost" onClick={vp.fit}>Fit</Button>
@@ -68,12 +86,12 @@ export function AlgorithmsWorkspace() {
       world={layout.world}
       grid
       toolbar={toolbar}
-      inspector={<AlgorithmsInspector graph={graph} selected={selected ? byId.get(selected) ?? null : null} onSelectNode={setSelected} />}
+      inspector={<AlgorithmsInspector graph={graph} selected={selected ? byId.get(selected) ?? null : null} activeTech={activeTech} onSelectNode={setSelected} />}
       inspectorResizable
       inspectorWidth={340}
       onBackgroundClick={() => setSelected(null)}
     >
-      <AlgorithmsCanvas graph={graph} layout={layout} selected={selected} lit={lit} activeKinds={activeKinds} onSelect={setSelected} />
+      <AlgorithmsCanvas graph={graph} layout={layout} selected={selected} lit={lit} activeKinds={activeKinds} implConcepts={implConcepts} onSelect={setSelected} />
     </GraphCanvas>
   );
 }
