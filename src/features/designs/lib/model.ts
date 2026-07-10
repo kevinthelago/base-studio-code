@@ -99,8 +99,16 @@ export interface ComponentRecord {
   whenNot: string[];
   /** Source file path (shown above the source). */
   src: string;
-  /** Representative source text. */
+  /** Representative source text — a short USAGE snippet (`import { Card } … <Card>…</Card>`), NOT the
+   *  implementation. For the emittable implementation see {@link source}. */
   srcText: string;
+  /** The component's verbatim implementation source (#2794) — the actual `.tsx` file contents, bundled
+   *  into the packaged kit ARTIFACT at generation time so `bsc ui … emit` (the vendored-source
+   *  distribution, epic #2793) has real code to write. Distinct from the usage-snippet {@link srcText}.
+   *  Present only in the packaged/released kit artifact, NOT in the mutable component store (the seed +
+   *  `bsc ui set` write-through deliberately omit it — the store is a contract catalog); absent ⇒ a
+   *  component with no standalone source file (a pure stub). */
+  source?: string;
   /** A packaged built-in (re-seeded into the store on hydrate). Absent ⇒ user-authored. */
   builtin?: boolean;
   /** The raw intrinsic this component REPLACES (`"button"`, `"input"`) — the authoring hint that

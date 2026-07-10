@@ -20,12 +20,24 @@ import { REACT_UI_KIT, REACT_UI_COMPONENTS, REACT_UI_KIT_STORE_ID, REACT_UI_KIT_
 // default-pin reads the sidecar via `@data/ui/react-ui-kit.meta.json`).
 const FILE = join(process.cwd(), "src-tauri/data/components/react-ui.json");
 const META_FILE = join(process.cwd(), "src-tauri/data/ui/react-ui-kit.meta.json");
+
+/** Bundle each component's VERBATIM implementation into the artifact (#2794, epic #2793): read the
+ *  `.tsx` at its `src` path, LF-normalized so the escaped-newline bytes — and therefore the hash
+ *  sidecar — are identical on every platform (the artifact is pinned `eol=lf`). A component whose `src`
+ *  has no standalone file (a pure stub) simply carries no `source`. This is what gives `bsc ui … emit`
+ *  real code to write; the mutable component store deliberately drops it (`builtinKits.withoutSource`). */
+const withSource = (components: typeof REACT_UI_COMPONENTS) =>
+  components.map((c) => {
+    const path = join(process.cwd(), "src", c.src);
+    return existsSync(path) ? { ...c, source: readFileSync(path, "utf8").replace(/\r\n/g, "\n") } : c;
+  });
+
 const kitFile = {
   order: 0,
   id: REACT_UI_KIT_STORE_ID,
   version: REACT_UI_KIT_VERSION,
   kit: REACT_UI_KIT,
-  components: REACT_UI_COMPONENTS,
+  components: withSource(REACT_UI_COMPONENTS),
 };
 const serialised = JSON.stringify(kitFile, null, 2) + "\n";
 const meta = {
@@ -52,5 +64,23 @@ describe("data/components/react-ui.json ↔ manifest (#2305 slice 1b)", () => {
     // pre-.gitattributes checkout may still hold the artifact CRLF; LF is the canonical byte form).
     const artifact = readFileSync(FILE, "utf8").replace(/\r\n/g, "\n");
     expect(createHash("sha256").update(artifact, "utf8").digest("hex")).toBe(meta.sha256);
+  });
+
+  it("bundles each component's verbatim implementation source (#2794)", () => {
+    const artifact = JSON.parse(readFileSync(FILE, "utf8")) as {
+      components: { id: string; src: string; source?: string }[];
+    };
+    const byId = new Map(artifact.components.map((c) => [c.id, c]));
+    // Real primitives carry their exact on-disk `.tsx` (not the usage-snippet `srcText`).
+    for (const id of ["card", "button"]) {
+      const c = byId.get(id);
+      expect(c, `${id} present in the artifact`).toBeTruthy();
+      const onDisk = readFileSync(join(process.cwd(), "src", c!.src), "utf8").replace(/\r\n/g, "\n");
+      expect(c!.source, `${id} bundles its verbatim source`).toBe(onDisk);
+    }
+    // Most components resolve to a real file — the artifact is now source-bearing, not just a catalog
+    // of path pointers. (A few templates/stubs legitimately have no standalone file → no `source`.)
+    const withRealSource = artifact.components.filter((c) => (c.source ?? "").length > 0).length;
+    expect(withRealSource).toBeGreaterThan(artifact.components.length / 2);
   });
 });
