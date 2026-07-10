@@ -3,6 +3,11 @@
 // bundled `bsc` without the `graph extract` verb — so the page keeps its no-badges state rather than
 // throwing. Kept thin + defensive: the ExtractResult shape is validated (all three arms must be arrays)
 // before it's trusted, matching themeBridge's shape-gate discipline.
+//
+// NOTE (#2785): currently UNTRIGGERED. The user-facing "Scan" control was removed when the Algorithms
+// page became a read-only viewer, so nothing calls `runExtract` today. It's retained as the ready
+// entry point for a future NON-user trigger (an auto-scan of the active project, or a Claude session) —
+// the reality-vs-intent lens the Canvas/Inspector already render is just waiting on a driver.
 import { bsc } from "@/shared/lib/core/bsc";
 import type { Tech } from "./knowledge";
 import type { ExtractResult } from "./extraction";

@@ -14,7 +14,7 @@ export function AlgorithmsRail({ graph, selected, onSelect }: {
   onSelect: (id: string) => void;
 }) {
   return (
-    <GraphRail label="Concepts" count={graph.nodes.length}>
+    <GraphRail label="Nodes" count={graph.nodes.length}>
       <Stack gap={10}>
         {KIND_ORDER.map((kind) => {
           const rows = graph.nodes.filter((n) => n.kind === kind);
