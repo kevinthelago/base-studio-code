@@ -2,11 +2,15 @@
 // `Inspector` are their own components. Renders the kits→components tree: technology → style group
 // headers (default OPEN) down to the collapsible kit heads and their search-filtered component rows.
 // Pure presentational — all selection/expand state lives in the parent (`DesignStudio`) and is threaded
-// through props; the class names + structure (`ds-grouphead`/`ds-kithead`/`ds-comprow`) are unchanged.
+// through props. The rows/headers now render through the shared RailRow / RailGroupHeader nav primitives
+// (#2789); the `ds-grouphead`/`ds-kithead`/`ds-comprow` classes remain only as selector/test hooks (the
+// styling is the canonical shared look, no longer their own CSS).
 import { type ReactNode } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
+import { RailRow } from "@/shared/ui/layouts/RailRow";
+import { RailGroupHeader } from "@/shared/ui/layouts/RailGroupHeader";
 import { RoleDot } from "./kitChrome";
 import type { ComponentRecord, Kit } from "./lib/model";
 import type { KitTreeNode } from "./lib/kitGroups";
@@ -42,20 +46,32 @@ export function RailTree({ railTree, expanded, setExpanded, kitId, setKitId, com
     const rows = inKit.filter(match);
     return (
       <Box key={k.id} style={{ marginBottom: 4 }}>
-        <Box as="button" className={`ds-kithead${k.id === kitId ? " active" : ""}`} title={label ? `${label} · ${k.name} — ${k.stack}` : k.stack} onClick={() => { setKitId(k.id); setExpanded((e) => ({ ...e, [k.id]: !e[k.id] })); }}>
-          <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
-          <ColorSwatch color={k.dot} size={7} />
-          <Text as="span" weight={500} style={{ flex: 1, textAlign: "left" }}>{label ?? k.name}</Text>
-          <Text mono size="xxs" tone="dim">{inKit.length}</Text>
-        </Box>
+        <RailRow
+          className="ds-kithead"
+          caret={open}
+          active={k.id === kitId}
+          weight={500}
+          title={label ? `${label} · ${k.name} — ${k.stack}` : k.stack}
+          onClick={() => { setKitId(k.id); setExpanded((e) => ({ ...e, [k.id]: !e[k.id] })); }}
+          leading={<ColorSwatch color={k.dot} size={7} />}
+          trailing={<Text mono size="xxs" tone="dim">{inKit.length}</Text>}
+        >
+          {label ?? k.name}
+        </RailRow>
         {open && (
           <Box style={{ margin: "2px 0 6px", paddingLeft: 6 }}>
             {rows.map((c) => (
-              <Box as="button" key={c.id} className={`ds-comprow${c.id === compId && k.id === kitId ? " on" : ""}`} onClick={() => selectComp(c)}>
-                <RoleDot role={c.role} size={7} glow={3} />
-                <Text as="span" style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</Text>
-                <Text mono size="xxs" tone="dim" style={{ padding: "1px 5px", background: "var(--bg-soft)", borderRadius: 4 }}>×{c.used}</Text>
-              </Box>
+              <RailRow
+                key={c.id}
+                className="ds-comprow"
+                indent={1}
+                active={c.id === compId && k.id === kitId}
+                onClick={() => selectComp(c)}
+                leading={<RoleDot role={c.role} size={7} glow={3} />}
+                trailing={<Text mono size="xxs" tone="dim" style={{ padding: "1px 5px", background: "var(--bg-soft)", borderRadius: 4 }}>×{c.used}</Text>}
+              >
+                {c.name}
+              </RailRow>
             ))}
             {open && rows.length === 0 && query && (
               <Text size={11} tone="dim" as="div" style={{ padding: "6px 10px", fontStyle: "italic" }}>no matches</Text>
@@ -74,11 +90,16 @@ export function RailTree({ railTree, expanded, setExpanded, kitId, setKitId, com
     const open = expanded[n.key] ?? true;
     return (
       <Box key={n.key} style={{ marginBottom: 4 }}>
-        <Box as="button" className="ds-grouphead" aria-expanded={open} title={`${n.level === "tech" ? "technology" : "visual language"}: ${n.label}`} onClick={() => setExpanded((e) => ({ ...e, [n.key]: !(e[n.key] ?? true) }))}>
-          <Text as="span" className="ds-caret" style={{ transform: open ? "rotate(90deg)" : "none" }}>▸</Text>
-          <Text as="span" mono size="xxs" style={{ flex: 1, textAlign: "left", letterSpacing: ".07em", textTransform: "uppercase" }}>{n.label}</Text>
-          <Text mono size="xxs" tone="dim">{n.count}</Text>
-        </Box>
+        <RailGroupHeader
+          className="ds-grouphead"
+          collapsible
+          open={open}
+          onToggle={() => setExpanded((e) => ({ ...e, [n.key]: !(e[n.key] ?? true) }))}
+          count={n.count}
+          title={`${n.level === "tech" ? "technology" : "visual language"}: ${n.label}`}
+        >
+          {n.label}
+        </RailGroupHeader>
         {open && <Box className="ds-groupkids">{n.children.map(renderRailNode)}</Box>}
       </Box>
     );
