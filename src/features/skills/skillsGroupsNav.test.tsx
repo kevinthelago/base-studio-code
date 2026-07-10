@@ -31,9 +31,9 @@ describe("SkillsWorkspace — left-nav Groups section (#skills-groups-nav)", () 
     // both group names show in the left nav (no section headers in list density).
     expect(screen.getByText("Release day")).toBeTruthy();
     expect(screen.getByText("Security sweep")).toBeTruthy();
-    // the "All" / clear affordance + the "+ New group" affordance.
+    // the "All" / clear affordance (the ＋New group button was removed, #2813).
     expect(screen.getByText("All")).toBeTruthy();
-    expect(screen.getByText("＋ New group")).toBeTruthy();
+    expect(screen.queryByText("＋ New group")).toBeNull();
   });
 
   it("the top quick-filter bar was removed (no '⬡ Task groups' header)", () => {
@@ -56,12 +56,6 @@ describe("SkillsWorkspace — left-nav Groups section (#skills-groups-nav)", () 
     expect(container.querySelectorAll(ROW).length).toBe(1); // r1 only
     fireEvent.click(screen.getByText("All"));
     expect(container.querySelectorAll(ROW).length).toBe(4);
-  });
-
-  it("'＋ New group' opens the new-group dialog", () => {
-    render(<SkillsWorkspace />);
-    fireEvent.click(screen.getByText("＋ New group"));
-    expect(screen.getByText("New task group")).toBeTruthy();
   });
 
   it("the active group exposes a delete affordance that removes only the group", () => {
@@ -87,13 +81,6 @@ describe("SkillsWorkspace — left-nav Groups section (#skills-groups-nav)", () 
     expect(screen.queryByText("Release day")).toBeNull();
     fireEvent.click(screen.getByText("⬡ Groups"));          // expand again
     expect(screen.getByText("Release day")).toBeTruthy();
-  });
-
-  it("'＋ New group' opens the dialog WITHOUT collapsing the section (stop-propagation, #2803)", () => {
-    render(<SkillsWorkspace />);
-    fireEvent.click(screen.getByText("＋ New group"));
-    expect(screen.getByText("New task group")).toBeTruthy(); // dialog opened
-    expect(screen.getByText("Release day")).toBeTruthy();    // section stayed open
   });
 });
 
