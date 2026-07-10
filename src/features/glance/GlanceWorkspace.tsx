@@ -10,7 +10,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { demoSnapshot } from "@/store/demoSnapshot";
-import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -23,6 +22,7 @@ import { type TabItem } from "@/app/chrome/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
+import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { Fleet } from "@/features/planner/fleet/Fleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
@@ -305,32 +305,11 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         </>
       }
       rail={
-        <Stack gap={0} style={{ flex: 1, minWidth: 0, background: "var(--bg-elev)", borderRight: "1px solid var(--border)", minHeight: 0 }}>
-          <Row align="baseline" justify="between" style={{ padding: "14px 16px 10px" }}>
-            <Text as="span" mono size={11} tone="dim" style={{ letterSpacing: "1.5px" }}>{drill ? "AGENTS" : "PROJECTS"}</Text>
-            <Text as="span" mono size={11} tone="dim">{model.nodes.length}</Text>
-          </Row>
-          <Box style={{ flex: 1, overflowY: "auto", padding: "0 8px 8px" }}>
-            {sidebar.map((n) => {
-              const st = HEALTH_META[n.rollupHealth];
-              const on = selNodeId === n.id || hoverNode === n.id;
-              return (
-                <Row key={n.id} gap={9} align="center" onClick={() => onNodeClick(n.id)} onMouseEnter={() => setHoverNode(n.id)} onMouseLeave={() => setHoverNode(null)}
-                  style={{ padding: "8px 9px", borderRadius: 7, cursor: "pointer", background: on ? "var(--bg-soft)" : "transparent", border: `1px solid ${on ? "var(--border)" : "transparent"}` }}>
-                  <StatusDot color={st.color} size={7} style={{ boxShadow: st.pulse ? `0 0 7px ${st.color}` : "none" }} />
-                  <Text as="span" mono size={12} style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
-                  {(n.faults ?? 0) > 0 && (
-                    <Text as="span" mono size={9.5} weight={700} title={`${n.faults} unresolved runtime faults`}
-                      style={{ flex: "none", color: "#fff", background: "var(--graph-health-error)", borderRadius: 8, padding: "1px 5px", minWidth: 15, textAlign: "center" }}>
-                      {(n.faults ?? 0) > 99 ? "99+" : n.faults}
-                    </Text>
-                  )}
-                  <Box style={{ width: 8, height: 3, borderRadius: 2, background: ROLE_COLOR[n.role], flex: "none" }} />
-                </Row>
-              );
-            })}
-          </Box>
-          {model.cyclePairs.length > 0 && (
+        <GraphRail
+          label={drill ? "AGENTS" : "PROJECTS"}
+          count={model.nodes.length}
+          bodyPad="0 8px 8px"
+          footer={model.cyclePairs.length > 0 ? (
             <Box style={{ borderTop: "1px solid var(--border)", padding: "12px 16px" }}>
               <Row gap={7} align="center" style={{ marginBottom: 9 }}>
                 <Text as="span" style={{ color: "var(--graph-health-error)" }}>▲</Text>
@@ -344,8 +323,27 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
                 </Box>
               ))}
             </Box>
-          )}
-        </Stack>
+          ) : undefined}
+        >
+          {sidebar.map((n) => {
+            const st = HEALTH_META[n.rollupHealth];
+            const on = selNodeId === n.id || hoverNode === n.id;
+            return (
+              <Row key={n.id} gap={9} align="center" onClick={() => onNodeClick(n.id)} onMouseEnter={() => setHoverNode(n.id)} onMouseLeave={() => setHoverNode(null)}
+                style={{ padding: "8px 9px", borderRadius: 7, cursor: "pointer", background: on ? "var(--bg-soft)" : "transparent", border: `1px solid ${on ? "var(--border)" : "transparent"}` }}>
+                <StatusDot color={st.color} size={7} style={{ boxShadow: st.pulse ? `0 0 7px ${st.color}` : "none" }} />
+                <Text as="span" mono size={12} style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
+                {(n.faults ?? 0) > 0 && (
+                  <Text as="span" mono size={9.5} weight={700} title={`${n.faults} unresolved runtime faults`}
+                    style={{ flex: "none", color: "#fff", background: "var(--graph-health-error)", borderRadius: 8, padding: "1px 5px", minWidth: 15, textAlign: "center" }}>
+                    {(n.faults ?? 0) > 99 ? "99+" : n.faults}
+                  </Text>
+                )}
+                <Box style={{ width: 8, height: 3, borderRadius: 2, background: ROLE_COLOR[n.role], flex: "none" }} />
+              </Row>
+            );
+          })}
+        </GraphRail>
       }
       inspector={sel ? <GlanceInspector model={model} selType={sel.type} selId={sel.id} onSelectNode={pickNode} onClose={() => setSel(null)}
         onRemoveEdge={!drill && !data.sample ? removeProjectLink : undefined}
