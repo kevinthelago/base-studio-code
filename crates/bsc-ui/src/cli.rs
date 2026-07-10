@@ -228,6 +228,22 @@ can't reach it). With --dir it scans a KIT's source for the `var(--<token>` it c
 surface); without, it resolves the whole contract. `complete` is true when nothing is uncontracted.
 Compact JSON by default; --pretty indents.",
     },
+    CmdDoc {
+        name: "emit",
+        summary: "vendor a component (or the whole kit) as compilable source into a directory (#2800)",
+        usage: "\
+USAGE:
+  bsc ui emit component <id> <dir>   # a component + its transitive composes + the _kit runtime it needs
+  bsc ui emit kit <dir>              # the whole kit
+
+Writes REAL, compilable source into <dir> (mirroring the src/ layout), every first-party `@/…` import
+rewritten to a resolvable relative path — so the emitted tree builds with NO alias config and NO
+network. Resolves against the EMBEDDED kit artifact (the packaged `bsc/react-ui`), so it works inside
+the sealed sandbox where the mutable stores aren't reachable. Each file is provenance-stamped
+(`// vendored from bsc/react-ui@<version>`), the marker a later `sync` keys on. Prints a JSON summary
+{ emitted, dir, files, externalDeps }, where `externalDeps` lists the npm packages (react, d3-*) the
+vendored code imports and the app must declare — the closure vendors first-party source only.",
+    },
 ];
 
 /// The merged command catalog (#2469): the contract verbs first, then the component-library verbs
@@ -267,6 +283,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("theme") => cmd_theme(&args[1..], prog),
         Some("generate") => cmd_generate(&args[1..], prog),
         Some("resolve") => cmd_resolve(&args[1..]),
+        Some("emit") => cmd_emit(&args[1..], prog),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
         // ours so the error shows the MERGED overview, not the component-only one.
@@ -440,6 +457,51 @@ fn cmd_resolve(args: &[String]) -> Result<(), String> {
     });
     let out = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
     println!("{}", out.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `bsc ui emit component <id> <dir>` / `bsc ui emit kit <dir>` (#2800) — vendor a component + its
+/// transitive closure (or the whole kit) as compilable source, from the EMBEDDED artifact (no store /
+/// network → sandbox-safe). See [`crate::emit`].
+fn cmd_emit(args: &[String], prog: &str) -> Result<(), String> {
+    match args.first().map(String::as_str) {
+        None | Some("help") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMMANDS, "emit"));
+            Ok(())
+        }
+        Some("component") => {
+            let id = args.get(1).ok_or("usage: bsc ui emit component <id> <dir>")?;
+            let dir = args.get(2).ok_or("usage: bsc ui emit component <id> <dir>")?;
+            write_plan(&crate::emit::EmitKit::packaged().plan_component(id)?, dir)
+        }
+        Some("kit") => {
+            let dir = args.get(1).ok_or("usage: bsc ui emit kit <dir>")?;
+            write_plan(&crate::emit::EmitKit::packaged().plan_kit(), dir)
+        }
+        Some(other) => {
+            Err(format!("unknown emit command '{other}' — want: component <id> <dir> | kit <dir>"))
+        }
+    }
+}
+
+/// Write every planned file under `dir` (creating parent dirs) and print the JSON summary
+/// `{ emitted, dir, files, externalDeps }`.
+fn write_plan(plan: &crate::emit::EmitPlan, dir: &str) -> Result<(), String> {
+    let root = Path::new(dir);
+    for f in &plan.files {
+        let out = root.join(&f.path);
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        }
+        std::fs::write(&out, &f.content).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
+    }
+    let summary = serde_json::json!({
+        "emitted": plan.files.len(),
+        "dir": dir,
+        "files": plan.files.iter().map(|f| &f.path).collect::<Vec<_>>(),
+        "externalDeps": plan.external_deps,
+    });
+    println!("{}", serde_json::to_string(&summary).map_err(|e| e.to_string())?);
     Ok(())
 }
 
@@ -1492,6 +1554,32 @@ mod tests {
         let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "emit-css");
         for needle in ["tokens.css", "theme.css", "READ-ONLY", "replacing theme.css only", "--theme"] {
             assert!(d.contains(needle), "emit-css help mentions {needle}");
+        }
+    }
+
+    #[test]
+    fn emit_component_writes_a_stamped_alias_free_closure() {
+        // The CLI path end-to-end (#2800): emit `card` into a temp dir, from the EMBEDDED artifact.
+        let dir = std::env::temp_dir().join(format!("bsc-ui-emit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let d = dir.to_string_lossy().into_owned();
+        run(vec!["emit".into(), "component".into(), "card".into(), d.clone()], "bsc ui").unwrap();
+        // Card landed mirroring the src/ layout, with NO first-party alias surviving, provenance-stamped.
+        let card = std::fs::read_to_string(dir.join("shared/ui/data/Card.tsx")).expect("Card.tsx emitted");
+        assert!(!card.contains("@/"), "emitted Card retains a @/ alias: {card}");
+        assert!(card.starts_with("// vendored from bsc/react-ui@"), "provenance stamp: {card}");
+        // Command surface: bare emit prints help; bad shapes error crisply.
+        assert!(run(vec!["emit".into()], "bsc ui").is_ok(), "bare emit prints help");
+        assert!(run(vec!["emit".into(), "component".into(), "nope".into(), d], "bsc ui").is_err(), "unknown id");
+        assert!(run(vec!["emit".into(), "kit".into()], "bsc ui").is_err(), "kit needs a dir");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn emit_help_documents_both_forms() {
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "emit");
+        for needle in ["emit component", "emit kit", "externalDeps", "sandbox", "vendored from"] {
+            assert!(d.contains(needle), "emit help mentions {needle}");
         }
     }
 

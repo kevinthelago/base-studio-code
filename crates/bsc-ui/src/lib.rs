@@ -15,6 +15,7 @@
 //! packaged `bsc/react-ui` kit resolving as an embedded fallback entry. Surfaced as `bsc ui kit`.
 
 pub mod cli;
+pub mod emit;
 pub mod kit;
 
 use serde_json::Value;
