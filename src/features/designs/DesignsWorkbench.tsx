@@ -8,17 +8,20 @@
 // preview (variant / theme / viewport switchers + the render-error card), Overview / Source / Usage tabs,
 // and the generate-variants design bar.
 //
-// It reuses the pure domain (`lib/model`), the shared specimen renderer (`renderSpecimen`), the shared
-// graph stack (`GraphCanvas` + `ZoomControls` + `useGraphViewport` + `graphEdge`, #2418; the top-down
-// hierarchy layout lives in `lib/compositionLayout`, #2455), and `useDragResize` — so it stays
-// on-architecture and the planner Kickoff pane is untouched. Data comes from the global store via the
-// `bsc ui` bridge.
+// The whole shell IS the shared `GraphCanvas` (#2766) — rail · [toolbar · canvas · dock] · inspector,
+// the SAME structure as Teams and Glance (the bespoke `.ds-body`/`.ds-col` layout + its duplicate inner
+// GraphCanvas are gone). It reuses the pure domain (`lib/model`), the shared specimen renderer
+// (`renderSpecimen`), the shared graph stack (`ZoomControls` + `useGraphPage`/`useGraphViewport` +
+// `graphEdge`, #2418; the top-down hierarchy layout lives in `lib/compositionLayout`, #2455); GraphCanvas
+// owns the rail/inspector widths, so `useDragResize` sizes only the designer-terminal dock now. Data
+// comes from the global store via the `bsc ui` bridge.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
 import { KitChangesCard, SeedNoticesCard } from "./KitChangesCard";
 import { DesignerTerminal } from "./DesignerTerminal";
 import { Box } from "@/shared/ui/layout/Box";
+import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Button } from "@/shared/ui/controls/Button";
@@ -29,10 +32,9 @@ import { Code } from "@/shared/ui/data/Code";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphPage } from "@/shared/ui/layouts/useGraphPage";
-import type { GraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 import { selectionNeighborhood } from "@/shared/lib/graph/selectionNeighborhood";
-import { layoutComposition, NODE_W, NODE_H, type CompositionLayout } from "./lib/compositionLayout";
+import { layoutComposition, NODE_W, NODE_H } from "./lib/compositionLayout";
 import { analyzeGraphHealth, HEALTH_SEVERITY, type HealthCategory } from "./lib/graphHealth";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
@@ -90,11 +92,9 @@ export function DesignsWorkbench() {
   useUiActivity(true);
   useEffect(() => () => useAppStore.getState().setAiFocused(null), []);
 
-  const rail = useDragResize({ initial: 266, min: 200, max: 400, axis: "x" });
-  // The inspector carries the full library detail (#2453), so it defaults — and is allowed — wider.
-  const insp = useDragResize({ initial: 420, min: 300, max: 680, axis: "x", invert: true });
   // The always-on designer terminal's height (#2624) — a row-resize handle above it; `invert` because
   // the terminal sits AFTER the handle, so dragging up grows it. The graph (flex:1) keeps priority.
+  // The rail + inspector widths are owned by GraphCanvas now (#2766), so only the dock stays caller-owned.
   const term = useDragResize({ initial: 240, min: 140, max: 560, axis: "y", invert: true });
 
   const match = (c: ComponentRecord) => matchesQuery(c, query);
@@ -163,11 +163,24 @@ export function DesignsWorkbench() {
     } catch (e) { previewErr = e instanceof Error ? e.message : String(e); }
   }
 
+  // Selection neighborhood (#2523): the focused node's edges draw in accent, its related nodes get a
+  // softer ring; incident edges render LAST so they sit above the dim ones. Hoisted out of the old
+  // GraphView wrapper (#2766) now that the graph IS the page's one GraphCanvas.
+  const selId = sel?.id ?? "";
+  const { incidentEdges, relatedNodes } = selectionNeighborhood(graph.edges, selId);
+  const orderedEdges = [...graph.edges].sort(
+    (a, b) => Number(incidentEdges.has(a.id)) - Number(incidentEdges.has(b.id)),
+  );
+  const EDGE_COLOR = "var(--border-strong, #3a434d)";
+  const EDGE_HL = "var(--accent)";
+
+  // The whole shell is the shared GraphCanvas (#2766): rail · [toolbar · canvas · dock] · inspector —
+  // structurally identical to Teams and Glance now (the bespoke .ds-body/.ds-col layout + its duplicate
+  // inner GraphCanvas are gone). The page-level toolbar was already dropped when the studio became a
+  // Planner tab (the PageTabs strip is its header); kit switching + search live in the rail, Share in the
+  // graph header. Modals + notice cards are siblings of the canvas.
   return (
-    <Box className="ds-root">
-      {/* The page-level toolbar was removed when the studio became a Planner tab (the PageTabs strip is
-          its header now). Kit switching lives in the rail — click a kit head to activate it; search sits
-          under the rail header; Share moved to the graph header. */}
+    <>
       {shareOpen && (
         <KitShareModal
           kit={kit ?? null}
@@ -176,70 +189,121 @@ export function DesignsWorkbench() {
           onImported={(k) => selectKit(k.id)}
         />
       )}
-
-      {/* kit-change propagation notify surface (#2277) — renders only when changes are pending */}
+      {/* kit-change propagation (#2277) + built-in seed-refresh notices (#2483) — render only when pending */}
       <KitChangesCard />
-      {/* built-in seed-refresh notices (#2483) — customized built-ins kept through a seed divergence */}
       <SeedNoticesCard />
 
-      {/* ── body ── */}
-      <Box className="ds-body">
-        {/* left rail — the kits · components list */}
-        <Box className="ds-col ds-rail" style={{ width: rail.size, flexBasis: rail.size }}>
-          <Box className="ds-colhead">
-            <Eyebrow size={9.5}>Kits · Components</Eyebrow>
-            <Text mono size="xxs" tone="dim">{kitComps.length} comps</Text>
+      <GraphCanvas
+        vp={gvp}
+        world={graph.world}
+        className="ds-graph"
+        grid gridSize={22} gridColor="var(--border-soft, var(--border))"
+        canvasBackground="var(--bg-canvas, var(--bg))"
+        railResizable railWidth={266} railMin={200} railMax={400}
+        inspectorResizable inspectorWidth={420} inspectorMin={300} inspectorMax={680}
+        // Clicking the canvas background (not a node) unfocuses → hides the details pane (#2705).
+        onBackgroundClick={deselect}
+        // The ALWAYS-ON designer session (#2597), docked below the graph; the caller owns its height + a
+        // `.resize-y` handle (GraphCanvas gives it a flex:none slot), mirroring the Teams dock (#2759).
+        dock={
+          <Box style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+            <Box className="resize-y" {...term.handleProps} title="Drag to resize" />
+            <DesignerTerminal height={term.size} />
           </Box>
-          {/* search — sits under the rail header */}
-          <Box style={{ flex: "none", padding: "8px 8px 0" }}>
-            <SearchField
-              value={query}
-              onChange={setQuery}
-              placeholder="Search components…"
-              aria-label="Search components"
-              style={{ width: "100%", maxWidth: 420 }}
-            />
-          </Box>
-          <Box className="ds-scroll" style={{ flex: 1, padding: "8px 8px 16px" }}>
-            <RailTree
-              railTree={railTree} expanded={expanded} setExpanded={setExpanded}
-              kitId={kitId} setKitId={setKitId} compId={compId}
-              components={components} match={match} selectComp={selectComp} query={query}
-            />
-          </Box>
-        </Box>
-        <Box className="ds-handle" {...rail.handleProps} />
-
-        {/* center — the composition graph, with the ALWAYS-ON designer session docked below it (#2597):
-            the graph flexes; the terminal is a fixed-height bottom strip, so the panes keep priority.
-            Clicking the canvas background (not a node) unfocuses → hides the details pane (#2705). */}
-        <Box className="ds-col ds-center">
-          <GraphView
-            graph={graph} comps={kitComps} selId={sel?.id ?? ""} workingId={aiFocusedId ?? ""} kitName={kit.name} gvp={gvp} onSelect={selectComp}
-            onShare={() => setShareOpen(true)} health={nodeHealth} findingsCount={healthFindings.length}
-            onDeselect={deselect}
-          />
-          <Box className="ds-handle-h" {...term.handleProps} />
-          <DesignerTerminal height={term.size} />
-        </Box>
-
-        {/* details pane — rendered ONLY when a component is focused (#2705); clicking the canvas
-            unfocuses and this (with its resize splitter) disappears, giving the graph the full width. */}
-        {sel && (
+        }
+        toolbar={
           <>
-            <Box className="ds-handle" {...insp.handleProps} />
-            <Inspector
-              width={insp.size} sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
-              allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
-              vp={vp} setVpKind={setVpKind}
-              kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
-              previewEl={previewEl} previewErr={previewErr} onRetry={() => setRenderKey((k) => k + 1)}
-              composes={composes} onSelect={selectComp}
-            />
+            <Eyebrow size={9.5}>Composition graph · {kit.name}</Eyebrow>
+            {healthFindings.length > 0 && (
+              <Text as="span" className="ds-healthcount" title="Graph-health findings — the same set `bsc ui doctor` reports (#2680)">
+                ⚠ {healthFindings.length} health finding{healthFindings.length === 1 ? "" : "s"}
+              </Text>
+            )}
+            <Box style={{ flex: 1 }} />
+            <ZoomControls vp={gvp} step={1.15} />
+            <Box as="button" className="ds-act" onClick={() => gvp.fit()}>fit</Box>
+            <Box as="button" className="ds-act" title="Share or import a kit (gist / share code)" onClick={() => setShareOpen(true)}><Text as="span" tone="dim">⇅</Text> Share</Box>
           </>
-        )}
-      </Box>
-    </Box>
+        }
+        rail={
+          <Stack gap={0} style={{ flex: 1, minWidth: 0, borderRight: "1px solid var(--border)", background: "var(--bg-elev, var(--bg-soft))", minHeight: 0 }}>
+            <Box className="ds-colhead">
+              <Eyebrow size={9.5}>Kits · Components</Eyebrow>
+              <Text mono size="xxs" tone="dim">{kitComps.length} comps</Text>
+            </Box>
+            {/* search — sits under the rail header */}
+            <Box style={{ flex: "none", padding: "8px 8px 0" }}>
+              <SearchField
+                value={query}
+                onChange={setQuery}
+                placeholder="Search components…"
+                aria-label="Search components"
+                style={{ width: "100%", maxWidth: 420 }}
+              />
+            </Box>
+            <Box className="ds-scroll" style={{ flex: 1, padding: "8px 8px 16px" }}>
+              <RailTree
+                railTree={railTree} expanded={expanded} setExpanded={setExpanded}
+                kitId={kitId} setKitId={setKitId} compId={compId}
+                components={components} match={match} selectComp={selectComp} query={query}
+              />
+            </Box>
+          </Stack>
+        }
+        // Details pane — rendered ONLY when a component is focused (#2705); clicking the canvas unfocuses
+        // and the inspector (with its splitter) disappears, giving the graph the full width.
+        inspector={sel ? (
+          <Inspector
+            sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
+            allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
+            vp={vp} setVpKind={setVpKind}
+            kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
+            previewEl={previewEl} previewErr={previewErr} onRetry={() => setRenderKey((k) => k + 1)}
+            composes={composes} onSelect={selectComp}
+          />
+        ) : undefined}
+      >
+        <svg width={graph.world.w} height={graph.world.h} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
+          {orderedEdges.map((e) => {
+            const a = graph.pos.get(e.from), b = graph.pos.get(e.to);
+            if (!a || !b) return null;
+            // The shared graph line-type (#2222) with PERIMETER-ANCHOR routing — the composition graph
+            // is a layered TOP-DOWN DAG (#2455); the anchor router leaves each card facing the other.
+            const g = graphEdge({ ...a, w: NODE_W, h: NODE_H }, { ...b, w: NODE_W, h: NODE_H });
+            const on = incidentEdges.has(e.id); // incident to the selection → accent + thicker (#2523)
+            const color = on ? EDGE_HL : EDGE_COLOR;
+            return (
+              <g key={e.id} className={on ? "ds-edge on" : "ds-edge"}>
+                <path d={g.d} stroke={color} strokeWidth={on ? 2.25 : 1.5} fill="none" />
+                <path d={g.arrow} fill={color} />
+              </g>
+            );
+          })}
+        </svg>
+        {kitComps.map((c) => {
+          const pos = graph.pos.get(c.id); if (!pos) return null;
+          // Full ring for the selection, softer ring for its related nodes (#2523); .on wins over .related.
+          const state = c.id === selId ? " on" : relatedNodes.has(c.id) ? " related" : "";
+          // AI live-focus (#2525): a DIFFERENT touched node pulses as `.working`; the user's `.on` wins if
+          // it's the SAME node, so an active selection is never overridden.
+          const working = c.id === (aiFocusedId ?? "") && c.id !== selId ? " working" : "";
+          const badge = nodeHealth.get(c.id); // graph-health category (#2680), if any
+          return (
+            <Box key={c.id} data-node onClick={() => selectComp(c)} className={`ds-node${state}${working}${badge ? " unhealthy" : ""}`} style={{ left: pos.x, top: pos.y, width: NODE_W }}>
+              {badge && (
+                <Text as="span" className={`ds-health ds-health-${badge}`} title={`${badge} — ${HEALTH_BADGE[badge].label}`}>{HEALTH_BADGE[badge].glyph}</Text>
+              )}
+              <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                <RoleDot role={c.role} /><Text weight={600} size={13}>{c.name}</Text>
+              </Box>
+              <Box style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <Text size={10} tone="dim">{c.role}</Text><Text mono size="xxs" tone="muted">×{c.used}</Text>
+              </Box>
+            </Box>
+          );
+        })}
+      </GraphCanvas>
+    </>
   );
 }
 
@@ -259,22 +323,9 @@ function GuideCard({ tone, title, items, glyph }: { tone: "success" | "danger"; 
   );
 }
 
-// ── Graph view ───────────────────────────────────────────────────────────────
-interface GraphProps {
-  graph: CompositionLayout;
-  comps: ComponentRecord[]; selId: string;
-  /** The AI-touched node (#2525) — pulses as `.working`, distinct from the user's `.on` selection. */
-  workingId: string; kitName: string;
-  gvp: GraphViewport; onSelect: (c: ComponentRecord) => void;
-  /** Open the share/import kits modal — the Share action lives in the graph header (right of fit). */
-  onShare: () => void;
-  /** Graph-health badges (#2680): node id → its most-severe finding category, + the total count. */
-  health: Map<string, HealthCategory>; findingsCount: number;
-  /** Clicking the canvas background (not a node) unfocuses → hides the details pane (#2705). */
-  onDeselect: () => void;
-}
-
-/** The health badge glyph + tooltip per category (#2680) — mirrors `bsc ui doctor`. */
+// ── Graph node badges ─────────────────────────────────────────────────────────
+/** The health badge glyph + tooltip per category (#2680) — mirrors `bsc ui doctor`; read by the graph
+ *  node cards in the page's one GraphCanvas (#2766, was the removed GraphView wrapper). */
 const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string }> = {
   cycle: { glyph: "⟳", label: "on a composes cycle" },
   "dangling-branch": { glyph: "⚠", label: "unused branch (nothing composes it, used = 0)" },
@@ -282,91 +333,12 @@ const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string }> = {
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
 };
 
-function GraphView({ graph, comps, selId, workingId, kitName, gvp, onSelect, onShare, health, findingsCount, onDeselect }: GraphProps) {
-  // The pan/zoom shell is the shared GraphCanvas template (#2208) — viewport ref/wheel/pan + the world
-  // transform + the infinite dotted grid all live there; this brings only the toolbar + world content.
-  const EDGE_COLOR = "var(--border-strong, #3a434d)";
-  const EDGE_HL = "var(--accent)";
-  // Selection neighborhood (#2523): the selected node's edges draw in accent, its related nodes get a
-  // softer ring. Incident edges render LAST (sorted to the end) so they sit above the dim ones.
-  const { incidentEdges, relatedNodes } = selectionNeighborhood(graph.edges, selId);
-  const orderedEdges = [...graph.edges].sort(
-    (a, b) => Number(incidentEdges.has(a.id)) - Number(incidentEdges.has(b.id)),
-  );
-  return (
-    <GraphCanvas
-      vp={gvp}
-      world={graph.world}
-      onBackgroundClick={onDeselect}
-      grid gridSize={22} gridColor="var(--border-soft, var(--border))"
-      canvasBackground="var(--bg-canvas, var(--bg))"
-      toolbar={
-        <>
-          <Eyebrow size={9.5}>Composition graph · {kitName}</Eyebrow>
-          {findingsCount > 0 && (
-            <Text as="span" className="ds-healthcount" title="Graph-health findings — the same set `bsc ui doctor` reports (#2680)">
-              ⚠ {findingsCount} health finding{findingsCount === 1 ? "" : "s"}
-            </Text>
-          )}
-          <Box style={{ flex: 1 }} />
-          <ZoomControls vp={gvp} step={1.15} />
-          <Box as="button" className="ds-act" onClick={() => gvp.fit()}>fit</Box>
-          <Box as="button" className="ds-act" title="Share or import a kit (gist / share code)" onClick={onShare}><Text as="span" tone="dim">⇅</Text> Share</Box>
-        </>
-      }
-    >
-      <svg width={graph.world.w} height={graph.world.h} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
-        {orderedEdges.map((e) => {
-          const a = graph.pos.get(e.from), b = graph.pos.get(e.to);
-          if (!a || !b) return null;
-          // The shared graph line-type (#2222) with PERIMETER-ANCHOR routing — the composition graph
-          // is a layered TOP-DOWN DAG (#2455); the side-port router is horizontal-only, and the anchor
-          // router leaves each card facing the other, which reads cleanly for the vertical flow.
-          const g = graphEdge({ ...a, w: NODE_W, h: NODE_H }, { ...b, w: NODE_W, h: NODE_H });
-          const on = incidentEdges.has(e.id); // incident to the selection → accent + thicker (#2523)
-          const color = on ? EDGE_HL : EDGE_COLOR;
-          return (
-            <g key={e.id} className={on ? "ds-edge on" : "ds-edge"}>
-              <path d={g.d} stroke={color} strokeWidth={on ? 2.25 : 1.5} fill="none" />
-              <path d={g.arrow} fill={color} />
-            </g>
-          );
-        })}
-      </svg>
-      {comps.map((c) => {
-        const pos = graph.pos.get(c.id); if (!pos) return null;
-        // Full ring for the selection, softer ring for its related nodes (#2523); .on wins over .related.
-        const state = c.id === selId ? " on" : relatedNodes.has(c.id) ? " related" : "";
-        // AI live-focus (#2525): the touched node pulses as `.working` — a DISTINCT state from the
-        // user's selection. Precedence: the user's `.on` wins if it's the SAME node (no `.working`
-        // added then), so a user's active selection is never overridden; a DIFFERENT touched node
-        // pulses (and composes with `.related` — `.working` is placed after `.related` in the CSS).
-        const working = c.id === workingId && c.id !== selId ? " working" : "";
-        const badge = health.get(c.id); // graph-health category (#2680), if any
-        return (
-          <Box key={c.id} data-node onClick={() => onSelect(c)} className={`ds-node${state}${working}${badge ? " unhealthy" : ""}`} style={{ left: pos.x, top: pos.y, width: NODE_W }}>
-            {badge && (
-              <Text as="span" className={`ds-health ds-health-${badge}`} title={`${badge} — ${HEALTH_BADGE[badge].label}`}>{HEALTH_BADGE[badge].glyph}</Text>
-            )}
-            <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-              <RoleDot role={c.role} /><Text weight={600} size={13}>{c.name}</Text>
-            </Box>
-            <Box style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <Text size={10} tone="dim">{c.role}</Text><Text mono size="xxs" tone="muted">×{c.used}</Text>
-            </Box>
-          </Box>
-        );
-      })}
-    </GraphCanvas>
-  );
-}
-
 // ── Inspector ────────────────────────────────────────────────────────────────
 // The full per-component detail surface (#2453) — it absorbed the removed Library center view:
 // identity header · live preview (variant/theme/viewport + error card) · Overview/Source/Usage tabs ·
 // the generate-variants design bar.
 interface InspProps {
-  width: number; sel: ComponentRecord | null; kitName: string; tab: Tab; setTab: (t: Tab) => void;
+  sel: ComponentRecord | null; kitName: string; tab: Tab; setTab: (t: Tab) => void;
   allVariants: string[]; activeVariant: string; setVariant: (v: string) => void;
   vp: Viewport; setVpKind: (v: Viewport) => void;
   /** The preview's THEME axis (#2488/#2545): the hydrated theme collection + the applied selection.
@@ -377,9 +349,10 @@ interface InspProps {
 }
 function Inspector(p: InspProps) {
   const sel = p.sel;
-  // The width splitter is the parent's handle (it drives `width`); the inspector just fills it.
+  // GraphCanvas owns the inspector column width now (#2766) — fill the wrapper it gives us; bring only
+  // the left border + elevated surface (the old `.ds-col ds-insp` shell classes are gone).
   return (
-    <Box className="ds-col ds-insp" style={{ width: p.width, flexBasis: p.width }}>
+    <Box data-testid="ds-inspector" style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", borderLeft: "1px solid var(--border)", background: "var(--bg-elev, var(--bg-soft))" }}>
       <Box className="ds-colhead">
         <Eyebrow size={9.5}>Inspector</Eyebrow>
         <Text size={10} tone="dim" style={{ display: "flex", alignItems: "center", gap: 5 }}><StatusDot color="var(--success)" size={6} />editable</Text>

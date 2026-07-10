@@ -32,7 +32,7 @@ describe("DesignsWorkbench (#2308)", () => {
     expect(screen.queryByText("▦ Library")).toBeNull();
     expect(screen.queryByText("⬡ Graph")).toBeNull();
     // Nothing is focused on mount → the details pane is hidden, the graph gets the full width (#2705).
-    expect(container.querySelector(".ds-insp")).toBeNull();
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();
     expect(screen.queryByText("Live preview")).toBeNull();
   });
 
@@ -103,7 +103,7 @@ describe("DesignsWorkbench (#2308)", () => {
     // vue kit's head is labelled with its style ("material") under the single-kit style merge (#2506).
     fireEvent.click(screen.getByText("material").closest("button.ds-kithead")!);
     expect(screen.getByText(/Composition graph · vue-kit/)).toBeTruthy();
-    expect(container.querySelector(".ds-insp")).toBeNull();          // switching focuses nothing (#2705)
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();          // switching focuses nothing (#2705)
     // …then picking a component from the new kit reveals its details.
     fireEvent.click(railRow("VueButton"));
     expect(screen.getByText("VueButton.tsx")).toBeTruthy();
@@ -168,7 +168,7 @@ describe("DesignsWorkbench (#2308)", () => {
     expect(panel).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Designer/ })).toBeNull();
     // It's docked inside the center column (below the graph), not a full-width overlay.
-    expect(panel.closest(".ds-center")).toBeTruthy();
+    expect(panel.closest(".ds-graph")).toBeTruthy();
     // The per-component generate-variants chat is gone.
     expect(screen.queryByRole("button", { name: /Generate variants/ })).toBeNull();
   });
@@ -176,7 +176,7 @@ describe("DesignsWorkbench (#2308)", () => {
   it("the designer chat box is resizable and doesn't pin the panes (#2624)", () => {
     const { container } = render(<DesignsWorkbench />);
     // A row-resize handle sits between the graph and the terminal.
-    expect(container.querySelector(".ds-handle-h")).toBeTruthy();
+    expect(container.querySelector(".resize-y")).toBeTruthy();
     // The terminal carries an inline (drag-driven) height so the graph keeps priority.
     const panel = screen.getByTestId("designer-terminal") as HTMLElement;
     expect(panel.style.height).not.toBe("");
@@ -208,38 +208,38 @@ describe("selection-driven details pane (#2705)", () => {
 
   it("hidden on mount — nothing is focused, so the graph gets the full width", () => {
     const { container } = render(<DesignsWorkbench />);
-    expect(container.querySelector(".ds-insp")).toBeNull();
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();
     expect(screen.queryByText("Live preview")).toBeNull();
     // Only the rail's own resize splitter is present (no details splitter yet).
-    expect(container.querySelectorAll(".ds-handle").length).toBe(1);
+    expect(container.querySelectorAll(".resize-x").length).toBe(1);
   });
 
   it("focusing a graph node reveals the details pane (with its resize splitter)", () => {
     const { container } = render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));
-    expect(container.querySelector(".ds-insp")).toBeTruthy();
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();
     expect(screen.getByText("Chip.tsx")).toBeTruthy();
     expect(graphNode("Chip").className).toContain("on");
-    expect(container.querySelectorAll(".ds-handle").length).toBe(2); // rail + details splitters
+    expect(container.querySelectorAll(".resize-x").length).toBe(2); // rail + details splitters
   });
 
   it("focusing a component from the rail also reveals the details pane", () => {
     const { container } = render(<DesignsWorkbench />);
-    expect(container.querySelector(".ds-insp")).toBeNull();
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();
     fireEvent.click(railRow("Chip"));
-    expect(container.querySelector(".ds-insp")).toBeTruthy();
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();
     expect(screen.getByText("Chip.tsx")).toBeTruthy();
   });
 
   it("clicking the canvas background unfocuses the node and hides the details pane", () => {
     const { container } = render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));                              // focus → details shown
-    expect(container.querySelector(".ds-insp")).toBeTruthy();
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();
     fireEvent.click(canvas(container));                              // click the empty canvas → unfocus
-    expect(container.querySelector(".ds-insp")).toBeNull();          // details pane gone
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();          // details pane gone
     expect(screen.queryByText("Chip.tsx")).toBeNull();
     expect(graphNode("Chip").className).not.toContain("on");         // node no longer selected
-    expect(container.querySelectorAll(".ds-handle").length).toBe(1); // details splitter removed too
+    expect(container.querySelectorAll(".resize-x").length).toBe(1); // details splitter removed too
   });
 });
 
