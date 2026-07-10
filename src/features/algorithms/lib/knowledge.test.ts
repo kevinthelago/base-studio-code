@@ -81,8 +81,12 @@ describe("pathBetween (undirected BFS)", () => {
     const path = pathBetween(KNOWLEDGE, "fibonacci", "mandelbrot");
     expect(path?.[0]).toBe("fibonacci");
     expect(path?.[path.length - 1]).toBe("mandelbrot");
-    // fibonacci ~ golden-ratio ~ self-similarity ~ mandelbrot (shortest is 4 nodes).
-    expect(path).toEqual(["fibonacci", "golden-ratio", "self-similarity", "mandelbrot"]);
+    // Two equal-length shortest paths exist (fibonacci→golden-ratio→… and fibonacci→recursion→…,
+    // and BFS picks recursion since composes-edges sort first) — so pin the INVARIANT hops, not the
+    // ambiguous middle: length 4, and self-similarity is always the penultimate node (mandelbrot's
+    // only link).
+    expect(path).toHaveLength(4);
+    expect(path?.[2]).toBe("self-similarity");
   });
 
   it("returns [id] for a node to itself and null for an unknown id", () => {
