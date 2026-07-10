@@ -6,3 +6,6 @@ description = "The Algorithms knowledge graph (#2760/#2761) — the curated conc
 
 [dependencies]
 serde_json = "1"
+tree-sitter = "0.23"
+tree-sitter-typescript = "0.23"
+tree-sitter-rust = "0.23"

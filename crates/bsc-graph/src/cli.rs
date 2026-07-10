@@ -56,11 +56,45 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             let b = positional.get(2).ok_or("usage: bsc graph path <a> <b>")?;
             emit(&serde_json::json!({ "from": a, "to": b, "path": crate::path(a, b) }))
         }
+        // `extract <dir> [--tech typescript|rust]` — parse real code (#2775, Phase 2), extract
+        // function definitions, and map each onto a seed concept. `matched` = fns with a concept,
+        // `unmatched` = fns without, `duplicates` = concepts implemented at more than one site.
+        "extract" => {
+            let dir = positional
+                .get(1)
+                .ok_or("usage: bsc graph extract <dir> [--tech typescript|rust]")?;
+            let tech = flag_value(&args, "--tech");
+            let fns: Vec<crate::extract::ExtractedFn> = crate::extract::extract_dir(std::path::Path::new(dir))
+                .into_iter()
+                .filter(|f| tech.as_deref().is_none_or(|t| f.tech == t))
+                .collect();
+            let matched: Vec<Value> = fns
+                .iter()
+                .filter(|f| f.concept.is_some())
+                .map(|f| serde_json::json!({ "concept": f.concept, "tech": f.tech, "name": f.name, "file": f.file, "line": f.line }))
+                .collect();
+            let unmatched: Vec<Value> = fns
+                .iter()
+                .filter(|f| f.concept.is_none())
+                .map(|f| serde_json::json!({ "name": f.name, "tech": f.tech, "file": f.file, "line": f.line }))
+                .collect();
+            let duplicates: Vec<Value> = crate::extract::dedup(&fns)
+                .into_iter()
+                .map(|(concept, sites)| {
+                    let sites: Vec<Value> = sites
+                        .iter()
+                        .map(|s| serde_json::json!({ "tech": s.tech, "file": s.file, "line": s.line }))
+                        .collect();
+                    serde_json::json!({ "concept": concept, "count": sites.len(), "sites": sites })
+                })
+                .collect();
+            emit(&serde_json::json!({ "matched": matched, "unmatched": unmatched, "duplicates": duplicates }))
+        }
         "help" | "-h" | "--help" => {
             print!("{}", help(prog));
             Ok(())
         }
-        other => Err(format!("unknown graph command '{other}' — want: list | neighbors <id> | path <a> <b> | impl <concept> --tech <t>\n\n{}", help(prog))),
+        other => Err(format!("unknown graph command '{other}' — want: list | neighbors <id> | path <a> <b> | impl <concept> --tech <t> | extract <dir>\n\n{}", help(prog))),
     }
 }
 
@@ -76,10 +110,11 @@ fn help(prog: &str) -> String {
          {prog} list [--kind K] [--tech T] [--pretty]   # every concept; filter by kind and/or a tech that implements it\n  \
          {prog} neighbors <id> [--pretty]               # a concept's relationships (rel + direction + other node)\n  \
          {prog} path <a> <b> [--pretty]                 # shortest relationship chain between two concepts\n  \
-         {prog} impl <concept> --tech <t> [--pretty]    # the concept's per-tech implementation (#2770), or null\n\n\
+         {prog} impl <concept> --tech <t> [--pretty]    # the concept's per-tech implementation (#2770), or null\n  \
+         {prog} extract <dir> [--tech T] [--pretty]     # parse real code (#2775): matched/unmatched fns + concept duplicates\n\n\
          Node kinds: data-structure · algorithm · concept · output.\n\
          Relationships: operates-on · composes · variant-of · generates · related-to.\n\
          Implementation techs (#2770): typescript · rust — each `implements` a concept and `composes` other same-tech impls.\n\
-         The graph is the curated ontology (Graph 1) + the per-tech implementation tier; Phase 2 (#2745) adds the extracted-code join.\n",
+         The graph is the curated ontology (Graph 1) + the per-tech implementation tier; Phase 2 (#2745/#2775) adds the extracted-from-code `implements` join.\n",
     )
 }

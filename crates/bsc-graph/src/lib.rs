@@ -5,6 +5,7 @@
 //! egress. Phase 2 (#2745) layers the extracted-from-code `implements` join on top.
 
 pub mod cli;
+pub mod extract;
 
 use serde_json::Value;
 
