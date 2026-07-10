@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "The Algorithms knowledge graph — Graph 1, the curated concept ontology (#2760/#2761). Canonical computer-science + math concepts and how they relate: data structures, algorithms, concepts, and outputs, joined by typed relationships. Seeded (comes from no codebase); the ONE source of truth read by BOTH the frontend (src/features/algorithms) AND the `bsc graph` CLI (crates/bsc-graph embeds it). Node `kind`: data-structure | algorithm | concept | output. Edge `rel`: operates-on (algorithm→data-structure) | composes (built from a sub-concept) | variant-of (a specialization) | generates (produces an output) | related-to (loose/cross-domain). Phase 2 (#2745) adds the `implements` join from extracted code.",
+  "note": "The Algorithms knowledge graph — Graph 1, the curated concept ontology (#2760/#2761), PLUS a per-tech implementation tier (#2770). Canonical computer-science + math concepts and how they relate: data structures, algorithms, concepts, and outputs, joined by typed relationships. Seeded (comes from no codebase); the ONE source of truth read by BOTH the frontend (src/features/algorithms) AND the `bsc graph` CLI (crates/bsc-graph embeds it). Node `kind`: data-structure | algorithm | concept | output. Edge `rel`: operates-on (algorithm→data-structure) | composes (built from a sub-concept) | variant-of (a specialization) | generates (produces an output) | related-to (loose/cross-domain). The `implementations` array (#2770) is the per-tech tier: each entry `implements` a concept in one tech (typescript | rust) and `composes` OTHER implementations of the same tech (a shareable component that builds into more complicated algorithms — e.g. merge-sort composes merge). Phase 2 (#2745) adds the `implements` join from extracted code.",
   "nodes": [
     { "id": "array", "kind": "data-structure", "name": "Array", "summary": "Contiguous indexed cells; O(1) random access, O(n) insert.", "tags": ["linear"] },
     { "id": "linked-list", "kind": "data-structure", "name": "Linked List", "summary": "Nodes chained by pointers; O(1) insert, O(n) access.", "tags": ["linear"] },
@@ -108,5 +108,101 @@
     { "from": "trie", "rel": "related-to", "to": "hash-table" },
     { "from": "bst", "rel": "related-to", "to": "binary-search" },
     { "from": "graph-ds", "rel": "related-to", "to": "matrix" }
+  ],
+  "implementations": [
+    {
+      "id": "merge.ts",
+      "concept": "merge",
+      "tech": "typescript",
+      "name": "merge (TypeScript)",
+      "summary": "Interleave two sorted arrays into one, driven by a comparator.",
+      "composes": [],
+      "code": "export function merge<T>(a: T[], b: T[], cmp: (x: T, y: T) => number): T[] {\n  const out: T[] = [];\n  let i = 0, j = 0;\n  while (i < a.length && j < b.length) {\n    out.push(cmp(a[i], b[j]) <= 0 ? a[i++] : b[j++]);\n  }\n  while (i < a.length) out.push(a[i++]);\n  while (j < b.length) out.push(b[j++]);\n  return out;\n}\n"
+    },
+    {
+      "id": "merge.rs",
+      "concept": "merge",
+      "tech": "rust",
+      "name": "merge (Rust)",
+      "summary": "Interleave two sorted slices into one sorted Vec.",
+      "composes": [],
+      "code": "/// Interleave two sorted slices into one sorted `Vec`.\npub fn merge<T: Ord + Clone>(a: &[T], b: &[T]) -> Vec<T> {\n    let mut out = Vec::with_capacity(a.len() + b.len());\n    let (mut i, mut j) = (0, 0);\n    while i < a.len() && j < b.len() {\n        if a[i] <= b[j] {\n            out.push(a[i].clone());\n            i += 1;\n        } else {\n            out.push(b[j].clone());\n            j += 1;\n        }\n    }\n    out.extend_from_slice(&a[i..]);\n    out.extend_from_slice(&b[j..]);\n    out\n}\n"
+    },
+    {
+      "id": "merge-sort.ts",
+      "concept": "merge-sort",
+      "tech": "typescript",
+      "name": "mergeSort (TypeScript)",
+      "summary": "Split, recursively sort the halves, and merge — built on the merge primitive.",
+      "composes": [
+        "merge.ts"
+      ],
+      "code": "import { merge } from \"./merge\";\n\nexport function mergeSort<T>(xs: T[], cmp: (x: T, y: T) => number): T[] {\n  if (xs.length <= 1) return xs.slice();\n  const mid = xs.length >> 1;\n  const left = mergeSort(xs.slice(0, mid), cmp);\n  const right = mergeSort(xs.slice(mid), cmp);\n  return merge(left, right, cmp);\n}\n"
+    },
+    {
+      "id": "merge-sort.rs",
+      "concept": "merge-sort",
+      "tech": "rust",
+      "name": "merge_sort (Rust)",
+      "summary": "Split, recursively sort the halves, and merge — built on the merge primitive.",
+      "composes": [
+        "merge.rs"
+      ],
+      "code": "use crate::merge::merge;\n\n/// Stable merge sort — split, sort halves, merge.\npub fn merge_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {\n    if xs.len() <= 1 {\n        return xs.to_vec();\n    }\n    let mid = xs.len() / 2;\n    let left = merge_sort(&xs[..mid]);\n    let right = merge_sort(&xs[mid..]);\n    merge(&left, &right)\n}\n"
+    },
+    {
+      "id": "binary-search.ts",
+      "concept": "binary-search",
+      "tech": "typescript",
+      "name": "binarySearch (TypeScript)",
+      "summary": "Halve a sorted range each step until the target is found.",
+      "composes": [],
+      "code": "export function binarySearch<T>(xs: T[], target: T, cmp: (x: T, y: T) => number): number {\n  let lo = 0, hi = xs.length - 1;\n  while (lo <= hi) {\n    const mid = (lo + hi) >> 1;\n    const c = cmp(xs[mid], target);\n    if (c === 0) return mid;\n    if (c < 0) lo = mid + 1;\n    else hi = mid - 1;\n  }\n  return -1;\n}\n"
+    },
+    {
+      "id": "binary-search.rs",
+      "concept": "binary-search",
+      "tech": "rust",
+      "name": "binary_search (Rust)",
+      "summary": "Halve a sorted range each step until the target is found.",
+      "composes": [],
+      "code": "/// Binary search a sorted slice; `Some(index)` on a hit, else `None`.\npub fn binary_search<T: Ord>(xs: &[T], target: &T) -> Option<usize> {\n    let (mut lo, mut hi) = (0, xs.len());\n    while lo < hi {\n        let mid = lo + (hi - lo) / 2;\n        match xs[mid].cmp(target) {\n            std::cmp::Ordering::Equal => return Some(mid),\n            std::cmp::Ordering::Less => lo = mid + 1,\n            std::cmp::Ordering::Greater => hi = mid,\n        }\n    }\n    None\n}\n"
+    },
+    {
+      "id": "quick-sort.ts",
+      "concept": "quick-sort",
+      "tech": "typescript",
+      "name": "quickSort (TypeScript)",
+      "summary": "Partition around a pivot and recurse each side.",
+      "composes": [],
+      "code": "export function quickSort<T>(xs: T[], cmp: (x: T, y: T) => number): T[] {\n  if (xs.length <= 1) return xs.slice();\n  const [pivot, ...rest] = xs;\n  const left = rest.filter((x) => cmp(x, pivot) < 0);\n  const right = rest.filter((x) => cmp(x, pivot) >= 0);\n  return [...quickSort(left, cmp), pivot, ...quickSort(right, cmp)];\n}\n"
+    },
+    {
+      "id": "quick-sort.rs",
+      "concept": "quick-sort",
+      "tech": "rust",
+      "name": "quick_sort (Rust)",
+      "summary": "Partition around a pivot and recurse each side.",
+      "composes": [],
+      "code": "/// Quick sort — partition around the first element, recurse each side.\npub fn quick_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {\n    if xs.len() <= 1 {\n        return xs.to_vec();\n    }\n    let pivot = xs[0].clone();\n    let left: Vec<T> = xs[1..].iter().filter(|x| **x < pivot).cloned().collect();\n    let right: Vec<T> = xs[1..].iter().filter(|x| **x >= pivot).cloned().collect();\n    let mut out = quick_sort(&left);\n    out.push(pivot);\n    out.extend(quick_sort(&right));\n    out\n}\n"
+    },
+    {
+      "id": "bfs.ts",
+      "concept": "bfs",
+      "tech": "typescript",
+      "name": "bfs (TypeScript)",
+      "summary": "Explore a graph level by level using a queue.",
+      "composes": [],
+      "code": "export function bfs(adj: Map<string, string[]>, start: string): string[] {\n  const order: string[] = [];\n  const seen = new Set<string>([start]);\n  const queue: string[] = [start];\n  while (queue.length) {\n    const node = queue.shift()!;\n    order.push(node);\n    for (const next of adj.get(node) ?? []) {\n      if (!seen.has(next)) {\n        seen.add(next);\n        queue.push(next);\n      }\n    }\n  }\n  return order;\n}\n"
+    },
+    {
+      "id": "bfs.rs",
+      "concept": "bfs",
+      "tech": "rust",
+      "name": "bfs (Rust)",
+      "summary": "Explore a graph level by level using a queue.",
+      "composes": [],
+      "code": "use std::collections::{HashMap, HashSet, VecDeque};\n\n/// Breadth-first traversal order from `start` over an adjacency map.\npub fn bfs(adj: &HashMap<&str, Vec<&str>>, start: &str) -> Vec<String> {\n    let mut order = Vec::new();\n    let mut seen = HashSet::from([start]);\n    let mut queue = VecDeque::from([start]);\n    while let Some(node) = queue.pop_front() {\n        order.push(node.to_string());\n        for &next in adj.get(node).into_iter().flatten() {\n            if seen.insert(next) {\n                queue.push_back(next);\n            }\n        }\n    }\n    order\n}\n"
+    }
   ]
 }
