@@ -32,12 +32,63 @@ const withSource = (components: typeof REACT_UI_COMPONENTS) =>
     return existsSync(path) ? { ...c, source: readFileSync(path, "utf8").replace(/\r\n/g, "\n") } : c;
   });
 
+const SRC = join(process.cwd(), "src");
+
+/** Resolve a first-party `@/…` import specifier to a path relative to `src/` (with extension), trying
+ *  TS module-resolution order. `null` when it isn't a resolvable first-party file (an external npm dep
+ *  — react/node/d3 — or a type-only path with no `.ts(x)` on disk). */
+function resolveFirstParty(spec: string): string | null {
+  if (!spec.startsWith("@/")) return null;
+  const base = spec.slice(2); // drop "@/"
+  for (const cand of [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`]) {
+    if (existsSync(join(SRC, cand))) return cand;
+  }
+  return null;
+}
+
+/** Every `@/…` specifier a source `import`s / re-`export`s / dynamically imports. */
+function firstPartyImports(source: string): string[] {
+  const specs: string[] = [];
+  const re = /(?:from|import)\s*\(?\s*["'](@\/[^"']+)["']/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source))) specs.push(m[1]);
+  return specs;
+}
+
+/** The transitive NON-COMPONENT support closure the components import (#2798) — the `_kit/` runtime the
+ *  vendored-source emit (②·2) needs so an emitted file compiles standalone: `{ <path rel. to src/> :
+ *  <verbatim LF source> }`. Seeded from every component's real source and walked through first-party
+ *  `@/…` imports; a resolved path that is a KIT COMPONENT (a `src` in the kit) is skipped — that's a
+ *  `composes` edge, emitted as a sibling file, not runtime — as are external (non-`@/`) deps (react,
+ *  d3), which stay npm dependencies. Deterministic (sorted) so the artifact bytes are stable. */
+function collectRuntime(components: typeof REACT_UI_COMPONENTS): Record<string, string> {
+  const componentSrc = new Set(components.map((c) => c.src)); // e.g. "shared/ui/data/Card.tsx"
+  const collected = new Map<string, string>();
+  const visited = new Set<string>();
+  const walk = (relPath: string) => {
+    if (visited.has(relPath)) return;
+    visited.add(relPath);
+    const abs = join(SRC, relPath);
+    if (!existsSync(abs)) return;
+    const source = readFileSync(abs, "utf8");
+    for (const spec of firstPartyImports(source)) {
+      const resolved = resolveFirstParty(spec);
+      if (!resolved || componentSrc.has(resolved)) continue; // external, unresolved, or a kit component
+      if (!collected.has(resolved)) collected.set(resolved, readFileSync(join(SRC, resolved), "utf8").replace(/\r\n/g, "\n"));
+      walk(resolved);
+    }
+  };
+  for (const c of components) walk(c.src); // seed the walk from each component's real source
+  return Object.fromEntries([...collected.entries()].sort(([a], [b]) => a.localeCompare(b)));
+}
+
 const kitFile = {
   order: 0,
   id: REACT_UI_KIT_STORE_ID,
   version: REACT_UI_KIT_VERSION,
   kit: REACT_UI_KIT,
   components: withSource(REACT_UI_COMPONENTS),
+  runtime: collectRuntime(REACT_UI_COMPONENTS),
 };
 const serialised = JSON.stringify(kitFile, null, 2) + "\n";
 const meta = {
@@ -82,5 +133,52 @@ describe("data/components/react-ui.json ↔ manifest (#2305 slice 1b)", () => {
     // of path pointers. (A few templates/stubs legitimately have no standalone file → no `source`.)
     const withRealSource = artifact.components.filter((c) => (c.source ?? "").length > 0).length;
     expect(withRealSource).toBeGreaterThan(artifact.components.length / 2);
+  });
+
+  it("bundles the transitive non-component support closure as `runtime` (#2798)", () => {
+    const artifact = JSON.parse(readFileSync(FILE, "utf8")) as {
+      components: { src: string }[];
+      runtime: Record<string, string>;
+    };
+    const rt = artifact.runtime;
+    expect(rt && Object.keys(rt).length, "runtime is non-empty").toBeTruthy();
+    // A known support module the components import (`core/format`) is vendored, verbatim.
+    const fmtKey = Object.keys(rt).find((k) => k.startsWith("shared/lib/core/format"));
+    expect(fmtKey, "core/format is in the runtime closure").toBeTruthy();
+    expect(rt[fmtKey!]).toBe(readFileSync(join(SRC, fmtKey!), "utf8").replace(/\r\n/g, "\n"));
+    // No COMPONENT module leaked into `runtime` — those are `source` (emitted via `composes`), never
+    // the support runtime. And every runtime entry resolves to a real on-disk file.
+    const componentSrc = new Set(artifact.components.map((c) => c.src));
+    for (const path of Object.keys(rt)) {
+      expect(componentSrc.has(path), `${path} is a support module, not a component`).toBe(false);
+      expect(existsSync(join(SRC, path)), `${path} exists on disk`).toBe(true);
+    }
+  });
+
+  it("the emit closure is COMPLETE — every first-party import resolves to a component or runtime (#2798)", () => {
+    // The guarantee that makes ②·2 emit COMPILABLE source: across everything emit would write (each
+    // component's `source` + each runtime module), every `@/…` import must resolve to either a kit
+    // component (a `composes` edge → sibling file) or a bundled runtime module. Any unresolved
+    // first-party import is a hole the emitted app couldn't build around.
+    const artifact = JSON.parse(readFileSync(FILE, "utf8")) as {
+      components: { src: string; source?: string }[];
+      runtime: Record<string, string>;
+    };
+    const componentSrc = new Set(artifact.components.map((c) => c.src));
+    const runtimeKeys = new Set(Object.keys(artifact.runtime));
+    const sources: [string, string][] = [
+      ...artifact.components.filter((c) => c.source).map((c) => [c.src, c.source!] as [string, string]),
+      ...Object.entries(artifact.runtime),
+    ];
+    const gaps: string[] = [];
+    for (const [file, src] of sources) {
+      for (const spec of firstPartyImports(src)) {
+        const resolved = resolveFirstParty(spec);
+        if (!resolved) continue; // external / type-only → an npm dep, not vendored
+        if (componentSrc.has(resolved) || runtimeKeys.has(resolved)) continue; // composes edge or runtime
+        gaps.push(`${file} → ${spec}`);
+      }
+    }
+    expect(gaps, `unresolved first-party imports would break an emitted file:\n${gaps.join("\n")}`).toEqual([]);
   });
 });
