@@ -23,7 +23,7 @@ export {
 // + the delivery drain (plan which dispatches to fire this cycle, and the per-rail messages).
 export {
   classifyChange, makeChange, changeId, kitUsageId, planPropagation, dedupeDispatches, dispatchKey,
-  planKitDrain, deliveryKey, kitDispatchPrompt, kitUpdateIssue, DEFAULT_KIT_DRAIN,
+  planKitDrain, deliveryKey, kitDispatchPrompt, DEFAULT_KIT_DRAIN,
   type KitChange, type ChangeClass, type KitConsumer, type Dispatch, type DispatchKind,
   type KitRail, type KitDelivery, type KitDrainConfig, type KitDrainPlan,
 } from "./lib/propagation";

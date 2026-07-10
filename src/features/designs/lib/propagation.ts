@@ -2,8 +2,9 @@
 // component is a *release*, and every app built on the kit is a consumer that may need to adopt it. This
 // module owns the model + the fan-out logic ONLY (no storage, no delivery): classify a change, and turn
 // { change × consumers } into a per-consumer dispatch plan. The consumer index (who uses the kit), the
-// change origin (`bsc ui set` emitting a change), and the delivery (issuer / `bsc-assign` /
-// GitHub issue) are follow-up slices that ride on this.
+// change origin (`bsc ui set` emitting a change), and the delivery (`bsc-assign` into the consumer's
+// live director → the UI worker re-runs `bsc ui emit sync`, #2806) are follow-up slices that ride on
+// this. The GitHub-issue rail was dropped (#2806): a dormant consumer holds until its fleet is live.
 import type { ComponentRecord } from "./model";
 
 /** How much a change forces on consumers — drives whether it's a mandatory adopt or a heads-up. */
@@ -34,8 +35,9 @@ export interface KitConsumer {
   auto?: boolean;
 }
 
-/** How a change reaches one consumer: a heads-up, an opened issue, or a live-stream assignment. */
-export type DispatchKind = "notify" | "issue" | "assign";
+/** How a change reaches one consumer: a surfaced heads-up, or a live-fleet stream assignment (#2806 —
+ *  the GitHub-issue rail was dropped; adoption is the UI worker re-running `bsc ui emit sync`). */
+export type DispatchKind = "notify" | "assign";
 
 /** The planned action for one consumer of a change. */
 export interface Dispatch {
@@ -102,21 +104,19 @@ export function makeChange(
 }
 
 /** Fan a change out over the consumer index: one {@link Dispatch} per consumer OF THE CHANGED KIT.
- *  Gated notify-only by default — a consumer only gets an issue/assignment when it opted into `auto`
- *  AND the change is `breaking`; a live fleet is assigned a stream, a dormant one gets a `kit-update`
- *  issue. Additive/fix changes (and every non-opted-in consumer) are notify-only, so a wide blast never
- *  silently opens N issues. */
+ *  Gated notify-only by default — a consumer only gets an `assign` when it opted into `auto` AND the
+ *  change is `breaking`. Liveness does NOT change the KIND (it gates DELIVERY in {@link planKitDrain}):
+ *  a breaking+auto consumer is `assign` whether or not its fleet is live now. Additive/fix (and every
+ *  non-opted-in consumer) are notify-only, so a wide blast never auto-dispatches N sessions. */
 export function planPropagation(change: KitChange, consumers: KitConsumer[]): Dispatch[] {
   return consumers
     .filter((c) => c.kitId === change.kitId)
     .map((c) => {
       const dispatch = !!c.auto && change.class === "breaking";
-      const kind: DispatchKind = !dispatch ? "notify" : c.live ? "assign" : "issue";
-      const reason = !dispatch
-        ? "notify-only (default / non-breaking / not opted-in)"
-        : c.live
-          ? "breaking + auto + live fleet → assign the UI stream"
-          : "breaking + auto, no live fleet → open a kit-update issue";
+      const kind: DispatchKind = dispatch ? "assign" : "notify";
+      const reason = dispatch
+        ? "breaking + auto → assign the UI stream to re-run `bsc ui emit sync`"
+        : "notify-only (default / non-breaking / not opted-in)";
       return { projectKey: c.projectKey, kind, change, reason };
     });
 }
@@ -137,9 +137,10 @@ export function dedupeDispatches(dispatches: Dispatch[], seen: Set<string>): Dis
 //   • DEDUP      — a (consumer, change) delivered once never re-fires while it stays queued.
 //   • RATE-LIMIT — a wide blast (one change × N consumers, or a burst of changes) is capped per cycle.
 
-/** How an actionable change reaches a consumer at delivery time: assigned into its LIVE fleet's director
- *  (bsc-issue → bsc-assign), or opened as a plain kit-update GitHub issue when it has no live fleet. */
-export type KitRail = "assign" | "issue";
+/** How an actionable change reaches a consumer at delivery time (#2806): assigned into its LIVE fleet's
+ *  director (bsc-issue → bsc-assign → the UI worker re-runs `bsc ui emit sync`). The only rail — a
+ *  consumer with no live fleet HOLDS (see {@link planKitDrain}) rather than opening a GitHub issue. */
+export type KitRail = "assign";
 
 /** One change to actually deliver to one consumer this cycle. */
 export interface KitDelivery {
@@ -186,18 +187,20 @@ export function deliveryKey(projectKey: string, changeId: string): string {
  *  - GATE: `cfg.enabled === false` ⇒ `deliver` is empty.
  *  - DEDUP: a (consumer, change) already in `delivered` is never re-fired.
  *  - RATE-LIMIT: `deliver.length ≤ maxPerCycle`.
- * The rail is `live ? "assign" : "issue"`.
+ * The only rail is `assign`; a non-live consumer HOLDS (delivers nothing) — no GitHub-issue fallback (#2806).
  */
 export function planKitDrain(dispatches: Dispatch[], delivered: Iterable<string>, cfg: KitDrainConfig): KitDrainPlan {
   const already = new Set(delivered);
-  if (!cfg.enabled) return { deliver: [], nextDelivered: [...already] };
-  const rail: KitRail = cfg.live ? "assign" : "issue";
+  // GATE + assign-only HOLD (#2806): deliver only when enabled AND the fleet is LIVE. A dormant consumer
+  // holds its queue (nothing marked delivered → carried forward), adopting on its next launch — never
+  // via a GitHub issue.
+  if (!cfg.enabled || !cfg.live) return { deliver: [], nextDelivered: [...already] };
   const chosen = dispatches
     .filter((d) => d.change.class === "breaking" && !already.has(deliveryKey(d.projectKey, d.change.id)))
     // Deterministic order so a capped cycle picks a stable subset.
     .sort((a, b) => deliveryKey(a.projectKey, a.change.id).localeCompare(deliveryKey(b.projectKey, b.change.id)))
     .slice(0, Math.max(0, cfg.maxPerCycle))
-    .map((d): KitDelivery => ({ projectKey: d.projectKey, change: d.change, rail }));
+    .map((d): KitDelivery => ({ projectKey: d.projectKey, change: d.change, rail: "assign" }));
   return { deliver: chosen, nextDelivered: [...already, ...chosen.map((c) => deliveryKey(c.projectKey, c.change.id))] };
 }
 
@@ -206,26 +209,17 @@ export function planKitDrain(dispatches: Dispatch[], delivered: Iterable<string>
 export function kitDispatchPrompt(change: KitChange): string {
   const ver = change.from && change.to ? ` (${change.from} → ${change.to})` : "";
   const mig = change.migration ? `\nMigration: ${change.migration}` : "";
+  const breaking = change.class === "breaking";
   return [
     `[kit-update] The \`${change.kitId}\` kit released a ${change.class} change to \`${change.component}\`${ver}` +
       " — adopt it in this app:",
     change.summary + mig,
-    "Capture it with `bsc-issue` (a title + the change/migration above), then `bsc-assign <session>` the " +
-      "worker whose `owns` lane covers the UI so it adopts the new component API.",
+    "`bsc-assign` the UI worker (the stream whose `owns` lane covers the vendored kit dir) to re-run:",
+    "  bsc ui emit sync <kit-dir>",
+    breaking
+      ? "That re-emits the managed vendored files from the updated kit; then reconcile any now-broken " +
+        "call sites — the migration note + the type/eslint errors point at them."
+      : "That re-emits the managed vendored files (no hand-edits; a diverged file is skipped, not clobbered).",
+    "Capture it with `bsc-issue` first, then `bsc-assign <session>`.",
   ].join("\n");
-}
-
-/** Title + body for a plain `kit-update` GitHub issue (the `issue` rail — a consumer with no live fleet). */
-export function kitUpdateIssue(change: KitChange): { title: string; body: string } {
-  const ver = change.from && change.to ? ` (${change.from} → ${change.to})` : change.to ? ` (${change.to})` : "";
-  const title = `kit-update: adopt ${change.component}${ver} from ${change.kitId}`;
-  const body = [
-    `The \`${change.kitId}\` kit released a **${change.class}** change to \`${change.component}\`${ver}.`,
-    "",
-    change.summary,
-    ...(change.migration ? ["", "## Migration", change.migration] : []),
-    "",
-    "_Opened automatically by kit-change propagation (#2277)._",
-  ].join("\n");
-  return { title, body };
 }
