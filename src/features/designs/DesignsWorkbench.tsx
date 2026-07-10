@@ -226,9 +226,9 @@ export function DesignsWorkbench() {
           </>
         }
         rail={
+          // Headerless graph-nav menu (#2797): search over the collapsible kits→components tree — no
+          // label bar (the PageTabs strip already titles the studio).
           <GraphRail
-            label="Kits · Components"
-            count={`${kitComps.length} comps`}
             tools={
               <SearchField
                 value={query}
