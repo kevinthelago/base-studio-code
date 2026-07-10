@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { useAppStore } from "@/store";
 import type { ComponentRecord, Kit } from "./lib/model";
+import type { Dispatch } from "./lib/propagation";
+import { makeChange } from "./lib/propagation";
+import { contractChanged, mergeDispatches } from "./store";
 import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
 import { SEED_THEMES, type KitThemeRecord } from "./lib/themes";
 import { stampSeedHash } from "./lib/seedRefresh";
@@ -85,6 +88,51 @@ describe("designer AI live-focus (#2525)", () => {
     useAppStore.getState().setAiFocused(null);
     expect(useAppStore.getState().aiFocusedId).toBeNull();
     expect(hydrateComponents).not.toHaveBeenCalled();
+  });
+});
+
+describe("kit-change origin (#2810 — a CLI edit fires propagation)", () => {
+  const button = SEED_COMPONENTS.find((c) => c.name === "Button")!;
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, kitUsage: [], kitDispatches: [], aiFocusedId: null });
+  });
+
+  it("contractChanged: true on a props/variants/version change, false on a non-contract field", () => {
+    expect(contractChanged(button, button)).toBe(false);
+    expect(contractChanged(button, { ...button, variants: [...button.variants, "loading"] })).toBe(true);
+    expect(contractChanged(button, { ...button, version: `${button.version}-x` })).toBe(true);
+    expect(contractChanged(button, { ...button, used: button.used + 1 })).toBe(false); // reuse count isn't a contract change
+  });
+
+  it("mergeDispatches appends only fresh dispatches (deduped by dispatchKey)", () => {
+    const d = (projectKey: string): Dispatch =>
+      ({ projectKey, kind: "assign", reason: "", change: makeChange({ ...button, version: "9.9.9" }, button, { class: "breaking" }) });
+    const a = d("p1");
+    expect(mergeDispatches([], [a])).toHaveLength(1);
+    expect(mergeDispatches([a], [a])).toHaveLength(1); // same (project, change) → not re-added
+    expect(mergeDispatches([a], [d("p2")])).toHaveLength(2);
+  });
+
+  it("a ui-touch whose component contract changed fans out to a kit consumer", async () => {
+    const edited = { ...button, variants: [...button.variants, "loading"] };
+    useAppStore.setState({ kitUsage: [{ projectKey: "p", kitId: button.kitId }] });
+    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([...SEED_COMPONENTS.filter((c) => c.id !== button.id), edited]);
+    vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
+    useAppStore.getState().setAiFocused(button.id, "component");
+    await new Promise((r) => setTimeout(r, 25)); // let the async hydrate + diff settle
+    const q = useAppStore.getState().kitDispatches;
+    expect(q.length).toBeGreaterThan(0);
+    expect(q[0].projectKey).toBe("p");
+  });
+
+  it("a ui-touch with NO contract change queues nothing (no noise on every touch)", async () => {
+    useAppStore.setState({ kitUsage: [{ projectKey: "p", kitId: button.kitId }] });
+    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce(SEED_COMPONENTS);
+    vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
+    useAppStore.getState().setAiFocused("chip", "component");
+    await new Promise((r) => setTimeout(r, 25));
+    expect(useAppStore.getState().kitDispatches).toEqual([]);
   });
 });
 

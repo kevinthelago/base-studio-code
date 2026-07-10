@@ -18,6 +18,25 @@ import { loadThemes, pushTheme, dropTheme, loadVariants } from "./lib/themeBridg
 import { loadKitUsage, pushKitUsage, dropKitUsage } from "./lib/kitUsageBridge";
 import { setActiveKitThemes, applyVariantsToRoot, applyContributionsToRoot, type DesignContributionOverlay } from "@/shared/ui/kit";
 
+/** Merge fresh kit-change dispatches into the queue, deduped by `dispatchKey` — shared by the two
+ *  change-origins: the desktop `setComponent` edit and the `ui-touch`/CLI-edit diff (#2810). Exported
+ *  for the unit test. */
+export function mergeDispatches(current: Dispatch[], fresh: Dispatch[]): Dispatch[] {
+  const seen = new Set(current.map(dispatchKey));
+  const add = fresh.filter((d) => !seen.has(dispatchKey(d)));
+  return add.length ? [...current, ...add] : current;
+}
+
+/** Has a component's PUBLIC CONTRACT (what consumers depend on) changed — props, variants, or version?
+ *  The gate for firing propagation from a `ui-touch` diff, so the 65 components a designer DIDN'T edit
+ *  don't queue noise on every touch. Exported for the unit test. */
+export function contractChanged(before: ComponentRecord, after: ComponentRecord): boolean {
+  return (
+    JSON.stringify([before.props, before.variants, before.version]) !==
+    JSON.stringify([after.props, after.variants, after.version])
+  );
+}
+
 export interface ComponentsSlice {
   /** The proven-component library — the typed seed until the global store lands, then its contents. */
   components: ComponentRecord[];
@@ -195,12 +214,7 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     void pushComponent(component);
     if (!before) return; // a brand-new component isn't a change to fan out
     const dispatches = planPropagation(makeChange(component, before, changeOverride), get().kitUsage);
-    if (!dispatches.length) return;
-    set((s) => {
-      const seen = new Set(s.kitDispatches.map(dispatchKey));
-      const fresh = dispatches.filter((d) => !seen.has(dispatchKey(d)));
-      return fresh.length ? { kitDispatches: [...s.kitDispatches, ...fresh] } : {};
-    });
+    if (dispatches.length) set((s) => ({ kitDispatches: mergeDispatches(s.kitDispatches, dispatches) }));
   },
 
   importKit: (kit, components) => {
@@ -235,7 +249,21 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     set({ aiFocusedId: id });
     if (!id) return; // a clear (session end) — no re-pull
     // Re-hydrate the touched collection so the AI's edit shows without a relaunch (#2483/#2514/#2525).
-    void get().hydrateComponents();
+    // A designer session edits via the CLI (`bsc ui set` / `set-token` / `define-variant`), which lands
+    // here as a `ui-touch` — the desktop `setComponent` fan-out never runs for it. So DIFF the reloaded
+    // library against the pre-hydration snapshot and fan out each component whose contract changed, so a
+    // CLI edit propagates exactly like a desktop edit (#2810). Deduped by `dispatchKey`.
+    const before = get().components;
+    // `Promise.resolve(...)` so a test that stubs `hydrateComponents` with a plain `vi.fn()` (returns
+    // undefined, not a promise) doesn't throw on `.then` — the diff simply sees no change.
+    void Promise.resolve(get().hydrateComponents()).then(() => {
+      const s = get();
+      const fresh = s.components.flatMap((after) => {
+        const b = before.find((x) => x.id === after.id);
+        return b && contractChanged(b, after) ? planPropagation(makeChange(after, b), s.kitUsage) : [];
+      });
+      if (fresh.length) set((st) => ({ kitDispatches: mergeDispatches(st.kitDispatches, fresh) }));
+    });
     if (collection === "theme") void get().hydrateThemes();
     if (collection === "variant") void get().hydrateVariants();
   },
