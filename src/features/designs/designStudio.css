@@ -1,10 +1,11 @@
-/* Design Studio (#2308) — the full-page component workbench. An IDE-style shell: toolbar · resizable
- * kits→components rail · the composition Graph center (#2453 — the only center view) · resizable
- * inspector (preview/tabs/design-bar, absorbed from the removed Library view). Distinct from the
- * condensed planner `ComponentLibraryPane` (the Kickoff design). Tokens come from tokens.css; only
- * the layout-specific rules live here. */
+/* Design Studio (#2308) — the full-page component workbench. The shell is the shared GraphCanvas
+ * (#2766): resizable kits→components rail · [graph header · composition-graph canvas · designer-terminal
+ * dock] · resizable inspector (preview/tabs/design-bar). Distinct from the condensed planner
+ * `ComponentLibraryPane` (the Kickoff design). Tokens come from tokens.css; only Design-Studio-specific
+ * rules live here now — the shell layout moved to GraphCanvas. */
 
-.ds-root { display: flex; flex-direction: column; height: 100%; width: 100%; min-height: 0; background: var(--bg-canvas, var(--bg)); color: var(--fg); font-size: 13px; }
+/* Base typography for the studio, applied to the GraphCanvas root via `className="ds-graph"`. */
+.ds-graph { font-size: 13px; color: var(--fg); }
 
 /* ── search (rail header) + graph-header actions ── */
 /* The former page toolbar (kit switcher · search · actions) was removed when the studio became a
@@ -13,19 +14,7 @@
 .ds-act { height: 32px; padding: 0 11px; display: flex; align-items: center; gap: 6px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; color: var(--fg-muted); font-size: 12px; cursor: pointer; }
 .ds-act:hover { border-color: var(--fg-dim); color: var(--fg); }
 
-/* ── body + columns ── */
-.ds-body { flex: 1; min-height: 0; display: flex; position: relative; }
-.ds-col { display: flex; flex-direction: column; min-height: 0; }
-.ds-rail { flex: none; min-width: 200px; border-right: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
-.ds-insp { flex: none; min-width: 300px; border-left: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
-/* The graph takes the full width when nothing is focused (details pane hidden, #2705); min-width:0 lets
-   it shrink to make room for the details pane when a node IS focused. */
-.ds-center { flex: 1; min-width: 0; background: var(--bg-canvas, var(--bg)); }
-.ds-handle { width: 5px; flex: none; cursor: col-resize; z-index: 4; position: relative; }
-.ds-handle:hover { background: var(--accent-soft); }
-/* Horizontal splitter (#2624) — row-resize divider between the graph and the docked designer terminal. */
-.ds-handle-h { height: 5px; flex: none; cursor: row-resize; z-index: 4; position: relative; }
-.ds-handle-h:hover { background: var(--accent-soft); }
+/* ── rail/inspector header + scroll (the shell COLUMNS themselves are GraphCanvas's now, #2766) ── */
 .ds-colhead { height: 38px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--border-soft, var(--border)); }
 .ds-scroll { overflow-y: auto; }
 

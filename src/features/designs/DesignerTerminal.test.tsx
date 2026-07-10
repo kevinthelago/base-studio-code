@@ -138,15 +138,15 @@ describe("DesignsWorkbench always-on designer panel (#2597)", () => {
     useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS });
   });
 
-  it("mounts the designer session immediately, docked in the center column, with no toggle button", async () => {
+  it("mounts the designer session immediately, docked in the studio's GraphCanvas, with no toggle button", async () => {
     render(<DesignsWorkbench />);
-    // Present from the first render — no ✦ Designer button gates it; the panel is docked in the
-    // center column (below the graph), not a full-width overlay, and it spawns exactly one PTY.
+    // Present from the first render — no ✦ Designer button gates it; the panel is docked below the graph
+    // in the studio's GraphCanvas shell (#2766), not a full-width overlay, and it spawns exactly one PTY.
     const panel = screen.getByTestId("designer-terminal");
     expect(panel).toBeInTheDocument();
     expect(panel.style.display).not.toBe("none");
     expect(screen.queryByRole("button", { name: /Designer/ })).toBeNull();
-    expect(panel.closest(".ds-center")).toBeTruthy();
+    expect(panel.closest(".ds-graph")).toBeTruthy();
     await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
   });
 });
