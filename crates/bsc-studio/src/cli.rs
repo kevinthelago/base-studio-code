@@ -13,6 +13,7 @@
 
 use bsc_cli_util::CmdDoc;
 use serde_json::Value;
+use std::io::Read;
 
 const TAGLINE: &str =
     "the Studio store — save/list/get/remove ~/.base-studio-code/studios: shareable snapshots of the app's library state (#2890)";
@@ -32,6 +33,18 @@ its records by system into an extensible map. Saved to <base>/studios/<id>.json 
 <name> (a same-named re-save overwrites). Prints the saved bundle (compact; --pretty indents). --dir
 overrides the base ~/.base-studio-code dir (the snapshot reads its siblings under it). Captures the
 AUTHORITATIVE stores only — never a cache, never live session state.",
+    },
+    CmdDoc {
+        name: "set",
+        summary: "upsert a full Studio bundle from JSON on stdin; prints its id",
+        usage: "\
+USAGE:
+  bsc studio set [--dir <base>] [--pretty]   # a full Studio bundle (one JSON object) on stdin
+
+Upserts a Studio by its (required, non-empty) \"id\" field — the write half of gist IMPORT (#2891).
+The bundle must be a JSON object carrying a non-empty \"id\" AND \"name\"; the captured snapshot rides
+through as given. A same-id bundle overwrites (upsert). Reads the bundle from stdin; prints the id
+written. --dir overrides the base ~/.base-studio-code dir (writes to <base>/studios/).",
     },
     CmdDoc {
         name: "list",
@@ -118,6 +131,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             let v = serde_json::to_value(&studio).map_err(|e| e.to_string())?;
             print_value(&v, args.pretty)
         }
+        "set" => {
+            // Read the full Studio bundle from stdin (the write half of gist import, #2891).
+            let mut json = String::new();
+            std::io::stdin()
+                .read_to_string(&mut json)
+                .map_err(|e| format!("reading stdin: {e}"))?;
+            let id = crate::set(&base, &json)?;
+            print_value(&Value::String(id), args.pretty)
+        }
         "list" => print_value(&Value::Array(crate::list_meta(&base)), args.pretty),
         "get" => {
             let id = args.positional.get(1).ok_or_else(|| format!("usage: {prog} get <id>"))?;
@@ -171,12 +193,16 @@ mod tests {
     #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
         let ov = bsc_cli_util::help_overview("bsc studio", TAGLINE, COMMANDS);
-        for c in ["save", "list", "get", "remove"] {
+        for c in ["save", "set", "list", "get", "remove"] {
             assert!(ov.contains(c), "overview lists {c}");
         }
         let one = bsc_cli_util::help_for("bsc studio", TAGLINE, COMMANDS, "save");
         assert!(one.contains("bsc studio save"));
         assert!(one.contains("snapshot"));
+        // `set` (#2891) drills in with its stdin usage.
+        let set_help = bsc_cli_util::help_for("bsc studio", TAGLINE, COMMANDS, "set");
+        assert!(set_help.contains("bsc studio set"));
+        assert!(set_help.contains("stdin"));
         // An unknown command falls back to the overview.
         assert!(bsc_cli_util::help_for("bsc studio", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
     }
@@ -187,6 +213,8 @@ mod tests {
         assert!(run(vec!["help".into()], "bsc studio").is_ok());
         assert!(run(vec![], "bsc studio").is_ok());
         assert!(run(vec!["save".into(), "help".into()], "bsc studio").is_ok());
+        // `set help` must resolve as help (not fall through to the stdin-reading dispatch arm).
+        assert!(run(vec!["set".into(), "help".into()], "bsc studio").is_ok());
     }
 
     #[test]

@@ -151,6 +151,39 @@ pub fn save(base: &Path, name: &str, description: Option<String>) -> Result<Stud
     Ok(studio)
 }
 
+/// Upsert a full Studio bundle (parsed from `json`) into the studios store, keyed by its `id`.
+/// Validation is MINIMAL by design (#2891): the bundle must be a JSON object carrying a non-empty `id`
+/// AND `name` — the identity every studio needs to key its `studios/<id>.json` file and render in the
+/// library; the `snapshot` (and any other fields) ride through unexamined. The parsed value is stored
+/// (normalized to compact JSON, matching [`save`]), so a same-id bundle overwrites (upsert). Returns
+/// the id written.
+///
+/// This is the write half of the gist IMPORT path: the frontend fetches + validates the shared
+/// extension manifest and coerces the studio payload, then hands the reconstructed bundle here (via the
+/// `bsc` bridge) to land it in the store — the mirror of `bsc blueprint set`.
+pub fn set(base: &Path, json: &str) -> Result<String, String> {
+    let value: Value =
+        serde_json::from_str(json).map_err(|e| format!("set: studio is not valid JSON: {e}"))?;
+    let id = value
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "set: studio JSON needs a non-empty \"id\"".to_string())?
+        .to_string();
+    let has_name = value
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .is_some_and(|s| !s.is_empty());
+    if !has_name {
+        return Err("set: studio JSON needs a non-empty \"name\"".to_string());
+    }
+    let normalized = serde_json::to_string(&value).map_err(|e| format!("set: {e}"))?;
+    studios_store(base).set(&id, &normalized)?;
+    Ok(id)
+}
+
 /// Every saved Studio's lean `{id, name}` projection (the full bundle is one [`get`] away). Robust to
 /// odd-shaped files (an unparseable blob yields empty strings, never a panic).
 pub fn list_meta(base: &Path) -> Vec<Value> {
@@ -263,6 +296,43 @@ mod tests {
         assert!(studio.snapshot.values().all(|recs| recs.is_empty()));
         // Round-trips through the store unchanged.
         assert!(get(&base, "blank").unwrap().is_some());
+    }
+
+    #[test]
+    fn set_upserts_a_bundle_and_get_reads_it_back() {
+        let base = tmp_base("set");
+        // A full imported bundle (the shape the gist-import path hands back) lands by id + reads back.
+        let bundle = r#"{"id":"imported","name":"Imported Studio","description":"from a gist","version":"2.0.0","snapshot":{"blueprints":[{"id":"bp1","name":"Full-stack"}],"teams":[]}}"#;
+        let id = set(&base, bundle).unwrap();
+        assert_eq!(id, "imported");
+
+        let got = get(&base, "imported").unwrap().expect("set studio is readable");
+        assert_eq!(got["id"], "imported");
+        assert_eq!(got["name"], "Imported Studio");
+        assert_eq!(got["description"], "from a gist");
+        assert_eq!(got["version"], "2.0.0");
+        assert_eq!(got["snapshot"]["blueprints"].as_array().unwrap().len(), 1);
+        assert_eq!(got["snapshot"]["blueprints"][0]["name"], "Full-stack");
+        // It shows up in the lean listing too.
+        assert_eq!(list_meta(&base), vec![serde_json::json!({"id": "imported", "name": "Imported Studio"})]);
+
+        // Upsert: a same-id re-set overwrites in place (no duplicate).
+        set(&base, r#"{"id":"imported","name":"Renamed","snapshot":{}}"#).unwrap();
+        let got2 = get(&base, "imported").unwrap().unwrap();
+        assert_eq!(got2["name"], "Renamed");
+        assert_eq!(list_meta(&base).len(), 1);
+    }
+
+    #[test]
+    fn set_rejects_malformed_bundles() {
+        let base = tmp_base("set-bad");
+        assert!(set(&base, "not json").is_err(), "invalid JSON is rejected");
+        assert!(set(&base, r#"{"name":"No Id","snapshot":{}}"#).is_err(), "missing id is rejected");
+        assert!(set(&base, r#"{"id":"","name":"Blank Id"}"#).is_err(), "empty id is rejected");
+        assert!(set(&base, r#"{"id":"x","snapshot":{}}"#).is_err(), "missing name is rejected");
+        assert!(set(&base, r#"{"id":"x","name":"  "}"#).is_err(), "blank name is rejected");
+        // Nothing landed on any rejection.
+        assert!(list_meta(&base).is_empty());
     }
 
     #[test]
