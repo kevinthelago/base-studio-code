@@ -22,6 +22,11 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
+/** After the dock's entrance animation (#2837, ~380ms) settles, do one authoritative fit + refresh so
+ *  the terminal is sized to its FINAL layout and repaints cleanly — this is what fixes the mis-sized /
+ *  garbled first render. A touch longer than the CSS animation. */
+const SETTLE_MS = 420;
+
 export interface ScreenSessionConfig<S = void> {
   /** Stable pane id — the pty_* event channel + write/resize/kill key. */
   paneId: string;
@@ -127,12 +132,26 @@ export function useScreenSession<S = void>(config: ScreenSessionConfig<S>): Scre
         if (!t || el.clientWidth === 0 || el.clientHeight === 0) return;
         fitAddon.fit();
         fireInvoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }, console.error);
+        t.refresh?.(0, t.rows - 1); // repaint the buffer cleanly at the settled size (#2837)
       }, 90);
     });
     ro.observe(el);
 
+    // Post-entrance settle (#2837): once the dock's slide-in animation has finished, the host is at its
+    // final layout — fit + refresh so xterm is sized correctly and repaints (the fix for the garbled /
+    // mis-sized first render). Transform/opacity don't change layout size, so the ResizeObserver above
+    // never fires for the animation — this timer is what lands the authoritative fit after it.
+    const settle = setTimeout(() => {
+      const t = termRef.current;
+      if (!t || el.clientWidth === 0 || el.clientHeight === 0) return;
+      fitAddon.fit();
+      fireInvoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }, console.error);
+      t.refresh?.(0, t.rows - 1);
+    }, SETTLE_MS);
+
     return () => {
       clearTimeout(resizeTimer);
+      clearTimeout(settle);
       unlistenData.current?.();
       unlistenExit.current?.();
       ro.disconnect();
@@ -154,6 +173,7 @@ export function useScreenSession<S = void>(config: ScreenSessionConfig<S>): Scre
       if (!fit || !term || !el || el.clientWidth === 0 || el.clientHeight === 0) return;
       fit.fit();
       fireInvoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }, console.error);
+      term.refresh?.(0, term.rows - 1); // repaint cleanly at the shown size (#2837)
       if (focusToo) term.focus();
     };
     let cancelled = false;
