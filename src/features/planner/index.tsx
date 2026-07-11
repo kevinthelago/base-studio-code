@@ -40,10 +40,6 @@ export {
 // the designer-terminal theme); the chunk loads on first open, then the page stays mounted (below) so
 // its always-on designer PTY survives a page switch — the same treatment Planning gets.
 const DesignsWorkbenchPage = lazy(() => import("@/features/designs").then((m) => ({ default: m.DesignsWorkbench })));
-// Themes (#themes-tab) — the sibling STYLE surface. A read-only gallery with NO live PTY, so (unlike the
-// Designs studio) it renders freely in any window and needs no single-owner gating. Lazy for the same
-// cycle-break + on-first-open chunk load.
-const ThemesPage = lazy(() => import("@/features/designs").then((m) => ({ default: m.ThemesGallery })));
 // Algorithms (#2785) — the knowledge graph, folded in from its own rail Workspace. It DOCKS the always-on
 // knowledge-librarian session (#2787/#2827), so like Designs it must stay MOUNTED across tab switches
 // (else the librarian PTY is killed + relaunched) and be single-owner-gated for tear-off. Lazy for the
@@ -162,14 +158,6 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
       >
         <DesignsWorkbenchPage />
       </KeptMountedPage>
-
-      {/* Themes (#themes-tab) — the theme (style) collection. No live PTY, so it just renders when active
-          in either window (main or torn-off); nothing to keep mounted or guard against double-ownership. */}
-      {mode === "themes" && (
-        <Box style={{ display: "flex", flex: 1, minHeight: 0 }}>
-          <Suspense fallback={<Box style={{ flex: 1 }} />}><ThemesPage /></Suspense>
-        </Box>
-      )}
 
       {/* Algorithms (#2785) — the knowledge graph, and it docks the always-on librarian session (#2787),
           so it gets the SAME keep-mounted + single-owner treatment as Designs (#2827): exactly one window
