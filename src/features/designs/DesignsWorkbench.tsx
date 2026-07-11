@@ -45,6 +45,7 @@ import { useUiActivity } from "./lib/uiActivity";
 import { groupKits } from "./lib/kitGroups";
 import { ComponentPreviewFrame } from "./ComponentPreviewFrame";
 import { ThemesMenu } from "./ThemesMenu";
+import { PaletteStrip } from "./PaletteStrip";
 import { DEFAULT_THEME } from "@/shared/ui/kit";
 
 /** The preview surface's light/dark axis, read off the selected theme's `base`. */
@@ -82,8 +83,10 @@ export function DesignsWorkbench() {
   // old hardcoded dark/light SegmentedControl is retired — light/dark is theme data served through
   // the same `bsc ui theme` collection, so the picker grows as themes are authored.
   const [kitTheme, setKitTheme] = useState<string>(DEFAULT_THEME);
+  // The applied theme record (its `vars`/`base`/`label` drive the preview, palette strip, and header).
+  const activeTheme = kitThemes.find((t) => t.id === kitTheme);
   // The preview iframe's light/dark surface, read off the selected theme's `base` (absent ⇒ dark).
-  const theme: PreviewTheme = kitThemes.find((t) => t.id === kitTheme)?.base ?? "dark";
+  const theme: PreviewTheme = activeTheme?.base ?? "dark";
   const [vp, setVpKind] = useState<Viewport>("auto");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({ [kits[0]?.id ?? ""]: true }));
@@ -278,14 +281,17 @@ export function DesignsWorkbench() {
               <Eyebrow size={9.5}>Theme preview</Eyebrow>
               <Text weight={600} size={13}>{sel.name}</Text>
               <Box style={{ flex: 1 }} />
-              <Text mono size="xxs" tone="muted">{kitThemes.find((t) => t.id === kitTheme)?.label}</Text>
+              <Text mono size="xxs" tone="muted">{activeTheme?.label}</Text>
             </Box>
+            {/* Palette strip (#2834): the theme's semantic swatches — the raw palette beside the applied
+                result — so the try-on shows both at once. */}
+            {activeTheme && <PaletteStrip theme={activeTheme} />}
             <Box style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, overflow: "auto" }}>
               <ComponentPreviewFrame
                 comp={sel}
                 theme={theme}
                 themeId={kitTheme}
-                themeVars={kitThemes.find((t) => t.id === kitTheme)?.vars ?? {}}
+                themeVars={activeTheme?.vars ?? {}}
                 width={VP[vp].w}
                 height={440}
               />
