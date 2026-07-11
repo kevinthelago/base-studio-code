@@ -2,19 +2,9 @@
    terminals (Designer/Architect/Librarian). Replaces the byte-identical per-feature classes
    (.ds-terminal/.teams-terminal/.algo-terminal + their -colhead/-termhost). The `.ds-colhead` class
    stays in designStudio.css — it is ALSO the Designs inspector header, not just the terminal. */
-.session-dock { flex: none; height: 240px; min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
-
-/* Entrance (#2837) — the dock slides + fades UP into the screen when it first appears, drawing the eye
-   to the session terminal (the app's primary interface). Transform/opacity only, so it doesn't thrash
-   the xterm host's layout size; the hook does an explicit fit + refresh once it settles (fixing the
-   mis-sized/garbled text). Plays on mount (the dock is kept-mounted per screen, so it fires once). */
-.session-dock { animation: session-dock-in 380ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-@keyframes session-dock-in {
-  from { transform: translateY(20px); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .session-dock { animation: none; }
-}
+/* Resting height 340px (#2905, up from 240) — the caller (`useDragResize`) owns the live height and drives
+   the ENTRANCE GROW via `useDockEntrance`, which animates the REAL height up into place so the xterm
+   resizes with it (replacing the transform-only slide + its post-animation "settle fit", #2837). */
+.session-dock { flex: none; height: 340px; min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
 .session-dock-head { height: 38px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--border-soft, var(--border)); }
 .session-dock-host { flex: 1; min-height: 0; min-width: 0; padding: 4px 8px; background: #181a1f; /* TERM_THEME background */ }

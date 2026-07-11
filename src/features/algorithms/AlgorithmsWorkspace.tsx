@@ -14,6 +14,7 @@ import { Button } from "@/shared/ui/controls/Button";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { useDragResize } from "@/shared/hooks/useDragResize";
+import { useDockEntrance } from "@/shared/hooks/useDockEntrance";
 import { AlgorithmsKitGraph } from "./AlgorithmsKitGraph";
 import { AlgorithmsInspector } from "./AlgorithmsInspector";
 import { AlgorithmsRail } from "./AlgorithmsRail";
@@ -63,7 +64,8 @@ export function AlgorithmsWorkspace() {
 
   // The always-on librarian session's dock height (#2787) — a row-resize handle above it; `invert`
   // because the terminal sits AFTER the handle, so dragging up grows it. Mirrors the Teams dock (#2759).
-  const term = useDragResize({ initial: 240, min: 140, max: 560, axis: "y", invert: true });
+  const term = useDragResize({ initial: 340, min: 140, max: 560, axis: "y", invert: true });
+  useDockEntrance(term.setSize, 340); // grow the dock up into place on mount (#2905)
 
   // Header: the active language + its graph counts (the rail folders are the language switcher now), then
   // the graph nav (zoom/fit).
