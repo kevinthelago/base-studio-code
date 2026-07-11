@@ -22,6 +22,11 @@
 .algo-node .algo-name { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .algo-node .algo-meta { font-size: 10.5px; color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* Per-kit graph (#2863) — the impl card's left edge tints by role: a primitive (language building block)
+   vs an algorithm (composed). A concept IS its implementation, so these are the kit graph's only nodes. */
+.algo-node.algo-impl-primitive { border-left: 3px solid var(--violet); }
+.algo-node.algo-impl-algorithm { border-left: 3px solid var(--accent); }
+
 /* The kits-index layer (#2863) — one card per language kit; drilling in opens the kit's graph. A larger,
    summary-weight card than a node (mirrors .algo-node's world-positioned idiom). */
 .algo-kit {
