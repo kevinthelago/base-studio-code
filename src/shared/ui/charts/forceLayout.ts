@@ -78,12 +78,15 @@ export function forceLayout(
   }));
   const byId = new Map(nodes.map((nd) => [nd.id, nd]));
   const labels = new Map(rawNodes.map((nd) => [nd.id, nd.label]));
-  const links = rawLinks
-    .filter((l) => byId.has(l.source) && byId.has(l.target))
-    .map((l) => ({ source: l.source, target: l.target }));
+  const validLinks = rawLinks.filter((l) => byId.has(l.source) && byId.has(l.target));
+  // d3-force's forceLink MUTATES its links array IN PLACE — after the sim runs, each link's source/target
+  // is the resolved node OBJECT, not the original string id. Hand it a SEPARATE copy so `validLinks` keeps
+  // its string ids for resolving the output endpoints below (else `pos.get(link.source)` is handed a node
+  // object, misses the string-keyed map, and returns undefined → a crash reading `.x`).
+  const simLinks = validLinks.map((l) => ({ source: l.source, target: l.target }));
 
   const sim = forceSimulation<SimNode>(nodes)
-    .force("link", forceLink<SimNode, { source: string; target: string }>(links).id((d) => d.id).distance(LINK_DIST).strength(0.5))
+    .force("link", forceLink<SimNode, { source: string; target: string }>(simLinks).id((d) => d.id).distance(LINK_DIST).strength(0.5))
     .force("charge", forceManyBody<SimNode>().strength(CHARGE))
     .force("center", forceCenter<SimNode>(0, 0))
     .force("collide", forceCollide<SimNode>(NODE_R + 4))
@@ -107,7 +110,7 @@ export function forceLayout(
     return { id: nd.id, x: p.x, y: p.y, group: nd.group, label: labels.get(nd.id) };
   });
   const pos = new Map(placed.map((p) => [p.id, p]));
-  const outLinks: PlacedLink[] = links.map((l) => {
+  const outLinks: PlacedLink[] = validLinks.map((l) => {
     const a = pos.get(l.source)!;
     const b = pos.get(l.target)!;
     return { x1: a.x, y1: a.y, x2: b.x, y2: b.y };
