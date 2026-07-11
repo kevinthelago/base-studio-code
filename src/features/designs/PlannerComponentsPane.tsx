@@ -25,14 +25,14 @@ const ROLE_RANK: Record<Role, number> = { page: 0, layout: 1, composite: 2, prim
 const ASSEMBLE_MAX = 6;
 const TOAST_MS = 1900;
 
-/** A lightweight, non-interactive thumbnail for the list + assembly views (#2824): a role dot + the
- *  component name. The LIVE render (esbuild + iframe) is the Design Studio's single-component surface —
- *  too heavy to run per list item — so this pane shows a compact identity chip and links to the studio. */
+/** A lightweight, non-interactive thumbnail for the list + assembly views (#2824): a framed role dot.
+ *  The LIVE render (esbuild + iframe) is the Design Studio's single-component surface — too heavy to run
+ *  per list item — so this pane shows a compact role marker (the name/role already label each row) and
+ *  links to the studio. Renders NO component-name text (the row owns that). */
 function Specimen({ comp, height }: { comp: ComponentRecord; scale?: number; height?: number }) {
   return (
-    <Box style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", height: height ?? "100%", minHeight: 40, padding: 10, pointerEvents: "none" }}>
-      <RoleDot role={comp.role} size={9} />
-      <Text mono size={11} tone="muted">{comp.name}</Text>
+    <Box style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: height ?? "100%", minHeight: 40, padding: 10, pointerEvents: "none", borderRadius: 8, background: "var(--bg-elev, var(--bg-soft))", border: "1px dashed var(--border-soft)" }}>
+      <RoleDot role={comp.role} size={12} />
     </Box>
   );
 }
