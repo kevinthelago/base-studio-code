@@ -108,9 +108,17 @@ export interface SectionDef {
   /** Optional applicability rule (e.g. UI only when the project needs a UI). Absent ⇒
    *  the section always applies. */
   appliesWhen?: Requirement;
+  /** Declarative "skippable RIGHT NOW" rule (#2854) — the same {@link Requirement} shape as
+   *  {@link appliesWhen}/gateRule, evaluated against the live signal bag, that makes a section's
+   *  Skip control appear. It expresses the "empty ⇒ skippable, populated ⇒ required" pattern
+   *  WITHOUT the stage disappearing (unlike `appliesWhen`, which drops it entirely): e.g. Features
+   *  carries `{ signal: "featuresDefined", target: 0, op: "==" }`, so an empty Features stage is
+   *  skippable but one with content is required. Absent ⇒ not skippable on its own (only an
+   *  {@link optional} section or gate-override offers Skip). Drives `Stage.skippable`. */
+  skipWhen?: Requirement;
   /** An OPTIONAL section is shown but never required: it doesn't block plan completion or
    *  downstream dependents, and it's off the critical path (currentStage skips it) — the
-   *  user can fill it or skip it (#676). */
+   *  user can fill it or skip it (#676). Equivalent to an always-passing {@link skipWhen}. */
   optional?: boolean;
   /** Context stage only (#1019): the baseline REQUIRED topics this section seeds into the project's
    *  dynamic context manifest (plan.db) when first adopted. The planner then adjusts the set with

@@ -128,6 +128,35 @@ describe("StageFooter (#652)", () => {
     render(<StageFooter stage={stage({ index: 0 })} action={{ kind: "approve-continue", enabled: true }} onBack={vi.fn()} onPrimary={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
   });
+
+  it("renders NO Skip on a required stage — the #2854 ghost fix (no greyed skip beside 'gate blocking…')", () => {
+    // A blocked required stage: canSkip is a marker but skipEnabled is false → the Skip control must
+    // not render at all (the bug rendered a disabled ghost next to the blocked primary).
+    render(
+      <StageFooter
+        stage={stage({ index: 1, skippable: false })}
+        action={{ kind: "approve-continue", enabled: false, canSkip: true, skipEnabled: false }}
+        onBack={vi.fn()} onPrimary={vi.fn()} onSkip={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("gate blocking…")).toBeInTheDocument();
+    expect(screen.queryByText(/skip stage/)).not.toBeInTheDocument();
+  });
+
+  it("renders an actionable Skip when the active stage is skippable (#2854)", () => {
+    const onSkip = vi.fn();
+    render(
+      <StageFooter
+        stage={stage({ index: 1, skippable: true })}
+        action={{ kind: "approve-continue", enabled: false, canSkip: true, skipEnabled: true }}
+        onBack={vi.fn()} onPrimary={vi.fn()} onSkip={onSkip}
+      />,
+    );
+    const skip = screen.getByText(/skip stage/);
+    expect(skip).toBeEnabled();
+    fireEvent.click(skip);
+    expect(onSkip).toHaveBeenCalled();
+  });
 });
 
 describe("banners (#652)", () => {
