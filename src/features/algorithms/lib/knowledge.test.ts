@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import {
   KNOWLEDGE, KIND_ORDER, TECHS, TECH_META, layoutKnowledge, neighborsOf, relationsOf, pathBetween,
   nodeIndex, edgeId, implsForConcept, implFor, implById, techsWithImpl, usedByImpl,
+  kitTechs, kitImpls, kitImplsByRole, pairsOf,
 } from "./knowledge";
 
 describe("KNOWLEDGE seed", () => {
@@ -128,12 +129,17 @@ describe("implementation tier (#2770)", () => {
     const nodeIds = new Set(KNOWLEDGE.nodes.map((n) => n.id));
     const implIds = new Set(KNOWLEDGE.implementations.map((i) => i.id));
     expect(implIds.size).toBe(KNOWLEDGE.implementations.length); // ids are unique
-    expect(KNOWLEDGE.implementations.length).toBe(32);
+    expect(KNOWLEDGE.implementations.length).toBeGreaterThanOrEqual(32);
     for (const im of KNOWLEDGE.implementations) {
-      expect(nodeIds.has(im.concept)).toBe(true); // every impl targets a REAL node id
+      expect(["primitive", "algorithm"]).toContain(im.role); // #2863 language-kit tier
       expect(TECHS).toContain(im.tech);
-      expect(im.id).toBe(`${im.concept}.${TECH_META[im.tech].ext}`); // id = <concept>.<ext>
       expect(im.code.trim().length).toBeGreaterThan(0);
+      // A concept-bearing impl targets a REAL node + follows the id convention; a free-standing
+      // primitive (#2863, e.g. `ts.array`) has no concept and its own id.
+      if (im.concept) {
+        expect(nodeIds.has(im.concept)).toBe(true);
+        expect(im.id).toBe(`${im.concept}.${TECH_META[im.tech].ext}`);
+      }
       for (const c of im.composes) {
         expect(implIds.has(c)).toBe(true); // every composes id is a REAL impl id
         expect(implById(KNOWLEDGE, c)!.tech).toBe(im.tech); // and of the SAME tech
@@ -162,9 +168,38 @@ describe("implementation tier (#2770)", () => {
         expect(dep!.tech).toBe("rust");
       }
     }
-    // No orphan implementation targets a non-algorithm node.
+    // No concept-bearing implementation targets a non-algorithm node (free-standing primitives (#2863)
+    // have no concept and are skipped).
+    const byId = nodeIndex(KNOWLEDGE.nodes);
     for (const im of KNOWLEDGE.implementations) {
-      expect(nodeIndex(KNOWLEDGE.nodes).get(im.concept)?.kind).toBe("algorithm");
+      if (im.concept) expect(byId.get(im.concept)?.kind).toBe("algorithm");
     }
+  });
+});
+
+describe("language kits (#2863) — a kit is every impl of one tech, grouped by role", () => {
+  it("kitTechs lists the seeded languages, TECHS-ordered", () => {
+    expect(kitTechs(KNOWLEDGE)).toEqual(["typescript", "rust"]);
+  });
+
+  it("kitImpls scopes to one language; kitImplsByRole splits primitives from algorithms", () => {
+    const ts = kitImpls(KNOWLEDGE, "typescript");
+    expect(ts.length).toBeGreaterThan(0);
+    expect(ts.every((im) => im.tech === "typescript")).toBe(true);
+    const prims = kitImplsByRole(KNOWLEDGE, "typescript", "primitive");
+    const algos = kitImplsByRole(KNOWLEDGE, "typescript", "algorithm");
+    expect(prims.map((im) => im.id)).toContain("ts.array"); // a free-standing primitive
+    expect(prims.map((im) => im.id)).toContain("merge.ts"); // a building-block primitive
+    expect(algos.map((im) => im.id)).toContain("merge-sort.ts"); // an algorithm
+    expect(prims.length + algos.length).toBe(ts.length);
+  });
+
+  it("pairsOf resolves a primitive's paired counterparts (same tech)", () => {
+    const array = implById(KNOWLEDGE, "ts.array")!;
+    expect(array.role).toBe("primitive");
+    expect(array.concept).toBeUndefined(); // free-standing
+    const paired = pairsOf(KNOWLEDGE, array).map((im) => im.id);
+    expect(paired).toContain("merge-sort.ts");
+    expect(paired.every((id) => id.endsWith(".ts"))).toBe(true); // same-tech
   });
 });
