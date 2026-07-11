@@ -295,3 +295,31 @@ export function pairsOf(graph: KnowledgeGraph, impl: AlgoImpl): AlgoImpl[] {
   const ids = new Set(impl.pairs ?? []);
   return graph.implementations.filter((im) => ids.has(im.id));
 }
+
+// ── The kits-index layer (#2863) — "the layer above the graph": each language kit is one card; drilling
+// into a card opens that kit's concept+primitive graph. A second, coarser navigation level over the kits. ──
+
+/** Kit-card size (world px) for the kits-index layer. Wider than a node card — it summarizes a whole kit. */
+export const KIT_W = 236;
+export const KIT_H = 82;
+const KIT_PITCH = KIT_H + 28;
+
+/** The kits-index layout — the {@link KitsLayout} counterpart of {@link KnowledgeLayout}, laid out as a
+ *  centered column of kit cards. Same `world`/`bounds` shape so the SAME viewport drives both layers. */
+export interface KitsLayout {
+  pos: Map<Tech, NodePos>;
+  world: { w: number; h: number };
+  bounds: Box;
+}
+
+/** Lay the language kits out as a column of cards (the kits-index layer, #2863). Pure + deterministic. */
+export function layoutKits(techs: Tech[]): KitsLayout {
+  const pos = new Map<Tech, NodePos>();
+  techs.forEach((t, i) => pos.set(t, { x: PAD, y: PAD + i * KIT_PITCH }));
+  const world = {
+    w: PAD * 2 + KIT_W,
+    h: PAD * 2 + Math.max(techs.length - 1, 0) * KIT_PITCH + KIT_H,
+  };
+  const bounds: Box = { x: PAD, y: PAD, w: world.w - PAD * 2, h: world.h - PAD * 2 };
+  return { pos, world, bounds };
+}

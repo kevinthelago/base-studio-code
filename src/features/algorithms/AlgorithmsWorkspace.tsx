@@ -14,14 +14,14 @@ import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { AlgorithmsCanvas } from "./AlgorithmsCanvas";
+import { AlgorithmsKitsCanvas } from "./AlgorithmsKitsCanvas";
 import { AlgorithmsInspector } from "./AlgorithmsInspector";
 import { AlgorithmsRail } from "./AlgorithmsRail";
 import { LibrarianTerminal } from "./LibrarianTerminal";
 import {
-  KIND_ORDER, TECHS, TECH_META, NODE_W, NODE_H, layoutKnowledge, neighborsOf, nodeIndex, kitTechs, implById,
+  KIND_ORDER, TECHS, TECH_META, NODE_W, NODE_H, layoutKnowledge, layoutKits, neighborsOf, nodeIndex, kitTechs, implById,
   type Tech,
 } from "./lib/knowledge";
-import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { useKnowledgeGraph } from "./useKnowledgeGraph";
 import "./algorithms.css";
 
@@ -34,7 +34,7 @@ export function AlgorithmsWorkspace() {
   // Live graph (#2856): the seed for an instant first paint, hydrated + kept fresh from the librarian's
   // writable store (`bsc graph dump`) so their curation shows.
   const graph = useKnowledgeGraph();
-  const layout = useMemo(() => layoutKnowledge(graph.nodes), [graph.nodes]);
+  const conceptLayout = useMemo(() => layoutKnowledge(graph.nodes), [graph.nodes]);
   const byId = useMemo(() => nodeIndex(graph.nodes), [graph.nodes]);
 
   const [selected, setSelected] = useState<string | null>(null);
@@ -50,6 +50,19 @@ export function AlgorithmsWorkspace() {
   const selectConcept = (id: string | null) => { setSelected(id); setSelectedImpl(null); };
   const selectPrimitive = (id: string) => { setSelectedImpl(id); setSelected(null); };
 
+  // The two graph layers (#2863): the "kits" index (a card per language kit) sits ABOVE the "kit" graph
+  // (that kit's concepts + primitives). The user drills kits → kit and pops back up. Default lands in the
+  // kit graph (the working view); the index is the coarse between-kits navigator, reached via the header.
+  const [view, setView] = useState<"kits" | "kit">("kit");
+  const kitsLayout = useMemo(() => layoutKits(techs), [techs]);
+  // Both layouts share the {world, bounds} shape, so ONE viewport frames whichever layer is active.
+  const frame = view === "kits" ? kitsLayout : conceptLayout;
+  // Open (drill into) a kit: make it active and show its graph. Preserves any selected concept so switching
+  // kits from within the graph just re-languages the inspector (the slice-2 behavior).
+  const openKit = (t: Tech) => { setActiveTech(t); setView("kit"); };
+  // Pop up to the kits index — clear the concept/primitive selection (it belongs to a kit's graph).
+  const goToKits = () => { setView("kits"); setSelected(null); setSelectedImpl(null); };
+
   const lit = useMemo(() => (selected ? neighborsOf(graph, selected) : null), [graph, selected]);
   // The concept ids that carry an implementation in the ACTIVE language — drives the node "</>" badge.
   const implConcepts = useMemo(
@@ -61,32 +74,39 @@ export function AlgorithmsWorkspace() {
     [graph.implementations, activeTech],
   );
 
-  const vp = useGraphViewport(layout.world, { contentBounds: () => layout.bounds });
-  // Frame the content on first mount (the ref callback has set the viewport element by commit time).
-  useEffect(() => { vp.fit(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const vp = useGraphViewport(frame.world, { contentBounds: () => frame.bounds });
+  // Frame the content on first mount AND whenever the layer switches (the two layers have different worlds).
+  useEffect(() => { vp.fit(); }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Rail selection also pans the node to center (the rail is navigation, not just selection).
+  // Rail selection drops into the kit graph (a concept lives there, not on the kits index), selects, and
+  // pans the node to center (the rail is navigation, not just selection).
   const selectFromRail = (id: string) => {
+    setView("kit");
     selectConcept(id);
-    const p = layout.pos.get(id);
+    const p = conceptLayout.pos.get(id);
     if (p) vp.centerOn(p.x + NODE_W / 2, p.y + NODE_H / 2);
   };
+  // A primitive picked from the rail also drops into the kit graph (it belongs to a kit).
+  const selectPrimitiveFromRail = (id: string) => { setView("kit"); selectPrimitive(id); };
 
   // The always-on librarian session's dock height (#2787) — a row-resize handle above it; `invert`
   // because the terminal sits AFTER the handle, so dragging up grows it. Mirrors the Teams dock (#2759).
   const term = useDragResize({ initial: 240, min: 140, max: 560, axis: "y", invert: true });
 
-  // Header: title + counts + the LANGUAGE-KIT selector (#2863 — the one control on the read-only viewer;
-  // it picks which kit's implementation the inspector + badges show), then the graph nav (zoom/fit).
+  // Header: a KITS breadcrumb (#2863) — the graph's between-kits navigation. In the kit graph it reads
+  // `Kits ▸ <language>` where "Kits" pops up to the kits-index layer; on the index it names the level and
+  // the kit count. Then the graph nav (zoom/fit).
   const toolbar = (
     <>
       <Eyebrow size={10}>Algorithms</Eyebrow>
-      <Text mono size="xxs" tone="dim">{graph.nodes.length} nodes · {graph.edges.length} relationships</Text>
-      {techs.length > 1 && (
-        <SegmentedControl
-          label=""
-          options={techs.map((t) => ({ label: TECH_META[t].label, on: t === activeTech, onClick: () => setActiveTech(t) }))}
-        />
+      {view === "kit" ? (
+        <>
+          <Button size="sm" variant="ghost" onClick={goToKits}>Kits</Button>
+          <Text mono size="xxs" tone="dim">▸ {TECH_META[activeTech]?.label ?? activeTech}</Text>
+          <Text mono size="xxs" tone="dim">· {graph.nodes.length} nodes · {graph.edges.length} relationships</Text>
+        </>
+      ) : (
+        <Text mono size="xxs" tone="dim">Kits · {techs.length} language {techs.length === 1 ? "kit" : "kits"}</Text>
       )}
       <Box style={{ flex: 1 }} />
       <ZoomControls vp={vp} />
@@ -97,16 +117,16 @@ export function AlgorithmsWorkspace() {
   return (
     <GraphCanvas
       vp={vp}
-      world={layout.world}
+      world={frame.world}
       grid
       toolbar={toolbar}
-      rail={<AlgorithmsRail graph={graph} activeTech={activeTech} selected={selected} selectedImpl={selectedImpl} onSelect={selectFromRail} onSelectImpl={selectPrimitive} />}
+      rail={<AlgorithmsRail graph={graph} activeTech={activeTech} selected={selected} selectedImpl={selectedImpl} onSelect={selectFromRail} onSelectImpl={selectPrimitiveFromRail} onSelectKit={openKit} />}
       railResizable
       railWidth={230}
       inspector={<AlgorithmsInspector graph={graph} selected={selected ? byId.get(selected) ?? null : null} focusedImpl={focusedImpl} activeTech={activeTech} onSelectNode={selectConcept} />}
       inspectorResizable
       inspectorWidth={340}
-      onBackgroundClick={() => selectConcept(null)}
+      onBackgroundClick={view === "kits" ? undefined : () => selectConcept(null)}
       // The always-on knowledge-librarian session (#2787), docked below the graph; the caller owns its
       // height + a `.resize-y` handle (GraphCanvas gives it a flex:none slot), mirroring Teams (#2759).
       dock={
@@ -116,7 +136,9 @@ export function AlgorithmsWorkspace() {
         </Box>
       }
     >
-      <AlgorithmsCanvas graph={graph} layout={layout} selected={selected} lit={lit} activeKinds={ALL_KINDS} implConcepts={implConcepts} onSelect={selectConcept} />
+      {view === "kits"
+        ? <AlgorithmsKitsCanvas graph={graph} layout={kitsLayout} activeTech={activeTech} onOpen={openKit} />
+        : <AlgorithmsCanvas graph={graph} layout={conceptLayout} selected={selected} lit={lit} activeKinds={ALL_KINDS} implConcepts={implConcepts} onSelect={selectConcept} />}
     </GraphCanvas>
   );
 }
