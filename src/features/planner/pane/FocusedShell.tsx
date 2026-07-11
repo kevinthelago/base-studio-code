@@ -199,8 +199,8 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
   publishLabel?: string;
   onBack: () => void;
   onPrimary: () => void;
-  /** Skip the active stage (#921/#2533) — rendered whenever `action.canSkip`, disabled unless
-   *  `action.skipEnabled` (optional stage, or gate-override on for a required stage). */
+  /** Skip the active stage (#921/#2854) — rendered only when `action.skipEnabled` (the stage is
+   *  skippable now, or gate-override is on). A required stage shows no Skip at all. */
   onSkip?: () => void;
 }) {
   const primaryLabel =
@@ -214,25 +214,23 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
   const stillNeeded = unmet.length > 0 ? "Still needed: " + unmet.map(reasonText).join("; ") : "";
   const blockedTip =
     action.kind === "approve-continue" && !action.enabled && stillNeeded ? stillNeeded : undefined;
-  // Skip tooltip (#2533): a disabled skip explains how to enable it; an enabled skip on a REQUIRED
-  // stage warns it bypasses the gate; on an optional stage it's the ordinary optional-skip.
-  const skipTip = !action.skipEnabled
-    ? "Enable “allow gate override” in Settings → Security to skip a required stage."
-    : stage.optional
-    ? "This stage is optional — skip it and continue without completing its gate."
+  // Skip tooltip (#2854): Skip only renders when actionable, so no "how to enable" case — an
+  // intrinsically-skippable/optional stage is the ordinary skip; a stage skippable only because
+  // gate-override is on warns it bypasses the gate.
+  const skipTip = stage.skippable
+    ? "This stage is skippable — skip it and continue without completing its gate."
     : "⚠ Gate override: skip past this required stage without meeting its gate.";
   return (
     <Box className="ph-foot">
       <BackButton variant="text" label="back" className="nav-btn" disabled={stage.index === 0} onClick={onBack} aria-label="Back" />
       <Box as="span" className="prog">stage {stage.index + 1} of {stage.total}</Box>
       <Box as="span" style={{ flex: 1 }} />
-      {/* The Skip control shows on every active stage (#2533) — the USER decides whether to move past
-          it. It's disabled on a required stage until gate-override is enabled (skipEnabled). */}
-      {action.canSkip && onSkip && (
+      {/* The Skip control renders only when the active stage is skippable now, or gate-override is on
+          (#2854) — a required stage like Discovery shows none, not a disabled ghost. */}
+      {action.skipEnabled && onSkip && (
         // eslint-disable-next-line no-restricted-syntax -- bespoke `.nav-btn` footer button (styled by the `.fp .nav-btn` CSS, not the .btn kit)
         <button
           className="nav-btn"
-          disabled={!action.skipEnabled}
           onClick={onSkip}
           title={skipTip}
         >

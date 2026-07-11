@@ -21,6 +21,11 @@
       }
     ]
   },
+  "skipWhen": {
+    "signal": "featuresDefined",
+    "target": 0,
+    "op": "=="
+  },
   "blurb": "The user-facing capabilities — each one a stream.",
   "prompt": "Define the app's user-facing capabilities — the things a user DOES (\"invite teammates\", \"export\nto CSV\"), never infrastructure (auth, queues, storage are implementation detail under a feature).\nEach capability becomes its own fleet stream. Propose the COMPLETE set a production-grade solution\nto the goal needs — not a minimal cut — then let the user curate it, and take each in turn.",
   "substeps": [

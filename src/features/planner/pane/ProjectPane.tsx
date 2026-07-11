@@ -60,7 +60,8 @@ export function ProjectPane({
     footer: { kind: FooterKind; enabled: boolean; canSkip?: boolean; skipEnabled?: boolean };
     onBack: () => void;
     onPrimary: () => void;
-    /** Skip the active stage (#921/#2533) — rendered when `footer.canSkip`, enabled per `skipEnabled`. */
+    /** Skip the active stage (#921/#2854) — rendered only when `footer.skipEnabled` (the stage is
+     *  skippable now, or gate-override is on); a required stage shows no Skip. */
     onSkip?: () => void;
     /** The project already has a GitHub board — the publish action reads as "Update GitHub" (#823). */
     published?: boolean;
