@@ -289,6 +289,13 @@ export function DesignsWorkbench() {
               <Eyebrow size={9.5}>Theme preview</Eyebrow>
               <Text weight={600} size={13}>{sel.name}</Text>
               <Box style={{ flex: 1 }} />
+              {/* Variant + viewport controls (#2834): moved here from the inspector — hidden in preview
+                  mode — so the component's variant/breakpoint stay flippable while trying themes. The
+                  variant switcher shows only when the component has more than one. */}
+              {allVariants.length > 1 && (
+                <SegmentedControl label="" options={allVariants.map((v) => ({ label: v, on: v === activeVariant, onClick: () => setVariant(v) }))} />
+              )}
+              <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === vp, onClick: () => setVpKind(k) }))} />
               <Text mono size="xxs" tone="muted">{activeTheme?.label}</Text>
             </Box>
             {/* Palette strip (#2834): the theme's semantic swatches — the raw palette beside the applied

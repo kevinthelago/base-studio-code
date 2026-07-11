@@ -407,4 +407,25 @@ describe("theme try-on preview (#2834)", () => {
     expect(screen.getByText("Surfaces")).toBeTruthy();
     expect(screen.getByText("Accent")).toBeTruthy();
   });
+
+  it("preview mode carries the variant + viewport toolbar over the expanded preview (#2834)", () => {
+    render(<DesignsWorkbench />);
+    fireEvent.click(graphNode("Chip"));                                  // Chip has 5 variants
+    fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
+    // The viewport switcher moved into the center toolbar (the inspector — its other home — is hidden).
+    expect(screen.getByText("⤢ fluid")).toBeTruthy();
+    expect(screen.getByText("sm")).toBeTruthy();
+    // The variant switcher shows for a multi-variant component (Chip: neutral/accent/…).
+    expect(screen.getByText("neutral")).toBeTruthy();
+  });
+
+  it("the center viewport switcher resizes the preview (#2834)", () => {
+    render(<DesignsWorkbench />);
+    fireEvent.click(graphNode("Chip"));
+    fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
+    const frame = () => screen.getByTitle("Chip preview").parentElement as HTMLElement;
+    expect(frame().style.width).toBe("100%");                            // default fluid
+    fireEvent.click(screen.getByText("sm"));
+    expect(frame().style.width).toBe("380px");                           // resized to the sm breakpoint
+  });
 });
