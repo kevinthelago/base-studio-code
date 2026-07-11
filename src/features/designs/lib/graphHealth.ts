@@ -4,19 +4,32 @@
 // scopes `kitComps` to the active kit, and `composes` edges only resolve within a kit).
 //
 // Findings, most-severe first: cycle (a `composes` loop) · dangling-branch (an unused root that still
-// pulls in dependencies) · duplicate (same `wraps` intrinsic, or identical source) · orphan (isolated,
-// never-referenced primitive/composite). "Unused" = no composer AND used === 0; a page/layout with
-// used > 0 is a legit entry point, never flagged.
+// pulls in dependencies) · duplicate (same `wraps` intrinsic, or identical source) · no-implementation
+// (a component the preview can't build — a spec, not code) · orphan (isolated, never-referenced
+// primitive/composite). "Unused" = no composer AND used === 0; a page/layout with used > 0 is a legit
+// entry point, never flagged.
+//
+// The no-implementation check reuses the EXACT preview logic (`componentPreviewFiles`, #2824/#2828):
+// the store strips a built-in's artifact `source` (#2794), so a built-in still builds from the packaged
+// artifact — only a node in NEITHER the artifact NOR carrying its own module/`source` is flagged.
+import reactUiArtifact from "@data/components/react-ui.json";
 import { buildComposesEdges } from "./compositionLayout";
+import { componentPreviewFiles, type KitArtifact } from "./componentPreview";
 import type { ComponentRecord } from "./model";
 
-export type HealthCategory = "cycle" | "dangling-branch" | "duplicate" | "orphan";
+// The packaged kit artifact (each built-in's verbatim `source` + the `runtime` @/ closure) — the SAME
+// raw import ComponentPreviewFrame builds against. A built-in's `src` resolves here, so it's buildable
+// even though the store strips its `source` (#2794).
+const ARTIFACT = reactUiArtifact as unknown as KitArtifact;
+
+export type HealthCategory = "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "orphan";
 
 /** Category → severity (higher = worse); drives ranking + which badge wins on a multi-flagged node. */
 export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   cycle: 4,
   "dangling-branch": 3,
   duplicate: 3,
+  "no-implementation": 3,
   orphan: 2,
 };
 
@@ -120,6 +133,18 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
     const names = g.map((c) => c.name);
     findings.push({ category: "duplicate", severity: 3, nodeIds: g.map((c) => c.id), nodeNames: names,
       why: `${g.length} components have identical source: ${names.join(", ")}` });
+  }
+
+  // no-implementation — a component the Design Studio preview can't build (`componentPreviewFiles` →
+  // null): it's a spec, not code. Reuses the EXACT preview logic so the badge and the live preview
+  // agree. A built-in resolves via the artifact roster (its source lives there even though the store
+  // strips it, #2794); only a node in neither the artifact nor carrying its own module/`source` is
+  // flagged (a user-authored spec, e.g. a `page` like GraphExplorerPage). Independent of used/role.
+  for (const c of comps) {
+    if (componentPreviewFiles(c, ARTIFACT) === null) {
+      findings.push({ category: "no-implementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
+        why: `${c.name} has no buildable implementation — the preview can't render it (a spec, not code)` });
+    }
   }
 
   return findings.sort((a, b) => b.severity - a.severity || (a.nodeNames[0] ?? "").localeCompare(b.nodeNames[0] ?? ""));

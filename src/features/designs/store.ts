@@ -8,6 +8,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import type { ComponentRecord, Kit } from "./lib/model";
+import type { ComponentBuildStatus } from "./lib/componentScan";
 import type { KitConsumer, KitChange, Dispatch } from "./lib/propagation";
 import type { SeedNotice } from "./lib/seedRefresh";
 import { kitUsageId, makeChange, planPropagation, dispatchKey } from "./lib/propagation";
@@ -111,6 +112,14 @@ export interface ComponentsSlice {
    *  `hydrateComponents` always, plus `hydrateThemes` for a `theme` touch. A `null` id clears the
    *  focus (session end) without re-hydrating. */
   setAiFocused: (id: string | null, collection?: string) => void;
+
+  /** Per-component preview-BUILD status (#2838) — component id → ok | error(message), populated lazily
+   *  by the on-visit `useComponentScan` sweep (esbuild-builds each buildable component in the active
+   *  kit, throttled). The Design Studio graph badges the `error` entries. TRANSIENT: not persisted (a
+   *  fresh scan repopulates on each visit), so it never goes stale on disk. */
+  componentBuildStatus: Record<string, ComponentBuildStatus>;
+  /** Record one component's build outcome — the scan's per-result write (upsert by id). */
+  setComponentBuildStatus: (id: string, status: ComponentBuildStatus) => void;
 }
 
 export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSlice> = (set, get) => ({
@@ -267,4 +276,9 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
     if (collection === "theme") void get().hydrateThemes();
     if (collection === "variant") void get().hydrateVariants();
   },
+
+  componentBuildStatus: {},
+
+  setComponentBuildStatus: (id, status) =>
+    set((s) => ({ componentBuildStatus: { ...s.componentBuildStatus, [id]: status } })),
 });
