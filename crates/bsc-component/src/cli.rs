@@ -135,7 +135,7 @@ planning (a project seeded from a kit-bearing blueprint uses that kit).",
     },
     CmdDoc {
         name: "doctor",
-        summary: "graph-health report — orphans, unused/dangling branches, duplicates, cycles (#2678)",
+        summary: "graph-health report — orphans, dead branches, duplicates, cycles, unbuildable components (#2678)",
         usage: "\
 USAGE:
   bsc ui doctor [--kit K] [--json] [--pretty]     # the health report (read-only)
@@ -144,14 +144,16 @@ USAGE:
 Traverses each kit's composition graph (nodes = components, edges = `composes`) and reports the
 dead/duplicated design a growing kit accumulates: CYCLE (a composes loop), DANGLING-BRANCH (an unused
 root that still pulls in dependencies), DUPLICATE (two components wrapping the same intrinsic, or
-byte-identical source), and ORPHAN (an isolated, never-referenced primitive/composite). \"Unused\" =
-no composer AND used = 0; a page/layout with used > 0 is a legit entry point, never flagged. Ranked
-most-severe-first; --kit scopes to one kit; --json emits the findings array (LLM-consumable).
+byte-identical source), NO-IMPLEMENTATION (a component the Design Studio preview can't build — a spec,
+not code; a built-in whose real source lives in the packaged artifact is NOT flagged), and ORPHAN (an
+isolated, never-referenced primitive/composite). \"Unused\" = no composer AND used = 0; a page/layout
+with used > 0 is a legit entry point, never flagged. Ranked most-severe-first; --kit scopes to one
+kit; --json emits the findings array (LLM-consumable).
 
 --fix prunes ONLY the safe set — the ROOT of each orphan/dangling-branch finding (never a used > 0
-node, never a duplicate or a cycle). It is a DRY RUN by default (prints what WOULD be removed); pass
---yes to apply. Branch descendants are left for the next pass (one might be shared) — re-run to clean
-them. #2678/#2679.",
+node, never a duplicate, cycle, or no-implementation). It is a DRY RUN by default (prints what WOULD be
+removed); pass --yes to apply. Branch descendants are left for the next pass (one might be shared) —
+re-run to clean them. #2678/#2679/#2839.",
     },
 ];
 
@@ -462,7 +464,7 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     // Human summary — one line per finding, most-severe first.
     if findings.is_empty() {
         let scope = kit.as_deref().map(|k| format!(" for kit '{k}'")).unwrap_or_default();
-        println!("✓ design graph is healthy{scope} — no orphans, dead branches, duplicates, or cycles.");
+        println!("✓ design graph is healthy{scope} — no orphans, dead branches, duplicates, cycles, or unbuildable components.");
         return Ok(());
     }
     println!("{} finding(s), most-severe first:", findings.len());
