@@ -15,6 +15,11 @@
 // composable primitive; a builder cannot instantiate a hook from a manifest node. Compose the
 // registered `Dialog` instead.
 
+// The authored-motion shape (#2867, epic #2865) — carried through to each emitted `ComponentRecord`'s
+// `animations` and compiled to live `@keyframes` by the render engine (`@/shared/ui/kit`). Imported
+// type-only (erased at compile time) so this module stays pure, JSON-serialisable data.
+import type { ComponentAnimation } from "@/shared/ui/kit/animations";
+
 /** Every primitive the kit exposes to the builder. Also the key type of the render-map registry. */
 export type PrimitiveName =
   // layout
@@ -84,6 +89,10 @@ export interface PrimitiveSpec {
   props: PropSpec[];
   /** True when arbitrary extra DOM props (className, style, data-attrs, handlers) pass through to the root. */
   passthrough?: boolean;
+  /** Authored MOTION (#2867, epic #2865) — named animations carried through to the emitted
+   *  `ComponentRecord.animations` and compiled to live `@keyframes` by the render engine. Values may
+   *  reference the motion tokens (`var(--dur-base)` / `var(--ease-standard)`). Absent ⇒ no motion. */
+  animations?: ComponentAnimation[];
 }
 
 // Shared prop fragments reused across the layout primitives.
@@ -235,6 +244,16 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "size", type: "enum", values: ["md", "sm"], default: "md", description: "Control height." },
       { name: "danger", type: "boolean", description: "Destructive (red) styling." },
     ],
+    // Authored-motion exemplar (#2871): a subtle hover lift on the primary action.
+    animations: [
+      {
+        name: "lift", trigger: "hover", duration: "var(--dur-fast)", easing: "var(--ease-standard)",
+        keyframes: {
+          from: { transform: "translateY(0)" },
+          to: { transform: "translateY(-1px)" },
+        },
+      },
+    ],
   },
   {
     name: "IconButton", group: "controls", importPath: "@/shared/ui/controls/IconButton",
@@ -362,6 +381,16 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "pad", type: "enum", values: ["sm"], description: "Compact padding." },
       { name: "onClick", type: "function", description: "Click handler (implies interactive)." },
       { name: "loading", type: "boolean", description: "Render the card loading — a skeleton body the shape of its content (#2302)." },
+    ],
+    // Authored-motion exemplar (#2871): a one-shot enter — the card rises + fades in on mount.
+    animations: [
+      {
+        name: "fade-in", trigger: "mount", duration: "var(--dur-base)", easing: "var(--ease-emphasized)",
+        keyframes: {
+          from: { opacity: "0", transform: "translateY(4px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+      },
     ],
   },
   {
@@ -615,6 +644,17 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "size", type: "number", default: 6, description: "Diameter in px." },
       { name: "pulse", type: "boolean", default: false, description: "Pulse animation." },
       { name: "title", type: "string", description: "Native tooltip." },
+    ],
+    // Authored-motion exemplar (#2871): the looping breathing pulse for a live status dot.
+    animations: [
+      {
+        name: "pulse", trigger: "always", duration: "var(--dur-slow)", easing: "var(--ease-standard)",
+        keyframes: {
+          "0%": { opacity: "1" },
+          "50%": { opacity: "0.45" },
+          "100%": { opacity: "1" },
+        },
+      },
     ],
   },
   {
