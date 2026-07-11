@@ -39,7 +39,7 @@ export function TeamsOverview({ teams, personas, onEnter }: Props) {
                 <IconBox size={26} radius={8} fontSize={13} color="var(--accent)" background="color-mix(in oklch, var(--accent) 14%, transparent)">◆</IconBox>
                 <Text as="span" weight={600} size={14.5} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{team.name}</Text>
               </Row>
-              {team.blurb && <Text as="div" size={11.5} tone="muted" style={{ lineHeight: 1.35, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{team.blurb}</Text>}
+              {team.blurb && <Text as="div" size={11.5} tone="muted" style={{ lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" }}>{team.blurb}</Text>}
               <Box style={{ flex: 1 }} />
               <Row gap={12} align="center">
                 <Text as="span" mono size={10} tone="dim">◆ {s.agents} agent{s.agents === 1 ? "" : "s"}</Text>
