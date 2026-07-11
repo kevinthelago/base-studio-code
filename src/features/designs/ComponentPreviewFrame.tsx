@@ -13,6 +13,7 @@ import { Code } from "@/shared/ui/data/Code";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { bundleComponent, buildComponentSrcDoc } from "@/shared/lib/preview/componentBundle";
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
+import { compileAnimationsCss, componentAnimations } from "@/shared/ui/kit";
 import { componentPreviewFiles, type KitArtifact } from "./lib/componentPreview";
 import type { ComponentRecord } from "./lib/model";
 
@@ -45,6 +46,9 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // here since the frame is inline-styled and self-contained (works wherever it's mounted).
   const [hint, setHint] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  // A stable rebuild key for the component's authored animations (#2870) — so authoring/removing one
+  // re-renders the preview (the object identity alone isn't a stable dep).
+  const animKey = JSON.stringify(comp.animations ?? []);
 
   // Rebuild when the selection / theme / retry changes (keyed on stable fields, not the object identity).
   useEffect(() => {
@@ -69,8 +73,18 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         if (cancelled) return;
         // App styles (tokens + component CSS) + the selected theme's semantic-token overrides on :root.
         const themeCss = Object.entries(themeVars).map(([k, v]) => `${k}:${v}`).join(";");
-        const injectedCss = collectAppCss() + (themeCss ? `\n:root{${themeCss}}` : "");
-        const srcDoc = buildComponentSrcDoc(js, { injectedCss, theme });
+        // The previewed component's authored MOTION (#2870): compile its own animations into the iframe
+        // (guaranteed present, not reliant on the global managed <style>), and put its animation classes
+        // on #root so the motion actually plays — hover/mount/always all fire. The compiled CSS keeps its
+        // `prefers-reduced-motion` guard, so a reduced-motion viewer sees the static component.
+        const animDefs = componentAnimations([comp]);
+        const animCss = compileAnimationsCss(animDefs);
+        const rootClass = animDefs
+          .map((d) => `${d.component}-anim-${d.name}`)
+          .filter((c) => /^[a-z][a-z0-9-]+$/.test(c))
+          .join(" ");
+        const injectedCss = collectAppCss() + (themeCss ? `\n:root{${themeCss}}` : "") + (animCss ? `\n${animCss}` : "");
+        const srcDoc = buildComponentSrcDoc(js, { injectedCss, theme, rootClass });
         if (iframeRef.current) iframeRef.current.srcdoc = srcDoc;
         setStatus("ready");
       } catch (e) {
@@ -81,7 +95,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, themeId, retry]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, animKey, themeId, retry]);
 
   // Surface runtime errors the iframe posts (an exception during the component's own render).
   useEffect(() => {
