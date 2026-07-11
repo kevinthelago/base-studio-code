@@ -24,18 +24,19 @@ import { RailSection } from "@/shared/ui/layouts/RailSection";
 import { SearchField } from "@/shared/ui/controls/SearchField";
 import { useRailSections } from "@/shared/hooks/useRailSections";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
-import { TeamsCanvas, OrgLegend, type Selection } from "./TeamsCanvas";
+import { TeamsCanvas, type Selection } from "./TeamsCanvas";
+import { GraphLegend, type LegendNode } from "@/shared/ui/layouts/GraphLegend";
 import { TeamsOverview } from "./TeamsOverview";
 import { TeamsInspector } from "./TeamsInspector";
 import { TeamsContextMenu } from "./TeamsContextMenu";
 import { ArchitectTerminal } from "./ArchitectTerminal";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { useDockEntrance } from "@/shared/hooks/useDockEntrance";
-import { type Position } from "./lib/team";
+import { RELATIONSHIP_ARCHETYPES, type Position } from "./lib/team";
 import { autoLayout, nodeBox, contentBounds, CANVAS_W, CANVAS_H, type Box as GBox } from "./lib/orgLayout";
 import { teamsBounds } from "./lib/teamsLayout";
 import { detectPools, collapseOrg, poolLayoutSizes, applyPoolLayout } from "./lib/orgPools";
-import { positionDisplay } from "./lib/orgView";
+import { positionDisplay, hueColor } from "./lib/orgView";
 import { overlayFile } from "@/shared/lib/core/configOverrides";
 
 /** Department display order in the left rail (positionDisplay assigns each a dept) — from
@@ -221,12 +222,29 @@ export function TeamsPanel() {
   // (don't render an empty panel), and it appears only once a node/edge is actually selected.
   const hasSel = sel.id !== "";
 
+  // The on-graph legend (#2909) — the position KINDS + the relationship archetypes actually present in
+  // this team, keyed off the same hue/style the canvas draws with, so it reads relevant to the team.
+  const legendNodes: LegendNode[] = [];
+  const kinds = new Set(org.positions.map((p) => p.kind));
+  if (kinds.has("agent")) legendNodes.push({ label: "Agent", color: "var(--accent)" });
+  if (kinds.has("resource")) legendNodes.push({ label: "Resource", color: hueColor(340) });
+  if (kinds.has("external")) legendNodes.push({ label: "External", color: "var(--fg-muted)" });
+  const presentArch = new Set(org.relationships.map((r) => r.archetype));
+  const legend = (
+    <GraphLegend
+      sections={[
+        { label: "Positions", nodes: legendNodes },
+        { label: "Relationships", edges: RELATIONSHIP_ARCHETYPES.filter((a) => presentArch.has(a.id)).map((a) => ({ label: a.label, color: hueColor(a.hue), dashed: a.style !== "solid" })) },
+      ]}
+    />
+  );
+
   return (
     <>
     <GraphCanvas
       vp={vp}
       world={{ w: CANVAS_W, h: CANVAS_H }}
-      overlays={<OrgLegend />}
+      overlays={legend}
       grid
       railResizable railWidth={260} railMin={200} railMax={420}
       inspectorResizable inspectorWidth={344} inspectorMin={280} inspectorMax={560}

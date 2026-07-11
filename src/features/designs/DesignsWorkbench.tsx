@@ -41,7 +41,8 @@ import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
-import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecord } from "./lib/model";
+import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
+import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useUiActivity } from "./lib/uiActivity";
 import { useComponentScan } from "./lib/useComponentScan";
 import { groupKits } from "./lib/kitGroups";
@@ -142,6 +143,15 @@ export function DesignsWorkbench() {
   // ── graph layout (#2455) — hierarchical top-down: composers above, dependencies below, role-tier
   // banding for edge-less nodes, `used`-desc ordering within a row. Pure model: lib/compositionLayout.
   const graph = useMemo(() => layoutComposition(kitComps), [kitComps]);
+
+  // The on-graph legend (#2909) — the component ROLES present in this kit (colored as their RoleDots) +
+  // the `composes` dependency edge when the kit actually has composition. Relevant to the kit on screen.
+  const legend = useMemo(() => {
+    const present = new Set(kitComps.map((c) => c.role));
+    const nodes = ROLES.filter((r) => present.has(r)).map((r) => ({ label: r[0].toUpperCase() + r.slice(1), color: ROLE_COLOR[r] }));
+    const edges = graph.edges.length ? [{ label: "composes" }] : [];
+    return <GraphLegend sections={[{ label: "Roles", nodes }, { label: "Composition", edges }]} />;
+  }, [kitComps, graph.edges.length]);
   // Graph health (#2680) — the same taxonomy `bsc ui doctor` reports (lib/graphHealth), mirrored to
   // badge dead/duplicated nodes. `nodeHealth` maps each flagged node to its MOST-SEVERE category.
   const healthFindings = useMemo(() => analyzeGraphHealth(kitComps), [kitComps]);
@@ -316,7 +326,7 @@ export function DesignsWorkbench() {
               />
             </Box>
           </Box>
-        ) : undefined}
+        ) : legend}
       >
         <svg width={graph.world.w} height={graph.world.h} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
           {orderedEdges.map((e) => {
