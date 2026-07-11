@@ -199,7 +199,8 @@ function ImplSection({ graph, impl, onSelectNode }: {
     .map((id) => implById(graph, id))
     .filter((im): im is AlgoImpl => !!im);
   const usedBy = usedByImpl(graph, impl.id);
-  const conceptName = (im: AlgoImpl) => byId.get(im.concept)?.name ?? im.concept;
+  // A free-standing primitive (#2863) has no concept — fall back to its own name.
+  const conceptName = (im: AlgoImpl) => (im.concept ? byId.get(im.concept)?.name : undefined) ?? im.name;
   return (
     <Stack gap={8}>
       <Row gap={6} align="center" style={{ minWidth: 0 }}>
@@ -213,7 +214,7 @@ function ImplSection({ graph, impl, onSelectNode }: {
         <Stack gap={4}>
           <Text mono size="xxs" tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase" }}>Builds on</Text>
           {buildsOn.map((sub) => (
-            <Box as="button" key={sub.id} className="algo-relrow" onClick={() => onSelectNode(sub.concept)}>
+            <Box as="button" key={sub.id} className="algo-relrow" onClick={() => { if (sub.concept) onSelectNode(sub.concept); }}>
               <Text as="span" tone="dim" size={11}>{"↳"}</Text>
               <Text as="span" size={12} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{conceptName(sub)}</Text>
               <Text as="span" mono size="xxs" tone="dim">{sub.id}</Text>
@@ -226,7 +227,7 @@ function ImplSection({ graph, impl, onSelectNode }: {
         <Stack gap={4}>
           <Text mono size="xxs" tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase" }}>Used by</Text>
           {usedBy.map((up) => (
-            <Box as="button" key={up.id} className="algo-relrow" onClick={() => onSelectNode(up.concept)}>
+            <Box as="button" key={up.id} className="algo-relrow" onClick={() => { if (up.concept) onSelectNode(up.concept); }}>
               <Text as="span" tone="dim" size={11}>{"↰"}</Text>
               <Text as="span" size={12} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{conceptName(up)}</Text>
               <Text as="span" mono size="xxs" tone="dim">{up.id}</Text>

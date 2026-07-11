@@ -21,6 +21,9 @@ pub const GRAPH_JSON: &str = include_str!("../../../src-tauri/data/knowledge/alg
 pub const KINDS: [&str; 4] = ["data-structure", "algorithm", "concept", "output"];
 /// The relationship `rel`s an edge may carry — validated on `link` for the same reason.
 pub const RELS: [&str; 5] = ["operates-on", "composes", "variant-of", "generates", "related-to"];
+/// The tiers an implementation may carry (#2863) — validated on `impl set`. A `primitive` is a
+/// language building block (free-standing, may have no `concept`); an `algorithm` composes them up.
+pub const ROLES: [&str; 2] = ["primitive", "algorithm"];
 
 /// Parse the embedded packaged seed. Panics only if the packaged JSON is malformed — a build-time
 /// invariant the tests guard.
@@ -318,6 +321,57 @@ pub fn unlink(g: &mut Value, from: &str, to: &str, rel: Option<&str>) -> usize {
     before - edges.len()
 }
 
+/// Upsert an implementation by id (#2863) — a language-kit node (`primitive` | `algorithm`, with
+/// `code`, `composes`/`pairs`). Validates a non-empty `id` + `tech` and a known `role`; `concept` is
+/// optional (a free-standing primitive has none). Returns `true` when it replaced an existing impl.
+pub fn set_impl(g: &mut Value, im: Value) -> Result<bool, String> {
+    let id = im
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .ok_or("an implementation needs a non-empty `id`")?
+        .to_string();
+    im.get("tech")
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .ok_or("an implementation needs a `tech` (the language kit)")?;
+    let role = im.get("role").and_then(Value::as_str).ok_or("an implementation needs a `role`")?;
+    if !ROLES.contains(&role) {
+        return Err(format!("unknown role '{role}' — want one of: {}", ROLES.join(" | ")));
+    }
+    let arr = ensure_array(g, "implementations");
+    if let Some(existing) = arr.iter_mut().find(|x| x.get("id").and_then(Value::as_str) == Some(id.as_str())) {
+        *existing = im;
+        Ok(true)
+    } else {
+        arr.push(im);
+        Ok(false)
+    }
+}
+
+/// Remove an implementation by id (#2863) and scrub the id from every other impl's `composes`/`pairs`.
+/// Returns whether it existed.
+pub fn remove_impl(g: &mut Value, id: &str) -> bool {
+    let existed = {
+        let arr = ensure_array(g, "implementations");
+        let before = arr.len();
+        arr.retain(|x| x.get("id").and_then(Value::as_str) != Some(id));
+        arr.len() != before
+    };
+    if !existed {
+        return false;
+    }
+    let arr = ensure_array(g, "implementations");
+    for im in arr.iter_mut() {
+        for key in ["composes", "pairs"] {
+            if let Some(list) = im.get_mut(key).and_then(Value::as_array_mut) {
+                list.retain(|v| v.as_str() != Some(id));
+            }
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,7 +424,12 @@ mod tests {
     #[test]
     fn implementation_lookup_reads_the_per_tech_tier() {
         let g = seed();
-        assert_eq!(implementations_of(&g).len(), 10);
+        assert!(implementations_of(&g).len() > 30, "the seed carries the per-language kits");
+        // Every impl declares a known role (#2863).
+        for im in implementations_of(&g) {
+            let role = im.get("role").and_then(Value::as_str).expect("impl.role is set");
+            assert!(ROLES.contains(&role), "impl role '{role}' is known");
+        }
 
         let ms = implementation_of(&g, "merge-sort", "rust").expect("merge-sort has a rust impl");
         assert_eq!(ms["id"], "merge-sort.rs");
@@ -472,5 +531,44 @@ mod tests {
         assert!(node_of(&load_at(&missing), "bloom-filter").is_none());
         assert!(node_of(&load_at(&missing), "merge-sort").is_some(), "an absent store reads the seed");
         let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn set_impl_upserts_a_language_kit_node_and_validates_role() {
+        let mut g = seed();
+        let n0 = implementations_of(&g).len();
+        // A free-standing primitive (no concept).
+        let inserted = set_impl(&mut g, serde_json::json!({
+            "id": "java.stream", "tech": "java", "role": "primitive", "name": "Stream (Java)", "composes": [], "pairs": [], "code": "…"
+        })).unwrap();
+        assert!(!inserted, "a new impl inserts");
+        assert_eq!(implementations_of(&g).len(), n0 + 1);
+        assert!(implementations_of(&g).iter().any(|im| im["id"] == "java.stream" && im["role"] == "primitive"));
+
+        // Upsert in place.
+        let replaced = set_impl(&mut g, serde_json::json!({
+            "id": "java.stream", "tech": "java", "role": "primitive", "name": "Stream v2", "composes": [], "code": "…"
+        })).unwrap();
+        assert!(replaced);
+        assert_eq!(implementations_of(&g).len(), n0 + 1, "upsert doesn't duplicate");
+
+        assert!(set_impl(&mut g, serde_json::json!({ "id": "x", "tech": "java", "role": "bogus", "name": "X", "composes": [] })).is_err(), "unknown role rejected");
+        assert!(set_impl(&mut g, serde_json::json!({ "id": "", "tech": "java", "role": "algorithm", "name": "X", "composes": [] })).is_err(), "empty id rejected");
+        assert!(set_impl(&mut g, serde_json::json!({ "id": "y", "role": "algorithm", "name": "Y", "composes": [] })).is_err(), "missing tech rejected");
+    }
+
+    #[test]
+    fn remove_impl_drops_it_and_scrubs_composes_and_pairs() {
+        let mut g = seed();
+        // merge-sort.rs composes merge.rs — removing the primitive scrubs the reference.
+        assert!(implementations_of(&g).iter().any(|im| im["id"] == "merge.rs"));
+        assert!(remove_impl(&mut g, "merge.rs"), "the primitive existed");
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "merge.rs"), "it's gone");
+        let ms = implementations_of(&g).into_iter().find(|im| im["id"] == "merge-sort.rs").unwrap();
+        assert!(
+            !ms["composes"].as_array().unwrap().iter().any(|v| v == "merge.rs"),
+            "the dangling composes reference was scrubbed",
+        );
+        assert!(!remove_impl(&mut g, "merge.rs"), "removing an absent impl reports false");
     }
 }

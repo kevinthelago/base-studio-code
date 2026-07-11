@@ -1,9 +1,11 @@
 //! `bsc graph` (#2761/#2853) — query AND curate the Algorithms knowledge graph from a live session.
 //! JSON out (compact by default; `--pretty` indents). READ: enumerate concepts, walk a node's
 //! relationships, find the path between two ideas, `dump` the whole graph. WRITE (#2853): the knowledge
-//! librarian upserts nodes (`set`), wires relationships (`link`/`unlink`), and removes nodes (`remove`)
-//! — persisted to the on-disk store (`~/.base-studio-code/knowledge/algorithms.json`), so a read after
-//! a write reflects it.
+//! librarian upserts nodes (`set`), wires relationships (`link`/`unlink`), removes nodes (`remove`), and
+//! curates the per-language kit tier — `impl set`/`impl remove`/`impl list` (#2863): implementations
+//! carry a `role` (primitive | algorithm) and, for primitives, may be free-standing (no `concept`).
+//! All persisted to the on-disk store (`~/.base-studio-code/knowledge/algorithms.json`), so a read
+//! after a write reflects it.
 
 use serde_json::Value;
 
@@ -38,13 +40,53 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 .collect();
             emit(&Value::Array(nodes))
         }
-        // `impl <concept> --tech <t>` — the concept's implementation in a tech (#2770), or null.
-        "impl" => {
-            let concept = positional.get(1).ok_or("usage: bsc graph impl <concept> --tech <t>")?;
-            let tech = flag_value(&args, "--tech").ok_or("usage: bsc graph impl <concept> --tech <t>")?;
-            let found = crate::implementation(concept, &tech).unwrap_or(Value::Null);
-            emit(&found)
-        }
+        // `impl …` — read a concept's per-tech impl (#2770), OR curate the language-kit tier (#2863):
+        //   impl <concept> --tech <t>          # the concept's implementation in a tech, or null
+        //   impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> --code <c> [--concept <c>] [--composes a,b] [--pairs x,y] [--summary <s>]
+        //   impl remove <id>                   # delete an implementation + scrub it from every composes/pairs
+        //   impl list [--tech <t>] [--role r]  # a language kit's implementations
+        "impl" => match positional.get(1).copied() {
+            Some("set") => {
+                let id = flag_value(&args, "--id").ok_or("usage: bsc graph impl set --tech <lang> --id <id> --role primitive|algorithm --name <name> --code <code> [--concept <c>] [--composes a,b] [--pairs x,y] [--summary <s>]")?;
+                let tech = flag_value(&args, "--tech").ok_or("usage: bsc graph impl set … --tech <language>")?;
+                let role = flag_value(&args, "--role").ok_or("usage: bsc graph impl set … --role primitive|algorithm")?;
+                let name = flag_value(&args, "--name").ok_or("usage: bsc graph impl set … --name <name>")?;
+                let mut im = serde_json::json!({ "id": id, "tech": tech, "role": role, "name": name, "composes": list_flag(flag_value(&args, "--composes").as_deref()) });
+                if let Some(c) = flag_value(&args, "--concept") { im["concept"] = Value::String(c); }
+                if let Some(s) = flag_value(&args, "--summary") { im["summary"] = Value::String(s); }
+                if let Some(code) = flag_value(&args, "--code") { im["code"] = Value::String(code); }
+                if let Some(p) = flag_value(&args, "--pairs") { im["pairs"] = list_flag(Some(&p)); }
+                let mut g = crate::load();
+                let replaced = crate::set_impl(&mut g, im.clone())?;
+                crate::save(&g)?;
+                emit(&serde_json::json!({ "ok": true, "action": if replaced { "updated" } else { "created" }, "impl": im }))
+            }
+            Some("remove") => {
+                let id = positional.get(2).ok_or("usage: bsc graph impl remove <id>")?;
+                let mut g = crate::load();
+                if crate::remove_impl(&mut g, id) {
+                    crate::save(&g)?;
+                    emit(&serde_json::json!({ "ok": true, "removed": id }))
+                } else {
+                    Err(format!("unknown implementation '{id}'"))
+                }
+            }
+            Some("list") => {
+                let tech = flag_value(&args, "--tech");
+                let role = flag_value(&args, "--role");
+                let impls: Vec<Value> = crate::implementations()
+                    .into_iter()
+                    .filter(|im| tech.as_deref().is_none_or(|t| im.get("tech").and_then(Value::as_str) == Some(t)))
+                    .filter(|im| role.as_deref().is_none_or(|r| im.get("role").and_then(Value::as_str) == Some(r)))
+                    .collect();
+                emit(&Value::Array(impls))
+            }
+            Some(concept) => {
+                let tech = flag_value(&args, "--tech").ok_or("usage: bsc graph impl <concept> --tech <t>")?;
+                emit(&crate::implementation(concept, &tech).unwrap_or(Value::Null))
+            }
+            None => Err("usage: bsc graph impl <concept> --tech <t> | impl set … | impl remove <id> | impl list [--tech <t>] [--role r]".to_string()),
+        },
         // `neighbors <id>` — the concept's relationships, each with the other endpoint + direction.
         "neighbors" => {
             let id = positional.get(1).ok_or("usage: bsc graph neighbors <id>")?;
@@ -158,13 +200,26 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             print!("{}", help(prog));
             Ok(())
         }
-        other => Err(format!("unknown graph command '{other}' — read: list | neighbors <id> | path <a> <b> | impl <concept> --tech <t> | dump | extract <dir>; write: set | link | unlink | remove\n\n{}", help(prog))),
+        other => Err(format!("unknown graph command '{other}' — read: list | neighbors <id> | path <a> <b> | impl <concept> --tech <t> | impl list | dump | extract <dir>; write: set | link | unlink | remove | impl set | impl remove\n\n{}", help(prog))),
     }
 }
 
 /// The value following a `--flag`, if present.
 fn flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
+}
+
+/// Split a `--flag a,b,c` value into a JSON string array (empty when absent/blank) — for `--composes`
+/// and `--pairs` on `impl set` (#2863).
+fn list_flag(s: Option<&str>) -> Value {
+    Value::Array(
+        s.unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|x| !x.is_empty())
+            .map(|x| Value::String(x.to_string()))
+            .collect(),
+    )
 }
 
 fn help(prog: &str) -> String {
@@ -175,14 +230,18 @@ fn help(prog: &str) -> String {
          {prog} neighbors <id> [--pretty]               # a concept's relationships (rel + direction + other node)\n  \
          {prog} path <a> <b> [--pretty]                 # shortest relationship chain between two concepts\n  \
          {prog} impl <concept> --tech <t> [--pretty]    # the concept's per-tech implementation (#2770), or null\n  \
+         {prog} impl list [--tech <t>] [--role r]       # a language kit's implementations (#2863)\n  \
          {prog} dump [--pretty]                         # the whole graph document (nodes + edges + implementations)\n  \
          {prog} extract <dir> [--tech T] [--pretty]     # parse real code (#2775): matched/unmatched fns + concept duplicates + call edges (#2779)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
          {prog} set --id <id> --kind <kind> --name <name> [--summary <s>] [--tags a,b] [--complexity <c>]   # upsert a node\n  \
          {prog} link <from> <to> --rel <rel>            # add a relationship edge (both nodes must exist)\n  \
          {prog} unlink <from> <to> [--rel <rel>]        # remove matching edges (all rels when --rel omitted)\n  \
-         {prog} remove <id>                             # delete a node + every edge/implementation referencing it\n\n\
+         {prog} remove <id>                             # delete a node + every edge/implementation referencing it\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> --code <c> [--concept <c>] [--composes a,b] [--pairs x,y]   # upsert a language-kit impl (#2863)\n  \
+         {prog} impl remove <id>                        # delete an implementation + scrub it from every composes/pairs\n\n\
          Node kinds: data-structure · algorithm · concept · output.\n\
+         Implementation roles (#2863): primitive (a language building block, free-standing) · algorithm (composes primitives up).\n\
          Relationships: operates-on · composes · variant-of · generates · related-to.\n\
          Implementation techs (#2770): typescript · rust — each `implements` a concept and `composes` other same-tech impls.\n\
          The graph is the curated ontology (Graph 1) + the per-tech implementation tier; Phase 2 (#2745/#2775) adds the extracted-from-code `implements` join.\n",
