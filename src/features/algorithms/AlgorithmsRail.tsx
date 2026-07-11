@@ -1,9 +1,9 @@
-// The Algorithms page left rail (#2773) — the shared headerless graph-nav menu (#2797): a search box
-// over collapsible sections of RailRows (the shared RailRow / RailSection primitives, #2789). It leads
-// with the active kit's free-standing PRIMITIVES (#2863 — the language building blocks that aren't
-// concept nodes, otherwise unreachable), then the concept nodes grouped by kind. Clicking a concept row
-// selects + centers the node; clicking a primitive shows its code in the inspector. Search +
-// section-collapse state are rail-local; selection lives in the Workspace and comes via props.
+// The Algorithms page left rail (#2773 · #2863) — the shared headerless graph-nav menu (#2797): a search
+// box over collapsible sections of RailRows (the shared RailRow / RailSection primitives, #2789). It leads
+// with the "Kits" between-language navigation, then the ACTIVE kit's implementations grouped by role —
+// "Primitives" (the language building blocks) and "Algorithms" (the composed ones). A concept IS its
+// implementation, so every row is an impl node in the per-kit graph; clicking one selects + centers it.
+// Search + section-collapse state are rail-local; selection lives in the Workspace and comes via props.
 import { useState } from "react";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { RailRow } from "@/shared/ui/layouts/RailRow";
@@ -13,17 +13,20 @@ import { useRailSections } from "@/shared/hooks/useRailSections";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
-import { KIND_ORDER, KIND_META, TECH_META, kitTechs, kitImpls, kitImplsByRole, type KnowledgeGraph, type Tech } from "./lib/knowledge";
+import { TECH_META, kitTechs, kitImpls, kitImplsByRole, type AlgoImpl, type ImplRole, type KnowledgeGraph, type Tech } from "./lib/knowledge";
 
-export function AlgorithmsRail({ graph, activeTech, selected, selectedImpl, onSelect, onSelectImpl, onSelectKit }: {
+/** Per-role rail treatment — the section label + the row's leading-dot color. */
+const ROLE_SECTIONS: { role: ImplRole; label: string; color: string }[] = [
+  { role: "primitive", label: "Primitives", color: "var(--violet)" },
+  { role: "algorithm", label: "Algorithms", color: "var(--accent)" },
+];
+
+export function AlgorithmsRail({ graph, activeTech, selectedImpl, onSelectImpl, onSelectKit }: {
   graph: KnowledgeGraph;
-  /** The active language kit (#2863) — its free-standing primitives lead the rail. */
+  /** The active language kit (#2863) — its implementations fill the rail. */
   activeTech: Tech;
-  /** The selected concept node id (a kind-section row). */
-  selected: string | null;
-  /** The selected free-standing primitive impl id (a Primitives-section row). */
+  /** The selected implementation id (a node in the per-kit graph). */
   selectedImpl: string | null;
-  onSelect: (id: string) => void;
   onSelectImpl: (id: string) => void;
   /** Switch to / drill into a language kit (#2863) — the rail's between-kits navigation. */
   onSelectKit: (tech: Tech) => void;
@@ -32,12 +35,18 @@ export function AlgorithmsRail({ graph, activeTech, selected, selectedImpl, onSe
   const sections = useRailSections();
   const q = query.trim().toLowerCase();
   const match = (name: string) => !q || name.toLowerCase().includes(q);
-  // The language kits present (#2863) — the coarse navigation level; picking one makes it active (and, from
-  // the kits-index layer, drills in). Mirrors the graph's kits-index cards, in the left pane.
   const kits = kitTechs(graph).filter((t) => match(TECH_META[t]?.label ?? t));
-  // The active kit's FREE-STANDING primitives (#2863) — role primitive, no concept, so they don't appear
-  // in the kind sections below; the concept-backed primitives (e.g. `merge`) are reachable via their node.
-  const primitives = kitImplsByRole(graph, activeTech, "primitive").filter((im) => !im.concept && match(im.name));
+  const row = (im: AlgoImpl, color: string) => (
+    <RailRow
+      key={im.id}
+      active={im.id === selectedImpl}
+      onClick={() => onSelectImpl(im.id)}
+      leading={<Box style={{ width: 8, height: 8, borderRadius: 2, background: color }} />}
+      trailing={<Text as="span" mono size="xxs" tone="dim">{im.id}</Text>}
+    >
+      {im.name}
+    </RailRow>
+  );
   return (
     <GraphRail
       tools={
@@ -71,47 +80,18 @@ export function AlgorithmsRail({ graph, activeTech, selected, selectedImpl, onSe
             ))}
           </RailSection>
         )}
-        {primitives.length > 0 && (
-          <RailSection
-            label={`Primitives · ${TECH_META[activeTech]?.label ?? activeTech}`}
-            count={primitives.length}
-            open={sections.isOpen("__primitives")}
-            onToggle={() => sections.toggle("__primitives")}
-          >
-            {primitives.map((im) => (
-              <RailRow
-                key={im.id}
-                active={im.id === selectedImpl}
-                onClick={() => onSelectImpl(im.id)}
-                leading={<Box style={{ width: 8, height: 8, borderRadius: 2, background: "var(--violet)" }} />}
-                trailing={<Text as="span" mono size="xxs" tone="dim">{im.id}</Text>}
-              >
-                {im.name}
-              </RailRow>
-            ))}
-          </RailSection>
-        )}
-        {KIND_ORDER.map((kind) => {
-          const rows = graph.nodes.filter((n) => n.kind === kind && match(n.name));
-          if (!rows.length) return null;
+        {ROLE_SECTIONS.map(({ role, label, color }) => {
+          const impls = kitImplsByRole(graph, activeTech, role).filter((im) => match(im.name));
+          if (!impls.length) return null;
           return (
             <RailSection
-              key={kind}
-              label={KIND_META[kind].label}
-              count={rows.length}
-              open={sections.isOpen(kind)}
-              onToggle={() => sections.toggle(kind)}
+              key={role}
+              label={`${label} · ${TECH_META[activeTech]?.label ?? activeTech}`}
+              count={impls.length}
+              open={sections.isOpen(role)}
+              onToggle={() => sections.toggle(role)}
             >
-              {rows.map((n) => (
-                <RailRow
-                  key={n.id}
-                  active={n.id === selected}
-                  onClick={() => onSelect(n.id)}
-                  leading={<Box style={{ width: 8, height: 8, borderRadius: 2, background: KIND_META[kind].color }} />}
-                >
-                  {n.name}
-                </RailRow>
-              ))}
+              {impls.map((im) => row(im, color))}
             </RailSection>
           );
         })}
