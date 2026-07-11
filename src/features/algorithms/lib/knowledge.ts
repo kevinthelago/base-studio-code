@@ -296,32 +296,30 @@ export function pairsOf(graph: KnowledgeGraph, impl: AlgoImpl): AlgoImpl[] {
   return graph.implementations.filter((im) => ids.has(im.id));
 }
 
-// ── The kits-index layer (#2863) — "the layer above the graph": each language kit is one card; drilling
-// into a card opens that kit's concept+primitive graph. A second, coarser navigation level over the kits. ──
+// ── The language-folder rail model (#2899) — mirror the Designs rail (kitGroups.ts): each LANGUAGE is a
+// folder (like each technology is a folder in Components), its impls the rows. Pure, so the rail render +
+// tests share one model. Replaces the kits-index card layer (the wrong-direction navigation). ──
 
-/** Kit-card size (world px) for the kits-index layer. Wider than a node card — it summarizes a whole kit. */
-export const KIT_W = 236;
-export const KIT_H = 82;
-const KIT_PITCH = KIT_H + 28;
-
-/** The kits-index layout — the {@link KitsLayout} counterpart of {@link KnowledgeLayout}, laid out as a
- *  centered column of kit cards. Same `world`/`bounds` shape so the SAME viewport drives both layers. */
-export interface KitsLayout {
-  pos: Map<Tech, NodePos>;
-  world: { w: number; h: number };
-  bounds: Box;
+/** A language folder in the Algorithms rail — a `tech` and its implementations (primitives first). */
+export interface AlgoLangGroup {
+  tech: Tech;
+  label: string;
+  /** Stable expand-state key (`lang:<tech>`). */
+  key: string;
+  /** The kit's impls, primitives before algorithms, each in seed order. */
+  impls: AlgoImpl[];
 }
 
-/** Lay the language kits out as a column of cards (the kits-index layer, #2863). Pure + deterministic. */
-export function layoutKits(techs: Tech[]): KitsLayout {
-  const pos = new Map<Tech, NodePos>();
-  techs.forEach((t, i) => pos.set(t, { x: PAD, y: PAD + i * KIT_PITCH }));
-  const world = {
-    w: PAD * 2 + KIT_W,
-    h: PAD * 2 + Math.max(techs.length - 1, 0) * KIT_PITCH + KIT_H,
-  };
-  const bounds: Box = { x: PAD, y: PAD, w: world.w - PAD * 2, h: world.h - PAD * 2 };
-  return { pos, world, bounds };
+/** Group the implementations into one folder per language (#2899) — the rail tree. Languages in
+ *  {@link kitTechs} order; within a folder, primitives lead the algorithms (the "base then grows up"
+ *  reading). Pure + deterministic. */
+export function groupImplsByLanguage(graph: KnowledgeGraph): AlgoLangGroup[] {
+  return kitTechs(graph).map((tech) => ({
+    tech,
+    label: TECH_META[tech]?.label ?? tech,
+    key: `lang:${tech}`,
+    impls: [...kitImplsByRole(graph, tech, "primitive"), ...kitImplsByRole(graph, tech, "algorithm")],
+  }));
 }
 
 // ── The per-kit graph (#2863) — the kit's OWN graph: nodes are its implementations (a concept IS its

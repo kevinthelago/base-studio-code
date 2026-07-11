@@ -2,9 +2,9 @@
 // neighbor/relation lookups, and BFS pathfinding.
 import { describe, it, expect } from "vitest";
 import {
-  KNOWLEDGE, KIND_ORDER, TECHS, TECH_META, layoutKnowledge, layoutKits, layoutKitGraph, neighborsOf, relationsOf, pathBetween,
+  KNOWLEDGE, KIND_ORDER, TECHS, TECH_META, layoutKnowledge, layoutKitGraph, neighborsOf, relationsOf, pathBetween,
   nodeIndex, edgeId, implsForConcept, implFor, implById, techsWithImpl, usedByImpl,
-  kitTechs, kitImpls, kitImplsByRole, pairsOf, kitGraph,
+  kitTechs, kitImpls, kitImplsByRole, pairsOf, kitGraph, groupImplsByLanguage,
 } from "./knowledge";
 
 describe("KNOWLEDGE seed", () => {
@@ -203,16 +203,20 @@ describe("language kits (#2863) — a kit is every impl of one tech, grouped by 
     expect(paired.every((id) => id.endsWith(".ts"))).toBe(true); // same-tech
   });
 
-  it("layoutKits places one card per kit with a positive world/bounds (the kits-index layer)", () => {
-    const techs = kitTechs(KNOWLEDGE);
-    const l = layoutKits(techs);
-    expect([...l.pos.keys()].sort()).toEqual([...techs].sort());
-    // Cards stack vertically — same x, strictly increasing y in kit order.
-    const ys = techs.map((t) => l.pos.get(t)!.y);
-    expect(ys.every((y, i) => i === 0 || y > ys[i - 1])).toBe(true);
-    expect(l.world.w).toBeGreaterThan(0);
-    expect(l.world.h).toBeGreaterThan(0);
-    expect(l.bounds.w).toBeGreaterThan(0);
+  it("groupImplsByLanguage makes one folder per language, primitives before algorithms (the rail tree)", () => {
+    const groups = groupImplsByLanguage(KNOWLEDGE);
+    // One folder per language kit, in kitTechs order.
+    expect(groups.map((g) => g.tech)).toEqual(kitTechs(KNOWLEDGE));
+    const ts = groups.find((g) => g.tech === "typescript")!;
+    expect(ts.label).toBe("TypeScript");
+    expect(ts.key).toBe("lang:typescript");
+    // Every impl in the folder is that language's, and every primitive precedes every algorithm.
+    expect(ts.impls.every((im) => im.tech === "typescript")).toBe(true);
+    const firstAlgo = ts.impls.findIndex((im) => im.role === "algorithm");
+    const lastPrim = ts.impls.map((im) => im.role).lastIndexOf("primitive");
+    expect(lastPrim).toBeLessThan(firstAlgo);
+    expect(ts.impls.map((im) => im.id)).toContain("ts.array"); // a primitive
+    expect(ts.impls.map((im) => im.id)).toContain("merge-sort.ts"); // an algorithm
   });
 
   it("kitGraph builds a kit's own impl graph — nodes are that tech's impls, wired by composes + pairs", () => {

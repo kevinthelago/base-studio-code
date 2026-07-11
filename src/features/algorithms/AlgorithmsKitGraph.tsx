@@ -91,7 +91,7 @@ export function AlgorithmsKitGraph({ kit, layout, selected, onSelect }: {
           <Box
             key={im.id}
             data-impl={im.id}
-            className={`algo-node algo-impl-${im.role}${im.id === selected ? " on" : ""}${dim ? " dim" : ""}`}
+            className={`algo-node${im.id === selected ? " on" : ""}${dim ? " dim" : ""}`}
             style={{ left: p.x, top: p.y, width: NODE_W, height: NODE_H }}
             onClick={(e) => { e.stopPropagation(); onSelect(im.id); }}
           >
