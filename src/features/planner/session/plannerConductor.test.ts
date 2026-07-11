@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nextInjection, isStepDelivered, flattenPrompt, stagePrompts, type ConductorState, type DeliverySignals } from "./plannerConductor";
+import { nextInjection, isStepDelivered, flattenPrompt, activeStagePrompt, type ConductorState, type DeliverySignals } from "./plannerConductor";
 import { mkStage } from "../stages/blueprints";
 
 const sig = (over: Partial<DeliverySignals> = {}): DeliverySignals => ({
@@ -9,46 +9,43 @@ const sig = (over: Partial<DeliverySignals> = {}): DeliverySignals => ({
 const emptyState = (): ConductorState => ({ doneSubsteps: new Set(), loops: {} });
 const state = (over: Partial<ConductorState> = {}): ConductorState => ({ doneSubsteps: new Set(), loops: {}, ...over });
 
-describe("stagePrompts — the on-demand '?' helper list (#…)", () => {
-  it("lists the stage overview prompt first, then each substep prompt", () => {
-    const context = mkStage("discovery");
-    const list = stagePrompts(context);
-    expect(list.length).toBeGreaterThanOrEqual(2);
-    expect(list[0].label).toContain("overview");
-    expect(list[0].text).toBe(context.prompt);
-    // every listed prompt has non-empty text, and the core discovery substeps are present
-    expect(list.every((p) => p.text.trim().length > 0)).toBe(true);
-    const labels = list.map((p) => p.label.toLowerCase()).join(" ");
-    expect(labels).toMatch(/goal/);
+describe("activeStagePrompt — the one-at-a-time '?' helper (#2859)", () => {
+  it("returns the CURRENT step: the first unfinished substep's prompt, advancing one at a time", () => {
+    const discovery = mkStage("discovery");
+    const first = discovery.substeps![0];
+    const p0 = activeStagePrompt(discovery, new Set());
+    expect(p0?.text).toBe(first.prompt);
+    expect(p0?.label).toBe(first.label || first.key);
+    // mark the first substep done → the helper advances to the SECOND (never shows both at once)
+    const second = discovery.substeps![1];
+    const p1 = activeStagePrompt(discovery, new Set([first.key]));
+    expect(p1?.text).toBe(second.prompt);
   });
 
-  it("returns [] for no section", () => {
-    expect(stagePrompts(undefined)).toEqual([]);
+  it("falls back to the stage overview when the stage has no substeps", () => {
+    const ui = mkStage("ui"); // ui carries no substeps
+    const p = activeStagePrompt(ui, new Set());
+    expect(p?.label).toContain("overview");
+    expect(p?.text).toBe(ui.prompt);
   });
 
-  // #1854 Phase (a): the overview row adapts to the driving model's capability tier, and a stage
-  // carrying archetype seed content surfaces a "seed" row right after the overview.
-  it("adapts the overview to the model tier and surfaces a seed row (#1854a)", () => {
-    const s = {
-      ...mkStage("discovery"),
-      prompt: "Open-ended overview.",
-      promptVariants: { local: "Tight, schema-shaped overview." },
-      seed: { archetype: "twitter-clone", content: "- Post a tweet" },
-    };
-    // No tier → base overview; the seed row follows the overview.
-    const base = stagePrompts(s);
-    expect(base[0].text).toBe("Open-ended overview.");
-    expect(base[1].label).toContain("seed");
-    expect(base[1].text).toBe("- Post a tweet");
-    // local tier → the variant overview (seed unchanged).
-    const local = stagePrompts(s, "local");
-    expect(local[0].text).toBe("Tight, schema-shaped overview.");
-    expect(local[1].text).toBe("- Post a tweet");
+  it("shows the loop substep until it's complete, then the overview (loopDone)", () => {
+    const features = mkStage("features"); // substeps: propose (static) + features (loop)
+    const staticDone = new Set(features.substeps!.filter((s) => !s.loop).map((s) => s.key));
+    const loopSub = features.substeps!.find((s) => s.loop)!;
+    // static steps done + loop NOT complete → the loop substep is the current step
+    expect(activeStagePrompt(features, staticDone, false)?.text).toBe(loopSub.prompt);
+    // loop complete → no active substep → the stage overview
+    const done = activeStagePrompt(features, staticDone, true);
+    expect(done?.label).toContain("overview");
+    expect(done?.text).toBe(features.prompt);
   });
 
-  it("no seed row when the stage carries no seed (additive default)", () => {
-    const list = stagePrompts(mkStage("discovery"));
-    expect(list.some((p) => p.label.includes("seed"))).toBe(false);
+  it("adapts the overview to the model tier and returns null for no section", () => {
+    const s = { ...mkStage("ui"), substeps: undefined, prompt: "Base.", promptVariants: { local: "Local." } };
+    expect(activeStagePrompt(s, new Set())?.text).toBe("Base.");
+    expect(activeStagePrompt(s, new Set(), false, "local")?.text).toBe("Local.");
+    expect(activeStagePrompt(undefined, new Set())).toBeNull();
   });
 });
 
