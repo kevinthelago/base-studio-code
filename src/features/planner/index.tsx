@@ -44,8 +44,10 @@ const DesignsWorkbenchPage = lazy(() => import("@/features/designs").then((m) =>
 // Designs studio) it renders freely in any window and needs no single-owner gating. Lazy for the same
 // cycle-break + on-first-open chunk load.
 const ThemesPage = lazy(() => import("@/features/designs").then((m) => ({ default: m.ThemesGallery })));
-// Algorithms (#2785) — the knowledge graph, folded in from its own rail Workspace. A read-only graph
-// viewer with NO live PTY, so (like Themes) it renders freely in any window with no single-owner gating.
+// Algorithms (#2785) — the knowledge graph, folded in from its own rail Workspace. It DOCKS the always-on
+// knowledge-librarian session (#2787/#2827), so like Designs it must stay MOUNTED across tab switches
+// (else the librarian PTY is killed + relaunched) and be single-owner-gated for tear-off. Lazy for the
+// on-first-open chunk load.
 const AlgorithmsPage = lazy(() => import("@/features/algorithms").then((m) => ({ default: m.AlgorithmsWorkspace })));
 
 export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
@@ -76,6 +78,10 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
   // its own window. The main window then RELEASES the page (unmounts it, below) so the detached window
   // is the SOLE owner of the single designer PTY — the two never fight over pty_create/pty_kill.
   const designDetached = !tabs.some((t) => t.id === "designs");
+  // Algorithms tear-off (#2827) — same single-owner handoff as Designs: the "algorithms" tab hosts the
+  // always-on librarian PTY (#2787), so exactly one window mounts it at a time. When it's torn off it
+  // drops from the main window's `tabs`, which releases the kept-mounted page (below) for the detached one.
+  const algorithmsDetached = !tabs.some((t) => t.id === "algorithms");
 
   // Single source of truth for the session identity, frozen at session start.
   // Remounting Planning only when this changes means publish assigning a project
@@ -165,13 +171,25 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
         </Box>
       )}
 
-      {/* Algorithms (#2785) — the read-only knowledge graph. No live PTY, so like Themes it renders when
-          active in either window; nothing to keep mounted or guard against double-ownership. */}
-      {mode === "algorithms" && (
+      {/* Algorithms (#2785) — the knowledge graph, and it docks the always-on librarian session (#2787),
+          so it gets the SAME keep-mounted + single-owner treatment as Designs (#2827): exactly one window
+          mounts it at a time so they never fight over the single librarian PTY. The detached window
+          (pageOverride==="algorithms") owns it while torn off; otherwise the main window keeps it mounted
+          (CSS-hidden) so the PTY survives a page switch, releasing it (algorithmsDetached) for the detached
+          window. pty_create reconnects to a live session and `claude --continue` rehydrates a killed one. */}
+      {pageOverride === "algorithms" && (
         <Box style={{ display: "flex", flex: 1, minHeight: 0 }}>
           <Suspense fallback={<Box style={{ flex: 1 }} />}><AlgorithmsPage /></Suspense>
         </Box>
       )}
+      <KeptMountedPage
+        active={mode === "algorithms"}
+        gate={!pageOverride && !algorithmsDetached}
+        fallback={<Box style={{ flex: 1 }} />}
+        style={{ flexDirection: "row" }}
+      >
+        <AlgorithmsPage />
+      </KeptMountedPage>
     </Screen>
   );
 }

@@ -18,7 +18,9 @@
 //     resumes the prior conversation.
 //
 // The generic console TerminalView is deliberately NOT reused (pane-system baggage); this hook tears
-// the session down when the panel unmounts (leaving the Algorithms tab).
+// the session down when the panel unmounts — which, since the Algorithms tab is kept mounted across tab
+// switches (#2827), now happens only on app shutdown (or a tear-off ownership release), not on leaving
+// the tab.
 import { type RefObject } from "react";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
