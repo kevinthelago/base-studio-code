@@ -8,6 +8,7 @@ import { useState } from "react";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { RailRow } from "@/shared/ui/layouts/RailRow";
 import { SearchField } from "@/shared/ui/controls/SearchField";
+import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { useRailSections } from "@/shared/hooks/useRailSections";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -52,6 +53,7 @@ export function AlgorithmsRail({ graph, activeTech, selectedImpl, onSelectImpl, 
               weight={500}
               title={`language: ${g.label}`}
               onClick={() => { onSelectLang(g.tech); folders.toggle(g.key); }}
+              leading={<ColorSwatch color={g.dot} size={7} />}
               trailing={<Text as="span" mono size="xxs" tone="dim">{g.impls.length}</Text>}
             >
               {g.label}
