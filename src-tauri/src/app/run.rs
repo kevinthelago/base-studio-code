@@ -215,6 +215,7 @@ pub fn run() {
             crate::platform::config::import_config_bundle,
             crate::platform::config::get_config_files,
             crate::platform::path_expose::path_expose_status,
+            crate::platform::path_expose::path_expose_configure,
             github::repos::clone_repo,
             extensions::mcp::mcp_clone,
             extensions::mcp::mcp_build,
