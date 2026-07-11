@@ -22,7 +22,7 @@ const ARTIFACT = reactUiArtifact as unknown as KitArtifact;
 
 type Status = "building" | "ready" | "error";
 
-export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width }: {
+export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand }: {
   comp: ComponentRecord;
   /** The selected theme's light/dark surface (its `base`). */
   theme: "dark" | "light";
@@ -31,10 +31,19 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width }
   /** The selected theme's semantic-token overrides, injected as `:root{…}` so the preview retints. */
   themeVars: Record<string, string>;
   width: number | string;
+  /** Frame height. Default 260 (the inspector thumbnail); the expanded try-on surface passes larger. */
+  height?: number | string;
+  /** When set, the thumbnail becomes a clickable affordance: hovering/focusing surfaces an "expand"
+   *  cue and activating it calls this — the Design Studio promotes the thumbnail to the full-canvas
+   *  theme try-on (#2834). Omit for the already-expanded surface (no self-expand). */
+  onExpand?: () => void;
 }) {
   const [status, setStatus] = useState<Status>("building");
   const [error, setError] = useState<string>("");
   const [retry, setRetry] = useState(0);
+  // Hover/focus reveal for the expand affordance (#2834) — a boolean is cheaper than a CSS :hover class
+  // here since the frame is inline-styled and self-contained (works wherever it's mounted).
+  const [hint, setHint] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Rebuild when the selection / theme / retry changes (keyed on stable fields, not the object identity).
@@ -87,7 +96,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width }
   }, []);
 
   return (
-    <Box style={{ position: "relative", width, maxWidth: "100%", height: 260, display: "flex", transition: "width .25s ease" }}>
+    <Box style={{ position: "relative", width, maxWidth: "100%", height, display: "flex", transition: "width .25s ease" }}>
       <iframe
         ref={iframeRef}
         title={`${comp.name} preview`}
@@ -104,7 +113,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width }
         </Box>
       )}
       {status === "error" && (
-        <Box style={{ position: "absolute", inset: 0, padding: 12, overflow: "auto", background: "var(--bg-elev, var(--bg-soft))", borderRadius: 8, border: "1px solid color-mix(in srgb, var(--danger) 40%, var(--border))" }}>
+        <Box style={{ position: "absolute", inset: 0, zIndex: 3, padding: 12, overflow: "auto", background: "var(--bg-elev, var(--bg-soft))", borderRadius: 8, border: "1px solid color-mix(in srgb, var(--danger) 40%, var(--border))" }}>
           <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <StatusDot color="var(--danger)" size={7} />
             <Text mono size="xxs" tone="danger" style={{ textTransform: "uppercase", letterSpacing: ".05em" }}>Preview failed to build</Text>
@@ -112,6 +121,39 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width }
             <Button variant="ghost" size="sm" onClick={() => setRetry((n) => n + 1)}>↻ retry</Button>
           </Box>
           <Code maxHeight={180} wrap>{error}</Code>
+        </Box>
+      )}
+      {/* Expand affordance (#2834): the whole thumbnail is a button that opens the full-canvas theme
+          try-on. A transparent overlay (below the z:3 error card, so its ↻ retry stays clickable) that
+          on hover/focus dims the frame and floats a "⤢ Expand" pill so it clearly reads as clickable. */}
+      {onExpand && (
+        <Box
+          as="button"
+          onClick={onExpand}
+          onMouseEnter={() => setHint(true)}
+          onMouseLeave={() => setHint(false)}
+          onFocus={() => setHint(true)}
+          onBlur={() => setHint(false)}
+          aria-label={`Expand ${comp.name} preview — try it across themes`}
+          title="Click to expand — preview this component across themes"
+          style={{
+            position: "absolute", inset: 0, zIndex: 2, cursor: "pointer", padding: 0, borderRadius: 8,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            border: hint ? "1px solid var(--accent)" : "1px solid transparent",
+            background: hint ? "color-mix(in srgb, var(--bg-canvas, var(--bg)) 52%, transparent)" : "transparent",
+            transition: "background .15s ease, border-color .15s ease",
+          }}
+        >
+          <Box style={{
+            display: "flex", alignItems: "center", gap: 7, padding: "6px 12px", borderRadius: 999,
+            border: "1px solid var(--border)", background: "var(--bg-elev, var(--bg-soft))",
+            boxShadow: "var(--shadow-md)", pointerEvents: "none",
+            opacity: hint ? 1 : 0, transform: hint ? "translateY(0)" : "translateY(5px)",
+            transition: "opacity .15s ease, transform .15s ease",
+          }}>
+            <Text as="span" size={12} weight={600}>⤢ Expand</Text>
+            <Text as="span" size={11} tone="muted">try themes</Text>
+          </Box>
         </Box>
       )}
     </Box>
