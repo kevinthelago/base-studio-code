@@ -18,7 +18,7 @@ import { AlgorithmsInspector } from "./AlgorithmsInspector";
 import { AlgorithmsRail } from "./AlgorithmsRail";
 import { LibrarianTerminal } from "./LibrarianTerminal";
 import {
-  KIND_ORDER, TECHS, TECH_META, NODE_W, NODE_H, layoutKnowledge, neighborsOf, nodeIndex, kitTechs,
+  KIND_ORDER, TECHS, TECH_META, NODE_W, NODE_H, layoutKnowledge, neighborsOf, nodeIndex, kitTechs, implById,
   type Tech,
 } from "./lib/knowledge";
 import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
@@ -43,6 +43,12 @@ export function AlgorithmsWorkspace() {
   // reachable. Defaults to the first seeded kit.
   const techs = useMemo(() => kitTechs(graph), [graph]);
   const [activeTech, setActiveTech] = useState<Tech>(() => kitTechs(graph)[0] ?? TECHS[0]);
+  // A free-standing primitive (#2863) picked from the rail's Primitives section — no concept node, so it's
+  // shown directly in the inspector. Mutually exclusive with a concept `selected`.
+  const [selectedImpl, setSelectedImpl] = useState<string | null>(null);
+  const focusedImpl = selectedImpl ? implById(graph, selectedImpl) ?? null : null;
+  const selectConcept = (id: string | null) => { setSelected(id); setSelectedImpl(null); };
+  const selectPrimitive = (id: string) => { setSelectedImpl(id); setSelected(null); };
 
   const lit = useMemo(() => (selected ? neighborsOf(graph, selected) : null), [graph, selected]);
   // The concept ids that carry an implementation in the ACTIVE language — drives the node "</>" badge.
@@ -61,7 +67,7 @@ export function AlgorithmsWorkspace() {
 
   // Rail selection also pans the node to center (the rail is navigation, not just selection).
   const selectFromRail = (id: string) => {
-    setSelected(id);
+    selectConcept(id);
     const p = layout.pos.get(id);
     if (p) vp.centerOn(p.x + NODE_W / 2, p.y + NODE_H / 2);
   };
@@ -94,13 +100,13 @@ export function AlgorithmsWorkspace() {
       world={layout.world}
       grid
       toolbar={toolbar}
-      rail={<AlgorithmsRail graph={graph} selected={selected} onSelect={selectFromRail} />}
+      rail={<AlgorithmsRail graph={graph} activeTech={activeTech} selected={selected} selectedImpl={selectedImpl} onSelect={selectFromRail} onSelectImpl={selectPrimitive} />}
       railResizable
       railWidth={230}
-      inspector={<AlgorithmsInspector graph={graph} selected={selected ? byId.get(selected) ?? null : null} activeTech={activeTech} onSelectNode={setSelected} />}
+      inspector={<AlgorithmsInspector graph={graph} selected={selected ? byId.get(selected) ?? null : null} focusedImpl={focusedImpl} activeTech={activeTech} onSelectNode={selectConcept} />}
       inspectorResizable
       inspectorWidth={340}
-      onBackgroundClick={() => setSelected(null)}
+      onBackgroundClick={() => selectConcept(null)}
       // The always-on knowledge-librarian session (#2787), docked below the graph; the caller owns its
       // height + a `.resize-y` handle (GraphCanvas gives it a flex:none slot), mirroring Teams (#2759).
       dock={
@@ -110,7 +116,7 @@ export function AlgorithmsWorkspace() {
         </Box>
       }
     >
-      <AlgorithmsCanvas graph={graph} layout={layout} selected={selected} lit={lit} activeKinds={ALL_KINDS} implConcepts={implConcepts} onSelect={setSelected} />
+      <AlgorithmsCanvas graph={graph} layout={layout} selected={selected} lit={lit} activeKinds={ALL_KINDS} implConcepts={implConcepts} onSelect={selectConcept} />
     </GraphCanvas>
   );
 }
