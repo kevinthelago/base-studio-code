@@ -336,6 +336,16 @@ export function groupImplsByLanguage(graph: KnowledgeGraph): AlgoLangGroup[] {
 /** A per-kit edge relationship — the ontology rels plus `pairs` (the primitive↔algorithm counterpart link). */
 export type KitRel = KnowledgeRel | "pairs";
 
+/** Per-kit-rel display label + edge style — the ontology rels (from {@link REL_META}) plus `pairs`. Shared
+ *  by the kit-graph canvas AND the on-graph legend (#2909) so the key never drifts from the drawn edges. */
+export const KIT_REL_META: Record<KitRel, { label: string; dashed?: boolean; doubleEnded?: boolean }> = {
+  ...REL_META,
+  pairs: { label: "pairs", dashed: true, doubleEnded: true },
+};
+
+/** The order kit-rel legend rows read in (composes/pairs first — the kit's own edges — then lifted ontology rels). */
+export const KIT_REL_ORDER: KitRel[] = ["composes", "pairs", "operates-on", "variant-of", "generates", "related-to"];
+
 /** An edge in a kit graph — endpoints are implementation ids (not concept ids). */
 export interface KitEdge { from: string; to: string; rel: KitRel }
 
