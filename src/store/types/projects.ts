@@ -9,10 +9,11 @@ import type { ReviewFinding } from "@/shared/lib/preview/previewReview";
 /** Projects slice of {@link AppStore}. */
 export interface ProjectsState {
   // Projects (transient). "designs" is the Designs studio page (#move-to-planner) — formerly its own rail
-  // Workspace, folded in as a Planner tab; "themes" is the sibling theme (style) collection (#themes-tab);
-  // "algorithms" is the knowledge graph, folded in the same way (formerly its own rail Workspace).
-  projectsPageMode: "projects" | "teams" | "designs" | "themes" | "algorithms";
-  setProjectsPageMode: (v: "projects" | "teams" | "designs" | "themes" | "algorithms") => void;
+  // Workspace, folded in as a Planner tab; it owns the structure axis AND, since #2834, the theme try-on,
+  // so the standalone "themes" tab was retired (#2850). "algorithms" is the knowledge graph, folded in
+  // the same way (formerly its own rail Workspace).
+  projectsPageMode: "projects" | "teams" | "designs" | "algorithms";
+  setProjectsPageMode: (v: "projects" | "teams" | "designs" | "algorithms") => void;
   // Glance drill target (#…): the project whose fleet graph is open on the Glance Network page, or null
   // for the project network. Lifted into the store (transient, not persisted) so the app-wide navigation
   // history (mouse back/forward) can drive it alongside the active workspace. See useNavHistory.

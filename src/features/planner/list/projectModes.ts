@@ -16,10 +16,10 @@ export const PROJECT_MODES: TabItem[] = [
   { id: "teams",      label: "Teams",       hint: "your agent teams — personas as positions, wired into a relationship graph" },
   // The Design Studio was a standalone rail Workspace; it's a single page, so it folded in here as a
   // Planner tab (its own rail destination was removed). Labelled "Components" (#2818) — it owns the
-  // kit/component (STRUCTURE) axis; the THEME (STYLE) axis lives in its own "Themes" tab below (epic
-  // #2606). The tab id STAYS "designs" (the internal feature name), so tear-off + persistence are unaffected.
-  { id: "designs",    label: "Components",  hint: "the kit & component workbench (the structure axis)" },
-  { id: "themes",     label: "Themes",      hint: "the theme collection — palettes of token overrides (the style axis)" },
+  // kit/component (STRUCTURE) axis AND, since #2834, the THEME (STYLE) axis via its in-place theme
+  // try-on preview (right-pane themes menu + palette + big preview), so the standalone "Themes" tab was
+  // retired (#2850). The tab id STAYS "designs" (the internal feature name), so tear-off + persistence are unaffected.
+  { id: "designs",    label: "Components",  hint: "the kit & component workbench — structure + the theme try-on" },
   // The Algorithms knowledge graph (#2760/#2761) — a single read-only page, so it folded in here as a
   // Planner tab (its own rail destination was removed, #2785), like Designs/Themes.
   { id: "algorithms", label: "Algorithms",  hint: "the algorithms knowledge graph — concepts, structures, and how they relate" },
