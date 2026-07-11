@@ -17,7 +17,7 @@ import { SEED_THEMES, reconcileThemes, orderThemes, type KitThemeRecord } from "
 import { loadComponents, loadKits, pushComponent, dropComponent, pushKit, dropKit } from "./lib/componentBridge";
 import { loadThemes, pushTheme, dropTheme, loadVariants } from "./lib/themeBridge";
 import { loadKitUsage, pushKitUsage, dropKitUsage } from "./lib/kitUsageBridge";
-import { setActiveKitThemes, applyVariantsToRoot, applyContributionsToRoot, type DesignContributionOverlay } from "@/shared/ui/kit";
+import { setActiveKitThemes, applyVariantsToRoot, applyContributionsToRoot, applyAnimationsToRoot, componentAnimations, type DesignContributionOverlay } from "@/shared/ui/kit";
 
 /** Merge fresh kit-change dispatches into the queue, deduped by `dispatchKey` — shared by the two
  *  change-origins: the desktop `setComponent` edit and the `ui-touch`/CLI-edit diff (#2810). Exported
@@ -128,7 +128,9 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
 
   hydrateComponents: async () => {
     const [loadedC, loadedK] = await Promise.all([loadComponents(), loadKits()]);
-    if (!loadedC && !loadedK) return; // bridge unreachable — keep the seed
+    // Compile authored component MOTION (#2867) into the managed <style> — on boot (useAppBoot calls
+    // this) and on a `ui-touch` component write (setAiFocused re-runs it), mirroring the variant apply.
+    if (!loadedC && !loadedK) { applyAnimationsToRoot(componentAnimations(get().components)); return; } // seed
     const rc = reconcileComponents(loadedC ?? []);
     const rk = reconcileKits(loadedK ?? []);
     // Replace only OUR notice types — theme notices (#2488) belong to hydrateThemes, which may have
@@ -138,6 +140,7 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
       kits: rk.records,
       seedNotices: [...s.seedNotices.filter((n) => n.type === "theme"), ...rk.notices, ...rc.notices],
     }));
+    applyAnimationsToRoot(componentAnimations(rc.records));
     // Converge the store to the verdicts (#2483): push refreshed + missing built-ins (stamped with the
     // new seedHash), drop pristine copies of retired built-ins. User records are never pushed/dropped.
     for (const c of rc.pushes) void pushComponent(c);
