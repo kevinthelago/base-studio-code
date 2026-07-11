@@ -106,11 +106,16 @@ export async function bundleComponent(files: Record<string, string>, entry: stri
 
 export interface ComponentSrcDocOptions {
   /** CSS injected into the iframe `<style>` — the app's tokens + component styles, so built-ins render
-   *  themed (their `.css` imports were no-op'd during bundling). */
+   *  themed (their `.css` imports were no-op'd during bundling). Also the previewed component's
+   *  authored-animation CSS (#2870), so its `@keyframes` are present. */
   injectedCss?: string;
   /** The theme attribute set on the iframe root (`data-theme`), so token overrides apply. */
   theme?: "dark" | "light";
   importmap?: Record<string, string>;
+  /** Class(es) applied to the `#root` wrapper (#2870) — the previewed component's authored animation
+   *  classes (`<component>-anim-<name>`), so its motion actually plays (the keyframes ride in via
+   *  `injectedCss`). Sanitised by the caller. Empty ⇒ no class. */
+  rootClass?: string;
 }
 
 /**
@@ -118,12 +123,12 @@ export interface ComponentSrcDocOptions {
  * as a module, posting `ready`/`error` to the parent. Pure.
  */
 export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOptions = {}): string {
-  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP } = opts;
+  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "" } = opts;
   return `<!doctype html><html data-theme="${theme}"><head><meta charset="utf-8" />
 <style>html,body,#root{margin:0;min-height:100%;box-sizing:border-box}*,*::before,*::after{box-sizing:inherit}</style>
 <style>${injectedCss}</style>
 <script type="importmap">${JSON.stringify({ imports: importmap })}</script>
-</head><body><div id="root"></div>
+</head><body><div id="root"${rootClass ? ` class="${rootClass}"` : ""}></div>
 <script>
   window.addEventListener("error", (e) => parent.postMessage({ __preview: "error", message: String(e.message) }, "*"));
   window.addEventListener("unhandledrejection", (e) => parent.postMessage({ __preview: "error", message: String(e.reason) }, "*"));
