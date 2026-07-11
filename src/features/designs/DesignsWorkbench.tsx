@@ -10,12 +10,12 @@
 //
 // The whole shell IS the shared `GraphCanvas` (#2766) — rail · [toolbar · canvas · dock] · inspector,
 // the SAME structure as Teams and Glance (the bespoke `.ds-body`/`.ds-col` layout + its duplicate inner
-// GraphCanvas are gone). It reuses the pure domain (`lib/model`), the shared specimen renderer
-// (`renderSpecimen`), the shared graph stack (`ZoomControls` + `useGraphPage`/`useGraphViewport` +
+// GraphCanvas are gone). It reuses the pure domain (`lib/model`), the live build-and-iframe preview
+// (`ComponentPreviewFrame`, #2824), the shared graph stack (`ZoomControls` + `useGraphPage`/`useGraphViewport` +
 // `graphEdge`, #2418; the top-down hierarchy layout lives in `lib/compositionLayout`, #2455); GraphCanvas
 // owns the rail/inspector widths, so `useDragResize` sizes only the designer-terminal dock now. Data
 // comes from the global store via the `bsc ui` bridge.
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
 import { KitChangesCard, SeedNoticesCard } from "./KitChangesCard";
@@ -43,9 +43,11 @@ import { RailTree } from "./RailTree";
 import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecord } from "./lib/model";
 import { useUiActivity } from "./lib/uiActivity";
 import { groupKits } from "./lib/kitGroups";
-import { renderSpecimen, type PreviewTheme } from "./specimens";
-import { previewFixture } from "./specimenFixtures";
-import { ThemeScope, DEFAULT_THEME } from "@/shared/ui/kit";
+import { ComponentPreviewFrame } from "./ComponentPreviewFrame";
+import { DEFAULT_THEME } from "@/shared/ui/kit";
+
+/** The preview surface's light/dark axis, read off the selected theme's `base`. */
+type PreviewTheme = "dark" | "light";
 import type { KitThemeRecord } from "./lib/themes";
 import "./designStudio.css";
 
@@ -79,12 +81,11 @@ export function DesignsWorkbench() {
   // old hardcoded dark/light SegmentedControl is retired — light/dark is theme data served through
   // the same `bsc ui theme` collection, so the picker grows as themes are authored.
   const [kitTheme, setKitTheme] = useState<string>(DEFAULT_THEME);
-  // The sandbox surface for `renderSpecimen`, read off the selected theme's `base` (absent ⇒ dark).
+  // The preview iframe's light/dark surface, read off the selected theme's `base` (absent ⇒ dark).
   const theme: PreviewTheme = kitThemes.find((t) => t.id === kitTheme)?.base ?? "dark";
   const [vp, setVpKind] = useState<Viewport>("auto");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({ [kits[0]?.id ?? ""]: true }));
-  const [renderKey, setRenderKey] = useState(0); // bumped by "Retry render" after a preview error
   const [shareOpen, setShareOpen] = useState(false); // the share/import kits modal (#2305 slice 1c)
   // Live-focus (#2525): the designer session is ALWAYS mounted (#2597), so poll its activity stream
   // for the whole Design Studio lifecycle; clear the focus when the studio unmounts.
@@ -151,16 +152,6 @@ export function DesignsWorkbench() {
 
   if (!kit) return <StudioEmpty />;
 
-  // The live preview node, guarded — a specimen that throws surfaces the error card, not a crash.
-  // Prefer the REAL component (`previewFixture` — react-ui + other kits like d3, #2555/#2820); fall back
-  // to the specimens.tsx mock for any name/variant not yet ported (the fixture returns null to defer).
-  let previewEl: ReactNode = null, previewErr: string | null = null;
-  if (sel) {
-    try {
-      void renderKey;
-      previewEl = previewFixture(sel.name, activeVariant) ?? renderSpecimen(sel, activeVariant, theme);
-    } catch (e) { previewErr = e instanceof Error ? e.message : String(e); }
-  }
 
   // Selection neighborhood (#2523): the focused node's edges draw in accent, its related nodes get a
   // softer ring; incident edges render LAST so they sit above the dim ones. Hoisted out of the old
@@ -256,7 +247,7 @@ export function DesignsWorkbench() {
             allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
             vp={vp} setVpKind={setVpKind}
             kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
-            previewEl={previewEl} previewErr={previewErr} onRetry={() => setRenderKey((k) => k + 1)}
+            previewTheme={theme}
             composes={composes} onSelect={selectComp}
           />
         }
@@ -342,7 +333,7 @@ interface InspProps {
   /** The preview's THEME axis (#2488/#2545): the hydrated theme collection + the applied selection.
    *  The selected theme drives both the retint (`vars`) and the sandbox surface (`base`). */
   kitTheme: string; setKitTheme: (id: string) => void; kitThemes: KitThemeRecord[];
-  previewEl: ReactNode; previewErr: string | null; onRetry: () => void;
+  previewTheme: PreviewTheme;
   composes: ReturnType<typeof resolveComposes>; onSelect: (c: ComponentRecord) => void;
 }
 function Inspector(p: InspProps) {
@@ -392,28 +383,18 @@ function Inspector(p: InspProps) {
               </select>
             </Box>
             <Box className="ds-surface">
-              {p.previewErr ? (
-                <Box className="ds-overlay" style={{ padding: 24 }}>
-                  <Box style={{ maxWidth: 400, width: "100%", background: "var(--bg-elev, var(--bg-soft))", border: "1px solid color-mix(in srgb, var(--danger) 40%, var(--border))", borderRadius: 12, overflow: "hidden" }}>
-                    <Box style={{ height: 30, display: "flex", alignItems: "center", gap: 8, padding: "0 12px", background: "color-mix(in srgb, var(--danger) 12%, transparent)", borderBottom: "1px solid color-mix(in srgb, var(--danger) 30%, transparent)" }}>
-                      <StatusDot color="var(--danger)" size={8} />
-                      <Text mono size="xxs" tone="danger" style={{ letterSpacing: ".05em", textTransform: "uppercase" }}>Preview failed to render</Text>
-                    </Box>
-                    <Box style={{ padding: "14px 16px" }}>
-                      <Code maxHeight={140} wrap>{p.previewErr}</Code>
-                      <Box style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                        <Button variant="primary" size="sm" onClick={p.onRetry}>↻ Retry render</Button>
-                      </Box>
-                    </Box>
-                  </Box>
-                </Box>
-              ) : (
-                <Box className="ds-frame">
-                  {/* centered on the surface (#2333); the width transition + fixed VP width are layout, not the removed motion pass.
-                      The ThemeScope (#2488) applies the selected kit theme's semantic-token overrides to the specimen frame. */}
-                  <ThemeScope theme={p.kitTheme} style={{ width: VP[p.vp].w, maxWidth: "100%", transition: "width .25s ease", display: "flex", justifyContent: "center" }}>{p.previewEl}</ThemeScope>
-                </Box>
-              )}
+              {/* Live preview (#2824): the component is BUILT (esbuild-wasm) from its real source and
+                  rendered in a sandboxed iframe — built-in kit or any user/library component — its own
+                  build/error state inside. Replaces the specimen mocks + real-component fixtures. */}
+              <Box className="ds-frame">
+                <ComponentPreviewFrame
+                  comp={sel}
+                  theme={p.previewTheme}
+                  themeId={p.kitTheme}
+                  themeVars={p.kitThemes.find((t) => t.id === p.kitTheme)?.vars ?? {}}
+                  width={VP[p.vp].w}
+                />
+              </Box>
               <Text as="div" className="ds-vplabel">{VP[p.vp].label}</Text>
             </Box>
           </Box>
