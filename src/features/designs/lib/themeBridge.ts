@@ -41,6 +41,12 @@ export async function loadThemes(): Promise<KitThemeRecord[] | null> {
       )
       .map((t) => ({
         id: t.id,
+        // The design group (#2749) — required + seed-relevant, so it must ride the round-trip
+        // verbatim (never defaulted for a current row, or the reloaded copy hashes differently from
+        // its stamp). A legacy/pre-#2749 row with no `tech` predates the axis: React is the only
+        // design group it could have belonged to, so it materializes under `react` (the reconcile
+        // then refreshes a pristine built-in to the seed's `tech` anyway).
+        tech: t.tech ?? "react",
         label: t.label,
         description: t.description ?? "",
         // `base` is seed-relevant content and must ride WITHOUT normalizing (#2514 round-trip

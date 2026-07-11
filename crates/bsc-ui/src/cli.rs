@@ -181,7 +181,9 @@ CLOSED VALUE GRAMMAR — a `var(--x)`/`@x` token reference, a `color-mix()`/`okl
 dimension; anything that could end the declaration or inject CSS is refused. A theme is a map of
 semantic component-token overrides (--card-*/--btn-*/--field-*/--chip-*) applied
 globally (:root) or scoped to a subtree — restyling every card/button/field/chip without touching a
-spec's structure. This is the SDK's THEME axis (style × theme × spec); the same collection the desktop
+spec's structure. Every theme MUST declare its DESIGN GROUP via a `tech` slug (#2749 — the same axis
+a kit carries: react, vue, …): the binding is mandatory and 1:1 from the theme's side, so `set` and
+`validate` REJECT a theme with no `tech`. This is the SDK's THEME axis (style × theme × spec); the same collection the desktop
 theme picker reads. Themes live in the designer-writable store at ~/.base-studio-code/themes/ (--dir/
 BSC_UI_THEME_DIR override, #2488); the reads MERGE the packaged built-ins in, so every theme is always
 visible and removing a built-in's stored copy falls back to the embedded one. `set`/`remove` are
@@ -226,7 +228,8 @@ leaves at its contract default — and `uncontracted` — a consumed token the c
 the design system can't govern it (the fall-loudly gap: it may be app-live legacy or a typo, but a theme
 can't reach it). With --dir it scans a KIT's source for the `var(--<token>` it consumes (its addressable
 surface); without, it resolves the whole contract. `complete` is true when nothing is uncontracted.
-Compact JSON by default; --pretty indents.",
+The report names the theme's `group` — its design-group binding (#2749) — so the diagnostic states
+which group's contract it resolved against. Compact JSON by default; --pretty indents.",
     },
     CmdDoc {
         name: "emit",
@@ -427,6 +430,10 @@ fn cmd_resolve(args: &[String]) -> Result<(), String> {
     }
     let theme_id = theme_id.ok_or("usage: bsc ui resolve --theme <id> [--dir <path>]")?;
     let theme = crate::theme_by_id(&theme_id).ok_or_else(|| format!("unknown theme '{theme_id}'"))?;
+    // The theme's DESIGN GROUP (#2749) — surfaced in the report so the diagnostic names which group's
+    // contract the theme is resolved against. Per-group *contracts* are #2606; today one shared
+    // contract backs every group, so resolution is unchanged — the binding is now explicit in output.
+    let group = theme.get("tech").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
     let overrides: std::collections::HashSet<String> = theme
         .get("vars")
         .and_then(serde_json::Value::as_object)
@@ -454,6 +461,7 @@ fn cmd_resolve(args: &[String]) -> Result<(), String> {
     let (misses, uncontracted) = resolve_diagnostics(&consumed, &overrides, &contract);
     let report = serde_json::json!({
         "theme": theme_id,
+        "group": group,
         "mode": if dir.is_some() { "dir" } else { "contract" },
         "consumed": consumed.len(),
         "overridden": consumed.len() - misses.len() - uncontracted.len(),
@@ -1287,6 +1295,16 @@ fn cmd_theme(args: &[String], prog: &str) -> Result<(), String> {
             let mut ids = Vec::new();
             for item in &items {
                 let id = bsc_json_store::cli::id_of(item, "theme")?;
+                // Mandatory design-group binding (#2749): a theme MUST declare its `tech`. Reject
+                // BEFORE the store write so a group-less theme can never be persisted.
+                match item.get("tech").and_then(serde_json::Value::as_str) {
+                    Some(t) if !t.trim().is_empty() => {}
+                    _ => {
+                        return Err(format!(
+                            "theme '{id}' must declare its design group — add a non-empty string \"tech\" (e.g. \"react\")"
+                        ))
+                    }
+                }
                 let json = serde_json::to_string(item).map_err(|e| format!("set: {e}"))?;
                 store.set(&id, &json)?;
                 // Design Studio live-focus (#2525): emit a `ui-touch` after the theme write lands,
@@ -1336,8 +1354,8 @@ fn cmd_theme(args: &[String], prog: &str) -> Result<(), String> {
                 let id = positional.get(1).ok_or("usage: bsc ui theme validate <id> | --file <path>")?;
                 load_theme_for_edit(&theme_store(&dir)?, id)?
             };
-            let vars = theme.get("vars").and_then(serde_json::Value::as_object).cloned().unwrap_or_default();
-            let errs = crate::validate_theme_vars(&vars);
+            // Full theme validation (#2749): the mandatory `tech` design-group binding + the `vars`.
+            let errs = crate::validate_theme(&theme);
             if errs.is_empty() {
                 println!("ok");
                 Ok(())
