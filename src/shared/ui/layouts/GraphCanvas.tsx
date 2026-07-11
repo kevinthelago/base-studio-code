@@ -103,10 +103,13 @@ export function GraphCanvas({
 
       {/* ── content column: toolbar (over the canvas only) · canvas · optional dock ── */}
       <Stack gap={0} style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-        {/* ── toolbar ── */}
-        <Row gap={16} align="center" style={{ height: 52, flex: "none", padding: "0 16px", borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)" }}>
-          {toolbar}
-        </Row>
+        {/* ── toolbar ── omitted entirely (no empty 52px bar) when the page passes none, so a page can
+            hand the whole content column to a full-canvas overlay (#2849, Design Studio theme preview). */}
+        {toolbar ? (
+          <Row gap={16} align="center" style={{ height: 52, flex: "none", padding: "0 16px", borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)" }}>
+            {toolbar}
+          </Row>
+        ) : null}
 
         {/* The pan/zoom viewport: a raw div for the native wheel listener + backdrop mousedown. */}
         <div ref={setVp} onMouseDown={onCanvasDown}

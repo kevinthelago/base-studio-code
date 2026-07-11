@@ -428,4 +428,14 @@ describe("theme try-on preview (#2834)", () => {
     fireEvent.click(screen.getByText("sm"));
     expect(frame().style.width).toBe("380px");                           // resized to the sm breakpoint
   });
+
+  it("preview mode hides the graph chrome (the composition-graph toolbar); it returns on exit (#2849)", () => {
+    render(<DesignsWorkbench />);
+    expect(screen.getByText(/Composition graph/)).toBeTruthy();          // graph header shown normally
+    fireEvent.click(graphNode("Chip"));
+    fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
+    expect(screen.queryByText(/Composition graph/)).toBeNull();          // hidden while previewing
+    fireEvent.click(screen.getByRole("button", { name: /Back to graph/ }));
+    expect(screen.getByText(/Composition graph/)).toBeTruthy();          // restored on exit
+  });
 });

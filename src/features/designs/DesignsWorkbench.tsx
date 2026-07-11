@@ -217,7 +217,9 @@ export function DesignsWorkbench() {
             <DesignerTerminal height={term.size} />
           </Box>
         }
-        toolbar={
+        // Theme try-on (#2849): hide the graph chrome in preview mode — no toolbar → GraphCanvas drops
+        // the header row so the preview overlay owns the whole center (the graph beneath it is covered).
+        toolbar={previewMode ? null : (
           <>
             <Eyebrow size={9.5}>Composition graph · {kit.name}</Eyebrow>
             {healthFindings.length > 0 && (
@@ -231,7 +233,7 @@ export function DesignsWorkbench() {
             <Button variant="ghost" onClick={() => gvp.fit()}>fit</Button>
             <Button variant="ghost" title="Share or import a kit (gist / share code)" onClick={() => setShareOpen(true)}><Text as="span" tone="dim">⇅</Text> Share</Button>
           </>
-        }
+        )}
         rail={
           // Headerless graph-nav menu (#2797): search over the collapsible kits→components tree — no
           // label bar (the PageTabs strip already titles the studio).
