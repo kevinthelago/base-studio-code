@@ -25,20 +25,20 @@ describe("themeBridge → bsc ui theme (#2488)", () => {
 
   it("parses full rows, keeping the seed-tracking fields (#2483)", async () => {
     vi.mocked(bsc).mockResolvedValueOnce(JSON.stringify([
-      { id: "soft", label: "Soft", description: "d", vars: { "--card-radius": "14px" }, builtin: true, seedHash: "abcd1234" },
+      { id: "soft", tech: "react", label: "Soft", description: "d", vars: { "--card-radius": "14px" }, builtin: true, seedHash: "abcd1234" },
     ]));
     expect(await loadThemes()).toEqual([
-      { id: "soft", label: "Soft", description: "d", vars: { "--card-radius": "14px" }, builtin: true, seedHash: "abcd1234" },
+      { id: "soft", tech: "react", label: "Soft", description: "d", vars: { "--card-radius": "14px" }, builtin: true, seedHash: "abcd1234" },
     ]);
   });
 
   it("drops var-less rows — an OLD bsc's lean list output must not cache themes without overrides", async () => {
     vi.mocked(bsc).mockResolvedValueOnce(JSON.stringify([
       { id: "soft", label: "Soft", description: "d" }, // lean row (pre-#2488 binary ignores --full)
-      { id: "ok", label: "Ok", vars: {} },
+      { id: "ok", label: "Ok", vars: {} }, // a legacy row with no `tech` (#2749) → defaults to react
       { id: "", label: "bad", vars: {} },
     ]));
-    expect(await loadThemes()).toEqual([{ id: "ok", label: "Ok", description: "", vars: {} }]);
+    expect(await loadThemes()).toEqual([{ id: "ok", tech: "react", label: "Ok", description: "", vars: {} }]);
   });
 
   it("returns null when the bridge is unreachable (the slice keeps its seed)", async () => {

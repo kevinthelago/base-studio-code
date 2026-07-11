@@ -19,6 +19,12 @@ import THEMES_DATA from "@data/ui/themes.json";
 export interface KitTheme {
   /** Stable id persisted in the store + used by `bsc ui theme get`. */
   id: string;
+  /** The DESIGN GROUP this theme belongs to (#2749) — the lowercase `tech` slug a kit carries
+   *  (`react`, `vue`, …). REQUIRED and 1:1 from the theme's side: a theme belongs to exactly one
+   *  design group (a group hosts its own set of themes), so `bsc ui theme set`/`validate` reject a
+   *  theme with no `tech` and the Themes page groups by it. Not optional — a theme is meaningless
+   *  without the group whose token contract it is resolved and emitted against. */
+  tech: string;
   label: string;
   description: string;
   /** The SURFACE the theme sits on (#2545). Absent ⇒ `"dark"` (the historical base). The Design
