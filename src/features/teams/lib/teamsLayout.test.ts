@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { teamsGrid, teamsBounds, teamStats } from "./teamsLayout";
+import { teamsGrid, teamsBounds, teamStats, TEAM_CARD_W, TEAM_CARD_H } from "./teamsLayout";
 import type { Team } from "./team";
 
 const team = (over: Partial<Team>): Team => ({ id: "t", name: "T", positions: [], relationships: [], ...over });
@@ -17,7 +17,17 @@ describe("teamsGrid (#2742)", () => {
   });
 
   it("every box has the fixed card size", () => {
-    for (const b of teamsGrid(4)) { expect(b.w).toBeGreaterThan(0); expect(b.h).toBeGreaterThan(0); }
+    for (const b of teamsGrid(4)) {
+      expect(b.w).toBe(TEAM_CARD_W);
+      expect(b.h).toBe(TEAM_CARD_H);
+    }
+  });
+
+  // #2846 — the card must stay large enough to show a multi-line team description without
+  // truncating it "way too soon". Guards against a future shrink that re-introduces the clipping.
+  it("cards are sized to fit a multi-line description", () => {
+    expect(TEAM_CARD_W).toBeGreaterThanOrEqual(280);
+    expect(TEAM_CARD_H).toBeGreaterThanOrEqual(150);
   });
 });
 

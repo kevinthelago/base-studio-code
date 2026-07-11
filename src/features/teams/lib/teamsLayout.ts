@@ -7,8 +7,8 @@ import { positionDisplay } from "./orgView";
 import type { Team } from "./team";
 import type { Persona } from "@/features/personas";
 
-export const TEAM_CARD_W = 248;
-export const TEAM_CARD_H = 116;
+export const TEAM_CARD_W = 288;
+export const TEAM_CARD_H = 160;
 const GAP_X = 40;
 const GAP_Y = 44;
 const ORIGIN_X = 60;
