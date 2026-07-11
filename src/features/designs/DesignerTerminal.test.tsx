@@ -5,6 +5,7 @@ import { DesignerTerminal } from "./DesignerTerminal";
 import { DESIGNER_PANE_ID, DESIGNER_ALLOWED_COMMANDS } from "./useDesignerTerminal";
 import { DesignsWorkbench } from "./DesignsWorkbench";
 import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
+import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { useAppStore } from "@/store";
 
 /**
@@ -148,5 +149,71 @@ describe("DesignsWorkbench always-on designer panel (#2597)", () => {
     expect(screen.queryByRole("button", { name: /Designer/ })).toBeNull();
     expect(panel.closest(".ds-graph")).toBeTruthy();
     await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
+  });
+});
+
+describe("designer PTY survives a planner-tab switch (kept-mounted, #2826)", () => {
+  // The Design Studio is a Planner tab (projectsPageMode "designs"), rendered through the SAME
+  // `KeptMountedPage` treatment ProjectsWorkspace gives it (src/features/planner/index.tsx): switching
+  // to another planner tab toggles the page's `active` (display: flex ↔ none) WITHOUT unmounting, so the
+  // always-on designer session is never torn down and its PTY is never relaunched. Before the page rode
+  // KeptMountedPage the tab switch unmounted DesignsWorkbench → DesignerTerminal → the shared
+  // useScreenSession cleanup fired pty_kill, and returning re-spawned it. This reproduces the switch via
+  // the `active` prop and asserts the PTY lifecycle across an away-and-back cycle: one pty_create, no
+  // pty_kill, no relaunch — the guard that would have caught the original bug.
+  it("keeps the session mounted (CSS-hidden) across a tab switch and never relaunches the PTY", async () => {
+    const { rerender, container } = render(
+      <KeptMountedPage active={true}>
+        <DesignerTerminal />
+      </KeptMountedPage>,
+    );
+    // On the Designs tab: the session mounts and spawns exactly one PTY.
+    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
+    const wrapper = container.firstElementChild as HTMLElement;
+    expect(wrapper.style.display).toBe("flex"); // shown
+    expect(screen.getByTestId("designer-terminal")).toBeInTheDocument();
+
+    // Switch to another planner tab → active=false. The page CSS-hides but STAYS mounted: no pty_kill.
+    rerender(
+      <KeptMountedPage active={false}>
+        <DesignerTerminal />
+      </KeptMountedPage>,
+    );
+    expect(wrapper.style.display).toBe("none"); // hidden, not unmounted
+    expect(screen.getByTestId("designer-terminal")).toBeInTheDocument();
+    expect(callsTo("pty_kill")).toHaveLength(0);
+
+    // Switch back to the Designs tab → active=true. Same mount — the PTY was never re-created.
+    rerender(
+      <KeptMountedPage active={true}>
+        <DesignerTerminal />
+      </KeptMountedPage>,
+    );
+    expect(screen.getByTestId("designer-terminal")).toBeInTheDocument();
+    expect(callsTo("pty_create")).toHaveLength(1); // NOT 2 — no relaunch
+    expect(callsTo("pty_kill")).toHaveLength(0);
+  });
+
+  it("fully tears the session down (pty_kill) only when the page is UNMOUNTED — e.g. torn off (gate drops)", async () => {
+    // The single-owner gate: when the Designs tab is torn into its own window, the main window's
+    // KeptMountedPage `gate` drops to false → it returns null and unmounts, releasing the one PTY for the
+    // detached window. That real unmount (unlike a tab switch) MUST run the cleanup and kill the PTY.
+    const { rerender } = render(
+      <KeptMountedPage active={true} gate={true}>
+        <DesignerTerminal />
+      </KeptMountedPage>,
+    );
+    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
+    expect(callsTo("pty_kill")).toHaveLength(0);
+
+    // gate=false → KeptMountedPage returns null → the page unmounts → the PTY is killed.
+    rerender(
+      <KeptMountedPage active={true} gate={false}>
+        <DesignerTerminal />
+      </KeptMountedPage>,
+    );
+    expect(screen.queryByTestId("designer-terminal")).toBeNull();
+    expect(callsTo("pty_kill")).toHaveLength(1);
+    expect(callsTo("pty_kill")[0].paneId).toBe(DESIGNER_PANE_ID);
   });
 });
