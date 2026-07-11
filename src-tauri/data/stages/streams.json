@@ -38,6 +38,11 @@
       }
     ]
   },
+  "skipWhen": {
+    "signal": "fleetStreams",
+    "target": 0,
+    "op": "=="
+  },
   "output": "issues",
   "blurb": "Review the dependency graph and plan the agent fleet + shared deps.",
   "prompt": "The features are a dependency DAG — run `bsc plan feature list` to see every feature and its\n`dependsOn`. PRESENT the dependency graph + roadmap and get the user's APPROVAL, then plan the agent\nfleet. There are no milestone phases and no phase numbering: the build order is implied PURELY by\neach feature's `dependsOn` (foundations first). Do NOT write phases.json or any issue files. Issues\nare generated from the features at GitHub-publish time, not during planning.\n\n1. Review the DAG with `bsc plan feature list` — confirm each feature's `dependsOn` is right and the\n   graph is acyclic (a cycle holds the gate). Present the implied roadmap and get the user's APPROVAL.\n   Where a real cross-feature contract exists (a shared schema/types/API), write it under\n   `contracts/<name>.md` — the director owns those and workers read them as the source of truth.\n2. Plan the fleet: derive each stream's least-privilege profile (commands / write-paths / push policy)\n   and pipe a FleetPlan JSON (non-overlapping streams + recommended/director/topology) to\n   `bsc plan fleet set`.\n3. Lock shared dependencies (#1429): for any repo that 2+ streams build, reconcile their libraries\n   once into the repo's lock via `bsc plan deps set`.\n\nLeave no TODO / TBD / FIXME / XXX markers — the gate blocks on them.",

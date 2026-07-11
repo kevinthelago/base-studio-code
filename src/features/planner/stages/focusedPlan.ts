@@ -8,7 +8,7 @@ import {
   enabledStages, currentStage, stageStatus, stageSkipped,
   type BlueprintStage,
 } from "./blueprints";
-import { evalGate, gateReasons, type PlanSignals } from "./stageGate";
+import { evalGate, evalRequirement, gateReasons, type PlanSignals } from "./stageGate";
 
 // "complete" = done IN sequence (at/behind the current position); "ahead" = done OUT of
 // sequence (gate met past the current position — "banked"); "skipped" = an OPTIONAL section
@@ -32,6 +32,11 @@ export interface Stage {
   fraction: number;
   /** An optional stage — shown but never required (#676). */
   optional?: boolean;
+  /** Whether the stage is SKIPPABLE right now (#2854): intrinsically `optional`, OR its declarative
+   *  `skipWhen` rule passes against the live signals (e.g. an empty Features stage). Drives whether
+   *  the footer renders a Skip control at all — a required stage (no rule) shows none, not a disabled
+   *  ghost. Absent ⇒ not skippable. */
+  skippable?: boolean;
   /** The Repos stage folds Deploy in as a "ship" substep (#1383) — drives the combined body. */
   ship?: boolean;
   /** The Structure stage folds Permissions in as a "fleet" substep → the "Streams" stage — drives
@@ -65,9 +70,12 @@ export function stagesFrom(sections: BlueprintStage[], signals: PlanSignals): St
     const unmet = gateReasons(s.gateRule, signals)
       .filter((r) => !r.pass)
       .map(({ label, detail }) => ({ label, detail }));
+    // Skippable RIGHT NOW (#2854): intrinsically optional, or the declarative `skipWhen` rule passes
+    // against the live signals (e.g. featuresDefined == 0). Drives whether the footer offers Skip.
+    const skippable = s.optional === true || (s.skipWhen ? evalRequirement(s.skipWhen, signals).pass : false);
     return {
       key: s.key, name: s.name, glyph: s.glyph, blurb: s.blurb, gate: s.gate,
-      index: i, total: visible.length, status, fraction: st.fraction, optional: s.optional, unmet,
+      index: i, total: visible.length, status, fraction: st.fraction, optional: s.optional, skippable, unmet,
       // #1383: the Repos stage folds Deploy in as a "ship" substep when a blueprint opts in — the
       // combined body renders the deploy block only then.
       ship: s.substeps?.some((ss) => ss.key === "ship"),
@@ -131,12 +139,15 @@ export type FooterKind = "back-to-current" | "jump-to-current" | "approve-contin
 export interface FooterAction {
   kind: FooterKind;
   enabled: boolean;
-  /** A Skip control is rendered beside the primary action — on EVERY active stage (#2533), so the
-   *  footer reads as a consistent Continue + Skip pair regardless of whether the stage is optional. */
+  /** Whether this action KIND supports a Skip control — set by {@link footerAction} on the active-stage
+   *  advance actions (approve-continue / route-design), never on navigation/publish. A marker only:
+   *  {@link resolveFooter} decides whether Skip actually RENDERS (`skipEnabled`) from the live signals. */
   canSkip?: boolean;
-  /** Whether that Skip control is ACTIONABLE (#2533): always on an optional stage; on a required
-   *  stage only when the user enabled "allow gate override" (#1285) — otherwise it renders disabled
-   *  with an explanatory tooltip. Distinct from `canSkip`, which only governs whether it's shown. */
+  /** Whether the Skip control RENDERS as an actionable button (#2854): true only when the stage is
+   *  skippable now (its `skipWhen` rule passes / it's intrinsically optional) OR the user enabled
+   *  "allow gate override" (#1285). A required stage like Discovery shows NO Skip — not a disabled
+   *  ghost (the #2533 always-visible-Skip behavior regressed into a greyed button beside "gate
+   *  blocking…"). The footer renders Skip iff this is set. */
   skipEnabled?: boolean;
 }
 
@@ -146,10 +157,10 @@ export interface FooterAction {
  * current; on the active stage → approve & continue (enabled when its gate is ready), or
  * publish when the whole plan is complete.
  *
- * `canSkip` (#2533): the Skip control is shown on EVERY active stage (both approve-continue and
- * route-design), giving a uniform Continue + Skip pair. Whether Skip is actually clickable is
- * decided later by {@link resolveFooter} (`skipEnabled`), which knows if the stage is optional and
- * whether gate-override is on. Navigation and publish never offer skip.
+ * `canSkip` marks the two active-stage advance actions (approve-continue, route-design) as
+ * skip-ELIGIBLE — a marker, not a render decision. Whether Skip actually appears is decided later by
+ * {@link resolveFooter} (`skipEnabled`) from the live signals: skippable stage or gate-override on.
+ * Navigation and publish are never skip-eligible.
  */
 export function footerAction(
   selectedIdx: number, activeIdx: number, planComplete: boolean, currentGateReady: boolean,
@@ -159,9 +170,8 @@ export function footerAction(
   if (selectedIdx < activeIdx) return { kind: "jump-to-current", enabled: true };
   if (planComplete) return { kind: "publish", enabled: true };
   // #2121: the active UI stage whose design is missing or stale → the primary action ROUTES the
-  // design (sync the skeleton + mark it current) instead of advancing. Skip is still offered (#2533)
-  // — routing and skipping the stage are both valid choices, and hiding skip here made the UI pane's
-  // button set flicker as the design state changed.
+  // design (sync the skeleton + mark it current) instead of advancing. It's skip-eligible too —
+  // routing and skipping are both valid choices — but resolveFooter still gates the actual Skip.
   if (routeDesign) return { kind: "route-design", enabled: true, canSkip: true };
   return { kind: "approve-continue", enabled: currentGateReady, canSkip: true };
 }
@@ -173,18 +183,18 @@ export function footerAction(
  * there are drafted-but-unconfirmed sections and clicking confirms them (the one-click approval).
  * Otherwise the primary stays disabled ("gate blocking…").
  *
- * SKIP (#2533) — for any action that shows a Skip control (`canSkip`), `skipEnabled` is set: always
- * on an OPTIONAL stage, and on a REQUIRED stage only when the user enabled gate override (#1285).
- * Skip is the single, uniform "move past without completing" affordance — it replaces the old
- * cautionary primary-morph, so both optional-skip and required-override render the same way.
+ * SKIP (#2854) — the Skip control RENDERS (`skipEnabled`) only when the KIND is skip-eligible
+ * (`canSkip`) AND the active stage is skippable now (its `skipWhen` rule passes / it's intrinsically
+ * optional) OR the user enabled gate override (#1285). A required stage (Discovery) shows NO Skip —
+ * not a disabled ghost. When Skip renders it is always actionable, so there is no disabled state.
  *
  * Pure + unit-tested.
  */
 export function resolveFooter(
-  raw: FooterAction, pendingCount: number, allowOverride: boolean, activeOptional: boolean,
+  raw: FooterAction, pendingCount: number, allowOverride: boolean, skippable: boolean,
 ): FooterAction {
-  // Skip actionability (only meaningful where a Skip control is shown).
-  const withSkip = raw.canSkip ? { ...raw, skipEnabled: activeOptional || allowOverride } : raw;
+  // Skip renders only when its KIND is eligible AND the stage is skippable now (or override is on).
+  const withSkip = raw.canSkip ? { ...raw, skipEnabled: skippable || allowOverride } : raw;
   // One-click confirm lights the blocking primary; nothing else force-enables it now.
   if (withSkip.kind !== "approve-continue" || withSkip.enabled) return withSkip;
   if (pendingCount > 0) return { ...withSkip, enabled: true };
