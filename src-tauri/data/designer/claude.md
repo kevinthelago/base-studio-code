@@ -31,6 +31,7 @@ lower rungs are more surgical. Never author a new spec when a token move would d
 | **2 · Component tokens** | one component family's look (`--card-*`, `--btn-*`, …) | `bsc ui component <c> set-token` |
 | **3 · Variants** | a NEW named look on a component, authored as data | `bsc ui component <c> define-variant` |
 | **4 · Composition** | a new screen/spec built from kit nodes | `bsc ui set` (spec) |
+| **5 · Animation** | MOTION on a component, authored as data (`@keyframes` + trigger) | `bsc ui define-animation` |
 
 **Discover before you change — never guess a token name.** The discovery surface IS the routing
 surface: if you type a token that doesn't exist, the edit is a silent no-op. Read the contract first:
@@ -118,6 +119,51 @@ new screen or a genuinely new component — not for restyling (rungs 1–3 do th
   (technology-scoped namespaces: `{ id, name, stack, dot }`).
 - `bsc ui validate` every spec before `bsc ui set` — never write a spec that fails the contract.
 
+## Rung 5 — Animation (motion on a component, as data)
+
+The most surgical rung: give a component **motion** — a named animation authored as DATA on its
+record, never as hand-written CSS or a `.tsx` transition. It compiles to a `@keyframes` block + an
+applying rule and plays LIVE on the real component the moment you write it, exactly like a variant.
+
+An animation is `{ name, keyframes, duration?, easing?, trigger? }`:
+
+- `name` — a safe CSS identifier (`[a-z][a-z0-9-]*`); it keys the `@keyframes` and the applying class.
+- `keyframes` — a map of stop → declarations: each stop is `from` / `to` / a percentage (`50%`), each
+  declaration is a CSS `property: value` (`{ "from": { "opacity": "0" }, "to": { "opacity": "1" } }`).
+- `duration` / `easing` — OPTIONAL; reference the **motion tokens** (`@dur-base` → `var(--dur-base)`,
+  `@ease-standard` → `var(--ease-standard)`) so motion stays coherent with the system. Defaults are
+  `var(--dur-base)` / `var(--ease-standard)`; a literal time (`220ms`) or timing-function also works.
+- `trigger` — WHEN it plays: `mount` (once on render, the default) · `hover` (on `:hover`) · `always`
+  (loops). Nothing else.
+
+**Motion honors the user.** The applying rule is wrapped in
+`@media (prefers-reduced-motion: no-preference)`, so a user who asks for less motion never sees it —
+you never gate this yourself; it's automatic.
+
+The verbs (component-animation authoring — top-level like `set`/`get`, not `bsc ui component <c> …`):
+
+- `bsc ui define-animation <component-id>` — read the animation JSON on STDIN, validate it against the
+  closed motion grammar, and UPSERT it by `name` (replace a same-named one, else append). Fires a live
+  restyle; prints the stored animation. Pipe the JSON in:
+
+  ```bash
+  echo '{
+    "name": "fade-in",
+    "keyframes": { "from": { "opacity": "0", "transform": "translateY(4px)" },
+                   "to":   { "opacity": "1", "transform": "none" } },
+    "duration": "var(--dur-base)",
+    "easing": "var(--ease-standard)",
+    "trigger": "mount"
+  }' | bsc ui define-animation card
+  ```
+
+- `bsc ui list-animations <component-id>` — the component's authored animations (read-only).
+- `bsc ui remove-animation <component-id> <name>` — drop one by name.
+
+**Same value grammar as everywhere.** Every keyframe value (and `duration` / `easing`) passes the
+closed grammar — a value carrying `;`, `{`, `url(`, `@import`, a comment, etc. is REJECTED (not
+silently dropped), so you fix it at write time. Author motion that composes with the tokens.
+
 ### The kit model
 
 A **kit** is a technology-scoped namespace (e.g. `react-ui`) of proven **components**. Each component
@@ -183,6 +229,10 @@ real defect to fix, not a note to skim:
   preview has nothing to render. Give it a **real, self-contained module** — imports ONLY libraries,
   exports the component — so it previews, or remove it. A usage-snippet `srcText` (how to CALL the
   component) is NOT an implementation; the module must define the component itself.
+
+`doctor` reconciles the composition graph; **motion is part of the same coherent kit** — any animation
+you author (rung 5) should reference the motion tokens (`@dur-base` / `@ease-standard`), not magic
+times, and honor reduced-motion (it does automatically), so the kit's motion reads as one system.
 
 ## What you never do
 
