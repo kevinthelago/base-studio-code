@@ -2,11 +2,14 @@ import { describe, it, expect } from "vitest";
 import { analyzeGraphHealth, nodeHealth } from "./graphHealth";
 import type { ComponentRecord, Role } from "./model";
 
-/** Minimal component fixture — only the fields the analyzer reads matter. */
+/** Minimal component fixture — only the fields the analyzer reads matter. Carries a real `source` so
+ *  the no-implementation check (#2839) never fires on it and the topology tests stay about topology;
+ *  the no-implementation-specific test overrides it with a deliberately source-less spec. */
 function comp(name: string, role: Role, used: number, composes: string[] = [], extra: Partial<ComponentRecord> = {}): ComponentRecord {
   return {
     id: name, name, kitId: "k", role, version: "1", used, tags: [], variants: ["default"],
-    composes, props: [], whenUse: [], whenNot: [], src: "", srcText: `src-${name}`, ...extra,
+    composes, props: [], whenUse: [], whenNot: [], src: "", srcText: `src-${name}`,
+    source: "export const C = () => null;", ...extra,
   };
 }
 
@@ -47,5 +50,29 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(map.get("Ghost")).toBe("orphan");
     expect(map.get("A")).toBe("cycle");
     expect(map.get("B")).toBe("cycle");
+  });
+
+  it("flags a source-less user spec as no-implementation but never a built-in (#2839)", () => {
+    // BUILT-IN: source-less in the store (its artifact `source` is stripped, #2794) but its `src` is a
+    // real packaged react-ui component — buildable via the artifact roster, so NOT flagged.
+    const builtin = comp("Card", "primitive", 2, [], {
+      source: undefined, src: "shared/ui/data/Card.tsx",
+      srcText: 'import { Card } from "@/shared/ui/data/Card";\n<Card />',
+    });
+    // USER SPEC: a `page` that's a design, not code — source-less, a usage-snippet srcText, and a `src`
+    // NOT in the artifact. The preview can't build it (componentPreviewFiles → null) → flagged.
+    const spec = comp("GraphExplorerPage", "page", 1, [], {
+      source: undefined, src: "user/pages/GraphExplorerPage.tsx",
+      srcText: 'import { GraphExplorerPage } from "@/x";\n<GraphExplorerPage nodes={…} />',
+    });
+    const flagged = analyzeGraphHealth([builtin, spec])
+      .filter((f) => f.category === "no-implementation")
+      .flatMap((f) => f.nodeNames);
+    expect(flagged).toContain("GraphExplorerPage");
+    expect(flagged).not.toContain("Card");
+    // The badge map picks it up (its most-severe category).
+    const map = nodeHealth([builtin, spec]);
+    expect(map.get("GraphExplorerPage")).toBe("no-implementation");
+    expect(map.get("Card")).toBeUndefined();
   });
 });

@@ -56,13 +56,19 @@
 .ds-edge path { transition: stroke .12s, fill .12s; }
 
 /* Graph-health badges (#2680) — a corner glyph on a node the analyzer flagged (mirrors `bsc ui
-   doctor`). Colored by severity: cycle/duplicate = danger, dangling = warn, orphan = dim. */
+   doctor`). Colored by severity: cycle/duplicate/no-implementation = danger, dangling = warn,
+   orphan = dim. */
 .ds-node.unhealthy { border-style: dashed; }
 .ds-health { position: absolute; top: -8px; right: -8px; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; border-radius: 50%; background: var(--bg-elev, var(--bg-soft)); border: 1px solid var(--border); z-index: 2; }
-.ds-health-cycle, .ds-health-duplicate { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); }
+.ds-health-cycle, .ds-health-duplicate, .ds-health-no-implementation { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); }
 .ds-health-dangling-branch { color: var(--state-wait, var(--warning)); border-color: color-mix(in srgb, var(--state-wait, var(--warning)) 55%, var(--border)); }
 .ds-health-orphan { color: var(--fg-dim); }
 .ds-healthcount { font-family: var(--mono); font-size: 10px; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius: 5px; padding: 1px 7px; margin-left: 8px; white-space: nowrap; }
+
+/* Preview build-error badge (#2838) — the on-visit component scan (`useComponentScan`) esbuild-builds
+   each buildable component; a node whose build FAILS gets this red glyph. Sits at the TOP-LEFT corner so
+   it never overlaps the graph-health badge (top-right, #2680) — the two signals read independently. */
+.ds-buildfail { position: absolute; top: -8px; left: -8px; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; border-radius: 50%; color: var(--danger); background: var(--bg-elev, var(--bg-soft)); border: 1px solid color-mix(in srgb, var(--danger) 60%, var(--border)); z-index: 2; }
 
 /* ── inspector bits ── */
 .ds-inspbox { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
