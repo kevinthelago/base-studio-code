@@ -521,6 +521,9 @@ function toRecord(spec: PrimitiveSpec): ComponentRecord {
     builtin: true,
     ...(g.wraps ? { wraps: g.wraps } : {}),
     ...(g.shapes ? { shapes: g.shapes } : {}),
+    // Authored motion (#2867/#2871) — carried through from the manifest spec; only emitted when
+    // present so animation-free records stay byte-identical.
+    ...(spec.animations ? { animations: spec.animations } : {}),
   };
 }
 

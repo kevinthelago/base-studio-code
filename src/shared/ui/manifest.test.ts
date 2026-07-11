@@ -50,6 +50,27 @@ describe("UI kit manifest — integrity", () => {
     expect(primitivesByGroup().pages.map((p) => p.name).sort()).toEqual(
       ["CollectionPage", "DashboardPage", "NetworkPage", "PipelinePage", "RecordPage", "TablePage", "TreeExplorerPage"]);
   });
+
+  it("carries authored-motion exemplars (#2871) referencing the motion tokens", () => {
+    // The built-in kit ships a couple of components with real authored `animations` — the exemplars
+    // proving the component-animation pipeline (#2865) end-to-end on the packaged react-ui kit.
+    const exemplars = {
+      StatusDot: { name: "pulse", trigger: "always" },
+      Card: { name: "fade-in", trigger: "mount" },
+      Button: { name: "lift", trigger: "hover" },
+    } as const;
+    for (const [comp, want] of Object.entries(exemplars)) {
+      const anims = findPrimitive(comp as never)?.animations;
+      expect(anims && anims.length, `${comp} has an authored animation`).toBeTruthy();
+      const a = anims![0];
+      expect(a.name, `${comp} animation name`).toBe(want.name);
+      expect(a.trigger, `${comp} animation trigger`).toBe(want.trigger);
+      // Duration + easing reference the motion tokens (#2866), never magic numbers.
+      expect(a.duration, `${comp} duration is a motion token`).toMatch(/^var\(--(dur|ease)-[a-z]+\)$/);
+      expect(a.easing, `${comp} easing is a motion token`).toMatch(/^var\(--ease-[a-z]+\)$/);
+      expect(Object.keys(a.keyframes).length, `${comp} has keyframe stops`).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe("UI kit manifest — sync with the render-map registry", () => {
