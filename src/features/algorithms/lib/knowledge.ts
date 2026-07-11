@@ -323,3 +323,100 @@ export function layoutKits(techs: Tech[]): KitsLayout {
   const bounds: Box = { x: PAD, y: PAD, w: world.w - PAD * 2, h: world.h - PAD * 2 };
   return { pos, world, bounds };
 }
+
+// ── The per-kit graph (#2863) — the kit's OWN graph: nodes are its implementations (a concept IS its
+// implementation), wired by `composes` (builds-on) + `pairs`, PLUS the concept ontology's semantic
+// relationships (operates-on, variant-of, generates, related-to) LIFTED onto the concrete impls so the
+// per-language graph keeps the ontology's meaning without any abstract concept blocks. Per-language, not
+// deduped: each kit renders only its own impls. This is what a kit's center graph draws. ──
+
+/** A per-kit edge relationship — the ontology rels plus `pairs` (the primitive↔algorithm counterpart link). */
+export type KitRel = KnowledgeRel | "pairs";
+
+/** An edge in a kit graph — endpoints are implementation ids (not concept ids). */
+export interface KitEdge { from: string; to: string; rel: KitRel }
+
+/** A language kit as its own graph: the kit's impls + the edges between them. */
+export interface KitGraph { nodes: AlgoImpl[]; edges: KitEdge[] }
+
+/**
+ * Build a kit's own graph (#2863) from `graph.implementations`, scoped to `tech`. Edges:
+ *  - `composes` — each impl → the same-tech impls it builds on (the "grows up" edges).
+ *  - `pairs` — undirected counterpart links (a primitive ↔ the algorithm it powers), deduped to one edge.
+ *  - lifted ontology rels — a concept-level `A —rel→ B` becomes `impl(A) —rel→ impl(B)` when BOTH concepts
+ *    have an impl in this kit (rel other than `composes`, which is already an impl-level edge). So the kit
+ *    graph inherits operates-on / variant-of / generates / related-to between the concrete impls.
+ * Pure.
+ */
+export function kitGraph(graph: KnowledgeGraph, tech: Tech): KitGraph {
+  const nodes = kitImpls(graph, tech);
+  const ids = new Set(nodes.map((n) => n.id));
+  const edges: KitEdge[] = [];
+  for (const im of nodes) {
+    for (const c of im.composes) if (ids.has(c)) edges.push({ from: im.id, to: c, rel: "composes" });
+  }
+  const seenPair = new Set<string>();
+  for (const im of nodes) {
+    for (const p of im.pairs ?? []) {
+      if (!ids.has(p)) continue;
+      const key = im.id < p ? `${im.id}|${p}` : `${p}|${im.id}`;
+      if (seenPair.has(key)) continue;
+      seenPair.add(key);
+      edges.push({ from: im.id, to: p, rel: "pairs" });
+    }
+  }
+  const implOfConcept = new Map<string, string>();
+  for (const n of nodes) if (n.concept) implOfConcept.set(n.concept, n.id);
+  for (const e of graph.edges) {
+    if (e.rel === "composes") continue; // already represented at the impl level
+    const from = implOfConcept.get(e.from), to = implOfConcept.get(e.to);
+    if (from && to && from !== to) edges.push({ from, to, rel: e.rel });
+  }
+  return { nodes, edges };
+}
+
+/** Per-impl "compose depth" within a kit: a primitive is the base (0); an algorithm is 1 + the deepest
+ *  in-kit impl it composes (min 1). Drives the left→right column layout ("grows up" reads as it deepens).
+ *  Cycle-guarded (composes shouldn't cycle, but a bad kit won't hang). */
+function composeDepth(kit: KitGraph): Map<string, number> {
+  const byId = new Map(kit.nodes.map((n) => [n.id, n]));
+  const memo = new Map<string, number>();
+  const visiting = new Set<string>();
+  const depth = (id: string): number => {
+    if (memo.has(id)) return memo.get(id)!;
+    const node = byId.get(id);
+    if (!node || node.role === "primitive") { memo.set(id, 0); return 0; }
+    if (visiting.has(id)) return 1; // cycle guard
+    visiting.add(id);
+    const composed = node.composes.filter((c) => byId.has(c));
+    const d = composed.length ? 1 + Math.max(...composed.map(depth)) : 1;
+    visiting.delete(id);
+    memo.set(id, d);
+    return d;
+  };
+  for (const n of kit.nodes) depth(n.id);
+  return memo;
+}
+
+/** Lay a kit graph out in columns by {@link composeDepth} (primitives at the base, algorithms deepening
+ *  right), stacked in seed order within a column. Same {@link KnowledgeLayout} shape as the concept graph
+ *  (positions keyed by impl id), so the SAME canvas/viewport draw it. Pure + deterministic. */
+export function layoutKitGraph(kit: KitGraph): KnowledgeLayout {
+  const depths = composeDepth(kit);
+  const pos = new Map<string, NodePos>();
+  const maxDepth = Math.max(0, ...kit.nodes.map((n) => depths.get(n.id) ?? 0));
+  const rowByCol = new Array<number>(maxDepth + 1).fill(0);
+  for (const n of kit.nodes) {
+    const col = depths.get(n.id) ?? 0;
+    const row = rowByCol[col]++;
+    pos.set(n.id, { x: PAD + col * COL_PITCH, y: PAD + row * ROW_PITCH });
+  }
+  const maxRows = Math.max(0, ...rowByCol);
+  const cols = maxDepth + 1;
+  const world = {
+    w: PAD * 2 + (cols - 1) * COL_PITCH + NODE_W,
+    h: PAD * 2 + Math.max(maxRows - 1, 0) * ROW_PITCH + NODE_H,
+  };
+  const bounds: Box = { x: PAD, y: PAD, w: world.w - PAD * 2, h: world.h - PAD * 2 };
+  return { pos, world, bounds };
+}
