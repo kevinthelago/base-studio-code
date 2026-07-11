@@ -33,6 +33,20 @@ describe("tokens-contract.css ↔ style-descriptor.json (#2567)", () => {
     expect(declared.has("--card-bg") && declared.has("--chip-border")).toBe(true);
   });
 
+  it("defines the motion tokens (#2866) — durations + easings in the base palette", () => {
+    const flat = flattenTokens(descriptor);
+    // Durations + easings live in `base` (app primitives, like the radii) so themes can re-time them
+    // and components/animations reference them by name.
+    expect(flat.find((t) => t.name === "--dur-base")).toMatchObject({ family: "base", type: "duration", default: "220ms" });
+    expect(flat.find((t) => t.name === "--dur-fast")?.type).toBe("duration");
+    expect(flat.find((t) => t.name === "--dur-slow")?.type).toBe("duration");
+    expect(flat.find((t) => t.name === "--ease-standard")).toMatchObject({ family: "base", type: "easing" });
+    expect(flat.find((t) => t.name === "--ease-emphasized")?.type).toBe("easing");
+    // and they emit into the contract CSS as var-referenceable declarations.
+    expect(css).toContain("--dur-base: 220ms;");
+    expect(css).toContain("--ease-standard: cubic-bezier(0.4, 0, 0.2, 1);");
+  });
+
   it("flattens base + component + per-variant tokens in order, with rung-2 addressing intact", () => {
     const flat = flattenTokens(descriptor);
     expect(flat.filter((t) => t.family === "base")).toHaveLength(descriptor.base.length);
