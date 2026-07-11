@@ -1,7 +1,7 @@
-// The Algorithms Workspace (#2761 · #2770 impl tier · #2773 rail) — render smoke test + the
-// select→inspector interaction. NB: node names now appear in BOTH the rail and the canvas (and a
-// selected concept also in the inspector), and complexities like "O(n log n)" repeat across cards —
-// so use getAllByText for anything that isn't inspector-unique.
+// The Algorithms Workspace (#2761 · #2863 per-kit graph) — render smoke test + the select→inspector
+// interaction over the per-kit graph. A concept IS its implementation, so the center graph's nodes are
+// the active kit's IMPLS; every impl name appears in BOTH the rail and the canvas, so use getAllByText
+// for anything that isn't inspector-unique (impl code, the role chip, section labels).
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AlgorithmsWorkspace } from "./AlgorithmsWorkspace";
@@ -26,70 +26,64 @@ beforeAll(() => {
 });
 
 describe("AlgorithmsWorkspace", () => {
-  it("renders the graph, the rail, and the empty-inspector legend", () => {
+  it("renders the per-kit graph, the rail, and the empty-inspector legend", () => {
     render(<AlgorithmsWorkspace />);
-    expect(screen.getByText(/nodes ·/)).toBeTruthy();          // read-only toolbar count "N nodes · M relationships" (#2785)
-    // "Concepts" is a node KIND now (the rail header is "Nodes", #2785) — it shows as a rail kind-group
-    // header and in the inspector's Kinds legend, so it still repeats.
-    expect(screen.getAllByText("Concepts").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Merge Sort").length).toBeGreaterThan(0); // rail + canvas
-    expect(screen.getByText("operates on")).toBeTruthy();      // inspector legend (unique)
+    expect(screen.getByText(/impls ·/)).toBeTruthy();               // breadcrumb count "N impls · M links"
+    // The active (TypeScript) kit's impls appear as nodes — in BOTH the rail and the canvas.
+    expect(screen.getAllByText("mergeSort (TypeScript)").length).toBeGreaterThan(0);
+    expect(screen.getByText("operates on")).toBeTruthy();           // empty-inspector legend (unique)
   });
 
-  it("selecting a node shows its details in the inspector", () => {
+  it("selecting an impl node shows its code + role in the inspector", () => {
     render(<AlgorithmsWorkspace />);
-    fireEvent.click(screen.getAllByText("Merge Sort")[0]);
-    expect(screen.getByText(/Split, sort halves, merge/)).toBeTruthy(); // summary (inspector-unique)
-    expect(screen.getAllByText("O(n log n)").length).toBeGreaterThan(0); // complexity (repeats)
-  });
-
-  it("shows the active-tech implementation + its builds-on for a selected concept (#2770)", () => {
-    render(<AlgorithmsWorkspace />);
-    fireEvent.click(screen.getAllByText("Merge Sort")[0]);
-    // TypeScript is the default tech — the impl section shows the TS code that calls merge...
+    fireEvent.click(screen.getAllByText("mergeSort (TypeScript)")[0]);
+    // The default (TypeScript) impl's code (inspector-unique)…
     expect(screen.getByText((c) => c.includes("return merge(left, right, cmp);"))).toBeTruthy();
-    // ...and lists the merge primitive it builds on.
-    expect(screen.getByText("Builds on")).toBeTruthy();
-    expect(screen.getByText("merge.ts")).toBeTruthy();
+    // …tagged as an algorithm (the role chip).
+    expect(screen.getByText("algorithm")).toBeTruthy();
   });
 
-  it("the language-kit selector switches the inspector to the chosen language's impl (#2863)", () => {
+  it("an algorithm impl lists the impls it builds on (#2863)", () => {
     render(<AlgorithmsWorkspace />);
-    // Both seeded kits are offered as a selector.
+    fireEvent.click(screen.getAllByText("mergeSort (TypeScript)")[0]);
+    expect(screen.getByText("Builds on")).toBeTruthy();
+    // The merge primitive it composes appears in the builds-on list (also in rail + canvas).
+    expect(screen.getAllByText("merge.ts").length).toBeGreaterThan(1);
+  });
+
+  it("switching kits re-languages the selected impl to the same concept's impl (#2863)", () => {
+    render(<AlgorithmsWorkspace />);
+    // Both seeded kits are offered in the rail's Kits section.
     expect(screen.getByText("TypeScript")).toBeTruthy();
     expect(screen.getByText("Rust")).toBeTruthy();
-    fireEvent.click(screen.getAllByText("Merge Sort")[0]);
-    // Default (TypeScript) shows the TS impl…
+    fireEvent.click(screen.getAllByText("mergeSort (TypeScript)")[0]);
     expect(screen.getByText((c) => c.includes("return merge(left, right, cmp);"))).toBeTruthy();
-    // …switching to Rust shows the Rust impl — unreachable before #2863's language selector.
+    // Switching to the Rust kit re-anchors the selection to merge-sort.rs — the Rust impl shows.
     fireEvent.click(screen.getByText("Rust"));
     expect(screen.getByText((c) => c.includes("merge(&left, &right)"))).toBeTruthy();
-    expect(screen.getByText("merge.rs")).toBeTruthy();
+    expect(screen.getAllByText("merge.rs").length).toBeGreaterThan(0);
   });
 
-  it("the rail surfaces the kit's free-standing primitives; selecting one shows its code (#2863)", () => {
+  it("the rail groups the kit's impls by role; selecting a primitive shows its code (#2863)", () => {
     render(<AlgorithmsWorkspace />);
-    // `ts.array` is a free-standing primitive — it isn't a concept node, so it appears only in the rail's
-    // Primitives section (unreachable before this slice).
-    const array = screen.getByText("Array (TypeScript)");
-    expect(array).toBeTruthy();
-    fireEvent.click(array);
-    // The inspector shows the primitive directly — the "primitive" chip + its code.
+    // `Array (TypeScript)` is a primitive — it appears in the rail's Primitives section and as a node.
+    fireEvent.click(screen.getAllByText("Array (TypeScript)")[0]);
+    // The inspector shows it directly — the "primitive" chip + its code.
     expect(screen.getByText("primitive")).toBeTruthy();
     expect(screen.getByText((c) => c.includes("xs.push(4)"))).toBeTruthy();
   });
 
   it("kits are navigable on the graph — pop to the kits index and drill into a kit (#2863)", () => {
     const { container } = render(<AlgorithmsWorkspace />);
-    // The header breadcrumb pops up to the kits-index layer (the coarse layer above the concept graph).
+    // The header breadcrumb pops up to the kits-index layer (the coarse layer above the kit graph).
     fireEvent.click(screen.getByRole("button", { name: "Kits" }));
     // The index renders a card per language kit.
     const rustCard = container.querySelector('[data-kit="rust"]');
     expect(rustCard).toBeTruthy();
     expect(container.querySelector('[data-kit="typescript"]')).toBeTruthy();
-    // Drilling into the Rust kit opens its graph — a concept there then shows the Rust implementation.
+    // Drilling into the Rust kit opens its graph — a Rust impl there shows the Rust code.
     fireEvent.click(rustCard!);
-    fireEvent.click(screen.getAllByText("Merge Sort")[0]);
+    fireEvent.click(screen.getAllByText("merge_sort (Rust)")[0]);
     expect(screen.getByText((c) => c.includes("merge(&left, &right)"))).toBeTruthy();
   });
 });
