@@ -52,4 +52,18 @@ describe("AlgorithmsWorkspace", () => {
     expect(screen.getByText("Builds on")).toBeTruthy();
     expect(screen.getByText("merge.ts")).toBeTruthy();
   });
+
+  it("the language-kit selector switches the inspector to the chosen language's impl (#2863)", () => {
+    render(<AlgorithmsWorkspace />);
+    // Both seeded kits are offered as a selector.
+    expect(screen.getByText("TypeScript")).toBeTruthy();
+    expect(screen.getByText("Rust")).toBeTruthy();
+    fireEvent.click(screen.getAllByText("Merge Sort")[0]);
+    // Default (TypeScript) shows the TS impl…
+    expect(screen.getByText((c) => c.includes("return merge(left, right, cmp);"))).toBeTruthy();
+    // …switching to Rust shows the Rust impl — unreachable before #2863's language selector.
+    fireEvent.click(screen.getByText("Rust"));
+    expect(screen.getByText((c) => c.includes("merge(&left, &right)"))).toBeTruthy();
+    expect(screen.getByText("merge.rs")).toBeTruthy();
+  });
 });
