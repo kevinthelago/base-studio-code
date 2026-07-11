@@ -10,4 +10,7 @@ export type {
 export { validateKitNode, NODE_CONTRACT } from "./schema";
 export { KitRenderer } from "./KitRenderer";
 export type { KitRendererProps, KitBindings } from "./KitRenderer";
+export { SelfWiredKitRenderer } from "./SelfWiredKitRenderer";
+export type { SelfWiredKitRendererProps } from "./SelfWiredKitRenderer";
+export { visitNodes, collectActions } from "./specWalk";
 export { demoSpec } from "./demoSpec";

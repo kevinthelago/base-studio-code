@@ -12,7 +12,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { ThemeScope } from "@/shared/ui/kit";
-import { KitRenderer, demoSpec } from "@/shared/ui/spec";
+import { SelfWiredKitRenderer, demoSpec } from "@/shared/ui/spec";
 import { useAppStore } from "@/store";
 
 export function KitThemeCard() {
@@ -38,14 +38,16 @@ export function KitThemeCard() {
         </Row>
         <Text tone="dim" size="sm">{active.description}</Text>
 
-        {/* Live preview: the SDK demo spec, rendered under the selected theme (scoped). */}
+        {/* Live preview: the SDK demo spec, rendered under the selected theme (scoped) and self-wired
+            (#2868) so its controls demonstrate their expected behavior — the toggle toggles, the
+            select selects — seeded from a sensible starting state. */}
         <Box>
           <Text tone="muted" size="xs" mono style={{ textTransform: "uppercase", letterSpacing: ".06em" }}>
             Preview
           </Text>
           <Box style={{ marginTop: 6, maxWidth: 340 }}>
             <ThemeScope theme={kitTheme}>
-              <KitRenderer node={demoSpec} values={{ provider: "anthropic", stream: true }} />
+              <SelfWiredKitRenderer node={demoSpec} initial={{ provider: "anthropic", stream: true }} />
             </ThemeScope>
           </Box>
         </Box>
