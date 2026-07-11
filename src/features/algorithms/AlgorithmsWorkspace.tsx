@@ -12,6 +12,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Button } from "@/shared/ui/controls/Button";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
+import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { useDockEntrance } from "@/shared/hooks/useDockEntrance";
@@ -21,7 +22,7 @@ import { AlgorithmsRail } from "./AlgorithmsRail";
 import { LibrarianTerminal } from "./LibrarianTerminal";
 import {
   TECHS, TECH_META, NODE_W, NODE_H, layoutKitGraph, kitGraph, kitTechs, implById,
-  type Tech,
+  KIT_REL_META, KIT_REL_ORDER, type Tech,
 } from "./lib/knowledge";
 import { useKnowledgeGraph } from "./useKnowledgeGraph";
 import "./algorithms.css";
@@ -40,6 +41,14 @@ export function AlgorithmsWorkspace() {
   // The active language's OWN graph (impls + composes/pairs/lifted edges) + its layout.
   const kit = useMemo(() => kitGraph(graph, activeTech), [graph, activeTech]);
   const kitLayout = useMemo(() => layoutKitGraph(kit), [kit]);
+
+  // The on-graph legend (#2909) — the relationship types ACTUALLY present in this kit's edges, keyed off
+  // the same KIT_REL_META the canvas draws with, so it reads relevant to the language on screen.
+  const legend = useMemo(() => {
+    const present = new Set(kit.edges.map((e) => e.rel));
+    const edges = KIT_REL_ORDER.filter((r) => present.has(r)).map((r) => ({ label: KIT_REL_META[r].label, dashed: KIT_REL_META[r].dashed }));
+    return <GraphLegend sections={[{ label: "Relationships", edges }]} />;
+  }, [kit.edges]);
 
   const vp = useGraphViewport(kitLayout.world, { contentBounds: () => kitLayout.bounds });
   // Frame the content on mount AND whenever the active language switches (each kit has its own world).
@@ -87,6 +96,7 @@ export function AlgorithmsWorkspace() {
       world={kitLayout.world}
       grid
       toolbar={toolbar}
+      overlays={legend}
       rail={<AlgorithmsRail graph={graph} activeTech={activeTech} selectedImpl={selectedImpl} onSelectImpl={selectImplFromRail} onSelectLang={selectLang} />}
       railResizable
       railWidth={230}

@@ -26,14 +26,17 @@ beforeAll(() => {
 });
 
 describe("AlgorithmsWorkspace", () => {
-  it("renders a folder per language with its impls, and the empty-inspector legend", () => {
+  it("renders a folder per language, its impls, and the on-graph relationships legend (#2909)", () => {
     render(<AlgorithmsWorkspace />);
     // Each language is a folder head in the rail (mirroring the Components tech folders, #2899).
     expect(screen.getByText("TypeScript")).toBeTruthy();
     expect(screen.getByText("Rust")).toBeTruthy();
     // Folders default open, so the active (TypeScript) kit's impls show — as rail rows + canvas nodes.
     expect(screen.getAllByText("mergeSort (TypeScript)").length).toBeGreaterThan(0);
-    expect(screen.getByText("operates on")).toBeTruthy(); // empty-inspector legend (unique)
+    // The on-graph legend (not the inspector) keys the edge types present in the kit — `composes` is live
+    // (merge-sort.ts composes merge.ts).
+    expect(screen.getByText("Relationships")).toBeTruthy();
+    expect(screen.getByText("composes")).toBeTruthy();
   });
 
   it("selecting an impl shows its code + role in the inspector", () => {
