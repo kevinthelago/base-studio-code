@@ -339,3 +339,28 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     ]);
   });
 });
+
+describe("theme try-on preview (#2834)", () => {
+  it("no expand affordance until a component is selected (the inspector is at its empty state)", () => {
+    render(<DesignsWorkbench />);
+    expect(screen.queryByRole("button", { name: /Expand .*preview/ })).toBeNull();
+  });
+
+  it("the selected component's preview thumbnail is a clickable expand affordance", () => {
+    render(<DesignsWorkbench />);
+    fireEvent.click(graphNode("Chip"));                              // focus reveals the inspector preview
+    // The thumbnail is a button, labelled so it reads as clickable (the hover cue is CSS on top).
+    expect(screen.getByRole("button", { name: /Expand Chip preview/ })).toBeTruthy();
+  });
+
+  it("clicking the thumbnail opens the in-place theme preview over the graph; Back to graph closes it", () => {
+    render(<DesignsWorkbench />);
+    fireEvent.click(graphNode("Chip"));
+    expect(screen.queryByText("Theme preview")).toBeNull();          // not expanded yet
+    fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
+    expect(screen.getByText("Theme preview")).toBeTruthy();          // the expanded surface mounted…
+    expect(screen.getByRole("button", { name: /Back to graph/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Back to graph/ }));
+    expect(screen.queryByText("Theme preview")).toBeNull();          // …and collapses back to the graph
+  });
+});

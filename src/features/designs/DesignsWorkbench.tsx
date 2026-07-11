@@ -87,6 +87,10 @@ export function DesignsWorkbench() {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({ [kits[0]?.id ?? ""]: true }));
   const [shareOpen, setShareOpen] = useState(false); // the share/import kits modal (#2305 slice 1c)
+  // Theme try-on (#2834): clicking the inspector's preview thumbnail promotes it to a full-canvas
+  // preview over the graph, where the selected component is the vehicle for viewing each theme. The
+  // left rail keeps navigating components while it's open; "← Back to graph" closes it.
+  const [previewMode, setPreviewMode] = useState(false);
   // Live-focus (#2525): the designer session is ALWAYS mounted (#2597), so poll its activity stream
   // for the whole Design Studio lifecycle; clear the focus when the studio unmounts.
   useUiActivity(true);
@@ -249,8 +253,37 @@ export function DesignsWorkbench() {
             kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
             previewTheme={theme}
             composes={composes} onSelect={selectComp}
+            onExpand={() => setPreviewMode(true)}
           />
         }
+        // Theme try-on (#2834): the expanded preview rides the untransformed `overlays` slot so it
+        // covers the canvas (not the rail/inspector) and never pans/zooms. It renders only with an open
+        // preview AND a live selection; stopPropagation keeps clicks off the canvas pan/deselect wiring.
+        overlays={previewMode && sel ? (
+          <Box
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            style={{ position: "absolute", inset: 0, zIndex: 5, display: "flex", flexDirection: "column", background: "var(--bg-canvas, var(--bg))" }}
+          >
+            <Box style={{ display: "flex", alignItems: "center", gap: 12, flex: "none", padding: "10px 14px", borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)" }}>
+              <Button variant="ghost" onClick={() => setPreviewMode(false)}>← Back to graph</Button>
+              <Eyebrow size={9.5}>Theme preview</Eyebrow>
+              <Text weight={600} size={13}>{sel.name}</Text>
+              <Box style={{ flex: 1 }} />
+              <Text mono size="xxs" tone="muted">{kitThemes.find((t) => t.id === kitTheme)?.label}</Text>
+            </Box>
+            <Box style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, overflow: "auto" }}>
+              <ComponentPreviewFrame
+                comp={sel}
+                theme={theme}
+                themeId={kitTheme}
+                themeVars={kitThemes.find((t) => t.id === kitTheme)?.vars ?? {}}
+                width={VP[vp].w}
+                height={440}
+              />
+            </Box>
+          </Box>
+        ) : undefined}
       >
         <svg width={graph.world.w} height={graph.world.h} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
           {orderedEdges.map((e) => {
@@ -335,6 +368,8 @@ interface InspProps {
   kitTheme: string; setKitTheme: (id: string) => void; kitThemes: KitThemeRecord[];
   previewTheme: PreviewTheme;
   composes: ReturnType<typeof resolveComposes>; onSelect: (c: ComponentRecord) => void;
+  /** Promote the thumbnail to the full-canvas theme try-on (#2834). */
+  onExpand: () => void;
 }
 function Inspector(p: InspProps) {
   const sel = p.sel;
@@ -393,6 +428,7 @@ function Inspector(p: InspProps) {
                   themeId={p.kitTheme}
                   themeVars={p.kitThemes.find((t) => t.id === p.kitTheme)?.vars ?? {}}
                   width={VP[p.vp].w}
+                  onExpand={p.onExpand}
                 />
               </Box>
               <Text as="div" className="ds-vplabel">{VP[p.vp].label}</Text>
