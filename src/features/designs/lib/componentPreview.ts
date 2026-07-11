@@ -7,9 +7,14 @@
 //     artifact's whole component + `runtime` (@/ dependency-closure) set as in-memory files. esbuild
 //     tree-shakes to just what the entry imports; the mem plugin resolves `@/…` to these files and
 //     bare imports (react, d3) to esm.sh.
-//   • USER-AUTHORED component → its own self-contained `source` (imports libraries as bare specifiers,
-//     which resolve from esm.sh). This is the case that renders arbitrary-library components — a d3
-//     component previews with no install.
+//   • USER-AUTHORED component → its own self-contained implementation source (imports libraries as bare
+//     specifiers, which resolve from esm.sh). This is the case that renders arbitrary-library components
+//     — a d3 component previews with no install. The store record deliberately omits the artifact-only
+//     `source` field (it's a contract catalog, #2794), so we take that source from `comp.source` when
+//     present, ELSE from `comp.srcText` WHEN it's a real module rather than the usual usage snippet
+//     (`looksBuildableModule`, #2828). A usage-snippet `srcText` (`import { X } from "@/…"; <X …/>`) is
+//     NOT buildable — its `@/` first-party imports have no closure to resolve against and its `…`
+//     placeholders don't compile — so it stays an honest empty state.
 //
 // The bootstrap imports the component and mounts it with sample props derived from its prop schema, so a
 // component with required props still renders something representative (not a curated mock).
@@ -38,6 +43,29 @@ export const PREVIEW_ENTRY = "__component_preview__.tsx";
 /** Drop the `.ts`/`.tsx` extension from a `src/`-relative path so it reads as an import specifier. */
 function stripExt(path: string): string {
   return path.replace(/\.(tsx|ts|jsx|js)$/, "");
+}
+
+/**
+ * Does `srcText` look like a self-contained, buildable component MODULE rather than a usage snippet?
+ *
+ * A component STORE record carries only `srcText` (the artifact-only `source` is stripped from the
+ * store — it's a contract catalog, #2794). For most records that `srcText` is a usage snippet —
+ * `import { X } from "@/…"; <X …/>` — which is NOT buildable here: its `@/` first-party imports have
+ * no dependency closure to resolve against (only the built-in kit ships one), and its `…` placeholders
+ * don't compile. A designer session CAN instead author a real, self-contained module into `srcText`
+ * (importing only bare libraries, which resolve from esm.sh); that one previews.
+ *
+ * Heuristic (deliberately conservative — false-negative into the honest empty state, never a false
+ * "buildable" that always throws): it must declare an `export` for the bootstrap to import, contain no
+ * `…` placeholder, and use no `@/` first-party import.
+ */
+export function looksBuildableModule(srcText: string | undefined): boolean {
+  const s = (srcText ?? "").trim();
+  if (!s) return false;
+  if (!/\bexport\b/.test(s)) return false; // no export ⇒ nothing for the bootstrap to import + mount
+  if (s.includes("…")) return false; // the `…` usage-snippet placeholder ⇒ won't compile
+  if (/["']@\//.test(s)) return false; // `@/` first-party import ⇒ no closure to resolve it against
+  return true;
 }
 
 /**
@@ -112,8 +140,10 @@ export function bootstrapSource(comp: ComponentRecord, importSpec: string): stri
  *
  * BUILT-IN (its `src` is in `artifact` with a `source`): hand esbuild the artifact's whole component +
  * `runtime` set (keyed by `src/`-relative path) so `@/…` imports resolve; the entry imports the target
- * via its `@/…` spec. USER-AUTHORED (`comp.source` set, not in the artifact): its self-contained source
- * at `comp.src` (or a synthetic path), imported by the entry.
+ * via its `@/…` spec. USER-AUTHORED (not in the artifact): its self-contained implementation source —
+ * `comp.source` when present, ELSE a `comp.srcText` that {@link looksBuildableModule} — placed at
+ * `comp.src` (or a synthetic path) and imported by the entry. A usage-snippet `srcText` yields `null`
+ * (the honest empty state).
  */
 export function componentPreviewFiles(comp: ComponentRecord, artifact: KitArtifact): ComponentPreviewBuild | null {
   const inArtifact = comp.src ? artifact.components.find((c) => c.src === comp.src && c.source) : undefined;
@@ -127,11 +157,16 @@ export function componentPreviewFiles(comp: ComponentRecord, artifact: KitArtifa
     return { files, entry: PREVIEW_ENTRY };
   }
 
-  // User-authored: needs its own self-contained implementation source.
-  if (comp.source && comp.source.trim()) {
+  // User-authored: build from its own self-contained implementation source — the explicit `source`
+  // field when present, else a `srcText` that is a real module (not the usual usage snippet, #2828).
+  const userSource =
+    comp.source && comp.source.trim() ? comp.source
+    : looksBuildableModule(comp.srcText) ? comp.srcText
+    : null;
+  if (userSource) {
     const path = comp.src?.trim() ? comp.src : `user/${comp.id || "component"}.tsx`;
     const importSpec = `@/${stripExt(path)}`;
-    const files: Record<string, string> = { [path]: comp.source, [PREVIEW_ENTRY]: bootstrapSource(comp, importSpec) };
+    const files: Record<string, string> = { [path]: userSource, [PREVIEW_ENTRY]: bootstrapSource(comp, importSpec) };
     return { files, entry: PREVIEW_ENTRY };
   }
 

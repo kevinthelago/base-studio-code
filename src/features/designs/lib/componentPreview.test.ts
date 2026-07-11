@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { componentPreviewFiles, bootstrapSource, samplePropValue, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
+import { componentPreviewFiles, bootstrapSource, samplePropValue, looksBuildableModule, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
 import type { ComponentRecord, PropSpec } from "./model";
 
 const prop = (name: string, type: string, req = false): PropSpec => ({ name, type, req, desc: "" });
@@ -48,6 +48,51 @@ describe("componentPreviewFiles (#2824)", () => {
   it("returns null when there is no buildable source (a bare catalog stub)", () => {
     const stub: ComponentRecord = { ...base, id: "ghost", name: "Ghost", src: "nowhere/Ghost.tsx", source: undefined };
     expect(componentPreviewFiles(stub, ARTIFACT)).toBeNull();
+  });
+
+  it("falls back to a USER-AUTHORED component's srcText WHEN it's a self-contained module (#2828)", () => {
+    // No artifact `source` (a user component the store omits `source` for), but its srcText is a real
+    // module importing only a bare library → buildable via esm.sh, imported under its `src` path.
+    const authored: ComponentRecord = {
+      ...base, id: "gx", name: "GraphExplorerPage", kitId: "user-kit", src: "user/pages/GraphExplorerPage.tsx",
+      source: undefined,
+      srcText: 'import * as d3 from "d3";\nexport function GraphExplorerPage() { return null; }',
+    };
+    const build = componentPreviewFiles(authored, ARTIFACT)!;
+    expect(build).not.toBeNull();
+    expect(build.files["user/pages/GraphExplorerPage.tsx"]).toContain("export function GraphExplorerPage");
+    expect(Object.values(build.files).some((s) => s.includes('from "d3"'))).toBe(true);
+    expect(build.files[PREVIEW_ENTRY]).toContain('import * as __mod from "@/user/pages/GraphExplorerPage"');
+    expect(build.files[PREVIEW_ENTRY]).toContain('__mod["GraphExplorerPage"]');
+  });
+
+  it("returns null for a USER-AUTHORED component whose srcText is only a usage snippet (#2828)", () => {
+    // The common case: the store record carries a usage snippet (`@/` import + `…` placeholder), which
+    // is NOT a runnable module → honest empty state, not a doomed build.
+    const snippet: ComponentRecord = {
+      ...base, id: "gx", name: "GraphExplorerPage", kitId: "user-kit", src: "user/pages/GraphExplorerPage.tsx",
+      source: undefined,
+      srcText: 'import { GraphExplorerPage } from "@/shared/ui/pages/GraphExplorerPage";\n\n<GraphExplorerPage nodes={…} />',
+    };
+    expect(componentPreviewFiles(snippet, ARTIFACT)).toBeNull();
+  });
+});
+
+describe("looksBuildableModule (#2828)", () => {
+  it("accepts a self-contained module (has an export, no `@/` import, no `…` placeholder)", () => {
+    expect(looksBuildableModule('import * as d3 from "d3";\nexport function Foo() { return null; }')).toBe(true);
+    expect(looksBuildableModule("export default function Foo() { return null; }")).toBe(true);
+  });
+
+  it("rejects a usage snippet, an empty string, and a module with no export", () => {
+    expect(looksBuildableModule("")).toBe(false);
+    expect(looksBuildableModule(undefined)).toBe(false);
+    // `@/` first-party import — no closure to resolve it against.
+    expect(looksBuildableModule('import { Card } from "@/shared/ui/data/Card";\nexport function X() {}')).toBe(false);
+    // `…` placeholder — won't compile.
+    expect(looksBuildableModule("export function X() { return <Card>…</Card>; }")).toBe(false);
+    // No export — nothing for the bootstrap to import + mount.
+    expect(looksBuildableModule("const x = 1;")).toBe(false);
   });
 });
 
