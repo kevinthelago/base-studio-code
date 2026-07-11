@@ -15,7 +15,9 @@ Everything you produce lives in the shared component-library store and is reache
 **The design surface is the RUNNING app.** Every token/variant/theme edit you make fires a live
 restyle — the desktop app re-applies it immediately, no rebuild, no `.tsx`. You never edit React. You
 change **data** (tokens, variants, themes, specs) and the hand-written renderer reflects it. So the
-loop is always: **discover → change → look at the running app → refine.**
+loop is always: **discover → change → look at the running app → run `bsc ui doctor` and reconcile →
+refine.** The `doctor` step is required, not optional (see "Graph health — reconcile every finding"
+below).
 
 ## The graduated ladder — pick the highest rung that fits
 
@@ -146,6 +148,41 @@ record carries:
   matching rule so generated apps can't drift around it.
 - **Validate first**: run `bsc ui validate` on every spec before `bsc ui set`; never write a spec
   that fails the contract.
+
+## Graph health — reconcile every finding (`bsc ui doctor`)
+
+The Standards above are what a coherent kit looks like; **`bsc ui doctor` is how you check you're
+still there.** It walks each kit's composition graph (nodes = components, edges = `composes`) and
+reports the dead, duplicated, and broken design a growing kit accumulates as you author — so you
+discover and reconcile it in ONE call. It is a **required** step of the loop, not optional: after
+every component you add or change, run `bsc ui doctor` and drive its report to empty before you move
+on. Treat a clean `doctor` the same way you treat a passing `bsc ui validate` — the bar for "done".
+
+- `bsc ui doctor [--kit <k>] [--json] [--pretty]` — the health report (read-only). Findings are ranked
+  most-severe-first; `--json` emits the machine-readable findings array; `--kit` scopes to one kit.
+- `bsc ui doctor --fix [--kit <k>] [--yes]` — prune ONLY the safe dead roots (the ROOT of each
+  **orphan** / **dangling-branch** finding — never a used node, never a duplicate or a cycle). It is a
+  **DRY RUN by default** (prints what WOULD be removed); pass `--yes` to apply, then re-run `doctor`
+  (removing a root can newly orphan its children). There is **no** `bsc ui prune` — pruning is
+  `doctor --fix`; for a single node, `bsc ui remove <id>`.
+
+**Reconcile EVERY finding — whatever its severity: errors, warnings, and suggestions alike.** Each is a
+real defect to fix, not a note to skim:
+
+- **cycle** — a `composes` loop. Break it; a composition graph must be acyclic (a cycle also breaks the
+  layered layout). Never auto-pruned — fix by hand.
+- **duplicate** — two components wrapping the same intrinsic, or with byte-identical source. Merge into
+  the most-used one and repoint the rest (a shared component + a variant per rung 3, not a fork). Never
+  auto-pruned — merge by hand.
+- **dangling-branch** — an unused root (nothing composes it, `used = 0`) that still pulls in
+  dependencies. Prune the branch from its root (`doctor --fix`), checking each dependency isn't shared
+  by a live component first.
+- **orphan** — an isolated, never-referenced primitive/composite (nothing composes it, `used = 0`).
+  Either compose it into a page/layout (it was mis-roled or left unwired) or prune it.
+- **no buildable implementation** — a component you authored as a spec with no real source, so the
+  preview has nothing to render. Give it a **real, self-contained module** — imports ONLY libraries,
+  exports the component — so it previews, or remove it. A usage-snippet `srcText` (how to CALL the
+  component) is NOT an implementation; the module must define the component itself.
 
 ## What you never do
 
