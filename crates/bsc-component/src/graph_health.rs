@@ -11,9 +11,17 @@
 //!
 //! Findings (most-severe first): **cycle** (a `composes` loop — also breaks the layered layout) ·
 //! **dangling-branch** (an unused root that still pulls in dependencies) · **duplicate** (two
-//! components wrapping the same intrinsic, or byte-identical source) · **orphan** (an isolated,
+//! components wrapping the same intrinsic, or byte-identical source) · **no-implementation** (a
+//! component the Design Studio preview can't build — a spec, not code) · **orphan** (an isolated,
 //! never-referenced primitive/composite). "Unused" = orphan ∪ dangling-branch — a node with no
 //! composer AND `used == 0`; a `page`/`layout` with `used > 0` is a legit entry point, never flagged.
+//!
+//! The **no-implementation** check is artifact-aware: a store record strips a built-in's `source`
+//! (#2794), so both built-ins and user specs look source-less in the store — but a built-in still
+//! builds because its real code lives in the packaged react-ui artifact. So a node is buildable iff
+//! its `src` is in that artifact (with `source`), OR it carries its own non-empty `source`, OR its
+//! `srcText` is a real module (`looks_buildable_module`) — the exact `componentPreviewFiles` logic
+//! (#2824/#2828). Only a node that is NONE of those is flagged (mirrors `graphHealth.ts`).
 
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -21,7 +29,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// One health finding — LLM-consumable: what, where, why, and what to do about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
-    /// `cycle` | `dangling-branch` | `duplicate` | `orphan`.
+    /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `orphan`.
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -64,6 +72,12 @@ struct Node {
     composes: Vec<String>,
     wraps: Option<String>,
     src_text: String,
+    /// `src/`-relative source path — cross-referenced against the packaged artifact roster for the
+    /// buildability check (a built-in's real code lives in the artifact even though the store strips it).
+    src: String,
+    /// The component's own implementation `source`, when it carries one (a user-authored module).
+    /// The store strips a built-in's `source` (#2794), so this is empty for built-ins.
+    source: String,
 }
 
 fn s(v: &Value, key: &str) -> String {
@@ -94,7 +108,87 @@ fn parse_node(v: &Value) -> Option<Node> {
             .unwrap_or_default(),
         wraps: v.get("wraps").and_then(Value::as_str).filter(|w| !w.is_empty()).map(str::to_string),
         src_text: s(v, "srcText"),
+        src: s(v, "src"),
+        source: s(v, "source"),
     })
+}
+
+/// The packaged `bsc/react-ui` kit artifact — the SAME embedded `react-ui.json` the kit store + the
+/// vendored-source emit read (`bsc_ui::kit::PACKAGED_KIT_JSON`). Embedded here too because this crate
+/// can't depend on `bsc-ui` (that edge would cycle), so the buildability check can cross-reference a
+/// component's `src` against the artifact roster with no fs/network — exactly like the frontend's raw
+/// `@data/components/react-ui.json` import that `componentPreviewFiles` resolves a built-in against.
+const PACKAGED_KIT_JSON: &str = include_str!("../../../src-tauri/data/components/react-ui.json");
+
+/// The set of packaged-artifact component `src` paths that ship a real implementation `source` — the
+/// "buildable roster" the Design Studio preview (`componentPreviewFiles`, #2824) resolves a built-in
+/// against. Cached: parsed once from the embedded artifact.
+fn buildable_srcs() -> &'static BTreeSet<String> {
+    static ROSTER: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+    ROSTER.get_or_init(|| artifact_buildable_srcs(PACKAGED_KIT_JSON))
+}
+
+/// Collect the `src` of every component in a kit-artifact JSON that carries a non-empty `source` (a
+/// real implementation file) — mirrors the `comp.src === c.src && c.source` artifact match in
+/// `componentPreviewFiles`. Pure over the JSON text (testable without the embed); a malformed artifact
+/// yields an empty roster, so the check just falls back to own-source / srcText — fail safe.
+fn artifact_buildable_srcs(artifact_json: &str) -> BTreeSet<String> {
+    let Ok(v) = serde_json::from_str::<Value>(artifact_json) else {
+        return BTreeSet::new();
+    };
+    v.get("components")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|c| {
+            let src = c.get("src").and_then(Value::as_str).filter(|s| !s.is_empty())?;
+            let has_source = c.get("source").and_then(Value::as_str).is_some_and(|s| !s.is_empty());
+            has_source.then(|| src.to_string())
+        })
+        .collect()
+}
+
+/// Whether a component has a buildable implementation the Design Studio preview can render — the Rust
+/// mirror of `componentPreviewFiles(comp, artifact) !== null` (componentPreview.ts, #2824/#2828).
+/// Buildable iff: its `src` is a packaged-artifact component shipping a real `source` (a BUILT-IN — its
+/// code lives in the artifact even though the store strips it, #2794), OR it carries its own non-empty
+/// `source`, OR its `srcText` is a real module rather than a usage snippet (`looks_buildable_module`).
+fn is_buildable(node: &Node, buildable: &BTreeSet<String>) -> bool {
+    (!node.src.is_empty() && buildable.contains(&node.src))
+        || !node.source.trim().is_empty()
+        || looks_buildable_module(&node.src_text)
+}
+
+/// Rust port of `looksBuildableModule` (componentPreview.ts, #2828): does `src_text` look like a
+/// self-contained, buildable component MODULE rather than the usual usage snippet? Conservative — it
+/// must declare an `export`, contain no `…` usage-snippet placeholder, and use no `@/` first-party
+/// import (which has no dependency closure to resolve against here). MUST stay in lockstep with the TS
+/// twin — both gate the SAME preview build.
+fn looks_buildable_module(src_text: &str) -> bool {
+    let s = src_text.trim();
+    !s.is_empty()
+        && contains_word(s, "export") // an export for the bootstrap to import + mount
+        && !s.contains('…') // the `…` usage-snippet placeholder won't compile
+        && !s.contains("\"@/") // a `@/` first-party import — no closure to resolve it against here
+        && !s.contains("'@/")
+}
+
+/// Whether `needle` appears in `haystack` as a whole word (the JS `\bword\b` the TS twin uses) —
+/// bounded by a non-word char (`[^A-Za-z0-9_]`) or the string edge on each side.
+fn contains_word(haystack: &str, needle: &str) -> bool {
+    let is_word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut from = 0;
+    while let Some(rel) = haystack[from..].find(needle) {
+        let at = from + rel;
+        let before_ok = haystack[..at].chars().next_back().is_none_or(|c| !is_word(c));
+        let after = at + needle.len();
+        let after_ok = haystack[after..].chars().next().is_none_or(|c| !is_word(c));
+        if before_ok && after_ok {
+            return true;
+        }
+        from = at + 1;
+    }
+    false
 }
 
 /// Analyze the component records for graph-health findings, grouped and scoped PER KIT (edges only
@@ -106,9 +200,10 @@ pub fn analyze(components: &[Value]) -> Vec<Finding> {
     for n in &nodes {
         by_kit.entry(n.kit.as_str()).or_default().push(n);
     }
+    let buildable = buildable_srcs();
     let mut out = Vec::new();
     for (kit, kit_nodes) in by_kit {
-        analyze_kit(kit, &kit_nodes, &mut out);
+        analyze_kit(kit, &kit_nodes, buildable, &mut out);
     }
     out.sort_by(|a, b| {
         b.severity
@@ -130,8 +225,8 @@ pub struct Prunable {
 /// The safe-to-remove set (#2679): the ROOT of every orphan / dangling-branch finding — a node with
 /// no composer and `used == 0`. Deliberately NOT the branch DESCENDANTS (one might be shared by a live
 /// component): removing the roots and re-running `doctor` surfaces any newly-orphaned children on the
-/// next pass. Cycles and duplicates are never auto-pruned (they need a human's merge/break call). By
-/// construction a `used > 0` node can never appear here.
+/// next pass. Cycles, duplicates, and no-implementation findings are never auto-pruned (they need a
+/// human's merge/break/author call). By construction a `used > 0` node can never appear here.
 pub fn prunable(components: &[Value]) -> Vec<Prunable> {
     analyze(components)
         .into_iter()
@@ -146,7 +241,7 @@ pub fn prunable(components: &[Value]) -> Vec<Prunable> {
         .collect()
 }
 
-fn analyze_kit(kit: &str, nodes: &[&Node], out: &mut Vec<Finding>) {
+fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &mut Vec<Finding>) {
     // Name → id (in-kit). A duplicate NAME would collide; the store keys by id, so we keep the first.
     let mut id_by_name: BTreeMap<&str, &str> = BTreeMap::new();
     for n in nodes {
@@ -184,6 +279,33 @@ fn analyze_kit(kit: &str, nodes: &[&Node], out: &mut Vec<Finding>) {
             node_names: names.clone(),
             why: format!("these components form a `composes` cycle: {}", names.join(" → ")),
             suggested_action: "break the loop — a composition graph must be acyclic (it also breaks the layered layout)".to_string(),
+        });
+    }
+
+    // ── no-implementation (severity 3): a component the Design Studio preview can't build
+    // (componentPreviewFiles → null) — it's a spec, not code. The store strips a built-in's artifact
+    // `source` (#2794), so a BUILT-IN looks source-less yet builds from the packaged artifact; only a
+    // node in NEITHER the artifact roster NOR carrying its own module/`source` is flagged (a user-
+    // authored spec, e.g. a `page` like GraphExplorerPage). Independent of used/role/degree — an
+    // unrenderable node is always flagged. Mirrors the frontend `analyzeGraphHealth` (graphHealth.ts).
+    for n in nodes {
+        if is_buildable(n, buildable) {
+            continue;
+        }
+        out.push(Finding {
+            category: "no-implementation",
+            severity: 3,
+            kit: kit.to_string(),
+            node_ids: vec![n.id.clone()],
+            node_names: vec![n.name.clone()],
+            why: format!(
+                "`{}` has no buildable implementation — the preview can't render it (a spec, not code)",
+                n.name
+            ),
+            suggested_action: format!(
+                "author a self-contained module for `{}` (its own `source`/`srcText`) or compose it from built-in kit components",
+                n.name
+            ),
         });
     }
 
@@ -369,9 +491,13 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    // A buildable component fixture — it carries its own `source` (a real module), so the
+    // no-implementation check never fires on it and the topology tests below stay about topology.
+    // (The no-implementation-specific tests build their own deliberately source-less fixtures.)
     fn comp(id: &str, role: &str, used: i64, composes: &[&str]) -> Value {
         json!({ "id": id, "name": id, "kitId": "k", "role": role, "used": used,
-                "composes": composes, "srcText": format!("src-{id}") })
+                "composes": composes, "srcText": format!("src-{id}"),
+                "source": "export const C = () => null;" })
     }
 
     fn cats(fs: &[Finding]) -> Vec<&str> {
@@ -383,8 +509,8 @@ mod tests {
         // Page → Card → Button, all used; nothing dead or duplicated.
         let comps = [
             comp("page", "page", 1, &["Card"]),
-            json!({ "id": "Card", "name": "Card", "kitId": "k", "role": "composite", "used": 3, "composes": ["Button"], "srcText": "card" }),
-            json!({ "id": "Button", "name": "Button", "kitId": "k", "role": "primitive", "used": 9, "composes": [], "srcText": "btn" }),
+            json!({ "id": "Card", "name": "Card", "kitId": "k", "role": "composite", "used": 3, "composes": ["Button"], "srcText": "card", "source": "export const C = () => null;" }),
+            json!({ "id": "Button", "name": "Button", "kitId": "k", "role": "primitive", "used": 9, "composes": [], "srcText": "btn", "source": "export const C = () => null;" }),
         ];
         assert!(analyze(&comps).is_empty());
     }
@@ -410,8 +536,8 @@ mod tests {
     fn flags_an_unused_root_with_deps_as_a_dangling_branch() {
         // DeadShell (unused, in-degree 0) composes Widget; the whole branch is dead.
         let comps = [
-            json!({ "id": "shell", "name": "DeadShell", "kitId": "k", "role": "layout", "used": 0, "composes": ["Widget"], "srcText": "a" }),
-            json!({ "id": "widget", "name": "Widget", "kitId": "k", "role": "composite", "used": 0, "composes": [], "srcText": "b" }),
+            json!({ "id": "shell", "name": "DeadShell", "kitId": "k", "role": "layout", "used": 0, "composes": ["Widget"], "srcText": "a", "source": "export const C = () => null;" }),
+            json!({ "id": "widget", "name": "Widget", "kitId": "k", "role": "composite", "used": 0, "composes": [], "srcText": "b", "source": "export const C = () => null;" }),
         ];
         let fs = analyze(&comps);
         assert_eq!(cats(&fs), ["dangling-branch"]);
@@ -422,8 +548,8 @@ mod tests {
     #[test]
     fn flags_two_components_wrapping_the_same_intrinsic_as_duplicates() {
         let comps = [
-            json!({ "id": "btn", "name": "Button", "kitId": "k", "role": "primitive", "used": 9, "composes": [], "wraps": "button", "srcText": "a" }),
-            json!({ "id": "btn2", "name": "Btn2", "kitId": "k", "role": "primitive", "used": 1, "composes": [], "wraps": "button", "srcText": "b" }),
+            json!({ "id": "btn", "name": "Button", "kitId": "k", "role": "primitive", "used": 9, "composes": [], "wraps": "button", "srcText": "a", "source": "export const C = () => null;" }),
+            json!({ "id": "btn2", "name": "Btn2", "kitId": "k", "role": "primitive", "used": 1, "composes": [], "wraps": "button", "srcText": "b", "source": "export const C = () => null;" }),
         ];
         let fs = analyze(&comps);
         assert_eq!(cats(&fs), ["duplicate"]);
@@ -434,8 +560,8 @@ mod tests {
     #[test]
     fn flags_a_composes_cycle() {
         let comps = [
-            json!({ "id": "a", "name": "A", "kitId": "k", "role": "composite", "used": 1, "composes": ["B"], "srcText": "a" }),
-            json!({ "id": "b", "name": "B", "kitId": "k", "role": "composite", "used": 1, "composes": ["A"], "srcText": "b" }),
+            json!({ "id": "a", "name": "A", "kitId": "k", "role": "composite", "used": 1, "composes": ["B"], "srcText": "a", "source": "export const C = () => null;" }),
+            json!({ "id": "b", "name": "B", "kitId": "k", "role": "composite", "used": 1, "composes": ["A"], "srcText": "b", "source": "export const C = () => null;" }),
         ];
         let fs = analyze(&comps);
         assert_eq!(cats(&fs), ["cycle"]);
@@ -446,9 +572,9 @@ mod tests {
     fn edges_do_not_cross_kits() {
         // Same dependency name in two kits must not wire them together.
         let comps = [
-            json!({ "id": "k1-page", "name": "Page", "kitId": "k1", "role": "page", "used": 1, "composes": ["Button"], "srcText": "a" }),
-            json!({ "id": "k1-btn", "name": "Button", "kitId": "k1", "role": "primitive", "used": 4, "composes": [], "srcText": "b" }),
-            json!({ "id": "k2-btn", "name": "Button", "kitId": "k2", "role": "primitive", "used": 0, "composes": [], "srcText": "c" }),
+            json!({ "id": "k1-page", "name": "Page", "kitId": "k1", "role": "page", "used": 1, "composes": ["Button"], "srcText": "a", "source": "export const C = () => null;" }),
+            json!({ "id": "k1-btn", "name": "Button", "kitId": "k1", "role": "primitive", "used": 4, "composes": [], "srcText": "b", "source": "export const C = () => null;" }),
+            json!({ "id": "k2-btn", "name": "Button", "kitId": "k2", "role": "primitive", "used": 0, "composes": [], "srcText": "c", "source": "export const C = () => null;" }),
         ];
         // k2's Button is isolated + unused in ITS kit → orphan; k1's Button is composed → clean.
         let fs = analyze(&comps);
@@ -480,11 +606,104 @@ mod tests {
     fn ranks_most_severe_first() {
         let comps = [
             comp("Ghost", "primitive", 0, &[]), // orphan (sev 2)
-            json!({ "id": "a", "name": "A", "kitId": "k", "role": "composite", "used": 1, "composes": ["B"], "srcText": "a" }),
-            json!({ "id": "b", "name": "B", "kitId": "k", "role": "composite", "used": 1, "composes": ["A"], "srcText": "b" }),
+            json!({ "id": "a", "name": "A", "kitId": "k", "role": "composite", "used": 1, "composes": ["B"], "srcText": "a", "source": "export const C = () => null;" }),
+            json!({ "id": "b", "name": "B", "kitId": "k", "role": "composite", "used": 1, "composes": ["A"], "srcText": "b", "source": "export const C = () => null;" }),
         ];
         let fs = analyze(&comps);
         assert_eq!(fs[0].category, "cycle"); // severity 4 leads
         assert_eq!(fs.last().unwrap().category, "orphan"); // severity 2 trails
+    }
+
+    // ── no-implementation (#2839) ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn flags_a_source_less_user_spec_but_never_a_built_in() {
+        // A REAL built-in `src` from the embedded packaged artifact roster. The store strips a built-in's
+        // `source` (#2794), so it looks source-less here (empty `source` + a usage-snippet `srcText`),
+        // yet it IS buildable because its code lives in the artifact — the roster check must save it.
+        let real_builtin_src =
+            buildable_srcs().iter().next().expect("the packaged artifact ships components").clone();
+        let comps = [
+            // BUILT-IN: source-less in the store, but its `src` is in the artifact roster → NOT flagged.
+            json!({ "id": "card", "name": "Card", "kitId": "react-ui", "role": "primitive", "used": 2,
+                    "composes": [], "src": real_builtin_src, "source": "",
+                    "srcText": "import { Card } from \"@/shared/ui/data/Card\";\n<Card />" }),
+            // USER SPEC: a `page` that's a design, not code — source-less, a usage-snippet `srcText`, and a
+            // `src` that is NOT in the artifact. The preview can't build it (componentPreviewFiles → null).
+            json!({ "id": "gx", "name": "GraphExplorerPage", "kitId": "react-ui", "role": "page", "used": 1,
+                    "composes": [], "src": "user/pages/GraphExplorerPage.tsx", "source": "",
+                    "srcText": "import { GraphExplorerPage } from \"@/x\";\n<GraphExplorerPage nodes={…} />" }),
+        ];
+        let fs = analyze(&comps);
+        let flagged: Vec<&str> = fs
+            .iter()
+            .filter(|f| f.category == "no-implementation")
+            .flat_map(|f| f.node_names.iter().map(String::as_str))
+            .collect();
+        assert!(flagged.contains(&"GraphExplorerPage"), "the source-less user spec is flagged: {flagged:?}");
+        assert!(
+            !flagged.contains(&"Card"),
+            "a built-in (its `src` in the packaged artifact) is NEVER flagged: {flagged:?}",
+        );
+        // The user spec's ONLY finding is no-implementation (used > 0 ⇒ not a dead root; composes nothing).
+        assert_eq!(cats(&fs), ["no-implementation"]);
+    }
+
+    #[test]
+    fn a_user_component_with_its_own_module_source_is_buildable() {
+        // No artifact `src`, but a real self-contained `source` (path 2) OR a real-module `srcText`
+        // (path 3) — either makes it buildable, so it's never flagged.
+        let own_source = json!({ "id": "u1", "name": "OwnSource", "kitId": "user", "role": "composite",
+            "used": 1, "composes": [], "src": "", "srcText": "",
+            "source": "import * as d3 from \"d3\";\nexport function OwnSource() { return null; }" });
+        let own_srctext = json!({ "id": "u2", "name": "OwnSrcText", "kitId": "user", "role": "composite",
+            "used": 1, "composes": [], "src": "", "source": "",
+            "srcText": "import * as d3 from \"d3\";\nexport function OwnSrcText() { return null; }" });
+        let fs = analyze(&[own_source, own_srctext]);
+        assert!(fs.iter().all(|f| f.category != "no-implementation"), "own-source/module fixtures build: {fs:?}");
+    }
+
+    #[test]
+    fn looks_buildable_module_mirrors_the_ts_twin() {
+        // Accepts a self-contained module (has an export; no `@/`; no `…`).
+        assert!(looks_buildable_module("import * as d3 from \"d3\";\nexport function Foo() { return null; }"));
+        assert!(looks_buildable_module("export default function Foo() { return null; }"));
+        // Rejects: empty / whitespace, no export, a `@/` first-party import (either quote), a `…` placeholder.
+        assert!(!looks_buildable_module(""));
+        assert!(!looks_buildable_module("   \n  "));
+        assert!(!looks_buildable_module("const x = 1;"));
+        assert!(!looks_buildable_module("import { Card } from \"@/shared/ui/data/Card\";\nexport function X() {}"));
+        assert!(!looks_buildable_module("import { Card } from '@/shared/ui/data/Card';\nexport function X() {}"));
+        assert!(!looks_buildable_module("export function X() { return <Card>…</Card>; }"));
+        // `export` must be a WHOLE word — a substring like `reexported` doesn't qualify.
+        assert!(!looks_buildable_module("const reexportedThing = 1;"));
+    }
+
+    #[test]
+    fn artifact_buildable_srcs_collects_only_components_that_ship_source() {
+        let artifact = json!({
+            "components": [
+                { "id": "card", "src": "shared/ui/data/Card.tsx", "source": "export const Card = () => null;" },
+                { "id": "stub", "src": "shared/ui/Stub.tsx" },                 // no source → excluded
+                { "id": "empty", "src": "shared/ui/Empty.tsx", "source": "" }, // empty source → excluded
+                { "id": "nosrc", "source": "export const X = () => null;" },   // no src → excluded
+            ]
+        })
+        .to_string();
+        let roster = artifact_buildable_srcs(&artifact);
+        assert_eq!(roster.len(), 1);
+        assert!(roster.contains("shared/ui/data/Card.tsx"));
+        assert!(!roster.contains("shared/ui/Stub.tsx"));
+        assert!(!roster.contains("shared/ui/Empty.tsx"));
+        // A malformed artifact is an empty roster (fail safe — the check then falls back to source/srcText).
+        assert!(artifact_buildable_srcs("not json").is_empty());
+    }
+
+    #[test]
+    fn the_embedded_packaged_roster_is_populated() {
+        // The buildability check reads the SAME react-ui.json the kit store + emit embed. If the include
+        // path or the artifact shape drifts, the roster empties and every built-in would be falsely
+        // flagged — so guard that it stays non-empty.
+        assert!(!buildable_srcs().is_empty(), "the embedded react-ui artifact roster must not be empty");
     }
 }
