@@ -18,6 +18,7 @@
 
 use bsc_cli_util::CmdDoc;
 use bsc_json_store::cli::CliSpec;
+use std::io::Read;
 
 const TAGLINE: &str = "the component library — proven components in technology-scoped kits (#2281)";
 const KIT_TAGLINE: &str = "the component library's kits — technology-scoped component namespaces (#2281)";
@@ -155,6 +156,47 @@ node, never a duplicate, cycle, or no-implementation). It is a DRY RUN by defaul
 removed); pass --yes to apply. Branch descendants are left for the next pass (one might be shared) —
 re-run to clean them. #2678/#2679/#2839.",
     },
+    CmdDoc {
+        name: "define-animation",
+        summary: "author a component's motion as data — animation JSON on stdin, upsert by name (#2869)",
+        usage: "\
+USAGE:
+  bsc ui define-animation <component-id> [--pretty]   # animation JSON on stdin
+
+Reads ONE animation object from stdin — { name, keyframes, duration?, easing?, trigger? } — VALIDATES
+it against the motion safety grammar, then UPSERTS it into the component's `animations` array by `name`
+(replacing a same-named one, else appending). `keyframes` maps a stop (`from` / `to` / a percentage
+like `50%`) to CSS declarations (property → value); `duration`/`easing` are optional and typically
+reference the motion tokens (`var(--dur-base)` / `var(--ease-standard)`); `trigger` is one of
+mount | hover | always (default mount). The animation plays LIVE on the real component — compiled to a
+`@keyframes` block + an applying rule, guarded by `prefers-reduced-motion`. A ui-scope MUTATION
+(#2470); errors when the component id is absent. Prints the stored animation (--pretty indents).
+
+VALIDATION (the closed grammar): `name` must match [a-z][a-z0-9-]* · every keyframe stop must be
+`from`/`to`/`\\d{1,3}%` · every declaration property must match [a-z-]+ · no value (incl.
+duration/easing) may carry `;` `{` `}` `<` `>` `\\` `url(` `expression(` `@import` `/*` · keyframes
+must be a non-empty object with at least one valid stop + declaration.",
+    },
+    CmdDoc {
+        name: "list-animations",
+        summary: "print a component's authored animations array (#2869)",
+        usage: "\
+USAGE:
+  bsc ui list-animations <component-id> [--pretty]
+
+Prints the component's `animations` array as JSON (an empty array when it has none). Read-only; errors
+when the component id is absent. --pretty indents.",
+    },
+    CmdDoc {
+        name: "remove-animation",
+        summary: "drop a named animation from a component (#2869)",
+        usage: "\
+USAGE:
+  bsc ui remove-animation <component-id> <name> [--pretty]
+
+Removes the animation named <name> from the component's `animations` array and writes the record back.
+A ui-scope MUTATION (#2470); errors when the component (or an animation with that name) is absent.",
+    },
 ];
 
 const KIT_COMMANDS: &[CmdDoc] = &[
@@ -214,18 +256,21 @@ pub fn command_docs() -> &'static [CmdDoc] {
 }
 
 /// Whether `args` is one of the store's MUTATING verb invocations — `set` / `remove` on either
-/// collection (`… set|remove` or `… kit set|remove`) — gated by the session's runtime `ui` scope
+/// collection (`… set|remove` or `… kit set|remove`) or the component-animation writers
+/// (`define-animation` / `remove-animation`, #2869) — gated by the session's runtime `ui` scope
 /// (#2470). The trailing `help` form (`set help`, `kit set help`) is NOT a mutation: help must stay
-/// reachable from a read-scoped session. Read verbs (`list`/`get`/`eslint-preset`/`usage`/`kit
-/// list|get`) never gate.
+/// reachable from a read-scoped session. Read verbs (`list`/`get`/`eslint-preset`/`usage`/
+/// `list-animations`/`kit list|get`) never gate.
 fn is_scoped_mutation(args: &[String]) -> bool {
     let (verb, next) = if args.first().map(String::as_str) == Some("kit") {
         (args.get(1), args.get(2))
     } else {
         (args.first(), args.get(1))
     };
-    matches!(verb.map(String::as_str), Some("set") | Some("remove"))
-        && next.map(String::as_str) != Some("help")
+    matches!(
+        verb.map(String::as_str),
+        Some("set") | Some("remove") | Some("define-animation") | Some("remove-animation")
+    ) && next.map(String::as_str) != Some("help")
 }
 
 /// The component-verb entrypoint: `args` is everything after the mount point (`bsc ui`, or the
@@ -290,6 +335,34 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 Ok(())
             } else {
                 cmd_doctor(&args[1..])
+            }
+        }
+        // The component-animation authoring verbs (#2869): motion as DATA on a component record. Custom
+        // reads/writes over the component store (validate → upsert into `animations`), so they're
+        // handled here rather than via the shared verbatim-JSON store CLI. The two writers are already
+        // ui-scope gated by `is_scoped_mutation` above, BEFORE any store is touched.
+        Some("define-animation") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "define-animation"));
+                Ok(())
+            } else {
+                cmd_define_animation(&args[1..])
+            }
+        }
+        Some("list-animations") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "list-animations"));
+                Ok(())
+            } else {
+                cmd_list_animations(&args[1..])
+            }
+        }
+        Some("remove-animation") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "remove-animation"));
+                Ok(())
+            } else {
+                cmd_remove_animation(&args[1..])
             }
         }
         // `list --shape <shape>` (#2475) filters to one shape's ideal components — intercepted here
@@ -685,6 +758,272 @@ fn cmd_usage(args: &[String], prog: &str) -> Result<(), String> {
     }
 }
 
+// ── component animations (#2869, epic #2865) ──────────────────────────────────────────────────────
+//
+// The AUTHORING surface for the motion an LLM defines as DATA on a `ComponentRecord.animations` (the
+// render engine is `src/shared/ui/kit/animations.ts`). Because this compiles LLM-authored data into
+// live CSS, the validator is a CLOSED SAFETY GRAMMAR that MUST mirror animations.ts exactly:
+//   SAFE_IDENT  /^[a-z][a-z0-9-]*$/   — the animation name
+//   SAFE_STOP   /^(from|to|\d{1,3}%)$/ — every keyframe stop selector
+//   SAFE_PROP   /^[a-z-]+$/           — every declaration property
+//   UNSAFE_VALUE /[;{}<>\\]|url\(|expression\(|@import|\/\*/i — refused in any value (case-insensitive)
+// The render engine SKIPS anything failing these (defense in depth); the authoring path REJECTS it
+// with a clear message so a designer fixes it at write time instead of shipping silently-dropped motion.
+
+/// A safe CSS identifier — `^[a-z][a-z0-9-]*$` (mirrors animations.ts `SAFE_IDENT`).
+fn is_safe_ident(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// A keyframe stop selector — `from`, `to`, or a 1–3 digit percentage (mirrors `SAFE_STOP`).
+fn is_safe_stop(s: &str) -> bool {
+    if s == "from" || s == "to" {
+        return true;
+    }
+    match s.strip_suffix('%') {
+        Some(num) => (1..=3).contains(&num.len()) && num.chars().all(|c| c.is_ascii_digit()),
+        None => false,
+    }
+}
+
+/// A CSS declaration property — `^[a-z-]+$`, non-empty (mirrors `SAFE_PROP`).
+fn is_safe_prop(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c == '-')
+}
+
+/// A declaration/duration/easing VALUE that cannot end the declaration or inject CSS — non-empty and
+/// free of any `UNSAFE_VALUE` sequence (case-insensitive), mirroring animations.ts `safeValue`.
+fn is_safe_value(v: &str) -> bool {
+    if v.is_empty() {
+        return false;
+    }
+    if v.chars().any(|c| matches!(c, ';' | '{' | '}' | '<' | '>' | '\\')) {
+        return false;
+    }
+    let lower = v.to_ascii_lowercase();
+    !(lower.contains("url(")
+        || lower.contains("expression(")
+        || lower.contains("@import")
+        || lower.contains("/*"))
+}
+
+/// Validate one authored animation object against the closed motion grammar (the port of
+/// animations.ts's guards, but REJECTING rather than skipping). Returns a clear, specific error naming
+/// the first problem. Pure → unit-tested directly.
+fn validate_animation(anim: &serde_json::Value) -> Result<(), String> {
+    use serde_json::Value;
+    let obj = anim.as_object().ok_or("animation must be a JSON object")?;
+
+    let name = obj
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or("animation `name` is required (a string)")?;
+    if !is_safe_ident(name) {
+        return Err(format!(
+            "animation name '{name}' must be a safe CSS identifier [a-z][a-z0-9-]*"
+        ));
+    }
+
+    let keyframes = obj
+        .get("keyframes")
+        .and_then(Value::as_object)
+        .ok_or("animation `keyframes` is required (an object of stop → declarations)")?;
+    if keyframes.is_empty() {
+        return Err("animation `keyframes` must have at least one stop".into());
+    }
+    let mut valid_stops = 0usize;
+    for (stop, decls) in keyframes {
+        if !is_safe_stop(stop) {
+            return Err(format!(
+                "keyframe stop '{stop}' must be `from`, `to`, or a 1–3 digit percentage (e.g. `50%`)"
+            ));
+        }
+        let decls = decls
+            .as_object()
+            .ok_or_else(|| format!("keyframe '{stop}' must map properties to values (an object)"))?;
+        let mut valid_decls = 0usize;
+        for (prop, value) in decls {
+            if !is_safe_prop(prop) {
+                return Err(format!("declaration property '{prop}' must match [a-z-]+"));
+            }
+            let v = value
+                .as_str()
+                .ok_or_else(|| format!("declaration '{prop}' value must be a string"))?;
+            if !is_safe_value(v) {
+                return Err(format!(
+                    "declaration '{prop}: {v}' carries an unsafe value (no ; {{ }} < > \\ url( expression( @import /*)"
+                ));
+            }
+            valid_decls += 1;
+        }
+        if valid_decls > 0 {
+            valid_stops += 1;
+        }
+    }
+    if valid_stops == 0 {
+        return Err("animation `keyframes` must have at least one stop with a declaration".into());
+    }
+
+    // Optional duration/easing: motion-token refs or literals, checked against the same value grammar.
+    for key in ["duration", "easing"] {
+        if let Some(v) = obj.get(key) {
+            let s = v.as_str().ok_or_else(|| format!("animation `{key}` must be a string"))?;
+            if !is_safe_value(s) {
+                return Err(format!("animation `{key}` value '{s}' carries an unsafe value"));
+            }
+        }
+    }
+
+    // Optional trigger: one of the closed set.
+    if let Some(t) = obj.get("trigger") {
+        let s = t.as_str().ok_or("animation `trigger` must be a string")?;
+        if !matches!(s, "mount" | "hover" | "always") {
+            return Err(format!(
+                "animation `trigger` '{s}' must be one of mount | hover | always"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate + upsert `anim` into component `id`'s `animations` array by `name` (replace same-named,
+/// else append), writing the record back. Errors when the component is absent or its record is not a
+/// JSON object. Pure of stdin/print so tests drive it directly.
+fn upsert_animation(
+    store: &bsc_json_store::Store,
+    id: &str,
+    anim: &serde_json::Value,
+) -> Result<(), String> {
+    validate_animation(anim)?;
+    let name = anim.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+    let mut record = load_component_object(store, id)?;
+    let obj = record.as_object_mut().expect("load_component_object guarantees an object");
+    let arr = obj
+        .entry("animations")
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+    let list = arr
+        .as_array_mut()
+        .ok_or_else(|| format!("component '{id}' `animations` is not an array"))?;
+    match list
+        .iter_mut()
+        .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(name))
+    {
+        Some(slot) => *slot = anim.clone(),
+        None => list.push(anim.clone()),
+    }
+    store.set(id, &serde_json::to_string(&record).map_err(|e| e.to_string())?)
+}
+
+/// Remove the animation named `name` from component `id`, writing the record back. Errors when the
+/// component is absent OR it has no animation with that name (so a typo surfaces, not a silent no-op).
+fn remove_named_animation(store: &bsc_json_store::Store, id: &str, name: &str) -> Result<(), String> {
+    let mut record = load_component_object(store, id)?;
+    let obj = record.as_object_mut().expect("load_component_object guarantees an object");
+    let removed = match obj.get_mut("animations").and_then(|a| a.as_array_mut()) {
+        Some(list) => {
+            let before = list.len();
+            list.retain(|a| a.get("name").and_then(|n| n.as_str()) != Some(name));
+            before != list.len()
+        }
+        None => false,
+    };
+    if !removed {
+        return Err(format!("component '{id}' has no animation named '{name}'"));
+    }
+    store.set(id, &serde_json::to_string(&record).map_err(|e| e.to_string())?)
+}
+
+/// The component's `animations` array (an empty array when the field is absent). Errors when the
+/// component id has no stored record.
+fn animations_of(store: &bsc_json_store::Store, id: &str) -> Result<serde_json::Value, String> {
+    let record = load_component_object(store, id)?;
+    Ok(record
+        .get("animations")
+        .cloned()
+        .unwrap_or_else(|| serde_json::Value::Array(Vec::new())))
+}
+
+/// Load component `id`'s stored record as a JSON object, or a clear error when it's absent / malformed.
+fn load_component_object(store: &bsc_json_store::Store, id: &str) -> Result<serde_json::Value, String> {
+    let raw = store
+        .get(id)?
+        .ok_or_else(|| format!("no component '{id}' in the store — author it first with `bsc ui set`"))?;
+    let record: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("stored component '{id}' is not valid JSON: {e}"))?;
+    if !record.is_object() {
+        return Err(format!("stored component '{id}' is not a JSON object"));
+    }
+    Ok(record)
+}
+
+/// Parse the shared `--dir`/`--pretty` flags + the trailing positionals from an animation-verb's args.
+/// Unknown flags error specifically; each caller pulls the `<component-id>` (+ `<name>`) it needs and
+/// emits its own usage line when a positional is missing.
+fn parse_anim_args(args: &[String]) -> Result<(Vec<String>, Option<String>, bool), String> {
+    let (mut dir, mut pretty) = (None::<String>, false);
+    let mut positionals: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            positional => positionals.push(positional.to_string()),
+        }
+    }
+    Ok((positionals, dir, pretty))
+}
+
+/// `define-animation <component-id> [--pretty]` (#2869) — read + validate an animation from stdin and
+/// upsert it onto the component; print the stored animation. A ui-scope mutation (gated in `run`).
+fn cmd_define_animation(args: &[String]) -> Result<(), String> {
+    let (pos, dir, pretty) = parse_anim_args(args)?;
+    let id = pos
+        .first()
+        .ok_or("usage: bsc ui define-animation <component-id>   # animation JSON on stdin")?;
+    let mut raw = String::new();
+    std::io::stdin().read_to_string(&mut raw).map_err(|e| format!("cannot read stdin: {e}"))?;
+    let anim: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("animation is not valid JSON: {e}"))?;
+    let store = open_component_store(&dir)?;
+    upsert_animation(&store, id, &anim)?;
+    bsc_util::emit_ui_activity("component", id);
+    let out = if pretty { serde_json::to_string_pretty(&anim) } else { serde_json::to_string(&anim) };
+    println!("{}", out.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `list-animations <component-id> [--pretty]` (#2869) — print the component's animations array. Read-only.
+fn cmd_list_animations(args: &[String]) -> Result<(), String> {
+    let (pos, dir, pretty) = parse_anim_args(args)?;
+    let id = pos.first().ok_or("usage: bsc ui list-animations <component-id>")?;
+    let store = open_component_store(&dir)?;
+    let anims = animations_of(&store, id)?;
+    let out = if pretty { serde_json::to_string_pretty(&anims) } else { serde_json::to_string(&anims) };
+    println!("{}", out.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `remove-animation <component-id> <name> [--pretty]` (#2869) — drop a named animation. A ui-scope
+/// mutation (gated in `run`); errors when the component or the named animation is absent.
+fn cmd_remove_animation(args: &[String]) -> Result<(), String> {
+    const USAGE: &str = "usage: bsc ui remove-animation <component-id> <name>";
+    let (pos, dir, _pretty) = parse_anim_args(args)?;
+    let id = pos.first().ok_or(USAGE)?;
+    let name = pos.get(1).ok_or(USAGE)?;
+    let store = open_component_store(&dir)?;
+    remove_named_animation(&store, id, name)?;
+    bsc_util::emit_ui_activity("component", id);
+    println!("removed animation '{name}' from '{id}'");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -749,7 +1088,13 @@ mod tests {
         // `bsc ui` composes this catalog (#2469): every store verb is present, and the usage text
         // teaches the CANONICAL `bsc ui …` form (the `bsc component` alias is deprecated).
         let names: Vec<&str> = command_docs().iter().map(|c| c.name).collect();
-        assert_eq!(names, vec!["list", "shapes", "get", "set", "remove", "kit", "eslint-preset", "usage", "doctor"]);
+        assert_eq!(
+            names,
+            vec![
+                "list", "shapes", "get", "set", "remove", "kit", "eslint-preset", "usage", "doctor",
+                "define-animation", "list-animations", "remove-animation"
+            ]
+        );
         for c in command_docs() {
             assert!(!c.usage.contains("bsc component"), "{}'s usage teaches `bsc ui`, not the alias", c.name);
         }
@@ -801,22 +1146,27 @@ mod tests {
     #[test]
     fn is_scoped_mutation_classifies_exactly_the_mutating_verbs() {
         let a = |args: &[&str]| args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        // The four mutating shapes (#2470) — gated on both collections.
+        // The mutating shapes (#2470) — gated on both collections + the animation writers (#2869).
         assert!(is_scoped_mutation(&a(&["set"])));
         assert!(is_scoped_mutation(&a(&["remove", "button"])));
         assert!(is_scoped_mutation(&a(&["kit", "set"])));
         assert!(is_scoped_mutation(&a(&["kit", "remove", "react-ui"])));
-        // Read verbs never gate — incl. the #2475 shape picker (`shapes` + `list --shape`).
+        assert!(is_scoped_mutation(&a(&["define-animation", "button"])));
+        assert!(is_scoped_mutation(&a(&["remove-animation", "button", "fade-in"])));
+        // Read verbs never gate — incl. the #2475 shape picker (`shapes` + `list --shape`) and
+        // `list-animations` (#2869).
         for read in [
             &["list"][..], &["get", "button"], &["kit", "list"], &["kit", "get", "react-ui"],
             &["eslint-preset"], &["usage", "list"], &["shapes"], &["shapes", "graph"],
-            &["list", "--shape", "table"], &["help"], &[],
+            &["list", "--shape", "table"], &["list-animations", "button"], &["help"], &[],
         ] {
             assert!(!is_scoped_mutation(&a(read)), "read shape gated: {read:?}");
         }
         // The trailing `help` form is documentation, not a mutation — reachable read-scoped.
         assert!(!is_scoped_mutation(&a(&["set", "help"])));
         assert!(!is_scoped_mutation(&a(&["kit", "remove", "help"])));
+        assert!(!is_scoped_mutation(&a(&["define-animation", "help"])));
+        assert!(!is_scoped_mutation(&a(&["remove-animation", "help"])));
     }
 
     // ONE test owns the real $BSC_SCOPES env var (parallel test threads share the process env).
@@ -983,5 +1333,178 @@ mod tests {
         std::env::remove_var("BSC_UI_ACTIVITY_LOG");
         std::env::remove_var("BSC_AUDIT_PANE");
         let _ = std::fs::remove_file(&act);
+    }
+
+    // ── component animations (#2869) ─────────────────────────────────────────────────────────────
+
+    /// A minimal valid animation object (a mount fade-in referencing the motion tokens).
+    fn valid_anim(name: &str) -> serde_json::Value {
+        serde_json::json!({
+            "name": name,
+            "keyframes": { "from": { "opacity": "0" }, "to": { "opacity": "1" } },
+            "duration": "var(--dur-base)",
+            "easing": "var(--ease-standard)",
+            "trigger": "mount",
+        })
+    }
+
+    #[test]
+    fn validate_animation_accepts_a_well_formed_definition() {
+        assert!(validate_animation(&valid_anim("fade-in")).is_ok());
+        // Minimal: just a name + one keyframe stop with one declaration (defaults fill the rest).
+        assert!(validate_animation(&serde_json::json!({
+            "name": "pulse",
+            "keyframes": { "50%": { "transform": "scale(1.05)" } },
+        }))
+        .is_ok());
+    }
+
+    #[test]
+    fn validate_animation_rejects_each_grammar_violation() {
+        // Bad name (uppercase / leading digit / injection char).
+        for bad in ["Fade", "1fade", "fade_in", "fade in", ""] {
+            let a = serde_json::json!({ "name": bad, "keyframes": { "to": { "opacity": "1" } } });
+            let err = validate_animation(&a).unwrap_err();
+            assert!(err.contains("name"), "bad name '{bad}' rejected: {err}");
+        }
+        // Bad keyframe stop.
+        let err = validate_animation(&serde_json::json!({
+            "name": "x", "keyframes": { "start": { "opacity": "1" } }
+        }))
+        .unwrap_err();
+        assert!(err.contains("stop"), "{err}");
+        // Bad property.
+        let err = validate_animation(&serde_json::json!({
+            "name": "x", "keyframes": { "to": { "Opacity": "1" } }
+        }))
+        .unwrap_err();
+        assert!(err.contains("property"), "{err}");
+        // Unsafe value (declaration-ending / injection).
+        for bad in ["1; } body { color: red", "url(evil.png)", "1 /* x */", "expression(alert(1))"] {
+            let a = serde_json::json!({ "name": "x", "keyframes": { "to": { "opacity": bad } } });
+            let err = validate_animation(&a).unwrap_err();
+            assert!(err.contains("unsafe"), "unsafe value '{bad}' rejected: {err}");
+        }
+        // Unsafe duration / easing.
+        let err = validate_animation(&serde_json::json!({
+            "name": "x", "keyframes": { "to": { "opacity": "1" } }, "duration": "1s; color: red"
+        }))
+        .unwrap_err();
+        assert!(err.contains("duration"), "{err}");
+        // Empty / non-object keyframes.
+        assert!(validate_animation(&serde_json::json!({ "name": "x", "keyframes": {} })).is_err());
+        assert!(validate_animation(&serde_json::json!({ "name": "x", "keyframes": "nope" })).is_err());
+        // Missing name / keyframes.
+        assert!(validate_animation(&serde_json::json!({ "keyframes": { "to": { "opacity": "1" } } })).is_err());
+        assert!(validate_animation(&serde_json::json!({ "name": "x" })).is_err());
+        // Unknown trigger.
+        let err = validate_animation(&serde_json::json!({
+            "name": "x", "keyframes": { "to": { "opacity": "1" } }, "trigger": "click"
+        }))
+        .unwrap_err();
+        assert!(err.contains("trigger"), "{err}");
+    }
+
+    #[test]
+    fn define_list_remove_animation_round_trip_on_the_record() {
+        let dir = tmp_store_dir("anim-roundtrip");
+        let store = bsc_json_store::Store::new(dir, "component");
+        store.set("card", r#"{"id":"card","name":"Card","kitId":"react-ui","role":"layout"}"#).unwrap();
+
+        // A component with no animations lists an empty array.
+        assert_eq!(animations_of(&store, "card").unwrap(), serde_json::json!([]));
+
+        // Define upserts by name — first append, then replace the same name (still ONE entry).
+        upsert_animation(&store, "card", &valid_anim("fade-in")).unwrap();
+        upsert_animation(&store, "card", &valid_anim("slide-up")).unwrap();
+        let mut replaced = valid_anim("fade-in");
+        replaced["trigger"] = serde_json::json!("hover");
+        upsert_animation(&store, "card", &replaced).unwrap();
+
+        let anims = animations_of(&store, "card").unwrap();
+        let arr = anims.as_array().unwrap();
+        assert_eq!(arr.len(), 2, "two distinct names, the duplicate replaced not appended");
+        let fade = arr.iter().find(|a| a["name"] == "fade-in").unwrap();
+        assert_eq!(fade["trigger"], "hover", "the replacement won");
+        // The record round-trips: the raw stored JSON parses and carries `animations`.
+        let raw = store.get("card").unwrap().unwrap();
+        assert!(raw.contains("\"animations\""));
+
+        // Remove drops exactly the named one.
+        remove_named_animation(&store, "card", "fade-in").unwrap();
+        let arr = animations_of(&store, "card").unwrap();
+        let arr = arr.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["name"], "slide-up");
+    }
+
+    #[test]
+    fn animation_verbs_error_on_an_unknown_component_or_animation() {
+        let dir = tmp_store_dir("anim-missing");
+        let store = bsc_json_store::Store::new(dir, "component");
+        // Unknown component id → a clear error for every verb.
+        assert!(upsert_animation(&store, "ghost", &valid_anim("fade-in")).unwrap_err().contains("ghost"));
+        assert!(animations_of(&store, "ghost").unwrap_err().contains("ghost"));
+        assert!(remove_named_animation(&store, "ghost", "fade-in").unwrap_err().contains("ghost"));
+        // Removing an animation the component doesn't have → an error naming it.
+        store.set("card", r#"{"id":"card","name":"Card"}"#).unwrap();
+        let err = remove_named_animation(&store, "card", "nope").unwrap_err();
+        assert!(err.contains("nope") && err.contains("no animation"), "{err}");
+        // An invalid animation never lands on the record.
+        let bad = serde_json::json!({ "name": "Bad", "keyframes": { "to": { "opacity": "1" } } });
+        assert!(upsert_animation(&store, "card", &bad).is_err());
+        assert_eq!(animations_of(&store, "card").unwrap(), serde_json::json!([]));
+    }
+
+    #[test]
+    fn list_and_remove_animation_run_end_to_end_through_the_cli() {
+        let dir = tmp_store_dir("anim-cli");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store.set("card", r#"{"id":"card","name":"Card"}"#).unwrap();
+        upsert_animation(&store, "card", &valid_anim("fade-in")).unwrap();
+
+        // list-animations is a read: runs Ok (lean + --pretty).
+        assert!(run(vec!["list-animations".into(), "card".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        assert!(run(
+            vec!["list-animations".into(), "card".into(), "--pretty".into(), "--dir".into(), dir.clone()],
+            "bsc ui"
+        )
+        .is_ok());
+        // remove-animation drops it through the CLI.
+        run(vec!["remove-animation".into(), "card".into(), "fade-in".into(), "--dir".into(), dir.clone()], "bsc ui")
+            .unwrap();
+        assert_eq!(animations_of(&store, "card").unwrap(), serde_json::json!([]));
+        // remove of an absent name errors through the CLI.
+        assert!(run(
+            vec!["remove-animation".into(), "card".into(), "gone".into(), "--dir".into(), dir],
+            "bsc ui"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn animation_verbs_appear_in_help_and_the_writers_refuse_under_a_read_scope() {
+        // The three verbs are in the merged catalog with their doc detail.
+        let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMPONENT_COMMANDS);
+        for c in ["define-animation", "list-animations", "remove-animation"] {
+            assert!(ov.contains(c), "overview lists {c}");
+        }
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "define-animation");
+        assert!(d.contains("stdin") && d.contains("keyframes"), "define-animation detail teaches the shape");
+
+        // The writers refuse under `ui: read`, BEFORE touching the store (mirrors set/remove).
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
+        let err = run(vec!["remove-animation".into(), "card".into(), "x".into()], "bsc ui").unwrap_err();
+        assert!(err.contains("'ui'") && err.contains("read-only"), "read-scope refusal: {err}");
+        // list-animations is a READ tier — reachable under the read scope, against a scratch --dir.
+        let dir = tmp_store_dir("anim-read-scope");
+        bsc_json_store::Store::new(dir.clone(), "component")
+            .set("card", r#"{"id":"card","name":"Card"}"#)
+            .unwrap();
+        assert!(run(vec!["list-animations".into(), "card".into(), "--dir".into(), dir], "bsc ui").is_ok());
+        // Help stays reachable read-scoped.
+        assert!(run(vec!["define-animation".into(), "help".into()], "bsc ui").is_ok());
+        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
     }
 }
