@@ -47,7 +47,11 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width }
     const build = componentPreviewFiles(comp, ARTIFACT);
     if (!build) {
       setStatus("error");
-      setError(`No buildable source for "${comp.name}". Add its implementation source to preview it.`);
+      setError(
+        `"${comp.name}" has no implementation source yet — its stored source is only a usage snippet, ` +
+          `not a runnable module. Add a self-contained component (imports only libraries; exports the ` +
+          `component) via the designer session or the Source tab to preview it.`,
+      );
       return;
     }
     (async () => {
@@ -68,7 +72,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.name, themeId, retry]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, themeId, retry]);
 
   // Surface runtime errors the iframe posts (an exception during the component's own render).
   useEffect(() => {
