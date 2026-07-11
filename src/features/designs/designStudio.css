@@ -64,6 +64,11 @@
 .ds-health-orphan { color: var(--fg-dim); }
 .ds-healthcount { font-family: var(--mono); font-size: 10px; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius: 5px; padding: 1px 7px; margin-left: 8px; white-space: nowrap; }
 
+/* Preview build-error badge (#2838) — the on-visit component scan (`useComponentScan`) esbuild-builds
+   each buildable component; a node whose build FAILS gets this red glyph. Sits at the TOP-LEFT corner so
+   it never overlaps the graph-health badge (top-right, #2680) — the two signals read independently. */
+.ds-buildfail { position: absolute; top: -8px; left: -8px; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; border-radius: 50%; color: var(--danger); background: var(--bg-elev, var(--bg-soft)); border: 1px solid color-mix(in srgb, var(--danger) 60%, var(--border)); z-index: 2; }
+
 /* ── inspector bits ── */
 .ds-inspbox { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
 .ds-insprow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 11px; border-bottom: 1px solid var(--border-soft, var(--border)); }
