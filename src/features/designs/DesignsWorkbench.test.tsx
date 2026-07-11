@@ -395,4 +395,16 @@ describe("theme try-on preview (#2834)", () => {
     expect(screen.queryByRole("button", { name: /Nord/ })).toBeNull();   // menu gone
     expect(screen.getByText("Live preview")).toBeTruthy();               // inspector restored
   });
+
+  it("the expanded center carries the theme's palette strip alongside the preview (#2834)", () => {
+    const { container } = render(<DesignsWorkbench />);
+    fireEvent.click(graphNode("Chip"));
+    expect(container.querySelector(".ds-palette")).toBeNull();           // not before expanding
+    fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
+    // The palette strip mounts with the expanded preview: the grouped semantic swatches.
+    expect(container.querySelector(".ds-palette")).toBeTruthy();
+    expect(container.querySelectorAll(".ds-swatch").length).toBe(14);
+    expect(screen.getByText("Surfaces")).toBeTruthy();
+    expect(screen.getByText("Accent")).toBeTruthy();
+  });
 });
