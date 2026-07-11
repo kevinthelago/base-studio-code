@@ -66,4 +66,16 @@ describe("AlgorithmsWorkspace", () => {
     expect(screen.getByText((c) => c.includes("merge(&left, &right)"))).toBeTruthy();
     expect(screen.getByText("merge.rs")).toBeTruthy();
   });
+
+  it("the rail surfaces the kit's free-standing primitives; selecting one shows its code (#2863)", () => {
+    render(<AlgorithmsWorkspace />);
+    // `ts.array` is a free-standing primitive — it isn't a concept node, so it appears only in the rail's
+    // Primitives section (unreachable before this slice).
+    const array = screen.getByText("Array (TypeScript)");
+    expect(array).toBeTruthy();
+    fireEvent.click(array);
+    // The inspector shows the primitive directly — the "primitive" chip + its code.
+    expect(screen.getByText("primitive")).toBeTruthy();
+    expect(screen.getByText((c) => c.includes("xs.push(4)"))).toBeTruthy();
+  });
 });
