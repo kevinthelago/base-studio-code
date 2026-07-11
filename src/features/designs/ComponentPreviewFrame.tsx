@@ -97,9 +97,13 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
   }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, animKey, themeId, retry]);
 
-  // Surface runtime errors the iframe posts (an exception during the component's own render).
+  // Surface runtime errors the iframe posts (an exception during the component's own render). Match ONLY
+  // this frame's own iframe by source window (#2908) — the on-visit scan now runs its own hidden probe
+  // iframes concurrently, and without this filter their errors would leak into (and falsely fail) this
+  // live preview.
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
+      if (e.source !== iframeRef.current?.contentWindow) return;
       if (e.data && e.data.__preview === "error") {
         setStatus("error");
         setError(String(e.data.message));

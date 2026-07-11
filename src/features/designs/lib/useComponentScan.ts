@@ -1,15 +1,19 @@
-// useComponentScan (#2838) — the Design Studio's on-visit preview-error scan. While the Studio page is
-// mounted (`active`; it lazily mounts on FIRST visit via KeptMountedPage, never at app boot), it
-// esbuild-builds each buildable component in the active kit — throttled to a small concurrency so it
-// never hangs the app — and records ok/error per component in the store. The graph badges the errors.
+// useComponentScan (#2838, #2908) — the Design Studio's on-visit preview-error scan. While the Studio page
+// is mounted (`active`; it lazily mounts on FIRST visit via KeptMountedPage, never at app boot), it
+// esbuild-builds each buildable component in the active kit AND runs each build-clean one in a hidden
+// iframe (#2908) — throttled to a small concurrency so it never hangs the app — recording
+// ok/build-error/runtime-error per component in the store. The graph badges the errors.
 //
-// The pure spine (which components to scan, the throttle pool, ok/error derivation) lives in
-// `componentScan.ts` and is unit-tested with a mocked bundle; this hook only wires it to the real
-// esbuild-wasm `bundleComponent` (which can't run under jsdom) and the store, with cancellation.
+// The pure spine (which components to scan, the throttle pool, build→run→status derivation) lives in
+// `componentScan.ts` and is unit-tested with a mocked bundle + run; this hook only wires it to the real
+// esbuild-wasm `bundleComponent` + the DOM `probeComponentRuntime` (neither runs under jsdom) and the
+// store, with cancellation.
 import { useEffect, useRef } from "react";
 import reactUiArtifact from "@data/components/react-ui.json";
 import { useAppStore } from "@/store";
 import { bundleComponent } from "@/shared/lib/preview/componentBundle";
+import { probeComponentRuntime } from "@/shared/lib/preview/componentRuntimeProbe";
+import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
 import { scannableComponents, pendingScans, scanComponents } from "./componentScan";
 import { type KitArtifact } from "./componentPreview";
 import type { ComponentRecord } from "./model";
@@ -45,6 +49,8 @@ export function useComponentScan(active: boolean, comps: ComponentRecord[], arti
     const pending = pendingScans(scannable, scannedSigs.current);
     if (pending.length === 0) return;
     const sigById = new Map(pending.map((p) => [p.id, p.sig]));
+    // App styles once per sweep (not per component) so each runtime probe renders faithfully.
+    const appCss = collectAppCss();
 
     let cancelled = false;
     void scanComponents(
@@ -59,6 +65,9 @@ export function useComponentScan(active: boolean, comps: ComponentRecord[], arti
         setStatus(id, status);
       },
       () => cancelled,
+      // Runtime probe (#2908): run each build-clean component in a hidden iframe to catch a throw the
+      // build can't see (e.g. a d3-force tick). Inconclusive/infra failures resolve ok — never a false badge.
+      (js) => probeComponentRuntime(js, appCss),
     );
     return () => { cancelled = true; };
   }, [active, comps, artifact, setStatus]);
