@@ -74,25 +74,11 @@ export function AlgorithmsInspector({ graph, selected, focusedImpl, activeTech, 
     return (
       <Box style={PANEL}>
         <Stack gap={12} style={{ padding: 16 }}>
-          <Eyebrow size={10}>Legend</Eyebrow>
-          <Text size={12} tone="muted">Select a concept to see what it operates on, composes, and generates. Relationships:</Text>
-          <Stack gap={6}>
-            {REL_ORDER.map((rel) => (
-              <Row key={rel} gap={8} align="center">
-                <Box style={{ width: 22, height: 0, borderTop: `2px ${REL_META[rel].dashed ? "dashed" : "solid"} var(--fg-dim)` }} />
-                <Text size={11.5}>{REL_META[rel].label}</Text>
-              </Row>
-            ))}
-          </Stack>
-          <Eyebrow size={10}>Kinds</Eyebrow>
-          <Stack gap={6}>
-            {(Object.keys(KIND_META) as (keyof typeof KIND_META)[]).map((k) => (
-              <Row key={k} gap={8} align="center">
-                <Box style={{ width: 10, height: 10, borderRadius: 3, background: KIND_META[k].color }} />
-                <Text size={11.5}>{KIND_META[k].label}</Text>
-              </Row>
-            ))}
-          </Stack>
+          <Eyebrow size={10}>Implementation</Eyebrow>
+          <Text size={12} tone="muted">
+            Select an implementation — from the rail or the graph — to see its code and what it builds on, is
+            used by, and pairs with. The edge types are keyed in the graph legend.
+          </Text>
         </Stack>
       </Box>
     );
