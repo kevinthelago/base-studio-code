@@ -1,14 +1,18 @@
 import { describe, it, expect, vi } from "vitest";
 import {
-  buildSignature, scannableComponents, pendingScans, runPooled, toBuildStatus, scanComponents,
-  type ScannableComponent, type ComponentBuildStatus,
+  buildSignature, scannableComponents, pendingScans, runPooled, toBuildStatus, buildAndProbe, scanComponents,
+  type ScannableComponent, type ComponentBuildStatus, type RunFn,
 } from "./componentScan";
 import type { KitArtifact } from "./componentPreview";
 import type { ComponentRecord } from "./model";
 
-// The esbuild-wasm bundle can't run under jsdom, so these cover the PURE spine of the on-visit scan
-// (#2838): which components to scan, the throttle/queue pool, ok/error derivation — with a MOCK bundle
-// (a plain fn that resolves or throws). The real esbuild bundle is exercised in the running app.
+// The esbuild-wasm bundle + the DOM runtime probe can't run under jsdom, so these cover the PURE spine of
+// the on-visit scan (#2838, #2908): which components to scan, the throttle/queue pool, and the
+// build→run→status derivation — with a MOCK bundle + MOCK run (plain fns that resolve or throw). The real
+// esbuild bundle + iframe probe are exercised in the running app.
+
+/** A run step that passes everything (build-clean ⇒ ok) — the default when a test only exercises builds. */
+const runOk: RunFn = async () => ({ ok: true });
 
 const base: ComponentRecord = {
   id: "card", name: "Card", kitId: "react-ui", role: "primitive", version: "1.0.0", used: 0,
@@ -98,16 +102,48 @@ describe("runPooled — throttle/queue", () => {
 });
 
 describe("toBuildStatus — ok/error derivation", () => {
-  it("maps a null/undefined outcome to ok and anything else to an error with a message", () => {
+  it("maps a null/undefined outcome to ok and anything else to a build error with a message", () => {
     expect(toBuildStatus(null)).toEqual({ state: "ok" });
     expect(toBuildStatus(undefined)).toEqual({ state: "ok" });
-    expect(toBuildStatus(new Error("boom"))).toEqual({ state: "error", message: "boom" });
-    expect(toBuildStatus("plain string failure")).toEqual({ state: "error", message: "plain string failure" });
+    expect(toBuildStatus(new Error("boom"))).toEqual({ state: "error", kind: "build", message: "boom" });
+    expect(toBuildStatus("plain string failure")).toEqual({ state: "error", kind: "build", message: "plain string failure" });
   });
 });
 
-describe("scanComponents — build sweep with a mock bundle", () => {
-  it("records ok for builds that resolve and error(message) for builds that throw", async () => {
+describe("buildAndProbe — build then runtime probe (#2908)", () => {
+  const item = sc("x");
+
+  it("builds clean and runs clean ⇒ ok", async () => {
+    const bundle = vi.fn(async () => "/*js*/");
+    const run = vi.fn(runOk);
+    expect(await buildAndProbe(item, bundle, run)).toEqual({ state: "ok" });
+    expect(run).toHaveBeenCalledWith("/*js*/"); // the built JS is handed to the probe
+  });
+
+  it("builds clean but throws at runtime ⇒ a RUNTIME error (the gap #2908 closes)", async () => {
+    const bundle = vi.fn(async () => "/*js*/");
+    const run: RunFn = async () => ({ ok: false, message: "links[0].source is undefined" });
+    expect(await buildAndProbe(item, bundle, run)).toEqual({
+      state: "error", kind: "runtime", message: "links[0].source is undefined",
+    });
+  });
+
+  it("fails to build ⇒ a BUILD error, and the runtime probe is never run", async () => {
+    const bundle = vi.fn(async () => { throw new Error("Transform failed"); });
+    const run = vi.fn(runOk);
+    expect(await buildAndProbe(item, bundle, run)).toEqual({ state: "error", kind: "build", message: "Transform failed" });
+    expect(run).not.toHaveBeenCalled(); // no point running a module that didn't build
+  });
+
+  it("treats a probe-infrastructure failure as inconclusive ⇒ ok (never a false badge)", async () => {
+    const bundle = vi.fn(async () => "/*js*/");
+    const run: RunFn = async () => { throw new Error("iframe blew up"); };
+    expect(await buildAndProbe(item, bundle, run)).toEqual({ state: "ok" });
+  });
+});
+
+describe("scanComponents — build + runtime sweep with mock bundle/run", () => {
+  it("records ok for builds that resolve and a build error(message) for builds that throw", async () => {
     const items = [sc("ok1"), sc("bad"), sc("ok2")];
     // Mock bundle: `bad` throws an esbuild-style error, the rest resolve.
     const bundle = vi.fn(async (files: Record<string, string>) => {
@@ -120,7 +156,20 @@ describe("scanComponents — build sweep with a mock bundle", () => {
     expect(bundle).toHaveBeenCalledTimes(3); // every buildable component was attempted
     expect(results.get("ok1")).toEqual({ state: "ok" });
     expect(results.get("ok2")).toEqual({ state: "ok" });
-    expect(results.get("bad")).toEqual({ state: "error", message: "Transform failed: Unexpected }" });
+    expect(results.get("bad")).toEqual({ state: "error", kind: "build", message: "Transform failed: Unexpected }" });
+  });
+
+  it("badges a build-clean component that throws at RUNTIME via the run step (#2908)", async () => {
+    const items = [sc("ok"), sc("throws")];
+    // Everything builds clean; the bundle echoes the component id (files.entry) so the probe can key off it.
+    const bundle = vi.fn(async (files: Record<string, string>) => files.entry);
+    // Runtime probe: the `throws` component fails at runtime, the rest run clean.
+    const run: RunFn = async (js) => (js === "throws" ? { ok: false, message: "d3 tick threw" } : { ok: true });
+    const results = new Map<string, ComponentBuildStatus>();
+    await scanComponents(items, bundle, 2, (id, status) => results.set(id, status), () => false, run);
+
+    expect(results.get("ok")).toEqual({ state: "ok" });
+    expect(results.get("throws")).toEqual({ state: "error", kind: "runtime", message: "d3 tick threw" });
   });
 
   it("does not let one throwing build abort the rest of the sweep", async () => {
