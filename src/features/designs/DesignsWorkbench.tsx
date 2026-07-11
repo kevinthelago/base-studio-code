@@ -44,6 +44,7 @@ import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecor
 import { useUiActivity } from "./lib/uiActivity";
 import { groupKits } from "./lib/kitGroups";
 import { ComponentPreviewFrame } from "./ComponentPreviewFrame";
+import { ThemesMenu } from "./ThemesMenu";
 import { DEFAULT_THEME } from "@/shared/ui/kit";
 
 /** The preview surface's light/dark axis, read off the selected theme's `base`. */
@@ -246,15 +247,22 @@ export function DesignsWorkbench() {
         // it, and clicking the canvas background clears the selection back to that empty state (the pane
         // stays put). Supersedes the #2705 hide-when-empty behavior.
         inspector={
-          <Inspector
-            sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
-            allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
-            vp={vp} setVpKind={setVpKind}
-            kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
-            previewTheme={theme}
-            composes={composes} onSelect={selectComp}
-            onExpand={() => setPreviewMode(true)}
-          />
+          // In preview mode the right pane BECOMES the themes navigator (#2834): pick a theme here, the
+          // center retints. Otherwise it's the per-component inspector, whose preview thumbnail opens
+          // preview mode.
+          previewMode ? (
+            <ThemesMenu themes={kitThemes} activeId={kitTheme} onSelect={setKitTheme} />
+          ) : (
+            <Inspector
+              sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
+              allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
+              vp={vp} setVpKind={setVpKind}
+              kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
+              previewTheme={theme}
+              composes={composes} onSelect={selectComp}
+              onExpand={() => setPreviewMode(true)}
+            />
+          )
         }
         // Theme try-on (#2834): the expanded preview rides the untransformed `overlays` slot so it
         // covers the canvas (not the rail/inspector) and never pans/zooms. It renders only with an open

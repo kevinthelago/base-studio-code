@@ -363,4 +363,36 @@ describe("theme try-on preview (#2834)", () => {
     fireEvent.click(screen.getByRole("button", { name: /Back to graph/ }));
     expect(screen.queryByText("Theme preview")).toBeNull();          // …and collapses back to the graph
   });
+
+  it("preview mode swaps the right pane to the grouped themes menu; the left rail still lists components", () => {
+    const { container } = render(<DesignsWorkbench />);
+    fireEvent.click(graphNode("Chip"));
+    fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
+    // Right pane = the themes menu: a theme row that exists ONLY there (Nord is a packaged theme, never
+    // a component/kit name), grouped by design group (#2749 → the .tm-grouphead header).
+    expect(screen.getByRole("button", { name: /Nord/ })).toBeTruthy();
+    expect(container.querySelector(".tm-grouphead")).toBeTruthy();
+    // The left rail is untouched — components stay navigable while trying themes on.
+    expect(railRow("Chip")).toBeTruthy();
+  });
+
+  it("selecting a theme in the menu makes it the applied theme (drives the preview retint)", () => {
+    render(<DesignsWorkbench />);
+    fireEvent.click(graphNode("Chip"));
+    fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
+    const nord = screen.getByRole("button", { name: /Nord/ });
+    expect(nord.className).not.toContain("on");                      // default is applied, not Nord
+    fireEvent.click(nord);
+    expect(nord.className).toContain("on");                          // Nord is now the applied theme
+  });
+
+  it("leaving preview mode restores the per-component inspector (the themes menu is gone)", () => {
+    render(<DesignsWorkbench />);
+    fireEvent.click(graphNode("Chip"));
+    fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
+    expect(screen.getByRole("button", { name: /Nord/ })).toBeTruthy();   // menu present
+    fireEvent.click(screen.getByRole("button", { name: /Back to graph/ }));
+    expect(screen.queryByRole("button", { name: /Nord/ })).toBeNull();   // menu gone
+    expect(screen.getByText("Live preview")).toBeTruthy();               // inspector restored
+  });
 });
