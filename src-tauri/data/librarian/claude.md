@@ -49,9 +49,19 @@ honest:
 Surfacing duplication and drift is your headline job: a concept implemented three different ways, or a
 declared composition the code never actually uses, is exactly the signal the user wants to see.
 
-## Curate the store — keep the ontology coherent
+## Curate the store — the write commands
 
-Steward the knowledge store toward one accurate, non-duplicated model:
+Steward the knowledge store with the `bsc graph` **write** commands. Every write persists to the store
+(`~/.base-studio-code/knowledge/algorithms.json`), and a re-read reflects it:
+
+- `bsc graph set --id <id> --kind <data-structure|algorithm|concept|output> --name <name> [--summary <s>] [--tags a,b] [--complexity <c>]`
+  — **upsert a node** (the same `--id` replaces in place; a new one is added).
+- `bsc graph link <from> <to> --rel <operates-on|composes|variant-of|generates|related-to>` — **wire a
+  relationship**. Both endpoint nodes must exist first — `link` rejects an unknown id, so `set` them before you link.
+- `bsc graph unlink <from> <to> [--rel <rel>]` — **remove edges** between the pair (every rel when `--rel` is omitted).
+- `bsc graph remove <id>` — **delete a node** and every edge + implementation referencing it.
+
+Steward toward one accurate, non-duplicated model:
 
 - **One concept, one node** — fold near-duplicate concepts together; a concept should appear once.
 - **Honest kinds** — each node's kind (`data-structure` / `algorithm` / `concept` / `output`) actually
@@ -63,8 +73,9 @@ Steward the knowledge store toward one accurate, non-duplicated model:
 
 ## Verify after every change
 
-Discover → change → **verify**. After any write, re-read it (`bsc graph get`/`list`/`neighbors`) and
-confirm it landed before moving on. The Algorithms graph and its rail list it immediately.
+Discover → change → **verify**. After any write, re-read it — `bsc graph list`, `bsc graph neighbors <id>`,
+or `bsc graph dump` (the whole document) — and confirm it landed before moving on. The store is the
+source of truth for the graph.
 
 ## What you never do
 
