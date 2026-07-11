@@ -29,6 +29,7 @@ import { SearchField } from "@/shared/ui/controls/SearchField";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Code } from "@/shared/ui/data/Code";
 import { useDragResize } from "@/shared/hooks/useDragResize";
+import { useDockEntrance } from "@/shared/hooks/useDockEntrance";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { useGraphPage } from "@/shared/ui/layouts/useGraphPage";
@@ -107,7 +108,8 @@ export function DesignsWorkbench() {
   // The always-on designer terminal's height (#2624) — a row-resize handle above it; `invert` because
   // the terminal sits AFTER the handle, so dragging up grows it. The graph (flex:1) keeps priority.
   // The rail + inspector widths are owned by GraphCanvas now (#2766), so only the dock stays caller-owned.
-  const term = useDragResize({ initial: 240, min: 140, max: 560, axis: "y", invert: true });
+  const term = useDragResize({ initial: 340, min: 140, max: 560, axis: "y", invert: true });
+  useDockEntrance(term.setSize, 340); // grow the dock up into place on mount (#2905)
 
   const match = (c: ComponentRecord) => matchesQuery(c, query);
   const kit = kits.find((k) => k.id === kitId) ?? kits[0];
