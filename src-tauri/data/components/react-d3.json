@@ -1,0 +1,42 @@
+{
+  "order": 10,
+  "id": "bsc/react-d3",
+  "version": "1.0.0",
+  "kit": {
+    "id": "react-d3",
+    "name": "react-d3",
+    "tech": "react",
+    "style": "d3",
+    "stack": "React · d3-force",
+    "dot": "var(--accent)",
+    "builtin": true
+  },
+  "components": [
+    {
+      "id": "forcegraph",
+      "name": "ForceGraph",
+      "kitId": "react-d3",
+      "role": "primitive",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": ["chart", "graph", "d3", "force", "network"],
+      "variants": ["default"],
+      "composes": [],
+      "props": [
+        { "name": "nodes", "type": "ForceGraphNode[]", "req": true, "desc": "Graph nodes — { id, label?, group? }; group cycles the node color." },
+        { "name": "links", "type": "ForceGraphLink[]", "req": true, "desc": "Edges — { source, target } by node id; links to an unknown id are dropped." },
+        { "name": "width", "type": "number", "req": false, "desc": "SVG width in px (default 320)." },
+        { "name": "height", "type": "number", "req": false, "desc": "SVG height in px (default 220)." }
+      ],
+      "whenUse": [
+        "Networks/relationships where a physics layout reveals structure — dependency graphs, social/org graphs, entity maps."
+      ],
+      "whenNot": [
+        "A hierarchy with a clear parent→child order — use a layered Tree/graph instead of a free force sim."
+      ],
+      "src": "src/shared/ui/charts/ForceGraph.tsx",
+      "srcText": "import { ForceGraph } from \"@/shared/ui/charts/ForceGraph\";\n\n<ForceGraph nodes={nodes} links={links} />",
+      "shapes": ["graph"]
+    }
+  ]
+}
