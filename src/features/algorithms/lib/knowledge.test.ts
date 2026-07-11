@@ -2,7 +2,7 @@
 // neighbor/relation lookups, and BFS pathfinding.
 import { describe, it, expect } from "vitest";
 import {
-  KNOWLEDGE, KIND_ORDER, TECHS, TECH_META, layoutKnowledge, neighborsOf, relationsOf, pathBetween,
+  KNOWLEDGE, KIND_ORDER, TECHS, TECH_META, layoutKnowledge, layoutKits, neighborsOf, relationsOf, pathBetween,
   nodeIndex, edgeId, implsForConcept, implFor, implById, techsWithImpl, usedByImpl,
   kitTechs, kitImpls, kitImplsByRole, pairsOf,
 } from "./knowledge";
@@ -201,5 +201,17 @@ describe("language kits (#2863) — a kit is every impl of one tech, grouped by 
     const paired = pairsOf(KNOWLEDGE, array).map((im) => im.id);
     expect(paired).toContain("merge-sort.ts");
     expect(paired.every((id) => id.endsWith(".ts"))).toBe(true); // same-tech
+  });
+
+  it("layoutKits places one card per kit with a positive world/bounds (the kits-index layer)", () => {
+    const techs = kitTechs(KNOWLEDGE);
+    const l = layoutKits(techs);
+    expect([...l.pos.keys()].sort()).toEqual([...techs].sort());
+    // Cards stack vertically — same x, strictly increasing y in kit order.
+    const ys = techs.map((t) => l.pos.get(t)!.y);
+    expect(ys.every((y, i) => i === 0 || y > ys[i - 1])).toBe(true);
+    expect(l.world.w).toBeGreaterThan(0);
+    expect(l.world.h).toBeGreaterThan(0);
+    expect(l.bounds.w).toBeGreaterThan(0);
   });
 });
