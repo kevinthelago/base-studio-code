@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Stepper, StageHeader, StageFooter, LockBanner, DoneBanner } from "./FocusedShell";
+import { Stepper, StageHeader, StageGuidanceCard, StageFooter, LockBanner, DoneBanner } from "./FocusedShell";
 import type { Stage } from "../stages/focusedPlan";
 
 const stage = (over: Partial<Stage> = {}): Stage => ({
@@ -83,24 +83,50 @@ describe("StageHeader (#652)", () => {
     expect(container.querySelector(".ph-gate.wait")).toBeTruthy();
   });
 
-  it("surfaces unmet gate reasons on click when blocked (#805)", () => {
+  it("no longer renders the click-to-reveal 'why?' popover — that moved to the guidance card (#2862)", () => {
+    render(<StageHeader stage={stage({ unmet: [{ label: "resolve the discovery topics", detail: "3 of 5" }] })} pill="wait" />);
+    expect(screen.queryByText("why?")).not.toBeInTheDocument();
+    // but the pill keeps an at-a-glance hover tooltip of what's left
+    expect(screen.getByText("gate").closest(".ph-gate")).toHaveAttribute("title", expect.stringContaining("resolve the discovery topics"));
+  });
+});
+
+describe("StageGuidanceCard (#2862)", () => {
+  it("lists the unmet gate requirements inline when the gate is blocking", () => {
     const p = stage({ unmet: [
       { label: "resolve the discovery topics", detail: "3 of 5" },
       { label: "confirm goal, scope, stack & architecture" },
     ] });
-    render(<StageHeader stage={p} pill="wait" />);
-    // a "why?" affordance shows; the reason list is hidden until clicked
-    expect(screen.getByText("why?")).toBeInTheDocument();
-    expect(screen.queryByText(/Still needed to pass/)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText("why?"));
-    expect(screen.getByText(/Still needed to pass/)).toBeInTheDocument();
-    expect(screen.getByText(/confirm goal, scope/)).toBeInTheDocument();
+    render(<StageGuidanceCard stage={p} pill="wait" />);
+    expect(screen.getByText(/What.s still needed/)).toBeInTheDocument();
+    expect(screen.getByText(/resolve the discovery topics/)).toBeInTheDocument();
     expect(screen.getByText(/3 of 5/)).toBeInTheDocument();
+    expect(screen.getByText(/confirm goal, scope/)).toBeInTheDocument();
   });
 
-  it("offers no 'why?' when the gate passes", () => {
-    render(<StageHeader stage={stage({ unmet: [{ label: "x" }] })} pill="pass" />);
-    expect(screen.queryByText("why?")).not.toBeInTheDocument();
+  it("collapses to 'Gate ready' with no requirements list once the gate passes", () => {
+    // With the gate passed the card shows only when there's still a prompt to suggest; then it reads
+    // "Gate ready" and drops the requirements entirely (unmet is stale once passed).
+    render(<StageGuidanceCard stage={stage({ unmet: [{ label: "x" }] })} pill="pass"
+      prompt={{ label: "Overview", text: "Recap." }} onInject={vi.fn()} />);
+    expect(screen.getByText("Gate ready")).toBeInTheDocument();
+    expect(screen.queryByText(/What.s still needed/)).not.toBeInTheDocument();
+    expect(screen.queryByText("x")).not.toBeInTheDocument();
+  });
+
+  it("shows the suggested next-step prompt and injects it on click", () => {
+    const onInject = vi.fn();
+    render(<StageGuidanceCard stage={stage()} pill="wait"
+      prompt={{ label: "Define each feature", text: "Now take ONE feature at a time." }} onInject={onInject} />);
+    expect(screen.getByText("Suggested next step")).toBeInTheDocument();
+    expect(screen.getByText("Define each feature")).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/Inject/));
+    expect(onInject).toHaveBeenCalledWith("Now take ONE feature at a time.");
+  });
+
+  it("renders nothing when there's no requirement and no prompt", () => {
+    const { container } = render(<StageGuidanceCard stage={stage({ unmet: [] })} pill="pass" />);
+    expect(container.querySelector(".stage-guide")).toBeNull();
   });
 });
 
