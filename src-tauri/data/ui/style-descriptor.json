@@ -17,7 +17,12 @@
     { "name": "--info", "type": "color", "value": "oklch(0.72 0.10 230)", "governs": "informational state colour" },
     { "name": "--danger", "type": "color", "value": "oklch(0.68 0.18 25)", "governs": "danger / destructive / error state colour" },
     { "name": "--r-md", "type": "dimension", "value": "6px", "governs": "medium corner radius" },
-    { "name": "--r-lg", "type": "dimension", "value": "10px", "governs": "large corner radius" }
+    { "name": "--r-lg", "type": "dimension", "value": "10px", "governs": "large corner radius" },
+    { "name": "--dur-fast", "type": "duration", "value": "120ms", "governs": "fast motion — hovers & small state flips" },
+    { "name": "--dur-base", "type": "duration", "value": "220ms", "governs": "base motion — the default transition / animation duration" },
+    { "name": "--dur-slow", "type": "duration", "value": "400ms", "governs": "slow motion — larger enters & exits" },
+    { "name": "--ease-standard", "type": "easing", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "governs": "standard easing — most transitions" },
+    { "name": "--ease-emphasized", "type": "easing", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "governs": "emphasized easing — expressive ease-out enters" }
   ],
   "components": [
     {

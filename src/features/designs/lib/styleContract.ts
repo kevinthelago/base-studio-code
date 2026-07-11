@@ -5,10 +5,12 @@
 // addressable surface for the designer LLM (#2568). One SoT feeds CSS emission AND discovery.
 //
 // Additive-first: a new token defaults to today's value, so growing the descriptor lands as a
-// zero-visual-change commit. Types are deliberately coarse ("color" | "dimension") — enough for
-// `bsc ui`'s closed value grammar to type-check a write, not a full CSS type system.
+// zero-visual-change commit. Types are deliberately coarse — "color" | "dimension" | "duration" |
+// "easing" (motion, #2866) — a discovery/label axis (what `bsc ui tokens` reports), not a full CSS
+// type system: `bsc ui`'s closed value grammar is character-based and already accepts a time (`120ms`)
+// or a timing-function (`cubic-bezier(...)`), so motion values need no grammar change.
 
-export type TokenType = "color" | "dimension";
+export type TokenType = "color" | "dimension" | "duration" | "easing";
 
 /** A base-palette token — an app-level default the semantic layer + themes compose from. */
 export interface BaseToken {
