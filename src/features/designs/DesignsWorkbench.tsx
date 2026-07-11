@@ -42,6 +42,7 @@ import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
 import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, type ComponentRecord } from "./lib/model";
 import { useUiActivity } from "./lib/uiActivity";
+import { useComponentScan } from "./lib/useComponentScan";
 import { groupKits } from "./lib/kitGroups";
 import { ComponentPreviewFrame } from "./ComponentPreviewFrame";
 import { DEFAULT_THEME } from "@/shared/ui/kit";
@@ -68,6 +69,9 @@ export function DesignsWorkbench() {
   const kitThemes = useAppStore((s) => s.kitThemes);
   // The node the designer AI is currently working (#2525) — a `.working` pulse + auto-pan target.
   const aiFocusedId = useAppStore((s) => s.aiFocusedId);
+  // Per-component preview-BUILD status (#2838) — populated by the on-visit `useComponentScan` sweep;
+  // the graph badges the `error` entries (a red build-error glyph, additive to the health badge).
+  const componentBuildStatus = useAppStore((s) => s.componentBuildStatus);
 
   const firstFor = (kitId: string) => components.find((c) => c.kitId === kitId);
   const [kitId, setKitId] = useState(() => kits[0]?.id ?? "");
@@ -104,6 +108,10 @@ export function DesignsWorkbench() {
   const match = (c: ComponentRecord) => matchesQuery(c, query);
   const kit = kits.find((k) => k.id === kitId) ?? kits[0];
   const kitComps = useMemo(() => components.filter((c) => c.kitId === kitId), [components, kitId]);
+  // Preview-error scan (#2838): while the Studio is mounted (visit, not boot — it lazily first-mounts via
+  // KeptMountedPage), esbuild-build each buildable component in the active kit — throttled — and record
+  // ok/error in the store; the graph badges the failures. Re-runs only for components whose source changed.
+  useComponentScan(true, kitComps);
   // The FOCUSED component — strictly the one the user picked, in the current kit. No fallback to "the
   // first"; when nothing is focused `sel` is null → the Inspector renders its empty state (#2818).
   const sel = compId ? components.find((c) => c.id === compId && c.kitId === kitId) ?? null : null;
@@ -310,10 +318,17 @@ export function DesignsWorkbench() {
           // it's the SAME node, so an active selection is never overridden.
           const working = c.id === (aiFocusedId ?? "") && c.id !== selId ? " working" : "";
           const badge = nodeHealth.get(c.id); // graph-health category (#2680), if any
+          // Preview build-error signal (#2838) — from the on-visit scan; ADDITIVE to the health badge
+          // above (different corner, own class) so the concurrent graph-health work reconciles cleanly.
+          const buildStatus = componentBuildStatus[c.id];
+          const buildError = buildStatus?.state === "error" ? buildStatus.message : null;
           return (
             <Box key={c.id} data-node onClick={() => selectComp(c)} className={`ds-node${state}${working}${badge ? " unhealthy" : ""}`} style={{ left: pos.x, top: pos.y, width: NODE_W }}>
               {badge && (
                 <Text as="span" className={`ds-health ds-health-${badge}`} title={`${badge} — ${HEALTH_BADGE[badge].label}`}>{HEALTH_BADGE[badge].glyph}</Text>
+              )}
+              {buildError && (
+                <Text as="span" className="ds-buildfail" title={`Preview build error — ${buildError}`}>✖</Text>
               )}
               <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
                 <RoleDot role={c.role} /><Text weight={600} size={13}>{c.name}</Text>
