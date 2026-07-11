@@ -1,6 +1,9 @@
-//! `bsc graph` (#2761) — query the Algorithms knowledge graph from a live session. Read-only JSON out
-//! (compact by default; `--pretty` indents), so an agent can enumerate concepts, walk a node's
-//! relationships, or find the path between two ideas "when required".
+//! `bsc graph` (#2761/#2853) — query AND curate the Algorithms knowledge graph from a live session.
+//! JSON out (compact by default; `--pretty` indents). READ: enumerate concepts, walk a node's
+//! relationships, find the path between two ideas, `dump` the whole graph. WRITE (#2853): the knowledge
+//! librarian upserts nodes (`set`), wires relationships (`link`/`unlink`), and removes nodes (`remove`)
+//! — persisted to the on-disk store (`~/.base-studio-code/knowledge/algorithms.json`), so a read after
+//! a write reflects it.
 
 use serde_json::Value;
 
@@ -98,11 +101,64 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 .collect();
             emit(&serde_json::json!({ "matched": matched, "unmatched": unmatched, "duplicates": duplicates, "calls": calls }))
         }
+        // ── curate the graph (#2853) — load → mutate → save; a read after reflects the write ──
+        // `set --id <id> --kind <k> --name <n> [--summary <s>] [--tags a,b] [--complexity <c>]` — upsert a node.
+        "set" => {
+            let id = flag_value(&args, "--id")
+                .ok_or("usage: bsc graph set --id <id> --kind <data-structure|algorithm|concept|output> --name <name> [--summary <s>] [--tags a,b] [--complexity <c>]")?;
+            let kind = flag_value(&args, "--kind").ok_or("usage: bsc graph set … --kind data-structure|algorithm|concept|output")?;
+            let name = flag_value(&args, "--name").ok_or("usage: bsc graph set … --name <name>")?;
+            let mut node = serde_json::json!({ "id": id, "kind": kind, "name": name });
+            if let Some(s) = flag_value(&args, "--summary") { node["summary"] = Value::String(s); }
+            if let Some(c) = flag_value(&args, "--complexity") { node["complexity"] = Value::String(c); }
+            if let Some(t) = flag_value(&args, "--tags") {
+                let tags: Vec<Value> = t.split(',').map(str::trim).filter(|x| !x.is_empty()).map(|x| Value::String(x.to_string())).collect();
+                node["tags"] = Value::Array(tags);
+            }
+            let mut g = crate::load();
+            let replaced = crate::set_node(&mut g, node.clone())?;
+            crate::save(&g)?;
+            emit(&serde_json::json!({ "ok": true, "action": if replaced { "updated" } else { "created" }, "node": node }))
+        }
+        // `link <from> <to> --rel <rel>` — add a relationship edge (endpoints must exist).
+        "link" => {
+            let from = positional.get(1).ok_or("usage: bsc graph link <from> <to> --rel <operates-on|composes|variant-of|generates|related-to>")?;
+            let to = positional.get(2).ok_or("usage: bsc graph link <from> <to> --rel <rel>")?;
+            let rel = flag_value(&args, "--rel").ok_or("usage: bsc graph link <from> <to> --rel <operates-on|composes|variant-of|generates|related-to>")?;
+            let mut g = crate::load();
+            let added = crate::link(&mut g, from, to, &rel)?;
+            crate::save(&g)?;
+            emit(&serde_json::json!({ "ok": true, "action": if added { "linked" } else { "exists" }, "edge": { "from": from, "to": to, "rel": rel } }))
+        }
+        // `unlink <from> <to> [--rel <rel>]` — remove matching edges (all rels when --rel is omitted).
+        "unlink" => {
+            let from = positional.get(1).ok_or("usage: bsc graph unlink <from> <to> [--rel <rel>]")?;
+            let to = positional.get(2).ok_or("usage: bsc graph unlink <from> <to> [--rel <rel>]")?;
+            let rel = flag_value(&args, "--rel");
+            let mut g = crate::load();
+            let removed = crate::unlink(&mut g, from, to, rel.as_deref());
+            crate::save(&g)?;
+            emit(&serde_json::json!({ "ok": true, "removed": removed, "from": from, "to": to, "rel": rel }))
+        }
+        // `remove <id>` — delete a node + every edge/implementation referencing it.
+        "remove" => {
+            let id = positional.get(1).ok_or("usage: bsc graph remove <id>")?;
+            let mut g = crate::load();
+            match crate::remove_node(&mut g, id) {
+                Some((edges, impls)) => {
+                    crate::save(&g)?;
+                    emit(&serde_json::json!({ "ok": true, "removed": id, "edges_removed": edges, "impls_removed": impls }))
+                }
+                None => Err(format!("unknown node '{id}'")),
+            }
+        }
+        // `dump` — the whole graph document (nodes + edges + implementations), store-or-seed.
+        "dump" => emit(&crate::load()),
         "help" | "-h" | "--help" => {
             print!("{}", help(prog));
             Ok(())
         }
-        other => Err(format!("unknown graph command '{other}' — want: list | neighbors <id> | path <a> <b> | impl <concept> --tech <t> | extract <dir>\n\n{}", help(prog))),
+        other => Err(format!("unknown graph command '{other}' — read: list | neighbors <id> | path <a> <b> | impl <concept> --tech <t> | dump | extract <dir>; write: set | link | unlink | remove\n\n{}", help(prog))),
     }
 }
 
@@ -113,13 +169,19 @@ fn flag_value(args: &[String], flag: &str) -> Option<String> {
 
 fn help(prog: &str) -> String {
     format!(
-        "{prog} — the Algorithms knowledge graph (#2761)\n\n\
-         USAGE:\n  \
+        "{prog} — the Algorithms knowledge graph (#2761/#2853)\n\n\
+         READ:\n  \
          {prog} list [--kind K] [--tech T] [--pretty]   # every concept; filter by kind and/or a tech that implements it\n  \
          {prog} neighbors <id> [--pretty]               # a concept's relationships (rel + direction + other node)\n  \
          {prog} path <a> <b> [--pretty]                 # shortest relationship chain between two concepts\n  \
          {prog} impl <concept> --tech <t> [--pretty]    # the concept's per-tech implementation (#2770), or null\n  \
+         {prog} dump [--pretty]                         # the whole graph document (nodes + edges + implementations)\n  \
          {prog} extract <dir> [--tech T] [--pretty]     # parse real code (#2775): matched/unmatched fns + concept duplicates + call edges (#2779)\n\n\
+         WRITE (#2853) — curate the store; a read after reflects the write:\n  \
+         {prog} set --id <id> --kind <kind> --name <name> [--summary <s>] [--tags a,b] [--complexity <c>]   # upsert a node\n  \
+         {prog} link <from> <to> --rel <rel>            # add a relationship edge (both nodes must exist)\n  \
+         {prog} unlink <from> <to> [--rel <rel>]        # remove matching edges (all rels when --rel omitted)\n  \
+         {prog} remove <id>                             # delete a node + every edge/implementation referencing it\n\n\
          Node kinds: data-structure · algorithm · concept · output.\n\
          Relationships: operates-on · composes · variant-of · generates · related-to.\n\
          Implementation techs (#2770): typescript · rust — each `implements` a concept and `composes` other same-tech impls.\n\

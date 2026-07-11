@@ -82,7 +82,7 @@ mod tests {
     }
 
     /// The PACKAGED seed (ignoring any config-dir override) carries the content pillars: the `bsc graph`
-    /// command surface, the knowledge-graph model vocabulary, and the scope guard.
+    /// read AND write (#2853) command surface, the knowledge-graph model vocabulary, and the scope guard.
     #[test]
     fn packaged_librarian_spec_carries_surface_model_and_scope_guard() {
         let seed = crate::platform::config::embedded_str("librarian/claude.md");
@@ -93,6 +93,9 @@ mod tests {
             "bsc graph neighbors",
             "bsc graph path",
             "bsc graph extract", // the reality lens
+            "bsc graph set",    // the write verbs (#2853) — the librarian must be TOLD how to curate
+            "bsc graph link",
+            "bsc graph remove",
             "concept",          // the knowledge-graph model vocabulary
             "relationship",
             "ONLY",             // the scope guard
