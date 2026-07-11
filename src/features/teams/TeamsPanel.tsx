@@ -30,6 +30,7 @@ import { TeamsInspector } from "./TeamsInspector";
 import { TeamsContextMenu } from "./TeamsContextMenu";
 import { ArchitectTerminal } from "./ArchitectTerminal";
 import { useDragResize } from "@/shared/hooks/useDragResize";
+import { useDockEntrance } from "@/shared/hooks/useDockEntrance";
 import { type Position } from "./lib/team";
 import { autoLayout, nodeBox, contentBounds, CANVAS_W, CANVAS_H, type Box as GBox } from "./lib/orgLayout";
 import { teamsBounds } from "./lib/teamsLayout";
@@ -83,7 +84,8 @@ export function TeamsPanel() {
   // The docked team-architect session's height (#2755) — a row-resize handle above it; `invert`
   // because the terminal sits AFTER the handle, so dragging up grows it. Mirrors the Design Studio's
   // terminal dock (DesignsWorkbench).
-  const term = useDragResize({ initial: 240, min: 140, max: 560, axis: "y", invert: true });
+  const term = useDragResize({ initial: 340, min: 140, max: 560, axis: "y", invert: true });
+  useDockEntrance(term.setSize, 340); // grow the dock up into place on mount (#2905)
 
   // The always-on architect session, docked below the graph on BOTH graph levels (#2759). Passing the
   // SAME element to the overview AND the entered-team GraphCanvas — which React reconciles as ONE
