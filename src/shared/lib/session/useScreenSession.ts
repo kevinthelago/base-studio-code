@@ -91,7 +91,14 @@ export function useScreenSession<S = void>(config: ScreenSessionConfig<S>): Scre
     const snap = (config.snapshot?.() as S);
 
     requestAnimationFrame(async () => {
-      fitAddon.fit();
+      // Only fit when the host has real dimensions. Fitting a 0-size host — a KeptMountedPage surface
+      // mounted before layout, or a collapsed/zero-height dock — sets the terminal to 0 rows, and the
+      // first `pty_data` write to a 0-row terminal dereferences a non-existent buffer line and crashes
+      // xterm ("Cannot set properties of undefined (setting 'isWrapped')"), taking the page down via the
+      // ErrorBoundary (#2832). A fresh xterm defaults to 80×24, so skipping the fit keeps a valid buffer;
+      // the ResizeObserver below fits it once the host is actually sized (e.g. when KeptMountedPage flips
+      // it to display:flex). Same guard the ResizeObserver already applies.
+      if (el.clientWidth > 0 && el.clientHeight > 0) fitAddon.fit();
 
       // Subscribe before creating the PTY so we never miss early output.
       unlistenData.current = await listen<string>(`pty_data_${paneId}`, (ev) => {
@@ -106,16 +113,26 @@ export function useScreenSession<S = void>(config: ScreenSessionConfig<S>): Scre
       await config.launch(term, snap);
     });
 
+    // DEBOUNCED refit (#2832): a resize DRAG fires the observer dozens of times per second. Calling
+    // `fit()` — which resizes the terminal and REFLOWS its buffer — on every frame while the PTY is
+    // streaming output races xterm's async write loop and corrupts the buffer, throwing
+    // "Cannot set properties of undefined (setting 'isWrapped')" from a later write (an UNCAUGHT error
+    // that takes the page down). Coalescing to a single fit ~90ms after the drag settles reflows once,
+    // off the streaming path. A hidden (display:none) host is 0-size → skipped.
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
     const ro = new ResizeObserver(() => {
-      // A hidden (collapsed) surface is display:none → zero client size, skipped here.
-      const { clientWidth, clientHeight } = el;
-      if (clientWidth === 0 || clientHeight === 0) return;
-      fitAddon.fit();
-      fireInvoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }, console.error);
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        const t = termRef.current;
+        if (!t || el.clientWidth === 0 || el.clientHeight === 0) return;
+        fitAddon.fit();
+        fireInvoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }, console.error);
+      }, 90);
     });
     ro.observe(el);
 
     return () => {
+      clearTimeout(resizeTimer);
       unlistenData.current?.();
       unlistenExit.current?.();
       ro.disconnect();
