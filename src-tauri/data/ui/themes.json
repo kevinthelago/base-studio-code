@@ -1,9 +1,10 @@
 {
   "version": 1,
-  "note": "The kit theme registry (#1852 Phase 3) — the ONE source of truth for the SDK's THEME axis. A theme is a map of overrides for the contracted tokens (the base palette `--bg-*`/`--fg-*`/`--border*`/`--accent*` and the semantic component tokens `--card-*`/`--btn-*`/`--field-*`/`--chip-*`, all defined in src-tauri/data/ui/tokens-contract.css), plus an optional `base` (\"dark\"|\"light\") naming the SURFACE the theme sits on. Applying a theme sets the token overrides — globally on :root (via appearance/useAppBoot, same mechanism as the accent) or scoped on a subtree (via <ThemeScope>, for a coexisting themed card or an isolated live preview); the Design Studio preview additionally reads `base` to pick its sandbox surface. This file is read by BOTH faces: the frontend (`src/shared/ui/kit/theme.ts` loads it + applies it) AND `bsc ui theme list|get` (crates/bsc-ui embeds it), so a live agent can enumerate + read themes from its own shell. `Dark` (empty overrides) is the base look; `Light` is the same look on the light surface; the named palettes are recognizable, permissively-licensed open-source color schemes (Nord, Dracula, Solarized, Gruvbox, Tokyo Night, Monokai) that rebind the WHOLE base palette — every value is a literal color so a palette composes cleanly over the contract without depending on the chosen accent.",
+  "note": "The kit theme registry (#1852 Phase 3) — the ONE source of truth for the SDK's THEME axis. A theme is a map of overrides for the contracted tokens (the base palette `--bg-*`/`--fg-*`/`--border*`/`--accent*` and the semantic component tokens `--card-*`/`--btn-*`/`--field-*`/`--chip-*`, all defined in src-tauri/data/ui/tokens-contract.css), plus an optional `base` (\"dark\"|\"light\") naming the SURFACE the theme sits on. Applying a theme sets the token overrides — globally on :root (via appearance/useAppBoot, same mechanism as the accent) or scoped on a subtree (via <ThemeScope>, for a coexisting themed card or an isolated live preview); the Design Studio preview additionally reads `base` to pick its sandbox surface. This file is read by BOTH faces: the frontend (`src/shared/ui/kit/theme.ts` loads it + applies it) AND `bsc ui theme list|get` (crates/bsc-ui embeds it), so a live agent can enumerate + read themes from its own shell. Every theme declares its DESIGN GROUP via a REQUIRED `tech` slug (#2749) — the same `tech` axis a kit carries (react, vue, …); the relationship is mandatory and 1:1 from the theme's side (a theme belongs to exactly one design group, a group hosts its own set of themes), so `bsc ui theme set`/`validate` reject a theme with no `tech` and the Themes page groups by it. React is the only design group today, so every packaged palette is `\"tech\": \"react\"`. `Dark` (empty overrides) is the base look; `Light` is the same look on the light surface; the named palettes are recognizable, permissively-licensed open-source color schemes (Nord, Dracula, Solarized, Gruvbox, Tokyo Night, Monokai) that rebind the WHOLE base palette — every value is a literal color so a palette composes cleanly over the contract without depending on the chosen accent.",
   "themes": [
     {
       "id": "default",
+      "tech": "react",
       "label": "Dark",
       "description": "The base look on the dark surface — no overrides.",
       "base": "dark",
@@ -11,6 +12,7 @@
     },
     {
       "id": "light",
+      "tech": "react",
       "label": "Light",
       "description": "The base look on the light surface — no overrides.",
       "base": "light",
@@ -18,6 +20,7 @@
     },
     {
       "id": "nord",
+      "tech": "react",
       "label": "Nord",
       "description": "An arctic, north-bluish palette — cool Polar Night surfaces with Frost accents.",
       "base": "dark",
@@ -40,6 +43,7 @@
     },
     {
       "id": "dracula",
+      "tech": "react",
       "label": "Dracula",
       "description": "The classic dark theme — deep slate surfaces with vivid purple, pink, and green.",
       "base": "dark",
@@ -62,6 +66,7 @@
     },
     {
       "id": "solarized-dark",
+      "tech": "react",
       "label": "Solarized Dark",
       "description": "Ethan Schoonover's precision palette — teal-tinted dark surfaces with a blue accent.",
       "base": "dark",
@@ -84,6 +89,7 @@
     },
     {
       "id": "solarized-light",
+      "tech": "react",
       "label": "Solarized Light",
       "description": "Solarized on its light surface — warm cream panels with the same blue accent.",
       "base": "light",
@@ -106,6 +112,7 @@
     },
     {
       "id": "gruvbox",
+      "tech": "react",
       "label": "Gruvbox",
       "description": "Retro-groove warmth — soft dark browns with earthy yellow, green, and orange.",
       "base": "dark",
@@ -128,6 +135,7 @@
     },
     {
       "id": "tokyo-night",
+      "tech": "react",
       "label": "Tokyo Night",
       "description": "A calm, deep-blue night palette with soft neon blue, cyan, and magenta.",
       "base": "dark",
@@ -150,6 +158,7 @@
     },
     {
       "id": "monokai",
+      "tech": "react",
       "label": "Monokai",
       "description": "The iconic editor palette — near-black surfaces with signature lime green and pink.",
       "base": "dark",

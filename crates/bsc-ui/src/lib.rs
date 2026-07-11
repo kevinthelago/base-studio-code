@@ -291,6 +291,23 @@ pub fn validate_theme_vars(vars: &serde_json::Map<String, Value>) -> Vec<String>
     errs
 }
 
+/// Validate a whole theme OBJECT (#2749): its DESIGN GROUP binding + its `vars`. `tech` — the design
+/// group the theme belongs to — is REQUIRED (mandatory, 1:1 from the theme's side), so a theme with no
+/// non-empty string `tech` is rejected here; the `vars` are then checked by [`validate_theme_vars`].
+/// Flat error list (empty = valid) — what `bsc ui theme set`/`validate` enforce.
+pub fn validate_theme(theme: &Value) -> Vec<String> {
+    let mut errs = Vec::new();
+    match theme.get("tech").and_then(Value::as_str) {
+        Some(t) if !t.trim().is_empty() => {}
+        _ => errs.push(
+            "must declare its design group — add a non-empty string \"tech\" (e.g. \"react\")".into(),
+        ),
+    }
+    let vars = theme.get("vars").and_then(Value::as_object).cloned().unwrap_or_default();
+    errs.extend(validate_theme_vars(&vars));
+    errs
+}
+
 /// Structurally validate a KitNode tree against the contract — the EXACT rules the frontend
 /// `validateKitNode` enforces, so a spec valid here is valid there. Returns the flat list of
 /// human-readable errors (empty = valid).
@@ -578,6 +595,45 @@ mod tests {
         let errs = validate_theme_vars(&bad);
         assert!(errs.iter().any(|e| e.contains("--not-a-token")), "flags the unknown token: {errs:?}");
         assert!(errs.iter().any(|e| e.contains("disallowed")), "flags the injection: {errs:?}");
+    }
+
+    #[test]
+    fn every_packaged_theme_declares_its_design_group() {
+        // #2749 — the theme↔design-group binding is mandatory: every packaged theme carries a
+        // non-empty `tech` slug. React is the only design group today, so they are all "react".
+        for t in themes() {
+            let id = t.get("id").and_then(Value::as_str).unwrap_or("?");
+            let tech = t.get("tech").and_then(Value::as_str);
+            assert!(
+                matches!(tech, Some(s) if !s.trim().is_empty()),
+                "theme '{id}' must declare a non-empty design group `tech`",
+            );
+            assert_eq!(tech, Some("react"), "theme '{id}' is in the react design group");
+        }
+    }
+
+    #[test]
+    fn validate_theme_requires_a_design_group() {
+        // #2749 — validate_theme rejects a group-less theme and still validates the vars alongside.
+        let no_group: Value =
+            serde_json::from_str(r#"{"id":"x","vars":{"--card-bg":"var(--bg-elev)"}}"#).unwrap();
+        assert!(
+            validate_theme(&no_group).iter().any(|e| e.contains("design group")),
+            "a theme with no `tech` is rejected",
+        );
+        let blank_group: Value = serde_json::from_str(r#"{"id":"x","tech":"  ","vars":{}}"#).unwrap();
+        assert!(!validate_theme(&blank_group).is_empty(), "a blank `tech` is rejected");
+
+        let ok: Value =
+            serde_json::from_str(r#"{"id":"x","tech":"react","vars":{"--card-bg":"var(--bg-elev)"}}"#).unwrap();
+        assert!(validate_theme(&ok).is_empty(), "a grouped theme with clean vars validates: {:?}", validate_theme(&ok));
+
+        let bad_vars: Value =
+            serde_json::from_str(r#"{"id":"x","tech":"react","vars":{"--not-a-token":"red"}}"#).unwrap();
+        assert!(
+            validate_theme(&bad_vars).iter().any(|e| e.contains("--not-a-token")),
+            "the vars are validated alongside the group binding",
+        );
     }
 
     #[test]

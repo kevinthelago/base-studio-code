@@ -191,7 +191,7 @@ describe("buildComponentsPayload", () => {
 describe("buildThemesPayload", () => {
   it("carries the registry + the active theme id", () => {
     const out = buildThemesPayload({
-      themes: [{ id: "soft", label: "Soft", description: "rounder", vars: { "--card-radius": "14px" }, builtin: true }],
+      themes: [{ id: "soft", tech: "react", label: "Soft", description: "rounder", vars: { "--card-radius": "14px" }, builtin: true }],
       active: "soft",
     });
     expect(out.active).toBe("soft");
