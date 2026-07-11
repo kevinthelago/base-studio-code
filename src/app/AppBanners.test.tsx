@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { SessionRecoveryBanner, SandboxSetupBanner } from "./AppBanners";
+import { SessionRecoveryBanner, SandboxSetupBanner, PathExposeBanner } from "./AppBanners";
 import { useAppStore } from "@/store";
 
 const DISCOVERED = [
@@ -131,4 +131,46 @@ describe("SandboxSetupBanner (#1916)", () => {
     await waitFor(() => expect(screen.queryByText(/Agent sandbox not set up/)).toBeNull());
   });
 
+});
+
+describe("PathExposeBanner (#2734)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "path_expose_status") return { configured: false, binDir: "C:\\Apps\\bsc" };
+      if (cmd === "path_expose_configure") return { changed: true, target: "your user PATH", undo: "remove it from Path" };
+      return undefined;
+    });
+  });
+
+  it("offers to add the bin dir, then reports what changed after configuring", async () => {
+    render(<PathExposeBanner />);
+    // The offer names the exact dir that would be added (transparency before the click).
+    await waitFor(() => expect(screen.getByText("C:\\Apps\\bsc")).toBeTruthy());
+    fireEvent.click(screen.getByText("Add to PATH"));
+    // The consented write reports back where it wrote + how to undo.
+    await waitFor(() => expect(screen.getByText(/Reopen your terminal/)).toBeTruthy());
+    expect(screen.getByText(/remove it from Path/)).toBeTruthy();
+  });
+
+  it("stays hidden when bsc already resolves on PATH", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) =>
+      cmd === "path_expose_status" ? { configured: true, binDir: "C:\\Apps\\bsc" } : undefined,
+    );
+    render(<PathExposeBanner />);
+    // Give the async status probe a tick, then assert nothing rendered.
+    await waitFor(() => expect(screen.queryByText("Add to PATH")).toBeNull());
+  });
+
+  it("persists dismissal so it doesn't nag on the next launch", async () => {
+    const { unmount } = render(<PathExposeBanner />);
+    await waitFor(() => expect(screen.getByText("Add to PATH")).toBeTruthy());
+    fireEvent.click(screen.getByLabelText(/dismiss/i));
+    expect(localStorage.getItem("bsc.pathExpose.dismissed")).toBe("1");
+    unmount();
+    // A fresh mount reads the persisted flag and stays hidden even though detection says not-configured.
+    render(<PathExposeBanner />);
+    await waitFor(() => expect(screen.queryByText("Add to PATH")).toBeNull());
+  });
 });
