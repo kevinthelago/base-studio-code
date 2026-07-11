@@ -210,6 +210,7 @@ describe("language kits (#2863) — a kit is every impl of one tech, grouped by 
     const ts = groups.find((g) => g.tech === "typescript")!;
     expect(ts.label).toBe("TypeScript");
     expect(ts.key).toBe("lang:typescript");
+    expect(ts.dot).toBe("var(--info)"); // the per-language folder-head color (#2902)
     // Every impl in the folder is that language's, and every primitive precedes every algorithm.
     expect(ts.impls.every((im) => im.tech === "typescript")).toBe(true);
     const firstAlgo = ts.impls.findIndex((im) => im.role === "algorithm");
