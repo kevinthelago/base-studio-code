@@ -391,6 +391,93 @@ function ProjectCompleteBanner() {
  * `pointer-events: none`). Multi-item alerts (quarantine, session recovery) collapse to ONE summary
  * banner with a "Review" drawer rather than one bar per item. Mounted once by App.
  */
+/** Where the bsc-on-PATH dismissal persists (a nudge, not a nag). */
+const PATH_DISMISS_KEY = "bsc.pathExpose.dismissed";
+
+/**
+ * bsc-on-PATH banner (#2734). Inside the app, sessions exec the bundled `bsc` by an absolute `$BSC_BIN`
+ * path (#2001) — no PATH. So a bare `bsc` in the user's OWN terminal won't resolve. When detection
+ * (`path_expose_status`) reports it isn't on PATH, this offers a one-click, CONSENTED add: the banner
+ * names the exact dir first, the click IS the consent, and `path_expose_configure` reports back exactly
+ * what changed + how to undo it. Dismissal persists; once configured, detection hides it next launch.
+ */
+export function PathExposeBanner() {
+  const [status, setStatus] = useState<{ configured: boolean; binDir: string | null } | null>(null);
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem(PATH_DISMISS_KEY) === "1"; } catch { return false; }
+  });
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<{ target: string; undo: string } | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    // Fall back to "configured" on any detection failure — never nag when we can't actually tell.
+    void safeInvoke<{ configured: boolean; binDir: string | null }>(
+      "path_expose_status", undefined, { configured: true, binDir: null },
+    ).then((s) => { if (!cancelled) setStatus(s); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const dismiss = () => {
+    try { localStorage.setItem(PATH_DISMISS_KEY, "1"); } catch { /* private mode — dismiss for this run */ }
+    setDismissed(true);
+  };
+
+  const configure = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await invoke<{ changed: boolean; target: string; undo: string }>("path_expose_configure");
+      setDone({ target: r.target, undo: r.undo });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Nothing to offer: still probing, already on PATH, no bundled bsc, or dismissed.
+  if (dismissed || !status || status.configured || !status.binDir) return null;
+
+  if (done) {
+    return (
+      <Banner
+        variant="bar"
+        tone="success"
+        onDismiss={dismiss}
+        lead={<Text weight={600} style={{ whiteSpace: "nowrap" }}>✓ bsc on PATH</Text>}
+      >
+        <Text>
+          Added to {done.target}. Reopen your terminal to run <Text as="span" mono>bsc</Text>. To undo: {done.undo}
+        </Text>
+      </Banner>
+    );
+  }
+
+  return (
+    <Banner
+      variant="bar"
+      tone="info"
+      onDismiss={dismiss}
+      lead={<Text weight={600} style={{ whiteSpace: "nowrap" }}>bsc CLI</Text>}
+      right={
+        <Button variant="primary" onClick={configure} disabled={busy}>
+          {busy ? "Configuring…" : "Add to PATH"}
+        </Button>
+      }
+    >
+      <Stack gap={2} style={{ flex: 1 }}>
+        <Text>
+          Run <Text as="span" mono>bsc</Text> from your own terminal — add{" "}
+          <Text as="span" mono>{status.binDir}</Text> to your PATH.
+        </Text>
+        {error && <Text size="xxs" style={{ color: "var(--danger)" }}>{error}</Text>}
+      </Stack>
+    </Banner>
+  );
+}
+
 export function AppBanners() {
   return (
     <Box className="app-banner-stack">
@@ -399,6 +486,7 @@ export function AppBanners() {
       <QuarantineBanner />
       <SandboxSetupBanner />
       <ProjectCompleteBanner />
+      <PathExposeBanner />
     </Box>
   );
 }
