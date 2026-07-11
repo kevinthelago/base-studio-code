@@ -6,13 +6,7 @@
 import { useMemo } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
-import { REL_META, NODE_W, NODE_H, type KitGraph, type KitRel, type KnowledgeLayout } from "./lib/knowledge";
-
-/** Edge styling for a kit graph — the ontology rels (from REL_META) plus `pairs` (the counterpart link). */
-const KIT_REL_META: Record<KitRel, { label: string; dashed?: boolean; doubleEnded?: boolean }> = {
-  ...REL_META,
-  pairs: { label: "pairs", dashed: true, doubleEnded: true },
-};
+import { KIT_REL_META, NODE_W, NODE_H, type KitGraph, type KitRel, type KnowledgeLayout } from "./lib/knowledge";
 
 interface KitEdgeGeom { id: string; rel: KitRel; from: string; to: string; d: string; arrow: string; arrowStart?: string; labelX: number; labelY: number }
 
