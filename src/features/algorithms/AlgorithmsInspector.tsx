@@ -11,7 +11,7 @@ import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Chip } from "@/shared/ui/data/Chip";
 import {
   KIND_META, REL_META, TECH_META, relationsOf, nodeIndex,
-  implsForConcept, implFor, implById, usedByImpl,
+  implsForConcept, implFor, implById, usedByImpl, pairsOf,
   type KnowledgeGraph, type KnowledgeNode, type KnowledgeRel, type Tech, type AlgoImpl,
 } from "./lib/knowledge";
 import type { ExtractSite, CallEdge } from "./lib/extraction";
@@ -21,9 +21,12 @@ const REL_ORDER: KnowledgeRel[] = ["operates-on", "composes", "variant-of", "gen
 
 const PANEL = { width: "100%", height: "100%", borderLeft: "1px solid var(--border)", overflowY: "auto", background: "var(--bg-panel)" } as const;
 
-export function AlgorithmsInspector({ graph, selected, activeTech, sites, calls, diff, onSelectNode }: {
+export function AlgorithmsInspector({ graph, selected, focusedImpl, activeTech, sites, calls, diff, onSelectNode }: {
   graph: KnowledgeGraph;
   selected: KnowledgeNode | null;
+  /** A free-standing PRIMITIVE (#2863) picked from the rail's Primitives section — shown directly (code
+   *  + pairs) since it has no concept node. Takes precedence over `selected` when set. */
+  focusedImpl?: AlgoImpl | null;
   /** The implementation tech (#2770) whose code + composition the impl section shows. */
   activeTech: Tech;
   /** The REAL implementation sites `bsc graph extract` found for the selected concept (#2777) — listed
@@ -37,6 +40,38 @@ export function AlgorithmsInspector({ graph, selected, activeTech, sites, calls,
   diff?: ConceptDiff;
   onSelectNode: (id: string) => void;
 }) {
+  // A free-standing primitive (#2863) — the language building block, shown directly: its code + the
+  // algorithm counterparts it `pairs` with.
+  if (focusedImpl) {
+    const paired = pairsOf(graph, focusedImpl);
+    const ell = { minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } as const;
+    return (
+      <Box style={PANEL}>
+        <Stack gap={12} style={{ padding: 16 }}>
+          <Row gap={8} align="center" style={{ minWidth: 0 }}>
+            <Box style={{ width: 10, height: 10, borderRadius: 3, background: "var(--violet)", flex: "none" }} />
+            <Text weight={600} size={15} style={ell}>{focusedImpl.name}</Text>
+            <Chip>primitive</Chip>
+          </Row>
+          <Eyebrow size={10}>Building block · {TECH_META[focusedImpl.tech]?.label ?? focusedImpl.tech}</Eyebrow>
+          {focusedImpl.summary && <Text size={12} tone="muted">{focusedImpl.summary}</Text>}
+          <Box as="pre" className="algo-code mono">{focusedImpl.code}</Box>
+          {paired.length > 0 && (
+            <Stack gap={4}>
+              <Text mono size="xxs" tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase" }}>Pairs with</Text>
+              {paired.map((p) => (
+                <Box as="button" key={p.id} className="algo-relrow" onClick={() => { if (p.concept) onSelectNode(p.concept); }}>
+                  <Text as="span" tone="dim" size={11}>{"⇄"}</Text>
+                  <Text as="span" size={12} style={{ flex: 1, ...ell }}>{p.name}</Text>
+                  <Text as="span" mono size="xxs" tone="dim">{p.id}</Text>
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </Stack>
+      </Box>
+    );
+  }
   if (!selected) {
     return (
       <Box style={PANEL}>
