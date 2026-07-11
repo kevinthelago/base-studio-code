@@ -20,6 +20,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("blueprint", "user blueprint store"),
     ("persona", "user persona store: agent identities (prompt + skills + model over a role)"),
     ("teams", "user teams store: persona-relationship graph (positions + relationships)"),
+    ("studio", "Studio store: shareable snapshots of the app's library state (save · list · get · remove)"),
     ("org", "DEPRECATED (#2700) → use `bsc teams` (the store, renamed org → teams)"),
     ("component", "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)"),
     ("ui", "UI design surface: KitNode contract + themes (#1852) + the component library (#2469) + the released-kit store (release, #2465)"),
@@ -58,6 +59,7 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "blueprint" => bsc_blueprint::cli::run(rest, "bsc blueprint"),
         "persona" => bsc_persona::cli::run(rest, "bsc persona"),
         "teams" => bsc_teams::cli::run(rest, "bsc teams"),
+        "studio" => bsc_studio::cli::run(rest, "bsc studio"),
         // Deprecated alias (#2700, the #2469 `bsc component` → `bsc ui` pattern): `bsc org` still routes
         // to the SAME teams store handler — live agent sessions call it, so it must keep working. The
         // pointer goes to STDERR so stdout stays clean JSON for pipes.
@@ -149,6 +151,13 @@ mod tests {
         assert!(h.contains("DEPRECATED (#2700)"), "the org row carries the deprecation pointer");
         assert!(h.contains("`bsc teams`"), "... aimed at the renamed teams store");
         assert!(h.contains("user teams store"), "the teams row describes the store");
+    }
+
+    #[test]
+    fn studio_dispatches_and_appears_in_the_overview() {
+        // #2890: the Studio store is mounted + listed. Help path — no store required.
+        assert!(dispatch("studio", vec!["help".into()]).is_ok());
+        assert!(top_help().contains("Studio store"), "the studio row describes the store");
     }
 
     #[test]
