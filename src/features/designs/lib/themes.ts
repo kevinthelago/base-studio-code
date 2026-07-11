@@ -41,3 +41,36 @@ export function orderThemes(records: KitThemeRecord[]): KitThemeRecord[] {
     .sort((a, b) => a.label.localeCompare(b.label));
   return [...packaged, ...authored];
 }
+
+/** The bucket a theme with no `tech` falls into (#2749). `tech` is required, but a corrupt persisted
+ *  copy must never crash the page — it groups here, always ordered last. */
+export const OTHER_GROUP = "other";
+
+/** A design-group section on the Themes page (#2749): one `tech` group and the themes under it,
+ *  mirroring how the Designs rail groups kits by their `tech` axis. */
+export interface ThemeGroup {
+  /** The design-group slug (`react`, …); {@link OTHER_GROUP} for a theme with no `tech`. */
+  tech: string;
+  /** The header label (the raw slug — the gallery uppercases it like the Designs `ds-grouphead`). */
+  label: string;
+  themes: KitThemeRecord[];
+}
+
+/** Group themes by their design group (#2749) for the grouped Themes page: one section per `tech`,
+ *  themes kept in {@link orderThemes} order within a group, groups ordered by first appearance with
+ *  the missing-`tech` bucket forced last. Pure → unit-tested. */
+export function groupThemes(records: KitThemeRecord[]): ThemeGroup[] {
+  const byTech = new Map<string, KitThemeRecord[]>();
+  for (const t of orderThemes(records)) {
+    const tech = (t.tech ?? "").trim() || OTHER_GROUP;
+    const arr = byTech.get(tech);
+    if (arr) arr.push(t);
+    else byTech.set(tech, [t]);
+  }
+  const other = byTech.get(OTHER_GROUP);
+  if (other && byTech.size > 1) {
+    byTech.delete(OTHER_GROUP);
+    byTech.set(OTHER_GROUP, other); // force the defensive bucket last
+  }
+  return [...byTech].map(([tech, themes]) => ({ tech, label: tech, themes }));
+}
