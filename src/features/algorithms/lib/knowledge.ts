@@ -42,10 +42,12 @@ export type Tech = "typescript" | "rust";
 /** The implementation techs, in display order. */
 export const TECHS: Tech[] = ["typescript", "rust"];
 
-/** Per-tech display label + file extension (the impl id suffix: `<concept>.<ext>`). */
-export const TECH_META: Record<Tech, { label: string; ext: string }> = {
-  typescript: { label: "TypeScript", ext: "ts" },
-  rust: { label: "Rust", ext: "rs" },
+/** Per-tech display label + file extension (the impl id suffix: `<concept>.<ext>`) + rail dot color (a
+ *  per-language identifier, the Algorithms analog of a Designs kit's `dot`; distinct from the impl role
+ *  dots `--violet`/`--accent`). */
+export const TECH_META: Record<Tech, { label: string; ext: string; dot: string }> = {
+  typescript: { label: "TypeScript", ext: "ts", dot: "var(--info)" },
+  rust: { label: "Rust", ext: "rs", dot: "var(--state-wait)" },
 };
 
 /** The tier of an implementation within a language kit (#2863): a `primitive` is a base language
@@ -306,6 +308,8 @@ export interface AlgoLangGroup {
   label: string;
   /** Stable expand-state key (`lang:<tech>`). */
   key: string;
+  /** The folder-head color dot — the per-language identifier (#2902), like a Designs kit's `dot`. */
+  dot: string;
   /** The kit's impls, primitives before algorithms, each in seed order. */
   impls: AlgoImpl[];
 }
@@ -318,6 +322,7 @@ export function groupImplsByLanguage(graph: KnowledgeGraph): AlgoLangGroup[] {
     tech,
     label: TECH_META[tech]?.label ?? tech,
     key: `lang:${tech}`,
+    dot: TECH_META[tech]?.dot ?? "var(--fg-muted)",
     impls: [...kitImplsByRole(graph, tech, "primitive"), ...kitImplsByRole(graph, tech, "algorithm")],
   }));
 }
