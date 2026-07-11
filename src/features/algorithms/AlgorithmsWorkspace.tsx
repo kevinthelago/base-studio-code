@@ -41,7 +41,11 @@ export function AlgorithmsWorkspace() {
   const lit = useMemo(() => (selected ? neighborsOf(graph, selected) : null), [graph, selected]);
   // The concept ids that carry an implementation in the default tech — drives the node "</>" badge.
   const implConcepts = useMemo(
-    () => new Set(graph.implementations.filter((im) => im.tech === DEFAULT_TECH).map((im) => im.concept)),
+    () => new Set(
+      graph.implementations
+        .filter((im) => im.tech === DEFAULT_TECH)
+        .flatMap((im) => (im.concept ? [im.concept] : [])), // free-standing primitives (#2863) have no concept
+    ),
     [graph.implementations],
   );
 

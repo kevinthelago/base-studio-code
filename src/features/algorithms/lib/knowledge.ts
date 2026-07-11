@@ -48,22 +48,35 @@ export const TECH_META: Record<Tech, { label: string; ext: string }> = {
   rust: { label: "Rust", ext: "rs" },
 };
 
+/** The tier of an implementation within a language kit (#2863): a `primitive` is a base language
+ *  building block (`java.stream`, `rust.iterator`, `merge`); an `algorithm` composes primitives +
+ *  simpler algorithms into something more complicated. This is the "base vs growing" distinction the
+ *  rail groups by. */
+export type ImplRole = "primitive" | "algorithm";
+
 /**
- * A per-tech implementation of a concept (#2770) — the second tier over the shared concept spine.
- * Mirrors the Designs component/kit system: a language-specific, shareable component that `implements`
- * one concept and `composes` OTHER implementations of the SAME tech to build more complicated
- * algorithms (e.g. `merge-sort.ts` composes `merge.ts`). `id` is `<concept>.<ext>` (ext = ts | rs).
+ * A concept-implementation within a language kit (#2770/#2863) — the unit of a language kit (like a
+ * component in a Designs kit): a real thing, in one `tech`, WITH code. `role` splits **primitives**
+ * (the language's building blocks — free-standing, no `concept`) from **algorithms** (which `composes`
+ * OTHER impls of the SAME tech to grow up, e.g. `merge-sort.ts` composes `merge.ts`). A `primitive`
+ * `pairs` with its algorithm counterparts (a Java `Stream` pairs a sort/search). `id` is `<name>.<ext>`.
  */
 export interface AlgoImpl {
-  /** `<concept>.<ext>` — e.g. "merge-sort.ts". */
+  /** `<name>.<ext>` — e.g. "merge-sort.ts", "java.stream". */
   id: string;
-  /** The concept node id this implements (a real node in `nodes`). */
-  concept: string;
+  /** The concept this realizes — a real node id. OPTIONAL (#2863): a free-standing PRIMITIVE (a pure
+   *  language building block) has no concept. */
+  concept?: string;
   tech: Tech;
+  /** The tier (#2863) — `primitive` (base building block) or `algorithm` (composed). */
+  role: ImplRole;
   name: string;
   summary?: string;
   /** OTHER implementation ids of the same tech this builds on (the "builds on" edges). */
   composes: string[];
+  /** Paired counterparts of the same tech (#2863) — a primitive's algorithm counterparts / an
+   *  algorithm's primitives (a Java `Stream` pairs the sort/search it powers). */
+  pairs?: string[];
   /** A real, concise implementation in `tech`. */
   code: string;
 }
@@ -253,4 +266,32 @@ export function techsWithImpl(graph: KnowledgeGraph, conceptId: string): Tech[] 
 /** The implementations that `compose` `implId` — the reverse of `composes` ("used by"). */
 export function usedByImpl(graph: KnowledgeGraph, implId: string): AlgoImpl[] {
   return graph.implementations.filter((im) => im.composes.includes(implId));
+}
+
+// ── Language kits (#2863) — a kit is every implementation of one `tech`; navigation groups a kit by
+// `role` (primitives → algorithms) the way the Designs rail groups a kit by component role. ──
+
+/** The techs that carry at least one implementation — the language kits present, in {@link TECHS}
+ *  order first, then any others in seed order. */
+export function kitTechs(graph: KnowledgeGraph): Tech[] {
+  const seen = graph.implementations.map((im) => im.tech);
+  const ordered = TECHS.filter((t) => seen.includes(t));
+  const extras = seen.filter((t, i) => seen.indexOf(t) === i && !ordered.includes(t));
+  return [...ordered, ...extras];
+}
+
+/** Every implementation in a language kit (all impls of `tech`), in seed order. */
+export function kitImpls(graph: KnowledgeGraph, tech: Tech): AlgoImpl[] {
+  return graph.implementations.filter((im) => im.tech === tech);
+}
+
+/** A kit's implementations of one `role` (its primitives, or its algorithms). */
+export function kitImplsByRole(graph: KnowledgeGraph, tech: Tech, role: ImplRole): AlgoImpl[] {
+  return graph.implementations.filter((im) => im.tech === tech && im.role === role);
+}
+
+/** The impls this one `pairs` with (same tech), resolved to the impl objects. */
+export function pairsOf(graph: KnowledgeGraph, impl: AlgoImpl): AlgoImpl[] {
+  const ids = new Set(impl.pairs ?? []);
+  return graph.implementations.filter((im) => ids.has(im.id));
 }
