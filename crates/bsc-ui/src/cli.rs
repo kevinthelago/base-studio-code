@@ -1913,7 +1913,7 @@ mod tests {
         // set via --file (stdin isn't drivable in a unit test) — the source file lives OUTSIDE the
         // store dir so `list` can't pick it up as a record.
         let src = std::env::temp_dir().join(format!("bsc-ui-theme-src-{}.json", std::process::id()));
-        std::fs::write(&src, r#"{"id":"neon","label":"Neon","description":"glow","vars":{"--card-bg":"black"}}"#).unwrap();
+        std::fs::write(&src, r#"{"id":"neon","tech":"react","label":"Neon","description":"glow","vars":{"--card-bg":"black"}}"#).unwrap();
         run_theme(&["set", "--file", src.to_str().unwrap()]).unwrap();
         let store = bsc_json_store::Store::new(dir.clone(), "theme");
         // `set` re-serializes each item through serde_json::Value (that's what lets an array upsert
@@ -1923,14 +1923,14 @@ mod tests {
         let stored: serde_json::Value =
             serde_json::from_str(&store.get("neon").unwrap().unwrap()).unwrap();
         let expected: serde_json::Value = serde_json::from_str(
-            r#"{"id":"neon","label":"Neon","description":"glow","vars":{"--card-bg":"black"}}"#,
+            r#"{"id":"neon","tech":"react","label":"Neon","description":"glow","vars":{"--card-bg":"black"}}"#,
         )
         .unwrap();
         assert_eq!(stored, expected, "stored content round-trips semantically");
         run_theme(&["get", "neon"]).unwrap();
         run_theme(&["get", "neon", "--pretty"]).unwrap();
         // An array upserts every element by id.
-        std::fs::write(&src, r#"[{"id":"a1","label":"A","description":"","vars":{}},{"id":"b2","label":"B","description":"","vars":{}}]"#).unwrap();
+        std::fs::write(&src, r#"[{"id":"a1","tech":"react","label":"A","description":"","vars":{}},{"id":"b2","tech":"react","label":"B","description":"","vars":{}}]"#).unwrap();
         run_theme(&["set", "--file", src.to_str().unwrap()]).unwrap();
         assert!(store.get("a1").unwrap().is_some() && store.get("b2").unwrap().is_some());
         // remove deletes the stored record; a removed built-in override falls back to embedded (get ok).
@@ -1984,7 +1984,7 @@ mod tests {
 
         let dir = tmp_store_dir("theme-emit");
         let src = std::env::temp_dir().join(format!("bsc-ui-theme-emit-src-{}.json", std::process::id()));
-        std::fs::write(&src, r#"{"id":"neon","label":"Neon","description":"glow","vars":{}}"#).unwrap();
+        std::fs::write(&src, r#"{"id":"neon","tech":"react","label":"Neon","description":"glow","vars":{}}"#).unwrap();
         run(vec!["theme".into(), "set".into(), "--file".into(), src.to_string_lossy().into_owned(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
         run(vec!["theme".into(), "remove".into(), "neon".into(), "--dir".into(), dir], "bsc ui").unwrap();
 
