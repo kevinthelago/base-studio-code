@@ -102,20 +102,29 @@ const COL_PITCH = NODE_W + 208;
 const ROW_PITCH = NODE_H + 22;
 const PAD = 48;
 
-/** The packaged seed graph — every node stamped `provenance: "seed"` (the JSON stays clean; Phase 2's
- *  extracted nodes carry `"extracted"`). This is the ONE source of truth, also embedded by `bsc graph`. */
-export const KNOWLEDGE: KnowledgeGraph = (() => {
-  const raw = RAW as unknown as {
-    nodes: Omit<KnowledgeNode, "provenance">[];
-    edges: KnowledgeEdge[];
-    implementations?: AlgoImpl[];
-  };
+/** The raw graph document shape — `@data/knowledge/algorithms.json` and `bsc graph dump` (#2853): nodes
+ *  WITHOUT the derived `provenance`, which {@link buildKnowledge} stamps. */
+export interface RawKnowledge {
+  nodes: Omit<KnowledgeNode, "provenance">[];
+  edges: KnowledgeEdge[];
+  implementations?: AlgoImpl[];
+}
+
+/** Build the model from a raw graph document — stamps every node `provenance: "seed"` (the curated
+ *  ontology; Phase 2's extracted nodes carry `"extracted"`) and defaults missing implementations to [].
+ *  Shared by the packaged seed AND the live hydrate from the writable store (#2856), so both produce the
+ *  identical model. Pure. */
+export function buildKnowledge(raw: RawKnowledge): KnowledgeGraph {
   return {
     nodes: raw.nodes.map((n) => ({ ...n, provenance: "seed" as const })),
     edges: raw.edges,
     implementations: raw.implementations ?? [],
   };
-})();
+}
+
+/** The packaged seed graph — the fast-first-paint fallback + the ONE source `bsc graph` embeds. The live
+ *  Algorithms view hydrates from the writable store (`bsc graph dump`, #2856) over this. */
+export const KNOWLEDGE: KnowledgeGraph = buildKnowledge(RAW as unknown as RawKnowledge);
 
 /** A stable id for an edge — `from~rel~to` (a pair can carry more than one relationship). */
 export function edgeId(e: KnowledgeEdge): string {

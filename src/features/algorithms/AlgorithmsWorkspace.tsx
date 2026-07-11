@@ -18,8 +18,9 @@ import { AlgorithmsInspector } from "./AlgorithmsInspector";
 import { AlgorithmsRail } from "./AlgorithmsRail";
 import { LibrarianTerminal } from "./LibrarianTerminal";
 import {
-  KNOWLEDGE, KIND_ORDER, TECHS, NODE_W, NODE_H, layoutKnowledge, neighborsOf, nodeIndex,
+  KIND_ORDER, TECHS, NODE_W, NODE_H, layoutKnowledge, neighborsOf, nodeIndex,
 } from "./lib/knowledge";
+import { useKnowledgeGraph } from "./useKnowledgeGraph";
 import "./algorithms.css";
 
 // The graph is READ-ONLY (#2785): every kind is always shown (the kind-filter control is gone), and the
@@ -29,7 +30,9 @@ const ALL_KINDS = new Set(KIND_ORDER);
 const DEFAULT_TECH = TECHS[0]; // TypeScript — the implementation shown in the inspector.
 
 export function AlgorithmsWorkspace() {
-  const graph = KNOWLEDGE;
+  // Live graph (#2856): the seed for an instant first paint, hydrated + kept fresh from the librarian's
+  // writable store (`bsc graph dump`) so their curation shows.
+  const graph = useKnowledgeGraph();
   const layout = useMemo(() => layoutKnowledge(graph.nodes), [graph.nodes]);
   const byId = useMemo(() => nodeIndex(graph.nodes), [graph.nodes]);
 
