@@ -18,8 +18,10 @@ import { AlgorithmsInspector } from "./AlgorithmsInspector";
 import { AlgorithmsRail } from "./AlgorithmsRail";
 import { LibrarianTerminal } from "./LibrarianTerminal";
 import {
-  KIND_ORDER, TECHS, NODE_W, NODE_H, layoutKnowledge, neighborsOf, nodeIndex,
+  KIND_ORDER, TECHS, TECH_META, NODE_W, NODE_H, layoutKnowledge, neighborsOf, nodeIndex, kitTechs,
+  type Tech,
 } from "./lib/knowledge";
+import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { useKnowledgeGraph } from "./useKnowledgeGraph";
 import "./algorithms.css";
 
@@ -27,7 +29,6 @@ import "./algorithms.css";
 // inspector shows the default tech's implementation (the language switcher is gone). Both were user
 // controls, removed so the page is a viewer the user watches rather than configures.
 const ALL_KINDS = new Set(KIND_ORDER);
-const DEFAULT_TECH = TECHS[0]; // TypeScript — the implementation shown in the inspector.
 
 export function AlgorithmsWorkspace() {
   // Live graph (#2856): the seed for an instant first paint, hydrated + kept fresh from the librarian's
@@ -37,16 +38,21 @@ export function AlgorithmsWorkspace() {
   const byId = useMemo(() => nodeIndex(graph.nodes), [graph.nodes]);
 
   const [selected, setSelected] = useState<string | null>(null);
+  // The active language kit (#2863) — un-hardwires the old TypeScript-only lock: the inspector shows
+  // THIS language's implementation, and the node badges track it, so the Rust (and future) kits are
+  // reachable. Defaults to the first seeded kit.
+  const techs = useMemo(() => kitTechs(graph), [graph]);
+  const [activeTech, setActiveTech] = useState<Tech>(() => kitTechs(graph)[0] ?? TECHS[0]);
 
   const lit = useMemo(() => (selected ? neighborsOf(graph, selected) : null), [graph, selected]);
-  // The concept ids that carry an implementation in the default tech — drives the node "</>" badge.
+  // The concept ids that carry an implementation in the ACTIVE language — drives the node "</>" badge.
   const implConcepts = useMemo(
     () => new Set(
       graph.implementations
-        .filter((im) => im.tech === DEFAULT_TECH)
+        .filter((im) => im.tech === activeTech)
         .flatMap((im) => (im.concept ? [im.concept] : [])), // free-standing primitives (#2863) have no concept
     ),
-    [graph.implementations],
+    [graph.implementations, activeTech],
   );
 
   const vp = useGraphViewport(layout.world, { contentBounds: () => layout.bounds });
@@ -64,12 +70,18 @@ export function AlgorithmsWorkspace() {
   // because the terminal sits AFTER the handle, so dragging up grows it. Mirrors the Teams dock (#2759).
   const term = useDragResize({ initial: 240, min: 140, max: 560, axis: "y", invert: true });
 
-  // Read-only header (#2785): the title + node/relationship count, then the standard graph nav
-  // (zoom/fit). The former kind-filter, language, and scan controls were removed — the page is a viewer.
+  // Header: title + counts + the LANGUAGE-KIT selector (#2863 — the one control on the read-only viewer;
+  // it picks which kit's implementation the inspector + badges show), then the graph nav (zoom/fit).
   const toolbar = (
     <>
       <Eyebrow size={10}>Algorithms</Eyebrow>
       <Text mono size="xxs" tone="dim">{graph.nodes.length} nodes · {graph.edges.length} relationships</Text>
+      {techs.length > 1 && (
+        <SegmentedControl
+          label=""
+          options={techs.map((t) => ({ label: TECH_META[t].label, on: t === activeTech, onClick: () => setActiveTech(t) }))}
+        />
+      )}
       <Box style={{ flex: 1 }} />
       <ZoomControls vp={vp} />
       <Button size="sm" variant="ghost" onClick={vp.fit}>Fit</Button>
@@ -85,7 +97,7 @@ export function AlgorithmsWorkspace() {
       rail={<AlgorithmsRail graph={graph} selected={selected} onSelect={selectFromRail} />}
       railResizable
       railWidth={230}
-      inspector={<AlgorithmsInspector graph={graph} selected={selected ? byId.get(selected) ?? null : null} activeTech={DEFAULT_TECH} onSelectNode={setSelected} />}
+      inspector={<AlgorithmsInspector graph={graph} selected={selected ? byId.get(selected) ?? null : null} activeTech={activeTech} onSelectNode={setSelected} />}
       inspectorResizable
       inspectorWidth={340}
       onBackgroundClick={() => setSelected(null)}
