@@ -123,12 +123,12 @@ describe("footerAction (#652/#2533)", () => {
     expect(footerAction(1, 1, true, false)).toEqual({ kind: "publish", enabled: true });
   });
 
-  it("shows a Skip control on EVERY active stage (#2533) — not just optional ones", () => {
-    // On the active stage, `canSkip` is always true so the footer reads as a uniform Continue + Skip
-    // pair; whether Skip is actionable is decided later by resolveFooter (`skipEnabled`).
+  it("marks every active stage skip-ELIGIBLE (#2533/#2854) — resolveFooter decides the actual render", () => {
+    // On the active stage, `canSkip` is a marker (skip-eligible KIND); whether Skip actually RENDERS
+    // is decided later by resolveFooter (`skipEnabled`) from the live signals.
     expect(footerAction(1, 1, false, true)).toEqual({ kind: "approve-continue", enabled: true, canSkip: true });
     expect(footerAction(1, 1, false, false)).toEqual({ kind: "approve-continue", enabled: false, canSkip: true });
-    // Browsing away from the active stage never offers skip.
+    // Browsing away from the active stage is never skip-eligible.
     expect(footerAction(2, 1, false, false).kind).toBe("back-to-current");
     expect(footerAction(0, 1, false, false).canSkip).toBeUndefined();
   });
@@ -146,7 +146,7 @@ describe("footerAction (#652/#2533)", () => {
   });
 });
 
-describe("resolveFooter — skip gating + one-click confirm (#1285/#2533)", () => {
+describe("resolveFooter — skip gating + one-click confirm (#1285/#2854)", () => {
   const blocked = footerAction(1, 1, false, false); // approve-continue, gate blocking, canSkip
   it("passes a non-skippable action (publish/nav) through untouched", () => {
     const publish = footerAction(1, 1, true, false);
@@ -154,9 +154,10 @@ describe("resolveFooter — skip gating + one-click confirm (#1285/#2533)", () =
     const nav = footerAction(2, 1, false, false);
     expect(resolveFooter(nav, 0, false, false)).toBe(nav);
   });
-  it("enables Skip on an optional stage always; on a required stage only with gate override", () => {
-    expect(resolveFooter(blocked, 0, false, true).skipEnabled).toBe(true);   // optional → always
-    expect(resolveFooter(blocked, 0, false, false).skipEnabled).toBe(false); // required + override off
+  it("renders Skip only when the stage is skippable now, or with gate override (#2854)", () => {
+    expect(resolveFooter(blocked, 0, false, true).skipEnabled).toBe(true);   // skippable → render
+    // A required stage (not skippable, override off) renders NO Skip — the #2854 ghost fix.
+    expect(resolveFooter(blocked, 0, false, false).skipEnabled).toBe(false);
     expect(resolveFooter(blocked, 0, true, false).skipEnabled).toBe(true);   // required + override on
     // Skip gating never touches the primary, and there is no `override` flag anymore.
     expect(resolveFooter(blocked, 0, true, false).enabled).toBe(false);
@@ -166,6 +167,31 @@ describe("resolveFooter — skip gating + one-click confirm (#1285/#2533)", () =
     expect(resolveFooter(blocked, 2, false, false).enabled).toBe(true);  // drafted sections → confirm
     expect(resolveFooter(blocked, 0, false, false).enabled).toBe(false); // nothing pending → blocked
     expect(resolveFooter(blocked, 0, true, true).enabled).toBe(false);   // override enables SKIP, not primary
+  });
+});
+
+describe("stagesFrom → Stage.skippable (#2854)", () => {
+  it("is true for an intrinsically optional stage, false for a plain required one", () => {
+    const secs: BlueprintStage[] = [
+      sec("discovery", { gateRule: { require: [{ signal: "d", target: true }] } }),
+      sec("extras", { optional: true }),
+    ];
+    const p = stagesFrom(secs, {} as PlanSignals);
+    expect(p.find((x) => x.key === "discovery")!.skippable).toBe(false); // no rule → required
+    expect(p.find((x) => x.key === "extras")!.skippable).toBe(true);     // optional → always skippable
+  });
+
+  it("follows a declarative skipWhen against live signals — empty ⇒ skippable, populated ⇒ required", () => {
+    const secs: BlueprintStage[] = [
+      sec("features", {
+        gateRule: { require: [{ signal: "featuresDefined", target: 1 }] },
+        skipWhen: { signal: "featuresDefined", target: 0, op: "==" },
+      }),
+    ];
+    // Empty (0 features) → skippable; the footer offers Skip.
+    expect(stagesFrom(secs, { featuresDefined: 0 }).find((x) => x.key === "features")!.skippable).toBe(true);
+    // Populated → required; Skip disappears and the gate must pass.
+    expect(stagesFrom(secs, { featuresDefined: 2 }).find((x) => x.key === "features")!.skippable).toBe(false);
   });
 });
 
