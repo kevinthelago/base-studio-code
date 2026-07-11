@@ -16,8 +16,6 @@ import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { RoleDot, KitChip } from "./kitChrome";
 import { ROLE_COLOR, matchesQuery, NO_COMPONENTS_TITLE, type ComponentRecord, type Role } from "./lib/model";
-import { renderSpecimen } from "./specimens";
-import { previewFixture } from "./specimenFixtures";
 import "./plannerComponentsPane.css";
 
 type Mode = "components" | "full";
@@ -27,13 +25,14 @@ const ROLE_RANK: Record<Role, number> = { page: 0, layout: 1, composite: 2, prim
 const ASSEMBLE_MAX = 6;
 const TOAST_MS = 1900;
 
-/** A scaled, non-interactive specimen for the thumbnails + previews (clipped to its frame). Prefers the
- *  REAL component (`previewFixture`, #2555/#2820), falling back to the `specimens.tsx` mock. */
-function Specimen({ comp, scale, height }: { comp: ComponentRecord; scale: number; height?: number }) {
-  const variant = comp.variants[0] ?? "default";
+/** A lightweight, non-interactive thumbnail for the list + assembly views (#2824): a role dot + the
+ *  component name. The LIVE render (esbuild + iframe) is the Design Studio's single-component surface —
+ *  too heavy to run per list item — so this pane shows a compact identity chip and links to the studio. */
+function Specimen({ comp, height }: { comp: ComponentRecord; scale?: number; height?: number }) {
   return (
-    <Box style={{ transform: `scale(${scale})`, transformOrigin: "center", pointerEvents: "none", maxHeight: height }}>
-      {previewFixture(comp.name, variant) ?? renderSpecimen(comp, variant, "dark")}
+    <Box style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", height: height ?? "100%", minHeight: 40, padding: 10, pointerEvents: "none" }}>
+      <RoleDot role={comp.role} size={9} />
+      <Text mono size={11} tone="muted">{comp.name}</Text>
     </Box>
   );
 }

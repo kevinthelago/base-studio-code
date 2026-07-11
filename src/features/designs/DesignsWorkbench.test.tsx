@@ -1,6 +1,15 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { DesignsWorkbench } from "./DesignsWorkbench";
+
+// The live preview builds with esbuild-wasm (can't run under jsdom); mock the bundler so the workbench
+// tests exercise the chrome without loading the wasm runtime (#2824).
+vi.mock("@/shared/lib/preview/componentBundle", () => ({
+  bundleComponent: vi.fn().mockResolvedValue("/*bundle*/"),
+  buildComponentSrcDoc: (js: string) => `<!doctype html><html><body>${js}</body></html>`,
+  COMPONENT_IMPORTMAP: { react: "https://esm.sh/react" },
+  COMPONENT_EXTERNALS: ["react"],
+}));
 import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
 import { SEED_THEMES } from "./lib/themes";
 import type { Kit } from "./lib/model";
@@ -128,8 +137,8 @@ describe("DesignsWorkbench (#2308)", () => {
     expect(screen.getByText("✗ When NOT to use")).toBeTruthy();
   });
 
-  it("the ONE preview Theme switcher applies the selected theme's vars to the specimen frame (#2488)", () => {
-    const { container } = render(<DesignsWorkbench />);
+  it("the ONE preview Theme switcher lists the hydrated collection and drives the preview (#2488/#2824)", () => {
+    render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));                              // focus a node to reveal the details pane
     const sel = screen.getByLabelText("Theme") as HTMLSelectElement;
     // Fed by the hydrated theme collection, defaulting to the base look.
@@ -139,29 +148,23 @@ describe("DesignsWorkbench (#2308)", () => {
     expect(Array.from(sel.options).map((o) => o.textContent)).toEqual(
       expect.arrayContaining(["◈ Dark", "◈ Light"]),
     );
-    // No overrides on the frame under `default`.
-    const defaultFrame = container.querySelector('[data-kit-theme="default"]') as HTMLElement;
-    expect(defaultFrame).toBeTruthy();
-    expect(defaultFrame.style.getPropertyValue("--card-radius")).toBe("");
-    // Switching applies the theme's palette-token overrides to the specimen frame via ThemeScope.
+    // Switching the theme drives the preview: the retint is now the theme's `vars` INJECTED into the
+    // build-and-iframe surface (#2824), so there is no ThemeScope frame in the parent DOM to inspect —
+    // the observable here is the single control updating.
     fireEvent.change(sel, { target: { value: "nord" } });
-    const frame = container.querySelector('[data-kit-theme="nord"]') as HTMLElement;
-    expect(frame).toBeTruthy();
-    expect(frame.style.getPropertyValue("--accent")).toBe("#88c0d0");
+    expect(sel.value).toBe("nord");
   });
 
   it("the Theme dropdown is the ONLY theme control — the old dark/light surface toggle is gone (#2545)", () => {
-    const { container } = render(<DesignsWorkbench />);
+    render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));                              // focus a node to reveal the details pane
     // The hardcoded SegmentedControl surface toggle no longer renders.
     expect(screen.queryByText("◐ dark")).toBeNull();
     expect(screen.queryByText("◑ light")).toBeNull();
-    // Selecting a light-`base` theme propagates through the single control to the specimen frame —
-    // the one dropdown now drives the surface (no separate toggle to keep in sync).
+    // Selecting a light-`base` theme drives the surface through the single control (no separate toggle).
     const sel = screen.getByLabelText("Theme") as HTMLSelectElement;
     fireEvent.change(sel, { target: { value: "light" } });
     expect(sel.value).toBe("light");
-    expect(container.querySelector('[data-kit-theme="light"]')).toBeTruthy();
   });
 
   it("docks the designer session ALWAYS-ON in the center column, with no toggle and no generate chat (#2597)", () => {
