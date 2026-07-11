@@ -2,9 +2,9 @@
 // neighbor/relation lookups, and BFS pathfinding.
 import { describe, it, expect } from "vitest";
 import {
-  KNOWLEDGE, KIND_ORDER, TECHS, TECH_META, layoutKnowledge, layoutKits, neighborsOf, relationsOf, pathBetween,
+  KNOWLEDGE, KIND_ORDER, TECHS, TECH_META, layoutKnowledge, layoutKits, layoutKitGraph, neighborsOf, relationsOf, pathBetween,
   nodeIndex, edgeId, implsForConcept, implFor, implById, techsWithImpl, usedByImpl,
-  kitTechs, kitImpls, kitImplsByRole, pairsOf,
+  kitTechs, kitImpls, kitImplsByRole, pairsOf, kitGraph,
 } from "./knowledge";
 
 describe("KNOWLEDGE seed", () => {
@@ -213,5 +213,45 @@ describe("language kits (#2863) — a kit is every impl of one tech, grouped by 
     expect(l.world.w).toBeGreaterThan(0);
     expect(l.world.h).toBeGreaterThan(0);
     expect(l.bounds.w).toBeGreaterThan(0);
+  });
+
+  it("kitGraph builds a kit's own impl graph — nodes are that tech's impls, wired by composes + pairs", () => {
+    const kg = kitGraph(KNOWLEDGE, "typescript");
+    // Nodes are exactly the TypeScript kit's impls.
+    expect(kg.nodes).toEqual(kitImpls(KNOWLEDGE, "typescript"));
+    expect(kg.nodes.every((n) => n.tech === "typescript")).toBe(true);
+    // The builds-on edge (merge-sort.ts composes merge.ts) is present as a `composes` edge…
+    expect(kg.edges).toContainEqual({ from: "merge-sort.ts", to: "merge.ts", rel: "composes" });
+    // …and the free-standing primitive's pair (ts.array ↔ merge-sort.ts) as ONE `pairs` edge.
+    const arrayPairs = kg.edges.filter((e) => e.rel === "pairs" && (e.from === "ts.array" || e.to === "ts.array"));
+    expect(arrayPairs.some((e) => e.from === "merge-sort.ts" || e.to === "merge-sort.ts")).toBe(true);
+    // Every edge endpoint is an in-kit impl id (never a concept id or a cross-tech impl).
+    const ids = new Set(kg.nodes.map((n) => n.id));
+    expect(kg.edges.every((e) => ids.has(e.from) && ids.has(e.to))).toBe(true);
+  });
+
+  it("kitGraph lifts the ontology's non-composes relationships onto the concrete impls", () => {
+    const kg = kitGraph(KNOWLEDGE, "typescript");
+    const implOf = (concept: string) => implFor(KNOWLEDGE, concept, "typescript")?.id;
+    // Find an ontology edge whose rel isn't `composes` and whose BOTH endpoints have a TS impl…
+    const lift = KNOWLEDGE.edges.find((e) => e.rel !== "composes" && implOf(e.from) && implOf(e.to) && implOf(e.from) !== implOf(e.to));
+    if (lift) {
+      // …it must appear as an impl-level edge with the same rel.
+      expect(kg.edges).toContainEqual({ from: implOf(lift.from)!, to: implOf(lift.to)!, rel: lift.rel });
+    }
+    // No lifted edge is a `composes` (those live only at the impl level).
+    const composeCount = kg.edges.filter((e) => e.rel === "composes").length;
+    expect(composeCount).toBe(kg.nodes.reduce((acc, n) => acc + n.composes.filter((c) => kg.nodes.some((m) => m.id === c)).length, 0));
+  });
+
+  it("layoutKitGraph columns primitives at the base and algorithms deepening right (compose depth)", () => {
+    const kg = kitGraph(KNOWLEDGE, "typescript");
+    const l = layoutKitGraph(kg);
+    expect([...l.pos.keys()].sort()).toEqual(kg.nodes.map((n) => n.id).sort());
+    const x = (id: string) => l.pos.get(id)!.x;
+    // A primitive (merge.ts) sits strictly left of the algorithm that composes it (merge-sort.ts).
+    expect(x("merge.ts")).toBeLessThan(x("merge-sort.ts"));
+    expect(l.world.w).toBeGreaterThan(0);
+    expect(l.world.h).toBeGreaterThan(0);
   });
 });
