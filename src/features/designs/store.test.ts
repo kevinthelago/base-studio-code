@@ -387,13 +387,15 @@ describe("component change origin → propagation (#2277)", () => {
     expect(push).toHaveBeenCalledWith(edited);
   });
 
-  it("a breaking edit fans out to an opted-in dormant consumer as an issue", () => {
+  it("a breaking edit fans out to an opted-in dormant consumer as an assignment", () => {
+    // The GH-issue rail was dropped for `bsc-assign` (kit-vendoring epic #2793): a breaking edit to an
+    // opted-in consumer now dispatches `kind: "assign"` — the only dispatch kinds are notify | assign.
     vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
     useAppStore.setState({ kitUsage: [{ projectKey: "app-a", kitId: "react-ui", auto: true, live: false }] });
     useAppStore.getState().setComponent({ ...button, version: "3.0.0", props: button.props.filter((p) => p.name !== "size") });
     const d = useAppStore.getState().kitDispatches;
     expect(d).toHaveLength(1);
-    expect(d[0]).toMatchObject({ projectKey: "app-a", kind: "issue" });
+    expect(d[0]).toMatchObject({ projectKey: "app-a", kind: "assign" });
     expect(d[0].change.class).toBe("breaking");
   });
 
