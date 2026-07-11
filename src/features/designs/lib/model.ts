@@ -124,6 +124,32 @@ export interface ComponentRecord {
   shapes?: DataShape[];
   /** Content hash of the seed copy this record came from (#2483) — see {@link Kit.seedHash}. */
   seedHash?: string;
+  /** Authored MOTION (#2867, epic #2865) — named animations, as DATA, compiled to `@keyframes` +
+   *  an applying rule and injected live (mirrors the variant render path). Absent ⇒ no motion. See
+   *  {@link ComponentAnimation}. */
+  animations?: ComponentAnimation[];
+}
+
+/** When an authored component animation plays: once on render (`mount`), on `:hover`, or looping
+ *  (`always`). Default `mount`. */
+export type AnimationTrigger = "mount" | "hover" | "always";
+
+/** One authored component animation (#2867) — motion as DATA on a {@link ComponentRecord}. The render
+ *  path (`@/shared/ui/kit` `compileAnimationsCss`) compiles it to a `@keyframes` block + an applying
+ *  rule on `.<component>-anim-<name>`, guarded by `prefers-reduced-motion`. Values may reference the
+ *  motion tokens (`var(--dur-base)` / `var(--ease-standard)`, #2866). */
+export interface ComponentAnimation {
+  /** Animation name — a safe CSS identifier `[a-z][a-z0-9-]*`. */
+  name: string;
+  /** Keyframe stops: a selector (`from` / `to` / a percentage like `50%`) → CSS declarations
+   *  (property → value). */
+  keyframes: Record<string, Record<string, string>>;
+  /** Duration — a motion-token ref (`var(--dur-base)`) or a time (`220ms`). Default `var(--dur-base)`. */
+  duration?: string;
+  /** Easing — a motion-token ref (`var(--ease-standard)`) or a timing-function. Default `var(--ease-standard)`. */
+  easing?: string;
+  /** When it plays. Default `mount`. */
+  trigger?: AnimationTrigger;
 }
 
 /** The shared zero-state title — Design Studio and the Planner Components pane must say the same
