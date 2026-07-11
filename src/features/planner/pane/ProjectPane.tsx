@@ -72,7 +72,7 @@ export function ProjectPane({
     authoring?: AuthoringWiring;
     /** The selected stage's injectable prompts + inject handler — drives the header "?" helper (#…),
      *  replacing the removed auto-injecting conductor. */
-    promptHelp?: { prompts: StagePrompt[]; onInject: (text: string) => void };
+    promptHelp?: { prompt: StagePrompt; onInject: (text: string) => void };
     /** The project's live required-context topics (#1061) — the Context body lists each by name
      *  with written/missing state so the user sees exactly which files the gate still needs. */
     requiredContext?: string[];

@@ -5,7 +5,8 @@
 // inject next"); the wiring (pty_write + idle timing + the injected-once guard + building the
 // ConductorState) lives in Planning.tsx. No React/Tauri — unit-testable.
 import type { BlueprintStage, ModelCapabilityTier } from "../stages/blueprints";
-import { resolveStagePrompt, stageSeed } from "../stages/blueprints";
+import { resolveStagePrompt } from "../stages/blueprints";
+import { activeSubstep } from "../stages/planSubsteps";
 
 export interface StagePrompt {
   /** Human label for the picker row (the stage name, or a substep's label/key). */
@@ -15,23 +16,26 @@ export interface StagePrompt {
 }
 
 /**
- * The injectable prompts for a stage, surfaced in the focused pane's "?" helper so the USER can
- * pick what to inject (the app no longer auto-injects). The stage's own overview prompt comes
- * first (adapted to the driving model's capability `tier` via {@link resolveStagePrompt}, #1854
- * Phase a), then — when the stage carries archetype seed content (`section.seed`) — a "seed"
- * row, then each substep's prompt in order. Prompts that are empty/whitespace are skipped.
+ * The SINGLE most relevant prompt for a stage's CURRENT step (#2859), surfaced in the focused pane's
+ * "?" helper — one prompt at a time instead of the whole list. The active step is the first
+ * not-yet-finished substep ({@link activeSubstep}); when the stage has no substeps (or they're all
+ * finished) it's the stage's own overview prompt (adapted to the driving model's capability `tier`
+ * via {@link resolveStagePrompt}, #1854 Phase a). Returns null when the stage has no prompt at all.
+ *
+ * `done` = the substep keys already resolved (a section file written / a step confirmed); `loopDone`
+ * = whether the stage's loop substep (the feature workshop) is complete. Pure + unit-tested.
  */
-export function stagePrompts(section: BlueprintStage | undefined, tier?: ModelCapabilityTier): StagePrompt[] {
-  if (!section) return [];
-  const out: StagePrompt[] = [];
+export function activeStagePrompt(
+  section: BlueprintStage | undefined,
+  done: Set<string>,
+  loopDone = false,
+  tier?: ModelCapabilityTier,
+): StagePrompt | null {
+  if (!section) return null;
+  const active = activeSubstep(section.substeps, done, loopDone);
+  if (active?.prompt?.trim()) return { label: active.label || active.key, text: active.prompt };
   const overview = resolveStagePrompt(section, tier);
-  if (overview.trim()) out.push({ label: `${section.name} — overview`, text: overview });
-  const seed = stageSeed(section);
-  if (seed) out.push({ label: `${section.name} — seed starter content`, text: seed.content });
-  for (const sub of section.substeps ?? []) {
-    if (sub.prompt?.trim()) out.push({ label: sub.label || sub.key, text: sub.prompt });
-  }
-  return out;
+  return overview.trim() ? { label: `${section.name} — overview`, text: overview } : null;
 }
 
 export interface Injection {

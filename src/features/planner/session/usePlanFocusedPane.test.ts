@@ -22,6 +22,8 @@ const base: PlanFocusedPaneOpts = {
   uiNeedsRoute: false,
   effectiveProjectId: "proj",
   effectiveBlueprintId: "bp",
+  stageDone: new Set(),
+  featuresComplete: false,
 };
 
 const render = (p: PlanFocusedPaneOpts = base) =>

@@ -48,7 +48,7 @@ import { usePlanningTitle } from "./usePlanningTitle";
 import { useCtxRequired } from "./useCtxRequired";
 import { usePlanConfirmations } from "./usePlanConfirmations";
 import { usePlanFocusedPane } from "./usePlanFocusedPane";
-import { useDesignRouteState } from "./useDesignRouteState";
+import { useDesignRouteState, uiNeedsRouting } from "./useDesignRouteState";
 import { invoke } from "@tauri-apps/api/core";
 import { parseIntake, markRouted, serializeIntake, INTAKE_DIR, INTAKE_MANIFEST } from "../lib/fileIntake";
 import { useSetupSignature } from "./useSetupSignature";
@@ -459,6 +459,14 @@ export function Planning({ visible }: { visible: boolean }) {
     [sections, publishRepos],
   );
   const featureState = useMemo(() => featuresSummary(planFeatures), [planFeatures]);
+  // The substep keys already resolved for the CURRENT-step "?" helper (#2859): every written/confirmed
+  // section file (its key IS the substep key for the discovery dimensions), plus the synthetic Features
+  // "propose" step once any feature exists. Drives `activeStagePrompt` via usePlanFocusedPane.
+  const stageDone = useMemo(() => {
+    const done = new Set(sections.filter((s) => s.state !== "pending").map((s) => s.k));
+    if (featureState.count > 0) done.add("propose");
+    return done;
+  }, [sections, featureState.count]);
   // The feature dependency DAG must stay acyclic (#plan-db) — a cycle is a planning deadlock that
   // holds the Features gate. `[]` when acyclic; otherwise the slugs on the offending cycle.
   const featureCycle = useMemo(() => featureDependencyCycle(planFeatures), [planFeatures]);
@@ -518,13 +526,18 @@ export function Planning({ visible }: { visible: boolean }) {
   // (content-hash diff, polled). While true the footer's primary action ROUTES the design (the
   // route-design branch of onPrimary, below) instead of advancing; once routed-and-current it
   // reverts to the normal "approve & continue". Replaces the removed FileIntakePane route button.
-  const designChanged = useDesignRouteState(effectiveProjectId, requiresUi);
-  const uiNeedsRoute = requiresUi && (!confirmedSet.has("ui") || designChanged);
+  // #2860 — the design "needs routing" only when there ARE staged files (design.hasFiles) AND either
+  // the `ui` section is unconfirmed or a staged file changed since the last route. Without the
+  // hasFiles guard the footer offered "route design to project" on a fresh UI stage with nothing to
+  // route (the `!confirmed('ui')` half is true before any file is dropped).
+  const design = useDesignRouteState(effectiveProjectId, requiresUi);
+  const uiNeedsRoute = uiNeedsRouting(requiresUi, confirmedSet.has("ui"), design);
   // Focused-pane SELECTION + its derived advance-bar/pill/prompt-help (#1490, usePlanFocusedPane).
   // Called here so the footer can read `pendingConfirm` (above) and the gate snapshot (usePlanGates).
-  const { setFocusSel, focusSelectedIdx, focusPill, focusFooter, focusStagePrompts } = usePlanFocusedPane({
+  const { setFocusSel, focusSelectedIdx, focusPill, focusFooter, focusStagePrompt } = usePlanFocusedPane({
     stages, focusActiveIdx, planComplete, focusGateReady, pendingConfirm,
     allowGateOverride, planSecs, effectiveProjectId, effectiveBlueprintId, uiNeedsRoute,
+    stageDone, featuresComplete: featureState.allConfirmed,
   });
 
   // #2121 — the UI stage footer's "route design to project" action (replaces the FileIntakePane
@@ -813,9 +826,9 @@ export function Planning({ visible }: { visible: boolean }) {
                 onSelect: (i) => setFocusSel(i),
                 pill: focusPill,
                 footer: focusFooter,
-                // Per-stage "?" prompt helper (#…): the user injects a stage prompt on demand
-                // (the auto-injecting conductor was removed).
-                promptHelp: { prompts: focusStagePrompts, onInject: sendPrompt },
+                // Per-stage "?" prompt helper (#2859): the user injects the SINGLE current-step
+                // prompt on demand (one at a time, not the whole list). Absent when the stage has none.
+                promptHelp: focusStagePrompt ? { prompt: focusStagePrompt, onInject: sendPrompt } : undefined,
                 // The live required-context set (#1061): the Context body names each required file
                 // as written/missing so the gate's "why" is visible at a glance.
                 requiredContext: ctxRequired,
