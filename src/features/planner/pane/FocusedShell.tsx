@@ -11,21 +11,20 @@ import { stageKind } from "../blueprints/blueprintCatalog";
 import { ProgressionRail, type RailNode } from "./ProgressionRail";
 import type { StagePrompt } from "../session/plannerConductor";
 
-/** The per-stage prompt helper (#…): the "?" affordance in the focused-pane header. The app no
- *  longer auto-injects prompts; instead this lists every injectable prompt for the stage and the
- *  user picks one to send into the planner chat. Renders nothing when the stage has no prompts. */
-export function StagePromptHelp({ prompts, onInject }: {
-  prompts: StagePrompt[];
+/** The per-stage prompt helper (#2859): the "?" affordance in the focused-pane header. Presents the
+ *  SINGLE most relevant prompt for the stage's CURRENT step (resolved upstream from substep progress)
+ *  and lets the user inject it into the planner chat — one prompt at a time, not the whole list. */
+export function StagePromptHelp({ prompt, onInject }: {
+  prompt: StagePrompt;
   onInject: (text: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  if (prompts.length === 0) return null;
   return (
     <>
       {/* eslint-disable-next-line no-restricted-syntax -- bespoke floating prompt-helper toggle (absolute-positioned, open-state accent-tinted inline styling, not the .btn/IconButton kit) */}
       <button
         className="mono"
-        title="Inject a prompt for this stage"
+        title="Inject this step's prompt"
         aria-label="Stage prompt helper"
         onClick={() => setOpen((o) => !o)}
         style={{
@@ -48,26 +47,23 @@ export function StagePromptHelp({ prompts, onInject }: {
             <Text as="div" mono size={9.5} tone="dim" style={{
               padding: "6px 8px 8px", letterSpacing: ".06em",
               textTransform: "uppercase",
-            }}>Inject a prompt for this stage</Text>
-            {prompts.map((p, i) => (
-              // eslint-disable-next-line no-restricted-syntax -- bespoke prompt-list menu item (block card-styled, text-left inline styling, not the .btn kit)
-              <button
-                key={i}
-                onClick={() => { onInject(p.text); setOpen(false); }}
-                title="Inject into the planner chat"
-                style={{
-                  display: "block", width: "100%", textAlign: "left", cursor: "pointer",
-                  background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)",
-                  padding: "8px 10px", marginBottom: 5, color: "var(--fg)",
-                }}
-              >
-                <Text as="div" mono size={11.5} weight={600} style={{ marginBottom: 3 }}>{p.label}</Text>
-                <Text as="div" size={10.5} tone="muted" style={{
-                  lineHeight: 1.5,
-                  display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
-                }}>{p.text}</Text>
-              </button>
-            ))}
+            }}>Inject this step&apos;s prompt</Text>
+            {/* eslint-disable-next-line no-restricted-syntax -- bespoke prompt menu item (block card-styled, text-left inline styling, not the .btn kit) */}
+            <button
+              onClick={() => { onInject(prompt.text); setOpen(false); }}
+              title="Inject into the planner chat"
+              style={{
+                display: "block", width: "100%", textAlign: "left", cursor: "pointer",
+                background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)",
+                padding: "8px 10px", color: "var(--fg)",
+              }}
+            >
+              <Text as="div" mono size={11.5} weight={600} style={{ marginBottom: 3 }}>{prompt.label}</Text>
+              <Text as="div" size={10.5} tone="muted" style={{
+                lineHeight: 1.5,
+                display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden",
+              }}>{prompt.text}</Text>
+            </button>
           </Box>
         </>
       )}
@@ -118,8 +114,8 @@ export function Stepper({ stages, selectedIdx, onSelect, highlight }: {
 export function StageHeader({ stage, pill, promptHelp }: {
   stage: Stage;
   pill: GatePill;
-  /** Injectable prompts for this stage + the inject handler — drives the "?" helper (#…). */
-  promptHelp?: { prompts: StagePrompt[]; onInject: (text: string) => void };
+  /** The current-step prompt for this stage + the inject handler — drives the "?" helper (#2859). */
+  promptHelp?: { prompt: StagePrompt; onInject: (text: string) => void };
 }) {
   const [showReasons, setShowReasons] = useState(false);
   const unmet = stage.unmet ?? [];
@@ -128,7 +124,7 @@ export function StageHeader({ stage, pill, promptHelp }: {
   const tip = hasReasons ? "Still needed: " + unmet.map(reasonText).join("; ") : undefined;
   return (
     <Box className="ph-head" style={{ position: "relative" }}>
-      {promptHelp && <StagePromptHelp prompts={promptHelp.prompts} onInject={promptHelp.onInject} />}
+      {promptHelp && <StagePromptHelp prompt={promptHelp.prompt} onInject={promptHelp.onInject} />}
       <Box className="ph-title">
         <h2>{stage.name}</h2>
         <Box as="span"

@@ -6,14 +6,15 @@
 //     pendingConfirm, and a Skip control (skipEnabled) RENDERS only when the active stage is
 //     skippable now (its `skipWhen` rule passes / it's optional) or gate-override is on (#2854).
 //   • focusPill — the selected stage's gate pill.
-//   • focusStagePrompts — the injectable prompts for the SELECTED stage (the header "?" helper).
+//   • focusStagePrompt — the SINGLE current-step prompt for the SELECTED stage (the header "?"
+//     helper), resolved from the stage's substep progress (#2859).
 // The JSX wires `setFocusSel` into onSelect/onBack/onSkip/onPrimary. Behavior-preserving move — the
 // state, reset effect, and derivations are verbatim; only their call-site moved below usePlanGates +
 // usePlanConfirmations (whose `pendingConfirm` the footer reads). The skip/confirm/publish actions
 // stay in the component (they close over usePlanConfirmations + usePlanPublish).
 import { useState, useEffect, useMemo } from "react";
 import { clampIndex, gatePill, footerAction, resolveFooter, type stagesFrom } from "../stages/focusedPlan";
-import { stagePrompts } from "./plannerConductor";
+import { activeStagePrompt } from "./plannerConductor";
 import type { BlueprintStage } from "../stages/blueprints";
 
 type Stages = ReturnType<typeof stagesFrom>;
@@ -34,6 +35,12 @@ export interface PlanFocusedPaneOpts {
   allowGateOverride: boolean;
   /** The blueprint's stages — resolves the selected stage's injectable prompts by key (#815). */
   planSecs: BlueprintStage[];
+  /** #2859 — the substep keys already resolved for the current plan (a section file written or a
+   *  step confirmed), so the "?" helper can pick the CURRENT-step prompt via `activeSubstep`. */
+  stageDone: Set<string>;
+  /** #2859 — whether the Features workshop loop is complete (every feature defined), the completion
+   *  signal for the one loop substep the "?" helper can't infer from written section files. */
+  featuresComplete: boolean;
   /** #2121 — the active UI stage's design is missing or stale (not routed / changed since routed),
    *  so its primary footer action becomes "route design" instead of "approve & continue". */
   uiNeedsRoute: boolean;
@@ -46,6 +53,7 @@ export function usePlanFocusedPane(opts: PlanFocusedPaneOpts) {
   const {
     stages, focusActiveIdx, planComplete, focusGateReady, pendingConfirm,
     allowGateOverride, planSecs, effectiveProjectId, effectiveBlueprintId, uiNeedsRoute,
+    stageDone, featuresComplete,
   } = opts;
 
   // The SELECTION — auto-follows the active stage (`focusSel` null) or pins to a user pick; reset on
@@ -66,12 +74,14 @@ export function usePlanFocusedPane(opts: PlanFocusedPaneOpts) {
   const focusFooter = resolveFooter(footerRaw, pendingConfirm.length, allowGateOverride, activeSkippable);
   const focusSelStage = stages[focusSelectedIdx];
   const focusPill = focusSelStage ? gatePill(focusSelStage) : "wait";
-  // Injectable prompts for the SELECTED stage — the header "?" helper lists them and the user picks
-  // one to inject (the app no longer auto-injects). Resolve the section BY KEY (stages is a filtered
-  // subset of planSecs, #815).
-  const focusStagePrompts = useMemo(
-    () => stagePrompts(planSecs.find(s => s.key === focusSelStage?.key)),
-    [planSecs, focusSelStage]);
+  // The SINGLE current-step prompt for the SELECTED stage — the header "?" helper shows one prompt at
+  // a time (#2859), resolved from substep progress (`activeSubstep`). The only loop substep the helper
+  // can't infer from written files is the Features workshop, so `loopDone` is fed only for that stage.
+  // Resolve the section BY KEY (stages is a filtered subset of planSecs, #815).
+  const selKey = focusSelStage?.key;
+  const focusStagePrompt = useMemo(
+    () => activeStagePrompt(planSecs.find(s => s.key === selKey), stageDone, selKey === "features" && featuresComplete),
+    [planSecs, selKey, stageDone, featuresComplete]);
 
-  return { setFocusSel, focusSelectedIdx, focusPill, focusFooter, focusStagePrompts };
+  return { setFocusSel, focusSelectedIdx, focusPill, focusFooter, focusStagePrompt };
 }
