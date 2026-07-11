@@ -78,4 +78,18 @@ describe("AlgorithmsWorkspace", () => {
     expect(screen.getByText("primitive")).toBeTruthy();
     expect(screen.getByText((c) => c.includes("xs.push(4)"))).toBeTruthy();
   });
+
+  it("kits are navigable on the graph — pop to the kits index and drill into a kit (#2863)", () => {
+    const { container } = render(<AlgorithmsWorkspace />);
+    // The header breadcrumb pops up to the kits-index layer (the coarse layer above the concept graph).
+    fireEvent.click(screen.getByRole("button", { name: "Kits" }));
+    // The index renders a card per language kit.
+    const rustCard = container.querySelector('[data-kit="rust"]');
+    expect(rustCard).toBeTruthy();
+    expect(container.querySelector('[data-kit="typescript"]')).toBeTruthy();
+    // Drilling into the Rust kit opens its graph — a concept there then shows the Rust implementation.
+    fireEvent.click(rustCard!);
+    fireEvent.click(screen.getAllByText("Merge Sort")[0]);
+    expect(screen.getByText((c) => c.includes("merge(&left, &right)"))).toBeTruthy();
+  });
 });

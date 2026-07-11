@@ -13,9 +13,9 @@ import { useRailSections } from "@/shared/hooks/useRailSections";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
-import { KIND_ORDER, KIND_META, TECH_META, kitImplsByRole, type KnowledgeGraph, type Tech } from "./lib/knowledge";
+import { KIND_ORDER, KIND_META, TECH_META, kitTechs, kitImpls, kitImplsByRole, type KnowledgeGraph, type Tech } from "./lib/knowledge";
 
-export function AlgorithmsRail({ graph, activeTech, selected, selectedImpl, onSelect, onSelectImpl }: {
+export function AlgorithmsRail({ graph, activeTech, selected, selectedImpl, onSelect, onSelectImpl, onSelectKit }: {
   graph: KnowledgeGraph;
   /** The active language kit (#2863) — its free-standing primitives lead the rail. */
   activeTech: Tech;
@@ -25,11 +25,16 @@ export function AlgorithmsRail({ graph, activeTech, selected, selectedImpl, onSe
   selectedImpl: string | null;
   onSelect: (id: string) => void;
   onSelectImpl: (id: string) => void;
+  /** Switch to / drill into a language kit (#2863) — the rail's between-kits navigation. */
+  onSelectKit: (tech: Tech) => void;
 }) {
   const [query, setQuery] = useState("");
   const sections = useRailSections();
   const q = query.trim().toLowerCase();
   const match = (name: string) => !q || name.toLowerCase().includes(q);
+  // The language kits present (#2863) — the coarse navigation level; picking one makes it active (and, from
+  // the kits-index layer, drills in). Mirrors the graph's kits-index cards, in the left pane.
+  const kits = kitTechs(graph).filter((t) => match(TECH_META[t]?.label ?? t));
   // The active kit's FREE-STANDING primitives (#2863) — role primitive, no concept, so they don't appear
   // in the kind sections below; the concept-backed primitives (e.g. `merge`) are reachable via their node.
   const primitives = kitImplsByRole(graph, activeTech, "primitive").filter((im) => !im.concept && match(im.name));
@@ -46,6 +51,26 @@ export function AlgorithmsRail({ graph, activeTech, selected, selectedImpl, onSe
       }
     >
       <Stack gap={4}>
+        {kits.length > 0 && (
+          <RailSection
+            label="Kits"
+            count={kits.length}
+            open={sections.isOpen("__kits")}
+            onToggle={() => sections.toggle("__kits")}
+          >
+            {kits.map((t) => (
+              <RailRow
+                key={t}
+                active={t === activeTech}
+                onClick={() => onSelectKit(t)}
+                leading={<Box style={{ width: 8, height: 8, borderRadius: 2, background: "var(--accent)" }} />}
+                trailing={<Text as="span" mono size="xxs" tone="dim">{kitImpls(graph, t).length}</Text>}
+              >
+                {TECH_META[t]?.label ?? t}
+              </RailRow>
+            ))}
+          </RailSection>
+        )}
         {primitives.length > 0 && (
           <RailSection
             label={`Primitives · ${TECH_META[activeTech]?.label ?? activeTech}`}
