@@ -2,8 +2,8 @@
 // navigable stepper, the stage header with gate pill, lock/done banners, and the footer
 // advance bar. Pure presentational (props in, callbacks out); the stage model + footer
 // logic live in focusedPlan.ts. Styling: projectPane.css, scoped under .fp.
-import { useState } from "react";
 import { BackButton } from "@/shared/ui/controls/BackButton";
+import { Button } from "@/shared/ui/controls/Button";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { connectorKind, type Stage, type GatePill, type FooterKind } from "../stages/focusedPlan";
@@ -11,69 +11,55 @@ import { stageKind } from "../blueprints/blueprintCatalog";
 import { ProgressionRail, type RailNode } from "./ProgressionRail";
 import type { StagePrompt } from "../session/plannerConductor";
 
-/** The per-stage prompt helper (#2859): the "?" affordance in the focused-pane header. Presents the
- *  SINGLE most relevant prompt for the stage's CURRENT step (resolved upstream from substep progress)
- *  and lets the user inject it into the planner chat — one prompt at a time, not the whole list. */
-export function StagePromptHelp({ prompt, onInject }: {
-  prompt: StagePrompt;
-  onInject: (text: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      {/* eslint-disable-next-line no-restricted-syntax -- bespoke floating prompt-helper toggle (absolute-positioned, open-state accent-tinted inline styling, not the .btn/IconButton kit) */}
-      <button
-        className="mono"
-        title="Inject this step's prompt"
-        aria-label="Stage prompt helper"
-        onClick={() => setOpen((o) => !o)}
-        style={{
-          position: "absolute", top: 12, right: 14, zIndex: 42,
-          width: 26, height: 26, display: "inline-flex", alignItems: "center", justifyContent: "center",
-          borderRadius: 999, cursor: "pointer", fontSize: 14, fontWeight: 700,
-          background: open ? "color-mix(in oklch, var(--accent), transparent 84%)" : "var(--bg-elev)",
-          border: `1px solid ${open ? "var(--accent)" : "var(--border)"}`,
-          color: open ? "var(--accent)" : "var(--fg-muted)",
-        }}
-      >?</button>
-      {open && (
-        <>
-          {/* click-away catcher */}
-          <Box onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 41 }} />
-          <Box role="menu" pad={6} bg="var(--bg-panel)" border radius="lg" style={{
-            position: "absolute", top: 44, right: 14, zIndex: 42, width: 360, maxHeight: 380, overflowY: "auto",
-            boxShadow: "0 16px 48px rgba(0,0,0,.5)",
-          }}>
-            <Text as="div" mono size={9.5} tone="dim" style={{
-              padding: "6px 8px 8px", letterSpacing: ".06em",
-              textTransform: "uppercase",
-            }}>Inject this step&apos;s prompt</Text>
-            {/* eslint-disable-next-line no-restricted-syntax -- bespoke prompt menu item (block card-styled, text-left inline styling, not the .btn kit) */}
-            <button
-              onClick={() => { onInject(prompt.text); setOpen(false); }}
-              title="Inject into the planner chat"
-              style={{
-                display: "block", width: "100%", textAlign: "left", cursor: "pointer",
-                background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)",
-                padding: "8px 10px", color: "var(--fg)",
-              }}
-            >
-              <Text as="div" mono size={11.5} weight={600} style={{ marginBottom: 3 }}>{prompt.label}</Text>
-              <Text as="div" size={10.5} tone="muted" style={{
-                lineHeight: 1.5,
-                display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden",
-              }}>{prompt.text}</Text>
-            </button>
-          </Box>
-        </>
-      )}
-    </>
-  );
-}
-
 /** Format one unmet requirement: "resolve the discovery topics (3 of 5)". */
 function reasonText(u: { label: string; detail?: string }): string {
   return u.detail ? `${u.label} (${u.detail})` : u.label;
+}
+
+/**
+ * The Stage Guidance card (#2862) — the always-visible panel that pairs the gate's REQUIREMENTS with
+ * the suggested next-step PROMPT, replacing the easy-to-miss "?" helper and the click-to-reveal gate
+ * "why?" popover. Shows the unmet requirements inline (`stage.unmet`) while the gate is blocking, and
+ * the single current-step prompt (#2859) with a legible Inject button. Once the gate passes it
+ * collapses to a "Gate ready" row. Renders nothing when there's neither a requirement nor a prompt.
+ */
+export function StageGuidanceCard({ stage, pill, prompt, onInject }: {
+  stage: Stage;
+  pill: GatePill;
+  /** The current-step prompt for this stage (#2859) — absent when the stage has none. */
+  prompt?: StagePrompt;
+  onInject?: (text: string) => void;
+}) {
+  const unmet = stage.unmet ?? [];
+  const showReqs = pill !== "pass" && unmet.length > 0;
+  const showPrompt = !!prompt && !!onInject;
+  if (!showReqs && !showPrompt) return null;
+  const ready = pill === "pass";
+  return (
+    <Box className={"stage-guide " + pill} role="group" aria-label="Stage guidance">
+      <Box className="sg-head">
+        <Box as="span" className="sg-dot" />
+        <Text as="span" className="sg-title">{ready ? "Gate ready" : "What’s still needed"}</Text>
+      </Box>
+      {showReqs && (
+        <ul className="sg-reqs">
+          {unmet.map((u, i) => (
+            <li key={i}>{u.label}{u.detail && <Text as="span" tone="dim"> — {u.detail}</Text>}</li>
+          ))}
+        </ul>
+      )}
+      {showPrompt && (
+        <Box className="sg-prompt">
+          <Text as="div" className="sg-eyebrow">Suggested next step</Text>
+          <Text as="div" className="sg-plabel">{prompt!.label}</Text>
+          <Text as="div" className="sg-ptext">{prompt!.text}</Text>
+          <Button variant="primary" size="sm" className="sg-inject" onClick={() => onInject!(prompt!.text)}>
+            Inject →
+          </Button>
+        </Box>
+      )}
+    </Box>
+  );
 }
 
 /**
@@ -109,51 +95,25 @@ export function Stepper({ stages, selectedIdx, onSelect, highlight }: {
   );
 }
 
-/** Eyebrow + title + blurb + gate pill for the focused stage. The pill surfaces WHY the
- *  gate isn't met (#805): a hover tooltip + a click-to-toggle popover of what's still needed. */
-export function StageHeader({ stage, pill, promptHelp }: {
+/** Eyebrow + title + blurb + a SLIM gate status pill for the focused stage. The pill is at-a-glance
+ *  status only (pass/wait, with a hover tooltip of what's left, #805); the requirement DETAIL + the
+ *  suggested prompt moved to the {@link StageGuidanceCard} (#2862). */
+export function StageHeader({ stage, pill }: {
   stage: Stage;
   pill: GatePill;
-  /** The current-step prompt for this stage + the inject handler — drives the "?" helper (#2859). */
-  promptHelp?: { prompt: StagePrompt; onInject: (text: string) => void };
 }) {
-  const [showReasons, setShowReasons] = useState(false);
   const unmet = stage.unmet ?? [];
-  // Only offer reasons while the gate isn't passing and there's something to explain.
-  const hasReasons = pill !== "pass" && unmet.length > 0;
-  const tip = hasReasons ? "Still needed: " + unmet.map(reasonText).join("; ") : undefined;
+  const tip = pill !== "pass" && unmet.length > 0 ? "Still needed: " + unmet.map(reasonText).join("; ") : undefined;
   return (
-    <Box className="ph-head" style={{ position: "relative" }}>
-      {promptHelp && <StagePromptHelp prompt={promptHelp.prompt} onInject={promptHelp.onInject} />}
+    <Box className="ph-head">
       <Box className="ph-title">
         <h2>{stage.name}</h2>
-        <Box as="span"
-          className={"ph-gate " + pill}
-          title={tip}
-          onClick={hasReasons ? () => setShowReasons((v) => !v) : undefined}
-          style={{ cursor: hasReasons ? "pointer" : undefined }}
-        >
+        <Box as="span" className={"ph-gate " + pill} title={tip}>
           <Box as="span" className="gd" />
           gate
-          {hasReasons && <Box as="span" style={{ marginLeft: 6, opacity: 0.75, textDecoration: "underline" }}>why?</Box>}
         </Box>
       </Box>
       <p className="ph-blurb">{stage.blurb}</p>
-      {hasReasons && showReasons && (
-        <Box role="status" className="mono" pad={[8, 11]} bg="var(--bg-elev)" border="soft" radius={7} style={{
-          marginTop: 8, maxWidth: 420,
-          fontSize: 11, lineHeight: 1.6, color: "var(--fg-muted)",
-        }}>
-          <Text as="div" tone="dim" size={9.5} style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 4 }}>
-            Still needed to pass this gate
-          </Text>
-          <ul style={{ margin: 0, paddingLeft: 16 }}>
-            {unmet.map((u, i) => (
-              <li key={i}>{u.label}{u.detail && <Text as="span" tone="dim"> — {u.detail}</Text>}</li>
-            ))}
-          </ul>
-        </Box>
-      )}
     </Box>
   );
 }

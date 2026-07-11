@@ -16,6 +16,7 @@ import type { Stage, GatePill, FooterKind } from "../stages/focusedPlan";
 import {
   Stepper as FocusedStepper,
   StageHeader as FocusedStageHeader,
+  StageGuidanceCard as FocusedStageGuidance,
   LockBanner as FocusedLockBanner,
   StageFooter as FocusedStageFooter,
 } from "./FocusedShell";
@@ -134,8 +135,9 @@ export function ProjectPane({
     return (
       <Pane mode="inline" bare className="pp fp">
         <FocusedStepper stages={focus.stages} selectedIdx={focus.selectedIdx} onSelect={focus.onSelect} />
-        <FocusedStageHeader stage={selected} pill={focus.pill} promptHelp={focus.promptHelp} />
+        <FocusedStageHeader stage={selected} pill={focus.pill} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
+        <FocusedStageGuidance stage={selected} pill={focus.pill} prompt={focus.promptHelp?.prompt} onInject={focus.promptHelp?.onInject} />
         <Box className="pp-scroll">
           <FocusedStageBody stage={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
             onFlow={onFlow} onModel={onModel} onPersona={onPersona} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
