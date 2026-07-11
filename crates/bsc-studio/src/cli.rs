@@ -47,6 +47,21 @@ through as given. A same-id bundle overwrites (upsert). Reads the bundle from st
 written. --dir overrides the base ~/.base-studio-code dir (writes to <base>/studios/).",
     },
     CmdDoc {
+        name: "apply",
+        summary: "re-seed the app's libraries from a saved Studio (REPLACES the captured systems)",
+        usage: "\
+USAGE:
+  bsc studio apply <id> [--dir <base>] [--pretty]
+
+Re-seeds the app's libraries from the saved Studio <id>. For EACH system captured in the studio's
+snapshot (teams · personas · components · kits · variants · themes · blueprints), REPLACES that
+system's store — every existing record is removed, then the studio's records are written in. A system
+the snapshot does NOT contain is left untouched (a partial studio is safe). DESTRUCTIVE: the current
+libraries for the captured systems are overwritten — save the current state first if you want a
+rollback point. Prints a summary { applied: { <system>: <count> }, id, name } (compact; --pretty
+indents). --dir overrides the base ~/.base-studio-code dir.",
+    },
+    CmdDoc {
         name: "list",
         summary: "every saved Studio's {id, name} (JSON)",
         usage: "\
@@ -140,6 +155,11 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             let id = crate::set(&base, &json)?;
             print_value(&Value::String(id), args.pretty)
         }
+        "apply" => {
+            let id = args.positional.get(1).ok_or_else(|| format!("usage: {prog} apply <id>"))?;
+            let summary = crate::apply(&base, id)?;
+            print_value(&summary, args.pretty)
+        }
         "list" => print_value(&Value::Array(crate::list_meta(&base)), args.pretty),
         "get" => {
             let id = args.positional.get(1).ok_or_else(|| format!("usage: {prog} get <id>"))?;
@@ -193,12 +213,16 @@ mod tests {
     #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
         let ov = bsc_cli_util::help_overview("bsc studio", TAGLINE, COMMANDS);
-        for c in ["save", "set", "list", "get", "remove"] {
+        for c in ["save", "set", "apply", "list", "get", "remove"] {
             assert!(ov.contains(c), "overview lists {c}");
         }
         let one = bsc_cli_util::help_for("bsc studio", TAGLINE, COMMANDS, "save");
         assert!(one.contains("bsc studio save"));
         assert!(one.contains("snapshot"));
+        // `apply` (#2893) drills in with its REPLACE semantics.
+        let apply_help = bsc_cli_util::help_for("bsc studio", TAGLINE, COMMANDS, "apply");
+        assert!(apply_help.contains("bsc studio apply"));
+        assert!(apply_help.contains("REPLACES"));
         // `set` (#2891) drills in with its stdin usage.
         let set_help = bsc_cli_util::help_for("bsc studio", TAGLINE, COMMANDS, "set");
         assert!(set_help.contains("bsc studio set"));
@@ -215,6 +239,42 @@ mod tests {
         assert!(run(vec!["save".into(), "help".into()], "bsc studio").is_ok());
         // `set help` must resolve as help (not fall through to the stdin-reading dispatch arm).
         assert!(run(vec!["set".into(), "help".into()], "bsc studio").is_ok());
+        assert!(run(vec!["apply".into(), "help".into()], "bsc studio").is_ok());
+    }
+
+    #[test]
+    fn run_apply_re_seeds_a_system_store_over_a_temp_base() {
+        // End-to-end through the CLI dispatch: seed a live store, save it as a studio under a fresh
+        // name, wipe the live store, then `apply` the studio to bring the records back.
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let base = std::env::temp_dir().join(format!(
+            "bsc-studio-cli-apply-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        let dir = base.to_string_lossy().into_owned();
+
+        let bp = bsc_json_store::Store::new(base.join("blueprints"), "blueprint");
+        bp.set("a", r#"{"id":"a","name":"A"}"#).unwrap();
+        run(vec!["save".into(), "Snap".into(), "--dir".into(), dir.clone()], "bsc studio").unwrap();
+        // Diverge the live store from the snapshot: drop the captured one, add an unrelated one.
+        bp.remove("a").unwrap();
+        bp.set("z", r#"{"id":"z","name":"Z"}"#).unwrap();
+
+        run(vec!["apply".into(), "snap".into(), "--dir".into(), dir.clone()], "bsc studio").unwrap();
+        // The store now mirrors the snapshot exactly: `a` back, `z` (not captured) gone.
+        let ids: std::collections::BTreeSet<String> = bp
+            .list()
+            .iter()
+            .filter_map(|j| serde_json::from_str::<Value>(j).ok())
+            .filter_map(|v| v["id"].as_str().map(str::to_string))
+            .collect();
+        assert_eq!(ids, ["a".to_string()].into_iter().collect());
+        // A missing positional errors with a usage line; an absent id errors from the core.
+        assert!(run(vec!["apply".into(), "--dir".into(), dir.clone()], "bsc studio").is_err());
+        assert!(run(vec!["apply".into(), "absent".into(), "--dir".into(), dir], "bsc studio").is_err());
     }
 
     #[test]

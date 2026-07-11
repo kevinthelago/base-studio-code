@@ -20,7 +20,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("blueprint", "user blueprint store"),
     ("persona", "user persona store: agent identities (prompt + skills + model over a role)"),
     ("teams", "user teams store: persona-relationship graph (positions + relationships)"),
-    ("studio", "Studio store: shareable snapshots of the app's library state (save · list · get · remove)"),
+    ("studio", "Studio store: shareable snapshots of the app's library state (save · apply · list · get · remove)"),
     ("org", "DEPRECATED (#2700) → use `bsc teams` (the store, renamed org → teams)"),
     ("component", "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)"),
     ("ui", "UI design surface: KitNode contract + themes (#1852) + the component library (#2469) + the released-kit store (release, #2465)"),

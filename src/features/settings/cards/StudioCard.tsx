@@ -7,6 +7,7 @@ import { TextField } from "@/shared/ui/controls/Field";
 import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
+import { Dialog } from "@/shared/ui/overlay/Dialog";
 import { useAppStore } from "@/store";
 import { bsc, bscJson, bscWrite } from "@/shared/lib/core/bsc";
 import { exportStudioToGist, importStudioFromGist, type Studio } from "@/features/studio";
@@ -27,6 +28,8 @@ export function StudioCard() {
   const [makePublic, setMakePublic] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  // The studio awaiting an apply confirmation (null = the confirm dialog is closed).
+  const [applyTarget, setApplyTarget] = useState<StudioMeta | null>(null);
 
   const flash = (tone: "ok" | "err", text: string) => {
     setNotice({ tone, text });
@@ -61,6 +64,41 @@ export function StudioCard() {
       const res = await exportStudioToGist(studio, githubToken, { public: makePublic });
       if (res.ok) flash("ok", `Uploaded "${name}" as a gist: ${res.url}`);
       else flash("err", res.error);
+    } finally { setBusy(false); }
+  };
+
+  // Re-hydrate every library the app boots from, so the UI reflects the freshly re-seeded stores
+  // WITHOUT a restart. These are the exact store actions `useAppBoot` runs on boot — `hydrateComponents`
+  // covers both components + kits; the rest cover themes, variants, kit-usage, personas, and teams (the
+  // `orgs` store). (Blueprints have no boot-time hydrate action — they re-load on the next app start.)
+  const rehydrateLibraries = async () => {
+    const s = useAppStore.getState();
+    await Promise.all([
+      s.hydrateComponents(),
+      s.hydrateThemes(),
+      s.hydrateVariants(),
+      s.hydrateKitUsage(),
+      s.hydratePersonas(),
+      s.hydrateOrgs(),
+    ]);
+  };
+
+  // Apply a saved studio — REPLACE the current libraries with its snapshot. `saveFirst` snapshots the
+  // current state as a rollback studio ("Before <name>") before applying, mirroring the blueprint-switch
+  // "export first" escape hatch. Always re-hydrates + re-lists on success.
+  const doApply = async (saveFirst: boolean) => {
+    if (!applyTarget) return;
+    const { id, name } = applyTarget;
+    setApplyTarget(null);
+    setBusy(true);
+    try {
+      if (saveFirst) await bsc(null, ["studio", "save", `Before ${name}`]);
+      await bsc(null, ["studio", "apply", id]);
+      await rehydrateLibraries();
+      flash("ok", `Applied studio "${name}" — your libraries were re-seeded from it.${saveFirst ? " Your previous state was saved first." : ""}`);
+      await refresh();
+    } catch (e) {
+      flash("err", `Apply failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally { setBusy(false); }
   };
 
@@ -115,9 +153,14 @@ export function StudioCard() {
                 <Text as="div" size={11.5} weight={600} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</Text>
                 {s.description && <Text as="div" tone="dim" size={10.5}>{s.description}</Text>}
               </Box>
-              <Button variant="ghost" size="sm" onClick={() => void doUpload(s.id, s.name)} disabled={busy || !githubToken}>
-                Upload to gist
-              </Button>
+              <Row gap={6} style={{ flexShrink: 0 }}>
+                <Button variant="ghost" size="sm" onClick={() => setApplyTarget(s)} disabled={busy}>
+                  Apply
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => void doUpload(s.id, s.name)} disabled={busy || !githubToken}>
+                  Upload to gist
+                </Button>
+              </Row>
             </Row>
           ))}
         </Box>
@@ -146,6 +189,29 @@ export function StudioCard() {
         <Banner tone={notice.tone === "ok" ? "success" : "danger"} style={{ wordBreak: "break-all" }}>
           {notice.text}
         </Banner>
+      )}
+
+      {applyTarget && (
+        <Dialog
+          title={`Apply "${applyTarget.name}"?`}
+          onDismiss={() => setApplyTarget(null)}
+          actions={
+            <>
+              <Button onClick={() => setApplyTarget(null)}>cancel</Button>
+              <Button disabled={busy} onClick={() => void doApply(true)}>save current first, then apply</Button>
+              <Button danger disabled={busy} onClick={() => void doApply(false)}>apply</Button>
+            </>
+          }
+        >
+          Applying this studio <b>replaces your current libraries</b> — teams, personas, components, kits,
+          variants, themes &amp; blueprints — with the snapshot it captured. Your current libraries for
+          those systems are overwritten. Choose how to proceed:
+          <ul style={{ margin: "10px 0 0", paddingLeft: 18, lineHeight: 1.6 }}>
+            <li><b>Save current first, then apply</b> — snapshot your current state as a new studio (a rollback point) before applying.</li>
+            <li><b>Apply</b> — replace your libraries now. This can't be undone.</li>
+            <li><b>Cancel</b> — leave everything as it is.</li>
+          </ul>
+        </Dialog>
       )}
     </Card>
   );

@@ -210,6 +210,61 @@ pub fn remove(base: &Path, id: &str) -> Result<(), String> {
     studios_store(base).remove(id)
 }
 
+/// Apply a saved Studio by `id` — RE-SEED the app's libraries from its captured snapshot. The inverse
+/// of [`save`]/[`build_snapshot`]: it writes back through the SAME `(system key → on-disk segment)`
+/// [`bsc_json_store::Store`] mapping the snapshot was read through, so the `teams` system re-seeds the
+/// on-disk `orgs/` store, etc.
+///
+/// For EACH system PRESENT in the studio's `snapshot`, it REPLACES that system's store: every existing
+/// record is removed ([`bsc_json_store::Store`] has no `clear`, so we `list()` the current records,
+/// read each one's `id`, and `remove` it), then every record in the snapshot array is written
+/// (`set(record.id, record)`). A snapshot record with no string `id` is SKIPPED (it cannot key a file)
+/// rather than aborting the whole apply, and a listed live record with no readable `id` is left in
+/// place (it cannot be addressed for removal). Only systems the snapshot actually contains are touched
+/// — a PARTIAL studio (a snapshot missing a system, or carrying a subset) leaves every unlisted system
+/// untouched. A snapshot key outside the [`SYSTEMS`] roster is ignored.
+///
+/// Returns a summary `{ "applied": { "<system>": <count> }, "id": "<id>", "name": "<name>" }` where
+/// each count is how many records were written for that system. `Err` when no studio is stored for
+/// `id` (or a stored record is unreadable, via [`get`]).
+pub fn apply(base: &Path, id: &str) -> Result<Value, String> {
+    let studio = get(base, id)?.ok_or_else(|| format!("apply: studio '{id}' not found"))?;
+    let name = studio.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+    let mut applied = serde_json::Map::new();
+
+    if let Some(snapshot) = studio.get("snapshot").and_then(Value::as_object) {
+        for &(key, segment, noun) in SYSTEMS {
+            // Only touch a system the snapshot actually carries (partial studios are safe).
+            let Some(records) = snapshot.get(key).and_then(Value::as_array) else { continue };
+            let store = bsc_json_store::Store::new(base.join(segment), noun);
+
+            // REPLACE step 1 — drop every existing record (addressed by its own `id`).
+            for existing in store.list() {
+                if let Some(eid) = serde_json::from_str::<Value>(&existing)
+                    .ok()
+                    .as_ref()
+                    .and_then(|v| v.get("id"))
+                    .and_then(Value::as_str)
+                {
+                    store.remove(eid)?;
+                }
+            }
+
+            // REPLACE step 2 — write the snapshot's records (skip any with no string `id`).
+            let mut count: u64 = 0;
+            for rec in records {
+                let Some(rid) = rec.get("id").and_then(Value::as_str) else { continue };
+                let json = serde_json::to_string(rec).map_err(|e| format!("apply: {e}"))?;
+                store.set(rid, &json)?;
+                count += 1;
+            }
+            applied.insert(key.to_string(), Value::from(count));
+        }
+    }
+
+    Ok(serde_json::json!({ "applied": applied, "id": id, "name": name }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,5 +414,58 @@ mod tests {
         assert_eq!(get(&base, "one").unwrap(), None);
         assert_eq!(list_meta(&base).len(), 1);
         remove(&base, "one").unwrap(); // no-op, not an error
+    }
+
+    // The set of record ids currently on disk for one sibling system store under `base`.
+    fn store_ids(base: &Path, segment: &str, noun: &'static str) -> std::collections::BTreeSet<String> {
+        bsc_json_store::Store::new(base.join(segment), noun)
+            .list()
+            .iter()
+            .filter_map(|j| serde_json::from_str::<Value>(j).ok())
+            .filter_map(|v| v["id"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    #[test]
+    fn apply_replaces_captured_systems_and_leaves_others_untouched() {
+        let base = tmp_base("apply");
+        // The LIVE stores: two blueprints to be replaced, and a persona the studio never mentions.
+        seed(&base, "blueprints", "blueprint", "old1", r#"{"id":"old1","name":"Old One"}"#);
+        seed(&base, "blueprints", "blueprint", "old2", r#"{"id":"old2","name":"Old Two"}"#);
+        seed(&base, "personas", "persona", "keep", r#"{"id":"keep","name":"Keep Me"}"#);
+
+        // A DIFFERENT studio: three blueprints (and NO personas key) — imported via `set`.
+        let bundle = r#"{"id":"other","name":"Other Studio","snapshot":{"blueprints":[
+            {"id":"new1","name":"New One"},{"id":"new2","name":"New Two"},{"id":"new3","name":"New Three"}]}}"#;
+        set(&base, bundle).unwrap();
+
+        let summary = apply(&base, "other").unwrap();
+        assert_eq!(summary["id"], "other");
+        assert_eq!(summary["name"], "Other Studio");
+        assert_eq!(summary["applied"]["blueprints"], 3);
+        // personas was NOT in the snapshot → not touched, not reported.
+        assert!(summary["applied"].get("personas").is_none(), "unlisted system not reported");
+
+        // The blueprints store now holds EXACTLY the studio's records — old ids gone, new present.
+        assert_eq!(
+            store_ids(&base, "blueprints", "blueprint"),
+            ["new1", "new2", "new3"].iter().map(|s| s.to_string()).collect()
+        );
+        // The unlisted personas store is untouched.
+        assert_eq!(store_ids(&base, "personas", "persona"), ["keep".to_string()].into_iter().collect());
+    }
+
+    #[test]
+    fn apply_skips_idless_records_and_errors_on_an_absent_studio() {
+        let base = tmp_base("apply-edge");
+        assert!(apply(&base, "nope").is_err(), "an absent studio ⇒ error");
+
+        // One good record + one id-less record in the same array.
+        let bundle = r#"{"id":"s","name":"S","snapshot":{"blueprints":[{"id":"good","name":"Good"},{"name":"No Id"}]}}"#;
+        set(&base, bundle).unwrap();
+        let summary = apply(&base, "s").unwrap();
+        // Only the record carrying a string id was written; the id-less one was skipped (not fatal).
+        assert_eq!(summary["applied"]["blueprints"], 1);
+        assert_eq!(store_ids(&base, "blueprints", "blueprint"), ["good".to_string()].into_iter().collect());
     }
 }
