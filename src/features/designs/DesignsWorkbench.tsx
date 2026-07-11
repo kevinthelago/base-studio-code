@@ -352,6 +352,7 @@ const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string }> = {
   cycle: { glyph: "⟳", label: "on a composes cycle" },
   "dangling-branch": { glyph: "⚠", label: "unused branch (nothing composes it, used = 0)" },
   duplicate: { glyph: "⧉", label: "duplicate (same intrinsic / identical source)" },
+  "no-implementation": { glyph: "∅", label: "no buildable implementation — a spec, not code" },
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
 };
 
