@@ -112,6 +112,20 @@ const UI_WRITE_DENY = [
   "bsc component set", "bsc component remove", "bsc component kit set", "bsc component kit remove",
 ];
 
+/** File-mutating shell commands denied for a WRITE-LESS role (#2932) — the bash counterpart to the
+ *  whole-tool Edit/Write deny in {@link roleWriteRules}. A `code: "none"` role with no scoped write
+ *  carve-out writes NOTHING: not via the Edit/Write tools (already denied), and not via bash either —
+ *  otherwise (as happened) a session bypasses the tool-deny with `tee`/`cp`/`echo > file` and mutates
+ *  the repo (e.g. `src-tauri/data/`, triggering a rebuild). Denies the common file writers; shell
+ *  redirection (`>`) can't be prefix-denied and is caught by the always-on `bsc-confine` FS hook.
+ *  Carve-out roles (documentor/marketer/a commons director) and writers (planner/worker) are EXCLUDED —
+ *  they write their scoped globs via the Write tool, not bash. */
+const FILE_WRITE_DENY = [
+  "tee", "dd", "truncate", "install", "cp", "mv", "ln", "patch", "sponge",
+  "sed -i", "sed --in-place", "perl -i",
+  "vi", "vim", "nano", "emacs", "ed", "ex",
+];
+
 /**
  * Command-prefix denies to apply at session launch for a role, merged into the
  * session's `deniedCommands` (the backend wraps each as `Bash(<prefix> *)`, and a
@@ -135,6 +149,10 @@ export function roleDeniedCommands(cap: RoleCapability): string[] {
   // lack it) behaves as `"read"`, never as an accidental grant.
   if (cap.ui === "none") out.push("bsc ui", "bsc component");
   else if (cap.ui !== "write") out.push(...UI_WRITE_DENY);
+  // A write-less role (code:none, no carve-out) writes NOTHING — deny the file-mutating bash commands
+  // too, the counterpart to its whole-tool Edit/Write deny (#2932). Shell redirection (`>`) can't be
+  // prefix-denied; the always-on `bsc-confine` FS hook is the complete layer.
+  if (cap.code === "none" && !hasScopedWriteCarveOut(cap)) out.push(...FILE_WRITE_DENY);
   return out;
 }
 
