@@ -34,22 +34,39 @@ const withSource = (components: typeof REACT_UI_COMPONENTS) =>
 
 const SRC = join(process.cwd(), "src");
 
-/** Resolve a first-party `@/…` import specifier to a path relative to `src/` (with extension), trying
- *  TS module-resolution order. `null` when it isn't a resolvable first-party file (an external npm dep
- *  — react/node/d3 — or a type-only path with no `.ts(x)` on disk). */
-function resolveFirstParty(spec: string): string | null {
-  if (!spec.startsWith("@/")) return null;
-  const base = spec.slice(2); // drop "@/"
+/** Resolve a FIRST-PARTY import specifier — a `@/…` OR a RELATIVE (`./`,`../`) path — to a path relative
+ *  to `src/` (with extension), trying TS module-resolution order. `fromRel` is the src/-relative path of
+ *  the IMPORTING module (needed to resolve a relative specifier). `null` when it isn't a resolvable
+ *  first-party file (an external npm dep — react/node/d3 — or a type-only path with no `.ts(x)` on disk). */
+function resolveImport(spec: string, fromRel: string): string | null {
+  let base: string;
+  if (spec.startsWith("@/")) {
+    base = spec.slice(2); // drop "@/"
+  } else if (spec.startsWith("./") || spec.startsWith("../")) {
+    // Resolve relative to the IMPORTING module's dir, normalising `.`/`..` segments (#2954).
+    const fromDir = fromRel.includes("/") ? fromRel.slice(0, fromRel.lastIndexOf("/")) : "";
+    const out: string[] = [];
+    for (const seg of (fromDir ? fromDir.split("/") : []).concat(spec.split("/"))) {
+      if (seg === "" || seg === ".") continue;
+      if (seg === "..") out.pop();
+      else out.push(seg);
+    }
+    base = out.join("/");
+  } else {
+    return null; // external npm dep (react, node, d3, …)
+  }
   for (const cand of [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`]) {
     if (existsSync(join(SRC, cand))) return cand;
   }
   return null;
 }
 
-/** Every `@/…` specifier a source `import`s / re-`export`s / dynamically imports. */
-function firstPartyImports(source: string): string[] {
+/** Every FIRST-PARTY specifier a source imports/re-exports/dynamically imports — the `@/…` AND the
+ *  RELATIVE (`./`, `../`) ones (#2954: relative imports were silently dropped before, so a relatively-
+ *  imported support module never vendored). External npm specifiers are left for `resolveImport` to drop. */
+function importSpecifiers(source: string): string[] {
   const specs: string[] = [];
-  const re = /(?:from|import)\s*\(?\s*["'](@\/[^"']+)["']/g;
+  const re = /(?:from|import)\s*\(?\s*["']((?:@\/|\.\.?\/)[^"']+)["']/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(source))) specs.push(m[1]);
   return specs;
@@ -71,8 +88,8 @@ function collectRuntime(components: typeof REACT_UI_COMPONENTS): Record<string, 
     const abs = join(SRC, relPath);
     if (!existsSync(abs)) return;
     const source = readFileSync(abs, "utf8");
-    for (const spec of firstPartyImports(source)) {
-      const resolved = resolveFirstParty(spec);
+    for (const spec of importSpecifiers(source)) {
+      const resolved = resolveImport(spec, relPath);
       if (!resolved || componentSrc.has(resolved)) continue; // external, unresolved, or a kit component
       if (!collected.has(resolved)) collected.set(resolved, readFileSync(join(SRC, resolved), "utf8").replace(/\r\n/g, "\n"));
       walk(resolved);
@@ -172,8 +189,8 @@ describe("data/components/react-ui.json ↔ manifest (#2305 slice 1b)", () => {
     ];
     const gaps: string[] = [];
     for (const [file, src] of sources) {
-      for (const spec of firstPartyImports(src)) {
-        const resolved = resolveFirstParty(spec);
+      for (const spec of importSpecifiers(src)) {
+        const resolved = resolveImport(spec, file);
         if (!resolved) continue; // external / type-only → an npm dep, not vendored
         if (componentSrc.has(resolved) || runtimeKeys.has(resolved)) continue; // composes edge or runtime
         gaps.push(`${file} → ${spec}`);

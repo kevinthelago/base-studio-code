@@ -12,8 +12,10 @@
 //! Findings (most-severe first): **cycle** (a `composes` loop — also breaks the layered layout) ·
 //! **dangling-branch** (an unused root that still pulls in dependencies) · **duplicate** (two
 //! components wrapping the same intrinsic, or byte-identical source) · **no-implementation** (a
-//! component the Design Studio preview can't build — a spec, not code) · **unresolvable-import** (a user
-//! module imports a bare package the preview can't resolve — throws at preview time, #2934) · **orphan**
+//! component the Design Studio preview can't build — a spec, not code) · **unresolvable-import** (a
+//! module imports something the preview can't resolve — a bare npm package not in the import-map, #2934,
+//! OR an internal `@/…`/relative import matching no kit component or runtime-closure module, #2954 —
+//! throws "module not found" at preview time) · **orphan**
 //! (an isolated, never-referenced primitive/composite) · **unwired-prop** (declares props its own source
 //! never references — a declared interface that does nothing, #2924) · **slot-shell** (INFORMATIONAL — a
 //! composite whose composed children arrive via ReactNode content slots, so a standalone preview renders
@@ -260,6 +262,79 @@ fn artifact_buildable_srcs(artifact_json: &str) -> BTreeSet<String> {
             has_source.then(|| src.to_string())
         })
         .collect()
+}
+
+/// The runtime-closure module paths a kit artifact vendors (#2798/#2954) — the KEYS of its `runtime`
+/// object (support modules like `shared/ui/typography/type.ts` the preview resolves a built-in's `@/`
+/// or RELATIVE import against). Pure over the JSON text (testable without the embed); a malformed
+/// artifact yields an empty set, so the internal-import check just flags nothing — fail safe.
+fn artifact_runtime_paths(artifact_json: &str) -> BTreeSet<String> {
+    serde_json::from_str::<Value>(artifact_json)
+        .ok()
+        .as_ref()
+        .and_then(|v| v.get("runtime"))
+        .and_then(Value::as_object)
+        .map(|m| m.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
+/// The set an INTERNAL import can resolve to at preview time (#2954): every packaged built-in that ships
+/// a real `source` (a `composes` sibling the preview vendors) PLUS every runtime-closure support module.
+/// Cached from the embedded artifact. The per-kit check unions in this kit's own component `src` paths so
+/// composing a sibling in the SAME kit (built-in or user) also resolves.
+fn internal_targets() -> &'static BTreeSet<String> {
+    static T: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+    T.get_or_init(|| {
+        let mut s = artifact_buildable_srcs(PACKAGED_KIT_JSON);
+        s.extend(artifact_runtime_paths(PACKAGED_KIT_JSON));
+        s
+    })
+}
+
+/// Is `spec` an INTERNAL first-party import — a `@/…` alias or a RELATIVE (`./`, `../`) path — as opposed
+/// to a bare npm specifier or an absolute path? These resolve against the kit's components + runtime
+/// closure, not the preview import-map. Mirrors `isInternalSpecifier` (TS).
+fn is_internal_specifier(spec: &str) -> bool {
+    spec.starts_with("@/") || spec.starts_with("./") || spec.starts_with("../")
+}
+
+/// Resolve an INTERNAL import `spec` — imported FROM module `from_rel` (a `src/`-relative path) — to its
+/// `src/`-relative module BASE (no extension), or `None` when it isn't internal. `@/x` → `x`; a relative
+/// path is joined onto the importer's directory and `.`/`..` segments collapsed. Mirrors the closure
+/// walker's resolver (reactUiKit.gen.test.ts) and `resolveInternalBase` (TS).
+fn resolve_internal_base(spec: &str, from_rel: &str) -> Option<String> {
+    let segs: Vec<&str> = if let Some(rest) = spec.strip_prefix("@/") {
+        rest.split('/').collect()
+    } else if spec.starts_with("./") || spec.starts_with("../") {
+        let from_dir = from_rel.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+        from_dir.split('/').chain(spec.split('/')).collect()
+    } else {
+        return None;
+    };
+    let mut out: Vec<&str> = Vec::new();
+    for seg in segs {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                out.pop();
+            }
+            _ => out.push(seg),
+        }
+    }
+    Some(out.join("/"))
+}
+
+/// Does an INTERNAL import `spec` (from module `from_rel`) resolve to a component or runtime module the
+/// preview provides (`targets`)? Tries TS module-resolution order (`.ts`/`.tsx`/`/index.ts`/`/index.tsx`)
+/// over the importer-relative base. A NON-internal spec returns `true` — it isn't this check's concern
+/// (the bare-specifier check owns npm resolution). Mirrors `resolvesInternal` (TS).
+fn resolves_internal(spec: &str, from_rel: &str, targets: &BTreeSet<String>) -> bool {
+    let Some(base) = resolve_internal_base(spec, from_rel) else {
+        return true;
+    };
+    [".ts", ".tsx", "/index.ts", "/index.tsx"]
+        .iter()
+        .any(|ext| targets.contains(&format!("{base}{ext}")))
 }
 
 /// Whether a component has a buildable implementation the Design Studio preview can render — the Rust
@@ -525,12 +600,18 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
         });
     }
 
-    // ── unresolvable-import (severity 3): a user-authored component whose OWN module imports a bare
-    // package the preview CAN'T resolve (not in the preview import-map) — the iframe throws "Failed to
-    // resolve module specifier" at preview time (#2934). The class `bsc ui doctor` was blind to (the
-    // static graph looked clean while the component was broken). Only own-source components — a
-    // `looks_buildable_module` srcText imports ONLY bare libraries (no `@/` closure), so its bare imports
-    // ARE exactly what the preview must resolve. Mirrors `graphHealth.ts`.
+    // ── unresolvable-import (severity 3): a component whose module imports something the preview CAN'T
+    // resolve — the class `bsc ui doctor` was blind to (the static graph looked clean while the component
+    // was broken). Two kinds, both flagged here (#2934 bare, #2954 internal):
+    //   • BARE — an npm package not in the preview import-map → the iframe throws "Failed to resolve
+    //     module specifier".
+    //   • INTERNAL — a `@/…` or RELATIVE import resolving to NEITHER a kit component NOR a runtime-closure
+    //     module → "module not found" (exactly the `Code`→`../typography/type` / `Skeleton`→`./shimmer`
+    //     failure #2954 fixed in the packaged closure; this catches any future/user-authored recurrence).
+    // Scanned on own-source components (a built-in's `source`, or a `looks_buildable_module` srcText) — the
+    // source the preview actually builds. Mirrors `graphHealth.ts`.
+    let mut targets = internal_targets().clone();
+    targets.extend(nodes.iter().map(|n| n.src.clone()).filter(|s| !s.is_empty()));
     for n in nodes {
         let src = if !n.source.trim().is_empty() {
             n.source.as_str()
@@ -540,16 +621,35 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
             continue;
         };
         let resolvable = resolvable_specifiers();
-        let mut unresolved: Vec<String> = import_specifiers(src)
-            .into_iter()
-            .filter(|s| is_bare_specifier(s) && !resolvable.contains(s))
+        let specs = import_specifiers(src);
+        let mut bare: Vec<String> =
+            specs.iter().filter(|s| is_bare_specifier(s) && !resolvable.contains(*s)).cloned().collect();
+        let mut internal: Vec<String> = specs
+            .iter()
+            .filter(|s| is_internal_specifier(s) && !resolves_internal(s, &n.src, &targets))
+            .cloned()
             .collect();
-        unresolved.sort();
-        unresolved.dedup();
-        if unresolved.is_empty() {
+        for v in [&mut bare, &mut internal] {
+            v.sort();
+            v.dedup();
+        }
+        if bare.is_empty() && internal.is_empty() {
             continue;
         }
-        let list = unresolved.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>().join(", ");
+        let fmt = |v: &[String]| v.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>().join(", ");
+        let mut reasons = Vec::new();
+        let mut actions = Vec::new();
+        if !bare.is_empty() {
+            reasons.push(format!("{} (no preview import-map entry)", fmt(&bare)));
+            actions.push(format!(
+                "pin {} in the preview import-map (src-tauri/data/ui/preview-importmap.json) or drop it",
+                fmt(&bare)
+            ));
+        }
+        if !internal.is_empty() {
+            reasons.push(format!("{} (no such module in the kit or its runtime closure)", fmt(&internal)));
+            actions.push(format!("fix or add the module for {} (it resolves to no kit component or runtime file)", fmt(&internal)));
+        }
         out.push(Finding {
             category: "unresolvable-import",
             severity: 3,
@@ -557,13 +657,11 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
             node_ids: vec![n.id.clone()],
             node_names: vec![n.name.clone()],
             why: format!(
-                "`{}` imports {} — not resolvable in the preview (no import-map entry), so it throws \"Failed to resolve module specifier\" when previewed",
-                n.name, list
+                "`{}` imports {} — the preview can't resolve it, so it throws \"module not found\" when rendered",
+                n.name,
+                reasons.join("; ")
             ),
-            suggested_action: format!(
-                "pin {} in the preview import-map (src-tauri/data/ui/preview-importmap.json), or drop the import from `{}`",
-                list, n.name
-            ),
+            suggested_action: actions.join("; "),
         });
     }
 
@@ -800,6 +898,74 @@ mod tests {
         let fs = analyze(&comps);
         let found = cats(&fs);
         assert!(!found.contains(&"unresolvable-import"));
+    }
+
+    #[test]
+    fn resolve_internal_base_handles_alias_and_relative() {
+        assert_eq!(
+            resolve_internal_base("@/shared/ui/typography/type", "anything"),
+            Some("shared/ui/typography/type".into())
+        );
+        // `Code`'s real failing import (#2954): relative, resolved against the importer's dir.
+        assert_eq!(
+            resolve_internal_base("../typography/type", "shared/ui/data/Code.tsx"),
+            Some("shared/ui/typography/type".into())
+        );
+        assert_eq!(
+            resolve_internal_base("./shimmer", "shared/ui/feedback/Skeleton.tsx"),
+            Some("shared/ui/feedback/shimmer".into())
+        );
+        assert_eq!(resolve_internal_base("react", "x"), None); // a bare npm spec isn't internal
+    }
+
+    #[test]
+    fn artifact_runtime_paths_reads_the_runtime_keys() {
+        let j = r#"{"components":[],"runtime":{"shared/ui/typography/type.ts":"x","shared/ui/feedback/shimmer.ts":"y"}}"#;
+        let p = artifact_runtime_paths(j);
+        assert!(p.contains("shared/ui/typography/type.ts"));
+        assert!(p.contains("shared/ui/feedback/shimmer.ts"));
+        assert!(artifact_runtime_paths("not json").is_empty()); // malformed → empty → fail safe
+    }
+
+    #[test]
+    fn resolves_internal_matches_only_known_targets() {
+        let targets: BTreeSet<String> = ["shared/ui/typography/type.ts".to_string()].into_iter().collect();
+        assert!(resolves_internal("@/shared/ui/typography/type", "x", &targets));
+        assert!(resolves_internal("../typography/type", "shared/ui/data/Code.tsx", &targets));
+        assert!(!resolves_internal("@/shared/ui/nope", "x", &targets));
+        assert!(resolves_internal("react", "x", &targets), "a bare spec isn't this check's concern");
+    }
+
+    #[test]
+    fn flags_a_component_importing_a_nonexistent_internal_module() {
+        // #2954: an internal `@/…` / relative import resolving to no kit component or runtime module —
+        // exactly the invisible `Code`/`Skeleton` preview failure, now surfaced by the doctor.
+        let comps = [json!({
+            "id":"widget", "name":"Widget", "kitId":"k", "role":"composite", "used":1, "composes":[],
+            "src":"shared/ui/data/Widget.tsx",
+            "source":"import { helper } from \"@/shared/ui/nope/missing\";\nimport { x } from \"../also/gone\";\nexport function Widget(){ return helper(x); }"
+        })];
+        let fs = analyze(&comps);
+        let f = fs.iter().find(|f| f.category == "unresolvable-import").expect("flagged");
+        assert_eq!(f.severity, 3);
+        assert!(f.why.contains("@/shared/ui/nope/missing"), "names the unresolvable alias import");
+        assert!(f.why.contains("../also/gone"), "names the unresolvable relative import");
+        assert!(f.why.contains("no such module in the kit or its runtime closure"));
+        assert!(f.suggested_action.contains("no kit component or runtime file"));
+    }
+
+    #[test]
+    fn does_not_flag_a_component_importing_a_valid_kit_sibling() {
+        // A `@/…` OR relative import that resolves to another component in the SAME kit is fine.
+        let comps = [
+            json!({ "id":"sib", "name":"Sibling", "kitId":"k", "role":"primitive", "used":1, "composes":[],
+                    "src":"shared/ui/data/Sibling.tsx", "source":"export const S = () => null;" }),
+            json!({ "id":"w", "name":"Widget", "kitId":"k", "role":"composite", "used":1, "composes":[],
+                    "src":"shared/ui/data/Widget.tsx",
+                    "source":"import { S } from \"@/shared/ui/data/Sibling\";\nimport { R } from \"./Sibling\";\nexport function Widget(){ return S ?? R; }" }),
+        ];
+        let fs = analyze(&comps);
+        assert!(!cats(&fs).contains(&"unresolvable-import"), "a sibling in the same kit resolves");
     }
 
     #[test]

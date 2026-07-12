@@ -144,6 +144,36 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(cats).not.toContain("unresolvable-import");
   });
 
+  it("flags a component importing a nonexistent internal module as unresolvable-import (#2954)", () => {
+    // The invisible `Code`→`../typography/type` / `Skeleton`→`./shimmer` class — an internal import
+    // (`@/…` OR relative) resolving to no kit component or runtime module, now surfaced by the doctor.
+    const widget = comp("Widget", "composite", 1, [], {
+      src: "shared/ui/data/Widget.tsx",
+      source:
+        'import { helper } from "@/shared/ui/nope/missing";\nimport { x } from "../also/gone";\n' +
+        "export function Widget(){ return helper(x); }",
+    });
+    const f = analyzeGraphHealth([widget]).find((x) => x.category === "unresolvable-import");
+    expect(f).toBeTruthy();
+    expect(f!.severity).toBe(3);
+    expect(f!.why).toContain("@/shared/ui/nope/missing"); // the alias import
+    expect(f!.why).toContain("../also/gone"); // the relative import
+    expect(f!.why).toContain("no such module in the kit or its runtime closure");
+  });
+
+  it("does NOT flag an internal import that resolves to a kit sibling (#2954)", () => {
+    // A `@/…` OR relative import that resolves to another component in the same store is fine.
+    const sibling = comp("Sibling", "primitive", 1, [], { src: "shared/ui/data/Sibling.tsx" });
+    const widget = comp("Widget", "composite", 1, [], {
+      src: "shared/ui/data/Widget.tsx",
+      source:
+        'import { S } from "@/shared/ui/data/Sibling";\nimport { R } from "./Sibling";\n' +
+        "export function Widget(){ return S ?? R; }",
+    });
+    const cats = analyzeGraphHealth([sibling, widget]).map((f) => f.category);
+    expect(cats).not.toContain("unresolvable-import");
+  });
+
   it("flags a source-less user spec as no-implementation but never a built-in (#2839)", () => {
     // BUILT-IN: source-less in the store (its artifact `source` is stripped, #2794) but its `src` is a
     // real packaged react-ui component — buildable via the artifact roster, so NOT flagged.
