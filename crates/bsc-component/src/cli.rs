@@ -225,6 +225,35 @@ kit objects (incl. the dot color) as a plain array.",
         summary: "delete a kit (no-op if absent)",
         usage: "USAGE:\n  bsc ui kit remove <id> [--pretty]\n\nDeletes the kit keyed by <id>; a no-op when absent.",
     },
+    CmdDoc {
+        name: "define-animation",
+        summary: "author a KIT's motion as data — animation JSON on stdin, upsert by name (#2942)",
+        usage: "\
+USAGE:
+  bsc ui kit define-animation <kit-id> [--pretty]   # animation JSON on stdin
+
+Reads ONE animation object from stdin — { name, keyframes, duration?, easing?, trigger? } — VALIDATES
+it against the motion safety grammar, then UPSERTS it into the KIT's `animations` library by `name`
+(replacing a same-named one, else appending). The kit OWNS the motion; a component PLAYS it by adding
+the name to its own `animations` array (via `bsc ui set`). `keyframes` maps a stop (`from`/`to`/`N%`)
+to CSS declarations; `duration`/`easing` typically reference the motion tokens (`var(--dur-base)` /
+`var(--ease-standard)`); `trigger` is mount | hover | always (default mount). Compiles to
+`@keyframes bsc-<kit>-<name>` + a `prefers-reduced-motion`-guarded rule on `.<kit>-anim-<name>`. A
+ui-scope MUTATION (#2470); errors when the kit id is absent. Prints the stored animation.
+
+VALIDATION (the closed grammar): `name` [a-z][a-z0-9-]* · stops `from`/`to`/`\\d{1,3}%` · properties
+[a-z-]+ · no value may carry `;` `{` `}` `<` `>` `\\` `url(` `expression(` `@import` `/*`.",
+    },
+    CmdDoc {
+        name: "list-animations",
+        summary: "print a kit's motion library (#2942)",
+        usage: "USAGE:\n  bsc ui kit list-animations <kit-id> [--pretty]\n\nPrints the kit's `animations` array as JSON (an empty array when it has none). Read-only; errors when the kit is absent.",
+    },
+    CmdDoc {
+        name: "remove-animation",
+        summary: "drop a named animation from a kit's library (#2942)",
+        usage: "USAGE:\n  bsc ui kit remove-animation <kit-id> <name> [--pretty]\n\nRemoves the animation named <name> from the kit's `animations` library. A ui-scope MUTATION; errors when the kit or the named animation is absent.",
+    },
 ];
 
 /// The component collection's knobs over the shared CLI. Lean `list` projects id/name/kitId/role +
@@ -289,15 +318,33 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     match args.first().map(String::as_str) {
         Some("kit") => {
             let kit_prog = format!("{prog} kit");
-            // Emit a `ui-touch` for the Design Studio's live-focus (#2525) after each kit set/remove
-            // write lands — WITH the "kit" collection context (bsc-json-store has none). A no-op for
-            // read verbs (the hook only fires inside set/remove) and for non-designer sessions.
-            bsc_json_store::cli::run_hooked(
-                args.into_iter().skip(1).collect(),
-                &kit_prog,
-                &KIT_SPEC,
-                Some(&|id: &str| bsc_util::emit_ui_activity("kit", id)),
-            )
+            match args.get(1).map(String::as_str) {
+                // The kit-scoped animation authoring verbs (#2942): a kit owns its motion library.
+                // Custom reads/writes over the KIT store; the two writers are already ui-scope gated by
+                // `is_scoped_mutation` above (the `kit` prefix → args[1] check), BEFORE any store touch.
+                Some("define-animation") if args.get(2).map(String::as_str) != Some("help") => {
+                    cmd_kit_define_animation(&args[2..])
+                }
+                Some("list-animations") if args.get(2).map(String::as_str) != Some("help") => {
+                    cmd_kit_list_animations(&args[2..])
+                }
+                Some("remove-animation") if args.get(2).map(String::as_str) != Some("help") => {
+                    cmd_kit_remove_animation(&args[2..])
+                }
+                Some(v @ ("define-animation" | "list-animations" | "remove-animation")) => {
+                    print!("{}", bsc_cli_util::help_for(&kit_prog, TAGLINE, KIT_COMMANDS, v));
+                    Ok(())
+                }
+                // Emit a `ui-touch` for the Design Studio's live-focus (#2525) after each kit set/remove
+                // write lands — WITH the "kit" collection context (bsc-json-store has none). A no-op for
+                // read verbs (the hook only fires inside set/remove) and for non-designer sessions.
+                _ => bsc_json_store::cli::run_hooked(
+                    args.into_iter().skip(1).collect(),
+                    &kit_prog,
+                    &KIT_SPEC,
+                    Some(&|id: &str| bsc_util::emit_ui_activity("kit", id)),
+                ),
+            }
         }
         // `eslint-preset` is a custom read (store → eslint config), not a CRUD verb, so it's handled
         // here before delegating to the shared store CLI.
@@ -416,6 +463,17 @@ fn open_component_store(dir: &Option<String>) -> Result<bsc_json_store::Store, S
             .ok_or_else(|| "could not resolve a home directory; set HOME/USERPROFILE".to_string())
     })?;
     Ok(bsc_json_store::Store::new(dir, "component"))
+}
+
+/// Resolve the KIT store with the same flag → env (`BSC_KIT_DIR`) → default (`~/.base-studio-code/kits/`)
+/// precedence — for the kit-scoped animation authoring (#2942; a kit owns its motion library).
+fn open_kit_store(dir: &Option<String>) -> Result<bsc_json_store::Store, String> {
+    let dir = bsc_cli_util::resolve_store_path(dir, KIT_SPEC.dir_env, || {
+        bsc_util::bsc_base_dir()
+            .map(|b| b.join(KIT_SPEC.dir_segment))
+            .ok_or_else(|| "could not resolve a home directory; set HOME/USERPROFILE".to_string())
+    })?;
+    Ok(bsc_json_store::Store::new(dir, "kit"))
 }
 
 /// Validate a shape token against the six-shape vocabulary (#2475); the error teaches the whole set.
@@ -937,7 +995,7 @@ fn upsert_animation(
         .or_insert_with(|| serde_json::Value::Array(Vec::new()));
     let list = arr
         .as_array_mut()
-        .ok_or_else(|| format!("component '{id}' `animations` is not an array"))?;
+        .ok_or_else(|| format!("record '{id}' `animations` is not an array"))?;
     match list
         .iter_mut()
         .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(name))
@@ -981,11 +1039,11 @@ fn animations_of(store: &bsc_json_store::Store, id: &str) -> Result<serde_json::
 fn load_component_object(store: &bsc_json_store::Store, id: &str) -> Result<serde_json::Value, String> {
     let raw = store
         .get(id)?
-        .ok_or_else(|| format!("no component '{id}' in the store — author it first with `bsc ui set`"))?;
+        .ok_or_else(|| format!("no record '{id}' in the store — author it first with `bsc ui set` (or `bsc ui kit set`)"))?;
     let record: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|e| format!("stored component '{id}' is not valid JSON: {e}"))?;
+        serde_json::from_str(&raw).map_err(|e| format!("stored record '{id}' is not valid JSON: {e}"))?;
     if !record.is_object() {
-        return Err(format!("stored component '{id}' is not a JSON object"));
+        return Err(format!("stored record '{id}' is not a JSON object"));
     }
     Ok(record)
 }
@@ -1049,6 +1107,51 @@ fn cmd_remove_animation(args: &[String]) -> Result<(), String> {
     remove_named_animation(&store, id, name)?;
     bsc_util::emit_ui_activity("component", id);
     println!("removed animation '{name}' from '{id}'");
+    Ok(())
+}
+
+/// `kit define-animation <kit-id>` (#2942) — read + validate an animation from stdin and upsert it into
+/// the KIT's motion library by name (the kit owns the def; components reference it by name). Prints the
+/// stored animation. A ui-scope mutation (gated in `run`).
+fn cmd_kit_define_animation(args: &[String]) -> Result<(), String> {
+    let (pos, dir, pretty) = parse_anim_args(args)?;
+    let id = pos
+        .first()
+        .ok_or("usage: bsc ui kit define-animation <kit-id>   # animation JSON on stdin")?;
+    let mut raw = String::new();
+    std::io::stdin().read_to_string(&mut raw).map_err(|e| format!("cannot read stdin: {e}"))?;
+    let anim: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("animation is not valid JSON: {e}"))?;
+    let store = open_kit_store(&dir)?;
+    upsert_animation(&store, id, &anim)?;
+    bsc_util::emit_ui_activity("kit", id);
+    let out = if pretty { serde_json::to_string_pretty(&anim) } else { serde_json::to_string(&anim) };
+    println!("{}", out.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `kit list-animations <kit-id> [--pretty]` (#2942) — print the kit's motion library. Read-only.
+fn cmd_kit_list_animations(args: &[String]) -> Result<(), String> {
+    let (pos, dir, pretty) = parse_anim_args(args)?;
+    let id = pos.first().ok_or("usage: bsc ui kit list-animations <kit-id>")?;
+    let store = open_kit_store(&dir)?;
+    let anims = animations_of(&store, id)?;
+    let out = if pretty { serde_json::to_string_pretty(&anims) } else { serde_json::to_string(&anims) };
+    println!("{}", out.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `kit remove-animation <kit-id> <name>` (#2942) — drop a named animation from the kit's library. A
+/// ui-scope mutation (gated in `run`); errors when the kit or the named animation is absent.
+fn cmd_kit_remove_animation(args: &[String]) -> Result<(), String> {
+    const USAGE: &str = "usage: bsc ui kit remove-animation <kit-id> <name>";
+    let (pos, dir, _pretty) = parse_anim_args(args)?;
+    let id = pos.first().ok_or(USAGE)?;
+    let name = pos.get(1).ok_or(USAGE)?;
+    let store = open_kit_store(&dir)?;
+    remove_named_animation(&store, id, name)?;
+    bsc_util::emit_ui_activity("kit", id);
+    println!("removed animation '{name}' from kit '{id}'");
     Ok(())
 }
 
@@ -1530,6 +1633,37 @@ mod tests {
             "bsc ui"
         )
         .is_err());
+    }
+
+    #[test]
+    fn kit_scoped_animation_authoring_round_trips_and_is_registered_and_gated() {
+        // #2942 — a kit owns its motion library (the sibling of themes). The core authoring functions
+        // work over the KIT store, the verbs are registered under `kit`, and the writers are ui-gated.
+        let dir = tmp_store_dir("kit-anim");
+        let store = bsc_json_store::Store::new(dir.clone(), "kit");
+        store.set("react-ui", r#"{"id":"react-ui","name":"react-ui","stack":"React"}"#).unwrap();
+
+        // Author two motions into the kit; list + remove round-trip.
+        upsert_animation(&store, "react-ui", &valid_anim("fade-in")).unwrap();
+        upsert_animation(&store, "react-ui", &valid_anim("lift")).unwrap();
+        assert_eq!(animations_of(&store, "react-ui").unwrap().as_array().unwrap().len(), 2);
+        assert!(store.get("react-ui").unwrap().unwrap().contains("\"animations\""));
+        // The CLI read + remove paths run through `run` against the kit store dir.
+        assert!(run(vec!["kit".into(), "list-animations".into(), "react-ui".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+        run(vec!["kit".into(), "remove-animation".into(), "react-ui".into(), "fade-in".into(), "--dir".into(), dir], "bsc ui").unwrap();
+        let arr = animations_of(&store, "react-ui").unwrap();
+        assert_eq!(arr.as_array().unwrap().len(), 1);
+        assert_eq!(arr.as_array().unwrap()[0]["name"], "lift");
+
+        // Registered under `kit`, and the writers are ui-scope gated (reads are not).
+        let names: Vec<&str> = KIT_COMMANDS.iter().map(|c| c.name).collect();
+        for v in ["define-animation", "list-animations", "remove-animation"] {
+            assert!(names.contains(&v), "KIT_COMMANDS exposes '{v}'");
+        }
+        let mk = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+        assert!(is_scoped_mutation(&mk(&["kit", "define-animation", "react-ui"])));
+        assert!(is_scoped_mutation(&mk(&["kit", "remove-animation", "react-ui", "x"])));
+        assert!(!is_scoped_mutation(&mk(&["kit", "list-animations", "react-ui"])));
     }
 
     #[test]
