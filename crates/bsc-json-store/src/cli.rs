@@ -67,6 +67,12 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
 /// context, the reason the emit doesn't live here), it just invokes the caller's hook.
 pub type WriteHook<'a> = &'a dyn Fn(&str);
 
+/// A per-`set` batch validator: given the parsed records about to be upserted, return `Err` to REJECT
+/// the whole batch before anything is written (#2928). The seam a domain store uses to enforce a
+/// write-time invariant the generic verbatim store can't know — e.g. the component store rejects a
+/// `srcText` that looks like a module but won't build (an unterminated string). Runs BEFORE `set_items`.
+pub type SetValidator<'a> = &'a dyn Fn(&[Value]) -> Result<(), String>;
+
 /// The store subcommand entrypoint: `args` is everything after `bsc <noun>`; `prog` is the display
 /// name for help/errors (`"bsc blueprint"` from the umbrella). `spec` supplies the per-store nouns +
 /// help catalog. Handles help (no command / `help` / `help <cmd>` / `<cmd> help`) before any store read.
@@ -78,6 +84,20 @@ pub fn run(args: Vec<String>, prog: &str, spec: &CliSpec) -> Result<(), String> 
 /// that don't observe writes call [`run`] (`on_write = None`); the component/kit/theme surfaces pass a
 /// hook that emits a `ui-touch` line for the Design Studio's live-focus.
 pub fn run_hooked(args: Vec<String>, prog: &str, spec: &CliSpec, on_write: Option<WriteHook>) -> Result<(), String> {
+    run_hooked_validated(args, prog, spec, on_write, None)
+}
+
+/// [`run_hooked`] with an optional per-`set` batch [`SetValidator`] (#2928) run on the parsed records
+/// BEFORE any write — if it errors, the batch is REJECTED and nothing is stored. The component surface
+/// passes a validator that rejects a `srcText` that looks like a module but won't build (an unterminated
+/// string — the escape-collapse corruption class). Stores with no domain validation call [`run_hooked`].
+pub fn run_hooked_validated(
+    args: Vec<String>,
+    prog: &str,
+    spec: &CliSpec,
+    on_write: Option<WriteHook>,
+    validate: Option<SetValidator>,
+) -> Result<(), String> {
     let args = parse_args(args)?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
 
@@ -121,6 +141,10 @@ pub fn run_hooked(args: Vec<String>, prog: &str, spec: &CliSpec, on_write: Optio
         // Upsert from an object — or an array of them — on stdin, written verbatim by id.
         "set" => {
             let items: Vec<Value> = read_stdin_json(spec.noun)?;
+            // Domain write-time gate (#2928): reject the whole batch before any write if it fails.
+            if let Some(v) = validate {
+                v(&items)?;
+            }
             let ids = set_items(&store, &items, spec.noun, on_write)?;
             print_json(&ids, args.pretty);
             Ok(())
