@@ -13,8 +13,10 @@
 //! **dangling-branch** (an unused root that still pulls in dependencies) · **duplicate** (two
 //! components wrapping the same intrinsic, or byte-identical source) · **no-implementation** (a
 //! component the Design Studio preview can't build — a spec, not code) · **orphan** (an isolated,
-//! never-referenced primitive/composite). "Unused" = orphan ∪ dangling-branch — a node with no
-//! composer AND `used == 0`; a `page`/`layout` with `used > 0` is a legit entry point, never flagged.
+//! never-referenced primitive/composite) · **slot-shell** (INFORMATIONAL — a composite whose composed
+//! children arrive via ReactNode content slots, so a standalone preview renders a demo placeholder,
+//! #2921). "Unused" = orphan ∪ dangling-branch — a node with no composer AND `used == 0`; a
+//! `page`/`layout` with `used > 0` is a legit entry point, never flagged.
 //!
 //! The **no-implementation** check is artifact-aware: a store record strips a built-in's `source`
 //! (#2794), so both built-ins and user specs look source-less in the store — but a built-in still
@@ -29,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// One health finding — LLM-consumable: what, where, why, and what to do about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
-    /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `orphan`.
+    /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `orphan` | `slot-shell`.
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -78,6 +80,8 @@ struct Node {
     /// The component's own implementation `source`, when it carries one (a user-authored module).
     /// The store strips a built-in's `source` (#2794), so this is empty for built-ins.
     source: String,
+    /// `(name, type)` per prop — for the slot-shell check (a non-`children` ReactNode content slot).
+    props: Vec<(String, String)>,
 }
 
 fn s(v: &Value, key: &str) -> String {
@@ -110,7 +114,31 @@ fn parse_node(v: &Value) -> Option<Node> {
         src_text: s(v, "srcText"),
         src: s(v, "src"),
         source: s(v, "source"),
+        props: v
+            .get("props")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|p| {
+                        let name = p.get("name").and_then(Value::as_str)?.to_string();
+                        let ty = p.get("type").and_then(Value::as_str).unwrap_or_default().to_string();
+                        Some((name, ty))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
     })
+}
+
+/// Is `(name, ty)` a CONTENT-SLOT prop — a non-`children` prop typed as a React node? Mirrors
+/// `isNodeSlotProp` (graphHealth.ts) + how the preview samples props: a `reactnode`/`node`-typed prop is
+/// filled with a placeholder standalone, so a component with one renders a demo (#2921).
+fn is_node_slot_prop(name: &str, ty: &str) -> bool {
+    if name == "children" {
+        return false;
+    }
+    let t = ty.to_lowercase();
+    t.contains("reactnode") || t.contains("node")
 }
 
 /// The packaged `bsc/react-ui` kit artifact — the SAME embedded `react-ui.json` the kit store + the
@@ -409,6 +437,41 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
             suggested_action: format!("merge into `{target}` (the most-used) and repoint the others"),
         });
     }
+
+    // ── slot-shell (severity 1, INFORMATIONAL): a composite whose composed children arrive via ReactNode
+    // CONTENT SLOTS. Standalone (no slots passed) it renders a demo/placeholder fallback, not its
+    // assembled function — so a preview looks non-functional even though it isn't (#2921). Explains e.g.
+    // GraphExplorerPage / AnalyticsPage. Detect: it `composes` ≥1 child AND exposes ≥1 non-`children`
+    // ReactNode slot prop. Mirrors the frontend `analyzeGraphHealth` (graphHealth.ts).
+    for n in nodes {
+        if n.composes.is_empty() {
+            continue;
+        }
+        let slots: Vec<&str> =
+            n.props.iter().filter(|p| is_node_slot_prop(&p.0, &p.1)).map(|p| p.0.as_str()).collect();
+        if slots.is_empty() {
+            continue;
+        }
+        out.push(Finding {
+            category: "slot-shell",
+            severity: 1,
+            kit: kit.to_string(),
+            node_ids: vec![n.id.clone()],
+            node_names: vec![n.name.clone()],
+            why: format!(
+                "`{}` is a slot-driven composite — its composed children ({}) arrive via content slots ({}), so a standalone preview renders a demo placeholder, not its assembled function",
+                n.name,
+                n.composes.join(", "),
+                slots.join(", ")
+            ),
+            suggested_action: format!(
+                "to preview `{}`'s real function, fill its slots ({}) with instances of the components it composes ({})",
+                n.name,
+                slots.join(", "),
+                n.composes.join(", ")
+            ),
+        });
+    }
 }
 
 /// Collect every id reachable from `start` along `out_ids` (DFS, cycle-safe via the visited set).
@@ -524,6 +587,46 @@ mod tests {
         let fs = analyze(&comps);
         assert_eq!(cats(&fs), ["orphan"]);
         assert_eq!(fs[0].node_names, ["Ghost"]);
+    }
+
+    #[test]
+    fn flags_a_slot_driven_composite_as_slot_shell() {
+        // A used page composing children delivered via a `view` ReactNode slot → previews a demo
+        // placeholder. used>0 so it isn't ALSO a dead-root dangling-branch — isolate the slot-shell.
+        let comps = [json!({
+            "id": "gx", "name": "GraphExplorerPage", "kitId": "k", "role": "page", "used": 2,
+            "composes": ["ForceGraph", "TreeDiagram"], "srcText": "src", "source": "export const C = () => null;",
+            "props": [
+                { "name": "title", "type": "string" },
+                { "name": "view", "type": "ReactNode" },
+                { "name": "inspector", "type": "ReactNode" }
+            ]
+        })];
+        let fs = analyze(&comps);
+        assert_eq!(cats(&fs), ["slot-shell"]);
+        assert_eq!(fs[0].severity, 1);
+        assert!(fs[0].why.contains("ForceGraph, TreeDiagram")); // names the composed children
+        assert!(fs[0].why.contains("view, inspector")); // names the slots
+        assert!(fs[0].suggested_action.contains("fill its slots"));
+    }
+
+    #[test]
+    fn does_not_flag_slot_shell_without_a_node_slot_or_children_only() {
+        let comps = [
+            // composes children but no ReactNode content slot → renders standalone, not flagged
+            json!({ "id": "tb", "name": "Toolbar", "kitId": "k", "role": "composite", "used": 3,
+                    "composes": ["Button"], "srcText": "a", "source": "export const C = () => null;",
+                    "props": [{ "name": "label", "type": "string" }] }),
+            // a `children`-only prop is universal, never a slot-shell signal
+            json!({ "id": "cd", "name": "Card", "kitId": "k", "role": "composite", "used": 3,
+                    "composes": ["Icon"], "srcText": "b", "source": "export const C = () => null;",
+                    "props": [{ "name": "children", "type": "ReactNode" }] }),
+            comp("Button", "primitive", 9, &[]),
+            comp("Icon", "primitive", 9, &[]),
+        ];
+        let fs = analyze(&comps);
+        let found = cats(&fs);
+        assert!(!found.contains(&"slot-shell"));
     }
 
     #[test]
