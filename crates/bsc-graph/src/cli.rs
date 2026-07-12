@@ -133,6 +133,54 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 .collect();
             emit(&serde_json::json!({ "candidates": candidates, "count": candidates.len() }))
         }
+        // `curate <dir> [--tech t] [--apply]` — the curation + optimize gate (#2745 slice 3): harvest +
+        // classify a project, keep only the WORTHY candidates, and plan each into the library — an `add`,
+        // or an `optimize` when the store already holds that id (the harvested version replaces it).
+        // `--apply` writes them to the runtime store (`impl set` semantics); without it, a dry-run plan.
+        "curate" => {
+            let dir = positional
+                .get(1)
+                .ok_or("usage: bsc graph curate <dir> [--tech typescript|rust] [--apply]")?;
+            let tech = flag_value(&args, "--tech");
+            let apply = args.iter().any(|a| a == "--apply");
+            let worthy: Vec<crate::extract::Candidate> =
+                crate::extract::harvest(std::path::Path::new(dir))
+                    .into_iter()
+                    .filter(|c| tech.as_deref().is_none_or(|t| c.tech == t))
+                    .filter(|c| c.classification.worthy)
+                    .collect();
+            let plan = crate::extract::curation_plan(&worthy, &crate::implementations());
+            if apply {
+                let mut g = crate::load();
+                for item in &plan {
+                    let c = &item.candidate;
+                    let mut im = serde_json::json!({
+                        "id": c.id, "tech": c.tech, "role": c.role, "name": c.name,
+                        "composes": c.composes, "code": c.code,
+                    });
+                    if let Some(concept) = &c.concept {
+                        im["concept"] = Value::String(concept.clone());
+                    }
+                    crate::set_impl(&mut g, im)?;
+                }
+                crate::save(&g)?;
+            }
+            let items: Vec<Value> = plan
+                .iter()
+                .map(|it| {
+                    serde_json::json!({
+                        "id": it.candidate.id,
+                        "name": it.candidate.name,
+                        "tech": it.candidate.tech,
+                        "concept": it.candidate.concept,
+                        "role": it.candidate.role,
+                        "action": if it.replaces.is_some() { "optimize" } else { "add" },
+                        "replaces": it.replaces,
+                    })
+                })
+                .collect();
+            emit(&serde_json::json!({ "applied": apply, "curated": items.len(), "plan": items }))
+        }
         // ── curate the graph (#2853) — load → mutate → save; a read after reflects the write ──
         // `set --id <id> --kind <k> --name <n> [--summary <s>] [--tags a,b] [--complexity <c>]` — upsert a node.
         "set" => {
@@ -190,7 +238,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             print!("{}", help(prog));
             Ok(())
         }
-        other => Err(format!("unknown graph command '{other}' — read: list | neighbors <id> | path <a> <b> | impl <concept> --tech <t> | impl list | dump | harvest <dir>; write: set | link | unlink | remove | impl set | impl remove\n\n{}", help(prog))),
+        other => Err(format!("unknown graph command '{other}' — read: list | neighbors <id> | path <a> <b> | impl <concept> --tech <t> | impl list | dump | harvest <dir> | curate <dir>; write: set | link | unlink | remove | impl set | impl remove\n\n{}", help(prog))),
     }
 }
 
@@ -222,7 +270,8 @@ fn help(prog: &str) -> String {
          {prog} impl <concept> --tech <t> [--pretty]    # the concept's per-tech implementation (#2770), or null\n  \
          {prog} impl list [--tech <t>] [--role r]       # a language kit's implementations (#2863)\n  \
          {prog} dump [--pretty]                         # the whole graph document (nodes + edges + implementations)\n  \
-         {prog} harvest <dir> [--tech T] [--worthy-only] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745)\n\n\
+         {prog} harvest <dir> [--tech T] [--worthy-only] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745)\n  \
+         {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
          {prog} set --id <id> --kind <kind> --name <name> [--summary <s>] [--tags a,b] [--complexity <c>]   # upsert a node\n  \
          {prog} link <from> <to> --rel <rel>            # add a relationship edge (both nodes must exist)\n  \
