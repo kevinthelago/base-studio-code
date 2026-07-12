@@ -1,0 +1,15 @@
+{
+  "id": "org-planning-studio",
+  "order": 3,
+  "name": "Planning Studio",
+  "blurb": "The planner sources its visuals by requesting components from the designer, who is the sole steward of the shared bsc ui library — so a planning session pairs chat with live, on-brand visuals (#2940).",
+  "positions": [
+    { "nodeId": "planner",  "kind": "agent",    "personaId": "persona-planner",  "x": 200, "y": 96 },
+    { "nodeId": "designer", "kind": "agent",    "personaId": "persona-designer", "x": 568, "y": 96 },
+    { "nodeId": "library",  "kind": "resource", "label": "Component library", "x": 384, "y": 312 }
+  ],
+  "relationships": [
+    { "id": "r-serves",   "archetype": "serves",   "from": "designer", "to": "planner", "bow": -30 },
+    { "id": "r-stewards", "archetype": "stewards", "from": "designer", "to": "library", "bow": 26 }
+  ]
+}
