@@ -65,3 +65,13 @@ fn bfs(adj: &[Vec<usize>], start: usize) -> Vec<usize> {
 fn some_helper() {
     // Not a seed concept — a call to it is dropped.
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_only_helper() {
+        // A #[test] fn inside a #[cfg(test)] module — the harvester must SKIP it (#2955), never treat
+        // it as a reusable library candidate.
+        let _ = super::merge(&[1], &[2]);
+    }
+}

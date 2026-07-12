@@ -258,21 +258,28 @@ fn harvest_walk(dir: &Path, out: &mut Vec<(String, String, String)>) {
                 harvest_walk(&path, out);
             }
         } else if let Some((tech, src, tree)) = parse(&path) {
-            collect_defs(tree.root_node(), &src, tech, out);
+            collect_defs(tree.root_node(), &src, tech, false, out);
         }
     }
 }
 
-/// Recursively collect `(name, tech, source text)` for every function definition under `node`.
-fn collect_defs(node: Node, src: &[u8], tech: &str, out: &mut Vec<(String, String, String)>) {
-    if let Some(name) = fn_def_name(node, src) {
-        if let Ok(code) = node.utf8_text(src) {
-            out.push((name, tech.to_string(), code.to_string()));
+/// Recursively collect `(name, tech, source text)` for every function definition under `node`, SKIPPING
+/// Rust inline test code — a `#[test]` fn or anything inside a `#[cfg(test)]` module — since tests
+/// aren't reusable library bits (#2955).
+fn collect_defs(node: Node, src: &[u8], tech: &str, in_test: bool, out: &mut Vec<(String, String, String)>) {
+    let name = fn_def_name(node, src);
+    let could_be_test = node.kind() == "mod_item" || name.is_some();
+    let in_test = in_test || (could_be_test && has_test_attr(node, src));
+    if !in_test {
+        if let Some(name) = name {
+            if let Ok(code) = node.utf8_text(src) {
+                out.push((name, tech.to_string(), code.to_string()));
+            }
         }
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_defs(child, src, tech, out);
+        collect_defs(child, src, tech, in_test, out);
     }
 }
 
@@ -331,6 +338,27 @@ fn field_text(node: Node, field: &str, src: &[u8]) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Does `node` carry a preceding Rust `#[test]` / `#[cfg(test)]` (or `::test`) attribute? Used to skip
+/// inline test functions and test modules — they aren't reusable library bits (#2955). Walks the
+/// preceding-sibling attributes (they stack and may be interleaved with comments).
+fn has_test_attr(node: Node, src: &[u8]) -> bool {
+    let mut prev = node.prev_sibling();
+    while let Some(p) = prev {
+        match p.kind() {
+            "attribute_item" => {
+                let t = p.utf8_text(src).unwrap_or("");
+                if t.contains("test]") || t.contains("test)") {
+                    return true;
+                }
+                prev = p.prev_sibling();
+            }
+            "line_comment" | "block_comment" => prev = p.prev_sibling(),
+            _ => break,
+        }
+    }
+    false
+}
+
 fn walk_calls(dir: &Path, out: &mut Vec<(String, String, String)>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
@@ -342,7 +370,7 @@ fn walk_calls(dir: &Path, out: &mut Vec<(String, String, String)>) {
                 walk_calls(&path, out);
             }
         } else if let Some((tech, src, tree)) = parse(&path) {
-            collect_calls(tree.root_node(), &src, tech, None, out);
+            collect_calls(tree.root_node(), &src, tech, false, None, out);
         }
     }
 }
@@ -351,17 +379,19 @@ fn walk_calls(dir: &Path, out: &mut Vec<(String, String, String)>) {
 /// enclosing named function through the walk. A function-definition node sets `enclosing` to its own
 /// name for its whole subtree; a `call_expression` reached while inside a named function records an
 /// edge from that function to the callee (when a callee name can be read).
-fn collect_calls(node: Node, src: &[u8], tech: &str, enclosing: Option<&str>, out: &mut Vec<(String, String, String)>) {
+fn collect_calls(node: Node, src: &[u8], tech: &str, in_test: bool, enclosing: Option<&str>, out: &mut Vec<(String, String, String)>) {
     let defined = fn_def_name(node, src);
+    let could_be_test = node.kind() == "mod_item" || defined.is_some();
+    let in_test = in_test || (could_be_test && has_test_attr(node, src));
     let current = defined.as_deref().or(enclosing);
-    if node.kind() == "call_expression" {
+    if !in_test && node.kind() == "call_expression" {
         if let (Some(caller), Some(callee)) = (current, callee_name(node, src, tech)) {
             out.push((caller.to_string(), callee, tech.to_string()));
         }
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_calls(child, src, tech, current, out);
+        collect_calls(child, src, tech, in_test, current, out);
     }
 }
 
@@ -430,6 +460,17 @@ mod tests {
         assert!(cands.iter().all(|c| !c.code.trim().is_empty()));
         assert!(cands.iter().all(|c| c.tech == "typescript" || c.tech == "rust"));
         assert!(cands.iter().all(|c| c.role == "primitive" || c.role == "algorithm"));
+    }
+
+    #[test]
+    fn harvest_skips_rust_inline_test_functions() {
+        // sample.rs has a `#[cfg(test)] mod tests` with a `#[test] fn test_only_helper` — it must NOT
+        // leak into the harvest as a candidate (#2955).
+        let cands = harvest(&fixtures());
+        assert!(
+            cands.iter().all(|c| c.name != "test_only_helper"),
+            "inline #[test] fns / #[cfg(test)] mods are skipped",
+        );
     }
 
     #[test]
