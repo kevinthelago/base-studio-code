@@ -14,7 +14,9 @@ import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import { Banner } from "@/shared/ui/feedback/Banner";
 import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
-import type { KitChange } from "@/features/designs";
+import { kitDispatchPrompt, type KitChange } from "@/features/designs";
+import { injectPrompt } from "@/shared/lib/fleet/paneInject";
+import { directorPaneId } from "@/app/console/lib/paneIdentity";
 import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
@@ -497,27 +499,32 @@ const KIT_CLASS_TONE: Record<KitChange["class"], string> = {
 function KitChangesBanner() {
   const dispatches = useAppStore((s) => s.kitDispatches);
   const autoApply = useAppStore((s) => s.autoApplyKitChanges);
-  const approvedChangeIds = useAppStore((s) => s.approvedChangeIds);
-  const approveKitChange = useAppStore((s) => s.approveKitChange);
-  const dismissKitDispatch = useAppStore((s) => s.dismissKitDispatch);
+  const paneDirectorDrive = useAppStore((s) => s.paneDirectorDrive);
+  const dismissKitChange = useAppStore((s) => s.dismissKitChange);
   const [open, setOpen] = useState(false);
 
-  // Group the still-pending (unapproved) dispatches by change → its consumer projects.
+  // Group the pending dispatches by change → its consumer projects.
   const groups = useMemo(() => {
     const m = new Map<string, { change: KitChange; projects: string[] }>();
     for (const d of dispatches) {
-      if (approvedChangeIds.includes(d.change.id)) continue; // already released to the drain
       const g = m.get(d.change.id);
       if (g) g.projects.push(d.projectKey);
       else m.set(d.change.id, { change: d.change, projects: [d.projectKey] });
     }
     return [...m.values()];
-  }, [dispatches, approvedChangeIds]);
+  }, [dispatches]);
 
   if (autoApply || groups.length === 0) return null;
   const n = groups.length;
-  const dismissChange = (g: { change: KitChange; projects: string[] }) =>
-    g.projects.forEach((pk) => dismissKitDispatch(pk, g.change.id));
+  // Approve = deliver the change to any LIVE consumer (into its director, like the drain), then REMOVE
+  // all of the change's dispatches (#2951) — gone immediately and for good. Dismiss just drops it.
+  const approve = (g: { change: KitChange; projects: string[] }) => {
+    for (const pk of g.projects) {
+      if (paneDirectorDrive?.[directorPaneId(pk)]) void injectPrompt(directorPaneId(pk), kitDispatchPrompt(g.change));
+    }
+    dismissKitChange(g.change.id);
+  };
+  const dismissChange = (g: { change: KitChange; projects: string[] }) => dismissKitChange(g.change.id);
 
   return (
     <>
@@ -541,7 +548,7 @@ function KitChangesBanner() {
                 <Chip color={KIT_CLASS_TONE[g.change.class]}>{g.change.class}</Chip>
                 <Text weight={600} size={12.5}>{g.change.component}</Text>
                 <Text size={12} tone="muted" style={{ flex: 1, minWidth: 100 }}>— {g.change.summary}</Text>
-                <Button variant="primary" style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => approveKitChange(g.change.id)}>Approve</Button>
+                <Button variant="primary" style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => approve(g)}>Approve</Button>
                 <Button variant="ghost" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => dismissChange(g)}>Dismiss</Button>
               </Row>
               {g.change.migration && (
