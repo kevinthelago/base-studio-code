@@ -253,6 +253,21 @@ every MANAGED file (unchanged since it was emitted — its body still matches th
 the current kit, and WARNS + skips every DIVERGED (hand-edited) file rather than clobbering it. Prints
 { dir, synced, upToDate, diverged, unknown }.",
     },
+    CmdDoc {
+        name: "changes",
+        summary: "the RUNNING app's pending kit-change confirmations, read-only (#2951)",
+        usage: "\
+USAGE:
+  bsc ui changes list [--json] [--pretty]   # kit changes awaiting the user's Approve, read-only
+
+Lists the kit-change confirmations the RUNNING app has queued — a component's contract changed and the
+designer's edit fans out to consumer projects, but the user hasn't Approved it yet in the top-right
+banner. Read from the app's persisted state (`app-state.json`, like `bsc ui theme active`). One entry
+per change: `{ change, consumers }` — its class (breaking/additive/fix), component, and summary, plus
+the consumer project keys it propagates to. READ-ONLY: confirming is the app's action; bsc never writes
+app-state while the app runs. `--json` emits the array (`--pretty` indents); empty when nothing is
+pending (or the app isn't running).",
+    },
 ];
 
 /// The merged command catalog (#2469): the contract verbs first, then the component-library verbs
@@ -293,6 +308,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("generate") => cmd_generate(&args[1..], prog),
         Some("resolve") => cmd_resolve(&args[1..]),
         Some("emit") => cmd_emit(&args[1..], prog),
+        Some("changes") => cmd_changes(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
         // ours so the error shows the MERGED overview, not the component-only one.
@@ -1184,6 +1200,82 @@ fn read_active_theme(path: &Path) -> Option<String> {
     decode_active_theme(&std::fs::read_to_string(path).ok()?)
 }
 
+/// Decode the persisted app-state's pending kit-change dispatches (#2951) — the double-encoded zustand
+/// snapshot's `.state.kitDispatches` (each `{ projectKey, change }`). Pure + total: an empty vec when
+/// the file isn't the expected shape or the field is absent.
+fn decode_kit_changes(contents: &str) -> Vec<serde_json::Value> {
+    (|| -> Option<Vec<serde_json::Value>> {
+        let file: serde_json::Value = serde_json::from_str(contents).ok()?;
+        let inner = file.get("app-state")?.as_str()?;
+        let snapshot: serde_json::Value = serde_json::from_str(inner).ok()?;
+        snapshot.get("state")?.get("kitDispatches")?.as_array().cloned()
+    })()
+    .unwrap_or_default()
+}
+
+/// Read + decode the pending kit-change dispatches from an app-state.json PATH (#2951); an empty vec
+/// when the file is missing/unreadable/not the expected shape.
+fn read_kit_changes(path: &Path) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(path).ok().map(|c| decode_kit_changes(&c)).unwrap_or_default()
+}
+
+/// Group the flat `{ projectKey, change }` dispatches into one entry per change (first-seen order):
+/// `{ change, consumers }`, the consumer project keys it propagates to. Pure — the shape printed.
+fn group_kit_changes(dispatches: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    for d in dispatches {
+        let change = match d.get("change") {
+            Some(c) => c,
+            None => continue,
+        };
+        let id = change.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+        let pk = d.get("projectKey").cloned().unwrap_or(serde_json::Value::Null);
+        match out.iter_mut().find(|g| {
+            g.get("change").and_then(|c| c.get("id")).and_then(|v| v.as_str()) == Some(id)
+        }) {
+            Some(g) => {
+                if let Some(arr) = g.get_mut("consumers").and_then(|c| c.as_array_mut()) {
+                    arr.push(pk);
+                }
+            }
+            None => out.push(serde_json::json!({ "change": change.clone(), "consumers": [pk] })),
+        }
+    }
+    out
+}
+
+/// `bsc ui changes list [--json] [--pretty]` (#2951) — READ-ONLY: the pending kit-change confirmations
+/// the running app has queued (from `app-state.json`, like `theme active`). One `{ change, consumers }`
+/// per change. Never writes app-state. `list` is implicit (the only verb); flags select the format.
+fn cmd_changes(args: &[String]) -> Result<(), String> {
+    if let Some(bad) = args.iter().find(|a| a.starts_with("--") && *a != "--json" && *a != "--pretty") {
+        return Err(format!("unknown flag '{bad}' — want: bsc ui changes list [--json] [--pretty]"));
+    }
+    let json = args.iter().any(|a| a == "--json");
+    let pretty = args.iter().any(|a| a == "--pretty");
+    let dispatches = app_state_path().map(|p| read_kit_changes(&p)).unwrap_or_default();
+    let grouped = group_kit_changes(&dispatches);
+    if json || grouped.is_empty() {
+        let v = serde_json::Value::Array(grouped);
+        let out = if pretty { serde_json::to_string_pretty(&v) } else { serde_json::to_string(&v) };
+        println!("{}", out.map_err(|e| e.to_string())?);
+    } else {
+        for g in &grouped {
+            let change = g.get("change");
+            let class = change.and_then(|c| c.get("class")).and_then(|v| v.as_str()).unwrap_or("?");
+            let comp = change.and_then(|c| c.get("component")).and_then(|v| v.as_str()).unwrap_or("?");
+            let summary = change.and_then(|c| c.get("summary")).and_then(|v| v.as_str()).unwrap_or("");
+            let consumers: Vec<&str> = g
+                .get("consumers")
+                .and_then(|c| c.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+                .unwrap_or_default();
+            println!("[{class}] {comp} — {summary}  → {}", consumers.join(", "));
+        }
+    }
+    Ok(())
+}
+
 /// `bsc ui theme …` (#1852 Phase 3 + #2488) — the kit THEME collection. Reads (`list`/`get`) merge the
 /// packaged built-ins under the store; the mutations (`set`/`remove`) persist to the theme store and
 /// are gated by the session's runtime `ui` scope (#2470) BEFORE any store is touched — the same
@@ -1855,6 +1947,66 @@ mod tests {
         // (b) a missing file → None → the verb falls back to "default".
         let _ = std::fs::remove_file(&path);
         assert_eq!(read_active_theme(&path), None);
+    }
+
+    // ── `changes list` — read the running app's pending kit-change confirmations (#2951) ─────────────
+
+    #[test]
+    fn changes_help_is_documented() {
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "changes");
+        for needle in ["list", "read-only", "consumers", "app-state.json", "--json"] {
+            assert!(d.contains(needle), "changes help mentions {needle}");
+        }
+    }
+
+    #[test]
+    fn decode_kit_changes_reads_the_double_encoded_dispatches() {
+        let inner = serde_json::json!({
+            "state": { "kitDispatches": [
+                { "projectKey": "acme", "change": { "id": "c1", "class": "breaking", "component": "Button", "summary": "renamed prop" } }
+            ] },
+            "version": 1,
+        })
+        .to_string();
+        let out = decode_kit_changes(&serde_json::json!({ "app-state": inner }).to_string());
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0]["change"]["id"], "c1");
+        // Absent / malformed → empty, never a panic.
+        assert!(decode_kit_changes(&serde_json::json!({ "other": 1 }).to_string()).is_empty());
+        assert!(decode_kit_changes("}{ not json").is_empty());
+    }
+
+    #[test]
+    fn group_kit_changes_folds_dispatches_by_change_with_their_consumers() {
+        let mk = |change: &str, project: &str| {
+            serde_json::json!({ "projectKey": project, "change": { "id": change, "class": "additive", "component": "Card", "summary": "s" } })
+        };
+        let grouped = group_kit_changes(&[mk("c1", "a"), mk("c1", "b"), mk("c2", "a")]);
+        assert_eq!(grouped.len(), 2);
+        assert_eq!(grouped[0]["change"]["id"], "c1");
+        assert_eq!(grouped[0]["consumers"], serde_json::json!(["a", "b"]));
+        assert_eq!(grouped[1]["consumers"], serde_json::json!(["a"]));
+    }
+
+    #[test]
+    fn changes_list_reads_the_override_and_rejects_a_bad_flag() {
+        let _guard = APP_STATE_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let path = std::env::temp_dir().join(format!("bsc-ui-changes-{}.json", std::process::id()));
+        let inner = serde_json::json!({
+            "state": { "kitDispatches": [
+                { "projectKey": "acme", "change": { "id": "c1", "class": "fix", "component": "Chip", "summary": "x" } }
+            ] },
+            "version": 1,
+        })
+        .to_string();
+        std::fs::write(&path, serde_json::json!({ "app-state": inner }).to_string()).unwrap();
+        std::env::set_var(APP_STATE_ENV, &path);
+        assert!(run(vec!["changes".into(), "list".into()], "bsc ui").is_ok());
+        assert!(run(vec!["changes".into(), "list".into(), "--json".into(), "--pretty".into()], "bsc ui").is_ok());
+        std::env::remove_var(APP_STATE_ENV);
+        let _ = std::fs::remove_file(&path);
+        // A bad flag errors before any app-state read.
+        assert!(run(vec!["changes".into(), "--nope".into()], "bsc ui").is_err());
     }
 
     #[test]
