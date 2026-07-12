@@ -31,7 +31,27 @@ export type GHealth = "idle" | "healthy" | "warning" | "error";
  *  project (a re-edit state). `waiting` = an EXPECTED blocked state (an agent parked for the user,
  *  `bsc-wait`) — calm, not alarming; it lives here, not on the health axis. */
 export type GActivity = "idle" | "planning" | "building" | "waiting" | "review" | "live";
-export type GEdgeKind = "api" | "data" | "events";
+export type GEdgeKind = "api" | "data" | "events" | "uses-kit";
+/** A Glance node's KIND (#2571) — a PROJECT (the default) or a UI-KIT node. ABSENT ⇒ `"project"`, so
+ *  every existing node + fixture + test is unaffected (only a `bsc ui` kit node ever carries `"kit"`). A
+ *  kit node's id is namespaced `kit:<kitId>` (see {@link kitNodeId}) so it can never collide with a
+ *  project key (a `[a-z0-9-]` slug — no colon). */
+export type GNodeKind = "project" | "kit";
+
+/** UI-KIT node/edge accent (#2571) — a distinct cyan that stands apart from the lifecycle-category
+ *  palette (teal/indigo/bronze/slate/magenta/gold), the health dots, and the iteration-loop violet, so a
+ *  kit node + its `uses-kit` edges read as a separate relationship dimension. */
+export const KIT_COLOR = "#22d3ee";
+/** Namespace prefix for a KIT node id (#2571). */
+export const KIT_NODE_PREFIX = "kit:";
+/** The stable, collision-proof id of the graph node for a `bsc ui` kit (#2571). */
+export const kitNodeId = (kitId: string): string => `${KIT_NODE_PREFIX}${kitId}`;
+/** The kit id behind a `kit:<kitId>` node id (identity for anything already bare). */
+export const kitIdOfNode = (nodeId: string): string =>
+  nodeId.startsWith(KIT_NODE_PREFIX) ? nodeId.slice(KIT_NODE_PREFIX.length) : nodeId;
+/** Stable id for a project→kit `uses-kit` edge (#2571) — prefixed so it can never collide with a
+ *  {@link projectLinkId} (`from>to:kind`). */
+export const usesKitEdgeId = (projectKey: string, kitId: string): string => `usekit:${projectKey}>${kitId}`;
 
 /** One communication form on a fleet node's comms surface (#2563) — a typed interaction + its `bsc-*`
  *  runtime transport, pared from the Org model so the glance node model stays decoupled from it. */
@@ -89,6 +109,10 @@ export interface GRawNode {
    *  graph when the project is complete. Clicking it morphs open the app preview (`GlancePreviewMorph`)
    *  the way an agent node morphs open its terminal. The canvas renders it distinctly (▷). */
   preview?: boolean;
+  /** The node KIND (#2571) — `"kit"` for a UI-kit node (one per distinct `bsc ui` kit in use, edged from
+   *  every consuming project), else a PROJECT node. ABSENT ⇒ `"project"` so existing nodes/tests are
+   *  unaffected; the canvas + inspector render a kit node distinctly (◆ · "kit" · consumer count). */
+  kind?: GNodeKind;
 }
 /** A dependency edge: `from` depends on `to`, over a contract of `kind`. Optional stable `id` (a
  *  user-drawn project link carries its own; sample/derived edges fall back to a positional id).
@@ -171,6 +195,9 @@ export const EDGE_META: Record<GEdgeKind, { label: string; color: string; dash: 
   api: { label: "depends on", color: "var(--graph-edge-api)", dash: "", w: 1.8, surface: "build & runtime dependency" },
   data: { label: "data flow", color: "var(--graph-edge-data)", dash: "", w: 1.8, surface: "consumes a data feed · schema-locked" },
   events: { label: "event stream", color: "var(--graph-edge-events)", dash: "6 5", w: 1.7, surface: "async messages · at-least-once" },
+  // The kit-consumer dimension (#2571): a project CONSUMES a shared `bsc ui` kit — a design-system
+  // dependency drawn to the shared kit node. Dashed cyan so it reads apart from the project edges.
+  "uses-kit": { label: "uses kit", color: KIT_COLOR, dash: "4 4", w: 1.6, surface: "consumes a shared bsc ui kit · design-system dependency" },
 };
 
 // Node box + spacing in world (design) coordinates.
