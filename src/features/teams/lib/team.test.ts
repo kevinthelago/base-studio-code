@@ -53,6 +53,30 @@ describe("built-in orgs (#2193)", () => {
     expect(fleet.positions.some((p) => p.kind === "external")).toBe(true);
     expect(fleet.positions.some((p) => p.kind === "resource")).toBe(true);
   });
+
+  it("every built-in org is structurally clean — no dangling edges / unknown archetypes", () => {
+    for (const o of makeBuiltinOrgs()) {
+      expect(orgIssues(o), `${o.id} has structural issues`).toEqual([]);
+    }
+  });
+
+  it("includes the Planning Studio network (#2940) — the designer serves the planner and stewards the library", () => {
+    const studio = makeBuiltinOrgs().find((o) => o.id === "org-planning-studio")!;
+    expect(studio).toBeTruthy();
+    expect(studio.builtin).toBe(true);
+    // planner (requester) + designer (provider/steward) + the shared component-library resource
+    expect(studio.positions.map((p) => p.personaId)).toEqual(
+      expect.arrayContaining(["persona-planner", "persona-designer"]),
+    );
+    expect(studio.positions.some((p) => p.kind === "resource")).toBe(true);
+    // the designer SERVES the planner (component requests → fulfilled) and STEWARDS the shared library
+    expect(
+      studio.relationships.some((r) => r.archetype === "serves" && r.from === "designer" && r.to === "planner"),
+    ).toBe(true);
+    expect(
+      studio.relationships.some((r) => r.archetype === "stewards" && r.from === "designer" && r.to === "library"),
+    ).toBe(true);
+  });
 });
 
 describe("deriveCommunication (#2193)", () => {
