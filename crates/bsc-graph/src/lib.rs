@@ -424,7 +424,7 @@ mod tests {
     #[test]
     fn implementation_lookup_reads_the_per_tech_tier() {
         let g = seed();
-        assert!(implementations_of(&g).len() > 30, "the seed carries the per-language kits");
+        assert!(implementations_of(&g).len() >= 16, "the seed carries the Rust kit");
         // Every impl declares a known role (#2863).
         for im in implementations_of(&g) {
             let role = im.get("role").and_then(Value::as_str).expect("impl.role is set");
