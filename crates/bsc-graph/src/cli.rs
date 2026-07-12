@@ -101,18 +101,21 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             let b = positional.get(2).ok_or("usage: bsc graph path <a> <b>")?;
             emit(&serde_json::json!({ "from": a, "to": b, "path": crate::path(a, b) }))
         }
-        // `harvest <dir> [--tech typescript|rust]` — the extract-to-harvest feeder (#2745): parse a
-        // project's real code and lift each function into a CANDIDATE library implementation
-        // (id/name/tech/concept?/role/composes/code) for review. Emits candidates ONLY — storing them
-        // into the library is the curation gate, never here.
+        // `harvest <dir> [--tech typescript|rust] [--worthy-only]` — the extract-to-harvest feeder
+        // (#2745): parse a project's real code and lift each function into a CANDIDATE library
+        // implementation (id/name/tech/concept?/role/composes/code), each CLASSIFIED library-worthy vs.
+        // project-glue with a score + reasons (#2745 slice 2). `--worthy-only` keeps just the worthy
+        // ones. Emits candidates ONLY — storing them into the library is the curation gate, never here.
         "harvest" => {
             let dir = positional
                 .get(1)
-                .ok_or("usage: bsc graph harvest <dir> [--tech typescript|rust]")?;
+                .ok_or("usage: bsc graph harvest <dir> [--tech typescript|rust] [--worthy-only]")?;
             let tech = flag_value(&args, "--tech");
+            let worthy_only = args.iter().any(|a| a == "--worthy-only");
             let candidates: Vec<Value> = crate::extract::harvest(std::path::Path::new(dir))
                 .into_iter()
                 .filter(|c| tech.as_deref().is_none_or(|t| c.tech == t))
+                .filter(|c| !worthy_only || c.classification.worthy)
                 .map(|c| {
                     serde_json::json!({
                         "id": c.id,
@@ -122,6 +125,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                         "role": c.role,
                         "composes": c.composes,
                         "code": c.code,
+                        "worthy": c.classification.worthy,
+                        "score": c.classification.score,
+                        "reasons": c.classification.reasons,
                     })
                 })
                 .collect();
@@ -216,7 +222,7 @@ fn help(prog: &str) -> String {
          {prog} impl <concept> --tech <t> [--pretty]    # the concept's per-tech implementation (#2770), or null\n  \
          {prog} impl list [--tech <t>] [--role r]       # a language kit's implementations (#2863)\n  \
          {prog} dump [--pretty]                         # the whole graph document (nodes + edges + implementations)\n  \
-         {prog} harvest <dir> [--tech T] [--pretty]     # harvest a project's functions into candidate library implementations (#2745)\n\n\
+         {prog} harvest <dir> [--tech T] [--worthy-only] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
          {prog} set --id <id> --kind <kind> --name <name> [--summary <s>] [--tags a,b] [--complexity <c>]   # upsert a node\n  \
          {prog} link <from> <to> --rel <rel>            # add a relationship edge (both nodes must exist)\n  \
