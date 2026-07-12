@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 import {
   KNOWLEDGE, KIND_ORDER, TECHS, TECH_META, layoutKnowledge, layoutKitGraph, neighborsOf, relationsOf, pathBetween,
   nodeIndex, edgeId, implsForConcept, implFor, implById, techsWithImpl, usedByImpl,
-  kitTechs, kitImpls, kitImplsByRole, pairsOf, kitGraph, groupImplsByLanguage,
+  kitTechs, kitImpls, kitImplsByRole, kitGraph, groupImplsByLanguage,
 } from "./knowledge";
 
 describe("KNOWLEDGE seed", () => {
@@ -100,8 +100,8 @@ describe("implementation tier (#2770)", () => {
   it("implFor / implsForConcept / techsWithImpl resolve per-tech implementations", () => {
     const rs = implFor(KNOWLEDGE, "merge-sort", "rust");
     expect(rs?.id).toBe("merge-sort.rs");
-    // The flagship "builds on" edge — merge-sort.rs composes the merge.rs primitive.
-    expect(rs?.composes).toEqual(["merge.rs"]);
+    // The flagship "builds on" edge — merge-sort.rs composes merge.rs and roots in the Rust primitives.
+    expect(rs?.composes).toEqual(["merge.rs", "rust.vec", "rust.slice"]);
     // The seed is Rust-only (#2760): no TypeScript implementation exists.
     expect(implFor(KNOWLEDGE, "merge-sort", "typescript")).toBeUndefined();
 
@@ -183,19 +183,23 @@ describe("language kits (#2863) — a kit is every impl of one tech, grouped by 
     expect(rs.every((im) => im.tech === "rust")).toBe(true);
     const prims = kitImplsByRole(KNOWLEDGE, "rust", "primitive");
     const algos = kitImplsByRole(KNOWLEDGE, "rust", "algorithm");
-    expect(prims.map((im) => im.id)).toContain("rust.iterator"); // a free-standing primitive
-    expect(prims.map((im) => im.id)).toContain("merge.rs"); // a building-block primitive
+    // `primitive` is now a LANGUAGE built-in (#2958); every user-written impl is an `algorithm`.
+    expect(prims.map((im) => im.id)).toContain("rust.iterator"); // a language primitive
+    expect(prims.map((im) => im.id)).toContain("rust.vec"); // a language primitive
+    expect(algos.map((im) => im.id)).toContain("merge.rs"); // a user impl (no longer a "primitive")
     expect(algos.map((im) => im.id)).toContain("merge-sort.rs"); // an algorithm
     expect(prims.length + algos.length).toBe(rs.length);
   });
 
-  it("pairsOf resolves a primitive's paired counterparts (same tech)", () => {
+  it("a language primitive is composed UP by its algorithms (usedByImpl, #2958)", () => {
     const iterator = implById(KNOWLEDGE, "rust.iterator")!;
     expect(iterator.role).toBe("primitive");
-    expect(iterator.concept).toBeUndefined(); // free-standing
-    const paired = pairsOf(KNOWLEDGE, iterator).map((im) => im.id);
-    expect(paired).toContain("merge-sort.rs");
-    expect(paired.every((id) => id.endsWith(".rs"))).toBe(true); // same-tech
+    expect(iterator.concept).toBeUndefined(); // free-standing — the impl IS the concept
+    // Algorithms COMPOSE the primitive (composition points down to the base); the reverse is
+    // `usedByImpl`. quick-sort.rs builds on the Iterator primitive.
+    const users = usedByImpl(KNOWLEDGE, "rust.iterator").map((im) => im.id);
+    expect(users).toContain("quick-sort.rs");
+    expect(users.every((id) => id.endsWith(".rs"))).toBe(true); // same-tech
   });
 
   it("groupImplsByLanguage makes one folder per language, primitives before algorithms (the rail tree)", () => {
@@ -215,16 +219,15 @@ describe("language kits (#2863) — a kit is every impl of one tech, grouped by 
     expect(rs.impls.map((im) => im.id)).toContain("merge-sort.rs"); // an algorithm
   });
 
-  it("kitGraph builds a kit's own impl graph — nodes are that tech's impls, wired by composes + pairs", () => {
+  it("kitGraph builds a kit's own impl graph — nodes are that tech's impls, wired by composes", () => {
     const kg = kitGraph(KNOWLEDGE, "rust");
     // Nodes are exactly the Rust kit's impls.
     expect(kg.nodes).toEqual(kitImpls(KNOWLEDGE, "rust"));
     expect(kg.nodes.every((n) => n.tech === "rust")).toBe(true);
     // The builds-on edge (merge-sort.rs composes merge.rs) is present as a `composes` edge…
     expect(kg.edges).toContainEqual({ from: "merge-sort.rs", to: "merge.rs", rel: "composes" });
-    // …and the free-standing primitive's pair (rust.iterator ↔ merge-sort.rs) as ONE `pairs` edge.
-    const iterPairs = kg.edges.filter((e) => e.rel === "pairs" && (e.from === "rust.iterator" || e.to === "rust.iterator"));
-    expect(iterPairs.some((e) => e.from === "merge-sort.rs" || e.to === "merge-sort.rs")).toBe(true);
+    // …and an algorithm rooting in a language primitive (quick-sort.rs composes rust.iterator) too.
+    expect(kg.edges).toContainEqual({ from: "quick-sort.rs", to: "rust.iterator", rel: "composes" });
     // Every edge endpoint is an in-kit impl id (never a concept id or a cross-tech impl).
     const ids = new Set(kg.nodes.map((n) => n.id));
     expect(kg.edges.every((e) => ids.has(e.from) && ids.has(e.to))).toBe(true);

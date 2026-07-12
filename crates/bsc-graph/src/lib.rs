@@ -444,7 +444,7 @@ mod tests {
     #[test]
     fn techs_with_impl_lists_the_seeded_languages() {
         let g = seed();
-        assert_eq!(techs_with_impl_of(&g, "merge-sort"), vec!["typescript".to_string(), "rust".to_string()]);
+        assert_eq!(techs_with_impl_of(&g, "merge-sort"), vec!["rust".to_string()]); // Rust-only seed (#2760)
         assert!(techs_with_impl_of(&g, "array").is_empty());
     }
 
@@ -456,8 +456,10 @@ mod tests {
         let impl_ids: std::collections::HashSet<String> =
             implementations_of(&g).iter().filter_map(|i| i.get("id").and_then(Value::as_str).map(str::to_owned)).collect();
         for im in implementations_of(&g) {
-            let concept = im.get("concept").and_then(Value::as_str).expect("impl.concept is a string");
-            assert!(node_ids.contains(concept), "impl concept '{concept}' is a known node");
+            // A free-standing primitive (#2863/#2958) has no concept; a concept-bearing impl targets a real node.
+            if let Some(concept) = im.get("concept").and_then(Value::as_str) {
+                assert!(node_ids.contains(concept), "impl concept '{concept}' is a known node");
+            }
             for c in im.get("composes").and_then(Value::as_array).into_iter().flatten() {
                 let cid = c.as_str().expect("composes id is a string");
                 assert!(impl_ids.contains(cid), "composes id '{cid}' is a known impl");
@@ -560,9 +562,9 @@ mod tests {
     #[test]
     fn remove_impl_drops_it_and_scrubs_composes_and_pairs() {
         let mut g = seed();
-        // merge-sort.rs composes merge.rs — removing the primitive scrubs the reference.
+        // merge-sort.rs composes merge.rs — removing merge.rs scrubs the reference.
         assert!(implementations_of(&g).iter().any(|im| im["id"] == "merge.rs"));
-        assert!(remove_impl(&mut g, "merge.rs"), "the primitive existed");
+        assert!(remove_impl(&mut g, "merge.rs"), "merge.rs existed");
         assert!(!implementations_of(&g).iter().any(|im| im["id"] == "merge.rs"), "it's gone");
         let ms = implementations_of(&g).into_iter().find(|im| im["id"] == "merge-sort.rs").unwrap();
         assert!(
