@@ -1,12 +1,42 @@
 import { describe, it, expect } from "vitest";
 import {
-  resolveAllowlist,
+  resolveAllowlistFrom,
   paneCount,
   consoleCount,
   findProfile,
   GUARANTEED,
   APP_ROLES,
+  type ConsoleSession,
 } from "./agentProfiles";
+
+// Sample console roster — a fixture for the pure resolution/count helpers. Moved
+// out of the production module in #2912 (the only consumer was this test; the live
+// Security UI derives its consoles from real app state via `deriveConsoles`).
+const CONSOLES: ConsoleSession[] = [
+  {
+    id: "con_orch", name: "orchestrator", repo: "acme/payments", status: "running",
+    projectAllow: ["cargo", "just"],
+    panes: [
+      { id: "t1p0", agent: "@scratch", status: "running", profileId: "pf_auto" },
+      { id: "t1p1", agent: "@reviewer", status: "awaiting", profileId: "pf_review" },
+      { id: "t1p2", agent: "@docs", status: "idle", profileId: "pf_review" },
+      { id: "t1p3", agent: "@github", status: "running", profileId: "pf_auto" },
+    ],
+  },
+  {
+    id: "con_tunnel", name: "feat/tunnel", repo: "acme/payments", status: "running",
+    projectAllow: ["cargo", "just"], repoAllow: ["wscat"],
+    panes: [
+      { id: "t2p0", agent: "@scratch", status: "running", profileId: "pf_auto" },
+      { id: "t2p1", agent: "@explore", status: "idle", profileId: "pf_sandbox" },
+    ],
+  },
+];
+
+// Resolve against the fixture roster — mirrors how the live UI calls
+// `resolveAllowlistFrom` with its own in-component consoles.
+const resolveAllowlist = (consoleId: string, profileId: string) =>
+  resolveAllowlistFrom(CONSOLES.find((c) => c.id === consoleId), findProfile(profileId));
 
 describe("resolveAllowlist", () => {
   it("unions guaranteed ∪ profile ∪ project ∪ repo, deduped, in precedence order", () => {
@@ -36,10 +66,10 @@ describe("resolveAllowlist", () => {
 
 describe("counts + lookup", () => {
   it("paneCount / consoleCount", () => {
-    expect(paneCount("pf_auto")).toBe(3); // t1p0, t1p3, t2p0
-    expect(consoleCount("pf_auto")).toBe(2);
-    expect(paneCount("pf_review")).toBe(2); // t1p1, t1p2
-    expect(consoleCount("pf_review")).toBe(1);
+    expect(paneCount("pf_auto", CONSOLES)).toBe(3); // t1p0, t1p3, t2p0
+    expect(consoleCount("pf_auto", CONSOLES)).toBe(2);
+    expect(paneCount("pf_review", CONSOLES)).toBe(2); // t1p1, t1p2
+    expect(consoleCount("pf_review", CONSOLES)).toBe(1);
   });
 
   it("findProfile resolves application roles and profiles", () => {
