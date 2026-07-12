@@ -128,8 +128,10 @@ export function bootstrapSource(comp: ComponentRecord, importSpec: string): stri
     `import * as __mod from "${importSpec}";`,
     `const __C = __mod[${JSON.stringify(comp.name)}] ?? __mod.default;`,
     `if (!__C) throw new Error("preview: no export ${comp.name} (or default) in ${importSpec}");`,
+    // A definite `height:100%` (not minHeight) so the srcdoc's `max-height:100%` cap on oversized media
+    // (#2915) resolves against this wrapper; box-sizing keeps the padding inside the frame.
     `createRoot(document.getElementById("root")).render(`,
-    `  createElement("div", { style: { padding: 20, display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100%" } },`,
+    `  createElement("div", { style: { padding: 20, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", height: "100%" } },`,
     `    createElement(__C, ${propsLiteral}${childArg})));`,
     "",
   ].join("\n");

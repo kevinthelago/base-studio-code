@@ -47,6 +47,13 @@ describe("componentBundle — buildComponentSrcDoc", () => {
     expect(buildComponentSrcDoc("X")).toContain('<div id="root"></div>'); // no class attribute when empty
   });
 
+  it("caps oversized media so a component fits the frame instead of overflowing (#2915)", () => {
+    const doc = buildComponentSrcDoc("X");
+    // The definite height chain lets a percentage max-height resolve, and media is capped both ways.
+    expect(doc).toContain("html,body,#root{margin:0;height:100%");
+    expect(doc).toContain("#root svg,#root canvas,#root img,#root video{max-width:100%;max-height:100%}");
+  });
+
   it("carries an authored component's compiled motion into the iframe, reduced-motion-guarded (#2870)", () => {
     // The full preview path: compile the record's animations → inject the CSS + apply the class on #root.
     const comp = { name: "Card", animations: [{ name: "fade-in", keyframes: { from: { opacity: "0" }, to: { opacity: "1" } } }] };
