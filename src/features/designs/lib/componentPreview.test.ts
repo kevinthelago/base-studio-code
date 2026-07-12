@@ -108,6 +108,13 @@ describe("bootstrapSource (#2824)", () => {
     expect(src).toContain("() => {}");   // function prop → a noop
     expect(src).toContain("createElement(__C,");
   });
+
+  it("mounts into a definite-height, border-box wrapper so oversized media can be capped (#2915)", () => {
+    const src = bootstrapSource(base, "@/x/Card");
+    expect(src).toContain('height: "100%"');        // definite height (not minHeight) → max-height:100% resolves
+    expect(src).toContain('boxSizing: "border-box"'); // padding stays inside the frame
+    expect(src).not.toContain('minHeight: "100%"');   // the old min-height didn't give a resolvable cap
+  });
 });
 
 describe("samplePropValue (#2824)", () => {
