@@ -13,10 +13,11 @@
 //! **dangling-branch** (an unused root that still pulls in dependencies) · **duplicate** (two
 //! components wrapping the same intrinsic, or byte-identical source) · **no-implementation** (a
 //! component the Design Studio preview can't build — a spec, not code) · **orphan** (an isolated,
-//! never-referenced primitive/composite) · **slot-shell** (INFORMATIONAL — a composite whose composed
-//! children arrive via ReactNode content slots, so a standalone preview renders a demo placeholder,
-//! #2921). "Unused" = orphan ∪ dangling-branch — a node with no composer AND `used == 0`; a
-//! `page`/`layout` with `used > 0` is a legit entry point, never flagged.
+//! never-referenced primitive/composite) · **unwired-prop** (declares props its own source never
+//! references — a declared interface that does nothing, #2924) · **slot-shell** (INFORMATIONAL — a
+//! composite whose composed children arrive via ReactNode content slots, so a standalone preview renders
+//! a demo placeholder, #2921). "Unused" = orphan ∪ dangling-branch — a node with no composer AND
+//! `used == 0`; a `page`/`layout` with `used > 0` is a legit entry point, never flagged.
 //!
 //! The **no-implementation** check is artifact-aware: a store record strips a built-in's `source`
 //! (#2794), so both built-ins and user specs look source-less in the store — but a built-in still
@@ -31,7 +32,8 @@ use std::collections::{BTreeMap, BTreeSet};
 /// One health finding — LLM-consumable: what, where, why, and what to do about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
-    /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `orphan` | `slot-shell`.
+    /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `orphan` | `unwired-prop` |
+    /// `slot-shell`.
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -438,6 +440,48 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
         });
     }
 
+    // ── unwired-prop (severity 2): a component that declares props its OWN module source never references
+    // — a declared interface that does nothing (#2924). Only for a node whose own source is present (a
+    // user-authored module: its `source`, or a buildable `srcText`); a built-in (source in the artifact)
+    // or a spec (no buildable module) is skipped. Guard: require ≥1 prop REFERENCED (so it uses NAMED
+    // props — not a `{...props}` spreader) before flagging the unreferenced ones. Mirrors `graphHealth.ts`.
+    for n in nodes {
+        let src = if !n.source.trim().is_empty() {
+            n.source.as_str()
+        } else if looks_buildable_module(&n.src_text) {
+            n.src_text.as_str()
+        } else {
+            continue;
+        };
+        if n.props.is_empty() || !n.props.iter().any(|p| contains_word(src, &p.0)) {
+            continue; // no props, or none referenced (a spreader) → conservative skip
+        }
+        let unwired: Vec<&str> =
+            n.props.iter().filter(|p| !contains_word(src, &p.0)).map(|p| p.0.as_str()).collect();
+        if unwired.is_empty() {
+            continue;
+        }
+        out.push(Finding {
+            category: "unwired-prop",
+            severity: 2,
+            kit: kit.to_string(),
+            node_ids: vec![n.id.clone()],
+            node_names: vec![n.name.clone()],
+            why: format!(
+                "`{}` declares prop{} its source never uses: {} — a declared interface that does nothing",
+                n.name,
+                if unwired.len() == 1 { "" } else { "s" },
+                unwired.join(", ")
+            ),
+            suggested_action: format!(
+                "wire {} into `{}`'s implementation, or drop {} from its props",
+                unwired.join(", "),
+                n.name,
+                if unwired.len() == 1 { "it" } else { "them" }
+            ),
+        });
+    }
+
     // ── slot-shell (severity 1, INFORMATIONAL): a composite whose composed children arrive via ReactNode
     // CONTENT SLOTS. Standalone (no slots passed) it renders a demo/placeholder fallback, not its
     // assembled function — so a preview looks non-functional even though it isn't (#2921). Explains e.g.
@@ -627,6 +671,47 @@ mod tests {
         let fs = analyze(&comps);
         let found = cats(&fs);
         assert!(!found.contains(&"slot-shell"));
+    }
+
+    #[test]
+    fn flags_a_component_that_declares_props_its_source_never_uses() {
+        // Reads `title` but ignores its declared `data` + `onRefresh` — a dead interface (used>0 so it's
+        // not a dead-root dangling-branch; source present so it's not no-implementation).
+        let comps = [json!({
+            "id": "dash", "name": "Dash", "kitId": "k", "role": "page", "used": 2, "composes": [],
+            "srcText": "src", "source": "export function Dash({ title }){ return <h1>{title}</h1>; }",
+            "props": [
+                { "name": "title", "type": "string" },
+                { "name": "data", "type": "Row[]" },
+                { "name": "onRefresh", "type": "() => void" }
+            ]
+        })];
+        let fs = analyze(&comps);
+        assert_eq!(cats(&fs), ["unwired-prop"]);
+        assert_eq!(fs[0].severity, 2);
+        assert!(fs[0].why.contains("data, onRefresh")); // names the dead props
+        assert!(!fs[0].why.contains("title")); // never the used one
+    }
+
+    #[test]
+    fn does_not_flag_unwired_prop_when_wired_a_spreader_or_a_spec() {
+        let comps = [
+            // every prop referenced → wired
+            json!({ "id": "card", "name": "Card", "kitId": "k", "role": "composite", "used": 3, "composes": [],
+                    "srcText": "s", "source": "export function Card({ title, onClick }){ return <button onClick={onClick}>{title}</button>; }",
+                    "props": [{ "name": "title", "type": "string" }, { "name": "onClick", "type": "() => void" }] }),
+            // references NO named prop (a `{...props}` spreader) → conservative skip
+            json!({ "id": "pt", "name": "Passthrough", "kitId": "k", "role": "composite", "used": 3, "composes": [],
+                    "srcText": "s", "source": "export function Passthrough(props){ return <div {...props} />; }",
+                    "props": [{ "name": "title", "type": "string" }, { "name": "onClick", "type": "() => void" }] }),
+            // no OWN module source (usage-snippet srcText, no `source`) → skipped (it's a spec)
+            json!({ "id": "btn", "name": "Btn", "kitId": "k", "role": "primitive", "used": 5, "composes": [],
+                    "srcText": "import { Btn } from \"@/x\";\n<Btn label={…} />",
+                    "props": [{ "name": "label", "type": "string" }] }),
+        ];
+        let fs = analyze(&comps);
+        let found = cats(&fs);
+        assert!(!found.contains(&"unwired-prop"));
     }
 
     #[test]
