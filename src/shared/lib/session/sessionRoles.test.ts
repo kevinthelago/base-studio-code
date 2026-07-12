@@ -183,6 +183,26 @@ describe("roleDeniedCommands (launch wiring)", () => {
     expect(denies).not.toContain("gh issue create");
   });
 
+  describe("file-write bash deny (#2932) — the bash counterpart to the Write-tool deny", () => {
+    it("a write-less role (designer) denies the file-mutating bash commands", () => {
+      const denies = roleDeniedCommands(ROLE_DEFAULTS.designer);
+      for (const c of ["tee", "cp", "mv", "dd", "sed -i", "vim"]) expect(denies).toContain(c);
+      // ...but it still runs `bsc ui` (its one write channel) — never file-denied.
+      expect(denies).not.toContain("bsc ui set");
+    });
+
+    it("a write-less director (no commons) denies file-writes; a commons director does NOT", () => {
+      expect(roleDeniedCommands(ROLE_DEFAULTS.director)).toContain("cp"); // no carve-out → writes nothing
+      const commonsDir = roleCapability("director", { writeGlobs: ["*.md"] });
+      expect(roleDeniedCommands(commonsDir)).not.toContain("cp"); // carve-out writes its globs via the Write tool
+    });
+
+    it("a writer (planner) and a carve-out documentor keep file-mutating bash commands", () => {
+      expect(roleDeniedCommands(ROLE_DEFAULTS.planner)).not.toContain("cp"); // code: write
+      expect(roleDeniedCommands(ROLE_DEFAULTS.documentor)).not.toContain("cp"); // code: none but *.md carve-out
+    });
+  });
+
   describe("ui tier (#2470) — the bsc ui component/kit store", () => {
     const UI_MUTATING = [
       "bsc ui set", "bsc ui remove", "bsc ui kit set", "bsc ui kit remove",
