@@ -108,27 +108,6 @@ export interface ConsoleSession {
   panes: ConsolePane[];
 }
 
-export const CONSOLES: ConsoleSession[] = [
-  {
-    id: "con_orch", name: "orchestrator", repo: "acme/payments", status: "running",
-    projectAllow: ["cargo", "just"],
-    panes: [
-      { id: "t1p0", agent: "@scratch", status: "running", profileId: "pf_auto" },
-      { id: "t1p1", agent: "@reviewer", status: "awaiting", profileId: "pf_review" },
-      { id: "t1p2", agent: "@docs", status: "idle", profileId: "pf_review" },
-      { id: "t1p3", agent: "@github", status: "running", profileId: "pf_auto" },
-    ],
-  },
-  {
-    id: "con_tunnel", name: "feat/tunnel", repo: "acme/payments", status: "running",
-    projectAllow: ["cargo", "just"], repoAllow: ["wscat"],
-    panes: [
-      { id: "t2p0", agent: "@scratch", status: "running", profileId: "pf_auto" },
-      { id: "t2p1", agent: "@explore", status: "idle", profileId: "pf_sandbox" },
-    ],
-  },
-];
-
 // ── Resolution helpers (pure) ───────────────────────────────────────────────────
 
 /** Look up a profile or application role by id. */
@@ -165,24 +144,13 @@ export function resolveAllowlistFrom(
   return out;
 }
 
-/**
- * Resolve the effective shell allowlist for a pane by id, against the module's
- * canonical data. Thin wrapper over {@link resolveAllowlistFrom}.
- */
-export function resolveAllowlist(consoleId: string, profileId: string): ResolvedCommand[] {
-  return resolveAllowlistFrom(
-    CONSOLES.find((c) => c.id === consoleId),
-    findProfile(profileId),
-  );
-}
-
-/** Number of panes governed by a profile across the given consoles (defaults to CONSOLES). */
-export function paneCount(profileId: string, consoles: ConsoleSession[] = CONSOLES): number {
+/** Number of panes governed by a profile across the given consoles. */
+export function paneCount(profileId: string, consoles: ConsoleSession[]): number {
   return consoles.reduce((n, c) => n + c.panes.filter((p) => p.profileId === profileId).length, 0);
 }
 
-/** Number of consoles that have at least one pane on a profile (defaults to CONSOLES). */
-export function consoleCount(profileId: string, consoles: ConsoleSession[] = CONSOLES): number {
+/** Number of consoles that have at least one pane on a profile. */
+export function consoleCount(profileId: string, consoles: ConsoleSession[]): number {
   return consoles.filter((c) => c.panes.some((p) => p.profileId === profileId)).length;
 }
 
