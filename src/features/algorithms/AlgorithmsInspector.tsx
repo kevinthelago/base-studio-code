@@ -14,14 +14,12 @@ import {
   implsForConcept, implFor, implById, usedByImpl, pairsOf,
   type KnowledgeGraph, type KnowledgeNode, type KnowledgeRel, type Tech, type AlgoImpl,
 } from "./lib/knowledge";
-import type { ExtractSite, CallEdge } from "./lib/extraction";
-import type { ConceptDiff } from "./lib/compositionDiff";
 
 const REL_ORDER: KnowledgeRel[] = ["operates-on", "composes", "variant-of", "generates", "related-to"];
 
 const PANEL = { width: "100%", height: "100%", borderLeft: "1px solid var(--border)", overflowY: "auto", background: "var(--bg-panel)" } as const;
 
-export function AlgorithmsInspector({ graph, selected, focusedImpl, activeTech, sites, calls, diff, onSelectNode, onSelectImpl }: {
+export function AlgorithmsInspector({ graph, selected, focusedImpl, activeTech, onSelectNode, onSelectImpl }: {
   graph: KnowledgeGraph;
   selected: KnowledgeNode | null;
   /** The focused implementation (#2863) — a node in the per-kit graph, or a free-standing primitive from
@@ -29,15 +27,6 @@ export function AlgorithmsInspector({ graph, selected, focusedImpl, activeTech, 
   focusedImpl?: AlgoImpl | null;
   /** The implementation tech (#2770) whose code + composition the impl section shows. */
   activeTech: Tech;
-  /** The REAL implementation sites `bsc graph extract` found for the selected concept (#2777) — listed
-   *  below the relationships when non-empty; nothing when absent (no scan run, or none found). */
-  sites?: ExtractSite[];
-  /** The extracted OUTBOUND call edges of the selected concept (#2779) — the concepts its real-code
-   *  implementation invokes; listed as a "Calls (from code)" section when non-empty. */
-  calls?: CallEdge[];
-  /** The selected concept's intent-vs-reality composition diff (#2781) — present only when a scan has
-   *  run AND the concept carries an implementation; drives the "Composition check" section. */
-  diff?: ConceptDiff;
   onSelectNode: (id: string) => void;
   /** Jump to another implementation (#2863) — the per-kit graph navigates impl→impl (builds-on / used-by
    *  / pairs), not through concept nodes. */
@@ -87,7 +76,6 @@ export function AlgorithmsInspector({ graph, selected, focusedImpl, activeTech, 
   const relations = relationsOf(graph, selected.id);
   const allImpls = implsForConcept(graph, selected.id);
   const impl = implFor(graph, selected.id, activeTech);
-  const byId = nodeIndex(graph.nodes);
   return (
     <Box style={PANEL}>
       <Stack gap={12} style={{ padding: 16 }}>
@@ -125,72 +113,6 @@ export function AlgorithmsInspector({ graph, selected, focusedImpl, activeTech, 
                 </Stack>
               );
             })}
-          </Stack>
-        )}
-
-        {calls && calls.length > 0 && (
-          <Stack gap={6}>
-            <Eyebrow size={10}>Calls (from code) · {calls.length}</Eyebrow>
-            <Stack gap={4}>
-              {calls.map((c, i) => {
-                const target = byId.get(c.to);
-                return (
-                  <Box as="button" key={`${c.to}:${c.tech}:${i}`} className="algo-relrow" onClick={() => onSelectNode(c.to)}>
-                    <Text as="span" tone="accent" size={11}>{"→"}</Text>
-                    <Box style={{ width: 8, height: 8, borderRadius: 2, background: target ? KIND_META[target.kind].color : "var(--accent)", flex: "none" }} />
-                    <Text as="span" size={12} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{target?.name ?? c.to}</Text>
-                    <Text as="span" mono size="xxs" tone="accent">{c.tech}</Text>
-                  </Box>
-                );
-              })}
-            </Stack>
-          </Stack>
-        )}
-
-        {diff && (
-          <Stack gap={6}>
-            <Eyebrow size={10}>Composition check</Eyebrow>
-            {diff.matched.length === 0 && diff.missing.length === 0 && diff.extra.length === 0 ? (
-              <Text size={12} tone="dim">Matches its declared composition.</Text>
-            ) : (
-              <Stack gap={4}>
-                {diff.matched.map((id) => (
-                  <Box as="button" key={`ck-match-${id}`} className="algo-relrow" onClick={() => onSelectNode(id)} title="Declared + found in code">
-                    <Text as="span" tone="success" size={11}>{"✓"}</Text>
-                    <Text as="span" size={12} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{byId.get(id)?.name ?? id}</Text>
-                  </Box>
-                ))}
-                {diff.missing.map((id) => (
-                  <Box as="button" key={`ck-miss-${id}`} className="algo-relrow" onClick={() => onSelectNode(id)} title="Declared, not observed in code — abstract concepts aren't literally called">
-                    <Text as="span" tone="muted" size={11}>{"⚠"}</Text>
-                    <Text as="span" tone="muted" size={12} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{byId.get(id)?.name ?? id}</Text>
-                  </Box>
-                ))}
-                {diff.extra.map((id) => (
-                  <Box as="button" key={`ck-extra-${id}`} className="algo-relrow" onClick={() => onSelectNode(id)} title="Found in code, not declared">
-                    <Text as="span" tone="accent" size={11}>{"+"}</Text>
-                    <Text as="span" size={12} style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{byId.get(id)?.name ?? id}</Text>
-                  </Box>
-                ))}
-              </Stack>
-            )}
-          </Stack>
-        )}
-
-        {sites && sites.length > 0 && (
-          <Stack gap={6}>
-            <Eyebrow size={10}>Implementations found · {sites.length}</Eyebrow>
-            <Stack gap={4}>
-              {sites.map((s, i) => (
-                <Row key={`${s.file}:${s.line}:${i}`} gap={6} align="center" style={{ minWidth: 0 }}>
-                  <Text as="span" mono size="xxs" tone="accent" style={{ flex: "none" }}>{s.tech}</Text>
-                  <Text as="span" mono size="xxs" tone="dim" title={`${s.file}:${s.line}`}
-                    style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {s.file}:{s.line}
-                  </Text>
-                </Row>
-              ))}
-            </Stack>
           </Stack>
         )}
 
