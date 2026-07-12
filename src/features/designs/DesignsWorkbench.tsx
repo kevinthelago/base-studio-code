@@ -408,6 +408,7 @@ const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string }> = {
   duplicate: { glyph: "⧉", label: "duplicate (same intrinsic / identical source)" },
   "no-implementation": { glyph: "∅", label: "no buildable implementation — a spec, not code" },
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
+  "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
   "slot-shell": { glyph: "▤", label: "slot shell — previews a demo placeholder; fill its content slots to see its real function" },
 };
 
