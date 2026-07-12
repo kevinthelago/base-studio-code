@@ -19,9 +19,12 @@
 import { buildComponentSrcDoc } from "./componentBundle";
 
 /** A build-clean component's RUNTIME outcome: `ok` (mounted + settled without throwing) or a throw with a
- *  message. The generic result the scan's `RunFn` consumes — canonical here (the probe produces it) so
- *  `shared/` stays feature-agnostic; `features/designs` imports this type for its scan contract. */
-export type RuntimeOutcome = { ok: true } | { ok: false; message: string };
+ *  message. `empty` (on the ok variant, #2926) is true when the iframe reported it rendered NOTHING — no
+ *  elements, no text — i.e. it mounts but produces no visible output; undefined ⇒ it rendered content or
+ *  the check was inconclusive (no `rendered` report). The generic result the scan's `RunFn` consumes —
+ *  canonical here (the probe produces it) so `shared/` stays feature-agnostic; `features/designs` imports
+ *  this type for its scan contract. */
+export type RuntimeOutcome = { ok: true; empty?: boolean } | { ok: false; message: string };
 
 /** How long to wait for the iframe to post `ready` before giving up (inconclusive ⇒ ok). Generous so a
  *  component that fetches externals from esm.sh has time to mount over a slow link. */
@@ -67,6 +70,10 @@ export function probeComponentRuntime(bundleJs: string, injectedCss = ""): Promi
 
     let settled = false;
     let settleTimer: ReturnType<typeof setTimeout> | undefined;
+    // Whether the iframe reported an EMPTY render (#2926). Captured from the `rendered` message, which the
+    // srcdoc posts a beat after `ready` (so async/effect renders have settled) — before the settle window
+    // resolves ok, so it's folded into the ok outcome. Undefined until reported ⇒ treated as not-empty.
+    let empty: boolean | undefined;
     const finish = (outcome: RuntimeOutcome): void => {
       if (settled) return;
       settled = true;
@@ -80,15 +87,18 @@ export function probeComponentRuntime(bundleJs: string, injectedCss = ""): Promi
     const onMsg = (e: MessageEvent): void => {
       // Correlate strictly by the source window so concurrent probes / a live preview frame don't leak in.
       if (e.source !== iframe.contentWindow) return;
-      const data = e.data as { __preview?: unknown; message?: unknown } | null;
+      const data = e.data as { __preview?: unknown; message?: unknown; empty?: unknown } | null;
       if (!data || typeof data.__preview !== "string") return;
       if (data.__preview === "error") {
         const message = String(data.message ?? "runtime error");
         // A failed external/module load is an environment problem, not a component defect ⇒ inconclusive.
         finish(looksLikeModuleLoadFailure(message) ? { ok: true } : { ok: false, message });
+      } else if (data.__preview === "rendered") {
+        empty = data.empty === true; // the iframe's post-render measurement (#2926)
       } else if (data.__preview === "ready") {
-        // Mounted without a synchronous throw — but keep listening briefly for a late (async) throw.
-        settleTimer = setTimeout(() => finish({ ok: true }), SETTLE_MS);
+        // Mounted without a synchronous throw — but keep listening briefly for a late (async) throw, then
+        // pass, carrying whatever empty-render verdict the `rendered` message reported by then.
+        settleTimer = setTimeout(() => finish({ ok: true, empty }), SETTLE_MS);
       }
     };
 

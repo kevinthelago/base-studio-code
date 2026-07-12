@@ -140,6 +140,20 @@ describe("buildAndProbe — build then runtime probe (#2908)", () => {
     const run: RunFn = async () => { throw new Error("iframe blew up"); };
     expect(await buildAndProbe(item, bundle, run)).toEqual({ state: "ok" });
   });
+
+  it("builds + mounts clean but renders nothing ⇒ an EMPTY status (#2926)", async () => {
+    const bundle = vi.fn(async () => "/*js*/");
+    const run: RunFn = async () => ({ ok: true, empty: true });
+    const status = await buildAndProbe(item, bundle, run);
+    expect(status.state).toBe("empty");
+    expect(status).toHaveProperty("message");
+  });
+
+  it("a clean render that produced output is ok, not empty (#2926)", async () => {
+    const bundle = vi.fn(async () => "/*js*/");
+    const run: RunFn = async () => ({ ok: true, empty: false });
+    expect(await buildAndProbe(item, bundle, run)).toEqual({ state: "ok" });
+  });
 });
 
 describe("scanComponents — build + runtime sweep with mock bundle/run", () => {

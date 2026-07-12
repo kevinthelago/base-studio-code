@@ -140,6 +140,17 @@ export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOpti
 <script type="module">
 ${bundleJs}
 parent.postMessage({ __preview: "ready" }, "*");
+// Empty-render probe (#2926): a beat after mount (past sync + effect renders), measure whether #root
+// produced anything visible — no element beyond the bootstrap wrapper AND no trimmed text — and report
+// it. Cheap + best-effort; the parent probe folds this into its ok verdict. Guarded so a throw here
+// never masks a real render error (the error listeners above own that).
+setTimeout(() => {
+  try {
+    var r = document.getElementById("root");
+    var empty = !!r && r.querySelectorAll("*").length <= 1 && (r.textContent || "").trim().length === 0;
+    parent.postMessage({ __preview: "rendered", empty: empty }, "*");
+  } catch (e) { /* measurement is best-effort */ }
+}, 400);
 </script>
 </body></html>`;
 }

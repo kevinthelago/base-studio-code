@@ -54,6 +54,13 @@ describe("componentBundle — buildComponentSrcDoc", () => {
     expect(doc).toContain("#root svg,#root canvas,#root img,#root video{max-width:100%;max-height:100%}");
   });
 
+  it("posts a post-mount `rendered` empty-render report to the host (#2926)", () => {
+    const doc = buildComponentSrcDoc("X");
+    expect(doc).toContain('__preview: "rendered"');           // the empty-render signal
+    expect(doc).toContain('querySelectorAll("*").length <= 1'); // measured: no element beyond the wrapper
+    expect(doc).toContain('.trim().length === 0');             // …AND no text
+  });
+
   it("carries an authored component's compiled motion into the iframe, reduced-motion-guarded (#2870)", () => {
     // The full preview path: compile the record's animations → inject the CSS + apply the class on #root.
     const comp = { name: "Card", animations: [{ name: "fade-in", keyframes: { from: { opacity: "0" }, to: { opacity: "1" } } }] };
