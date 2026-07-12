@@ -5,8 +5,10 @@
 //
 // Findings, most-severe first: cycle (a `composes` loop) · dangling-branch (an unused root that still
 // pulls in dependencies) · duplicate (same `wraps` intrinsic, or identical source) · no-implementation
-// (a component the preview can't build — a spec, not code) · unresolvable-import (a user module imports a
-// bare package the preview can't resolve — throws at preview time, #2934) · orphan (isolated, never-
+// (a component the preview can't build — a spec, not code) · unresolvable-import (a module imports
+// something the preview can't resolve: a bare npm package not in the import-map (#2934) OR an internal
+// `@/…`/relative import matching no kit component or runtime module (#2954) — throws at preview time) ·
+// orphan (isolated, never-
 // referenced primitive/composite) · unwired-prop (declares props its own source never references — a
 // declared interface that does nothing, #2924) · slot-shell (INFORMATIONAL — a composite whose composed
 // children arrive via ReactNode content slots, so a standalone preview renders a demo placeholder, #2921).
@@ -79,10 +81,58 @@ function isBareSpecifier(spec: string): boolean {
   return !spec.startsWith(".") && !spec.startsWith("/") && !spec.startsWith("@/");
 }
 
+/** Is `spec` an INTERNAL first-party import — a `@/…` alias or a RELATIVE (`./`, `../`) path — as opposed
+ *  to a bare npm specifier or an absolute path? These resolve against the kit's components + runtime
+ *  closure, not the preview import-map (#2954). Rust twin: `is_internal_specifier`. */
+function isInternalSpecifier(spec: string): boolean {
+  return spec.startsWith("@/") || spec.startsWith("./") || spec.startsWith("../");
+}
+
+/** Resolve an INTERNAL import `spec` — imported FROM module `fromRel` (a `src/`-relative path) — to its
+ *  `src/`-relative module BASE (no extension), or `null` when it isn't internal. `@/x` → `x`; a relative
+ *  path is joined onto the importer's dir and `.`/`..` segments collapsed. Rust twin: `resolve_internal_base`. */
+function resolveInternalBase(spec: string, fromRel: string): string | null {
+  let segs: string[];
+  if (spec.startsWith("@/")) {
+    segs = spec.slice(2).split("/");
+  } else if (spec.startsWith("./") || spec.startsWith("../")) {
+    const fromDir = fromRel.includes("/") ? fromRel.slice(0, fromRel.lastIndexOf("/")) : "";
+    segs = (fromDir ? fromDir.split("/") : []).concat(spec.split("/"));
+  } else {
+    return null;
+  }
+  const out: string[] = [];
+  for (const seg of segs) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") out.pop();
+    else out.push(seg);
+  }
+  return out.join("/");
+}
+
+/** Does an INTERNAL import `spec` (from module `fromRel`) resolve to a component or runtime module the
+ *  preview provides (`targets`)? Tries TS module-resolution order over the importer-relative base. A
+ *  NON-internal spec returns `true` — not this check's concern (the bare-specifier check owns npm).
+ *  Rust twin: `resolves_internal`. */
+function resolvesInternal(spec: string, fromRel: string, targets: Set<string>): boolean {
+  const base = resolveInternalBase(spec, fromRel);
+  if (base === null) return true;
+  return [".ts", ".tsx", "/index.ts", "/index.tsx"].some((ext) => targets.has(base + ext));
+}
+
 // The packaged kit artifact (each built-in's verbatim `source` + the `runtime` @/ closure) — the SAME
 // raw import ComponentPreviewFrame builds against. A built-in's `src` resolves here, so it's buildable
 // even though the store strips its `source` (#2794).
 const ARTIFACT = reactUiArtifact as unknown as KitArtifact;
+
+/** The set an INTERNAL import can resolve to at preview time (#2954): every runtime-closure module PLUS
+ *  every packaged built-in that ships a real `source` (a `composes` sibling `componentPreviewFiles`
+ *  vendors). The exact files the preview writes for `@/`/relative resolution. Rust twin: `internal_targets`
+ *  (the analyze pass also unions in the store's own component `src` paths for same-store siblings). */
+const INTERNAL_TARGETS = new Set<string>([
+  ...Object.keys(ARTIFACT.runtime ?? {}),
+  ...ARTIFACT.components.filter((c) => c.source).map((c) => c.src),
+]);
 
 export type HealthCategory =
   | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "unresolvable-import"
@@ -218,19 +268,28 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
     }
   }
 
-  // unresolvable-import — a user-authored component whose OWN module imports a bare package the preview
-  // CAN'T resolve: not in the preview import-map, so the iframe throws "Failed to resolve module
-  // specifier" at preview time (#2934). This is the class `bsc ui doctor` was blind to — the graph looked
-  // clean while the component was broken. Only own-source (user) components — a `looksBuildableModule`
-  // srcText imports ONLY bare libraries (no `@/` closure), so its bare imports ARE exactly what the
-  // preview must resolve. Built-ins resolve via the artifact + the map, so they're not scanned here.
+  // unresolvable-import — a component whose OWN module imports something the preview CAN'T resolve, the
+  // class `bsc ui doctor` was blind to (the graph looked clean while the component was broken). Two kinds:
+  //   • BARE — an npm package not in the preview import-map → "Failed to resolve module specifier" (#2934).
+  //   • INTERNAL — a `@/…`/relative import matching NEITHER a kit component NOR a runtime-closure module →
+  //     "module not found" (exactly the `Code`→`../typography/type` / `Skeleton`→`./shimmer` failure #2954
+  //     fixed in the packaged closure; this surfaces any future/user-authored recurrence).
+  // Only own-source components (`ownModuleSource`) — the source the preview actually builds. Rust twin:
+  // the `unresolvable-import` loop in graph_health.rs.
+  const internalTargets = new Set<string>([...INTERNAL_TARGETS, ...comps.map((c) => c.src).filter(Boolean)]);
+  const fmtSpecs = (v: string[]) => v.map((s) => `\`${s}\``).join(", ");
   for (const c of comps) {
     const src = ownModuleSource(c);
     if (!src) continue;
-    const unresolved = importSpecifiers(src).filter((s) => isBareSpecifier(s) && !RESOLVABLE_SPECIFIERS.has(s));
-    if (unresolved.length === 0) continue;
+    const specs = importSpecifiers(src);
+    const bare = specs.filter((s) => isBareSpecifier(s) && !RESOLVABLE_SPECIFIERS.has(s)).sort();
+    const internal = specs.filter((s) => isInternalSpecifier(s) && !resolvesInternal(s, c.src, internalTargets)).sort();
+    if (bare.length === 0 && internal.length === 0) continue;
+    const reasons: string[] = [];
+    if (bare.length) reasons.push(`${fmtSpecs(bare)} (no preview import-map entry)`);
+    if (internal.length) reasons.push(`${fmtSpecs(internal)} (no such module in the kit or its runtime closure)`);
     findings.push({ category: "unresolvable-import", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
-      why: `${c.name} imports ${unresolved.map((s) => `\`${s}\``).join(", ")} — not resolvable in the preview (no import-map entry), so it throws "Failed to resolve module specifier" when previewed` });
+      why: `${c.name} imports ${reasons.join("; ")} — the preview can't resolve it, so it throws "module not found" when rendered` });
   }
 
   // unwired-prop — a component that declares props its own source never references (a declared interface
