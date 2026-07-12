@@ -30,6 +30,8 @@ pub struct Candidate {
     pub composes: Vec<String>,
     /// The function's full source text.
     pub code: String,
+    /// The reusability classification (#2745 slice 2) — library-worthy vs. project glue, with reasons.
+    pub classification: Classification,
 }
 
 /// Path segments we never descend into or parse — vendored deps, build output, VCS/tooling dirs.
@@ -81,6 +83,84 @@ pub fn concept_of(name: &str) -> Option<String> {
     is_node.then_some(candidate)
 }
 
+/// The reusability classification of a harvested candidate (#2745 slice 2) — whether it's a
+/// library-worthy building block vs. project-specific glue, the weighted score, and the reasons.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Classification {
+    /// The candidate cleared the worthiness threshold (a net-positive score).
+    pub worthy: bool,
+    /// The weighted signal score (concept / generics / composition raise it; a glue name or a trivial
+    /// body lower it).
+    pub score: i32,
+    /// Human-readable reasons behind the score — one per signal that fired.
+    pub reasons: Vec<String>,
+}
+
+/// App-glue / trait-boilerplate function names — entry points + Rust trait methods that are not
+/// reusable algorithm building blocks (matched case-insensitively as an exact name).
+const GLUE_NAMES: &[&str] = &[
+    "main", "run", "dispatch", "register", "serve", "listen", "connect", "new", "default", "from",
+    "into", "fmt", "drop", "next", "clone",
+];
+
+/// Does the function's name read as project glue / trait boilerplate rather than a reusable algorithm?
+fn is_glue_name(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    GLUE_NAMES.contains(&n.as_str())
+        || n.starts_with("handle")
+        || n.starts_with("setup")
+        || n.starts_with("init")
+        || n.starts_with("on_")
+        || n.contains("helper")
+}
+
+/// Does the function declare its OWN type parameters (a `<…>` in the signature, before the parameter
+/// list)? A generic function is reusable across types rather than welded to one concrete app type.
+fn is_generic(code: &str) -> bool {
+    code.split_once('(').map(|(sig, _)| sig.contains('<')).unwrap_or(false)
+}
+
+/// Is the body empty of real statements (only comments / whitespace / braces)? Nothing worth storing.
+/// A brace-less expression body (a one-liner arrow) is NOT trivial — it computes something.
+fn is_trivial(code: &str) -> bool {
+    match code.split_once('{') {
+        Some((_, body)) => !body.lines().any(|l| {
+            let t = l.trim();
+            !t.is_empty() && !t.starts_with("//") && t != "}" && t != "{"
+        }),
+        None => false,
+    }
+}
+
+/// Classify a candidate's reusability (#2745 slice 2): a weighted score over cheap, tree-sitter-derivable
+/// signals — a seed-concept match, generics, and real composition raise it; an app-glue name or a
+/// trivial body lower it. `worthy` when the score is net-positive (the curation gate reviews only these).
+pub fn classify(c: &Candidate) -> Classification {
+    let mut score = 0;
+    let mut reasons = Vec::new();
+    if let Some(concept) = &c.concept {
+        score += 2;
+        reasons.push(format!("maps to the `{concept}` concept"));
+    }
+    if is_generic(&c.code) {
+        score += 1;
+        reasons.push("generic — reusable across types".to_string());
+    }
+    if !c.composes.is_empty() {
+        score += 1;
+        reasons.push(format!("composes {} building block(s)", c.composes.len()));
+    }
+    if is_glue_name(&c.name) {
+        score -= 2;
+        reasons.push("app-glue / boilerplate name".to_string());
+    }
+    if is_trivial(&c.code) {
+        score -= 2;
+        reasons.push("trivial body — nothing to store".to_string());
+    }
+    Classification { worthy: score >= 1, score, reasons }
+}
+
 /// The file extension (impl id suffix) for a tech.
 fn ext_of(tech: &str) -> &'static str {
     match tech {
@@ -117,7 +197,7 @@ pub fn harvest(dir: &Path) -> Vec<Candidate> {
                 }
             }
             let role = if composes.is_empty() { "primitive" } else { "algorithm" };
-            Candidate {
+            let mut c = Candidate {
                 id: format!("{}.{}", kebab(&name), ext_of(&tech)),
                 concept: concept_of(&name),
                 role,
@@ -125,7 +205,10 @@ pub fn harvest(dir: &Path) -> Vec<Candidate> {
                 tech,
                 name,
                 code,
-            }
+                classification: Classification::default(),
+            };
+            c.classification = classify(&c);
+            c
         })
         .collect()
 }
@@ -320,5 +403,33 @@ mod tests {
         assert!(cands.iter().all(|c| !c.code.trim().is_empty()));
         assert!(cands.iter().all(|c| c.tech == "typescript" || c.tech == "rust"));
         assert!(cands.iter().all(|c| c.role == "primitive" || c.role == "algorithm"));
+    }
+
+    #[test]
+    fn classify_scores_library_worthy_vs_glue() {
+        let cands = harvest(&fixtures());
+        let of = |name: &str| cands.iter().find(|c| c.name == name).expect("harvested");
+
+        // Recognized algorithms — a seed concept + generics (+ composition) → library-worthy.
+        for name in ["merge_sort", "quick_sort", "merge", "binarySearch"] {
+            let c = of(name);
+            assert!(
+                c.classification.worthy,
+                "{name} is library-worthy (score {})",
+                c.classification.score
+            );
+            assert!(!c.classification.reasons.is_empty());
+        }
+
+        // Project glue — a non-concept, trivial-bodied helper → not worthy, with a reason why.
+        for name in ["helperThing", "some_helper"] {
+            let c = of(name);
+            assert!(!c.classification.worthy, "{name} is glue, not library-worthy");
+            assert!(c
+                .classification
+                .reasons
+                .iter()
+                .any(|r| r.contains("trivial") || r.contains("glue")));
+        }
     }
 }
