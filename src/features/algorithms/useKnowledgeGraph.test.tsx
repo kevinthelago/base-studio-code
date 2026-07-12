@@ -18,12 +18,13 @@ describe("useKnowledgeGraph (#2856)", () => {
 
   it("swaps to the store's graph when it differs from the seed (a librarian edit shows)", async () => {
     loadGraph.mockResolvedValue({
-      nodes: [...KNOWLEDGE.nodes, { id: "skip-list", kind: "data-structure", name: "Skip List", summary: "layered" }],
-      edges: KNOWLEDGE.edges,
-      implementations: KNOWLEDGE.implementations,
+      implementations: [
+        ...KNOWLEDGE.implementations,
+        { id: "rust.skiplist", tech: "rust", role: "primitive", name: "SkipList (Rust)", composes: [], code: "// skip list" },
+      ],
     });
     const { result } = renderHook(() => useKnowledgeGraph());
-    await waitFor(() => expect(result.current.nodes.some((n) => n.id === "skip-list")).toBe(true));
+    await waitFor(() => expect(result.current.implementations.some((im) => im.id === "rust.skiplist")).toBe(true));
   });
 
   it("keeps the seed identity when the store still matches it (no needless swap/re-render)", async () => {

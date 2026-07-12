@@ -8,27 +8,26 @@ import { loadGraph } from "./graphBridge";
 describe("graphBridge.loadGraph (#2856)", () => {
   beforeEach(() => bscJson.mockReset());
 
-  it("builds the model from a valid `bsc graph dump` doc, stamping provenance", async () => {
+  it("builds the impl-only model from a valid `bsc graph dump` doc (#2961)", async () => {
     bscJson.mockResolvedValue({
-      nodes: [{ id: "array", kind: "data-structure", name: "Array", summary: "cells" }],
-      edges: [{ from: "merge-sort", to: "array", rel: "operates-on" }],
-      implementations: [],
+      implementations: [
+        { id: "merge.rs", tech: "rust", role: "algorithm", name: "merge (Rust)", composes: [], code: "fn merge() {}" },
+      ],
     });
     const g = await loadGraph();
     expect(g).not.toBeNull();
-    expect(g!.nodes[0]).toMatchObject({ id: "array", provenance: "seed" });
-    expect(g!.edges).toHaveLength(1);
+    expect(g!.implementations[0]).toMatchObject({ id: "merge.rs", role: "algorithm" });
     // It called the dump verb, not project-scoped.
     expect(bscJson).toHaveBeenCalledWith(null, ["graph", "dump"], null);
   });
 
-  it("defaults a missing `implementations` to []", async () => {
-    bscJson.mockResolvedValue({ nodes: [], edges: [] });
+  it("accepts an empty implementations array", async () => {
+    bscJson.mockResolvedValue({ implementations: [] });
     expect((await loadGraph())!.implementations).toEqual([]);
   });
 
-  it("returns null when nodes/edges aren't arrays (degraded → keep the seed)", async () => {
-    bscJson.mockResolvedValue({ nodes: "nope", edges: [] });
+  it("returns null when implementations isn't an array (degraded → keep the seed)", async () => {
+    bscJson.mockResolvedValue({ implementations: "nope" });
     expect(await loadGraph()).toBeNull();
   });
 
