@@ -14,7 +14,7 @@ import { Code } from "@/shared/ui/data/Code";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { bundleComponent, buildComponentSrcDoc } from "@/shared/lib/preview/componentBundle";
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
-import { compileAnimationsCss } from "@/shared/ui/kit";
+import { compileAnimationsCss, type AnimationDef } from "@/shared/ui/kit";
 import { componentPreviewFiles, type KitArtifact } from "./lib/componentPreview";
 import { resolveComponentAnimations, type ComponentRecord } from "./lib/model";
 
@@ -24,7 +24,7 @@ const ARTIFACT = reactUiArtifact as unknown as KitArtifact;
 
 type Status = "building" | "ready" | "error";
 
-export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand }: {
+export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation }: {
   comp: ComponentRecord;
   /** The selected theme's light/dark surface (its `base`). */
   theme: "dark" | "light";
@@ -39,6 +39,9 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
    *  cue and activating it calls this — the Design Studio promotes the thumbnail to the full-canvas
    *  theme try-on (#2834). Omit for the already-expanded surface (no self-expand). */
   onExpand?: () => void;
+  /** A kit animation to PLAY on the vehicle beyond what the component binds (#2942) — the Animations
+   *  try-on: the studio passes the motion selected in the AnimationsMenu so it plays live here. */
+  extraAnimation?: AnimationDef | null;
 }) {
   const [status, setStatus] = useState<Status>("building");
   const [error, setError] = useState<string>("");
@@ -51,7 +54,15 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // component references them by name. A derived key so authoring/removing a binding OR editing the
   // kit's motion re-renders the preview (the object identity alone isn't a stable dep).
   const kits = useAppStore((s) => s.kits);
-  const animDefs = useMemo(() => resolveComponentAnimations(comp, kits), [comp, kits]);
+  const boundDefs = useMemo(() => resolveComponentAnimations(comp, kits), [comp, kits]);
+  // The motion actually played: the component's bound animations + any try-on animation the studio
+  // passes (deduped by kit+name so a try-on replaces a same-named binding rather than doubling it).
+  const animDefs = useMemo(
+    () => (extraAnimation
+      ? [...boundDefs.filter((d) => !(d.name === extraAnimation.name && d.kit === extraAnimation.kit)), extraAnimation]
+      : boundDefs),
+    [boundDefs, extraAnimation],
+  );
   const animKey = JSON.stringify(animDefs);
 
   // Rebuild when the selection / theme / retry changes (keyed on stable fields, not the object identity).
