@@ -63,6 +63,7 @@
 .ds-health-cycle, .ds-health-duplicate, .ds-health-no-implementation { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); }
 .ds-health-dangling-branch { color: var(--state-wait, var(--warning)); border-color: color-mix(in srgb, var(--state-wait, var(--warning)) 55%, var(--border)); }
 .ds-health-orphan { color: var(--fg-dim); }
+.ds-health-unwired-prop { color: var(--warning, var(--state-wait)); border-color: color-mix(in srgb, var(--warning, var(--state-wait)) 45%, var(--border)); }
 .ds-health-slot-shell { color: var(--info, var(--accent)); border-color: color-mix(in srgb, var(--info, var(--accent)) 45%, var(--border)); }
 .ds-healthcount { font-family: var(--mono); font-size: 10px; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius: 5px; padding: 1px 7px; margin-left: 8px; white-space: nowrap; }
 

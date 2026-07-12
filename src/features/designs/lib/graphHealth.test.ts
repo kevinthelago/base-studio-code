@@ -79,6 +79,43 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(cats).not.toContain("slot-shell");
   });
 
+  it("flags a component that declares props its source never uses as unwired-prop (#2924)", () => {
+    // A used page that reads `title` but ignores its declared `data` + `onRefresh` — a dead interface.
+    const stub = comp("Dash", "page", 2, [], {
+      source: "export function Dash({ title }){ return <h1>{title}</h1>; }",
+      props: [
+        { name: "title", type: "string", req: false, desc: "" },
+        { name: "data", type: "Row[]", req: false, desc: "" },
+        { name: "onRefresh", type: "() => void", req: false, desc: "" },
+      ],
+    });
+    const fs = analyzeGraphHealth([stub]);
+    expect(fs.map((f) => f.category)).toEqual(["unwired-prop"]);
+    expect(fs[0].severity).toBe(2);
+    expect(fs[0].why).toContain("data, onRefresh"); // names the dead props, not `title`
+    expect(fs[0].why).not.toContain("title");
+  });
+
+  it("does NOT flag unwired-prop when every prop is used, for a spreader, or a built-in/spec (#2924)", () => {
+    // all props referenced → wired.
+    const wired = comp("Card", "composite", 3, [], {
+      source: "export function Card({ title, onClick }){ return <button onClick={onClick}>{title}</button>; }",
+      props: [{ name: "title", type: "string", req: false, desc: "" }, { name: "onClick", type: "() => void", req: false, desc: "" }],
+    });
+    // references NO named prop (a `{...props}` spreader) → conservative skip.
+    const spreader = comp("Passthrough", "composite", 3, [], {
+      source: "export function Passthrough(props){ return <div {...props} />; }",
+      props: [{ name: "title", type: "string", req: false, desc: "" }, { name: "onClick", type: "() => void", req: false, desc: "" }],
+    });
+    // a built-in/spec with no OWN module source (usage-snippet srcText, no `source`) → skipped.
+    const spec = comp("Btn", "primitive", 5, [], {
+      source: undefined, srcText: 'import { Btn } from "@/x";\n<Btn label={…} />',
+      props: [{ name: "label", type: "string", req: false, desc: "" }],
+    });
+    const cats = analyzeGraphHealth([wired, spreader, spec]).map((f) => f.category);
+    expect(cats).not.toContain("unwired-prop");
+  });
+
   it("flags a source-less user spec as no-implementation but never a built-in (#2839)", () => {
     // BUILT-IN: source-less in the store (its artifact `source` is stripped, #2794) but its `src` is a
     // real packaged react-ui component — buildable via the artifact roster, so NOT flagged.
