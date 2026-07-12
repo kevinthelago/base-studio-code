@@ -361,6 +361,8 @@ export function DesignsWorkbench() {
           const buildError = buildStatus?.state === "error"
             ? `Preview ${buildStatus.kind} error — ${buildStatus.message}`
             : null;
+          // Empty-render signal (#2926) — built + mounted clean but produced no visible output.
+          const emptyRender = buildStatus?.state === "empty" ? buildStatus.message : null;
           return (
             <Box key={c.id} data-node onClick={() => selectComp(c)} className={`ds-node${state}${working}${badge ? " unhealthy" : ""}`} style={{ left: pos.x, top: pos.y, width: NODE_W }}>
               {badge && (
@@ -368,6 +370,9 @@ export function DesignsWorkbench() {
               )}
               {buildError && (
                 <Text as="span" className="ds-buildfail" title={buildError}>✖</Text>
+              )}
+              {emptyRender && (
+                <Text as="span" className="ds-emptyrender" title={emptyRender}>▢</Text>
               )}
               <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
                 <RoleDot role={c.role} /><Text weight={600} size={13}>{c.name}</Text>

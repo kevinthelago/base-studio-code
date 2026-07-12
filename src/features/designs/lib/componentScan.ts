@@ -19,12 +19,14 @@ import type { RuntimeOutcome } from "@/shared/lib/preview/componentRuntimeProbe"
 import { componentPreviewFiles, type KitArtifact } from "./componentPreview";
 import type { ComponentRecord } from "./model";
 
-/** One component's preview outcome — the value the graph badges off. `ok` = built clean AND ran without
- *  throwing; `error` carries a readable message for the node's tooltip and a `kind` distinguishing a
- *  `build` failure (esbuild) from a `runtime` throw (an exception during the component's own render). */
+/** One component's preview outcome — the value the graph badges off. `ok` = built clean, ran without
+ *  throwing, AND rendered something; `error` carries a readable message for the node's tooltip and a
+ *  `kind` distinguishing a `build` failure (esbuild) from a `runtime` throw (an exception during the
+ *  component's own render); `empty` = built + mounted clean but rendered NOTHING visible (#2926). */
 export type ComponentBuildStatus =
   | { state: "ok" }
-  | { state: "error"; kind: "build" | "runtime"; message: string };
+  | { state: "error"; kind: "build" | "runtime"; message: string }
+  | { state: "empty"; message: string };
 
 /** A component queued for the build scan: its id, a change-signature (so an edit re-queues just it), and
  *  the in-memory files + entry to hand esbuild. */
@@ -122,7 +124,10 @@ export async function buildAndProbe(item: ScannableComponent, bundle: BundleFn, 
   } catch {
     return { state: "ok" }; // probe infra failure ⇒ inconclusive, never a false badge
   }
-  return outcome.ok ? { state: "ok" } : { state: "error", kind: "runtime", message: outcome.message };
+  if (!outcome.ok) return { state: "error", kind: "runtime", message: outcome.message };
+  // Built + mounted clean, but rendered nothing visible (#2926) — a distinct "no output" signal.
+  if (outcome.empty) return { state: "empty", message: "renders nothing — the component mounts but produces no visible output" };
+  return { state: "ok" };
 }
 
 /**
