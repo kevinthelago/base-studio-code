@@ -8,5 +8,6 @@
   "@react-three/fiber": "https://esm.sh/@react-three/fiber@8?deps=react@18.3.1,react-dom@18.3.1",
   "@react-three/drei": "https://esm.sh/@react-three/drei@9?deps=react@18.3.1,three@0.169.0",
   "d3": "https://esm.sh/d3@7",
-  "d3-force": "https://esm.sh/d3-force@3"
+  "d3-force": "https://esm.sh/d3-force@3",
+  "lucide-react": "https://esm.sh/lucide-react@1?deps=react@18.3.1"
 }

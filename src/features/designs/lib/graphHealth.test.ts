@@ -116,6 +116,34 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(cats).not.toContain("unwired-prop");
   });
 
+  it("flags a user component importing a preview-unresolvable package as unresolvable-import (#2934)", () => {
+    // Imports d3-scale (NOT in the preview import-map) alongside react + lucide-react (both pinned).
+    const chart = comp("Chart", "composite", 2, [], {
+      source: undefined,
+      srcText:
+        'import React from "react";\nimport { scaleLinear } from "d3-scale";\nimport { Icon } from "lucide-react";\n' +
+        "export function Chart(){ return React.createElement(Icon, null, scaleLinear); }",
+    });
+    const fs = analyzeGraphHealth([chart]);
+    const f = fs.find((x) => x.category === "unresolvable-import");
+    expect(f).toBeTruthy();
+    expect(f!.severity).toBe(3);
+    expect(f!.why).toContain("d3-scale"); // not in the map → flagged
+    expect(f!.why).not.toContain("`react`"); // react is pinned → resolvable, not listed
+    expect(f!.why).not.toContain("`lucide-react`"); // pinned (#2934) → resolvable, not listed
+  });
+
+  it("does NOT flag unresolvable-import when every import resolves, or for a non-module snippet (#2934)", () => {
+    const ok = comp("Fine", "composite", 2, [], {
+      source: undefined,
+      srcText: 'import React from "react";\nimport * as d3 from "d3";\nexport function Fine(){ return null; }',
+    });
+    // a usage-snippet srcText (has `@/`, not a buildable module) is never scanned for imports.
+    const snippet = comp("Snip", "primitive", 3, [], { source: undefined, srcText: 'import { Snip } from "@/x";\n<Snip/>' });
+    const cats = analyzeGraphHealth([ok, snippet]).map((f) => f.category);
+    expect(cats).not.toContain("unresolvable-import");
+  });
+
   it("flags a source-less user spec as no-implementation but never a built-in (#2839)", () => {
     // BUILT-IN: source-less in the store (its artifact `source` is stripped, #2794) but its `src` is a
     // real packaged react-ui component — buildable via the artifact roster, so NOT flagged.
