@@ -67,7 +67,8 @@ type DemoProject = { title: string; pitch: string; createdAt: number; role?: GRo
 
 /** Demo LIFECYCLE category per sample role (#2583) — a deterministic, varied showcase of the category
  *  palette so the loaded demo network reads as greenfield/harden/maintain/data at a glance (the legend
- *  still documents `transform`). */
+ *  still documents `transform`). Intentionally inline: demo-assembler glue over the `@data/demo/*` seeds,
+ *  not seed state itself — kept here by design (reviewed in #2912). */
 const DEMO_CATEGORY: Record<GRole, GCategory> = {
   infra: "maintain", service: "greenfield", data: "data", client: "harden",
 };
