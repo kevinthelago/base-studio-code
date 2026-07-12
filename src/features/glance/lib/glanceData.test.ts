@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { SAMPLE_GRAPH, buildGlanceData } from "./glanceData";
+import { kitNodeId, usesKitEdgeId } from "./glanceGraph";
 
 // Guard for the externalized sample network (@data/glance/sample-graph.json, #2419).
 describe("SAMPLE_GRAPH (loaded from @data/glance/sample-graph.json)", () => {
@@ -51,5 +52,60 @@ describe("buildGlanceData", () => {
     expect(g.rawNodes[0].category).toBe("transform");
     // the same project id always yields the same node (was hash-derived role before) — deterministic
     expect(buildGlanceData([{ id: "p", name: "P", category: "transform" }]).rawNodes[0]).toEqual(g.rawNodes[0]);
+  });
+});
+
+describe("buildGlanceData — UI-kit nodes (#2571)", () => {
+  const projects = [{ id: "app-a", name: "App A" }, { id: "app-b", name: "App B" }];
+  const kits = [{ id: "react-ui", name: "React UI" }];
+
+  it("adds ONE kit node per distinct kit in use + one kit→project edge per consumer", () => {
+    const g = buildGlanceData(projects, [], [
+      { projectKey: "app-a", kitId: "react-ui" },
+      { projectKey: "app-b", kitId: "react-ui" },
+    ], kits);
+    const kitNode = g.rawNodes.find((n) => n.kind === "kit");
+    expect(kitNode).toMatchObject({ id: kitNodeId("react-ui"), kind: "kit", slug: "React UI", health: "idle", activity: "idle" });
+    // exactly one kit node (two consumers of the SAME kit ⇒ one node)
+    expect(g.rawNodes.filter((n) => n.kind === "kit")).toHaveLength(1);
+    // one edge per consumer, project→kit, kind "uses-kit"
+    const kitEdges = g.rawEdges.filter((e) => e.kind === "uses-kit");
+    expect(kitEdges).toEqual([
+      { id: usesKitEdgeId("app-a", "react-ui"), from: "app-a", to: kitNodeId("react-ui"), kind: "uses-kit" },
+      { id: usesKitEdgeId("app-b", "react-ui"), from: "app-b", to: kitNodeId("react-ui"), kind: "uses-kit" },
+    ]);
+  });
+
+  it("leaves the PROJECT nodes untouched — no `kind`, same shape as without kit usage", () => {
+    const withKits = buildGlanceData(projects, [], [{ projectKey: "app-a", kitId: "react-ui" }], kits);
+    const without = buildGlanceData(projects);
+    const projA = withKits.rawNodes.find((n) => n.id === "app-a");
+    expect(projA?.kind).toBeUndefined();
+    expect(projA).toEqual(without.rawNodes.find((n) => n.id === "app-a"));
+  });
+
+  it("emits NO kit node for a kit whose only consumer isn't a project in this graph (stale usage)", () => {
+    const g = buildGlanceData(projects, [], [{ projectKey: "ghost", kitId: "react-ui" }], kits);
+    expect(g.rawNodes.some((n) => n.kind === "kit")).toBe(false);
+    expect(g.rawEdges.some((e) => e.kind === "uses-kit")).toBe(false);
+  });
+
+  it("dedupes a duplicate (projectKey, kitId) into a single edge", () => {
+    const g = buildGlanceData(projects, [], [
+      { projectKey: "app-a", kitId: "react-ui" },
+      { projectKey: "app-a", kitId: "react-ui" },
+    ], kits);
+    expect(g.rawEdges.filter((e) => e.kind === "uses-kit")).toHaveLength(1);
+  });
+
+  it("falls back to the kit ID when the kit library has no matching name", () => {
+    const g = buildGlanceData(projects, [], [{ projectKey: "app-a", kitId: "mystery-kit" }], []);
+    expect(g.rawNodes.find((n) => n.kind === "kit")?.slug).toBe("mystery-kit");
+  });
+
+  it("adds nothing when there is no kit usage (identical to before #2571)", () => {
+    const g = buildGlanceData(projects, [], [], kits);
+    expect(g.rawNodes.some((n) => n.kind === "kit")).toBe(false);
+    expect(g.rawEdges).toEqual([]);
   });
 });

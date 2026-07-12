@@ -9,7 +9,7 @@ import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { GlancePreviewMorph } from "./GlancePreviewMorph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
-import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory } from "./lib/glanceGraph";
+import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, KIT_COLOR, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory } from "./lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { archetypeById, hueColor } from "@/features/teams";
 
@@ -31,6 +31,7 @@ const EDGE_ROWS_L0: [string, string, string][] = [
   [EDGE_META.api.label, EDGE_META.api.color, EDGE_META.api.dash],
   [EDGE_META.data.label, EDGE_META.data.color, EDGE_META.data.dash],
   [EDGE_META.events.label, EDGE_META.events.color, EDGE_META.events.dash],
+  [EDGE_META["uses-kit"].label, EDGE_META["uses-kit"].color, EDGE_META["uses-kit"].dash], // #2571 kit-consumer edge
   ["cycle", "var(--graph-health-error)", "7 6"],
 ];
 // Fleet-drill (L1) legend: the role colour buckets read as agent FUNCTION groups; the edge rows are the
@@ -136,6 +137,35 @@ export function GlanceCanvas(p: CanvasProps) {
 
       {/* nodes */}
       {model.nodes.map((n) => {
+        // A UI-KIT node (#2571) reads distinctly — a dashed cyan card with a ◆ marker, a "kit" label, and
+        // the count of consuming projects (the edges INTO it) — so it never looks like a project node.
+        if (n.kind === "kit") {
+          const consumers = model.edges.reduce((acc, e) => acc + (e.to === n.id ? 1 : 0), 0);
+          const selected = p.selNodeId === n.id;
+          const inFocus = focus ? focus.nodes.has(n.id) : true;
+          const push = pushMap.get(n.id);
+          const border = selected ? "var(--accent)" : (focus && inFocus ? KIT_COLOR : `color-mix(in oklch, ${KIT_COLOR} 45%, transparent)`);
+          return (
+            <Box key={n.id} data-glance-node={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
+              style={{ position: "absolute", left: n.x, top: n.y, width: NW, height: NH, cursor: "pointer",
+                transform: push ? `translate(${push.dx}px, ${push.dy}px)` : undefined,
+                zIndex: selected ? 6 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: `opacity .18s ease, transform ${MORPH_EASE}` }}>
+              <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1.5px dashed ${border}`,
+                borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
+                boxShadow: selected ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)" : "0 2px 8px rgba(0,0,0,.45)", transition: "border-color .15s, box-shadow .15s" }}>
+                <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Text as="span" style={{ color: KIT_COLOR, flex: "none", fontSize: 11, lineHeight: 1 }}>◆</Text>
+                  <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
+                </Box>
+                <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
+                  <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: KIT_COLOR }}>kit</Text>
+                  <Box style={{ flex: 1 }} />
+                  <Text as="span" mono size={10} weight={500} tone="dim">{consumers} app{consumers === 1 ? "" : "s"}</Text>
+                </Box>
+              </Box>
+            </Box>
+          );
+        }
         // A PROJECT (L0) node is accented by its LIFECYCLE category (#2583); a fleet-drill (L1) node has
         // no category and keeps its function-group `role` colour.
         const cat = n.category ? CATEGORY_META[n.category] : undefined;
