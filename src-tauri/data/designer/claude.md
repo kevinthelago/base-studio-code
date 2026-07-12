@@ -33,7 +33,7 @@ lower rungs are more surgical. Never author a new spec when a token move would d
 | **2 · Component tokens** | one component family's look (`--card-*`, `--btn-*`, …) | `bsc ui component <c> set-token` |
 | **3 · Variants** | a NEW named look on a component, authored as data | `bsc ui component <c> define-variant` |
 | **4 · Composition** | a new screen/spec built from kit nodes | `bsc ui set` (spec) |
-| **5 · Animation** | MOTION on a component, authored as data (`@keyframes` + trigger) | `bsc ui define-animation` |
+| **5 · Animation** | MOTION as data — a KIT's motion library; components bind by name | `bsc ui kit define-animation` |
 
 **Discover before you change — never guess a token name.** The discovery surface IS the routing
 surface: if you type a token that doesn't exist, the edit is a silent no-op. Read the contract first:
@@ -121,11 +121,13 @@ new screen or a genuinely new component — not for restyling (rungs 1–3 do th
   (technology-scoped namespaces: `{ id, name, stack, dot }`).
 - `bsc ui validate` every spec before `bsc ui set` — never write a spec that fails the contract.
 
-## Rung 5 — Animation (motion on a component, as data)
+## Rung 5 — Animation (a kit's motion library, as data)
 
-The most surgical rung: give a component **motion** — a named animation authored as DATA on its
-record, never as hand-written CSS or a `.tsx` transition. It compiles to a `@keyframes` block + an
-applying rule and plays LIVE on the real component the moment you write it, exactly like a variant.
+Motion is a per-KIT layer — the sibling of themes. A **kit** owns a library of named animations (its
+motion vocabulary); a component PLAYS one by referencing its name. You author motion as DATA on the
+kit, never as hand-written CSS or a `.tsx` transition. It compiles to a `@keyframes` block + an
+applying rule and plays LIVE on the real component the moment you bind it, exactly like a variant.
+Per-kit (not global): a structurally-different kit (3D, non-DOM) carries its own motion representation.
 
 An animation is `{ name, keyframes, duration?, easing?, trigger? }`:
 
@@ -142,25 +144,29 @@ An animation is `{ name, keyframes, duration?, easing?, trigger? }`:
 `@media (prefers-reduced-motion: no-preference)`, so a user who asks for less motion never sees it —
 you never gate this yourself; it's automatic.
 
-The verbs (component-animation authoring — top-level like `set`/`get`, not `bsc ui component <c> …`):
+The flow is two steps — **author the motion on the kit, then bind it to components:**
 
-- `bsc ui define-animation <component-id>` — read the animation JSON on STDIN, validate it against the
-  closed motion grammar, and UPSERT it by `name` (replace a same-named one, else append). Fires a live
-  restyle; prints the stored animation. Pipe the JSON in:
+1. **Author on the kit** — `bsc ui kit define-animation <kit-id>` reads the animation JSON on STDIN,
+   validates it against the closed motion grammar, and UPSERTS it into the kit's `animations` library
+   by `name` (replace a same-named one, else append). Fires a live restyle; prints the stored motion:
 
-  ```bash
-  echo '{
-    "name": "fade-in",
-    "keyframes": { "from": { "opacity": "0", "transform": "translateY(4px)" },
-                   "to":   { "opacity": "1", "transform": "none" } },
-    "duration": "var(--dur-base)",
-    "easing": "var(--ease-standard)",
-    "trigger": "mount"
-  }' | bsc ui define-animation card
-  ```
+   ```bash
+   echo '{
+     "name": "fade-in",
+     "keyframes": { "from": { "opacity": "0", "transform": "translateY(4px)" },
+                    "to":   { "opacity": "1", "transform": "none" } },
+     "duration": "var(--dur-base)",
+     "easing": "var(--ease-standard)",
+     "trigger": "mount"
+   }' | bsc ui kit define-animation react-ui
+   ```
 
-- `bsc ui list-animations <component-id>` — the component's authored animations (read-only).
-- `bsc ui remove-animation <component-id> <name>` — drop one by name.
+2. **Bind to a component** — a component plays a kit animation by listing its name in the component's
+   own `animations` array (a list of NAMES, not defs). Read it (`bsc ui get <id>`), add the name, and
+   write it back with `bsc ui set` (JSON on stdin); the motion then plays on that component live.
+
+- `bsc ui kit list-animations <kit-id>` — the kit's motion library (read-only).
+- `bsc ui kit remove-animation <kit-id> <name>` — drop one motion from the library by name.
 
 **Same value grammar as everywhere.** Every keyframe value (and `duration` / `easing`) passes the
 closed grammar — a value carrying `;`, `{`, `url(`, `@import`, a comment, etc. is REJECTED (not
