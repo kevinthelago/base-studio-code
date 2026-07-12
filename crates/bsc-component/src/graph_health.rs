@@ -12,9 +12,10 @@
 //! Findings (most-severe first): **cycle** (a `composes` loop — also breaks the layered layout) ·
 //! **dangling-branch** (an unused root that still pulls in dependencies) · **duplicate** (two
 //! components wrapping the same intrinsic, or byte-identical source) · **no-implementation** (a
-//! component the Design Studio preview can't build — a spec, not code) · **orphan** (an isolated,
-//! never-referenced primitive/composite) · **unwired-prop** (declares props its own source never
-//! references — a declared interface that does nothing, #2924) · **slot-shell** (INFORMATIONAL — a
+//! component the Design Studio preview can't build — a spec, not code) · **unresolvable-import** (a user
+//! module imports a bare package the preview can't resolve — throws at preview time, #2934) · **orphan**
+//! (an isolated, never-referenced primitive/composite) · **unwired-prop** (declares props its own source
+//! never references — a declared interface that does nothing, #2924) · **slot-shell** (INFORMATIONAL — a
 //! composite whose composed children arrive via ReactNode content slots, so a standalone preview renders
 //! a demo placeholder, #2921). "Unused" = orphan ∪ dangling-branch — a node with no composer AND
 //! `used == 0`; a `page`/`layout` with `used > 0` is a legit entry point, never flagged.
@@ -32,8 +33,8 @@ use std::collections::{BTreeMap, BTreeSet};
 /// One health finding — LLM-consumable: what, where, why, and what to do about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
-    /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `orphan` | `unwired-prop` |
-    /// `slot-shell`.
+    /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `unresolvable-import` |
+    /// `orphan` | `unwired-prop` | `slot-shell`.
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -149,6 +150,89 @@ fn is_node_slot_prop(name: &str, ty: &str) -> bool {
 /// component's `src` against the artifact roster with no fs/network — exactly like the frontend's raw
 /// `@data/components/react-ui.json` import that `componentPreviewFiles` resolves a built-in against.
 const PACKAGED_KIT_JSON: &str = include_str!("../../../src-tauri/data/components/react-ui.json");
+
+/// The preview import-map (`src-tauri/data/ui/preview-importmap.json`) — the SAME json the frontend
+/// `componentBundle` uses. Its KEYS are the specifiers the preview iframe can resolve; a bare import not
+/// among them throws "Failed to resolve module specifier" at preview time (#2934). Embedded so the
+/// static `unresolvable-import` check runs with no fs/network — the Rust twin of `graphHealth.ts`.
+const PREVIEW_IMPORTMAP_JSON: &str = include_str!("../../../src-tauri/data/ui/preview-importmap.json");
+
+/// The set of specifiers the preview can resolve — the import-map's keys. Cached; a malformed map yields
+/// an empty set (so the check flags nothing — fail safe, never a false alarm).
+fn resolvable_specifiers() -> &'static BTreeSet<String> {
+    static KEYS: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+    KEYS.get_or_init(|| {
+        serde_json::from_str::<Value>(PREVIEW_IMPORTMAP_JSON)
+            .ok()
+            .as_ref()
+            .and_then(Value::as_object)
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default()
+    })
+}
+
+/// Is `spec` a BARE package specifier — not a relative (`.`/`..`), absolute (`/`), or first-party (`@/`)
+/// import? Only bare specifiers resolve through the preview import-map. Mirrors `isBareSpecifier` (TS).
+fn is_bare_specifier(spec: &str) -> bool {
+    !spec.starts_with('.') && !spec.starts_with('/') && !spec.starts_with("@/")
+}
+
+/// Every module specifier imported/exported-from in `source` — `import … from "X"`, `export … from "X"`,
+/// `import "X"`, `import("X")`. A hand scanner (no regex dep): track the last identifier and, when a
+/// string literal opens in normal code, capture it iff the last word was `from` or `import`. String +
+/// line/block-comment state is tracked so a quote inside a comment/string is never captured. Deliberately
+/// loose — over-inclusion is harmless (the caller flags only BARE unresolved specifiers). Rust twin of
+/// `importSpecifiers` (TS).
+fn import_specifiers(source: &str) -> Vec<String> {
+    let chars: Vec<char> = source.chars().collect();
+    let n = chars.len();
+    let mut i = 0;
+    let mut out = Vec::new();
+    let mut last_word = String::new();
+    let is_id = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    while i < n {
+        let c = chars[i];
+        if c == '/' && i + 1 < n && chars[i + 1] == '/' {
+            i += 2;
+            while i < n && chars[i] != '\n' {
+                i += 1;
+            }
+        } else if c == '/' && i + 1 < n && chars[i + 1] == '*' {
+            i += 2;
+            while i < n && !(chars[i] == '*' && i + 1 < n && chars[i + 1] == '/') {
+                i += 1;
+            }
+            i += 2;
+        } else if c == '"' || c == '\'' || c == '`' {
+            let quote = c;
+            i += 1;
+            let start = i;
+            while i < n && chars[i] != quote {
+                if chars[i] == '\\' {
+                    i += 1;
+                }
+                i += 1;
+            }
+            if last_word == "from" || last_word == "import" {
+                out.push(chars[start..i.min(n)].iter().collect());
+            }
+            i += 1; // past the closing quote (or EOF)
+            last_word.clear(); // a string is not an identifier
+        } else if is_id(c) {
+            let mut w = String::new();
+            while i < n && is_id(chars[i]) {
+                w.push(chars[i]);
+                i += 1;
+            }
+            last_word = w;
+        } else {
+            // A non-identifier char (whitespace, `(`, `;`, …) — keep `last_word` so `import(` / `import "x"`
+            // still see the `import` keyword.
+            i += 1;
+        }
+    }
+    out
+}
 
 /// The set of packaged-artifact component `src` paths that ship a real implementation `source` — the
 /// "buildable roster" the Design Studio preview (`componentPreviewFiles`, #2824) resolves a built-in
@@ -441,6 +525,48 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
         });
     }
 
+    // ── unresolvable-import (severity 3): a user-authored component whose OWN module imports a bare
+    // package the preview CAN'T resolve (not in the preview import-map) — the iframe throws "Failed to
+    // resolve module specifier" at preview time (#2934). The class `bsc ui doctor` was blind to (the
+    // static graph looked clean while the component was broken). Only own-source components — a
+    // `looks_buildable_module` srcText imports ONLY bare libraries (no `@/` closure), so its bare imports
+    // ARE exactly what the preview must resolve. Mirrors `graphHealth.ts`.
+    for n in nodes {
+        let src = if !n.source.trim().is_empty() {
+            n.source.as_str()
+        } else if looks_buildable_module(&n.src_text) {
+            n.src_text.as_str()
+        } else {
+            continue;
+        };
+        let resolvable = resolvable_specifiers();
+        let mut unresolved: Vec<String> = import_specifiers(src)
+            .into_iter()
+            .filter(|s| is_bare_specifier(s) && !resolvable.contains(s))
+            .collect();
+        unresolved.sort();
+        unresolved.dedup();
+        if unresolved.is_empty() {
+            continue;
+        }
+        let list = unresolved.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>().join(", ");
+        out.push(Finding {
+            category: "unresolvable-import",
+            severity: 3,
+            kit: kit.to_string(),
+            node_ids: vec![n.id.clone()],
+            node_names: vec![n.name.clone()],
+            why: format!(
+                "`{}` imports {} — not resolvable in the preview (no import-map entry), so it throws \"Failed to resolve module specifier\" when previewed",
+                n.name, list
+            ),
+            suggested_action: format!(
+                "pin {} in the preview import-map (src-tauri/data/ui/preview-importmap.json), or drop the import from `{}`",
+                list, n.name
+            ),
+        });
+    }
+
     // ── unwired-prop (severity 2): a component that declares props its OWN module source never references
     // — a declared interface that does nothing (#2924). Only for a node whose own source is present (a
     // user-authored module: its `source`, or a buildable `srcText`); a built-in (source in the artifact)
@@ -632,6 +758,48 @@ mod tests {
         let fs = analyze(&comps);
         assert_eq!(cats(&fs), ["orphan"]);
         assert_eq!(fs[0].node_names, ["Ghost"]);
+    }
+
+    #[test]
+    fn import_specifiers_extracts_from_import_export_and_dynamic_but_not_comments() {
+        let src = "import React from \"react\";\nimport { a } from \"d3-scale\";\nexport * from \"./local\";\n\
+                   const x = import(\"lucide-react\");\n// import \"commented-out\"\nconst s = \"not-an-import\";";
+        let specs = import_specifiers(src);
+        assert!(specs.contains(&"react".to_string()));
+        assert!(specs.contains(&"d3-scale".to_string()));
+        assert!(specs.contains(&"./local".to_string()));
+        assert!(specs.contains(&"lucide-react".to_string()));
+        assert!(!specs.contains(&"commented-out".to_string()), "a comment's string is not captured");
+        assert!(!specs.contains(&"not-an-import".to_string()), "a plain string is not an import");
+    }
+
+    #[test]
+    fn flags_a_user_component_importing_a_preview_unresolvable_package() {
+        // Imports d3-scale (NOT in the preview import-map) alongside react + lucide-react (both pinned).
+        let comps = [json!({
+            "id":"chart", "name":"Chart", "kitId":"k", "role":"composite", "used":2, "composes":[],
+            "srcText":"import React from \"react\";\nimport { scaleLinear } from \"d3-scale\";\nimport { Icon } from \"lucide-react\";\nexport function Chart(){ return React.createElement(Icon, null, scaleLinear); }"
+        })];
+        let fs = analyze(&comps);
+        let f = fs.iter().find(|f| f.category == "unresolvable-import").expect("flagged");
+        assert_eq!(f.severity, 3);
+        assert!(f.why.contains("d3-scale"), "names the unresolvable specifier");
+        assert!(!f.why.contains("`react`") && !f.why.contains("`lucide-react`"), "pinned imports not listed");
+        assert!(f.suggested_action.contains("preview-importmap"));
+    }
+
+    #[test]
+    fn does_not_flag_unresolvable_import_when_all_resolve_or_for_a_snippet() {
+        let comps = [
+            json!({ "id":"fine", "name":"Fine", "kitId":"k", "role":"composite", "used":2, "composes":[],
+                    "srcText":"import React from \"react\";\nimport * as d3 from \"d3\";\nexport function Fine(){ return null; }" }),
+            // a usage-snippet srcText (`@/`) is not a buildable module → not scanned for imports
+            json!({ "id":"snip", "name":"Snip", "kitId":"k", "role":"primitive", "used":3, "composes":[],
+                    "srcText":"import { Snip } from \"@/x\";\n<Snip/>" }),
+        ];
+        let fs = analyze(&comps);
+        let found = cats(&fs);
+        assert!(!found.contains(&"unresolvable-import"));
     }
 
     #[test]
