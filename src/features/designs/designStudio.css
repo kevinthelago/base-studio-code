@@ -71,6 +71,7 @@
    each buildable component; a node whose build FAILS gets this red glyph. Sits at the TOP-LEFT corner so
    it never overlaps the graph-health badge (top-right, #2680) — the two signals read independently. */
 .ds-buildfail { position: absolute; top: -8px; left: -8px; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; border-radius: 50%; color: var(--danger); background: var(--bg-elev, var(--bg-soft)); border: 1px solid color-mix(in srgb, var(--danger) 60%, var(--border)); z-index: 2; }
+.ds-emptyrender { position: absolute; top: -8px; left: -8px; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; border-radius: 50%; color: var(--warning, var(--state-wait)); background: var(--bg-elev, var(--bg-soft)); border: 1px solid color-mix(in srgb, var(--warning, var(--state-wait)) 55%, var(--border)); z-index: 2; }
 
 /* ── inspector bits ── */
 .ds-inspbox { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
