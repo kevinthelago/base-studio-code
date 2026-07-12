@@ -5,19 +5,26 @@
 //
 // Findings, most-severe first: cycle (a `composes` loop) · dangling-branch (an unused root that still
 // pulls in dependencies) · duplicate (same `wraps` intrinsic, or identical source) · no-implementation
-// (a component the preview can't build — a spec, not code) · orphan (isolated, never-referenced
-// primitive/composite) · unwired-prop (declares props its own source never references — a declared
-// interface that does nothing, #2924) · slot-shell (INFORMATIONAL — a composite whose composed children
-// arrive via ReactNode content slots, so a standalone preview renders a demo placeholder, #2921).
+// (a component the preview can't build — a spec, not code) · unresolvable-import (a user module imports a
+// bare package the preview can't resolve — throws at preview time, #2934) · orphan (isolated, never-
+// referenced primitive/composite) · unwired-prop (declares props its own source never references — a
+// declared interface that does nothing, #2924) · slot-shell (INFORMATIONAL — a composite whose composed
+// children arrive via ReactNode content slots, so a standalone preview renders a demo placeholder, #2921).
 // "Unused" = no composer AND used === 0; a page/layout with used > 0 is a legit entry point, never flagged.
 //
 // The no-implementation check reuses the EXACT preview logic (`componentPreviewFiles`, #2824/#2828):
 // the store strips a built-in's artifact `source` (#2794), so a built-in still builds from the packaged
 // artifact — only a node in NEITHER the artifact NOR carrying its own module/`source` is flagged.
 import reactUiArtifact from "@data/components/react-ui.json";
+import previewImportmap from "@data/ui/preview-importmap.json";
 import { buildComposesEdges } from "./compositionLayout";
 import { componentPreviewFiles, looksBuildableModule, type KitArtifact } from "./componentPreview";
 import type { ComponentRecord, PropSpec } from "./model";
+
+/** The specifiers the preview iframe can resolve — the exact keys of the preview import-map (react/three/
+ *  d3/lucide-react/…). A bare import not in this set throws "Failed to resolve module specifier" at
+ *  preview time (#2934). Kept in lockstep with the Rust twin (which embeds the SAME json). */
+const RESOLVABLE_SPECIFIERS = new Set(Object.keys(previewImportmap));
 
 /** Is `p` a CONTENT-SLOT prop — a non-`children` prop typed as a React node? Matches how the preview
  *  samples props (`samplePropValue` treats any `reactnode`/`node`-typed prop as a slot), so a component
@@ -53,23 +60,45 @@ function referencesIdentifier(source: string, name: string): boolean {
   }
 }
 
+/** Every module specifier imported/exported-from in `source` (`import … from "X"`, `export … from "X"`,
+ *  `import "X"`, `import("X")`), deduped. A loose regex scan — over-inclusion is harmless (the caller only
+ *  flags BARE unresolved ones). The Rust twin (`import_specifiers`) is a hand scanner but the same intent. */
+function importSpecifiers(source: string): string[] {
+  const specs = new Set<string>();
+  let m: RegExpExecArray | null;
+  const fromRe = /\bfrom\s*["']([^"']+)["']/g; // import … from "x"; export … from "x"
+  const importRe = /\bimport\s*\(?\s*["']([^"']+)["']/g; // import "x"; import("x")
+  while ((m = fromRe.exec(source))) specs.add(m[1]);
+  while ((m = importRe.exec(source))) specs.add(m[1]);
+  return [...specs];
+}
+
+/** Is `spec` a BARE package specifier — not a relative (`.`/`..`), absolute (`/`), or first-party
+ *  (`@/`) import? Only bare specifiers resolve through the preview import-map. */
+function isBareSpecifier(spec: string): boolean {
+  return !spec.startsWith(".") && !spec.startsWith("/") && !spec.startsWith("@/");
+}
+
 // The packaged kit artifact (each built-in's verbatim `source` + the `runtime` @/ closure) — the SAME
 // raw import ComponentPreviewFrame builds against. A built-in's `src` resolves here, so it's buildable
 // even though the store strips its `source` (#2794).
 const ARTIFACT = reactUiArtifact as unknown as KitArtifact;
 
 export type HealthCategory =
-  | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "orphan" | "unwired-prop" | "slot-shell";
+  | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "unresolvable-import"
+  | "orphan" | "unwired-prop" | "slot-shell";
 
 /** Category → severity (higher = worse); drives ranking + which badge wins on a multi-flagged node.
- *  `unwired-prop` (2) is a real but mild signal — a declared interface a component never implements.
- *  `slot-shell` is INFORMATIONAL (1, below every defect) — it never overrides a real defect badge, it
- *  just explains why a composite previews as a demo placeholder (#2921). */
+ *  `unresolvable-import` (3) is a real defect — the component throws at preview time (a bare import the
+ *  preview can't resolve). `unwired-prop` (2) is a real but mild signal — a declared interface a
+ *  component never implements. `slot-shell` is INFORMATIONAL (1, below every defect) — it never overrides
+ *  a real defect badge, it just explains why a composite previews as a demo placeholder (#2921). */
 export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   cycle: 4,
   "dangling-branch": 3,
   duplicate: 3,
   "no-implementation": 3,
+  "unresolvable-import": 3,
   orphan: 2,
   "unwired-prop": 2,
   "slot-shell": 1,
@@ -187,6 +216,21 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
       findings.push({ category: "no-implementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
         why: `${c.name} has no buildable implementation — the preview can't render it (a spec, not code)` });
     }
+  }
+
+  // unresolvable-import — a user-authored component whose OWN module imports a bare package the preview
+  // CAN'T resolve: not in the preview import-map, so the iframe throws "Failed to resolve module
+  // specifier" at preview time (#2934). This is the class `bsc ui doctor` was blind to — the graph looked
+  // clean while the component was broken. Only own-source (user) components — a `looksBuildableModule`
+  // srcText imports ONLY bare libraries (no `@/` closure), so its bare imports ARE exactly what the
+  // preview must resolve. Built-ins resolve via the artifact + the map, so they're not scanned here.
+  for (const c of comps) {
+    const src = ownModuleSource(c);
+    if (!src) continue;
+    const unresolved = importSpecifiers(src).filter((s) => isBareSpecifier(s) && !RESOLVABLE_SPECIFIERS.has(s));
+    if (unresolved.length === 0) continue;
+    findings.push({ category: "unresolvable-import", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
+      why: `${c.name} imports ${unresolved.map((s) => `\`${s}\``).join(", ")} — not resolvable in the preview (no import-map entry), so it throws "Failed to resolve module specifier" when previewed` });
   }
 
   // unwired-prop — a component that declares props its own source never references (a declared interface
