@@ -39,6 +39,7 @@ export async function loadComponents(): Promise<ComponentRecord[] | null> {
         wraps: c.wraps,
         rules: c.rules,
         shapes: c.shapes,
+        animations: c.animations, // #2942 — MOTION binding (the kit-animation names it plays); rides verbatim
         seedHash: c.seedHash, // #2483 — must ride the allowlist or the refresh baseline is lost on write-through
       }));
   } catch {
@@ -55,7 +56,7 @@ export async function loadKits(): Promise<Kit[] | null> {
       .filter((k): k is Kit => typeof k.id === "string" && !!k.id && !!k.name)
       // tech/style (#2487) ride VERBATIM — an absent field must stay absent (never defaulted), so a
       // pre-#2487 copy still hashes to its recorded seedHash and the #2483 reconcile can refresh it.
-      .map((k) => ({ id: k.id, name: k.name!, tech: k.tech, style: k.style, stack: k.stack ?? "", dot: k.dot ?? "var(--fg-muted)", builtin: k.builtin, seedHash: k.seedHash }));
+      .map((k) => ({ id: k.id, name: k.name!, tech: k.tech, style: k.style, stack: k.stack ?? "", dot: k.dot ?? "var(--fg-muted)", animations: k.animations, builtin: k.builtin, seedHash: k.seedHash }));
   } catch {
     return null;
   }

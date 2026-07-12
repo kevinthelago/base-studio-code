@@ -4,6 +4,8 @@
 // The library is a GLOBAL store reached through the `bsc ui` CLI (see componentBridge.ts); this
 // module owns only the shapes + pure derivations (search, compose/used-by resolution, role colors).
 
+import type { KitAnimation, AnimationDef } from "@/shared/ui/kit/animations";
+
 /** A component's architectural role — drives its accent color + grouping. */
 export type Role = "primitive" | "composite" | "layout" | "page" | "service";
 
@@ -48,6 +50,13 @@ export interface Kit {
   stack: string;
   /** The kit's dot color (a CSS color; the seed uses app tokens). */
   dot: string;
+  /** The kit's MOTION library (#2942) — named animations as DATA, the motion sibling of themes. A
+   *  component plays one by referencing its name in `ComponentRecord.animations`; the render engine
+   *  (`@/shared/ui/kit` `kitAnimations` → `compileAnimationsCss`) compiles each to
+   *  `@keyframes bsc-<kit>-<name>` + a `prefers-reduced-motion`-guarded rule on `.<kit>-anim-<name>`.
+   *  Per-kit (not global): a structurally-different kit (3D/non-DOM) carries its own motion. Absent ⇒
+   *  no motion. See {@link KitAnimation}. */
+  animations?: KitAnimation[];
   /** A packaged built-in (re-seeded into the store on hydrate). Absent ⇒ user-authored. */
   builtin?: boolean;
   /** Content hash of the seed copy this record came from (#2483, `seedRefresh.ts`) — stamped at
@@ -124,32 +133,10 @@ export interface ComponentRecord {
   shapes?: DataShape[];
   /** Content hash of the seed copy this record came from (#2483) — see {@link Kit.seedHash}. */
   seedHash?: string;
-  /** Authored MOTION (#2867, epic #2865) — named animations, as DATA, compiled to `@keyframes` +
-   *  an applying rule and injected live (mirrors the variant render path). Absent ⇒ no motion. See
-   *  {@link ComponentAnimation}. */
-  animations?: ComponentAnimation[];
-}
-
-/** When an authored component animation plays: once on render (`mount`), on `:hover`, or looping
- *  (`always`). Default `mount`. */
-export type AnimationTrigger = "mount" | "hover" | "always";
-
-/** One authored component animation (#2867) — motion as DATA on a {@link ComponentRecord}. The render
- *  path (`@/shared/ui/kit` `compileAnimationsCss`) compiles it to a `@keyframes` block + an applying
- *  rule on `.<component>-anim-<name>`, guarded by `prefers-reduced-motion`. Values may reference the
- *  motion tokens (`var(--dur-base)` / `var(--ease-standard)`, #2866). */
-export interface ComponentAnimation {
-  /** Animation name — a safe CSS identifier `[a-z][a-z0-9-]*`. */
-  name: string;
-  /** Keyframe stops: a selector (`from` / `to` / a percentage like `50%`) → CSS declarations
-   *  (property → value). */
-  keyframes: Record<string, Record<string, string>>;
-  /** Duration — a motion-token ref (`var(--dur-base)`) or a time (`220ms`). Default `var(--dur-base)`. */
-  duration?: string;
-  /** Easing — a motion-token ref (`var(--ease-standard)`) or a timing-function. Default `var(--ease-standard)`. */
-  easing?: string;
-  /** When it plays. Default `mount`. */
-  trigger?: AnimationTrigger;
+  /** MOTION binding (#2942) — the names of the owning {@link Kit}'s animations this component plays.
+   *  The kit owns the keyframes/timing/trigger ({@link Kit.animations}); a component just references
+   *  them by name, so the same motion is reused across a kit's components. Absent ⇒ no motion. */
+  animations?: string[];
 }
 
 /** The shared zero-state title — Design Studio and the Planner Components pane must say the same
@@ -187,4 +174,19 @@ export function resolveComposes(
 /** The components that compose `c` (its "used by" set). */
 export function resolveUsedBy(c: ComponentRecord, all: ComponentRecord[]): ComponentRecord[] {
   return all.filter((x) => x.composes.includes(c.name));
+}
+
+/** Resolve a component's MOTION bindings (#2942) into the flat, kit-scoped {@link AnimationDef}s the
+ *  render engine compiles: look each bound name up in the owning kit's `animations` library, dropping
+ *  any that don't resolve. Empty when the component binds nothing or its kit has no matching motion. */
+export function resolveComponentAnimations(comp: ComponentRecord, kits: Kit[]): AnimationDef[] {
+  const names = comp.animations ?? [];
+  if (!names.length) return [];
+  const kit = kits.find((k) => k.id === comp.kitId);
+  if (!kit?.animations?.length) return [];
+  const byName = new Map(kit.animations.map((a) => [a.name, a]));
+  return names
+    .map((n) => byName.get(n))
+    .filter((a): a is KitAnimation => !!a)
+    .map((a) => ({ ...a, kit: kit.id }));
 }

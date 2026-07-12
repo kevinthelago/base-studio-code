@@ -9,6 +9,7 @@
 // authoring the rich guidance for the rest is #2305 slice 3.
 import { UI_KIT, type PrimitiveSpec, type PropSpec as ManifestProp, type PrimitiveGroup } from "@/shared/ui/manifest";
 import type { ComponentRecord, DataShape, Kit, PropSpec, Role } from "./model";
+import type { KitAnimation } from "@/shared/ui/kit/animations";
 
 export const REACT_UI_KIT_ID = "react-ui";
 
@@ -521,18 +522,31 @@ function toRecord(spec: PrimitiveSpec): ComponentRecord {
     builtin: true,
     ...(g.wraps ? { wraps: g.wraps } : {}),
     ...(g.shapes ? { shapes: g.shapes } : {}),
-    // Authored motion (#2867/#2871) — carried through from the manifest spec; only emitted when
+    // Motion BINDING (#2942) — the manifest spec's animation defs are lifted to the kit
+    // (`REACT_UI_KIT.animations`); the component keeps just the names it plays. Only emitted when
     // present so animation-free records stay byte-identical.
-    ...(spec.animations ? { animations: spec.animations } : {}),
+    ...(spec.animations?.length ? { animations: spec.animations.map((a) => a.name) } : {}),
   };
+}
+
+/** The `react-ui` kit's MOTION library (#2942) — every primitive's authored animation defs, deduped
+ *  by name (first wins). Components reference these by name (see `toRecord`); the kit owns the
+ *  keyframes/timing/trigger, so the same motion is reusable across the kit's components. */
+function collectKitAnimations(): KitAnimation[] {
+  const byName = new Map<string, KitAnimation>();
+  for (const spec of UI_KIT) {
+    for (const a of spec.animations ?? []) if (!byName.has(a.name)) byName.set(a.name, a);
+  }
+  return [...byName.values()];
 }
 
 /** The `react-ui` kit — the app's own shared-UI primitives. `tech`/`style` are the #2487 rail
  *  hierarchy axes: react technology, and "studio" — the app's neutral house visual language (the
- *  structural component set; palettes/themes are a separate axis and never name a style). */
+ *  structural component set; palettes/themes are a separate axis and never name a style). Its
+ *  `animations` are the kit's motion library (#2942), lifted from the primitives' authored defs. */
 export const REACT_UI_KIT: Kit = {
   id: REACT_UI_KIT_ID, name: "react-ui", tech: "react", style: "studio", stack: "React · TypeScript",
-  dot: "var(--info)", builtin: true,
+  dot: "var(--info)", builtin: true, animations: collectKitAnimations(),
 };
 
 /** Every registered primitive as a component record — generated from the manifest, so this is exactly

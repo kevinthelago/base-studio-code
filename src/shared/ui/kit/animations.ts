@@ -1,12 +1,18 @@
-// Data-defined component ANIMATIONS (#2867, epic #2865) — the RENDER path for motion an LLM authors
-// as data on a component record (`ComponentRecord.animations`). Each definition compiles to a
-// `@keyframes bsc-<component>-<name>` block + an applying rule on `.<component>-anim-<name>`, injected
-// into ONE managed `<style>`, so authored motion plays on the real component with zero component
-// changes. Mirrors the variant render path (variants.ts): compiled on boot + re-applied on a
-// `ui-touch` write. The applying rule is wrapped in `@media (prefers-reduced-motion: no-preference)`,
-// so motion is suppressed for users who ask for less of it.
+// Data-defined KIT animations (#2942, epic #2865/#2553) — the RENDER path for motion an LLM authors
+// as data on a KIT (`Kit.animations`), the motion sibling of themes. Each definition compiles to a
+// `@keyframes bsc-<kit>-<name>` block + an applying rule on `.<kit>-anim-<name>`, injected into ONE
+// managed `<style>`, so a kit's motion plays on any of its components with zero component changes.
+// A component BINDS an animation by name (`ComponentRecord.animations: string[]`) — the renderer puts
+// `.<kit>-anim-<name>` on the element; the kit owns the keyframes + timing + trigger.
 //
-// DEFENSE IN DEPTH: like variants, this compiles LLM-authored data into live CSS, so a component /
+// Motion is per-KIT, not global and not baked per-component: a kit is a structurally-distinct
+// component set (its own DOM/CSS architecture), so a 3D / non-DOM kit carries a different motion
+// representation, and two kits may reuse a name (`fade-in`) with different keyframes without colliding.
+// Mirrors the variant render path (variants.ts): compiled on boot + re-applied on a `ui-touch` write.
+// The applying rule is wrapped in `@media (prefers-reduced-motion: no-preference)`, so motion is
+// suppressed for users who ask for less of it.
+//
+// DEFENSE IN DEPTH: like variants, this compiles LLM-authored data into live CSS, so a kit /
 // animation name must be a safe CSS identifier, a keyframe stop must be `from`/`to`/`N%`, a property
 // must be `[a-z-]+`, and no value may carry a declaration-ending / injection sequence. Anything
 // failing is skipped, never emitted.
@@ -14,9 +20,10 @@
 /** When an authored animation plays. */
 export type AnimationTrigger = "mount" | "hover" | "always";
 
-/** One authored component animation (the shape carried on a `ComponentRecord`'s `animations`). */
-export interface ComponentAnimation {
-  /** Animation name — a safe CSS identifier → `.<component>-anim-<name>` + `@keyframes bsc-<component>-<name>`. */
+/** One authored animation in a kit's motion library (the shape carried on a `Kit`'s `animations`).
+ *  A component references it by {@link name} to play it — the kit owns the keyframes/timing/trigger. */
+export interface KitAnimation {
+  /** Animation name — a safe CSS identifier → `.<kit>-anim-<name>` + `@keyframes bsc-<kit>-<name>`. */
   name: string;
   /** Keyframe stops: a selector (`from`/`to`/`N%`) → CSS declarations (property → value). */
   keyframes: Record<string, Record<string, string>>;
@@ -28,10 +35,10 @@ export interface ComponentAnimation {
   trigger?: AnimationTrigger;
 }
 
-/** A component animation + its owning component's CSS class base (the flat shape the compiler takes). */
-export interface AnimationDef extends ComponentAnimation {
-  /** The component's CSS class base (e.g. `card`, `btn`). */
-  component: string;
+/** A kit animation + its owning kit's CSS class base (the flat shape the compiler takes). */
+export interface AnimationDef extends KitAnimation {
+  /** The kit's CSS class base (its id, e.g. `react-ui`). */
+  kit: string;
 }
 
 const STYLE_ID = "bsc-ui-animations";
@@ -60,26 +67,26 @@ function keyframesCss(d: AnimationDef): string {
       .map(([prop, value]) => `    ${prop}: ${value};`);
     if (lines.length) stops.push(`  ${stop} {\n${lines.join("\n")}\n  }`);
   }
-  return stops.length ? `@keyframes bsc-${d.component}-${d.name} {\n${stops.join("\n")}\n}` : "";
+  return stops.length ? `@keyframes bsc-${d.kit}-${d.name} {\n${stops.join("\n")}\n}` : "";
 }
 
 /**
- * Compile animation definitions into CSS: a `@keyframes bsc-<component>-<name>` block + a
- * reduced-motion-guarded rule applying it on `.<component>-anim-<name>` (`:hover` for a hover
+ * Compile animation definitions into CSS: a `@keyframes bsc-<kit>-<name>` block + a
+ * reduced-motion-guarded rule applying it on `.<kit>-anim-<name>` (`:hover` for a hover
  * trigger; `infinite` for `always`, else played once). Pure + guarded — skips any definition whose
- * component/name isn't a safe identifier, whose duration/easing looks like an injection, or with no
+ * kit/name isn't a safe identifier, whose duration/easing looks like an injection, or with no
  * valid keyframes. Empty string when nothing is renderable.
  */
 export function compileAnimationsCss(defs: AnimationDef[]): string {
   const blocks: string[] = [];
   for (const d of defs) {
-    if (!d || !SAFE_IDENT.test(d.component ?? "") || !SAFE_IDENT.test(d.name ?? "")) continue;
+    if (!d || !SAFE_IDENT.test(d.kit ?? "") || !SAFE_IDENT.test(d.name ?? "")) continue;
     const frames = keyframesCss(d);
     if (!frames) continue;
     const dur = safeValue(d.duration) ? d.duration! : DUR_DEFAULT;
     const ease = safeValue(d.easing) ? d.easing! : EASE_DEFAULT;
-    const anim = `bsc-${d.component}-${d.name}`;
-    const cls = `.${d.component}-anim-${d.name}`;
+    const anim = `bsc-${d.kit}-${d.name}`;
+    const cls = `.${d.kit}-anim-${d.name}`;
     const selector = d.trigger === "hover" ? `${cls}:hover` : cls;
     const iter = d.trigger === "always" ? "infinite" : "1";
     blocks.push(
@@ -89,15 +96,15 @@ export function compileAnimationsCss(defs: AnimationDef[]): string {
   return blocks.join("\n\n");
 }
 
-/** Flatten a component list's authored `animations` into the flat `AnimationDef[]` the compiler takes,
- *  keying each by the component's CSS class base — its lowercased name (the kit convention). */
-export function componentAnimations(
-  components: { name: string; animations?: ComponentAnimation[] }[],
+/** Flatten a kit list's authored `animations` into the flat `AnimationDef[]` the compiler takes,
+ *  keying each by its kit's CSS class base (the kit id — the kit convention). */
+export function kitAnimations(
+  kits: { id: string; animations?: KitAnimation[] }[],
 ): AnimationDef[] {
   const out: AnimationDef[] = [];
-  for (const c of components) {
-    const component = (c.name ?? "").toLowerCase();
-    for (const a of c.animations ?? []) out.push({ ...a, component });
+  for (const k of kits) {
+    const kit = k.id ?? "";
+    for (const a of k.animations ?? []) out.push({ ...a, kit });
   }
   return out;
 }

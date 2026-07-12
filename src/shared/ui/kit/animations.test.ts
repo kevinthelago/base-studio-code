@@ -1,56 +1,64 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { compileAnimationsCss, applyAnimationsToRoot, componentAnimations, type AnimationDef } from "./animations";
+import { compileAnimationsCss, applyAnimationsToRoot, kitAnimations, type AnimationDef } from "./animations";
 
 const fade: AnimationDef = {
-  component: "card",
+  kit: "react-ui",
   name: "fade-in",
   keyframes: { from: { opacity: "0" }, to: { opacity: "1" } },
 };
 
-describe("compileAnimationsCss (#2867)", () => {
+describe("compileAnimationsCss (#2942)", () => {
   it("emits a @keyframes block + a reduced-motion-guarded applying rule, defaulting to the motion tokens", () => {
     const css = compileAnimationsCss([fade]);
-    expect(css).toContain("@keyframes bsc-card-fade-in {");
+    expect(css).toContain("@keyframes bsc-react-ui-fade-in {");
     expect(css).toContain("from {");
     expect(css).toContain("opacity: 0;");
     expect(css).toContain("@media (prefers-reduced-motion: no-preference) {");
-    // default duration/easing are the #2866 motion tokens; played once, class .<component>-anim-<name>
-    expect(css).toContain(".card-anim-fade-in { animation: bsc-card-fade-in var(--dur-base) var(--ease-standard) 1 both; }");
+    // default duration/easing are the #2866 motion tokens; played once, class .<kit>-anim-<name>
+    expect(css).toContain(".react-ui-anim-fade-in { animation: bsc-react-ui-fade-in var(--dur-base) var(--ease-standard) 1 both; }");
   });
 
   it("honors the trigger and explicit duration/easing", () => {
     const hov = compileAnimationsCss([{ ...fade, name: "pulse", trigger: "hover", duration: "120ms", easing: "var(--ease-emphasized)" }]);
-    expect(hov).toContain(".card-anim-pulse:hover { animation: bsc-card-pulse 120ms var(--ease-emphasized) 1 both; }");
+    expect(hov).toContain(".react-ui-anim-pulse:hover { animation: bsc-react-ui-pulse 120ms var(--ease-emphasized) 1 both; }");
     const loop = compileAnimationsCss([{ ...fade, name: "spin", trigger: "always" }]);
-    expect(loop).toContain(".card-anim-spin { animation: bsc-card-spin var(--dur-base) var(--ease-standard) infinite both; }");
+    expect(loop).toContain(".react-ui-anim-spin { animation: bsc-react-ui-spin var(--dur-base) var(--ease-standard) infinite both; }");
   });
 
-  it("skips unsafe input — bad component/name, stop, property, or injection value (defense in depth)", () => {
-    expect(compileAnimationsCss([{ ...fade, component: "Card" }])).toBe("");                       // uppercase component
+  it("skips unsafe input — bad kit/name, stop, property, or injection value (defense in depth)", () => {
+    expect(compileAnimationsCss([{ ...fade, kit: "React-UI" }])).toBe("");                        // uppercase kit
     expect(compileAnimationsCss([{ ...fade, name: "fade;}evil" }])).toBe("");                      // unsafe name
-    expect(compileAnimationsCss([{ component: "card", name: "x", keyframes: { from: { opacity: "1; } a{" } } }])).toBe(""); // injection value
-    expect(compileAnimationsCss([{ component: "card", name: "x", keyframes: { "999%extra": { opacity: "1" } } }])).toBe(""); // bad stop
+    expect(compileAnimationsCss([{ kit: "react-ui", name: "x", keyframes: { from: { opacity: "1; } a{" } } }])).toBe(""); // injection value
+    expect(compileAnimationsCss([{ kit: "react-ui", name: "x", keyframes: { "999%extra": { opacity: "1" } } }])).toBe(""); // bad stop
     expect(compileAnimationsCss([])).toBe("");
   });
-});
 
-describe("componentAnimations (#2867)", () => {
-  it("flattens records' authored animations, keyed by the lowercased component name", () => {
-    const defs = componentAnimations([
-      { name: "Card", animations: [{ name: "fade-in", keyframes: { from: { opacity: "0" }, to: { opacity: "1" } } }] },
-      { name: "Chip" }, // no animations → contributes nothing
-    ]);
-    expect(defs).toHaveLength(1);
-    expect(defs[0]).toMatchObject({ component: "card", name: "fade-in" });
+  it("keys the keyframes + class by the KIT (#2942) — two kits reuse a name without colliding", () => {
+    const css = compileAnimationsCss([fade, { ...fade, kit: "vue-ui" }]);
+    expect(css).toContain("@keyframes bsc-react-ui-fade-in {");
+    expect(css).toContain("@keyframes bsc-vue-ui-fade-in {");
+    expect(css).toContain(".react-ui-anim-fade-in {");
+    expect(css).toContain(".vue-ui-anim-fade-in {");
   });
 });
 
-describe("applyAnimationsToRoot (#2867)", () => {
+describe("kitAnimations (#2942)", () => {
+  it("flattens kits' motion libraries into defs keyed by the kit id", () => {
+    const defs = kitAnimations([
+      { id: "react-ui", animations: [{ name: "fade-in", keyframes: { from: { opacity: "0" }, to: { opacity: "1" } } }] },
+      { id: "empty-kit" }, // no animations → contributes nothing
+    ]);
+    expect(defs).toHaveLength(1);
+    expect(defs[0]).toMatchObject({ kit: "react-ui", name: "fade-in" });
+  });
+});
+
+describe("applyAnimationsToRoot (#2942)", () => {
   beforeEach(() => { document.getElementById("bsc-ui-animations")?.remove(); });
 
   it("injects the compiled CSS into a managed <style>, then removes it when cleared", () => {
     applyAnimationsToRoot([fade]);
-    expect(document.getElementById("bsc-ui-animations")?.textContent).toContain("@keyframes bsc-card-fade-in");
+    expect(document.getElementById("bsc-ui-animations")?.textContent).toContain("@keyframes bsc-react-ui-fade-in");
     applyAnimationsToRoot([]); // no renderable animation → the managed element is removed
     expect(document.getElementById("bsc-ui-animations")).toBeNull();
   });

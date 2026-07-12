@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compileAnimationsCss, componentAnimations } from "@/shared/ui/kit";
+import { compileAnimationsCss, kitAnimations } from "@/shared/ui/kit";
 import {
   resolveMemPath, lookupMem, buildComponentSrcDoc, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
 } from "./componentBundle";
@@ -61,17 +61,17 @@ describe("componentBundle — buildComponentSrcDoc", () => {
     expect(doc).toContain('.trim().length === 0');             // …AND no text
   });
 
-  it("carries an authored component's compiled motion into the iframe, reduced-motion-guarded (#2870)", () => {
-    // The full preview path: compile the record's animations → inject the CSS + apply the class on #root.
-    const comp = { name: "Card", animations: [{ name: "fade-in", keyframes: { from: { opacity: "0" }, to: { opacity: "1" } } }] };
-    const defs = componentAnimations([comp]);
+  it("carries a kit's compiled motion into the iframe, reduced-motion-guarded (#2942)", () => {
+    // The preview path: compile a kit's animations → inject the CSS + apply the `.<kit>-anim-<name>`
+    // class on #root.
+    const defs = kitAnimations([{ id: "react-ui", animations: [{ name: "fade-in", keyframes: { from: { opacity: "0" }, to: { opacity: "1" } } }] }]);
     const doc = buildComponentSrcDoc("X", {
       injectedCss: compileAnimationsCss(defs),
-      rootClass: defs.map((d) => `${d.component}-anim-${d.name}`).join(" "),
+      rootClass: defs.map((d) => `${d.kit}-anim-${d.name}`).join(" "),
     });
-    expect(doc).toContain("@keyframes bsc-card-fade-in");                    // the keyframes reach the iframe
+    expect(doc).toContain("@keyframes bsc-react-ui-fade-in");                // the keyframes reach the iframe
     expect(doc).toContain("@media (prefers-reduced-motion: no-preference)"); // motion suppressed for reduced-motion viewers
-    expect(doc).toContain('<div id="root" class="card-anim-fade-in">');       // #root carries the applying class → it plays
+    expect(doc).toContain('<div id="root" class="react-ui-anim-fade-in">');   // #root carries the applying class → it plays
   });
 });
 
