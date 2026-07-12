@@ -81,4 +81,12 @@ describe("componentBundle — externals", () => {
     expect(COMPONENT_EXTERNALS).toContain("react");
     for (const url of Object.values(COMPONENT_IMPORTMAP)) expect(url).toMatch(/^https:\/\/esm\.sh\//);
   });
+
+  it("pins d3 + d3-force so react-d3 kit previews resolve deterministically (#2930)", () => {
+    expect(COMPONENT_IMPORTMAP["d3"]).toMatch(/^https:\/\/esm\.sh\/d3@\d/);
+    expect(COMPONENT_IMPORTMAP["d3-force"]).toMatch(/^https:\/\/esm\.sh\/d3-force@\d/);
+    // …and they ride into the srcdoc's import-map so the iframe resolves them without re-fetching latest.
+    const doc = buildComponentSrcDoc("X");
+    expect(doc).toContain(COMPONENT_IMPORTMAP["d3-force"]);
+  });
 });
