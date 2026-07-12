@@ -161,6 +161,33 @@ pub fn classify(c: &Candidate) -> Classification {
     Classification { worthy: score >= 1, score, reasons }
 }
 
+/// One curation decision (#2745 slice 3) — a worthy candidate to store, plus the existing library impl
+/// it REPLACES (an optimize) or `None` (a fresh add).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurationItem {
+    /// The candidate to store as a canonical library implementation.
+    pub candidate: Candidate,
+    /// `Some(id)` = optimize (the store already holds an impl with this id → replace it); `None` = add.
+    pub replaces: Option<String>,
+}
+
+/// Plan the curation of worthy candidates into the library (#2745 slice 3): each becomes an `add`, or an
+/// `optimize` when an implementation with the same id is already stored (the harvested version replaces
+/// it — the "better version propagates"). Pure — APPLYING the plan (writing the store) is the caller's job.
+pub fn curation_plan(worthy: &[Candidate], existing: &[serde_json::Value]) -> Vec<CurationItem> {
+    let existing_ids: HashSet<&str> = existing
+        .iter()
+        .filter_map(|e| e.get("id").and_then(serde_json::Value::as_str))
+        .collect();
+    worthy
+        .iter()
+        .map(|c| CurationItem {
+            replaces: existing_ids.contains(c.id.as_str()).then(|| c.id.clone()),
+            candidate: c.clone(),
+        })
+        .collect()
+}
+
 /// The file extension (impl id suffix) for a tech.
 fn ext_of(tech: &str) -> &'static str {
     match tech {
@@ -431,5 +458,26 @@ mod tests {
                 .iter()
                 .any(|r| r.contains("trivial") || r.contains("glue")));
         }
+    }
+
+    #[test]
+    fn curation_plan_adds_new_and_optimizes_existing() {
+        let worthy: Vec<Candidate> =
+            harvest(&fixtures()).into_iter().filter(|c| c.classification.worthy).collect();
+        // An existing store already holding merge-sort.rs → that candidate is an OPTIMIZE (replace);
+        // a candidate with no stored counterpart (quick-sort.rs) is an ADD.
+        let existing = vec![serde_json::json!({ "id": "merge-sort.rs", "tech": "rust" })];
+        let plan = curation_plan(&worthy, &existing);
+
+        let ms = plan.iter().find(|it| it.candidate.id == "merge-sort.rs").expect("merge-sort planned");
+        assert_eq!(ms.replaces.as_deref(), Some("merge-sort.rs")); // optimize
+        let qs = plan.iter().find(|it| it.candidate.id == "quick-sort.rs").expect("quick-sort planned");
+        assert!(qs.replaces.is_none()); // add
+
+        // Only worthy candidates are curated — the glue (helperThing / some_helper) never appears.
+        assert!(plan.iter().all(|it| it.candidate.classification.worthy));
+        assert!(plan
+            .iter()
+            .all(|it| it.candidate.name != "helperThing" && it.candidate.name != "some_helper"));
     }
 }
