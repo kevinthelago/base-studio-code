@@ -4,8 +4,9 @@
 // the built-in kit (its verbatim source + dependency closure from the packaged artifact) AND
 // user-authored components built on any npm library (d3, three, …), which load from esm.sh in the iframe
 // with no install. The app's live styles are injected so built-ins render themed.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import reactUiArtifact from "@data/components/react-ui.json";
+import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
@@ -13,9 +14,9 @@ import { Code } from "@/shared/ui/data/Code";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { bundleComponent, buildComponentSrcDoc } from "@/shared/lib/preview/componentBundle";
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
-import { compileAnimationsCss, componentAnimations } from "@/shared/ui/kit";
+import { compileAnimationsCss } from "@/shared/ui/kit";
 import { componentPreviewFiles, type KitArtifact } from "./lib/componentPreview";
-import type { ComponentRecord } from "./lib/model";
+import { resolveComponentAnimations, type ComponentRecord } from "./lib/model";
 
 // The packaged kit artifact carries each built-in's verbatim `source` + the `runtime` (@/) closure
 // (react-ui.json; the builtinKits SEED strips `source`, but this raw import keeps it — same bundle).
@@ -46,9 +47,12 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // here since the frame is inline-styled and self-contained (works wherever it's mounted).
   const [hint, setHint] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  // A stable rebuild key for the component's authored animations (#2870) — so authoring/removing one
-  // re-renders the preview (the object identity alone isn't a stable dep).
-  const animKey = JSON.stringify(comp.animations ?? []);
+  // The kit-scoped animation defs this component BINDS (#2942) — the kit owns the keyframes, the
+  // component references them by name. A derived key so authoring/removing a binding OR editing the
+  // kit's motion re-renders the preview (the object identity alone isn't a stable dep).
+  const kits = useAppStore((s) => s.kits);
+  const animDefs = useMemo(() => resolveComponentAnimations(comp, kits), [comp, kits]);
+  const animKey = JSON.stringify(animDefs);
 
   // Rebuild when the selection / theme / retry changes (keyed on stable fields, not the object identity).
   useEffect(() => {
@@ -73,14 +77,14 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         if (cancelled) return;
         // App styles (tokens + component CSS) + the selected theme's semantic-token overrides on :root.
         const themeCss = Object.entries(themeVars).map(([k, v]) => `${k}:${v}`).join(";");
-        // The previewed component's authored MOTION (#2870): compile its own animations into the iframe
-        // (guaranteed present, not reliant on the global managed <style>), and put its animation classes
-        // on #root so the motion actually plays — hover/mount/always all fire. The compiled CSS keeps its
-        // `prefers-reduced-motion` guard, so a reduced-motion viewer sees the static component.
-        const animDefs = componentAnimations([comp]);
+        // The previewed component's bound kit MOTION (#2942): compile the kit animations it plays into
+        // the iframe (guaranteed present, not reliant on the global managed <style>), and put their
+        // `.<kit>-anim-<name>` classes on #root so the motion actually plays — hover/mount/always all
+        // fire. The compiled CSS keeps its `prefers-reduced-motion` guard, so a reduced-motion viewer
+        // sees the static component.
         const animCss = compileAnimationsCss(animDefs);
         const rootClass = animDefs
-          .map((d) => `${d.component}-anim-${d.name}`)
+          .map((d) => `${d.kit}-anim-${d.name}`)
           .filter((c) => /^[a-z][a-z0-9-]+$/.test(c))
           .join(" ");
         const injectedCss = collectAppCss() + (themeCss ? `\n:root{${themeCss}}` : "") + (animCss ? `\n${animCss}` : "");
