@@ -4,9 +4,10 @@ export { GlanceWorkspace } from "./GlanceWorkspace";
 export {
   buildGraph, focusSets, edgeGeom, rollUpHealth,
   ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, HEALTH_RANK, EDGE_META,
-  type GraphModel, type GNode, type GEdge, type GRawNode, type GRawEdge, type GRole, type GCategory, type GHealth, type GActivity, type GEdgeKind,
+  KIT_COLOR, KIT_NODE_PREFIX, kitNodeId, kitIdOfNode, usesKitEdgeId,
+  type GraphModel, type GNode, type GEdge, type GRawNode, type GRawEdge, type GRole, type GCategory, type GHealth, type GActivity, type GEdgeKind, type GNodeKind,
 } from "./lib/glanceGraph";
-export { buildGlanceData, SAMPLE_GRAPH, type GlanceData, type ProjectLite } from "./lib/glanceData";
+export { buildGlanceData, SAMPLE_GRAPH, type GlanceData, type ProjectLite, type KitLite } from "./lib/glanceData";
 // #2498: the mobile store projector mirrors the SAME project/fault/fleet sources the Glance
 // workspace reads, so the data hooks are public API alongside the graph model.
 export { useGlanceProjects, applyFaultHealth, applyLiveness, applyRunningActivity, deriveBuildingKeys, mergeGlanceProjects } from "./lib/useGlanceProjects";

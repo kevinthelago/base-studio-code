@@ -82,6 +82,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const loadDemoState = useAppStore((s) => s.loadDemoState);
   const projectLinks = useAppStore((s) => s.projectLinks);
   const removeProjectLink = useAppStore((s) => s.removeProjectLink);
+  // The UI-kit consumer index + kit library (#2571): drives the kit NODES on the L0 network (one per
+  // distinct kit in use, edged to every consuming project — showing which projects share a kit).
+  const kitUsage = useAppStore((s) => s.kitUsage);
+  const kits = useAppStore((s) => s.kits);
   // Per-project auto-triage toggle (#2265) — gates the fault→fix loop; surfaced in the node inspector.
   const autoTriage = useAppStore((s) => s.autoTriage);
   const setAutoTriage = useAppStore((s) => s.setAutoTriage);
@@ -101,8 +105,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     () => applyFaultHealth(applyStallHealth(projectsBase, coord.state.waiting, now), faults),
     [projectsBase, coord.state.waiting, faults, now],
   );
-  // L0 — the project-network graph (nodes = real projects, edges = the user-drawn relationships #2253).
-  const projectData = useMemo(() => buildGlanceData(projects, projectLinks), [projects, projectLinks]);
+  // L0 — the project-network graph (nodes = real projects + UI-kit nodes #2571, edges = the user-drawn
+  // relationships #2253 + one kit→project edge per consumer #2571).
+  const projectData = useMemo(() => buildGlanceData(projects, projectLinks, kitUsage, kits), [projects, projectLinks, kitUsage, kits]);
   const projectModel = useMemo(() => buildGraph(projectData.rawNodes, projectData.rawEdges), [projectData]);
 
   const { tabs, activeId, select, reorder, tearOff } = usePageTabs("glance", GLANCE_TABS);
@@ -207,6 +212,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       else if (isLiveAgent(id)) setChatNode(id);
       else pickNode(id);
     }
+    // A UI-KIT node (#2571) has no fleet to drill into — a click just SELECTS it (→ the kit inspector).
+    else if (projectModel.nodes.find((n) => n.id === id)?.kind === "kit") pickNode(id);
     else { setDrill(id); setSel(null); setShowCycle(false); }
   };
   const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); setChatNode(null); setPreviewOpen(false); };
