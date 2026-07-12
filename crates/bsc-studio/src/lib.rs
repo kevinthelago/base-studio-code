@@ -14,10 +14,18 @@
 
 pub mod cli;
 
+use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+
+/// The packaged built-in studios, embedded from `src-tauri/data/studios/*.json` (#2894) — the same
+/// `include_dir!` pattern skilldb uses for its packaged skills. Built-ins are the shipped PRESETS
+/// (e.g. `web-app-dev`, the zero-change baseline). They're merged UNDER the user store — a same-id user
+/// studio overrides one — and are READ-ONLY (`remove` leaves them; the on-disk store holds only user
+/// studios).
+static PACKAGED_STUDIOS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../src-tauri/data/studios");
 
 /// The library systems a snapshot captures, as `(system key, on-disk dir segment, record noun)`. Each
 /// is a verbatim-JSON-per-id [`bsc_json_store`] collection under the base dir, read uniformly via
@@ -184,25 +192,64 @@ pub fn set(base: &Path, json: &str) -> Result<String, String> {
     Ok(id)
 }
 
-/// Every saved Studio's lean `{id, name}` projection (the full bundle is one [`get`] away). Robust to
-/// odd-shaped files (an unparseable blob yields empty strings, never a panic).
-pub fn list_meta(base: &Path) -> Vec<Value> {
-    studios_store(base)
-        .list()
+/// The packaged built-in studios, parsed from the embedded `src-tauri/data/studios/*.json` (#2894), in
+/// a stable order (by filename). A malformed file is skipped (never poisons the set). Each carries
+/// `"builtin": true` in its JSON so the library can tag + protect it.
+pub fn builtin_studios() -> Vec<Value> {
+    let mut files: Vec<_> = PACKAGED_STUDIOS_DIR
+        .files()
+        .filter(|f| f.path().extension().is_some_and(|e| e == "json"))
+        .collect();
+    files.sort_by_key(|f| f.path().to_path_buf());
+    files
         .iter()
-        .map(|j| bsc_json_store::cli::lean_meta(j, &["id", "name"]))
+        .filter_map(|f| f.contents_utf8().and_then(|s| serde_json::from_str::<Value>(s).ok()))
         .collect()
 }
 
-/// The full stored Studio bundle for `id` as a parsed [`Value`], or `None` when absent. `Err` only
-/// when a present record is not valid JSON.
+/// A studio Value's non-empty string `id`, else `None`.
+fn studio_id(v: &Value) -> Option<&str> {
+    v.get("id").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// Every Studio's lean `{id, name}` projection — the USER-saved ones plus every packaged built-in a user
+/// studio doesn't override (#2894), with `builtin: true` on the built-in entries. Built-ins come first
+/// (they're the shipped presets). Robust to odd-shaped files (an unparseable blob yields empty strings,
+/// never a panic).
+pub fn list_meta(base: &Path) -> Vec<Value> {
+    let user: Vec<Value> = studios_store(base)
+        .list()
+        .iter()
+        .map(|j| bsc_json_store::cli::lean_meta(j, &["id", "name"]))
+        .collect();
+    let user_ids: std::collections::BTreeSet<String> =
+        user.iter().filter_map(|m| m.get("id").and_then(Value::as_str)).map(str::to_string).collect();
+    // Built-ins a user studio doesn't shadow by id, tagged so the library shows + protects them.
+    let mut out: Vec<Value> = builtin_studios()
+        .iter()
+        .filter_map(|v| {
+            let id = studio_id(v)?;
+            if user_ids.contains(id) {
+                return None;
+            }
+            let name = v.get("name").and_then(Value::as_str).unwrap_or(id);
+            Some(serde_json::json!({ "id": id, "name": name, "builtin": true }))
+        })
+        .collect();
+    out.extend(user);
+    out
+}
+
+/// The full Studio bundle for `id` as a parsed [`Value`], or `None` when absent. A user-saved studio wins;
+/// else it falls back to a packaged built-in (#2894), so `get`/`apply` work on a built-in even with no
+/// user copy. `Err` only when a present user record is not valid JSON.
 pub fn get(base: &Path, id: &str) -> Result<Option<Value>, String> {
-    match studios_store(base).get(id)? {
-        Some(j) => serde_json::from_str::<Value>(&j)
+    if let Some(j) = studios_store(base).get(id)? {
+        return serde_json::from_str::<Value>(&j)
             .map(Some)
-            .map_err(|e| format!("get: stored studio '{id}' is not valid JSON: {e}")),
-        None => Ok(None),
+            .map_err(|e| format!("get: stored studio '{id}' is not valid JSON: {e}"));
     }
+    Ok(builtin_studios().into_iter().find(|v| studio_id(v) == Some(id)))
 }
 
 /// Remove a Studio by `id` (a no-op, not an error, when absent).
@@ -424,6 +471,52 @@ mod tests {
             .filter_map(|j| serde_json::from_str::<Value>(j).ok())
             .filter_map(|v| v["id"].as_str().map(str::to_string))
             .collect()
+    }
+
+    #[test]
+    fn ships_the_web_app_dev_builtin_a_reset_to_defaults_baseline() {
+        let builtins = builtin_studios();
+        let web = builtins.iter().find(|v| v["id"] == "web-app-dev").expect("web-app-dev built-in ships");
+        assert_eq!(web["builtin"], true);
+        assert_eq!(web["name"], "Web App Dev");
+        // Its snapshot is empty-per-system — applying it CLEARS the user library so the packaged
+        // defaults re-hydrate (the zero-change baseline), rather than duplicating every seed record.
+        let snap = web["snapshot"].as_object().expect("snapshot is an object");
+        for (key, _, _) in SYSTEMS {
+            assert!(snap.get(*key).and_then(Value::as_array).is_some_and(|a| a.is_empty()), "system '{key}' present + empty");
+        }
+    }
+
+    #[test]
+    fn builtins_merge_into_list_and_get_and_a_user_studio_overrides_by_id() {
+        let base = tmp_base("builtins");
+        // A fresh base (no user studios) still lists the built-in, tagged, and `get` resolves it.
+        let metas = list_meta(&base);
+        let web_meta = metas.iter().find(|m| m["id"] == "web-app-dev").expect("built-in listed on an empty base");
+        assert_eq!(web_meta["builtin"], true);
+        assert!(get(&base, "web-app-dev").unwrap().is_some(), "get falls back to the built-in");
+
+        // A user studio with the SAME id (slug of "Web App Dev") overrides the built-in: no duplicate,
+        // and the entry is no longer tagged builtin (the user copy wins).
+        save(&base, "Web App Dev", Some("my override".into())).unwrap();
+        let metas = list_meta(&base);
+        let web = metas.iter().filter(|m| m["id"] == "web-app-dev").collect::<Vec<_>>();
+        assert_eq!(web.len(), 1, "no duplicate when a user studio shadows the built-in");
+        assert!(web[0].get("builtin").is_none(), "the user copy wins, not tagged built-in");
+        assert_eq!(get(&base, "web-app-dev").unwrap().unwrap()["description"], "my override");
+    }
+
+    #[test]
+    fn apply_works_on_a_builtin_clearing_the_user_library() {
+        let base = tmp_base("apply-builtin");
+        // Seed user records across two systems; applying web-app-dev (empty snapshot) clears them.
+        seed(&base, "blueprints", "blueprint", "mine", r#"{"id":"mine","name":"My BP"}"#);
+        seed(&base, "components", "component", "mycomp", r#"{"id":"mycomp","name":"MyComp"}"#);
+        let summary = apply(&base, "web-app-dev").unwrap();
+        assert_eq!(summary["id"], "web-app-dev");
+        assert_eq!(summary["applied"]["blueprints"], 0); // replaced with the empty snapshot ⇒ cleared
+        assert!(store_ids(&base, "blueprints", "blueprint").is_empty());
+        assert!(store_ids(&base, "components", "component").is_empty());
     }
 
     #[test]

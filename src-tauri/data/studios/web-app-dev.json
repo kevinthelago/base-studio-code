@@ -1,0 +1,15 @@
+{
+  "id": "web-app-dev",
+  "name": "Web App Dev",
+  "description": "The default web-app-development library — the zero-change baseline. Applying it clears your custom library state (teams, personas, components, kits, variants, themes, blueprints) and restores the packaged defaults.",
+  "builtin": true,
+  "snapshot": {
+    "teams": [],
+    "personas": [],
+    "components": [],
+    "kits": [],
+    "variants": [],
+    "themes": [],
+    "blueprints": []
+  }
+}

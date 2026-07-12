@@ -898,6 +898,7 @@ dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
  "bsc-util",
+ "include_dir",
  "serde",
  "serde_json",
 ]
