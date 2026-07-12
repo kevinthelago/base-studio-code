@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "note": "The Algorithms knowledge graph — Graph 1, the curated concept ontology (#2760/#2761), PLUS a per-tech implementation tier (#2770). Canonical computer-science + math concepts and how they relate: data structures, algorithms, concepts, and outputs, joined by typed relationships. Seeded (comes from no codebase); the ONE source of truth read by BOTH the frontend (src/features/algorithms) AND the `bsc graph` CLI (crates/bsc-graph embeds it). Node `kind`: data-structure | algorithm | concept | output. Edge `rel`: operates-on (algorithm→data-structure) | composes (built from a sub-concept) | variant-of (a specialization) | generates (produces an output) | related-to (loose/cross-domain). The `implementations` array (#2770/#2863 — the language-kit tier: each impl carries a `role` (primitive | algorithm) and, for primitives, may be free-standing with no `concept`; `pairs` links a primitive to its algorithm counterparts) is the per-tech tier: each entry `implements` a concept in one tech (typescript | rust) and `composes` OTHER implementations of the same tech (a shareable component that builds into more complicated algorithms — e.g. merge-sort composes merge). Phase 2 (#2745) adds the `implements` join from extracted code.",
+  "note": "The Algorithms knowledge graph — Graph 1, the curated concept ontology (#2760): canonical computer-science + math concepts and how they relate (data structures, algorithms, concepts, outputs), joined by typed relationships. Reseeded RUST-FIRST (#2760): the implementations tier carries real, working Rust code as the founding language — the base the generative library grows from (seed -> reuse -> generate -> extract). The ONE source of truth read by BOTH the frontend (src/features/algorithms) AND the `bsc graph` CLI (crates/bsc-graph embeds it). Node `kind`: data-structure | algorithm | concept | output. Edge `rel`: operates-on | composes | variant-of | generates | related-to. Each implementation `implements` a concept in Rust (role: primitive | algorithm) and `composes` other Rust implementations; a free-standing primitive (no `concept`) may `pairs` with its algorithm counterparts. More languages can be added later (the Tech type + tree-sitter extractor still support them); the seed is Rust for now.",
   "nodes": [
     {
       "id": "array",
@@ -585,16 +585,6 @@
   ],
   "implementations": [
     {
-      "id": "merge.ts",
-      "concept": "merge",
-      "tech": "typescript",
-      "name": "merge (TypeScript)",
-      "summary": "Interleave two sorted arrays into one, driven by a comparator.",
-      "composes": [],
-      "code": "export function merge<T>(a: T[], b: T[], cmp: (x: T, y: T) => number): T[] {\n  const out: T[] = [];\n  let i = 0, j = 0;\n  while (i < a.length && j < b.length) {\n    out.push(cmp(a[i], b[j]) <= 0 ? a[i++] : b[j++]);\n  }\n  while (i < a.length) out.push(a[i++]);\n  while (j < b.length) out.push(b[j++]);\n  return out;\n}\n",
-      "role": "primitive"
-    },
-    {
       "id": "merge.rs",
       "concept": "merge",
       "tech": "rust",
@@ -603,18 +593,6 @@
       "composes": [],
       "code": "/// Interleave two sorted slices into one sorted `Vec`.\npub fn merge<T: Ord + Clone>(a: &[T], b: &[T]) -> Vec<T> {\n    let mut out = Vec::with_capacity(a.len() + b.len());\n    let (mut i, mut j) = (0, 0);\n    while i < a.len() && j < b.len() {\n        if a[i] <= b[j] {\n            out.push(a[i].clone());\n            i += 1;\n        } else {\n            out.push(b[j].clone());\n            j += 1;\n        }\n    }\n    out.extend_from_slice(&a[i..]);\n    out.extend_from_slice(&b[j..]);\n    out\n}\n",
       "role": "primitive"
-    },
-    {
-      "id": "merge-sort.ts",
-      "concept": "merge-sort",
-      "tech": "typescript",
-      "name": "mergeSort (TypeScript)",
-      "summary": "Split, recursively sort the halves, and merge — built on the merge primitive.",
-      "composes": [
-        "merge.ts"
-      ],
-      "code": "import { merge } from \"./merge\";\n\nexport function mergeSort<T>(xs: T[], cmp: (x: T, y: T) => number): T[] {\n  if (xs.length <= 1) return xs.slice();\n  const mid = xs.length >> 1;\n  const left = mergeSort(xs.slice(0, mid), cmp);\n  const right = mergeSort(xs.slice(mid), cmp);\n  return merge(left, right, cmp);\n}\n",
-      "role": "algorithm"
     },
     {
       "id": "merge-sort.rs",
@@ -629,16 +607,6 @@
       "role": "algorithm"
     },
     {
-      "id": "binary-search.ts",
-      "concept": "binary-search",
-      "tech": "typescript",
-      "name": "binarySearch (TypeScript)",
-      "summary": "Halve a sorted range each step until the target is found.",
-      "composes": [],
-      "code": "export function binarySearch<T>(xs: T[], target: T, cmp: (x: T, y: T) => number): number {\n  let lo = 0, hi = xs.length - 1;\n  while (lo <= hi) {\n    const mid = (lo + hi) >> 1;\n    const c = cmp(xs[mid], target);\n    if (c === 0) return mid;\n    if (c < 0) lo = mid + 1;\n    else hi = mid - 1;\n  }\n  return -1;\n}\n",
-      "role": "algorithm"
-    },
-    {
       "id": "binary-search.rs",
       "concept": "binary-search",
       "tech": "rust",
@@ -646,16 +614,6 @@
       "summary": "Halve a sorted range each step until the target is found.",
       "composes": [],
       "code": "/// Binary search a sorted slice; `Some(index)` on a hit, else `None`.\npub fn binary_search<T: Ord>(xs: &[T], target: &T) -> Option<usize> {\n    let (mut lo, mut hi) = (0, xs.len());\n    while lo < hi {\n        let mid = lo + (hi - lo) / 2;\n        match xs[mid].cmp(target) {\n            std::cmp::Ordering::Equal => return Some(mid),\n            std::cmp::Ordering::Less => lo = mid + 1,\n            std::cmp::Ordering::Greater => hi = mid,\n        }\n    }\n    None\n}\n",
-      "role": "algorithm"
-    },
-    {
-      "id": "quick-sort.ts",
-      "concept": "quick-sort",
-      "tech": "typescript",
-      "name": "quickSort (TypeScript)",
-      "summary": "Partition around a pivot and recurse each side.",
-      "composes": [],
-      "code": "export function quickSort<T>(xs: T[], cmp: (x: T, y: T) => number): T[] {\n  if (xs.length <= 1) return xs.slice();\n  const [pivot, ...rest] = xs;\n  const left = rest.filter((x) => cmp(x, pivot) < 0);\n  const right = rest.filter((x) => cmp(x, pivot) >= 0);\n  return [...quickSort(left, cmp), pivot, ...quickSort(right, cmp)];\n}\n",
       "role": "algorithm"
     },
     {
@@ -669,16 +627,6 @@
       "role": "algorithm"
     },
     {
-      "id": "bfs.ts",
-      "concept": "bfs",
-      "tech": "typescript",
-      "name": "bfs (TypeScript)",
-      "summary": "Explore a graph level by level using a queue.",
-      "composes": [],
-      "code": "export function bfs(adj: Map<string, string[]>, start: string): string[] {\n  const order: string[] = [];\n  const seen = new Set<string>([start]);\n  const queue: string[] = [start];\n  while (queue.length) {\n    const node = queue.shift()!;\n    order.push(node);\n    for (const next of adj.get(node) ?? []) {\n      if (!seen.has(next)) {\n        seen.add(next);\n        queue.push(next);\n      }\n    }\n  }\n  return order;\n}\n",
-      "role": "algorithm"
-    },
-    {
       "id": "bfs.rs",
       "concept": "bfs",
       "tech": "rust",
@@ -686,16 +634,6 @@
       "summary": "Explore a graph level by level using a queue.",
       "composes": [],
       "code": "use std::collections::{HashMap, HashSet, VecDeque};\n\n/// Breadth-first traversal order from `start` over an adjacency map.\npub fn bfs(adj: &HashMap<&str, Vec<&str>>, start: &str) -> Vec<String> {\n    let mut order = Vec::new();\n    let mut seen = HashSet::from([start]);\n    let mut queue = VecDeque::from([start]);\n    while let Some(node) = queue.pop_front() {\n        order.push(node.to_string());\n        for &next in adj.get(node).into_iter().flatten() {\n            if seen.insert(next) {\n                queue.push_back(next);\n            }\n        }\n    }\n    order\n}\n",
-      "role": "algorithm"
-    },
-    {
-      "id": "bubble-sort.ts",
-      "concept": "bubble-sort",
-      "tech": "typescript",
-      "name": "bubbleSort (TypeScript)",
-      "summary": "Swap adjacent out-of-order pairs each pass, stopping early once a pass is clean; comparator-driven.",
-      "composes": [],
-      "code": "export function bubbleSort<T>(xs: T[], cmp: (x: T, y: T) => number): T[] {\n  const out = xs.slice();\n  for (let end = out.length - 1; end > 0; end--) {\n    let swapped = false;\n    for (let i = 0; i < end; i++) {\n      if (cmp(out[i], out[i + 1]) > 0) {\n        [out[i], out[i + 1]] = [out[i + 1], out[i]];\n        swapped = true;\n      }\n    }\n    if (!swapped) break;\n  }\n  return out;\n}\n",
       "role": "algorithm"
     },
     {
@@ -709,16 +647,6 @@
       "role": "algorithm"
     },
     {
-      "id": "insertion-sort.ts",
-      "concept": "insertion-sort",
-      "tech": "typescript",
-      "name": "insertionSort (TypeScript)",
-      "summary": "Grow a sorted prefix, shifting larger elements right to insert each new key; comparator-driven.",
-      "composes": [],
-      "code": "export function insertionSort<T>(xs: T[], cmp: (x: T, y: T) => number): T[] {\n  const out = xs.slice();\n  for (let i = 1; i < out.length; i++) {\n    const key = out[i];\n    let j = i - 1;\n    while (j >= 0 && cmp(out[j], key) > 0) {\n      out[j + 1] = out[j];\n      j--;\n    }\n    out[j + 1] = key;\n  }\n  return out;\n}\n",
-      "role": "algorithm"
-    },
-    {
       "id": "insertion-sort.rs",
       "concept": "insertion-sort",
       "tech": "rust",
@@ -726,16 +654,6 @@
       "summary": "Grow a sorted prefix, shifting larger elements right to open a slot for each key.",
       "composes": [],
       "code": "/// Insertion sort — grow a sorted prefix, shifting larger elements right to open a slot.\npub fn insertion_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {\n    let mut out = xs.to_vec();\n    for i in 1..out.len() {\n        let mut j = i;\n        while j > 0 && out[j - 1] > out[j] {\n            out.swap(j - 1, j);\n            j -= 1;\n        }\n    }\n    out\n}\n",
-      "role": "algorithm"
-    },
-    {
-      "id": "heap-sort.ts",
-      "concept": "heap-sort",
-      "tech": "typescript",
-      "name": "heapSort (TypeScript)",
-      "summary": "Build a max-heap in place, then repeatedly swap the root to the end and re-sift; comparator-driven.",
-      "composes": [],
-      "code": "export function heapSort<T>(xs: T[], cmp: (x: T, y: T) => number): T[] {\n  const out = xs.slice();\n  const n = out.length;\n  const siftDown = (start: number, end: number) => {\n    let root = start;\n    for (;;) {\n      const left = 2 * root + 1;\n      if (left > end) return;\n      const right = left + 1;\n      let largest = root;\n      if (cmp(out[largest], out[left]) < 0) largest = left;\n      if (right <= end && cmp(out[largest], out[right]) < 0) largest = right;\n      if (largest === root) return;\n      [out[root], out[largest]] = [out[largest], out[root]];\n      root = largest;\n    }\n  };\n  for (let i = (n >> 1) - 1; i >= 0; i--) siftDown(i, n - 1);\n  for (let end = n - 1; end > 0; end--) {\n    [out[0], out[end]] = [out[end], out[0]];\n    siftDown(0, end - 1);\n  }\n  return out;\n}\n",
       "role": "algorithm"
     },
     {
@@ -749,16 +667,6 @@
       "role": "algorithm"
     },
     {
-      "id": "linear-search.ts",
-      "concept": "linear-search",
-      "tech": "typescript",
-      "name": "linearSearch (TypeScript)",
-      "summary": "Scan left to right for the first element equal to the target; the index, or -1 on a miss.",
-      "composes": [],
-      "code": "export function linearSearch<T>(xs: T[], target: T, cmp: (x: T, y: T) => number): number {\n  for (let i = 0; i < xs.length; i++) {\n    if (cmp(xs[i], target) === 0) return i;\n  }\n  return -1;\n}\n",
-      "role": "algorithm"
-    },
-    {
       "id": "linear-search.rs",
       "concept": "linear-search",
       "tech": "rust",
@@ -766,16 +674,6 @@
       "summary": "Scan for the first element equal to the target; Some(index) on a hit, else None.",
       "composes": [],
       "code": "/// Linear search — the index of the first element equal to `target`, else `None`.\npub fn linear_search<T: PartialEq>(xs: &[T], target: &T) -> Option<usize> {\n    xs.iter().position(|x| x == target)\n}\n",
-      "role": "algorithm"
-    },
-    {
-      "id": "dfs.ts",
-      "concept": "dfs",
-      "tech": "typescript",
-      "name": "dfs (TypeScript)",
-      "summary": "Explore as deep as possible from a start node, backtracking — recursive over the adjacency map.",
-      "composes": [],
-      "code": "export function dfs(adj: Map<string, [string, number][]>, start: string): string[] {\n  const order: string[] = [];\n  const seen = new Set<string>();\n  const visit = (node: string) => {\n    if (seen.has(node)) return;\n    seen.add(node);\n    order.push(node);\n    for (const [next] of adj.get(node) ?? []) visit(next);\n  };\n  visit(start);\n  return order;\n}\n",
       "role": "algorithm"
     },
     {
@@ -789,16 +687,6 @@
       "role": "algorithm"
     },
     {
-      "id": "dijkstra.ts",
-      "concept": "dijkstra",
-      "tech": "typescript",
-      "name": "dijkstra (TypeScript)",
-      "summary": "Greedy non-negative-weight shortest distances from a start node over the adjacency map.",
-      "composes": [],
-      "code": "export function dijkstra(adj: Map<string, [string, number][]>, start: string): Map<string, number> {\n  const dist = new Map<string, number>([[start, 0]]);\n  const visited = new Set<string>();\n  for (;;) {\n    let node: string | undefined;\n    let best = Infinity;\n    for (const [n, d] of dist) {\n      if (!visited.has(n) && d < best) {\n        best = d;\n        node = n;\n      }\n    }\n    if (node === undefined) break;\n    visited.add(node);\n    for (const [next, w] of adj.get(node) ?? []) {\n      const nd = best + w;\n      if (nd < (dist.get(next) ?? Infinity)) dist.set(next, nd);\n    }\n  }\n  return dist;\n}\n",
-      "role": "algorithm"
-    },
-    {
       "id": "dijkstra.rs",
       "concept": "dijkstra",
       "tech": "rust",
@@ -806,16 +694,6 @@
       "summary": "Greedy non-negative-weight shortest distances from a start node, using a binary min-heap.",
       "composes": [],
       "code": "use std::cmp::Reverse;\nuse std::collections::{BinaryHeap, HashMap};\n\n/// Dijkstra shortest-path distances from `start` over a non-negative weighted adjacency map.\npub fn dijkstra(adj: &HashMap<String, Vec<(String, u32)>>, start: &str) -> HashMap<String, u32> {\n    let mut dist: HashMap<String, u32> = HashMap::from([(start.to_string(), 0)]);\n    let mut heap: BinaryHeap<Reverse<(u32, String)>> = BinaryHeap::new();\n    heap.push(Reverse((0, start.to_string())));\n    while let Some(Reverse((d, node))) = heap.pop() {\n        if d > dist.get(&node).copied().unwrap_or(u32::MAX) {\n            continue;\n        }\n        if let Some(neighbors) = adj.get(&node) {\n            for (next, w) in neighbors {\n                let nd = d + w;\n                if nd < dist.get(next).copied().unwrap_or(u32::MAX) {\n                    dist.insert(next.clone(), nd);\n                    heap.push(Reverse((nd, next.clone())));\n                }\n            }\n        }\n    }\n    dist\n}\n",
-      "role": "algorithm"
-    },
-    {
-      "id": "a-star.ts",
-      "concept": "a-star",
-      "tech": "typescript",
-      "name": "aStar (TypeScript)",
-      "summary": "Dijkstra guided by an admissible heuristic; returns the shortest node path to the goal, or null.",
-      "composes": [],
-      "code": "export function aStar(\n  adj: Map<string, [string, number][]>,\n  start: string,\n  goal: string,\n  heuristic: (node: string) => number,\n): string[] | null {\n  const gScore = new Map<string, number>([[start, 0]]);\n  const cameFrom = new Map<string, string>();\n  const open = new Set<string>([start]);\n  while (open.size) {\n    let current: string | undefined;\n    let best = Infinity;\n    for (const n of open) {\n      const f = (gScore.get(n) ?? Infinity) + heuristic(n);\n      if (f < best) {\n        best = f;\n        current = n;\n      }\n    }\n    if (current === undefined) break;\n    if (current === goal) {\n      const path = [current];\n      let step = current;\n      while (cameFrom.has(step)) {\n        step = cameFrom.get(step)!;\n        path.unshift(step);\n      }\n      return path;\n    }\n    open.delete(current);\n    const gCurrent = gScore.get(current) ?? Infinity;\n    for (const [next, w] of adj.get(current) ?? []) {\n      const tentative = gCurrent + w;\n      if (tentative < (gScore.get(next) ?? Infinity)) {\n        cameFrom.set(next, current);\n        gScore.set(next, tentative);\n        open.add(next);\n      }\n    }\n  }\n  return null;\n}\n",
       "role": "algorithm"
     },
     {
@@ -829,16 +707,6 @@
       "role": "algorithm"
     },
     {
-      "id": "topological-sort.ts",
-      "concept": "topological-sort",
-      "tech": "typescript",
-      "name": "topologicalSort (TypeScript)",
-      "summary": "Kahn's algorithm — repeatedly emit in-degree-zero nodes; null when a cycle is present.",
-      "composes": [],
-      "code": "export function topologicalSort(adj: Map<string, [string, number][]>): string[] | null {\n  const indegree = new Map<string, number>();\n  const ensure = (n: string) => { if (!indegree.has(n)) indegree.set(n, 0); };\n  for (const [node, edges] of adj) {\n    ensure(node);\n    for (const [next] of edges) {\n      ensure(next);\n      indegree.set(next, indegree.get(next)! + 1);\n    }\n  }\n  const queue: string[] = [];\n  for (const [node, deg] of indegree) if (deg === 0) queue.push(node);\n  const order: string[] = [];\n  while (queue.length) {\n    const node = queue.shift()!;\n    order.push(node);\n    for (const [next] of adj.get(node) ?? []) {\n      const d = indegree.get(next)! - 1;\n      indegree.set(next, d);\n      if (d === 0) queue.push(next);\n    }\n  }\n  return order.length === indegree.size ? order : null;\n}\n",
-      "role": "algorithm"
-    },
-    {
       "id": "topological-sort.rs",
       "concept": "topological-sort",
       "tech": "rust",
@@ -846,16 +714,6 @@
       "summary": "Kahn's algorithm — repeatedly emit in-degree-zero nodes; None when a cycle is present.",
       "composes": [],
       "code": "use std::collections::{HashMap, VecDeque};\n\n/// Kahn's algorithm — a topological ordering of a DAG, or `None` if a cycle is present.\npub fn topological_sort(adj: &HashMap<String, Vec<(String, u32)>>) -> Option<Vec<String>> {\n    let mut indegree: HashMap<String, usize> = HashMap::new();\n    for (node, edges) in adj {\n        indegree.entry(node.clone()).or_insert(0);\n        for (next, _) in edges {\n            *indegree.entry(next.clone()).or_insert(0) += 1;\n        }\n    }\n    let mut queue: VecDeque<String> = indegree\n        .iter()\n        .filter(|(_, &d)| d == 0)\n        .map(|(n, _)| n.clone())\n        .collect();\n    let mut order = Vec::new();\n    while let Some(node) = queue.pop_front() {\n        order.push(node.clone());\n        if let Some(edges) = adj.get(&node) {\n            for (next, _) in edges {\n                let d = indegree.get_mut(next).unwrap();\n                *d -= 1;\n                if *d == 0 {\n                    queue.push_back(next.clone());\n                }\n            }\n        }\n    }\n    if order.len() == indegree.len() {\n        Some(order)\n    } else {\n        None\n    }\n}\n",
-      "role": "algorithm"
-    },
-    {
-      "id": "fibonacci.ts",
-      "concept": "fibonacci",
-      "tech": "typescript",
-      "name": "fibonacci (TypeScript)",
-      "summary": "The nth Fibonacci number (F0 = 0, F1 = 1), iterated bottom-up in O(n).",
-      "composes": [],
-      "code": "export function fibonacci(n: number): number {\n  if (n < 2) return n;\n  let a = 0, b = 1;\n  for (let i = 2; i <= n; i++) {\n    [a, b] = [b, a + b];\n  }\n  return b;\n}\n",
       "role": "algorithm"
     },
     {
@@ -869,16 +727,6 @@
       "role": "algorithm"
     },
     {
-      "id": "euclid-gcd.ts",
-      "concept": "euclid-gcd",
-      "tech": "typescript",
-      "name": "gcd (TypeScript)",
-      "summary": "Greatest common divisor by repeated remainder — the Euclidean algorithm.",
-      "composes": [],
-      "code": "export function gcd(a: number, b: number): number {\n  let x = Math.abs(a);\n  let y = Math.abs(b);\n  while (y !== 0) {\n    [x, y] = [y, x % y];\n  }\n  return x;\n}\n",
-      "role": "algorithm"
-    },
-    {
       "id": "euclid-gcd.rs",
       "concept": "euclid-gcd",
       "tech": "rust",
@@ -886,16 +734,6 @@
       "summary": "Greatest common divisor by repeated remainder — the Euclidean algorithm.",
       "composes": [],
       "code": "/// Greatest common divisor via the Euclidean algorithm (iterated remainder).\npub fn gcd(mut a: u64, mut b: u64) -> u64 {\n    while b != 0 {\n        let r = a % b;\n        a = b;\n        b = r;\n    }\n    a\n}\n",
-      "role": "algorithm"
-    },
-    {
-      "id": "fft.ts",
-      "concept": "fft",
-      "tech": "typescript",
-      "name": "fft (TypeScript)",
-      "summary": "Recursive radix-2 Cooley–Tukey FFT over complex samples; input length must be a power of two.",
-      "composes": [],
-      "code": "export interface Complex { re: number; im: number }\n\nexport function fft(input: Complex[]): Complex[] {\n  const n = input.length;\n  if (n <= 1) return input.slice();\n  if (n & (n - 1)) throw new Error(\"fft: length must be a power of two\");\n  const even = fft(input.filter((_, i) => i % 2 === 0));\n  const odd = fft(input.filter((_, i) => i % 2 === 1));\n  const out: Complex[] = new Array(n);\n  for (let k = 0; k < n / 2; k++) {\n    const angle = (-2 * Math.PI * k) / n;\n    const tw = { re: Math.cos(angle), im: Math.sin(angle) };\n    const o = odd[k];\n    const t = { re: tw.re * o.re - tw.im * o.im, im: tw.re * o.im + tw.im * o.re };\n    out[k] = { re: even[k].re + t.re, im: even[k].im + t.im };\n    out[k + n / 2] = { re: even[k].re - t.re, im: even[k].im - t.im };\n  }\n  return out;\n}\n",
       "role": "algorithm"
     },
     {
@@ -907,21 +745,6 @@
       "composes": [],
       "code": "/// Recursive radix-2 Cooley–Tukey FFT over complex samples `(re, im)`.\n/// `input.len()` must be a power of two.\npub fn fft(input: &[(f64, f64)]) -> Vec<(f64, f64)> {\n    let n = input.len();\n    if n <= 1 {\n        return input.to_vec();\n    }\n    assert!(n & (n - 1) == 0, \"fft: length must be a power of two\");\n    let even = fft(&input.iter().step_by(2).copied().collect::<Vec<_>>());\n    let odd = fft(&input.iter().skip(1).step_by(2).copied().collect::<Vec<_>>());\n    let mut out = vec![(0.0, 0.0); n];\n    for k in 0..n / 2 {\n        let angle = -2.0 * std::f64::consts::PI * k as f64 / n as f64;\n        let (tw_re, tw_im) = (angle.cos(), angle.sin());\n        let (o_re, o_im) = odd[k];\n        let t = (tw_re * o_re - tw_im * o_im, tw_re * o_im + tw_im * o_re);\n        let (e_re, e_im) = even[k];\n        out[k] = (e_re + t.0, e_im + t.1);\n        out[k + n / 2] = (e_re - t.0, e_im - t.1);\n    }\n    out\n}\n",
       "role": "algorithm"
-    },
-    {
-      "id": "ts.array",
-      "tech": "typescript",
-      "role": "primitive",
-      "name": "Array (TypeScript)",
-      "summary": "The native indexed sequence — the base most sort/search algorithms operate on.",
-      "composes": [],
-      "pairs": [
-        "binary-search.ts",
-        "linear-search.ts",
-        "merge-sort.ts",
-        "quick-sort.ts"
-      ],
-      "code": "const xs: number[] = [3, 1, 2];\nxs.push(4);\nconst first = xs[0];\nconst n = xs.length;\n"
     },
     {
       "id": "rust.iterator",
