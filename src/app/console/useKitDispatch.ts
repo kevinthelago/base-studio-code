@@ -53,10 +53,15 @@ export function useKitDispatch(): void {
 
     for (const [projectKey, projDispatches] of byProject) {
       if (isCancelled()) return;
-      if (!st.autoKitDispatch?.[projectKey]) continue; // toggle OFF ⇒ surface-only (no dispatch)
+      // Deliver a dispatch when auto-apply is on, its change has been APPROVED (#2944), or the legacy
+      // per-project toggle is on. Gated per-dispatch — a project may hold both approved + still-pending.
+      const eligible = projDispatches.filter((d) =>
+        st.autoApplyKitChanges || st.approvedChangeIds?.includes(d.change.id) || st.autoKitDispatch?.[projectKey],
+      );
+      if (eligible.length === 0) continue; // nothing approved for this project yet ⇒ surface-only
       const live = !!st.paneDirectorDrive?.[directorPaneId(projectKey)];
-      const plan = planKitDrain(projDispatches, delivered.current, {
-        enabled: true, // gated above per project; the pure fn re-checks but we've filtered already
+      const plan = planKitDrain(eligible, delivered.current, {
+        enabled: true, // gated above per dispatch; the pure fn re-checks but we've filtered already
         live,
         maxPerCycle: DEFAULT_KIT_DRAIN.maxPerCycle,
       });
