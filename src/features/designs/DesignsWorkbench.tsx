@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
-import { KitChangesCard, SeedNoticesCard } from "./KitChangesCard";
+import { SeedNoticesCard } from "./KitChangesCard";
 import { DesignerTerminal } from "./DesignerTerminal";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -208,7 +208,7 @@ export function DesignsWorkbench() {
         />
       )}
       {/* kit-change propagation (#2277) + built-in seed-refresh notices (#2483) — render only when pending */}
-      <KitChangesCard />
+      {/* Kit changes now gate in the top-right KitChangesBanner (#2944), not an in-Studio card. */}
       <SeedNoticesCard />
 
       <GraphCanvas

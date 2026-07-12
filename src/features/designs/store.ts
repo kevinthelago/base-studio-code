@@ -102,6 +102,16 @@ export interface ComponentsSlice {
   kitDispatches: Dispatch[];
   /** Dismiss a queued dispatch (once delivered / acknowledged), keyed by (projectKey, change.id). */
   dismissKitDispatch: (projectKey: string, changeId: string) => void;
+  /** Auto-apply kit changes (#2944) — when ON, a designer change propagates to its consumers without
+   *  the approval gate; when OFF (default) the KitChangesBanner presents it for the user to approve.
+   *  Surfaced in Planner settings; persisted. */
+  autoApplyKitChanges: boolean;
+  setAutoApplyKitChanges: (on: boolean) => void;
+  /** Change ids the user has APPROVED (#2944) — the drain delivers an approved change's dispatches
+   *  (like auto-apply, but per-change). Ephemeral (not persisted); a delivered dispatch leaves the queue. */
+  approvedChangeIds: string[];
+  /** Approve a kit change (#2944): mark it for delivery — the drain propagates its dispatches. */
+  approveKitChange: (changeId: string) => void;
 
   /** The library id the designer AI most-recently touched (#2525) — a component/kit/theme id from a
    *  `bsc ui set/remove` mutation the `useUiActivity` poll observed. The Design Studio live-focuses it
@@ -215,6 +225,11 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
   },
 
   kitDispatches: [],
+  autoApplyKitChanges: false,
+  setAutoApplyKitChanges: (on) => set({ autoApplyKitChanges: on }),
+  approvedChangeIds: [],
+  approveKitChange: (changeId) =>
+    set((s) => (s.approvedChangeIds.includes(changeId) ? {} : { approvedChangeIds: [...s.approvedChangeIds, changeId] })),
 
   setComponent: (component, changeOverride) => {
     const before = get().components.find((c) => c.id === component.id);
