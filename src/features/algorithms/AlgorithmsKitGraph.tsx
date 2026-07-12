@@ -1,8 +1,8 @@
 // The per-kit graph canvas (#2863) — a language kit's OWN graph: nodes are its implementations (a
 // concept IS its implementation), wired by `composes` (builds-on) + `pairs` + the ontology's semantic
-// relationships lifted onto the concrete impls. World-positioned impl cards over an SVG edge layer,
-// mirroring AlgorithmsCanvas' idiom (GraphCanvas owns the pan/zoom transform) so it reads like every
-// other graph. Selection lights a node + its neighbors; the role tints the card (primitive vs algorithm).
+// relationships lifted onto the concrete impls. World-positioned impl cards over an SVG edge layer
+// (GraphCanvas owns the pan/zoom transform) so it reads like every other graph. Selection lights a
+// node + its neighbors; the role tints the card (primitive vs algorithm).
 import { useMemo } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { graphEdge } from "@/shared/lib/graph/edgePath";

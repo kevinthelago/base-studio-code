@@ -1,5 +1,5 @@
 // The Algorithms page ↔ `bsc graph dump` bridge (#2856) — the live hydrate over the packaged seed.
-// Mirrors extractionBridge/themeBridge: `loadGraph` returns `null` when the bridge is unreachable (the
+// Mirrors themeBridge: `loadGraph` returns `null` when the bridge is unreachable (the
 // web shell, the tests, or an OLD bundled `bsc` without the `graph dump` verb from #2853) so the page
 // keeps rendering the embedded seed rather than blanking. The whole-graph doc `bsc graph dump` returns
 // is shape-gated (nodes + edges must be arrays) before it's trusted, matching themeBridge's discipline.
