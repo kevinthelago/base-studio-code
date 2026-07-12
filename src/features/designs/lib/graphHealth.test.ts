@@ -52,6 +52,33 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(map.get("B")).toBe("cycle");
   });
 
+  it("flags a slot-driven composite (composes + a ReactNode slot) as slot-shell, informationally (#2921)", () => {
+    // A used page that composes children delivered via a `view` ReactNode slot → previews a demo
+    // placeholder standalone. Used>0 so it isn't ALSO a dead-root dangling-branch — isolate slot-shell.
+    const page = comp("GraphExplorerPage", "page", 2, ["ForceGraph", "TreeDiagram"], {
+      props: [
+        { name: "title", type: "string", req: false, desc: "" },
+        { name: "view", type: "ReactNode", req: false, desc: "" },
+        { name: "inspector", type: "ReactNode", req: false, desc: "" },
+      ],
+    });
+    const fs = analyzeGraphHealth([page]);
+    expect(fs.map((f) => f.category)).toEqual(["slot-shell"]);
+    expect(fs[0].severity).toBe(1);
+    expect(fs[0].why).toContain("ForceGraph, TreeDiagram"); // names the composed children
+    expect(fs[0].why).toContain("view, inspector");         // names the slots
+  });
+
+  it("does NOT flag slot-shell without a node slot, or with only `children` (#2921)", () => {
+    // composes children but no ReactNode content slot → renders its function standalone, not flagged.
+    const internal = comp("Toolbar", "composite", 3, ["Button"], { props: [{ name: "label", type: "string", req: false, desc: "" }] });
+    // a `children`-only prop is universal, never a slot-shell signal.
+    const wrapper = comp("Card", "composite", 3, ["Icon"], { props: [{ name: "children", type: "ReactNode", req: false, desc: "" }] });
+    const cats = analyzeGraphHealth([internal, wrapper, comp("Button", "primitive", 9), comp("Icon", "primitive", 9)])
+      .map((f) => f.category);
+    expect(cats).not.toContain("slot-shell");
+  });
+
   it("flags a source-less user spec as no-implementation but never a built-in (#2839)", () => {
     // BUILT-IN: source-less in the store (its artifact `source` is stripped, #2794) but its `src` is a
     // real packaged react-ui component — buildable via the artifact roster, so NOT flagged.
