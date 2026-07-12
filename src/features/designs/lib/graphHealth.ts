@@ -6,16 +6,17 @@
 // Findings, most-severe first: cycle (a `composes` loop) · dangling-branch (an unused root that still
 // pulls in dependencies) · duplicate (same `wraps` intrinsic, or identical source) · no-implementation
 // (a component the preview can't build — a spec, not code) · orphan (isolated, never-referenced
-// primitive/composite) · slot-shell (INFORMATIONAL — a composite whose composed children arrive via
-// ReactNode content slots, so a standalone preview renders a demo placeholder, #2921). "Unused" = no
-// composer AND used === 0; a page/layout with used > 0 is a legit entry point, never flagged.
+// primitive/composite) · unwired-prop (declares props its own source never references — a declared
+// interface that does nothing, #2924) · slot-shell (INFORMATIONAL — a composite whose composed children
+// arrive via ReactNode content slots, so a standalone preview renders a demo placeholder, #2921).
+// "Unused" = no composer AND used === 0; a page/layout with used > 0 is a legit entry point, never flagged.
 //
 // The no-implementation check reuses the EXACT preview logic (`componentPreviewFiles`, #2824/#2828):
 // the store strips a built-in's artifact `source` (#2794), so a built-in still builds from the packaged
 // artifact — only a node in NEITHER the artifact NOR carrying its own module/`source` is flagged.
 import reactUiArtifact from "@data/components/react-ui.json";
 import { buildComposesEdges } from "./compositionLayout";
-import { componentPreviewFiles, type KitArtifact } from "./componentPreview";
+import { componentPreviewFiles, looksBuildableModule, type KitArtifact } from "./componentPreview";
 import type { ComponentRecord, PropSpec } from "./model";
 
 /** Is `p` a CONTENT-SLOT prop — a non-`children` prop typed as a React node? Matches how the preview
@@ -26,15 +27,42 @@ function isNodeSlotProp(p: PropSpec): boolean {
   return p.name !== "children" && (t.includes("reactnode") || t.includes("node"));
 }
 
+/** The component's OWN module source (a user-authored module) — its record `source`, else a `srcText`
+ *  that {@link looksBuildableModule} — or `null` when the source isn't in the record: a built-in (its
+ *  artifact `source` is stripped from the store, #2794) or a spec (no buildable module). Only these have
+ *  a source we can scan for prop references. Mirrors `componentPreviewFiles`'s user-authored source pick. */
+function ownModuleSource(c: ComponentRecord): string | null {
+  if (c.source && c.source.trim()) return c.source;
+  if (looksBuildableModule(c.srcText)) return c.srcText;
+  return null;
+}
+
+/** Does `source` reference `name` as a whole identifier (not a substring of a longer name)? The TS twin of
+ *  the Rust `contains_word` — word chars are `[A-Za-z0-9_]`, kept in lockstep (#2924). */
+function referencesIdentifier(source: string, name: string): boolean {
+  const isWord = (ch: string) => /[A-Za-z0-9_]/.test(ch);
+  let from = 0;
+  for (;;) {
+    const at = source.indexOf(name, from);
+    if (at < 0) return false;
+    const beforeOk = at === 0 || !isWord(source[at - 1]);
+    const afterIdx = at + name.length;
+    const afterOk = afterIdx >= source.length || !isWord(source[afterIdx]);
+    if (beforeOk && afterOk) return true;
+    from = at + 1;
+  }
+}
+
 // The packaged kit artifact (each built-in's verbatim `source` + the `runtime` @/ closure) — the SAME
 // raw import ComponentPreviewFrame builds against. A built-in's `src` resolves here, so it's buildable
 // even though the store strips its `source` (#2794).
 const ARTIFACT = reactUiArtifact as unknown as KitArtifact;
 
 export type HealthCategory =
-  | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "orphan" | "slot-shell";
+  | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "orphan" | "unwired-prop" | "slot-shell";
 
 /** Category → severity (higher = worse); drives ranking + which badge wins on a multi-flagged node.
+ *  `unwired-prop` (2) is a real but mild signal — a declared interface a component never implements.
  *  `slot-shell` is INFORMATIONAL (1, below every defect) — it never overrides a real defect badge, it
  *  just explains why a composite previews as a demo placeholder (#2921). */
 export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
@@ -43,6 +71,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   duplicate: 3,
   "no-implementation": 3,
   orphan: 2,
+  "unwired-prop": 2,
   "slot-shell": 1,
 };
 
@@ -158,6 +187,21 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
       findings.push({ category: "no-implementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
         why: `${c.name} has no buildable implementation — the preview can't render it (a spec, not code)` });
     }
+  }
+
+  // unwired-prop — a component that declares props its own source never references (a declared interface
+  // that does nothing, #2924). Only for a node with its OWN module source (user-authored); a built-in
+  // (source in the artifact) or a spec (no buildable module) is skipped. Guard: require ≥1 prop REFERENCED
+  // (so it clearly uses NAMED props — not a `{...props}` spreader) before flagging the unreferenced ones.
+  for (const c of comps) {
+    const src = ownModuleSource(c);
+    if (!src || c.props.length === 0) continue;
+    const used = new Map(c.props.map((p) => [p.name, referencesIdentifier(src, p.name)]));
+    if (![...used.values()].some(Boolean)) continue; // no named-prop usage confirmed → conservative skip
+    const unwired = c.props.map((p) => p.name).filter((n) => !used.get(n));
+    if (unwired.length === 0) continue;
+    findings.push({ category: "unwired-prop", severity: 2, nodeIds: [c.id], nodeNames: [c.name],
+      why: `${c.name} declares prop${unwired.length === 1 ? "" : "s"} its source never uses: ${unwired.join(", ")} — a declared interface that does nothing` });
   }
 
   // slot-shell (informational) — a composite whose composed children arrive via ReactNode CONTENT SLOTS.
