@@ -98,44 +98,44 @@ describe("pathBetween (undirected BFS)", () => {
 
 describe("implementation tier (#2770)", () => {
   it("implFor / implsForConcept / techsWithImpl resolve per-tech implementations", () => {
-    const ts = implFor(KNOWLEDGE, "merge-sort", "typescript");
-    expect(ts?.id).toBe("merge-sort.ts");
-    // The flagship "builds on" edge — merge-sort.ts composes the merge.ts primitive.
-    expect(ts?.composes).toEqual(["merge.ts"]);
-    expect(implFor(KNOWLEDGE, "merge-sort", "rust")?.composes).toEqual(["merge.rs"]);
+    const rs = implFor(KNOWLEDGE, "merge-sort", "rust");
+    expect(rs?.id).toBe("merge-sort.rs");
+    // The flagship "builds on" edge — merge-sort.rs composes the merge.rs primitive.
+    expect(rs?.composes).toEqual(["merge.rs"]);
+    // The seed is Rust-only (#2760): no TypeScript implementation exists.
+    expect(implFor(KNOWLEDGE, "merge-sort", "typescript")).toBeUndefined();
 
-    // A node with no implementation in a tier returns undefined / empty.
-    expect(implFor(KNOWLEDGE, "array", "typescript")).toBeUndefined();
+    // A node with no implementation in any tier returns undefined / empty.
+    expect(implFor(KNOWLEDGE, "array", "rust")).toBeUndefined();
     expect(implsForConcept(KNOWLEDGE, "array")).toEqual([]);
 
-    expect(implsForConcept(KNOWLEDGE, "merge-sort").map((i) => i.tech).sort()).toEqual(["rust", "typescript"]);
-    expect(techsWithImpl(KNOWLEDGE, "merge-sort")).toEqual(["typescript", "rust"]); // in TECHS order
+    expect(implsForConcept(KNOWLEDGE, "merge-sort").map((i) => i.tech)).toEqual(["rust"]);
+    expect(techsWithImpl(KNOWLEDGE, "merge-sort")).toEqual(["rust"]);
     expect(techsWithImpl(KNOWLEDGE, "array")).toEqual([]);
   });
 
   it("implById resolves an id and misses cleanly", () => {
     expect(implById(KNOWLEDGE, "bfs.rs")?.tech).toBe("rust");
-    expect(implById(KNOWLEDGE, "nope.ts")).toBeUndefined();
+    expect(implById(KNOWLEDGE, "nope.rs")).toBeUndefined();
   });
 
   it("usedByImpl is the reverse of composes", () => {
-    expect(usedByImpl(KNOWLEDGE, "merge.ts").map((i) => i.id)).toEqual(["merge-sort.ts"]);
     expect(usedByImpl(KNOWLEDGE, "merge.rs").map((i) => i.id)).toEqual(["merge-sort.rs"]);
     // A top-level impl no one composes has no reverse edges.
-    expect(usedByImpl(KNOWLEDGE, "merge-sort.ts")).toEqual([]);
+    expect(usedByImpl(KNOWLEDGE, "merge-sort.rs")).toEqual([]);
   });
 
   it("seed integrity: unique ids, real concept targets, canonical id, same-tech composes", () => {
     const nodeIds = new Set(KNOWLEDGE.nodes.map((n) => n.id));
     const implIds = new Set(KNOWLEDGE.implementations.map((i) => i.id));
     expect(implIds.size).toBe(KNOWLEDGE.implementations.length); // ids are unique
-    expect(KNOWLEDGE.implementations.length).toBeGreaterThanOrEqual(32);
+    expect(KNOWLEDGE.implementations.length).toBeGreaterThanOrEqual(16);
     for (const im of KNOWLEDGE.implementations) {
       expect(["primitive", "algorithm"]).toContain(im.role); // #2863 language-kit tier
       expect(TECHS).toContain(im.tech);
       expect(im.code.trim().length).toBeGreaterThan(0);
       // A concept-bearing impl targets a REAL node + follows the id convention; a free-standing
-      // primitive (#2863, e.g. `ts.array`) has no concept and its own id.
+      // primitive (#2863, e.g. `rust.iterator`) has no concept and its own id.
       if (im.concept) {
         expect(nodeIds.has(im.concept)).toBe(true);
         expect(im.id).toBe(`${im.concept}.${TECH_META[im.tech].ext}`);
@@ -147,21 +147,16 @@ describe("implementation tier (#2770)", () => {
     }
   });
 
-  it("every algorithm-kind concept carries BOTH a TypeScript and a Rust fundamental (#2783)", () => {
+  it("every algorithm-kind concept carries a Rust fundamental (#2760 — Rust-only seed)", () => {
     const algos = KNOWLEDGE.nodes.filter((n) => n.kind === "algorithm");
-    // The seeded fundamentals: 16 algorithm nodes × 2 techs = 32 implementations.
+    // The seeded fundamentals: 16 algorithm nodes, each with one real Rust implementation.
     expect(algos.length).toBe(16);
     for (const node of algos) {
-      const ts = implFor(KNOWLEDGE, node.id, "typescript");
       const rs = implFor(KNOWLEDGE, node.id, "rust");
-      expect(ts, `${node.id} is missing its TypeScript fundamental`).toBeDefined();
       expect(rs, `${node.id} is missing its Rust fundamental`).toBeDefined();
+      // The seed is Rust-only — no TypeScript fundamentals remain.
+      expect(implFor(KNOWLEDGE, node.id, "typescript")).toBeUndefined();
       // Each fundamental's `composes` ids resolve to REAL impls of the SAME tech.
-      for (const c of ts!.composes) {
-        const dep = implById(KNOWLEDGE, c);
-        expect(dep, `${ts!.id} composes a missing impl ${c}`).toBeDefined();
-        expect(dep!.tech).toBe("typescript");
-      }
       for (const c of rs!.composes) {
         const dep = implById(KNOWLEDGE, c);
         expect(dep, `${rs!.id} composes a missing impl ${c}`).toBeDefined();
@@ -179,65 +174,65 @@ describe("implementation tier (#2770)", () => {
 
 describe("language kits (#2863) — a kit is every impl of one tech, grouped by role", () => {
   it("kitTechs lists the seeded languages, TECHS-ordered", () => {
-    expect(kitTechs(KNOWLEDGE)).toEqual(["typescript", "rust"]);
+    expect(kitTechs(KNOWLEDGE)).toEqual(["rust"]); // Rust-only seed (#2760)
   });
 
   it("kitImpls scopes to one language; kitImplsByRole splits primitives from algorithms", () => {
-    const ts = kitImpls(KNOWLEDGE, "typescript");
-    expect(ts.length).toBeGreaterThan(0);
-    expect(ts.every((im) => im.tech === "typescript")).toBe(true);
-    const prims = kitImplsByRole(KNOWLEDGE, "typescript", "primitive");
-    const algos = kitImplsByRole(KNOWLEDGE, "typescript", "algorithm");
-    expect(prims.map((im) => im.id)).toContain("ts.array"); // a free-standing primitive
-    expect(prims.map((im) => im.id)).toContain("merge.ts"); // a building-block primitive
-    expect(algos.map((im) => im.id)).toContain("merge-sort.ts"); // an algorithm
-    expect(prims.length + algos.length).toBe(ts.length);
+    const rs = kitImpls(KNOWLEDGE, "rust");
+    expect(rs.length).toBeGreaterThan(0);
+    expect(rs.every((im) => im.tech === "rust")).toBe(true);
+    const prims = kitImplsByRole(KNOWLEDGE, "rust", "primitive");
+    const algos = kitImplsByRole(KNOWLEDGE, "rust", "algorithm");
+    expect(prims.map((im) => im.id)).toContain("rust.iterator"); // a free-standing primitive
+    expect(prims.map((im) => im.id)).toContain("merge.rs"); // a building-block primitive
+    expect(algos.map((im) => im.id)).toContain("merge-sort.rs"); // an algorithm
+    expect(prims.length + algos.length).toBe(rs.length);
   });
 
   it("pairsOf resolves a primitive's paired counterparts (same tech)", () => {
-    const array = implById(KNOWLEDGE, "ts.array")!;
-    expect(array.role).toBe("primitive");
-    expect(array.concept).toBeUndefined(); // free-standing
-    const paired = pairsOf(KNOWLEDGE, array).map((im) => im.id);
-    expect(paired).toContain("merge-sort.ts");
-    expect(paired.every((id) => id.endsWith(".ts"))).toBe(true); // same-tech
+    const iterator = implById(KNOWLEDGE, "rust.iterator")!;
+    expect(iterator.role).toBe("primitive");
+    expect(iterator.concept).toBeUndefined(); // free-standing
+    const paired = pairsOf(KNOWLEDGE, iterator).map((im) => im.id);
+    expect(paired).toContain("merge-sort.rs");
+    expect(paired.every((id) => id.endsWith(".rs"))).toBe(true); // same-tech
   });
 
   it("groupImplsByLanguage makes one folder per language, primitives before algorithms (the rail tree)", () => {
     const groups = groupImplsByLanguage(KNOWLEDGE);
     // One folder per language kit, in kitTechs order.
     expect(groups.map((g) => g.tech)).toEqual(kitTechs(KNOWLEDGE));
-    const ts = groups.find((g) => g.tech === "typescript")!;
-    expect(ts.label).toBe("TypeScript");
-    expect(ts.key).toBe("lang:typescript");
-    expect(ts.dot).toBe("var(--info)"); // the per-language folder-head color (#2902)
+    const rs = groups.find((g) => g.tech === "rust")!;
+    expect(rs.label).toBe("Rust");
+    expect(rs.key).toBe("lang:rust");
+    expect(rs.dot).toBe("var(--state-wait)"); // the per-language folder-head color (#2902)
     // Every impl in the folder is that language's, and every primitive precedes every algorithm.
-    expect(ts.impls.every((im) => im.tech === "typescript")).toBe(true);
-    const firstAlgo = ts.impls.findIndex((im) => im.role === "algorithm");
-    const lastPrim = ts.impls.map((im) => im.role).lastIndexOf("primitive");
+    expect(rs.impls.every((im) => im.tech === "rust")).toBe(true);
+    const firstAlgo = rs.impls.findIndex((im) => im.role === "algorithm");
+    const lastPrim = rs.impls.map((im) => im.role).lastIndexOf("primitive");
     expect(lastPrim).toBeLessThan(firstAlgo);
-    expect(ts.impls.map((im) => im.id)).toContain("ts.array"); // a primitive
-    expect(ts.impls.map((im) => im.id)).toContain("merge-sort.ts"); // an algorithm
+    expect(rs.impls.map((im) => im.id)).toContain("rust.iterator"); // a primitive
+    expect(rs.impls.map((im) => im.id)).toContain("merge-sort.rs"); // an algorithm
   });
 
   it("kitGraph builds a kit's own impl graph — nodes are that tech's impls, wired by composes + pairs", () => {
-    const kg = kitGraph(KNOWLEDGE, "typescript");
-    // Nodes are exactly the TypeScript kit's impls.
-    expect(kg.nodes).toEqual(kitImpls(KNOWLEDGE, "typescript"));
-    expect(kg.nodes.every((n) => n.tech === "typescript")).toBe(true);
-    // The builds-on edge (merge-sort.ts composes merge.ts) is present as a `composes` edge…
-    expect(kg.edges).toContainEqual({ from: "merge-sort.ts", to: "merge.ts", rel: "composes" });
-    // …and the free-standing primitive's pair (ts.array ↔ merge-sort.ts) as ONE `pairs` edge.
-    const arrayPairs = kg.edges.filter((e) => e.rel === "pairs" && (e.from === "ts.array" || e.to === "ts.array"));
-    expect(arrayPairs.some((e) => e.from === "merge-sort.ts" || e.to === "merge-sort.ts")).toBe(true);
+    const kg = kitGraph(KNOWLEDGE, "rust");
+    // Nodes are exactly the Rust kit's impls.
+    expect(kg.nodes).toEqual(kitImpls(KNOWLEDGE, "rust"));
+    expect(kg.nodes.every((n) => n.tech === "rust")).toBe(true);
+    // The builds-on edge (merge-sort.rs composes merge.rs) is present as a `composes` edge…
+    expect(kg.edges).toContainEqual({ from: "merge-sort.rs", to: "merge.rs", rel: "composes" });
+    // …and the free-standing primitive's pair (rust.iterator ↔ merge-sort.rs) as ONE `pairs` edge.
+    const iterPairs = kg.edges.filter((e) => e.rel === "pairs" && (e.from === "rust.iterator" || e.to === "rust.iterator"));
+    expect(iterPairs.some((e) => e.from === "merge-sort.rs" || e.to === "merge-sort.rs")).toBe(true);
     // Every edge endpoint is an in-kit impl id (never a concept id or a cross-tech impl).
     const ids = new Set(kg.nodes.map((n) => n.id));
     expect(kg.edges.every((e) => ids.has(e.from) && ids.has(e.to))).toBe(true);
   });
 
   it("kitGraph lifts the ontology's non-composes relationships onto the concrete impls", () => {
-    const kg = kitGraph(KNOWLEDGE, "typescript");
-    const implOf = (concept: string) => implFor(KNOWLEDGE, concept, "typescript")?.id;
+    const kg = kitGraph(KNOWLEDGE, "rust");
+    const implOf = (concept: string) => implFor(KNOWLEDGE, concept, "rust")?.id;
     // Find an ontology edge whose rel isn't `composes` and whose BOTH endpoints have a TS impl…
     const lift = KNOWLEDGE.edges.find((e) => e.rel !== "composes" && implOf(e.from) && implOf(e.to) && implOf(e.from) !== implOf(e.to));
     if (lift) {
@@ -250,12 +245,12 @@ describe("language kits (#2863) — a kit is every impl of one tech, grouped by 
   });
 
   it("layoutKitGraph columns primitives at the base and algorithms deepening right (compose depth)", () => {
-    const kg = kitGraph(KNOWLEDGE, "typescript");
+    const kg = kitGraph(KNOWLEDGE, "rust");
     const l = layoutKitGraph(kg);
     expect([...l.pos.keys()].sort()).toEqual(kg.nodes.map((n) => n.id).sort());
     const x = (id: string) => l.pos.get(id)!.x;
-    // A primitive (merge.ts) sits strictly left of the algorithm that composes it (merge-sort.ts).
-    expect(x("merge.ts")).toBeLessThan(x("merge-sort.ts"));
+    // A primitive (merge.rs) sits strictly left of the algorithm that composes it (merge-sort.rs).
+    expect(x("merge.rs")).toBeLessThan(x("merge-sort.rs"));
     expect(l.world.w).toBeGreaterThan(0);
     expect(l.world.h).toBeGreaterThan(0);
   });
