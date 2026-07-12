@@ -125,7 +125,11 @@ export interface ComponentSrcDocOptions {
 export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOptions = {}): string {
   const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "" } = opts;
   return `<!doctype html><html data-theme="${theme}"><head><meta charset="utf-8" />
-<style>html,body,#root{margin:0;min-height:100%;box-sizing:border-box}*,*::before,*::after{box-sizing:inherit}</style>
+<style>html,body,#root{margin:0;height:100%;box-sizing:border-box}#root{overflow:auto}*,*::before,*::after{box-sizing:inherit}
+/* Fit oversized preview media (d3 charts/graphs, images) within the frame rather than overflowing it (#2915).
+   Aspect-preserving on replaced/viewBox elements; the definite height chain above lets max-height:100% resolve.
+   Fluid (width:100%) components are unaffected — the caps only bite oversized fixed-dimension media. */
+#root svg,#root canvas,#root img,#root video{max-width:100%;max-height:100%}</style>
 <style>${injectedCss}</style>
 <script type="importmap">${JSON.stringify({ imports: importmap })}</script>
 </head><body><div id="root"${rootClass ? ` class="${rootClass}"` : ""}></div>
