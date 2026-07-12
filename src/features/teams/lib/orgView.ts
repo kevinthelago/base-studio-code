@@ -7,7 +7,9 @@ import type { Persona } from "@/features/personas";
 import { archetypeById, deriveCommunication, type CommunicationForm, type Team, type Position } from "./team";
 
 /** Per-role display metadata — the department bucket (left-rail grouping) + a glyph. Presentation-only
- *  (the role gate itself carries no glyph); a role not listed falls back to a neutral default. */
+ *  (the role gate itself carries no glyph); a role not listed falls back to a neutral default.
+ *  Intentionally inline: a view-layer glyph/label map, not seed library state — kept here by design
+ *  rather than externalized to `data/` (reviewed in #2912; config-vs-presentation golden rule). */
 export const ROLE_META: Record<string, { dept: string; glyph: string }> = {
   planner:    { dept: "Leadership",  glyph: "◆" },
   director:   { dept: "Leadership",  glyph: "◆" },
