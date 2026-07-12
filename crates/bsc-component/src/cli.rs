@@ -369,14 +369,42 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // (the shared store CLI rejects unknown flags); a plain `list` still delegates unchanged.
         Some("list") if args.iter().any(|a| a == "--shape") => cmd_list_shape(&args[1..]),
         // The COMPONENT collection's list/get/set/remove. Fire the live-focus `ui-touch` (#2525) after
-        // a component set/remove write lands, with the "component" collection context.
-        _ => bsc_json_store::cli::run_hooked(
+        // a component set/remove write lands, with the "component" collection context. A `set` batch is
+        // gated first by `validate_component_batch` (#2928) — a module `srcText` that won't build (an
+        // unterminated string) is rejected before anything is written.
+        _ => bsc_json_store::cli::run_hooked_validated(
             args,
             prog,
             &COMPONENT_SPEC,
             Some(&|id: &str| bsc_util::emit_ui_activity("component", id)),
+            Some(&validate_component_batch),
         ),
     }
+}
+
+/// Write-time gate for a `bsc ui set` batch (#2928): for each record whose `srcText` claims to be a
+/// module (`looks_buildable_module`, the SAME test the preview uses), run the module-syntax check and
+/// reject the whole batch on the first defect — so a silently-corrupted source (an unterminated string
+/// from an escape-collapse) can't be stored. A usage-snippet `srcText` is not a module and is left
+/// alone; a record with no `srcText` is fine. Pure — driven directly by tests.
+fn validate_component_batch(items: &[serde_json::Value]) -> Result<(), String> {
+    for item in items {
+        let src_text = item.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if !crate::graph_health::looks_buildable_module(src_text) {
+            continue;
+        }
+        if let Err(msg) = crate::syntax::check_module_syntax(src_text) {
+            let name = item
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .or_else(|| item.get("id").and_then(serde_json::Value::as_str))
+                .unwrap_or("component");
+            return Err(format!(
+                "{name}: {msg} — its srcText looks like a module but won't build. Fix it, or author it from a raw file to avoid shell-escaping corruption."
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Resolve the COMPONENT store with the same flag → env (`BSC_COMPONENT_DIR`) → default
@@ -1027,6 +1055,28 @@ fn cmd_remove_animation(args: &[String]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validate_component_batch_rejects_a_corrupt_module_srctext_but_passes_valid_ones() {
+        // A module srcText corrupted by an escape-collapse (a `\n` turned into a real newline inside a
+        // `.join("…")` string) → rejected, naming the component.
+        let corrupt = serde_json::json!({
+            "id": "bar", "name": "BarChart",
+            "srcText": "export const s = [1,2].join(\"\n\");",
+        });
+        let err = validate_component_batch(std::slice::from_ref(&corrupt)).unwrap_err();
+        assert!(err.contains("BarChart"), "names the component; got: {err}");
+        assert!(err.contains("unterminated string literal"), "got: {err}");
+
+        // A valid module, a usage-snippet srcText (not a module → not gated), and a record with no
+        // srcText all pass — the whole batch is accepted.
+        let ok_batch = vec![
+            serde_json::json!({ "id": "a", "name": "A", "srcText": "export function A(){ return null; }" }),
+            serde_json::json!({ "id": "b", "name": "B", "srcText": "import { B } from \"@/x\";\n<B label={…} />" }),
+            serde_json::json!({ "id": "c", "name": "C" }),
+        ];
+        assert!(validate_component_batch(&ok_batch).is_ok());
+    }
 
     /// Serializes the tests that mutate the process-wide `$BSC_SCOPES` / `$BSC_UI_ACTIVITY_LOG` env
     /// (the scope-gate test and the #2525 emit test): parallel threads share the process env, so an

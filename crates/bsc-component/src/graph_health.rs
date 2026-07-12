@@ -193,8 +193,9 @@ fn is_buildable(node: &Node, buildable: &BTreeSet<String>) -> bool {
 /// self-contained, buildable component MODULE rather than the usual usage snippet? Conservative — it
 /// must declare an `export`, contain no `…` usage-snippet placeholder, and use no `@/` first-party
 /// import (which has no dependency closure to resolve against here). MUST stay in lockstep with the TS
-/// twin — both gate the SAME preview build.
-fn looks_buildable_module(src_text: &str) -> bool {
+/// twin — both gate the SAME preview build. Crate-visible so the write-time syntax gate (#2928) reuses
+/// the SAME "is this a module?" test to decide whether to syntax-check a `srcText`.
+pub(crate) fn looks_buildable_module(src_text: &str) -> bool {
     let s = src_text.trim();
     !s.is_empty()
         && contains_word(s, "export") // an export for the bootstrap to import + mount
