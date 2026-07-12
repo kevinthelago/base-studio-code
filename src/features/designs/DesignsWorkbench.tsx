@@ -412,6 +412,7 @@ const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string }> = {
   "dangling-branch": { glyph: "⚠", label: "unused branch (nothing composes it, used = 0)" },
   duplicate: { glyph: "⧉", label: "duplicate (same intrinsic / identical source)" },
   "no-implementation": { glyph: "∅", label: "no buildable implementation — a spec, not code" },
+  "unresolvable-import": { glyph: "↯", label: "imports a package the preview can't resolve — throws at preview time" },
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
   "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
   "slot-shell": { glyph: "▤", label: "slot shell — previews a demo placeholder; fill its content slots to see its real function" },
