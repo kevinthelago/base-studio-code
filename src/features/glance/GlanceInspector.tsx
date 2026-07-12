@@ -12,7 +12,7 @@ import { IconButton } from "@/shared/ui/controls/IconButton";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { StatTile } from "@/shared/ui/data/StatTile";
-import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, type GraphModel, type GNode, type GEdge } from "./lib/glanceGraph";
+import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, KIT_COLOR, kitIdOfNode, type GraphModel, type GNode, type GEdge } from "./lib/glanceGraph";
 import { archetypeById, formById, hueColor } from "@/features/teams";
 
 const FAULT_COLOR = "var(--graph-health-error)";
@@ -69,6 +69,47 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
   if (selType === "node" && selId) {
     const n = model.nodes.find((x) => x.id === selId);
     if (!n) return null;
+
+    // A UI-KIT node (#2571): the kit id + the projects that CONSUME it (the edges into the kit), each
+    // clickable to hop to that project. A kit has no health/activity/role of its own, so the project
+    // tiles are replaced by a kit-scoped panel.
+    if (n.kind === "kit") {
+      const consumers = model.edges.filter((e) => e.to === n.id);
+      return (
+        <Box style={PANEL}>
+          <Header title="UI KIT" onClose={onClose} />
+          <Box style={{ flex: 1, overflowY: "auto", padding: "18px 16px" }}>
+            <Text as="div" mono size={19} weight={700} style={{ letterSpacing: "-.4px" }}>{n.slug}</Text>
+            <Text as="div" mono size={11} tone="dim" style={{ marginTop: 4 }}>{kitIdOfNode(n.id)}</Text>
+
+            <Grid cols={2} gap={8} style={{ marginTop: 16 }}>
+              <StatTile k="KIND" v={
+                <Row gap={7} align="center">
+                  <Text as="span" style={{ color: KIT_COLOR, flex: "none" }}>◆</Text>
+                  <Text as="span" mono size={12.5} weight={500} style={{ color: KIT_COLOR }}>ui kit</Text>
+                </Row>
+              } />
+              <StatTile k="CONSUMERS" v={
+                <Text as="span" mono size={12.5} weight={500} tone="muted">{consumers.length} project{consumers.length === 1 ? "" : "s"}</Text>
+              } />
+            </Grid>
+
+            <Row gap={9} align="start" style={{ marginTop: 14, background: `color-mix(in oklch, ${KIT_COLOR} 8%, transparent)`, border: `1px solid color-mix(in oklch, ${KIT_COLOR} 30%, transparent)`, borderRadius: 8, padding: "10px 12px" }}>
+              <Text as="span" style={{ color: KIT_COLOR, flex: "none" }}>◆</Text>
+              <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: "var(--fg-muted)" }}>A shared <code>bsc ui</code> kit. Every project below consumes it — a design-system dependency, so a breaking kit change fans out to them all.</Text>
+            </Row>
+
+            {LABEL("CONSUMED BY")}
+            {consumers.length === 0 ? <Text as="div" mono size={11} tone="dim">— no consumers</Text>
+              : consumers.map((e) => {
+                  const consumer = model.nodes.find((x) => x.id === e.from);
+                  return consumer ? <DepRow key={e.id} node={consumer} kind="uses kit" color={KIT_COLOR} onClick={() => onSelectNode(e.from)} /> : null;
+                })}
+          </Box>
+        </Box>
+      );
+    }
+
     const health = HEALTH_META[n.rollupHealth];   // axis 1 — rolled-up health (dot colour)
     const activity = ACTIVITY_META[n.activity];   // axis 2 — the lifecycle word
     const faults = n.faults ?? 0;
