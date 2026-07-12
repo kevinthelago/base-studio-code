@@ -99,8 +99,21 @@ function sampleString(name: string): string {
   if (/login|user|author/i.test(name)) return "octocat";
   return prettyName(name);
 }
-/** A number sample — a 0–1 fraction for ratio-ish props, else a small integer. */
+/** A number sample (as a JS source expression, evaluated in the preview iframe). CANVAS-dimension props
+ *  (width/height/size) sample with the actual preview FRAME size (`window.innerWidth`/`innerHeight`) so a
+ *  sized component — a d3 chart/graph — fills the frame at its orientation instead of the old 3px
+ *  placeholder that rendered it as a tiny sample (#2918). STYLE dimensions (stroke/border/font/line
+ *  width, gaps, spacing) are guarded out — they are not canvas sizes and must stay small. Everything else
+ *  keeps the prior behavior: a 0–1 fraction for ratio-ish names, else a small integer. */
 function numberSample(name: string): string {
+  const n = name.toLowerCase();
+  // Exclude style dimensions so `strokeWidth`/`borderWidth`/`fontSize`/… never become the viewport size.
+  const styleDim = /stroke|border|font|line|gap|margin|pad|spacing|weight|gutter|inset|offset/.test(n);
+  if (!styleDim) {
+    if (n === "w" || n === "width" || n.endsWith("width")) return "window.innerWidth";
+    if (n === "h" || n === "height" || n.endsWith("height")) return "window.innerHeight";
+    if (n === "size" || n === "extent") return "Math.min(window.innerWidth, window.innerHeight)";
+  }
   return /value|fraction|ratio|progress|percent|opacity/i.test(name) ? "0.6" : "3";
 }
 

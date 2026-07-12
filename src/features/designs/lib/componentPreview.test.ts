@@ -128,4 +128,25 @@ describe("samplePropValue (#2824)", () => {
     expect(samplePropValue(prop("tone", '"neutral" | "danger"'))).toBe('"neutral"');
     expect(samplePropValue(prop("color", "string"))).toBe('"var(--accent)"');
   });
+
+  it("samples canvas-dimension props with the frame size so a sized component fills the frame (#2918)", () => {
+    // width/height/size drive a component's rendered size → the actual iframe viewport, not a 3px stub.
+    expect(samplePropValue(prop("width", "number"))).toBe("window.innerWidth");
+    expect(samplePropValue(prop("chartWidth", "number"))).toBe("window.innerWidth");
+    expect(samplePropValue(prop("w", "number"))).toBe("window.innerWidth");
+    expect(samplePropValue(prop("height", "number"))).toBe("window.innerHeight");
+    expect(samplePropValue(prop("svgHeight", "number"))).toBe("window.innerHeight");
+    expect(samplePropValue(prop("h", "number"))).toBe("window.innerHeight");
+    expect(samplePropValue(prop("size", "number"))).toBe("Math.min(window.innerWidth, window.innerHeight)");
+  });
+
+  it("keeps STYLE dimensions and non-dimension numbers small (not the viewport) (#2918)", () => {
+    // strokeWidth/borderWidth/fontSize are style sizes, not canvas sizes — they must stay small.
+    expect(samplePropValue(prop("strokeWidth", "number"))).toBe("3");
+    expect(samplePropValue(prop("borderWidth", "number"))).toBe("3");
+    expect(samplePropValue(prop("fontSize", "number"))).toBe("3");
+    expect(samplePropValue(prop("lineWidth", "number"))).toBe("3");
+    // a plain count is unchanged
+    expect(samplePropValue(prop("columns", "number"))).toBe("3");
+  });
 });
