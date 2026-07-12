@@ -19,3 +19,6 @@ bsc-util = { path = "../bsc-util" }
 bsc-cli-util = { path = "../bsc-cli-util" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Embed the packaged built-in studios (src-tauri/data/studios/*.json, #2894) into the binary — the same
+# `include_dir!` pattern skilldb uses for its packaged skills, so `bsc studio list/get/apply` see built-ins.
+include_dir = "0.7"

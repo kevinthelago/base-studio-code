@@ -12,8 +12,10 @@ import { useAppStore } from "@/store";
 import { bsc, bscJson, bscWrite } from "@/shared/lib/core/bsc";
 import { exportStudioToGist, importStudioFromGist, type Studio } from "@/features/studio";
 
-/** One saved studio's headline metadata — the shape `bsc studio list` returns (not the full snapshot). */
-type StudioMeta = { id: string; name: string; description?: string };
+/** One studio's headline metadata — the shape `bsc studio list` returns (not the full snapshot).
+ *  `builtin` marks a packaged preset (#2894, e.g. Web App Dev) — applied like any studio, but shipped
+ *  and read-only (a same-named save just shadows it in the user store). */
+type StudioMeta = { id: string; name: string; description?: string; builtin?: boolean };
 
 // Save / share **Studios** (#2889) — a Studio is a self-contained snapshot of the app's library state
 // (teams · personas · components · kits · variants · themes · blueprints). This card saves the current
@@ -150,7 +152,15 @@ export function StudioCard() {
               borderTop: i === 0 ? undefined : "1px solid var(--border-soft)",
             }}>
               <Box style={{ minWidth: 0 }}>
-                <Text as="div" size={11.5} weight={600} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</Text>
+                <Row gap={6} style={{ alignItems: "center", minWidth: 0 }}>
+                  <Text as="div" size={11.5} weight={600} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</Text>
+                  {s.builtin && (
+                    <Text as="span" mono size={9} tone="muted" style={{
+                      flexShrink: 0, padding: "1px 6px", borderRadius: 5, textTransform: "uppercase", letterSpacing: ".04em",
+                      border: "1px solid var(--border-soft)", background: "var(--bg-elev, var(--bg-soft))",
+                    }}>built-in</Text>
+                  )}
+                </Row>
                 {s.description && <Text as="div" tone="dim" size={10.5}>{s.description}</Text>}
               </Box>
               <Row gap={6} style={{ flexShrink: 0 }}>
