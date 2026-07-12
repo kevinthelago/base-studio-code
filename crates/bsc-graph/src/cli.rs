@@ -101,47 +101,31 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             let b = positional.get(2).ok_or("usage: bsc graph path <a> <b>")?;
             emit(&serde_json::json!({ "from": a, "to": b, "path": crate::path(a, b) }))
         }
-        // `extract <dir> [--tech typescript|rust]` — parse real code (#2775, Phase 2), extract
-        // function definitions, and map each onto a seed concept. `matched` = fns with a concept,
-        // `unmatched` = fns without, `duplicates` = concepts implemented at more than one site,
-        // `calls` = concept→concept call edges lifted from real code (#2779).
-        "extract" => {
+        // `harvest <dir> [--tech typescript|rust]` — the extract-to-harvest feeder (#2745): parse a
+        // project's real code and lift each function into a CANDIDATE library implementation
+        // (id/name/tech/concept?/role/composes/code) for review. Emits candidates ONLY — storing them
+        // into the library is the curation gate, never here.
+        "harvest" => {
             let dir = positional
                 .get(1)
-                .ok_or("usage: bsc graph extract <dir> [--tech typescript|rust]")?;
+                .ok_or("usage: bsc graph harvest <dir> [--tech typescript|rust]")?;
             let tech = flag_value(&args, "--tech");
-            let fns: Vec<crate::extract::ExtractedFn> = crate::extract::extract_dir(std::path::Path::new(dir))
-                .into_iter()
-                .filter(|f| tech.as_deref().is_none_or(|t| f.tech == t))
-                .collect();
-            let matched: Vec<Value> = fns
-                .iter()
-                .filter(|f| f.concept.is_some())
-                .map(|f| serde_json::json!({ "concept": f.concept, "tech": f.tech, "name": f.name, "file": f.file, "line": f.line }))
-                .collect();
-            let unmatched: Vec<Value> = fns
-                .iter()
-                .filter(|f| f.concept.is_none())
-                .map(|f| serde_json::json!({ "name": f.name, "tech": f.tech, "file": f.file, "line": f.line }))
-                .collect();
-            let duplicates: Vec<Value> = crate::extract::dedup(&fns)
-                .into_iter()
-                .map(|(concept, sites)| {
-                    let sites: Vec<Value> = sites
-                        .iter()
-                        .map(|s| serde_json::json!({ "tech": s.tech, "file": s.file, "line": s.line }))
-                        .collect();
-                    serde_json::json!({ "concept": concept, "count": sites.len(), "sites": sites })
-                })
-                .collect();
-            // Concept→concept call edges lifted from real code (#2779) — a caller function that maps
-            // onto a concept invoking a callee that maps onto a concept. Tech-filtered like the fns.
-            let calls: Vec<Value> = crate::extract::extract_calls(std::path::Path::new(dir))
+            let candidates: Vec<Value> = crate::extract::harvest(std::path::Path::new(dir))
                 .into_iter()
                 .filter(|c| tech.as_deref().is_none_or(|t| c.tech == t))
-                .map(|c| serde_json::json!({ "from": c.from, "to": c.to, "tech": c.tech }))
+                .map(|c| {
+                    serde_json::json!({
+                        "id": c.id,
+                        "name": c.name,
+                        "tech": c.tech,
+                        "concept": c.concept,
+                        "role": c.role,
+                        "composes": c.composes,
+                        "code": c.code,
+                    })
+                })
                 .collect();
-            emit(&serde_json::json!({ "matched": matched, "unmatched": unmatched, "duplicates": duplicates, "calls": calls }))
+            emit(&serde_json::json!({ "candidates": candidates, "count": candidates.len() }))
         }
         // ── curate the graph (#2853) — load → mutate → save; a read after reflects the write ──
         // `set --id <id> --kind <k> --name <n> [--summary <s>] [--tags a,b] [--complexity <c>]` — upsert a node.
@@ -200,7 +184,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             print!("{}", help(prog));
             Ok(())
         }
-        other => Err(format!("unknown graph command '{other}' — read: list | neighbors <id> | path <a> <b> | impl <concept> --tech <t> | impl list | dump | extract <dir>; write: set | link | unlink | remove | impl set | impl remove\n\n{}", help(prog))),
+        other => Err(format!("unknown graph command '{other}' — read: list | neighbors <id> | path <a> <b> | impl <concept> --tech <t> | impl list | dump | harvest <dir>; write: set | link | unlink | remove | impl set | impl remove\n\n{}", help(prog))),
     }
 }
 
@@ -232,7 +216,7 @@ fn help(prog: &str) -> String {
          {prog} impl <concept> --tech <t> [--pretty]    # the concept's per-tech implementation (#2770), or null\n  \
          {prog} impl list [--tech <t>] [--role r]       # a language kit's implementations (#2863)\n  \
          {prog} dump [--pretty]                         # the whole graph document (nodes + edges + implementations)\n  \
-         {prog} extract <dir> [--tech T] [--pretty]     # parse real code (#2775): matched/unmatched fns + concept duplicates + call edges (#2779)\n\n\
+         {prog} harvest <dir> [--tech T] [--pretty]     # harvest a project's functions into candidate library implementations (#2745)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
          {prog} set --id <id> --kind <kind> --name <name> [--summary <s>] [--tags a,b] [--complexity <c>]   # upsert a node\n  \
          {prog} link <from> <to> --rel <rel>            # add a relationship edge (both nodes must exist)\n  \
@@ -244,6 +228,6 @@ fn help(prog: &str) -> String {
          Implementation roles (#2863): primitive (a language building block, free-standing) · algorithm (composes primitives up).\n\
          Relationships: operates-on · composes · variant-of · generates · related-to.\n\
          Implementation techs (#2770): typescript · rust — each `implements` a concept and `composes` other same-tech impls.\n\
-         The graph is the curated ontology (Graph 1) + the per-tech implementation tier; Phase 2 (#2745/#2775) adds the extracted-from-code `implements` join.\n",
+         The graph is the curated ontology + the per-tech implementation tier; `harvest` (#2745) mines a project's real code into candidate implementations for the library.\n",
     )
 }
