@@ -64,7 +64,7 @@ export type ImplRole = "primitive" | "algorithm";
  * `pairs` with its algorithm counterparts (a Java `Stream` pairs a sort/search). `id` is `<name>.<ext>`.
  */
 export interface AlgoImpl {
-  /** `<name>.<ext>` — e.g. "merge-sort.ts", "java.stream". */
+  /** `<name>.<ext>` — e.g. "merge-sort.rs", "java.stream". */
   id: string;
   /** The concept this realizes — a real node id. OPTIONAL (#2863): a free-standing PRIMITIVE (a pure
    *  language building block) has no concept. */
@@ -255,7 +255,7 @@ export function implFor(graph: KnowledgeGraph, conceptId: string, tech: Tech): A
   return graph.implementations.find((im) => im.concept === conceptId && im.tech === tech);
 }
 
-/** An implementation by its id (e.g. "merge-sort.ts"), or `undefined`. */
+/** An implementation by its id (e.g. "merge-sort.rs"), or `undefined`. */
 export function implById(graph: KnowledgeGraph, id: string): AlgoImpl | undefined {
   return graph.implementations.find((im) => im.id === id);
 }
