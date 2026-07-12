@@ -48,6 +48,7 @@ import { useComponentScan } from "./lib/useComponentScan";
 import { groupKits } from "./lib/kitGroups";
 import { ComponentPreviewFrame } from "./ComponentPreviewFrame";
 import { ThemesMenu } from "./ThemesMenu";
+import { AnimationsMenu } from "./AnimationsMenu";
 import { PaletteStrip } from "./PaletteStrip";
 import { DEFAULT_THEME } from "@/shared/ui/kit";
 
@@ -101,6 +102,10 @@ export function DesignsWorkbench() {
   // preview over the graph, where the selected component is the vehicle for viewing each theme. The
   // left rail keeps navigating components while it's open; "← Back to graph" closes it.
   const [previewMode, setPreviewMode] = useState(false);
+  // Preview-mode right-pane axis (#2942): try on the palette (Themes) or the kit's MOTION (Animations).
+  const [rightAxis, setRightAxis] = useState<"themes" | "animations">("themes");
+  // The kit animation PLAYED on the vehicle — the motion try-on (#2942), or null.
+  const [tryAnim, setTryAnim] = useState<string | null>(null);
   // Live-focus (#2525): the designer session is ALWAYS mounted (#2597), so poll its activity stream
   // for the whole Design Studio lifecycle; clear the focus when the studio unmounts.
   useUiActivity(true);
@@ -114,6 +119,12 @@ export function DesignsWorkbench() {
 
   const match = (c: ComponentRecord) => matchesQuery(c, query);
   const kit = kits.find((k) => k.id === kitId) ?? kits[0];
+  // The resolved try-on motion def (#2942) — the selected kit animation, kit-scoped for the vehicle.
+  const tryAnimDef = useMemo(() => {
+    if (!tryAnim || !kit) return null;
+    const a = (kit.animations ?? []).find((x) => x.name === tryAnim);
+    return a ? { ...a, kit: kit.id } : null;
+  }, [tryAnim, kit]);
   const kitComps = useMemo(() => components.filter((c) => c.kitId === kitId), [components, kitId]);
   // Preview-error scan (#2838): while the Studio is mounted (visit, not boot — it lazily first-mounts via
   // KeptMountedPage), esbuild-build each buildable component in the active kit — throttled — and record
@@ -135,6 +146,7 @@ export function DesignsWorkbench() {
   const selectComp = (c: ComponentRecord) => {
     if (c.kitId !== kitId) setKitId(c.kitId);
     setCompId(c.id); setVariant(c.variants[0] ?? "default"); setTab("overview");
+    setTryAnim(null); // a new vehicle clears the motion try-on (#2942)
   };
   // Clicking anything other than a node (the canvas background) unfocuses → the Inspector returns to
   // its empty state (#2818).
@@ -276,7 +288,21 @@ export function DesignsWorkbench() {
           // center retints. Otherwise it's the per-component inspector, whose preview thumbnail opens
           // preview mode.
           previewMode ? (
-            <ThemesMenu themes={kitThemes} activeId={kitTheme} onSelect={setKitTheme} />
+            // #2942: the try-on right pane toggles between the palette (Themes) and the kit's MOTION
+            // (Animations); each menu owns its left border, so the toggle bar matches it.
+            <Box style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <Box style={{ flex: "none", padding: "8px 8px 0", borderLeft: "1px solid var(--border)", background: "var(--bg-elev)" }}>
+                <SegmentedControl options={[
+                  { label: "Themes", on: rightAxis === "themes", onClick: () => setRightAxis("themes") },
+                  { label: "Animations", on: rightAxis === "animations", onClick: () => setRightAxis("animations") },
+                ]} />
+              </Box>
+              {rightAxis === "themes" ? (
+                <ThemesMenu themes={kitThemes} activeId={kitTheme} onSelect={setKitTheme} />
+              ) : (
+                <AnimationsMenu animations={kit?.animations ?? []} boundNames={sel?.animations ?? []} activeName={tryAnim} onPlay={setTryAnim} />
+              )}
+            </Box>
           ) : (
             <Inspector
               sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
@@ -296,10 +322,12 @@ export function DesignsWorkbench() {
           <Box
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
-            style={{ position: "absolute", inset: 0, zIndex: 5, display: "flex", flexDirection: "column", background: "var(--bg-canvas, var(--bg))" }}
+            // cursor:default — the overlay covers the pannable canvas, so its bars must not inherit the
+            // canvas `cursor: grab` (the graph beneath is covered and can't be panned here).
+            style={{ position: "absolute", inset: 0, zIndex: 5, display: "flex", flexDirection: "column", background: "var(--bg-canvas, var(--bg))", cursor: "default" }}
           >
             <Box style={{ display: "flex", alignItems: "center", gap: 12, flex: "none", padding: "10px 14px", borderBottom: "1px solid var(--border-soft)", background: "var(--bg-elev)" }}>
-              <Button variant="ghost" onClick={() => setPreviewMode(false)}>← Back to graph</Button>
+              <Button variant="ghost" onClick={() => { setPreviewMode(false); setTryAnim(null); }}>← Back to graph</Button>
               <Eyebrow size={9.5}>Theme preview</Eyebrow>
               <Text weight={600} size={13}>{sel.name}</Text>
               <Box style={{ flex: 1 }} />
@@ -323,6 +351,7 @@ export function DesignsWorkbench() {
                 themeVars={activeTheme?.vars ?? {}}
                 width={VP[vp].w}
                 height={440}
+                extraAnimation={tryAnimDef}
               />
             </Box>
           </Box>

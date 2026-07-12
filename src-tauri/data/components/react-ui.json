@@ -9,7 +9,56 @@
     "style": "studio",
     "stack": "React · TypeScript",
     "dot": "var(--info)",
-    "builtin": true
+    "builtin": true,
+    "animations": [
+      {
+        "name": "lift",
+        "trigger": "hover",
+        "duration": "var(--dur-fast)",
+        "easing": "var(--ease-standard)",
+        "keyframes": {
+          "from": {
+            "transform": "translateY(0)"
+          },
+          "to": {
+            "transform": "translateY(-1px)"
+          }
+        }
+      },
+      {
+        "name": "fade-in",
+        "trigger": "mount",
+        "duration": "var(--dur-base)",
+        "easing": "var(--ease-emphasized)",
+        "keyframes": {
+          "from": {
+            "opacity": "0",
+            "transform": "translateY(4px)"
+          },
+          "to": {
+            "opacity": "1",
+            "transform": "translateY(0)"
+          }
+        }
+      },
+      {
+        "name": "pulse",
+        "trigger": "always",
+        "duration": "var(--dur-slow)",
+        "easing": "var(--ease-standard)",
+        "keyframes": {
+          "0%": {
+            "opacity": "1"
+          },
+          "50%": {
+            "opacity": "0.45"
+          },
+          "100%": {
+            "opacity": "1"
+          }
+        }
+      }
+    ]
   },
   "components": [
     {
@@ -826,20 +875,7 @@
       "builtin": true,
       "wraps": "button",
       "animations": [
-        {
-          "name": "lift",
-          "trigger": "hover",
-          "duration": "var(--dur-fast)",
-          "easing": "var(--ease-standard)",
-          "keyframes": {
-            "from": {
-              "transform": "translateY(0)"
-            },
-            "to": {
-              "transform": "translateY(-1px)"
-            }
-          }
-        }
+        "lift"
       ],
       "source": "import type { ButtonHTMLAttributes } from \"react\";\n\nexport interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {\n  /** Background style — the `.btn` family. `default` = the quiet bg-elev secondary · `primary` =\n   *  the accent call-to-action · `ghost` = transparent. A DATA-DEFINED variant (#2569, authored via\n   *  `bsc ui component btn define-variant`) is any other lowercase string: it rides the same\n   *  class-name path (`.btn.<variant>`) that `applyVariantsToRoot`'s compiled CSS targets. */\n  variant?: \"default\" | \"primary\" | \"ghost\" | (string & {});\n  /** Danger color modifier (composes with `default`/`ghost`). */\n  danger?: boolean;\n  /** Hit size: `md` = 28px (default) · `sm` = 24px. */\n  size?: \"md\" | \"sm\";\n}\n\n/**\n * The shared button primitive (#1889) — a thin wrapper over the `.btn` class system in\n * `tokens.css`, so it rides the exact styles the app already ships (no visual divergence) and\n * stays the one place button look is defined. Reach for this instead of a hand-rolled\n * `<button style={{…}}>` or a CSSProperties helper. For icon-only buttons use `IconButton`; for the\n * back-chevron use `BackButton`. All native `<button>` attributes (onClick, disabled, title, type,\n * style for one-off positional tweaks, …) pass through.\n */\nexport function Button({\n  variant = \"default\", danger, size = \"md\", className, type = \"button\", ...rest\n}: ButtonProps) {\n  const cls = [\"btn\", variant !== \"default\" && variant, danger && \"danger\", size === \"sm\" && \"sm\", className]\n    .filter(Boolean)\n    .join(\" \");\n  return <button type={type} className={cls} {...rest} />;\n}\n"
     },
@@ -1550,22 +1586,7 @@
       "srcText": "import { Card } from \"@/shared/ui/data/Card\";\n\n<Card>…</Card>",
       "builtin": true,
       "animations": [
-        {
-          "name": "fade-in",
-          "trigger": "mount",
-          "duration": "var(--dur-base)",
-          "easing": "var(--ease-emphasized)",
-          "keyframes": {
-            "from": {
-              "opacity": "0",
-              "transform": "translateY(4px)"
-            },
-            "to": {
-              "opacity": "1",
-              "transform": "translateY(0)"
-            }
-          }
-        }
+        "fade-in"
       ],
       "source": "// Card — the one framed-panel primitive (#card-unify). Renders the shared `.card` class (bg-panel +\n// 1px border + rounded corners + padding, from tokens.css) so it's a drop-in for the ~100 raw\n// `<div className=\"card\">` divs across the app — feature CSS that targets `.card` as an ancestor\n// (`.card .head`, `.prof-list.card`, …) keeps working untouched. On top of the class it adds a thin\n// layer: an optional canonical head (`title` + `hint` + `right` → an h3 row, absorbing the old\n// `SettingsCardHead`) OR a fully-custom `header` node, a `tone` border tint, an `interactive`/`onClick`\n// hover affordance, and a compact `pad=\"sm\"` density. Layout cards still add their own className.\nimport type { ReactNode, CSSProperties, MouseEvent } from \"react\";\nimport { SkeletonText } from \"@/shared/ui/feedback/Skeleton\";\n\nexport interface CardProps {\n  children: ReactNode;\n  /** Render the card LOADING (#2302): keep the frame + head, replace the body with a skeleton the\n   *  same shape as its content. `loadingLines` tunes the body skeleton's line count (default 3). */\n  loading?: boolean;\n  loadingLines?: number;\n  /** Canonical head: a title (h3) rendered above the body. The one-stop \"card with a title\". */\n  title?: ReactNode;\n  /** Inline hint beside the title (canonical head only). */\n  hint?: ReactNode;\n  /** Right-aligned control in the canonical head row. */\n  right?: ReactNode;\n  /** Override the canonical head's bottom margin (px). Default 12. */\n  headMb?: number;\n  /** A fully-composed header node — for heads that aren't the canonical h3 row. Wins over `title`. */\n  header?: ReactNode;\n  /** Border accent color — e.g. \"var(--accent)\" / \"var(--success)\". Default = the `.card` border. */\n  tone?: string;\n  /** Hover/press affordance (pointer + a transition); also implied when `onClick` is set. */\n  interactive?: boolean;\n  /** \"sm\" overrides `.card`'s padding for a compact body card; default keeps the `.card` look. */\n  pad?: \"sm\";\n  className?: string;\n  style?: CSSProperties;\n  onClick?: (e: MouseEvent<HTMLDivElement>) => void;\n  /** The HTML `title` attribute (hover tooltip). */\n  tooltip?: string;\n}\n\nexport function Card({ children, loading, loadingLines = 3, title, hint, right, headMb, header, tone, interactive, pad, className, style, onClick, tooltip }: CardProps) {\n  const head = header ?? (title != null ? (\n    <div style={{ display: \"flex\", alignItems: \"baseline\", marginBottom: headMb ?? 12, gap: 10 }}>\n      <h3 style={{ margin: 0 }}>{title}</h3>\n      {hint && <span className=\"hint\">{hint}</span>}\n      {right && <><span style={{ flex: 1 }} />{right}</>}\n    </div>\n  ) : null);\n  return (\n    <div\n      className={\"card\" + (className ? ` ${className}` : \"\")}\n      title={tooltip}\n      onClick={onClick}\n      style={{\n        ...(tone ? { borderColor: `color-mix(in oklch, ${tone}, transparent 72%)` } : {}),\n        ...(interactive || onClick ? { cursor: \"pointer\", transition: \"border-color .1s, background .1s\" } : {}),\n        ...(pad === \"sm\" ? { padding: \"10px 12px\" } : {}),\n        ...style,\n      }}\n    >\n      {head}\n      {loading ? <SkeletonText lines={loadingLines} /> : children}\n    </div>\n  );\n}\n"
     },
@@ -2971,23 +2992,7 @@
       "srcText": "import { StatusDot } from \"@/shared/ui/feedback/StatusDot\";\n\n<StatusDot />",
       "builtin": true,
       "animations": [
-        {
-          "name": "pulse",
-          "trigger": "always",
-          "duration": "var(--dur-slow)",
-          "easing": "var(--ease-standard)",
-          "keyframes": {
-            "0%": {
-              "opacity": "1"
-            },
-            "50%": {
-              "opacity": "0.45"
-            },
-            "100%": {
-              "opacity": "1"
-            }
-          }
-        }
+        "pulse"
       ],
       "source": "// StatusDot (#1777) — one small colored status dot, replacing the hand-prepended `●` glyph and the\n// ad-hoc inline circle <span>s scattered across the app. Defaults to `currentColor` so dropping it\n// into a `.tag`/`.tag.green`/etc. inherits that element's color exactly (the `●` glyph did the same),\n// or pass a semantic `state` to use the shared `--state-*` tokens, or an explicit `color`.\nimport type { CSSProperties } from \"react\";\n\n/** Canonical activity states → their design token (tokens.css `--state-*`). */\nexport type DotState = \"run\" | \"wait\" | \"idle\" | \"stopped\";\n\nconst STATE_COLOR: Record<DotState, string> = {\n  run: \"var(--state-run)\",\n  wait: \"var(--state-wait)\",\n  idle: \"var(--state-idle)\",\n  stopped: \"var(--state-stopped)\",\n};\n\nexport interface StatusDotProps {\n  /** Semantic state → its `--state-*` token. Ignored when `color` is set. */\n  state?: DotState;\n  /** Explicit color. Defaults to `currentColor` (inherits the surrounding tag/text color). */\n  color?: string;\n  /** Diameter in px (default 6). */\n  size?: number;\n  /** Pulse animation — a live \"running\" indicator. */\n  pulse?: boolean;\n  /** Native tooltip; when set, the dot is exposed to AT, otherwise it's `aria-hidden`. */\n  title?: string;\n  style?: CSSProperties;\n}\n\nexport function StatusDot({ state, color, size = 6, pulse = false, title, style }: StatusDotProps) {\n  const background = color ?? (state ? STATE_COLOR[state] : \"currentColor\");\n  return (\n    <span\n      {...(title ? { title } : { \"aria-hidden\": true })}\n      style={{\n        display: \"inline-block\",\n        width: size,\n        height: size,\n        flex: `0 0 ${size}px`,\n        borderRadius: \"50%\",\n        background,\n        ...(pulse ? { animation: \"pulse 1.4s ease-in-out infinite\" } : {}),\n        ...style,\n      }}\n    />\n  );\n}\n"
     },

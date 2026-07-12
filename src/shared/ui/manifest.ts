@@ -18,7 +18,7 @@
 // The authored-motion shape (#2867, epic #2865) — carried through to each emitted `ComponentRecord`'s
 // `animations` and compiled to live `@keyframes` by the render engine (`@/shared/ui/kit`). Imported
 // type-only (erased at compile time) so this module stays pure, JSON-serialisable data.
-import type { ComponentAnimation } from "@/shared/ui/kit/animations";
+import type { KitAnimation } from "@/shared/ui/kit/animations";
 
 /** Every primitive the kit exposes to the builder. Also the key type of the render-map registry. */
 export type PrimitiveName =
@@ -89,10 +89,11 @@ export interface PrimitiveSpec {
   props: PropSpec[];
   /** True when arbitrary extra DOM props (className, style, data-attrs, handlers) pass through to the root. */
   passthrough?: boolean;
-  /** Authored MOTION (#2867, epic #2865) — named animations carried through to the emitted
-   *  `ComponentRecord.animations` and compiled to live `@keyframes` by the render engine. Values may
-   *  reference the motion tokens (`var(--dur-base)` / `var(--ease-standard)`). Absent ⇒ no motion. */
-  animations?: ComponentAnimation[];
+  /** Authored MOTION (#2942, epic #2865) — named animation defs. At generation these are LIFTED into
+   *  the `react-ui` kit's motion library (`Kit.animations`) and the component keeps a name binding
+   *  (`ComponentRecord.animations: string[]`), so a kit's motion is reusable across its components.
+   *  Values may reference the motion tokens (`var(--dur-base)` / `var(--ease-standard)`). Absent ⇒ no motion. */
+  animations?: KitAnimation[];
 }
 
 // Shared prop fragments reused across the layout primitives.
