@@ -13,14 +13,12 @@ import { loadGraph } from "./lib/graphBridge";
 const HYDRATE_MS = 5000;
 
 /** An order-independent content signature — so an unchanged store (serde may reorder JSON keys) does NOT
- *  churn a re-render every tick, while any node/edge edit does. */
+ *  churn a re-render every tick, while any implementation edit does. */
 function graphSig(g: KnowledgeGraph): string {
-  const nodes = g.nodes
-    .map((n) => `${n.id}:${n.kind}:${n.name}:${n.summary}:${n.complexity ?? ""}:${(n.tags ?? []).join(",")}`)
+  return g.implementations
+    .map((im) => `${im.id}:${im.tech}:${im.role}:${im.name}:${im.summary ?? ""}:${im.composes.join(",")}`)
     .sort()
     .join("|");
-  const edges = g.edges.map((e) => `${e.from}>${e.rel}>${e.to}`).sort().join("|");
-  return `${nodes}#${edges}`;
 }
 const SEED_SIG = graphSig(KNOWLEDGE);
 

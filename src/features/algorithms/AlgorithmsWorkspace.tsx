@@ -1,11 +1,11 @@
 // The Algorithms knowledge-graph page (#2761, epic #2760 · #2863 · #2899) — rendered on the shared
 // GraphCanvas + useGraphViewport (the Glance/Teams/Designs stack). Works basically like the Components
 // (Designs) page: the LEFT PANE is a language-FOLDER tree (each language a folder, its impls the rows —
-// #2899), and the CENTER is that language's OWN graph. A concept IS its implementation: the graph's nodes
-// are the active kit's impls (primitives + algorithms), wired by composes + pairs + the ontology's
-// relationships lifted onto the concrete impls. The active language is driven by rail selection. The
-// inspector shows the selected impl's code + what it builds on / is used by / pairs with. The seed is
-// authored in @data/knowledge and hydrated live from the librarian's writable store (#2856).
+// #2899), and the CENTER is that language's OWN graph. A concept IS its implementation (#2958): the
+// graph's nodes are the active kit's impls (primitives + algorithms), wired by `composes` (down to the
+// primitive base). The active language is driven by rail selection. The inspector shows the selected
+// impl's code + what it builds on / is used by. The seed is authored in @data/knowledge and hydrated
+// live from the librarian's writable store (#2856).
 import { useEffect, useMemo, useState } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -38,7 +38,7 @@ export function AlgorithmsWorkspace() {
   const [selectedImpl, setSelectedImpl] = useState<string | null>(null);
   const focusedImpl = selectedImpl ? implById(graph, selectedImpl) ?? null : null;
 
-  // The active language's OWN graph (impls + composes/pairs/lifted edges) + its layout.
+  // The active language's OWN graph (impls + composes edges, down to the primitive base) + its layout.
   const kit = useMemo(() => kitGraph(graph, activeTech), [graph, activeTech]);
   const kitLayout = useMemo(() => layoutKitGraph(kit), [kit]);
 
@@ -100,7 +100,7 @@ export function AlgorithmsWorkspace() {
       rail={<AlgorithmsRail graph={graph} activeTech={activeTech} selectedImpl={selectedImpl} onSelectImpl={selectImplFromRail} onSelectLang={selectLang} />}
       railResizable
       railWidth={230}
-      inspector={<AlgorithmsInspector graph={graph} selected={null} focusedImpl={focusedImpl} activeTech={activeTech} onSelectNode={() => {}} onSelectImpl={setSelectedImpl} />}
+      inspector={<AlgorithmsInspector graph={graph} focusedImpl={focusedImpl} onSelectImpl={setSelectedImpl} />}
       inspectorResizable
       inspectorWidth={340}
       onBackgroundClick={() => setSelectedImpl(null)}
