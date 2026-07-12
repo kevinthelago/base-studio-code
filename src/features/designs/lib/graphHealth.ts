@@ -6,8 +6,9 @@
 // Findings, most-severe first: cycle (a `composes` loop) · dangling-branch (an unused root that still
 // pulls in dependencies) · duplicate (same `wraps` intrinsic, or identical source) · no-implementation
 // (a component the preview can't build — a spec, not code) · orphan (isolated, never-referenced
-// primitive/composite). "Unused" = no composer AND used === 0; a page/layout with used > 0 is a legit
-// entry point, never flagged.
+// primitive/composite) · slot-shell (INFORMATIONAL — a composite whose composed children arrive via
+// ReactNode content slots, so a standalone preview renders a demo placeholder, #2921). "Unused" = no
+// composer AND used === 0; a page/layout with used > 0 is a legit entry point, never flagged.
 //
 // The no-implementation check reuses the EXACT preview logic (`componentPreviewFiles`, #2824/#2828):
 // the store strips a built-in's artifact `source` (#2794), so a built-in still builds from the packaged
@@ -15,22 +16,34 @@
 import reactUiArtifact from "@data/components/react-ui.json";
 import { buildComposesEdges } from "./compositionLayout";
 import { componentPreviewFiles, type KitArtifact } from "./componentPreview";
-import type { ComponentRecord } from "./model";
+import type { ComponentRecord, PropSpec } from "./model";
+
+/** Is `p` a CONTENT-SLOT prop — a non-`children` prop typed as a React node? Matches how the preview
+ *  samples props (`samplePropValue` treats any `reactnode`/`node`-typed prop as a slot), so a component
+ *  with one renders a placeholder standalone. `children` is universal and excluded (#2921). */
+function isNodeSlotProp(p: PropSpec): boolean {
+  const t = (p.type || "").toLowerCase();
+  return p.name !== "children" && (t.includes("reactnode") || t.includes("node"));
+}
 
 // The packaged kit artifact (each built-in's verbatim `source` + the `runtime` @/ closure) — the SAME
 // raw import ComponentPreviewFrame builds against. A built-in's `src` resolves here, so it's buildable
 // even though the store strips its `source` (#2794).
 const ARTIFACT = reactUiArtifact as unknown as KitArtifact;
 
-export type HealthCategory = "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "orphan";
+export type HealthCategory =
+  | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "orphan" | "slot-shell";
 
-/** Category → severity (higher = worse); drives ranking + which badge wins on a multi-flagged node. */
+/** Category → severity (higher = worse); drives ranking + which badge wins on a multi-flagged node.
+ *  `slot-shell` is INFORMATIONAL (1, below every defect) — it never overrides a real defect badge, it
+ *  just explains why a composite previews as a demo placeholder (#2921). */
 export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   cycle: 4,
   "dangling-branch": 3,
   duplicate: 3,
   "no-implementation": 3,
   orphan: 2,
+  "slot-shell": 1,
 };
 
 export interface HealthFinding {
@@ -145,6 +158,18 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
       findings.push({ category: "no-implementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
         why: `${c.name} has no buildable implementation — the preview can't render it (a spec, not code)` });
     }
+  }
+
+  // slot-shell (informational) — a composite whose composed children arrive via ReactNode CONTENT SLOTS.
+  // Standalone (no slots passed) it renders a demo/placeholder fallback, not its assembled function, so a
+  // preview looks non-functional even though it isn't (#2921). Explains e.g. GraphExplorerPage /
+  // AnalyticsPage. Detect: it `composes` ≥1 child AND exposes ≥1 non-`children` ReactNode slot prop.
+  for (const c of comps) {
+    if (c.composes.length === 0) continue;
+    const slots = c.props.filter((p) => isNodeSlotProp(p)).map((p) => p.name);
+    if (slots.length === 0) continue;
+    findings.push({ category: "slot-shell", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
+      why: `${c.name} is a slot-driven composite — its composed children (${c.composes.join(", ")}) arrive via content slots (${slots.join(", ")}), so a standalone preview renders a demo placeholder, not its assembled function; fill the slots to see it` });
   }
 
   return findings.sort((a, b) => b.severity - a.severity || (a.nodeNames[0] ?? "").localeCompare(b.nodeNames[0] ?? ""));
