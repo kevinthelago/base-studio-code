@@ -73,7 +73,8 @@ export interface ComponentsSlice {
   removeDesignContribution: (source: string) => void;
   /** Built-ins kept through a seed divergence (#2483): the user's customized copy survived an
    *  upstream update, or a retired built-in was kept because it was customized. Recomputed on each
-   *  hydrate (not persisted); rendered by the Design Studio's SeedNoticesCard. */
+   *  hydrate (not persisted). No longer surfaced in a UI pane — the in-Studio SeedNoticesCard was
+   *  removed (#2948); the reconcile still tracks these for `dismissSeedNotice`/future surfacing. */
   seedNotices: SeedNotice[];
   /** Dismiss one seed notice (by type + id). */
   dismissSeedNotice: (type: SeedNotice["type"], id: string) => void;
