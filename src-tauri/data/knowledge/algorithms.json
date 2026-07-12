@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "note": "The Algorithms knowledge graph — Graph 1, the curated concept ontology (#2760): canonical computer-science + math concepts and how they relate (data structures, algorithms, concepts, outputs), joined by typed relationships. Reseeded RUST-FIRST (#2760): the implementations tier carries real, working Rust code as the founding language — the base the generative library grows from (seed -> reuse -> generate -> extract). The ONE source of truth read by BOTH the frontend (src/features/algorithms) AND the `bsc graph` CLI (crates/bsc-graph embeds it). Node `kind`: data-structure | algorithm | concept | output. Edge `rel`: operates-on | composes | variant-of | generates | related-to. Each implementation `implements` a concept in Rust (role: primitive | algorithm) and `composes` other Rust implementations; a free-standing primitive (no `concept`) may `pairs` with its algorithm counterparts. More languages can be added later (the Tech type + tree-sitter extractor still support them); the seed is Rust for now.",
+  "note": "The Algorithms knowledge graph (#2760) — RUST-first, growing toward a PRIMITIVES-ROOTED, impl-is-concept model: each language's graph is rooted in that language's PRIMITIVES (role: primitive — Vec, slice, Iterator, Option, HashMap, VecDeque, BinaryHeap, i64, bool, tuple) and every implementation (role: algorithm) COMPOSES up from them; the implementation IS the concept. The ONE source of truth read by BOTH the frontend (src/features/algorithms) AND the `bsc graph` CLI (crates/bsc-graph embeds it). Slice A (#2958) authors the Rust primitive base + rewires the algorithm impls to compose from it; the abstract concept ontology (the `nodes`/`edges` arrays + per-impl `concept`) is retained for now and removed in slice B. Node `kind`: data-structure | algorithm | concept | output. Edge `rel`: operates-on | composes | variant-of | generates | related-to.",
   "nodes": [
     {
       "id": "array",
@@ -590,9 +590,12 @@
       "tech": "rust",
       "name": "merge (Rust)",
       "summary": "Interleave two sorted slices into one sorted Vec.",
-      "composes": [],
+      "composes": [
+        "rust.vec",
+        "rust.slice"
+      ],
       "code": "/// Interleave two sorted slices into one sorted `Vec`.\npub fn merge<T: Ord + Clone>(a: &[T], b: &[T]) -> Vec<T> {\n    let mut out = Vec::with_capacity(a.len() + b.len());\n    let (mut i, mut j) = (0, 0);\n    while i < a.len() && j < b.len() {\n        if a[i] <= b[j] {\n            out.push(a[i].clone());\n            i += 1;\n        } else {\n            out.push(b[j].clone());\n            j += 1;\n        }\n    }\n    out.extend_from_slice(&a[i..]);\n    out.extend_from_slice(&b[j..]);\n    out\n}\n",
-      "role": "primitive"
+      "role": "algorithm"
     },
     {
       "id": "merge-sort.rs",
@@ -601,7 +604,9 @@
       "name": "merge_sort (Rust)",
       "summary": "Split, recursively sort the halves, and merge — built on the merge primitive.",
       "composes": [
-        "merge.rs"
+        "merge.rs",
+        "rust.vec",
+        "rust.slice"
       ],
       "code": "use crate::merge::merge;\n\n/// Stable merge sort — split, sort halves, merge.\npub fn merge_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {\n    if xs.len() <= 1 {\n        return xs.to_vec();\n    }\n    let mid = xs.len() / 2;\n    let left = merge_sort(&xs[..mid]);\n    let right = merge_sort(&xs[mid..]);\n    merge(&left, &right)\n}\n",
       "role": "algorithm"
@@ -612,7 +617,10 @@
       "tech": "rust",
       "name": "binary_search (Rust)",
       "summary": "Halve a sorted range each step until the target is found.",
-      "composes": [],
+      "composes": [
+        "rust.slice",
+        "rust.option"
+      ],
       "code": "/// Binary search a sorted slice; `Some(index)` on a hit, else `None`.\npub fn binary_search<T: Ord>(xs: &[T], target: &T) -> Option<usize> {\n    let (mut lo, mut hi) = (0, xs.len());\n    while lo < hi {\n        let mid = lo + (hi - lo) / 2;\n        match xs[mid].cmp(target) {\n            std::cmp::Ordering::Equal => return Some(mid),\n            std::cmp::Ordering::Less => lo = mid + 1,\n            std::cmp::Ordering::Greater => hi = mid,\n        }\n    }\n    None\n}\n",
       "role": "algorithm"
     },
@@ -622,7 +630,11 @@
       "tech": "rust",
       "name": "quick_sort (Rust)",
       "summary": "Partition around a pivot and recurse each side.",
-      "composes": [],
+      "composes": [
+        "rust.vec",
+        "rust.slice",
+        "rust.iterator"
+      ],
       "code": "/// Quick sort — partition around the first element, recurse each side.\npub fn quick_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {\n    if xs.len() <= 1 {\n        return xs.to_vec();\n    }\n    let pivot = xs[0].clone();\n    let left: Vec<T> = xs[1..].iter().filter(|x| **x < pivot).cloned().collect();\n    let right: Vec<T> = xs[1..].iter().filter(|x| **x >= pivot).cloned().collect();\n    let mut out = quick_sort(&left);\n    out.push(pivot);\n    out.extend(quick_sort(&right));\n    out\n}\n",
       "role": "algorithm"
     },
@@ -632,7 +644,11 @@
       "tech": "rust",
       "name": "bfs (Rust)",
       "summary": "Explore a graph level by level using a queue.",
-      "composes": [],
+      "composes": [
+        "rust.hashmap",
+        "rust.vecdeque",
+        "rust.vec"
+      ],
       "code": "use std::collections::{HashMap, HashSet, VecDeque};\n\n/// Breadth-first traversal order from `start` over an adjacency map.\npub fn bfs(adj: &HashMap<&str, Vec<&str>>, start: &str) -> Vec<String> {\n    let mut order = Vec::new();\n    let mut seen = HashSet::from([start]);\n    let mut queue = VecDeque::from([start]);\n    while let Some(node) = queue.pop_front() {\n        order.push(node.to_string());\n        for &next in adj.get(node).into_iter().flatten() {\n            if seen.insert(next) {\n                queue.push_back(next);\n            }\n        }\n    }\n    order\n}\n",
       "role": "algorithm"
     },
@@ -642,7 +658,10 @@
       "tech": "rust",
       "name": "bubble_sort (Rust)",
       "summary": "Swap adjacent out-of-order pairs each pass, stopping early once a pass makes no swap.",
-      "composes": [],
+      "composes": [
+        "rust.vec",
+        "rust.slice"
+      ],
       "code": "/// Bubble sort — repeatedly swap adjacent out-of-order pairs; stop early once a pass makes no swap.\npub fn bubble_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {\n    let mut out = xs.to_vec();\n    let n = out.len();\n    for end in (1..n).rev() {\n        let mut swapped = false;\n        for i in 0..end {\n            if out[i] > out[i + 1] {\n                out.swap(i, i + 1);\n                swapped = true;\n            }\n        }\n        if !swapped {\n            break;\n        }\n    }\n    out\n}\n",
       "role": "algorithm"
     },
@@ -652,7 +671,10 @@
       "tech": "rust",
       "name": "insertion_sort (Rust)",
       "summary": "Grow a sorted prefix, shifting larger elements right to open a slot for each key.",
-      "composes": [],
+      "composes": [
+        "rust.vec",
+        "rust.slice"
+      ],
       "code": "/// Insertion sort — grow a sorted prefix, shifting larger elements right to open a slot.\npub fn insertion_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {\n    let mut out = xs.to_vec();\n    for i in 1..out.len() {\n        let mut j = i;\n        while j > 0 && out[j - 1] > out[j] {\n            out.swap(j - 1, j);\n            j -= 1;\n        }\n    }\n    out\n}\n",
       "role": "algorithm"
     },
@@ -662,7 +684,10 @@
       "tech": "rust",
       "name": "heap_sort (Rust)",
       "summary": "Build a max-heap in place, then swap the root to the end and re-sift the remaining prefix.",
-      "composes": [],
+      "composes": [
+        "rust.vec",
+        "rust.slice"
+      ],
       "code": "/// Heap sort — build a max-heap in place, then swap the root to the end and re-sift the rest.\npub fn heap_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {\n    fn sift_down<T: Ord>(a: &mut [T], start: usize, end: usize) {\n        let mut root = start;\n        loop {\n            let left = 2 * root + 1;\n            if left > end {\n                return;\n            }\n            let right = left + 1;\n            let mut largest = root;\n            if a[largest] < a[left] {\n                largest = left;\n            }\n            if right <= end && a[largest] < a[right] {\n                largest = right;\n            }\n            if largest == root {\n                return;\n            }\n            a.swap(root, largest);\n            root = largest;\n        }\n    }\n    let mut out = xs.to_vec();\n    let n = out.len();\n    if n < 2 {\n        return out;\n    }\n    for start in (0..n / 2).rev() {\n        sift_down(&mut out, start, n - 1);\n    }\n    for end in (1..n).rev() {\n        out.swap(0, end);\n        sift_down(&mut out, 0, end - 1);\n    }\n    out\n}\n",
       "role": "algorithm"
     },
@@ -672,7 +697,11 @@
       "tech": "rust",
       "name": "linear_search (Rust)",
       "summary": "Scan for the first element equal to the target; Some(index) on a hit, else None.",
-      "composes": [],
+      "composes": [
+        "rust.slice",
+        "rust.iterator",
+        "rust.option"
+      ],
       "code": "/// Linear search — the index of the first element equal to `target`, else `None`.\npub fn linear_search<T: PartialEq>(xs: &[T], target: &T) -> Option<usize> {\n    xs.iter().position(|x| x == target)\n}\n",
       "role": "algorithm"
     },
@@ -682,7 +711,10 @@
       "tech": "rust",
       "name": "dfs (Rust)",
       "summary": "Explore as deep as possible from a start node, backtracking — recursive over the adjacency map.",
-      "composes": [],
+      "composes": [
+        "rust.hashmap",
+        "rust.vec"
+      ],
       "code": "use std::collections::{HashMap, HashSet};\n\n/// Depth-first traversal order from `start` over a weighted adjacency map (weights ignored).\npub fn dfs(adj: &HashMap<String, Vec<(String, u32)>>, start: &str) -> Vec<String> {\n    fn visit(\n        adj: &HashMap<String, Vec<(String, u32)>>,\n        node: &str,\n        seen: &mut HashSet<String>,\n        order: &mut Vec<String>,\n    ) {\n        if !seen.insert(node.to_string()) {\n            return;\n        }\n        order.push(node.to_string());\n        if let Some(neighbors) = adj.get(node) {\n            for (next, _) in neighbors {\n                visit(adj, next, seen, order);\n            }\n        }\n    }\n    let mut order = Vec::new();\n    let mut seen = HashSet::new();\n    visit(adj, start, &mut seen, &mut order);\n    order\n}\n",
       "role": "algorithm"
     },
@@ -692,7 +724,10 @@
       "tech": "rust",
       "name": "dijkstra (Rust)",
       "summary": "Greedy non-negative-weight shortest distances from a start node, using a binary min-heap.",
-      "composes": [],
+      "composes": [
+        "rust.hashmap",
+        "rust.binaryheap"
+      ],
       "code": "use std::cmp::Reverse;\nuse std::collections::{BinaryHeap, HashMap};\n\n/// Dijkstra shortest-path distances from `start` over a non-negative weighted adjacency map.\npub fn dijkstra(adj: &HashMap<String, Vec<(String, u32)>>, start: &str) -> HashMap<String, u32> {\n    let mut dist: HashMap<String, u32> = HashMap::from([(start.to_string(), 0)]);\n    let mut heap: BinaryHeap<Reverse<(u32, String)>> = BinaryHeap::new();\n    heap.push(Reverse((0, start.to_string())));\n    while let Some(Reverse((d, node))) = heap.pop() {\n        if d > dist.get(&node).copied().unwrap_or(u32::MAX) {\n            continue;\n        }\n        if let Some(neighbors) = adj.get(&node) {\n            for (next, w) in neighbors {\n                let nd = d + w;\n                if nd < dist.get(next).copied().unwrap_or(u32::MAX) {\n                    dist.insert(next.clone(), nd);\n                    heap.push(Reverse((nd, next.clone())));\n                }\n            }\n        }\n    }\n    dist\n}\n",
       "role": "algorithm"
     },
@@ -702,7 +737,10 @@
       "tech": "rust",
       "name": "a_star (Rust)",
       "summary": "Dijkstra guided by an admissible heuristic; returns the shortest node path to the goal, or None.",
-      "composes": [],
+      "composes": [
+        "rust.hashmap",
+        "rust.vec"
+      ],
       "code": "use std::collections::{HashMap, HashSet};\n\n/// A* shortest path from `start` to `goal`, guided by `heuristic`. Returns the node path\n/// (inclusive of both ends) or `None` if `goal` is unreachable.\npub fn a_star(\n    adj: &HashMap<String, Vec<(String, u32)>>,\n    start: &str,\n    goal: &str,\n    heuristic: impl Fn(&str) -> u32,\n) -> Option<Vec<String>> {\n    let mut g_score: HashMap<String, u32> = HashMap::from([(start.to_string(), 0)]);\n    let mut came_from: HashMap<String, String> = HashMap::new();\n    let mut open: HashSet<String> = HashSet::from([start.to_string()]);\n    while !open.is_empty() {\n        let current = open\n            .iter()\n            .min_by_key(|n| {\n                g_score.get(*n).copied().unwrap_or(u32::MAX).saturating_add(heuristic(n))\n            })\n            .cloned()\n            .unwrap();\n        if current == goal {\n            let mut path = vec![current.clone()];\n            let mut step = current;\n            while let Some(prev) = came_from.get(&step) {\n                path.push(prev.clone());\n                step = prev.clone();\n            }\n            path.reverse();\n            return Some(path);\n        }\n        open.remove(&current);\n        let g_current = g_score.get(&current).copied().unwrap_or(u32::MAX);\n        if let Some(neighbors) = adj.get(&current) {\n            for (next, w) in neighbors {\n                let tentative = g_current.saturating_add(*w);\n                if tentative < g_score.get(next).copied().unwrap_or(u32::MAX) {\n                    came_from.insert(next.clone(), current.clone());\n                    g_score.insert(next.clone(), tentative);\n                    open.insert(next.clone());\n                }\n            }\n        }\n    }\n    None\n}\n",
       "role": "algorithm"
     },
@@ -712,7 +750,11 @@
       "tech": "rust",
       "name": "topological_sort (Rust)",
       "summary": "Kahn's algorithm — repeatedly emit in-degree-zero nodes; None when a cycle is present.",
-      "composes": [],
+      "composes": [
+        "rust.hashmap",
+        "rust.vecdeque",
+        "rust.vec"
+      ],
       "code": "use std::collections::{HashMap, VecDeque};\n\n/// Kahn's algorithm — a topological ordering of a DAG, or `None` if a cycle is present.\npub fn topological_sort(adj: &HashMap<String, Vec<(String, u32)>>) -> Option<Vec<String>> {\n    let mut indegree: HashMap<String, usize> = HashMap::new();\n    for (node, edges) in adj {\n        indegree.entry(node.clone()).or_insert(0);\n        for (next, _) in edges {\n            *indegree.entry(next.clone()).or_insert(0) += 1;\n        }\n    }\n    let mut queue: VecDeque<String> = indegree\n        .iter()\n        .filter(|(_, &d)| d == 0)\n        .map(|(n, _)| n.clone())\n        .collect();\n    let mut order = Vec::new();\n    while let Some(node) = queue.pop_front() {\n        order.push(node.clone());\n        if let Some(edges) = adj.get(&node) {\n            for (next, _) in edges {\n                let d = indegree.get_mut(next).unwrap();\n                *d -= 1;\n                if *d == 0 {\n                    queue.push_back(next.clone());\n                }\n            }\n        }\n    }\n    if order.len() == indegree.len() {\n        Some(order)\n    } else {\n        None\n    }\n}\n",
       "role": "algorithm"
     },
@@ -722,7 +764,9 @@
       "tech": "rust",
       "name": "fibonacci (Rust)",
       "summary": "The nth Fibonacci number (F0 = 0, F1 = 1), iterated bottom-up in O(n).",
-      "composes": [],
+      "composes": [
+        "rust.i64"
+      ],
       "code": "/// The nth Fibonacci number (0-indexed: F0 = 0, F1 = 1), iterated bottom-up.\npub fn fibonacci(n: u64) -> u64 {\n    if n < 2 {\n        return n;\n    }\n    let (mut a, mut b) = (0u64, 1u64);\n    for _ in 2..=n {\n        let next = a + b;\n        a = b;\n        b = next;\n    }\n    b\n}\n",
       "role": "algorithm"
     },
@@ -732,7 +776,9 @@
       "tech": "rust",
       "name": "gcd (Rust)",
       "summary": "Greatest common divisor by repeated remainder — the Euclidean algorithm.",
-      "composes": [],
+      "composes": [
+        "rust.i64"
+      ],
       "code": "/// Greatest common divisor via the Euclidean algorithm (iterated remainder).\npub fn gcd(mut a: u64, mut b: u64) -> u64 {\n    while b != 0 {\n        let r = a % b;\n        a = b;\n        b = r;\n    }\n    a\n}\n",
       "role": "algorithm"
     },
@@ -742,7 +788,10 @@
       "tech": "rust",
       "name": "fft (Rust)",
       "summary": "Recursive radix-2 Cooley–Tukey FFT over complex samples (re, im); input length must be a power of two.",
-      "composes": [],
+      "composes": [
+        "rust.vec",
+        "rust.tuple"
+      ],
       "code": "/// Recursive radix-2 Cooley–Tukey FFT over complex samples `(re, im)`.\n/// `input.len()` must be a power of two.\npub fn fft(input: &[(f64, f64)]) -> Vec<(f64, f64)> {\n    let n = input.len();\n    if n <= 1 {\n        return input.to_vec();\n    }\n    assert!(n & (n - 1) == 0, \"fft: length must be a power of two\");\n    let even = fft(&input.iter().step_by(2).copied().collect::<Vec<_>>());\n    let odd = fft(&input.iter().skip(1).step_by(2).copied().collect::<Vec<_>>());\n    let mut out = vec![(0.0, 0.0); n];\n    for k in 0..n / 2 {\n        let angle = -2.0 * std::f64::consts::PI * k as f64 / n as f64;\n        let (tw_re, tw_im) = (angle.cos(), angle.sin());\n        let (o_re, o_im) = odd[k];\n        let t = (tw_re * o_re - tw_im * o_im, tw_re * o_im + tw_im * o_re);\n        let (e_re, e_im) = even[k];\n        out[k] = (e_re + t.0, e_im + t.1);\n        out[k + n / 2] = (e_re - t.0, e_im - t.1);\n    }\n    out\n}\n",
       "role": "algorithm"
     },
@@ -753,13 +802,88 @@
       "name": "Iterator (Rust)",
       "summary": "Lazy sequence adaptor — map/filter/fold that sort/search compose over slices.",
       "composes": [],
-      "pairs": [
-        "binary-search.rs",
-        "linear-search.rs",
-        "merge-sort.rs",
-        "quick-sort.rs"
-      ],
       "code": "let xs = vec![3, 1, 2];\nlet doubled: Vec<i32> = xs.iter().map(|x| x * 2).collect();\nlet sum: i32 = xs.iter().sum();\n"
+    },
+    {
+      "id": "rust.i64",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "Integer (Rust)",
+      "summary": "Fixed-width signed integer — the scalar arithmetic and counting run on (i32/i64/u64/usize).",
+      "composes": [],
+      "code": "let n: i64 = 42;\nlet doubled = n * 2;\nlet rem = n % 5;\nlet idx = n as usize;\n"
+    },
+    {
+      "id": "rust.bool",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "Boolean (Rust)",
+      "summary": "true / false — the branch and predicate primitive every comparison collapses to.",
+      "composes": [],
+      "code": "let ordered: bool = 3 < 5;\nif ordered {\n    // take the branch\n}\nlet both = ordered && !false;\n"
+    },
+    {
+      "id": "rust.tuple",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "Tuple (Rust)",
+      "summary": "A fixed heterogeneous group — pairs like (node, weight) or a complex sample (re, im).",
+      "composes": [],
+      "code": "let sample: (f64, f64) = (1.0, -0.5);\nlet (re, im) = sample;\nlet edge = (\"a\", 7u32);\n"
+    },
+    {
+      "id": "rust.slice",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "Slice (Rust)",
+      "summary": "&[T] — a borrowed contiguous view; the sequence sort and search read it without owning it.",
+      "composes": [],
+      "code": "let owned = vec![3, 1, 2];\nlet view: &[i32] = &owned;\nlet first = view[0];\nlet n = view.len();\nlet tail = &view[1..];\n"
+    },
+    {
+      "id": "rust.vec",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "Vec (Rust)",
+      "summary": "Vec<T> — the growable owned buffer sort results and graph traversal orders are built up in.",
+      "composes": [],
+      "code": "let mut xs: Vec<i32> = Vec::with_capacity(4);\nxs.push(3);\nxs.extend([1, 2]);\nxs.sort();\n"
+    },
+    {
+      "id": "rust.option",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "Option (Rust)",
+      "summary": "Option<T> — Some(x) | None; the presence/absence primitive a search returns.",
+      "composes": [],
+      "code": "let hit: Option<usize> = Some(2);\nmatch hit {\n    Some(i) => { let _ = i; }\n    None => {}\n}\nlet or = hit.unwrap_or(0);\n"
+    },
+    {
+      "id": "rust.hashmap",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "HashMap (Rust)",
+      "summary": "HashMap<K, V> — average-O(1) keyed lookup; the adjacency map and the memo / distance table.",
+      "composes": [],
+      "code": "use std::collections::HashMap;\nlet mut m: HashMap<&str, u32> = HashMap::new();\nm.insert(\"a\", 1);\n*m.entry(\"a\").or_insert(0) += 1;\nlet got = m.get(\"a\").copied();\n"
+    },
+    {
+      "id": "rust.vecdeque",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "VecDeque (Rust)",
+      "summary": "VecDeque<T> — a double-ended queue; the FIFO frontier BFS and Kahn's algorithm pop from.",
+      "composes": [],
+      "code": "use std::collections::VecDeque;\nlet mut q: VecDeque<&str> = VecDeque::new();\nq.push_back(\"start\");\nwhile let Some(node) = q.pop_front() {\n    let _ = node;\n}\n"
+    },
+    {
+      "id": "rust.binaryheap",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "BinaryHeap (Rust)",
+      "summary": "BinaryHeap<T> — a binary max-heap; the priority queue Dijkstra pulls the min from via Reverse.",
+      "composes": [],
+      "code": "use std::cmp::Reverse;\nuse std::collections::BinaryHeap;\nlet mut pq: BinaryHeap<Reverse<(u32, &str)>> = BinaryHeap::new();\npq.push(Reverse((0, \"start\")));\nlet next = pq.pop();\n"
     }
   ]
 }
