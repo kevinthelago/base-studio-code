@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { LifeBuoy, RotateCcw, Trash2, ShieldAlert, PartyPopper } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { LifeBuoy, RotateCcw, Trash2, ShieldAlert, PartyPopper, GitBranch } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { bscJson } from "@/shared/lib/core/bsc";
@@ -13,6 +13,8 @@ import {
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import { Banner } from "@/shared/ui/feedback/Banner";
 import { Button } from "@/shared/ui/controls/Button";
+import { Chip } from "@/shared/ui/data/Chip";
+import type { KitChange } from "@/features/designs";
 import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
@@ -478,9 +480,93 @@ export function PathExposeBanner() {
   );
 }
 
+const KIT_CLASS_TONE: Record<KitChange["class"], string> = {
+  breaking: "var(--danger)",
+  additive: "var(--accent)",
+  fix: "var(--success)",
+};
+
+/**
+ * Kit-change approval banner (#2944). After the designer session makes kit modifications, the store
+ * fans them out to consumer projects (`kitDispatches`). By default (auto-apply OFF — a Planner setting)
+ * they're GATED here: one summary banner + a Review drawer listing each change, its propagated
+ * consumers, and an **Approve** button that releases it to the drain (routing it into each live
+ * consumer's director). Approving marks the change approved so it leaves this gate immediately;
+ * dismissing drops it. Hidden entirely when auto-apply is ON (changes flow without a gate).
+ */
+function KitChangesBanner() {
+  const dispatches = useAppStore((s) => s.kitDispatches);
+  const autoApply = useAppStore((s) => s.autoApplyKitChanges);
+  const approvedChangeIds = useAppStore((s) => s.approvedChangeIds);
+  const approveKitChange = useAppStore((s) => s.approveKitChange);
+  const dismissKitDispatch = useAppStore((s) => s.dismissKitDispatch);
+  const [open, setOpen] = useState(false);
+
+  // Group the still-pending (unapproved) dispatches by change → its consumer projects.
+  const groups = useMemo(() => {
+    const m = new Map<string, { change: KitChange; projects: string[] }>();
+    for (const d of dispatches) {
+      if (approvedChangeIds.includes(d.change.id)) continue; // already released to the drain
+      const g = m.get(d.change.id);
+      if (g) g.projects.push(d.projectKey);
+      else m.set(d.change.id, { change: d.change, projects: [d.projectKey] });
+    }
+    return [...m.values()];
+  }, [dispatches, approvedChangeIds]);
+
+  if (autoApply || groups.length === 0) return null;
+  const n = groups.length;
+  const dismissChange = (g: { change: KitChange; projects: string[] }) =>
+    g.projects.forEach((pk) => dismissKitDispatch(pk, g.change.id));
+
+  return (
+    <>
+      <Banner
+        variant="bar"
+        tone="accent"
+        role="status"
+        lead={<GitBranch size={14} style={{ color: "var(--accent)", flexShrink: 0 }} />}
+        right={<Button onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</Button>}
+      >
+        <Box as="span" style={{ flex: 1, minWidth: 0 }}>
+          <b>{n} kit change{n === 1 ? "" : "s"}</b> from the designer {n === 1 ? "is" : "are"} ready to apply — review &amp; approve.
+        </Box>
+      </Banner>
+
+      {open && (
+        <Box className="banner-drawer">
+          {groups.map((g) => (
+            <Box key={g.change.id} border="soft" radius={6} style={{ overflow: "hidden" }}>
+              <Row gap={8} style={{ padding: "7px 10px", flexWrap: "wrap", alignItems: "center" }}>
+                <Chip color={KIT_CLASS_TONE[g.change.class]}>{g.change.class}</Chip>
+                <Text weight={600} size={12.5}>{g.change.component}</Text>
+                <Text size={12} tone="muted" style={{ flex: 1, minWidth: 100 }}>— {g.change.summary}</Text>
+                <Button variant="primary" style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => approveKitChange(g.change.id)}>Approve</Button>
+                <Button variant="ghost" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => dismissChange(g)}>Dismiss</Button>
+              </Row>
+              {g.change.migration && (
+                <Text size={11} tone="muted" as="div" style={{ padding: "0 10px 6px" }}>Migration: {g.change.migration}</Text>
+              )}
+              <Box style={{ padding: "6px 10px", borderTop: "1px solid var(--border-soft)", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                <Text size={10.5} tone="dim">propagates to</Text>
+                {g.projects.length === 0 ? (
+                  <Text size={10.5} tone="dim">— no consumer projects yet</Text>
+                ) : g.projects.map((pk) => (
+                  <Text key={pk} mono size={10.5} tone="muted" style={{ background: "var(--bg-panel)", borderRadius: 4, padding: "1px 6px" }}>{pk}</Text>
+                ))}
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      )}
+    </>
+  );
+}
+
 export function AppBanners() {
   return (
     <Box className="app-banner-stack">
+      <KitChangesBanner />
       <CrashRecoveryBanner />
       <SessionRecoveryBanner />
       <QuarantineBanner />

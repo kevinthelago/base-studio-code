@@ -2,6 +2,7 @@ import { useState } from "react";
 import { LlmProviderCard } from "../cards/LlmProviderCard";
 import { PlanningAutomationCard } from "../cards/PlanningAutomationCard";
 import { ShellSelectorCard } from "../cards/ShellSelectorCard";
+import { KitChangeApprovalCard } from "../cards/KitChangeApprovalCard";
 import { TunnelSettings } from "@/features/tunnel";
 import { MetricsCollectionCard } from "../cards/MetricsCollectionCard";
 import { IdleReaperCard } from "../cards/IdleReaperCard";
@@ -42,6 +43,9 @@ export function PlannerPage() {
       <Sub>Providers &amp; automation</Sub>
       <LlmProviderCard />
       <PlanningAutomationCard />
+
+      <Sub>Design</Sub>
+      <KitChangeApprovalCard />
 
       <Sub>Shell</Sub>
       <ShellSelectorCard />
