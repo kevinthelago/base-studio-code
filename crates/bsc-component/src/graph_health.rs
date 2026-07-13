@@ -173,10 +173,24 @@ fn resolvable_specifiers() -> &'static BTreeSet<String> {
     })
 }
 
-/// Is `spec` a BARE package specifier — not a relative (`.`/`..`), absolute (`/`), or first-party (`@/`)
-/// import? Only bare specifiers resolve through the preview import-map. Mirrors `isBareSpecifier` (TS).
+/// Is `spec` a BARE package specifier — not a relative (`.`/`..`), absolute (`/`), first-party (`@/`),
+/// or an absolute URL? Only bare specifiers resolve through the preview import-map. Mirrors
+/// `isBareSpecifier` (TS).
 fn is_bare_specifier(spec: &str) -> bool {
-    !spec.starts_with('.') && !spec.starts_with('/') && !spec.starts_with("@/")
+    !spec.starts_with('.') && !spec.starts_with('/') && !spec.starts_with("@/") && !is_url_specifier(spec)
+}
+
+/// Is `spec` an ABSOLUTE URL — a `scheme:` prefix (the first `:` sits before any `/`, e.g. `https:`,
+/// `http:`, `data:`)? Such a specifier resolves DIRECTLY in the preview iframe (the import-map's own
+/// values ARE esm.sh URLs), so it needs no import-map entry and must never be flagged as an unresolvable
+/// bare import (#2963). Mirrors `isUrlSpecifier` (TS). (Protocol-relative `//` is already excluded by the
+/// leading-`/` check in `is_bare_specifier`.)
+fn is_url_specifier(spec: &str) -> bool {
+    match (spec.find(':'), spec.find('/')) {
+        (Some(colon), Some(slash)) => colon < slash, // a scheme (`https:`) before any path `/`
+        (Some(_), None) => true,                     // `data:…` with no slash
+        _ => false,
+    }
 }
 
 /// Every module specifier imported/exported-from in `source` — `import … from "X"`, `export … from "X"`,
@@ -898,6 +912,37 @@ mod tests {
         let fs = analyze(&comps);
         let found = cats(&fs);
         assert!(!found.contains(&"unresolvable-import"));
+    }
+
+    #[test]
+    fn is_url_specifier_recognizes_absolute_urls_but_not_bare_packages() {
+        assert!(is_url_specifier("https://esm.sh/d3@7"));
+        assert!(is_url_specifier("http://x/y"));
+        assert!(is_url_specifier("data:text/javascript,x"));
+        assert!(!is_url_specifier("d3")); // a bare package
+        assert!(!is_url_specifier("d3-scale"));
+        assert!(!is_url_specifier("@scope/pkg")); // scoped, no scheme
+        assert!(!is_url_specifier("./local"));
+        // a URL is therefore NOT a bare specifier; a genuine bare package still is.
+        assert!(!is_bare_specifier("https://esm.sh/d3@7"));
+        assert!(is_bare_specifier("d3-scale"));
+    }
+
+    #[test]
+    fn does_not_flag_an_absolute_url_import_but_still_flags_a_bare_miss() {
+        // #2963: a full esm.sh URL resolves DIRECTLY in the preview (no import-map entry) → not flagged;
+        // a bare package missing from the map (d3-scale) is still flagged.
+        let comps = [
+            json!({ "id":"chart", "name":"Chart", "kitId":"k", "role":"composite", "used":2, "composes":[],
+                    "srcText":"import * as d3 from \"https://esm.sh/d3@7\";\nexport function Chart(){ return d3; }" }),
+            json!({ "id":"bad", "name":"Bad", "kitId":"k", "role":"composite", "used":2, "composes":[],
+                    "srcText":"import { scaleLinear } from \"d3-scale\";\nexport function Bad(){ return scaleLinear; }" }),
+        ];
+        let fs = analyze(&comps);
+        let flagged: Vec<_> = fs.iter().filter(|f| f.category == "unresolvable-import").collect();
+        assert_eq!(flagged.len(), 1, "only the bare miss is flagged, not the esm.sh URL");
+        assert_eq!(flagged[0].node_names, ["Bad"]);
+        assert!(flagged[0].why.contains("d3-scale"));
     }
 
     #[test]

@@ -75,10 +75,21 @@ function importSpecifiers(source: string): string[] {
   return [...specs];
 }
 
-/** Is `spec` a BARE package specifier — not a relative (`.`/`..`), absolute (`/`), or first-party
- *  (`@/`) import? Only bare specifiers resolve through the preview import-map. */
+/** Is `spec` an ABSOLUTE URL — a `scheme:` prefix (the first `:` sits before any `/`, e.g. `https:`,
+ *  `http:`, `data:`)? Such a specifier resolves DIRECTLY in the preview iframe (the import-map's own
+ *  values ARE esm.sh URLs), so it needs no import-map entry and is never an unresolvable bare import
+ *  (#2963). Rust twin: `is_url_specifier`. (Protocol-relative `//` is excluded by the leading-`/` check.) */
+function isUrlSpecifier(spec: string): boolean {
+  const colon = spec.indexOf(":");
+  if (colon < 0) return false;
+  const slash = spec.indexOf("/");
+  return slash < 0 || colon < slash;
+}
+
+/** Is `spec` a BARE package specifier — not a relative (`.`/`..`), absolute (`/`), first-party
+ *  (`@/`), or an absolute URL? Only bare specifiers resolve through the preview import-map. */
 function isBareSpecifier(spec: string): boolean {
-  return !spec.startsWith(".") && !spec.startsWith("/") && !spec.startsWith("@/");
+  return !spec.startsWith(".") && !spec.startsWith("/") && !spec.startsWith("@/") && !isUrlSpecifier(spec);
 }
 
 /** Is `spec` an INTERNAL first-party import — a `@/…` alias or a RELATIVE (`./`, `../`) path — as opposed
