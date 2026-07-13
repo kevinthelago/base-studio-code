@@ -14,8 +14,9 @@
 //
 // DEFENSE IN DEPTH: like variants, this compiles LLM-authored data into live CSS, so a kit /
 // animation name must be a safe CSS identifier, a keyframe stop must be `from`/`to`/`N%`, a property
-// must be `[a-z-]+`, and no value may carry a declaration-ending / injection sequence. Anything
-// failing is skipped, never emitted.
+// must be `[a-z-]+`, and no value may carry a declaration-ending / injection sequence. An optional
+// child `selector` must pass `SAFE_SELECTOR` (only selector-safe characters — it cannot break out of
+// the selector position). Anything failing is skipped, never emitted.
 
 /** When an authored animation plays. */
 export type AnimationTrigger = "mount" | "hover" | "always";
@@ -31,8 +32,16 @@ export interface KitAnimation {
   duration?: string;
   /** Easing — a motion-token ref (`var(--ease-standard)`) or a timing-function. Default `var(--ease-standard)`. */
   easing?: string;
+  /** Animation-level delay (#3056) — a time (`120ms`), slotted after easing in the shorthand. Default none. */
+  delay?: string;
   /** When it plays. Default `mount`. */
   trigger?: AnimationTrigger;
+  /** Scope the applying rule to a CHILD element (#3054) — a descendant combinator
+   *  (`.<kit>-anim-<name> <selector>`). Absent ⇒ the animation applies to the root class as before. */
+  selector?: string;
+  /** STATIC declarations set on the applying rule (#3054) — for `transform-origin` / `transform-box`
+   *  etc. that can't live in keyframes. Each `property: value` is guarded like a keyframe declaration. */
+  set?: Record<string, string>;
 }
 
 /** A kit animation + its owning kit's CSS class base (the flat shape the compiler takes). */
@@ -48,6 +57,10 @@ const SAFE_IDENT = /^[a-z][a-z0-9-]*$/;
 const SAFE_STOP = /^(from|to|\d{1,3}%)$/;
 /** A CSS property name — lowercase letters + hyphens (`opacity`, `transform`, `background-color`). */
 const SAFE_PROP = /^[a-z-]+$/;
+/** A child selector for the applying rule (#3054) — ONLY selector-safe characters, so it structurally
+ *  cannot break out of the selector position into a declaration / new rule / comment (no `{ } ; < \ /`).
+ *  Allows classes, tags, `#`ids, `>`/space/`+`/`~` combinators, `[attr="v"]`, `:nth-child(2n)`, `,` lists, `*`. */
+const SAFE_SELECTOR = /^[a-zA-Z0-9 ._#>[\]="'\-:(),*+~]+$/;
 /** A value that could END the declaration or INJECT CSS — refused even though the CLI already guards. */
 const UNSAFE_VALUE = /[;{}<>\\]|url\(|expression\(|@import|\/\*/i;
 const DUR_DEFAULT = "var(--dur-base)";
@@ -73,9 +86,12 @@ function keyframesCss(d: AnimationDef): string {
 /**
  * Compile animation definitions into CSS: a `@keyframes bsc-<kit>-<name>` block + a
  * reduced-motion-guarded rule applying it on `.<kit>-anim-<name>` (`:hover` for a hover
- * trigger; `infinite` for `always`, else played once). Pure + guarded — skips any definition whose
- * kit/name isn't a safe identifier, whose duration/easing looks like an injection, or with no
- * valid keyframes. Empty string when nothing is renderable.
+ * trigger; `infinite` for `always`, else played once). A valid {@link KitAnimation.selector}
+ * scopes the applying rule to a CHILD (`.<kit>-anim-<name> <selector>`, #3054); {@link KitAnimation.set}
+ * adds static declarations to the rule body; {@link KitAnimation.delay} slots into the shorthand after
+ * easing (#3056). Pure + guarded — skips any definition whose kit/name isn't a safe identifier, whose
+ * duration/easing/delay looks like an injection, or with no valid keyframes; an unsafe selector falls
+ * back to the root class and an unsafe `set` pair is dropped. Empty string when nothing is renderable.
  */
 export function compileAnimationsCss(defs: AnimationDef[]): string {
   const blocks: string[] = [];
@@ -85,12 +101,21 @@ export function compileAnimationsCss(defs: AnimationDef[]): string {
     if (!frames) continue;
     const dur = safeValue(d.duration) ? d.duration! : DUR_DEFAULT;
     const ease = safeValue(d.easing) ? d.easing! : EASE_DEFAULT;
+    const delay = safeValue(d.delay) ? ` ${d.delay}` : "";
     const anim = `bsc-${d.kit}-${d.name}`;
     const cls = `.${d.kit}-anim-${d.name}`;
-    const selector = d.trigger === "hover" ? `${cls}:hover` : cls;
+    // #3054: scope to a child when a safe selector is given (descendant combinator); else the root class.
+    const scoped = SAFE_SELECTOR.test(d.selector ?? "") ? `${cls} ${d.selector!.trim()}` : cls;
+    const rule = d.trigger === "hover" ? `${scoped}:hover` : scoped;
     const iter = d.trigger === "always" ? "infinite" : "1";
+    // #3054: static declarations on the applying rule, guarded exactly like a keyframe declaration.
+    const setCss = Object.entries(d.set ?? {})
+      .filter(([prop, value]) => SAFE_PROP.test(prop) && safeValue(value))
+      .map(([prop, value]) => `${prop}: ${value};`)
+      .join(" ");
+    const body = `${setCss ? `${setCss} ` : ""}animation: ${anim} ${dur} ${ease}${delay} ${iter} both;`;
     blocks.push(
-      `${frames}\n@media (prefers-reduced-motion: no-preference) {\n  ${selector} { animation: ${anim} ${dur} ${ease} ${iter} both; }\n}`,
+      `${frames}\n@media (prefers-reduced-motion: no-preference) {\n  ${rule} { ${body} }\n}`,
     );
   }
   return blocks.join("\n\n");
