@@ -176,7 +176,8 @@ whole implementation, then store it.
 - `bsc ui list [--full]` · `bsc ui get <id>` · `bsc ui set` (JSON on stdin, upsert by `id`) ·
   `bsc ui remove <id>` — the components.
 - `bsc ui kit list` · `bsc ui kit get <id>` · `bsc ui kit set` · `bsc ui kit remove <id>` — the kits
-  (technology-scoped namespaces: `{ id, name, stack, dot }`).
+  (technology-scoped namespaces: `{ id, name, tech, style, stack?, dot }` — see "The kit model";
+  `tech` + `style` place the kit in the rail, omit them and it shows as "other/other").
 - `bsc ui validate` every spec before `bsc ui set` — never write a spec that fails the contract.
 
 ## Rung 5 — Animation (a kit's motion library, as data)
@@ -232,8 +233,13 @@ silently dropped), so you fix it at write time. Author motion that composes with
 
 ### The kit model
 
-A **kit** is a technology-scoped namespace (e.g. `react-ui`) of proven **components**. Each component
-record carries:
+A **kit** is a technology-scoped namespace (e.g. `react-ui`) of proven **components**. The kit record
+itself carries `{ id, name, tech, style, stack?, dot }` — and **`tech` + `style` are what place the kit
+in the Design Studio rail**: `tech` = the technology slug (`react` / `vue` / `kotlin` …, the top level),
+`style` = the visual language (`studio` / `material` / `demo` …, the second). **Set BOTH** — a kit
+missing either falls into the trailing "other" head, so `{ id, name, stack }` alone renders as
+"other/other". `stack` is a **display label only** (e.g. `"React · TypeScript"`), never a grouping axis.
+Each component record carries:
 
 - `role` — its architectural tier: `primitive` · `composite` · `layout` · `page` · `service`.
 - `composes` — the component names it depends on (its dependencies in the composition graph).
