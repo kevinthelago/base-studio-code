@@ -50,6 +50,7 @@ export default function App() {
     focusedAgentName,
     activeRepoName,
     activePageTab,
+    crumbEntity,
     projectsPageMode,
     projectsView,
     githubTab,
@@ -83,6 +84,7 @@ export default function App() {
   const titleWorkspace = locationCrumb({
     activeWorkspace,
     activePageTab,
+    crumbEntity,
     projectsPageMode,
     projectsView,
     githubTab,
