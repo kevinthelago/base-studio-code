@@ -3,7 +3,7 @@
 // retired spring-kotlin/tauri-rust kits, the masked #2475 shapes stamps).
 import { describe, it, expect } from "vitest";
 import type { Kit } from "./model";
-import { SEED_COMPONENTS, SEED_KITS, reconcileComponents, reconcileKits } from "./seed";
+import { SEED_COMPONENTS, SEED_KITS, reconcileComponents, reconcileKits, DEFAULT_KIT_SEEDED } from "./seed";
 import { seedHashOf, stampSeedHash } from "./seedRefresh";
 
 describe("packaged seed stamping (#2483)", () => {
@@ -19,7 +19,9 @@ describe("packaged seed stamping (#2483)", () => {
   });
 });
 
-describe("reconcile against the real seed (#2483 acceptance criteria)", () => {
+// TEMPORARY (#3029): the default kit is disabled, so the reconcile converges against an EMPTY seed —
+// these real-seed acceptance tests are dormant until DEFAULT_KIT_SEEDED flips back on (they auto-restore).
+describe.skipIf(!DEFAULT_KIT_SEEDED)("reconcile against the real seed (#2483 acceptance criteria)", () => {
   it("a seed change to an untouched built-in reaches an existing store (the #2475 shapes-mask regression)", () => {
     // Yesterday's release: the same component WITHOUT the later-added `shapes` stamp — pristine
     // (self-consistently hashed), but stale.
