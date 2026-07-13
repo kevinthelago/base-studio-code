@@ -101,4 +101,38 @@ mod tests {
         // An unknown command falls back to the overview.
         assert!(bsc_cli_util::help_for("bsc blueprint", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
     }
+
+    /// Regression for the JSON-files → SQLite migration (#2983, epic #2982): the blueprint store — the
+    /// shared [`bsc_json_store::Store`] under THIS crate's `blueprints` segment + `blueprint` noun (from
+    /// [`SPEC`]) — must persist records to a SQLite `blueprints.db`, NOT to the legacy per-id
+    /// `blueprints/<id>.json` files. Round-trips a blueprint through the public store API under a fresh
+    /// temp base, then asserts the on-disk backing.
+    #[test]
+    fn blueprints_persist_to_sqlite_not_legacy_json_files() {
+        use bsc_json_store::Store;
+
+        // A fresh temp base per test; clean any leftover up front (the db lives INSIDE base, so a single
+        // remove wipes both the segment dir and the sibling `.db`).
+        let base = std::env::temp_dir().join(format!("bsc-blueprint-sqlite-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+
+        // The store exactly as this crate configures it (`SPEC`): the `blueprints` segment + `blueprint`
+        // noun — bsc-blueprint has no base-dir-injectable API of its own, so drive the shared Store.
+        let store = Store::new(base.join(SPEC.dir_segment), SPEC.noun);
+
+        // Round-trip a blueprint through the public store API (write → read back, verbatim).
+        let json = r#"{"id":"demo","name":"Demo Blueprint","sections":[]}"#;
+        store.set("demo", json).unwrap();
+        assert_eq!(store.get("demo").unwrap().as_deref(), Some(json), "blueprint round-trips verbatim");
+
+        // The SQLite backing exists at `<base>/blueprints.db` …
+        let db = base.join(format!("{}.db", SPEC.dir_segment));
+        assert!(db.is_file(), "records persist to the SQLite db {db:?}");
+
+        // … and NO legacy per-id JSON file was created under `<base>/blueprints/`.
+        let legacy = base.join(SPEC.dir_segment).join("demo.json");
+        assert!(!legacy.exists(), "no legacy JSON file {legacy:?} — records live in SQLite, not files");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }
