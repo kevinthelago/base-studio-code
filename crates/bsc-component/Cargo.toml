@@ -2,7 +2,7 @@
 name = "bsc-component"
 version = "0.1.0"
 edition = "2021"
-description = "Component-library store (file CRUD over ~/.base-studio-code/components + kits) for base-studio-code (#2281) — the proven-component kits the pane, planner, and every live session share, a thin two-collection shim over the shared bsc-json-store (#2158), reachable from the Tauri app's component bridge and the session-facing `bsc ui` CLI (#2469 — its store verbs mount under `bsc ui`; `bsc component` is the deprecated alias)."
+description = "Component-library store (SQLite stores at ~/.base-studio-code/components.db + kits.db) for base-studio-code (#2281) — the proven-component kits the pane, planner, and every live session share, a thin two-collection shim over the shared bsc-json-store (#2158), reachable from the Tauri app's component bridge and the session-facing `bsc ui` CLI (#2469 — its store verbs mount under `bsc ui`; `bsc component` is the deprecated alias)."
 
 # The core lib (no Tauri, no SQLite) so the tiny CLI reuses it without dragging the whole desktop app
 # in. The hyphenated package name maps to the `bsc_component` crate name.

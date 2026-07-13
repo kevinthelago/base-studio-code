@@ -2,7 +2,7 @@
 name = "bsc-blueprint"
 version = "0.1.0"
 edition = "2021"
-description = "User blueprint store (file CRUD over ~/.base-studio-code/blueprints/) for base-studio-code (#1719) — a thin blueprint-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's blueprint commands and the session-facing `bsc blueprint` CLI."
+description = "User blueprint store (SQLite store at ~/.base-studio-code/blueprints.db) for base-studio-code (#1719) — a thin blueprint-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's blueprint commands and the session-facing `bsc blueprint` CLI."
 
 # The core lib (no Tauri, no SQLite) so the tiny CLI reuses it without dragging the whole desktop app
 # in. The hyphenated package name maps to the `bsc_blueprint` crate name.
