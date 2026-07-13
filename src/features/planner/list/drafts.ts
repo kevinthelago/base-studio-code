@@ -11,6 +11,12 @@
 // showing in BOTH lists. Keying off `lp.published` is the fix; the board-title keys stay as a
 // secondary signal for hubs the reconcile hasn't marked yet. (The node-id alias is retired, #2409 —
 // a board's key derives from its name.)
+//
+// #2995 adds a THIRD source unioned in on top: the durable projects DB (`bsc project db`). That layer
+// is a strictly ADDITIVE mirror of the store draft map so a draft survives a restart even when the
+// fragile `localDraftProjects` cache misses — see `mergeDbDrafts`.
+
+import type { DbProject } from "./projectsDbBridge";
 
 /** The fields of the backend `LocalProject` this selection needs. */
 export interface LocalProjectLite {
@@ -68,4 +74,37 @@ export function buildDrafts(
     byKey.set(key, { key, title: d.title, pitch: d.pitch, sort: Math.max(ex?.sort ?? 0, d.createdAt) });
   }
   return [...byKey.values()].filter(d => !publishedKeys.has(d.key));
+}
+
+/**
+ * Union the durable projects-DB rows (#2995) into the assembled Drafts list. ADDITIVE only: every
+ * `existing` row is kept, and a DB row that isn't already represented is appended — so a draft the
+ * `localDraftProjects` cache lost on restart still surfaces from the DB. Only `drafted`/`planning`-state
+ * rows are drafts; `published`/`created` rows are ignored (a published project is not a draft). Deduped
+ * by key — an existing entry KEEPS its title + pitch when non-empty (the on-disk hub / store draft map
+ * is the richer source), only borrowing the DB's when it has none; `sort` is the newer of the two.
+ * Pure so it's unit-testable.
+ *
+ * @param existing the rows {@link buildDrafts} produced (on-disk hubs ∪ store draft map, minus published).
+ * @param dbRows   every row from `bsc project db list` (see {@link DbProject}); non-draft states ignored.
+ */
+export function mergeDbDrafts(existing: DraftRow[], dbRows: DbProject[]): DraftRow[] {
+  const byKey = new Map<string, DraftRow>();
+  for (const d of existing) byKey.set(d.key, d);
+  for (const r of Array.isArray(dbRows) ? dbRows : []) {
+    if (r.state !== "drafted" && r.state !== "planning") continue;
+    const dbSort = r.updatedAt || r.createdAt || 0;
+    const ex = byKey.get(r.key);
+    if (ex) {
+      byKey.set(r.key, {
+        key: r.key,
+        title: ex.title || r.title,
+        pitch: ex.pitch || r.pitch,
+        sort: Math.max(ex.sort, dbSort),
+      });
+    } else {
+      byKey.set(r.key, { key: r.key, title: r.title, pitch: r.pitch, sort: dbSort });
+    }
+  }
+  return [...byKey.values()];
 }
