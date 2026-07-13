@@ -41,7 +41,7 @@ const HANDLES: { dir: string; style: CSSProperties }[] = (() => {
   ];
 })();
 
-export function GlanceStreamMorph({ node, paneId, name, role, zoom = 1, onRect, onClose }: {
+export function GlanceStreamMorph({ node, paneId, name, role, zoom = 1, onRect, onClose, onEnd }: {
   /** The graph node this session belongs to — the card's origin + return box, in WORLD coords. */
   node: { x: number; y: number };
   /** The agent's identity pane id (`<project>:<stream>`) — the live PTY the dock reconnects to. */
@@ -52,7 +52,12 @@ export function GlanceStreamMorph({ node, paneId, name, role, zoom = 1, onRect, 
   zoom?: number;
   /** Report the expanded world box (or null when collapsed/closed) so the canvas can push neighbours (#2662). */
   onRect?: (rect: MorphRect | null) => void;
+  /** Collapse the morph back into its node (keeps the PTY alive). */
   onClose: () => void;
+  /** END the session — kill the PTY + drop the cell from the live set (#3049) — for a soft-locked
+   *  fleet the user needs to fully tear a stuck agent down before relaunching triage. Undefined ⇒
+   *  the dock omits the affordance. */
+  onEnd?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   // The expanded panel's world box — defaults to the panel centred on the node, then edge/corner drags
@@ -62,6 +67,11 @@ export function GlanceStreamMorph({ node, paneId, name, role, zoom = 1, onRect, 
   }));
   const [resizing, setResizing] = useState(false);
   const closingRef = useRef(false);
+  // The pending grow→collapse→onClose timer. Held in a ref so we can CANCEL it if this morph unmounts
+  // before it fires (#3049) — e.g. the user clicks another live node, which remounts a FRESH morph for
+  // it (keyed by paneId). Without this, the old morph's delayed onClose (setChatNode(null)) fires ~420ms
+  // later and clobbers the newly-grown node, collapsing everything instead of switching.
+  const exitTimer = useRef<number | null>(null);
 
   // Grow to the expanded box on the next frame; the CSS transition tweens the world geometry.
   useLayoutEffect(() => {
@@ -74,13 +84,15 @@ export function GlanceStreamMorph({ node, paneId, name, role, zoom = 1, onRect, 
     onRect?.(open && !closingRef.current ? rect : null);
   }, [open, rect, onRect]);
   useEffect(() => () => onRect?.(null), [onRect]);
+  // Cancel a pending exit on unmount so a superseded morph's onClose can't fire after it's gone (#3049).
+  useEffect(() => () => { if (exitTimer.current != null) window.clearTimeout(exitTimer.current); }, []);
 
   const close = () => {
     if (closingRef.current) return;
     closingRef.current = true;
     onRect?.(null);                       // release the neighbours immediately
     setOpen(false);                       // shrink back into the node
-    window.setTimeout(onClose, EXIT_MS);  // unmount after the transition (or immediately, reduced-motion)
+    exitTimer.current = window.setTimeout(onClose, EXIT_MS);  // unmount after the transition (or immediately, reduced-motion)
   };
 
   useEffect(() => {
@@ -160,7 +172,7 @@ export function GlanceStreamMorph({ node, paneId, name, role, zoom = 1, onRect, 
         ...(resizing ? { transition: "none" } : null) }}
     >
       <Box className="glance-card-body">
-        <GlanceChatDock paneId={paneId} name={name} role={role} onClose={close} />
+        <GlanceChatDock paneId={paneId} name={name} role={role} onClose={close} onEnd={onEnd} />
       </Box>
       {open ? HANDLES.map((hnd) => (
         <Box

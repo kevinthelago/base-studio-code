@@ -88,6 +88,11 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // Per-project auto-triage toggle (#2265) — gates the fault→fix loop; surfaced in the node inspector.
   const autoTriage = useAppStore((s) => s.autoTriage);
   const setAutoTriage = useAppStore((s) => s.setAutoTriage);
+  // Ending a stuck agent's session (#3049): disabling the cell drops it from livePaneIds (so the node
+  // stops reading as live) and setPaneStatus clears a stale "run" dot. fleetStartProject re-enables the
+  // cell on the next launch, so this is self-reversing — "Relaunch fleet" respawns it fresh.
+  const setPaneDisabled = useAppStore((s) => s.setPaneDisabled);
+  const setPaneStatus = useAppStore((s) => s.setPaneStatus);
   // HEALTH axis (#2541, was #2265): the worst unresolved fault per project (from `bsc errors`) overlaid
   // onto each node — escalating health to warning/error and carrying the fault title as the reason.
   const faults = useGlanceFaults(useMemo(() => projectsBase.map((p) => p.id), [projectsBase]));
@@ -218,6 +223,16 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     else { setDrill(id); setSel(null); setShowCycle(false); }
   };
   const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); setChatNode(null); setPreviewOpen(false); };
+  // END a live agent's session (#3049): kill its PTY (mirrors the console's disable path) and disable
+  // the cell so the node drops out of the live set + its stale "run" clears. For a soft-locked fleet
+  // this fully tears a stuck agent down — then "Relaunch fleet" (#3044) respawns it, and fleetStartProject
+  // clears the disable on relaunch, so the teardown is self-reversing. Also collapses the morph.
+  const endSession = (pid: string) => {
+    void safeInvoke("pty_kill", { paneId: pid }, undefined);
+    setPaneDisabled(pid, true);
+    setPaneStatus(pid, "idle");
+    setChatNode(null);
+  };
 
   // The dock shows ONLY while the open node is still a live agent in the CURRENT fleet — so drilling
   // out (or a nav-history back/forward that swaps `drill`) closes it by derivation, no reset effect.
@@ -360,6 +375,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           // The live-agent terminal morphs open IN the graph, as an oversized node (#2534).
           chat={chatPaneId && chatNode ? { nodeId: chatNode, paneId: chatPaneId, name: chatMeta?.slug ?? "agent", role: chatMeta?.roleLabel } : null}
           onCloseChat={() => setChatNode(null)}
+          onEndChat={chatPaneId ? () => endSession(chatPaneId) : undefined}
           preview={previewOn && drill ? {
             nodeId: PREVIEW_NODE_ID, name: drillNode?.slug ?? "app",
             source: previewSources[drill] ?? null,

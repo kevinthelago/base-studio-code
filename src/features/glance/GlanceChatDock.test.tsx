@@ -39,11 +39,22 @@ describe("GlanceChatDock", () => {
     expect(screen.getByTestId("terminal")).toHaveAttribute("data-visible", "false");
   });
 
-  it("fires onClose from the close button", () => {
+  it("fires onClose (collapse — agent stays alive) from the ✕ button", () => {
     const onClose = vi.fn();
     render(<GlanceChatDock paneId="proj:api" name="api-worker" onClose={onClose} />);
-    fireEvent.click(screen.getByRole("button", { name: "Close stream" }));
+    fireEvent.click(screen.getByRole("button", { name: "Collapse stream (agent stays alive)" }));
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("shows the End-session button only when onEnd is given, and fires it (#3049)", () => {
+    // No onEnd → collapse-only (the ✕); the kill affordance is absent.
+    const { rerender } = render(<GlanceChatDock paneId="proj:api" name="api-worker" onClose={() => {}} />);
+    expect(screen.queryByRole("button", { name: "End session" })).toBeNull();
+    // With onEnd → the End-session (kill) button appears and calls onEnd, distinct from onClose.
+    const onEnd = vi.fn();
+    rerender(<GlanceChatDock paneId="proj:api" name="api-worker" onClose={() => {}} onEnd={onEnd} />);
+    fireEvent.click(screen.getByRole("button", { name: "End session" }));
+    expect(onEnd).toHaveBeenCalledOnce();
   });
 
   it("sends a chat message to the agent's PTY via the Send button (pty_write + Enter)", () => {

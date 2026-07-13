@@ -57,6 +57,9 @@ interface CanvasProps {
    *  node's world coords. Null = none open. */
   chat?: { nodeId: string; paneId: string; name: string; role?: string } | null;
   onCloseChat?: () => void;
+  /** END the open session (#3049) — kill its PTY + drop the cell from the live set, so a soft-locked
+   *  agent is fully torn down and triage can be relaunched. */
+  onEndChat?: () => void;
   /** The PREVIEW node morphed open (#2623) — the finished app rendered IN the graph, at its node's
    *  world coords. `source` is null until the verify-build produces one. Null = none open. */
   preview?: { nodeId: string; name: string; source: PreviewSource | null; building?: boolean; onBuild?: () => void; review?: PreviewReview } | null;
@@ -246,7 +249,10 @@ export function GlanceCanvas(p: CanvasProps) {
       {/* A live agent's terminal, morphed open IN the graph (#2534): an oversized node grown at the
           clicked node's world coords, so it pans/zooms/scales with the canvas. No portal, no scrim. */}
       {chatNode && p.chat && p.onCloseChat && (
-        <GlanceStreamMorph node={chatNode} paneId={p.chat.paneId} name={p.chat.name} role={p.chat.role} zoom={p.zoom} onRect={setMorphRect} onClose={p.onCloseChat} />
+        // Keyed by paneId (#3049): switching to another live node REMOUNTS the morph so it grows from
+        // the newly-clicked node's box (not the old one's), and the old morph's pending exit timer is
+        // cancelled on unmount — so clicking another node GROWS it instead of collapsing everything.
+        <GlanceStreamMorph key={p.chat.paneId} node={chatNode} paneId={p.chat.paneId} name={p.chat.name} role={p.chat.role} zoom={p.zoom} onRect={setMorphRect} onClose={p.onCloseChat} onEnd={p.onEndChat} />
       )}
 
       {/* The PREVIEW node, morphed open into the finished application IN the graph (#2623). */}
