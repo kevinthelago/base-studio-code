@@ -56,7 +56,10 @@ export function buildDrafts(
 
   const byKey = new Map<string, DraftRow>();
   for (const lp of safeLocals) {
-    if (!lp?.hasPlan) continue;   // skip bare scaffold dirs
+    // A hub is a draft when it has a plan OR the user named it (`titled`, #2994) — a user-titled hub
+    // with a plan.db but no goal/scope section yet is still a real draft. Only a bare, UNTITLED
+    // scaffold is skipped. (Interim until the DB-backed list, epic #2993.)
+    if (!lp?.hasPlan && !lp?.titled) continue;
     if (lp.published) continue;   // published hubs are not drafts (#922)
     byKey.set(lp.key, { key: lp.key, title: lp.title, pitch: "", sort: lp.updatedAt });
   }
