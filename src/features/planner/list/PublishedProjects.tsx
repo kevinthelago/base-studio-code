@@ -62,6 +62,12 @@ interface PublishedProjectsProps {
    *  mount), the time that state was fetched (epoch ms) — drives the "last synced 2h ago" hint.
    *  `null` when the live fetch landed or there is no persisted overlay. */
   staleFetchedAt: number | null;
+  /** Bare on-disk scaffolds (no plan/title/publish) surfaced for a confirm-gated cleanup (#2998) —
+   *  rendered as a de-emphasized line at the bottom of the projects column. The confirm modal is
+   *  owned by the composer (ProjectsList); this component only shows the affordance. Empty → nothing. */
+  orphans?: LocalProjectLite[];
+  /** Open the orphan-cleanup confirm modal (owned by ProjectsList). */
+  onCleanupOrphans?: () => void;
 }
 
 /** The published-projects column — the page header (title · summary · sync/new · new-project form ·
@@ -73,6 +79,7 @@ export function PublishedProjects({
   query, setQuery, sort, setSort, totalSummary, grandTotal, publishedCount,
   fetchProjects, setProjects, menuOpenId, setMenuOpenId, reopenDraft, setDraftDeleteTarget,
   localProjects, refreshLocalProjects, localPublished, staleFetchedAt,
+  orphans = [], onCleanupOrphans,
 }: PublishedProjectsProps) {
   const {
     setWorkspace, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard,
@@ -119,6 +126,33 @@ export function PublishedProjects({
   // content (#2445) — logged out they ARE the published column.
   const projectsEmpty = publishedCount === 0 && fDrafts.length === 0 && localPublished.length === 0;
   const q = query.trim().toLowerCase();
+
+  // #2998: split the drafts into two lifecycle groups by the durable projects.db state — a bare
+  // DRAFTED idea (drafted / absent) vs a CREATED/in-progress project whose hub + plan already exist
+  // (created / planning). The group header now conveys the state, so the chip drops its per-chip
+  // label; the dot color is the group's (accent for drafts · violet for in-progress).
+  const inProgress = fDrafts.filter(d => { const st = dbStateByKey[d.key]; return st === "created" || st === "planning"; });
+  const drafts     = fDrafts.filter(d => { const st = dbStateByKey[d.key]; return st !== "created" && st !== "planning"; });
+
+  // One chip, reused by both groups — the dot color comes from the group (accent vs violet).
+  const draftChip = (d: DraftRow, dot: string) => (
+    <Box as="span"
+      key={d.key}
+      onClick={() => reopenDraft(d)}
+      title={d.pitch || undefined}
+      className="mono"
+      pad={[5, 12]} bg="var(--bg-elev)" border="soft" radius={7} style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--fg)", cursor: "pointer" }}
+    >
+      <Box as="span" bg={dot} radius={99} style={{ width: 5, height: 5, flexShrink: 0 }} />
+      {d.title}
+      <Text as="span" tone="dim">{timeAgoMs(d.sort)}</Text>
+      <Box as="span"
+        onClick={e => { e.stopPropagation(); setDraftDeleteTarget(d); }}
+        title="delete draft"
+        style={{ color: "var(--fg-dim)", cursor: "pointer", paddingLeft: 2 }}
+      >✕</Box>
+    </Box>
+  );
 
   return (
     <>
@@ -172,40 +206,24 @@ export function PublishedProjects({
             <InlineError radius="md" borderFade={60} style={{ marginBottom: 12 }}>{draftError}</InlineError>
           )}
 
-          {/* drafts — compact chips (click = resume · ✕ = delete) */}
-          {fDrafts.length > 0 && (
+          {/* drafts — bare ideas (compact chips: click = resume · ✕ = delete). #2998 splits the single
+              chip row into two lifecycle groups by projects.db state: DRAFTS (drafted/absent) then IN
+              PROGRESS (created/planning), rendered in that lifecycle order and only when non-empty. */}
+          {drafts.length > 0 && (
             <Row gap={9} wrap style={{ marginBottom: 20 }}>
               <Text mono size={9.5} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".08em", whiteSpace: "nowrap" }}>
-                {fDrafts.length} draft{fDrafts.length !== 1 ? "s" : ""}
+                {drafts.length} draft{drafts.length !== 1 ? "s" : ""}
               </Text>
-              {fDrafts.map(d => {
-                // #2998: the durable lifecycle state (projects.db) distinguishes a bare DRAFTED idea
-                // from a CREATED/planning project whose hub + plan already exist. Absent until the DB
-                // is populated (a new draft or the backfill on restart) → the plain drafted look.
-                const st = dbStateByKey[d.key];
-                const inProgress = st === "created" || st === "planning";
-                return (
-                  <Box as="span"
-                    key={d.key}
-                    onClick={() => reopenDraft(d)}
-                    title={d.pitch || undefined}
-                    className="mono"
-                    pad={[5, 12]} bg="var(--bg-elev)" border="soft" radius={7} style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--fg)", cursor: "pointer" }}
-                  >
-                    <Box as="span" bg={inProgress ? "var(--violet)" : "var(--accent)"} radius={99} style={{ width: 5, height: 5, flexShrink: 0 }} />
-                    {d.title}
-                    {st && st !== "drafted" && (
-                      <Text as="span" mono size={9} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em" }}>{st}</Text>
-                    )}
-                    <Text as="span" tone="dim">{timeAgoMs(d.sort)}</Text>
-                    <Box as="span"
-                      onClick={e => { e.stopPropagation(); setDraftDeleteTarget(d); }}
-                      title="delete draft"
-                      style={{ color: "var(--fg-dim)", cursor: "pointer", paddingLeft: 2 }}
-                    >✕</Box>
-                  </Box>
-                );
-              })}
+              {drafts.map(d => draftChip(d, "var(--accent)"))}
+            </Row>
+          )}
+
+          {inProgress.length > 0 && (
+            <Row gap={9} wrap style={{ marginBottom: 20 }}>
+              <Text mono size={9.5} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".08em", whiteSpace: "nowrap" }}>
+                {inProgress.length} in progress
+              </Text>
+              {inProgress.map(d => draftChip(d, "var(--violet)"))}
             </Row>
           )}
 
@@ -288,6 +306,21 @@ export function PublishedProjects({
                 Nothing here yet. Start a plan with <b style={{ color: "var(--fg-muted)" }}>+ New project</b>.
               </Text>
             )
+          )}
+
+          {/* Orphaned scaffolds (#2998): bare on-disk hubs with no plan/title/publish — invisible in the
+              lists above yet cluttering the projects dir. A quiet, de-emphasized cleanup affordance; the
+              confirm modal (which lists exactly what gets deleted) is owned by the composer. */}
+          {orphans.length > 0 && onCleanupOrphans && (
+            <Row gap={8} align="center" style={{ marginTop: 10, paddingTop: 4 }}>
+              <Text as="span" mono size={10} tone="dim">
+                {orphans.length} orphaned scaffold{orphans.length !== 1 ? "s" : ""} · no plan
+              </Text>
+              <Box as="button" onClick={onCleanupOrphans} className="mono"
+                style={{ background: "none", border: "none", padding: 0, color: "var(--fg-muted)", cursor: "pointer", fontSize: 10, textDecoration: "underline" }}>
+                Clean up
+              </Box>
+            </Row>
           )}
         </Box>
       </Stack>
