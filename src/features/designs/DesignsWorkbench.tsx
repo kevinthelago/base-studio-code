@@ -353,6 +353,14 @@ export function DesignsWorkbench() {
         ) : legend}
       >
         <svg width={graph.world.w} height={graph.world.h} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
+          {/* Semantic swimlanes (#2964): Pages (top) · Composables (middle) · Fundamentals (base). */}
+          {graph.lanes.map((lane, i) => (
+            <g key={lane.tier} className={`ds-lane ds-lane-${lane.tier}`}>
+              <rect x={0} y={lane.y0} width={graph.world.w} height={lane.y1 - lane.y0} className="ds-lane-bg" />
+              {i > 0 && <line x1={0} y1={lane.y0} x2={graph.world.w} y2={lane.y0} className="ds-lane-divider" />}
+              <text x={16} y={lane.y0 + 20} className="ds-lane-label">{lane.label}</text>
+            </g>
+          ))}
           {orderedEdges.map((e) => {
             const a = graph.pos.get(e.from), b = graph.pos.get(e.to);
             if (!a || !b) return null;
