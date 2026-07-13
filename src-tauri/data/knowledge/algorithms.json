@@ -1,592 +1,9 @@
 {
   "version": 2,
-  "note": "The Algorithms knowledge graph (#2760) — RUST-first, growing toward a PRIMITIVES-ROOTED, impl-is-concept model: each language's graph is rooted in that language's PRIMITIVES (role: primitive — Vec, slice, Iterator, Option, HashMap, VecDeque, BinaryHeap, i64, bool, tuple) and every implementation (role: algorithm) COMPOSES up from them; the implementation IS the concept. The ONE source of truth read by BOTH the frontend (src/features/algorithms) AND the `bsc graph` CLI (crates/bsc-graph embeds it). Slice A (#2958) authors the Rust primitive base + rewires the algorithm impls to compose from it; the abstract concept ontology (the `nodes`/`edges` arrays + per-impl `concept`) is retained for now and removed in slice B. Node `kind`: data-structure | algorithm | concept | output. Edge `rel`: operates-on | composes | variant-of | generates | related-to.",
-  "nodes": [
-    {
-      "id": "array",
-      "kind": "data-structure",
-      "name": "Array",
-      "summary": "Contiguous indexed cells; O(1) random access, O(n) insert.",
-      "tags": [
-        "linear"
-      ]
-    },
-    {
-      "id": "linked-list",
-      "kind": "data-structure",
-      "name": "Linked List",
-      "summary": "Nodes chained by pointers; O(1) insert, O(n) access.",
-      "tags": [
-        "linear"
-      ]
-    },
-    {
-      "id": "stack",
-      "kind": "data-structure",
-      "name": "Stack",
-      "summary": "LIFO — push/pop at one end. The call stack.",
-      "tags": [
-        "linear"
-      ]
-    },
-    {
-      "id": "queue",
-      "kind": "data-structure",
-      "name": "Queue",
-      "summary": "FIFO — enqueue/dequeue at opposite ends.",
-      "tags": [
-        "linear"
-      ]
-    },
-    {
-      "id": "hash-table",
-      "kind": "data-structure",
-      "name": "Hash Table",
-      "summary": "Key→value via a hash function; ~O(1) lookup.",
-      "tags": [
-        "map"
-      ]
-    },
-    {
-      "id": "binary-tree",
-      "kind": "data-structure",
-      "name": "Binary Tree",
-      "summary": "Each node has at most two children.",
-      "tags": [
-        "tree"
-      ]
-    },
-    {
-      "id": "bst",
-      "kind": "data-structure",
-      "name": "Binary Search Tree",
-      "summary": "Ordered binary tree: left < node < right.",
-      "tags": [
-        "tree",
-        "ordered"
-      ]
-    },
-    {
-      "id": "heap",
-      "kind": "data-structure",
-      "name": "Heap",
-      "summary": "Complete tree with the heap order — the priority queue.",
-      "tags": [
-        "tree",
-        "priority-queue"
-      ]
-    },
-    {
-      "id": "trie",
-      "kind": "data-structure",
-      "name": "Trie",
-      "summary": "Prefix tree keyed by sequence position.",
-      "tags": [
-        "tree",
-        "map"
-      ]
-    },
-    {
-      "id": "graph-ds",
-      "kind": "data-structure",
-      "name": "Graph",
-      "summary": "Nodes + edges — relationships between entities.",
-      "tags": [
-        "relational"
-      ]
-    },
-    {
-      "id": "matrix",
-      "kind": "data-structure",
-      "name": "Matrix",
-      "summary": "2-D grid of values; adjacency + linear transforms.",
-      "tags": [
-        "grid"
-      ]
-    },
-    {
-      "id": "bubble-sort",
-      "kind": "algorithm",
-      "name": "Bubble Sort",
-      "summary": "Repeatedly swap adjacent out-of-order pairs.",
-      "complexity": "O(n²)"
-    },
-    {
-      "id": "insertion-sort",
-      "kind": "algorithm",
-      "name": "Insertion Sort",
-      "summary": "Grow a sorted prefix one element at a time.",
-      "complexity": "O(n²)"
-    },
-    {
-      "id": "merge-sort",
-      "kind": "algorithm",
-      "name": "Merge Sort",
-      "summary": "Split, sort halves, merge — stable, predictable.",
-      "complexity": "O(n log n)"
-    },
-    {
-      "id": "quick-sort",
-      "kind": "algorithm",
-      "name": "Quick Sort",
-      "summary": "Partition around a pivot, recurse each side.",
-      "complexity": "O(n log n) avg"
-    },
-    {
-      "id": "heap-sort",
-      "kind": "algorithm",
-      "name": "Heap Sort",
-      "summary": "Build a heap, repeatedly extract the max.",
-      "complexity": "O(n log n)"
-    },
-    {
-      "id": "linear-search",
-      "kind": "algorithm",
-      "name": "Linear Search",
-      "summary": "Scan every element until a match.",
-      "complexity": "O(n)"
-    },
-    {
-      "id": "binary-search",
-      "kind": "algorithm",
-      "name": "Binary Search",
-      "summary": "Halve a sorted range each step.",
-      "complexity": "O(log n)"
-    },
-    {
-      "id": "bfs",
-      "kind": "algorithm",
-      "name": "Breadth-First Search",
-      "summary": "Explore a graph level by level via a queue.",
-      "complexity": "O(V+E)"
-    },
-    {
-      "id": "dfs",
-      "kind": "algorithm",
-      "name": "Depth-First Search",
-      "summary": "Explore a graph as deep as possible, then backtrack.",
-      "complexity": "O(V+E)"
-    },
-    {
-      "id": "dijkstra",
-      "kind": "algorithm",
-      "name": "Dijkstra",
-      "summary": "Greedy shortest paths on non-negative weights.",
-      "complexity": "O(E log V)"
-    },
-    {
-      "id": "a-star",
-      "kind": "algorithm",
-      "name": "A* Search",
-      "summary": "Dijkstra guided by a heuristic estimate.",
-      "complexity": "O(E)"
-    },
-    {
-      "id": "topological-sort",
-      "kind": "algorithm",
-      "name": "Topological Sort",
-      "summary": "Linear order of a DAG respecting dependencies.",
-      "complexity": "O(V+E)"
-    },
-    {
-      "id": "fibonacci",
-      "kind": "algorithm",
-      "name": "Fibonacci",
-      "summary": "Fₙ = Fₙ₋₁ + Fₙ₋₂ — the recurrence behind the golden ratio.",
-      "complexity": "O(n) memoized"
-    },
-    {
-      "id": "euclid-gcd",
-      "kind": "algorithm",
-      "name": "Euclid's GCD",
-      "summary": "Greatest common divisor by repeated remainder.",
-      "complexity": "O(log n)"
-    },
-    {
-      "id": "merge",
-      "kind": "algorithm",
-      "name": "Merge",
-      "summary": "Interleave two sorted runs into one.",
-      "complexity": "O(n)"
-    },
-    {
-      "id": "fft",
-      "kind": "algorithm",
-      "name": "Fast Fourier Transform",
-      "summary": "Divide-and-conquer discrete Fourier transform.",
-      "complexity": "O(n log n)"
-    },
-    {
-      "id": "recursion",
-      "kind": "concept",
-      "name": "Recursion",
-      "summary": "A procedure defined in terms of itself."
-    },
-    {
-      "id": "divide-and-conquer",
-      "kind": "concept",
-      "name": "Divide & Conquer",
-      "summary": "Split into subproblems, solve, combine."
-    },
-    {
-      "id": "dynamic-programming",
-      "kind": "concept",
-      "name": "Dynamic Programming",
-      "summary": "Reuse overlapping subproblem solutions."
-    },
-    {
-      "id": "greedy",
-      "kind": "concept",
-      "name": "Greedy",
-      "summary": "Take the locally-best choice at each step."
-    },
-    {
-      "id": "backtracking",
-      "kind": "concept",
-      "name": "Backtracking",
-      "summary": "Explore choices, undo on a dead end."
-    },
-    {
-      "id": "comparison-sort",
-      "kind": "concept",
-      "name": "Comparison Sort",
-      "summary": "Order by pairwise comparison — Ω(n log n) bound."
-    },
-    {
-      "id": "golden-ratio",
-      "kind": "concept",
-      "name": "Golden Ratio",
-      "summary": "φ ≈ 1.618 — the limit of Fibonacci ratios."
-    },
-    {
-      "id": "self-similarity",
-      "kind": "concept",
-      "name": "Self-Similarity",
-      "summary": "A whole resembling its parts at every scale."
-    },
-    {
-      "id": "l-system",
-      "kind": "concept",
-      "name": "L-system",
-      "summary": "Rewrite rules generating self-similar structure."
-    },
-    {
-      "id": "sorted-sequence",
-      "kind": "output",
-      "name": "Sorted Sequence",
-      "summary": "Elements in non-decreasing order."
-    },
-    {
-      "id": "shortest-path",
-      "kind": "output",
-      "name": "Shortest Path",
-      "summary": "A minimum-cost route through a graph."
-    },
-    {
-      "id": "golden-spiral",
-      "kind": "output",
-      "name": "Golden Spiral",
-      "summary": "A logarithmic spiral growing by φ each quarter turn."
-    },
-    {
-      "id": "mandelbrot",
-      "kind": "output",
-      "name": "Mandelbrot Set",
-      "summary": "The canonical fractal from a simple iterated map."
-    },
-    {
-      "id": "sierpinski",
-      "kind": "output",
-      "name": "Sierpiński Triangle",
-      "summary": "A self-similar fractal of nested triangles."
-    }
-  ],
-  "edges": [
-    {
-      "from": "linear-search",
-      "rel": "operates-on",
-      "to": "array"
-    },
-    {
-      "from": "binary-search",
-      "rel": "operates-on",
-      "to": "array"
-    },
-    {
-      "from": "merge-sort",
-      "rel": "operates-on",
-      "to": "array"
-    },
-    {
-      "from": "quick-sort",
-      "rel": "operates-on",
-      "to": "array"
-    },
-    {
-      "from": "heap-sort",
-      "rel": "operates-on",
-      "to": "heap"
-    },
-    {
-      "from": "bfs",
-      "rel": "operates-on",
-      "to": "graph-ds"
-    },
-    {
-      "from": "dfs",
-      "rel": "operates-on",
-      "to": "graph-ds"
-    },
-    {
-      "from": "dijkstra",
-      "rel": "operates-on",
-      "to": "graph-ds"
-    },
-    {
-      "from": "a-star",
-      "rel": "operates-on",
-      "to": "graph-ds"
-    },
-    {
-      "from": "topological-sort",
-      "rel": "operates-on",
-      "to": "graph-ds"
-    },
-    {
-      "from": "dijkstra",
-      "rel": "operates-on",
-      "to": "heap"
-    },
-    {
-      "from": "fft",
-      "rel": "operates-on",
-      "to": "matrix"
-    },
-    {
-      "from": "bst",
-      "rel": "variant-of",
-      "to": "binary-tree"
-    },
-    {
-      "from": "heap",
-      "rel": "variant-of",
-      "to": "binary-tree"
-    },
-    {
-      "from": "bubble-sort",
-      "rel": "variant-of",
-      "to": "comparison-sort"
-    },
-    {
-      "from": "insertion-sort",
-      "rel": "variant-of",
-      "to": "comparison-sort"
-    },
-    {
-      "from": "merge-sort",
-      "rel": "variant-of",
-      "to": "comparison-sort"
-    },
-    {
-      "from": "quick-sort",
-      "rel": "variant-of",
-      "to": "comparison-sort"
-    },
-    {
-      "from": "heap-sort",
-      "rel": "variant-of",
-      "to": "comparison-sort"
-    },
-    {
-      "from": "a-star",
-      "rel": "variant-of",
-      "to": "dijkstra"
-    },
-    {
-      "from": "merge-sort",
-      "rel": "composes",
-      "to": "merge"
-    },
-    {
-      "from": "merge-sort",
-      "rel": "composes",
-      "to": "divide-and-conquer"
-    },
-    {
-      "from": "quick-sort",
-      "rel": "composes",
-      "to": "divide-and-conquer"
-    },
-    {
-      "from": "binary-search",
-      "rel": "composes",
-      "to": "divide-and-conquer"
-    },
-    {
-      "from": "fft",
-      "rel": "composes",
-      "to": "divide-and-conquer"
-    },
-    {
-      "from": "fibonacci",
-      "rel": "composes",
-      "to": "recursion"
-    },
-    {
-      "from": "fibonacci",
-      "rel": "composes",
-      "to": "dynamic-programming"
-    },
-    {
-      "from": "euclid-gcd",
-      "rel": "composes",
-      "to": "recursion"
-    },
-    {
-      "from": "dijkstra",
-      "rel": "composes",
-      "to": "greedy"
-    },
-    {
-      "from": "a-star",
-      "rel": "composes",
-      "to": "greedy"
-    },
-    {
-      "from": "backtracking",
-      "rel": "composes",
-      "to": "recursion"
-    },
-    {
-      "from": "dfs",
-      "rel": "composes",
-      "to": "recursion"
-    },
-    {
-      "from": "dfs",
-      "rel": "composes",
-      "to": "stack"
-    },
-    {
-      "from": "bfs",
-      "rel": "composes",
-      "to": "queue"
-    },
-    {
-      "from": "heap-sort",
-      "rel": "composes",
-      "to": "heap"
-    },
-    {
-      "from": "topological-sort",
-      "rel": "composes",
-      "to": "dfs"
-    },
-    {
-      "from": "merge-sort",
-      "rel": "generates",
-      "to": "sorted-sequence"
-    },
-    {
-      "from": "quick-sort",
-      "rel": "generates",
-      "to": "sorted-sequence"
-    },
-    {
-      "from": "dijkstra",
-      "rel": "generates",
-      "to": "shortest-path"
-    },
-    {
-      "from": "a-star",
-      "rel": "generates",
-      "to": "shortest-path"
-    },
-    {
-      "from": "golden-ratio",
-      "rel": "generates",
-      "to": "golden-spiral"
-    },
-    {
-      "from": "l-system",
-      "rel": "generates",
-      "to": "sierpinski"
-    },
-    {
-      "from": "self-similarity",
-      "rel": "generates",
-      "to": "mandelbrot"
-    },
-    {
-      "from": "fibonacci",
-      "rel": "related-to",
-      "to": "golden-ratio"
-    },
-    {
-      "from": "golden-ratio",
-      "rel": "related-to",
-      "to": "self-similarity"
-    },
-    {
-      "from": "self-similarity",
-      "rel": "related-to",
-      "to": "l-system"
-    },
-    {
-      "from": "recursion",
-      "rel": "related-to",
-      "to": "self-similarity"
-    },
-    {
-      "from": "l-system",
-      "rel": "related-to",
-      "to": "recursion"
-    },
-    {
-      "from": "stack",
-      "rel": "related-to",
-      "to": "recursion"
-    },
-    {
-      "from": "stack",
-      "rel": "related-to",
-      "to": "linked-list"
-    },
-    {
-      "from": "queue",
-      "rel": "related-to",
-      "to": "linked-list"
-    },
-    {
-      "from": "heap",
-      "rel": "related-to",
-      "to": "queue"
-    },
-    {
-      "from": "hash-table",
-      "rel": "related-to",
-      "to": "array"
-    },
-    {
-      "from": "trie",
-      "rel": "related-to",
-      "to": "hash-table"
-    },
-    {
-      "from": "bst",
-      "rel": "related-to",
-      "to": "binary-search"
-    },
-    {
-      "from": "graph-ds",
-      "rel": "related-to",
-      "to": "matrix"
-    }
-  ],
+  "note": "The Algorithms knowledge library (#2760) — RUST-first, PRIMITIVES-ROOTED, impl-is-concept (#2961): each language is a tier of IMPLEMENTATIONS rooted in that language's PRIMITIVES (role: primitive — Vec, slice, Iterator, Option, HashMap, VecDeque, BinaryHeap, i64, bool, tuple), with algorithms (role: algorithm) composing UP from them; the implementation IS the concept — there is NO abstract concept ontology (nodes/edges/concept removed #2961). The ONE source of truth read by BOTH the frontend (src/features/algorithms) AND the `bsc graph` CLI (crates/bsc-graph embeds it). Each impl: { id, tech, role, name, summary, composes, code }.",
   "implementations": [
     {
       "id": "merge.rs",
-      "concept": "merge",
       "tech": "rust",
       "name": "merge (Rust)",
       "summary": "Interleave two sorted slices into one sorted Vec.",
@@ -599,7 +16,6 @@
     },
     {
       "id": "merge-sort.rs",
-      "concept": "merge-sort",
       "tech": "rust",
       "name": "merge_sort (Rust)",
       "summary": "Split, recursively sort the halves, and merge — built on the merge primitive.",
@@ -613,7 +29,6 @@
     },
     {
       "id": "binary-search.rs",
-      "concept": "binary-search",
       "tech": "rust",
       "name": "binary_search (Rust)",
       "summary": "Halve a sorted range each step until the target is found.",
@@ -626,7 +41,6 @@
     },
     {
       "id": "quick-sort.rs",
-      "concept": "quick-sort",
       "tech": "rust",
       "name": "quick_sort (Rust)",
       "summary": "Partition around a pivot and recurse each side.",
@@ -640,7 +54,6 @@
     },
     {
       "id": "bfs.rs",
-      "concept": "bfs",
       "tech": "rust",
       "name": "bfs (Rust)",
       "summary": "Explore a graph level by level using a queue.",
@@ -654,7 +67,6 @@
     },
     {
       "id": "bubble-sort.rs",
-      "concept": "bubble-sort",
       "tech": "rust",
       "name": "bubble_sort (Rust)",
       "summary": "Swap adjacent out-of-order pairs each pass, stopping early once a pass makes no swap.",
@@ -667,7 +79,6 @@
     },
     {
       "id": "insertion-sort.rs",
-      "concept": "insertion-sort",
       "tech": "rust",
       "name": "insertion_sort (Rust)",
       "summary": "Grow a sorted prefix, shifting larger elements right to open a slot for each key.",
@@ -680,7 +91,6 @@
     },
     {
       "id": "heap-sort.rs",
-      "concept": "heap-sort",
       "tech": "rust",
       "name": "heap_sort (Rust)",
       "summary": "Build a max-heap in place, then swap the root to the end and re-sift the remaining prefix.",
@@ -693,7 +103,6 @@
     },
     {
       "id": "linear-search.rs",
-      "concept": "linear-search",
       "tech": "rust",
       "name": "linear_search (Rust)",
       "summary": "Scan for the first element equal to the target; Some(index) on a hit, else None.",
@@ -707,7 +116,6 @@
     },
     {
       "id": "dfs.rs",
-      "concept": "dfs",
       "tech": "rust",
       "name": "dfs (Rust)",
       "summary": "Explore as deep as possible from a start node, backtracking — recursive over the adjacency map.",
@@ -720,7 +128,6 @@
     },
     {
       "id": "dijkstra.rs",
-      "concept": "dijkstra",
       "tech": "rust",
       "name": "dijkstra (Rust)",
       "summary": "Greedy non-negative-weight shortest distances from a start node, using a binary min-heap.",
@@ -733,7 +140,6 @@
     },
     {
       "id": "a-star.rs",
-      "concept": "a-star",
       "tech": "rust",
       "name": "a_star (Rust)",
       "summary": "Dijkstra guided by an admissible heuristic; returns the shortest node path to the goal, or None.",
@@ -746,7 +152,6 @@
     },
     {
       "id": "topological-sort.rs",
-      "concept": "topological-sort",
       "tech": "rust",
       "name": "topological_sort (Rust)",
       "summary": "Kahn's algorithm — repeatedly emit in-degree-zero nodes; None when a cycle is present.",
@@ -760,7 +165,6 @@
     },
     {
       "id": "fibonacci.rs",
-      "concept": "fibonacci",
       "tech": "rust",
       "name": "fibonacci (Rust)",
       "summary": "The nth Fibonacci number (F0 = 0, F1 = 1), iterated bottom-up in O(n).",
@@ -772,7 +176,6 @@
     },
     {
       "id": "euclid-gcd.rs",
-      "concept": "euclid-gcd",
       "tech": "rust",
       "name": "gcd (Rust)",
       "summary": "Greatest common divisor by repeated remainder — the Euclidean algorithm.",
@@ -784,7 +187,6 @@
     },
     {
       "id": "fft.rs",
-      "concept": "fft",
       "tech": "rust",
       "name": "fft (Rust)",
       "summary": "Recursive radix-2 Cooley–Tukey FFT over complex samples (re, im); input length must be a power of two.",
