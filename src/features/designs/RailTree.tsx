@@ -14,6 +14,7 @@ import { RailGroupHeader } from "@/shared/ui/layouts/RailGroupHeader";
 import { RoleDot } from "./kitChrome";
 import type { ComponentRecord, Kit } from "./lib/model";
 import type { KitTreeNode } from "./lib/kitGroups";
+import { byTier } from "./lib/compositionLayout";
 
 interface RailTreeProps {
   /** The technology → style rail hierarchy (from `groupKits`). */
@@ -43,7 +44,7 @@ export function RailTree({ railTree, expanded, setExpanded, kitId, setKitId, com
   const renderRailKit = (k: Kit, label?: string) => {
     const open = !!expanded[k.id];
     const inKit = components.filter((c) => c.kitId === k.id);
-    const rows = inKit.filter(match);
+    const rows = inKit.filter(match).sort(byTier); // Pages on top, like the graph (#2976)
     return (
       <Box key={k.id} style={{ marginBottom: 4 }}>
         <RailRow
