@@ -216,6 +216,18 @@ export function nodeHasLiveSession(paneId: string, livePaneIds: ReadonlySet<stri
   return livePaneIds.has(paneId);
 }
 
+/**
+ * Every live session pane that belongs to a project — its director + workers — so the whole fleet can be
+ * ended at once (#3052). A fleet pane id is `<projectKey>:<streamId>` (fleetPaneId), so the project's
+ * panes are exactly those with the `<projectKey>:` prefix. The trailing `:` makes the match EXACT: a
+ * project keyed `cli` never captures `cli-typer`'s panes. Pure; the caller kills each returned pane.
+ */
+export function livePanesForProject(projectKey: string, livePaneIds: ReadonlySet<string>): string[] {
+  if (!projectKey) return [];
+  const prefix = `${projectKey}:`;
+  return [...livePaneIds].filter((pid) => pid.startsWith(prefix));
+}
+
 /** Build a project's fleet as a Glance graph: a director (infra hub), 2–4 workers (service), a reviewer
  *  (data), and an auditor (data) in a CYCLICAL loop with the reviewer (#2578). Edges are "depends on":
  *  each worker depends on the director's direction (api), the reviewer oversees each worker's output
