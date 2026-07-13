@@ -107,6 +107,10 @@ pub fn run() {
             // One-time layout migration (#922): consolidate legacy draft/ hubs back under
             // projects/ while nothing holds them as a cwd. Idempotent + cheap once draft/ is gone.
             migrate_draft_hubs_into_projects();
+            // One-time plan.db relocation (#2996): move each hub's plan.db to the central plans/ store
+            // so the plan is folder-independent (the DB is the source of truth; the hub is materialized
+            // at triage, epic #2993). After the draft consolidation, before any session opens a plan.db.
+            crate::project::plan_db::migrate_plan_dbs_to_central();
             // Seed the runtime config dir (#2027 P2): copy the embedded `data/` tree into
             // ~/.base-studio-code/config/ on first run (only absent files — never clobbers a user
             // edit), so prompts/taxonomies can be edited without a rebuild. Best-effort: on failure

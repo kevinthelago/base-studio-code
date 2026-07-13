@@ -568,14 +568,14 @@ mod tests {
     }
 
     #[test]
-    fn plan_db_for_cwd_resolves_the_hub_db_from_a_project_session() {
+    fn plan_db_for_cwd_resolves_the_central_db_from_a_project_session() {
         let projects = bsc_base_dir().join("projects");
-        // Director/planner at the hub root → projects/<key>/plan.db.
+        // Director/planner at the hub root → the project's central plans/<key>.db (#2996, out of the hub).
         let hub = projects.join("my-app");
-        assert_eq!(plan_db_for_cwd(&hub.to_string_lossy()), Some(hub.join("plan.db")));
+        assert_eq!(plan_db_for_cwd(&hub.to_string_lossy()), Some(crate::plan_db_path("my-app")));
         // A worker in a worktree beneath the hub resolves to the SAME db.
         let wt = projects.join("my-app").join(".worktrees").join("web--auth");
-        assert_eq!(plan_db_for_cwd(&wt.to_string_lossy()), Some(hub.join("plan.db")));
+        assert_eq!(plan_db_for_cwd(&wt.to_string_lossy()), Some(crate::plan_db_path("my-app")));
     }
 
     #[test]
