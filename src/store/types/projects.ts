@@ -50,6 +50,10 @@ export interface ProjectsState {
   // page (#498) and the execution tabs were removed.
   projectsView: "list" | "planning";
   setProjectsView: (v: "list" | "planning") => void;
+  /** #3044 re-triage: the project key whose fleet should auto-launch once its planning session opens +
+   *  loads (set by the "Relaunch fleet" action, consumed once by usePlanPublish). `null` when idle. */
+  relaunchOnOpen: string | null;
+  setRelaunchOnOpen: (key: string | null) => void;
   activeProjectId: string | null;
   activeProjectName: string;
   activeProjectRepo: string;

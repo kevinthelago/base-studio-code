@@ -76,4 +76,25 @@ describe("ProjectRow", () => {
     render(row({ menuOpenId: null }));
     expect(screen.queryByText("delete project")).not.toBeInTheDocument();
   });
+
+  it("shows the inline 'Relaunch fleet' button only when the fleet is STOPPED, and calls onRelaunch (#3044)", () => {
+    const onRelaunch = vi.fn();
+    render(row({ onRelaunch, running: 0, menuOpenId: null })); // stopped fleet, menu closed
+    fireEvent.click(screen.getByText("Relaunch fleet"));
+    expect(onRelaunch).toHaveBeenCalledWith(mockProject);
+  });
+
+  it("hides the inline relaunch button when the fleet is running, but keeps it in the ⋯ menu (#3044)", () => {
+    const onRelaunch = vi.fn();
+    render(row({ onRelaunch, running: 2 })); // live fleet, menu open (default)
+    expect(screen.queryByText("Relaunch fleet")).toBeNull();  // inline hidden — the fleet is live
+    fireEvent.click(screen.getByText("relaunch fleet"));       // still reachable via the menu
+    expect(onRelaunch).toHaveBeenCalledWith(mockProject);
+  });
+
+  it("shows NO relaunch affordance for a non-triaged project (onRelaunch absent) (#3044)", () => {
+    render(row({ running: 0 })); // no onRelaunch prop
+    expect(screen.queryByText("Relaunch fleet")).toBeNull();
+    expect(screen.queryByText("relaunch fleet")).toBeNull();
+  });
 });
