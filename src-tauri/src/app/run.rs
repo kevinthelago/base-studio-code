@@ -111,6 +111,10 @@ pub fn run() {
             // so the plan is folder-independent (the DB is the source of truth; the hub is materialized
             // at triage, epic #2993). After the draft consolidation, before any session opens a plan.db.
             crate::project::plan_db::migrate_plan_dbs_to_central();
+            // One-time backfill (#2998): fold every existing on-disk hub into the durable projects.db
+            // registry (title + lifecycle state), so the DB is the source of truth for what projects
+            // exist — recovering hubs that only lived on disk. Additive + idempotent; never deletes.
+            crate::project::hub::backfill_projects_db_from_hubs();
             // Seed the runtime config dir (#2027 P2): copy the embedded `data/` tree into
             // ~/.base-studio-code/config/ on first run (only absent files — never clobbers a user
             // edit), so prompts/taxonomies can be edited without a rebuild. Best-effort: on failure
