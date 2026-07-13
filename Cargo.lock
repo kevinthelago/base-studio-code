@@ -878,7 +878,10 @@ name = "bsc-project"
 version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
+ "bsc-sqlite-util",
  "bsc-util",
+ "rusqlite",
+ "serde",
  "serde_json",
 ]
 
