@@ -2,9 +2,9 @@
 name = "bsc-json-store"
 version = "0.1.0"
 edition = "2021"
-description = "Shared verbatim-JSON-per-id user file store + CLI scaffold (#2158) for base-studio-code. bsc-blueprint and bsc-persona were byte-identical stores (CRUD over ~/.base-studio-code/<segment>/<id>.json) with a byte-identical `bsc <noun>` CLI; this is their single home, so each is now a thin shim over one implementation and the copies can't drift."
+description = "Shared verbatim-JSON-per-id user store + CLI scaffold (#2158) for base-studio-code. bsc-blueprint and bsc-persona were byte-identical stores with a byte-identical `bsc <noun>` CLI; this is their single home, so each is a thin shim over one implementation. Backed by SQLite (#2983, one `<segment>.db` per store) with a one-time import of the legacy `<segment>/<id>.json` files; the public API + CLI are unchanged."
 
-# The core lib (no Tauri, no SQLite — just file CRUD + a small CLI dispatch) so the tiny wrapper
+# The core lib (no Tauri — SQLite-backed record CRUD + a small CLI dispatch) so the tiny wrapper
 # crates reuse it without dragging the desktop app in. The hyphenated package name maps to the
 # `bsc_json_store` crate name.
 [lib]
@@ -14,9 +14,13 @@ name = "bsc_json_store"
 # Shared leaf utilities (#1646): the one cross-platform home-dir / `~/.base-studio-code` resolver, so
 # every store CLI agrees on which dir it reads/writes.
 bsc-util = { path = "../bsc-util" }
-# Shared CLI helpers (#1621): `print_json` + `read_stdin_json` (the object-or-array stdin read the
-# `set`-style command takes).
-bsc-sqlite-util = { path = "../bsc-sqlite-util" }
+# Shared CLI + SQLite helpers (#1621): `print_json` + `read_stdin_json` (the object-or-array stdin read
+# the `set`-style command takes) AND, under `conn` (#2983), the connection plumbing this store now rides
+# on — `open_db` (open + parent-dir create + busy_timeout) and `open_in_memory_db` (tests).
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
 # Shared CLI scaffold (#1762): `CmdDoc`/`handle_help`/`unknown_command` help system + `resolve_store_path`.
 bsc-cli-util = { path = "../bsc-cli-util" }
 serde_json = "1"
+# The SQLite backend (#2983): `bundled` compiles SQLite from source (matches plandb/skilldb/compliance)
+# for cross-platform reliability. Same version as the sibling SQLite stores so the workspace shares one build.
+rusqlite = { version = "0.40", features = ["bundled"] }
