@@ -103,9 +103,9 @@ export interface ComponentsSlice {
   kitDispatches: Dispatch[];
   /** Dismiss a queued dispatch (once delivered / acknowledged), keyed by (projectKey, change.id). */
   dismissKitDispatch: (projectKey: string, changeId: string) => void;
-  /** Auto-apply kit changes (#2944) — when ON, a designer change propagates to its consumers without
-   *  the approval gate; when OFF (default) the KitChangesBanner presents it for the user to approve.
-   *  Surfaced in Planner settings; persisted. */
+  /** Auto-apply kit changes (#2944, default ON #2968) — when ON (default) a designer change propagates
+   *  to its consumers without the approval gate; when OFF the KitChangesBanner presents it for the user
+   *  to approve. Surfaced in Planner settings; persisted. */
   autoApplyKitChanges: boolean;
   setAutoApplyKitChanges: (on: boolean) => void;
   /** Remove ALL of a kit change's queued dispatches at once (#2951) — the KitChangesBanner's Approve
@@ -226,7 +226,7 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
   },
 
   kitDispatches: [],
-  autoApplyKitChanges: false,
+  autoApplyKitChanges: true, // #2968: default ON — designer changes apply without confirmation; toggle OFF in Planner settings to gate them
   setAutoApplyKitChanges: (on) => set({ autoApplyKitChanges: on }),
   dismissKitChange: (changeId) =>
     set((s) => ({ kitDispatches: s.kitDispatches.filter((d) => d.change.id !== changeId) })),
