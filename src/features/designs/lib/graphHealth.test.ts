@@ -144,6 +144,22 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(cats).not.toContain("unresolvable-import");
   });
 
+  it("does NOT flag an absolute URL import (esm.sh) but still flags a bare miss (#2963)", () => {
+    // A full esm.sh URL resolves directly in the preview (the import-map's own values are esm.sh URLs).
+    const urlImport = comp("Chart", "composite", 2, [], {
+      source: undefined,
+      srcText: 'import * as d3 from "https://esm.sh/d3@7";\nexport function Chart(){ return d3; }',
+    });
+    // a genuine bare package missing from the map is STILL flagged.
+    const bareMiss = comp("Bad", "composite", 2, [], {
+      source: undefined,
+      srcText: 'import { scaleLinear } from "d3-scale";\nexport function Bad(){ return scaleLinear; }',
+    });
+    const flagged = analyzeGraphHealth([urlImport, bareMiss]).filter((f) => f.category === "unresolvable-import");
+    expect(flagged.map((f) => f.nodeNames[0])).toEqual(["Bad"]); // only the bare miss
+    expect(flagged[0].why).toContain("d3-scale");
+  });
+
   it("flags a component importing a nonexistent internal module as unresolvable-import (#2954)", () => {
     // The invisible `Code`→`../typography/type` / `Skeleton`→`./shimmer` class — an internal import
     // (`@/…` OR relative) resolving to no kit component or runtime module, now surfaced by the doctor.
