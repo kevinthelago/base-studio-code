@@ -31,6 +31,7 @@ import { TeamsContextMenu } from "./TeamsContextMenu";
 import { ArchitectTerminal } from "./ArchitectTerminal";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { useDockEntrance } from "@/shared/hooks/useDockEntrance";
+import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
 import { RELATIONSHIP_ARCHETYPES, type Position } from "./lib/team";
 import { autoLayout, nodeBox, contentBounds, CANVAS_W, CANVAS_H, type Box as GBox } from "./lib/orgLayout";
 import { teamsBounds } from "./lib/teamsLayout";
@@ -57,6 +58,8 @@ export function TeamsPanel() {
   // id whose team was deleted, so we never render a missing team.
   const [orgId, setOrgId] = useState<string | null>(null);
   const org = orgId ? orgs.find((o) => o.id === orgId) : undefined;
+  // Name the entered team in the titlebar crumb (#3041) — "" on the teams overview.
+  useCrumbEntity("teams", org?.name ?? "");
   const savedZoom = useAppStore((s) => s.teamsZoom[orgId ?? ""]);
   // Open with nothing selected (the empty sentinel — inspector empty, no dimming; see onBackgroundClick).
   const [sel, setSel] = useState<Selection>({ type: "node", id: "" });
