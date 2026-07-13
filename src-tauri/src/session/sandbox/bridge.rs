@@ -69,7 +69,11 @@ fn copy_dir_to_sandbox(host_dir: &std::path::Path, distro_dir: &str) -> Result<(
 #[tauri::command]
 pub(crate) fn setup_sandbox_hub(key: String) -> Result<String, String> {
     require_windows()?;
-    let host_hub = crate::platform::paths::project_dir(&key);
+    // Source the hub from the planner's ACTUAL cwd (#2997): a never-materialized greenfield draft
+    // plans in the ephemeral `planning/<key>` workspace, a materialized / repo-linked project in
+    // `projects/<key>`. `planning_cwd` resolves whichever exists, so the replication mirrors the real
+    // files instead of an empty `project_dir`.
+    let host_hub = crate::platform::paths::planning_cwd(&key);
     let distro_hub = sandbox_project_path(&key);
     copy_dir_to_sandbox(&host_hub, &distro_hub)?;
     // plan.db now lives OUTSIDE the hub (central `plans/<key>.db`, #2996) — replicate it INTO the cage

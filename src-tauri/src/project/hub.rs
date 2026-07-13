@@ -77,8 +77,9 @@ pub(crate) fn delete_project_dir_impl(project_key: &str, pty: &crate::console::p
         log::info!("delete_project_dir: reaped {killed} orphaned shell(s) of {project_key:?}");
     }
     // The hub lives under projects/<key> (#922). Also remove any legacy draft/<key> copy left by a
-    // pre-migration build so a stale half-moved hub can't linger and reappear in the list.
-    for dir in [project_dir(project_key), legacy_draft_dir(project_key)] {
+    // pre-migration build, and the ephemeral planning/<key> workspace (#2997) a never-materialized
+    // greenfield draft plans in — so deleting a draft can't leave a half-baked folder behind.
+    for dir in [project_dir(project_key), legacy_draft_dir(project_key), planning_workspace_dir(project_key)] {
         if !dir.exists() { continue; }
         // Clear read-only first: on Windows `remove_dir_all` can't delete read-only files, and
         // git pack files in a cloned-repo subdir are read-only — so a project with a linked repo
@@ -454,6 +455,100 @@ pub(crate) fn backfill_projects_db_from_hubs() {
         }
     }
 }
+/// Materialize a project hub on disk at TRIAGE / fleet-launch (#2997, epic #2993). Planning now runs in
+/// an ephemeral per-project workspace (`planning/<key>`, see [`planning_cwd`]) so a never-launched draft
+/// leaves no half-baked `projects/<key>/` folder behind; this is the point that promotes it to the real
+/// hub. Called (AWAITED) before the first director/worker/triage session whose cwd is `projects/<key>/`
+/// or a worktree beneath it — without it the launch would drop the fleet into a non-existent directory.
+///
+/// IDEMPOTENT and lossless:
+/// - already materialized with nothing left in the ephemeral workspace → returns the hub path unchanged
+///   (grandfathered hubs and fleet re-launches take this fast path).
+/// - otherwise create `projects/<key>/` and, if the planner authored into `planning_workspace_dir(key)`,
+///   MOVE its contents over so nothing the planner wrote is lost — then mark the project `created` in the
+///   durable `projects.db`. This also folds in the publish-before-launch case, where `mark_published`
+///   created `projects/<key>/` (holding only `.published`) while the plan files still sit in the
+///   ephemeral workspace: the hub already exists, but the workspace still needs migrating.
+///
+/// Linked repos are deliberately NOT cloned here — the fleet-launch path (`launchTriage`) clones them
+/// idempotently into the now-existing hub right after (and a sandboxed launch clones IN-DISTRO instead),
+/// so cloning here would duplicate that and, for the sandbox, violate the "nothing lands on the host"
+/// invariant. Returns the hub's absolute path.
+///
+/// # Errors
+/// An empty (sanitized) key, or a filesystem failure creating the hub / moving a workspace entry.
+#[tauri::command]
+pub(crate) fn materialize_hub(project_key: String) -> Result<String, String> {
+    let key = sanitize_project_key(&project_key);
+    if key.is_empty() {
+        return Err("materialize_hub: empty project_key".into());
+    }
+    let hub = project_dir(&key);
+    let planning = planning_workspace_dir(&key);
+    // Fast path: the hub exists AND the ephemeral workspace is already gone → fully materialized, no-op
+    // (grandfathered hubs, fleet re-launches). A still-present workspace means either a fresh greenfield
+    // draft (hub absent) or a publish-before-launch project (hub holds only `.published`) — fall through
+    // and migrate the planner's files in either way.
+    if hub.exists() && !planning.exists() {
+        return Ok(hub.to_string_lossy().into_owned());
+    }
+    std::fs::create_dir_all(&hub).str_err()?;
+    if planning.is_dir() {
+        move_dir_contents(&planning, &hub)?;
+        let _ = std::fs::remove_dir(&planning); // retire the now-empty workspace (no-op if non-empty)
+    }
+    // Durable lifecycle state (#2998): the folder now exists → `created`, unless the hub is already
+    // published (a publish-before-launch project), where `published` wins — mirroring `backfill_state`'s
+    // precedence. Best-effort — the on-disk hub is the real materialization, so a projects.db hiccup must
+    // never fail the launch. `set_state` only touches an existing row; a project that never dual-wrote to
+    // projects.db (publish removes its draft row) gets a minimal row inserted so the DB reflects it.
+    if let Ok(conn) = bsc_project::store::open() {
+        let now = bsc_util::now_ms();
+        let state = if is_published(&key) { "published" } else { "created" };
+        match bsc_project::store::set_state(&conn, &key, state, now) {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                let row = bsc_project::store::ProjectRow {
+                    key: key.clone(),
+                    title: title_from_key(&key).unwrap_or_else(|| "Untitled project".into()),
+                    pitch: String::new(),
+                    blueprint: None,
+                    category: None,
+                    state: state.into(),
+                    created_at: now,
+                    updated_at: now,
+                };
+                if let Err(e) = bsc_project::store::upsert(&conn, &row) {
+                    log::warn!("materialize_hub({key}): projects.db insert failed: {e}");
+                }
+            }
+            Err(e) => log::warn!("materialize_hub({key}): projects.db state update failed: {e}"),
+        }
+    }
+    log::info!("materialized project hub {:?} (#2997)", hub);
+    Ok(hub.to_string_lossy().into_owned())
+}
+
+/// Move every top-level entry of `src` INTO the already-existing `dst`, via `fs::rename` — both dirs
+/// live under `~/.base-studio-code` (one volume), so each rename is an atomic move, not a copy (binary
+/// files like `plan.db`-adjacent artifacts travel intact). Used by [`materialize_hub`] to promote the
+/// planner's ephemeral workspace into the real hub. An entry already present in `dst` (there should be
+/// none but `.published`, which `dst` may already hold) is LEFT in place and its source copy dropped —
+/// the materialized hub wins. A per-entry rename failure is surfaced so the caller can abort the launch.
+fn move_dir_contents(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+    let entries = std::fs::read_dir(src).map_err(|e| format!("materialize_hub: read {}: {e}", src.display()))?;
+    for entry in entries.flatten() {
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if to.exists() {
+            continue; // dst wins — drop the ephemeral copy (removed with the workspace dir afterwards)
+        }
+        std::fs::rename(&from, &to)
+            .map_err(|e| format!("materialize_hub: move {} → {}: {e}", from.display(), to.display()))?;
+    }
+    Ok(())
+}
+
 /// Absolute path to a project's hub directory (#647) — the frontend reveals it so the
 /// user can export/back up authored plan files before resetting the blueprint.
 #[tauri::command]
@@ -728,6 +823,92 @@ mod relocated_tests {
         crate::project::hub::delete_project_dir_impl(&key, &crate::console::pty::PtyState::new()).unwrap();
         assert!(!project_dir(&key).exists(), "hub should be deleted");
         assert!(!worktrees_dir(&key).exists(), "relocated worktrees should be deleted too");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn materialize_hub_promotes_the_planning_workspace_and_sets_state_created() {
+        // #2997: a greenfield draft planned in the ephemeral planning/<key> workspace is promoted into
+        // the real projects/<key> hub at launch — the planner's authored files move over (nothing lost)
+        // and the durable projects.db state advances to `created`.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("materialize");
+        let key = "greenfield-app";
+        write_file(&planning_workspace_dir(key).join("goal.md"), "# Goal");
+        write_file(&planning_workspace_dir(key).join("prompts").join("director-kickoff.md"), "coordinate");
+        {
+            let conn = bsc_project::store::open().unwrap();
+            bsc_project::store::upsert(&conn, &bsc_project::store::ProjectRow {
+                key: key.into(), title: "Greenfield App".into(), pitch: String::new(),
+                blueprint: None, category: None, state: "drafted".into(), created_at: 1, updated_at: 1,
+            }).unwrap();
+        }
+        assert!(!project_dir(key).exists(), "no hub before materialize");
+
+        let path = materialize_hub(key.to_string()).unwrap();
+        assert_eq!(std::path::Path::new(&path), project_dir(key));
+        assert!(project_dir(key).join("goal.md").exists(), "plan section migrated into the hub");
+        assert!(project_dir(key).join("prompts").join("director-kickoff.md").exists(), "prompts/ migrated");
+        assert!(!planning_workspace_dir(key).exists(), "ephemeral workspace retired");
+        let conn = bsc_project::store::open().unwrap();
+        assert_eq!(bsc_project::store::get(&conn, key).unwrap().state, "created", "state advanced to created");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn materialize_hub_is_idempotent_and_early_returns_for_a_materialized_hub() {
+        // An already-materialized hub with no ephemeral workspace is the fast path: no-op, hub untouched.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("materialize-idem");
+        let key = "already-materialized";
+        write_file(&project_dir(key).join("goal.md"), "# Goal");
+        let before = std::fs::read_to_string(project_dir(key).join("goal.md")).unwrap();
+
+        let path = materialize_hub(key.to_string()).unwrap();
+        assert_eq!(std::path::Path::new(&path), project_dir(key));
+        assert_eq!(std::fs::read_to_string(project_dir(key).join("goal.md")).unwrap(), before, "existing hub untouched");
+        // Re-running is a no-op (idempotent).
+        materialize_hub(key.to_string()).unwrap();
+        assert!(project_dir(key).join("goal.md").exists());
+        // An empty key is refused so it can never touch the projects/ root.
+        assert!(materialize_hub(String::new()).is_err());
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn materialize_hub_folds_the_workspace_into_a_publish_before_launch_hub() {
+        // `mark_published` creates projects/<key>/ holding only `.published` while the plan files still
+        // sit in the ephemeral workspace — materialize must fold them in (hub exists but the workspace is
+        // non-empty), NOT early-return and strand them (#2997).
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("materialize-pub");
+        let key = "published-first";
+        write_file(&project_dir(key).join(".published"), "published\n");
+        write_file(&planning_workspace_dir(key).join("goal.md"), "# Goal");
+
+        materialize_hub(key.to_string()).unwrap();
+        assert!(project_dir(key).join(".published").is_file(), ".published preserved (dst wins on collision)");
+        assert!(project_dir(key).join("goal.md").exists(), "plan files folded into the published hub");
+        assert!(!planning_workspace_dir(key).exists(), "ephemeral workspace retired");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn delete_project_dir_removes_the_ephemeral_planning_workspace() {
+        // A never-materialized greenfield draft plans in planning/<key>; deleting it must remove that
+        // workspace too, so no half-baked folder lingers (#2997).
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("dpdplanning");
+        let key = "draft-to-delete".to_string();
+        write_file(&planning_workspace_dir(&key).join("goal.md"), "# goal");
+        assert!(planning_workspace_dir(&key).exists());
+
+        crate::project::hub::delete_project_dir_impl(&key, &crate::console::pty::PtyState::new()).unwrap();
+        assert!(!planning_workspace_dir(&key).exists(), "ephemeral planning workspace removed on delete");
 
         std::fs::remove_dir_all(&home).ok();
     }
