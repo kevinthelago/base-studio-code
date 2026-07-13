@@ -25,6 +25,7 @@ export async function loadComponents(): Promise<ComponentRecord[] | null> {
         name: c.name!,
         kitId: c.kitId!,
         role: (ROLES.includes(c.role as Role) ? c.role : "primitive") as Role,
+        group: c.group, // #3048 — the kit-purpose partition; rides verbatim (never defaulted), like tech/style on a kit
         version: c.version ?? "",
         used: typeof c.used === "number" ? c.used : 0,
         tags: c.tags ?? [],
