@@ -2,7 +2,8 @@
 // concept IS its implementation), wired by `composes` (builds-on) + `pairs` + the ontology's semantic
 // relationships lifted onto the concrete impls. World-positioned impl cards over an SVG edge layer
 // (GraphCanvas owns the pan/zoom transform) so it reads like every other graph. Selection lights a
-// node + its neighbors; the role tints the card (primitive vs algorithm).
+// node + its neighbors. The role distinguishes the card (#2980): a primitive is a language built-in
+// (#2972) — a violet dashed descriptor chip showing its std `ref` — vs an algorithm's solid card.
 import { useMemo } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
@@ -85,12 +86,13 @@ export function AlgorithmsKitGraph({ kit, layout, selected, onSelect }: {
           <Box
             key={im.id}
             data-impl={im.id}
-            className={`algo-node${im.id === selected ? " on" : ""}${dim ? " dim" : ""}`}
+            className={`algo-node${im.role === "primitive" ? " algo-prim" : ""}${im.id === selected ? " on" : ""}${dim ? " dim" : ""}`}
             style={{ left: p.x, top: p.y, width: NODE_W, height: NODE_H }}
             onClick={(e) => { e.stopPropagation(); onSelect(im.id); }}
           >
             <Box as="span" className="algo-name">{im.name}</Box>
-            <Box as="span" className="algo-meta mono">{im.id}</Box>
+            {/* A primitive is a language built-in (#2972) — show the std ref it names, not its id. */}
+            <Box as="span" className="algo-meta mono">{im.role === "primitive" ? (im.ref ?? im.id) : im.id}</Box>
           </Box>
         );
       })}
