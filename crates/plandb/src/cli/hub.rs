@@ -7,6 +7,7 @@
 
 use super::{emit_json_or_lines, emit_set_result, open_store, resolve_db, unknown_sub, Args};
 use crate::{Automation, StartupScript};
+use bsc_sqlite_util::print_json;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -137,6 +138,83 @@ pub(crate) fn cmd_github_context(args: &Args) -> Result<(), String> {
     match sub {
         "get" => get_hub_doc(&path, "github context"),
         other => Err(unknown_sub(args, "github-context", other)),
+    }
+}
+
+/// `artifact` — planner OUTPUT artifacts (#2997), durable CONTENT in plan.db keyed by (kind, name).
+/// The substrate for later moving planner-produced content (discovery prose, contract specs, kickoff
+/// briefs) off flat hub files and into plan.db. `set` reads the content on stdin (like the prose-doc
+/// `set`s); `get`/`list` read it back; `remove` drops one. Additive + unwired — nothing else touches
+/// it yet.
+pub(crate) fn cmd_artifact(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    match sub {
+        // `artifact set <kind> <name>` — content on stdin → upsert.
+        "set" => {
+            let kind = args
+                .positional
+                .get(2)
+                .ok_or("usage: bsc plan artifact set <kind> <name>  (content on stdin)")?;
+            let name = args
+                .positional
+                .get(3)
+                .ok_or("usage: bsc plan artifact set <kind> <name>  (content on stdin)")?;
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("reading stdin: {e}"))?;
+            open_store(&args.db)?.artifact_set(kind, name, &buf).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("wrote artifact {kind}/{name}");
+            }
+            Ok(())
+        }
+        // `artifact get <kind> <name>` — content verbatim, or (`--json`) the Artifact JSON / `null`.
+        "get" => {
+            let kind = args.positional.get(2).ok_or("usage: bsc plan artifact get <kind> <name>")?;
+            let name = args.positional.get(3).ok_or("usage: bsc plan artifact get <kind> <name>")?;
+            let s = open_store(&args.db)?;
+            if args.json {
+                let found = s
+                    .artifact_list(Some(kind))
+                    .map_err(|e| e.to_string())?
+                    .into_iter()
+                    .find(|a| &a.name == name);
+                // to_value on an Option: Some → the object, None → JSON null.
+                print_json(&serde_json::to_value(&found).unwrap_or(serde_json::Value::Null), args.pretty);
+                Ok(())
+            } else {
+                match s.artifact_get(kind, name).map_err(|e| e.to_string())? {
+                    Some(c) => {
+                        print!("{c}");
+                        Ok(())
+                    }
+                    None => Err(format!("no artifact '{kind}/{name}'")),
+                }
+            }
+        }
+        // `artifact list [<kind>]` — all artifacts, or one kind; --json for the full objects.
+        "list" => {
+            let kind = args.positional.get(2).map(String::as_str);
+            let items = open_store(&args.db)?.artifact_list(kind).map_err(|e| e.to_string())?;
+            emit_json_or_lines(args.json, &items, "(no artifacts)", |_, a| {
+                format!("{}\t{}", a.kind, a.name)
+            });
+            Ok(())
+        }
+        // `artifact remove <kind> <name>` — delete; echo removed/absent.
+        "remove" => {
+            let kind = args.positional.get(2).ok_or("usage: bsc plan artifact remove <kind> <name>")?;
+            let name = args.positional.get(3).ok_or("usage: bsc plan artifact remove <kind> <name>")?;
+            let removed = open_store(&args.db)?.artifact_remove(kind, name).map_err(|e| e.to_string())?;
+            if !args.json {
+                if removed {
+                    println!("removed artifact {kind}/{name}");
+                } else {
+                    println!("no artifact {kind}/{name}");
+                }
+            }
+            Ok(())
+        }
+        other => Err(unknown_sub(args, "artifact", other)),
     }
 }
 
