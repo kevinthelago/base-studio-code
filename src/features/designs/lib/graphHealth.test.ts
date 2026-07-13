@@ -25,6 +25,21 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(fs[0].nodeNames).toEqual(["Ghost"]);
   });
 
+  it("flags a self-referential stub (renders only itself) but not a real module or a snippet (#3026)", () => {
+    const fs = analyzeGraphHealth([
+      // a self-call: it has an export (so it's "buildable") and is valid, but the only element it
+      // renders is itself. `source: ""` so ownModuleSource reads the srcText; `used: 1` avoids orphan.
+      comp("D3Chart", "composite", 1, [], { source: "", srcText: "export function D3Chart(props){ return <D3Chart {...props} />; }" }),
+      // a REAL module — renders its own <svg>, never itself: NOT a self-reference.
+      comp("Spark", "composite", 2, [], { source: "", srcText: "import { useRef } from 'react';\nexport function Spark(){ const r = useRef(null); return <svg ref={r} />; }" }),
+      // a bare usage snippet — no export → no-implementation, never double-flagged self-reference.
+      comp("Usage", "composite", 1, [], { source: "", srcText: "<Usage data={[1,2,3]} />" }),
+    ]);
+    expect(fs.filter((f) => f.category === "self-reference").flatMap((f) => f.nodeNames)).toEqual(["D3Chart"]);
+    expect(fs.some((f) => f.nodeNames.includes("Spark"))).toBe(false);
+    expect(fs.find((f) => f.nodeNames.includes("Usage"))?.category).toBe("no-implementation");
+  });
+
   it("flags an unused root with deps as a dangling branch (root + reachable)", () => {
     const fs = analyzeGraphHealth([comp("DeadShell", "layout", 0, ["Widget"]), comp("Widget", "composite", 0)]);
     expect(fs.map((f) => f.category)).toEqual(["dangling-branch"]);
