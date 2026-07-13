@@ -11,9 +11,14 @@ describe("buildDrafts", () => {
     expect(out.map(d => d.key).sort()).toEqual(["draft-a", "draft-b"]);
   });
 
-  it("skips bare scaffold dirs (no plan)", () => {
-    const out = buildDrafts([lp({ key: "scaffold", hasPlan: false })], {}, []);
+  it("skips bare, untitled scaffold dirs (no plan, no title)", () => {
+    const out = buildDrafts([lp({ key: "scaffold", hasPlan: false, titled: false })], {}, []);
     expect(out).toHaveLength(0);
+  });
+
+  it("includes a user-titled hub even without a plan (#2994 — a named draft, e.g. cli-typer)", () => {
+    const out = buildDrafts([lp({ key: "cli-typer", title: "cli typer", hasPlan: false, titled: true })], {}, []);
+    expect(out).toEqual([{ key: "cli-typer", title: "cli typer", pitch: "", sort: 0 }]);
   });
 
   it("excludes a published hub even when its key differs in CASE from the board title (#1449)", () => {
