@@ -13,6 +13,7 @@
 //! (#1877) and by the legacy `bsc-project` shim.
 
 pub mod cli;
+pub mod store;
 
 use std::path::PathBuf;
 
