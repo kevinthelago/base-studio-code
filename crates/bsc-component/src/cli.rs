@@ -99,13 +99,16 @@ Deletes the component keyed by <id>. A no-op (not an error) when it does not exi
         summary: "operate on the KITS instead of the components",
         usage: "\
 USAGE:
-  bsc ui kit list [--full] [--pretty]   # every kit's { id, name, stack }
+  bsc ui kit list [--full] [--pretty]   # every kit's { id, name, tech, style, stack }
   bsc ui kit get <id> [--pretty]
   bsc ui kit set [--pretty]             # kit JSON on stdin (upsert by id)
   bsc ui kit remove <id> [--pretty]
 
-A kit is a technology-scoped namespace of components ({ id, name, stack, dot }). `bsc ui kit …`
-is the same list/get/set/remove over the kit collection.",
+A kit is a technology-scoped namespace of components: { id, name, tech, style, stack?, dot }. `tech`
+(technology slug: react/vue/kotlin…) and `style` (visual language: studio/material…) are the RAIL AXES
+that place the kit in the Design Studio — set BOTH, or the kit buckets under \"other/other\". `stack` is
+a display label only (e.g. \"React · TypeScript\"). `bsc ui kit …` is list/get/set/remove over the kit
+collection.",
     },
     CmdDoc {
         name: "eslint-preset",
@@ -218,7 +221,7 @@ kit objects (incl. the dot color) as a plain array.",
     CmdDoc {
         name: "set",
         summary: "upsert from kit JSON on stdin; prints id(s)",
-        usage: "USAGE:\n  bsc ui kit set [--pretty]   # kit JSON (object or array) on stdin\n\nUpserts each kit by its \"id\", written verbatim.",
+        usage: "USAGE:\n  bsc ui kit set [--pretty]   # kit JSON (object or array) on stdin\n\nUpserts each kit by its \"id\", written verbatim. Fields: { id, name, tech, style, stack?, dot } — tech + style place the kit in the rail (omit either ⇒ it shows as \"other/other\"); stack is a display label only.",
     },
     CmdDoc {
         name: "remove",
@@ -267,15 +270,37 @@ const COMPONENT_SPEC: CliSpec = CliSpec {
     meta_fields: &["id", "name", "kitId", "role", "shapes"],
 };
 
-/// The kit collection's knobs. Lean `list` projects id/name/stack.
+/// The kit collection's knobs. Lean `list` projects id/name/tech/style/stack.
 const KIT_SPEC: CliSpec = CliSpec {
     noun: "kit",
     dir_env: "BSC_COMPONENT_KIT_DIR",
     dir_segment: "kits",
     tagline: KIT_TAGLINE,
     commands: KIT_COMMANDS,
-    meta_fields: &["id", "name", "stack"],
+    meta_fields: &["id", "name", "tech", "style", "stack"],
 };
+
+/// A non-blocking `kit set` advisory (#3040): the Design Studio places a kit in its rail by two axes —
+/// `tech` (technology slug) + `style` (visual language) — so a kit missing either shows under the
+/// trailing "other" head (e.g. "other/other"), which is almost never intended. Warn (stderr) per such
+/// kit, but NEVER reject: both axes are OPTIONAL in the model (`Kit.tech?`/`style?`, back-compat with
+/// pre-#2487 stores), so this only nudges. `stack` is a display label, NOT a substitute for either.
+fn warn_kit_axes(items: &[serde_json::Value]) -> Result<(), String> {
+    for it in items {
+        let id = it.get("id").and_then(serde_json::Value::as_str).unwrap_or("<no id>");
+        let present = |k: &str| it.get(k).and_then(serde_json::Value::as_str).is_some_and(|s| !s.trim().is_empty());
+        let missing: Vec<&str> = ["tech", "style"].into_iter().filter(|k| !present(k)).collect();
+        if !missing.is_empty() {
+            eprintln!(
+                "warning: kit '{id}' has no {} — the Design Studio groups kits by tech + style, so it will \
+                 show under the \"other\" bucket. Add e.g. \"tech\":\"react\",\"style\":\"studio\" (stack is a \
+                 display label only, not a grouping axis).",
+                missing.join(" and no ")
+            );
+        }
+    }
+    Ok(())
+}
 
 /// The component-surface command catalog, exposed so `bsc ui` (#2469) can compose it verbatim into its
 /// merged help tree AND gate which verbs it delegates here (unknown verbs stay `bsc ui`'s, so its
@@ -338,11 +363,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // Emit a `ui-touch` for the Design Studio's live-focus (#2525) after each kit set/remove
                 // write lands — WITH the "kit" collection context (bsc-json-store has none). A no-op for
                 // read verbs (the hook only fires inside set/remove) and for non-designer sessions.
-                _ => bsc_json_store::cli::run_hooked(
+                _ => bsc_json_store::cli::run_hooked_validated(
                     args.into_iter().skip(1).collect(),
                     &kit_prog,
                     &KIT_SPEC,
                     Some(&|id: &str| bsc_util::emit_ui_activity("kit", id)),
+                    // Non-blocking nudge (#3040): a kit with no tech/style buckets to "other/other".
+                    Some(&warn_kit_axes),
                 ),
             }
         }
@@ -1203,10 +1230,28 @@ mod tests {
         assert_eq!(COMPONENT_SPEC.meta_fields, &["id", "name", "kitId", "role", "shapes"]);
         assert_eq!(KIT_SPEC.noun, "kit");
         assert_eq!(KIT_SPEC.dir_segment, "kits");
-        assert_eq!(KIT_SPEC.meta_fields, &["id", "name", "stack"]);
+        assert_eq!(KIT_SPEC.meta_fields, &["id", "name", "tech", "style", "stack"]);
         // The two collections live in DIFFERENT dirs (a component and a kit can share an id).
         assert_ne!(COMPONENT_SPEC.dir_segment, KIT_SPEC.dir_segment);
         assert_ne!(COMPONENT_SPEC.dir_env, KIT_SPEC.dir_env);
+    }
+
+    #[test]
+    fn kit_axis_advisory_warns_but_never_blocks() {
+        use serde_json::json;
+        // #3040: a kit WITH both rail axes is fine, and one MISSING either (the "other/other" case a
+        // designer hits by only setting `stack`) must still be accepted — the axes are optional in the
+        // model, so `warn_kit_axes` only nudges (stderr) and NEVER rejects the batch.
+        assert!(warn_kit_axes(&[json!({"id":"react-ui","name":"React","tech":"react","style":"studio","stack":"React"})]).is_ok());
+        // Missing style, missing tech, missing both, and blank-string (which must not count as present).
+        for bare in [
+            json!({"id":"a","name":"A","tech":"react","stack":"x"}),           // no style
+            json!({"id":"b","name":"B","style":"studio","stack":"x"}),          // no tech
+            json!({"id":"react","name":"React","stack":"react"}),               // the exact reported case
+            json!({"id":"c","name":"C","tech":" ","style":"","stack":"x"}),     // present-but-blank ⇒ still absent
+        ] {
+            assert!(warn_kit_axes(std::slice::from_ref(&bare)).is_ok(), "advisory must not block: {bare}");
+        }
     }
 
     #[test]
