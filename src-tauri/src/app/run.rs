@@ -306,6 +306,7 @@ pub fn run() {
             project::ui_skeleton::read_ui_skeleton,
             project::ui_skeleton::sync_design_to_skeleton,
             project::hub::project_dir_path,
+            project::hub::materialize_hub,
             project::hub::repo_dir_path,
             project::preview::verify_build,
             observability::logs::append_coord_woke,

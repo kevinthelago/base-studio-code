@@ -37,6 +37,32 @@ pub(crate) fn project_dir(project_key: &str) -> std::path::PathBuf {
     projects_root().join(sanitize_project_key(project_key))
 }
 
+/// The ephemeral, per-project planning workspace: `~/.base-studio-code/planning/<key>` (#2997, epic
+/// #2993). Where a NEVER-MATERIALIZED greenfield draft's planner session mounts, so a draft that's
+/// abandoned before triage leaves no half-baked `projects/<key>/` hub behind. STABLE per key (no
+/// timestamp / random component) so Claude's cwd-keyed `--continue` history survives a relaunch. Its
+/// contents are promoted into the real [`project_dir`] at fleet launch by
+/// [`crate::project::hub::materialize_hub`]. Sanitizes the key exactly like `project_dir`.
+pub(crate) fn planning_workspace_dir(project_key: &str) -> std::path::PathBuf {
+    bsc_base_dir().join("planning").join(sanitize_project_key(project_key))
+}
+
+/// The planner session's CWD for `key` (#2997): the EXISTING hub if it's already on disk, else the
+/// ephemeral [`planning_workspace_dir`]. Grandfathered / repo-linked projects (whose `project_dir`
+/// already exists — the repo auto-clone materializes it) keep their EXACT mount + `--continue` history
+/// unchanged; a fresh greenfield draft plans in the ephemeral workspace until [`crate::project::hub::materialize_hub`]
+/// promotes it at triage. This is the ONE resolver both the planner mount (`setup_workspaces`) and its
+/// determinism guard (`get_context_signature`) read, so the recorded signature and the actual mount can
+/// never disagree.
+pub(crate) fn planning_cwd(project_key: &str) -> std::path::PathBuf {
+    let hub = project_dir(project_key);
+    if hub.exists() {
+        hub
+    } else {
+        planning_workspace_dir(project_key)
+    }
+}
+
 /// The root that holds every project's plan store, OUT of the hub (#2996): `~/.base-studio-code/plans`.
 /// plan.db moved here (from `projects/<key>/plan.db`) so the plan persists independently of whether the
 /// hub folder exists — the database is the source of truth; the hub is a projection materialized at
@@ -292,6 +318,28 @@ mod relocated_tests {
         // First '--' is the boundary → repo short truncates to "a", slug is the remainder.
         assert_eq!(parse_worktree_dir_name(&name), Some(("a", "b--s1")));
     }
+    #[test]
+    fn planning_cwd_prefers_an_existing_hub_else_the_ephemeral_workspace() {
+        // #2997: the planner mounts at the EXISTING hub when one is on disk (grandfathered / repo-linked
+        // projects keep their exact mount + --continue history), otherwise at the stable ephemeral
+        // `planning/<key>` workspace, so a never-launched greenfield draft leaves no half-baked hub.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("plancwd");
+        let key = "greenfield-draft";
+        // Fresh (no hub yet) → the ephemeral planning workspace, which is STABLE per key.
+        assert_eq!(planning_cwd(key), planning_workspace_dir(key));
+        assert_eq!(planning_workspace_dir(key), bsc_base_dir().join("planning").join(key));
+        assert!(!planning_workspace_dir(key).to_string_lossy().contains(".."));
+        // Stable across calls (no timestamp/random) so --continue history survives a relaunch.
+        assert_eq!(planning_workspace_dir(key), planning_workspace_dir(key));
+        // Once the hub exists on disk, planning_cwd resolves there instead (unchanged behavior).
+        std::fs::create_dir_all(project_dir(key)).unwrap();
+        assert_eq!(planning_cwd(key), project_dir(key));
+        // The key is sanitized (idempotent on an already-slug key), like project_dir.
+        assert_eq!(planning_workspace_dir("a/b"), planning_workspace_dir("a_b"));
+        std::fs::remove_dir_all(&home).ok();
+    }
+
     #[test]
     fn worktrees_dir_is_outside_the_project_hub() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());

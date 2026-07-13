@@ -124,6 +124,18 @@ export function usePlanPublish(deps: PlanPublishDeps) {
     setTriageNote(null);
     setTriaging(true);
     try {
+      // Materialize the project hub on disk (#2997 C, epic #2993): planning ran in an ephemeral
+      // per-project workspace, so this creates projects/<key>/ and moves the planner's authored files
+      // in — BEFORE any director/worker cwd (the hub dir or a worktree beneath it) resolves to it.
+      // Idempotent: an already-materialized hub or a re-launch is a no-op. Fail-CLOSED — without the
+      // hub the director + worktree cwds don't exist, so surface the failure and abort the launch
+      // rather than dropping the fleet into a missing directory.
+      try {
+        await invoke("materialize_hub", { projectKey: effectiveProjectId });
+      } catch (e) {
+        setTriageError(`launch failed — could not materialize the project hub: ${String(e)}`);
+        return;
+      }
       // #1988: when the sandbox is on AND the fleet runs on the model-agnostic bsc-agent harness (the
       // only runtime baked into the sealed distro), the whole fleet launches INSIDE the WSL2 cage —
       // the hub is relocated to the distro's ext4, repos are cloned + worktrees created in-distro, and
