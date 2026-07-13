@@ -323,6 +323,14 @@ export function ProjectsList() {
   const publishedCount = grouped.active.length + grouped.shipped.length;
   const grandTotal = publishedCount + fDrafts.length + fBlueprints.length;
 
+  // key → durable lifecycle state from projects.db (#2998) — lets the draft chips distinguish a bare
+  // DRAFTED idea from a CREATED/in-progress project (whose hub + plan already exist).
+  const dbStateByKey = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const p of dbProjects) m[p.key] = p.state;
+    return m;
+  }, [dbProjects]);
+
   const totalSummary = `${visibleProjects.length} published · ${normalDrafts.length} draft${normalDrafts.length !== 1 ? "s" : ""} · ${blueprintItems.length} blueprint${blueprintItems.length !== 1 ? "s" : ""} · ${repos.size} repo${repos.size !== 1 ? "s" : ""}`;
 
   return (
@@ -331,6 +339,7 @@ export function ProjectsList() {
         visibleProjects={visibleProjects}
         grouped={grouped}
         fDrafts={fDrafts}
+        dbStateByKey={dbStateByKey}
         fleetByProject={fleetByProject}
         loading={loading}
         error={error}
