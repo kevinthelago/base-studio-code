@@ -53,10 +53,11 @@ describe("AlgorithmsWorkspace", () => {
     expect(screen.getAllByText("merge.rs").length).toBeGreaterThan(1); // rail + canvas + builds-on row
   });
 
-  it("a primitive row in a folder selects the primitive (#2899)", () => {
+  it("a primitive selects and shows as a descriptor — its std ref, not code (#2899/#2972)", () => {
     render(<AlgorithmsWorkspace />);
     fireEvent.click(screen.getAllByText("Iterator")[0]);
     expect(screen.getByText("primitive")).toBeTruthy();
-    expect(screen.getByText((c) => c.includes("xs.iter().map(|x| x * 2)"))).toBeTruthy();
+    // A primitive is DESCRIBED by the language built-in it names, not re-coded (#2972).
+    expect(screen.getByText((c) => c.includes("std::iter::Iterator"))).toBeTruthy();
   });
 });

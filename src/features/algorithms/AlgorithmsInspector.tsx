@@ -49,9 +49,16 @@ export function AlgorithmsInspector({ graph, focusedImpl, onSelectImpl }: {
           <Text weight={600} size={15} style={ell}>{focusedImpl.name}</Text>
           <Chip>{focusedImpl.role}</Chip>
         </Row>
-        <Eyebrow size={10}>{isPrim ? "Building block" : "Implementation"} · {TECH_META[focusedImpl.tech]?.label ?? focusedImpl.tech}</Eyebrow>
+        <Eyebrow size={10}>{isPrim ? "Language built-in" : "Implementation"} · {TECH_META[focusedImpl.tech]?.label ?? focusedImpl.tech}</Eyebrow>
         {focusedImpl.summary && <Text size={12} tone="muted">{focusedImpl.summary}</Text>}
-        <Box as="pre" className="algo-code mono">{focusedImpl.code}</Box>
+        {/* A primitive is a DESCRIPTOR of a language built-in (#2972) — its std `ref`, not a reimplementation. */}
+        {focusedImpl.ref && (
+          <Row gap={8} align="center" style={{ minWidth: 0 }}>
+            <Text mono size="xxs" tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase", flex: "none" }}>Built-in</Text>
+            <Text as="code" mono size={12} style={ell}>{focusedImpl.ref}</Text>
+          </Row>
+        )}
+        {focusedImpl.code && <Box as="pre" className="algo-code mono">{focusedImpl.code}</Box>}
         <ImplLinks label="Builds on" glyph="↳" impls={buildsOn} onJump={jump} />
         <ImplLinks label="Used by" glyph="↰" impls={usedBy} onJump={jump} />
       </Stack>
