@@ -137,8 +137,8 @@ right mode:
    brings (error/empty states, edge cases, migrations, cross-repo contracts) and
    write it before moving on, then sequence by dependency. The longest, most
    interactive part: be Socratic, propose then interrogate, and don't shortcut it.
-5. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
-   and set the optimal session count (see "Plan the agent fleet").
+5. **Plan the agent fleet** — split the work into parallel, non-conflicting streams,
+   one session each; the fleet size follows from that split (see "Plan the agent fleet").
 
 When the plan is complete and the user has confirmed it, your work is done — stop
 there. Putting it on GitHub is the user's job, not yours.
