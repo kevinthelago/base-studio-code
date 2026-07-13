@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { Titlebar } from "@/app/chrome/Titlebar";
 import { Rail } from "@/app/chrome/Rail";
-import { workspaceLabel } from "@/app/registry";
+import { locationCrumb } from "@/app/chrome/locationCrumb";
 import { Tabstrip } from "@/app/chrome/Tabstrip";
 import { StatusBar } from "@/app/chrome/StatusBar";
 import { ErrorBoundary } from "@/app/safety/ErrorBoundary";
@@ -49,9 +49,13 @@ export default function App() {
     tabs, activeTabIdx,
     focusedAgentName,
     activeRepoName,
-    automationsTab,
-    settingsSection,
+    activePageTab,
+    projectsPageMode,
     projectsView,
+    githubTab,
+    githubBoardOpen,
+    githubBoardTab,
+    settingsSection,
     hasHydrated,
     showConsolePage,
   } = useAppStore();
@@ -73,31 +77,22 @@ export default function App() {
   // by ProjectsWorkspace, so it rides Projects' keep-mounted treatment and its designer PTY (#2585) still
   // survives screen switches.
 
-  // The "you are here" position crumb: the screen's canonical name (from the registry — the same
-  // source the rail nav uses, so they can't drift) followed by any in-screen detail (the active
-  // tab/agent, repo, sub-section). Only the DETAIL lives here; the page NAME is never hardcoded.
-  const titleWorkspace = (() => {
-    const parts: string[] = [workspaceLabel(activeWorkspace)];
-    switch (activeWorkspace) {
-      case "console":
-        if (tabs[activeTabIdx]?.name) parts.push(tabs[activeTabIdx].name);
-        if (focusedAgentName) parts.push(focusedAgentName);
-        break;
-      case "github":
-        if (activeRepoName) parts.push(activeRepoName);
-        break;
-      case "automation":
-        parts.push(automationsTab);
-        break;
-      case "projects":
-        if (projectsView === "planning") parts.push("planning");
-        break;
-      case "settings":
-        parts.push(settingsSection);
-        break;
-    }
-    return parts.filter(Boolean).join(" — ");
-  })();
+  // The "you are here" position crumb: the Workspace's canonical name (registry.ts — the same source
+  // the rail nav uses, so they can't drift) followed by its active PAGE (and any further in-page detail).
+  // The full mapping — every workspace's page — lives in the pure, unit-tested `locationCrumb` (#3036).
+  const titleWorkspace = locationCrumb({
+    activeWorkspace,
+    activePageTab,
+    projectsPageMode,
+    projectsView,
+    githubTab,
+    githubBoardOpen,
+    githubBoardTab,
+    activeRepoName,
+    settingsSection,
+    consoleTab: tabs[activeTabIdx]?.name,
+    focusedAgentName,
+  });
 
   // Hold the first paint until the async-persisted state has hydrated, so screens
   // don't flash from store defaults (e.g. GitHub "not connected" → connected) on
