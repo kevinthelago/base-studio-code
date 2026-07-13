@@ -334,6 +334,15 @@ mod tests {
         bsc_json_store::Store::new(base.join(segment), noun).set(id, json).unwrap();
     }
 
+    /// The lean listing WITHOUT the packaged built-ins (#2894 ships `web-app-dev`) — the user-authored
+    /// studios these CRUD tests assert over. (The built-in merge itself is covered by its own tests.)
+    fn user_meta(base: &Path) -> Vec<Value> {
+        list_meta(base)
+            .into_iter()
+            .filter(|v| v.get("builtin").and_then(Value::as_bool) != Some(true))
+            .collect()
+    }
+
     #[test]
     fn slug_lowercases_collapses_and_trims() {
         assert_eq!(slug("My Studio").unwrap(), "my-studio");
@@ -416,13 +425,13 @@ mod tests {
         assert_eq!(got["snapshot"]["blueprints"].as_array().unwrap().len(), 1);
         assert_eq!(got["snapshot"]["blueprints"][0]["name"], "Full-stack");
         // It shows up in the lean listing too.
-        assert_eq!(list_meta(&base), vec![serde_json::json!({"id": "imported", "name": "Imported Studio"})]);
+        assert_eq!(user_meta(&base), vec![serde_json::json!({"id": "imported", "name": "Imported Studio"})]);
 
         // Upsert: a same-id re-set overwrites in place (no duplicate).
         set(&base, r#"{"id":"imported","name":"Renamed","snapshot":{}}"#).unwrap();
         let got2 = get(&base, "imported").unwrap().unwrap();
         assert_eq!(got2["name"], "Renamed");
-        assert_eq!(list_meta(&base).len(), 1);
+        assert_eq!(user_meta(&base).len(), 1);
     }
 
     #[test]
@@ -434,20 +443,20 @@ mod tests {
         assert!(set(&base, r#"{"id":"x","snapshot":{}}"#).is_err(), "missing name is rejected");
         assert!(set(&base, r#"{"id":"x","name":"  "}"#).is_err(), "blank name is rejected");
         // Nothing landed on any rejection.
-        assert!(list_meta(&base).is_empty());
+        assert!(user_meta(&base).is_empty());
     }
 
     #[test]
     fn list_get_remove_round_trip() {
         let base = tmp_base("crud");
-        assert!(list_meta(&base).is_empty(), "a fresh base has no studios");
+        assert!(user_meta(&base).is_empty(), "a fresh base has no studios");
         assert_eq!(get(&base, "one").unwrap(), None, "absent ⇒ None");
 
         save(&base, "One", None).unwrap();
         save(&base, "Two", None).unwrap();
 
         // list projects the lean {id, name} of each.
-        let mut metas = list_meta(&base);
+        let mut metas = user_meta(&base);
         metas.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
         assert_eq!(metas.len(), 2);
         assert_eq!(metas[0], serde_json::json!({"id": "one", "name": "One"}));
@@ -459,7 +468,7 @@ mod tests {
         // remove drops one; the other survives; remove-absent is a no-op.
         remove(&base, "one").unwrap();
         assert_eq!(get(&base, "one").unwrap(), None);
-        assert_eq!(list_meta(&base).len(), 1);
+        assert_eq!(user_meta(&base).len(), 1);
         remove(&base, "one").unwrap(); // no-op, not an error
     }
 
