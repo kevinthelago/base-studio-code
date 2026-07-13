@@ -29,6 +29,7 @@ import { Chip } from "@/shared/ui/data/Chip";
 import { Code } from "@/shared/ui/data/Code";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { useDockEntrance } from "@/shared/hooks/useDockEntrance";
+import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { useGraphPage } from "@/shared/ui/layouts/useGraphPage";
@@ -117,6 +118,8 @@ export function DesignsWorkbench() {
 
   const match = (c: ComponentRecord) => matchesQuery(c, query);
   const kit = kits.find((k) => k.id === kitId) ?? kits[0];
+  // Name the active kit in the titlebar crumb (#3041) — "" when the library is empty.
+  useCrumbEntity("designs", kit?.name ?? "");
   // The resolved try-on motion def (#2942) — the selected kit animation, kit-scoped for the vehicle.
   const tryAnimDef = useMemo(() => {
     if (!tryAnim || !kit) return null;

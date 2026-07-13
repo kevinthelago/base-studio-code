@@ -52,6 +52,9 @@ const label = (map: Record<string, string>, id: string | undefined): string =>
 export interface CrumbState {
   activeWorkspace: Workspace;
   activePageTab: Record<string, string>;
+  /** The navigated ENTITY per graph, keyed by page id (`glance`/`teams`/`designs`/`algorithms`),
+   *  reported by each graph via `useCrumbEntity` (#3041). Appended after the page name. */
+  crumbEntity: Record<string, string>;
   projectsPageMode: string;
   projectsView: string;
   githubTab: string;
@@ -78,6 +81,9 @@ export function locationCrumb(s: CrumbState): string {
       if (s.focusedAgentName) parts.push(s.focusedAgentName);
       break;
     case "glance":
+      parts.push(label(PAGES.glance ?? {}, s.activePageTab.glance ?? DEFAULT_PAGE.glance));
+      if (s.crumbEntity.glance) parts.push(s.crumbEntity.glance); // the drilled project
+      break;
     case "skills":
     case "mcp":
     case "security":
@@ -86,8 +92,13 @@ export function locationCrumb(s: CrumbState): string {
       break;
     case "projects":
       parts.push(label(PLANNER_PAGES, s.projectsPageMode));
-      // Inside the Projects tab, a live planning session is a distinct place worth naming.
-      if (s.projectsPageMode === "projects" && s.projectsView === "planning") parts.push("Planning");
+      if (s.projectsPageMode === "projects") {
+        // Inside the Projects tab, a live planning session is a distinct place worth naming.
+        if (s.projectsView === "planning") parts.push("Planning");
+      } else if (s.crumbEntity[s.projectsPageMode]) {
+        // Teams / Components / Algorithms → the entered team, active kit, active language.
+        parts.push(s.crumbEntity[s.projectsPageMode]);
+      }
       break;
     case "github":
       // A full-page board drill (Board/Roadmap/Issues/Insights) sits OVER the tabs when open.

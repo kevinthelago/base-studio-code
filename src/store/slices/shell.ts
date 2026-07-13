@@ -9,7 +9,7 @@ import { setMapEntry } from "../updateHelpers";
 import { pickDemoable, mergeSnapshotInto } from "../appState";
 
 type ShellSlice = Pick<AppStore,
-  "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "activePageTab" | "setActivePageTab" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "sandboxNudgeDismissCount" | "dismissSandboxNudge" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig" | "demoActive" | "demoBackup" | "loadDemoState" | "clearDemoState"
+  "automationsTab" | "setAutomationsTab" | "pageTabOrder" | "setPageTabOrder" | "activePageTab" | "setActivePageTab" | "crumbEntity" | "setCrumbEntity" | "detachedTabIds" | "setTabDetached" | "detachedSections" | "setSectionDetached" | "settingsSection" | "setSettingsSection" | "sandboxNudgeDismissCount" | "dismissSandboxNudge" | "perfConfig" | "setPerfConfig" | "logConfig" | "setLogConfig" | "demoActive" | "demoBackup" | "loadDemoState" | "clearDemoState"
 >;
 
 export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set) => ({
@@ -23,6 +23,11 @@ export const createShellSlice: StateCreator<AppStore, [], [], ShellSlice> = (set
       // no-op writes from usePageTabs's validity effect don't churn subscribers.
       setActivePageTab: (page, id) =>
         set((s) => (s.activePageTab[page] === id ? s : { activePageTab: setMapEntry(s.activePageTab, page, id) })),
+      crumbEntity: {},
+      // Idempotent (same guard as setActivePageTab) — the reporting effects fire on every render, so
+      // skip the write when the label is unchanged to avoid churning subscribers.
+      setCrumbEntity: (key, label) =>
+        set((s) => (s.crumbEntity[key] === label ? s : { crumbEntity: setMapEntry(s.crumbEntity, key, label) })),
       detachedTabIds: [],
       setTabDetached: (id, detached) =>
         set((s) => ({
