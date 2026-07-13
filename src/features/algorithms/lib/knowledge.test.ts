@@ -17,7 +17,14 @@ describe("KNOWLEDGE seed (impl-only, #2958)", () => {
       expect(["primitive", "algorithm"]).toContain(im.role);
       expect(TECHS).toContain(im.tech);
       expect(im.name.trim().length).toBeGreaterThan(0);
-      expect(im.code.trim().length).toBeGreaterThan(0);
+      // #2972: an algorithm carries real, reusable code; a primitive is a DESCRIPTOR of a language
+      // built-in — it names its std `ref` and is NOT re-coded.
+      if (im.role === "algorithm") {
+        expect((im.code ?? "").trim().length).toBeGreaterThan(0);
+      } else {
+        expect((im.ref ?? "").trim().length).toBeGreaterThan(0);
+        expect(im.code).toBeUndefined();
+      }
       for (const c of im.composes) {
         expect(ids.has(c)).toBe(true); // every composes id is a REAL impl
         expect(implById(KNOWLEDGE, c)!.tech).toBe(im.tech); // and of the SAME tech

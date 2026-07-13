@@ -180,6 +180,30 @@ mod tests {
     }
 
     #[test]
+    fn primitives_are_descriptors_with_a_ref_not_code() {
+        // #2972: a primitive DESCRIBES a language built-in (its std `ref`) and is NOT re-coded; an
+        // algorithm carries real, reusable code.
+        let g = seed();
+        for im in implementations_of(&g) {
+            let id = im.get("id").and_then(Value::as_str).unwrap_or_default();
+            match im.get("role").and_then(Value::as_str) {
+                Some("primitive") => {
+                    assert!(
+                        im.get("ref").and_then(Value::as_str).is_some_and(|r| !r.trim().is_empty()),
+                        "primitive '{id}' names its std ref",
+                    );
+                    assert!(im.get("code").is_none(), "primitive '{id}' is described, not re-coded");
+                }
+                Some("algorithm") => assert!(
+                    im.get("code").and_then(Value::as_str).is_some_and(|c| !c.trim().is_empty()),
+                    "algorithm '{id}' carries real code",
+                ),
+                other => panic!("impl '{id}' has an unexpected role {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn implementations_find_by_id_over_the_tier() {
         let g = seed();
         let ms = implementations_of(&g)

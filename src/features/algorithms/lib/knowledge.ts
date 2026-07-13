@@ -25,11 +25,12 @@ export const TECH_META: Record<Tech, { label: string; ext: string; dot: string }
 export type ImplRole = "primitive" | "algorithm";
 
 /**
- * A unit of a language kit (#2863/#2958) — a real thing, in one `tech`, WITH code. The implementation
- * IS the concept: there is no abstract concept node. `role` splits **primitives** (the language's
- * building blocks — `rust.vec`, `rust.iterator`) from **algorithms** (which `compose` OTHER impls of
- * the SAME tech, growing UP from the primitive base — e.g. `merge-sort.rs` composes `merge.rs`,
- * `rust.vec`, `rust.slice`). `id` is `<name>.<ext>` for an algorithm, `<tech>.<name>` for a primitive.
+ * A unit of a language kit (#2863/#2958) — a node in one `tech`. The implementation IS the concept:
+ * there is no abstract concept node. `role` splits **primitives** — a language BUILT-IN (`rust.vec`,
+ * `rust.iterator`) that is DESCRIBED by its std `ref`, never re-coded (#2972) — from **algorithms**:
+ * real reusable `code` that `compose`s OTHER impls of the SAME tech, growing UP from the primitive base
+ * (e.g. `merge-sort.rs` composes `merge.rs`, `rust.vec`, `rust.slice`). `id` is `<name>.<ext>` for an
+ * algorithm, `<tech>.<name>` for a primitive.
  */
 export interface AlgoImpl {
   /** `<name>.<ext>` (algorithm) or `<tech>.<name>` (primitive) — e.g. "merge-sort.rs", "rust.iterator". */
@@ -42,8 +43,12 @@ export interface AlgoImpl {
   /** OTHER implementation ids of the same tech this builds on — the "builds on" edges, pointing DOWN
    *  to the primitive base. */
   composes: string[];
-  /** A real, concise implementation in `tech`. */
-  code: string;
+  /** A primitive's std reference — the language built-in it names (`std::vec::Vec`, `i64`). Primitives
+   *  are DESCRIBED, not re-coded (#2972); algorithms leave this unset. */
+  ref?: string;
+  /** An algorithm's real, reusable implementation in `tech`. Optional for a primitive — a language
+   *  built-in is described (`ref` + `summary`), not re-coded (#2972). */
+  code?: string;
 }
 
 /** The knowledge model — the per-language implementation tier (#2958); the abstract concept ontology
