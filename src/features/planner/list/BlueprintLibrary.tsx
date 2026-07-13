@@ -18,6 +18,7 @@ import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import type { DraftRow } from "./drafts";
+import { addDbProject } from "./projectsDbBridge";
 import { BlueprintCard } from "./BlueprintCard";
 import { buildBlueprintItems, type BpItem } from "./blueprintLibrary.helpers";
 
@@ -80,6 +81,9 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
     setPlanningContext(b.pitch || "Design a reusable blueprint to publish as a gist.", "");
     setActiveProjectMeta(null, "", "", 0);
     addDraftProject(key, { title: b.name, pitch: b.pitch ?? "", createdAt: Date.now() });
+    // Durable dual-write (#2995): mirror the draft into the projects DB so it survives a restart even
+    // if the `localDraftProjects` cache misses. Fire-and-forget; degrades silently. KEEPS the store write.
+    void addDbProject({ key, title: b.name, pitch: b.pitch ?? "", blueprint: AUTHORING_BLUEPRINT_ID, category: full?.category ?? null, state: "drafted" });
     setPlanningSession(key);
     setProjectsView("planning");
   }
@@ -107,6 +111,8 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
     setPlanningContext("Design a reusable blueprint to publish as a gist.", "");
     setActiveProjectMeta(null, "", "", 0);
     addDraftProject(key, { title, pitch: "Design a reusable blueprint.", createdAt: Date.now() });
+    // Durable dual-write (#2995): mirror into the projects DB (fire-and-forget; degrades silently).
+    void addDbProject({ key, title, pitch: "Design a reusable blueprint.", blueprint: AUTHORING_BLUEPRINT_ID, state: "drafted" });
     setPlanningSession(key);
     setBpNewOpen(false);
     setBpTitle("");
