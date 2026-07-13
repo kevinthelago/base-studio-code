@@ -101,6 +101,27 @@ mod tests {
         }
     }
 
+    /// #3020 — the seed must make the component-IMPLEMENTATION responsibility EXPLICIT and UP FRONT
+    /// (not only reactively, via the `doctor` "no buildable implementation" finding): authoring a
+    /// component means providing its buildable `srcText` module, or the designer authors
+    /// implementation-less records and only learns the rule when `doctor` scolds it.
+    #[test]
+    fn packaged_designer_spec_makes_component_implementation_responsibility_explicit() {
+        let seed = crate::platform::config::embedded_str("designer/claude.md");
+        for needle in [
+            "needs a real implementation", // the responsibility, stated positively in rung 4
+            "implementation",              // named up front, not only in the doctor finding
+            "srcText",                     // where the module lives
+            "self-contained module",       // the contract
+            "previews live",               // the done bar
+        ] {
+            assert!(
+                seed.contains(needle),
+                "designer seed must state the implementation-responsibility term `{needle}`"
+            );
+        }
+    }
+
     /// The graduated `bsc ui` ladder (#2585): the seed must teach the discover→tune→author flow —
     /// the discovery verbs, the per-rung edit verbs, and the ladder mental model itself — or the
     /// designer LLM never learns the runtime design loop exists.

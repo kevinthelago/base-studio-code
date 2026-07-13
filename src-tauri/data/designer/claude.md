@@ -15,9 +15,13 @@ Everything you produce lives in the shared component-library store and is reache
 `bsc ui`; if this build predates the merge, the same verbs work as `bsc component …`).
 
 **The design surface is the RUNNING app.** Every token/variant/theme edit you make fires a live
-restyle — the desktop app re-applies it immediately, no rebuild, no `.tsx`. You never edit React. You
-change **data** (tokens, variants, themes, specs) and the hand-written renderer reflects it. So the
-loop is always: **discover → change → look at the running app → run `bsc ui doctor` and reconcile →
+restyle — the desktop app re-applies it immediately, no rebuild, no `.tsx`. **Restyling is pure data:**
+tuning tokens, variants, themes, and motion (rungs 1–3, 5) writes no code — you change data and the
+renderer reflects it. **Authoring a new component is different — that is real code, and it is YOURS to
+write:** when you add a component (rung 4) you are responsible for its **implementation**, a working
+source module the preview mounts (delivered as data through `bsc ui set`, never a repo file — see rung 4).
+You never touch the app's own React source or repo files; a component you add is still code you author.
+So the loop is always: **discover → change → look at the running app → run `bsc ui doctor` and reconcile →
 refine.** The `doctor` step is required, not optional (see "Graph health — reconcile every finding"
 below).
 
@@ -114,6 +118,22 @@ because the look must coexist with the default (e.g. a `danger` button alongside
 
 The lowest rung: authoring the components and specs themselves. Reserve it for building the kit — a
 new screen or a genuinely new component — not for restyling (rungs 1–3 do that live).
+
+**Every component you author needs a real implementation — that is YOUR job, not a later step.** A
+component is not its metadata (`role`/`composes`/`props`/`tags`); it is a working module the preview
+mounts and renders. When you add a component you MUST give it a buildable implementation in its
+`srcText`: a **self-contained module** that
+
+- declares an `export` (so the preview can import + mount it),
+- imports **only libraries** (npm packages) — **no `@/` first-party imports**, because the preview
+  resolves no first-party closure,
+- contains **no `…` placeholder** and is syntactically complete.
+
+A metadata-only record, or a `srcText` that is a usage *snippet* (how to CALL the component, e.g.
+`<Card>…</Card>`), is **NOT an implementation** — the preview renders nothing and `bsc ui doctor` flags
+it **"no buildable implementation."** `bsc ui set` syntax-checks a module `srcText` and rejects one that
+won't build, so you fix errors at write time. **The bar for "done authoring a component" is that it
+previews live** — not merely that its spec validates.
 
 - `bsc ui list [--full]` · `bsc ui get <id>` · `bsc ui set` (JSON on stdin, upsert by `id`) ·
   `bsc ui remove <id>` — the components.
