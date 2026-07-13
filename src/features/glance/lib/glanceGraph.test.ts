@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildGraph, focusSets, rollUpHealth, type GRawNode, type GRawEdge } from "./glanceGraph";
+import { buildGraph, focusSets, rollUpHealth, kitNodeId, usesKitEdgeId, NW, type GRawNode, type GRawEdge } from "./glanceGraph";
 import { buildGlanceData } from "./glanceData";
 
 const NODES: GRawNode[] = [
@@ -69,6 +69,60 @@ describe("buildGraph (#2206)", () => {
     const y = Object.fromEntries(g.nodes.map((n) => [n.id, n.y]));
     expect(y.c2).toBeLessThan(y.c1);
     expect(y.c1).toBeLessThan(y.c3);
+  });
+});
+
+describe("buildGraph — fenced UI-kit band (#3007)", () => {
+  // Two projects, both consuming one shared kit — the kit is edged FROM each project via `uses-kit`.
+  const KIT = "react-ui";
+  const withKit: GRawNode[] = [
+    { id: "app-a", role: "service", health: "idle", activity: "idle" },
+    { id: "app-b", role: "service", health: "idle", activity: "idle" },
+    { id: kitNodeId(KIT), slug: "React UI", kind: "kit", role: "infra", health: "idle", activity: "idle" },
+  ];
+  const kitEdges: GRawEdge[] = [
+    { id: usesKitEdgeId("app-a", KIT), from: "app-a", to: kitNodeId(KIT), kind: "uses-kit" },
+    { id: usesKitEdgeId("app-b", KIT), from: "app-b", to: kitNodeId(KIT), kind: "uses-kit" },
+  ];
+
+  it("lifts kit nodes into a fenced top band, strictly above every project node", () => {
+    const g = buildGraph(withKit, kitEdges);
+    expect(g.kitBand).toBeDefined();
+    const band = g.kitBand!;
+    const kits = g.nodes.filter((n) => n.kind === "kit");
+    const projs = g.nodes.filter((n) => n.kind !== "kit");
+    expect(kits).toHaveLength(1);
+    for (const k of kits) {
+      // every kit sits INSIDE the band…
+      expect(k.y).toBeGreaterThanOrEqual(band.y0);
+      expect(k.y).toBeLessThanOrEqual(band.y1);
+      expect(k.layer).toBe(-1); // sentinel: outside the project layering
+    }
+    // …and every project sits STRICTLY below the fence.
+    for (const p of projs) expect(p.y).toBeGreaterThan(band.y1);
+  });
+
+  it("routes each uses-kit edge with the perimeter-anchor router (not the columnar side-port)", () => {
+    const g = buildGraph(withKit, kitEdges);
+    const kitEdgesOut = g.edges.filter((e) => e.kind === "uses-kit");
+    expect(kitEdgesOut).toHaveLength(2);
+    for (const e of kitEdgesOut) {
+      expect(e.d.startsWith("M ") && e.arrow.startsWith("M ")).toBe(true);
+      // The perimeter-anchor router leaves the source's TOP face at the box's horizontal CENTRE (the kit
+      // sits directly above), NOT the left/right side-port a layered edge would use.
+      const src = g.nodes.find((n) => n.id === e.from)!;
+      const startX = Number(/^M ([\d.]+) /.exec(e.d)![1]);
+      expect(Math.abs(startX - (src.x + NW / 2))).toBeLessThan(6);
+    }
+  });
+
+  it("returns NO band and the exact pre-#3007 project layout when there are no kit nodes", () => {
+    const g = buildGraph(NODES, EDGES);
+    expect(g.kitBand).toBeUndefined();
+    // Locked coordinates: the layered DAG places core/api/web left→right, all on one centred row —
+    // byte-identical to before the kit-band scoping refactor.
+    const layout = Object.fromEntries(g.nodes.map((n) => [n.id, [n.x, n.y]]));
+    expect(layout).toEqual({ core: [70, 70], api: [322, 70], web: [574, 70] });
   });
 });
 

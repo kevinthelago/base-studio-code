@@ -92,6 +92,16 @@ export function GlanceCanvas(p: CanvasProps) {
 
       {/* edges */}
       <svg width={model.worldW} height={model.worldH} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>
+        {/* The fenced UI-KIT band (#3007) — drawn FIRST so it sits behind the edges + nodes. A faint
+            cyan wash, a dashed divider at the fence, and a small "UI KITS" label, mirroring the Design
+            Studio composition swimlanes so the lifted kit nodes read as a distinct top zone. */}
+        {model.kitBand && (
+          <g className="glance-kit-band" style={{ pointerEvents: "none" }}>
+            <rect x={0} y={model.kitBand.y0} width={model.worldW} height={model.kitBand.y1 - model.kitBand.y0} className="glance-kit-band-bg" style={{ fill: KIT_COLOR }} />
+            <line x1={0} y1={model.kitBand.y1} x2={model.worldW} y2={model.kitBand.y1} className="glance-kit-band-divider" style={{ stroke: KIT_COLOR }} />
+            <text x={16} y={model.kitBand.y0 + 22} className="glance-kit-band-label" style={{ fill: KIT_COLOR }}>UI KITS</text>
+          </g>
+        )}
         {model.edges.map((e) => {
           const meta = EDGE_META[e.kind];
           // A fleet-drill (L1) edge is fully styled by its Org relationship archetype (#2561/#2565) —
@@ -114,7 +124,7 @@ export function GlanceCanvas(p: CanvasProps) {
             const F = nodeById.get(e.from), T = nodeById.get(e.to);
             if (F && T) {
               const g = edgeGeom({ x: F.x + (dF?.dx ?? 0), y: F.y + (dF?.dy ?? 0), id: e.from },
-                                 { x: T.x + (dT?.dx ?? 0), y: T.y + (dT?.dy ?? 0), id: e.to }, e.isCycle);
+                                 { x: T.x + (dT?.dx ?? 0), y: T.y + (dT?.dy ?? 0), id: e.to }, e.isCycle, e.kind);
               d = g.d; arrow = g.arrow;
             }
           }
