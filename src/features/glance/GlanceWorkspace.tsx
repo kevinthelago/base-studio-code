@@ -19,6 +19,7 @@ import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { Screen } from "@/app/chrome/Screen";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
+import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
@@ -134,6 +135,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const effectiveFleet = storeFleet && storeFleet.streams.length > 0 ? storeFleet : loadedFleet;
 
   const drillNode = drill ? projectModel.nodes.find((n) => n.id === drill) ?? null : null;
+  // Name the drilled project in the titlebar crumb (#3041) — "" on the un-drilled network overview.
+  useCrumbEntity("glance", drillNode?.slug ?? "");
   // The drilled project's authored team (#2572): its blueprint's `team` (positions + relationships).
   const drillTeam = useMemo(() => {
     const bpId = drill ? projectBlueprintId[drill] : undefined;

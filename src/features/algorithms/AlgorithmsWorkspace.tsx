@@ -16,6 +16,7 @@ import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { useDockEntrance } from "@/shared/hooks/useDockEntrance";
+import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
 import { AlgorithmsKitGraph } from "./AlgorithmsKitGraph";
 import { AlgorithmsInspector } from "./AlgorithmsInspector";
 import { AlgorithmsRail } from "./AlgorithmsRail";
@@ -40,6 +41,8 @@ export function AlgorithmsWorkspace() {
 
   // The active language's OWN graph (impls + composes edges, down to the primitive base) + its layout.
   const kit = useMemo(() => kitGraph(graph, activeTech), [graph, activeTech]);
+  // Name the active language in the titlebar crumb (#3041).
+  useCrumbEntity("algorithms", TECH_META[activeTech]?.label ?? activeTech);
   const kitLayout = useMemo(() => layoutKitGraph(kit), [kit]);
 
   // The on-graph legend (#2909) — the relationship types ACTUALLY present in this kit's edges, keyed off
