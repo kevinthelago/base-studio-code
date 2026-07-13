@@ -242,6 +242,11 @@ missing either falls into the trailing "other" head, so `{ id, name, stack }` al
 Each component record carries:
 
 - `role` — its architectural tier: `primitive` · `composite` · `layout` · `page` · `service`.
+- `group` — OPTIONAL. The component's PURPOSE partition within the kit (`data-viz` / `pages` /
+  `forms` …), **orthogonal to `role`** (the arch tier): `group` says what the component is FOR, `role`
+  says what tier it is. Purely organizational — components **compose across groups within the SAME
+  kit** (kits never cross), so a `pages`-group component composes a `data-viz`-group chart directly.
+  Absent ⇒ the kit's trailing "ungrouped" bucket in the rail.
 - `composes` — the component names it depends on (its dependencies in the composition graph).
 - `variants` — the named visual/behavioral variants the preview and generate loop cycle through.
 - `wraps` — the raw intrinsic it replaces (`"button"`, `"input"`): the authoring hint that derives
