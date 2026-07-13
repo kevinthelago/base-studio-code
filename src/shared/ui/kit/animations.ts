@@ -18,8 +18,8 @@
 // child `selector` must pass `SAFE_SELECTOR` (only selector-safe characters — it cannot break out of
 // the selector position). Anything failing is skipped, never emitted.
 
-/** When an authored animation plays. */
-export type AnimationTrigger = "mount" | "hover" | "always";
+/** When an authored animation plays. `exit` is DORMANT until the preview exit-runtime lands (#3057). */
+export type AnimationTrigger = "mount" | "hover" | "always" | "exit";
 
 /** One authored animation in a kit's motion library (the shape carried on a `Kit`'s `animations`).
  *  A component references it by {@link name} to play it — the kit owns the keyframes/timing/trigger. */
@@ -34,7 +34,10 @@ export interface KitAnimation {
   easing?: string;
   /** Animation-level delay (#3056) — a time (`120ms`), slotted after easing in the shorthand. Default none. */
   delay?: string;
-  /** When it plays. Default `mount`. */
+  /** When it plays. Default `mount`. `exit` (#3057) keys the rule on a `[data-bsc-exit]` marker so it
+   *  plays as a subtree LEAVES — DORMANT until the preview exit-runtime sets that marker on the leaving
+   *  element (nothing sets it today, so an exit animation compiles the keyframes + rule but plays
+   *  nothing yet; a follow-up slice adds the runtime that flips the marker). */
   trigger?: AnimationTrigger;
   /** Scope the applying rule to a CHILD element (#3054) — a descendant combinator
    *  (`.<kit>-anim-<name> <selector>`). Absent ⇒ the animation applies to the root class as before. */
@@ -95,7 +98,8 @@ function keyframesCss(d: AnimationDef): string {
 /**
  * Compile animation definitions into CSS: a `@keyframes bsc-<kit>-<name>` block + a
  * reduced-motion-guarded rule applying it on `.<kit>-anim-<name>` (`:hover` for a hover
- * trigger; `infinite` for `always`, else played once). A valid {@link KitAnimation.selector}
+ * trigger; `[data-bsc-exit]` for an `exit` trigger — dormant until the exit-runtime, #3057;
+ * `infinite` for `always`, else played once). A valid {@link KitAnimation.selector}
  * scopes the applying rule to a CHILD (`.<kit>-anim-<name> <selector>`, #3054); {@link KitAnimation.set}
  * adds static declarations to the rule body; {@link KitAnimation.delay} slots into the shorthand after
  * easing (#3056). A {@link KitAnimation.stagger} with a valid `selector` (#3055) adds, after the base
@@ -118,7 +122,12 @@ export function compileAnimationsCss(defs: AnimationDef[]): string {
     const cls = `.${d.kit}-anim-${d.name}`;
     // #3054: scope to a child when a safe selector is given (descendant combinator); else the root class.
     const scoped = SAFE_SELECTOR.test(d.selector ?? "") ? `${cls} ${d.selector!.trim()}` : cls;
-    const rule = d.trigger === "hover" ? `${scoped}:hover` : scoped;
+    // #3057: `exit` keys the rule on a `[data-bsc-exit]` marker — DORMANT until the exit-runtime sets it
+    // on a leaving element (nothing sets it today, so an exit rule compiles but never matches → inert).
+    const rule =
+      d.trigger === "hover" ? `${scoped}:hover`
+      : d.trigger === "exit" ? `${scoped}[data-bsc-exit]`
+      : scoped;
     const iter = d.trigger === "always" ? "infinite" : "1";
     // #3054: static declarations on the applying rule, guarded exactly like a keyframe declaration.
     const setCss = Object.entries(d.set ?? {})

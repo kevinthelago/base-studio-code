@@ -174,7 +174,7 @@ component's `animations` array by `name` (replacing a same-named one, else appen
 a stop (`from` / `to` / a percentage like `50%`) to CSS declarations (property → value); `duration`/
 `easing` are optional and typically reference the motion tokens (`var(--dur-base)` / `var(--ease-standard)`);
 `delay` is an optional animation-level time slotted after easing; `trigger` is one of
-mount | hover | always (default mount); `selector` scopes the applying rule to a CHILD element (a
+mount | hover | always | exit (default mount; `exit` is accepted but DORMANT until the preview exit-runtime, #3057); `selector` scopes the applying rule to a CHILD element (a
 descendant combinator); `set` is a map of STATIC declarations applied on the rule (e.g. transform-origin
 that can't live in keyframes); `stagger` is a per-matched-element delay STEP (a time, e.g. `14ms`) that
 cascades the delay across the elements `selector` matches — it REQUIRES a `selector`. The animation plays
@@ -250,7 +250,7 @@ KIT's `animations` library by `name` (replacing a same-named one, else appending
 motion; a component PLAYS it by adding the name to its own `animations` array (via `bsc ui set`).
 `keyframes` maps a stop (`from`/`to`/`N%`) to CSS declarations; `duration`/`easing` typically reference
 the motion tokens (`var(--dur-base)` / `var(--ease-standard)`); `delay` is an optional animation-level
-time (after easing in the shorthand); `trigger` is mount | hover | always (default mount); `selector`
+time (after easing in the shorthand); `trigger` is mount | hover | always | exit (default mount; `exit` is accepted but DORMANT until the preview exit-runtime, #3057); `selector`
 scopes the applying rule to a CHILD element (a descendant combinator); `set` maps STATIC declarations
 applied on the rule (e.g. transform-origin/box that can't live in keyframes); `stagger` is a
 per-matched-element delay STEP (a time, e.g. `14ms`) cascaded across the elements `selector` matches — it
@@ -1029,9 +1029,9 @@ fn validate_animation(anim: &serde_json::Value) -> Result<(), String> {
     // Optional trigger: one of the closed set.
     if let Some(t) = obj.get("trigger") {
         let s = t.as_str().ok_or("animation `trigger` must be a string")?;
-        if !matches!(s, "mount" | "hover" | "always") {
+        if !matches!(s, "mount" | "hover" | "always" | "exit") {
             return Err(format!(
-                "animation `trigger` '{s}' must be one of mount | hover | always"
+                "animation `trigger` '{s}' must be one of mount | hover | always | exit"
             ));
         }
     }
@@ -1745,6 +1745,11 @@ mod tests {
         }))
         .unwrap_err();
         assert!(err.contains("trigger"), "{err}");
+        // `exit` (#3057) is a valid trigger — accepted (its rule/keyframes compile; runtime is a follow-up).
+        assert!(validate_animation(&serde_json::json!({
+            "name": "x", "keyframes": { "to": { "opacity": "1" } }, "trigger": "exit"
+        }))
+        .is_ok());
         // Injection selector (#3054) — a breakout attempt in the child selector is rejected.
         for bad in ["a{}b", "a;b", "</style>", "svg/*x*/"] {
             let a = serde_json::json!({
