@@ -107,6 +107,12 @@ export function SessionRecoveryBanner() {
   }, []);
 
   const restoreProject = useCallback(async (projectKey: string, sessions: RecoverableSession[]) => {
+    // Ensure the hub is materialized on disk before relaunching (#2997 C): recovered fleet/triage cwds
+    // are the hub dir or worktrees beneath it. A prior fleet run almost always materialized it already
+    // (so this is a no-op), but a draft recovered before its first launch needs the ephemeral planning
+    // workspace promoted first. Best-effort — the recovery has no error surface, and the launch paths
+    // below already fall back to nearest-existing-ancestor cwds.
+    await safeInvoke("materialize_hub", { projectKey }, "");
     const build = sessions.filter((s) => s.kind === "director" || s.kind === "worker");
     const triage = sessions.filter((s) => s.kind === "triage");
     if (build.length) {
