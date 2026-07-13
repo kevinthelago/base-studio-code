@@ -1,8 +1,10 @@
-// Unit tests for the kit-change approval store actions (#2944/#2951). Auto-apply is a global toggle
-// (OFF by default), surfaced in Planner settings; `dismissKitChange` removes ALL of a change's
-// dispatches at once (the banner's Approve/Dismiss both call it, so confirming actually clears it).
+// Unit tests for the kit-change approval store actions (#2944/#2951/#2968). Auto-apply is a global
+// toggle (ON by default #2968 — designer changes apply without confirmation), surfaced in Planner
+// settings; `dismissKitChange` removes ALL of a change's dispatches at once (the banner's
+// Approve/Dismiss both call it, so confirming actually clears it).
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "@/store";
+import { createComponentsSlice } from "./store";
 import type { Dispatch } from "@/features/designs";
 
 // A minimal dispatch — the tests only read `projectKey` + `change.id`, so cast past the rest.
@@ -11,13 +13,15 @@ const dispatch = (changeId: string, projectKey: string): Dispatch => ({
   change: { id: changeId, class: "additive", component: "Button", summary: "changed" },
 } as unknown as Dispatch);
 
-describe("kit-change approval store (#2944/#2951)", () => {
+describe("kit-change approval store (#2944/#2951/#2968)", () => {
   beforeEach(() => {
-    useAppStore.setState({ autoApplyKitChanges: false, kitDispatches: [] });
+    useAppStore.setState({ kitDispatches: [] });
   });
 
-  it("auto-apply defaults OFF (the user approves each change)", () => {
-    expect(useAppStore.getState().autoApplyKitChanges).toBe(false);
+  it("auto-apply defaults ON — designer changes apply without confirmation (#2968)", () => {
+    // Assert the SHIPPED default off a fresh slice (not the shared singleton the other tests mutate).
+    const fresh = createComponentsSlice((() => {}) as never, (() => ({})) as never, undefined as never);
+    expect(fresh.autoApplyKitChanges).toBe(true);
   });
 
   it("setAutoApplyKitChanges toggles it", () => {
