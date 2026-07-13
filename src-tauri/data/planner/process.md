@@ -239,15 +239,20 @@ files and rarely need a human.
      stay clean.
 3. **Assign each stream the issues it owns** — the deliverables from `features`/scope
    for its area.
-4. **Decide the optimal concurrent session count.** There is **no hard limit** on how
-   many sessions can run at once: the app shows each session as a pane, a single tab
-   holds up to **4×4 = 16** panes, and the user can open **many tabs**. So 16 is only
-   a per-tab layout limit, never a ceiling on the fleet. The real bound is how many
-   sessions the user can realistically **review and steer** — ask them, and set the
-   recommended count to that. Recommend the largest number of genuinely independent
-   (non-overlapping, dependency-free) streams they can keep up with, and explain the
-   reasoning. (The one-click launch fills one build tab with up to 16 of them; run the
-   rest from additional tabs.)
+4. **Derive the recommended concurrent count — do NOT ask the user for it.** The streams
+   you just defined ARE the sessions (one stream = one session), so the fleet is already
+   fully determined by the decomposition. **Never ask "how many streams / sessions do you
+   want to run?"** — that number isn't the user's to pick; it's the count of the streams
+   you planned. `recommended` is simply how many launch together: since the streams are
+   non-overlapping and workers build against the planned contracts in parallel (a
+   `dependsOn` is a planning-time ordering hint, NOT a runtime wait), that's normally **all
+   of them**. Derive the number from the streams you built and explain the reasoning — don't
+   solicit it. There is **no hard limit** on concurrency: each session is a pane, one tab
+   holds up to **4×4 = 16** panes, and the user can open **many tabs**, so 16 is only a
+   per-tab layout limit, never a ceiling on the fleet (the one-click launch fills one build
+   tab with up to 16; the rest run from additional tabs). Steering capacity is the user's
+   call **at launch** — they open fewer panes/tabs if they'd rather watch a few at a time —
+   and it never changes the streams you planned.
 5. **Recommend a director** when the fleet is non-trivial (2+ streams, or multiple
    repos). The director is an *async-integrator* session at the project root: it
    reviews/merges PRs, resolves the cross-stream decisions workers log, and keeps
