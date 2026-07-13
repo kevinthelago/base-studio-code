@@ -12,7 +12,9 @@
 //! Findings (most-severe first): **cycle** (a `composes` loop — also breaks the layered layout) ·
 //! **dangling-branch** (an unused root that still pulls in dependencies) · **duplicate** (two
 //! components wrapping the same intrinsic, or byte-identical source) · **no-implementation** (a
-//! component the Design Studio preview can't build — a spec, not code) · **unresolvable-import** (a
+//! component the Design Studio preview can't build — a spec, not code) · **self-reference** (an
+//! own-module component whose only rendered element is ITSELF, `<Name/>` — a self-referential stub
+//! that passes the buildability + syntax gates yet produces no output, #3026) · **unresolvable-import** (a
 //! module imports something the preview can't resolve — a bare npm package not in the import-map, #2934,
 //! OR an internal `@/…`/relative import matching no kit component or runtime-closure module, #2954 —
 //! throws "module not found" at preview time) · **orphan**
@@ -395,6 +397,71 @@ fn contains_word(haystack: &str, needle: &str) -> bool {
     false
 }
 
+/// Whether `source` DECLARES the symbol `name` — a `function`/`const`/`let`/`var`/`class` binding of it
+/// (`export function Foo` / `const Foo =` / …), not a mere reference. Distinguishes a module that DEFINES
+/// the component from a bare usage snippet that only calls it. Mirrors `declaresSymbol` (graphHealth.ts).
+fn declares_symbol(source: &str, name: &str) -> bool {
+    ["function ", "const ", "let ", "var ", "class "].iter().any(|kw| {
+        let needle = format!("{kw}{name}");
+        let mut from = 0;
+        while let Some(rel) = source[from..].find(&needle) {
+            let at = from + rel;
+            let after = at + needle.len();
+            let after_ok =
+                source[after..].chars().next().is_none_or(|c| !(c.is_ascii_alphanumeric() || c == '_'));
+            if after_ok {
+                return true;
+            }
+            from = at + 1;
+        }
+        false
+    })
+}
+
+/// The set of JSX element/component tag names OPENED in `source` — every `<Ident` that is not a closing
+/// `</…` tag. (A TS generic like `<Number>` lands here too, which only makes the self-reference check
+/// MORE conservative — a stub carrying a generic simply isn't flagged.) Mirrors `jsxTagNames` (graphHealth.ts).
+fn jsx_tag_names(source: &str) -> BTreeSet<String> {
+    let bytes = source.as_bytes();
+    let mut set = BTreeSet::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'<' && i + 1 < bytes.len() && (bytes[i + 1] as char).is_ascii_alphabetic() {
+            let start = i + 1;
+            let mut k = start;
+            while k < bytes.len() && ((bytes[k] as char).is_ascii_alphanumeric() || bytes[k] == b'_') {
+                k += 1;
+            }
+            set.insert(source[start..k].to_string());
+            i = k;
+            continue;
+        }
+        i += 1;
+    }
+    set
+}
+
+/// Whether `node` is a SELF-REFERENTIAL STUB — an own-module component that declares its own name yet the
+/// ONLY element it renders is itself (`<Name/>`). It passes `looks_buildable_module` (it has an `export`)
+/// so `no-implementation` is blind to it, and it's syntactically valid so the write-time gate accepts it —
+/// but it produces no real output and recurses forever. Mirrors `isSelfReferentialStub` (graphHealth.ts).
+fn is_self_referential_stub(node: &Node) -> bool {
+    // The component's OWN module source: its `source`, else a `srcText` that is a real module. A
+    // non-module usage snippet is already `no-implementation`; a built-in's stripped source isn't ours.
+    let src = if !node.source.trim().is_empty() {
+        node.source.as_str()
+    } else if looks_buildable_module(&node.src_text) {
+        node.src_text.as_str()
+    } else {
+        return false;
+    };
+    if node.name.is_empty() || !declares_symbol(src, &node.name) {
+        return false;
+    }
+    let tags = jsx_tag_names(src);
+    tags.len() == 1 && tags.contains(&node.name)
+}
+
 /// Analyze the component records for graph-health findings, grouped and scoped PER KIT (edges only
 /// resolve within a kit). Returns a ranked list, most-severe first (stable tiebreak: kit, then the
 /// first node name), so the same input always yields the same ordering.
@@ -509,6 +576,31 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
             suggested_action: format!(
                 "author a self-contained module for `{}` (its own `source`/`srcText`) or compose it from built-in kit components",
                 n.name
+            ),
+        });
+    }
+
+    // ── self-reference (severity 3): an own-module component whose only rendered element is ITSELF
+    // (`<Name/>`). It passes the buildability check (it has an `export`, so no-implementation is blind to
+    // it) and the write-time syntax gate (it's valid), yet it produces no output and recurses forever —
+    // the class the designer hit authoring D3 components as self-calls (#3026).
+    for n in nodes {
+        if !is_self_referential_stub(n) {
+            continue;
+        }
+        out.push(Finding {
+            category: "self-reference",
+            severity: 3,
+            kit: kit.to_string(),
+            node_ids: vec![n.id.clone()],
+            node_names: vec![n.name.clone()],
+            why: format!(
+                "`{}` only renders itself (`<{}/>`) — a self-referential stub, not a real implementation (it produces no output and recurses forever)",
+                n.name, n.name
+            ),
+            suggested_action: format!(
+                "replace `{}`'s source with its REAL body — the elements/state/effects that produce its output — never a call to `<{}>`",
+                n.name, n.name
             ),
         });
     }
@@ -870,6 +962,36 @@ mod tests {
         let fs = analyze(&comps);
         assert_eq!(cats(&fs), ["orphan"]);
         assert_eq!(fs[0].node_names, ["Ghost"]);
+    }
+
+    #[test]
+    fn flags_a_self_referential_stub_but_not_a_real_module_or_a_snippet() {
+        let comps = [
+            // A self-call: it has an `export` (so it's "buildable") and is valid syntax, but the only
+            // element it renders is itself — the exact designer failure (#3026). `used: 1` so it isn't
+            // also a dead-root orphan, keeping the assertion about self-reference alone.
+            json!({ "id":"D3Chart", "name":"D3Chart", "kitId":"k", "role":"composite", "used":1, "composes":[],
+                    "srcText":"export function D3Chart(props){ return <D3Chart {...props} />; }" }),
+            // A REAL module — renders its own `<svg>`, never itself: NOT a self-reference.
+            json!({ "id":"Spark", "name":"Spark", "kitId":"k", "role":"composite", "used":2, "composes":[],
+                    "srcText":"import { useRef } from \"react\";\nexport function Spark(){ const r = useRef(null); return <svg ref={r} />; }" }),
+            // A bare usage snippet — no `export` → already `no-implementation`, never double-flagged.
+            json!({ "id":"Usage", "name":"Usage", "kitId":"k", "role":"composite", "used":1, "composes":[],
+                    "srcText":"<Usage data={[1,2,3]} />" }),
+        ];
+        let fs = analyze(&comps);
+        let self_ref: Vec<&str> = fs
+            .iter()
+            .filter(|f| f.category == "self-reference")
+            .flat_map(|f| f.node_names.iter().map(String::as_str))
+            .collect();
+        assert_eq!(self_ref, ["D3Chart"], "only the self-call is a self-reference");
+        assert!(!fs.iter().any(|f| f.node_names.contains(&"Spark".to_string())), "a real module isn't flagged");
+        let usage = fs.iter().find(|f| f.node_names.contains(&"Usage".to_string())).expect("Usage flagged");
+        assert_eq!(usage.category, "no-implementation", "a bare snippet is no-implementation, not self-reference");
+        let f = fs.iter().find(|f| f.category == "self-reference").unwrap();
+        assert_eq!(f.severity, 3);
+        assert!(f.why.contains("renders itself"), "why names the failure");
     }
 
     #[test]

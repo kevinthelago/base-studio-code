@@ -136,7 +136,7 @@ planning (a project seeded from a kit-bearing blueprint uses that kit).",
     },
     CmdDoc {
         name: "doctor",
-        summary: "graph-health report — orphans, dead branches, duplicates, cycles, unbuildable components (#2678)",
+        summary: "graph-health report — orphans, dead branches, duplicates, cycles, unbuildable + self-referential components (#2678)",
         usage: "\
 USAGE:
   bsc ui doctor [--kit K] [--json] [--pretty]     # the health report (read-only)
@@ -623,7 +623,7 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     // Human summary — one line per finding, most-severe first.
     if findings.is_empty() {
         let scope = kit.as_deref().map(|k| format!(" for kit '{k}'")).unwrap_or_default();
-        println!("✓ design graph is healthy{scope} — no orphans, dead branches, duplicates, cycles, or unbuildable components.");
+        println!("✓ design graph is healthy{scope} — no orphans, dead branches, duplicates, cycles, unbuildable, or self-referential components.");
         return Ok(());
     }
     println!("{} finding(s), most-severe first:", findings.len());
