@@ -89,6 +89,13 @@ export function nodeTier(role: Role): Tier {
   return "composable";
 }
 
+/** Sort components by graph TIER (Pages → Layouts → Composables → Fundamentals), then importance
+ *  (`used` desc, name tiebreak). The rail (#2976) sorts its list with this so it reads like the graph. */
+export const byTier = (a: ComponentRecord, b: ComponentRecord): number =>
+  TIER_ORDER.indexOf(nodeTier(a.role)) - TIER_ORDER.indexOf(nodeTier(b.role)) ||
+  b.used - a.used ||
+  a.name.localeCompare(b.name);
+
 /** The kit's `composes` names resolved to in-kit edges (composer → dependency). Names that don't
  *  resolve to a component in `comps` are dropped — no dangling graph edges. */
 export function buildComposesEdges(comps: readonly ComponentRecord[]): GraphEdge[] {
