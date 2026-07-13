@@ -169,22 +169,25 @@ USAGE:
   bsc ui define-animation <component-id> [--pretty]   # animation JSON on stdin
 
 Reads ONE animation object from stdin — { name, keyframes, duration?, easing?, delay?, trigger?,
-selector?, set? } — VALIDATES it against the motion safety grammar, then UPSERTS it into the component's
-`animations` array by `name` (replacing a same-named one, else appending). `keyframes` maps a stop
-(`from` / `to` / a percentage like `50%`) to CSS declarations (property → value); `duration`/`easing`
-are optional and typically reference the motion tokens (`var(--dur-base)` / `var(--ease-standard)`);
+selector?, set?, stagger? } — VALIDATES it against the motion safety grammar, then UPSERTS it into the
+component's `animations` array by `name` (replacing a same-named one, else appending). `keyframes` maps
+a stop (`from` / `to` / a percentage like `50%`) to CSS declarations (property → value); `duration`/
+`easing` are optional and typically reference the motion tokens (`var(--dur-base)` / `var(--ease-standard)`);
 `delay` is an optional animation-level time slotted after easing; `trigger` is one of
 mount | hover | always (default mount); `selector` scopes the applying rule to a CHILD element (a
 descendant combinator); `set` is a map of STATIC declarations applied on the rule (e.g. transform-origin
-that can't live in keyframes). The animation plays LIVE on the real component — compiled to a
-`@keyframes` block + an applying rule, guarded by `prefers-reduced-motion`. A ui-scope MUTATION
-(#2470); errors when the component id is absent. Prints the stored animation (--pretty indents).
+that can't live in keyframes); `stagger` is a per-matched-element delay STEP (a time, e.g. `14ms`) that
+cascades the delay across the elements `selector` matches — it REQUIRES a `selector`. The animation plays
+LIVE on the real component — compiled to a `@keyframes` block + an applying rule, guarded by
+`prefers-reduced-motion`. A ui-scope MUTATION (#2470); errors when the component id is absent. Prints the
+stored animation (--pretty indents).
 
 VALIDATION (the closed grammar): `name` must match [a-z][a-z0-9-]* · every keyframe stop must be
 `from`/`to`/`\\d{1,3}%` · every declaration property (incl. `set` keys) must match [a-z-]+ · no value
-(incl. duration/easing/delay/`set` values) may carry `;` `{` `}` `<` `>` `\\` `url(` `expression(`
+(incl. duration/easing/delay/stagger/`set` values) may carry `;` `{` `}` `<` `>` `\\` `url(` `expression(`
 `@import` `/*` · `selector` may use only selector-safe characters (letters, digits, space . _ # > [ ] =
-\" ' - : ( ) , * + ~) · keyframes must be a non-empty object with at least one valid stop + declaration.",
+\" ' - : ( ) , * + ~) · `stagger` requires a `selector` · keyframes must be a non-empty object with at
+least one valid stop + declaration.",
     },
     CmdDoc {
         name: "list-animations",
@@ -242,20 +245,23 @@ USAGE:
   bsc ui kit define-animation <kit-id> [--pretty]   # animation JSON on stdin
 
 Reads ONE animation object from stdin — { name, keyframes, duration?, easing?, delay?, trigger?,
-selector?, set? } — VALIDATES it against the motion safety grammar, then UPSERTS it into the KIT's
-`animations` library by `name` (replacing a same-named one, else appending). The kit OWNS the motion; a
-component PLAYS it by adding the name to its own `animations` array (via `bsc ui set`). `keyframes` maps
-a stop (`from`/`to`/`N%`) to CSS declarations; `duration`/`easing` typically reference the motion tokens
-(`var(--dur-base)` / `var(--ease-standard)`); `delay` is an optional animation-level time (after easing
-in the shorthand); `trigger` is mount | hover | always (default mount); `selector` scopes the applying
-rule to a CHILD element (a descendant combinator); `set` maps STATIC declarations applied on the rule
-(e.g. transform-origin/box that can't live in keyframes). Compiles to `@keyframes bsc-<kit>-<name>` + a
-`prefers-reduced-motion`-guarded rule on `.<kit>-anim-<name>` (scoped to the child when `selector` is
-given). A ui-scope MUTATION (#2470); errors when the kit id is absent. Prints the stored animation.
+selector?, set?, stagger? } — VALIDATES it against the motion safety grammar, then UPSERTS it into the
+KIT's `animations` library by `name` (replacing a same-named one, else appending). The kit OWNS the
+motion; a component PLAYS it by adding the name to its own `animations` array (via `bsc ui set`).
+`keyframes` maps a stop (`from`/`to`/`N%`) to CSS declarations; `duration`/`easing` typically reference
+the motion tokens (`var(--dur-base)` / `var(--ease-standard)`); `delay` is an optional animation-level
+time (after easing in the shorthand); `trigger` is mount | hover | always (default mount); `selector`
+scopes the applying rule to a CHILD element (a descendant combinator); `set` maps STATIC declarations
+applied on the rule (e.g. transform-origin/box that can't live in keyframes); `stagger` is a
+per-matched-element delay STEP (a time, e.g. `14ms`) cascaded across the elements `selector` matches — it
+REQUIRES a `selector`. Compiles to `@keyframes bsc-<kit>-<name>` + a `prefers-reduced-motion`-guarded
+rule on `.<kit>-anim-<name>` (scoped to the child when `selector` is given). A ui-scope MUTATION (#2470);
+errors when the kit id is absent. Prints the stored animation.
 
 VALIDATION (the closed grammar): `name` [a-z][a-z0-9-]* · stops `from`/`to`/`\\d{1,3}%` · properties
-(incl. `set` keys) [a-z-]+ · no value (incl. delay/`set` values) may carry `;` `{` `}` `<` `>` `\\`
-`url(` `expression(` `@import` `/*` · `selector` uses only selector-safe characters.",
+(incl. `set` keys) [a-z-]+ · no value (incl. delay/stagger/`set` values) may carry `;` `{` `}` `<` `>`
+`\\` `url(` `expression(` `@import` `/*` · `selector` uses only selector-safe characters · `stagger`
+requires a `selector`.",
     },
     CmdDoc {
         name: "list-animations",
@@ -1008,9 +1014,10 @@ fn validate_animation(anim: &serde_json::Value) -> Result<(), String> {
         return Err("animation `keyframes` must have at least one stop with a declaration".into());
     }
 
-    // Optional duration/easing/delay: motion-token refs or literals, checked against the value grammar.
-    // `delay` (#3056) is an animation-level time slotted after easing in the shorthand.
-    for key in ["duration", "easing", "delay"] {
+    // Optional duration/easing/delay/stagger: motion-token refs or literals, checked against the value
+    // grammar. `delay` (#3056) is an animation-level time slotted after easing in the shorthand;
+    // `stagger` (#3055) is a per-matched-element delay STEP (needs a `selector`, guarded below).
+    for key in ["duration", "easing", "delay", "stagger"] {
         if let Some(v) = obj.get(key) {
             let s = v.as_str().ok_or_else(|| format!("animation `{key}` must be a string"))?;
             if !is_safe_value(s) {
@@ -1037,6 +1044,14 @@ fn validate_animation(anim: &serde_json::Value) -> Result<(), String> {
                 "animation `selector` '{s}' must use only selector-safe characters (letters, digits, space . _ # > [ ] = \" ' - : ( ) , * + ~)"
             ));
         }
+    }
+
+    // Semantic guard (#3055): a `stagger` STEP cascades the delay across the elements a `selector`
+    // matches, so it's meaningless on the root — reject a `stagger` with no `selector` at write time.
+    if obj.contains_key("stagger") && !obj.contains_key("selector") {
+        return Err(
+            "animation `stagger` requires a `selector` — it steps the delay across the matched child elements".into(),
+        );
     }
 
     // Optional set (#3054): STATIC declarations applied on the rule (transform-origin/box, etc.), each
@@ -1676,6 +1691,14 @@ mod tests {
             "delay": "120ms",
         }))
         .is_ok());
+        // Optional stagger (#3055): a per-element delay step is valid WITH a selector.
+        assert!(validate_animation(&serde_json::json!({
+            "name": "wave",
+            "keyframes": { "to": { "opacity": "1" } },
+            "selector": ".cell",
+            "stagger": "14ms",
+        }))
+        .is_ok());
     }
 
     #[test]
@@ -1747,6 +1770,31 @@ mod tests {
         }))
         .unwrap_err();
         assert!(err.contains("delay"), "{err}");
+    }
+
+    #[test]
+    fn validate_animation_gates_the_stagger_step() {
+        // #3055 — `stagger` needs a `selector` (it steps the delay across the matched siblings) and
+        // passes the value grammar. A selector + a safe stagger is accepted.
+        assert!(validate_animation(&serde_json::json!({
+            "name": "wave", "keyframes": { "to": { "opacity": "1" } }, "selector": ".cell", "stagger": "14ms"
+        }))
+        .is_ok());
+        // A stagger with NO selector is rejected with the named error.
+        let err = validate_animation(&serde_json::json!({
+            "name": "wave", "keyframes": { "to": { "opacity": "1" } }, "stagger": "14ms"
+        }))
+        .unwrap_err();
+        assert!(
+            err.contains("stagger") && err.contains("requires a `selector`"),
+            "stagger without a selector rejected: {err}"
+        );
+        // An unsafe stagger VALUE (declaration-ending / injection) is rejected even with a selector.
+        let err = validate_animation(&serde_json::json!({
+            "name": "wave", "keyframes": { "to": { "opacity": "1" } }, "selector": ".cell", "stagger": "14ms; } body{"
+        }))
+        .unwrap_err();
+        assert!(err.contains("stagger") && err.contains("unsafe"), "unsafe stagger value rejected: {err}");
     }
 
     #[test]
