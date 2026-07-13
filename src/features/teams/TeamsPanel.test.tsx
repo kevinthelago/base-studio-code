@@ -14,8 +14,10 @@ const selectRailPosition = (name: string) =>
   fireEvent.click(screen.getAllByText(name).find((el) => !el.closest("[data-node]")) as HTMLElement);
 
 // The drill lives in the store since #2492 (nav-history integration) — reset it so a drill from one
-// test can't leak a drilled canvas into the next render. Also start at the overview (orgId is local).
-beforeEach(() => useAppStore.setState({ teamsDrill: null }));
+// test can't leak a drilled canvas into the next render. Also restore the seeded teams (the no-teams
+// test #3033 empties them, and the store is a singleton). Start at the overview (orgId is local).
+const SEEDED_TEAMS = useAppStore.getState().teams;
+beforeEach(() => useAppStore.setState({ teamsDrill: null, teams: SEEDED_TEAMS }));
 
 /** Enter a team from the Teams overview by clicking its card (the [data-node] wrapper). */
 const teamCard = (name: string): HTMLElement =>
@@ -30,6 +32,14 @@ describe("Teams overview — the top navigation level (#2742)", () => {
     expect(teamCard(FLEET)).toBeTruthy();                          // each team is a card
     expect(screen.queryByText("New team")).toBeNull();            // teams are AI-configured — no create card
     expect(screen.getAllByText("Teams").length).toBeGreaterThan(0); // breadcrumb/rail title
+  });
+
+  it("with NO teams still renders the overview graph — never a blocking empty-state page (#3033)", () => {
+    useAppStore.setState({ teams: [] });
+    render(<TeamsPanel />);
+    expect(screen.queryByText("No team yet")).toBeNull();           // no blocking empty-state card
+    expect(screen.getAllByText("Teams").length).toBeGreaterThan(0); // the overview graph + its toolbar render
+    expect(screen.getByText("Fit")).toBeTruthy();                   // the graph toolbar is present → the canvas rendered
   });
 
   it("clicking a team card enters it (per-team toolbar), and the Teams crumb climbs back", () => {
