@@ -16,7 +16,6 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { IconBox } from "@/shared/ui/data/IconBox";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { RailRow } from "@/shared/ui/layouts/RailRow";
@@ -128,17 +127,9 @@ export function TeamsPanel() {
   const enterTeam = (id: string) => { setOrgId(id); setSel({ type: "node", id: "" }); };
   const toTeams = () => { setOrgId(null); setSel({ type: "node", id: "" }); };
 
-  // No teams at all → the first-run empty state. Teams are configured by the AI (the planner), not
-  // created by the user (#2750), so there is no create action here — just the explanatory message.
-  if (orgs.length === 0) {
-    return (
-      <EmptyState
-        icon="◆" iconVariant="dashed"
-        title="No team yet"
-        description="A team wires personas into positions and relationships — the planner configures one as it plans your project."
-      />
-    );
-  }
+  // No teams yet is NOT an empty-state page (#3033): the `!org` overview below still renders the graph +
+  // rail + the architect terminal with zero team cards, so the graph is always present (and the terminal,
+  // which is where the AI configures teams, #2750, stays reachable) — never hidden behind a blocking card.
 
   // ── TOP LEVEL (#2742): the Teams overview — every team is a card you click to enter; the left rail
   // lists the teams. This replaced the header org-switcher dropdown. `!org` also covers a stale/deleted

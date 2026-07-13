@@ -37,10 +37,9 @@ import { selectionNeighborhood } from "@/shared/lib/graph/selectionNeighborhood"
 import { layoutComposition, NODE_W, NODE_H } from "./lib/compositionLayout";
 import { analyzeGraphHealth, HEALTH_SEVERITY, type HealthCategory } from "./lib/graphHealth";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
-import { matchesQuery, resolveComposes, NO_COMPONENTS_TITLE, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
+import { matchesQuery, resolveComposes, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
 import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useUiActivity } from "./lib/uiActivity";
 import { useComponentScan } from "./lib/useComponentScan";
@@ -189,8 +188,10 @@ export function DesignsWorkbench() {
   // header IS the kit (lib/kitGroups), so the packaged library reads React → Studio → components.
   const railTree = useMemo(() => groupKits(kits), [kits]);
 
-  if (!kit) return <StudioEmpty />;
-
+  // Always render the graph + panes + the designer terminal — even with NO kit (an empty library, e.g.
+  // right after the default kit is cleared, #3029): the studio is where you BUILD the kit, so it must
+  // never hide behind an empty-state page (that would hide the very designer session you need). The
+  // graph simply draws empty, the rail is empty, the Inspector shows its own "select a component" state.
 
   // Selection neighborhood (#2523): the focused node's edges draw in accent, its related nodes get a
   // softer ring; incident edges render LAST so they sit above the dim ones. Hoisted out of the old
@@ -240,7 +241,7 @@ export function DesignsWorkbench() {
         // the header row so the preview overlay owns the whole center (the graph beneath it is covered).
         toolbar={previewMode ? null : (
           <>
-            <Eyebrow size={9.5}>Composition graph · {kit.name}</Eyebrow>
+            <Eyebrow size={9.5}>Composition graph{kit ? ` · ${kit.name}` : ""}</Eyebrow>
             {healthFindings.length > 0 && (
               <Text as="span" className="ds-healthcount" title="Graph-health findings — the same set `bsc ui doctor` reports (#2680)">
                 ⚠ {healthFindings.length} health finding{healthFindings.length === 1 ? "" : "s"}
@@ -300,7 +301,7 @@ export function DesignsWorkbench() {
             </Box>
           ) : (
             <Inspector
-              sel={sel} kitName={kit.name} tab={tab} setTab={setTab}
+              sel={sel} kitName={kit?.name ?? ""} tab={tab} setTab={setTab}
               allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
               vp={vp} setVpKind={setVpKind}
               kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
@@ -617,17 +618,5 @@ function InspectorOverview({ sel, allVariants, activeVariant, composes, onSelect
         ) : <Text size={11.5} tone="dim" style={{ fontStyle: "italic" }}>Primitive — composes nothing.</Text>}
       </Box>
     </Box>
-  );
-}
-
-// ── Empty state ──────────────────────────────────────────────────────────────
-function StudioEmpty() {
-  return (
-    <EmptyState
-      icon="⬡" iconVariant="dashed"
-      title={NO_COMPONENTS_TITLE}
-      description={<>A <b style={{ color: "var(--fg)" }}>kit</b> is a technology-scoped namespace of proven components. Seed one from the UI already living in your repo, or start an empty kit.</>}
-      style={{ height: "100%" }}
-    />
   );
 }
