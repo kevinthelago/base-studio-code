@@ -410,6 +410,29 @@ mod tests {
     }
 
     #[test]
+    fn user_studios_persist_to_sqlite_not_json_files() {
+        // #2988 (epic #2982): the shared `bsc-json-store` backend was migrated JSON-files → SQLite
+        // (#2983) transparently, so the studios store now persists to a `.db`. This is the EXPLICIT
+        // regression guard for that property on the USER studio store.
+        let base = tmp_base("sqlite");
+
+        // A user studio round-trips through the store: save it, then read it back both ways.
+        save(&base, "My Studio", Some("a snapshot".into())).unwrap();
+        let got = get(&base, "my-studio").unwrap().expect("saved studio is readable");
+        assert_eq!(got["id"], "my-studio");
+        assert_eq!(user_meta(&base), vec![serde_json::json!({"id": "my-studio", "name": "My Studio"})]);
+
+        // The backing is SQLite: the sibling `<base>/studios.db` exists after the write...
+        assert!(base.join("studios.db").is_file(), "user studios persist to the SQLite `studios.db`");
+        // ...and NO legacy per-id `<base>/studios/<id>.json` file was written (that path is now only
+        // the one-time legacy-import source, never a live write target).
+        assert!(
+            !base.join(STUDIOS_SEGMENT).join("my-studio.json").exists(),
+            "no per-id JSON file — user studios live in SQLite, not `studios/<id>.json`",
+        );
+    }
+
+    #[test]
     fn set_upserts_a_bundle_and_get_reads_it_back() {
         let base = tmp_base("set");
         // A full imported bundle (the shape the gist-import path hands back) lands by id + reads back.
