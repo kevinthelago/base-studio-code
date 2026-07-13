@@ -47,6 +47,9 @@ interface PublishedProjectsProps {
   setMenuOpenId: (id: string | null) => void;
   reopenDraft: (d: { key: string; title: string; pitch: string }) => void;
   setDraftDeleteTarget: (d: DraftRow | null) => void;
+  /** key → durable lifecycle state (`drafted`/`planning`/`created`/`published`) from projects.db
+   *  (#2998), to distinguish a bare draft from a created/in-progress project on its chip. */
+  dbStateByKey?: Record<string, string>;
   /** On-disk local hubs (`list_local_projects`) — the reopen flow derives each board project's hub
    *  from its name (#2409) and offers these as link candidates on a mismatch. */
   localProjects: LocalProjectLite[];
@@ -66,7 +69,7 @@ interface PublishedProjectsProps {
  *  Keep-vs-Delete modal. The composer owns the project scan + shared search/sort + the shared
  *  draft-delete flow; this component owns the new-project form and the published-delete flow. */
 export function PublishedProjects({
-  visibleProjects, grouped, fDrafts, fleetByProject, loading, error, lastSync, draftError,
+  visibleProjects, grouped, fDrafts, fleetByProject, loading, error, lastSync, draftError, dbStateByKey = {},
   query, setQuery, sort, setSort, totalSummary, grandTotal, publishedCount,
   fetchProjects, setProjects, menuOpenId, setMenuOpenId, reopenDraft, setDraftDeleteTarget,
   localProjects, refreshLocalProjects, localPublished, staleFetchedAt,
@@ -175,24 +178,34 @@ export function PublishedProjects({
               <Text mono size={9.5} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".08em", whiteSpace: "nowrap" }}>
                 {fDrafts.length} draft{fDrafts.length !== 1 ? "s" : ""}
               </Text>
-              {fDrafts.map(d => (
-                <Box as="span"
-                  key={d.key}
-                  onClick={() => reopenDraft(d)}
-                  title={d.pitch || undefined}
-                  className="mono"
-                  pad={[5, 12]} bg="var(--bg-elev)" border="soft" radius={7} style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--fg)", cursor: "pointer" }}
-                >
-                  <Box as="span" bg="var(--accent)" radius={99} style={{ width: 5, height: 5, flexShrink: 0 }} />
-                  {d.title}
-                  <Text as="span" tone="dim">{timeAgoMs(d.sort)}</Text>
+              {fDrafts.map(d => {
+                // #2998: the durable lifecycle state (projects.db) distinguishes a bare DRAFTED idea
+                // from a CREATED/planning project whose hub + plan already exist. Absent until the DB
+                // is populated (a new draft or the backfill on restart) → the plain drafted look.
+                const st = dbStateByKey[d.key];
+                const inProgress = st === "created" || st === "planning";
+                return (
                   <Box as="span"
-                    onClick={e => { e.stopPropagation(); setDraftDeleteTarget(d); }}
-                    title="delete draft"
-                    style={{ color: "var(--fg-dim)", cursor: "pointer", paddingLeft: 2 }}
-                  >✕</Box>
-                </Box>
-              ))}
+                    key={d.key}
+                    onClick={() => reopenDraft(d)}
+                    title={d.pitch || undefined}
+                    className="mono"
+                    pad={[5, 12]} bg="var(--bg-elev)" border="soft" radius={7} style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--fg)", cursor: "pointer" }}
+                  >
+                    <Box as="span" bg={inProgress ? "var(--violet)" : "var(--accent)"} radius={99} style={{ width: 5, height: 5, flexShrink: 0 }} />
+                    {d.title}
+                    {st && st !== "drafted" && (
+                      <Text as="span" mono size={9} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".06em" }}>{st}</Text>
+                    )}
+                    <Text as="span" tone="dim">{timeAgoMs(d.sort)}</Text>
+                    <Box as="span"
+                      onClick={e => { e.stopPropagation(); setDraftDeleteTarget(d); }}
+                      title="delete draft"
+                      style={{ color: "var(--fg-dim)", cursor: "pointer", paddingLeft: 2 }}
+                    >✕</Box>
+                  </Box>
+                );
+              })}
             </Row>
           )}
 
