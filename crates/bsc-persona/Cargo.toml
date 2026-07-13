@@ -2,7 +2,7 @@
 name = "bsc-persona"
 version = "0.1.0"
 edition = "2021"
-description = "User persona store (file CRUD over ~/.base-studio-code/personas/) for base-studio-code (#2094) — the agent-identity library (start prompt + skills + model, over a referenced role), a thin persona-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's persona bridge and the session-facing `bsc persona` CLI."
+description = "User persona store (SQLite store at ~/.base-studio-code/personas.db) for base-studio-code (#2094) — the agent-identity library (start prompt + skills + model, over a referenced role), a thin persona-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's persona bridge and the session-facing `bsc persona` CLI."
 
 # The core lib (no Tauri, no SQLite) so the tiny CLI reuses it without dragging the whole desktop app
 # in. The hyphenated package name maps to the `bsc_persona` crate name.
