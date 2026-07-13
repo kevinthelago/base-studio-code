@@ -207,6 +207,11 @@ An animation is `{ name, keyframes, duration?, easing?, delay?, trigger?, select
 - `set` — OPTIONAL map of **static** declarations set on the applying rule (not the keyframes), for
   properties that can't animate from keyframes — e.g. `{ "transform-origin": "center", "transform-box": "fill-box" }`
   to pin an SVG's rotation pivot.
+- `stagger` — OPTIONAL per-matched-element delay **step** (a time like `14ms`): it cascades the delay
+  across the elements the `selector` matches (a heatmap wave, a scatter cascade, a per-series line
+  ripple), so element 2 starts one step after the base delay, element 3 two steps, and so on. **Needs a
+  `selector`** (a root has no siblings to step — rejected without one) and is capped at ~32 elements
+  (siblings past the cap fall back to the base delay).
 
 **Motion honors the user.** The applying rule is wrapped in
 `@media (prefers-reduced-motion: no-preference)`, so a user who asks for less motion never sees it —

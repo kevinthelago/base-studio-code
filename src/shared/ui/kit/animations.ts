@@ -42,6 +42,11 @@ export interface KitAnimation {
   /** STATIC declarations set on the applying rule (#3054) — for `transform-origin` / `transform-box`
    *  etc. that can't live in keyframes. Each `property: value` is guarded like a keyframe declaration. */
   set?: Record<string, string>;
+  /** Per-matched-element delay STEP (#3055) — a time (`14ms`) added cumulatively across the elements a
+   *  {@link selector} matches, so a heatmap wave / scatter cascade / per-series line ripples in. Only
+   *  meaningful WITH a `selector` (a root has no siblings to step); capped at ~`STAGGER_MAX` elements
+   *  (siblings past the cap gracefully fall back to the base `delay`). Absent ⇒ no per-element step. */
+  stagger?: string;
 }
 
 /** A kit animation + its owning kit's CSS class base (the flat shape the compiler takes). */
@@ -65,6 +70,10 @@ const SAFE_SELECTOR = /^[a-zA-Z0-9 ._#>[\]="'\-:(),*+~]+$/;
 const UNSAFE_VALUE = /[;{}<>\\]|url\(|expression\(|@import|\/\*/i;
 const DUR_DEFAULT = "var(--dur-base)";
 const EASE_DEFAULT = "var(--ease-standard)";
+/** Cap on the stagger nth-child ramp (#3055): pure-CSS stagger needs one rule per position, so it's
+ *  bounded — 32 covers typical charts, and elements past it fall back to the base delay (graceful,
+ *  documented). */
+const STAGGER_MAX = 32;
 
 function safeValue(v: unknown): v is string {
   return typeof v === "string" && v.length > 0 && !UNSAFE_VALUE.test(v);
@@ -89,9 +98,12 @@ function keyframesCss(d: AnimationDef): string {
  * trigger; `infinite` for `always`, else played once). A valid {@link KitAnimation.selector}
  * scopes the applying rule to a CHILD (`.<kit>-anim-<name> <selector>`, #3054); {@link KitAnimation.set}
  * adds static declarations to the rule body; {@link KitAnimation.delay} slots into the shorthand after
- * easing (#3056). Pure + guarded — skips any definition whose kit/name isn't a safe identifier, whose
+ * easing (#3056). A {@link KitAnimation.stagger} with a valid `selector` (#3055) adds, after the base
+ * rule, a bounded `:nth-child(2..STAGGER_MAX)` `animation-delay` ramp so the matched elements cascade.
+ * Pure + guarded — skips any definition whose kit/name isn't a safe identifier, whose
  * duration/easing/delay looks like an injection, or with no valid keyframes; an unsafe selector falls
- * back to the root class and an unsafe `set` pair is dropped. Empty string when nothing is renderable.
+ * back to the root class (and drops the stagger ramp) and an unsafe `set` pair is dropped. Empty string
+ * when nothing is renderable.
  */
 export function compileAnimationsCss(defs: AnimationDef[]): string {
   const blocks: string[] = [];
@@ -114,8 +126,22 @@ export function compileAnimationsCss(defs: AnimationDef[]): string {
       .map(([prop, value]) => `${prop}: ${value};`)
       .join(" ");
     const body = `${setCss ? `${setCss} ` : ""}animation: ${anim} ${dur} ${ease}${delay} ${iter} both;`;
+    // #3055: with a valid child selector AND a valid stagger step, cascade the matched elements by a
+    // bounded nth-child `animation-delay` ramp AFTER the base rule (same scoped(+hover) selector, so
+    // specificity + trigger match — `… :hover:nth-child(k)` overrides the base delay). nth-child(1) is
+    // already the base delay (the shorthand), so the ramp starts at k=2; each step is (k-1) × stagger,
+    // added onto the base delay when one is present. Elements past STAGGER_MAX keep the base delay.
+    let staggerRamp = "";
+    if (SAFE_SELECTOR.test(d.selector ?? "") && safeValue(d.stagger)) {
+      const baseTerm = safeValue(d.delay) ? `${d.delay} + ` : "";
+      const steps: string[] = [];
+      for (let k = 2; k <= STAGGER_MAX; k++) {
+        steps.push(`  ${rule}:nth-child(${k}) { animation-delay: calc(${baseTerm}${k - 1} * ${d.stagger}); }`);
+      }
+      staggerRamp = `\n${steps.join("\n")}`;
+    }
     blocks.push(
-      `${frames}\n@media (prefers-reduced-motion: no-preference) {\n  ${rule} { ${body} }\n}`,
+      `${frames}\n@media (prefers-reduced-motion: no-preference) {\n  ${rule} { ${body} }${staggerRamp}\n}`,
     );
   }
   return blocks.join("\n\n");
