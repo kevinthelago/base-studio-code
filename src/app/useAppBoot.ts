@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { addDbProject } from "@/features/planner";
 import { markBoot, logStartupTrace } from "@/shared/lib/core/startupTrace";
 import { startPerfMonitor, recordStoreWrite } from "@/shared/lib/core/perf";
 import { log } from "@/shared/lib/core/log";
@@ -24,6 +25,8 @@ export function useAppBoot() {
   const designContributions = useAppStore((s) => s.designContributions);
   const hasHydrated = useAppStore((s) => s.hasHydrated);
   const setBscBaseDir = useAppStore((s) => s.setBscBaseDir);
+  // Guards the one-time draft→DB migration (#2995) so it fires exactly once per app session.
+  const draftsMigratedToDb = useRef(false);
 
   // Apply the chosen accent to the design-token CSS vars at the document root,
   // live on change and after persisted state rehydrates. Inline vars on :root
@@ -55,6 +58,21 @@ export function useAppBoot() {
     if (!hasHydrated) return;
     markBoot("hydrated");
     requestAnimationFrame(() => { markBoot("painted"); logStartupTrace(); });
+  }, [hasHydrated]);
+
+  // One-time draft → projects-DB migration (#2995): after the store rehydrates, upsert every entry in
+  // the fragile `localDraftProjects` cache into the durable projects DB (`bsc project db add` is an
+  // idempotent upsert), so drafts that only ever lived in the cache become restart-durable. Gated on
+  // `hasHydrated` because persist is async — a mount-time read would see the pre-hydration empty map —
+  // and ref-guarded so it runs exactly once. Each write is fire-and-forget and degrades silently when
+  // the bridge/binary is absent.
+  useEffect(() => {
+    if (!hasHydrated || draftsMigratedToDb.current) return;
+    draftsMigratedToDb.current = true;
+    const drafts = useAppStore.getState().localDraftProjects;
+    for (const [key, d] of Object.entries(drafts)) {
+      void addDbProject({ key, title: d.title, pitch: d.pitch, state: "drafted" });
+    }
   }, [hasHydrated]);
 
   // Fetch the app-managed base directory once so the rest of the UI can

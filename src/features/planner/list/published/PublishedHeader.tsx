@@ -11,6 +11,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { DEFAULT_BLUEPRINT_ID } from "../../stages/blueprints";
+import { addDbProject } from "../projectsDbBridge";
 import type { GhProject } from "./publishedModel";
 import type { LocalProjectLite } from "../drafts";
 
@@ -47,7 +48,7 @@ export function PublishedHeader({
 }: PublishedHeaderProps) {
   const {
     setProjectsView, setActiveProjectMeta, setPlanningContext, setPlanningTitle, setPlanningSession,
-    addDraftProject, setProjectBlueprintId, activeBlueprintId,
+    addDraftProject, setProjectBlueprintId, activeBlueprintId, blueprints,
   } = useAppStore();
   const [title, setTitle]         = useState("");
   const [newOpen, setNewOpen]     = useState(false);
@@ -83,14 +84,18 @@ export function PublishedHeader({
     setPlanningContext("", "");
     setActiveProjectMeta(null, "", "", 0);
     addDraftProject(draftKey, { title: titleTrimmed, pitch: "", createdAt: Date.now() });
+    // Bind the blueprint AT CREATION (#988) — the explicit consent point — capturing whatever's
+    // selected now. Opening the project later never adopts the (freely-changing) global selection,
+    // so its blueprint can't switch without the user's intent.
+    const bpId = activeBlueprintId || DEFAULT_BLUEPRINT_ID;
+    // Durable dual-write (#2995): mirror the draft into the projects DB so it survives a restart even
+    // if the `localDraftProjects` cache misses. Fire-and-forget; degrades silently. KEEPS the store write.
+    void addDbProject({ key: draftKey, title: titleTrimmed, pitch: "", blueprint: bpId, category: blueprints.find((b) => b.id === bpId)?.category ?? null, state: "drafted" });
     // Persist the user's title into the hub (`projects/<key>/.title`) so the on-disk name is their
     // input from the start — not a title fabricated from the opaque key when `goal.md` isn't authored
     // yet (which then leaked into the session skill-group name, GitHub structure, and tab labels).
     fireInvoke("set_project_title", { projectKey: draftKey, title: titleTrimmed });
-    // Bind the blueprint AT CREATION (#988) — the explicit consent point — capturing whatever's
-    // selected now. Opening the project later never adopts the (freely-changing) global selection,
-    // so its blueprint can't switch without the user's intent.
-    setProjectBlueprintId(draftKey, activeBlueprintId || DEFAULT_BLUEPRINT_ID);
+    setProjectBlueprintId(draftKey, bpId);
     setPlanningSession(draftKey);
     setNewOpen(false);
     setTitle("");
