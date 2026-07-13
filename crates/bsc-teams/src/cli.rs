@@ -93,6 +93,46 @@ mod tests {
     }
 
     #[test]
+    fn teams_store_persists_to_sqlite_not_json_files() {
+        // #2983 regression (epic #2982): the shared store backend moved JSON-files → SQLite. Prove the
+        // teams store (segment `orgs`, per SPEC) now round-trips through a SQLite `orgs.db` and never
+        // writes a legacy `orgs/<id>.json` file. Uses the public `bsc_json_store::Store` over the SAME
+        // segment/noun the `bsc teams` CLI uses, rooted at a fresh temp base.
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let uniq = format!("{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed));
+        let base = std::env::temp_dir().join(format!("bsc-teams-sqlite-test-{uniq}"));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+
+        let store = bsc_json_store::Store::new(base.join(SPEC.dir_segment), SPEC.noun);
+
+        // Round-trip a team through the public store API (write → read back).
+        let team = r#"{"id":"squad","name":"Squad","positions":[],"relationships":[]}"#;
+        store.set("squad", team).unwrap();
+        assert_eq!(
+            store.get("squad").unwrap().as_deref(),
+            Some(team),
+            "the written team reads back verbatim",
+        );
+
+        // SQLite, not files: `<base>/orgs.db` EXISTS after the write, and NO `<base>/orgs/<id>.json`
+        // (nor even the legacy `orgs/` dir) was created.
+        let db = base.join(format!("{}.db", SPEC.dir_segment));
+        assert!(db.exists(), "the SQLite db {} exists after a write", db.display());
+        let legacy_json = base.join(SPEC.dir_segment).join("squad.json");
+        assert!(
+            !legacy_json.exists(),
+            "no legacy JSON file was written ({})",
+            legacy_json.display(),
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_dir_all(base.join(SPEC.dir_segment));
+        let _ = std::fs::remove_file(&db);
+    }
+
+    #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
         let ov = bsc_cli_util::help_overview("bsc teams", TAGLINE, COMMANDS);
         for c in ["list", "get", "set", "remove"] {
