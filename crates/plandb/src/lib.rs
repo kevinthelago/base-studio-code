@@ -37,6 +37,7 @@
 /// dispatched to by the unified `bsc` umbrella and the legacy `bsc-plan` shim.
 pub mod cli;
 
+mod artifacts;
 mod assignments;
 mod blueprint;
 mod confirmed;
@@ -62,6 +63,7 @@ mod ui;
 /// the same shape checks the `bsc plan` CLI enforces.
 pub mod validate;
 
+pub use artifacts::Artifact;
 pub use assignments::{Automation, StartupScript};
 pub use features::PlanFeature;
 pub use issues::{is_valid_status, IssueSummary, PlanIssue, STATUSES};

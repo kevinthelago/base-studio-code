@@ -381,6 +381,20 @@ USAGE:
 USAGE:
   bsc plan github-context get   # read github_context.md (app-generated; read-only)",
     },
+    CmdDoc {
+        name: "artifact",
+        summary: "planner OUTPUT artifacts — durable content in plan.db, keyed by (kind, name) (#2997)",
+        usage: "\
+USAGE:
+  bsc plan artifact set <kind> <name>      # write an artifact's content from stdin (upsert by kind+name)
+  bsc plan artifact get <kind> <name>      # print the content (--json → the Artifact JSON, or null on a miss)
+  bsc plan artifact list [<kind>]          # list artifacts (all, or one kind); --json for the full objects
+  bsc plan artifact remove <kind> <name>   # delete one artifact
+
+Durable store (#2997) for planner-produced CONTENT keyed by (kind, name) — the substrate for moving
+that content off flat hub files and into plan.db. `set` reads the content on stdin; a non-JSON `get`
+of an absent artifact is an error, while `--json` emits `null`.",
+    },
 ];
 
 /// One command's detailed help — shown at the foot of an unknown-subcommand error (via
@@ -522,6 +536,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "automations" => hub::cmd_automations(&args),
         "startup" => hub::cmd_startup(&args),
         "github-context" => hub::cmd_github_context(&args),
+        "artifact" => hub::cmd_artifact(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
@@ -651,7 +666,7 @@ mod tests {
             "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
             "fleet", "deploy", "deps", "market", "transformation", "mcp", "blueprint", "ui", "discovery",
             "confirm", "skip", "integration", "lesson", "triage", "stage", "automations", "startup",
-            "github-context",
+            "github-context", "artifact",
         ] {
             assert!(ov.contains(c), "overview lists {c}");
         }
