@@ -10,8 +10,16 @@ name = "bsc_project"
 
 [dependencies]
 # Shared leaf utilities (#1646): the ONE home-dir / `~/.base-studio-code` resolver, so this CLI and
-# the desktop app (`project/hub.rs`) agree on which projects dir they read/write.
+# the desktop app (`project/hub.rs`) agree on which projects dir they read/write; plus `now_ms()`,
+# the one epoch-millis clock the `db` store stamps rows with.
 bsc-util = { path = "../bsc-util" }
 # Shared CLI scaffold (#1762): the byte-identical `main` wrapper (`cli_main`).
 bsc-cli-util = { path = "../bsc-cli-util" }
+# Shared SQLite-CLI helpers (#1621): `default_store_path` + the app↔CLI busy_timeout `open_db`
+# connection plumbing (`conn`, #1863) + `read_stdin_json_one`/`print_json` — the durable projects
+# store (#2995) mirrors the plandb/compliance house pattern.
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# `bundled` compiles SQLite from source (matches src-tauri/plandb/compliance) for cross-platform reliability.
+rusqlite = { version = "0.40", features = ["bundled"] }
