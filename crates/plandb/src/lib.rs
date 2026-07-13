@@ -1,7 +1,9 @@
 //! Native per-project plan store (#plan-db). The canonical, granular store for a project's plan: the
 //! planner upserts ONE item at a time (via the `bsc-plan` CLI) instead of rewriting whole files, and
 //! the execution files (issues.json, …) are RENDERED from here at launch — so everything downstream
-//! is unchanged and a file is still inspectable. One SQLite db per project hub: `projects/<key>/plan.db`.
+//! is unchanged and a file is still inspectable. One SQLite db per project, in the central store
+//! `plans/<key>.db` (#2996 — relocated OUT of the hub so the plan persists folder-independently; the
+//! app resolves the path via `plan_db_path` and passes it in `$BSC_PLAN_DB`).
 //!
 //! This crate is Tauri-free on purpose: the desktop app (`src-tauri`) and the `bsc-plan` agent CLI
 //! both depend on it, so the CLI stays a tiny binary instead of relinking the whole app.

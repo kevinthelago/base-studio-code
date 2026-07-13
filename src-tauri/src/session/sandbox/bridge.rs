@@ -72,6 +72,12 @@ pub(crate) fn setup_sandbox_hub(key: String) -> Result<String, String> {
     let host_hub = crate::platform::paths::project_dir(&key);
     let distro_hub = sandbox_project_path(&key);
     copy_dir_to_sandbox(&host_hub, &distro_hub)?;
+    // plan.db now lives OUTSIDE the hub (central `plans/<key>.db`, #2996) — replicate it INTO the cage
+    // hub as `plan.db` so a sandboxed planner resumes its existing plan and `sync_sandbox_plan_db`
+    // mirrors it back to the central store. Absent (a brand-new project) → nothing to seed.
+    if let Ok(bytes) = std::fs::read(crate::platform::paths::plan_db_path(&key)) {
+        sandbox_write(&format!("{distro_hub}/plan.db"), &bytes)?;
+    }
     Ok(distro_hub)
 }
 
