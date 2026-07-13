@@ -1210,6 +1210,62 @@ mod tests {
     }
 
     #[test]
+    fn components_and_kits_persist_to_sqlite_db_files_not_legacy_json() {
+        // Regression proof for #2984 (epic #2982): the shared-store SQLite migration (#2983) is
+        // transparent to this crate. A component (and a kit) written through the crate's OWN store-open
+        // path must land in the sibling `<base>/<segment>.db` SQLite file — NOT the pre-migration legacy
+        // `<base>/<segment>/<id>.json` per-id file.
+        let base = std::env::temp_dir().join(format!("bsc-component-sqlite-{}", std::process::id()));
+        // Start from a clean slate so a prior run can't pre-seed the db (making "exists" trivially true)
+        // or leave a stray legacy file (making "no legacy json" trivially false).
+        let _ = std::fs::remove_dir_all(&base);
+        let comp_dir = base.join("components");
+        let kit_dir = base.join("kits");
+
+        // Open both collections through the crate's own resolution. A `--dir` override wins over the env
+        // (`resolve_store_path`), so this is deterministic: components at `<base>/components`, kits at
+        // `<base>/kits`.
+        let comps = open_component_store(&Some(comp_dir.to_string_lossy().into_owned())).unwrap();
+        let kits = open_kit_store(&Some(kit_dir.to_string_lossy().into_owned())).unwrap();
+
+        // Write one record into each collection…
+        comps
+            .set("button", r#"{"id":"button","name":"Button","kitId":"react-ui","role":"control"}"#)
+            .unwrap();
+        kits.set("react-ui", r#"{"id":"react-ui","name":"React UI","stack":"react"}"#).unwrap();
+
+        // …and read them back verbatim (the round-trip the desktop library + a live session rely on).
+        assert_eq!(
+            comps.get("button").unwrap().as_deref(),
+            Some(r#"{"id":"button","name":"Button","kitId":"react-ui","role":"control"}"#),
+            "component round-trips through the SQLite store",
+        );
+        assert_eq!(
+            kits.get("react-ui").unwrap().as_deref(),
+            Some(r#"{"id":"react-ui","name":"React UI","stack":"react"}"#),
+            "kit round-trips through the SQLite store",
+        );
+
+        // The SQLite backing is the sibling `<base>/<segment>.db`, and it exists after the write.
+        assert_eq!(comps.db_path(), base.join("components.db").as_path());
+        assert_eq!(kits.db_path(), base.join("kits.db").as_path());
+        assert!(comps.db_path().exists(), "components persist to components.db");
+        assert!(kits.db_path().exists(), "kits persist to kits.db");
+
+        // No legacy per-id JSON file was written. `Store::file` computes exactly the pre-migration
+        // `<segment>/<id>.json` path the SQLite backend replaced — assert it was never created.
+        let legacy_comp = comps.file("button").unwrap();
+        let legacy_kit = kits.file("react-ui").unwrap();
+        assert_eq!(legacy_comp, comp_dir.join("button.json"));
+        assert_eq!(legacy_kit, kit_dir.join("react-ui.json"));
+        assert!(!legacy_comp.exists(), "no legacy components/<id>.json — the record lives in SQLite");
+        assert!(!legacy_kit.exists(), "no legacy kits/<id>.json — the record lives in SQLite");
+
+        // The db files (+ their WAL/SHM siblings) live inside `base`, so this clears everything.
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
     fn component_help_lists_commands_incl_the_kit_pointer() {
         let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMPONENT_COMMANDS);
         for c in ["list", "get", "set", "remove", "kit"] {
