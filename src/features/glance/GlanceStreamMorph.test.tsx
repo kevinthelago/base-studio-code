@@ -35,7 +35,7 @@ describe("GlanceStreamMorph (#2401/#2534)", () => {
     const onClose = vi.fn();
     render(<GlanceStreamMorph node={NODE} paneId="proj:api-client" name="api-client" onClose={onClose} />);
     // The dock's ✕ triggers the morph-back — onClose is deferred until the card returns to the node.
-    fireEvent.click(screen.getByRole("button", { name: "Close stream" }));
+    fireEvent.click(screen.getByRole("button", { name: "Collapse stream (agent stays alive)" }));
     expect(onClose).not.toHaveBeenCalled();
     act(() => { vi.advanceTimersByTime(500); }); // past the exit fallback
     expect(onClose).toHaveBeenCalledOnce();
@@ -48,6 +48,29 @@ describe("GlanceStreamMorph (#2401/#2534)", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     act(() => { vi.advanceTimersByTime(500); });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("CANCELS its pending exit onClose when unmounted before the timer fires (#3049)", () => {
+    // The regression: with A's morph open, clicking another live node remounts a fresh morph (keyed by
+    // paneId) — the OLD morph unmounts. Its delayed onClose (setChatNode(null)) must NOT fire afterwards,
+    // or it collapses everything instead of GROWING the newly-clicked node.
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    const { unmount } = render(<GlanceStreamMorph node={NODE} paneId="proj:api-client" name="api-client" onClose={onClose} />);
+    fireEvent.keyDown(window, { key: "Escape" });  // schedules the deferred onClose
+    unmount();                                     // superseded before the exit transition completes
+    act(() => { vi.advanceTimersByTime(500); });   // the cancelled timer never fires
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("renders an End-session button that fires onEnd, and omits it without onEnd (#3049)", () => {
+    const onEnd = vi.fn();
+    const { rerender } = render(<GlanceStreamMorph node={NODE} paneId="proj:api-client" name="api-client" onClose={() => {}} onEnd={onEnd} />);
+    fireEvent.click(screen.getByRole("button", { name: "End session" }));
+    expect(onEnd).toHaveBeenCalledOnce();
+    // Without onEnd the affordance is absent (only the ✕ collapse remains).
+    rerender(<GlanceStreamMorph node={NODE} paneId="proj:api-client" name="api-client" onClose={() => {}} />);
+    expect(screen.queryByRole("button", { name: "End session" })).toBeNull();
   });
 
   it("a CLICK outside the card closes it (#2537)", () => {
