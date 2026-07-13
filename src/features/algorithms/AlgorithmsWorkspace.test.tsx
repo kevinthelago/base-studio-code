@@ -53,11 +53,14 @@ describe("AlgorithmsWorkspace", () => {
     expect(screen.getAllByText("merge.rs").length).toBeGreaterThan(1); // rail + canvas + builds-on row
   });
 
-  it("a primitive selects and shows as a descriptor — its std ref, not code (#2899/#2972)", () => {
-    render(<AlgorithmsWorkspace />);
+  it("a primitive node is visually marked + shows as a descriptor with its std ref (#2899/#2972/#2980)", () => {
+    const { container } = render(<AlgorithmsWorkspace />);
+    // The primitive node carries the distinct `algo-prim` marker (violet dashed descriptor chip, #2980).
+    expect(container.querySelector('[data-impl="rust.iterator"]')?.className).toContain("algo-prim");
     fireEvent.click(screen.getAllByText("Iterator")[0]);
     expect(screen.getByText("primitive")).toBeTruthy();
-    // A primitive is DESCRIBED by the language built-in it names, not re-coded (#2972).
-    expect(screen.getByText((c) => c.includes("std::iter::Iterator"))).toBeTruthy();
+    // A primitive is DESCRIBED by the language built-in it names, not re-coded (#2972) — shown on the
+    // node meta AND the inspector, so the ref appears more than once.
+    expect(screen.getAllByText((c) => c.includes("std::iter::Iterator")).length).toBeGreaterThan(0);
   });
 });
