@@ -104,17 +104,20 @@ pub(crate) fn read_plan_stages(project_key: String) -> Result<std::collections::
     if safe_key.is_empty() {
         return Ok(std::collections::HashMap::new());
     }
-    let plans_dir = plan_dir_for(&project_key);
-    if !plans_dir.exists() {
-        return Ok(std::collections::HashMap::new());
-    }
-    // Every non-empty .md/.json section file, keyed by file stem, from the hub root
-    // (manifests + legacy flat sections + the considered-but-skipped `_skipped` record +
-    // the `phases` roadmap — handled specially by the UI) AND the `context/` subdir (the
-    // Context-stage discovery topics, #807). Reading both keeps pre-existing flat projects
-    // working; context/ is ingested last so a section there wins over a stale root copy.
+    // Every non-empty .md/.json section file, keyed by file stem, from BOTH the ephemeral planning
+    // workspace (`planning/<key>`, where a never-materialized greenfield draft's planner writes,
+    // #2997) AND the materialized hub (`projects/<key>`) — root files (manifests + legacy flat
+    // sections + the considered-but-skipped `_skipped` record + the `phases` roadmap, handled
+    // specially by the UI) plus each dir's `discovery/` subdir (the Context-stage discovery topics,
+    // #807). The union is purely additive: a draft whose files still sit in either location surfaces.
+    // Ingest ORDER sets precedence (later wins): the planning workspace first, then the hub — so the
+    // materialized hub (more recent) wins over a same-named ephemeral section; within each dir the
+    // `discovery/` subdir is ingested after its root so a discovery topic overrides a stale root copy.
     let mut sections = std::collections::HashMap::new();
-    ingest_stage_files(&plans_dir, &mut sections);
+    let planning_dir = planning_workspace_dir(&project_key);
+    ingest_stage_files(&planning_dir, &mut sections);
+    ingest_stage_files(&planning_dir.join("discovery"), &mut sections);
+    ingest_stage_files(&plan_dir_for(&project_key), &mut sections);
     ingest_stage_files(&discovery_dir_for(&project_key), &mut sections);
     // plan.db `section` artifacts (#2997 A2) — the DB-backed source as planner content migrates OFF
     // files toward the hub-is-a-pure-projection model. Ingested LAST so an artifact WINS over a
@@ -185,6 +188,36 @@ mod relocated_tests {
         assert_eq!(out.get("goal").map(String::as_str), Some("goal from DB"), "a plan.db-only artifact surfaces");
         assert_eq!(out.get("scope").map(String::as_str), Some("scope from DB"), "plan.db WINS over the same-named file");
         assert!(!out.contains_key("web"), "a non-section artifact kind never leaks into the sections map");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn read_plan_stages_unions_files_from_the_planning_workspace_and_the_hub() {
+        // #2997: a never-materialized greenfield draft plans in the ephemeral `planning/<key>`
+        // workspace, so read_plan_stages must ingest section files from BOTH that workspace AND the
+        // materialized `projects/<key>` hub — additive, with the hub winning on a same-named section.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("unionread");
+        let key = "union-read-proj".to_string();
+        let planning = planning_workspace_dir(&key);
+        let hub = project_dir(&key);
+        // A section that ONLY lives in the ephemeral planning workspace still surfaces (the greenfield
+        // draft case, before materialization — project_dir may not even exist yet).
+        write_file(&planning.join("goal.md"), "goal from PLANNING");
+        // A discovery topic in the workspace's discovery/ subdir surfaces too.
+        write_file(&planning.join("discovery").join("stack.md"), "stack from PLANNING discovery");
+        // A section present in BOTH: the materialized hub wins (more recent than the ephemeral copy).
+        write_file(&planning.join("scope.md"), "scope from PLANNING");
+        write_file(&hub.join("scope.md"), "scope from HUB");
+        // A hub-only section surfaces (a materialized / repo-linked project).
+        write_file(&hub.join("architecture.md"), "arch from HUB");
+
+        let out = read_plan_stages(key).unwrap();
+        assert_eq!(out.get("goal").map(String::as_str), Some("goal from PLANNING"), "planning-only section surfaces");
+        assert_eq!(out.get("stack").map(String::as_str), Some("stack from PLANNING discovery"), "planning discovery/ surfaces");
+        assert_eq!(out.get("scope").map(String::as_str), Some("scope from HUB"), "the materialized hub wins over the ephemeral copy");
+        assert_eq!(out.get("architecture").map(String::as_str), Some("arch from HUB"), "hub-only section surfaces");
 
         std::fs::remove_dir_all(&home).ok();
     }
