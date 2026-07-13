@@ -150,6 +150,10 @@ export interface GraphModel {
   cycleNodeIds: Set<string>;
   worldW: number;
   worldH: number;
+  /** The fenced UI-KIT band across the top (#3007) — the vertical zone [`y0`, `y1`] the lifted kit nodes
+   *  occupy, with `y1` the fence divider below them. ABSENT when the graph has no kit nodes, so a
+   *  project-only graph is unchanged. The canvas draws a tinted backdrop + divider + "UI KITS" label. */
+  kitBand?: { y0: number; y1: number };
 }
 
 /** Role → accent colour (drives the node left-border + role chip + legend). */
@@ -204,15 +208,26 @@ export const EDGE_META: Record<GEdgeKind, { label: string; color: string; dash: 
 export const NW = 186, NH = 66;
 const COLGAP = 252, ROWGAP = 102;
 
+// The fenced UI-KIT band across the top (#3007). Kit nodes are LIFTED out of the project dependency DAG
+// into a single row here, so they read as a separate design-system dimension instead of an intermixed
+// project column (mirrors the Design Studio composition swimlanes).
+const KIT_TOP_PAD = 40;   // y of the kit cards' top edge inside the band
+const KIT_BAND_GAP = 34;  // clearance from the kit cards' bottom down to the fence divider
+
 /** Bezier path + arrowhead between two node boxes (F depends on T). Cycle back-edges bow to separate the
- *  two directions. Ported from the spec's edgeGeom. */
-export function edgeGeom(F: { x: number; y: number; id: string }, T: { x: number; y: number; id: string }, isCycle: boolean): { d: string; arrow: string } {
-  // The shared graph line-type (#2222) with SIDE-PORT routing (#2226) — Glance is a layered left→right
-  // DAG, so edges leave the right edge / enter the left at the vertical middle for a clean columnar flow
-  // (the perimeter-anchor router read messy here). Cycle back-edges bow apart (deterministic sign by id
-  // order) so the two directions of a↔b don't overlap.
+ *  two directions. Ported from the spec's edgeGeom. `kind` picks the router (#3007): a `uses-kit` edge
+ *  runs VERTICALLY (a project below → its kit in the top band), so it uses the DEFAULT perimeter-anchor
+ *  router; every project edge keeps the layered side-port routing. */
+export function edgeGeom(F: { x: number; y: number; id: string }, T: { x: number; y: number; id: string }, isCycle: boolean, kind?: GEdgeKind): { d: string; arrow: string } {
+  // The shared graph line-type (#2222) with SIDE-PORT routing (#2226) — Glance's PROJECT network is a
+  // layered left→right DAG, so edges leave the right edge / enter the left at the vertical middle for a
+  // clean columnar flow (the perimeter-anchor router read messy here). Cycle back-edges bow apart
+  // (deterministic sign by id order) so the two directions of a↔b don't overlap. A `uses-kit` edge is
+  // vertical (kit band above the network), so side ports would meet the wrong faces — route it with the
+  // perimeter-anchor DEFAULT (omit `routing: "ports"`) so each card faces the other.
   const bow = isCycle ? (F.id < T.id ? -46 : 46) : 0;
-  const { d, arrow } = graphEdge({ x: F.x, y: F.y, w: NW, h: NH }, { x: T.x, y: T.y, w: NW, h: NH }, { bow, routing: "ports" });
+  const opts = kind === "uses-kit" ? { bow } : { bow, routing: "ports" as const };
+  const { d, arrow } = graphEdge({ x: F.x, y: F.y, w: NW, h: NH }, { x: T.x, y: T.y, w: NW, h: NH }, opts);
   return { d, arrow };
 }
 
@@ -279,6 +294,44 @@ export function rollUpHealth(
   return out;
 }
 
+/** Lay out the PROJECT network (kits excluded, #3007) with the layered left→right DAG engine — a plain
+ *  GRID when there are no project dependency edges, else longest-path layering + barycenter ordering.
+ *  Mutates each project node's `layer`/`x`/`y` in place. `byId` indexes ALL nodes; `cycleEdge` is the set
+ *  of mutual-pair edge ids to exclude from layering. This is the pre-#3007 `buildGraph` body verbatim,
+ *  scoped to `projNodes`/`projEdges` (so a project-only graph is byte-identical to before). */
+function layoutProjectNetwork(projNodes: GNode[], projEdges: GEdge[], byId: Record<string, GNode>, cycleEdge: ReadonlySet<string>): void {
+  // No dependency edges (real projects before a cross-project relationship model exists): a plain GRID so
+  // the cards read as a network of peers instead of stacking in one column. Skip the layering.
+  if (projEdges.length === 0) {
+    const cols = Math.max(1, Math.round(Math.sqrt(projNodes.length)));
+    projNodes.forEach((n, i) => { n.layer = 0; n.x = 70 + (i % cols) * COLGAP; n.y = 70 + Math.floor(i / cols) * ROWGAP; });
+    return;
+  }
+
+  // Longest-path layering via the shared layerer (#2214). Glance is a DEPENDS-ON DAG (from depends on
+  // to → the dependency `to` must sit at a LOWER layer), so we hand `layerDag` the edges REVERSED — its
+  // "from → deeper" convention then puts each dependency below its dependent. Cycle (mutual-pair) edges
+  // are excluded so the loop can't diverge.
+  const reversed = projEdges.map((e) => ({ id: e.id, from: e.to, to: e.from }));
+  const layer = layerDag(projNodes.map((n) => n.id), reversed, cycleEdge);
+  projNodes.forEach((n) => (n.layer = layer[n.id]));
+
+  // Crossing reduction via the shared barycenter orderer (#2418) with glance's tunables: every edge
+  // endpoint pulls (both directions, cycle edges included), 6 snapshot sweeps.
+  const nb = new Map<string, string[]>(projNodes.map((n) => [n.id, []]));
+  projEdges.forEach((e) => { nb.get(e.from)!.push(e.to); nb.get(e.to)!.push(e.from); });
+  const order = orderLayers(projNodes.map((n) => n.id), (id) => layer[id], (id) => nb.get(id)!, { passes: 6, sweep: "snapshot" });
+
+  const maxCount = Math.max(1, ...[...order.values()].map((a) => a.length));
+  const Cy = 70 + (maxCount - 1) * ROWGAP / 2;
+  for (const [L, arr] of order) {
+    arr.forEach((id, i) => {
+      byId[id].x = 70 + L * COLGAP;
+      byId[id].y = Cy + (i - (arr.length - 1) / 2) * ROWGAP;
+    });
+  }
+}
+
 /** Build the laid-out, cycle-aware graph model from raw nodes + edges. Deterministic. */
 export function buildGraph(rawNodes: GRawNode[], rawEdges: GRawEdge[]): GraphModel {
   const nodes: GNode[] = rawNodes.map((n) => ({ ...n, slug: n.slug ?? n.id, layer: 0, x: 0, y: 0, rollupHealth: n.health, healthInherited: false }));
@@ -294,47 +347,46 @@ export function buildGraph(rawNodes: GRawNode[], rawEdges: GRawEdge[]): GraphMod
   edges.forEach((e) => { if (cycleEdge.has(e.id)) e.isCycle = true; });
 
   // Roll health up the dependency edges (#2541) — every node now carries its effective (rolled) health.
+  // Kit nodes are always `idle` and never propagate, so the `uses-kit` edges have no effect here (#3007).
   const rolled = rollUpHealth(nodes, edges);
   nodes.forEach((n) => { const r = rolled.get(n.id)!; n.rollupHealth = r.health; n.healthInherited = r.inherited; });
 
-  // No dependency edges (real projects before a cross-project relationship model exists, #…): a plain
-  // GRID so the cards read as a network of peers instead of stacking in one column. Skip the layering.
-  if (edges.length === 0) {
-    const cols = Math.max(1, Math.round(Math.sqrt(nodes.length)));
-    nodes.forEach((n, i) => { n.layer = 0; n.x = 70 + (i % cols) * COLGAP; n.y = 70 + Math.floor(i / cols) * ROWGAP; });
-    let mX = 0, mY = 0;
-    nodes.forEach((n) => { mX = Math.max(mX, n.x); mY = Math.max(mY, n.y); });
-    return { nodes, edges, cyclePairs, cycleNodeIds, worldW: mX + NW + 80, worldH: mY + NH + 90 };
-  }
+  // #3007 — LIFT the UI-KIT nodes out of the dependency DAG into their own fenced band across the top, so
+  // they read as a separate design-system dimension, not an intermixed project column. The PROJECT
+  // network lays out with ONLY the project nodes + project edges (the existing engine, unchanged); the
+  // kits then sit in a single row above it and every project node shifts down to clear the band.
+  const kitNodes = nodes.filter((n) => n.kind === "kit");
+  const projNodes = nodes.filter((n) => n.kind !== "kit");
+  const projEdges = edges.filter((e) => e.kind !== "uses-kit");
 
-  // Longest-path layering via the shared layerer (#2214). Glance is a DEPENDS-ON DAG (from depends on
-  // to → the dependency `to` must sit at a LOWER layer), so we hand `layerDag` the edges REVERSED — its
-  // "from → deeper" convention then puts each dependency below its dependent. Cycle (mutual-pair) edges
-  // are excluded so the loop can't diverge.
-  const reversed = edges.map((e) => ({ id: e.id, from: e.to, to: e.from }));
-  const layer = layerDag(nodes.map((n) => n.id), reversed, cycleEdge);
-  nodes.forEach((n) => (n.layer = layer[n.id]));
+  layoutProjectNetwork(projNodes, projEdges, byId, cycleEdge);
 
-  // Crossing reduction via the shared barycenter orderer (#2418) with glance's tunables: every edge
-  // endpoint pulls (both directions, cycle edges included), 6 snapshot sweeps.
-  const nb = new Map<string, string[]>(nodes.map((n) => [n.id, []]));
-  edges.forEach((e) => { nb.get(e.from)!.push(e.to); nb.get(e.to)!.push(e.from); });
-  const order = orderLayers(nodes.map((n) => n.id), (id) => layer[id], (id) => nb.get(id)!, { passes: 6, sweep: "snapshot" });
+  let kitBand: { y0: number; y1: number } | undefined;
+  if (kitNodes.length > 0) {
+    // A single kit row across the TOP, evenly spaced and centred over the project span [70, projMaxX] —
+    // but the step never exceeds one column gap, so a couple of kits cluster in the middle instead of
+    // stretching the full width. `layer = -1` marks them as band nodes (outside the project layering).
+    const projMaxX = projNodes.length ? Math.max(...projNodes.map((n) => n.x)) : 70;
+    const spanX0 = 70, span = Math.max(0, projMaxX - spanX0);
+    const step = kitNodes.length > 1 ? Math.min(span / (kitNodes.length - 1), COLGAP) : 0;
+    const rowW = step * (kitNodes.length - 1);
+    const startX = spanX0 + (span - rowW) / 2;
+    kitNodes.forEach((k, i) => { k.layer = -1; k.x = startX + i * step; k.y = KIT_TOP_PAD; });
 
-  const maxCount = Math.max(1, ...[...order.values()].map((a) => a.length));
-  const Cy = 70 + (maxCount - 1) * ROWGAP / 2;
-  for (const [L, arr] of order) {
-    arr.forEach((id, i) => {
-      byId[id].x = 70 + L * COLGAP;
-      byId[id].y = Cy + (i - (arr.length - 1) / 2) * ROWGAP;
-    });
+    // The fence sits a gap below the kit cards' bottom; the project network shifts down by that much so
+    // the layout's own 70px top pad becomes the clean gap between the divider and the first project row.
+    const dividerY = KIT_TOP_PAD + NH + KIT_BAND_GAP;
+    kitBand = { y0: 0, y1: dividerY };
+    projNodes.forEach((n) => (n.y += dividerY));
   }
 
   let maxX = 0, maxY = 0;
   nodes.forEach((n) => { maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y); });
   const worldW = maxX + NW + 80, worldH = maxY + NH + 90;
 
-  edges.forEach((e) => Object.assign(e, edgeGeom(byId[e.from], byId[e.to], e.isCycle)));
+  // Edge geometry LAST — after both the project layout and the kit-band shift — so every endpoint is
+  // final. `e.kind` routes `uses-kit` edges vertically (perimeter-anchor); project edges keep side ports.
+  edges.forEach((e) => Object.assign(e, edgeGeom(byId[e.from], byId[e.to], e.isCycle, e.kind)));
 
-  return { nodes, edges, cyclePairs, cycleNodeIds, worldW, worldH };
+  return { nodes, edges, cyclePairs, cycleNodeIds, worldW, worldH, kitBand };
 }

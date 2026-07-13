@@ -4,6 +4,14 @@
 @keyframes glance-dashmove { to { stroke-dashoffset: -26; } }
 @keyframes glance-softpulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
 
+/* The fenced UI-KIT band (#3007) — the kit nodes lifted into their own zone across the top of the graph,
+   mirroring the Design Studio composition swimlanes (.ds-lane-*). The fill/stroke colour (KIT_COLOR) is
+   set inline on the elements; these rules keep the treatment SUBTLE so the band reads as a backdrop, not
+   foreground chrome: a faint cyan wash, a dashed divider, and a small uppercase mono label. */
+.glance-kit-band-bg { opacity: .045; }
+.glance-kit-band-divider { stroke-width: 1; stroke-dasharray: 5 7; opacity: .5; }
+.glance-kit-band-label { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; opacity: .7; }
+
 /* Node → live-terminal card (#2401/#2534): a node grows in place into its CLI session, IN the graph — a
    WORLD-LAYER child, so it pans/zooms/scales with the canvas (no portal, no scrim; the graph stays fully
    visible + interactive). JS sets the card's WORLD geometry (left/top/width/height) from the node box →
