@@ -138,6 +138,9 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
   kits: SEED_KITS,
 
   hydrateComponents: async () => {
+    // #2975: auto-apply ON ⇒ no pending review queue. `kitDispatches` is persisted (durable across
+    // restarts), so drop any queued requests on boot when the setting is enabled — they're ignored.
+    if (get().autoApplyKitChanges && get().kitDispatches.length > 0) set({ kitDispatches: [] });
     const [loadedC, loadedK] = await Promise.all([loadComponents(), loadKits()]);
     // Compile each KIT's MOTION library (#2942) into the managed <style> — on boot (useAppBoot calls
     // this) and on a `ui-touch` write (setAiFocused re-runs it), mirroring the variant apply.
@@ -227,7 +230,10 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
 
   kitDispatches: [],
   autoApplyKitChanges: true, // #2968: default ON — designer changes apply without confirmation; toggle OFF in Planner settings to gate them
-  setAutoApplyKitChanges: (on) => set({ autoApplyKitChanges: on }),
+  setAutoApplyKitChanges: (on) =>
+    // #2975: enabling auto-apply IGNORES the pending review queue — drop the queued requests so they
+    // don't linger (the banner already hides when ON; this also stops the drain re-delivering them).
+    set((s) => ({ autoApplyKitChanges: on, kitDispatches: on ? [] : s.kitDispatches })),
   dismissKitChange: (changeId) =>
     set((s) => ({ kitDispatches: s.kitDispatches.filter((d) => d.change.id !== changeId) })),
 
