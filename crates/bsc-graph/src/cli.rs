@@ -18,18 +18,21 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Ok(())
     };
     match verb {
-        // `impl …` — read / curate the language-kit implementation tier (#2863/#2961):
-        //   impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> --code <c> [--composes a,b] [--summary <s>]
+        // `impl …` — read / curate the language-kit implementation tier (#2863/#2961/#2972):
+        //   impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>]
+        //     (algorithm: real --code; primitive: DESCRIBE a language built-in via --ref, e.g. std::vec::Vec — never re-coded, #2972)
         //   impl remove <id>                   # delete an implementation + scrub it from every composes
         //   impl list [--tech <t>] [--role r]  # a language kit's implementations
         "impl" => match positional.get(1).copied() {
             Some("set") => {
-                let id = flag_value(&args, "--id").ok_or("usage: bsc graph impl set --tech <lang> --id <id> --role primitive|algorithm --name <name> --code <code> [--composes a,b] [--summary <s>]")?;
+                let id = flag_value(&args, "--id").ok_or("usage: bsc graph impl set --tech <lang> --id <id> --role primitive|algorithm --name <name> [--code <code>] [--ref <std-path>] [--composes a,b] [--summary <s>]")?;
                 let tech = flag_value(&args, "--tech").ok_or("usage: bsc graph impl set … --tech <language>")?;
                 let role = flag_value(&args, "--role").ok_or("usage: bsc graph impl set … --role primitive|algorithm")?;
                 let name = flag_value(&args, "--name").ok_or("usage: bsc graph impl set … --name <name>")?;
                 let mut im = serde_json::json!({ "id": id, "tech": tech, "role": role, "name": name, "composes": list_flag(flag_value(&args, "--composes").as_deref()) });
                 if let Some(s) = flag_value(&args, "--summary") { im["summary"] = Value::String(s); }
+                // A primitive DESCRIBES a language built-in via `--ref` (std path), rather than re-coding it (#2972).
+                if let Some(r) = flag_value(&args, "--ref") { im["ref"] = Value::String(r); }
                 if let Some(code) = flag_value(&args, "--code") { im["code"] = Value::String(code); }
                 let mut g = crate::load();
                 let replaced = crate::set_impl(&mut g, im.clone())?;
@@ -170,9 +173,9 @@ fn help(prog: &str) -> String {
          {prog} harvest <dir> [--tech T] [--worthy-only] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745)\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> --code <c> [--composes a,b] [--summary <s>]   # upsert a language-kit impl (#2863)\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>]   # upsert a language-kit impl (#2863/#2972)\n  \
          {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n\n\
-         Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator) · algorithm (composes primitives up).\n\
+         Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
          Implementation techs (#2770): typescript · rust — each `composes` other same-tech impls, rooted in the language's primitives.\n\
          The library is the per-language implementation tier; `harvest`/`curate` (#2745) mine a project's real code into candidate implementations.\n",
     )

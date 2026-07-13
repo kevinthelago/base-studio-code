@@ -204,7 +204,7 @@
       "name": "Iterator",
       "summary": "Lazy sequence adaptor — map/filter/fold that sort/search compose over slices.",
       "composes": [],
-      "code": "let xs = vec![3, 1, 2];\nlet doubled: Vec<i32> = xs.iter().map(|x| x * 2).collect();\nlet sum: i32 = xs.iter().sum();\n"
+      "ref": "std::iter::Iterator"
     },
     {
       "id": "rust.i64",
@@ -213,7 +213,7 @@
       "name": "Integer",
       "summary": "Fixed-width signed integer — the scalar arithmetic and counting run on (i32/i64/u64/usize).",
       "composes": [],
-      "code": "let n: i64 = 42;\nlet doubled = n * 2;\nlet rem = n % 5;\nlet idx = n as usize;\n"
+      "ref": "i64"
     },
     {
       "id": "rust.bool",
@@ -222,7 +222,7 @@
       "name": "Boolean",
       "summary": "true / false — the branch and predicate primitive every comparison collapses to.",
       "composes": [],
-      "code": "let ordered: bool = 3 < 5;\nif ordered {\n    // take the branch\n}\nlet both = ordered && !false;\n"
+      "ref": "bool"
     },
     {
       "id": "rust.tuple",
@@ -231,7 +231,7 @@
       "name": "Tuple",
       "summary": "A fixed heterogeneous group — pairs like (node, weight) or a complex sample (re, im).",
       "composes": [],
-      "code": "let sample: (f64, f64) = (1.0, -0.5);\nlet (re, im) = sample;\nlet edge = (\"a\", 7u32);\n"
+      "ref": "(T, U, …)"
     },
     {
       "id": "rust.slice",
@@ -240,7 +240,7 @@
       "name": "Slice",
       "summary": "&[T] — a borrowed contiguous view; the sequence sort and search read it without owning it.",
       "composes": [],
-      "code": "let owned = vec![3, 1, 2];\nlet view: &[i32] = &owned;\nlet first = view[0];\nlet n = view.len();\nlet tail = &view[1..];\n"
+      "ref": "&[T]"
     },
     {
       "id": "rust.vec",
@@ -249,7 +249,7 @@
       "name": "Vec",
       "summary": "Vec<T> — the growable owned buffer sort results and graph traversal orders are built up in.",
       "composes": [],
-      "code": "let mut xs: Vec<i32> = Vec::with_capacity(4);\nxs.push(3);\nxs.extend([1, 2]);\nxs.sort();\n"
+      "ref": "std::vec::Vec"
     },
     {
       "id": "rust.option",
@@ -258,7 +258,7 @@
       "name": "Option",
       "summary": "Option<T> — Some(x) | None; the presence/absence primitive a search returns.",
       "composes": [],
-      "code": "let hit: Option<usize> = Some(2);\nmatch hit {\n    Some(i) => { let _ = i; }\n    None => {}\n}\nlet or = hit.unwrap_or(0);\n"
+      "ref": "std::option::Option"
     },
     {
       "id": "rust.hashmap",
@@ -267,7 +267,7 @@
       "name": "HashMap",
       "summary": "HashMap<K, V> — average-O(1) keyed lookup; the adjacency map and the memo / distance table.",
       "composes": [],
-      "code": "use std::collections::HashMap;\nlet mut m: HashMap<&str, u32> = HashMap::new();\nm.insert(\"a\", 1);\n*m.entry(\"a\").or_insert(0) += 1;\nlet got = m.get(\"a\").copied();\n"
+      "ref": "std::collections::HashMap"
     },
     {
       "id": "rust.vecdeque",
@@ -276,7 +276,7 @@
       "name": "VecDeque",
       "summary": "VecDeque<T> — a double-ended queue; the FIFO frontier BFS and Kahn's algorithm pop from.",
       "composes": [],
-      "code": "use std::collections::VecDeque;\nlet mut q: VecDeque<&str> = VecDeque::new();\nq.push_back(\"start\");\nwhile let Some(node) = q.pop_front() {\n    let _ = node;\n}\n"
+      "ref": "std::collections::VecDeque"
     },
     {
       "id": "rust.binaryheap",
@@ -285,7 +285,7 @@
       "name": "BinaryHeap",
       "summary": "BinaryHeap<T> — a binary max-heap; the priority queue Dijkstra pulls the min from via Reverse.",
       "composes": [],
-      "code": "use std::cmp::Reverse;\nuse std::collections::BinaryHeap;\nlet mut pq: BinaryHeap<Reverse<(u32, &str)>> = BinaryHeap::new();\npq.push(Reverse((0, \"start\")));\nlet next = pq.pop();\n"
+      "ref": "std::collections::BinaryHeap"
     }
   ]
 }
