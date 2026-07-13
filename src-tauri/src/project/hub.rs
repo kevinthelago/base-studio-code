@@ -401,6 +401,59 @@ pub(crate) fn migrate_draft_hubs_into_projects() {
     }
     let _ = std::fs::remove_dir(&draft_root); // retire the now-empty draft/ root (no-op if non-empty)
 }
+
+/// The lifecycle state under which an existing on-disk hub is backfilled into `projects.db` (#2998),
+/// or `None` to SKIP it — a bare, UNTITLED scaffold with no plan is an orphan (the `admin-console` /
+/// `test_with_kit` mess), not a real project. Published hub → `published`; a hub carrying a plan
+/// section (goal/scope) → `created` (its folder is materialized); a user-TITLED hub with no plan yet
+/// → `drafted` (e.g. `cli-typer`). Pure, so the mapping is unit-tested. Mirrors the interim draft
+/// visibility rule (#2994: `has_plan || titled`) but now durable in the DB.
+fn backfill_state(lp: &LocalProject) -> Option<&'static str> {
+    if lp.published {
+        Some("published")
+    } else if lp.has_plan {
+        Some("created")
+    } else if lp.titled {
+        Some("drafted")
+    } else {
+        None
+    }
+}
+
+/// One-time backfill (#2998, epic #2993): fold every existing on-disk project hub into the durable
+/// `projects.db` registry so the DB becomes the source of truth for what projects exist — recovering
+/// hubs (like `cli-typer`) that only ever lived on disk + the fragile draft cache. ADDITIVE + idempotent:
+/// a key already in the DB is left alone (the create dual-write / a prior run wins); a bare untitled
+/// scaffold is skipped ([`backfill_state`] → `None`). NEVER deletes a hub — orphan cleanup is a
+/// user-confirmed action, not a silent migration. Runs at startup after the hub-layout migrations.
+pub(crate) fn backfill_projects_db_from_hubs() {
+    let conn = match bsc_project::store::open() {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("backfill projects.db skipped: {e}");
+            return;
+        }
+    };
+    for lp in list_local_projects().unwrap_or_default() {
+        if bsc_project::store::get(&conn, &lp.key).is_some() {
+            continue; // already tracked in the DB — don't clobber a richer row
+        }
+        let Some(state) = backfill_state(&lp) else { continue };
+        let row = bsc_project::store::ProjectRow {
+            key: lp.key.clone(),
+            title: lp.title,
+            pitch: String::new(),
+            blueprint: None,
+            category: None,
+            state: state.to_string(),
+            created_at: lp.updated_at as i64, // best-effort: the hub's mtime as its origin time
+            updated_at: bsc_util::now_ms(),
+        };
+        if let Err(e) = bsc_project::store::upsert(&conn, &row) {
+            log::warn!("backfill projects.db {:?}: {e}", lp.key);
+        }
+    }
+}
 /// Absolute path to a project's hub directory (#647) — the frontend reveals it so the
 /// user can export/back up authored plan files before resetting the blueprint.
 #[tauri::command]
@@ -466,6 +519,19 @@ mod relocated_tests {
         assert!(get("real-proj").has_plan, "a hub with a plan section IS a real project");
         assert_eq!(get("real-proj").title, "Build a thing", "title comes from goal.md, not the key");
         std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn backfill_state_maps_hubs_by_marker_and_skips_bare_scaffolds() {
+        // #2998: how an existing on-disk hub is folded into projects.db. Pure — no env.
+        let lp = |published: bool, has_plan: bool, titled: bool| LocalProject {
+            key: "k".into(), title: "T".into(), has_plan, updated_at: 0, published, titled,
+        };
+        assert_eq!(backfill_state(&lp(true, false, false)), Some("published"));
+        assert_eq!(backfill_state(&lp(true, true, true)), Some("published"), "published wins");
+        assert_eq!(backfill_state(&lp(false, true, false)), Some("created"), "a plan section → materialized");
+        assert_eq!(backfill_state(&lp(false, false, true)), Some("drafted"), "titled, no plan → a draft (cli-typer)");
+        assert_eq!(backfill_state(&lp(false, false, false)), None, "bare untitled scaffold → orphan, skip");
     }
 
     #[test]
