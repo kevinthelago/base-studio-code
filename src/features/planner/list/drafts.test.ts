@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildDrafts, type LocalProjectLite } from "./drafts";
+import { buildDrafts, mergeDbDrafts, type LocalProjectLite, type DraftRow } from "./drafts";
+import type { DbProject } from "./projectsDbBridge";
 
 const lp = (over: Partial<LocalProjectLite> & { key: string }): LocalProjectLite => ({
   title: over.key, hasPlan: true, updatedAt: 0, published: false, ...over,
@@ -69,5 +70,53 @@ describe("buildDrafts", () => {
   it("tolerates a non-array localProjects (defensive, #874)", () => {
     const out = buildDrafts(undefined as unknown as LocalProjectLite[], { k: { title: "K", pitch: "", createdAt: 1 } }, []);
     expect(out.map(d => d.key)).toEqual(["k"]);
+  });
+});
+
+const dbRow = (over: Partial<DbProject> & { key: string }): DbProject => ({
+  title: over.key, pitch: "", blueprint: null, category: null, state: "drafted", createdAt: 0, updatedAt: 0, ...over,
+});
+
+describe("mergeDbDrafts (#2995)", () => {
+  it("surfaces a DB `drafted` row the store cache lost (durable restart survival)", () => {
+    const out = mergeDbDrafts([], [dbRow({ key: "recovered", title: "Recovered", pitch: "from db", updatedAt: 42 })]);
+    expect(out).toEqual([{ key: "recovered", title: "Recovered", pitch: "from db", sort: 42 }]);
+  });
+
+  it("also surfaces a `planning`-state DB row", () => {
+    const out = mergeDbDrafts([], [dbRow({ key: "mid-plan", title: "Mid Plan", state: "planning" })]);
+    expect(out.map(d => d.key)).toEqual(["mid-plan"]);
+  });
+
+  it("ignores non-draft DB rows (published / created)", () => {
+    const out = mergeDbDrafts([], [
+      dbRow({ key: "shipped", state: "published" }),
+      dbRow({ key: "built", state: "created" }),
+    ]);
+    expect(out).toHaveLength(0);
+  });
+
+  it("keeps the existing entry's title + pitch when present, taking the newer sort", () => {
+    const existing: DraftRow[] = [{ key: "k", title: "On disk", pitch: "rich", sort: 100 }];
+    const out = mergeDbDrafts(existing, [dbRow({ key: "k", title: "DB title", pitch: "db pitch", updatedAt: 200 })]);
+    expect(out).toEqual([{ key: "k", title: "On disk", pitch: "rich", sort: 200 }]);
+  });
+
+  it("borrows the DB title/pitch only when the existing entry has none", () => {
+    const existing: DraftRow[] = [{ key: "k", title: "", pitch: "", sort: 0 }];
+    const out = mergeDbDrafts(existing, [dbRow({ key: "k", title: "DB title", pitch: "db pitch", createdAt: 5 })]);
+    expect(out).toEqual([{ key: "k", title: "DB title", pitch: "db pitch", sort: 5 }]);
+  });
+
+  it("is additive — every existing row is kept even with no DB match", () => {
+    const existing: DraftRow[] = [{ key: "a", title: "A", pitch: "", sort: 1 }];
+    const out = mergeDbDrafts(existing, [dbRow({ key: "b", title: "B" })]);
+    expect(out.map(d => d.key).sort()).toEqual(["a", "b"]);
+  });
+
+  it("tolerates a non-array dbRows (defensive)", () => {
+    const existing: DraftRow[] = [{ key: "a", title: "A", pitch: "", sort: 1 }];
+    const out = mergeDbDrafts(existing, undefined as unknown as DbProject[]);
+    expect(out).toEqual(existing);
   });
 });

@@ -30,6 +30,9 @@ export { Roadmap } from "./github/Roadmap";
 export { Issues } from "./github/Issues";
 export { Insights } from "./github/Insights";
 export { flowPermissionRules, flowGrantedPushCommands } from "./fleet/flowPermissions";
+// #2995: the durable projects-DB bridge — the app shell's boot migration upserts every cached draft
+// into the DB through this (reached via the barrel, not a deep path, per the app import boundary).
+export { addDbProject } from "./list/projectsDbBridge";
 export {
   decideDirectorAction, resolveDirectorDrive, askKey, pendingAskPrompt,
   briefKey, pendingBriefPrompt, DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,

@@ -14,7 +14,8 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { AUTHORING_BLUEPRINT_ID, type Blueprint } from "../stages/blueprints";
-import { buildDrafts, type DraftRow, type LocalProjectLite } from "./drafts";
+import { buildDrafts, mergeDbDrafts, type DraftRow, type LocalProjectLite } from "./drafts";
+import { listDbProjects, removeDbProject, type DbProject } from "./projectsDbBridge";
 import { buildLocalPublished, type LocalPublishedRow } from "./localPublished";
 import { PublishedProjects, ProjectRow, projStatus, type GhProject, type ProjStatus, PROJECTS_QUERY } from "./PublishedProjects";
 import { BlueprintLibrary, buildBlueprintItems, type BpItem } from "./BlueprintLibrary";
@@ -53,6 +54,10 @@ export function ProjectsList() {
   // On-disk local projects (#…) — the durable source of truth for unpublished work, since the
   // store's draft map drifts out of sync with the `projects/` dir.
   const [localProjects, setLocalProjects] = useState<LocalProjectLite[]>([]);
+  // Durable draft rows from the projects DB (#2995): reached through the generic `bsc` bridge, unioned
+  // into the drafts list so a draft survives a restart even when the `localDraftProjects` cache misses.
+  // Additive over the two existing sources; degrades to [] when the bridge is unreachable.
+  const [dbProjects, setDbProjects] = useState<DbProject[]>([]);
   // Live fleet (for the per-project "agents running" pill).
   const { workers } = useFleetLive();
 
@@ -104,6 +109,15 @@ export function ProjectsList() {
     if (activeWorkspace !== "projects") return;
     void refreshLocalProjects();
   }, [activeWorkspace, refreshLocalProjects]);
+
+  // Load the durable DB draft rows whenever the tab opens (#2995). A null return (bridge unreachable /
+  // old `bsc`) degrades to [] so the two existing sources render exactly as before.
+  useEffect(() => {
+    if (activeWorkspace !== "projects") return;
+    let cancelled = false;
+    void listDbProjects().then((rows) => { if (!cancelled) setDbProjects(rows ?? []); });
+    return () => { cancelled = true; };
+  }, [activeWorkspace]);
 
   // Reconcile published markers (#922): a local hub that matches a GitHub board — by title, or by
   // the board's name-derived key (`projectSlug(title)`, #2409) — but isn't yet flagged published
@@ -192,6 +206,10 @@ export function ProjectsList() {
     // rather than a surfaced error (#874).
     try {
       removeDraftProject(key);
+      // Mirror the store removal into the durable DB (#2995), and prune the local DB-row cache so the
+      // card drops immediately (the async remove hasn't re-read yet). Fire-and-forget; degrades silently.
+      void removeDbProject(key);
+      setDbProjects(prev => (Array.isArray(prev) ? prev : []).filter(r => r.key !== key));
       deleteLocalProject([key]);
       setLocalProjects(prev => (Array.isArray(prev) ? prev : []).filter(lp => lp.key !== key));
     } catch (e) {
@@ -234,13 +252,17 @@ export function ProjectsList() {
   // differs in case from its GitHub board title can't leak into BOTH lists. Both key forms of each
   // board title are passed (#2409): the name-derived slug (today's keys) and the legacy
   // case-preserving sanitize (grandfathered title-keyed hubs). See `buildDrafts`.
+  // …then union in the durable DB draft rows (#2995) so a draft the local cache lost still surfaces.
   const allDrafts = useMemo<DraftRow[]>(
-    () => buildDrafts(
-      localProjects,
-      localDraftProjects,
-      visibleProjects.flatMap(p => [projectSlug(p.title), sanitizeProjectKey(p.title)]),
+    () => mergeDbDrafts(
+      buildDrafts(
+        localProjects,
+        localDraftProjects,
+        visibleProjects.flatMap(p => [projectSlug(p.title), sanitizeProjectKey(p.title)]),
+      ),
+      dbProjects,
     ),
-    [localProjects, localDraftProjects, visibleProjects],
+    [localProjects, localDraftProjects, visibleProjects, dbProjects],
   );
 
   // A draft bound to the blueprint-author lifecycle is an in-progress BLUEPRINT — it belongs in the
