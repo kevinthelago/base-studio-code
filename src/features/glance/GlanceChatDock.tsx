@@ -24,12 +24,16 @@ import { GlanceSessionLog } from "./GlanceSessionLog";
 type DockTab = "stream" | "logs";
 
 export function GlanceChatDock({
-  paneId, name, role, onClose,
+  paneId, name, role, onClose, onEnd,
 }: {
   paneId: string;
   name: string;
   role?: string;
+  /** Collapse the dock back into its node — the PTY stays ALIVE (the agent is untouched). */
   onClose: () => void;
+  /** END the session — kill the PTY so a stuck / soft-locked agent is fully torn down and triage can
+   *  be relaunched cleanly (#3049). Undefined ⇒ the End-session button is omitted. */
+  onEnd?: () => void;
 }) {
   const [tab, setTab] = useState<DockTab>("stream");
   const [draft, setDraft] = useState("");
@@ -68,7 +72,15 @@ export function GlanceChatDock({
               {t === "stream" ? "Stream" : "Logs"}
             </Button>
           ))}
-          <IconButton aria-label="Close stream" onClick={onClose}>×</IconButton>
+          {/* END the session (#3049) — kills the PTY (distinct from the ✕, which only collapses the
+              morph and keeps the agent alive). For a soft-locked fleet this fully tears a stuck agent
+              down so "Relaunch fleet" can restart triage cleanly. */}
+          {onEnd && (
+            <Button size="sm" variant="ghost" danger onClick={onEnd} title="Kill this agent's session so triage can be relaunched">
+              End session
+            </Button>
+          )}
+          <IconButton aria-label="Collapse stream (agent stays alive)" onClick={onClose}>×</IconButton>
         </Row>
       </Row>
 
