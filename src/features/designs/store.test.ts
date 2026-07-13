@@ -4,7 +4,7 @@ import type { ComponentRecord, Kit } from "./lib/model";
 import type { Dispatch } from "./lib/propagation";
 import { makeChange } from "./lib/propagation";
 import { contractChanged, mergeDispatches } from "./store";
-import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
+import { SEED_COMPONENTS, SEED_KITS, DEFAULT_KIT_SEEDED } from "./lib/seed";
 import { SEED_THEMES, type KitThemeRecord } from "./lib/themes";
 import { stampSeedHash } from "./lib/seedRefresh";
 import * as bridge from "./lib/componentBridge";
@@ -26,16 +26,33 @@ describe("components store slice (#2281)", () => {
     expect(useAppStore.getState().kits).toEqual(SEED_KITS);
   });
 
-  it("hydrateComponents reconciles + re-seeds a dropped built-in, pushing it back through the bridge", async () => {
-    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([]); // store empty → every built-in re-seeds
+  // TEMPORARY (#3029): the packaged default kit is disabled while it's redefined via the designer, so
+  // the reconcile seeds NOTHING — an empty store is NOT re-seeded. Restore this to the original "empty
+  // store re-seeds every built-in, pushing it back through the bridge" assertion when the seed returns.
+  it.skipIf(DEFAULT_KIT_SEEDED)("hydrateComponents does NOT re-seed while the default kit is disabled — an empty store stays empty", async () => {
+    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([]);
     vi.spyOn(bridge, "loadKits").mockResolvedValueOnce([]);
     const pushC = vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
     const pushK = vi.spyOn(bridge, "pushKit").mockResolvedValue(undefined);
     await useAppStore.getState().hydrateComponents();
-    expect(useAppStore.getState().components.some((c) => c.id === "button" && c.builtin)).toBe(true);
-    expect(pushC).toHaveBeenCalledWith(expect.objectContaining({ id: "button" }));
-    expect(useAppStore.getState().kits.some((k) => k.id === "react-ui")).toBe(true);
-    expect(pushK).toHaveBeenCalledWith(expect.objectContaining({ id: "react-ui" }));
+    expect(useAppStore.getState().components).toEqual([]);
+    expect(useAppStore.getState().kits).toEqual([]);
+    expect(pushC).not.toHaveBeenCalled();
+    expect(pushK).not.toHaveBeenCalled();
+  });
+
+  // TEMPORARY (#3029): the current default (react-ui) retires from an EXISTING store on the next boot —
+  // its pristine built-ins left the seed, so the #2483 reconcile drops them. Remove when the seed returns.
+  it.skipIf(DEFAULT_KIT_SEEDED)("hydrateComponents retires the now-unseeded default built-ins from an existing store", async () => {
+    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce(SEED_COMPONENTS);
+    vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
+    const dropC = vi.spyOn(bridge, "dropComponent").mockResolvedValue(undefined);
+    const dropK = vi.spyOn(bridge, "dropKit").mockResolvedValue(undefined);
+    await useAppStore.getState().hydrateComponents();
+    expect(useAppStore.getState().kits).toEqual([]);
+    expect(useAppStore.getState().components).toEqual([]);
+    expect(dropK).toHaveBeenCalledWith("react-ui");
+    expect(dropC).toHaveBeenCalled();
   });
 
   it("hydrateComponents keeps a user record from the store and does NOT re-push it", async () => {
@@ -136,7 +153,9 @@ describe("kit-change origin (#2810 — a CLI edit fires propagation)", () => {
   });
 });
 
-describe("hash-based built-in seed refresh (#2483)", () => {
+// TEMPORARY (#3029): the default kit is disabled, so hydrate reconciles against an EMPTY seed — this
+// whole seed-refresh block is dormant until DEFAULT_KIT_SEEDED flips back on (it auto-restores).
+describe.skipIf(!DEFAULT_KIT_SEEDED)("hash-based built-in seed refresh (#2483)", () => {
   beforeEach(() => {
     useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, seedNotices: [] });
     vi.restoreAllMocks();

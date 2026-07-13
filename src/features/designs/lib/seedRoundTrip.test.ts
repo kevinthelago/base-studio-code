@@ -80,7 +80,7 @@ vi.mock("@/shared/lib/core/bsc", () => ({
 
 import { useAppStore } from "@/store";
 import type { ComponentRecord, Kit } from "./model";
-import { SEED_COMPONENTS, SEED_KITS, reconcileComponents } from "./seed";
+import { SEED_COMPONENTS, SEED_KITS, reconcileComponents, DEFAULT_KIT_SEEDED } from "./seed";
 import { SEED_THEMES } from "./themes";
 import { SEED_HASH_EXCLUDED, stableStringify, seedHashOf, type SeedRecord } from "./seedRefresh";
 import { loadComponents, loadKits, pushComponent, pushKit } from "./componentBridge";
@@ -139,7 +139,8 @@ describe("the round-trip invariant (#2514): every packaged stamp survives push �
 });
 
 describe("hydrate is a fixpoint across restarts (#2514)", () => {
-  it("boot 1 seeds the empty store; boot 2 re-loads it and changes NOTHING", async () => {
+  // TEMPORARY (#3029): hydrate seeds nothing while the default kit is disabled — restored with the flag.
+  it.skipIf(!DEFAULT_KIT_SEEDED)("boot 1 seeds the empty store; boot 2 re-loads it and changes NOTHING", async () => {
     await useAppStore.getState().hydrateComponents(); // boot 1: empty store → seed everything
     const afterBoot1 = fake.counts();
     expect(afterBoot1.writes).toBe(SEED_COMPONENTS.length + SEED_KITS.length);
@@ -181,7 +182,7 @@ describe("the #2514 heal — the maintainer's REAL broken store converges on one
     for (const k of brokenKits) expect(seedHashOf(k)).toBe(k.seedHash);
   });
 
-  it("hydrating over the broken store deletes the retirees, refreshes the rest, and materializes tech/style/pages", async () => {
+  it.skipIf(!DEFAULT_KIT_SEEDED)("hydrating over the broken store deletes the retirees, refreshes the rest, and materializes tech/style/pages", async () => {
     for (const c of brokenComponents) await fake.write(null, ["ui", "set"], c);
     for (const k of brokenKits) await fake.write(null, ["ui", "kit", "set"], k);
 
@@ -204,7 +205,7 @@ describe("the #2514 heal — the maintainer's REAL broken store converges on one
     expect(s.seedNotices).toEqual([]);
   });
 
-  it("a rotten STAMP on an in-seed record heals via the tolerant re-stamp (#2514 branch 1)", () => {
+  it.skipIf(!DEFAULT_KIT_SEEDED)("a rotten STAMP on an in-seed record heals via the tolerant re-stamp (#2514 branch 1)", () => {
     // Dynamically pick a fixture record whose content still equals the CURRENT seed's (avatar at the
     // time of writing) so the test tracks seed evolution instead of hardcoding an id.
     const seedById = new Map(SEED_COMPONENTS.map((s) => [s.id, s]));
