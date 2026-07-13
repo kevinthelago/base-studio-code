@@ -22,6 +22,27 @@
 .algo-node .algo-name { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .algo-node .algo-meta { font-size: 10.5px; color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* Language primitives (#2980) — a primitive is a DESCRIPTOR of a language built-in (#2972), not our
+   code, so it reads distinctly from the solid algorithm cards: a dashed violet border + a violet tint +
+   a leading violet role dot, carrying the same "primitive = violet" cue the rail + inspector use. */
+.algo-node.algo-prim {
+  border-style: dashed;
+  border-color: var(--violet);
+  background: color-mix(in srgb, var(--violet) 8%, var(--bg-elev, var(--bg-soft)));
+}
+.algo-node.algo-prim:hover { border-color: var(--violet); }
+.algo-node.algo-prim.on { box-shadow: 0 0 0 2px var(--violet); border-color: var(--violet); }
+.algo-node.algo-prim .algo-name::before {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--violet);
+  vertical-align: middle;
+}
+.algo-node.algo-prim .algo-meta { color: color-mix(in srgb, var(--violet) 65%, var(--fg-dim)); }
+
 /* The edge label pill — only shown for lit (selected-neighbor) edges to keep the graph readable. */
 .algo-edgelabel {
   font-size: 9.5px;
