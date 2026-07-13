@@ -198,7 +198,8 @@ An animation is `{ name, keyframes, duration?, easing?, delay?, trigger?, select
   `var(--dur-base)` / `var(--ease-standard)`; a literal time (`220ms`) or timing-function also works.
 - `delay` — OPTIONAL animation-level delay (a time like `120ms`), slotted after easing in the shorthand.
 - `trigger` — WHEN it plays: `mount` (once on render, the default) · `hover` (on `:hover`) · `always`
-  (loops). Nothing else.
+  (loops) · `exit` (as a subtree LEAVES — accepted, but DORMANT until the preview exit-runtime lands,
+  #3057: the keyframes + rule compile yet play nothing yet). Nothing else.
 - `selector` — OPTIONAL; scopes the applying rule to a **child** element (a descendant combinator,
   `.<kit>-anim-<name> <selector>`) instead of the component root — e.g. animate an inner `.icon` only.
   Selector-safe characters only. A `trigger: mount` animation whose `selector` matches a
