@@ -47,16 +47,25 @@ pub(crate) fn planning_workspace_dir(project_key: &str) -> std::path::PathBuf {
     bsc_base_dir().join("planning").join(sanitize_project_key(project_key))
 }
 
-/// The planner session's CWD for `key` (#2997): the EXISTING hub if it's already on disk, else the
-/// ephemeral [`planning_workspace_dir`]. Grandfathered / repo-linked projects (whose `project_dir`
-/// already exists — the repo auto-clone materializes it) keep their EXACT mount + `--continue` history
-/// unchanged; a fresh greenfield draft plans in the ephemeral workspace until [`crate::project::hub::materialize_hub`]
-/// promotes it at triage. This is the ONE resolver both the planner mount (`setup_workspaces`) and its
-/// determinism guard (`get_context_signature`) read, so the recorded signature and the actual mount can
-/// never disagree.
+/// The planner session's CWD for `key` (#2997): the EXISTING **materialized** hub if one is on disk,
+/// else the ephemeral [`planning_workspace_dir`]. Grandfathered / repo-linked / already-materialized
+/// projects (whose `project_dir` holds a real hub) keep their EXACT mount + `--continue` history
+/// unchanged; a fresh greenfield draft plans in the ephemeral workspace until
+/// [`crate::project::hub::materialize_hub`] promotes it at triage. This is the ONE resolver both the
+/// planner mount (`setup_workspaces`) and its determinism guard (`get_context_signature`) read, so the
+/// recorded signature and the actual mount can never disagree.
+///
+/// The "materialized" test is `project_dir/CLAUDE.md`, NOT bare `project_dir` existence: `setup_workspaces`
+/// writes `CLAUDE.md` into the resolved planning dir (so a greenfield draft's `CLAUDE.md` lands in
+/// `planning/<key>`, never `project_dir`), while `mint_ingest_token` DOES stub `project_dir/ingest-token`
+/// during planning. Keying off bare existence would let that token stub flip the mount back to the hub on
+/// the next planner relaunch — orphaning the draft's files and losing its `--continue` history (#2997).
+/// A materialized hub always has `CLAUDE.md` (every legacy hub was set up with one; `materialize_hub`
+/// moves the planner's `CLAUDE.md` in), and a token-only stub never does — so `CLAUDE.md` cleanly tells
+/// the two apart.
 pub(crate) fn planning_cwd(project_key: &str) -> std::path::PathBuf {
     let hub = project_dir(project_key);
-    if hub.exists() {
+    if hub.join("CLAUDE.md").is_file() {
         hub
     } else {
         planning_workspace_dir(project_key)
@@ -332,8 +341,16 @@ mod relocated_tests {
         assert!(!planning_workspace_dir(key).to_string_lossy().contains(".."));
         // Stable across calls (no timestamp/random) so --continue history survives a relaunch.
         assert_eq!(planning_workspace_dir(key), planning_workspace_dir(key));
-        // Once the hub exists on disk, planning_cwd resolves there instead (unchanged behavior).
+        // Regression (#2997): a token-STUB project_dir (mint_ingest_token writes `ingest-token` during
+        // planning) must NOT flip the mount — no CLAUDE.md means it's not a materialized hub, so a
+        // planner relaunch keeps planning in the ephemeral workspace (else the draft's files orphan and
+        // its --continue history is lost).
         std::fs::create_dir_all(project_dir(key)).unwrap();
+        std::fs::write(project_dir(key).join("ingest-token"), "tok").unwrap();
+        assert_eq!(planning_cwd(key), planning_workspace_dir(key), "token stub must not count as a hub");
+        // Once a REAL hub exists on disk (marked by CLAUDE.md), planning_cwd resolves there instead —
+        // grandfathered / materialized projects keep their exact mount.
+        std::fs::write(project_dir(key).join("CLAUDE.md"), "# hub").unwrap();
         assert_eq!(planning_cwd(key), project_dir(key));
         // The key is sanitized (idempotent on an already-slug key), like project_dir.
         assert_eq!(planning_workspace_dir("a/b"), planning_workspace_dir("a_b"));
