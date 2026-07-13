@@ -58,8 +58,12 @@ pub fn check_module_syntax(src: &str) -> Result<(), String> {
                     }
                 }
             }
-            // regex literal (in expression position) → to the closing unescaped `/` outside a char class
-            '/' if last_sig.is_none_or(|p| !is_value_end(p)) => {
+            // regex literal (in expression position) → to the closing unescaped `/` outside a char class.
+            // A `/` IMMEDIATELY after `<` is a JSX closing tag (`</div>`, `</>` fragment), NOT a regex
+            // (#2991) — else it would open a "regex" that runs to the newline and false-reject the
+            // module. A genuine `< /re/` (compare-to-regex) keeps its space, so only the adjacent
+            // `</` is excluded.
+            '/' if last_sig.is_none_or(|p| !is_value_end(p)) && !(i > 0 && chars[i - 1] == '<') => {
                 let start = line;
                 i += 1;
                 let mut in_class = false;
@@ -171,6 +175,17 @@ line two ${title}`;
             }
         "#;
         assert!(check_module_syntax(src).is_ok());
+    }
+
+    #[test]
+    fn jsx_closing_tag_is_not_read_as_a_regex() {
+        // The `/` in `</div>` sits right after `<`, so the old check opened a "regex" that ran to the
+        // newline and false-rejected the module (#2991). A closing tag / `</>` fragment must be inert.
+        assert!(check_module_syntax("export const C = () => <div>{x}</div>;\n").is_ok());
+        assert!(check_module_syntax("export const F = () => <>{x}</>;\n").is_ok(), "fragment close too");
+        // A genuine regex (space before `/`) still parses; a real unterminated string still rejects.
+        assert!(check_module_syntax("export const re = /a\\/b/g;\nexport const y = 1;\n").is_ok());
+        assert!(check_module_syntax("export const s = \"oops\n\";\n").is_err(), "still catches the corruption");
     }
 
     #[test]
