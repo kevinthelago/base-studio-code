@@ -95,6 +95,15 @@ export interface ComponentRecord {
   name: string;
   kitId: string;
   role: Role;
+  /** The component's PURPOSE partition within the kit (#3048) — e.g. `data-viz` / `pages` / `forms`.
+   *  ORTHOGONAL to {@link role} (the architectural tier that drives the composition swimlanes): `group`
+   *  answers "what is this component FOR in the kit", `role` answers "what tier is it". ORGANIZATIONAL
+   *  only — `composes` still resolves across the WHOLE kit, so components in DIFFERENT groups compose
+   *  freely (a `pages` component composes a `data-viz` chart directly; kits never cross). Absent ⇒ the
+   *  kit's trailing "ungrouped" bucket (`kitGroups.ts`). OPTIONAL and NEVER defaulted — like
+   *  {@link Kit.tech}/`style`, an absent `group` must stay absent (never `""`) so a store copy keeps
+   *  hashing to its recorded `seedHash` and the #2483 reconcile can refresh it. */
+  group?: string;
   version: string;
   /** Times this component is used across the codebase (a reuse signal). */
   used: number;

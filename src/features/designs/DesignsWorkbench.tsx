@@ -414,7 +414,9 @@ export function DesignsWorkbench() {
                 <RoleDot role={c.role} /><Text weight={600} size={13}>{c.name}</Text>
               </Box>
               <Box style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <Text size={10} tone="dim">{c.role}</Text><Text mono size="xxs" tone="muted">×{c.used}</Text>
+                {/* group indicator (#3048) — the component's purpose partition, read inline on the
+                    existing role line (no layout change; role-tier banding is unchanged). */}
+                <Text size={10} tone="dim">{c.role}{c.group ? <Text as="span" tone="muted"> · {c.group}</Text> : ""}</Text><Text mono size="xxs" tone="muted">×{c.used}</Text>
               </Box>
             </Box>
           );

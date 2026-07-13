@@ -13,7 +13,7 @@ import { RailRow } from "@/shared/ui/layouts/RailRow";
 import { RailGroupHeader } from "@/shared/ui/layouts/RailGroupHeader";
 import { RoleDot } from "./kitChrome";
 import type { ComponentRecord, Kit } from "./lib/model";
-import type { KitTreeNode } from "./lib/kitGroups";
+import { type KitTreeNode, groupComponentsByGroup } from "./lib/kitGroups";
 import { byTier } from "./lib/compositionLayout";
 
 interface RailTreeProps {
@@ -45,6 +45,23 @@ export function RailTree({ railTree, expanded, setExpanded, kitId, setKitId, com
     const open = !!expanded[k.id];
     const inKit = components.filter((c) => c.kitId === k.id);
     const rows = inKit.filter(match).sort(byTier); // Pages on top, like the graph (#2976)
+    // One component row — shared by the flat list and the per-group nesting (#3048).
+    const renderCompRow = (c: ComponentRecord) => (
+      <RailRow
+        key={c.id}
+        className="ds-comprow"
+        indent={1}
+        active={c.id === compId && k.id === kitId}
+        onClick={() => selectComp(c)}
+        leading={<RoleDot role={c.role} size={7} glow={3} />}
+        trailing={<Text mono size="xxs" tone="dim" style={{ padding: "1px 5px", background: "var(--bg-soft)", borderRadius: 4 }}>×{c.used}</Text>}
+      >
+        {c.name}
+      </RailRow>
+    );
+    // When this kit's components carry `group` values, nest them under group sub-headers (#3048);
+    // otherwise `groups` is null and the flat list renders EXACTLY as before (zero regression).
+    const groups = groupComponentsByGroup(rows);
     return (
       <Box key={k.id} style={{ marginBottom: 4 }}>
         <RailRow
@@ -61,19 +78,21 @@ export function RailTree({ railTree, expanded, setExpanded, kitId, setKitId, com
         </RailRow>
         {open && (
           <Box style={{ margin: "2px 0 6px", paddingLeft: 6 }}>
-            {rows.map((c) => (
-              <RailRow
-                key={c.id}
-                className="ds-comprow"
-                indent={1}
-                active={c.id === compId && k.id === kitId}
-                onClick={() => selectComp(c)}
-                leading={<RoleDot role={c.role} size={7} glow={3} />}
-                trailing={<Text mono size="xxs" tone="dim" style={{ padding: "1px 5px", background: "var(--bg-soft)", borderRadius: 4 }}>×{c.used}</Text>}
-              >
-                {c.name}
-              </RailRow>
-            ))}
+            {groups
+              ? groups.map((g) => (
+                  <Box key={g.key} className="ds-compgroup" style={{ marginBottom: 2 }}>
+                    <RailGroupHeader
+                      className="ds-compgrouphead"
+                      count={g.components.length}
+                      size={9}
+                      title={g.ungrouped ? "components with no group" : `group: ${g.label}`}
+                    >
+                      {g.label}
+                    </RailGroupHeader>
+                    {g.components.map(renderCompRow)}
+                  </Box>
+                ))
+              : rows.map(renderCompRow)}
             {open && rows.length === 0 && query && (
               <Text size={11} tone="dim" as="div" style={{ padding: "6px 10px", fontStyle: "italic" }}>no matches</Text>
             )}

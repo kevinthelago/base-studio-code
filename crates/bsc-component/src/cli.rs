@@ -40,12 +40,12 @@ const DATA_SHAPES: &[(&str, &str)] = &[
 const COMPONENT_COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "list",
-        summary: "every component's {id, name, kitId, role, shapes} (JSON)",
+        summary: "every component's {id, name, kitId, role, group, shapes} (JSON)",
         usage: "\
 USAGE:
   bsc ui list [--shape <shape>] [--full] [--pretty]
 
-Prints every component's { id, name, kitId, role, shapes } as JSON (compact; --pretty for indented).
+Prints every component's { id, name, kitId, role, group, shapes } as JSON (compact; --pretty for indented).
 --shape filters to the components whose `shapes` field stamps <shape> — the kit's IDEAL renderings
 for that data shape (#2475; one of list · linked-list · tree · graph · table · key-value — see
 `bsc ui shapes`). --full emits the COMPLETE component objects (variants + props + composes + guidance
@@ -60,7 +60,7 @@ USAGE:
 
 Prints the six-shape data vocabulary — list · linked-list · tree · graph · table · key-value — as a
 JSON array of { shape, desc, components }, where components are the stored components whose `shapes`
-field stamps that shape (the kit's IDEAL renderings for it, as lean {id, name, kitId, role, shapes}
+field stamps that shape (the kit's IDEAL renderings for it, as lean {id, name, kitId, role, group, shapes}
 rows). With <shape>, prints just that shape's entry. An EMPTY components array means the kit has no
 ideal layout for that shape yet — a genuine gap to record, not a fit to force. Read-only: how the
 planner picks a layout — derive the data's shape, then `bsc ui shapes <shape>` (or the equivalent
@@ -83,7 +83,9 @@ USAGE:
   bsc ui set [--pretty]   # component JSON (one object or an array) on stdin
 
 Upserts each component by its (required, non-empty) \"id\" field, written verbatim. Prints the id(s)
-written — how an agent (or the pane) authors/updates a component in the shared kit.",
+written — how an agent (or the pane) authors/updates a component in the shared kit. An optional `group`
+field names the component's PURPOSE partition within the kit (`data-viz`/`pages`/`forms`) — orthogonal
+to `role` (the arch tier), organizational only (`composes` still resolves across the whole kit).",
     },
     CmdDoc {
         name: "remove",
@@ -267,7 +269,7 @@ const COMPONENT_SPEC: CliSpec = CliSpec {
     dir_segment: "components",
     tagline: TAGLINE,
     commands: COMPONENT_COMMANDS,
-    meta_fields: &["id", "name", "kitId", "role", "shapes"],
+    meta_fields: &["id", "name", "kitId", "role", "group", "shapes"],
 };
 
 /// The kit collection's knobs. Lean `list` projects id/name/tech/style/stack.
@@ -1226,8 +1228,8 @@ mod tests {
     fn specs_are_the_two_collections_with_the_right_lean_fields() {
         assert_eq!(COMPONENT_SPEC.noun, "component");
         assert_eq!(COMPONENT_SPEC.dir_segment, "components");
-        // `shapes` rides the lean list projection (#2475) so `list`/`list --shape` expose the axis.
-        assert_eq!(COMPONENT_SPEC.meta_fields, &["id", "name", "kitId", "role", "shapes"]);
+        // `group` (#3048) + `shapes` (#2475) ride the lean list projection so `list`/`list --shape` expose the axes.
+        assert_eq!(COMPONENT_SPEC.meta_fields, &["id", "name", "kitId", "role", "group", "shapes"]);
         assert_eq!(KIT_SPEC.noun, "kit");
         assert_eq!(KIT_SPEC.dir_segment, "kits");
         assert_eq!(KIT_SPEC.meta_fields, &["id", "name", "tech", "style", "stack"]);
