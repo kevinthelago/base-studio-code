@@ -122,6 +122,27 @@ mod tests {
         }
     }
 
+    /// #3024 — a rule alone didn't land (the designer authored D3 components whose `srcText` just
+    /// calls itself). The seed must carry a CONCRETE worked example of a complete component module
+    /// AND spell out the self-reference / usage-snippet anti-pattern, since models imitate examples
+    /// far more reliably than rules.
+    #[test]
+    fn packaged_designer_spec_shows_a_complete_component_example_and_the_self_reference_antipattern() {
+        let seed = crate::platform::config::embedded_str("designer/claude.md");
+        for needle in [
+            "```tsx",            // a real code example is present, not just prose
+            "useEffect",         // the ✅ example carries actual render logic (not a stub)
+            "self-reference",    // the anti-pattern named
+            "calls itself",      // the exact failure phrasing the user hit
+            "❌",                // the wrong-way example is called out
+        ] {
+            assert!(
+                seed.contains(needle),
+                "designer seed must carry the complete-component example / anti-pattern term `{needle}`"
+            );
+        }
+    }
+
     /// The graduated `bsc ui` ladder (#2585): the seed must teach the discover→tune→author flow —
     /// the discovery verbs, the per-rung edit verbs, and the ladder mental model itself — or the
     /// designer LLM never learns the runtime design loop exists.

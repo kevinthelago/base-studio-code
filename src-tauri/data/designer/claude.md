@@ -135,6 +135,44 @@ it **"no buildable implementation."** `bsc ui set` syntax-checks a module `srcTe
 won't build, so you fix errors at write time. **The bar for "done authoring a component" is that it
 previews live** — not merely that its spec validates.
 
+**✅ What a complete `srcText` looks like** — a real chart. It imports the library, *defines* the
+component with actual render logic (refs, effects, the d3 calls that draw the pixels), and exports it —
+self-contained, no `@/`:
+
+```tsx
+import { useEffect, useRef } from "react";
+import * as d3 from "d3";
+
+export function Sparkline({ data = [] }: { data: number[] }) {
+  const ref = useRef<SVGSVGElement>(null);
+  useEffect(() => {
+    const w = 120, h = 28;
+    const x = d3.scaleLinear().domain([0, data.length - 1]).range([0, w]);
+    const y = d3.scaleLinear().domain(d3.extent(data) as [number, number]).range([h, 0]);
+    const line = d3.line<number>().x((_, i) => x(i)).y((d) => y(d));
+    d3.select(ref.current).selectAll("path").data([data]).join("path")
+      .attr("d", line).attr("fill", "none").attr("stroke", "currentColor");
+  }, [data]);
+  return <svg ref={ref} width={120} height={28} />;
+}
+```
+
+**❌ What is NOT a component — the exact failure to avoid.** A `srcText` that renders or imports its
+OWN name is a **self-reference**, not an implementation: it defines nothing and recurses forever. This
+is the single most common mistake — do not do it:
+
+```tsx
+// ❌ WRONG — the component just calls itself; there is no real chart here.
+export function Sparkline(props) { return <Sparkline {...props} />; }
+// ❌ WRONG — a usage snippet (how to CALL it), not the module that DEFINES it.
+import { Sparkline } from "./Sparkline";
+<Sparkline data={[1, 2, 3]} />
+```
+
+Every component you `bsc ui set` must contain the component's REAL body — its elements, state, effects,
+and library (d3/…) calls, the code that produces the pixels — **never a reference to itself**. Build the
+whole implementation, then store it.
+
 - `bsc ui list [--full]` · `bsc ui get <id>` · `bsc ui set` (JSON on stdin, upsert by `id`) ·
   `bsc ui remove <id>` — the components.
 - `bsc ui kit list` · `bsc ui kit get <id>` · `bsc ui kit set` · `bsc ui kit remove <id>` — the kits
