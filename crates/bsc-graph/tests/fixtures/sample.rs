@@ -1,8 +1,8 @@
-// Fixture for the tree-sitter extractor (#2775) + call-graph extraction (#2779). `quick_sort`
-// collides with the TS `quickSort` (both map to the `quick-sort` concept → a duplicate); `merge_sort`
-// calls `merge(...)` so the extractor lifts a concept→concept call edge merge-sort → merge (the SAME
-// edge the TS fixture produces, in the other tech); `bfs` maps to a concept and calls `some_helper`,
-// which does NOT map to a concept (so that call is dropped — not a concept→concept edge).
+// Fixture for the tree-sitter extractor (#2775) + call-graph extraction (#2779). Impl-only (#2961):
+// every fn is harvested as a candidate keyed `<kebab-name>.rs`. `quick_sort` shares its kebab id
+// `quick-sort` with the TS `quickSort` (one candidate per tech). `merge_sort` calls `merge(...)`, so
+// the extractor lifts a same-tech compose edge merge-sort.rs → merge.rs (the SAME edge the TS fixture
+// produces, in the other tech); a recursive self-call is NOT composition and is dropped.
 
 pub fn quick_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {
     if xs.len() <= 1 {
@@ -63,7 +63,7 @@ fn bfs(adj: &[Vec<usize>], start: usize) -> Vec<usize> {
 }
 
 fn some_helper() {
-    // Not a seed concept — a call to it is dropped.
+    // A tiny helper, harvested as its own candidate — no concept ontology (#2961).
 }
 
 #[cfg(test)]

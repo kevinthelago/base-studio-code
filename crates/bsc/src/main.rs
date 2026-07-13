@@ -26,7 +26,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("ui", "UI design surface: KitNode contract + themes (#1852) + the component library (#2469) + the released-kit store (release, #2465)"),
     ("logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control"),
     ("files", "file-ops toolkit: read/write/edit/list/info"),
-    ("graph", "algorithms knowledge graph: concepts + relationships (list · neighbors · path)"),
+    ("graph", "algorithms knowledge library: per-language implementations (impl list · dump · harvest · curate)"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
     ("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance"),
     ("hook", "internal PreToolUse deny hooks (run by Claude Code, not by hand)"),
