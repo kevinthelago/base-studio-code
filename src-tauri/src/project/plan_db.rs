@@ -106,6 +106,21 @@ pub(crate) fn clear(project_key: &str) -> Result<(), String> {
     Store::open(&path).and_then(|s| s.clear()).str_err()
 }
 
+/// Plan.db artifacts of `kind` (#2997 A2) as `(name, content)` pairs — the DB-backed source for
+/// planner-authored content (discovery/section/contract/kickoff) as it migrates OFF hub files, so the
+/// hub becomes a pure projection. Empty when there's no plan.db (never MATERIALIZES one — mirrors
+/// [`fleet_for`]); best-effort on any read error. See [`plandb`]'s `artifact_list`.
+pub(crate) fn artifacts_of_kind(project_key: &str, kind: &str) -> Vec<(String, String)> {
+    if !db_path(project_key).exists() {
+        return Vec::new();
+    }
+    open(project_key)
+        .ok()
+        .and_then(|s| s.artifact_list(Some(kind)).ok())
+        .map(|arts| arts.into_iter().map(|a| (a.name, a.content)).collect())
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

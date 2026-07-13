@@ -125,7 +125,16 @@ pub(crate) fn read_sandbox_plan_stages(key: String) -> Result<std::collections::
         "for f in {hub}/*.md {hub}/*.json {hub}/discovery/*.md {hub}/discovery/*.json; do [ -f \"$f\" ] || continue; printf '%s\\n' \"$f\"; cat \"$f\"; printf '\\0'; done"
     );
     let out = wsl_exec(&["-d", AGENT_SANDBOX_DISTRO, "--", "sh", "-c", script.as_str()])?;
-    Ok(parse_section_dump(&out))
+    let mut sections = parse_section_dump(&out);
+    // plan.db `section` artifacts (#2997 A2) — a sandboxed planner's plan.db is mirrored to the HOST
+    // (`sync_sandbox_plan_db`), so the DB-backed sections read from the host store; they win over files.
+    for (name, content) in crate::project::plan_db::artifacts_of_kind(&key, "section") {
+        let c = content.trim();
+        if !c.is_empty() {
+            sections.insert(name, c.to_string());
+        }
+    }
+    Ok(sections)
 }
 
 /// Read a file's raw bytes from the sandbox distro (#1988) — binary-safe, for the SQLite `plan.db`.
