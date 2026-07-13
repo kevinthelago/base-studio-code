@@ -168,19 +168,23 @@ re-run to clean them. #2678/#2679/#2839.",
 USAGE:
   bsc ui define-animation <component-id> [--pretty]   # animation JSON on stdin
 
-Reads ONE animation object from stdin — { name, keyframes, duration?, easing?, trigger? } — VALIDATES
-it against the motion safety grammar, then UPSERTS it into the component's `animations` array by `name`
-(replacing a same-named one, else appending). `keyframes` maps a stop (`from` / `to` / a percentage
-like `50%`) to CSS declarations (property → value); `duration`/`easing` are optional and typically
-reference the motion tokens (`var(--dur-base)` / `var(--ease-standard)`); `trigger` is one of
-mount | hover | always (default mount). The animation plays LIVE on the real component — compiled to a
+Reads ONE animation object from stdin — { name, keyframes, duration?, easing?, delay?, trigger?,
+selector?, set? } — VALIDATES it against the motion safety grammar, then UPSERTS it into the component's
+`animations` array by `name` (replacing a same-named one, else appending). `keyframes` maps a stop
+(`from` / `to` / a percentage like `50%`) to CSS declarations (property → value); `duration`/`easing`
+are optional and typically reference the motion tokens (`var(--dur-base)` / `var(--ease-standard)`);
+`delay` is an optional animation-level time slotted after easing; `trigger` is one of
+mount | hover | always (default mount); `selector` scopes the applying rule to a CHILD element (a
+descendant combinator); `set` is a map of STATIC declarations applied on the rule (e.g. transform-origin
+that can't live in keyframes). The animation plays LIVE on the real component — compiled to a
 `@keyframes` block + an applying rule, guarded by `prefers-reduced-motion`. A ui-scope MUTATION
 (#2470); errors when the component id is absent. Prints the stored animation (--pretty indents).
 
 VALIDATION (the closed grammar): `name` must match [a-z][a-z0-9-]* · every keyframe stop must be
-`from`/`to`/`\\d{1,3}%` · every declaration property must match [a-z-]+ · no value (incl.
-duration/easing) may carry `;` `{` `}` `<` `>` `\\` `url(` `expression(` `@import` `/*` · keyframes
-must be a non-empty object with at least one valid stop + declaration.",
+`from`/`to`/`\\d{1,3}%` · every declaration property (incl. `set` keys) must match [a-z-]+ · no value
+(incl. duration/easing/delay/`set` values) may carry `;` `{` `}` `<` `>` `\\` `url(` `expression(`
+`@import` `/*` · `selector` may use only selector-safe characters (letters, digits, space . _ # > [ ] =
+\" ' - : ( ) , * + ~) · keyframes must be a non-empty object with at least one valid stop + declaration.",
     },
     CmdDoc {
         name: "list-animations",
@@ -237,17 +241,21 @@ kit objects (incl. the dot color) as a plain array.",
 USAGE:
   bsc ui kit define-animation <kit-id> [--pretty]   # animation JSON on stdin
 
-Reads ONE animation object from stdin — { name, keyframes, duration?, easing?, trigger? } — VALIDATES
-it against the motion safety grammar, then UPSERTS it into the KIT's `animations` library by `name`
-(replacing a same-named one, else appending). The kit OWNS the motion; a component PLAYS it by adding
-the name to its own `animations` array (via `bsc ui set`). `keyframes` maps a stop (`from`/`to`/`N%`)
-to CSS declarations; `duration`/`easing` typically reference the motion tokens (`var(--dur-base)` /
-`var(--ease-standard)`); `trigger` is mount | hover | always (default mount). Compiles to
-`@keyframes bsc-<kit>-<name>` + a `prefers-reduced-motion`-guarded rule on `.<kit>-anim-<name>`. A
-ui-scope MUTATION (#2470); errors when the kit id is absent. Prints the stored animation.
+Reads ONE animation object from stdin — { name, keyframes, duration?, easing?, delay?, trigger?,
+selector?, set? } — VALIDATES it against the motion safety grammar, then UPSERTS it into the KIT's
+`animations` library by `name` (replacing a same-named one, else appending). The kit OWNS the motion; a
+component PLAYS it by adding the name to its own `animations` array (via `bsc ui set`). `keyframes` maps
+a stop (`from`/`to`/`N%`) to CSS declarations; `duration`/`easing` typically reference the motion tokens
+(`var(--dur-base)` / `var(--ease-standard)`); `delay` is an optional animation-level time (after easing
+in the shorthand); `trigger` is mount | hover | always (default mount); `selector` scopes the applying
+rule to a CHILD element (a descendant combinator); `set` maps STATIC declarations applied on the rule
+(e.g. transform-origin/box that can't live in keyframes). Compiles to `@keyframes bsc-<kit>-<name>` + a
+`prefers-reduced-motion`-guarded rule on `.<kit>-anim-<name>` (scoped to the child when `selector` is
+given). A ui-scope MUTATION (#2470); errors when the kit id is absent. Prints the stored animation.
 
 VALIDATION (the closed grammar): `name` [a-z][a-z0-9-]* · stops `from`/`to`/`\\d{1,3}%` · properties
-[a-z-]+ · no value may carry `;` `{` `}` `<` `>` `\\` `url(` `expression(` `@import` `/*`.",
+(incl. `set` keys) [a-z-]+ · no value (incl. delay/`set` values) may carry `;` `{` `}` `<` `>` `\\`
+`url(` `expression(` `@import` `/*` · `selector` uses only selector-safe characters.",
     },
     CmdDoc {
         name: "list-animations",
@@ -911,6 +919,22 @@ fn is_safe_prop(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c == '-')
 }
 
+/// A safe CHILD selector for the applying rule (#3054) — ONLY selector-safe characters, so it cannot
+/// break out of the selector position into a declaration / new rule / comment (no `{ } ; < \ /`).
+/// Mirrors animations.ts `SAFE_SELECTOR` (classes, tags, `#`ids, `>`/space/`+`/`~` combinators,
+/// `[attr="v"]`, `:nth-child(2n)`, `,` lists, `*`).
+fn is_safe_selector(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(
+                    c,
+                    ' ' | '.' | '_' | '#' | '>' | '[' | ']' | '=' | '"' | '\'' | '-' | ':' | '(' | ')'
+                        | ',' | '*' | '+' | '~'
+                )
+        })
+}
+
 /// A declaration/duration/easing VALUE that cannot end the declaration or inject CSS — non-empty and
 /// free of any `UNSAFE_VALUE` sequence (case-insensitive), mirroring animations.ts `safeValue`.
 fn is_safe_value(v: &str) -> bool {
@@ -984,8 +1008,9 @@ fn validate_animation(anim: &serde_json::Value) -> Result<(), String> {
         return Err("animation `keyframes` must have at least one stop with a declaration".into());
     }
 
-    // Optional duration/easing: motion-token refs or literals, checked against the same value grammar.
-    for key in ["duration", "easing"] {
+    // Optional duration/easing/delay: motion-token refs or literals, checked against the value grammar.
+    // `delay` (#3056) is an animation-level time slotted after easing in the shorthand.
+    for key in ["duration", "easing", "delay"] {
         if let Some(v) = obj.get(key) {
             let s = v.as_str().ok_or_else(|| format!("animation `{key}` must be a string"))?;
             if !is_safe_value(s) {
@@ -1001,6 +1026,35 @@ fn validate_animation(anim: &serde_json::Value) -> Result<(), String> {
             return Err(format!(
                 "animation `trigger` '{s}' must be one of mount | hover | always"
             ));
+        }
+    }
+
+    // Optional selector (#3054): scope the applying rule to a CHILD element — a closed selector grammar.
+    if let Some(v) = obj.get("selector") {
+        let s = v.as_str().ok_or("animation `selector` must be a string")?;
+        if !is_safe_selector(s) {
+            return Err(format!(
+                "animation `selector` '{s}' must use only selector-safe characters (letters, digits, space . _ # > [ ] = \" ' - : ( ) , * + ~)"
+            ));
+        }
+    }
+
+    // Optional set (#3054): STATIC declarations applied on the rule (transform-origin/box, etc.), each
+    // checked against the same property + value grammar as a keyframe declaration.
+    if let Some(v) = obj.get("set") {
+        let set = v
+            .as_object()
+            .ok_or("animation `set` must map properties to values (an object)")?;
+        for (prop, value) in set {
+            if !is_safe_prop(prop) {
+                return Err(format!("`set` property '{prop}' must match [a-z-]+"));
+            }
+            let s = value
+                .as_str()
+                .ok_or_else(|| format!("`set` value for '{prop}' must be a string"))?;
+            if !is_safe_value(s) {
+                return Err(format!("`set` declaration '{prop}: {s}' carries an unsafe value"));
+            }
         }
     }
 
@@ -1613,6 +1667,15 @@ mod tests {
             "keyframes": { "50%": { "transform": "scale(1.05)" } },
         }))
         .is_ok());
+        // Optional selector / set / delay (#3054/#3056): a child selector, static decls, and a delay.
+        assert!(validate_animation(&serde_json::json!({
+            "name": "icon-spin",
+            "keyframes": { "to": { "transform": "rotate(90deg)" } },
+            "selector": ".icon > svg:nth-child(2n)",
+            "set": { "transform-origin": "center", "transform-box": "fill-box" },
+            "delay": "120ms",
+        }))
+        .is_ok());
     }
 
     #[test]
@@ -1659,6 +1722,31 @@ mod tests {
         }))
         .unwrap_err();
         assert!(err.contains("trigger"), "{err}");
+        // Injection selector (#3054) — a breakout attempt in the child selector is rejected.
+        for bad in ["a{}b", "a;b", "</style>", "svg/*x*/"] {
+            let a = serde_json::json!({
+                "name": "x", "keyframes": { "to": { "opacity": "1" } }, "selector": bad
+            });
+            let err = validate_animation(&a).unwrap_err();
+            assert!(err.contains("selector"), "bad selector '{bad}' rejected: {err}");
+        }
+        // Unsafe `set` property / value (#3054).
+        let err = validate_animation(&serde_json::json!({
+            "name": "x", "keyframes": { "to": { "opacity": "1" } }, "set": { "Bad-Prop": "center" }
+        }))
+        .unwrap_err();
+        assert!(err.contains("set"), "{err}");
+        let err = validate_animation(&serde_json::json!({
+            "name": "x", "keyframes": { "to": { "opacity": "1" } }, "set": { "transform-origin": "center; }evil{" }
+        }))
+        .unwrap_err();
+        assert!(err.contains("set") && err.contains("unsafe"), "{err}");
+        // Unsafe delay (#3056).
+        let err = validate_animation(&serde_json::json!({
+            "name": "x", "keyframes": { "to": { "opacity": "1" } }, "delay": "1s; color: red"
+        }))
+        .unwrap_err();
+        assert!(err.contains("delay"), "{err}");
     }
 
     #[test]

@@ -42,6 +42,56 @@ describe("compileAnimationsCss (#2942)", () => {
   });
 });
 
+describe("compileAnimationsCss — child targeting + set + delay (#3054/#3056)", () => {
+  it("scopes the applying rule to a child via `selector` (descendant combinator)", () => {
+    const css = compileAnimationsCss([{ ...fade, name: "icon-spin", selector: ".icon" }]);
+    expect(css).toContain(".react-ui-anim-icon-spin .icon { animation: bsc-react-ui-icon-spin var(--dur-base) var(--ease-standard) 1 both; }");
+    // a hover trigger appends `:hover` to the FULL (child-scoped) selector
+    const hov = compileAnimationsCss([{ ...fade, name: "icon-hi", trigger: "hover", selector: ".icon" }]);
+    expect(hov).toContain(".react-ui-anim-icon-hi .icon:hover {");
+  });
+
+  it("emits `set` static declarations in the applying rule body, before `animation:`", () => {
+    const css = compileAnimationsCss([{ ...fade, name: "rot", selector: ".arrow", set: { "transform-origin": "center", "transform-box": "fill-box" } }]);
+    expect(css).toContain(".react-ui-anim-rot .arrow { transform-origin: center; transform-box: fill-box; animation: bsc-react-ui-rot var(--dur-base) var(--ease-standard) 1 both; }");
+  });
+
+  it("slots `delay` into the shorthand between easing and iteration (#3056)", () => {
+    const css = compileAnimationsCss([{ ...fade, name: "fade-d", delay: "120ms" }]);
+    expect(css).toContain(".react-ui-anim-fade-d { animation: bsc-react-ui-fade-d var(--dur-base) var(--ease-standard) 120ms 1 both; }");
+  });
+
+  it("refuses an injection selector — never emitted, falls back to the root class (defense in depth)", () => {
+    for (const bad of ["foo{}", "a;b", "</style", "a/*"]) {
+      const css = compileAnimationsCss([{ ...fade, name: "safe", selector: bad }]);
+      expect(css).not.toContain(bad);                              // the injection never reaches CSS
+      expect(css).toContain(".react-ui-anim-safe { animation:");   // fell back to the bare root class
+    }
+  });
+
+  it("drops a `set` pair with an unsafe property or value, keeping the safe ones", () => {
+    const css = compileAnimationsCss([{ ...fade, name: "s2", set: { "transform-origin": "center", "Bad-Prop": "x", color: "red; }evil{" } }]);
+    expect(css).toContain("transform-origin: center;");
+    expect(css).not.toContain("Bad-Prop"); // uppercase property dropped
+    expect(css).not.toContain("evil");     // declaration-ending value dropped
+  });
+
+  it("is byte-identical to the pre-#3054 output when the new fields are absent (zero regression)", () => {
+    const expected = `@keyframes bsc-react-ui-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .react-ui-anim-fade-in { animation: bsc-react-ui-fade-in var(--dur-base) var(--ease-standard) 1 both; }
+}`;
+    expect(compileAnimationsCss([fade])).toBe(expected);
+  });
+});
+
 describe("kitAnimations (#2942)", () => {
   it("flattens kits' motion libraries into defs keyed by the kit id", () => {
     const defs = kitAnimations([
