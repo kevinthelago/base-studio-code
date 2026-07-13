@@ -20,7 +20,7 @@ describe("useKnowledgeGraph (#2856)", () => {
     loadGraph.mockResolvedValue({
       implementations: [
         ...KNOWLEDGE.implementations,
-        { id: "rust.skiplist", tech: "rust", role: "primitive", name: "SkipList (Rust)", composes: [], code: "// skip list" },
+        { id: "rust.skiplist", tech: "rust", role: "primitive", name: "SkipList", composes: [], code: "// skip list" },
       ],
     });
     const { result } = renderHook(() => useKnowledgeGraph());
