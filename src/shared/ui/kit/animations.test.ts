@@ -25,6 +25,19 @@ describe("compileAnimationsCss (#2942)", () => {
     expect(loop).toContain(".react-ui-anim-spin { animation: bsc-react-ui-spin var(--dur-base) var(--ease-standard) infinite both; }");
   });
 
+  it("exit trigger keys the rule on the DORMANT [data-bsc-exit] marker (#3057)", () => {
+    // A root-level exit: the rule matches only when the (future) exit-runtime marks the leaving element,
+    // so it compiles the keyframes + rule but is INERT today (nothing sets the marker).
+    const ex = compileAnimationsCss([{ ...fade, name: "fade-out", trigger: "exit" }]);
+    expect(ex).toContain("@keyframes bsc-react-ui-fade-out {");
+    expect(ex).toContain(".react-ui-anim-fade-out[data-bsc-exit] { animation: bsc-react-ui-fade-out var(--dur-base) var(--ease-standard) 1 both; }");
+    // A child exit (a leaving tooltip): the marker sits on the selector-matched element.
+    const child = compileAnimationsCss([{ ...fade, name: "tip-out", trigger: "exit", selector: ".tooltip" }]);
+    expect(child).toContain(".react-ui-anim-tip-out .tooltip[data-bsc-exit] { animation: bsc-react-ui-tip-out var(--dur-base) var(--ease-standard) 1 both; }");
+    // The dormant marker is exit-only — a non-exit trigger never carries it (zero regression).
+    expect(compileAnimationsCss([fade])).not.toContain("[data-bsc-exit]");
+  });
+
   it("skips unsafe input — bad kit/name, stop, property, or injection value (defense in depth)", () => {
     expect(compileAnimationsCss([{ ...fade, kit: "React-UI" }])).toBe("");                        // uppercase kit
     expect(compileAnimationsCss([{ ...fade, name: "fade;}evil" }])).toBe("");                      // unsafe name
