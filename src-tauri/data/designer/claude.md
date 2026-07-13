@@ -188,7 +188,7 @@ kit, never as hand-written CSS or a `.tsx` transition. It compiles to a `@keyfra
 applying rule and plays LIVE on the real component the moment you bind it, exactly like a variant.
 Per-kit (not global): a structurally-different kit (3D, non-DOM) carries its own motion representation.
 
-An animation is `{ name, keyframes, duration?, easing?, trigger? }`:
+An animation is `{ name, keyframes, duration?, easing?, delay?, trigger?, selector?, set? }`:
 
 - `name` — a safe CSS identifier (`[a-z][a-z0-9-]*`); it keys the `@keyframes` and the applying class.
 - `keyframes` — a map of stop → declarations: each stop is `from` / `to` / a percentage (`50%`), each
@@ -196,8 +196,17 @@ An animation is `{ name, keyframes, duration?, easing?, trigger? }`:
 - `duration` / `easing` — OPTIONAL; reference the **motion tokens** (`@dur-base` → `var(--dur-base)`,
   `@ease-standard` → `var(--ease-standard)`) so motion stays coherent with the system. Defaults are
   `var(--dur-base)` / `var(--ease-standard)`; a literal time (`220ms`) or timing-function also works.
+- `delay` — OPTIONAL animation-level delay (a time like `120ms`), slotted after easing in the shorthand.
 - `trigger` — WHEN it plays: `mount` (once on render, the default) · `hover` (on `:hover`) · `always`
   (loops). Nothing else.
+- `selector` — OPTIONAL; scopes the applying rule to a **child** element (a descendant combinator,
+  `.<kit>-anim-<name> <selector>`) instead of the component root — e.g. animate an inner `.icon` only.
+  Selector-safe characters only. A `trigger: mount` animation whose `selector` matches a
+  conditionally-rendered subtree fires **each time that subtree mounts** — so a tooltip pop-in is now
+  data (#3058).
+- `set` — OPTIONAL map of **static** declarations set on the applying rule (not the keyframes), for
+  properties that can't animate from keyframes — e.g. `{ "transform-origin": "center", "transform-box": "fill-box" }`
+  to pin an SVG's rotation pivot.
 
 **Motion honors the user.** The applying rule is wrapped in
 `@media (prefers-reduced-motion: no-preference)`, so a user who asks for less motion never sees it —
