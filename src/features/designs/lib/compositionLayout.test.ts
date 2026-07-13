@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  layoutComposition, buildComposesEdges, selectionNeighborhood, nodeTier, DEFAULT_METRICS, NODE_W, NODE_H,
+  layoutComposition, buildComposesEdges, selectionNeighborhood, nodeTier, byTier, DEFAULT_METRICS, NODE_W, NODE_H,
 } from "./compositionLayout";
 import type { GraphEdge } from "@/shared/lib/graph/types";
 import type { ComponentRecord, Role } from "./model";
@@ -74,6 +74,20 @@ describe("nodeTier — the semantic tier of a node (#2970)", () => {
     expect(nodeTier("primitive")).toBe("fundamental"); // a content atom (Button, Text, …)
     expect(nodeTier("composite")).toBe("composable");  // an assembled widget (Card, Dialog, …)
     expect(nodeTier("service")).toBe("composable");    // service groups with composables
+  });
+});
+
+describe("byTier — tier + importance ordering (#2976)", () => {
+  it("sorts by tier (pages → layouts → composables → fundamentals), then importance", () => {
+    const rows = [
+      mk("Button", "primitive", 9),
+      mk("NetworkPage", "page"),
+      mk("Box", "layout"),
+      mk("Card", "composite", 2),
+      mk("Text", "primitive", 50),
+    ].sort(byTier);
+    // Pages on top; within Fundamentals, Text (used 50) before Button (used 9).
+    expect(rows.map((c) => c.name)).toEqual(["NetworkPage", "Box", "Card", "Text", "Button"]);
   });
 });
 
