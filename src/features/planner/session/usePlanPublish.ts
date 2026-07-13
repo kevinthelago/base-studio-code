@@ -20,6 +20,7 @@ import { type PlanIssue } from "../issues/planIssues";
 import { pruneCompletedStreams, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
 import { withDerivedStreamIssues } from "../fleet/planFleet";
 import { recoverIssues, type GitHubIssueLike } from "../issues/recoverIssues";
+import { removeDbProject } from "../list/projectsDbBridge";
 import { publishFleetRoster } from "@/shared/lib/fleet/fleetRoster";
 import { canLaunchTriage, publishBlockReason } from "@/shared/lib/github/projectSync";
 import { coerceBlueprint, blueprintToManifest } from "../blueprints/blueprintShare";
@@ -346,8 +347,11 @@ export function usePlanPublish(deps: PlanPublishDeps) {
         // key from the project's name (`projectSlug(title)`), so publish records nothing to bridge.
         // Mark the hub published in place (#922) — the hub never moves, so --continue history survives.
         fireInvoke("mark_published", { projectKey: effectiveProjectId }, (e) => console.warn("mark_published failed (Projects page reconciles it):", e));
-        // Drop the store's draft entry so the project can't linger as a ghost draft card.
+        // Drop the store's draft entry so the project can't linger as a ghost draft card, and mirror
+        // that removal into the durable projects DB (#2995) so the published project doesn't re-surface
+        // as a draft from the DB union. Fire-and-forget; degrades silently.
         store.removeDraftProject(effectiveProjectId);
+        void removeDbProject(effectiveProjectId);
       }
 
       // 3. Issues — features → issues, on the board, assigned, sub-issues nested (no milestones, #1912).
