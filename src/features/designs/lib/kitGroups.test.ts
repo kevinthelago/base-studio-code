@@ -2,12 +2,16 @@
 // technology → style, the single-kit style merge (the style header IS the kit), first-appearance
 // ordering ("other" last), and missing-field tolerance.
 import { describe, it, expect } from "vitest";
-import type { Kit } from "./model";
-import { groupKits, OTHER_BUCKET, type KitGroup, type KitTreeNode } from "./kitGroups";
+import type { Kit, ComponentRecord } from "./model";
+import { groupKits, groupComponentsByGroup, OTHER_BUCKET, UNGROUPED_LABEL, type KitGroup, type KitTreeNode } from "./kitGroups";
 import { SEED_KITS } from "./seed";
 
 const kit = (id: string, tech?: string, style?: string): Kit =>
   ({ id, name: id, tech, style, stack: "", dot: "var(--accent)" });
+
+const comp = (id: string, group?: string): ComponentRecord =>
+  ({ id, name: id, kitId: "k", role: "primitive", group, version: "1", used: 0, tags: [],
+     variants: ["default"], composes: [], props: [], whenUse: [], whenNot: [], src: "", srcText: "" });
 
 /** The kit ids of a node list, descending groups depth-first (order-preserving). */
 const flatIds = (nodes: KitTreeNode[]): string[] =>
@@ -105,5 +109,37 @@ describe("groupKits — always technology → style (#2506)", () => {
 
   it("empty library → empty tree", () => {
     expect(groupKits([])).toEqual([]);
+  });
+});
+
+describe("groupComponentsByGroup — the orthogonal `group` axis under a kit (#3048)", () => {
+  it("partitions by `group` in first-appearance order, the ungrouped bucket forced LAST", () => {
+    // "b" (no group) appears 2nd but its ungrouped bucket still orders last.
+    const g = groupComponentsByGroup([comp("a", "data-viz"), comp("b"), comp("c", "forms"), comp("d", "data-viz")]);
+    expect(g).not.toBeNull();
+    expect(g!.map((x) => x.label)).toEqual(["data-viz", "forms", UNGROUPED_LABEL]);
+    expect(g!.map((x) => x.key)).toEqual(["data-viz", "forms", OTHER_BUCKET]);
+    expect(g!.map((x) => x.ungrouped)).toEqual([false, false, true]);
+    // input order preserved within a bucket.
+    expect(g!.find((x) => x.key === "data-viz")!.components.map((c) => c.id)).toEqual(["a", "d"]);
+    expect(g!.find((x) => x.ungrouped)!.components.map((c) => c.id)).toEqual(["b"]);
+  });
+
+  it("returns null when NO component carries a group — the rail renders flat (zero regression)", () => {
+    expect(groupComponentsByGroup([comp("a"), comp("b")])).toBeNull();
+    // blank/whitespace-only group counts as absent — still flat.
+    expect(groupComponentsByGroup([comp("a", "  "), comp("b", "")])).toBeNull();
+    expect(groupComponentsByGroup([])).toBeNull();
+  });
+
+  it("any component with a group triggers nesting — even a single group, or a partial-group kit", () => {
+    // A single group nests under one header.
+    const one = groupComponentsByGroup([comp("a", "forms"), comp("b", "forms")]);
+    expect(one!.map((x) => x.label)).toEqual(["forms"]);
+    expect(one![0].components.map((c) => c.id)).toEqual(["a", "b"]);
+    // A partial-group kit: grouped components + an ungrouped-last bucket.
+    const partial = groupComponentsByGroup([comp("a", "data-viz"), comp("b")]);
+    expect(partial!.map((x) => x.label)).toEqual(["data-viz", UNGROUPED_LABEL]);
+    expect(partial![1].ungrouped).toBe(true);
   });
 });

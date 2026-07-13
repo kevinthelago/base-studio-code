@@ -16,10 +16,20 @@
 //
 // MISSING FIELDS — kits without `tech`/`style` (user-authored, imported, pre-#2487) group into the
 // trailing "other" bucket on that axis. Never a crash.
-import type { Kit } from "./model";
+//
+// THE `group` AXIS UNDER A KIT (#3048) — a kit's components carry an ORTHOGONAL `group` (their purpose
+// partition: `data-viz` / `pages` / `forms` …). `groupComponentsByGroup` partitions ONE kit's
+// components into that level (group → its components), reusing the same first-appearance ordering +
+// forced-last "ungrouped" bucket as the kit `bucket()`. It returns `null` when NO component carries a
+// `group`, so the rail renders the flat list exactly as before (zero regression for group-less kits).
+import type { Kit, ComponentRecord } from "./model";
 
-/** The bucket kits without a `tech`/`style` value group under (always ordered last). */
+/** The bucket kits without a `tech`/`style` value — and components without a `group` — group under
+ *  (always ordered last). */
 export const OTHER_BUCKET = "other";
+
+/** The header label shown for the trailing bucket of components that carry no `group` (#3048). */
+export const UNGROUPED_LABEL = "ungrouped";
 
 /** A kit row in the rail tree (only under a style that holds SEVERAL kits — see the module doc). */
 export interface KitLeaf {
@@ -46,15 +56,17 @@ export type KitTreeNode = KitGroup | KitLeaf;
 
 const techOf = (k: Kit): string => (k.tech ?? "").trim().toLowerCase() || OTHER_BUCKET;
 const styleOf = (k: Kit): string => (k.style ?? "").trim() || OTHER_BUCKET;
+const groupOf = (c: ComponentRecord): string => (c.group ?? "").trim() || OTHER_BUCKET;
 
-/** Bucket kits by an axis in first-appearance order, the missing-field OTHER bucket forced last. */
-function bucket(kits: Kit[], keyOf: (k: Kit) => string): Map<string, Kit[]> {
-  const m = new Map<string, Kit[]>();
-  for (const k of kits) {
-    const key = keyOf(k);
+/** Bucket items by a key in first-appearance order, the missing-field OTHER bucket forced last.
+ *  Generic over kits (the tech/style axes) and components (the #3048 `group` axis). */
+function bucket<T>(items: readonly T[], keyOf: (x: T) => string): Map<string, T[]> {
+  const m = new Map<string, T[]>();
+  for (const x of items) {
+    const key = keyOf(x);
     const arr = m.get(key);
-    if (arr) arr.push(k);
-    else m.set(key, [k]);
+    if (arr) arr.push(x);
+    else m.set(key, [x]);
   }
   const other = m.get(OTHER_BUCKET);
   if (other && m.size > 1) {
@@ -92,5 +104,37 @@ export function groupKits(kits: Kit[]): KitTreeNode[] {
     label: tech,
     count: inTech.length,
     children: styleLevel(inTech, `${tech}/`),
+  }));
+}
+
+/** One `group`-axis bucket under a kit (#3048): the components sharing a `group`, or the trailing
+ *  "ungrouped" bucket (`ungrouped === true`). */
+export interface ComponentGroup {
+  /** The group value, or `OTHER_BUCKET` for the trailing ungrouped bucket (its stable key). */
+  key: string;
+  /** Header label — the group value, or `UNGROUPED_LABEL` for the ungrouped bucket. */
+  label: string;
+  /** Whether this is the forced-last bucket of components that carry no `group`. */
+  ungrouped: boolean;
+  components: ComponentRecord[];
+}
+
+/**
+ * Partition ONE kit's components by their orthogonal `group` axis (#3048) — group → its components,
+ * in first-appearance order with the "ungrouped" bucket (components with no `group`) forced LAST
+ * (mirroring the kit `bucket()` OTHER-last rule). `composes` is unaffected: it resolves across the
+ * whole kit, so components in different groups still compose freely — this level is organizational.
+ *
+ * Returns `null` when NO component carries a `group`, so the rail renders the flat component list
+ * EXACTLY as before (zero regression for group-less kits). The passed order is preserved within each
+ * bucket, so the caller controls sort (e.g. `byTier`) and search-filtering upstream.
+ */
+export function groupComponentsByGroup(comps: readonly ComponentRecord[]): ComponentGroup[] | null {
+  if (!comps.some((c) => (c.group ?? "").trim())) return null;
+  return [...bucket(comps, groupOf)].map(([key, components]) => ({
+    key,
+    label: key === OTHER_BUCKET ? UNGROUPED_LABEL : key,
+    ungrouped: key === OTHER_BUCKET,
+    components,
   }));
 }
