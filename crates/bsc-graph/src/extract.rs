@@ -10,10 +10,9 @@ use std::path::{Path, PathBuf};
 use tree_sitter::{Language, Node, Parser};
 
 /// A candidate library implementation harvested from real code (#2745) — the seed's `implementations`
-/// shape, so the curation gate can review it straight into the library. `concept` is set when the
-/// function name maps onto a seed concept, else `None` (a genuinely new building block). `role` is a
-/// heuristic: a function that composes no other harvested candidate is a `primitive`, one that calls
-/// other harvested candidates is an `algorithm`.
+/// shape, so the curation gate can review it straight into the library. `role` is a heuristic: a
+/// function that composes no other harvested candidate is a `primitive`, one that calls other harvested
+/// candidates is an `algorithm`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {
     /// Candidate id — `<kebab(name)>.<ext>` (the curation gate may re-key it).
@@ -22,8 +21,6 @@ pub struct Candidate {
     pub name: String,
     /// The language it was harvested from: `"typescript"` | `"rust"`.
     pub tech: String,
-    /// The seed concept id the name maps onto (`concept_of(name)`), or `None`.
-    pub concept: Option<String>,
     /// `"primitive"` | `"algorithm"` — the #2863 role tier, by the compose heuristic.
     pub role: &'static str,
     /// Ids of the same-tech harvested candidates this one calls (intra-project call edges).
@@ -37,14 +34,14 @@ pub struct Candidate {
 /// Path segments we never descend into or parse — vendored deps, build output, VCS/tooling dirs.
 const SKIP_DIRS: &[&str] = &["node_modules", "target", ".git", ".claude", "dist", "build"];
 
-/// Test files carry no production concept implementation — skip them.
+/// Test files carry no production implementation — skip them.
 fn is_test_file(name: &str) -> bool {
     name.ends_with(".test.ts") || name.ends_with(".test.tsx") || name.ends_with(".spec.ts")
 }
 
-/// Normalize a function name to a candidate kebab-case concept id: split camelCase / PascalCase
-/// humps and snake_case underscores, lowercase everything. A run of uppercase letters stays fused
-/// (so `FFT` → `fft`, not `f-f-t`). Leading/trailing separators are trimmed.
+/// Normalize a function name to a candidate kebab-case id: split camelCase / PascalCase humps and
+/// snake_case underscores, lowercase everything. A run of uppercase letters stays fused (so `FFT` →
+/// `fft`, not `f-f-t`). Leading/trailing separators are trimmed.
 fn kebab(name: &str) -> String {
     let mut out = String::new();
     // Whether the previous emitted char was a lowercase letter or a digit — a hump boundary is only
@@ -70,27 +67,14 @@ fn kebab(name: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
-/// Map a function name onto a seed concept id: normalize to kebab-case and return it IF it is a
-/// concept node id in the seed (`crate::nodes()`), else `None`.
-pub fn concept_of(name: &str) -> Option<String> {
-    let candidate = kebab(name);
-    if candidate.is_empty() {
-        return None;
-    }
-    let is_node = crate::nodes()
-        .iter()
-        .any(|n| n.get("id").and_then(serde_json::Value::as_str) == Some(candidate.as_str()));
-    is_node.then_some(candidate)
-}
-
 /// The reusability classification of a harvested candidate (#2745 slice 2) — whether it's a
 /// library-worthy building block vs. project-specific glue, the weighted score, and the reasons.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Classification {
     /// The candidate cleared the worthiness threshold (a net-positive score).
     pub worthy: bool,
-    /// The weighted signal score (concept / generics / composition raise it; a glue name or a trivial
-    /// body lower it).
+    /// The weighted signal score (generics + composition raise it; a glue name or a trivial body
+    /// lower it).
     pub score: i32,
     /// Human-readable reasons behind the score — one per signal that fired.
     pub reasons: Vec<String>,
@@ -133,15 +117,11 @@ fn is_trivial(code: &str) -> bool {
 }
 
 /// Classify a candidate's reusability (#2745 slice 2): a weighted score over cheap, tree-sitter-derivable
-/// signals — a seed-concept match, generics, and real composition raise it; an app-glue name or a
-/// trivial body lower it. `worthy` when the score is net-positive (the curation gate reviews only these).
+/// signals — generics and real composition raise it; an app-glue name or a trivial body lower it.
+/// `worthy` when the score is net-positive (the curation gate reviews only these).
 pub fn classify(c: &Candidate) -> Classification {
     let mut score = 0;
     let mut reasons = Vec::new();
-    if let Some(concept) = &c.concept {
-        score += 2;
-        reasons.push(format!("maps to the `{concept}` concept"));
-    }
     if is_generic(&c.code) {
         score += 1;
         reasons.push("generic — reusable across types".to_string());
@@ -197,8 +177,8 @@ fn ext_of(tech: &str) -> &'static str {
 }
 
 /// Harvest `dir` into candidate library implementations (#2745): every function definition becomes a
-/// `Candidate` carrying its source, an optional seed concept, a heuristic role, and the ids of the
-/// same-tech candidates it calls (`composes`). Order-stable; skips vendored/build/VCS dirs + test
+/// `Candidate` carrying its source, a heuristic role, and the ids of the same-tech candidates it calls
+/// (`composes`). Order-stable; skips vendored/build/VCS dirs + test
 /// files. Storing candidates is the curation gate's job, not this function's.
 pub fn harvest(dir: &Path) -> Vec<Candidate> {
     let defs = harvest_defs(dir);
@@ -226,7 +206,6 @@ pub fn harvest(dir: &Path) -> Vec<Candidate> {
             let role = if composes.is_empty() { "primitive" } else { "algorithm" };
             let mut c = Candidate {
                 id: format!("{}.{}", kebab(&name), ext_of(&tech)),
-                concept: concept_of(&name),
                 role,
                 composes,
                 tech,
@@ -419,28 +398,13 @@ mod tests {
     }
 
     #[test]
-    fn concept_of_normalizes_camel_pascal_and_snake_case() {
-        assert_eq!(concept_of("quickSort"), Some("quick-sort".to_string()));
-        assert_eq!(concept_of("quick_sort"), Some("quick-sort".to_string()));
-        assert_eq!(concept_of("QuickSort"), Some("quick-sort".to_string()));
-        assert_eq!(concept_of("mergeSort"), Some("merge-sort".to_string()));
-        assert_eq!(concept_of("binary_search"), Some("binary-search".to_string()));
-        assert_eq!(concept_of("bfs"), Some("bfs".to_string()));
-        // Non-concept names resolve to nothing.
-        assert_eq!(concept_of("helperThing"), None);
-        assert_eq!(concept_of("some_helper"), None);
-        assert_eq!(concept_of(""), None);
-    }
-
-    #[test]
     fn harvest_lifts_functions_into_library_candidates() {
         let cands = harvest(&fixtures());
         let find = |name: &str, tech: &str| cands.iter().find(|c| c.name == name && c.tech == tech);
 
-        // A Rust merge_sort is harvested with its code, mapped onto the merge-sort concept, role algorithm.
+        // A Rust merge_sort is harvested with its full source, role algorithm.
         let ms = find("merge_sort", "rust").expect("rust merge_sort harvested");
         assert_eq!(ms.id, "merge-sort.rs");
-        assert_eq!(ms.concept.as_deref(), Some("merge-sort"));
         assert_eq!(ms.role, "algorithm");
         assert!(ms.code.contains("fn merge_sort"), "the candidate carries its full source");
         // merge_sort calls merge(...) in-set (its self-recursion is dropped) → composes the merge candidate.
@@ -451,9 +415,8 @@ mod tests {
         assert_eq!(merge.role, "primitive");
         assert!(merge.composes.is_empty());
 
-        // A non-concept helper is still harvested — concept None (a genuinely new building block).
+        // An app helper is still harvested as a candidate — the classifier decides its worthiness.
         let helper = cands.iter().find(|c| c.name == "helperThing").expect("helperThing harvested");
-        assert!(helper.concept.is_none());
         assert_eq!(helper.tech, "typescript");
 
         // Every candidate carries non-empty code, a known tech, and a role.
@@ -478,7 +441,7 @@ mod tests {
         let cands = harvest(&fixtures());
         let of = |name: &str| cands.iter().find(|c| c.name == name).expect("harvested");
 
-        // Recognized algorithms — a seed concept + generics (+ composition) → library-worthy.
+        // Recognized algorithms — generic + real composition → library-worthy.
         for name in ["merge_sort", "quick_sort", "merge", "binarySearch"] {
             let c = of(name);
             assert!(
@@ -489,7 +452,7 @@ mod tests {
             assert!(!c.classification.reasons.is_empty());
         }
 
-        // Project glue — a non-concept, trivial-bodied helper → not worthy, with a reason why.
+        // Project glue — a glue-named, trivial-bodied helper → not worthy, with a reason why.
         for name in ["helperThing", "some_helper"] {
             let c = of(name);
             assert!(!c.classification.worthy, "{name} is glue, not library-worthy");

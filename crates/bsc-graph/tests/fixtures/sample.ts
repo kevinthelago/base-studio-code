@@ -1,8 +1,7 @@
-// Fixture for the tree-sitter extractor (#2775) + call-graph extraction (#2779). Names chosen to
-// exercise concept mapping: quickSort / mergeSort / binarySearch / merge resolve to seed concepts;
-// helperThing does not. mergeSort's body now actually calls merge(...) so the extractor lifts a
-// concept→concept call edge merge-sort → merge (real-code composition); the recursive self-calls and
-// the .slice()/.filter() member calls are NOT concept→concept edges and are dropped.
+// Fixture for the tree-sitter extractor (#2775) + call-graph extraction (#2779). Impl-only (#2961):
+// every fn is harvested as a candidate keyed `<kebab-name>.ts`. mergeSort's body calls merge(...), so
+// the extractor lifts a same-tech compose edge merge-sort.ts → merge.ts (real-code composition); the
+// recursive self-calls and the .slice()/.filter() member calls are NOT compose edges and are dropped.
 
 export function quickSort<T>(xs: T[]): T[] {
   if (xs.length <= 1) return xs.slice();
