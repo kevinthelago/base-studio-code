@@ -5,7 +5,9 @@
 //
 // Findings, most-severe first: cycle (a `composes` loop) · dangling-branch (an unused root that still
 // pulls in dependencies) · duplicate (same `wraps` intrinsic, or identical source) · no-implementation
-// (a component the preview can't build — a spec, not code) · unresolvable-import (a module imports
+// (a component the preview can't build — a spec, not code) · self-reference (an own-module component
+// whose only rendered element is itself, <Name/> — a self-referential stub that passes the buildability
+// + syntax gates yet produces no output, #3026) · unresolvable-import (a module imports
 // something the preview can't resolve: a bare npm package not in the import-map (#2934) OR an internal
 // `@/…`/relative import matching no kit component or runtime module (#2954) — throws at preview time) ·
 // orphan (isolated, never-
@@ -44,6 +46,39 @@ function ownModuleSource(c: ComponentRecord): string | null {
   if (c.source && c.source.trim()) return c.source;
   if (looksBuildableModule(c.srcText)) return c.srcText;
   return null;
+}
+
+/** Escape a string for literal use inside a RegExp (component names are identifiers, but be safe). */
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Does `source` DECLARE the symbol `name` — a `function`/`const`/`let`/`var`/`class` binding of it — as
+ *  opposed to a bare reference? Distinguishes a module that DEFINES the component from a usage snippet.
+ *  Rust twin: `declares_symbol`. */
+function declaresSymbol(source: string, name: string): boolean {
+  return new RegExp(`\\b(?:function|const|let|var|class)\\s+${escapeRe(name)}\\b`).test(source);
+}
+
+/** The set of JSX element/component tag names OPENED in `source` — every `<Ident` that is not a closing
+ *  `</…` tag. (A TS generic like `<Number>` lands here too, only making the self-reference check more
+ *  conservative.) Rust twin: `jsx_tag_names`. */
+function jsxTagNames(source: string): Set<string> {
+  const set = new Set<string>();
+  const re = /<([A-Za-z][A-Za-z0-9_]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source))) set.add(m[1]);
+  return set;
+}
+
+/** Is `c` a SELF-REFERENTIAL STUB — an own-module component that declares its own name yet the ONLY
+ *  element it renders is itself (`<Name/>`)? It passes the buildability + syntax gates but produces no
+ *  output and recurses forever (#3026). Rust twin: `is_self_referential_stub`. */
+function isSelfReferentialStub(c: ComponentRecord): boolean {
+  const src = ownModuleSource(c);
+  if (!src || !c.name || !declaresSymbol(src, c.name)) return false;
+  const tags = jsxTagNames(src);
+  return tags.size === 1 && tags.has(c.name);
 }
 
 /** Does `source` reference `name` as a whole identifier (not a substring of a longer name)? The TS twin of
@@ -146,7 +181,7 @@ const INTERNAL_TARGETS = new Set<string>([
 ]);
 
 export type HealthCategory =
-  | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "unresolvable-import"
+  | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "self-reference" | "unresolvable-import"
   | "orphan" | "unwired-prop" | "slot-shell";
 
 /** Category → severity (higher = worse); drives ranking + which badge wins on a multi-flagged node.
@@ -159,6 +194,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "dangling-branch": 3,
   duplicate: 3,
   "no-implementation": 3,
+  "self-reference": 3,
   "unresolvable-import": 3,
   orphan: 2,
   "unwired-prop": 2,
@@ -276,6 +312,17 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
     if (componentPreviewFiles(c, ARTIFACT) === null) {
       findings.push({ category: "no-implementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
         why: `${c.name} has no buildable implementation — the preview can't render it (a spec, not code)` });
+    }
+  }
+
+  // self-reference — an own-module component whose only rendered element is ITSELF (`<Name/>`): a
+  // self-referential stub. It passes the buildability check (it has an `export`, so no-implementation is
+  // blind to it) and the write-time syntax gate, yet produces no output and recurses forever — the class
+  // the designer hit authoring D3 components as self-calls (#3026). Rust twin: the self-reference loop.
+  for (const c of comps) {
+    if (isSelfReferentialStub(c)) {
+      findings.push({ category: "self-reference", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
+        why: `${c.name} only renders itself (<${c.name}/>) — a self-referential stub, not a real implementation (it produces no output and recurses forever)` });
     }
   }
 
