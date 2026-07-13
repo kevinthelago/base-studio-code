@@ -2,7 +2,7 @@
 name = "bsc-studio"
 version = "0.1.0"
 edition = "2021"
-description = "Studio store (file CRUD over ~/.base-studio-code/studios/) for base-studio-code (#2890) — a Studio is a self-contained, shareable snapshot of the app's library state (teams · personas · components · variants · themes · blueprints), assembled by reading each sibling bsc-json-store collection uniformly, reachable from the session-facing `bsc studio` CLI."
+description = "Studio store (SQLite store at ~/.base-studio-code/studios.db) for base-studio-code (#2890) — a Studio is a self-contained, shareable snapshot of the app's library state (teams · personas · components · variants · themes · blueprints), assembled by reading each sibling bsc-json-store collection uniformly, reachable from the session-facing `bsc studio` CLI."
 
 # The core lib (no Tauri, no SQLite) so the tiny CLI reuses it without dragging the whole desktop app
 # in. The hyphenated package name maps to the `bsc_studio` crate name.
