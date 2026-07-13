@@ -24,9 +24,18 @@ the topic's **canonical key** — a single lowercase word, **never the display t
 or the colloquial name**. For example the technology-stack topic is `stack.md`,
 **never** `Tech stack.md`; the data model is `schema.md`, never `Data model.md`.
 
-**Write the section file** — the single source of truth. It survives restarts and is
-read by the workers too; the app polls these files every 2 seconds and updates the
-right panel. Overwrite to refine — each write replaces the previous version.
+**Record each section in the plan DB** — `bsc plan artifact set section <topic>` with the
+content on stdin (`bsc plan artifact set section goal <<'MD'` … `MD`). The `<topic>` is the
+bare canonical key — `goal`, `scope`, `stack`, `schema`, … — never a colloquial name. This
+is the durable, folder-independent source of truth: it survives restarts, does not depend on
+any hub folder (so it stays intact even before the project's folder is materialized), and is
+read by both the app (the right panel updates within ~2s) and the workers. Overwrite to
+refine — each `set` replaces the previous version.
+
+During the current transition ALSO write the matching **section file** (below) so nothing
+that still reads files regresses. The app reads whichever is present and the plan-DB copy
+wins on a tie, so the two never conflict — but always write the plan-DB copy; the file is the
+legacy mirror.
 
 - **Discovery-stage file: `discovery/{topic}.md`** — e.g. `discovery/goal.md`,
   `discovery/stack.md`, `discovery/security.md`, `discovery/observability.md`, or a custom
