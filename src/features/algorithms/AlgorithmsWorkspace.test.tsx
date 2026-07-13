@@ -32,7 +32,7 @@ describe("AlgorithmsWorkspace", () => {
     // is Rust-only (#2760), so the one kit is Rust.
     expect(screen.getByText("Rust")).toBeTruthy();
     // Folders default open, so the active (Rust) kit's impls show — as rail rows + canvas nodes.
-    expect(screen.getAllByText("merge_sort (Rust)").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("merge_sort").length).toBeGreaterThan(0);
     // The on-graph legend (not the inspector) keys the edge types present in the kit — `composes` is live
     // (merge-sort.rs composes merge.rs).
     expect(screen.getByText("Relationships")).toBeTruthy();
@@ -41,21 +41,21 @@ describe("AlgorithmsWorkspace", () => {
 
   it("selecting an impl shows its code + role in the inspector", () => {
     render(<AlgorithmsWorkspace />);
-    fireEvent.click(screen.getAllByText("merge_sort (Rust)")[0]);
+    fireEvent.click(screen.getAllByText("merge_sort")[0]);
     expect(screen.getByText((c) => c.includes("merge(&left, &right)"))).toBeTruthy();
     expect(screen.getByText("algorithm")).toBeTruthy(); // the role chip
   });
 
   it("an algorithm impl lists the impls it builds on (#2863)", () => {
     render(<AlgorithmsWorkspace />);
-    fireEvent.click(screen.getAllByText("merge_sort (Rust)")[0]);
+    fireEvent.click(screen.getAllByText("merge_sort")[0]);
     expect(screen.getByText("Builds on")).toBeTruthy();
     expect(screen.getAllByText("merge.rs").length).toBeGreaterThan(1); // rail + canvas + builds-on row
   });
 
   it("a primitive row in a folder selects the primitive (#2899)", () => {
     render(<AlgorithmsWorkspace />);
-    fireEvent.click(screen.getAllByText("Iterator (Rust)")[0]);
+    fireEvent.click(screen.getAllByText("Iterator")[0]);
     expect(screen.getByText("primitive")).toBeTruthy();
     expect(screen.getByText((c) => c.includes("xs.iter().map(|x| x * 2)"))).toBeTruthy();
   });

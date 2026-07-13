@@ -11,7 +11,7 @@ describe("graphBridge.loadGraph (#2856)", () => {
   it("builds the impl-only model from a valid `bsc graph dump` doc (#2961)", async () => {
     bscJson.mockResolvedValue({
       implementations: [
-        { id: "merge.rs", tech: "rust", role: "algorithm", name: "merge (Rust)", composes: [], code: "fn merge() {}" },
+        { id: "merge.rs", tech: "rust", role: "algorithm", name: "merge", composes: [], code: "fn merge() {}" },
       ],
     });
     const g = await loadGraph();
