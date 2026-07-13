@@ -55,6 +55,14 @@
 }
 .ds-edge path { transition: stroke .12s, fill .12s; }
 
+/* Composition swimlanes (#2964) — faint tier bands behind the graph: Pages (top) · Composables
+   (middle) · Fundamentals (base). The two ends are tinted a touch stronger so the middle reads as the
+   clear lane between them; a dashed divider separates adjacent lanes; the label sits in the top gutter. */
+.ds-lane-bg { fill: var(--fg); opacity: .022; }
+.ds-lane-page .ds-lane-bg, .ds-lane-fundamental .ds-lane-bg { opacity: .05; }
+.ds-lane-divider { stroke: var(--border-soft, var(--border)); stroke-width: 1; stroke-dasharray: 5 7; opacity: .6; }
+.ds-lane-label { fill: var(--fg-dim); font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+
 /* Graph-health badges (#2680) — a corner glyph on a node the analyzer flagged (mirrors `bsc ui
    doctor`). Colored by severity: cycle/duplicate/no-implementation = danger, dangling = warn,
    orphan = dim. */
