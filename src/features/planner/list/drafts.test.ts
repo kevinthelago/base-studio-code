@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildDrafts, mergeDbDrafts, type LocalProjectLite, type DraftRow } from "./drafts";
+import { buildDrafts, mergeDbDrafts, isOrphanScaffold, type LocalProjectLite, type DraftRow } from "./drafts";
 import type { DbProject } from "./projectsDbBridge";
 
 const lp = (over: Partial<LocalProjectLite> & { key: string }): LocalProjectLite => ({
@@ -70,6 +70,26 @@ describe("buildDrafts", () => {
   it("tolerates a non-array localProjects (defensive, #874)", () => {
     const out = buildDrafts(undefined as unknown as LocalProjectLite[], { k: { title: "K", pitch: "", createdAt: 1 } }, []);
     expect(out.map(d => d.key)).toEqual(["k"]);
+  });
+});
+
+describe("isOrphanScaffold (#2998)", () => {
+  it("selects a bare scaffold — no plan, no title, not published", () => {
+    expect(isOrphanScaffold(lp({ key: "admin-console", hasPlan: false, titled: false, published: false }))).toBe(true);
+    // `titled` absent (older fixtures / bare hub) is still an orphan — !undefined is truthy.
+    expect(isOrphanScaffold(lp({ key: "test_with_kit", hasPlan: false, published: false }))).toBe(true);
+  });
+
+  it("excludes a real hub with a plan", () => {
+    expect(isOrphanScaffold(lp({ key: "real", hasPlan: true, titled: false }))).toBe(false);
+  });
+
+  it("excludes a user-titled hub even without a plan (#2994)", () => {
+    expect(isOrphanScaffold(lp({ key: "named", hasPlan: false, titled: true }))).toBe(false);
+  });
+
+  it("excludes a published hub", () => {
+    expect(isOrphanScaffold(lp({ key: "shipped", hasPlan: false, titled: false, published: true }))).toBe(false);
   });
 });
 

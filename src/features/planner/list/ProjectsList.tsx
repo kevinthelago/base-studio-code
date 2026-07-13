@@ -14,7 +14,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { AUTHORING_BLUEPRINT_ID, type Blueprint } from "../stages/blueprints";
-import { buildDrafts, mergeDbDrafts, type DraftRow, type LocalProjectLite } from "./drafts";
+import { buildDrafts, mergeDbDrafts, isOrphanScaffold, type DraftRow, type LocalProjectLite } from "./drafts";
 import { listDbProjects, removeDbProject, type DbProject } from "./projectsDbBridge";
 import { buildLocalPublished, type LocalPublishedRow } from "./localPublished";
 import { PublishedProjects, ProjectRow, projStatus, type GhProject, type ProjStatus, PROJECTS_QUERY } from "./PublishedProjects";
@@ -51,6 +51,9 @@ export function ProjectsList() {
   // Blueprints rail (an authoring draft is a folder on disk too).
   const [draftDeleteTarget, setDraftDeleteTarget] = useState<DraftRow | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
+  // Orphaned-scaffold cleanup (#2998): a confirm-gated bulk delete of bare on-disk hubs (no
+  // plan/title/publish) — invisible in the lists yet cluttering `projects/`. Holds the modal's open flag.
+  const [showOrphanCleanup, setShowOrphanCleanup] = useState(false);
   // On-disk local projects (#…) — the durable source of truth for unpublished work, since the
   // store's draft map drifts out of sync with the `projects/` dir.
   const [localProjects, setLocalProjects] = useState<LocalProjectLite[]>([]);
@@ -227,6 +230,14 @@ export function ProjectsList() {
     await deleteDraft(key);
   }
 
+  // Confirmed orphan cleanup (#2998): delete every orphaned scaffold folder — reusing deleteDraft,
+  // which already surfaces errors + prunes the store/local/DB caches — then re-scan and close the modal.
+  async function cleanupOrphans() {
+    for (const o of orphans) { await deleteDraft(o.key); }
+    await refreshLocalProjects();
+    setShowOrphanCleanup(false);
+  }
+
   // Memoized: only the distinct-repo count feeds the summary line, so don't rebuild the Set every render.
   const repos = useMemo(() => new Set(visibleProjects.flatMap(p => p.repositories?.nodes?.map(r => r.nameWithOwner) ?? [])), [visibleProjects]);
 
@@ -264,6 +275,13 @@ export function ProjectsList() {
     ),
     [localProjects, localDraftProjects, visibleProjects, dbProjects],
   );
+
+  // Orphaned scaffolds (#2998): bare on-disk hubs with no plan, no user title, and not published —
+  // filtered out of the Drafts list (`buildDrafts` skips untitled/planless hubs) so they're invisible,
+  // yet they clutter `projects/`. The last clause is belt-and-suspenders: never surface here anything
+  // already shown as a draft elsewhere. A plain derived const — React Compiler memoizes it (a manual
+  // useMemo here trips its preserve-manual-memoization check).
+  const orphans = localProjects.filter(lp => isOrphanScaffold(lp) && !allDrafts.some(d => d.key === lp.key));
 
   // A draft bound to the blueprint-author lifecycle is an in-progress BLUEPRINT — it belongs in the
   // Blueprints section, not the normal Drafts list (#923 / Projects-tab redesign).
@@ -362,6 +380,8 @@ export function ProjectsList() {
         refreshLocalProjects={refreshLocalProjects}
         localPublished={localPublished}
         staleFetchedAt={staleFetchedAt}
+        orphans={orphans}
+        onCleanupOrphans={() => setShowOrphanCleanup(true)}
       />
 
       <BlueprintLibrary
@@ -395,6 +415,31 @@ export function ProjectsList() {
                 style={{ display: "flex", alignItems: "center", gap: 6 }}
               >
                 <Trash2 size={12} /> delete draft
+              </Button>
+            </Row>
+          </Box>
+        </ModalScrim>
+      )}
+
+      {/* Orphaned-scaffold cleanup confirmation (#2998) — a confirm-gated bulk delete of bare on-disk
+          hubs. Lists exactly which folders will be removed, mirroring the draft-delete modal pattern. */}
+      {showOrphanCleanup && (
+        <ModalScrim onDismiss={() => setShowOrphanCleanup(false)}>
+          <Box pad={[24, 28]} bg="var(--bg-elev)" border="soft" radius="lg" style={{ width: 460, maxWidth: "90vw" }}>
+            <h3 className="mono" style={{ margin: "0 0 8px", fontSize: 14, color: "var(--fg)" }}>
+              Clean up orphaned scaffolds?
+            </h3>
+            <Text as="p" size={12} tone="muted" style={{ margin: "0 0 16px", lineHeight: 1.6 }}>
+              These bare hubs have no plan, no title, and were never published. Their local folders will be
+              permanently deleted — there's nothing on GitHub to remove.
+            </Text>
+            <Text as="div" mono size={11} tone="muted" style={{ marginBottom: 20, lineHeight: 1.7 }}>
+              {orphans.map(o => <Box key={o.key}>· {o.key}</Box>)}
+            </Text>
+            <Row gap={8} align="stretch" justify="end">
+              <Button variant="ghost" onClick={() => setShowOrphanCleanup(false)}>cancel</Button>
+              <Button danger onClick={cleanupOrphans} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <Trash2 size={12} /> delete {orphans.length} scaffold{orphans.length !== 1 ? "s" : ""}
               </Button>
             </Row>
           </Box>

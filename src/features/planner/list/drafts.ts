@@ -34,6 +34,17 @@ export interface LocalProjectLite {
 /** A store draft-map entry (`addDraftProject`). */
 export interface DraftMapEntry { title: string; pitch: string; createdAt: number }
 
+/**
+ * A bare on-disk scaffold hub — no plan, no user title, and never published (#2998). `buildDrafts`
+ * filters these out of the Drafts list (only `hasPlan || titled` hubs are kept), so they're invisible
+ * yet clutter the `projects/` dir. The Projects page surfaces them for a confirm-gated cleanup. Pure
+ * so the predicate is unit-testable independently of the memo that also excludes anything already
+ * shown as a draft.
+ */
+export function isOrphanScaffold(lp: LocalProjectLite): boolean {
+  return !lp.hasPlan && !lp.titled && !lp.published;
+}
+
 /** A row in the Drafts list. */
 export interface DraftRow { key: string; title: string; pitch: string; sort: number }
 
