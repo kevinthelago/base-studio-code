@@ -87,7 +87,7 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["Many options (>5) — use a select.", "A single on/off — use Toggle."],
   },
   Card: {
-    role: "layout", version: "1.3.2", used: 121, tags: ["surface"],
+    role: "composite", version: "1.3.2", used: 121, tags: ["surface"], // #2970: a container with chrome, not a positioner
     whenUse: ["Group related content in a framed surface.", "A selectable item in a list (interactive)."],
     whenNot: ["Full-bleed page sections — cards imply containment.", "A modal — use Dialog."],
   },
@@ -124,12 +124,12 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["A single row or column — use Row / Stack.", "One-off positioning — use Box."],
   },
   SectionHeader: {
-    tags: ["layout", "chrome"],
+    role: "composite", tags: ["chrome"], // #2970: a titled header row (title + control), not a positioner
     whenUse: ["A titled section heading with an optional trailing control.", "The head of a settings or card group."],
     whenNot: ["A page title — that's screen chrome.", "A bare eyebrow label — use SectionLabel."],
   },
   SectionLabel: {
-    tags: ["layout", "chrome"],
+    role: "primitive", tags: ["chrome"], // #2970: a styled eyebrow label atom, not a positioner
     whenUse: ["A small uppercase eyebrow labelling a group.", "A field-group or list-section caption."],
     whenNot: ["A full heading with actions — use SectionHeader.", "Body copy — use Text."],
   },
@@ -139,7 +139,7 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["Non-blocking info — use a Banner / toast.", "A large multi-step flow — use a page / stage."],
   },
   ModalScrim: {
-    tags: ["overlay"],
+    role: "composite", tags: ["overlay"], // #2970: an overlay backdrop with chrome, not a positioner
     whenUse: ["The dimmed, click-to-dismiss backdrop behind a modal surface.", "Trapping focus under a Dialog."],
     whenNot: ["A non-modal overlay — use a positioned Box.", "The whole modal — compose this inside a Dialog / ModalCard."],
   },
@@ -377,7 +377,7 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["A dense column-aligned table — use DataTableRow.", "A single event notice — use Banner."],
   },
   Pane: {
-    role: "layout", tags: ["overlay", "editor"], composes: ["IconButton"],
+    role: "composite", tags: ["overlay", "editor"], composes: ["IconButton"], // #2970: a chrome container, not a positioner
     whenUse: ["A select-an-item → edit-its-fields surface: slide-over drawer or inline master-detail pane.", "Editors needing the standard draft/remove footer."],
     whenNot: ["A blocking decision or short form — use Dialog.", "Static grouped content — use Card."],
   },
