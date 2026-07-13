@@ -10,11 +10,13 @@ describe("GlanceWorkspace (tabbed, #2223)", () => {
     expect(screen.getByText("Fleet")).toBeTruthy();
   });
 
-  it("opens the Network page by default, showing a REAL empty state when there are no projects (#2272)", () => {
+  it("opens the Network page by default, ALWAYS rendering the graph — never a blocking empty-state page (#3033)", () => {
     render(<GlanceWorkspace />);
-    // With no projects, the Network page renders a real empty state — NOT the old sample/mock graph.
-    expect(screen.getByText("No project network yet")).toBeTruthy();
-    expect(screen.queryByText("PROJECTS")).toBeNull(); // the projects rail only shows once there are projects
+    // With no projects we render the (empty) project-network graph + its toolbar, NOT the old
+    // "No project network yet" empty-state page (#2272 reverted by #3033).
+    expect(screen.queryByText("No project network yet")).toBeNull();
+    expect(screen.getByText("fit")).toBeTruthy();       // the graph toolbar rendered → the canvas is present
+    expect(screen.getByText("Load demo")).toBeTruthy(); // the demo affordance moved into the toolbar when empty
   });
 
   it("renders only the active page body (Fleet is not mounted on the Network tab)", () => {

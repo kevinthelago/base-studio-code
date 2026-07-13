@@ -16,7 +16,6 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Button } from "@/shared/ui/controls/Button";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Screen } from "@/app/chrome/Screen";
 import { type TabItem } from "@/app/chrome/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
@@ -78,7 +77,6 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // drill resolves each project's fleet). A "planning" status marks a planned project; "live" (app running)
   // is the detection follow-up.
   const projectsBase = useGlanceProjects();
-  const setWorkspace = useAppStore((s) => s.setWorkspace);
   const loadDemoState = useAppStore((s) => s.loadDemoState);
   const projectLinks = useAppStore((s) => s.projectLinks);
   const removeProjectLink = useAppStore((s) => s.removeProjectLink);
@@ -238,8 +236,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   const q = search.trim().toLowerCase();
   const sidebar = model.nodes.slice().sort((a, b) => a.layer - b.layer || a.slug.localeCompare(b.slug)).filter((n) => !q || n.slug.toLowerCase().includes(q));
-  // A brand-new / unseeded app has no projects → show a REAL empty state instead of the old mock graph
-  // (#2272). Only on the (un-drilled) project network — you can't drill without projects.
+  // An un-drilled project network with no projects yet. We ALWAYS render the (empty) graph now (#3033) —
+  // never a blocking empty-state page — and instead surface a one-click "Load demo" in the toolbar so the
+  // #2272 demo stays reachable. (Create a project in the Projects workspace via the Rail as usual.)
   const networkEmpty = !drill && projectModel.nodes.length === 0;
 
   return (
@@ -252,28 +251,14 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       pageOverride={pageOverride}
       className="glance-workspace"
     >
-      {page === "fleet" ? <Fleet /> : networkEmpty ? (
-      <Box style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <EmptyState
-          icon="◍" iconVariant="dashed"
-          title="No project network yet"
-          description="Projects you create show up here as a network you can wire together — dependencies, contracts, and cross-project cycles. Create one in Projects, or load the demo to see a whole platform — projects, fleets, and the libraries — come alive."
-          actions={
-            <>
-              <Button onClick={() => setWorkspace("projects")}>Go to Projects</Button>
-              <Button variant="ghost" onClick={() => loadDemoState(demoSnapshot())}>Load demo</Button>
-            </>
-          }
-        />
-      </Box>
-      ) : (
+      {page === "fleet" ? <Fleet /> : (
       // The graph must FILL the screen body (a pan/zoom canvas, not scrolling content); the shared
       // .screen-body is a block scroll container, so give it an explicit full-height flex column.
       <Box style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
       <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
     <GraphCanvas
       vp={vp}
-      world={{ w: model.worldW, h: model.worldH }}
+      world={{ w: model.worldW || 1600, h: model.worldH || 900 }}
       canvasBackground="radial-gradient(120% 120% at 30% 0%, var(--bg-elev) 0%, var(--bg) 100%)"
       // The infinite viewport grid (#2418, the same graph paper org uses) — 28px tiles; the color
       // matches the old in-world grid (12% fg dots at 0.6 layer opacity ⇒ ~7.2% fg).
@@ -309,6 +294,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           )}
           <ZoomControls vp={vp} step={1.2} />
           <Button variant="ghost" onClick={vp.fit}>fit</Button>
+          {/* No projects yet → keep the one-click demo reachable here instead of a blocking empty page (#3033). */}
+          {networkEmpty && <Button variant="ghost" title="Load a demo platform — projects, fleets, and libraries" onClick={() => loadDemoState(demoSnapshot())}>Load demo</Button>}
         </>
       }
       rail={

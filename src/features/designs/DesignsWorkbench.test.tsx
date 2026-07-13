@@ -48,6 +48,17 @@ describe("DesignsWorkbench (#2308)", () => {
     expect(screen.queryByText("Live preview")).toBeNull();          // no live preview until one is focused
   });
 
+  it("ALWAYS renders the graph + panes even with NO kits (empty library, #3033) — never a blocking empty-state page", () => {
+    useAppStore.setState({ components: [], kits: [] }); // an empty library (e.g. right after the default kit is cleared)
+    render(<DesignsWorkbench />);
+    // The composition-graph shell still mounts (no kit-name suffix); the rail search + the Inspector's own
+    // "select a component" empty state are present — the studio never hides behind a StudioEmpty page (which
+    // would hide the designer terminal you need to BUILD the kit).
+    expect(screen.getByText("Composition graph")).toBeTruthy();
+    expect(screen.getByLabelText("Search components")).toBeTruthy();
+    expect(screen.getByText(/Select a component/)).toBeTruthy();
+  });
+
   it("the inspector carries the library detail: live preview + Overview/Source/Usage tabs", () => {
     render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));                              // focus a node to reveal the details pane
