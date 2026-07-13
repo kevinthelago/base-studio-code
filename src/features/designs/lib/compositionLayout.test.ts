@@ -57,104 +57,81 @@ describe("layoutComposition — top-down DAG placement", () => {
     expect(pos.get("parent")!.x).toBe(pos.get("child")!.x);
   });
 
-  it("keeps each connected node at its layerDag depth (longest incoming chain)", () => {
-    const comps = [
-      mk("Top", "layout", 0, ["Mid", "Leaf"]),
-      mk("Mid", "composite", 0, ["Leaf"]),
-      mk("Leaf", "primitive"),
-    ];
-    const { depth } = layoutComposition(comps);
-    expect(depth.get("top")).toBe(0);
-    expect(depth.get("mid")).toBe(1);
-    expect(depth.get("leaf")).toBe(2); // longest chain wins, not the direct Top→Leaf edge
+  it("bands purely by ROLE tier, top → bottom: page → layout → composable → fundamental (#2970)", () => {
+    const comps = [mk("Page", "page"), mk("Box", "layout"), mk("Card", "composite"), mk("Button", "primitive")];
+    const { depth, pos, tier } = layoutComposition(comps);
+    expect([tier.get("page"), tier.get("box"), tier.get("card"), tier.get("button")])
+      .toEqual(["page", "layout", "composable", "fundamental"]);
+    expect([depth.get("page"), depth.get("box"), depth.get("card"), depth.get("button")]).toEqual([0, 1, 2, 3]);
+    expect(pos.get("box")!.y).toBeLessThan(pos.get("card")!.y); // layouts sit ABOVE composables (#2970)
   });
 });
 
-describe("nodeTier — the semantic tier of a node (#2964)", () => {
-  it("a page is a page; a primitive or ANY leaf is a fundamental; an assembler is a composable", () => {
-    expect(nodeTier("page", 3)).toBe("page");
-    expect(nodeTier("primitive", 0)).toBe("fundamental");
-    expect(nodeTier("primitive", 2)).toBe("fundamental"); // primitive stays fundamental even if it composes
-    expect(nodeTier("layout", 0)).toBe("fundamental");    // a LEAF layout (Card) is a fundamental
-    expect(nodeTier("layout", 3)).toBe("composable");     // a layout that ASSEMBLES is a composable
-    expect(nodeTier("composite", 2)).toBe("composable");
-    expect(nodeTier("service", 1)).toBe("composable");    // service groups with composables
-    expect(nodeTier("service", 0)).toBe("fundamental");
+describe("nodeTier — the semantic tier of a node (#2970)", () => {
+  it("maps role → tier: page→page, layout→layout, primitive→fundamental, else→composable", () => {
+    expect(nodeTier("page")).toBe("page");
+    expect(nodeTier("layout")).toBe("layout");         // a structural positioner (Box, Stack, …)
+    expect(nodeTier("primitive")).toBe("fundamental"); // a content atom (Button, Text, …)
+    expect(nodeTier("composite")).toBe("composable");  // an assembled widget (Card, Dialog, …)
+    expect(nodeTier("service")).toBe("composable");    // service groups with composables
   });
 });
 
-describe("layoutComposition — semantic tiers (#2964)", () => {
-  it("stacks pages at the TOP, composables in the MIDDLE, fundamentals at the BASE", () => {
+describe("layoutComposition — role tiers (#2970)", () => {
+  it("stacks Pages · Layouts · Composables · Fundamentals top → bottom", () => {
     const comps = [
-      mk("Page", "page", 0, ["Assembler"]),
-      mk("Assembler", "composite", 0, ["Card"]),
-      mk("Card", "layout"), // leaf → fundamental
+      mk("DashboardPage", "page", 0, ["Stack"]),
+      mk("Stack", "layout"),
+      mk("Card", "composite", 0, ["Button"]),
+      mk("Button", "primitive"),
     ];
-    const { pos, tier } = layoutComposition(comps);
-    expect(tier.get("page")).toBe("page");
-    expect(tier.get("assembler")).toBe("composable");
-    expect(tier.get("card")).toBe("fundamental");
-    expect(pos.get("page")!.y).toBeLessThan(pos.get("assembler")!.y);
-    expect(pos.get("assembler")!.y).toBeLessThan(pos.get("card")!.y);
+    const { pos } = layoutComposition(comps);
+    expect(pos.get("dashboardpage")!.y).toBeLessThan(pos.get("stack")!.y);
+    expect(pos.get("stack")!.y).toBeLessThan(pos.get("card")!.y);   // Layouts above Composables (#2970)
+    expect(pos.get("card")!.y).toBeLessThan(pos.get("button")!.y);
   });
 
-  it("drops a ROOT composable (in-degree 0) BELOW the pages, not up with them", () => {
-    // The bug this fixes: ItemBars/RoleTierChips are composites nothing composes → composition roots.
-    // They must NOT share the page band; pages own the top.
-    const comps = [
-      mk("NetworkPage", "page", 0, ["Card"]),
-      mk("ItemBars", "composite", 0, ["Bar"]), // a root composable — nothing composes it
-      mk("Card", "layout"),
-      mk("Bar", "primitive"),
-    ];
+  it("keeps a ROOT composable (in-degree 0) out of the page band — pages own the top", () => {
+    // ItemBars/RoleTierChips are composites nothing composes → roots; role tiers put them in
+    // Composables regardless, never up with the pages.
+    const comps = [mk("NetworkPage", "page"), mk("ItemBars", "composite", 0, ["Bar"]), mk("Bar", "primitive")];
     const { pos, depth } = layoutComposition(comps);
-    expect(depth.get("networkpage")).toBe(0);          // page band — alone at the top
-    expect(depth.get("itembars")).toBeGreaterThan(0);  // dropped into the composables lane
+    expect(depth.get("networkpage")).toBe(0);
     expect(pos.get("networkpage")!.y).toBeLessThan(pos.get("itembars")!.y);
   });
 
-  it("puts every leaf/primitive in ONE fundamental band at the very base", () => {
+  it("puts every primitive in ONE fundamental band at the very base; a leaf layout stays in Layouts", () => {
     const comps = [
-      mk("Page", "page", 0, ["A"]),
-      mk("A", "composite", 0, ["Card", "Button"]),
-      mk("Card", "layout"), mk("Button", "primitive"), mk("Box", "layout"), // all leaves
+      mk("Page", "page", 0, ["Card"]),
+      mk("Card", "composite", 0, ["Button", "Box"]),
+      mk("Box", "layout"),          // a leaf layout → Layouts, NOT the base
+      mk("Button", "primitive"), mk("Text", "primitive"),
     ];
     const { pos, depth, tier } = layoutComposition(comps);
-    for (const n of ["card", "button", "box"]) expect(tier.get(n)).toBe("fundamental");
-    expect(new Set(["card", "button", "box"].map((n) => pos.get(n)!.y)).size).toBe(1); // one band → one y
+    expect(tier.get("box")).toBe("layout");
+    for (const n of ["button", "text"]) expect(tier.get(n)).toBe("fundamental");
+    expect(pos.get("button")!.y).toBe(pos.get("text")!.y); // one fundamental band → one y
     const maxDepth = Math.max(...depth.values());
-    for (const n of ["card", "button", "box"]) expect(depth.get(n)).toBe(maxDepth); // and it's the deepest
-  });
-
-  it("sub-orders composables by composition depth (a composable that composes another sits above it)", () => {
-    const comps = [
-      mk("Page", "page", 0, ["Outer"]),
-      mk("Outer", "composite", 0, ["Inner"]),
-      mk("Inner", "composite", 0, ["Leaf"]),
-      mk("Leaf", "primitive"),
-    ];
-    const { pos, tier } = layoutComposition(comps);
-    expect(tier.get("outer")).toBe("composable");
-    expect(tier.get("inner")).toBe("composable");
-    expect(pos.get("outer")!.y).toBeLessThan(pos.get("inner")!.y); // Outer composes Inner → above it
+    for (const n of ["button", "text"]) expect(depth.get(n)).toBe(maxDepth);
+    expect(depth.get("box")).toBeLessThan(maxDepth); // Box (layout) sits above the base
   });
 });
 
-describe("layoutComposition — swimlanes (#2964)", () => {
+describe("layoutComposition — swimlanes (#2970)", () => {
   it("returns one lane per present tier, top → bottom, tiled to fill the world height", () => {
-    const comps = [mk("Page", "page", 0, ["Asm"]), mk("Asm", "composite", 0, ["Card"]), mk("Card", "layout")];
+    const comps = [mk("Page", "page"), mk("Box", "layout"), mk("Card", "composite"), mk("Button", "primitive")];
     const { lanes, world } = layoutComposition(comps);
-    expect(lanes.map((l) => l.tier)).toEqual(["page", "composable", "fundamental"]);
-    expect(lanes.map((l) => l.label)).toEqual(["Pages", "Composables", "Fundamentals"]);
+    expect(lanes.map((l) => l.tier)).toEqual(["page", "layout", "composable", "fundamental"]);
+    expect(lanes.map((l) => l.label)).toEqual(["Pages", "Layouts", "Composables", "Fundamentals"]);
     expect(lanes[0].y0).toBe(0);                        // the top lane starts at the world top
     expect(lanes[lanes.length - 1].y1).toBe(world.h);   // the bottom lane ends at the world bottom
     for (let i = 1; i < lanes.length; i++) expect(lanes[i].y0).toBe(lanes[i - 1].y1); // tiled, no gaps/overlap
   });
 
-  it("omits a lane for an absent tier (no pages → no Pages lane)", () => {
-    const comps = [mk("Asm", "composite", 0, ["Card"]), mk("Card", "layout")];
+  it("omits a lane for an absent tier (no layouts → no Layouts lane)", () => {
+    const comps = [mk("Page", "page"), mk("Card", "composite"), mk("Button", "primitive")];
     const { lanes } = layoutComposition(comps);
-    expect(lanes.map((l) => l.tier)).toEqual(["composable", "fundamental"]);
+    expect(lanes.map((l) => l.tier)).toEqual(["page", "composable", "fundamental"]);
   });
 });
 

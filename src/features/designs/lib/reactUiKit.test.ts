@@ -31,9 +31,9 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
   });
 
   it("maps the manifest group to a role (overlay wins)", () => {
-    expect(byName("Box")!.role).toBe("layout");         // layout group
+    expect(byName("Box")!.role).toBe("layout");         // layout group — a true positioner
     expect(byName("Button")!.role).toBe("primitive");   // controls group
-    expect(byName("Card")!.role).toBe("layout");        // overlay override (data group → layout)
+    expect(byName("Card")!.role).toBe("composite");     // overlay override (#2970: a chrome container, not a positioner)
     expect(byName("SegmentedControl")!.role).toBe("composite"); // overlay override
   });
 

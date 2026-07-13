@@ -1,25 +1,21 @@
-// Composition-graph layout (#2455, #2964) — the pure, hierarchical TOP-DOWN placement for the Design
-// Studio's composition graph, banded into three SEMANTIC TIERS and labeled as swimlanes:
+// Composition-graph layout (#2455, #2964, #2970) — the pure, hierarchical TOP-DOWN placement for the
+// Design Studio's composition graph, banded into four SEMANTIC ROLE TIERS and labeled as swimlanes:
 //
-//   • PAGES (top)         — complete ideas (`role === "page"`).
-//   • COMPOSABLES (middle)— things that ASSEMBLE other components; sub-layered by composition depth
-//                           (via the shared `layerDag`, #2214) so a composable that composes another
-//                           sits above it.
-//   • FUNDAMENTALS (base) — building blocks: a `primitive`, or ANY leaf that composes nothing in-kit
-//                           (e.g. `Card`, a leaf `layout`). One band, at the bottom.
+//   • PAGES (top)         — complete ideas / whole screens (`role === "page"`).
+//   • LAYOUTS             — structural POSITIONERS: arrange children, render no content of their own
+//                           (`role === "layout"` — Box, Stack, Grid, MasterDetail, …). The maintainer's
+//                           flexbox framing — the scaffold the content sits in — so they rank just under
+//                           Pages, ABOVE the composables that fill them (#2970).
+//   • COMPOSABLES         — assembled widgets (`role` composite / service — Card, Dialog, StatCard, …).
+//   • FUNDAMENTALS (base) — content atoms (`role === "primitive"` — Button, Text, Chip, …).
 //
-// This replaced the old rule (pure composition depth + a role-tier fallback for isolated nodes, #2455),
-// which conflated composition ROOTS (in-degree 0) — so an unused composable like `ItemBars` landed in the
-// top band shoulder-to-shoulder with the pages. Tier-anchoring keeps pages alone at the top and every
-// leaf at the base, whatever their composition depth.
-//
-// Two kit-specific rules live here (which is why this is feature lib, not shared graph):
-//   • TIER ANCHORING — pages own the top band, fundamentals the base band; composables fill the middle.
-//   • IMPORTANCE ORDERING — within a row, nodes sort by the `used` count (the cross-codebase reuse
-//     signal) descending, name as the stable tiebreak. Ordering only; no size/emphasis scaling.
+// Purely ROLE-DRIVEN (#2970): the tier is the component's kind, so a composition ROOT nobody uses yet
+// (an unwired composite like `ItemBars`) no longer floats up into the page band — it sits in Composables
+// where it belongs. Composition (`composes`) is the EDGE set + still drawn, but no longer the y-axis.
+// One band per present tier, ordered within by importance (`used` desc, name tiebreak), wrapping into
+// sub-rows past `maxPerRow`. The `lanes` tile the world height so the chrome can label each tier.
 //
 // Pure and React-free; DesignsWorkbench's graph memo is a single call to `layoutComposition`.
-import { layerDag } from "@/shared/lib/graph/layers";
 import type { GraphEdge } from "@/shared/lib/graph/types";
 import type { ComponentRecord, Role } from "./model";
 
@@ -46,16 +42,17 @@ export const DEFAULT_METRICS: CompositionLayoutMetrics = {
   nodeW: NODE_W, nodeH: NODE_H, hGap: 28, bandGap: 92, subRowGap: 26, pad: 60, maxPerRow: 8,
 };
 
-/** A semantic vertical tier (#2964): complete ideas (`page`) at the top, fundamental building blocks
- *  (`primitive` or a leaf) at the base, everything that assembles others (`composable`) between. */
-export type Tier = "page" | "composable" | "fundamental";
+/** A semantic vertical tier (#2964/#2970), top → bottom: complete ideas (`page`), structural positioners
+ *  (`layout`), assembled widgets (`composable`), content atoms (`fundamental`). */
+export type Tier = "page" | "layout" | "composable" | "fundamental";
 
 /** Tier order, top → bottom. */
-export const TIER_ORDER: readonly Tier[] = ["page", "composable", "fundamental"];
+export const TIER_ORDER: readonly Tier[] = ["page", "layout", "composable", "fundamental"];
 
 /** The lane label shown for each tier. */
 export const LANE_LABEL: Record<Tier, string> = {
   page: "Pages",
+  layout: "Layouts",
   composable: "Composables",
   fundamental: "Fundamentals",
 };
@@ -74,23 +71,21 @@ export interface CompositionLayout {
   world: { w: number; h: number };
   /** Node id → its vertical band (0 = top row). Exposed for tests + the lane chrome. */
   depth: Map<string, number>;
-  /** Node id → its semantic tier (#2964). */
+  /** Node id → its semantic tier (#2964/#2970). */
   tier: Map<string, Tier>;
   /** The swimlanes, top → bottom — one per PRESENT tier, tiled to fill the world height. */
   lanes: CompositionLane[];
 }
 
 /**
- * The semantic tier a component belongs to (#2964).
- *
- * A `page` is a complete idea (top). A `primitive`, or ANY leaf that composes nothing in-kit
- * (`outDeg === 0` — e.g. `Card`, a leaf `layout`), is a fundamental building block (base). Everything
- * that assembles other components is a composable (middle); `service` groups with composables. `outDeg`
- * is the node's RESOLVED out-degree (its in-kit `composes` edges).
+ * The semantic tier a component belongs to (#2970) — purely by its architectural `role`:
+ * `page` → Pages, `layout` → Layouts (a structural positioner), `primitive` → Fundamentals (a content
+ * atom), everything else (`composite`, `service`) → Composables (an assembled widget).
  */
-export function nodeTier(role: Role, outDeg: number): Tier {
+export function nodeTier(role: Role): Tier {
   if (role === "page") return "page";
-  if (role === "primitive" || outDeg === 0) return "fundamental";
+  if (role === "layout") return "layout";
+  if (role === "primitive") return "fundamental";
   return "composable";
 }
 
@@ -115,11 +110,9 @@ const byImportance = (a: ComponentRecord, b: ComponentRecord): number =>
 /**
  * Compute the tier-banded, top-down composition layout for one kit's components.
  *
- * Bands, top → bottom: the PAGE band (all pages), then one sub-band per distinct composition depth
- * among the composables (so a composable that composes another sits above it), then the FUNDAMENTAL
- * band (all leaves/primitives). Only PRESENT tiers take a row, so an absent tier leaves no gap. Each
- * band is ordered by importance and wraps into sub-rows past `maxPerRow`. The `lanes` tile the world
- * height so the chrome can label each tier.
+ * One band per PRESENT tier, in `TIER_ORDER` (an absent tier leaves no gap). Each band is ordered by
+ * importance and wraps into sub-rows past `maxPerRow`. The `lanes` tile the world height so the chrome
+ * can label each tier.
  */
 export function layoutComposition(
   comps: readonly ComponentRecord[],
@@ -127,35 +120,15 @@ export function layoutComposition(
 ): CompositionLayout {
   const m = metrics;
   const edges = buildComposesEdges(comps);
-  const outDeg = new Map<string, number>();
-  for (const e of edges) outDeg.set(e.from, (outDeg.get(e.from) ?? 0) + 1);
 
-  // Composition longest-path depth — orders composables among themselves (a composer above its dep).
-  const layer = layerDag(comps.map((c) => c.id), edges);
-
-  // Tier each node, then band tier-anchored: pages own the TOP band, fundamentals the BASE band, and
-  // composables fill sub-bands BETWEEN them ordered by composition depth. Only PRESENT bands take a row.
   const tier = new Map<string, Tier>();
-  for (const c of comps) tier.set(c.id, nodeTier(c.role, outDeg.get(c.id) ?? 0));
+  for (const c of comps) tier.set(c.id, nodeTier(c.role));
 
-  const composableLayers = [
-    ...new Set(comps.filter((c) => tier.get(c.id) === "composable").map((c) => layer[c.id] ?? 0)),
-  ].sort((a, b) => a - b);
-  const subBand = new Map<number, number>(); // composition layer → composable sub-band offset
-  composableLayers.forEach((l, i) => subBand.set(l, i));
-
-  const hasPage = comps.some((c) => tier.get(c.id) === "page");
-  const composableBase = hasPage ? 1 : 0;
-  const fundBand = composableBase + composableLayers.length;
-
+  // One band per PRESENT tier, top → bottom in TIER_ORDER.
+  const present = TIER_ORDER.filter((t) => comps.some((c) => tier.get(c.id) === t));
+  const bandOfTier = new Map<Tier, number>(present.map((t, i) => [t, i]));
   const depth = new Map<string, number>();
-  for (const c of comps) {
-    const t = tier.get(c.id)!;
-    depth.set(
-      c.id,
-      t === "page" ? 0 : t === "fundamental" ? fundBand : composableBase + (subBand.get(layer[c.id] ?? 0) ?? 0),
-    );
-  }
+  for (const c of comps) depth.set(c.id, bandOfTier.get(tier.get(c.id)!)!);
 
   // Band the nodes by depth, order each band by importance, wrap into sub-rows.
   const bands = new Map<number, ComponentRecord[]>();
@@ -202,7 +175,6 @@ export function layoutComposition(
     if (cur) { cur.min = Math.min(cur.min, p.y); cur.max = Math.max(cur.max, p.y + m.nodeH); }
     else tierYs.set(t, { min: p.y, max: p.y + m.nodeH });
   }
-  const present = TIER_ORDER.filter((t) => tierYs.has(t));
   const lanes: CompositionLane[] = present.map((t, i) => ({
     tier: t,
     label: LANE_LABEL[t],
