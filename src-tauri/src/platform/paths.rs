@@ -37,13 +37,21 @@ pub(crate) fn project_dir(project_key: &str) -> std::path::PathBuf {
     projects_root().join(sanitize_project_key(project_key))
 }
 
-/// The project hub's per-project SQLite plan store: `projects/<key>/plan.db` (#plan-db). The sole fleet
-/// store (#1805). One helper so the path stops being spelled two ways — `project_dir(key).join("plan.db")`
-/// vs `bsc_base_dir().join("projects").join(key).join("plan.db")` — which is exactly the drift this
-/// module exists to prevent (#2081). Key sanitize is idempotent, so a cwd-derived (already-sanitized)
-/// key resolves to the same path.
+/// The root that holds every project's plan store, OUT of the hub (#2996): `~/.base-studio-code/plans`.
+/// plan.db moved here (from `projects/<key>/plan.db`) so the plan persists independently of whether the
+/// hub folder exists — the database is the source of truth; the hub is a projection materialized at
+/// triage (epic #2993). One source of truth for the path (#2081).
+pub(crate) fn plans_root() -> std::path::PathBuf {
+    bsc_base_dir().join("plans")
+}
+
+/// The per-project SQLite plan store: `plans/<key>.db` (#plan-db; relocated OUT of the hub, #2996). The
+/// sole fleet store (#1805). Resolved by every session via `$BSC_PLAN_DB`; existing in-hub
+/// `projects/<key>/plan.db` files are moved here once at startup by
+/// [`crate::project::plan_db::migrate_plan_dbs_to_central`]. Key sanitize is idempotent, so a
+/// cwd-derived (already-sanitized) key resolves to the same path.
 pub(crate) fn plan_db_path(project_key: &str) -> std::path::PathBuf {
-    project_dir(project_key).join("plan.db")
+    plans_root().join(format!("{}.db", sanitize_project_key(project_key)))
 }
 
 /// The project hub's per-project SQLite **runtime-fault store**: `projects/<key>/error.db` (#2260).
@@ -224,13 +232,13 @@ mod relocated_tests {
     }
 
     #[test]
-    fn plan_db_path_collapses_the_two_former_spellings() {
-        // #2081 regression: plan.db was spelled `project_dir(k).join("plan.db")` in one place and
-        // `bsc_base_dir().join("projects").join(k).join("plan.db")` in another. Both must resolve to
-        // the SAME path so the drift can't recur. Key sanitize is idempotent, so an already-sanitized
-        // (cwd-derived) key resolves identically.
-        assert_eq!(plan_db_path("my-app"), project_dir("my-app").join("plan.db"));
-        assert_eq!(plan_db_path("my-app"), projects_root().join("my-app").join("plan.db"));
+    fn plan_db_path_is_the_central_store_not_the_hub() {
+        // #2996: plan.db was relocated OUT of the hub to the central `plans/<key>.db` store, so the plan
+        // persists folder-independently. One canonical spelling (the #2081 anti-drift point still holds).
+        assert_eq!(plan_db_path("my-app"), plans_root().join("my-app.db"));
+        assert_eq!(plan_db_path("my-app"), bsc_base_dir().join("plans").join("my-app.db"));
+        // It is NO LONGER under the project hub.
+        assert_ne!(plan_db_path("my-app"), project_dir("my-app").join("plan.db"));
         // sanitize is applied and idempotent.
         assert_eq!(plan_db_path("a/b"), plan_db_path("a_b"));
     }
