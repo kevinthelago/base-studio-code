@@ -116,6 +116,15 @@ pub(crate) fn read_plan_stages(project_key: String) -> Result<std::collections::
     let mut sections = std::collections::HashMap::new();
     ingest_stage_files(&plans_dir, &mut sections);
     ingest_stage_files(&discovery_dir_for(&project_key), &mut sections);
+    // plan.db `section` artifacts (#2997 A2) — the DB-backed source as planner content migrates OFF
+    // files toward the hub-is-a-pure-projection model. Ingested LAST so an artifact WINS over a
+    // same-named file; trimmed + empties dropped, matching the file ingest.
+    for (name, content) in plan_db::artifacts_of_kind(&project_key, "section") {
+        let c = content.trim();
+        if !c.is_empty() {
+            sections.insert(name, c.to_string());
+        }
+    }
     Ok(sections)
 }
 
@@ -154,6 +163,32 @@ mod relocated_tests {
 
         std::fs::remove_dir_all(&home).ok();
     }
+
+    #[test]
+    fn read_plan_stages_dual_reads_plandb_artifacts_over_files() {
+        // #2997 A2: read_plan_stages merges plan.db `section` artifacts with the file sections, and an
+        // artifact WINS over a same-named file (plan.db is the source as content migrates off files).
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("dualread");
+        let key = "dual-read-proj".to_string();
+        let proj = bsc_base_dir().join("projects").join(&key);
+        write_file(&proj.join("stack.md"), "stack from FILE"); // file-only section
+        write_file(&proj.join("scope.md"), "scope from file"); // will be overridden by an artifact
+        // plan.db `section` artifacts: a fresh one, one colliding with scope.md, + a non-section kind.
+        let store = plandb::Store::open(&crate::plan_db_path(&key)).unwrap();
+        store.artifact_set("section", "goal", "goal from DB").unwrap();
+        store.artifact_set("section", "scope", "scope from DB").unwrap();
+        store.artifact_set("kickoff", "web", "kickoff — ignored").unwrap();
+
+        let out = read_plan_stages(key).unwrap();
+        assert_eq!(out.get("stack").map(String::as_str), Some("stack from FILE"), "a file-only section still surfaces");
+        assert_eq!(out.get("goal").map(String::as_str), Some("goal from DB"), "a plan.db-only artifact surfaces");
+        assert_eq!(out.get("scope").map(String::as_str), Some("scope from DB"), "plan.db WINS over the same-named file");
+        assert!(!out.contains_key("web"), "a non-section artifact kind never leaks into the sections map");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
     #[test]
     fn clear_project_plan_files_empties_the_plan_db() {
         // The plan now lives in plan.db, not files — clearing must empty it too, or the next poll
