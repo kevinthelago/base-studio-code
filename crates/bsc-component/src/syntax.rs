@@ -59,11 +59,19 @@ pub fn check_module_syntax(src: &str) -> Result<(), String> {
                 }
             }
             // regex literal (in expression position) → to the closing unescaped `/` outside a char class.
-            // A `/` IMMEDIATELY after `<` is a JSX closing tag (`</div>`, `</>` fragment), NOT a regex
-            // (#2991) — else it would open a "regex" that runs to the newline and false-reject the
-            // module. A genuine `< /re/` (compare-to-regex) keeps its space, so only the adjacent
-            // `</` is excluded.
-            '/' if last_sig.is_none_or(|p| !is_value_end(p)) && !(i > 0 && chars[i - 1] == '<') => {
+            // Two JSX slashes are NOT regexes and are excluded, else the `/` opens a "regex" that runs to
+            // the newline and false-rejects the whole module:
+            //   • `</div>` / `</>` — the `/` sits right after `<` (a closing tag / fragment, #2991).
+            //   • `<div … />`      — a self-closing `/>` (the `/` is followed by `>`, #3045). This bites
+            //     after a `"…"` / `{…}` attribute, whose last significant char is `"`/`}` (a non-value),
+            //     so the `/` read as expression-position — the "unterminated regular expression" the
+            //     designer session hit on EVERY JSX-module component (d3 `<rect/>`/`<path/>`, Button, …).
+            // A genuine `< /re/` (compare-to-regex) keeps its space, and a literal `/>x/` regex is
+            // vanishingly rare in component code, so both exclusions are safe + low-false-positive.
+            '/' if last_sig.is_none_or(|p| !is_value_end(p))
+                && !(i > 0 && chars[i - 1] == '<')
+                && !(i + 1 < n && chars[i + 1] == '>') =>
+            {
                 let start = line;
                 i += 1;
                 let mut in_class = false;
@@ -186,6 +194,21 @@ line two ${title}`;
         // A genuine regex (space before `/`) still parses; a real unterminated string still rejects.
         assert!(check_module_syntax("export const re = /a\\/b/g;\nexport const y = 1;\n").is_ok());
         assert!(check_module_syntax("export const s = \"oops\n\";\n").is_err(), "still catches the corruption");
+    }
+
+    #[test]
+    fn jsx_self_closing_tag_is_not_read_as_a_regex() {
+        // #3045: a self-closing `/>` after a `"…"` / `{…}` attribute (a non-value last significant char)
+        // was misread as a regex that ran to EOF → "unterminated regular expression" — the exact failure
+        // that made `bsc ui set` reject EVERY JSX-module component. All of these must now parse clean:
+        assert!(check_module_syntax("export function T(){ return <div className=\"x\" />; }\n").is_ok(), "the reported repro");
+        assert!(check_module_syntax("export const I = () => <img src=\"x\"/>;\n").is_ok(), "no space before />");
+        assert!(check_module_syntax("export const R = () => <rect x=\"0\" width=\"4\" />;\n").is_ok(), "d3 self-closing SVG");
+        assert!(check_module_syntax("export const S = () => <Comp {...props} />;\n").is_ok(), "spread attr then />");
+        // The fix must NOT weaken the real checks: a genuine regex still parses, and an unterminated
+        // string inside a JSX module is still caught (before the `/>`).
+        assert!(check_module_syntax("export const re = /[0-9]+/g;\nexport const A = () => <b/>;\n").is_ok());
+        assert!(check_module_syntax("export const C = () => <div title=\"oops\n\" />;\n").unwrap_err().contains("unterminated string"));
     }
 
     #[test]
