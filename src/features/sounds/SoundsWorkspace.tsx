@@ -1,76 +1,85 @@
-// The Sounds tab (#3072, epic #3071) — the synthesis-first audio library, folded into the Planner as the
-// "sounds" page-mode alongside Components/Algorithms. Phase 1 is the PLAYABLE library: the starter kit's
-// cues, grouped by category, each a card you press to hear it synthesized live (Web Audio). The full
-// composition GRAPH (GraphCanvas + rail + inspector + Primitive/Voice/Cue swimlanes) is Phase 2.
-import { useState } from "react";
-import { Play } from "lucide-react";
+// The Sounds tab (#3072 · #3077) — the synthesis-first audio library, on the shared GraphCanvas stack
+// like Components/Algorithms. The CENTER is the kit's composition graph (Primitives → Voices → Cues,
+// wired by `composes`); the LEFT rail is a folder tree of cues/voices/primitives; the inspector shows the
+// selected node. Clicking a graph node plays it; the rail browses quietly (Play is in the inspector).
+import { useEffect, useMemo, useState } from "react";
 import { Box } from "@/shared/ui/layout/Box";
-import { Row } from "@/shared/ui/layout/Row";
-import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
-import { Card } from "@/shared/ui/data/Card";
+import { Button } from "@/shared/ui/controls/Button";
+import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
+import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
-import { SOUND_CATEGORIES, CATEGORY_LABEL, type Cue, type SoundKit } from "./lib/soundDescriptor";
+import { SoundsKitGraph } from "./SoundsKitGraph";
+import { SoundsRail } from "./SoundsRail";
+import { SoundsInspector } from "./SoundsInspector";
+import { buildSoundGraph, layoutSoundGraph, playableCueForNode, NODE_W, NODE_H, type SoundNode } from "./lib/soundGraph";
 import { playCue } from "./lib/synth";
 import { STARTER_KIT } from "./lib/soundSeeds";
-
-/** One playable cue — click anywhere on the card to synthesize + hear it; a brief accent pulse confirms. */
-function CueCard({ cue, kit }: { cue: Cue; kit: SoundKit }) {
-  const [playing, setPlaying] = useState(false);
-  const play = () => {
-    const dur = playCue(cue, kit); // seconds (0 where Web Audio is unavailable)
-    setPlaying(true);
-    window.setTimeout(() => setPlaying(false), Math.max(160, dur * 1000));
-  };
-  const n = cue.layers.length;
-  return (
-    <Card interactive onClick={play} pad="sm" tone={playing ? "var(--accent)" : undefined}
-      tooltip={`Play "${cue.name}" — ${n} voice${n === 1 ? "" : "s"}`}>
-      <Row justify="between" align="center" gap="sm">
-        <Box style={{ minWidth: 0 }}>
-          <Text mono weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{cue.name}</Text>
-          <Text as="div" tone="dim" size="xs">{n} voice{n === 1 ? "" : "s"}</Text>
-        </Box>
-        <Box aria-hidden style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "center",
-          width: 26, height: 26, borderRadius: "50%", color: "var(--accent)",
-          background: "color-mix(in oklch, var(--accent) 14%, transparent)" }}>
-          <Play size={13} fill="currentColor" />
-        </Box>
-      </Row>
-    </Card>
-  );
-}
+import "./sounds.css";
 
 export function SoundsWorkspace() {
-  // Phase 1 reads the seed kit directly (the durable bsc-sound store is Phase 3).
+  // Phase 1/2 read the seed kit directly (the durable bsc-sound store is Phase 3).
   const kit = STARTER_KIT;
-  // Name the active kit in the titlebar crumb, like the sibling library pages (#3041).
   useCrumbEntity("sounds", kit.name);
 
-  const cuesFor = (cat: string) => kit.cues.filter((c) => c.category === cat);
-  const usedCategories = SOUND_CATEGORIES.filter((cat) => cuesFor(cat).length > 0);
+  const graph = useMemo(() => buildSoundGraph(kit), [kit]);
+  const layout = useMemo(() => layoutSoundGraph(graph), [graph]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const selectedNode = selected ? graph.nodes.find((n) => n.id === selected) ?? null : null;
+
+  const vp = useGraphViewport(layout.world, { contentBounds: () => layout.bounds });
+  // Frame the graph once on mount (like AlgorithmsWorkspace) — we only want the initial fit.
+  useEffect(() => { vp.fit(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const play = (node: SoundNode) => {
+    const cue = playableCueForNode(node, kit);
+    if (cue) playCue(cue, kit);
+  };
+  // Rail click: select + pan to the node, no sound (browse quietly).
+  const select = (id: string) => {
+    setSelected(id);
+    const p = layout.pos.get(id);
+    if (p) vp.centerOn(p.x + NODE_W / 2, p.y + NODE_H / 2);
+  };
+  // Graph-node click: select + play.
+  const activate = (id: string) => {
+    setSelected(id);
+    const node = graph.nodes.find((n) => n.id === id);
+    if (node) play(node);
+  };
+
+  const counts = useMemo(() => ({
+    cues: graph.nodes.filter((n) => n.kind === "cue").length,
+    voices: graph.nodes.filter((n) => n.kind === "voice").length,
+    primitives: graph.nodes.filter((n) => n.kind === "primitive").length,
+  }), [graph.nodes]);
+
+  const toolbar = (
+    <>
+      <Eyebrow size={10}>Sounds</Eyebrow>
+      <Text mono size="xxs" tone="dim">{kit.name} · {counts.cues} cues · {counts.voices} voices · {counts.primitives} primitives</Text>
+      <Box style={{ flex: 1 }} />
+      <ZoomControls vp={vp} />
+      <Button size="sm" variant="ghost" onClick={vp.fit}>Fit</Button>
+    </>
+  );
 
   return (
-    <Box style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "20px 24px" }}>
-      <Stack gap="lg" style={{ maxWidth: 980, margin: "0 auto" }}>
-        <Box>
-          <Eyebrow size={10}>Sounds</Eyebrow>
-          <Text as="div" size="lg" weight={600}>{kit.name} kit</Text>
-          <Text as="div" tone="dim" size="sm">
-            {kit.cues.length} cues · {kit.voices.length} voices · {kit.primitives.length} primitives · synthesized live
-          </Text>
-        </Box>
-
-        {usedCategories.map((cat) => (
-          <Box key={cat}>
-            <Eyebrow size={10}>{CATEGORY_LABEL[cat]}</Eyebrow>
-            <Box style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12, marginTop: 8 }}>
-              {cuesFor(cat).map((cue) => <CueCard key={cue.id} cue={cue} kit={kit} />)}
-            </Box>
-          </Box>
-        ))}
-      </Stack>
-    </Box>
+    <GraphCanvas
+      vp={vp}
+      world={layout.world}
+      grid
+      toolbar={toolbar}
+      rail={<SoundsRail graph={graph} selected={selected} onSelect={select} />}
+      railResizable
+      railWidth={230}
+      inspector={<SoundsInspector node={selectedNode} kit={kit} onPlay={play} />}
+      inspectorResizable
+      inspectorWidth={320}
+      onBackgroundClick={() => setSelected(null)}
+    >
+      <SoundsKitGraph graph={graph} layout={layout} selected={selected} onActivate={activate} />
+    </GraphCanvas>
   );
 }
