@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { compileAnimationsCss, kitAnimations } from "@/shared/ui/kit";
 import {
-  resolveMemPath, lookupMem, buildComponentSrcDoc, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
+  resolveMemPath, lookupMem, buildComponentSrcDoc, exitShimScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
 } from "./componentBundle";
 
 // The esbuild-wasm bundle can't run under jsdom; these cover the PURE pieces (path resolution + srcdoc
@@ -72,6 +72,80 @@ describe("componentBundle — buildComponentSrcDoc", () => {
     expect(doc).toContain("@keyframes bsc-react-ui-fade-in");                // the keyframes reach the iframe
     expect(doc).toContain("@media (prefers-reduced-motion: no-preference)"); // motion suppressed for reduced-motion viewers
     expect(doc).toContain('<div id="root" class="react-ui-anim-fade-in">');   // #root carries the applying class → it plays
+  });
+});
+
+describe("componentBundle — exit-runtime shim (#3057)", () => {
+  it("injects the shim (observer + guards + marker) when exit selectors are given", () => {
+    const doc = buildComponentSrcDoc("/*B*/", { exitSelectors: [".tooltip"] });
+    expect(doc).toContain('[".tooltip"]');                      // the selector list, JSON-embedded
+    expect(doc).toContain("MutationObserver");                  // watches #root for leaving subtrees
+    expect(doc).toContain("(prefers-reduced-motion: reduce)");  // reduced-motion bypass
+    expect(doc).toContain('setAttribute("data-bsc-exit"');      // flips the marker the dormant rule keys on
+    expect(doc).toContain("animationend");                      // plays-to-completion cleanup
+    expect(doc).toContain("setTimeout(finish, 1200)");          // the missing-animationend backstop
+    // The shim runs BEFORE the module script (so the observer is watching before React mounts/unmounts).
+    expect(doc.indexOf("MutationObserver")).toBeLessThan(doc.indexOf('<script type="module">'));
+    // …and AFTER #root (the observer's target exists when the shim runs).
+    expect(doc.indexOf('<div id="root"')).toBeLessThan(doc.indexOf("MutationObserver"));
+  });
+
+  it("injects NOTHING when there are no exit selectors — the non-exit srcdoc is unchanged", () => {
+    const bare = buildComponentSrcDoc("X");
+    // `[]` and the default (absent) must be byte-for-byte identical to no option at all.
+    expect(buildComponentSrcDoc("X", { exitSelectors: [] })).toBe(bare);
+    for (const doc of [bare, buildComponentSrcDoc("X", { exitSelectors: [] })]) {
+      expect(doc).not.toContain("MutationObserver");
+      expect(doc).not.toContain("data-bsc-exit");
+      expect(doc).not.toContain("(prefers-reduced-motion: reduce)");
+      expect(doc).not.toContain("animationend");
+    }
+  });
+
+  it("exitShimScript embeds the selectors and every guard; empty ⇒ empty string", () => {
+    expect(exitShimScript([])).toBe("");
+    const shim = exitShimScript([".tooltip", "[data-toast]"]);
+    expect(shim).toContain('[".tooltip","[data-toast]"]'); // both selectors, JSON-embedded, in order
+    expect(shim).toContain("new WeakSet()");               // the loop guard
+    expect(shim).toContain("exiting.has(node)");           // …consulted so re-inserts/removes are ignored
+    expect(shim).toContain("parent.isConnected");          // re-home only under a live parent
+    expect(shim).toContain("record.nextSibling");          // position reconstruction
+    expect(shim).toContain("(prefers-reduced-motion: reduce)"); // reduced-motion bypass
+    expect(shim).toContain('{ once: true }');              // one-shot animationend
+    expect(shim).toContain("setTimeout(finish, 1200)");    // backstop
+    expect(shim.startsWith("\n<script>")).toBe(true);      // a plain (non-module) script block
+  });
+
+  it("drives the runtime in jsdom: re-homes a leaving match and flips data-bsc-exit", async () => {
+    // jsdom has MutationObserver but no CSS animations / `animationend`, so this exercises the
+    // OBSERVE → re-home → mark path (the part that makes the exit rule match). The animation playback +
+    // the `animationend`-driven removal need a live browser; only the 1200ms backstop would remove the
+    // node here, which we don't wait for.
+    const root = document.createElement("div");
+    root.id = "root";
+    document.body.appendChild(root);
+    const tip = document.createElement("div");
+    tip.className = "tooltip";
+    const keep = document.createElement("div"); // an ordinary (non-matching) sibling
+    root.append(tip, keep);
+
+    // Execute the shim in this jsdom global (strip the <script> wrapper). Indirect eval → global scope,
+    // where document/window/MutationObserver/Element/WeakSet all resolve.
+    const src = exitShimScript([".tooltip"]).replace(/^\s*<script>/, "").replace(/<\/script>\s*$/, "");
+    (0, eval)(src);
+
+    // An ordinary unmount of a NON-matching node is left alone.
+    root.removeChild(keep);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(root.contains(keep)).toBe(false);
+
+    // A matching node is re-homed and marked so the dormant exit rule would play.
+    root.removeChild(tip);
+    await new Promise((r) => setTimeout(r, 0)); // flush the MutationObserver microtask
+    expect(root.contains(tip)).toBe(true);              // re-inserted under #root by the shim
+    expect(tip.getAttribute("data-bsc-exit")).toBe(""); // marker flipped
+
+    document.body.removeChild(root);
   });
 });
 
