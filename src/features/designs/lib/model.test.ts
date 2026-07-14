@@ -1,5 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { matchesQuery, resolveComposes, resolveUsedBy, DATA_SHAPES, ROLE_COLOR, ROLES, type ComponentRecord, type DataShape } from "./model";
+import {
+  matchesQuery,
+  resolveComposes,
+  resolveUsedBy,
+  resolveComponentAnimations,
+  DATA_SHAPES,
+  ROLE_COLOR,
+  ROLES,
+  type ComponentRecord,
+  type Kit,
+  type DataShape,
+} from "./model";
+import type { KitAnimation } from "@/shared/ui/kit/animations";
 import { SEED_COMPONENTS, SEED_KITS } from "./seed";
 
 const byName = (n: string) => SEED_COMPONENTS.find((c) => c.name === n)!;
@@ -60,5 +72,63 @@ describe("component model helpers (#2269)", () => {
       expect(k.tech, `${k.id} tech is a lowercase slug`).toMatch(/^[a-z][a-z0-9-]*$/);
       expect(k.style, `${k.id} carries a visual-language label`).toBeTruthy();
     }
+  });
+});
+
+// ── resolveComponentAnimations — kit-name refs + inline defs (#2942/#3065) ─────────────────────────
+const fade: KitAnimation = { name: "fade-in", keyframes: { from: { opacity: "0" }, to: { opacity: "1" } } };
+const draw: KitAnimation = { name: "draw", keyframes: { from: { "stroke-dashoffset": "100" }, to: { "stroke-dashoffset": "0" } } };
+
+const mkComp = (over: Partial<ComponentRecord>): ComponentRecord => ({
+  id: "spark", name: "Sparkline", kitId: "react-ui", role: "composite", version: "1.0.0",
+  used: 0, tags: [], variants: ["default"], composes: [], props: [], whenUse: [], whenNot: [],
+  src: "", srcText: "", ...over,
+});
+const mkKit = (over: Partial<Kit>): Kit => ({ id: "react-ui", name: "React UI", stack: "React", dot: "var(--accent)", ...over });
+
+describe("resolveComponentAnimations (#2942/#3065)", () => {
+  it("resolves an INLINE-def-only component even when the kit has NO animations library (the #3065 regression)", () => {
+    // The pre-#3065 resolver bailed on the empty-kit check and silently rendered nothing; an inline-only
+    // component must now resolve its own def objects directly.
+    const comp = mkComp({ animations: [draw] });
+    const kit = mkKit({ animations: [] }); // empty library — the exact silent-fail case
+    const defs = resolveComponentAnimations(comp, [kit]);
+    expect(defs.map((d) => d.name)).toEqual(["draw"]);
+    expect(defs[0]).toMatchObject({ name: "draw", kit: "react-ui" });
+  });
+
+  it("resolves a NAME ref from the kit's animations library (the pre-#3065 path, unchanged)", () => {
+    const comp = mkComp({ animations: ["fade-in"] });
+    const kit = mkKit({ animations: [fade, draw] });
+    const defs = resolveComponentAnimations(comp, [kit]);
+    expect(defs.map((d) => d.name)).toEqual(["fade-in"]);
+    expect(defs[0].keyframes).toEqual(fade.keyframes);
+    expect(defs[0].kit).toBe("react-ui");
+  });
+
+  it("resolves a MIXED array — a kit NAME ref AND an inline def object — resolving both, in order", () => {
+    const comp = mkComp({ animations: ["fade-in", draw] });
+    const kit = mkKit({ animations: [fade] }); // only fade-in is in the library; draw is inline
+    const defs = resolveComponentAnimations(comp, [kit]);
+    expect(defs.map((d) => d.name)).toEqual(["fade-in", "draw"]);
+    for (const d of defs) expect(d.kit).toBe("react-ui");
+  });
+
+  it("drops a malformed inline object (missing keyframes) and an unresolved name", () => {
+    const comp = mkComp({
+      // a valid inline def, a malformed inline object (no keyframes), and a name not in the library
+      animations: [draw, { name: "broken" } as unknown as KitAnimation, "nonexistent"],
+    });
+    const kit = mkKit({ animations: [] });
+    const defs = resolveComponentAnimations(comp, [kit]);
+    expect(defs.map((d) => d.name)).toEqual(["draw"]);
+  });
+
+  it("empty when the component binds nothing, and every resolved def carries kit: comp.kitId", () => {
+    expect(resolveComponentAnimations(mkComp({}), [mkKit({ animations: [fade] })])).toEqual([]);
+    // kitId stamping holds even for an inline def whose owning kit isn't in the list at all.
+    const defs = resolveComponentAnimations(mkComp({ kitId: "vue-kit", animations: [draw] }), [mkKit({})]);
+    expect(defs).toHaveLength(1);
+    expect(defs[0].kit).toBe("vue-kit");
   });
 });
