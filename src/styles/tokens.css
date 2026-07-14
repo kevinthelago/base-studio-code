@@ -59,6 +59,12 @@
   --sans: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
 
   --r-sm: 4px; --r-md: 6px; --r-lg: 10px;
+  /* motion tokens (#2866) — the durations + easings the design-studio animation system references
+     (var(--dur-base) / var(--ease-standard), animations.ts defaults). Values MIRROR the `base` block of
+     src-tauri/data/ui/style-descriptor.json so the descriptor ↔ tokens.css guard (styleDescriptor.appTokens)
+     stays truthful and `bsc ui tokens` describes what the app actually uses (#2567). */
+  --dur-fast: 120ms; --dur-base: 220ms; --dur-slow: 400ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1); --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
   /* spacing scale (#2056) — the one gap/padding vocabulary the layout kit references.
      JS side: the Space named sizes in shared/ui/layout/space.ts map 1:1 (xs=4 … xl=24).
      Raw pixel values (e.g. the very common gap:10) stay legal as numbers; these are the

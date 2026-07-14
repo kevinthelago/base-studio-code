@@ -28,7 +28,9 @@ describe("ThemesMenu (#2834)", () => {
 
   it("shows a per-row surface glyph (dark/light) from the theme's base", () => {
     render(<ThemesMenu themes={SEED_THEMES} activeId="default" onSelect={() => {}} />);
-    // Light is a packaged light-surface theme → its row carries the ◑ glyph.
-    expect(screen.getByRole("button", { name: /Light.*◑/ })).toBeTruthy();
+    // Light is a packaged light-surface theme → its row carries the ◑ glyph. Anchor `^Light` so it
+    // matches ONLY the `light` theme, not `solarized-light` ("Solarized Light") — mirrors the `^Dark`
+    // disambiguation above now that a second light-surface theme exists (base-drift, #3032).
+    expect(screen.getByRole("button", { name: /^Light.*◑/ })).toBeTruthy();
   });
 });
