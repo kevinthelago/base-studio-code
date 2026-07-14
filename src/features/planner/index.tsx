@@ -9,6 +9,7 @@ import { ProjectsEmpty } from "./list/Empty";
 import { ProjectsList } from "./list/ProjectsList";
 import { Planning } from "./session/Planning";
 import { TeamsPanel } from "@/features/teams";
+import { SoundsWorkspace } from "@/features/sounds";
 import { useProjectScan } from "./list/useProjectScan";
 import { PROJECT_MODES } from "./list/projectModes";
 import "./projectsScreen.css";
@@ -119,6 +120,14 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
         <Stack style={{ flex: 1, minHeight: 0 }}>
           <TeamsPanel />
         </Stack>
+      )}
+
+      {/* Sounds — the synthesis-first audio library (#3072). Authoring/preview, no live PTY (like Teams),
+          so it renders directly (no keep-mounted / single-owner tear-off dance). */}
+      {mode === "sounds" && (
+        <Box style={{ display: "flex", flex: 1, minHeight: 0 }}>
+          <SoundsWorkspace />
+        </Box>
       )}
 
       {/* Planner — kept MOUNTED (CSS-hidden) in the main window so the live planning PTY survives a

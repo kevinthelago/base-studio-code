@@ -5,7 +5,7 @@ describe("PROJECT_MODES (#2850)", () => {
   it("has no standalone Themes tab — theme viewing folded into the Components preview (#2834)", () => {
     const ids = PROJECT_MODES.map((m) => m.id);
     expect(ids).not.toContain("themes");
-    expect(ids).toEqual(["projects", "teams", "designs", "algorithms"]);
+    expect(ids).toEqual(["projects", "teams", "designs", "algorithms", "sounds"]);
   });
 
   it("Components stays keyed 'designs' (tear-off + persistence unaffected)", () => {

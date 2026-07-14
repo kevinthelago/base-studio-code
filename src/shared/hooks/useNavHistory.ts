@@ -12,7 +12,7 @@ interface NavLoc {
   workspace: Workspace;
   /** The Planner workspace's page (Projects ↔ Teams ↔ Designs ↔ Algorithms); null on every
    *  other workspace. */
-  page: "projects" | "teams" | "designs" | "algorithms" | null;
+  page: "projects" | "teams" | "designs" | "algorithms" | "sounds" | null;
   /** The Glance drill target; null outside Glance. */
   drill: string | null;
   /** The Org designer's pool drill; null unless the Planner's Org page is showing. */

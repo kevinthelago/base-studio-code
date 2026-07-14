@@ -12,8 +12,8 @@ export interface ProjectsState {
   // Workspace, folded in as a Planner tab; it owns the structure axis AND, since #2834, the theme try-on,
   // so the standalone "themes" tab was retired (#2850). "algorithms" is the knowledge graph, folded in
   // the same way (formerly its own rail Workspace).
-  projectsPageMode: "projects" | "teams" | "designs" | "algorithms";
-  setProjectsPageMode: (v: "projects" | "teams" | "designs" | "algorithms") => void;
+  projectsPageMode: "projects" | "teams" | "designs" | "algorithms" | "sounds";
+  setProjectsPageMode: (v: "projects" | "teams" | "designs" | "algorithms" | "sounds") => void;
   // Glance drill target (#…): the project whose fleet graph is open on the Glance Network page, or null
   // for the project network. Lifted into the store (transient, not persisted) so the app-wide navigation
   // history (mouse back/forward) can drive it alongside the active workspace. See useNavHistory.
