@@ -299,7 +299,7 @@ export function DesignsWorkbench() {
               {rightAxis === "themes" ? (
                 <ThemesMenu themes={kitThemes} activeId={kitTheme} onSelect={setKitTheme} />
               ) : (
-                <AnimationsMenu animations={kit?.animations ?? []} boundNames={(sel?.animations ?? []).map((a) => (typeof a === "string" ? a : a.name))} activeName={tryAnim} onPlay={setTryAnim} />
+                <AnimationsMenu animations={kit?.animations ?? []} boundNames={(sel?.animations ?? []).filter((a): a is string => typeof a === "string")} activeName={tryAnim} onPlay={setTryAnim} />
               )}
             </Box>
           ) : (
