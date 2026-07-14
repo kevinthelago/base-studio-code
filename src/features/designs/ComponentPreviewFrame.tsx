@@ -64,6 +64,16 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     [boundDefs, extraAnimation],
   );
   const animKey = JSON.stringify(animDefs);
+  // #3057: the selectors of the exit-triggered animations this component binds — the exit-runtime shim
+  // (injected into the preview iframe) watches for a leaving element matching one of these and flips the
+  // `[data-bsc-exit]` marker so the dormant exit rule plays. Exit defs WITHOUT a selector are skipped:
+  // the preview `#root` itself never leaves, so a root-scoped exit rule has nothing to observe. A derived
+  // string key (not object identity) so a change to the exit set re-triggers the rebuild effect.
+  const exitSelectors = useMemo(
+    () => Array.from(new Set(animDefs.filter((d) => d.trigger === "exit" && d.selector).map((d) => d.selector!))),
+    [animDefs],
+  );
+  const exitKey = exitSelectors.join("|");
 
   // Rebuild when the selection / theme / retry changes (keyed on stable fields, not the object identity).
   useEffect(() => {
@@ -99,7 +109,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
           .filter((c) => /^[a-z][a-z0-9-]+$/.test(c))
           .join(" ");
         const injectedCss = collectAppCss() + (themeCss ? `\n:root{${themeCss}}` : "") + (animCss ? `\n${animCss}` : "");
-        const srcDoc = buildComponentSrcDoc(js, { injectedCss, theme, rootClass });
+        const srcDoc = buildComponentSrcDoc(js, { injectedCss, theme, rootClass, exitSelectors });
         if (iframeRef.current) iframeRef.current.srcdoc = srcDoc;
         setStatus("ready");
       } catch (e) {
@@ -110,7 +120,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, animKey, themeId, retry]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, animKey, exitKey, themeId, retry]);
 
   // Surface runtime errors the iframe posts (an exception during the component's own render). Match ONLY
   // this frame's own iframe by source window (#2908) — the on-visit scan now runs its own hidden probe
