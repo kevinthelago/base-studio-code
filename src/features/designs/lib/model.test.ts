@@ -4,6 +4,7 @@ import {
   resolveComposes,
   resolveUsedBy,
   resolveComponentAnimations,
+  resolveComponentAnimationDefs,
   DATA_SHAPES,
   ROLE_COLOR,
   ROLES,
@@ -130,5 +131,53 @@ describe("resolveComponentAnimations (#2942/#3065)", () => {
     const defs = resolveComponentAnimations(mkComp({ kitId: "vue-kit", animations: [draw] }), [mkKit({})]);
     expect(defs).toHaveLength(1);
     expect(defs[0].kit).toBe("vue-kit");
+  });
+});
+
+// ── Animation VARIATIONS — per-slot alternatives (#3069) ────────────────────────────────────────────
+// Grouped inline defs: two "bars" variations (one the marked default) + a separate one-off group.
+const barsGrow: KitAnimation = {
+  name: "bars-grow", group: "bars", default: true,
+  keyframes: { from: { transform: "scaleY(0)" }, to: { transform: "scaleY(1)" } },
+};
+const barsFade: KitAnimation = {
+  name: "bars-fade", group: "bars",
+  keyframes: { from: { opacity: "0" }, to: { opacity: "1" } },
+};
+
+describe("resolveComponentAnimations — variation slots (#3069)", () => {
+  it("(a) ungrouped animations ALL resolve and play — zero regression vs today's data", () => {
+    const comp = mkComp({ animations: [draw, fade] }); // both inline, neither grouped
+    expect(resolveComponentAnimations(comp, [mkKit({})]).map((d) => d.name)).toEqual(["draw", "fade-in"]);
+  });
+
+  it("(b) a group with a marked `default` resolves ONLY the default (even when listed later)", () => {
+    // bars-fade first, bars-grow (the default) second → only bars-grow plays, at the slot's first slot.
+    const comp = mkComp({ animations: [barsFade, barsGrow] });
+    const defs = resolveComponentAnimations(comp, [mkKit({})]);
+    expect(defs.map((d) => d.name)).toEqual(["bars-grow"]);
+  });
+
+  it("(c) a group with NO default resolves the FIRST in appearance order", () => {
+    const first: KitAnimation = { name: "first", group: "g", keyframes: { from: { opacity: "0" }, to: { opacity: "1" } } };
+    const second: KitAnimation = { name: "second", group: "g", keyframes: { from: { opacity: "0" }, to: { opacity: "1" } } };
+    const comp = mkComp({ animations: [first, second] });
+    expect(resolveComponentAnimations(comp, [mkKit({})]).map((d) => d.name)).toEqual(["first"]);
+  });
+
+  it("(d) mixed grouped + ungrouped resolves the group's default + EVERY ungrouped, order preserved", () => {
+    // order: bars-fade (grouped) · draw (ungrouped) · bars-grow (grouped default). The slot is emitted
+    // at its FIRST-appearance position holding the default; the ungrouped def keeps its place.
+    const comp = mkComp({ animations: [barsFade, draw, barsGrow] });
+    expect(resolveComponentAnimations(comp, [mkKit({})]).map((d) => d.name)).toEqual(["bars-grow", "draw"]);
+  });
+
+  it("resolveComponentAnimationDefs keeps ALL variations (the menu's full set), group/default riding through", () => {
+    const comp = mkComp({ animations: [barsFade, draw, barsGrow] });
+    const all = resolveComponentAnimationDefs(comp, [mkKit({})]);
+    expect(all.map((d) => d.name)).toEqual(["bars-fade", "draw", "bars-grow"]);
+    expect(all[0].group).toBe("bars");
+    expect(all[2].default).toBe(true);
+    expect(all.every((d) => d.kit === "react-ui")).toBe(true);
   });
 });

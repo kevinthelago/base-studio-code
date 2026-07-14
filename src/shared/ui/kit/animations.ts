@@ -50,6 +50,19 @@ export interface KitAnimation {
    *  meaningful WITH a `selector` (a root has no siblings to step); capped at ~`STAGGER_MAX` elements
    *  (siblings past the cap gracefully fall back to the base `delay`). Absent ⇒ no per-element step. */
   stagger?: string;
+  /** VARIATION SLOT (#3069) — the ORGANIZATIONAL grouping for a component's alternative animations, the
+   *  motion analog of a component variant. Two or more animations a component binds that share a `group`
+   *  are VARIATIONS of one another for the SAME slot (e.g. "bars entering"), and only ONE of the group
+   *  PLAYS — the {@link default} (or the first in appearance order, if none is marked). Ungrouped
+   *  animations are unaffected: they all play, exactly as before. Purely ORGANIZATIONAL: it is NOT
+   *  emitted to CSS — {@link compileAnimationsCss} and the Rust `validate_animation` ignore it, so it
+   *  never touches the keyframes / applying rule. Resolved by `resolveComponentAnimations`. Absent ⇒
+   *  ungrouped (always plays). */
+  group?: string;
+  /** The DEFAULT variation of its {@link group} (#3069) — the one that plays. At most one variation per
+   *  group is the default; if none is marked, the FIRST in appearance order plays. Meaningful only WITH a
+   *  `group`. Like `group` it is ORGANIZATIONAL — never emitted to CSS. Absent ⇒ not the group's default. */
+  default?: boolean;
 }
 
 /** A kit animation + its owning kit's CSS class base (the flat shape the compiler takes). */

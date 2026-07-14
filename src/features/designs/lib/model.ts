@@ -203,14 +203,17 @@ function isInlineAnim(e: unknown): e is KitAnimation {
   );
 }
 
-/** Resolve a component's MOTION bindings (#2942/#3065) into the flat, kit-scoped {@link AnimationDef}s
- *  the render engine compiles. Each entry is EITHER a NAME — looked up in the owning kit's `animations`
- *  library (shared/reusable motion) — OR an INLINE def (a full {@link KitAnimation} object used directly,
- *  for component-specific one-off motion). Names that don't resolve, and malformed inline objects, are
+/** Resolve EVERY animation a component binds (#2942/#3065) into the flat, kit-scoped {@link AnimationDef}s
+ *  — the FULL set, with ALL {@link KitAnimation.group} variations kept (both the default and its
+ *  alternatives). Each entry is EITHER a NAME — looked up in the owning kit's `animations` library
+ *  (shared/reusable motion) — OR an INLINE def (a full {@link KitAnimation} object used directly, for
+ *  component-specific one-off motion). Names that don't resolve, and malformed inline objects, are
  *  dropped. It does NOT bail when the kit's library is empty (an inline-only component must still
- *  resolve); every resolved def is stamped with the component's `kitId`. Empty when the component binds
- *  nothing. Pure (React-free). */
-export function resolveComponentAnimations(comp: ComponentRecord, kits: Kit[]): AnimationDef[] {
+ *  resolve); every resolved def is stamped with the component's `kitId`, preserving first-appearance
+ *  order. Empty when the component binds nothing. Pure (React-free). This is what the right-pane
+ *  AnimationsMenu lists so the user can see + switch each slot's variations; the RENDER path
+ *  ({@link resolveComponentAnimations}) narrows it to the one-per-group set that actually plays. */
+export function resolveComponentAnimationDefs(comp: ComponentRecord, kits: Kit[]): AnimationDef[] {
   const entries = comp.animations ?? [];
   if (!entries.length) return [];
   const kit = kits.find((k) => k.id === comp.kitId);
@@ -219,6 +222,35 @@ export function resolveComponentAnimations(comp: ComponentRecord, kits: Kit[]): 
   for (const e of entries) {
     const def = typeof e === "string" ? byName.get(e) : isInlineAnim(e) ? e : undefined;
     if (def) out.push({ ...def, kit: comp.kitId });
+  }
+  return out;
+}
+
+/** Resolve a component's MOTION bindings into the flat, kit-scoped {@link AnimationDef}s that ACTUALLY
+ *  PLAY (#2942/#3065/#3069) — the set the render engine compiles. Resolves every binding
+ *  ({@link resolveComponentAnimationDefs}), then applies VARIATION selection (#3069): a def with NO
+ *  {@link KitAnimation.group} always plays (unchanged); defs sharing a `group` are alternatives of ONE
+ *  slot and only ONE plays — the one marked {@link KitAnimation.default}, else the FIRST in appearance
+ *  order — occupying the group's first-appearance position (so switching the slot default never reorders
+ *  the played set). First-appearance order is preserved. A component whose bindings carry NO `group`
+ *  (today's data) resolves to exactly the same list as before — zero regression. Pure (React-free). */
+export function resolveComponentAnimations(comp: ComponentRecord, kits: Kit[]): AnimationDef[] {
+  const resolved = resolveComponentAnimationDefs(comp, kits);
+  // The playing def per group: the one marked `default`, else the first seen (appearance order).
+  const chosen = new Map<string, AnimationDef>();
+  for (const d of resolved) {
+    if (!d.group) continue;
+    const cur = chosen.get(d.group);
+    if (!cur || (d.default && !cur.default)) chosen.set(d.group, d);
+  }
+  // Emit in first-appearance order: an ungrouped def as-is; a group ONCE, at its first slot, holding its pick.
+  const out: AnimationDef[] = [];
+  const emitted = new Set<string>();
+  for (const d of resolved) {
+    if (!d.group) { out.push(d); continue; }
+    if (emitted.has(d.group)) continue;
+    emitted.add(d.group);
+    out.push(chosen.get(d.group)!);
   }
   return out;
 }
