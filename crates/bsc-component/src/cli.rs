@@ -476,9 +476,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
 /// module (`looks_buildable_module`, the SAME test the preview uses), run the module-syntax check and
 /// reject the whole batch on the first defect — so a silently-corrupted source (an unterminated string
 /// from an escape-collapse) can't be stored. A usage-snippet `srcText` is not a module and is left
-/// alone; a record with no `srcText` is fine. Pure — driven directly by tests.
+/// alone; a record with no `srcText` is fine. ALSO (non-blocking, #3065): warns on stderr for a bad
+/// INLINE animation def on the record's `animations`, but never rejects over one. The srcText Err
+/// semantics are unchanged; the animation check is a pure side-effect. Driven directly by tests.
 fn validate_component_batch(items: &[serde_json::Value]) -> Result<(), String> {
     for item in items {
+        // #3065: non-blocking — runs for EVERY item, BEFORE the srcText early-continue below, so an
+        // inline-animation warning surfaces even on a component whose `srcText` isn't a buildable module.
+        warn_component_animations(item);
+
         let src_text = item.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
         if !crate::graph_health::looks_buildable_module(src_text) {
             continue;
@@ -495,6 +501,40 @@ fn validate_component_batch(items: &[serde_json::Value]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Non-blocking write-time advisory (#3065) for a component's INLINE animation defs. A component's
+/// `animations` entries may each be a kit-animation NAME (a string — always fine, a ref into the kit's
+/// library) OR an INLINE def object (a full `KitAnimation` used directly for component-specific one-off
+/// motion, validated exactly like `bsc ui kit define-animation`). An inline def that fails the motion
+/// grammar — or an entry that is neither a string nor an object — is WARNED about on stderr (naming the
+/// component id), but NEVER rejected: the render compiler guards every field at render, and dropping a
+/// whole component over one bad anim is too heavy. Purely advisory — it never changes the batch result.
+fn warn_component_animations(item: &serde_json::Value) {
+    let Some(anims) = item.get("animations").and_then(serde_json::Value::as_array) else {
+        return;
+    };
+    let id = item
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| item.get("name").and_then(serde_json::Value::as_str))
+        .unwrap_or("component");
+    for entry in anims {
+        if entry.is_string() {
+            continue; // a NAME ref into the kit's animations library — always fine.
+        }
+        if entry.is_object() {
+            if let Err(msg) = validate_animation(entry) {
+                eprintln!(
+                    "warning: component '{id}' has an invalid inline animation: {msg} — it will be dropped at render (fix it, or reference a kit animation by name)."
+                );
+            }
+        } else {
+            eprintln!(
+                "warning: component '{id}' has an `animations` entry that is neither a name (string) nor an inline def (object) — it will be ignored."
+            );
+        }
+    }
 }
 
 /// Resolve the COMPONENT store with the same flag → env (`BSC_COMPONENT_DIR`) → default
@@ -1277,6 +1317,52 @@ mod tests {
             serde_json::json!({ "id": "c", "name": "C" }),
         ];
         assert!(validate_component_batch(&ok_batch).is_ok());
+    }
+
+    #[test]
+    fn validate_component_batch_never_rejects_over_inline_animations() {
+        use serde_json::json;
+        // #3065: a component's `animations` entries may be a kit-animation NAME (string) OR an INLINE
+        // def object (validated like `bsc ui kit define-animation`). A VALID inline def + a name ref is
+        // clean — the batch passes.
+        let good = json!({
+            "id": "spark", "name": "Sparkline",
+            "animations": [
+                "fade-in", // a NAME ref into the kit's library
+                { "name": "draw", "keyframes": { "from": { "opacity": "0" }, "to": { "opacity": "1" } } }
+            ],
+        });
+        assert!(validate_component_batch(std::slice::from_ref(&good)).is_ok());
+
+        // An INVALID inline def (an unsafe `url(...)` keyframe value + a bad-ident name) and a
+        // non-string/non-object entry are NON-BLOCKING — the batch STILL writes (the warnings are a
+        // stderr side-effect; the render compiler drops the bad fields). Rejecting a whole component
+        // over one bad anim is too heavy.
+        let bad = json!({
+            "id": "spark2", "name": "Sparkline2",
+            "animations": [
+                { "name": "draw", "keyframes": { "from": { "opacity": "url(evil)" } } },
+                { "name": "BAD NAME", "keyframes": { "from": { "opacity": "0" } } },
+                42
+            ],
+        });
+        assert!(
+            validate_component_batch(std::slice::from_ref(&bad)).is_ok(),
+            "an invalid inline animation must WRITE (warn-only), never reject the component",
+        );
+
+        // A component whose `animations` are all NAME refs (the pre-#3065 shape) is untouched + clean,
+        // and one with a corrupt inline def alongside a corrupt-module srcText still fails ONLY on the
+        // srcText (the srcText Err semantics are unchanged by the animations advisory).
+        let names_only = json!({ "id": "c", "name": "C", "animations": ["fade-in", "pop"] });
+        assert!(validate_component_batch(std::slice::from_ref(&names_only)).is_ok());
+        let bad_src_and_anim = json!({
+            "id": "d", "name": "DChart",
+            "srcText": "export const s = [1,2].join(\"\n\");",
+            "animations": [{ "name": "BAD NAME", "keyframes": {} }],
+        });
+        let err = validate_component_batch(std::slice::from_ref(&bad_src_and_anim)).unwrap_err();
+        assert!(err.contains("DChart") && err.contains("unterminated string literal"), "srcText Err unchanged; got: {err}");
     }
 
     /// Serializes the tests that mutate the process-wide `$BSC_SCOPES` / `$BSC_UI_ACTIVITY_LOG` env
