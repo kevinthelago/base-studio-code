@@ -280,3 +280,21 @@ export function resolveComponentAnimations(comp: ComponentRecord, kits: Kit[]): 
   }
   return out;
 }
+
+/** The canonical motion PRESET group (#3083). A component's motion is presented as a pick-one list of
+ *  PRESETS — each binding is a composed alternative and only the chosen one plays. Folding every inline
+ *  binding into ONE group makes "the entire component's animation" a single selectable value. */
+export const MOTION_PRESET_GROUP = "motion";
+
+/** Rewrite a component's `animations` so `name` becomes the ACTIVE preset (#3083): every INLINE def joins
+ *  {@link MOTION_PRESET_GROUP} and the def named `name` is its `default`, so it's the ONE that plays
+ *  ({@link resolveComponentAnimations} emits one-per-group). NAME-ref entries (strings) are left as-is —
+ *  a shared-motion binding carries no component-level default. Pure; the studio persists the result. */
+export function selectAnimationPreset(
+  animations: (string | KitAnimation)[],
+  name: string,
+): (string | KitAnimation)[] {
+  return animations.map((e) =>
+    typeof e === "string" ? e : { ...e, group: MOTION_PRESET_GROUP, default: e.name === name },
+  );
+}
