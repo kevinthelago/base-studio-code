@@ -23,4 +23,7 @@ export const PROJECT_MODES: TabItem[] = [
   // The Algorithms knowledge graph (#2760/#2761) — a single read-only page, so it folded in here as a
   // Planner tab (its own rail destination was removed, #2785), like Designs/Themes.
   { id: "algorithms", label: "Algorithms",  hint: "the algorithms knowledge graph — concepts, structures, and how they relate" },
+  // The Sounds library (#3072, epic #3071) — the synthesis-first audio pillar, structured like
+  // Components/Algorithms: a kit of live-synthesized cues. A no-PTY page (like Teams), folded in here.
+  { id: "sounds",     label: "Sounds",      hint: "the sound library — synthesized UI cues, organized into kits" },
 ];
