@@ -40,7 +40,7 @@ import { analyzeGraphHealth, HEALTH_SEVERITY, type HealthCategory } from "./lib/
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
-import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
+import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNamedAnimation, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
 import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useUiActivity } from "./lib/uiActivity";
 import { useComponentScan } from "./lib/useComponentScan";
@@ -125,10 +125,11 @@ export function DesignsWorkbench() {
   useCrumbEntity("designs", kit?.name ?? "");
   // The resolved try-on motion def (#2942) — the selected kit animation, kit-scoped for the vehicle.
   const tryAnimDef = useMemo(() => {
-    if (!tryAnim || !kit) return null;
-    const a = (kit.animations ?? []).find((x) => x.name === tryAnim);
-    return a ? { ...a, kit: kit.id } : null;
-  }, [tryAnim, kit]);
+    // The try-on resolves against the SELECTED component's OWN animations first, then the kit shelf
+    // (#3071) — so clicking a component animation replays it (the old kit-only lookup missed inline defs).
+    const c = compId ? components.find((x) => x.id === compId && x.kitId === kitId) ?? null : null;
+    return resolveNamedAnimation(c, kit, kits, tryAnim ?? "");
+  }, [tryAnim, compId, components, kitId, kits, kit]);
   const kitComps = useMemo(() => components.filter((c) => c.kitId === kitId), [components, kitId]);
   // Preview-error scan (#2838): while the Studio is mounted (visit, not boot — it lazily first-mounts via
   // KeptMountedPage), esbuild-build each buildable component in the active kit — throttled — and record
@@ -164,6 +165,8 @@ export function DesignsWorkbench() {
       typeof e === "string" || e.group !== group ? e : { ...e, default: e.name === name },
     );
     setComponent({ ...sel, animations });
+    setTryAnim(name); // #3071: also play the chosen variation immediately (guarantees a replay even
+                      // when it was already the default — the try-on rebuilds the preview).
   };
 
   // Clicking anything other than a node (the canvas background) unfocuses → the Inspector returns to
