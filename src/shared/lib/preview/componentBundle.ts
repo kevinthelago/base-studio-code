@@ -116,6 +116,93 @@ export interface ComponentSrcDocOptions {
    *  classes (`<component>-anim-<name>`), so its motion actually plays (the keyframes ride in via
    *  `injectedCss`). Sanitised by the caller. Empty ⇒ no class. */
   rootClass?: string;
+  /** Selectors of `exit`-triggered animations bound by the previewed component (#3057). When non-empty,
+   *  a self-contained exit-runtime shim is injected: a MutationObserver watches `#root`, and when React
+   *  unmounts a subtree that matches one of these selectors it re-homes the leaving element, flips the
+   *  `[data-bsc-exit]` marker the dormant exit rule keys on (so the exit animation plays), then removes
+   *  the element after it finishes. Empty/absent ⇒ NO shim is injected (zero change to the srcdoc). Each
+   *  selector is already `SAFE_SELECTOR`-validated at write time and used only in `querySelectorAll`/
+   *  `matches`; it is JSON-embedded here regardless. */
+  exitSelectors?: string[];
+}
+
+/**
+ * The exit-runtime shim (#3057) — a self-contained, non-module `<script>` that plays kit `exit`
+ * animations in the preview iframe. Returns "" when there are no exit selectors (so a non-exit srcdoc is
+ * byte-for-byte unchanged). Runs BEFORE React mounts, so the observer is already watching when React
+ * later unmounts a conditional subtree.
+ *
+ * How it works, and the guards that keep it safe:
+ * - **Reduced-motion bypass:** if the viewer asks for reduced motion it does nothing — React removes
+ *   normally (mirrors the `@media (prefers-reduced-motion: no-preference)` guard on the compiled rule).
+ * - **Loop guard (`exiting` WeakSet):** a re-homed leaving node is added to the set BEFORE re-insertion,
+ *   so the observer ignores both its re-insertion and its eventual `.remove()` — no infinite loop.
+ * - **Position reconstruction:** the node is put back under its old parent (`record.target`, skipped if
+ *   detached) before its old next-sibling (`record.nextSibling` when still connected, else appended).
+ * - **Cleanup:** each matched element gets `[data-bsc-exit]` (→ the dormant rule now matches → it plays)
+ *   and a one-shot `animationend` listener; when all have ended the node is removed, with a 1200ms
+ *   `setTimeout` BACKSTOP so a missing `animationend` never leaks the orphaned node.
+ *
+ * Vanilla ES5-ish (no imports/JSX/template features) — it runs inline in the sandboxed iframe. Only the
+ * selector list is interpolated (JSON-embedded); everything else is literal. Pure (a string builder).
+ */
+export function exitShimScript(exitSelectors: string[]): string {
+  if (!exitSelectors.length) return "";
+  return `\n<script>
+(function () {
+  try {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  } catch (e) { /* no matchMedia in this environment → proceed and observe */ }
+  var SELS = ${JSON.stringify(exitSelectors)};
+  var exiting = new WeakSet();
+  var root = document.getElementById("root");
+  if (!root) return;
+  function playExit(node, matches, parent, before) {
+    exiting.add(node);                 // LOOP GUARD: mark before re-inserting so the re-insert + final remove are ignored
+    parent.insertBefore(node, before); // put it back exactly where React took it from
+    var pending = matches.length;
+    var done = false;
+    function finish() {
+      if (done) return;                // guard-once: animationend AND the backstop both call this
+      done = true;
+      node.remove();                   // ignored by the observer — node is in \`exiting\`
+    }
+    function onEnd() {
+      pending -= 1;
+      if (pending <= 0) finish();
+    }
+    for (var i = 0; i < matches.length; i++) {
+      matches[i].setAttribute("data-bsc-exit", ""); // flip the marker → the dormant exit rule matches → it plays
+      matches[i].addEventListener("animationend", onEnd, { once: true });
+    }
+    setTimeout(finish, 1200);          // BACKSTOP: a missing animationend never leaks the orphaned node
+  }
+  function cb(records) {
+    for (var r = 0; r < records.length; r++) {
+      var record = records[r];
+      var removed = record.removedNodes;
+      for (var n = 0; n < removed.length; n++) {
+        var node = removed[n];
+        if (!(node instanceof Element) || exiting.has(node)) continue; // Elements only; skip our own re-homed nodes
+        var matches = [];
+        for (var s = 0; s < SELS.length; s++) {
+          try {
+            if (node.matches(SELS[s]) && matches.indexOf(node) === -1) matches.push(node);
+            var found = node.querySelectorAll(SELS[s]);
+            for (var f = 0; f < found.length; f++) if (matches.indexOf(found[f]) === -1) matches.push(found[f]);
+          } catch (e) { /* a bad selector never breaks the observer */ }
+        }
+        if (!matches.length) continue;                 // ordinary unmount — nothing to animate
+        var parent = record.target;
+        if (!parent || !parent.isConnected) continue;  // parent gone → can't re-home, let it go
+        var before = (record.nextSibling && record.nextSibling.isConnected) ? record.nextSibling : null;
+        playExit(node, matches, parent, before);
+      }
+    }
+  }
+  new MutationObserver(cb).observe(root, { childList: true, subtree: true });
+})();
+</script>`;
 }
 
 /**
@@ -123,7 +210,11 @@ export interface ComponentSrcDocOptions {
  * as a module, posting `ready`/`error` to the parent. Pure.
  */
 export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOptions = {}): string {
-  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "" } = opts;
+  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [] } = opts;
+  // #3057: the exit-runtime shim, injected right after `#root` and BEFORE the module script so the
+  // observer is watching before React mounts (and later unmounts) subtrees. "" when no exit selectors —
+  // the non-exit srcdoc is then byte-for-byte unchanged.
+  const exitShim = exitShimScript(exitSelectors);
   return `<!doctype html><html data-theme="${theme}"><head><meta charset="utf-8" />
 <style>html,body,#root{margin:0;height:100%;box-sizing:border-box}#root{overflow:auto}*,*::before,*::after{box-sizing:inherit}
 /* Fit oversized preview media (d3 charts/graphs, images) within the frame rather than overflowing it (#2915).
@@ -132,7 +223,7 @@ export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOpti
 #root svg,#root canvas,#root img,#root video{max-width:100%;max-height:100%}</style>
 <style>${injectedCss}</style>
 <script type="importmap">${JSON.stringify({ imports: importmap })}</script>
-</head><body><div id="root"${rootClass ? ` class="${rootClass}"` : ""}></div>
+</head><body><div id="root"${rootClass ? ` class="${rootClass}"` : ""}></div>${exitShim}
 <script>
   window.addEventListener("error", (e) => parent.postMessage({ __preview: "error", message: String(e.message) }, "*"));
   window.addEventListener("unhandledrejection", (e) => parent.postMessage({ __preview: "error", message: String(e.reason) }, "*"));
