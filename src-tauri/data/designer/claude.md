@@ -253,18 +253,27 @@ The flow is two steps — **author the motion on the kit, then bind it to compon
 - `bsc ui kit list-animations <kit-id>` — the kit's motion library (read-only).
 - `bsc ui kit remove-animation <kit-id> <name>` — drop one motion from the library by name.
 
-**Variations of a slot (#3069).** A component can offer several alternatives for ONE animation slot —
-the motion analog of a component variant. Bind several **inline defs** (all with distinct `name`s) that
-share a `group`, and mark one `"default": true`; only that one plays (or the first, if none is marked),
-and the Design Studio right pane lets the user switch which is the default. `group` / `default` are
-purely organizational (never compiled to CSS), and ungrouped animations are unaffected — they all play.
+**One request → ONE composed animation (#3083).** When the user asks for an animation — even a compound
+one like "slide in with some grow and opacity" — author it as a **single** inline def whose `keyframes`
+combine all the effects in one motion (translate **+** scale **+** opacity in the SAME stops), NOT three
+separate animations. A `@keyframes` stop is a map of declarations, so one keyframe set is one composed
+animation. The result is **one clickable value**, never a list of atomic effects.
+
+**Presents as PRESETS — a pick-one list (#3083).** A component's motion is presented to the user as a
+list of **presets**: a few composed animations, exactly ONE of which is active (plays). Offer the
+alternatives by binding several **inline defs** (distinct `name`s) that share the **`"motion"`** group
+and marking one `"default": true` — the active preset. The Design Studio right pane shows them as a
+pick-one list, and selecting a preset makes it the component's motion (it folds every binding into the
+one `motion` group, so only the pick plays). `group` / `default` are purely organizational (never
+compiled to CSS). So each authored animation is one preset value; the user picks between them.
 
 ```jsonc
-// a component's own `animations` — a "bars-entering" slot with two variations, "grow" the default:
+// a component's own `animations` — TWO composed motion presets; "slide-grow-in" is the active one:
 "animations": [
-  { "name": "bars-grow",  "group": "bars-entering", "default": true,
-    "keyframes": { "from": { "transform": "scaleY(0)" }, "to": { "transform": "scaleY(1)" } } },
-  { "name": "bars-fade",  "group": "bars-entering",
+  { "name": "slide-grow-in", "group": "motion", "default": true,
+    "keyframes": { "from": { "opacity": "0", "transform": "translateY(8px) scale(0.96)" },
+                   "to":   { "opacity": "1", "transform": "translateY(0) scale(1)" } } },
+  { "name": "fade-in", "group": "motion",
     "keyframes": { "from": { "opacity": "0" }, "to": { "opacity": "1" } } }
 ]
 ```

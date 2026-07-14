@@ -1,18 +1,19 @@
-// AnimationsMenu (#2942 · #3067 · #3069) — the right-pane MOTION navigator for the Design Studio's
-// animation try-on, the sibling of ThemesMenu. In preview mode the right pane toggles Themes | Animations.
-// Motion is PER-COMPONENT (#3065/#3067): the menu leads with the SELECTED COMPONENT's OWN animations — the
-// motion that plays on it (`ComponentRecord.animations`, resolved to `AnimationDef[]`) — and keeps the
-// kit's `animations` library below as a thin, secondary "generic shelf" of reusable motion (rendered only
-// when the kit has any). Clicking an ungrouped or a shelf row PLAYS it on the center vehicle (`onPlay` →
-// the studio applies `.<kit>-anim-<name>` to the preview #root); clicking the active one again clears. In
-// the shelf, the animations the component references BY NAME are marked with a ● dot.
-// VARIATION SLOTS (#3069): the component's OWN motion is partitioned by `group` — animations sharing a
-// group are alternatives of ONE slot ("bars entering"), rendered under a slot sub-header with a ★ on the
-// slot DEFAULT (the one that plays; distinct from the shelf's ● reference dot). Clicking a variation row
-// SELECTS it as the slot default (`onSelectVariation` → the studio rewrites the component + persists), the
-// motion analog of a component variant.
-// Reuses the shared rail scaffold (GraphRail · RailGroupHeader · RailRow) so it reads exactly like
-// ThemesMenu, mirrored into the right pane.
+// AnimationsMenu (#2942 · #3067 · #3069 · #3083) — the right-pane MOTION navigator for the Design
+// Studio's animation try-on, the sibling of ThemesMenu. In preview mode the right pane toggles
+// Themes | Animations.
+//
+// PRESETS (#3083): a component's motion is presented as a PICK-ONE list of PRESETS — each binding is a
+// composed alternative ("slide in with grow + opacity" is ONE preset, not three rows), and exactly one
+// is ACTIVE (plays). Clicking a preset SELECTS it as the component's motion (`onSelectPreset` → the
+// studio folds every binding into one motion group with the pick as default, persists, and the preview
+// replays it). This replaced the earlier flat "every animation on the component" list + per-slot
+// variation sub-headers: the user picks a value, not a menu of atomic effects.
+//
+// Below the presets sits the kit's reusable "generic shelf" (only when the kit has any) — motion the kit
+// owns, PLAYED on the center vehicle as a try-on (`onPlay` → the studio applies `.<kit>-anim-<name>` to
+// the preview #root); clicking the active try-on again clears. The animations the component references BY
+// NAME are marked with a ● dot there. Reuses the shared rail scaffold (GraphRail · RailGroupHeader ·
+// RailRow) so it reads exactly like ThemesMenu, mirrored into the right pane.
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { RailGroupHeader } from "@/shared/ui/layouts/RailGroupHeader";
 import { RailRow } from "@/shared/ui/layouts/RailRow";
@@ -23,8 +24,39 @@ import type { KitAnimation } from "@/shared/ui/kit";
 /** When each motion plays → a compact glyph in the row's leading slot. */
 const TRIGGER_GLYPH: Record<string, string> = { mount: "▸", hover: "☝", always: "∞" };
 
-/** One motion row — the try-on cell shared by the ungrouped + shelf groups. Clicking plays it on the
- *  vehicle (or clears when it's already the active try-on); `bound` shows the ● reference dot (shelf). */
+/** One PRESET row (#3083) — a composed alternative for the component's motion. Clicking SELECTS it as the
+ *  component's animation (the primary action); the ACTIVE preset (the one that plays) reads as `active`
+ *  and carries an "active" trailing tag. */
+function PresetRow({ a, active, onSelect }: {
+  a: KitAnimation;
+  active: boolean;
+  onSelect?: (name: string) => void;
+}) {
+  const trigger = a.trigger ?? "mount";
+  return (
+    <RailRow
+      active={active}
+      onClick={() => onSelect?.(a.name)}
+      leading={
+        <Text as="span" mono size="xs" tone="dim" title={`plays on ${trigger}`}>
+          {TRIGGER_GLYPH[trigger] ?? "▸"}
+        </Text>
+      }
+      trailing={
+        <Text as="span" mono size="xxs" tone={active ? "accent" : "dim"}>
+          {active ? "active · " : ""}{trigger}
+        </Text>
+      }
+      title={`${a.name} — ${active ? "the active preset (plays on this component)" : "click to make this the component's motion"} · plays on ${trigger}`}
+      data-anim-name={a.name}
+    >
+      {a.name}
+    </RailRow>
+  );
+}
+
+/** One SHELF row — the kit's reusable motion, PLAYED on the vehicle as a try-on (or cleared when it's
+ *  already the active try-on); `bound` shows the ● reference dot (the component references it by name). */
 function AnimRow({ a, bound, activeName, onPlay }: {
   a: KitAnimation;
   bound: boolean;
@@ -54,72 +86,29 @@ function AnimRow({ a, bound, activeName, onPlay }: {
   );
 }
 
-/** One VARIATION row within a slot group (#3069) — an alternative motion for the slot. Clicking SELECTS
- *  it as the slot's DEFAULT (the motion analog of picking a variant), which is the primary action here;
- *  the current default carries a ★ and reads as `active`. Shares AnimRow's leading trigger glyph. */
-function VariationRow({ a, group, isDefault, onSelectVariation }: {
-  a: KitAnimation;
-  group: string;
-  isDefault: boolean;
-  onSelectVariation?: (group: string, name: string) => void;
-}) {
-  const trigger = a.trigger ?? "mount";
-  return (
-    <RailRow
-      active={isDefault}
-      onClick={() => onSelectVariation?.(group, a.name)}
-      leading={
-        <Text as="span" mono size="xs" tone="dim" title={`plays on ${trigger}`}>
-          {TRIGGER_GLYPH[trigger] ?? "▸"}
-        </Text>
-      }
-      trailing={
-        <Text as="span" mono size="xxs" tone={isDefault ? "accent" : "dim"}>
-          {isDefault ? "★ " : ""}{trigger}
-        </Text>
-      }
-      title={`${a.name} — ${isDefault ? "the slot default (plays)" : "click to make this the slot default"} · plays on ${trigger}`}
-      data-anim-name={a.name}
-    >
-      {a.name}
-    </RailRow>
-  );
-}
-
-/** The right-pane animations menu (#3067/#3069). Two groups: the SELECTED COMPONENT's own motion (the
- *  star — what actually plays), then the kit's reusable "generic shelf" below (only when it has any).
- *  Within "This component", animations sharing a `group` are VARIATIONS of one SLOT (#3069): rendered
- *  under a slot sub-header, the DEFAULT marked ★; clicking one makes it the slot default
- *  (`onSelectVariation`). Ungrouped + shelf rows play on the vehicle (the try-on); `activeName`
- *  highlights the active one. */
-export function AnimationsMenu({ componentAnimations, shelf, boundShelfNames, activeName, onPlay, onSelectVariation }: {
-  /** The selected component's OWN resolved animations — the FULL set (all variations, each carrying its
-   *  `group`/`default`), so the menu can present + switch each slot's variations. */
+/** The right-pane animations menu (#3083). PRIMARY: the component's motion as a PICK-ONE list of
+ *  PRESETS — the active one (the one that plays) is marked; clicking one makes it the component's motion
+ *  (`onSelectPreset`). SECONDARY: the kit's reusable "generic shelf" (only when it has any), PLAYED on the
+ *  vehicle as a try-on (`onPlay`; `activeName` highlights the active try-on). */
+export function AnimationsMenu({ componentAnimations, shelf, boundShelfNames, activeName, onPlay, onSelectPreset }: {
+  /** The selected component's OWN resolved animations — every binding, presented as the preset list. */
   componentAnimations: KitAnimation[];
   /** The kit's animation library — the reusable/generic shelf, shown as a secondary group. */
   shelf: KitAnimation[];
   /** Names of SHELF animations the component references — marked with a ● dot in the shelf group. */
   boundShelfNames: string[];
-  /** The animation currently played on the vehicle (the try-on), or null. */
+  /** The animation currently played on the vehicle (the shelf try-on), or null. */
   activeName: string | null;
-  /** Play a motion on the vehicle; the active name again (or null) clears it. */
+  /** Play a SHELF motion on the vehicle; the active name again (or null) clears it. */
   onPlay: (name: string | null) => void;
-  /** Select a VARIATION as its slot's default (#3069) — `(group, name)`. Omitted ⇒ variation rows are
-   *  inert (the menu still renders the slots + ★). */
-  onSelectVariation?: (group: string, name: string) => void;
+  /** Select a PRESET as the component's motion (#3083) — the primary action. Omitted ⇒ preset rows are
+   *  inert (the menu still renders the list + the active marker). */
+  onSelectPreset?: (name: string) => void;
 }) {
   const bound = new Set(boundShelfNames);
-  // Partition the component's OWN motion into ungrouped rows + VARIATION SLOTS (#3069), preserving
-  // first-appearance order for both the ungrouped list and the slots (mirrors resolveComponentAnimations).
-  const ungrouped = componentAnimations.filter((a) => !a.group);
-  const slots: { group: string; variations: KitAnimation[] }[] = [];
-  const slotIndex = new Map<string, number>();
-  for (const a of componentAnimations) {
-    if (!a.group) continue;
-    let i = slotIndex.get(a.group);
-    if (i === undefined) { i = slots.length; slotIndex.set(a.group, i); slots.push({ group: a.group, variations: [] }); }
-    slots[i].variations.push(a);
-  }
+  // The ACTIVE preset — the one that plays (the component's current motion): the def marked `default`,
+  // else the first in appearance order. Mirrors resolveComponentAnimations' one-per-group pick.
+  const activePreset = componentAnimations.find((a) => a.default)?.name ?? componentAnimations[0]?.name ?? null;
   return (
     <GraphRail
       label="Animations"
@@ -127,49 +116,26 @@ export function AnimationsMenu({ componentAnimations, shelf, boundShelfNames, ac
       // Mirror the left rail into the right pane, exactly like ThemesMenu.
       style={{ borderRight: "none", borderLeft: "1px solid var(--border)" }}
     >
-      {/* Primary — this component's OWN motion (the star: what actually plays on it). */}
-      <RailGroupHeader count={componentAnimations.length} title="motion this component actually plays">
-        This component
+      {/* Primary — the component's motion as a pick-one list of composed PRESETS. */}
+      <RailGroupHeader count={componentAnimations.length} title="pick one — it becomes this component's motion">
+        Presets
       </RailGroupHeader>
       {componentAnimations.length === 0 ? (
         <Box style={{ padding: "4px 10px 10px" }}>
           <Text size="xs" tone="dim">No animations on this component yet.</Text>
         </Box>
       ) : (
-        <>
-          {/* Ungrouped motion — each plays; one row apiece, exactly as before. */}
-          {ungrouped.map((a, i) => (
-            <AnimRow key={`own:${a.name}:${i}`} a={a} bound={false} activeName={activeName} onPlay={onPlay} />
-          ))}
-          {/* Variation slots — alternatives of one slot under its header; ★ marks the default that plays. */}
-          {slots.map(({ group, variations }) => {
-            const def = variations.find((v) => v.default) ?? variations[0];
-            return (
-              <Box key={`slot:${group}`}>
-                <RailGroupHeader count={variations.length} title="variation slot — one of these plays; ★ is the default">
-                  {group}
-                </RailGroupHeader>
-                {variations.map((a, i) => (
-                  <VariationRow
-                    key={`var:${group}:${a.name}:${i}`}
-                    a={a}
-                    group={group}
-                    isDefault={a.name === def.name}
-                    onSelectVariation={onSelectVariation}
-                  />
-                ))}
-              </Box>
-            );
-          })}
-        </>
+        componentAnimations.map((a, i) => (
+          <PresetRow key={`preset:${a.name}:${i}`} a={a} active={a.name === activePreset} onSelect={onSelectPreset} />
+        ))
       )}
 
-      {/* Secondary — the kit's reusable/generic shelf (only when it carries any). */}
+      {/* Secondary — the kit's reusable/generic shelf (only when it carries any), a try-on. */}
       {shelf.length > 0 && (
         <>
           <RailGroupHeader
             count={shelf.length}
-            title="reusable motion the kit owns — attachable to any of its components"
+            title="reusable motion the kit owns — click to preview it on the component"
           >
             Generic shelf
           </RailGroupHeader>

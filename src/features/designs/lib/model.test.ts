@@ -6,6 +6,8 @@ import {
   resolveComponentAnimations,
   resolveComponentAnimationDefs,
   resolveNamedAnimation,
+  selectAnimationPreset,
+  MOTION_PRESET_GROUP,
   previewAnimDefs,
   DATA_SHAPES,
   ROLE_COLOR,
@@ -217,5 +219,35 @@ describe("resolveComponentAnimations — variation slots (#3069)", () => {
     expect(all[0].group).toBe("bars");
     expect(all[2].default).toBe(true);
     expect(all.every((d) => d.kit === "react-ui")).toBe(true);
+  });
+});
+
+// ── selectAnimationPreset — pick one preset = the component's motion (#3083) ─────────────────────────
+describe("selectAnimationPreset (#3083)", () => {
+  it("folds EVERY inline binding into the one motion group with the pick as the sole default", () => {
+    const out = selectAnimationPreset([draw, fade], "fade-in");
+    expect(out).toEqual([
+      { ...draw, group: MOTION_PRESET_GROUP, default: false },
+      { ...fade, group: MOTION_PRESET_GROUP, default: true },
+    ]);
+  });
+
+  it("re-picks — exactly one binding is the default after a switch", () => {
+    const seeded = selectAnimationPreset([draw, fade], "draw") as KitAnimation[];
+    const out = selectAnimationPreset(seeded, "fade-in") as KitAnimation[];
+    const defaults = out.filter((e): e is KitAnimation => typeof e !== "string" && !!e.default);
+    expect(defaults.map((d) => d.name)).toEqual(["fade-in"]);
+  });
+
+  it("leaves NAME-ref (string) entries untouched", () => {
+    const out = selectAnimationPreset(["shelf-fade", draw], "draw");
+    expect(out[0]).toBe("shelf-fade");
+    expect(out[1]).toMatchObject({ name: "draw", group: MOTION_PRESET_GROUP, default: true });
+  });
+
+  it("after selecting a preset, ONLY the pick plays (resolveComponentAnimations picks it)", () => {
+    // Two ungrouped animations both play today; selecting one makes it the sole motion.
+    const comp = mkComp({ animations: selectAnimationPreset([draw, fade], "fade-in") });
+    expect(resolveComponentAnimations(comp, [mkKit({})]).map((d) => d.name)).toEqual(["fade-in"]);
   });
 });
