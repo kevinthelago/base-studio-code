@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, teamToOrg, nodeHasLiveSession, withPreviewNode, PREVIEW_NODE_ID } from "./glanceFleet";
+import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, teamToOrg, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./glanceFleet";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 import type { Team } from "@/features/teams";
@@ -315,5 +315,24 @@ describe("nodeHasLiveSession (#2534/#2542 — a fleet-tab cell morphs)", () => {
   it("is NOT live for a pane that isn't a cell of any launched tab", () => {
     expect(nodeHasLiveSession("proj:ghost", live)).toBe(false);
     expect(nodeHasLiveSession("proj:director", new Set())).toBe(false);
+  });
+});
+
+describe("livePanesForProject (#3052 — bulk End sessions)", () => {
+  const live = new Set(["cli:director", "cli:foundation", "cli:pages", "cli-typer:director", "other:worker"]);
+
+  it("returns every live pane for the project — director + workers", () => {
+    expect(livePanesForProject("cli", live).sort()).toEqual(["cli:director", "cli:foundation", "cli:pages"]);
+  });
+
+  it("matches the `<key>:` prefix EXACTLY — a project keyed `cli` never captures `cli-typer`'s panes", () => {
+    expect(livePanesForProject("cli", live)).not.toContain("cli-typer:director");
+    expect(livePanesForProject("cli-typer", live)).toEqual(["cli-typer:director"]);
+  });
+
+  it("is empty for a project with no live sessions, an empty live set, or a blank key", () => {
+    expect(livePanesForProject("ghost", live)).toEqual([]);
+    expect(livePanesForProject("cli", new Set())).toEqual([]);
+    expect(livePanesForProject("", live)).toEqual([]);
   });
 });
