@@ -519,7 +519,23 @@ function Inspector(p: InspProps) {
               <Text weight={600} size={16} style={{ letterSpacing: "-.01em" }}>{sel.name}</Text>
               <Text size={11.5} tone="muted" as="div" style={{ marginTop: 2 }}>{sel.role} · {p.kitName}</Text>
             </Box>
-            <Text mono size={10} tone="muted" style={{ border: "1px solid var(--border)", borderRadius: 5, padding: "2px 7px" }}>v{sel.version}</Text>
+            {/* THEME switcher (#2488/#2545) — a header-level control beside the component name (#3085):
+                the ONE theme control (hydrated light/dark + designer-authored), driving both the surface
+                (`base`) and the retint (`vars`). A compact select since the set grows via `bsc ui theme`. */}
+            {/* eslint-disable-next-line no-restricted-syntax -- compact header select over a dynamic set (SelectField imposes a labelled field layout) */}
+            <select
+              className="sel"
+              aria-label="Theme"
+              title="Theme — surface + semantic-token palette applied to the specimen (bsc ui theme)"
+              value={p.kitTheme}
+              onChange={(e) => p.setKitTheme(e.target.value)}
+              style={{ flex: "none", marginTop: 1 }}
+            >
+              {p.kitThemes.map((t) => (
+                <option key={t.id} value={t.id}>◈ {t.label}</option>
+              ))}
+            </select>
+            <Text mono size={10} tone="muted" style={{ border: "1px solid var(--border)", borderRadius: 5, padding: "2px 7px", marginTop: 2 }}>v{sel.version}</Text>
           </Box>
 
           {/* live preview — folded in from the removed Library center view (#2453) */}
@@ -528,21 +544,7 @@ function Inspector(p: InspProps) {
               <Eyebrow size={9.5}>Live preview</Eyebrow>
               <SegmentedControl label="" options={p.allVariants.map((v) => ({ label: v, on: v === p.activeVariant, onClick: () => p.setVariant(v) }))} />
               <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === p.vp, onClick: () => p.setVpKind(k) }))} />
-              {/* THEME switcher (#2488/#2545): the ONE theme control — the hydrated theme collection
-                  (light/dark + designer-authored), driving both the surface (`base`) and the retint
-                  (`vars`). A compact select since the set is open-ended and grows via `bsc ui theme`. */}
-              {/* eslint-disable-next-line no-restricted-syntax -- compact toolbar select over a dynamic set (SelectField imposes a labelled field layout) */}
-              <select
-                className="sel"
-                aria-label="Theme"
-                title="Theme — surface + semantic-token palette applied to the specimen (bsc ui theme)"
-                value={p.kitTheme}
-                onChange={(e) => p.setKitTheme(e.target.value)}
-              >
-                {p.kitThemes.map((t) => (
-                  <option key={t.id} value={t.id}>◈ {t.label}</option>
-                ))}
-              </select>
+              {/* The theme switcher moved up beside the component name (#3085). */}
             </Box>
             <Box className="ds-surface">
               {/* Live preview (#2824): the component is BUILT (esbuild-wasm) from its real source and
