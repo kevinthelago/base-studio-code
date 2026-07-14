@@ -40,7 +40,7 @@ import { analyzeGraphHealth, HEALTH_SEVERITY, type HealthCategory } from "./lib/
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
-import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNamedAnimation, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
+import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNamedAnimation, selectAnimationPreset, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
 import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useUiActivity } from "./lib/uiActivity";
 import { useComponentScan } from "./lib/useComponentScan";
@@ -153,20 +153,16 @@ export function DesignsWorkbench() {
     setCompId(c.id); setVariant(c.variants[0] ?? "default"); setTab("overview");
     setTryAnim(null); // a new vehicle clears the motion try-on (#2942)
   };
-  // Select a VARIATION as its slot's default (#3069): within `group`, mark the INLINE def named `name`
-  // the default and clear the flag on the group's other inline defs; ungrouped defs, other groups, and
-  // NAME-ref entries (strings — they carry no component-level `default`; a shared-motion variation's
-  // group/default lives on the kit-library def) are left untouched. Persist through the STANDARD
+  // Select a PRESET as the component's motion (#3083): fold every inline binding into ONE motion preset
+  // group with `name` as the default (`selectAnimationPreset`), so exactly the picked one plays — the
+  // "pick a value to set the entire component's animation" model. Persist through the STANDARD
   // component-edit path (`setComponent` → store update + write-through `bsc ui set`), so the preview
-  // replays the new default (its `resolveComponentAnimations` re-picks) and the ★ moves immediately.
-  const selectVariation = (group: string, name: string) => {
+  // replays the new pick (its `resolveComponentAnimations` re-picks) and the active marker moves at once.
+  const selectPreset = (name: string) => {
     if (!sel) return;
-    const animations = (sel.animations ?? []).map((e) =>
-      typeof e === "string" || e.group !== group ? e : { ...e, default: e.name === name },
-    );
-    setComponent({ ...sel, animations });
-    setTryAnim(name); // #3071: also play the chosen variation immediately (guarantees a replay even
-                      // when it was already the default — the try-on rebuilds the preview).
+    setComponent({ ...sel, animations: selectAnimationPreset(sel.animations ?? [], name) });
+    setTryAnim(name); // also play the chosen preset immediately (guarantees a replay even when it was
+                      // already active — the try-on rebuilds the preview).
   };
 
   // Clicking anything other than a node (the canvas background) unfocuses → the Inspector returns to
@@ -327,7 +323,7 @@ export function DesignsWorkbench() {
                   boundShelfNames={(sel?.animations ?? []).filter((a): a is string => typeof a === "string")}
                   activeName={tryAnim}
                   onPlay={setTryAnim}
-                  onSelectVariation={selectVariation}
+                  onSelectPreset={selectPreset}
                 />
               )}
             </Box>
