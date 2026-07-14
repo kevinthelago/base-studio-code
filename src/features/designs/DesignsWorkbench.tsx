@@ -40,7 +40,7 @@ import { analyzeGraphHealth, HEALTH_SEVERITY, type HealthCategory } from "./lib/
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
-import { matchesQuery, resolveComposes, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
+import { matchesQuery, resolveComposes, resolveComponentAnimations, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
 import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useUiActivity } from "./lib/uiActivity";
 import { useComponentScan } from "./lib/useComponentScan";
@@ -299,7 +299,13 @@ export function DesignsWorkbench() {
               {rightAxis === "themes" ? (
                 <ThemesMenu themes={kitThemes} activeId={kitTheme} onSelect={setKitTheme} />
               ) : (
-                <AnimationsMenu animations={kit?.animations ?? []} boundNames={(sel?.animations ?? []).filter((a): a is string => typeof a === "string")} activeName={tryAnim} onPlay={setTryAnim} />
+                <AnimationsMenu
+                  componentAnimations={sel ? resolveComponentAnimations(sel, kits) : []}
+                  shelf={kit?.animations ?? []}
+                  boundShelfNames={(sel?.animations ?? []).filter((a): a is string => typeof a === "string")}
+                  activeName={tryAnim}
+                  onPlay={setTryAnim}
+                />
               )}
             </Box>
           ) : (
