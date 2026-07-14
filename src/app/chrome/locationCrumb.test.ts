@@ -27,6 +27,7 @@ describe("locationCrumb (#3036) — every page shows in the titlebar", () => {
     expect(crumb({ activeWorkspace: "projects", projectsPageMode: "designs" })).toBe("Planner — Components");
     expect(crumb({ activeWorkspace: "projects", projectsPageMode: "teams" })).toBe("Planner — Teams");
     expect(crumb({ activeWorkspace: "projects", projectsPageMode: "algorithms" })).toBe("Planner — Algorithms");
+    expect(crumb({ activeWorkspace: "projects", projectsPageMode: "sounds" })).toBe("Planner — Sounds");
     expect(crumb({ activeWorkspace: "projects", projectsPageMode: "projects" })).toBe("Planner — Projects");
     expect(crumb({ activeWorkspace: "projects", projectsPageMode: "projects", projectsView: "planning" }))
       .toBe("Planner — Projects — Planning");
