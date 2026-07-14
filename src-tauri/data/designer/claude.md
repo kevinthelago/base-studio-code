@@ -213,6 +213,10 @@ An animation is `{ name, keyframes, duration?, easing?, delay?, trigger?, select
   ripple), so element 2 starts one step after the base delay, element 3 two steps, and so on. **Needs a
   `selector`** (a root has no siblings to step — rejected without one) and is capped at ~32 elements
   (siblings past the cap fall back to the base delay).
+- `group` / `default` — OPTIONAL, and only on a component's binding (see **Variations** below). A
+  component can offer several VARIATIONS of one animation slot by binding several **inline defs** that
+  share a `group` (`"bars-entering"`); only ONE plays — the one marked `"default": true`, else the first
+  in order. Purely **organizational** — never emitted to CSS.
 
 **Motion honors the user.** The applying rule is wrapped in
 `@media (prefers-reduced-motion: no-preference)`, so a user who asks for less motion never sees it —
@@ -249,6 +253,22 @@ The flow is two steps — **author the motion on the kit, then bind it to compon
 - `bsc ui kit list-animations <kit-id>` — the kit's motion library (read-only).
 - `bsc ui kit remove-animation <kit-id> <name>` — drop one motion from the library by name.
 
+**Variations of a slot (#3069).** A component can offer several alternatives for ONE animation slot —
+the motion analog of a component variant. Bind several **inline defs** (all with distinct `name`s) that
+share a `group`, and mark one `"default": true`; only that one plays (or the first, if none is marked),
+and the Design Studio right pane lets the user switch which is the default. `group` / `default` are
+purely organizational (never compiled to CSS), and ungrouped animations are unaffected — they all play.
+
+```jsonc
+// a component's own `animations` — a "bars-entering" slot with two variations, "grow" the default:
+"animations": [
+  { "name": "bars-grow",  "group": "bars-entering", "default": true,
+    "keyframes": { "from": { "transform": "scaleY(0)" }, "to": { "transform": "scaleY(1)" } } },
+  { "name": "bars-fade",  "group": "bars-entering",
+    "keyframes": { "from": { "opacity": "0" }, "to": { "opacity": "1" } } }
+]
+```
+
 **Same value grammar as everywhere.** Every keyframe value (and `duration` / `easing`) passes the
 closed grammar — a value carrying `;`, `{`, `url(`, `@import`, a comment, etc. is REJECTED (not
 silently dropped), so you fix it at write time. Author motion that composes with the tokens.
@@ -278,7 +298,8 @@ Each component record carries:
 - `animations` — OPTIONAL. The component's MOTION bindings (rung 5): a list whose entries are each a
   kit-animation **NAME** (a string resolved from the owning kit's `animations` library — shared,
   reusable motion) OR an **inline def** object (a full `{ name, keyframes, … }` — component-specific
-  one-off motion, validated at write time exactly like a kit animation). Absent ⇒ no motion.
+  one-off motion, validated at write time exactly like a kit animation). Inline defs sharing a `group`
+  are VARIATIONS of one slot (one, the `default`, plays — see "Variations of a slot"). Absent ⇒ no motion.
 - Plus identity + guidance: `id`, `name`, `kitId`, `version`, `props`, `tags`, `whenUse`,
   `whenNot`, `src`, `srcText`, and the reuse signal `used`.
 
