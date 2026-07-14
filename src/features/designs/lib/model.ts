@@ -243,6 +243,15 @@ export function resolveNamedAnimation(
   return [...own, ...shelf].find((x) => x.name === name) ?? null;
 }
 
+/** The animations the render-preview should COMPILE. A try-on ISOLATES the clicked animation — the
+ *  preview plays ONLY it, so clicking each animation in the menu previews THAT one; with no try-on the
+ *  component's full bound motion plays. (#3075: before, the try-on was APPENDED to the full bound set,
+ *  so every click compiled the identical set and the preview never changed — "always the same one".)
+ *  Pure (React-free). */
+export function previewAnimDefs(boundDefs: AnimationDef[], tryOn: AnimationDef | null | undefined): AnimationDef[] {
+  return tryOn ? [tryOn] : boundDefs;
+}
+
 /** Resolve a component's MOTION bindings into the flat, kit-scoped {@link AnimationDef}s that ACTUALLY
  *  PLAY (#2942/#3065/#3069) — the set the render engine compiles. Resolves every binding
  *  ({@link resolveComponentAnimationDefs}), then applies VARIATION selection (#3069): a def with NO
