@@ -5,6 +5,7 @@ import {
   resolveUsedBy,
   resolveComponentAnimations,
   resolveComponentAnimationDefs,
+  resolveNamedAnimation,
   DATA_SHAPES,
   ROLE_COLOR,
   ROLES,
@@ -86,6 +87,25 @@ const mkComp = (over: Partial<ComponentRecord>): ComponentRecord => ({
   src: "", srcText: "", ...over,
 });
 const mkKit = (over: Partial<Kit>): Kit => ({ id: "react-ui", name: "React UI", stack: "React", dot: "var(--accent)", ...over });
+
+describe("resolveNamedAnimation — the try-on replay resolution (#3071)", () => {
+  it("finds a component's INLINE animation, not just the kit shelf (the replay regression)", () => {
+    const comp = mkComp({ animations: [draw] }); // inline on the component
+    const kit = mkKit({ animations: [] });        // shelf EMPTY — the post component-owned migration state
+    expect(resolveNamedAnimation(comp, kit, [kit], "draw")?.name).toBe("draw");
+    expect(resolveNamedAnimation(comp, kit, [kit], "draw")?.kit).toBe("react-ui");
+  });
+  it("falls back to the kit's generic shelf when the name isn't on the component", () => {
+    const kit = mkKit({ animations: [fade] });    // a generic on the shelf
+    expect(resolveNamedAnimation(mkComp({ animations: [] }), kit, [kit], "fade-in")?.name).toBe("fade-in");
+  });
+  it("returns null for an unknown name, an empty name, or a null component with no shelf match", () => {
+    const kit = mkKit({ animations: [] });
+    expect(resolveNamedAnimation(mkComp({ animations: [draw] }), kit, [kit], "nope")).toBeNull();
+    expect(resolveNamedAnimation(mkComp({ animations: [draw] }), kit, [kit], "")).toBeNull();
+    expect(resolveNamedAnimation(null, kit, [kit], "draw")).toBeNull();
+  });
+});
 
 describe("resolveComponentAnimations (#2942/#3065)", () => {
   it("resolves an INLINE-def-only component even when the kit has NO animations library (the #3065 regression)", () => {

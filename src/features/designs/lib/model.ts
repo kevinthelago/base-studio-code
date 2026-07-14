@@ -226,6 +226,23 @@ export function resolveComponentAnimationDefs(comp: ComponentRecord, kits: Kit[]
   return out;
 }
 
+/** Resolve an animation by NAME to its playable def (#3071) — the SELECTED component's OWN animations
+ *  first (inline defs + resolved kit refs, all variations), then the kit's generic shelf. This is what
+ *  the preview's TRY-ON uses, so clicking a component animation replays it; a kit-only lookup misses the
+ *  now-inline component animations (the kit library is empty after the component-owned migration) → no
+ *  `extraAnimation` → no rebuild-key change → no replay. Returns `null` when nothing matches. Pure. */
+export function resolveNamedAnimation(
+  comp: ComponentRecord | null,
+  kit: Kit | undefined,
+  kits: Kit[],
+  name: string,
+): AnimationDef | null {
+  if (!name) return null;
+  const own = comp ? resolveComponentAnimationDefs(comp, kits) : [];
+  const shelf = kit ? (kit.animations ?? []).map((a) => ({ ...a, kit: kit.id })) : [];
+  return [...own, ...shelf].find((x) => x.name === name) ?? null;
+}
+
 /** Resolve a component's MOTION bindings into the flat, kit-scoped {@link AnimationDef}s that ACTUALLY
  *  PLAY (#2942/#3065/#3069) — the set the render engine compiles. Resolves every binding
  *  ({@link resolveComponentAnimationDefs}), then applies VARIATION selection (#3069): a def with NO
