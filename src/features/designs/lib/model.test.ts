@@ -6,6 +6,7 @@ import {
   resolveComponentAnimations,
   resolveComponentAnimationDefs,
   resolveNamedAnimation,
+  previewAnimDefs,
   DATA_SHAPES,
   ROLE_COLOR,
   ROLES,
@@ -87,6 +88,23 @@ const mkComp = (over: Partial<ComponentRecord>): ComponentRecord => ({
   src: "", srcText: "", ...over,
 });
 const mkKit = (over: Partial<Kit>): Kit => ({ id: "react-ui", name: "React UI", stack: "React", dot: "var(--accent)", ...over });
+
+describe("previewAnimDefs — the try-on ISOLATES the clicked animation (#3075)", () => {
+  const a = { ...draw, kit: "react-ui" };
+  const b = { ...fade, kit: "react-ui" };
+  it("plays ONLY the try-on animation when one is set (not the whole bound set)", () => {
+    expect(previewAnimDefs([a, b], b)).toEqual([b]);
+  });
+  it("plays the component's full bound motion when there is NO try-on", () => {
+    const bound = [a, b];
+    expect(previewAnimDefs(bound, null)).toBe(bound);
+  });
+  it("isolates even an animation already in the bound set — so every click changes the preview", () => {
+    // The #3075 regression: appending the clicked one to [a, b] yielded [a, b] every time.
+    expect(previewAnimDefs([a, b], a)).toEqual([a]);
+    expect(previewAnimDefs([a, b], b)).toEqual([b]);
+  });
+});
 
 describe("resolveNamedAnimation — the try-on replay resolution (#3071)", () => {
   it("finds a component's INLINE animation, not just the kit shelf (the replay regression)", () => {

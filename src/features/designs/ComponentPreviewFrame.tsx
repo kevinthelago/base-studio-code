@@ -16,7 +16,7 @@ import { bundleComponent, buildComponentSrcDoc } from "@/shared/lib/preview/comp
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
 import { compileAnimationsCss, type AnimationDef } from "@/shared/ui/kit";
 import { componentPreviewFiles, type KitArtifact } from "./lib/componentPreview";
-import { resolveComponentAnimations, type ComponentRecord } from "./lib/model";
+import { resolveComponentAnimations, previewAnimDefs, type ComponentRecord } from "./lib/model";
 
 // The packaged kit artifact carries each built-in's verbatim `source` + the `runtime` (@/) closure
 // (react-ui.json; the builtinKits SEED strips `source`, but this raw import keeps it — same bundle).
@@ -55,12 +55,12 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // kit's motion re-renders the preview (the object identity alone isn't a stable dep).
   const kits = useAppStore((s) => s.kits);
   const boundDefs = useMemo(() => resolveComponentAnimations(comp, kits), [comp, kits]);
-  // The motion actually played: the component's bound animations + any try-on animation the studio
-  // passes (deduped by kit+name so a try-on replaces a same-named binding rather than doubling it).
+  // The motion actually played. A try-on ISOLATES the clicked animation — the preview plays ONLY it,
+  // so clicking each animation in the menu previews THAT one. Without a try-on the component's full
+  // bound motion plays. (Before #3075 the try-on appended to the full bound set, so every click
+  // compiled the SAME set and the preview never changed — "always the same one".)
   const animDefs = useMemo(
-    () => (extraAnimation
-      ? [...boundDefs.filter((d) => !(d.name === extraAnimation.name && d.kit === extraAnimation.kit)), extraAnimation]
-      : boundDefs),
+    () => previewAnimDefs(boundDefs, extraAnimation),
     [boundDefs, extraAnimation],
   );
   const animKey = JSON.stringify(animDefs);
