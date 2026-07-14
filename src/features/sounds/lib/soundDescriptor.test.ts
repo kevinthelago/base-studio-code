@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { validateKit, type SoundKit } from "./soundDescriptor";
-import { STARTER_KIT } from "./soundSeeds";
+import { STARTER_KIT } from "./soundKits";
 
 describe("validateKit (#3072)", () => {
   it("passes the starter kit — no dangling composes edges (seed integrity)", () => {

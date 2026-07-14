@@ -15,12 +15,15 @@ import { SoundsRail } from "./SoundsRail";
 import { SoundsInspector } from "./SoundsInspector";
 import { buildSoundGraph, layoutSoundGraph, playableCueForNode, NODE_W, NODE_H, type SoundNode } from "./lib/soundGraph";
 import { playCue } from "./lib/synth";
-import { STARTER_KIT } from "./lib/soundSeeds";
+import { BUILTIN_KITS } from "./lib/soundKits";
+import { useSoundKits } from "./useSoundKits";
 import "./sounds.css";
 
 export function SoundsWorkspace() {
-  // Phase 1/2 read the seed kit directly (the durable bsc-sound store is Phase 3).
-  const kit = STARTER_KIT;
+  // Seed-first, hydrated from the durable bsc-sound store (#3080). The first kit is active (multi-kit
+  // selection lands later); BUILTIN_KITS[0] is the guaranteed non-empty fallback for the first paint.
+  const kits = useSoundKits();
+  const kit = kits[0] ?? BUILTIN_KITS[0];
   useCrumbEntity("sounds", kit.name);
 
   const graph = useMemo(() => buildSoundGraph(kit), [kit]);
