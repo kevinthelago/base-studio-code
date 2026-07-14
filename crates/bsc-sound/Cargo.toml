@@ -1,0 +1,17 @@
+[package]
+name = "bsc-sound"
+version = "0.1.0"
+edition = "2021"
+description = "User sound-kit store (SQLite store at ~/.base-studio-code/sounds.db) for base-studio-code (#3080, epic #3071) — the synthesis-first audio library (primitives + voices + cues), a thin sound-specific shim over the shared bsc-json-store (#2158), reachable from the Tauri app's sound bridge and the session-facing `bsc sound` CLI."
+
+# The core lib (no Tauri, no SQLite) so the tiny CLI reuses it without dragging the whole desktop app
+# in. The hyphenated package name maps to the `bsc_sound` crate name.
+[lib]
+name = "bsc_sound"
+
+[dependencies]
+# The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the
+# sound-kit nouns + lean `list` fields via a CliSpec.
+bsc-json-store = { path = "../bsc-json-store" }
+# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog.
+bsc-cli-util = { path = "../bsc-cli-util" }

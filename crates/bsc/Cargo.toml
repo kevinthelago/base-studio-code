@@ -27,6 +27,7 @@ skilldb = { path = "../skilldb" }
 compliance = { path = "../compliance" }
 bsc-blueprint = { path = "../bsc-blueprint" }
 bsc-persona = { path = "../bsc-persona" }
+bsc-sound = { path = "../bsc-sound" }
 bsc-teams = { path = "../bsc-teams" }
 # `bsc studio` — the Studio store (#2890): shareable snapshots of the app's library state.
 bsc-studio = { path = "../bsc-studio" }

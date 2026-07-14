@@ -3,7 +3,7 @@ import {
   buildSoundGraph, layoutSoundGraph, playableCueForNode, nodeTier,
   primNodeId, voiceNodeId, cueNodeId,
 } from "./soundGraph";
-import { STARTER_KIT } from "./soundSeeds";
+import { STARTER_KIT } from "./soundKits";
 import type { SoundKit } from "./soundDescriptor";
 
 describe("buildSoundGraph (#3077)", () => {
