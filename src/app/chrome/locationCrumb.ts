@@ -28,7 +28,7 @@ const PAGES: Partial<Record<Workspace, Record<string, string>>> = {
   security:   { profiles: "Profiles", assignments: "Assignments", activity: "Activity", flow: "Flow" },
 };
 /** Planner sub-page (`projectsPageMode`) → label (mirrors `PROJECT_MODES`). */
-const PLANNER_PAGES: Record<string, string> = { projects: "Projects", teams: "Teams", designs: "Components", algorithms: "Algorithms" };
+const PLANNER_PAGES: Record<string, string> = { projects: "Projects", teams: "Teams", designs: "Components", algorithms: "Algorithms", sounds: "Sounds" };
 /** GitHub tab (`githubTab`) → label (mirrors `GITHUB_TABS`). */
 const GITHUB_TABS: Record<string, string> = { summary: "Summary", projects: "Projects", repos: "Repositories" };
 /** GitHub board-drill (`githubBoardTab`) → label. */
