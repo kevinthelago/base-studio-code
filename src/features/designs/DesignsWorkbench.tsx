@@ -40,7 +40,7 @@ import { analyzeGraphHealth, HEALTH_SEVERITY, type HealthCategory } from "./lib/
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
-import { matchesQuery, resolveComposes, resolveComponentAnimations, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
+import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
 import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useUiActivity } from "./lib/uiActivity";
 import { useComponentScan } from "./lib/useComponentScan";
@@ -76,6 +76,9 @@ export function DesignsWorkbench() {
   // Per-component preview-BUILD status (#2838) — populated by the on-visit `useComponentScan` sweep;
   // the graph badges the `error` entries (a red build-error glyph, additive to the health badge).
   const componentBuildStatus = useAppStore((s) => s.componentBuildStatus);
+  // The standard component-edit action (#3069) — updates the store + write-throughs `bsc ui set`; the
+  // animation-variation default-switch reuses it exactly like any other component edit.
+  const setComponent = useAppStore((s) => s.setComponent);
 
   const firstFor = (kitId: string) => components.find((c) => c.kitId === kitId);
   const [kitId, setKitId] = useState(() => kits[0]?.id ?? "");
@@ -149,6 +152,20 @@ export function DesignsWorkbench() {
     setCompId(c.id); setVariant(c.variants[0] ?? "default"); setTab("overview");
     setTryAnim(null); // a new vehicle clears the motion try-on (#2942)
   };
+  // Select a VARIATION as its slot's default (#3069): within `group`, mark the INLINE def named `name`
+  // the default and clear the flag on the group's other inline defs; ungrouped defs, other groups, and
+  // NAME-ref entries (strings — they carry no component-level `default`; a shared-motion variation's
+  // group/default lives on the kit-library def) are left untouched. Persist through the STANDARD
+  // component-edit path (`setComponent` → store update + write-through `bsc ui set`), so the preview
+  // replays the new default (its `resolveComponentAnimations` re-picks) and the ★ moves immediately.
+  const selectVariation = (group: string, name: string) => {
+    if (!sel) return;
+    const animations = (sel.animations ?? []).map((e) =>
+      typeof e === "string" || e.group !== group ? e : { ...e, default: e.name === name },
+    );
+    setComponent({ ...sel, animations });
+  };
+
   // Clicking anything other than a node (the canvas background) unfocuses → the Inspector returns to
   // its empty state (#2818).
   const deselect = () => setCompId(null);
@@ -300,11 +317,14 @@ export function DesignsWorkbench() {
                 <ThemesMenu themes={kitThemes} activeId={kitTheme} onSelect={setKitTheme} />
               ) : (
                 <AnimationsMenu
-                  componentAnimations={sel ? resolveComponentAnimations(sel, kits) : []}
+                  // The FULL resolved set (#3069) — ALL variations, each carrying its `group`/`default` —
+                  // so the menu can present + switch each slot; the preview narrows it to what plays.
+                  componentAnimations={sel ? resolveComponentAnimationDefs(sel, kits) : []}
                   shelf={kit?.animations ?? []}
                   boundShelfNames={(sel?.animations ?? []).filter((a): a is string => typeof a === "string")}
                   activeName={tryAnim}
                   onPlay={setTryAnim}
+                  onSelectVariation={selectVariation}
                 />
               )}
             </Box>
