@@ -142,10 +142,12 @@ export interface ComponentRecord {
   shapes?: DataShape[];
   /** Content hash of the seed copy this record came from (#2483) — see {@link Kit.seedHash}. */
   seedHash?: string;
-  /** MOTION binding (#2942) — the names of the owning {@link Kit}'s animations this component plays.
-   *  The kit owns the keyframes/timing/trigger ({@link Kit.animations}); a component just references
-   *  them by name, so the same motion is reused across a kit's components. Absent ⇒ no motion. */
-  animations?: string[];
+  /** MOTION binding (#2942/#3065) — each entry is EITHER a kit-animation NAME (resolved from the owning
+   *  {@link Kit}'s `animations` library — SHARED/reusable motion the kit owns) OR an INLINE def (a full
+   *  {@link KitAnimation} object used directly — COMPONENT-SPECIFIC one-off motion, e.g. a d3-chart
+   *  draw-in or a component-scoped `selector` animation not worth lifting to the kit). Resolved by
+   *  {@link resolveComponentAnimations}. Absent ⇒ no motion. */
+  animations?: (string | KitAnimation)[];
 }
 
 /** The shared zero-state title — Design Studio and the Planner Components pane must say the same
@@ -185,17 +187,38 @@ export function resolveUsedBy(c: ComponentRecord, all: ComponentRecord[]): Compo
   return all.filter((x) => x.composes.includes(c.name));
 }
 
-/** Resolve a component's MOTION bindings (#2942) into the flat, kit-scoped {@link AnimationDef}s the
- *  render engine compiles: look each bound name up in the owning kit's `animations` library, dropping
- *  any that don't resolve. Empty when the component binds nothing or its kit has no matching motion. */
+/** Is `e` a valid INLINE animation def (#3065) — a full {@link KitAnimation} object carried directly on
+ *  a component (component-specific one-off motion), as opposed to a NAME string that resolves from the
+ *  kit's shared library? Requires a non-null object with a non-empty string `name` AND a non-null object
+ *  `keyframes`, so a malformed object is DROPPED rather than compiled into junk CSS. */
+function isInlineAnim(e: unknown): e is KitAnimation {
+  const a = e as KitAnimation | null;
+  return (
+    typeof a === "object" &&
+    a !== null &&
+    typeof a.name === "string" &&
+    a.name.length > 0 &&
+    typeof a.keyframes === "object" &&
+    a.keyframes !== null
+  );
+}
+
+/** Resolve a component's MOTION bindings (#2942/#3065) into the flat, kit-scoped {@link AnimationDef}s
+ *  the render engine compiles. Each entry is EITHER a NAME — looked up in the owning kit's `animations`
+ *  library (shared/reusable motion) — OR an INLINE def (a full {@link KitAnimation} object used directly,
+ *  for component-specific one-off motion). Names that don't resolve, and malformed inline objects, are
+ *  dropped. It does NOT bail when the kit's library is empty (an inline-only component must still
+ *  resolve); every resolved def is stamped with the component's `kitId`. Empty when the component binds
+ *  nothing. Pure (React-free). */
 export function resolveComponentAnimations(comp: ComponentRecord, kits: Kit[]): AnimationDef[] {
-  const names = comp.animations ?? [];
-  if (!names.length) return [];
+  const entries = comp.animations ?? [];
+  if (!entries.length) return [];
   const kit = kits.find((k) => k.id === comp.kitId);
-  if (!kit?.animations?.length) return [];
-  const byName = new Map(kit.animations.map((a) => [a.name, a]));
-  return names
-    .map((n) => byName.get(n))
-    .filter((a): a is KitAnimation => !!a)
-    .map((a) => ({ ...a, kit: kit.id }));
+  const byName = new Map((kit?.animations ?? []).map((a) => [a.name, a]));
+  const out: AnimationDef[] = [];
+  for (const e of entries) {
+    const def = typeof e === "string" ? byName.get(e) : isInlineAnim(e) ? e : undefined;
+    if (def) out.push({ ...def, kit: comp.kitId });
+  }
+  return out;
 }
