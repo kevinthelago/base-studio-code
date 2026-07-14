@@ -742,6 +742,7 @@ dependencies = [
  "bsc-graph",
  "bsc-persona",
  "bsc-project",
+ "bsc-sound",
  "bsc-studio",
  "bsc-teams",
  "bsc-todo",
@@ -883,6 +884,14 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "bsc-sound"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-json-store",
 ]
 
 [[package]]

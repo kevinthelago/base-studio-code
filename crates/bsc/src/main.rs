@@ -19,6 +19,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("compliance", "compliance standards corpus"),
     ("blueprint", "user blueprint store"),
     ("persona", "user persona store: agent identities (prompt + skills + model over a role)"),
+    ("sound", "user sound-kit store: synthesized cues (primitives + voices + cues)"),
     ("teams", "user teams store: persona-relationship graph (positions + relationships)"),
     ("studio", "Studio store: shareable snapshots of the app's library state (save · apply · list · get · remove)"),
     ("org", "DEPRECATED (#2700) → use `bsc teams` (the store, renamed org → teams)"),
@@ -58,6 +59,7 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "compliance" => compliance::cli::run(rest, "bsc compliance"),
         "blueprint" => bsc_blueprint::cli::run(rest, "bsc blueprint"),
         "persona" => bsc_persona::cli::run(rest, "bsc persona"),
+        "sound" => bsc_sound::cli::run(rest, "bsc sound"),
         "teams" => bsc_teams::cli::run(rest, "bsc teams"),
         "studio" => bsc_studio::cli::run(rest, "bsc studio"),
         // Deprecated alias (#2700, the #2469 `bsc component` → `bsc ui` pattern): `bsc org` still routes
@@ -158,6 +160,13 @@ mod tests {
         // #2890: the Studio store is mounted + listed. Help path — no store required.
         assert!(dispatch("studio", vec!["help".into()]).is_ok());
         assert!(top_help().contains("Studio store"), "the studio row describes the store");
+    }
+
+    #[test]
+    fn sound_dispatches_and_appears_in_the_overview() {
+        // #3080: the sound-kit store is mounted + listed. Help path — no store required.
+        assert!(dispatch("sound", vec!["help".into()]).is_ok());
+        assert!(top_help().contains("user sound-kit store"), "the sound row describes the store");
     }
 
     #[test]

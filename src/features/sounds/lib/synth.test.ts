@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { compileCue, voiceDuration } from "./synth";
-import { STARTER_KIT } from "./soundSeeds";
+import { STARTER_KIT } from "./soundKits";
 import type { SoundKit } from "./soundDescriptor";
 
 const cue = (id: string) => STARTER_KIT.cues.find((c) => c.id === id)!;
