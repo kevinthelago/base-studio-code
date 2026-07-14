@@ -15,6 +15,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Button } from "@/shared/ui/controls/Button";
+import { useConfirmDialog } from "@/shared/ui/overlay/promptDialog";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { Screen } from "@/app/chrome/Screen";
 import { type TabItem } from "@/app/chrome/TabBar";
@@ -32,7 +33,7 @@ import { GlanceInspector } from "./GlanceInspector";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";
 import { buildGraph, focusSets, HEALTH_META, ROLE_COLOR, NW, NH } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
-import { buildFleetData, buildRealFleetData, nodeHasLiveSession, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
+import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
 import { useProjectComplete } from "./lib/useProjectComplete";
 import { usePreviewReview } from "./usePreviewReview";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
@@ -93,6 +94,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // cell on the next launch, so this is self-reversing — "Relaunch fleet" respawns it fresh.
   const setPaneDisabled = useAppStore((s) => s.setPaneDisabled);
   const setPaneStatus = useAppStore((s) => s.setPaneStatus);
+  // Confirm before the BULK "End sessions" (#3052) — stopping a whole fleet at once warrants a guard.
+  const { confirm, dialog: endAllDialog } = useConfirmDialog();
   // HEALTH axis (#2541, was #2265): the worst unresolved fault per project (from `bsc errors`) overlaid
   // onto each node — escalating health to warning/error and carrying the fault title as the reason.
   const faults = useGlanceFaults(useMemo(() => projectsBase.map((p) => p.id), [projectsBase]));
@@ -223,14 +226,39 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     else { setDrill(id); setSel(null); setShowCycle(false); }
   };
   const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); setChatNode(null); setPreviewOpen(false); };
-  // END a live agent's session (#3049): kill its PTY (mirrors the console's disable path) and disable
-  // the cell so the node drops out of the live set + its stale "run" clears. For a soft-locked fleet
-  // this fully tears a stuck agent down — then "Relaunch fleet" (#3044) respawns it, and fleetStartProject
-  // clears the disable on relaunch, so the teardown is self-reversing. Also collapses the morph.
-  const endSession = (pid: string) => {
+  // Kill ONE live pane (#3049): terminate its PTY (mirrors the console's disable path) and disable the
+  // cell so the node drops out of the live set + its stale "run" clears. fleetStartProject re-enables the
+  // cell on relaunch, so the teardown is self-reversing — "Relaunch fleet" (#3044) respawns it.
+  const killPane = (pid: string) => {
     void safeInvoke("pty_kill", { paneId: pid }, undefined);
     setPaneDisabled(pid, true);
     setPaneStatus(pid, "idle");
+  };
+  // END a single agent's session from its morph (#3049): tear it down + collapse the morph.
+  const endSession = (pid: string) => { killPane(pid); setChatNode(null); };
+  // The drilled project's live sessions — every launched pane under its `<key>:` prefix (director +
+  // workers). The `:` delimiter makes the prefix exact (`cli:` never matches `cli-typer:`). Drives the
+  // toolbar "End sessions" button + its count.
+  const liveProjectPanes = useMemo(
+    () => (drill ? livePanesForProject(drill, livePaneIds) : []),
+    [drill, livePaneIds],
+  );
+  // END EVERY session for the drilled project (#3052) — the bulk form of endSession, behind a confirm
+  // (this stops the whole fleet at once). Self-reversing like the single kill: worktrees/branches/plan.db
+  // are untouched, so "Relaunch fleet" restarts them.
+  const endAllSessions = async () => {
+    const panes = liveProjectPanes;
+    if (panes.length === 0) return;
+    const ok = await confirm({
+      title: `End ${panes.length} session${panes.length === 1 ? "" : "s"}?`,
+      message: `Kills every live agent for ${drillNode?.slug ?? "this project"} (director + workers). `
+        + `Their worktrees, branches, and plan are kept — "Relaunch fleet" restarts them.`,
+      confirmLabel: "End sessions",
+      cancelLabel: "Cancel",
+      danger: true,
+    });
+    if (!ok) return;
+    for (const pid of panes) killPane(pid);
     setChatNode(null);
   };
 
@@ -302,6 +330,14 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
                 ? <Chip color="var(--warn, #f2b155)">sample fleet · no plan.db fleet</Chip>
                 : <Chip color="#4fd6a0">real fleet · {model.nodes.length} agents</Chip>)
             : (data.sample && <Chip color="var(--warn, #f2b155)">sample topology · preview</Chip>)}
+          {/* Project-level bulk kill (#3052): end EVERY live session for the drilled project at once —
+              the fast recovery when a whole fleet is soft-locked. Shown only when it has live sessions. */}
+          {drill && liveProjectPanes.length > 0 && (
+            <Button variant="ghost" danger onClick={endAllSessions}
+              title="End every live agent session for this project — Relaunch fleet restarts them">
+              End {liveProjectPanes.length} session{liveProjectPanes.length === 1 ? "" : "s"}
+            </Button>
+          )}
           {model.cyclePairs.length > 0 && (
             <Box as="button" onClick={() => { setShowCycle((v) => !v); setSel(null); }}
               style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", borderRadius: 7, padding: "6px 11px",
@@ -390,6 +426,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       </Box>
       </Box>
       )}
+      {/* The bulk "End sessions" confirm (#3052) — rendered regardless of page. */}
+      {endAllDialog}
     </Screen>
   );
 }
