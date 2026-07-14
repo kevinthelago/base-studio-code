@@ -235,9 +235,16 @@ The flow is two steps — **author the motion on the kit, then bind it to compon
    }' | bsc ui kit define-animation react-ui
    ```
 
-2. **Bind to a component** — a component plays a kit animation by listing its name in the component's
-   own `animations` array (a list of NAMES, not defs). Read it (`bsc ui get <id>`), add the name, and
-   write it back with `bsc ui set` (JSON on stdin); the motion then plays on that component live.
+2. **Bind to a component** — a component plays motion by listing it in the component's own `animations`
+   array, whose entries are EITHER a **NAME** (a string) that resolves from the owning kit's `animations`
+   library — **shared, reusable motion** the kit owns — OR an **inline def** (the full
+   `{ name, keyframes, … }` object, the exact same shape) used **directly** for **component-specific
+   one-off motion**: a d3 chart's draw-in, a component-scoped `selector` cascade — motion not worth
+   lifting into the kit. An inline def is validated at write time against the **same closed motion
+   grammar** as a kit animation (a malformed inline def is warned about, then dropped at render), and
+   compiles the same way. Read the component (`bsc ui get <id>`), add the name or the def, and write it
+   back with `bsc ui set` (JSON on stdin); the motion then plays on that component live. **Prefer a kit
+   NAME when the motion is reusable; reach for an inline def only for a genuinely one-off animation.**
 
 - `bsc ui kit list-animations <kit-id>` — the kit's motion library (read-only).
 - `bsc ui kit remove-animation <kit-id> <name>` — drop one motion from the library by name.
@@ -268,6 +275,10 @@ Each component record carries:
   the kit's flagship anti-duplication lint rule ("use `<Name>`, not a raw `<wraps>`").
 - `rules` — author-declared lint rules (`forbid-element` / `forbid-import`) the kit ships in its
   eslint preset, each pointing at the component to use instead.
+- `animations` — OPTIONAL. The component's MOTION bindings (rung 5): a list whose entries are each a
+  kit-animation **NAME** (a string resolved from the owning kit's `animations` library — shared,
+  reusable motion) OR an **inline def** object (a full `{ name, keyframes, … }` — component-specific
+  one-off motion, validated at write time exactly like a kit animation). Absent ⇒ no motion.
 - Plus identity + guidance: `id`, `name`, `kitId`, `version`, `props`, `tags`, `whenUse`,
   `whenNot`, `src`, `srcText`, and the reuse signal `used`.
 
