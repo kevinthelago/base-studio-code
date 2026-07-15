@@ -32,7 +32,7 @@ import { teamRoleStreams } from "@/features/planner/fleet/teamFleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";
-import { buildGraph, focusSets, HEALTH_META, ROLE_COLOR, NW, NH } from "./lib/glanceGraph";
+import { buildGraph, focusSets, isLibraryNode, HEALTH_META, ROLE_COLOR, NW, NH } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
 import { useProjectComplete } from "./lib/useProjectComplete";
@@ -228,8 +228,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       else if (isLiveAgent(id)) setChatNode(id);
       else pickNode(id);
     }
-    // A UI-KIT node (#2571) has no fleet to drill into — a click just SELECTS it (→ the kit inspector).
-    else if (projectModel.nodes.find((n) => n.id === id)?.kind === "kit") pickNode(id);
+    // A cross-graph LIBRARY node (#2571 kit → generalized #3119: kit/algorithm/sound) has no fleet to
+    // drill into — a click just SELECTS it (→ the library inspector).
+    else if (isLibraryNode(projectModel.nodes.find((n) => n.id === id) ?? {})) pickNode(id);
     else { setDrill(id); setSel(null); setShowCycle(false); }
   };
   const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); setChatNode(null); setPreviewOpen(false); };

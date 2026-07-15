@@ -9,7 +9,7 @@ import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { GlancePreviewMorph } from "./GlancePreviewMorph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
-import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, KIT_COLOR, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory } from "./lib/glanceGraph";
+import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, isLibraryNode, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { archetypeById, hueColor } from "@/features/teams";
 
@@ -32,8 +32,13 @@ const EDGE_ROWS_L0: [string, string, string][] = [
   [EDGE_META.data.label, EDGE_META.data.color, EDGE_META.data.dash],
   [EDGE_META.events.label, EDGE_META.events.color, EDGE_META.events.dash],
   [EDGE_META["uses-kit"].label, EDGE_META["uses-kit"].color, EDGE_META["uses-kit"].dash], // #2571 kit-consumer edge
+  [EDGE_META.requires.label, EDGE_META.requires.color, EDGE_META.requires.dash],           // #3119 cross-graph library edge
   ["cycle", "var(--graph-health-error)", "7 6"],
 ];
+// The cross-graph LIBRARY node dimensions (#3119) — the fenced-band flavours, each its own accent + glyph.
+// Shown as a distinct legend column at L0 (not while drilled into a fleet).
+const LIBRARY_GRAPHS: GLibraryGraph[] = ["ui", "algo", "sound"];
+const LIBRARY_ROWS: [string, string, string][] = LIBRARY_GRAPHS.map((g) => [LIBRARY_META[g].kindLabel, LIBRARY_META[g].color, LIBRARY_META[g].marker]);
 // Fleet-drill (L1) legend: the role colour buckets read as agent FUNCTION groups; the edge rows are the
 // Org relationship archetypes actually present in the drilled fleet (#2561).
 const ROLE_ROWS_L1: [string, string][] = [["orchestrate", ROLE_COLOR.infra], ["build", ROLE_COLOR.service], ["verify", ROLE_COLOR.data], ["flow", ROLE_COLOR.client]];
@@ -88,6 +93,17 @@ export function GlanceCanvas(p: CanvasProps) {
     return partAroundPanel(model.nodes, morphRect, p.chat?.nodeId);
   }, [morphRect, model.nodes, p.chat?.nodeId]);
 
+  // The library dimension(s) present in the fenced band (#3119) — drive its accent + header. A
+  // single-dimension band reads in that graph's colour + name (kit-only stays cyan "UI KITS",
+  // byte-identical to #3007); a mixed band is neutral "LIBRARIES".
+  const bandGraphs = useMemo(() => {
+    const s = new Set<GLibraryGraph>();
+    for (const n of model.nodes) { const g = libraryGraphOf(n); if (g) s.add(g); }
+    return [...s];
+  }, [model.nodes]);
+  const bandColor = bandGraphs.length === 1 ? LIBRARY_META[bandGraphs[0]].color : "var(--fg-muted)";
+  const bandLabel = bandGraphs.length === 1 ? LIBRARY_META[bandGraphs[0]].bandLabel : "LIBRARIES";
+
   return (
     <>
       {/* The dotted graph-paper backdrop is owned by the shared GraphCanvas (an infinite viewport
@@ -95,14 +111,15 @@ export function GlanceCanvas(p: CanvasProps) {
 
       {/* edges */}
       <svg width={model.worldW} height={model.worldH} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>
-        {/* The fenced UI-KIT band (#3007) — drawn FIRST so it sits behind the edges + nodes. A faint
-            cyan wash, a dashed divider at the fence, and a small "UI KITS" label, mirroring the Design
-            Studio composition swimlanes so the lifted kit nodes read as a distinct top zone. */}
+        {/* The fenced LIBRARY band (#3007, generalized #3119) — drawn FIRST so it sits behind the edges +
+            nodes. A faint wash, a dashed divider at the fence, and a small header label, mirroring the
+            Design Studio composition swimlanes so the lifted library nodes read as a distinct top zone.
+            Colour + label follow the dimension(s) present (kit-only ⇒ cyan "UI KITS", unchanged). */}
         {model.kitBand && (
           <g className="glance-kit-band" style={{ pointerEvents: "none" }}>
-            <rect x={0} y={model.kitBand.y0} width={model.worldW} height={model.kitBand.y1 - model.kitBand.y0} className="glance-kit-band-bg" style={{ fill: KIT_COLOR }} />
-            <line x1={0} y1={model.kitBand.y1} x2={model.worldW} y2={model.kitBand.y1} className="glance-kit-band-divider" style={{ stroke: KIT_COLOR }} />
-            <text x={16} y={model.kitBand.y0 + 22} className="glance-kit-band-label" style={{ fill: KIT_COLOR }}>UI KITS</text>
+            <rect x={0} y={model.kitBand.y0} width={model.worldW} height={model.kitBand.y1 - model.kitBand.y0} className="glance-kit-band-bg" style={{ fill: bandColor }} />
+            <line x1={0} y1={model.kitBand.y1} x2={model.worldW} y2={model.kitBand.y1} className="glance-kit-band-divider" style={{ stroke: bandColor }} />
+            <text x={16} y={model.kitBand.y0 + 22} className="glance-kit-band-label" style={{ fill: bandColor }}>{bandLabel}</text>
           </g>
         )}
         {model.edges.map((e) => {
@@ -115,7 +132,12 @@ export function GlanceCanvas(p: CanvasProps) {
           // A cyclical archetype (iterates, #2578) is a DELIBERATE loop — keep the archetype's hue (not
           // the red hazard tint) but the animated cycle dash, so it reads as an intentional iteration loop.
           const loop = e.isCycle && !!arch?.cyclical;
-          const color = loop ? hueColor(arch!.hue) : e.isCycle ? "var(--graph-health-error)" : arch ? hueColor(arch.hue) : meta.color;
+          // A LIBRARY edge (#3119) is tinted by its TARGET node's graph accent — uses-kit→ui cyan,
+          // requires→algo violet / →sound pink — so a mixed band's edges read per-dimension. For a
+          // `uses-kit` edge the target is a kit node ⇒ ui ⇒ KIT_COLOR == meta.color (byte-identical).
+          const libGraph = isLibraryEdge(e.kind) ? libraryGraphOf(nodeById.get(e.to) ?? {}) : undefined;
+          const libColor = libGraph ? LIBRARY_META[libGraph].color : undefined;
+          const color = loop ? hueColor(arch!.hue) : e.isCycle ? "var(--graph-health-error)" : arch ? hueColor(arch.hue) : (libColor ?? meta.color);
           const width = (e.isCycle ? 2.3 : arch ? 1.8 : meta.w) + (inFocus && focus ? 0.7 : 0);
           const dash = e.isCycle ? "7 6" : arch ? (ARCH_DASH[arch.style] ?? "") : meta.dash;
           const opacity = e.isCycle ? (focus ? (inFocus ? 1 : 0.4) : 0.95) : (focus ? (inFocus ? 1 : REST_E) : 0.82);
@@ -150,14 +172,17 @@ export function GlanceCanvas(p: CanvasProps) {
 
       {/* nodes */}
       {model.nodes.map((n) => {
-        // A UI-KIT node (#2571) reads distinctly — a dashed cyan card with a ◆ marker, a "kit" label, and
-        // the count of consuming projects (the edges INTO it) — so it never looks like a project node.
-        if (n.kind === "kit") {
+        // A cross-graph LIBRARY node (#2571 kit → generalized #3119) reads distinctly — a dashed card in
+        // its graph's accent, with the graph glyph (◆/∑/♪), the kind word (kit/algorithm/sound), and the
+        // count of consuming projects (the edges INTO it) — so it never looks like a project node. The `ui`
+        // case is byte-identical to the pre-#3119 kit card (cyan · ◆ · "kit").
+        if (isLibraryNode(n)) {
+          const lib = LIBRARY_META[libraryGraphOf(n) ?? "ui"];
           const consumers = model.edges.reduce((acc, e) => acc + (e.to === n.id ? 1 : 0), 0);
           const selected = p.selNodeId === n.id;
           const inFocus = focus ? focus.nodes.has(n.id) : true;
           const push = pushMap.get(n.id);
-          const border = selected ? "var(--accent)" : (focus && inFocus ? KIT_COLOR : `color-mix(in oklch, ${KIT_COLOR} 45%, transparent)`);
+          const border = selected ? "var(--accent)" : (focus && inFocus ? lib.color : `color-mix(in oklch, ${lib.color} 45%, transparent)`);
           return (
             <Box key={n.id} data-glance-node={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
               style={{ position: "absolute", left: n.x, top: n.y, width: NW, height: NH, cursor: "pointer",
@@ -167,11 +192,11 @@ export function GlanceCanvas(p: CanvasProps) {
                 borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
                 boxShadow: selected ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)" : "0 2px 8px rgba(0,0,0,.45)", transition: "border-color .15s, box-shadow .15s" }}>
                 <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Text as="span" style={{ color: KIT_COLOR, flex: "none", fontSize: 11, lineHeight: 1 }}>◆</Text>
+                  <Text as="span" style={{ color: lib.color, flex: "none", fontSize: 11, lineHeight: 1 }}>{lib.marker}</Text>
                   <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
                 </Box>
                 <Box style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
-                  <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: KIT_COLOR }}>kit</Text>
+                  <Text as="span" mono size={10} style={{ textTransform: "uppercase", letterSpacing: ".5px", color: lib.color }}>{lib.kindLabel}</Text>
                   <Box style={{ flex: 1 }} />
                   <Text as="span" mono size={10} weight={500} tone="dim">{consumers} app{consumers === 1 ? "" : "s"}</Text>
                 </Box>
@@ -321,6 +346,21 @@ export function GlanceOverlays({ drill = false, archetypes = [] }: { drill?: boo
             ))}
           </Box>
         </Box>
+        {/* The cross-graph LIBRARY node dimensions (#3119) — the fenced-band flavours (kit/algorithm/sound),
+            each its own accent + glyph. L0 only (a drilled fleet has no library band). */}
+        {!drill && (
+          <Box>
+            <Text as="div" mono size={9.5} tone="dim" style={{ letterSpacing: "1px", marginBottom: 8 }}>LIBRARY</Text>
+            <Box style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {LIBRARY_ROWS.map(([label, color, marker]) => (
+                <Box key={label} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <Text as="span" style={{ color, flex: "none", width: 9, textAlign: "center", fontSize: 9, lineHeight: 1 }}>{marker}</Text>
+                  <Text as="span" mono size={10} tone="muted">{label}</Text>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+        )}
       </Box>
     </>
   );
