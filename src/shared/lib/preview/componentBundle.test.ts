@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { compileAnimationsCss, kitAnimations } from "@/shared/ui/kit";
 import {
-  resolveMemPath, lookupMem, buildComponentSrcDoc, exitShimScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
+  resolveMemPath, lookupMem, buildComponentSrcDoc, exitShimScript, fitShimScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
 } from "./componentBundle";
 
 // The esbuild-wasm bundle can't run under jsdom; these cover the PURE pieces (path resolution + srcdoc
@@ -146,6 +146,70 @@ describe("componentBundle — exit-runtime shim (#3057)", () => {
     expect(tip.getAttribute("data-bsc-exit")).toBe(""); // marker flipped
 
     document.body.removeChild(root);
+  });
+});
+
+describe("componentBundle — scale-to-fit shim (#3141)", () => {
+  it("injects the shim (measure + scale + overflow clip) when fitContent is set, AFTER the module script", () => {
+    const doc = buildComponentSrcDoc("/*B*/", { fitContent: true });
+    expect(doc).toContain('root.style.overflow = "hidden"'); // fit by scaling, not scrolling
+    expect(doc).toContain("content.offsetWidth");            // measures the component's natural size
+    expect(doc).toContain('scale("');                        // applies a transform scale
+    expect(doc).toContain("ResizeObserver");                 // re-fits on frame resize
+    // The shim runs AFTER the module script (so the component is mounted when it measures).
+    expect(doc.indexOf("content.offsetWidth")).toBeGreaterThan(doc.indexOf('<script type="module">'));
+  });
+
+  it("injects NOTHING when fitContent is off — the srcdoc is byte-for-byte unchanged", () => {
+    const bare = buildComponentSrcDoc("X");
+    expect(buildComponentSrcDoc("X", { fitContent: false })).toBe(bare);
+    for (const doc of [bare, buildComponentSrcDoc("X", { fitContent: false })]) {
+      expect(doc).not.toContain('root.style.overflow = "hidden"');
+      expect(doc).not.toContain("content.offsetWidth");
+    }
+  });
+
+  it("fitShimScript returns a module script when fitting; empty string otherwise", () => {
+    expect(fitShimScript(false)).toBe("");
+    const shim = fitShimScript(true);
+    expect(shim.startsWith('\n<script type="module">')).toBe(true); // runs post-mount (deferred module)
+    expect(shim).toContain("Math.min(1,");                          // never scales UP — only down to fit
+    expect(shim).toContain("transformOrigin");                      // scales about the center
+  });
+
+  it("drives the runtime in jsdom: scales an overflowing component down, leaves a fitting one alone", async () => {
+    // jsdom has no layout engine (offset*/client* are 0), so stub the sizes the shim reads. The shim uses
+    // the timed passes (no ResizeObserver in jsdom) — await past the 120ms pass to see the transform.
+    function mount(rootW: number, rootH: number, contentW: number, contentH: number) {
+      const root = document.createElement("div");
+      root.id = "root";
+      Object.defineProperty(root, "clientWidth", { value: rootW, configurable: true });
+      Object.defineProperty(root, "clientHeight", { value: rootH, configurable: true });
+      const wrap = document.createElement("div");
+      const content = document.createElement("div");
+      Object.defineProperty(content, "offsetWidth", { value: contentW, configurable: true });
+      Object.defineProperty(content, "offsetHeight", { value: contentH, configurable: true });
+      wrap.appendChild(content);
+      root.appendChild(wrap);
+      document.body.appendChild(root);
+      return { root, content };
+    }
+    const run = (shim: string) => (0, eval)(shim.replace(/^\s*<script type="module">/, "").replace(/<\/script>\s*$/, ""));
+
+    // Overflows vertically (400 tall in a 200 frame) → scales to min(1, .94*200/100, .94*200/400) = 0.47.
+    const over = mount(200, 200, 100, 400);
+    run(fitShimScript(true));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(over.content.style.transform).toBe("scale(0.47)");
+    expect(over.root.style.overflow).toBe("hidden");
+    document.body.removeChild(over.root);
+
+    // Already fits (small component) → k clamps to 1 → no scaling.
+    const fits = mount(200, 200, 40, 20);
+    run(fitShimScript(true));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(fits.content.style.transform).toBe("none");
+    document.body.removeChild(fits.root);
   });
 });
 
