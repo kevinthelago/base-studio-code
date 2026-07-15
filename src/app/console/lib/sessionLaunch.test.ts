@@ -219,6 +219,21 @@ describe("buildSessionSettings", () => {
     expect(worker.allowedCommands).not.toContain("bsc graph");
   });
 
+  it("tightens a curator pane to restrictedAllow with Read kept, leaving other roles unrestricted (#3098)", () => {
+    // The curator suppresses the Bash baselines (restrictedAllow) so its ONLY auto-run command surface
+    // is bsc ui/graph — but it keeps the Read TOOL to read generated source before harvesting it.
+    const curator = buildSessionSettings(mkStore({ paneRoles: { p: "curator" } }), "p");
+    expect(curator.restrictedAllow).toBe(true);
+    expect(curator.allowToolRules).toContain("Read");
+    // No fixed store surface ⇒ no tightening: a worker keeps its posture-scaled baselines and does NOT
+    // get the extra Read grant (Read is folded in only for a restricted role here).
+    const worker = buildSessionSettings(mkStore({ paneRoles: { p: "worker" } }), "p");
+    expect(worker.restrictedAllow).toBe(false);
+    expect(worker.allowToolRules).not.toContain("Read");
+    // An ungated pane is likewise unrestricted.
+    expect(buildSessionSettings(mkStore(), "p").restrictedAllow).toBe(false);
+  });
+
   it("installs the bsc-skill telemetry hooks when the session has skills, not otherwise", () => {
     expect(cmds(buildSessionSettings(mkStore(), "p"))).not.toContain("bsc-skill");
     const withSkill = mkStore({ paneSkills: { p: [{ name: "My Skill", desc: "d", prompt: "do x" }] } });
