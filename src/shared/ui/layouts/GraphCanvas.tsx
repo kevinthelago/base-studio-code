@@ -89,20 +89,27 @@ export function GraphCanvas({
   // Hooks always run (rules of hooks); the live size only drives a column when that side is resizable.
   const railDrag = useDragResize({ initial: railWidth, min: railMin, max: railMax, axis: "x" });
   const inspDrag = useDragResize({ initial: inspectorWidth, min: inspectorMin, max: inspectorMax, axis: "x", invert: true });
-  const paneBox = (size: number): CSSProperties => ({ flex: `0 0 ${size}px`, width: size, minWidth: 0, display: "flex", overflow: "hidden" });
+  // A side-pane box. `shrink` 0 = rigid (holds its width — the priority pane); 1 = yields when the row
+  // is too narrow to hold rail + inspector + graph, so nothing overflows off the right edge (#3097).
+  const paneBox = (size: number, shrink = 0): CSSProperties => ({ flex: `0 ${shrink} ${size}px`, width: size, minWidth: 0, display: "flex", overflow: "hidden" });
   return (
     // rail · content-column · inspector — the rail/inspector run FULL HEIGHT (siblings of the content
     // column) so the toolbar spans only the canvas, not the whole page (#2754).
     <Row gap={0} align="stretch" className={className} style={{ flex: 1, minHeight: 0 }}>
       {rail && (railResizable ? (
         <>
-          <Box style={paneBox(railDrag.size)}>{rail}</Box>
+          {/* The rail YIELDS (shrink 1) so the inspector keeps its width on a narrow window (#3097): the
+              graph column collapses first, then the rail; the inspector stays put and never gets pushed
+              off the right edge. */}
+          <Box style={paneBox(railDrag.size, 1)}>{rail}</Box>
           <Box className="resize-x" {...railDrag.handleProps} title="Drag to resize" />
         </>
       ) : rail)}
 
-      {/* ── content column: toolbar (over the canvas only) · canvas · optional dock ── */}
-      <Stack gap={0} style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+      {/* ── content column: toolbar (over the canvas only) · canvas · optional dock. overflow:hidden WRAPS
+          the graph + terminal so their content can't spill past the (shrinking) column into a horizontal
+          overflow — the column yields width to the side panes cleanly instead (#3097). ── */}
+      <Stack gap={0} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
         {/* ── toolbar ── omitted entirely (no empty 52px bar) when the page passes none, so a page can
             hand the whole content column to a full-canvas overlay (#2849, Design Studio theme preview). */}
         {toolbar ? (
