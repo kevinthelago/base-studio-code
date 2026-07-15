@@ -42,21 +42,20 @@ describe("DesignsWorkbench (#2308)", () => {
     // The Library/Graph toggle is gone — there is no alternate center mode.
     expect(screen.queryByText("▦ Library")).toBeNull();
     expect(screen.queryByText("⬡ Graph")).toBeNull();
-    // Nothing is focused on mount → the Inspector is present but shows its empty state (#2818).
-    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();
-    expect(screen.getByText(/Select a component/)).toBeTruthy();
+    // Nothing is focused on mount → the Inspector is HIDDEN, the graph is full-width (#3090).
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();
     expect(screen.queryByText("Live preview")).toBeNull();          // no live preview until one is focused
   });
 
-  it("ALWAYS renders the graph + panes even with NO kits (empty library, #3033) — never a blocking empty-state page", () => {
+  it("ALWAYS renders the graph even with NO kits (empty library, #3033) — never a blocking empty-state page", () => {
     useAppStore.setState({ components: [], kits: [] }); // an empty library (e.g. right after the default kit is cleared)
-    render(<DesignsWorkbench />);
-    // The composition-graph shell still mounts (no kit-name suffix); the rail search + the Inspector's own
-    // "select a component" empty state are present — the studio never hides behind a StudioEmpty page (which
-    // would hide the designer terminal you need to BUILD the kit).
+    const { container } = render(<DesignsWorkbench />);
+    // The composition-graph shell still mounts (no kit-name suffix) with its rail search — the studio never
+    // hides behind a StudioEmpty page (which would hide the designer terminal you need to BUILD the kit). The
+    // Inspector is hidden (nothing to focus in an empty library, #3090).
     expect(screen.getByText("Composition graph")).toBeTruthy();
     expect(screen.getByLabelText("Search components")).toBeTruthy();
-    expect(screen.getByText(/Select a component/)).toBeTruthy();
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();
   });
 
   it("the inspector carries the library detail: live preview + Overview/Source/Usage tabs", () => {
@@ -121,12 +120,12 @@ describe("DesignsWorkbench (#2308)", () => {
     const vueKit: Kit = { id: "vue-kit", name: "vue-kit", tech: "vue", style: "material", stack: "Vue · TypeScript", dot: "var(--accent)" };
     const vueComp = { ...SEED_COMPONENTS[0], id: "vue-button", name: "VueButton", kitId: "vue-kit" };
     useAppStore.setState({ kits: [...SEED_KITS, vueKit], components: [...SEED_COMPONENTS, vueComp] });
-    render(<DesignsWorkbench />);
+    const { container } = render(<DesignsWorkbench />);
     // The toolbar switcher is gone (#move-to-planner) — clicking a rail kit head activates that kit. The
     // vue kit's head is labelled with its style ("material") under the single-kit style merge (#2506).
     fireEvent.click(screen.getByText("material").closest("button.ds-kithead")!);
     expect(screen.getByText(/Composition graph · vue-kit/)).toBeTruthy();
-    expect(screen.getByText(/Select a component/)).toBeTruthy();          // switching focuses nothing → empty state (#2818)
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();  // switching focuses nothing → hidden (#3090)
     // …then picking a component from the new kit reveals its details.
     fireEvent.click(railRow("VueButton"));
     expect(screen.getByText("VueButton.tsx")).toBeTruthy();
@@ -219,47 +218,66 @@ describe("DesignsWorkbench (#2308)", () => {
   });
 });
 
-describe("always-visible details pane, selection-driven CONTENT (#2818, was #2705)", () => {
+describe("selection-driven inspector visibility (#3090, restoring #2705) — visible when focused or AI-worked", () => {
   /** The pan/zoom canvas viewport (the element that fires onBackgroundClick). */
   const canvas = (c: HTMLElement) => c.querySelector('div[style*="cursor: grab"]') as HTMLElement;
 
-  it("empty state on mount — the Inspector is present, prompting a selection (#2818)", () => {
+  it("hidden on mount — no Inspector, the graph is full-width (only the rail splitter, #3090)", () => {
     const { container } = render(<DesignsWorkbench />);
-    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();
-    expect(screen.getByText(/Select a component/)).toBeTruthy();
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();
     expect(screen.queryByText("Live preview")).toBeNull();          // no preview until a component is focused
-    // The Inspector is always visible now, so its resize splitter is always present (rail + details).
-    expect(container.querySelectorAll(".resize-x").length).toBe(2);
+    // No inspector ⇒ only the rail's resize splitter is present (not the inspector's) — the half-screen win.
+    expect(container.querySelectorAll(".resize-x").length).toBe(1);
   });
 
-  it("focusing a graph node fills the always-visible Inspector", () => {
+  it("focusing a graph node reveals the Inspector", () => {
     const { container } = render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));
     expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();
     expect(screen.getByText("Chip.tsx")).toBeTruthy();
-    expect(screen.queryByText(/Select a component/)).toBeNull();     // filled — the prompt is gone
     expect(graphNode("Chip").className).toContain("on");
-    expect(container.querySelectorAll(".resize-x").length).toBe(2); // rail + details splitters
+    expect(container.querySelectorAll(".resize-x").length).toBe(2); // rail + inspector splitters
   });
 
-  it("focusing a component from the rail also fills the Inspector", () => {
+  it("focusing a component from the rail also reveals the Inspector", () => {
     const { container } = render(<DesignsWorkbench />);
-    expect(screen.getByText(/Select a component/)).toBeTruthy();     // empty state first
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull(); // hidden first
     fireEvent.click(railRow("Chip"));
     expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();
     expect(screen.getByText("Chip.tsx")).toBeTruthy();
   });
 
-  it("clicking the canvas background unfocuses the node → the Inspector returns to its empty state", () => {
+  it("clicking the canvas background unfocuses the node → the Inspector HIDES, graph full-width again", () => {
     const { container } = render(<DesignsWorkbench />);
-    fireEvent.click(graphNode("Chip"));                              // focus → filled
+    fireEvent.click(graphNode("Chip"));                              // focus → revealed
     expect(screen.getByText("Chip.tsx")).toBeTruthy();
     fireEvent.click(canvas(container));                              // click the empty canvas → unfocus
-    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();         // pane STAYS (#2818)
-    expect(screen.getByText(/Select a component/)).toBeTruthy();     // back to the empty state
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();           // pane GONE (#3090)
     expect(screen.queryByText("Chip.tsx")).toBeNull();
     expect(graphNode("Chip").className).not.toContain("on");         // node no longer selected
-    expect(container.querySelectorAll(".resize-x").length).toBe(2); // Inspector (always on) keeps its splitter
+    expect(container.querySelectorAll(".resize-x").length).toBe(1); // only the rail splitter remains
+  });
+
+  it("a node being worked on by Claude reveals the Inspector even with NO user selection (#3090)", () => {
+    const working = SEED_COMPONENTS.filter((c) => c.kitId === SEED_KITS[0].id)[0];
+    useAppStore.setState({ aiFocusedId: working.id });               // Claude is working a node…
+    const { container } = render(<DesignsWorkbench />);
+    // …so the details pane is visible and shows Claude's node, though nothing was clicked.
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();
+    expect(screen.getByText(`${working.name}.tsx`)).toBeTruthy();
+    // The graph marks it with the AI `.working` pulse, NOT the user's `.on` ring (the signals stay separate).
+    expect(graphNode(working.name).className).toMatch(/\bworking\b/);
+    expect(graphNode(working.name).className).not.toMatch(/\bon\b/);
+  });
+
+  it("a user selection takes the Inspector even while Claude works a different node", () => {
+    const kitComps = SEED_COMPONENTS.filter((c) => c.kitId === SEED_KITS[0].id);
+    const aiNode = kitComps.find((c) => c.name !== "Chip")!;         // Claude works some OTHER node
+    useAppStore.setState({ aiFocusedId: aiNode.id });
+    render(<DesignsWorkbench />);
+    fireEvent.click(graphNode("Chip"));                             // the user picks Chip
+    expect(screen.getByText("Chip.tsx")).toBeTruthy();             // the user's pick wins in the Inspector
+    expect(screen.queryByText(`${aiNode.name}.tsx`)).toBeNull();
   });
 });
 
@@ -352,7 +370,7 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
 });
 
 describe("theme try-on preview (#2834)", () => {
-  it("no expand affordance until a component is selected (the inspector is at its empty state)", () => {
+  it("no expand affordance until a component is selected (the inspector is hidden until a selection)", () => {
     render(<DesignsWorkbench />);
     expect(screen.queryByRole("button", { name: /Expand .*preview/ })).toBeNull();
   });
