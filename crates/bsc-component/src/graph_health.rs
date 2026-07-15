@@ -19,7 +19,9 @@
 //! OR an internal `@/…`/relative import matching no kit component or runtime-closure module, #2954 —
 //! throws "module not found" at preview time) · **orphan**
 //! (an isolated, never-referenced primitive/composite) · **unwired-prop** (declares props its own source
-//! never references — a declared interface that does nothing, #2924) · **slot-shell** (INFORMATIONAL — a
+//! never references — a declared interface that does nothing, #2924) · **phantom-compose** (a user
+//! component declares `composes` children its own source never renders — a false graph edge that also
+//! masks orphan detection, #3111) · **slot-shell** (INFORMATIONAL — a
 //! composite whose composed children arrive via ReactNode content slots, so a standalone preview renders
 //! a demo placeholder, #2921). "Unused" = orphan ∪ dangling-branch — a node with no composer AND
 //! `used == 0`; a `page`/`layout` with `used > 0` is a legit entry point, never flagged.
@@ -38,7 +40,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
     /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `unresolvable-import` |
-    /// `orphan` | `unwired-prop` | `slot-shell`.
+    /// `orphan` | `unwired-prop` | `phantom-compose` | `slot-shell`.
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -89,6 +91,10 @@ struct Node {
     source: String,
     /// `(name, type)` per prop — for the slot-shell check (a non-`children` ReactNode content slot).
     props: Vec<(String, String)>,
+    /// Whether this is a packaged built-in (its store record is a contract catalog: `source` stripped,
+    /// `srcText` an illustrative snippet). The phantom-compose check (#3111) skips built-ins — scanning
+    /// their illustrative snippet for composed children would false-positive.
+    builtin: bool,
 }
 
 fn s(v: &Value, key: &str) -> String {
@@ -134,6 +140,7 @@ fn parse_node(v: &Value) -> Option<Node> {
                     .collect()
             })
             .unwrap_or_default(),
+        builtin: v.get("builtin").and_then(Value::as_bool).unwrap_or(false),
     })
 }
 
@@ -943,6 +950,52 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
         });
     }
 
+    // ── phantom-compose (severity 2): a component that DECLARES `composes` children its own source never
+    // renders. The graph draws edges straight from `composes`, so a phantom edge claims a composition that
+    // doesn't happen AND masks orphan detection (the phantom in-edge makes the child look used). Only
+    // USER-authored components with own-module source: a built-in's store record is a contract catalog
+    // (`source` stripped #2794, `srcText` an illustrative snippet), so scanning it would false-positive. A
+    // SLOT-SHELL is exempt — its children legitimately arrive via a content slot. Mirrors graphHealth.ts (#3111).
+    for n in nodes {
+        if n.builtin || n.composes.is_empty() {
+            continue;
+        }
+        let Some(src) = own_module_source(n, &kit_targets) else {
+            continue; // no scannable module (a spec) → no-implementation owns it
+        };
+        if n.props.iter().any(|p| is_node_slot_prop(&p.0, &p.1)) {
+            continue; // slot-shell: composes may arrive via a slot
+        }
+        let rendered = jsx_tag_names(src);
+        if rendered.is_empty() {
+            continue; // renders no JSX at all → a stub, not a phantom composition
+        }
+        let phantom: Vec<&str> =
+            n.composes.iter().filter(|c| !rendered.contains(c.as_str())).map(String::as_str).collect();
+        if phantom.is_empty() {
+            continue;
+        }
+        let it = if phantom.len() == 1 { "it" } else { "them" };
+        out.push(Finding {
+            category: "phantom-compose",
+            severity: 2,
+            kit: kit.to_string(),
+            node_ids: vec![n.id.clone()],
+            node_names: vec![n.name.clone()],
+            why: format!(
+                "`{}` declares it composes {} but its source never renders {it} — a phantom composition edge (the graph draws a composition that doesn't happen, and the false edge hides the child from orphan detection)",
+                n.name,
+                phantom.join(", ")
+            ),
+            suggested_action: format!(
+                "render {} in `{}`'s source, or drop {} from its `composes`",
+                phantom.join(", "),
+                n.name,
+                if phantom.len() == 1 { "it" } else { "them" }
+            ),
+        });
+    }
+
     // ── slot-shell (severity 1, INFORMATIONAL): a composite whose composed children arrive via ReactNode
     // CONTENT SLOTS. Standalone (no slots passed) it renders a demo/placeholder fallback, not its
     // assembled function — so a preview looks non-functional even though it isn't (#2921). Explains e.g.
@@ -1577,6 +1630,58 @@ mod tests {
         assert!(
             fs.iter().any(|f| f.category == "no-implementation"),
             "an import resolving to no sibling is not buildable: {fs:?}"
+        );
+    }
+
+    #[test]
+    fn flags_a_declared_composition_the_source_never_renders_as_phantom_compose() {
+        // #3111: a chart that DECLARES it composes ChartFrame/Axis but redraws them inline (renders only
+        // raw SVG) — a phantom edge the graph would draw, and the false in-edge would mask orphan detection.
+        let chart = json!({ "id": "bar", "name": "BarChart", "kitId": "d3", "role": "composite", "used": 2,
+            "composes": ["ChartFrame", "Axis"], "src": "d3/BarChart.tsx",
+            "source": "export function BarChart(){ return <svg><rect/></svg>; }" });
+        let frame = json!({ "id": "cf", "name": "ChartFrame", "kitId": "d3", "role": "layout", "used": 1,
+            "composes": [], "src": "d3/ChartFrame.tsx", "source": "export function ChartFrame(){ return null; }" });
+        let axis = json!({ "id": "ax", "name": "Axis", "kitId": "d3", "role": "primitive", "used": 1,
+            "composes": [], "src": "d3/Axis.tsx", "source": "export function Axis(){ return null; }" });
+        let fs = analyze(&[chart, frame, axis]);
+        let f = fs.iter().find(|f| f.category == "phantom-compose").expect("phantom-compose flagged");
+        assert_eq!(f.severity, 2);
+        assert_eq!(f.node_names, vec!["BarChart"]);
+        assert!(f.why.contains("ChartFrame, Axis"), "names the phantom edges: {}", f.why);
+    }
+
+    #[test]
+    fn does_not_flag_phantom_compose_for_a_real_render_slot_shell_stub_or_builtin() {
+        let comps = [
+            // renders <ChartFrame> → a real composition.
+            json!({ "id": "line", "name": "LineChart", "kitId": "d3", "role": "composite", "used": 2,
+                "composes": ["ChartFrame"], "src": "d3/LineChart.tsx",
+                "source": "export function LineChart(){ return <ChartFrame><path/></ChartFrame>; }" }),
+            // a slot-shell (composes + a ReactNode slot) — the child arrives via the slot.
+            json!({ "id": "pg", "name": "AnalyticsPage", "kitId": "d3", "role": "page", "used": 2,
+                "composes": ["BarChart"], "src": "d3/AnalyticsPage.tsx",
+                "props": [{ "name": "range", "type": "ReactNode" }],
+                "source": "export function AnalyticsPage({ range }){ return <div>{range}</div>; }" }),
+            // renders NO JSX (a stub, ambiguous) → not flagged.
+            json!({ "id": "stub", "name": "Stub", "kitId": "d3", "role": "composite", "used": 2,
+                "composes": ["ChartFrame"], "src": "d3/Stub.tsx", "source": "export function Stub(){ return null; }" }),
+            // a BUILT-IN: its store srcText is an illustrative snippet, not the real module → exempt.
+            json!({ "id": "chip", "name": "Chip", "kitId": "d3", "role": "composite", "used": 5, "builtin": true,
+                "composes": ["StatusDot"], "src": "d3/Chip.tsx",
+                "srcText": "export function Chip({ children }){ return <span>{children}</span>; }" }),
+            json!({ "id": "cf", "name": "ChartFrame", "kitId": "d3", "role": "layout", "used": 3, "composes": [],
+                "src": "d3/ChartFrame.tsx", "source": "export function ChartFrame(){ return null; }" }),
+            json!({ "id": "bar", "name": "BarChart", "kitId": "d3", "role": "composite", "used": 3,
+                "composes": ["ChartFrame"], "src": "d3/BarChart.tsx",
+                "source": "export function BarChart(){ return <ChartFrame/>; }" }),
+            json!({ "id": "sd", "name": "StatusDot", "kitId": "d3", "role": "primitive", "used": 9, "composes": [],
+                "src": "d3/StatusDot.tsx", "source": "export function StatusDot(){ return null; }" }),
+        ];
+        assert!(
+            analyze(&comps).iter().all(|f| f.category != "phantom-compose"),
+            "real render / slot-shell / stub / built-in are not phantom: {:?}",
+            analyze(&comps)
         );
     }
 

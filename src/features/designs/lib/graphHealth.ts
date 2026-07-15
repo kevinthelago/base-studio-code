@@ -12,8 +12,10 @@
 // `@/…`/relative import matching no kit component or runtime module (#2954) — throws at preview time) ·
 // orphan (isolated, never-
 // referenced primitive/composite) · unwired-prop (declares props its own source never references — a
-// declared interface that does nothing, #2924) · slot-shell (INFORMATIONAL — a composite whose composed
-// children arrive via ReactNode content slots, so a standalone preview renders a demo placeholder, #2921).
+// declared interface that does nothing, #2924) · phantom-compose (a user component declares `composes`
+// children its own source never renders — a false graph edge that also masks orphan detection, #3111) ·
+// slot-shell (INFORMATIONAL — a composite whose composed children arrive via ReactNode content slots, so
+// a standalone preview renders a demo placeholder, #2921).
 // "Unused" = no composer AND used === 0; a page/layout with used > 0 is a legit entry point, never flagged.
 //
 // The no-implementation check reuses the EXACT preview logic (`componentPreviewFiles`, #2824/#2828):
@@ -192,7 +194,7 @@ const INTERNAL_TARGETS = new Set<string>([
 
 export type HealthCategory =
   | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "self-reference" | "unresolvable-import"
-  | "orphan" | "unwired-prop" | "slot-shell";
+  | "orphan" | "unwired-prop" | "phantom-compose" | "slot-shell";
 
 /** Category → severity (higher = worse); drives ranking + which badge wins on a multi-flagged node.
  *  `unresolvable-import` (3) is a real defect — the component throws at preview time (a bare import the
@@ -208,6 +210,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "unresolvable-import": 3,
   orphan: 2,
   "unwired-prop": 2,
+  "phantom-compose": 2,
   "slot-shell": 1,
 };
 
@@ -375,6 +378,27 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
     if (unwired.length === 0) continue;
     findings.push({ category: "unwired-prop", severity: 2, nodeIds: [c.id], nodeNames: [c.name],
       why: `${c.name} declares prop${unwired.length === 1 ? "" : "s"} its source never uses: ${unwired.join(", ")} — a declared interface that does nothing` });
+  }
+
+  // phantom-compose — a component that DECLARES `composes` children its own source never renders. The
+  // composition graph draws edges straight from `composes` (`buildComposesEdges`), so a phantom edge makes
+  // the graph claim a composition that doesn't happen AND masks orphan detection (the phantom in-edge makes
+  // the child look used). Only USER-authored components with own-module source: a built-in's store record is
+  // a contract catalog (its `source` is stripped, #2794, and its `srcText` is an illustrative snippet — not
+  // the real module that renders the child), so scanning it would false-positive. A SLOT-SHELL is exempt —
+  // its composed children legitimately arrive via a content slot, not a direct render (the informational
+  // slot-shell finding already explains it). Rust twin: the phantom-compose loop in graph_health.rs. (#3111)
+  for (const c of comps) {
+    if (c.builtin || c.composes.length === 0) continue;
+    const src = ownModuleSource(c, comps);
+    if (!src) continue; // no scannable module (a spec) → no-implementation owns it
+    if (c.props.some((p) => isNodeSlotProp(p))) continue; // slot-shell: composes may arrive via a slot
+    const rendered = jsxTagNames(src);
+    if (rendered.size === 0) continue; // renders no JSX at all → a stub, not a phantom composition
+    const phantom = c.composes.filter((name) => !rendered.has(name));
+    if (phantom.length === 0) continue;
+    findings.push({ category: "phantom-compose", severity: 2, nodeIds: [c.id], nodeNames: [c.name],
+      why: `${c.name} declares it composes ${phantom.join(", ")} but its source never renders ${phantom.length === 1 ? "it" : "them"} — a phantom composition edge (the graph draws a composition that doesn't happen, and the false edge hides the child from orphan detection)` });
   }
 
   // slot-shell (informational) — a composite whose composed children arrive via ReactNode CONTENT SLOTS.
