@@ -1,11 +1,16 @@
-// Component → Algorithm cross-graph composition (#3116, epic #3114) — derive the `requires` edges a kit's
-// components declare by importing `@bsc/<segment>/<name>`, plus the unique library nodes they reference, so
-// the composition graph can render those nodes in a FENCED BAND (A's `layoutBand`) with dashed `requires`
-// edges into them. Pure + React-free; DesignsWorkbench turns this into band positions + edge paths.
+// Component → library cross-graph composition (#3116 algorithms, #3117 sounds; epic #3114) — derive the
+// `requires` edges a kit's components declare by importing `@bsc/<segment>/<name>` (an ALGORITHM via
+// `@bsc/algorithms/…` OR a SOUND cue/voice via `@bsc/sounds/…`), plus the unique library nodes they
+// reference, so the composition graph can render those nodes in a FENCED BAND (A's `layoutBand`) with dashed
+// `requires` edges into them. Pure + React-free; DesignsWorkbench turns this into band positions + edge paths.
 //
-// A component's URN is `ui:<kitId>/<id>` (the design graph); the referenced node's URN is the CANONICAL
-// `algo:<tech>/<id>` the resolver mints. Edges are deduped by `crossGraphEdgeId`; a component with NO
-// `@bsc/…` import contributes nothing (an empty result ⇒ the band is omitted entirely, byte-identical today).
+// Graph-agnostic: it delegates identity + resolution to `resolveLibrarySpec` (libraryModules.ts), which
+// resolves EACH library graph against its default kit — so an algorithm ref and a sound-cue ref are
+// collected UNIFORMLY here, each referenced node carrying the reusable `code` the preview vendors (an
+// algorithm's real source, or a sound cue's generated player module). A component's URN is `ui:<kitId>/<id>`
+// (the design graph); the referenced node's URN is the CANONICAL `algo:…`/`sound:…` the resolver mints.
+// Edges are deduped by `crossGraphEdgeId`; a component with NO `@bsc/…` import contributes nothing (an empty
+// result ⇒ the band is omitted entirely, byte-identical today).
 import { crossGraphEdgeId, type CrossGraphEdge, type ResolvedNode } from "@/shared/lib/graph/crossGraph";
 import { formatNodeUrn, isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
 import { resolveLibrarySpec } from "./libraryModules";
@@ -34,21 +39,22 @@ function componentSource(c: ComponentRecord): string {
   return (c.source?.trim() ? c.source : c.srcText) ?? "";
 }
 
-/** The derived cross-graph composition for a kit's components. */
-export interface AlgoComposition {
-  /** The `requires` edges (a component URN → an algorithm URN), deduped, in first-seen order. */
+/** The derived cross-graph composition for a kit's components — its library `requires` edges + nodes. */
+export interface LibraryComposition {
+  /** The `requires` edges (a component URN → a library-node URN), deduped, in first-seen order. */
   edges: CrossGraphEdge[];
-  /** The UNIQUE referenced library nodes (an algorithm's resolved node, carrying its `code`), in
+  /** The UNIQUE referenced library nodes (an algorithm's / sound's resolved node, carrying its `code`), in
    *  first-seen order — one band card each. */
   nodes: ResolvedNode[];
 }
 
 /**
  * Derive the `requires` edges + referenced library nodes for `comps` from their `@bsc/<segment>/<name>`
- * imports. Only references that RESOLVE to a runnable node (one carrying `code`) are included — an
- * unresolvable `@bsc/…/<missing>` is a graphHealth finding, not a graph node. Deterministic. Pure.
+ * imports (algorithms AND sounds). Only references that RESOLVE to a runnable node (one carrying `code`) are
+ * included — an unresolvable `@bsc/…/<missing>` (or a code-less primitive descriptor) is a graphHealth
+ * finding, not a graph node. Deterministic. Pure.
  */
-export function resolveComponentAlgoRefs(comps: readonly ComponentRecord[]): AlgoComposition {
+export function resolveComponentLibraryRefs(comps: readonly ComponentRecord[]): LibraryComposition {
   const edges: CrossGraphEdge[] = [];
   const nodesByUrn = new Map<string, ResolvedNode>();
   const seenEdge = new Set<string>();
