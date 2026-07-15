@@ -228,4 +228,44 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(map.get("GraphExplorerPage")).toBe("no-implementation");
     expect(map.get("Card")).toBeUndefined();
   });
+
+  it("flags a component that declares `composes` its source never renders as phantom-compose (#3111)", () => {
+    // A user chart that DECLARES it composes ChartFrame/Axis but redraws them inline (renders neither) —
+    // the graph would draw phantom edges AND the false in-edges would hide ChartFrame/Axis from orphan
+    // detection. It renders only lowercase SVG, no kit component.
+    const chart = comp("BarChart", "composite", 2, ["ChartFrame", "Axis"], {
+      source: "export function BarChart(){ return <svg><rect/></svg>; }",
+    });
+    const frame = comp("ChartFrame", "layout", 1);
+    const axis = comp("Axis", "primitive", 1);
+    const fs = analyzeGraphHealth([chart, frame, axis]);
+    const f = fs.find((x) => x.category === "phantom-compose");
+    expect(f).toBeTruthy();
+    expect(f!.severity).toBe(2);
+    expect(f!.nodeNames).toEqual(["BarChart"]);
+    expect(f!.why).toContain("ChartFrame, Axis"); // names the phantom edges, in composes order
+  });
+
+  it("does NOT flag phantom-compose for a real render, a slot-shell, or a built-in (#3111)", () => {
+    // Renders <ChartFrame> → a real composition, not phantom.
+    const real = comp("LineChart", "composite", 2, ["ChartFrame"], {
+      source: "export function LineChart(){ return <ChartFrame><path/></ChartFrame>; }",
+    });
+    // A slot-shell (composes + a ReactNode slot): the child arrives via the slot, not a direct render.
+    const slotted = comp("AnalyticsPage", "page", 2, ["BarChart"], {
+      source: "export function AnalyticsPage({ range }){ return <div>{range}</div>; }",
+      props: [{ name: "range", type: "ReactNode", req: false, desc: "" }],
+    });
+    // A BUILT-IN: its store `srcText` is an illustrative snippet (not the real module that renders the
+    // child), so scanning it would false-positive — built-ins are exempt.
+    const builtin = comp("Chip", "composite", 5, ["StatusDot"], {
+      builtin: true, source: undefined, srcText: "export function Chip({ children }){ return <span>{children}</span>; }",
+    });
+    const cats = analyzeGraphHealth([
+      real, slotted, builtin,
+      comp("ChartFrame", "layout", 3), comp("BarChart", "composite", 3, ["ChartFrame"], { source: "export function BarChart(){ return <ChartFrame/>; }" }),
+      comp("StatusDot", "primitive", 9),
+    ]).map((f) => f.category);
+    expect(cats).not.toContain("phantom-compose");
+  });
 });
