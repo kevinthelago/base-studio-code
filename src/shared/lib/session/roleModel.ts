@@ -170,3 +170,24 @@ const CARVE_OUT_ROLES: ReadonlySet<SessionRole> = new Set<SessionRole>(["directo
 export function hasScopedWriteCarveOut(cap: RoleCapability): boolean {
   return CARVE_OUT_ROLES.has(cap.role) && cap.code === "none" && cap.writeGlobs.length > 0;
 }
+
+/** Roles whose fleet launch grants a FIXED store-CLI auto-run surface on top of the profile — the
+ *  bundled `bsc` subcommands they drive, regardless of the project (#3095, epic #3087). Today only the
+ *  **curator** (the post-landing harvest + graph-optimize actor): `bsc ui` (harvest components into the
+ *  component store + `bsc ui doctor --fix` to prune/merge) and `bsc graph` (harvest + `bsc graph
+ *  curate --apply` for the algorithms graph). This is the FLEET-launch path; the standing-tab sessions
+ *  (designer/librarian/architect) instead pin their WHOLE surface via `restrictedAllow` in their own
+ *  launch hooks. Tightening the curator to `restrictedAllow` (these two as its ONLY surface) is the
+ *  follow-up P2b-2 — here they layer ON TOP of the baseline tiers. */
+const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> = {
+  curator: ["bsc ui", "bsc graph"],
+};
+
+/**
+ * The fixed store-CLI command prefixes a role auto-runs at launch, in ADDITION to its profile's
+ * `allowedCommands` (#3095). Empty for a role with no fixed store surface (every role but `curator`
+ * today). Returns a fresh array so callers can spread/mutate freely.
+ */
+export function restrictedRoleCommands(role: SessionRole | null | undefined): string[] {
+  return role ? [...(RESTRICTED_ROLE_COMMANDS[role] ?? [])] : [];
+}

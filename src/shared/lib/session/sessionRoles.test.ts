@@ -18,6 +18,7 @@ import {
   sessionScopes,
   scopeWriteGlobs,
   hasScopedWriteCarveOut,
+  restrictedRoleCommands,
 } from "./sessionRoles";
 
 describe("scopeWriteGlobs (#1297)", () => {
@@ -700,5 +701,26 @@ describe("architect role (#2755)", () => {
     expect(p.deny_bash).toContain("gh");
     expect(p.deny_bash).toContain("bsc ui"); // ui:none flows through to the agent runtime too
     expect(p.write_globs).toEqual([]);
+  });
+});
+
+describe("restrictedRoleCommands (curator store surface, #3095)", () => {
+  it("hands the curator its two store CLIs — bsc ui (components) + bsc graph (algorithms)", () => {
+    expect(restrictedRoleCommands("curator")).toEqual(["bsc ui", "bsc graph"]);
+  });
+
+  it("is empty for every non-curator role and for an absent role", () => {
+    for (const role of Object.keys(ROLE_DEFAULTS) as SessionRole[]) {
+      if (role === "curator") continue;
+      expect(restrictedRoleCommands(role)).toEqual([]);
+    }
+    expect(restrictedRoleCommands(null)).toEqual([]);
+    expect(restrictedRoleCommands(undefined)).toEqual([]);
+  });
+
+  it("returns a fresh array each call so callers can spread/mutate without corrupting the source", () => {
+    const a = restrictedRoleCommands("curator");
+    a.push("bsc plan");
+    expect(restrictedRoleCommands("curator")).toEqual(["bsc ui", "bsc graph"]);
   });
 });
