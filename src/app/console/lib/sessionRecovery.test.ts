@@ -83,4 +83,20 @@ describe("reconcileSessions (#1266)", () => {
     // it never appears in the recoverable list, while a real worker still does.
     expect(out.map((s) => s.paneId)).toEqual(["proj:auth"]);
   });
+
+  it("excludes the app-owned studio sessions (designer/librarian/architect) (#3137)", () => {
+    // Their ids share the `<key>:<tail>` worker grammar, so before #3137 they were surfaced as
+    // restorable workers. They're app-owned singletons re-created when their workspace opens —
+    // never restored — so they must never appear, while a real worker still does.
+    const out = reconcileSessions(
+      [
+        sess("design-studio:designer", "running"),
+        sess("algorithms-studio:librarian", "dormant"),
+        sess("teams-studio:architect", "running"),
+        sess("proj:auth", "dormant"),
+      ],
+      [],
+    );
+    expect(out.map((s) => s.paneId)).toEqual(["proj:auth"]);
+  });
 });
