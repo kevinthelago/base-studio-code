@@ -164,7 +164,9 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
           .filter((c) => /^[a-z][a-z0-9-]+$/.test(c))
           .join(" ");
         const injectedCss = collectAppCss() + (themeCss ? `\n:root{${themeCss}}` : "") + (animCss ? `\n${animCss}` : "");
-        const srcDoc = buildComponentSrcDoc(js, { injectedCss, theme, rootClass, exitSelectors });
+        // #3141: pages/layouts are scaled parent-side (the canvas above); a component that overflows the
+        // frame gets the in-iframe scale-to-fit shim instead so it shows whole rather than clipping.
+        const srcDoc = buildComponentSrcDoc(js, { injectedCss, theme, rootClass, exitSelectors, fitContent: !pageLike });
         if (iframeRef.current) iframeRef.current.srcdoc = srcDoc;
         setStatus("ready");
       } catch (e) {
@@ -175,7 +177,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, siblingsKey, animKey, exitKey, themeId, previewState, retry]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, themeId, previewState, retry]);
 
   // Surface runtime errors the iframe posts (an exception during the component's own render). Match ONLY
   // this frame's own iframe by source window (#2908) — the on-visit scan now runs its own hidden probe
