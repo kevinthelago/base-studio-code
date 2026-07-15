@@ -5,6 +5,7 @@ import {
   resolveUsedBy,
   resolveComponentAnimations,
   resolveComponentAnimationDefs,
+  resolveComposedAnimations,
   resolveNamedAnimation,
   selectAnimationPreset,
   MOTION_PRESET_GROUP,
@@ -105,6 +106,30 @@ describe("previewAnimDefs — the try-on ISOLATES the clicked animation (#3075)"
     // The #3075 regression: appending the clicked one to [a, b] yielded [a, b] every time.
     expect(previewAnimDefs([a, b], a)).toEqual([a]);
     expect(previewAnimDefs([a, b], b)).toEqual([b]);
+  });
+});
+
+describe("resolveComposedAnimations — pair each composed import with its motion (#3130)", () => {
+  const frame = mkComp({ id: "frame", name: "Frame", animations: [draw] });
+  const axis = mkComp({ id: "axis", name: "Axis", animations: [fade] });
+  it("unions the active animations of the siblings a component composes", () => {
+    const chart = mkComp({ id: "chart", name: "Chart", composes: ["Frame", "Axis"] });
+    const defs = resolveComposedAnimations(chart, [chart, frame, axis], [mkKit({})]);
+    expect(defs.map((d) => d.name)).toEqual(["draw", "fade-in"]);
+    expect(defs.every((d) => d.kit === "react-ui")).toBe(true);
+  });
+  it("dedupes a shared animation across composed siblings (kit:name)", () => {
+    const a = mkComp({ id: "a", name: "A", animations: [fade] });
+    const b = mkComp({ id: "b", name: "B", animations: [fade] });
+    const chart = mkComp({ id: "chart", name: "Chart", composes: ["A", "B"] });
+    expect(resolveComposedAnimations(chart, [chart, a, b], [mkKit({})]).map((d) => d.name)).toEqual(["fade-in"]);
+  });
+  it("yields nothing when it composes nothing, and ignores a cross-kit or missing composed name", () => {
+    expect(resolveComposedAnimations(mkComp({ composes: [] }), [], [mkKit({})])).toEqual([]);
+    const vueFrame = mkComp({ id: "vf", name: "Frame", kitId: "vue-kit", animations: [draw] });
+    const chart = mkComp({ id: "chart", name: "Chart", composes: ["Frame", "Ghost"] });
+    // Frame here is a DIFFERENT kit → excluded; Ghost isn't in the kit → skipped.
+    expect(resolveComposedAnimations(chart, [chart, vueFrame], [mkKit({})])).toEqual([]);
   });
 });
 
