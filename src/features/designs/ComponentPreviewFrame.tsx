@@ -4,7 +4,7 @@
 // the built-in kit (its verbatim source + dependency closure from the packaged artifact) AND
 // user-authored components built on any npm library (d3, three, …), which load from esm.sh in the iframe
 // with no install. The app's live styles are injected so built-ins render themed.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import reactUiArtifact from "@data/components/react-ui.json";
 import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
@@ -22,6 +22,11 @@ import { resolveComponentAnimations, resolveComposedAnimations, previewAnimDefs,
 // The packaged kit artifact carries each built-in's verbatim `source` + the `runtime` (@/) closure
 // (react-ui.json; the builtinKits SEED strips `source`, but this raw import keeps it — same bundle).
 const ARTIFACT = reactUiArtifact as unknown as KitArtifact;
+
+// Page canvas aspect (#3139): a page-like preview renders in a viewport this many × the frame width tall,
+// then contain-scales to fit — so the header sits at the top and the whole page shows. ~1.15 keeps a
+// desktop-ish canvas without shrinking the page too far in a short thumbnail.
+const PAGE_ASPECT = 1.15;
 
 type Status = "building" | "ready" | "error";
 
@@ -54,6 +59,29 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // here since the frame is inline-styled and self-contained (works wherever it's mounted).
   const [hint, setHint] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  // Measure the frame so page-like components can render at a natural viewport canvas and scale-to-fit
+  // (#3139) — a full-viewport page squeezed into the raw frame overflows/clips; scaling shows the whole
+  // thing. Only pages/layouts scale; a component keeps its 1:1, centered mount.
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [frame, setFrame] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setFrame({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const pageLike = comp.role === "page" || comp.role === "layout";
+  // The page canvas + scale-to-fit ratio (#3139): render at the frame WIDTH (the selected sm/md/auto
+  // breakpoint = the page's authored layout width) × a taller viewport canvas, then contain-scale so the
+  // whole page shows. `null` for non-pages (they render 1:1) or before the frame is measured.
+  const canvas = useMemo(() => {
+    if (!pageLike || frame.w === 0 || frame.h === 0) return null;
+    const naturalW = frame.w;
+    const naturalH = Math.max(frame.h, Math.round(naturalW * PAGE_ASPECT));
+    const scale = Math.min(1, frame.w / naturalW, frame.h / naturalH);
+    return { naturalW, naturalH, scale };
+  }, [pageLike, frame.w, frame.h]);
   // The kit-scoped animation defs this component BINDS (#2942) — the kit owns the keyframes, the
   // component references them by name. A derived key so authoring/removing a binding OR editing the
   // kit's motion re-renders the preview (the object identity alone isn't a stable dep).
@@ -165,16 +193,28 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     return () => window.removeEventListener("message", onMsg);
   }, []);
 
+  // #3139: a page-like preview renders at its natural viewport canvas + is contain-scaled (absolute,
+  // top-anchored, centered); a component renders 1:1, filling the frame. Common chrome either way.
+  const chrome: CSSProperties = {
+    border: "1px solid var(--border-soft)", borderRadius: 8,
+    background: "var(--bg-canvas, var(--bg))", opacity: status === "ready" ? 1 : 0.35, transition: "opacity .2s",
+  };
+  const iframeStyle: CSSProperties = canvas
+    ? {
+        ...chrome, position: "absolute", top: 0,
+        left: Math.round((frame.w - canvas.naturalW * canvas.scale) / 2),
+        width: canvas.naturalW, height: canvas.naturalH,
+        transform: `scale(${canvas.scale})`, transformOrigin: "top left",
+      }
+    : { ...chrome, flex: 1, width: "100%", height: "100%" };
   return (
-    <Box style={{ position: "relative", width, maxWidth: "100%", height, display: "flex", transition: "width .25s ease" }}>
+    // eslint-disable-next-line no-restricted-syntax -- measured mount: ResizeObserver reads this frame's px size to scale a page-like preview (#3139)
+    <div ref={frameRef} style={{ position: "relative", width, maxWidth: "100%", height, display: "flex", overflow: "hidden", transition: "width .25s ease" }}>
       <iframe
         ref={iframeRef}
         title={`${comp.name} preview`}
         sandbox="allow-scripts"
-        style={{
-          flex: 1, width: "100%", height: "100%", border: "1px solid var(--border-soft)", borderRadius: 8,
-          background: "var(--bg-canvas, var(--bg))", opacity: status === "ready" ? 1 : 0.35, transition: "opacity .2s",
-        }}
+        style={iframeStyle}
       />
       {status === "building" && (
         <Box style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, pointerEvents: "none" }}>
@@ -226,6 +266,6 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
           </Box>
         </Box>
       )}
-    </Box>
+    </div>
   );
 }
