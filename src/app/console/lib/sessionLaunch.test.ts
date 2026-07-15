@@ -201,6 +201,24 @@ describe("buildSessionSettings", () => {
     expect(out.bashPosture).toBe(build.tools.bash);
   });
 
+  it("grants a curator pane its fixed bsc ui/graph store surface on top of the profile (#3095)", () => {
+    // No profile assigned ⇒ the curator's WHOLE auto-run surface is the two store CLIs it harvests +
+    // optimizes with (`bsc ui`, `bsc graph`). Layered, not replaced — see the profile case below.
+    const bare = buildSessionSettings(mkStore({ paneRoles: { p: "curator" } }), "p");
+    expect(bare.allowedCommands).toEqual(["bsc ui", "bsc graph"]);
+    // With a profile, the fixed surface is APPENDED to the profile's own allowedCommands.
+    const withProf = buildSessionSettings(
+      mkStore({ paneRoles: { p: "curator" }, paneProfiles: { p: "pf_auto" }, agentProfiles: PROFILES }),
+      "p",
+    );
+    const prof = resolveProfileSettings(PROFILES.find((x) => x.id === "pf_auto")!);
+    expect(withProf.allowedCommands).toEqual([...prof.allowedCommands, "bsc ui", "bsc graph"]);
+    // Every OTHER role is unchanged — the store surface is curator-only, so a worker never auto-runs it.
+    const worker = buildSessionSettings(mkStore({ paneRoles: { p: "worker" } }), "p");
+    expect(worker.allowedCommands).not.toContain("bsc ui");
+    expect(worker.allowedCommands).not.toContain("bsc graph");
+  });
+
   it("installs the bsc-skill telemetry hooks when the session has skills, not otherwise", () => {
     expect(cmds(buildSessionSettings(mkStore(), "p"))).not.toContain("bsc-skill");
     const withSkill = mkStore({ paneSkills: { p: [{ name: "My Skill", desc: "d", prompt: "do x" }] } });
