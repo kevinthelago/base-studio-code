@@ -71,7 +71,15 @@ export type SessionRole =
   // release announcements). Least-privilege like `documentor`: `code: "none"` with a marketing-content
   // write carve-out (markdown/mdx under `marketing/`/`content/` + README/CHANGELOG), so it can never
   // touch feature code; outward (third-party) publishing is out of v1.
-  | "marketer";
+  | "marketer"
+  // Curator (#3092, epic #3087): the reusable-library lifecycle actor — the library analog of the
+  // `documentor`. After a change lands it HARVESTS the reusable components/algorithms the fleet built
+  // into the GLOBAL stores (not already present), then OPTIMIZES the graph via the command
+  // (`bsc ui doctor --fix`). Scoped write to the STORES only — `ui: "write"` (the component/kit store)
+  // + `bsc graph` via the restricted allow-list — with `code: "none"` and `git: "read"` (to read the
+  // landed repo it harvests from). It never touches project files or GitHub. Distinct from the
+  // `librarian` (the standing Algorithms-Studio session): the curator is a FLEET post-landing actor.
+  | "curator";
 
 /** Access to a capability: none < read < write. */
 export type AccessTier = "none" | "read" | "write";

@@ -6,7 +6,7 @@ import { mergeRoleDefaults, roleCapability, type RoleCapability } from "./roleMo
 // #2027 P1). The role gate is least-privilege; a JSON edit that WIDENS a role's access (e.g. gives a
 // reviewer git:write, or hands a non-planner default write globs) must trip a test here, not ship.
 describe("role capability table (loaded from @data/permissions/role-capabilities.json)", () => {
-  it("has exactly the 13 roles with their intended github/git/code/net/ui tiers", () => {
+  it("has exactly the 14 roles with their intended github/git/code/net/ui tiers", () => {
     const tiers = Object.fromEntries(
       Object.values(ROLE_DEFAULTS).map((c) => [c.role, `${c.github}/${c.git}/${c.code}/${c.net}/${c.ui}`]),
     );
@@ -39,6 +39,11 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
       // Marketer (#2431): read-only on git/GitHub, code:none — writes come solely from its
       // marketing-content carve-out (asserted below), never a code tier.
       marketer:   "read/read/none/read/read",
+      // Curator (#3092, epic #3087): the reusable-library post-landing actor — `none` on GitHub/net,
+      // `code: none` (never edits project files), `git: read` (reads the landed repo it harvests from),
+      // and `ui: write` (the ONE write grant — the component/kit store; `bsc graph` for algorithms comes
+      // via the restricted allow-list at launch). No writeGlobs — its writes go to the stores, not files.
+      curator:    "none/read/none/none/write",
     });
   });
 
