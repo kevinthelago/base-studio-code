@@ -36,7 +36,11 @@ export function KeptMountedPage({
 
   const body = fallback !== undefined ? <Suspense fallback={fallback}>{children}</Suspense> : children;
   return (
-    <Box style={{ display: active ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0, ...style }}>
+    // minWidth/minHeight:0 keep the flex SHRINK CHAIN intact — a kept-mounted page (e.g. the Design
+    // Studio's GraphCanvas) can then shrink WITH the window instead of pinning to its content's intrinsic
+    // width and overflowing (which the `.screen-body` clips → the right pane vanishes, #3097). Every flex
+    // ancestor from the shrinking element up to the sized ancestor needs it; don't drop these.
+    <Box style={{ display: active ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0, minWidth: 0, ...style }}>
       {body}
     </Box>
   );
