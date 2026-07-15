@@ -17,7 +17,10 @@
 //! that passes the buildability + syntax gates yet produces no output, #3026) · **unresolvable-import** (a
 //! module imports something the preview can't resolve — a bare npm package not in the import-map, #2934,
 //! OR an internal `@/…`/relative import matching no kit component or runtime-closure module, #2954 —
-//! throws "module not found" at preview time) · **orphan**
+//! throws "module not found" at preview time) · **reimplementation** (an own-source component that
+//! DECLARES a symbol re-coding a node that already exists in the library — an inline `function fibonacci`
+//! while `@bsc/algorithms/fibonacci` exists — instead of importing it; the "compose, don't recreate"
+//! guardrail, #3118) · **orphan**
 //! (an isolated, never-referenced primitive/composite) · **unwired-prop** (declares props its own source
 //! never references — a declared interface that does nothing, #2924) · **phantom-compose** (a user
 //! component declares `composes` children its own source never renders — a false graph edge that also
@@ -39,8 +42,9 @@ use std::collections::{BTreeMap, BTreeSet};
 /// One health finding — LLM-consumable: what, where, why, and what to do about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
-    /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `unresolvable-import` |
-    /// `orphan` | `unwired-prop` | `phantom-compose` | `slot-shell`.
+    /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
+    /// `unresolvable-import` | `reimplementation` | `orphan` | `unwired-prop` | `phantom-compose` |
+    /// `slot-shell`.
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -295,6 +299,44 @@ fn resolves_library(spec: &str) -> bool {
         "sounds" => sound_library_names().contains(name),
         _ => false,
     }
+}
+
+/// Is `s` a single valid JS identifier (so it COULD be a declared symbol)? Excludes empty, a leading
+/// digit, and any non-`[A-Za-z0-9_$]` char — so a library name that can never appear as `function <name>`
+/// (an extension-bearing algo id like `fibonacci.ts`) is not a reimplementation candidate. Mirrors
+/// `isJsIdentifier` (libraryModules.ts).
+fn is_js_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' || c == '$' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+}
+
+/// The library nodes a component could RE-CODE instead of importing (#3118) — the "compose, don't
+/// recreate" guardrail's candidate set. `(name, segment)`: `name` is the exact identifier a
+/// reimplementation would DECLARE (an algorithm's bare name); `segment` is the `@bsc/<segment>` import
+/// root (always `algorithms`). Drawn from the SAME `algo_library_names()` set the #3116 resolvable check
+/// uses (so a listed name is one `@bsc/algorithms/<name>` resolves), then filtered to identifiers — a
+/// non-identifier library name (the extension-bearing algo id `fibonacci.ts`) can never be a declared
+/// symbol, so it's no reimplementation candidate. Cached. Mirrors `libraryReimplTargets` (libraryModules.ts).
+///
+/// ALGORITHMS-ONLY BY DESIGN. Sounds are DELIBERATELY excluded even though `@bsc/sounds/<id>` resolves +
+/// vendors (#3117 — that import path stays fully intact, `sound_library_names()` still backs it): a sound
+/// cue/voice id (`click`, `toggle`, `error`, `success`, `pop`, `tick`, …) collides with extremely common
+/// handler/function names, so a component that legitimately declares `function click()` would be wrongly
+/// flagged — and you don't "re-code" a cue as a function anyway. Value asymmetric, false-positive cost
+/// high, so the reimplementation detector matches algorithms only.
+fn reimpl_targets() -> &'static [(String, &'static str)] {
+    static T: std::sync::OnceLock<Vec<(String, &'static str)>> = std::sync::OnceLock::new();
+    T.get_or_init(|| {
+        algo_library_names()
+            .iter()
+            .filter(|name| is_js_identifier(name))
+            .map(|name| (name.clone(), "algorithms"))
+            .collect()
+    })
 }
 
 /// Is `spec` an ABSOLUTE URL — a `scheme:` prefix (the first `:` sits before any `/`, e.g. `https:`,
@@ -1038,6 +1080,60 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
         });
     }
 
+    // ── reimplementation (severity 3): the "compose, don't recreate" guardrail (#3118, epic #3114). An
+    // own-source component that DECLARES a symbol whose name EXACTLY matches an existing LIBRARY ALGORITHM
+    // is RE-CODING what it could import via `@bsc/algorithms/…` — an inline `function fibonacci` while
+    // `@bsc/algorithms/fibonacci` already exists. #3116 made those references resolvable + vendorable (the
+    // preview runs the library impl); this steers the designer to compose the ONE canonical node instead of
+    // forking it. ALGORITHMS-ONLY (see `reimpl_targets`): sounds are excluded — a cue id like `click`
+    // collides with common handler names. Conservative (false positives are worse than a miss): EXACT
+    // whole-identifier match (`declares_symbol`), on the source the preview builds (`own_module_source`),
+    // and SKIPPED when the component already imports that `@bsc/<segment>/<name>` node. Mirrors graphHealth.ts.
+    for n in nodes {
+        let Some(src) = own_module_source(n, &kit_targets) else {
+            continue;
+        };
+        let specs: BTreeSet<String> = import_specifiers(src).into_iter().collect();
+        let mut recoded: Vec<(String, String)> = Vec::new(); // (name, importSpec)
+        for (name, segment) in reimpl_targets() {
+            let import_spec = format!("@bsc/{segment}/{name}");
+            if declares_symbol(src, name) && !specs.contains(&import_spec) {
+                recoded.push((name.clone(), import_spec));
+            }
+        }
+        if recoded.is_empty() {
+            continue;
+        }
+        recoded.sort();
+        recoded.dedup();
+        let one = recoded.len() == 1;
+        let list = recoded
+            .iter()
+            .map(|(name, spec)| format!("`{name}` (import `{spec}`)"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let names = recoded.iter().map(|(name, _)| format!("`{name}`")).collect::<Vec<_>>().join(", ");
+        let imports = recoded.iter().map(|(_, spec)| format!("`{spec}`")).collect::<Vec<_>>().join(", ");
+        out.push(Finding {
+            category: "reimplementation",
+            severity: 3,
+            kit: kit.to_string(),
+            node_ids: vec![n.id.clone()],
+            node_names: vec![n.name.clone()],
+            why: format!(
+                "`{}` re-codes {}: {} — compose {} from the library instead of re-coding (compose, don't recreate)",
+                n.name,
+                if one { "a library node that already exists" } else { "library nodes that already exist" },
+                list,
+                if one { "it" } else { "them" }
+            ),
+            suggested_action: format!(
+                "import {} instead of re-declaring {} inline in `{}`",
+                imports, names, n.name
+            ),
+        });
+    }
+
     // ── unwired-prop (severity 2): a component that declares props its OWN module source never references
     // — a declared interface that does nothing (#2924). Only for a node whose own source is present (a
     // user-authored module: its `source`, or a buildable `srcText`); a built-in (source in the artifact)
@@ -1556,6 +1652,91 @@ mod tests {
         assert!(flagged[0].why.contains("@bsc/sounds/nope"), "names the unresolvable sound ref");
         assert!(flagged[0].why.contains("no matching node in the library"));
         assert!(!flagged[0].why.contains("import-map"), "a library miss isn't reported as a bare import-map miss");
+    }
+
+    // ── #3118: the reimplementation guardrail — "compose, don't recreate" ────────────────────────────
+
+    #[test]
+    fn is_js_identifier_accepts_identifiers_and_rejects_ids_and_hyphens() {
+        assert!(is_js_identifier("fibonacci") && is_js_identifier("click") && is_js_identifier("_x") && is_js_identifier("$"));
+        assert!(!is_js_identifier("fibonacci.ts"), "an extension-bearing algo id is not a declarable symbol");
+        assert!(!is_js_identifier("bell-lo"), "a hyphenated cue id is not a declarable symbol");
+        assert!(!is_js_identifier("") && !is_js_identifier("2fast"));
+    }
+
+    #[test]
+    fn reimpl_targets_are_algorithms_only_by_bare_name() {
+        // ALGORITHMS-ONLY (#3118): the candidate set is the TS algorithm names (by bare name, NOT the `.ts`
+        // id), filtered to identifiers. Sounds are DELIBERATELY excluded — a cue id like `click` collides
+        // with common handler names (the `@bsc/sounds/…` import path, #3117, is untouched).
+        let t = reimpl_targets();
+        assert!(t.iter().any(|(n, seg)| n == "fibonacci" && *seg == "algorithms"), "the TS fibonacci is a candidate: {t:?}");
+        assert!(!t.iter().any(|(n, _)| n == "fibonacci.ts"), "the extension-bearing id is not a candidate");
+        assert!(t.iter().all(|(_, seg)| *seg == "algorithms"), "every candidate is an algorithm — sounds excluded: {t:?}");
+        assert!(!t.iter().any(|(n, _)| n == "click"), "a sound cue id is not a reimplementation candidate");
+    }
+
+    #[test]
+    fn flags_an_inline_reimplementation_of_a_library_algorithm() {
+        // An own-source component that DECLARES `fibonacci` (no `@bsc/algorithms/fibonacci` import) re-codes
+        // the library algorithm — the compose-don't-recreate guardrail. used>0 so it isn't a dead-root
+        // orphan; it renders no JSX so it isn't a self-reference — the ONLY finding is reimplementation.
+        let comps = [json!({
+            "id":"fib", "name":"FibWidget", "kitId":"react-ui", "role":"composite", "used":2, "composes":[],
+            "srcText":"export function fibonacci(n){ return n < 2 ? n : fibonacci(n-1) + fibonacci(n-2); }"
+        })];
+        let fs = analyze(&comps);
+        assert_eq!(cats(&fs), ["reimplementation"], "the inline algorithm is flagged, nothing else: {fs:?}");
+        let f = &fs[0];
+        assert_eq!(f.severity, 3);
+        assert_eq!(f.node_names, ["FibWidget"]);
+        assert!(f.why.contains("fibonacci"), "names the re-coded symbol");
+        assert!(f.why.contains("@bsc/algorithms/fibonacci"), "names the library import to compose instead");
+        assert!(f.suggested_action.contains("@bsc/algorithms/fibonacci"));
+    }
+
+    #[test]
+    fn does_not_flag_a_component_that_imports_the_library_algorithm() {
+        // Imports + uses @bsc/algorithms/fibonacci (declares no local `fibonacci`) — it's already composing,
+        // not recreating. Clean overall (the library ref resolves, so no unresolvable-import either).
+        let comps = [json!({
+            "id":"fib", "name":"FibCard", "kitId":"react-ui", "role":"composite", "used":2, "composes":[],
+            "srcText":"import { fibonacci } from \"@bsc/algorithms/fibonacci\";\nexport function FibCard(){ return fibonacci(10); }"
+        })];
+        assert!(analyze(&comps).is_empty(), "an importer of the library node is not flagged: {:?}", analyze(&comps));
+    }
+
+    #[test]
+    fn does_not_flag_a_declaration_matching_no_library_node() {
+        // Declares `Sparkline` — no such library node → never a reimplementation.
+        let comps = [json!({
+            "id":"sp", "name":"Sparkline", "kitId":"react-ui", "role":"composite", "used":2, "composes":[],
+            "srcText":"export function Sparkline(){ return null; }"
+        })];
+        assert!(!cats(&analyze(&comps)).contains(&"reimplementation"), "a non-library symbol is not flagged");
+    }
+
+    #[test]
+    fn does_not_flag_a_reimplementation_when_the_component_also_imports_the_node() {
+        // Degenerate belt-and-suspenders: a component that both imports @bsc/algorithms/fibonacci AND
+        // declares a local `fibonacci` is treated as composing (the import is present) → skipped.
+        let comps = [json!({
+            "id":"fib", "name":"FibShadow", "kitId":"react-ui", "role":"composite", "used":2, "composes":[],
+            "srcText":"import { fibonacci } from \"@bsc/algorithms/fibonacci\";\nexport function fibonacci(n){ return n; }"
+        })];
+        assert!(!cats(&analyze(&comps)).contains(&"reimplementation"), "the import suppresses the reimplementation flag");
+    }
+
+    #[test]
+    fn does_not_flag_a_symbol_matching_a_sound_cue_id() {
+        // ALGORITHMS-ONLY (#3118): a component declaring `click` (a default-kit sound cue id) is NOT a
+        // reimplementation — sound ids collide with common handler names, and you don't re-code a cue as a
+        // function. The `@bsc/sounds/…` import resolution + vendoring (#3117) is untouched by this narrowing.
+        let comps = [json!({
+            "id":"c", "name":"ClickFx", "kitId":"react-ui", "role":"composite", "used":2, "composes":[],
+            "srcText":"export function click(){ /* a click handler */ return null; }"
+        })];
+        assert!(!cats(&analyze(&comps)).contains(&"reimplementation"), "a sound-id-named symbol is not flagged");
     }
 
     #[test]
