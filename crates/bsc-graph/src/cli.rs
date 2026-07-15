@@ -18,14 +18,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Ok(())
     };
     match verb {
-        // `impl …` — read / curate the language-kit implementation tier (#2863/#2961/#2972):
-        //   impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>]
+        // `impl …` — read / curate the language-kit implementation tier (#2863/#2961/#2972/#3120):
+        //   impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b]
         //     (algorithm: real --code; primitive: DESCRIBE a language built-in via --ref, e.g. std::vec::Vec — never re-coded, #2972)
-        //   impl remove <id>                   # delete an implementation + scrub it from every composes
-        //   impl list [--tech <t>] [--role r]  # a language kit's implementations
+        //   impl remove <id>                             # delete an implementation + scrub it from every composes
+        //   impl list [--tech <t>] [--role r] [--domain <d>]  # a language kit's implementations, optionally a domain collection (#3120)
         "impl" => match positional.get(1).copied() {
             Some("set") => {
-                let id = flag_value(&args, "--id").ok_or("usage: bsc graph impl set --tech <lang> --id <id> --role primitive|algorithm --name <name> [--code <code>] [--ref <std-path>] [--composes a,b] [--summary <s>]")?;
+                let id = flag_value(&args, "--id").ok_or("usage: bsc graph impl set --tech <lang> --id <id> --role primitive|algorithm --name <name> [--code <code>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b]")?;
                 let tech = flag_value(&args, "--tech").ok_or("usage: bsc graph impl set … --tech <language>")?;
                 let role = flag_value(&args, "--role").ok_or("usage: bsc graph impl set … --role primitive|algorithm")?;
                 let name = flag_value(&args, "--name").ok_or("usage: bsc graph impl set … --name <name>")?;
@@ -34,6 +34,9 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // A primitive DESCRIBES a language built-in via `--ref` (std path), rather than re-coding it (#2972).
                 if let Some(r) = flag_value(&args, "--ref") { im["ref"] = Value::String(r); }
                 if let Some(code) = flag_value(&args, "--code") { im["code"] = Value::String(code); }
+                // The domain facet (#3120) — additive: only written when supplied, so existing impls are untouched.
+                if let Some(d) = flag_value(&args, "--domain") { im["domain"] = Value::String(d); }
+                if let Some(t) = flag_value(&args, "--tags") { im["tags"] = list_flag(Some(t.as_str())); }
                 let mut g = crate::load();
                 let replaced = crate::set_impl(&mut g, im.clone())?;
                 crate::save(&g)?;
@@ -52,14 +55,17 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             Some("list") => {
                 let tech = flag_value(&args, "--tech");
                 let role = flag_value(&args, "--role");
+                // The domain facet filter (#3120) — a cross-language domain collection ("all logistics algorithms").
+                let domain = flag_value(&args, "--domain");
                 let impls: Vec<Value> = crate::implementations()
                     .into_iter()
                     .filter(|im| tech.as_deref().is_none_or(|t| im.get("tech").and_then(Value::as_str) == Some(t)))
                     .filter(|im| role.as_deref().is_none_or(|r| im.get("role").and_then(Value::as_str) == Some(r)))
+                    .filter(|im| domain.as_deref().is_none_or(|d| crate::impl_in_domain(im, d)))
                     .collect();
                 emit(&Value::Array(impls))
             }
-            _ => Err("usage: bsc graph impl set … | impl remove <id> | impl list [--tech <t>] [--role r]".to_string()),
+            _ => Err("usage: bsc graph impl set … | impl remove <id> | impl list [--tech <t>] [--role r] [--domain <d>]".to_string()),
         },
         // `harvest <dir> [--tech typescript|rust] [--worthy-only]` — the extract-to-harvest feeder
         // (#2745): parse a project's real code and lift each function into a CANDIDATE library
@@ -168,12 +174,12 @@ fn help(prog: &str) -> String {
     format!(
         "{prog} — the Algorithms knowledge library (#2761/#2853/#2961) — IMPL-ONLY (a node IS its implementation)\n\n\
          READ:\n  \
-         {prog} impl list [--tech <t>] [--role r]       # a language kit's implementations (#2863)\n  \
+         {prog} impl list [--tech <t>] [--role r] [--domain <d>]   # a language kit's implementations (#2863); --domain filters to a cross-language collection (#3120)\n  \
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir> [--tech T] [--worthy-only] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745)\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>]   # upsert a language-kit impl (#2863/#2972)\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b]   # upsert a language-kit impl (#2863/#2972); --domain/--tags are the #3120 facets\n  \
          {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
          Implementation techs (#2770): typescript · rust — each `composes` other same-tech impls, rooted in the language's primitives.\n\
