@@ -28,6 +28,7 @@ import { RailRow } from "@/shared/ui/layouts/RailRow";
 import { SearchField } from "@/shared/ui/controls/SearchField";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { Fleet } from "@/features/planner/fleet/Fleet";
+import { teamRoleStreams } from "@/features/planner/fleet/teamFleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";
@@ -169,8 +170,14 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const previewReview = usePreviewReview(drill);
   const fleetData = useMemo(() => {
     if (!drillNode) return null;
-    const base = effectiveFleet && effectiveFleet.streams.length > 0
-      ? buildRealFleetData(effectiveFleet, personas, drillTeam)
+    // Team-driven fleet (#3101/#3103): fold the team's ROLE-ACTOR streams (curator/documentor/…) into
+    // the drilled graph so what SHOWS matches what LAUNCHES — the same `teamRoleStreams` the launch
+    // composes (`usePlanPublish`). A team position for a seedable role becomes a node even before the
+    // fleet plan lists a worker for it.
+    const roleStreams = effectiveFleet ? teamRoleStreams(drillTeam, personas, effectiveFleet.streams) : [];
+    const composed = effectiveFleet ? { ...effectiveFleet, streams: [...effectiveFleet.streams, ...roleStreams] } : undefined;
+    const base = composed && composed.streams.length > 0
+      ? buildRealFleetData(composed, personas, drillTeam)
       : buildFleetData({ id: drillNode.id, name: drillNode.slug });
     // Add the preview node when the project has finished building (idempotent, no-op while building).
     return withPreviewNode(base, drillComplete);
