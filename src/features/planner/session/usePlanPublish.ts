@@ -19,6 +19,7 @@ import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 import { type PlanIssue } from "../issues/planIssues";
 import { pruneCompletedStreams, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
 import { withDerivedStreamIssues } from "../fleet/planFleet";
+import { teamRoleStreams } from "../fleet/teamFleet";
 import { recoverIssues, type GitHubIssueLike } from "../issues/recoverIssues";
 import { removeDbProject } from "../list/projectsDbBridge";
 import { publishFleetRoster } from "@/shared/lib/fleet/fleetRoster";
@@ -195,7 +196,15 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       // not the "(none yet — ask the director)" placeholder. A stream that already lists issues is kept.
       const launchable = withDerivedStreamIssues([...active, ...maintenance].filter(st => st.repo), dbIssues);
       const noRepo = [...active, ...maintenance].filter(st => !st.repo);
-      const launchPlan = { ...fullPlan, streams: launchable };
+      // Team-driven fleet (#3101/#3103): a project's TEAM contributes its ROLE-ACTOR sessions (curator,
+      // documentor, reviewer, tester, juror, issuer) — one per team position bound to such a persona,
+      // deduped vs the planner's own streams. They run at the project HUB (no repo → no worktree; the
+      // `fleetStartProject` repo-less branch routes them there), so they compose in AFTER `launchable`
+      // and are deliberately NOT part of the worktree-creation loop below.
+      const teamStore = useAppStore.getState();
+      const projectTeam = teamStore.blueprints.find(b => b.id === teamStore.projectBlueprintId[effectiveProjectId])?.team;
+      const roleStreams = teamRoleStreams(projectTeam, teamStore.personas, fullPlan.streams);
+      const launchPlan = { ...fullPlan, streams: [...launchable, ...roleStreams] };
       if (launchPlan.streams.length === 0 && !launchPlan.director.enabled) {
         setTriageError(noRepo.length > 0
           ? `No workers to launch — ${noRepo.length} stream${noRepo.length === 1 ? "" : "s"} (${noRepo.map(s => s.id).join(", ")}) need a repo assigned.`
@@ -225,7 +234,9 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       // Create each worker's git worktree FAIL-CLOSED (#551/#359): if any can't be created,
       // abort the launch so no agent starts in a fallback dir. (Restored: the refactor had
       // weakened this to a non-fatal .catch that let the launch continue.)
-      const worktreeResults = await Promise.all(launchPlan.streams.map(st => {
+      // Only the repo'd WORKER streams get a worktree — the team's hub role-actors (repo-less) are
+      // excluded (they run at the hub, no isolated tree). `launchable` is exactly those worker streams.
+      const worktreeResults = await Promise.all(launchable.map(st => {
         // Seed each worktree's CLAUDE.local.md with the worker's SCOPE (owns/issues/deps) plus its
         // repo's LOCKED dependency manifest (#1111), not the full plan — the worktree lives outside
         // the hub so the planner spec is no longer an ancestor (#844). In-distro when sandboxed
