@@ -249,16 +249,23 @@ export function bootstrapSource(comp: ComponentRecord, importSpec: string, state
     .filter(Boolean);
   const propsLiteral = `{ ${propEntries.join(", ")} }`;
   const childArg = childText ? `, ${childText}` : "";
+  // Role-aware mount wrapper (#3139). A PAGE/LAYOUT is authored for a full viewport (flex:1 / height:100%),
+  // so it gets a full-bleed, TOP-LEFT wrapper (no centering, no padding) — its header sits at the top and
+  // it fills the natural canvas the frame then scales to fit. A component keeps the centered, padded
+  // wrapper so an intrinsic-size primitive reads well. (`height:100%`, not minHeight, so the srcdoc's
+  // `max-height:100%` media cap (#2915) resolves.)
+  const pageLike = comp.role === "page" || comp.role === "layout";
+  const wrapStyle = pageLike
+    ? `{ height: "100%", width: "100%", boxSizing: "border-box", overflow: "hidden" }`
+    : `{ padding: 20, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }`;
   return [
     `import { createRoot } from "react-dom/client";`,
     `import { createElement } from "react";`,
     `import * as __mod from "${importSpec}";`,
     `const __C = __mod[${JSON.stringify(comp.name)}] ?? __mod.default;`,
     `if (!__C) throw new Error("preview: no export ${comp.name} (or default) in ${importSpec}");`,
-    // A definite `height:100%` (not minHeight) so the srcdoc's `max-height:100%` cap on oversized media
-    // (#2915) resolves against this wrapper; box-sizing keeps the padding inside the frame.
     `createRoot(document.getElementById("root")).render(`,
-    `  createElement("div", { style: { padding: 20, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", height: "100%" } },`,
+    `  createElement("div", { style: ${wrapStyle} },`,
     `    createElement(__C, ${propsLiteral}${childArg})));`,
     "",
   ].join("\n");

@@ -287,3 +287,15 @@ describe("bootstrapSource — data-state threads to the sampled props (#3135)", 
     expect(bootstrapSource(chart, "@/x/Chart", "loading")).toContain('"loading": true');
   });
 });
+
+describe("bootstrapSource — role-aware mount wrapper (#3139)", () => {
+  it("a page/layout mounts full-bleed top-left (no centering); a component stays centered", () => {
+    const pageSrc = bootstrapSource({ ...base, name: "DashboardPage", role: "page" }, "@/x/DashboardPage");
+    expect(pageSrc).toContain('overflow: "hidden"'); // full-bleed page wrapper
+    expect(pageSrc).not.toContain("justifyContent"); // not centered — its header sits at the top
+    const layoutSrc = bootstrapSource({ ...base, name: "MasterDetail", role: "layout" }, "@/x/MasterDetail");
+    expect(layoutSrc).not.toContain("justifyContent");
+    const compSrc = bootstrapSource({ ...base, name: "Chip", role: "primitive" }, "@/x/Chip");
+    expect(compSrc).toContain('justifyContent: "center"'); // a component reads best centered
+  });
+});
