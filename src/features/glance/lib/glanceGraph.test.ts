@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildGraph, focusSets, rollUpHealth, kitNodeId, usesKitEdgeId, NW, type GRawNode, type GRawEdge } from "./glanceGraph";
+import {
+  buildGraph, focusSets, rollUpHealth, kitNodeId, usesKitEdgeId, NW, NH,
+  libraryNodeId, requiresEdgeId, libIdOfNode, isLibraryNode, libraryGraphOf, isLibraryEdge, LIBRARY_META,
+  type GRawNode, type GRawEdge,
+} from "./glanceGraph";
+import { layoutBand } from "@/shared/lib/graph/crossGraph";
 import { buildGlanceData } from "./glanceData";
 
 const NODES: GRawNode[] = [
@@ -123,6 +128,120 @@ describe("buildGraph — fenced UI-kit band (#3007)", () => {
     // byte-identical to before the kit-band scoping refactor.
     const layout = Object.fromEntries(g.nodes.map((n) => [n.id, [n.x, n.y]]));
     expect(layout).toEqual({ core: [70, 70], api: [322, 70], web: [574, 70] });
+  });
+});
+
+describe("cross-graph library band (#3119) — generalized from the UI-kit band", () => {
+  it("id + guard helpers: kit is the `ui` library graph, requires is a library edge", () => {
+    // `ui` reuses the persisted `kit:` namespace — libraryNodeId("ui", …) IS kitNodeId(…).
+    expect(libraryNodeId("ui", "react-ui")).toBe(kitNodeId("react-ui"));
+    expect(libraryNodeId("ui", "react-ui")).toBe("kit:react-ui");
+    expect(libraryNodeId("algo", "dijkstra")).toBe("algo:dijkstra");
+    expect(libraryNodeId("sound", "chime")).toBe("sound:chime");
+    expect(libIdOfNode("algo:dijkstra")).toBe("dijkstra");
+    expect(libIdOfNode(kitNodeId("react-ui"))).toBe("react-ui");
+    expect(requiresEdgeId("route-planner", libraryNodeId("algo", "dijkstra"))).toBe("req:route-planner>algo:dijkstra");
+
+    expect(isLibraryNode({ kind: "kit" })).toBe(true);
+    expect(isLibraryNode({ kind: "library" })).toBe(true);
+    expect(isLibraryNode({ kind: "project" })).toBe(false);
+    expect(isLibraryNode({})).toBe(false);
+
+    expect(libraryGraphOf({ kind: "kit" })).toBe("ui");                       // back-compat: a kit is a ui node
+    expect(libraryGraphOf({ kind: "library", library: "algo" })).toBe("algo");
+    expect(libraryGraphOf({ kind: "library", library: "sound" })).toBe("sound");
+    expect(libraryGraphOf({ kind: "library" })).toBe("ui");                   // defaults to ui
+    expect(libraryGraphOf({ kind: "project" })).toBeUndefined();
+
+    expect(isLibraryEdge("uses-kit")).toBe(true);
+    expect(isLibraryEdge("requires")).toBe(true);
+    expect(isLibraryEdge("api")).toBe(false);
+    expect(isLibraryEdge("events")).toBe(false);
+
+    // every graph has band presentation; the ui row is the exact pre-#3119 kit treatment.
+    expect(LIBRARY_META.ui.bandLabel).toBe("UI KITS");
+    expect(LIBRARY_META.algo.bandLabel).toBe("ALGORITHMS");
+    expect(LIBRARY_META.sound.bandLabel).toBe("SOUNDS");
+  });
+
+  // A route-planner-style app: three project nodes, plus an ALGORITHM and a SOUND library node pulled in
+  // via `requires` edges — the logistics example from the epic (a page requires algo:*/dijkstra).
+  const ALGO = libraryNodeId("algo", "dijkstra"), SOUND = libraryNodeId("sound", "chime");
+  const withLibs: GRawNode[] = [
+    ...NODES,
+    { id: ALGO, slug: "Dijkstra", kind: "library", library: "algo", role: "infra", health: "idle", activity: "idle" },
+    { id: SOUND, slug: "Chime", kind: "library", library: "sound", role: "infra", health: "idle", activity: "idle" },
+  ];
+  const libEdges: GRawEdge[] = [
+    ...EDGES,
+    { id: requiresEdgeId("web", ALGO), from: "web", to: ALGO, kind: "requires" },
+    { id: requiresEdgeId("api", SOUND), from: "api", to: SOUND, kind: "requires" },
+  ];
+
+  it("lifts algorithm + sound library nodes into the fenced band, laid out via A's layoutBand", () => {
+    const g = buildGraph(withLibs, libEdges);
+    // The band's vertical extent is topPad(40) + NH(66) + gap(34) = 140 (from the shared layoutBand math).
+    expect(g.kitBand).toEqual({ y0: 0, y1: 140 });
+
+    const libs = g.nodes.filter(isLibraryNode);
+    expect(libs.map((n) => n.id)).toEqual([ALGO, SOUND]); // both library dimensions present, in order
+
+    // Positions come straight from A's layoutBand over the project span [70, projMaxX=574] (core/api/web).
+    const expected = layoutBand(2, { spanX0: 70, spanX1: 574, topPad: 40, nodeH: NH, gap: 34, maxStep: 252 });
+    libs.forEach((n, i) => {
+      expect(n.layer).toBe(-1); // sentinel: outside the project layering
+      expect(n.x).toBeCloseTo(expected.positions[i].x);
+      expect(n.y).toBe(expected.positions[i].y);
+    });
+
+    // every project sits STRICTLY below the fence (shifted down by the divider).
+    for (const p of g.nodes.filter((n) => !isLibraryNode(n))) expect(p.y).toBeGreaterThan(g.kitBand!.y1);
+  });
+
+  it("routes each requires edge vertically with the perimeter-anchor router (leaves the project's top face)", () => {
+    // One app directly below its two library deps (the aligned single-consumer case, like the kit-band
+    // test) so the perimeter-anchor router is unambiguous — the band sits straight above the project.
+    const g = buildGraph(
+      [
+        { id: "app", role: "service", health: "idle", activity: "idle" },
+        { id: ALGO, slug: "Dijkstra", kind: "library", library: "algo", role: "infra", health: "idle", activity: "idle" },
+        { id: SOUND, slug: "Chime", kind: "library", library: "sound", role: "infra", health: "idle", activity: "idle" },
+      ],
+      [
+        { id: requiresEdgeId("app", ALGO), from: "app", to: ALGO, kind: "requires" },
+        { id: requiresEdgeId("app", SOUND), from: "app", to: SOUND, kind: "requires" },
+      ],
+    );
+    const reqEdges = g.edges.filter((e) => e.kind === "requires");
+    expect(reqEdges).toHaveLength(2);
+    for (const e of reqEdges) {
+      expect(e.d.startsWith("M ") && e.arrow.startsWith("M ")).toBe(true);
+      // The library node sits above; the edge leaves the project's TOP face at the box's horizontal centre
+      // (the perimeter-anchor router), NOT the left/right side-port a layered project edge would use.
+      const src = g.nodes.find((n) => n.id === e.from)!;
+      const startX = Number(/^M ([\d.]+) /.exec(e.d)![1]);
+      expect(Math.abs(startX - (src.x + NW / 2))).toBeLessThan(6);
+    }
+  });
+
+  it("holds MULTIPLE dimensions at once — a UI kit and an algorithm in the same band", () => {
+    const nodes: GRawNode[] = [
+      { id: "app", role: "service", health: "idle", activity: "idle" },
+      { id: kitNodeId("react-ui"), slug: "React UI", kind: "kit", role: "infra", health: "idle", activity: "idle" },
+      { id: libraryNodeId("algo", "fib"), slug: "Fibonacci", kind: "library", library: "algo", role: "infra", health: "idle", activity: "idle" },
+    ];
+    const edges: GRawEdge[] = [
+      { id: usesKitEdgeId("app", "react-ui"), from: "app", to: kitNodeId("react-ui"), kind: "uses-kit" },
+      { id: requiresEdgeId("app", libraryNodeId("algo", "fib")), from: "app", to: libraryNodeId("algo", "fib"), kind: "requires" },
+    ];
+    const g = buildGraph(nodes, edges);
+    expect(g.kitBand).toBeDefined();
+    const libs = g.nodes.filter(isLibraryNode);
+    expect(libs).toHaveLength(2);
+    for (const l of libs) expect(l.layer).toBe(-1);
+    // both the uses-kit and the requires edge render (excluded from the project layout, routed vertically).
+    expect(g.edges.filter((e) => isLibraryEdge(e.kind))).toHaveLength(2);
+    expect(g.nodes.find((n) => n.id === "app")!.y).toBeGreaterThan(g.kitBand!.y1);
   });
 });
 

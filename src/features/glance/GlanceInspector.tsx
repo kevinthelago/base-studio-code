@@ -12,7 +12,7 @@ import { IconButton } from "@/shared/ui/controls/IconButton";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { StatTile } from "@/shared/ui/data/StatTile";
-import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, KIT_COLOR, kitIdOfNode, type GraphModel, type GNode, type GEdge } from "./lib/glanceGraph";
+import { ROLE_COLOR, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, isLibraryNode, libraryGraphOf, libIdOfNode, type GraphModel, type GNode, type GEdge } from "./lib/glanceGraph";
 import { archetypeById, formById, hueColor } from "@/features/teams";
 
 const FAULT_COLOR = "var(--graph-health-error)";
@@ -46,6 +46,13 @@ interface InspectorProps {
   onOpenStream?: (nodeId: string) => void;
 }
 
+// Render a library-node blurb, wrapping `backtick`-delimited spans in <code> — so the ui kit's `bsc ui`
+// keeps its inline-code styling (byte-identical to the pre-#3119 kit blurb) while algo/sound blurbs stay
+// plain. #3119.
+function blurbNodes(s: string): React.ReactNode[] {
+  return s.split("`").map((seg, i) => (i % 2 ? <code key={i}>{seg}</code> : seg));
+}
+
 function DepRow({ node, kind, color, onClick }: { node: GNode; kind: string; color: string; onClick: () => void }) {
   return (
     <Row gap={9} align="center" onClick={onClick} style={{ padding: "8px 10px", borderRadius: 7, cursor: "pointer", background: "var(--bg)", border: "1px solid var(--border)", marginBottom: 5 }}>
@@ -70,23 +77,25 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
     const n = model.nodes.find((x) => x.id === selId);
     if (!n) return null;
 
-    // A UI-KIT node (#2571): the kit id + the projects that CONSUME it (the edges into the kit), each
-    // clickable to hop to that project. A kit has no health/activity/role of its own, so the project
-    // tiles are replaced by a kit-scoped panel.
-    if (n.kind === "kit") {
+    // A cross-graph LIBRARY node (#2571 kit → generalized #3119): the library id + the projects that
+    // CONSUME it (the edges into it), each clickable to hop to that project. A library node has no
+    // health/activity/role of its own, so the project tiles are replaced by a library-scoped panel. The
+    // `ui` case is byte-identical to the pre-#3119 kit panel (header "UI KIT" · ◆ · "ui kit" · "uses kit").
+    if (isLibraryNode(n)) {
+      const lib = LIBRARY_META[libraryGraphOf(n) ?? "ui"];
       const consumers = model.edges.filter((e) => e.to === n.id);
       return (
         <Box style={PANEL}>
-          <Header title="UI KIT" onClose={onClose} />
+          <Header title={lib.panelTitle} onClose={onClose} />
           <Box style={{ flex: 1, overflowY: "auto", padding: "18px 16px" }}>
             <Text as="div" mono size={19} weight={700} style={{ letterSpacing: "-.4px" }}>{n.slug}</Text>
-            <Text as="div" mono size={11} tone="dim" style={{ marginTop: 4 }}>{kitIdOfNode(n.id)}</Text>
+            <Text as="div" mono size={11} tone="dim" style={{ marginTop: 4 }}>{libIdOfNode(n.id)}</Text>
 
             <Grid cols={2} gap={8} style={{ marginTop: 16 }}>
               <StatTile k="KIND" v={
                 <Row gap={7} align="center">
-                  <Text as="span" style={{ color: KIT_COLOR, flex: "none" }}>◆</Text>
-                  <Text as="span" mono size={12.5} weight={500} style={{ color: KIT_COLOR }}>ui kit</Text>
+                  <Text as="span" style={{ color: lib.color, flex: "none" }}>{lib.marker}</Text>
+                  <Text as="span" mono size={12.5} weight={500} style={{ color: lib.color }}>{lib.panelTitle.toLowerCase()}</Text>
                 </Row>
               } />
               <StatTile k="CONSUMERS" v={
@@ -94,16 +103,16 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
               } />
             </Grid>
 
-            <Row gap={9} align="start" style={{ marginTop: 14, background: `color-mix(in oklch, ${KIT_COLOR} 8%, transparent)`, border: `1px solid color-mix(in oklch, ${KIT_COLOR} 30%, transparent)`, borderRadius: 8, padding: "10px 12px" }}>
-              <Text as="span" style={{ color: KIT_COLOR, flex: "none" }}>◆</Text>
-              <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: "var(--fg-muted)" }}>A shared <code>bsc ui</code> kit. Every project below consumes it — a design-system dependency, so a breaking kit change fans out to them all.</Text>
+            <Row gap={9} align="start" style={{ marginTop: 14, background: `color-mix(in oklch, ${lib.color} 8%, transparent)`, border: `1px solid color-mix(in oklch, ${lib.color} 30%, transparent)`, borderRadius: 8, padding: "10px 12px" }}>
+              <Text as="span" style={{ color: lib.color, flex: "none" }}>{lib.marker}</Text>
+              <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: "var(--fg-muted)" }}>{blurbNodes(lib.blurb)}</Text>
             </Row>
 
             {LABEL("CONSUMED BY")}
             {consumers.length === 0 ? <Text as="div" mono size={11} tone="dim">— no consumers</Text>
               : consumers.map((e) => {
                   const consumer = model.nodes.find((x) => x.id === e.from);
-                  return consumer ? <DepRow key={e.id} node={consumer} kind="uses kit" color={KIT_COLOR} onClick={() => onSelectNode(e.from)} /> : null;
+                  return consumer ? <DepRow key={e.id} node={consumer} kind={lib.edgeLabel} color={lib.color} onClick={() => onSelectNode(e.from)} /> : null;
                 })}
           </Box>
         </Box>
