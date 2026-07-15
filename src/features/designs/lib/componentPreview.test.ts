@@ -230,7 +230,8 @@ describe("samplePropValue (#2824)", () => {
     expect(samplePropValue(prop("value", "number"))).toBe("0.6"); // ratio-ish → a fraction
     expect(samplePropValue(prop("open", "boolean"))).toBe("true");
     expect(samplePropValue(prop("onClick", "() => void"))).toBe("() => {}");
-    expect(samplePropValue(prop("rows", "Row[]"))).toBe("[]");
+    expect(samplePropValue(prop("rows", "Row[]"))).toBeNull(); // optional collection → omitted in loaded (#3135)
+    expect(samplePropValue(prop("rows", "Row[]", true))).toBe("[]"); // a REQUIRED collection still renders
     expect(samplePropValue(prop("tone", '"neutral" | "danger"'))).toBe('"neutral"');
     expect(samplePropValue(prop("color", "string"))).toBe('"var(--accent)"');
   });
@@ -254,5 +255,35 @@ describe("samplePropValue (#2824)", () => {
     expect(samplePropValue(prop("lineWidth", "number"))).toBe("3");
     // a plain count is unchanged
     expect(samplePropValue(prop("columns", "number"))).toBe("3");
+  });
+
+  it("samples per DATA-STATE — loaded / empty / loading (#3135)", () => {
+    const data = prop("data", "Datum[]"); // optional collection
+    const loading = prop("loading", "boolean");
+    // loaded: optional collection OMITTED (→ demo via undefined), loading OFF (fixes the always-skeleton quirk).
+    expect(samplePropValue(data, "loaded")).toBeNull();
+    expect(samplePropValue(loading, "loaded")).toBeNull();
+    // empty: explicit [] for the collection, loading still off.
+    expect(samplePropValue(data, "empty")).toBe("[]");
+    expect(samplePropValue(loading, "empty")).toBeNull();
+    // loading: the loading-family boolean turns ON; the collection stays omitted (demo layout under the skeleton).
+    expect(samplePropValue(loading, "loading")).toBe("true");
+    expect(samplePropValue(data, "loading")).toBeNull();
+    // a non-loading boolean is unaffected by state (always true).
+    expect(samplePropValue(prop("stacked", "boolean"), "loading")).toBe("true");
+    // a REQUIRED collection always renders ([]), even in loaded — so a required-data component isn't blank.
+    expect(samplePropValue(prop("rows", "Row[]", true), "loaded")).toBe("[]");
+  });
+});
+
+describe("bootstrapSource — data-state threads to the sampled props (#3135)", () => {
+  const chart: ComponentRecord = {
+    ...base, name: "Chart", props: [prop("data", "Datum[]"), prop("loading", "boolean")],
+  };
+  it("loaded omits data + loading; empty passes data={[]}; loading passes loading={true}", () => {
+    expect(bootstrapSource(chart, "@/x/Chart", "loaded")).not.toContain('"data"');
+    expect(bootstrapSource(chart, "@/x/Chart", "loaded")).not.toContain('"loading"');
+    expect(bootstrapSource(chart, "@/x/Chart", "empty")).toContain('"data": []');
+    expect(bootstrapSource(chart, "@/x/Chart", "loading")).toContain('"loading": true');
   });
 });

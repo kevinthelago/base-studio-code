@@ -100,7 +100,9 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
       source: "export function Dash({ title }){ return <h1>{title}</h1>; }",
       props: [
         { name: "title", type: "string", req: false, desc: "" },
-        { name: "data", type: "Row[]", req: false, desc: "" },
+        // `data: Row` (a record, not an array) so this stays a pure unwired-prop case — an ARRAY prop would
+        // also (correctly) trigger the #3135 no-empty-state/no-loading-state checks.
+        { name: "data", type: "Row", req: false, desc: "" },
         { name: "onRefresh", type: "() => void", req: false, desc: "" },
       ],
     });
@@ -364,5 +366,33 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
       comp("StatusDot", "primitive", 9),
     ]).map((f) => f.category);
     expect(cats).not.toContain("phantom-compose");
+  });
+
+  it("flags a data component with no empty/loading state support (#3135)", () => {
+    // A chart with a data array that renders it raw — no EmptyState/empty-guard, no `loading` prop.
+    const chart = comp("BarChart", "composite", 2, [], {
+      source: "export function BarChart({ data }){ return <svg>{data.map((d) => <rect key={d} />)}</svg>; }",
+      props: [{ name: "data", type: "Datum[]", req: false, desc: "" }],
+    });
+    const cats = analyzeGraphHealth([chart]).map((f) => f.category);
+    expect(cats).toContain("no-empty-state");
+    expect(cats).toContain("no-loading-state");
+    expect(analyzeGraphHealth([chart]).find((f) => f.category === "no-empty-state")?.severity).toBe(1);
+  });
+
+  it("does NOT flag when a data component handles empty AND exposes a loading prop, or has no data prop (#3135)", () => {
+    // Handles empty (Array.isArray) + has a loading prop → supports both states.
+    const good = comp("Good", "composite", 2, [], {
+      source: "export function Good({ data, loading }){ if (loading) return <span>…</span>; return <svg>{Array.isArray(data) ? data.map((d) => <rect key={d} />) : null}</svg>; }",
+      props: [{ name: "data", type: "Datum[]", req: false, desc: "" }, { name: "loading", type: "boolean", req: false, desc: "" }],
+    });
+    // No collection prop at all → not a data component → never flagged.
+    const button = comp("Button", "primitive", 5, [], {
+      source: "export function Button({ label }){ return <button>{label}</button>; }",
+      props: [{ name: "label", type: "string", req: false, desc: "" }],
+    });
+    const cats = analyzeGraphHealth([good, button]).map((f) => f.category);
+    expect(cats).not.toContain("no-empty-state");
+    expect(cats).not.toContain("no-loading-state");
   });
 });

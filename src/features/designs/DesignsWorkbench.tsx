@@ -49,6 +49,7 @@ import { useUiActivity } from "./lib/uiActivity";
 import { useComponentScan } from "./lib/useComponentScan";
 import { groupKits } from "./lib/kitGroups";
 import { ComponentPreviewFrame } from "./ComponentPreviewFrame";
+import type { PreviewState } from "./lib/componentPreview";
 import { ThemesMenu } from "./ThemesMenu";
 import { AnimationsMenu } from "./AnimationsMenu";
 import { PaletteStrip } from "./PaletteStrip";
@@ -68,6 +69,8 @@ const VP: Record<Viewport, { w: string; label: string }> = {
 };
 
 // Cross-graph library band (#3116) — the fenced top band of algorithm nodes a kit's components `require`.
+/** The preview data-state axis (#3135) — the switcher's options, in order. */
+const PREVIEW_STATES: PreviewState[] = ["loaded", "empty", "loading"];
 const BAND_PAD = 60;         // left/right inset the band centers over (matches the composition layout pad)
 const BAND_TOP = 40;         // y of the band cards' top edge
 const BAND_GAP = 34;         // clearance from the band cards down to the fence divider
@@ -97,6 +100,8 @@ export function DesignsWorkbench() {
   const [compId, setCompId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [variant, setVariant] = useState(() => firstFor(kits[0]?.id ?? "")?.variants[0] ?? "default");
+  // The preview's DATA-STATE axis (#3135): loaded (demo) · empty (no data) · loading (skeleton).
+  const [previewState, setPreviewState] = useState<PreviewState>("loaded");
   // The preview's THEME axis (#2488) — ONE control now (#2545): the selected theme drives both the
   // component retint (its `vars`, via <ThemeScope>) AND the sandbox SURFACE (its `base`, below). The
   // old hardcoded dark/light SegmentedControl is retired — light/dark is theme data served through
@@ -394,6 +399,7 @@ export function DesignsWorkbench() {
               sel={focusComp} kitName={kit?.name ?? ""} tab={tab} setTab={setTab}
               allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
               vp={vp} setVpKind={setVpKind}
+              previewState={previewState} setPreviewState={setPreviewState}
               kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
               previewTheme={theme}
               composes={composes} onSelect={selectComp}
@@ -425,6 +431,7 @@ export function DesignsWorkbench() {
               {allVariants.length > 1 && (
                 <SegmentedControl label="" options={allVariants.map((v) => ({ label: v, on: v === activeVariant, onClick: () => setVariant(v) }))} />
               )}
+              <SegmentedControl label="" options={PREVIEW_STATES.map((s) => ({ label: s, on: s === previewState, onClick: () => setPreviewState(s) }))} />
               <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === vp, onClick: () => setVpKind(k) }))} />
               <Text mono size="xxs" tone="muted">{activeTheme?.label}</Text>
             </Box>
@@ -440,6 +447,7 @@ export function DesignsWorkbench() {
                 width={VP[vp].w}
                 height={440}
                 extraAnimation={tryAnimDef}
+                previewState={previewState}
               />
             </Box>
           </Box>
@@ -585,6 +593,8 @@ const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string }> = {
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
   "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
   "phantom-compose": { glyph: "⇢", label: "phantom composes — declares a composition its source never renders (a false graph edge)" },
+  "no-empty-state": { glyph: "◍", label: "no empty state — takes data but renders no distinct empty view; add an EmptyState" },
+  "no-loading-state": { glyph: "◌", label: "no loading state — takes data but has no `loading` prop; add one for a loading preview" },
   "slot-shell": { glyph: "▤", label: "slot shell — previews a demo placeholder; fill its content slots to see its real function" },
 };
 
@@ -596,6 +606,7 @@ interface InspProps {
   sel: ComponentRecord; kitName: string; tab: Tab; setTab: (t: Tab) => void;
   allVariants: string[]; activeVariant: string; setVariant: (v: string) => void;
   vp: Viewport; setVpKind: (v: Viewport) => void;
+  previewState: PreviewState; setPreviewState: (s: PreviewState) => void;
   /** The preview's THEME axis (#2488/#2545): the hydrated theme collection + the applied selection.
    *  The selected theme drives both the retint (`vars`) and the sandbox surface (`base`). */
   kitTheme: string; setKitTheme: (id: string) => void; kitThemes: KitThemeRecord[];
@@ -646,6 +657,7 @@ function Inspector(p: InspProps) {
             <Box className="ds-prevctl">
               <Eyebrow size={9.5}>Live preview</Eyebrow>
               <SegmentedControl label="" options={p.allVariants.map((v) => ({ label: v, on: v === p.activeVariant, onClick: () => p.setVariant(v) }))} />
+              <SegmentedControl label="" options={PREVIEW_STATES.map((s) => ({ label: s, on: s === p.previewState, onClick: () => p.setPreviewState(s) }))} />
               <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === p.vp, onClick: () => p.setVpKind(k) }))} />
               {/* The theme switcher moved up beside the component name (#3085). */}
             </Box>
@@ -661,6 +673,7 @@ function Inspector(p: InspProps) {
                   themeVars={p.kitThemes.find((t) => t.id === p.kitTheme)?.vars ?? {}}
                   width={VP[p.vp].w}
                   onExpand={p.onExpand}
+                  previewState={p.previewState}
                 />
               </Box>
               <Text as="div" className="ds-vplabel">{VP[p.vp].label}</Text>

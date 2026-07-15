@@ -45,6 +45,20 @@ function isNodeSlotProp(p: PropSpec): boolean {
   return p.name !== "children" && (t.includes("reactnode") || t.includes("node"));
 }
 
+/** Is `p` a COLLECTION/data prop — an array (`Row[]`, `array`)? Data components take one; the preview's
+ *  empty/loading state switch (#3135) is expected of them. Mirrors `isCollectionProp` (componentPreview.ts). */
+function isCollectionProp(p: PropSpec): boolean {
+  const t = (p.type || "").toLowerCase();
+  return t.includes("[]") || t.includes("array");
+}
+
+/** Is `p` a LOADING-family boolean (`loading`/`busy`/`pending`/`isLoading`)? A data component with one can
+ *  preview its loading/skeleton render (#3135). Mirrors `isLoadingProp` (componentPreview.ts). */
+function isLoadingProp(p: PropSpec): boolean {
+  const t = (p.type || "").toLowerCase();
+  return (t === "boolean" || t.includes("boolean")) && /^(loading|busy|pending|isloading)$/i.test(p.name);
+}
+
 /** The component's OWN module source (a user-authored module) — its record `source`, else a `srcText`
  *  that {@link looksBuildableModule} — or `null` when the source isn't in the record: a built-in (its
  *  artifact `source` is stripped from the store, #2794) or a spec (no buildable module). Only these have
@@ -199,7 +213,8 @@ const INTERNAL_TARGETS = new Set<string>([
 
 export type HealthCategory =
   | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "self-reference" | "unresolvable-import"
-  | "reimplementation" | "orphan" | "unwired-prop" | "phantom-compose" | "slot-shell";
+  | "reimplementation" | "orphan" | "unwired-prop" | "phantom-compose"
+  | "no-empty-state" | "no-loading-state" | "slot-shell";
 
 /** Category → severity (higher = worse); drives ranking + which badge wins on a multi-flagged node.
  *  `unresolvable-import` (3) is a real defect — the component throws at preview time (a bare import the
@@ -217,6 +232,8 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   orphan: 2,
   "unwired-prop": 2,
   "phantom-compose": 2,
+  "no-empty-state": 1,
+  "no-loading-state": 1,
   "slot-shell": 1,
 };
 
@@ -437,6 +454,27 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
     if (phantom.length === 0) continue;
     findings.push({ category: "phantom-compose", severity: 2, nodeIds: [c.id], nodeNames: [c.name],
       why: `${c.name} declares it composes ${phantom.join(", ")} but its source never renders ${phantom.length === 1 ? "it" : "them"} — a phantom composition edge (the graph draws a composition that doesn't happen, and the false edge hides the child from orphan detection)` });
+  }
+
+  // no-empty-state / no-loading-state (informational, #3135) — the preview's data-state switcher (loaded/
+  // empty/loading) can only SHOW a state a component SUPPORTS. A DATA component (has a collection/array
+  // prop), scanned from its own module source, is flagged when it lacks: (a) an EMPTY render — no
+  // `EmptyState` and no `Array.isArray`/`.length` empty-guard, so its empty preview matches loaded; or (b)
+  // a `loading`-family prop, so its loading preview can't skeleton. Guides the designer session to add the
+  // missing state. Rust twin: the no-empty-state/no-loading-state loop in graph_health.rs.
+  for (const c of comps) {
+    const src = ownModuleSource(c, comps);
+    if (!src) continue;
+    const collections = c.props.filter(isCollectionProp).map((p) => p.name);
+    if (collections.length === 0) continue; // not a data component
+    if (!/\bEmptyState\b/.test(src) && !/\bArray\.isArray\b|\.length\b/.test(src)) {
+      findings.push({ category: "no-empty-state", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
+        why: `${c.name} takes data (${collections.join(", ")}) but renders no distinct EMPTY state (no EmptyState, no empty-data branch) — its empty preview shows the same as loaded; add an EmptyState / empty-data render so its empty state is viewable` });
+    }
+    if (!c.props.some(isLoadingProp)) {
+      findings.push({ category: "no-loading-state", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
+        why: `${c.name} takes data (${collections.join(", ")}) but exposes no \`loading\` prop — the preview can't show its LOADING state; add a boolean \`loading\` prop that renders a skeleton` });
+    }
   }
 
   // slot-shell (informational) — a composite whose composed children arrive via ReactNode CONTENT SLOTS.
