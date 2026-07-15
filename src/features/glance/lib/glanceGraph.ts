@@ -12,6 +12,8 @@ import { mutualPairs } from "@/shared/lib/graph/cycles";
 import { layerDag } from "@/shared/lib/graph/layers";
 import { orderLayers } from "@/shared/lib/graph/order";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
+import { layoutBand } from "@/shared/lib/graph/crossGraph";
+import type { NodeGraph } from "@/shared/lib/graph/nodeUrn";
 
 export type GRole = "infra" | "service" | "data" | "client";
 /** A project's LIFECYCLE category (#2583) — what KIND of work it is, the app's real project vocabulary
@@ -31,27 +33,88 @@ export type GHealth = "idle" | "healthy" | "warning" | "error";
  *  project (a re-edit state). `waiting` = an EXPECTED blocked state (an agent parked for the user,
  *  `bsc-wait`) — calm, not alarming; it lives here, not on the health axis. */
 export type GActivity = "idle" | "planning" | "building" | "waiting" | "review" | "live";
-export type GEdgeKind = "api" | "data" | "events" | "uses-kit";
-/** A Glance node's KIND (#2571) — a PROJECT (the default) or a UI-KIT node. ABSENT ⇒ `"project"`, so
- *  every existing node + fixture + test is unaffected (only a `bsc ui` kit node ever carries `"kit"`). A
- *  kit node's id is namespaced `kit:<kitId>` (see {@link kitNodeId}) so it can never collide with a
- *  project key (a `[a-z0-9-]` slug — no colon). */
-export type GNodeKind = "project" | "kit";
+/** A Glance edge's kind. The project-network contracts (`api`/`data`/`events`) plus the CROSS-GRAPH
+ *  LIBRARY edges: `uses-kit` (a project consumes a `bsc ui` kit, #2571) and the generalized `requires`
+ *  (#3119, epic #3114) — a project/page pulls in an ALGORITHM or a SOUND library node. Both library kinds
+ *  ({@link isLibraryEdge}) route vertically into the fenced band; the project contracts flow left→right. */
+export type GEdgeKind = "api" | "data" | "events" | "uses-kit" | "requires";
+/** A Glance node's KIND (#2571 → generalized #3119). A PROJECT (the default), a UI-KIT node (`kit`, the
+ *  `ui` library graph — kept as-is so existing fixtures + persisted ids are unaffected), or a generalized
+ *  cross-graph `library` node (an algorithm / sound, carrying {@link GRawNode.library}). ABSENT ⇒
+ *  `"project"`. A library node's id is namespaced (`kit:` / `algo:` / `sound:`, see {@link libraryNodeId})
+ *  so it can never collide with a project key (a `[a-z0-9-]` slug — no colon). */
+export type GNodeKind = "project" | "kit" | "library";
+
+/** The cross-graph LIBRARY dimensions a band node can belong to (#3119) — reuses A's {@link NodeGraph}
+ *  (algorithms · UI kits · sounds). A `kit` node is the `ui` case (kept for back-compat); a generalized
+ *  `library` node names its graph via {@link GRawNode.library}. */
+export type GLibraryGraph = NodeGraph; // "algo" | "ui" | "sound"
 
 /** UI-KIT node/edge accent (#2571) — a distinct cyan that stands apart from the lifecycle-category
  *  palette (teal/indigo/bronze/slate/magenta/gold), the health dots, and the iteration-loop violet, so a
  *  kit node + its `uses-kit` edges read as a separate relationship dimension. */
 export const KIT_COLOR = "#22d3ee";
+/** Algorithm-library accent (#3119) — violet. */
+export const ALGO_COLOR = "#a78bfa";
+/** Sound-library accent (#3119) — pink. */
+export const SOUND_COLOR = "#f472b6";
+
+/** Per-library-graph presentation (#3119) — the accent colour, the node glyph + kind word, the band
+ *  header, the inspector panel title, the consumer-edge label, and the inspector blurb. The `ui` row is
+ *  EXACTLY the pre-#3119 kit treatment (cyan · ◆ · "kit" · "UI KITS" · "UI KIT" · "uses kit"), so a
+ *  kit-only graph stays byte-identical. */
+export const LIBRARY_META: Record<GLibraryGraph, {
+  color: string; marker: string; kindLabel: string; bandLabel: string; panelTitle: string; edgeLabel: string; blurb: string;
+}> = {
+  ui: {
+    color: KIT_COLOR, marker: "◆", kindLabel: "kit", bandLabel: "UI KITS", panelTitle: "UI KIT", edgeLabel: "uses kit",
+    blurb: "A shared `bsc ui` kit. Every project below consumes it — a design-system dependency, so a breaking kit change fans out to them all.",
+  },
+  algo: {
+    color: ALGO_COLOR, marker: "∑", kindLabel: "algorithm", bandLabel: "ALGORITHMS", panelTitle: "ALGORITHM", edgeLabel: "requires",
+    blurb: "A shared algorithm from the algorithms graph. Every project above requires it — a cross-graph library dependency, so the reference implementation is reused, not re-coded.",
+  },
+  sound: {
+    color: SOUND_COLOR, marker: "♪", kindLabel: "sound", bandLabel: "SOUNDS", panelTitle: "SOUND", edgeLabel: "requires",
+    blurb: "A shared sound cue from the sounds graph. Every project above requires it — a cross-graph library dependency.",
+  },
+};
+
 /** Namespace prefix for a KIT node id (#2571). */
 export const KIT_NODE_PREFIX = "kit:";
+/** graph → the namespace prefix for a library node id (#3119). `ui` stays `kit:` so {@link kitNodeId}
+ *  and every persisted `kit:<id>` node id are unchanged; algo/sound get their own namespaces. */
+export const LIBRARY_NODE_PREFIX: Record<GLibraryGraph, string> = { ui: KIT_NODE_PREFIX, algo: "algo:", sound: "sound:" };
+/** The stable, collision-proof id of a library node in `graph` (#3119). `libraryNodeId("ui", x)` is
+ *  exactly {@link kitNodeId}`(x)`. */
+export const libraryNodeId = (graph: GLibraryGraph, libId: string): string => `${LIBRARY_NODE_PREFIX[graph]}${libId}`;
 /** The stable, collision-proof id of the graph node for a `bsc ui` kit (#2571). */
 export const kitNodeId = (kitId: string): string => `${KIT_NODE_PREFIX}${kitId}`;
 /** The kit id behind a `kit:<kitId>` node id (identity for anything already bare). */
 export const kitIdOfNode = (nodeId: string): string =>
   nodeId.startsWith(KIT_NODE_PREFIX) ? nodeId.slice(KIT_NODE_PREFIX.length) : nodeId;
+/** The in-graph library id behind a library node id (#3119), stripping whichever graph prefix matches. */
+export const libIdOfNode = (nodeId: string): string => {
+  for (const p of Object.values(LIBRARY_NODE_PREFIX)) if (nodeId.startsWith(p)) return nodeId.slice(p.length);
+  return nodeId;
+};
 /** Stable id for a project→kit `uses-kit` edge (#2571) — prefixed so it can never collide with a
  *  {@link projectLinkId} (`from>to:kind`). */
 export const usesKitEdgeId = (projectKey: string, kitId: string): string => `usekit:${projectKey}>${kitId}`;
+/** Stable id for a project→library `requires` edge (#3119) — prefixed so it never collides with a
+ *  {@link projectLinkId} or a {@link usesKitEdgeId}. `toNodeId` is the target library node id. */
+export const requiresEdgeId = (fromKey: string, toNodeId: string): string => `req:${fromKey}>${toNodeId}`;
+
+/** Is `n` a cross-graph LIBRARY node (#3119) — a lifted band node, not a project? True for a legacy `kit`
+ *  node (the `ui` graph) or a generalized `library` node (algo/sound/ui). */
+export const isLibraryNode = (n: { kind?: GNodeKind }): boolean => n.kind === "kit" || n.kind === "library";
+/** The library graph a node belongs to (#3119): `kit` ⇒ `"ui"` (back-compat), a `library` node ⇒ its
+ *  `library` field (defaulting to `"ui"`), else undefined (a project). */
+export const libraryGraphOf = (n: { kind?: GNodeKind; library?: GLibraryGraph }): GLibraryGraph | undefined =>
+  n.kind === "kit" ? "ui" : n.kind === "library" ? (n.library ?? "ui") : undefined;
+/** Is `kind` a cross-graph LIBRARY edge (#3119) — a `uses-kit` (ui) or generalized `requires` edge? These
+ *  route VERTICALLY into the fenced band and are excluded from the project-network layout. */
+export const isLibraryEdge = (kind: GEdgeKind): boolean => kind === "uses-kit" || kind === "requires";
 
 /** One communication form on a fleet node's comms surface (#2563) — a typed interaction + its `bsc-*`
  *  runtime transport, pared from the Org model so the glance node model stays decoupled from it. */
@@ -109,10 +172,15 @@ export interface GRawNode {
    *  graph when the project is complete. Clicking it morphs open the app preview (`GlancePreviewMorph`)
    *  the way an agent node morphs open its terminal. The canvas renders it distinctly (▷). */
   preview?: boolean;
-  /** The node KIND (#2571) — `"kit"` for a UI-kit node (one per distinct `bsc ui` kit in use, edged from
-   *  every consuming project), else a PROJECT node. ABSENT ⇒ `"project"` so existing nodes/tests are
-   *  unaffected; the canvas + inspector render a kit node distinctly (◆ · "kit" · consumer count). */
+  /** The node KIND (#2571 → generalized #3119) — `"kit"` for a UI-kit node, `"library"` for a generalized
+   *  cross-graph library node (algorithm / sound), else a PROJECT node. ABSENT ⇒ `"project"` so existing
+   *  nodes/tests are unaffected; the canvas + inspector render a library node distinctly (its graph glyph
+   *  · kind word · consumer count). */
   kind?: GNodeKind;
+  /** The library graph this node belongs to (#3119) — set on a generalized `library` node to say which
+   *  cross-graph dimension it is (`algo`/`sound`/`ui`). A legacy `kit` node leaves this ABSENT (it is
+   *  implicitly `ui`). Absent on a project. */
+  library?: GLibraryGraph;
 }
 /** A dependency edge: `from` depends on `to`, over a contract of `kind`. Optional stable `id` (a
  *  user-drawn project link carries its own; sample/derived edges fall back to a positional id).
@@ -150,9 +218,12 @@ export interface GraphModel {
   cycleNodeIds: Set<string>;
   worldW: number;
   worldH: number;
-  /** The fenced UI-KIT band across the top (#3007) — the vertical zone [`y0`, `y1`] the lifted kit nodes
-   *  occupy, with `y1` the fence divider below them. ABSENT when the graph has no kit nodes, so a
-   *  project-only graph is unchanged. The canvas draws a tinted backdrop + divider + "UI KITS" label. */
+  /** The fenced LIBRARY band across the top (#3007, generalized #3119) — the vertical zone [`y0`, `y1`]
+   *  the lifted library nodes occupy (UI kits AND/OR algorithms/sounds), with `y1` the fence divider below
+   *  them. ABSENT when the graph has no library nodes, so a project-only graph is unchanged. The canvas
+   *  draws a tinted backdrop + divider + a header label (the graph's name for a single-dimension band —
+   *  "UI KITS"/"ALGORITHMS"/"SOUNDS" — else "LIBRARIES"). The field name stays `kitBand` for persist/test
+   *  stability. */
   kitBand?: { y0: number; y1: number };
 }
 
@@ -202,31 +273,38 @@ export const EDGE_META: Record<GEdgeKind, { label: string; color: string; dash: 
   // The kit-consumer dimension (#2571): a project CONSUMES a shared `bsc ui` kit — a design-system
   // dependency drawn to the shared kit node. Dashed cyan so it reads apart from the project edges.
   "uses-kit": { label: "uses kit", color: KIT_COLOR, dash: "4 4", w: 1.6, surface: "consumes a shared bsc ui kit · design-system dependency" },
+  // The generalized cross-graph LIBRARY dimension (#3119, epic #3114): a project/page REQUIRES a node in
+  // ANOTHER graph — an algorithm or a sound cue. Dashed like `uses-kit` so it reads as a library
+  // dependency; the canvas tints each edge by the TARGET node's graph colour (LIBRARY_META), so this
+  // static `color` is only a neutral fallback (e.g. the legend swatch).
+  requires: { label: "requires", color: "var(--fg-muted)", dash: "4 4", w: 1.6, surface: "requires a shared library node (algorithm / sound) · cross-graph dependency" },
 };
 
 // Node box + spacing in world (design) coordinates.
 export const NW = 186, NH = 66;
 const COLGAP = 252, ROWGAP = 102;
 
-// The fenced UI-KIT band across the top (#3007). Kit nodes are LIFTED out of the project dependency DAG
-// into a single row here, so they read as a separate design-system dimension instead of an intermixed
-// project column (mirrors the Design Studio composition swimlanes).
-const KIT_TOP_PAD = 40;   // y of the kit cards' top edge inside the band
-const KIT_BAND_GAP = 34;  // clearance from the kit cards' bottom down to the fence divider
+// The fenced LIBRARY band across the top (#3007, generalized #3119). Library nodes (UI kits + algorithms +
+// sounds) are LIFTED out of the project dependency DAG into a single row here, so they read as a separate
+// library dimension instead of an intermixed project column (mirrors the Design Studio composition
+// swimlanes). The band math is A's shared `layoutBand`; these tune its top pad + fence clearance.
+const KIT_TOP_PAD = 40;   // y of the library cards' top edge inside the band
+const KIT_BAND_GAP = 34;  // clearance from the library cards' bottom down to the fence divider
 
 /** Bezier path + arrowhead between two node boxes (F depends on T). Cycle back-edges bow to separate the
- *  two directions. Ported from the spec's edgeGeom. `kind` picks the router (#3007): a `uses-kit` edge
- *  runs VERTICALLY (a project below → its kit in the top band), so it uses the DEFAULT perimeter-anchor
- *  router; every project edge keeps the layered side-port routing. */
+ *  two directions. Ported from the spec's edgeGeom. `kind` picks the router (#3007, generalized #3119): a
+ *  LIBRARY edge (`uses-kit`/`requires`) runs VERTICALLY (a project below → its library node in the top
+ *  band), so it uses the DEFAULT perimeter-anchor router; every project edge keeps the layered side-port
+ *  routing. */
 export function edgeGeom(F: { x: number; y: number; id: string }, T: { x: number; y: number; id: string }, isCycle: boolean, kind?: GEdgeKind): { d: string; arrow: string } {
   // The shared graph line-type (#2222) with SIDE-PORT routing (#2226) — Glance's PROJECT network is a
   // layered left→right DAG, so edges leave the right edge / enter the left at the vertical middle for a
   // clean columnar flow (the perimeter-anchor router read messy here). Cycle back-edges bow apart
-  // (deterministic sign by id order) so the two directions of a↔b don't overlap. A `uses-kit` edge is
-  // vertical (kit band above the network), so side ports would meet the wrong faces — route it with the
-  // perimeter-anchor DEFAULT (omit `routing: "ports"`) so each card faces the other.
+  // (deterministic sign by id order) so the two directions of a↔b don't overlap. A LIBRARY edge is
+  // vertical (the band sits above the network), so side ports would meet the wrong faces — route it with
+  // the perimeter-anchor DEFAULT (omit `routing: "ports"`) so each card faces the other.
   const bow = isCycle ? (F.id < T.id ? -46 : 46) : 0;
-  const opts = kind === "uses-kit" ? { bow } : { bow, routing: "ports" as const };
+  const opts = kind && isLibraryEdge(kind) ? { bow } : { bow, routing: "ports" as const };
   const { d, arrow } = graphEdge({ x: F.x, y: F.y, w: NW, h: NH }, { x: T.x, y: T.y, w: NW, h: NH }, opts);
   return { d, arrow };
 }
@@ -347,45 +425,45 @@ export function buildGraph(rawNodes: GRawNode[], rawEdges: GRawEdge[]): GraphMod
   edges.forEach((e) => { if (cycleEdge.has(e.id)) e.isCycle = true; });
 
   // Roll health up the dependency edges (#2541) — every node now carries its effective (rolled) health.
-  // Kit nodes are always `idle` and never propagate, so the `uses-kit` edges have no effect here (#3007).
+  // Library nodes (kits/algorithms/sounds) are always `idle` and never propagate, so the `uses-kit` /
+  // `requires` edges have no effect here (#3007/#3119).
   const rolled = rollUpHealth(nodes, edges);
   nodes.forEach((n) => { const r = rolled.get(n.id)!; n.rollupHealth = r.health; n.healthInherited = r.inherited; });
 
-  // #3007 — LIFT the UI-KIT nodes out of the dependency DAG into their own fenced band across the top, so
-  // they read as a separate design-system dimension, not an intermixed project column. The PROJECT
-  // network lays out with ONLY the project nodes + project edges (the existing engine, unchanged); the
-  // kits then sit in a single row above it and every project node shifts down to clear the band.
-  const kitNodes = nodes.filter((n) => n.kind === "kit");
-  const projNodes = nodes.filter((n) => n.kind !== "kit");
-  const projEdges = edges.filter((e) => e.kind !== "uses-kit");
+  // #3007 (generalized #3119) — LIFT the cross-graph LIBRARY nodes (UI kits AND/OR algorithms/sounds) out
+  // of the dependency DAG into their own fenced band across the top, so they read as a separate library
+  // dimension, not an intermixed project column. The PROJECT network lays out with ONLY the project nodes
+  // + project edges (the existing engine, unchanged); the library nodes then sit in a single row above it
+  // and every project node shifts down to clear the band.
+  const bandNodes = nodes.filter(isLibraryNode);
+  const projNodes = nodes.filter((n) => !isLibraryNode(n));
+  const projEdges = edges.filter((e) => !isLibraryEdge(e.kind));
 
   layoutProjectNetwork(projNodes, projEdges, byId, cycleEdge);
 
   let kitBand: { y0: number; y1: number } | undefined;
-  if (kitNodes.length > 0) {
-    // A single kit row across the TOP, evenly spaced and centred over the project span [70, projMaxX] —
-    // but the step never exceeds one column gap, so a couple of kits cluster in the middle instead of
-    // stretching the full width. `layer = -1` marks them as band nodes (outside the project layering).
+  if (bandNodes.length > 0) {
+    // A single library row across the TOP, laid out by A's shared band helper (#3119) — evenly spaced and
+    // centred over the project span [70, projMaxX], the step capped at one column gap so a couple of nodes
+    // cluster in the middle instead of stretching the full width. `layer = -1` marks them as band nodes
+    // (outside the project layering). This is behaviour-preserving for the kit-only case (#3007).
     const projMaxX = projNodes.length ? Math.max(...projNodes.map((n) => n.x)) : 70;
-    const spanX0 = 70, span = Math.max(0, projMaxX - spanX0);
-    const step = kitNodes.length > 1 ? Math.min(span / (kitNodes.length - 1), COLGAP) : 0;
-    const rowW = step * (kitNodes.length - 1);
-    const startX = spanX0 + (span - rowW) / 2;
-    kitNodes.forEach((k, i) => { k.layer = -1; k.x = startX + i * step; k.y = KIT_TOP_PAD; });
+    const band = layoutBand(bandNodes.length, { spanX0: 70, spanX1: projMaxX, topPad: KIT_TOP_PAD, nodeH: NH, gap: KIT_BAND_GAP, maxStep: COLGAP });
+    bandNodes.forEach((k, i) => { k.layer = -1; k.x = band.positions[i].x; k.y = band.positions[i].y; });
 
-    // The fence sits a gap below the kit cards' bottom; the project network shifts down by that much so
-    // the layout's own 70px top pad becomes the clean gap between the divider and the first project row.
-    const dividerY = KIT_TOP_PAD + NH + KIT_BAND_GAP;
-    kitBand = { y0: 0, y1: dividerY };
-    projNodes.forEach((n) => (n.y += dividerY));
+    // The fence sits a gap below the library cards' bottom; the project network shifts down by that much
+    // so the layout's own 70px top pad becomes the clean gap between the divider and the first project row.
+    kitBand = { y0: band.y0, y1: band.y1 };
+    projNodes.forEach((n) => (n.y += band.dividerY));
   }
 
   let maxX = 0, maxY = 0;
   nodes.forEach((n) => { maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y); });
   const worldW = maxX + NW + 80, worldH = maxY + NH + 90;
 
-  // Edge geometry LAST — after both the project layout and the kit-band shift — so every endpoint is
-  // final. `e.kind` routes `uses-kit` edges vertically (perimeter-anchor); project edges keep side ports.
+  // Edge geometry LAST — after both the project layout and the library-band shift — so every endpoint is
+  // final. `e.kind` routes LIBRARY edges (`uses-kit`/`requires`) vertically (perimeter-anchor); project
+  // edges keep side ports.
   edges.forEach((e) => Object.assign(e, edgeGeom(byId[e.from], byId[e.to], e.isCycle, e.kind)));
 
   return { nodes, edges, cyclePairs, cycleNodeIds, worldW, worldH, kitBand };
