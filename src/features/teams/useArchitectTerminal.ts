@@ -36,9 +36,11 @@ import { BUILTIN_PERSONAS } from "@/features/personas";
 // canonical constants (a lint-clean feature→app import, as the tunnel feature already does) instead of
 // duplicating the literal.
 import { TERM_THEME } from "@/app/console/lib/terminalConstants";
+import { TEAMS_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 
-/** The architect session's stable pane id — one global session, keyed like `<project>:<stream>`. */
-export const ARCHITECT_PANE_ID = "teams-studio:architect";
+/** The architect session's stable pane id — one global, app-owned session (#3137: the single source of
+ *  truth lives in `systemSessions`, so crash recovery excludes it). */
+export const ARCHITECT_PANE_ID = TEAMS_STUDIO_SESSION_ID;
 
 /** The architect's whole command surface: `bsc teams` (the persona-relationship graph) + `bsc persona`
  *  (agent identities), emitted as the session's ONLY `Bash(<cmd> *)` allows via `restrictedAllow`. */

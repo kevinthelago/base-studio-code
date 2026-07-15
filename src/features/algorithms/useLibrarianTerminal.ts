@@ -36,9 +36,11 @@ import { BUILTIN_PERSONAS } from "@/features/personas";
 // The shared xterm terminal theme, sourced from the console's canonical constants (a lint-clean
 // feature→app import, exactly as the tunnel + teams features do) rather than duplicating the literal.
 import { TERM_THEME } from "@/app/console/lib/terminalConstants";
+import { ALGORITHMS_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 
-/** The librarian session's stable pane id — one global session, keyed like `<project>:<stream>`. */
-export const LIBRARIAN_PANE_ID = "algorithms-studio:librarian";
+/** The librarian session's stable pane id — one global, app-owned session (#3137: the single source of
+ *  truth lives in `systemSessions`, so crash recovery excludes it). */
+export const LIBRARIAN_PANE_ID = ALGORITHMS_STUDIO_SESSION_ID;
 
 /** The librarian's whole command surface: `bsc graph` (the algorithms knowledge graph — nodes,
  *  relationships, the per-tech impl tier, and the extraction lens), emitted as the session's ONLY
