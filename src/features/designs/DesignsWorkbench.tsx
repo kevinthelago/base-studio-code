@@ -36,8 +36,8 @@ import { useGraphPage } from "@/shared/ui/layouts/useGraphPage";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 import { selectionNeighborhood } from "@/shared/lib/graph/selectionNeighborhood";
 import { layoutBand } from "@/shared/lib/graph/crossGraph";
-import { parseNodeUrn } from "@/shared/lib/graph/nodeUrn";
-import { resolveComponentAlgoRefs } from "./lib/algoComposition";
+import { parseNodeUrn, LIBRARY_SEGMENT } from "@/shared/lib/graph/nodeUrn";
+import { resolveComponentLibraryRefs } from "./lib/libraryComposition";
 import { layoutComposition, NODE_W, NODE_H } from "./lib/compositionLayout";
 import { analyzeGraphHealth, HEALTH_SEVERITY, type HealthCategory } from "./lib/graphHealth";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
@@ -198,20 +198,20 @@ export function DesignsWorkbench() {
   // banding for edge-less nodes, `used`-desc ordering within a row. Pure model: lib/compositionLayout.
   const graph = useMemo(() => layoutComposition(kitComps), [kitComps]);
 
-  // ── Cross-graph composition (#3116) — the ALGORITHM library nodes a kit's components `require` (via a
-  // `@bsc/algorithms/…` import), rendered in a FENCED BAND across the top with dashed `requires` edges into
-  // them (A's `layoutBand`). A kit with NO library imports yields no band → the graph is byte-identical to
-  // today (the band memo returns 0 nodes, `bandShift` = 0, `world` === `graph.world`).
-  const algoComp = useMemo(() => resolveComponentAlgoRefs(kitComps), [kitComps]);
+  // ── Cross-graph composition (#3116 algorithms, #3117 sounds) — the LIBRARY nodes a kit's components
+  // `require` (via a `@bsc/algorithms/…` or `@bsc/sounds/…` import), rendered in a FENCED BAND across the top
+  // with dashed `requires` edges into them (A's `layoutBand`). A kit with NO library imports yields no band →
+  // the graph is byte-identical to today (the band memo returns 0 nodes, `bandShift` = 0, `world` === `graph.world`).
+  const libComp = useMemo(() => resolveComponentLibraryRefs(kitComps), [kitComps]);
   const band = useMemo(
-    () => layoutBand(algoComp.nodes.length, {
+    () => layoutBand(libComp.nodes.length, {
       spanX0: BAND_PAD, spanX1: Math.max(BAND_PAD, graph.world.w - BAND_PAD),
       topPad: BAND_TOP, nodeH: NODE_H, gap: BAND_GAP, maxStep: NODE_W + 70,
     }),
-    [algoComp.nodes.length, graph.world.w],
+    [libComp.nodes.length, graph.world.w],
   );
   // How far the composition graph shifts DOWN to clear the band + its fence (0 when there's no band).
-  const bandShift = algoComp.nodes.length ? band.dividerY + BAND_BOTTOM_GAP : 0;
+  const bandShift = libComp.nodes.length ? band.dividerY + BAND_BOTTOM_GAP : 0;
   // The world the viewport fits to — extended by the band. Preserve `graph.world`'s identity when there is
   // no band so `useGraphPage` doesn't needlessly re-fit (byte-identical behavior for a bandless kit).
   const world = useMemo(
@@ -220,8 +220,8 @@ export function DesignsWorkbench() {
   );
   // Each band node's top-left (world coords) by its canonical URN — the dashed edge's target + the card.
   const bandPosByUrn = useMemo(
-    () => new Map(algoComp.nodes.map((n, i) => [n.urn, band.positions[i]] as const)),
-    [algoComp.nodes, band.positions],
+    () => new Map(libComp.nodes.map((n, i) => [n.urn, band.positions[i]] as const)),
+    [libComp.nodes, band.positions],
   );
 
   // The on-graph legend (#2909) — the component ROLES present in this kit (colored as their RoleDots) +
@@ -230,12 +230,18 @@ export function DesignsWorkbench() {
     const present = new Set(kitComps.map((c) => c.role));
     const nodes = ROLES.filter((r) => present.has(r)).map((r) => ({ label: r[0].toUpperCase() + r.slice(1), color: ROLE_COLOR[r] }));
     const edges = graph.edges.length ? [{ label: "composes" }] : [];
-    // A "Library" key row appears only when the kit reaches into the library (#3116).
-    const librarySection = algoComp.nodes.length
-      ? [{ label: "Library", nodes: [{ label: "algorithm", color: "var(--info)" }], edges: [{ label: "requires", dashed: true, color: "var(--info)" }] }]
+    // A "Library" key row appears only when the kit reaches into the library (#3116/#3117) — one entry per
+    // referenced graph (algorithm and/or sound), both drawn in the band's `--info` accent.
+    const libGraphs = new Set(libComp.nodes.map((n) => n.graph));
+    const libNodes = [
+      ...(libGraphs.has("algo") ? [{ label: "algorithm", color: "var(--info)" }] : []),
+      ...(libGraphs.has("sound") ? [{ label: "sound", color: "var(--info)" }] : []),
+    ];
+    const librarySection = libComp.nodes.length
+      ? [{ label: "Library", nodes: libNodes, edges: [{ label: "requires", dashed: true, color: "var(--info)" }] }]
       : [];
     return <GraphLegend sections={[{ label: "Roles", nodes }, { label: "Composition", edges }, ...librarySection]} />;
-  }, [kitComps, graph.edges.length, algoComp.nodes.length]);
+  }, [kitComps, graph.edges.length, libComp.nodes]);
   // Graph health (#2680) — the same taxonomy `bsc ui doctor` reports (lib/graphHealth), mirrored to
   // badge dead/duplicated nodes. `nodeHealth` maps each flagged node to its MOST-SEVERE category.
   const healthFindings = useMemo(() => analyzeGraphHealth(kitComps), [kitComps]);
@@ -449,8 +455,8 @@ export function DesignsWorkbench() {
               <text x={16} y={lane.y0 + bandShift + 20} className="ds-lane-label">{lane.label}</text>
             </g>
           ))}
-          {/* The library band's fence (#3116) — algorithm nodes sit ABOVE it, the composition below. */}
-          {algoComp.nodes.length > 0 && (
+          {/* The library band's fence (#3116/#3117) — library nodes sit ABOVE it, the composition below. */}
+          {libComp.nodes.length > 0 && (
             <g className="ds-band">
               <text x={16} y={BAND_TOP - 12} className="ds-lane-label">Library</text>
               <line x1={0} y1={band.dividerY} x2={world.w} y2={band.dividerY} className="ds-band-fence" />
@@ -471,15 +477,15 @@ export function DesignsWorkbench() {
               </g>
             );
           })}
-          {/* Dashed `requires` edges into the band (#3116): from a component UP to the algorithm it imports. */}
-          {algoComp.edges.map((e) => {
+          {/* Dashed `requires` edges into the band (#3116/#3117): from a component UP to the library node it imports. */}
+          {libComp.edges.map((e) => {
             const from = parseNodeUrn(e.fromUrn);
             const compPos = from ? graph.pos.get(from.id) : undefined;
-            const algoPos = bandPosByUrn.get(e.toUrn);
-            if (!compPos || !algoPos) return null;
+            const libPos = bandPosByUrn.get(e.toUrn);
+            if (!compPos || !libPos) return null;
             const g = graphEdge(
               { x: compPos.x, y: compPos.y + bandShift, w: NODE_W, h: NODE_H },
-              { x: algoPos.x, y: algoPos.y, w: NODE_W, h: NODE_H },
+              { x: libPos.x, y: libPos.y, w: NODE_W, h: NODE_H },
             );
             return (
               <g key={e.id} className="ds-req-edge">
@@ -489,16 +495,18 @@ export function DesignsWorkbench() {
             );
           })}
         </svg>
-        {/* Library band cards (#3116) — the referenced algorithm nodes, above the fence. Not selectable in
-            this slice (they belong to the Algorithms graph); the tooltip names the source. */}
-        {algoComp.nodes.map((n) => {
+        {/* Library band cards (#3116 algorithms, #3117 sounds) — the referenced library nodes, above the
+            fence. Not selectable in this slice (they belong to another pillar's graph); the tooltip names the
+            source. The card is graph-aware: an algorithm vendors its real code, a sound a generated player. */}
+        {libComp.nodes.map((n) => {
           const pos = bandPosByUrn.get(n.urn); if (!pos) return null;
+          const vendored = n.graph === "sound" ? "a generated player module" : "its real code";
           return (
-            <Box key={n.urn} className="ds-algonode" style={{ left: pos.x, top: pos.y, width: NODE_W }} title={`${n.label} — @bsc/algorithms (library ${n.kind}); the preview vendors its real code`}>
+            <Box key={n.urn} className="ds-algonode" style={{ left: pos.x, top: pos.y, width: NODE_W }} title={`${n.label} — @bsc/${LIBRARY_SEGMENT[n.graph]} (library ${n.kind}); the preview vendors ${vendored}`}>
               <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
                 <StatusDot color="var(--info)" size={8} /><Text weight={600} size={13}>{n.label}</Text>
               </Box>
-              <Text size={10} tone="dim">algorithm · {n.kit}</Text>
+              <Text size={10} tone="dim">{n.kind} · {n.kit}</Text>
             </Box>
           );
         })}

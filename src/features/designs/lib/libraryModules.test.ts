@@ -23,9 +23,35 @@ describe("resolveLibrarySpec (#3116)", () => {
   it("returns null for a missing algorithm, a graph with no vendor path here, and a non-@bsc spec", () => {
     expect(resolveLibrarySpec("@bsc/algorithms/nope")).toBeNull();
     expect(resolveLibrarySpec("@bsc/ui/Sparkline")).toBeNull(); // no ui vendor path in this slice
-    expect(resolveLibrarySpec("@bsc/sounds/click")).toBeNull();
+    expect(resolveLibrarySpec("@bsc/sounds/nope")).toBeNull(); // sounds resolves now — but not a missing cue
     expect(resolveLibrarySpec("d3")).toBeNull();
     expect(resolveLibrarySpec("@/shared/ui/data/Card")).toBeNull();
+  });
+});
+
+describe("resolveLibrarySpec — sounds (#3117)", () => {
+  it("resolves @bsc/sounds/click against the default sound kit as a cue node with a player module", () => {
+    const n = resolveLibrarySpec("@bsc/sounds/click");
+    expect(n).not.toBeNull();
+    expect(n!.graph).toBe("sound");
+    expect(n!.kit).toBe("signal"); // the default (first built-in) sound kit
+    expect(n!.kind).toBe("cue");
+    expect(n!.label).toBe("Click");
+    expect(n!.urn).toBe("sound:signal/click");
+    expect(n!.code).toContain("export function play"); // the self-contained player module
+  });
+
+  it("falls back to a voice (a playable patch) and misses cleanly on an unknown id", () => {
+    expect(resolveLibrarySpec("@bsc/sounds/blip")!.kind).toBe("voice");
+    expect(resolveLibrarySpec("@bsc/sounds/blip")!.code).toContain("export function play");
+    expect(resolveLibrarySpec("@bsc/sounds/nope")).toBeNull();
+  });
+
+  it("resolves a primitive as a code-less descriptor (not importable)", () => {
+    const n = resolveLibrarySpec("@bsc/sounds/sine");
+    expect(n).not.toBeNull();
+    expect(n!.kind).toBe("primitive");
+    expect(n!.code).toBeUndefined();
   });
 });
 
@@ -44,5 +70,21 @@ describe("libraryModuleResolver (#3116)", () => {
   it("returns null for a primitive (no code → not importable) and a missing name", () => {
     expect(libraryModuleResolver("@bsc/algorithms/number")).toBeNull();
     expect(libraryModuleResolver("@bsc/algorithms/nope")).toBeNull();
+  });
+});
+
+describe("libraryModuleResolver — sounds (#3117)", () => {
+  it("vendors a sound cue as a self-contained player module (path keyed by the specifier + .ts)", () => {
+    const mod = libraryModuleResolver("@bsc/sounds/click");
+    expect(mod).not.toBeNull();
+    expect(mod!.path).toBe("@bsc/sounds/click.ts");
+    expect(mod!.source).toContain("export function play"); // the export API a component binds
+    expect(mod!.source).toContain("const SCHEDULE ="); // the embedded compiled schedule
+    expect(mod!.source).toContain("\"voices\""); // …which carries the compiled voice list
+  });
+
+  it("returns null for a sound primitive (no player) and a missing cue", () => {
+    expect(libraryModuleResolver("@bsc/sounds/sine")).toBeNull(); // a primitive descriptor — no code
+    expect(libraryModuleResolver("@bsc/sounds/nope")).toBeNull();
   });
 });
