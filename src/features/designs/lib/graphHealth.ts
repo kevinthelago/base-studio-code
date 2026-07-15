@@ -22,7 +22,7 @@
 import reactUiArtifact from "@data/components/react-ui.json";
 import previewImportmap from "@data/ui/preview-importmap.json";
 import { buildComposesEdges } from "./compositionLayout";
-import { componentPreviewFiles, looksBuildableModule, type KitArtifact } from "./componentPreview";
+import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, type KitArtifact } from "./componentPreview";
 import type { ComponentRecord, PropSpec } from "./model";
 
 /** The specifiers the preview iframe can resolve — the exact keys of the preview import-map (react/three/
@@ -41,11 +41,21 @@ function isNodeSlotProp(p: PropSpec): boolean {
 /** The component's OWN module source (a user-authored module) — its record `source`, else a `srcText`
  *  that {@link looksBuildableModule} — or `null` when the source isn't in the record: a built-in (its
  *  artifact `source` is stripped from the store, #2794) or a spec (no buildable module). Only these have
- *  a source we can scan for prop references. Mirrors `componentPreviewFiles`'s user-authored source pick. */
-function ownModuleSource(c: ComponentRecord): string | null {
+ *  a source we can scan for prop references. Mirrors `componentPreviewFiles`'s user-authored source pick.
+ *
+ *  `siblings` (#3112): the kit's other components. A `srcText` that imports SIBLINGS is a real module too
+ *  (the preview vendors them) — sibling-aware buildability keeps this in lockstep with the preview build,
+ *  so the health checks scan exactly the source the preview compiles. */
+function ownModuleSource(c: ComponentRecord, siblings: readonly ComponentRecord[] = []): string | null {
   if (c.source && c.source.trim()) return c.source;
-  if (looksBuildableModule(c.srcText)) return c.srcText;
-  return null;
+  const srcText = c.srcText ?? "";
+  if (!srcText.trim()) return null;
+  if (siblings.length) {
+    const sibTargets = new Set(siblings.filter((s) => s.id !== c.id).map((s) => s.src).filter(Boolean));
+    const resolves = (spec: string, fromRel: string) => resolvesInternal(spec, fromRel, sibTargets);
+    return isPreviewBuildable(srcText, c.src, resolves) ? srcText : null;
+  }
+  return looksBuildableModule(srcText) ? srcText : null;
 }
 
 /** Escape a string for literal use inside a RegExp (component names are identifiers, but be safe). */
@@ -74,8 +84,8 @@ function jsxTagNames(source: string): Set<string> {
 /** Is `c` a SELF-REFERENTIAL STUB — an own-module component that declares its own name yet the ONLY
  *  element it renders is itself (`<Name/>`)? It passes the buildability + syntax gates but produces no
  *  output and recurses forever (#3026). Rust twin: `is_self_referential_stub`. */
-function isSelfReferentialStub(c: ComponentRecord): boolean {
-  const src = ownModuleSource(c);
+function isSelfReferentialStub(c: ComponentRecord, siblings: readonly ComponentRecord[] = []): boolean {
+  const src = ownModuleSource(c, siblings);
   if (!src || !c.name || !declaresSymbol(src, c.name)) return false;
   const tags = jsxTagNames(src);
   return tags.size === 1 && tags.has(c.name);
@@ -309,7 +319,9 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
   // strips it, #2794); only a node in neither the artifact nor carrying its own module/`source` is
   // flagged (a user-authored spec, e.g. a `page` like GraphExplorerPage). Independent of used/role.
   for (const c of comps) {
-    if (componentPreviewFiles(c, ARTIFACT) === null) {
+    // Pass the kit as siblings so a composing user component (importing a sibling, #3112) builds and is
+    // NOT falsely flagged — the exact set the live preview vendors.
+    if (componentPreviewFiles(c, ARTIFACT, comps) === null) {
       findings.push({ category: "no-implementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
         why: `${c.name} has no buildable implementation — the preview can't render it (a spec, not code)` });
     }
@@ -320,7 +332,7 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
   // blind to it) and the write-time syntax gate, yet produces no output and recurses forever — the class
   // the designer hit authoring D3 components as self-calls (#3026). Rust twin: the self-reference loop.
   for (const c of comps) {
-    if (isSelfReferentialStub(c)) {
+    if (isSelfReferentialStub(c, comps)) {
       findings.push({ category: "self-reference", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
         why: `${c.name} only renders itself (<${c.name}/>) — a self-referential stub, not a real implementation (it produces no output and recurses forever)` });
     }
@@ -337,7 +349,7 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
   const internalTargets = new Set<string>([...INTERNAL_TARGETS, ...comps.map((c) => c.src).filter(Boolean)]);
   const fmtSpecs = (v: string[]) => v.map((s) => `\`${s}\``).join(", ");
   for (const c of comps) {
-    const src = ownModuleSource(c);
+    const src = ownModuleSource(c, comps);
     if (!src) continue;
     const specs = importSpecifiers(src);
     const bare = specs.filter((s) => isBareSpecifier(s) && !RESOLVABLE_SPECIFIERS.has(s)).sort();
@@ -355,7 +367,7 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
   // (source in the artifact) or a spec (no buildable module) is skipped. Guard: require ≥1 prop REFERENCED
   // (so it clearly uses NAMED props — not a `{...props}` spreader) before flagging the unreferenced ones.
   for (const c of comps) {
-    const src = ownModuleSource(c);
+    const src = ownModuleSource(c, comps);
     if (!src || c.props.length === 0) continue;
     const used = new Map(c.props.map((p) => [p.name, referencesIdentifier(src, p.name)]));
     if (![...used.values()].some(Boolean)) continue; // no named-prop usage confirmed → conservative skip

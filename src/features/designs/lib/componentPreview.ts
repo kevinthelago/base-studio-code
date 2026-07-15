@@ -13,8 +13,11 @@
 //     `source` field (it's a contract catalog, #2794), so we take that source from `comp.source` when
 //     present, ELSE from `comp.srcText` WHEN it's a real module rather than the usual usage snippet
 //     (`looksBuildableModule`, #2828). A usage-snippet `srcText` (`import { X } from "@/…"; <X …/>`) is
-//     NOT buildable — its `@/` first-party imports have no closure to resolve against and its `…`
-//     placeholders don't compile — so it stays an honest empty state.
+//     NOT buildable — its `…` placeholders don't compile — so it stays an honest empty state.
+//     COMPOSING (#3112): a user component may `import` a SIBLING in its kit (`@/<sibling.src>` or a
+//     relative path); the transitive closure of the siblings it imports is vendored into the build so it
+//     resolves and the component composes real siblings instead of inlining everything. An internal
+//     import that resolves to NO sibling still fails buildability (the honest empty state).
 //
 // The bootstrap imports the component and mounts it with sample props derived from its prop schema, so a
 // component with required props still renders something representative (not a curated mock).
@@ -45,6 +48,61 @@ function stripExt(path: string): string {
   return path.replace(/\.(tsx|ts|jsx|js)$/, "");
 }
 
+// ── internal-import resolution (#3112) ─────────────────────────────────────────────────────────────
+// Small twins of the graph_health scanners — kept LOCAL so componentPreview has no dependency on
+// graphHealth (graphHealth imports THIS module). Behavior mirrors `importSpecifiers` /
+// `isInternalSpecifier` / `resolveInternalBase` there and the Rust `graph_health.rs` twins. Used to
+// vendor a user component's imported SIBLINGS into its preview build so it can compose real components.
+
+/** Every module specifier imported/exported-from in `source` (`import … from "x"`, `import "x"`,
+ *  `import("x")`), deduped. A loose regex scan — over-inclusion is harmless (callers only act on the
+ *  ones that resolve to a sibling). */
+function importSpecs(source: string): string[] {
+  const specs = new Set<string>();
+  let m: RegExpExecArray | null;
+  const fromRe = /\bfrom\s*["']([^"']+)["']/g;
+  const importRe = /\bimport\s*\(?\s*["']([^"']+)["']/g;
+  while ((m = fromRe.exec(source))) specs.add(m[1]);
+  while ((m = importRe.exec(source))) specs.add(m[1]);
+  return [...specs];
+}
+
+/** Is `spec` an INTERNAL first-party import — a `@/…` alias or a RELATIVE (`./`, `../`) path — as
+ *  opposed to a bare npm specifier or an absolute path/URL? Only these resolve against sibling modules. */
+function isInternalSpec(spec: string): boolean {
+  return spec.startsWith("@/") || spec.startsWith("./") || spec.startsWith("../");
+}
+
+/** Resolve an INTERNAL import `spec` (imported FROM `fromRel`, a `src/`-relative path) to its
+ *  `src/`-relative module BASE (no extension), or `null` when it isn't internal. `@/x` → `x`; a
+ *  relative path joins onto the importer's dir with `.`/`..` collapsed. */
+function resolveInternalBase(spec: string, fromRel: string): string | null {
+  let segs: string[];
+  if (spec.startsWith("@/")) {
+    segs = spec.slice(2).split("/");
+  } else if (spec.startsWith("./") || spec.startsWith("../")) {
+    const fromDir = fromRel.includes("/") ? fromRel.slice(0, fromRel.lastIndexOf("/")) : "";
+    segs = (fromDir ? fromDir.split("/") : []).concat(spec.split("/"));
+  } else {
+    return null;
+  }
+  const out: string[] = [];
+  for (const seg of segs) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") out.pop();
+    else out.push(seg);
+  }
+  return out.join("/");
+}
+
+/** A user component's own IMPLEMENTATION source — its explicit `source`, else a non-empty `srcText`
+ *  (buildability is judged separately). `null` when the record carries neither. */
+function ownImplSource(c: ComponentRecord): string | null {
+  if (c.source && c.source.trim()) return c.source;
+  if (c.srcText && c.srcText.trim()) return c.srcText;
+  return null;
+}
+
 /**
  * Does `srcText` look like a self-contained, buildable component MODULE rather than a usage snippet?
  *
@@ -65,6 +123,28 @@ export function looksBuildableModule(srcText: string | undefined): boolean {
   if (!/\bexport\b/.test(s)) return false; // no export ⇒ nothing for the bootstrap to import + mount
   if (s.includes("…")) return false; // the `…` usage-snippet placeholder ⇒ won't compile
   if (/["']@\//.test(s)) return false; // `@/` first-party import ⇒ no closure to resolve it against
+  return true;
+}
+
+/**
+ * Sibling-aware buildability (#3112): like {@link looksBuildableModule}, but an internal (`@/`, `./`)
+ * import is allowed WHEN it resolves to a vendored sibling — the closure that lets a user-kit component
+ * compose real siblings instead of inlining everything. `source` from module `fromRel`; `resolvesToSibling`
+ * says whether an internal import spec lands on a sibling the preview will vendor. An internal import that
+ * resolves to NOTHING still fails (the honest empty state); `…` placeholders and no-export still fail.
+ */
+export function isPreviewBuildable(
+  source: string,
+  fromRel: string,
+  resolvesToSibling: (spec: string, fromRel: string) => boolean,
+): boolean {
+  const s = source.trim();
+  if (!s) return false;
+  if (!/\bexport\b/.test(s)) return false;
+  if (s.includes("…")) return false;
+  for (const spec of importSpecs(s)) {
+    if (isInternalSpec(spec) && !resolvesToSibling(spec, fromRel)) return false;
+  }
   return true;
 }
 
@@ -159,8 +239,19 @@ export function bootstrapSource(comp: ComponentRecord, importSpec: string): stri
  * `comp.source` when present, ELSE a `comp.srcText` that {@link looksBuildableModule} — placed at
  * `comp.src` (or a synthetic path) and imported by the entry. A usage-snippet `srcText` yields `null`
  * (the honest empty state).
+ *
+ * `siblings` (#3112): the OTHER user components in `comp`'s kit. A user component may `import` a sibling
+ * (`@/<sibling.src>` or a relative path) — the transitive closure of the siblings it actually imports is
+ * VENDORED into the file set (keyed by each sibling's `src`), so a user-kit component can compose real
+ * siblings instead of inlining everything. Buildability is then sibling-aware ({@link isPreviewBuildable}):
+ * an internal import that resolves to a vendored sibling is allowed; one that resolves to nothing still
+ * yields `null`. Omit `siblings` for the pre-#3112 single-module behavior (any `@/` import ⇒ not buildable).
  */
-export function componentPreviewFiles(comp: ComponentRecord, artifact: KitArtifact): ComponentPreviewBuild | null {
+export function componentPreviewFiles(
+  comp: ComponentRecord,
+  artifact: KitArtifact,
+  siblings: readonly ComponentRecord[] = [],
+): ComponentPreviewBuild | null {
   const inArtifact = comp.src ? artifact.components.find((c) => c.src === comp.src && c.source) : undefined;
 
   if (inArtifact) {
@@ -172,18 +263,50 @@ export function componentPreviewFiles(comp: ComponentRecord, artifact: KitArtifa
     return { files, entry: PREVIEW_ENTRY };
   }
 
-  // User-authored: build from its own self-contained implementation source — the explicit `source`
-  // field when present, else a `srcText` that is a real module (not the usual usage snippet, #2828).
-  const userSource =
-    comp.source && comp.source.trim() ? comp.source
-    : looksBuildableModule(comp.srcText) ? comp.srcText
-    : null;
-  if (userSource) {
-    const path = comp.src?.trim() ? comp.src : `user/${comp.id || "component"}.tsx`;
-    const importSpec = `@/${stripExt(path)}`;
-    const files: Record<string, string> = { [path]: userSource, [PREVIEW_ENTRY]: bootstrapSource(comp, importSpec) };
-    return { files, entry: PREVIEW_ENTRY };
-  }
+  // User-authored: build from its own implementation source — the explicit `source` when present, else
+  // the `srcText`. An explicit `source` is trusted; a `srcText` must look like a real module (#2828).
+  const explicitSource = comp.source && comp.source.trim() ? comp.source : null;
+  const userSource = explicitSource ?? (comp.srcText && comp.srcText.trim() ? comp.srcText : null);
+  if (userSource === null) return null;
+  const path = comp.src?.trim() ? comp.src : `user/${comp.id || "component"}.tsx`;
 
-  return null;
+  // Sibling modules keyed by their import BASE (`src` minus extension) — what an internal import lands on.
+  const sibByBase = new Map<string, { src: string; source: string }>();
+  for (const s of siblings) {
+    if (s.id === comp.id) continue;
+    const source = ownImplSource(s);
+    const sp = s.src?.trim();
+    if (source && sp) sibByBase.set(stripExt(sp), { src: sp, source });
+  }
+  const resolvesToSibling = (spec: string, fromRel: string): boolean => {
+    const base = resolveInternalBase(spec, fromRel);
+    return base !== null && sibByBase.has(base);
+  };
+
+  // Buildable? An explicit `source` is trusted; a `srcText` must be a module (sibling-aware when siblings
+  // are supplied, else the conservative `looksBuildableModule` — identical pre-#3112 behavior).
+  const buildable = explicitSource !== null
+    || (sibByBase.size > 0 ? isPreviewBuildable(userSource, path, resolvesToSibling) : looksBuildableModule(userSource));
+  if (!buildable) return null;
+
+  // Vendor the transitive closure of siblings the source imports (BFS over internal imports). esbuild
+  // tree-shakes, but vendoring only the reachable set keeps the build lean and never parses an unrelated
+  // broken sibling.
+  const files: Record<string, string> = { [path]: userSource };
+  const seenBase = new Set<string>([stripExt(path)]);
+  const queue: Array<{ source: string; fromRel: string }> = [{ source: userSource, fromRel: path }];
+  while (queue.length) {
+    const { source, fromRel } = queue.shift()!;
+    for (const spec of importSpecs(source)) {
+      const base = resolveInternalBase(spec, fromRel);
+      if (base === null || seenBase.has(base)) continue;
+      const mod = sibByBase.get(base);
+      if (!mod) continue;
+      seenBase.add(base);
+      files[mod.src] = mod.source;
+      queue.push({ source: mod.source, fromRel: mod.src });
+    }
+  }
+  files[PREVIEW_ENTRY] = bootstrapSource(comp, `@/${stripExt(path)}`);
+  return { files, entry: PREVIEW_ENTRY };
 }

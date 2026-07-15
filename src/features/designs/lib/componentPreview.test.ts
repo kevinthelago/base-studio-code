@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { componentPreviewFiles, bootstrapSource, samplePropValue, looksBuildableModule, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
+import { componentPreviewFiles, bootstrapSource, samplePropValue, looksBuildableModule, isPreviewBuildable, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
 import type { ComponentRecord, PropSpec } from "./model";
 
 const prop = (name: string, type: string, req = false): PropSpec => ({ name, type, req, desc: "" });
@@ -75,6 +75,69 @@ describe("componentPreviewFiles (#2824)", () => {
       srcText: 'import { GraphExplorerPage } from "@/shared/ui/pages/GraphExplorerPage";\n\n<GraphExplorerPage nodes={…} />',
     };
     expect(componentPreviewFiles(snippet, ARTIFACT)).toBeNull();
+  });
+});
+
+describe("componentPreviewFiles — sibling vendoring (#3112)", () => {
+  const chartFrame: ComponentRecord = {
+    ...base, id: "chartframe", name: "ChartFrame", kitId: "react-d3", role: "layout", src: "react-d3/ChartFrame.tsx",
+    source: undefined,
+    srcText: 'import type { ReactNode } from "react";\nexport function ChartFrame({ children }: { children?: ReactNode }) { return children ?? null; }',
+  };
+  const axis: ComponentRecord = {
+    ...base, id: "axis", name: "Axis", kitId: "react-d3", role: "primitive", src: "react-d3/Axis.tsx",
+    source: undefined, srcText: "export function Axis() { return null; }",
+  };
+  const barChart: ComponentRecord = {
+    ...base, id: "barchart", name: "BarChart", kitId: "react-d3", role: "composite", composes: ["ChartFrame"],
+    src: "react-d3/BarChart.tsx", source: undefined,
+    srcText: 'import * as d3 from "d3";\nimport { ChartFrame } from "@/react-d3/ChartFrame";\nexport function BarChart() { void d3; return <ChartFrame/>; }',
+  };
+
+  it("vendors an imported sibling into the build so a user-kit component composes for real", () => {
+    const build = componentPreviewFiles(barChart, ARTIFACT, [chartFrame, axis])!;
+    expect(build).not.toBeNull();
+    expect(build.files["react-d3/BarChart.tsx"]).toContain("export function BarChart");
+    expect(build.files["react-d3/ChartFrame.tsx"]).toContain("export function ChartFrame"); // the imported sibling
+    expect(build.files["react-d3/Axis.tsx"]).toBeUndefined(); // NOT imported → not vendored (lean closure)
+    expect(build.files[PREVIEW_ENTRY]).toContain('import * as __mod from "@/react-d3/BarChart"');
+  });
+
+  it("vendors the TRANSITIVE closure — a sibling the imported sibling imports", () => {
+    const frameWithAxis: ComponentRecord = {
+      ...chartFrame,
+      srcText: 'import { Axis } from "@/react-d3/Axis";\nexport function ChartFrame() { return <Axis/>; }',
+    };
+    const build = componentPreviewFiles(barChart, ARTIFACT, [frameWithAxis, axis])!;
+    expect(build.files["react-d3/ChartFrame.tsx"]).toBeDefined();
+    expect(build.files["react-d3/Axis.tsx"]).toContain("export function Axis"); // pulled in transitively
+  });
+
+  it("returns null WITHOUT siblings (no closure to resolve the @/ import — the pre-#3112 behavior)", () => {
+    expect(componentPreviewFiles(barChart, ARTIFACT)).toBeNull();
+  });
+
+  it("returns null when an internal import resolves to NO sibling (honest empty state)", () => {
+    const dangling: ComponentRecord = {
+      ...base, id: "x", name: "X", kitId: "react-d3", src: "react-d3/X.tsx", source: undefined,
+      srcText: 'import { Nope } from "@/react-d3/Nope";\nexport function X() { return null; }',
+    };
+    expect(componentPreviewFiles(dangling, ARTIFACT, [chartFrame, axis])).toBeNull();
+  });
+});
+
+describe("isPreviewBuildable (#3112)", () => {
+  const resolves = (spec: string) => spec === "@/react-d3/ChartFrame";
+  it("allows an internal import that resolves to a sibling", () => {
+    expect(isPreviewBuildable('import { ChartFrame } from "@/react-d3/ChartFrame";\nexport function F() {}', "f.tsx", resolves)).toBe(true);
+  });
+  it("rejects an internal import that resolves to nothing, and the usual non-modules", () => {
+    expect(isPreviewBuildable('import { Nope } from "@/react-d3/Nope";\nexport function F() {}', "f.tsx", resolves)).toBe(false);
+    expect(isPreviewBuildable("const x = 1;", "f.tsx", resolves)).toBe(false); // no export
+    expect(isPreviewBuildable("export function F() { return <X>…</X>; }", "f.tsx", resolves)).toBe(false); // `…` placeholder
+  });
+  it("allows a bare-library-only module (no internal imports)", () => {
+    expect(isPreviewBuildable('import * as d3 from "d3";\nexport function F() {}', "f.tsx", () => false)).toBe(true);
   });
 });
 
