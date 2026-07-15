@@ -94,8 +94,10 @@ export function GraphCanvas({
   const paneBox = (size: number, shrink = 0): CSSProperties => ({ flex: `0 ${shrink} ${size}px`, width: size, minWidth: 0, display: "flex", overflow: "hidden" });
   return (
     // rail · content-column · inspector — the rail/inspector run FULL HEIGHT (siblings of the content
-    // column) so the toolbar spans only the canvas, not the whole page (#2754).
-    <Row gap={0} align="stretch" className={className} style={{ flex: 1, minHeight: 0 }}>
+    // column) so the toolbar spans only the canvas, not the whole page (#2754). minWidth:0 keeps the flex
+    // shrink chain intact (with KeptMountedPage above): without it this Row pins to the graph's intrinsic
+    // width, can't shrink, and pushes the inspector off the right edge (#3097). Load-bearing — don't drop.
+    <Row gap={0} align="stretch" className={className} style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
       {rail && (railResizable ? (
         <>
           {/* The rail YIELDS (shrink 1) so the inspector keeps its width on a narrow window (#3097): the
