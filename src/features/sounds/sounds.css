@@ -1,6 +1,7 @@
 /* Sounds composition-graph page (#3077). Layout-specific rules only; colors + primitives come from
    tokens.css. Mirrors the Algorithms/Glance canvas idiom (absolute world-positioned node cards + an SVG
-   edge layer under them). Node tint reads the tier: cue = accent, voice = success, primitive = violet. */
+   edge layer under them). Cards are neutral like the Algorithms cards; only primitives read distinctly
+   (dashed violet). Tier color lives in the rail dots (SoundsRail), not a per-card left rail (#3123). */
 
 .snd-node {
   position: absolute;
@@ -10,7 +11,6 @@
   gap: 2px;
   padding: 8px 12px;
   border: 1px solid var(--border);
-  border-left-width: 3px;
   border-radius: 10px;
   background: var(--bg-elev, var(--bg-soft));
   cursor: pointer;
@@ -23,15 +23,10 @@
 .snd-node .snd-name { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .snd-node .snd-meta { font-size: 10.5px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* A cue is the "product" — an accent left rail. */
-.snd-node.snd-cue { border-left-color: var(--accent); }
-/* A voice is a patch — a success (teal) left rail. */
-.snd-node.snd-voice { border-left-color: var(--success, #4fd6a0); }
 /* A primitive is a source descriptor (like the Algorithms primitives) — dashed violet. */
 .snd-node.snd-primitive {
   border-style: dashed;
   border-color: var(--violet, #a78bfa);
-  border-left-width: 1px;
   background: color-mix(in srgb, var(--violet, #a78bfa) 8%, var(--bg-elev, var(--bg-soft)));
 }
 .snd-node.snd-primitive:hover { border-color: var(--violet, #a78bfa); }
