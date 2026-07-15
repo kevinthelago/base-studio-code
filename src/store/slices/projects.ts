@@ -534,10 +534,14 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                   // hard-blocks anything outside them. Empty ⇒ no carve-out, full code:none deny.
                   if (commonsGlobs.length) newPaneRoleGlobs[key] = commonsGlobs;
                 } else {
-                  // Worker runs in its own git worktree on its own branch. Prefer the
-                  // absolute path ensure_worktree returned (#905) over the bscBaseDir-derived
-                  // mirror, so an empty/malformed base dir can't drop the worker at user root.
-                  newPaneCwds[key]     = paths?.worktreePaths?.[sess.id] || agentWorktreeCwd(s.bscBaseDir, projectKey, sess.repo, sess.id);
+                  // A REPO-LESS stream is a team-derived hub role-actor (#3103: curator/documentor/…) —
+                  // it runs PROJECT-WIDE at the hub (like the director), not in a per-repo worktree. A
+                  // repo'd worker runs in its own git worktree on its own branch: prefer the absolute
+                  // path ensure_worktree returned (#905) over the bscBaseDir-derived mirror, so an
+                  // empty/malformed base dir can't drop the worker at user root.
+                  newPaneCwds[key]     = sess.repo
+                    ? (paths?.worktreePaths?.[sess.id] || agentWorktreeCwd(s.bscBaseDir, projectKey, sess.repo, sess.id))
+                    : (paths?.hubPath || projectHubCwd(s.bscBaseDir, projectKey, !!s.activeProjectId));
                   newPaneInitCmds[key] = "claude";
                   if (sess.prompt) {
                     newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, sess.prompt);
