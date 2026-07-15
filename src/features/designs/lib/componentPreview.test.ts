@@ -126,6 +126,49 @@ describe("componentPreviewFiles — sibling vendoring (#3112)", () => {
   });
 });
 
+describe("componentPreviewFiles — library (algorithm) vendoring (#3116)", () => {
+  // A FAKE resolver (kept pure — no algorithms store): resolve exactly the fibonacci reference.
+  const FIB = "export function fibonacci(n: number): number { return n < 2 ? n : fibonacci(n - 1) + fibonacci(n - 2); }";
+  const libResolver = (spec: string) =>
+    spec === "@bsc/algorithms/fibonacci" ? { path: "@bsc/algorithms/fibonacci.ts", source: FIB } : null;
+
+  const fibComp: ComponentRecord = {
+    ...base, id: "fib", name: "FibCard", kitId: "user-kit", src: "user/FibCard.tsx", source: undefined,
+    srcText: 'import { fibonacci } from "@bsc/algorithms/fibonacci";\nexport function FibCard() { return <div>{fibonacci(10)}</div>; }',
+  };
+
+  it("vendors the algorithm's code as a module the @bsc import resolves to", () => {
+    const build = componentPreviewFiles(fibComp, ARTIFACT, [], libResolver)!;
+    expect(build).not.toBeNull();
+    // The component's own module is present, AND the library impl is vendored under the resolved path.
+    expect(build.files["user/FibCard.tsx"]).toContain("export function FibCard");
+    expect(build.files["@bsc/algorithms/fibonacci.ts"]).toBe(FIB); // the ONE source of truth — no inline copy
+    expect(build.files[PREVIEW_ENTRY]).toContain('import * as __mod from "@/user/FibCard"');
+  });
+
+  it("does NOT vendor when the reference doesn't resolve (the honest build failure)", () => {
+    const bad: ComponentRecord = {
+      ...fibComp, id: "bad", name: "Bad",
+      srcText: 'import { nope } from "@bsc/algorithms/nope";\nexport function Bad() { return nope(); }',
+    };
+    const build = componentPreviewFiles(bad, ARTIFACT, [], libResolver)!;
+    // Still buildable (a `@bsc/…` import is blind to buildability, like a bare npm import), but the missing
+    // module is NOT vendored → the bundler will throw "module not found" (graphHealth flags it separately).
+    expect(build).not.toBeNull();
+    expect(Object.keys(build.files).some((k) => k.startsWith("@bsc/"))).toBe(false);
+  });
+
+  it("is byte-identical to the pre-#3116 build for a component with NO library import", () => {
+    const plain: ComponentRecord = {
+      ...base, id: "d3", name: "D3", kitId: "user-kit", src: "user/D3.tsx", source: undefined,
+      srcText: 'import * as d3 from "d3";\nexport function D3() { void d3; return null; }',
+    };
+    const withResolver = componentPreviewFiles(plain, ARTIFACT, [], libResolver)!;
+    const without = componentPreviewFiles(plain, ARTIFACT, [])!;
+    expect(withResolver.files).toEqual(without.files);
+  });
+});
+
 describe("isPreviewBuildable (#3112)", () => {
   const resolves = (spec: string) => spec === "@/react-d3/ChartFrame";
   it("allows an internal import that resolves to a sibling", () => {

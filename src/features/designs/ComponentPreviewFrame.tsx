@@ -16,6 +16,7 @@ import { bundleComponent, buildComponentSrcDoc } from "@/shared/lib/preview/comp
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
 import { compileAnimationsCss, type AnimationDef } from "@/shared/ui/kit";
 import { componentPreviewFiles, type KitArtifact } from "./lib/componentPreview";
+import { libraryModuleResolver } from "./lib/libraryModules";
 import { resolveComponentAnimations, previewAnimDefs, type ComponentRecord } from "./lib/model";
 
 // The packaged kit artifact carries each built-in's verbatim `source` + the `runtime` (@/) closure
@@ -94,7 +95,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     setStatus("building");
     setError("");
     /* eslint-enable react-hooks/set-state-in-effect */
-    const build = componentPreviewFiles(comp, ARTIFACT, siblings);
+    const build = componentPreviewFiles(comp, ARTIFACT, siblings, libraryModuleResolver);
     if (!build) {
       setStatus("error");
       setError(
