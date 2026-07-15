@@ -21,7 +21,17 @@
 //
 // The bootstrap imports the component and mounts it with sample props derived from its prop schema, so a
 // component with required props still renders something representative (not a curated mock).
+import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
 import type { ComponentRecord, PropSpec } from "./model";
+
+/**
+ * Resolve a `@bsc/<segment>/<name>` LIBRARY import (#3116) to the preview module it vendors — a `path` the
+ * import resolves to within the mem file set + the module `source` (an algorithm's reusable `code`) — or
+ * `null` when it doesn't resolve. Param-injected so this pure module never imports the algorithms store; the
+ * default (`libraryModuleResolver`) is wired at the call sites. Absent ⇒ no `@bsc/…` handling (byte-identical
+ * to pre-#3116 for a component with no library imports).
+ */
+export type LibraryModuleResolver = (spec: string) => { path: string; source: string } | null;
 
 /** The buildable slice of the packaged kit artifact — each component's verbatim `source` and the
  *  `runtime` (non-component @/ closure), both keyed by their `src/`-relative path. This is exactly the
@@ -251,6 +261,7 @@ export function componentPreviewFiles(
   comp: ComponentRecord,
   artifact: KitArtifact,
   siblings: readonly ComponentRecord[] = [],
+  libResolver?: LibraryModuleResolver,
 ): ComponentPreviewBuild | null {
   const inArtifact = comp.src ? artifact.components.find((c) => c.src === comp.src && c.source) : undefined;
 
@@ -258,6 +269,7 @@ export function componentPreviewFiles(
     const files: Record<string, string> = {};
     for (const [path, src] of Object.entries(artifact.runtime ?? {})) files[path] = src;
     for (const c of artifact.components) if (c.source) files[c.src] = c.source;
+    vendorLibraryModules(files, libResolver); // #3116: any `@bsc/…` a built-in references
     const importSpec = `@/${stripExt(inArtifact.src)}`;
     files[PREVIEW_ENTRY] = bootstrapSource(comp, importSpec);
     return { files, entry: PREVIEW_ENTRY };
@@ -307,6 +319,32 @@ export function componentPreviewFiles(
       queue.push({ source: mod.source, fromRel: mod.src });
     }
   }
+  vendorLibraryModules(files, libResolver); // #3116: vendor any `@bsc/…` library imports (recursively)
   files[PREVIEW_ENTRY] = bootstrapSource(comp, `@/${stripExt(path)}`);
   return { files, entry: PREVIEW_ENTRY };
+}
+
+/**
+ * Vendor every `@bsc/<segment>/<name>` LIBRARY import reachable from the current `files` (#3116) — resolve
+ * each via `libResolver` and add its module `source` at the `path` the import resolves to, recursing into a
+ * vendored module's own library imports (an algorithm that `import`s another). Mutates `files` in place.
+ * A no-op when `libResolver` is absent or nothing imports `@bsc/…` — so a component with no library imports
+ * yields a byte-identical file set to pre-#3116. A spec that doesn't resolve is simply not added (the build
+ * then fails "module not found" — the honest unresolvable-import surface, mirrored in graphHealth).
+ */
+function vendorLibraryModules(files: Record<string, string>, libResolver?: LibraryModuleResolver): void {
+  if (!libResolver) return;
+  const seenSpec = new Set<string>();
+  const queue: string[] = Object.values(files);
+  while (queue.length) {
+    const source = queue.shift()!;
+    for (const spec of importSpecs(source)) {
+      if (!isLibrarySpec(spec) || seenSpec.has(spec)) continue;
+      seenSpec.add(spec);
+      const mod = libResolver(spec);
+      if (!mod || mod.path in files) continue;
+      files[mod.path] = mod.source;
+      queue.push(mod.source);
+    }
+  }
 }

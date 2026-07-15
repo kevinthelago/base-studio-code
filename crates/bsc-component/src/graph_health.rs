@@ -168,6 +168,13 @@ const PACKAGED_KIT_JSON: &str = include_str!("../../../src-tauri/data/components
 /// static `unresolvable-import` check runs with no fs/network — the Rust twin of `graphHealth.ts`.
 const PREVIEW_IMPORTMAP_JSON: &str = include_str!("../../../src-tauri/data/ui/preview-importmap.json");
 
+/// The algorithms knowledge seed (`src-tauri/data/knowledge/algorithms.json`) — the SAME json the frontend
+/// (`@data/knowledge/algorithms.json`) + `bsc graph` embed. Embedded here so the THIRD import-resolution
+/// class (#3116) — a `@bsc/algorithms/<name>` cross-graph reference — is recognized with no fs/network: a
+/// reference matching a real TS algorithm resolves (the preview vendors its code) and is NEVER flagged; a
+/// `@bsc/algorithms/<missing>` is. The Rust twin of `libraryModules.ts` / `graphHealth.ts`.
+const ALGORITHMS_JSON: &str = include_str!("../../../src-tauri/data/knowledge/algorithms.json");
+
 /// The set of specifiers the preview can resolve — the import-map's keys. Cached; a malformed map yields
 /// an empty set (so the check flags nothing — fail safe, never a false alarm).
 fn resolvable_specifiers() -> &'static BTreeSet<String> {
@@ -187,6 +194,62 @@ fn resolvable_specifiers() -> &'static BTreeSet<String> {
 /// `isBareSpecifier` (TS).
 fn is_bare_specifier(spec: &str) -> bool {
     !spec.starts_with('.') && !spec.starts_with('/') && !spec.starts_with("@/") && !is_url_specifier(spec)
+}
+
+/// Is `spec` a `@bsc/<segment>/<name>` LIBRARY reference (#3116) — the reserved cross-graph import root
+/// (A's `LIBRARY_ROOT`)? Bare-shaped, but it resolves against a library store (the algorithms graph), NOT
+/// the preview import-map — the THIRD import-resolution class. Mirrors `isLibrarySpec` (nodeUrn.ts).
+fn is_library_specifier(spec: &str) -> bool {
+    spec.starts_with("@bsc/")
+}
+
+/// The resolvable `@bsc/algorithms/…` reference NAMES — every TYPESCRIPT algorithm impl carrying real
+/// `code`, keyed by BOTH its bare name (`fibonacci`) and its exact id (`fibonacci.ts`), since a React
+/// component resolves against the TS algorithm kit and accepts either form (#3116). Cached; a malformed
+/// seed yields an empty set, so every `@bsc/algorithms/…` is then flagged — fail safe, never a false
+/// "resolves". Mirrors the resolvable set behind `libraryModuleResolver` (libraryModules.ts).
+fn algo_library_names() -> &'static BTreeSet<String> {
+    static N: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+    N.get_or_init(|| algo_library_names_from(ALGORITHMS_JSON))
+}
+
+/// Pure over the seed JSON text (testable without the embed): the bare names + exact ids of every
+/// typescript algorithm impl that ships non-empty `code` (a primitive descriptor has no code → not
+/// importable, so it's excluded). Malformed JSON → empty set.
+fn algo_library_names_from(json: &str) -> BTreeSet<String> {
+    let Ok(v) = serde_json::from_str::<Value>(json) else {
+        return BTreeSet::new();
+    };
+    let mut out = BTreeSet::new();
+    for im in v.get("implementations").and_then(Value::as_array).into_iter().flatten() {
+        let tech = im.get("tech").and_then(Value::as_str).unwrap_or_default();
+        let role = im.get("role").and_then(Value::as_str).unwrap_or_default();
+        let has_code = im.get("code").and_then(Value::as_str).is_some_and(|c| !c.trim().is_empty());
+        if tech != "typescript" || role != "algorithm" || !has_code {
+            continue;
+        }
+        if let Some(id) = im.get("id").and_then(Value::as_str) {
+            out.insert(id.to_string());
+        }
+        if let Some(name) = im.get("name").and_then(Value::as_str) {
+            out.insert(name.to_string());
+        }
+    }
+    out
+}
+
+/// Does a `@bsc/<segment>/<name>` LIBRARY reference resolve to a real, runnable library node (#3116)? Only
+/// the `algorithms` segment resolves in this slice; `<name>` (bare name OR exact id) must match a TS
+/// algorithm impl carrying code. A non-`@bsc/` spec returns false (gated by `is_library_specifier`). Mirrors
+/// `libraryModuleResolver(spec) !== null` (graphHealth.ts / libraryModules.ts).
+fn resolves_library(spec: &str) -> bool {
+    let Some(rest) = spec.strip_prefix("@bsc/") else {
+        return false;
+    };
+    let Some((segment, name)) = rest.split_once('/') else {
+        return false;
+    };
+    segment == "algorithms" && !name.is_empty() && algo_library_names().contains(name)
 }
 
 /// Is `spec` an ABSOLUTE URL — a `scheme:` prefix (the first `:` sits before any `/`, e.g. `https:`,
@@ -853,12 +916,15 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
 
     // ── unresolvable-import (severity 3): a component whose module imports something the preview CAN'T
     // resolve — the class `bsc ui doctor` was blind to (the static graph looked clean while the component
-    // was broken). Two kinds, both flagged here (#2934 bare, #2954 internal):
+    // was broken). Three kinds, all flagged here (#2934 bare, #2954 internal, #3116 library):
     //   • BARE — an npm package not in the preview import-map → the iframe throws "Failed to resolve
     //     module specifier".
     //   • INTERNAL — a `@/…` or RELATIVE import resolving to NEITHER a kit component NOR a runtime-closure
     //     module → "module not found" (exactly the `Code`→`../typography/type` / `Skeleton`→`./shimmer`
     //     failure #2954 fixed in the packaged closure; this catches any future/user-authored recurrence).
+    //   • LIBRARY (#3116) — a `@bsc/<segment>/<name>` cross-graph reference (the THIRD class, neither npm
+    //     nor first-party) naming NO real library node. A `@bsc/algorithms/<name>` matching a real algorithm
+    //     is a NEW resolvable class (the preview vendors its code), NEVER flagged; only a missing one is.
     // Scanned on own-source components (a built-in's `source`, or a `looks_buildable_module` srcText) — the
     // source the preview actually builds. Mirrors `graphHealth.ts`.
     let mut targets = internal_targets().clone();
@@ -869,18 +935,26 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
         };
         let resolvable = resolvable_specifiers();
         let specs = import_specifiers(src);
-        let mut bare: Vec<String> =
-            specs.iter().filter(|s| is_bare_specifier(s) && !resolvable.contains(*s)).cloned().collect();
+        // A `@bsc/…` LIBRARY reference (#3116) is bare-shaped but resolves against the algorithms store, NOT
+        // the import-map — so it's excluded from `bare` and judged by `resolves_library` (a match ⇒ the
+        // preview vendors its code ⇒ clean; a `@bsc/algorithms/<missing>` ⇒ flagged here).
+        let mut library: Vec<String> =
+            specs.iter().filter(|s| is_library_specifier(s) && !resolves_library(s)).cloned().collect();
+        let mut bare: Vec<String> = specs
+            .iter()
+            .filter(|s| is_bare_specifier(s) && !is_library_specifier(s) && !resolvable.contains(*s))
+            .cloned()
+            .collect();
         let mut internal: Vec<String> = specs
             .iter()
             .filter(|s| is_internal_specifier(s) && !resolves_internal(s, &n.src, &targets))
             .cloned()
             .collect();
-        for v in [&mut bare, &mut internal] {
+        for v in [&mut bare, &mut library, &mut internal] {
             v.sort();
             v.dedup();
         }
-        if bare.is_empty() && internal.is_empty() {
+        if bare.is_empty() && library.is_empty() && internal.is_empty() {
             continue;
         }
         let fmt = |v: &[String]| v.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>().join(", ");
@@ -891,6 +965,13 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
             actions.push(format!(
                 "pin {} in the preview import-map (src-tauri/data/ui/preview-importmap.json) or drop it",
                 fmt(&bare)
+            ));
+        }
+        if !library.is_empty() {
+            reasons.push(format!("{} (no matching node in the library)", fmt(&library)));
+            actions.push(format!(
+                "reference an EXISTING library node for {} (e.g. `@bsc/algorithms/fibonacci`), or author it in the library",
+                fmt(&library)
             ));
         }
         if !internal.is_empty() {
@@ -1316,6 +1397,62 @@ mod tests {
         ];
         let fs = analyze(&comps);
         assert!(!cats(&fs).contains(&"unresolvable-import"), "a sibling in the same kit resolves");
+    }
+
+    // ── #3116: the THIRD import class — @bsc/<segment>/<name> LIBRARY references ─────────────────────
+
+    #[test]
+    fn algo_library_names_indexes_ts_algorithms_by_name_and_id_only() {
+        let json = r#"{"implementations":[
+            {"id":"fibonacci.ts","tech":"typescript","role":"algorithm","name":"fibonacci","code":"export function fibonacci(){}"},
+            {"id":"typescript.number","tech":"typescript","role":"primitive","name":"number","ref":"number"},
+            {"id":"merge.rs","tech":"rust","role":"algorithm","name":"merge","code":"pub fn merge(){}"}
+        ]}"#;
+        let names = algo_library_names_from(json);
+        assert!(names.contains("fibonacci") && names.contains("fibonacci.ts"), "a TS algorithm is indexed by name + id");
+        assert!(!names.contains("number"), "a primitive (no code) is not importable → excluded");
+        assert!(!names.contains("merge"), "a Rust algorithm is not in the typescript kit");
+        assert!(algo_library_names_from("not json").is_empty(), "malformed seed → empty (fail safe)");
+    }
+
+    #[test]
+    fn resolves_library_recognizes_a_real_algorithm_but_not_a_missing_one() {
+        // A `@bsc/algorithms/<name>` reference resolves against the TS algorithm kit (bare name OR exact id);
+        // a missing name, a graph with no vendor path here, and a bare npm spec never resolve.
+        assert!(resolves_library("@bsc/algorithms/fibonacci"), "the seeded TS fibonacci resolves by bare name");
+        assert!(resolves_library("@bsc/algorithms/fibonacci.ts"), "…and by exact id");
+        assert!(!resolves_library("@bsc/algorithms/nope"), "a missing algorithm does not resolve");
+        assert!(!resolves_library("@bsc/sounds/click"), "a graph with no vendor path here does not resolve");
+        assert!(!resolves_library("d3-scale"), "a bare npm spec is not a library reference");
+        assert!(is_library_specifier("@bsc/algorithms/fibonacci") && !is_library_specifier("@/x") && !is_library_specifier("d3"));
+    }
+
+    #[test]
+    fn does_not_flag_a_resolvable_library_import_but_flags_a_missing_one() {
+        // #3116 acceptance (Rust twin): a component importing @bsc/algorithms/fibonacci is CLEAN; one
+        // importing @bsc/algorithms/nope is flagged unresolvable-import with the LIBRARY reason, never a
+        // bare import-map miss. Both carry a real module srcText so no-implementation stays out of it.
+        let comps = [
+            json!({ "id":"fib", "name":"FibCard", "kitId":"react-ui", "role":"composite", "used":2, "composes":[],
+                    "srcText":"import { fibonacci } from \"@bsc/algorithms/fibonacci\";\nexport function FibCard(){ return fibonacci(10); }" }),
+            json!({ "id":"bad", "name":"BadCard", "kitId":"react-ui", "role":"composite", "used":2, "composes":[],
+                    "srcText":"import { nope } from \"@bsc/algorithms/nope\";\nexport function BadCard(){ return nope(); }" }),
+        ];
+        let fs = analyze(&comps);
+        let flagged: Vec<_> = fs.iter().filter(|f| f.category == "unresolvable-import").collect();
+        assert_eq!(flagged.len(), 1, "only the missing library ref is flagged: {fs:?}");
+        assert_eq!(flagged[0].node_names, ["BadCard"]);
+        assert!(flagged[0].why.contains("@bsc/algorithms/nope"), "names the unresolvable library ref");
+        assert!(flagged[0].why.contains("no matching node in the library"));
+        assert!(!flagged[0].why.contains("import-map"), "a library miss isn't reported as a bare import-map miss");
+    }
+
+    #[test]
+    fn the_embedded_algorithms_seed_carries_the_ts_fibonacci() {
+        // The resolvable-class check reads the SAME algorithms.json the frontend + `bsc graph` embed. If the
+        // include path or the seed drifts, the set empties and the flagship @bsc/algorithms/fibonacci would
+        // be falsely flagged — guard that the seed still carries it.
+        assert!(algo_library_names().contains("fibonacci"), "the packaged seed must carry the TS fibonacci");
     }
 
     #[test]

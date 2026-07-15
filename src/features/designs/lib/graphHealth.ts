@@ -25,6 +25,8 @@ import reactUiArtifact from "@data/components/react-ui.json";
 import previewImportmap from "@data/ui/preview-importmap.json";
 import { buildComposesEdges } from "./compositionLayout";
 import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, type KitArtifact } from "./componentPreview";
+import { libraryModuleResolver } from "./libraryModules";
+import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
 import type { ComponentRecord, PropSpec } from "./model";
 
 /** The specifiers the preview iframe can resolve — the exact keys of the preview import-map (react/three/
@@ -324,7 +326,7 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
   for (const c of comps) {
     // Pass the kit as siblings so a composing user component (importing a sibling, #3112) builds and is
     // NOT falsely flagged — the exact set the live preview vendors.
-    if (componentPreviewFiles(c, ARTIFACT, comps) === null) {
+    if (componentPreviewFiles(c, ARTIFACT, comps, libraryModuleResolver) === null) {
       findings.push({ category: "no-implementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
         why: `${c.name} has no buildable implementation — the preview can't render it (a spec, not code)` });
     }
@@ -347,6 +349,10 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
   //   • INTERNAL — a `@/…`/relative import matching NEITHER a kit component NOR a runtime-closure module →
   //     "module not found" (exactly the `Code`→`../typography/type` / `Skeleton`→`./shimmer` failure #2954
   //     fixed in the packaged closure; this surfaces any future/user-authored recurrence).
+  //   • LIBRARY (#3116) — a `@bsc/<segment>/<name>` cross-graph reference (the THIRD import class: neither
+  //     npm nor first-party) that names NO real library node. A `@bsc/algorithms/<name>` matching a real
+  //     algorithm is a NEW resolvable class — the preview vendors its code (`libraryModuleResolver`), so it
+  //     is NEVER flagged; only a `@bsc/…/<missing>` is.
   // Only own-source components (`ownModuleSource`) — the source the preview actually builds. Rust twin:
   // the `unresolvable-import` loop in graph_health.rs.
   const internalTargets = new Set<string>([...INTERNAL_TARGETS, ...comps.map((c) => c.src).filter(Boolean)]);
@@ -355,11 +361,15 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
     const src = ownModuleSource(c, comps);
     if (!src) continue;
     const specs = importSpecifiers(src);
-    const bare = specs.filter((s) => isBareSpecifier(s) && !RESOLVABLE_SPECIFIERS.has(s)).sort();
+    // A `@bsc/…` library spec is bare-shaped but resolves against the algorithms store, NOT the import-map
+    // — so it's excluded from `bare` and judged by `libraryModuleResolver` (resolvable ⇒ vendored ⇒ clean).
+    const library = specs.filter((s) => isLibrarySpec(s) && libraryModuleResolver(s) === null).sort();
+    const bare = specs.filter((s) => isBareSpecifier(s) && !isLibrarySpec(s) && !RESOLVABLE_SPECIFIERS.has(s)).sort();
     const internal = specs.filter((s) => isInternalSpecifier(s) && !resolvesInternal(s, c.src, internalTargets)).sort();
-    if (bare.length === 0 && internal.length === 0) continue;
+    if (bare.length === 0 && internal.length === 0 && library.length === 0) continue;
     const reasons: string[] = [];
     if (bare.length) reasons.push(`${fmtSpecs(bare)} (no preview import-map entry)`);
+    if (library.length) reasons.push(`${fmtSpecs(library)} (no matching node in the library)`);
     if (internal.length) reasons.push(`${fmtSpecs(internal)} (no such module in the kit or its runtime closure)`);
     findings.push({ category: "unresolvable-import", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
       why: `${c.name} imports ${reasons.join("; ")} — the preview can't resolve it, so it throws "module not found" when rendered` });

@@ -286,6 +286,24 @@
       "summary": "BinaryHeap<T> — a binary max-heap; the priority queue Dijkstra pulls the min from via Reverse.",
       "composes": [],
       "ref": "std::collections::BinaryHeap"
+    },
+    {
+      "id": "typescript.number",
+      "tech": "typescript",
+      "role": "primitive",
+      "name": "number",
+      "summary": "The IEEE-754 double every TypeScript numeric algorithm computes over — the language's numeric base.",
+      "composes": [],
+      "ref": "number"
+    },
+    {
+      "id": "fibonacci.ts",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "fibonacci",
+      "summary": "The nth Fibonacci number (F0 = 0, F1 = 1), iterated bottom-up in O(n) — the TypeScript twin of fibonacci.rs and the #3116 Component→Algorithm example: a React component imports it via @bsc/algorithms/fibonacci and the Design Studio preview vendors this code so it runs the library impl live.",
+      "composes": ["typescript.number"],
+      "code": "export function fibonacci(n: number): number {\n  if (n < 2) return n;\n  let a = 0,\n    b = 1;\n  for (let i = 2; i <= n; i++) {\n    const next = a + b;\n    a = b;\n    b = next;\n  }\n  return b;\n}\n"
     }
   ]
 }
