@@ -130,6 +130,14 @@ export interface ComponentSrcDocOptions {
    *  selector is already `SAFE_SELECTOR`-validated at write time and used only in `querySelectorAll`/
    *  `matches`; it is JSON-embedded here regardless. */
   exitSelectors?: string[];
+  /** Scale-to-fit the mounted component when it overflows the frame (#3141). For an intrinsic-size
+   *  component (a d3 chart with a fixed height, a tall card) that would otherwise clip at the bottom or
+   *  bleed past the frame, a shim measures the mount wrapper's natural (pre-transform) size against
+   *  `#root` and, when it overflows, `transform: scale(k)`s the wrapper so the WHOLE component shows.
+   *  Content that already fits measures k=1 and is untouched. Set for non-page mounts only — pages are
+   *  scaled parent-side (#3139), so leave this off for them to avoid double-scaling. Absent ⇒ no shim
+   *  (byte-for-byte unchanged srcdoc). */
+  fitContent?: boolean;
 }
 
 /**
@@ -212,15 +220,73 @@ export function exitShimScript(exitSelectors: string[]): string {
 }
 
 /**
+ * The scale-to-fit shim (#3141) — a self-contained `<script type="module">` that, after mount, scales an
+ * oversized component down so the WHOLE thing shows instead of clipping. Returns "" when `fit` is false
+ * (so the srcdoc is byte-for-byte unchanged for pages — they're scaled parent-side per #3139, and scaling
+ * them here too would double-scale).
+ *
+ * Why in the iframe (not parent-side like the page canvas): a component has an INTRINSIC size (a d3 chart
+ * with a fixed height, a tall card). The parent already sizes the iframe to the frame; the component
+ * overflows WITHIN it. Only in the iframe can we measure the mounted component's natural size and scale it.
+ *
+ * How + the guards:
+ * - **Measure the component, not the wrapper.** `content` is the component's own root (the child of
+ *   bootstrapSource's centered mount wrapper). `offsetWidth/offsetHeight` are LAYOUT (pre-transform)
+ *   metrics — a CSS transform never changes them — so re-running is idempotent and needs no reset/flash.
+ * - **Scale = min(1, …) with a MARGIN** so a fitted component gets a little breathing room from the frame
+ *   edge and a component that already fits (k=1) is untouched. Fluid `width:100%` charts fit horizontally
+ *   via flex-shrink, so the height ratio typically binds.
+ * - **`#root` overflow → hidden:** we fit by scaling, not scrolling; the transform leaves the layout box
+ *   its natural (overflowing) size, so hidden clips the residual rather than showing scrollbars.
+ * - **Re-fit on settle:** a `ResizeObserver` on `#root` (frame resize) plus timed passes catch a d3-force
+ *   simulation or async data that changes the natural size after first paint. Best-effort; a throw here
+ *   never breaks the preview.
+ *
+ * Vanilla, single-root assumption (measures the first element child — the common component shape). Pure.
+ */
+export function fitShimScript(fit: boolean): string {
+  if (!fit) return "";
+  return `\n<script type="module">
+(function () {
+  try {
+    var root = document.getElementById("root");
+    if (!root) return;
+    var wrap = root.firstElementChild;                 // bootstrapSource's centered mount wrapper
+    if (!(wrap instanceof HTMLElement)) return;
+    var content = wrap.firstElementChild;              // the component's own root element
+    if (!(content instanceof HTMLElement)) return;
+    root.style.overflow = "hidden";                    // fit by scaling, not scrolling — clip any residual
+    var MARGIN = 0.94;                                 // a little breathing room from the frame edge
+    function fit() {
+      var vw = root.clientWidth, vh = root.clientHeight;
+      var cw = content.offsetWidth, ch = content.offsetHeight;  // natural (pre-transform) — transform never changes offset*
+      if (!vw || !vh || !cw || !ch) return;
+      var k = Math.min(1, (vw * MARGIN) / cw, (vh * MARGIN) / ch);
+      content.style.transformOrigin = "center center";
+      content.style.transform = k < 1 ? "scale(" + k + ")" : "none";
+    }
+    try { new ResizeObserver(fit).observe(root); } catch (e) { /* no ResizeObserver → timed passes below */ }
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(fit);
+    setTimeout(fit, 120);
+    setTimeout(fit, 500);                              // re-fit after a d3-force sim / async data settles
+  } catch (e) { /* fitting is best-effort — never break the preview */ }
+})();
+</script>`;
+}
+
+/**
  * Assemble the sandboxed-iframe srcdoc: import-map for the externals + the injected app CSS + the bundle
  * as a module, posting `ready`/`error` to the parent. Pure.
  */
 export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOptions = {}): string {
-  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [] } = opts;
+  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false } = opts;
   // #3057: the exit-runtime shim, injected right after `#root` and BEFORE the module script so the
   // observer is watching before React mounts (and later unmounts) subtrees. "" when no exit selectors —
   // the non-exit srcdoc is then byte-for-byte unchanged.
   const exitShim = exitShimScript(exitSelectors);
+  // #3141: the scale-to-fit shim, injected AFTER the module script so it runs post-mount (measures the
+  // mounted component). "" for pages (scaled parent-side per #3139) so their srcdoc is unchanged.
+  const fitShim = fitShimScript(fitContent);
   return `<!doctype html><html data-theme="${theme}"><head><meta charset="utf-8" />
 <style>html,body,#root{margin:0;height:100%;box-sizing:border-box}#root{overflow:auto}*,*::before,*::after{box-sizing:inherit}
 /* Fit oversized preview media (d3 charts/graphs, images) within the frame rather than overflowing it (#2915).
@@ -248,6 +314,6 @@ setTimeout(() => {
     parent.postMessage({ __preview: "rendered", empty: empty }, "*");
   } catch (e) { /* measurement is best-effort */ }
 }, 400);
-</script>
+</script>${fitShim}
 </body></html>`;
 }
