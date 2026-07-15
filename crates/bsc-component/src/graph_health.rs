@@ -512,6 +512,114 @@ pub fn prunable(components: &[Value]) -> Vec<Prunable> {
         .collect()
 }
 
+/// A byte-identical MERGE group (#3089, epic #3087) — the OPTIMIZE analog of a [`Prunable`]: the safe,
+/// mechanical dedup the curator's optimize command applies. Components in a kit sharing byte-identical
+/// non-empty `srcText` ARE the same component (e.g. two projects harvested the same Button), so the group
+/// folds into ONE canonical — the most-`used` (tie-broken by smallest id, deterministic) — and the rest
+/// are removed. Only byte-identical is auto-merged: a same-`wraps` "duplicate" finding is a WEAKER signal
+/// (two DIFFERENT implementations of one intrinsic) that needs the curator's semantic judgment, so it is
+/// NOT merged here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MergeGroup {
+    pub kit: String,
+    pub canonical_id: String,
+    pub canonical_name: String,
+    /// The merged-away duplicates (removed from the store), each `(id, name)`.
+    pub removed: Vec<(String, String)>,
+}
+
+/// The full byte-identical merge plan (#3089): the groups to fold + every composer record whose
+/// `composes` must be repointed from a removed dup's NAME to the canonical's NAME. `repoints` carries the
+/// FULL rewritten record (all fields preserved, only `composes` edited) so the caller writes it verbatim.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MergePlan {
+    pub groups: Vec<MergeGroup>,
+    pub repoints: Vec<(String, Value)>,
+}
+
+/// Plan the safe, MECHANICAL merge of byte-identical duplicate components (#3089) — the curator's
+/// optimize step, so 'keep the graph minimal' is a COMMAND, not hand-organization. Per kit: group nodes
+/// by non-empty `srcText`; a group of 2+ folds into the most-`used` canonical (tie-break smallest id),
+/// removing the rest and repointing every composer's `composes` from a removed NAME → the canonical NAME
+/// (deduped; a resulting self-reference is dropped). Pure — APPLYING the plan (store writes) is the
+/// caller's. Deterministic ordering (kit+source sort). Never touches a cycle / same-`wraps` dup.
+pub fn merge_plan(components: &[Value]) -> MergePlan {
+    let nodes: Vec<Node> = components.iter().filter_map(parse_node).collect();
+    let raw_by_id: BTreeMap<&str, &Value> = components
+        .iter()
+        .filter_map(|v| v.get("id").and_then(Value::as_str).map(|id| (id, v)))
+        .collect();
+
+    // Group by (kit, srcText) — byte-identical source within a kit (edges never cross kits).
+    let mut by_src: BTreeMap<(&str, &str), Vec<&Node>> = BTreeMap::new();
+    for n in &nodes {
+        if !n.src_text.trim().is_empty() {
+            by_src.entry((n.kit.as_str(), n.src_text.as_str())).or_default().push(n);
+        }
+    }
+
+    let mut groups: Vec<MergeGroup> = Vec::new();
+    let mut remap: BTreeMap<(String, String), String> = BTreeMap::new(); // (kit, removedName) → canonicalName
+    let mut removed_ids: BTreeSet<String> = BTreeSet::new();
+    for ((kit, _src), group) in &by_src {
+        if group.len() < 2 {
+            continue;
+        }
+        // Canonical = most-used; tie-break the SMALLEST id (so the pick is deterministic + stable).
+        let canonical = group
+            .iter()
+            .max_by(|a, b| a.used.cmp(&b.used).then_with(|| b.id.cmp(&a.id)))
+            .unwrap();
+        let mut removed: Vec<(String, String)> = Vec::new();
+        for n in group {
+            if n.id != canonical.id {
+                removed.push((n.id.clone(), n.name.clone()));
+                removed_ids.insert(n.id.clone());
+                remap.insert(((*kit).to_string(), n.name.clone()), canonical.name.clone());
+            }
+        }
+        if !removed.is_empty() {
+            groups.push(MergeGroup {
+                kit: (*kit).to_string(),
+                canonical_id: canonical.id.clone(),
+                canonical_name: canonical.name.clone(),
+                removed,
+            });
+        }
+    }
+
+    // Repoint composers: any SURVIVING node whose `composes` references a removed NAME (same kit) → the
+    // canonical NAME, deduped; an edge the remap turns into a self-reference is dropped.
+    let mut repoints: Vec<(String, Value)> = Vec::new();
+    for n in &nodes {
+        if removed_ids.contains(&n.id) {
+            continue;
+        }
+        let mut changed = false;
+        let mut new_composes: Vec<String> = Vec::new();
+        for dep in &n.composes {
+            let mapped = remap.get(&(n.kit.clone(), dep.clone())).cloned().unwrap_or_else(|| dep.clone());
+            if &mapped != dep {
+                changed = true;
+            }
+            if mapped == n.name || new_composes.contains(&mapped) {
+                changed = true; // dropped a self-reference or a duplicate edge produced by the remap
+            } else {
+                new_composes.push(mapped);
+            }
+        }
+        if changed {
+            if let Some(raw) = raw_by_id.get(n.id.as_str()) {
+                let mut v = (*raw).clone();
+                v["composes"] = Value::Array(new_composes.into_iter().map(Value::String).collect());
+                repoints.push((n.id.clone(), v));
+            }
+        }
+    }
+
+    MergePlan { groups, repoints }
+}
+
 fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &mut Vec<Finding>) {
     // Name → id (in-kit). A duplicate NAME would collide; the store keys by id, so we keep the first.
     let mut id_by_name: BTreeMap<&str, &str> = BTreeMap::new();
@@ -1245,6 +1353,74 @@ mod tests {
         assert_eq!(cats(&fs), ["duplicate"]);
         // Merge target is the most-used one.
         assert!(fs[0].suggested_action.contains("Button"));
+    }
+
+    // ── merge_plan (#3089) — the safe, mechanical byte-identical dedup the optimize command applies ──
+    const DUP_SRC: &str = "export function Button(){ return <button/>; }";
+
+    #[test]
+    fn merge_plan_folds_byte_identical_dups_into_the_most_used_canonical() {
+        let comps = [
+            json!({ "id": "btn", "name": "Button", "kitId": "k", "role": "primitive", "used": 9, "composes": [], "srcText": DUP_SRC, "source": DUP_SRC }),
+            json!({ "id": "btn2", "name": "Btn2", "kitId": "k", "role": "primitive", "used": 1, "composes": [], "srcText": DUP_SRC, "source": DUP_SRC }),
+        ];
+        let plan = merge_plan(&comps);
+        assert_eq!(plan.groups.len(), 1);
+        let g = &plan.groups[0];
+        assert_eq!(g.canonical_id, "btn"); // the most-used survives
+        assert_eq!(g.canonical_name, "Button");
+        assert_eq!(g.removed, vec![("btn2".to_string(), "Btn2".to_string())]);
+    }
+
+    #[test]
+    fn merge_plan_repoints_composers_from_the_removed_dup_to_the_canonical() {
+        let comps = [
+            json!({ "id": "btn", "name": "Button", "kitId": "k", "role": "primitive", "used": 9, "composes": [], "srcText": DUP_SRC, "source": DUP_SRC }),
+            json!({ "id": "btn2", "name": "Btn2", "kitId": "k", "role": "primitive", "used": 1, "composes": [], "srcText": DUP_SRC, "source": DUP_SRC }),
+            json!({ "id": "page", "name": "Page", "kitId": "k", "role": "page", "used": 0, "composes": ["Btn2", "Other"], "srcText": "p", "source": "export const C=()=>null;" }),
+        ];
+        let plan = merge_plan(&comps);
+        assert_eq!(plan.repoints.len(), 1);
+        let (id, rec) = &plan.repoints[0];
+        assert_eq!(id, "page");
+        assert_eq!(rec["composes"], json!(["Button", "Other"])); // Btn2 → Button
+    }
+
+    #[test]
+    fn merge_plan_dedups_the_edge_when_a_composer_uses_both_canonical_and_dup() {
+        let comps = [
+            json!({ "id": "btn", "name": "Button", "kitId": "k", "role": "primitive", "used": 9, "composes": [], "srcText": DUP_SRC, "source": DUP_SRC }),
+            json!({ "id": "btn2", "name": "Btn2", "kitId": "k", "role": "primitive", "used": 1, "composes": [], "srcText": DUP_SRC, "source": DUP_SRC }),
+            json!({ "id": "page", "name": "Page", "kitId": "k", "role": "page", "used": 0, "composes": ["Button", "Btn2"], "srcText": "p", "source": "export const C=()=>null;" }),
+        ];
+        let (_, rec) = merge_plan(&comps).repoints.into_iter().find(|(id, _)| id == "page").unwrap();
+        assert_eq!(rec["composes"], json!(["Button"])); // the Btn2→Button remap collapses onto the existing edge
+    }
+
+    #[test]
+    fn merge_plan_leaves_same_wraps_but_different_source_alone() {
+        // Same intrinsic, DIFFERENT source → a weaker duplicate signal, NOT auto-merged (curator's call).
+        let comps = [
+            json!({ "id": "btn", "name": "Button", "kitId": "k", "role": "primitive", "used": 9, "composes": [], "wraps": "button", "srcText": "a", "source": "a" }),
+            json!({ "id": "btn2", "name": "Btn2", "kitId": "k", "role": "primitive", "used": 1, "composes": [], "wraps": "button", "srcText": "b", "source": "b" }),
+        ];
+        let plan = merge_plan(&comps);
+        assert!(plan.groups.is_empty());
+        assert!(plan.repoints.is_empty());
+    }
+
+    #[test]
+    fn merge_plan_scopes_to_a_kit_and_ties_break_to_the_smallest_id() {
+        let comps = [
+            json!({ "id": "a2", "name": "A2", "kitId": "k1", "role": "primitive", "used": 5, "composes": [], "srcText": DUP_SRC, "source": DUP_SRC }),
+            json!({ "id": "a1", "name": "A1", "kitId": "k1", "role": "primitive", "used": 5, "composes": [], "srcText": DUP_SRC, "source": DUP_SRC }),
+            json!({ "id": "b1", "name": "B1", "kitId": "k2", "role": "primitive", "used": 0, "composes": [], "srcText": DUP_SRC, "source": DUP_SRC }),
+            json!({ "id": "b2", "name": "B2", "kitId": "k2", "role": "primitive", "used": 3, "composes": [], "srcText": DUP_SRC, "source": DUP_SRC }),
+        ];
+        let plan = merge_plan(&comps);
+        assert_eq!(plan.groups.len(), 2); // one per kit — edges never cross kits
+        assert_eq!(plan.groups.iter().find(|g| g.kit == "k1").unwrap().canonical_id, "a1"); // used tie → smallest id
+        assert_eq!(plan.groups.iter().find(|g| g.kit == "k2").unwrap().canonical_name, "B2"); // most-used
     }
 
     #[test]
