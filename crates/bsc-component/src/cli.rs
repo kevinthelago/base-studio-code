@@ -145,7 +145,7 @@ planning (a project seeded from a kit-bearing blueprint uses that kit).",
         usage: "\
 USAGE:
   bsc ui doctor [--kit K] [--json] [--pretty]     # the health report (read-only)
-  bsc ui doctor --fix [--kit K] [--yes]           # prune the safe dead roots (dry-run unless --yes)
+  bsc ui doctor --fix [--kit K] [--yes]           # OPTIMIZE: merge byte-identical dups + prune dead roots (dry-run unless --yes)
 
 Traverses each kit's composition graph (nodes = components, edges = `composes`) and reports the
 dead/duplicated design a growing kit accumulates: CYCLE (a composes loop), DANGLING-BRANCH (an unused
@@ -156,10 +156,12 @@ isolated, never-referenced primitive/composite). \"Unused\" = no composer AND us
 with used > 0 is a legit entry point, never flagged. Ranked most-severe-first; --kit scopes to one
 kit; --json emits the findings array (LLM-consumable).
 
---fix prunes ONLY the safe set — the ROOT of each orphan/dangling-branch finding (never a used > 0
-node, never a duplicate, cycle, or no-implementation). It is a DRY RUN by default (prints what WOULD be
-removed); pass --yes to apply. Branch descendants are left for the next pass (one might be shared) —
-re-run to clean them. #2678/#2679/#2839.",
+--fix is the mechanical, SAFE OPTIMIZE (#3089): (1) MERGE byte-identical-source duplicates — fold each
+group into the most-`used` canonical and repoint composers to it (lossless; only byte-identical, never a
+same-`wraps` dup), then (2) PRUNE the safe dead roots — the ROOT of each orphan/dangling-branch finding
+(never a used > 0 node). DRY RUN by default (prints what WOULD change); pass --yes to apply. Cycles and
+same-`wraps` (differing-source) duplicates are NOT auto-resolved — they need a semantic call. Branch
+descendants are left for the next pass (one might be shared) — re-run to clean them. #2678/#2679/#3089.",
     },
     CmdDoc {
         name: "define-animation",
@@ -717,43 +719,77 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// The `doctor --fix` action (#2679) — prune the safe dead roots. Dry run unless `apply`. Confirm-
-/// gated by construction: the removal set is `graph_health::prunable` (orphan/dead-root only, never a
-/// `used > 0` node, never a duplicate/cycle). Duplicates present in the graph are surfaced as a
-/// manual note so `--fix` never hides that there's more to reconcile by hand.
+/// The `doctor --fix` optimize action (#2679, #3089 merge) — the curator's mechanical, SAFE graph
+/// optimization as a COMMAND (epic #3087: 'keep the graph minimal' is a tool, not hand-organization).
+/// Two lossless steps, dry-run unless `apply`:
+///   1. MERGE byte-identical duplicates (`graph_health::merge_plan`) — fold each group into the
+///      most-`used` canonical, repointing composers; only byte-identical, never a same-`wraps` dup.
+///   2. PRUNE the safe dead roots (`graph_health::prunable`) — orphan/dead-root only, never a `used > 0`.
+///
+/// Cycles + same-`wraps` (differing-source) duplicates need the curator's SEMANTIC call, so they're only
+/// surfaced as a note — never auto-resolved here.
 fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply: bool) -> Result<(), String> {
-    let prunable = crate::graph_health::prunable(comps);
-    let dup_kinds = crate::graph_health::analyze(comps)
-        .iter()
-        .filter(|f| f.category == "duplicate" || f.category == "cycle")
-        .count();
-
-    if prunable.is_empty() {
-        println!("✓ nothing safe to prune — no orphans or dead branch roots.");
-        if dup_kinds > 0 {
-            println!("  ({dup_kinds} duplicate/cycle finding(s) remain — reconcile by hand; see `bsc ui doctor`).");
+    let plan = crate::graph_health::merge_plan(comps);
+    // Dead roots to prune, minus anything a merge already removes (never double-handle an id).
+    let merged_ids: std::collections::BTreeSet<String> =
+        plan.groups.iter().flat_map(|g| g.removed.iter().map(|(id, _)| id.clone())).collect();
+    let prunable: Vec<_> = crate::graph_health::prunable(comps)
+        .into_iter()
+        .filter(|p| !merged_ids.contains(&p.id))
+        .collect();
+    let cycles = crate::graph_health::analyze(comps).iter().filter(|f| f.category == "cycle").count();
+    let manual_note = || {
+        if cycles > 0 {
+            println!("  ({cycles} cycle(s) need a manual break; same-`wraps` duplicates need the curator's semantic call — see `bsc ui doctor`).");
         }
+    };
+
+    if plan.groups.is_empty() && prunable.is_empty() {
+        println!("✓ nothing to auto-optimize — no byte-identical duplicates and no dead roots.");
+        manual_note();
         return Ok(());
     }
 
     if !apply {
-        println!("DRY RUN — {} node(s) WOULD be removed (pass --yes to apply):", prunable.len());
-        for p in &prunable {
-            println!("  - {} ({}) — {}", p.name, p.id, p.reason);
+        if !plan.groups.is_empty() {
+            println!("DRY RUN — {} byte-identical duplicate group(s) WOULD be merged (pass --yes to apply):", plan.groups.len());
+            for g in &plan.groups {
+                let names: Vec<&str> = g.removed.iter().map(|(_, n)| n.as_str()).collect();
+                println!("  merge {} → {} ({})", names.join(", "), g.canonical_name, g.canonical_id);
+            }
+            if !plan.repoints.is_empty() {
+                println!("  ({} composer(s) would repoint to the canonical)", plan.repoints.len());
+            }
         }
-        if dup_kinds > 0 {
-            println!("  ({dup_kinds} duplicate/cycle finding(s) are NOT auto-pruned — reconcile by hand).");
+        if !prunable.is_empty() {
+            println!("DRY RUN — {} dead node(s) WOULD be pruned:", prunable.len());
+            for p in &prunable {
+                println!("  - {} ({}) — {}", p.name, p.id, p.reason);
+            }
         }
+        manual_note();
         return Ok(());
     }
 
-    let mut removed = 0usize;
+    // APPLY — merge first (repoint composers, then drop the dups), then prune dead roots.
+    for (id, rec) in &plan.repoints {
+        store.set(id, &serde_json::to_string(rec).map_err(|e| e.to_string())?)?;
+    }
+    let mut merged = 0usize;
+    for g in &plan.groups {
+        for (id, name) in &g.removed {
+            store.remove(id)?;
+            println!("merged {name} ({id}) → {}", g.canonical_name);
+            merged += 1;
+        }
+    }
+    let mut pruned = 0usize;
     for p in &prunable {
         store.remove(&p.id)?;
-        println!("removed {} ({})", p.name, p.id);
-        removed += 1;
+        println!("pruned {} ({})", p.name, p.id);
+        pruned += 1;
     }
-    println!("pruned {removed} node(s). Re-run `bsc ui doctor` — removing a root can newly orphan its children.");
+    println!("optimized: merged {merged} duplicate(s), pruned {pruned} dead node(s). Re-run `bsc ui doctor` — an optimization can surface more.");
     Ok(())
 }
 
@@ -1919,6 +1955,30 @@ mod tests {
         let arr = arr.as_array().unwrap();
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["name"], "slide-up");
+    }
+
+    #[test]
+    fn doctor_fix_merges_byte_identical_dups_and_repoints_composers() {
+        let dir = tmp_store_dir("doctor-merge");
+        let store = bsc_json_store::Store::new(dir, "component");
+        let src = "export function Button(){ return <button/>; }";
+        // The canonical (most-used) + a byte-identical dup + a page that composes the DUP.
+        store.set("btn", &serde_json::json!({ "id": "btn", "name": "Button", "kitId": "k", "role": "primitive", "used": 9, "composes": [], "srcText": src, "source": src }).to_string()).unwrap();
+        store.set("btn2", &serde_json::json!({ "id": "btn2", "name": "Btn2", "kitId": "k", "role": "primitive", "used": 1, "composes": [], "srcText": src, "source": src }).to_string()).unwrap();
+        store.set("page", &serde_json::json!({ "id": "page", "name": "Page", "kitId": "k", "role": "page", "used": 2, "composes": ["Btn2"], "srcText": "p", "source": "export const C=()=>null;" }).to_string()).unwrap();
+
+        let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+
+        // Dry run touches nothing.
+        doctor_fix(&store, &comps, false).unwrap();
+        assert!(store.get("btn2").unwrap().is_some(), "a dry run removes nothing");
+
+        // Apply: the byte-identical dup is merged away; the canonical survives; the composer repoints.
+        doctor_fix(&store, &comps, true).unwrap();
+        assert!(store.get("btn2").unwrap().is_none(), "the byte-identical dup is merged away");
+        assert!(store.get("btn").unwrap().is_some(), "the most-used canonical survives");
+        let page: serde_json::Value = serde_json::from_str(&store.get("page").unwrap().unwrap()).unwrap();
+        assert_eq!(page["composes"], serde_json::json!(["Button"]), "the composer repointed Btn2 → Button");
     }
 
     #[test]
