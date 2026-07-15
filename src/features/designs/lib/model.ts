@@ -281,6 +281,33 @@ export function resolveComponentAnimations(comp: ComponentRecord, kits: Kit[]): 
   return out;
 }
 
+/** The ACTIVE animation defs of the siblings a component COMPOSES (#3130) — pair each rendered import
+ *  with its motion. For every name in `comp.composes`, find that same-kit component in `comps` and take
+ *  its {@link resolveComponentAnimations} (the one-per-group active set); deduped by `kit:name` across
+ *  the imports (a kit's chart primitives all share `fade-in`). The preview UNIONS these with the
+ *  component's own motion — the composed pieces (a chart's ChartFrame / Axis) then animate in too, not
+ *  just the top component's own marks. A component that composes nothing yields `[]`. Pure (React-free). */
+export function resolveComposedAnimations(
+  comp: ComponentRecord,
+  comps: ComponentRecord[],
+  kits: Kit[],
+): AnimationDef[] {
+  const byName = new Map(comps.map((c) => [c.name, c] as const));
+  const seen = new Set<string>();
+  const out: AnimationDef[] = [];
+  for (const name of comp.composes) {
+    const sib = byName.get(name);
+    if (!sib || sib.kitId !== comp.kitId) continue;
+    for (const def of resolveComponentAnimations(sib, kits)) {
+      const key = `${def.kit}:${def.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(def);
+    }
+  }
+  return out;
+}
+
 /** The canonical motion PRESET group (#3083). A component's motion is presented as a pick-one list of
  *  PRESETS — each binding is a composed alternative and only the chosen one plays. Folding every inline
  *  binding into ONE group makes "the entire component's animation" a single selectable value. */

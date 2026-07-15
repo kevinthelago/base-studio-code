@@ -17,7 +17,7 @@ import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
 import { compileAnimationsCss, type AnimationDef } from "@/shared/ui/kit";
 import { componentPreviewFiles, type KitArtifact } from "./lib/componentPreview";
 import { libraryModuleResolver } from "./lib/libraryModules";
-import { resolveComponentAnimations, previewAnimDefs, type ComponentRecord } from "./lib/model";
+import { resolveComponentAnimations, resolveComposedAnimations, previewAnimDefs, type ComponentRecord } from "./lib/model";
 
 // The packaged kit artifact carries each built-in's verbatim `source` + the `runtime` (@/) closure
 // (react-ui.json; the builtinKits SEED strips `source`, but this raw import keeps it — same bundle).
@@ -68,14 +68,25 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     () => siblings.map((c) => `${c.src} ${c.source ?? c.srcText ?? ""}`).join(" "),
     [siblings],
   );
+  // The ACTIVE motion of each sibling this component COMPOSES (#3130). Now that a user-kit component
+  // vendors + renders its imports for real (#3112), pair each import with its active animation — else the
+  // composed pieces (a chart's ChartFrame / Axis / …) render statically. The top's own defs are appended
+  // AFTER (see `animDefs`) so a top-level root-scoped animation still wins `#root`.
+  const composedDefs = useMemo(
+    () => resolveComposedAnimations(comp, allComponents, kits),
+    [comp, allComponents, kits],
+  );
   // The motion actually played. A try-on ISOLATES the clicked animation — the preview plays ONLY it,
   // so clicking each animation in the menu previews THAT one. Without a try-on the component's full
   // bound motion plays. (Before #3075 the try-on appended to the full bound set, so every click
-  // compiled the SAME set and the preview never changed — "always the same one".)
-  const animDefs = useMemo(
-    () => previewAnimDefs(boundDefs, extraAnimation),
-    [boundDefs, extraAnimation],
-  );
+  // compiled the SAME set and the preview never changed — "always the same one".) #3130: the composed
+  // imports' active motion is unioned in FIRST (deduped, excluding what the top binds), the top's own
+  // LAST — so a top-level root-scoped animation wins `#root` (no regression) while composed defs fill in.
+  const animDefs = useMemo(() => {
+    const own = previewAnimDefs(boundDefs, extraAnimation);
+    const ownKeys = new Set(own.map((d) => `${d.kit}:${d.name}`));
+    return [...composedDefs.filter((d) => !ownKeys.has(`${d.kit}:${d.name}`)), ...own];
+  }, [composedDefs, boundDefs, extraAnimation]);
   const animKey = JSON.stringify(animDefs);
   // #3057: the selectors of the exit-triggered animations this component binds — the exit-runtime shim
   // (injected into the preview iframe) watches for a leaving element matching one of these and flips the
