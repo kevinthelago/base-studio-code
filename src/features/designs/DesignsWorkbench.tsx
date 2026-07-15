@@ -82,8 +82,9 @@ export function DesignsWorkbench() {
 
   const firstFor = (kitId: string) => components.find((c) => c.kitId === kitId);
   const [kitId, setKitId] = useState(() => kits[0]?.id ?? "");
-  // The FOCUSED component — null when nothing is focused → the Inspector shows its empty state (#2818,
-  // superseding #2705's hide-when-empty). Focusing a node (or a rail row) sets it; clicking the canvas clears it.
+  // The user-FOCUSED component — null when nothing is focused → the Inspector is hidden unless Claude is
+  // working a node (#3090, restoring #2705's hide-when-empty over #2818). Focusing a node (or a rail row)
+  // sets it; clicking the canvas clears it.
   const [compId, setCompId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [variant, setVariant] = useState(() => firstFor(kits[0]?.id ?? "")?.variants[0] ?? "default");
@@ -135,13 +136,19 @@ export function DesignsWorkbench() {
   // KeptMountedPage), esbuild-build each buildable component in the active kit — throttled — and record
   // ok/error in the store; the graph badges the failures. Re-runs only for components whose source changed.
   useComponentScan(true, kitComps);
-  // The FOCUSED component — strictly the one the user picked, in the current kit. No fallback to "the
-  // first"; when nothing is focused `sel` is null → the Inspector renders its empty state (#2818).
+  // The FOCUSED component — strictly the one the user picked, in the current kit; drives the graph's
+  // `.on` selection ring. No fallback to "the first".
   const sel = compId ? components.find((c) => c.id === compId && c.kitId === kitId) ?? null : null;
+  // The node Claude is actively working (#2525) becomes the inspector subject when the user hasn't
+  // focused anything — so the details pane is visible while a node is focused OR being worked on by
+  // Claude (#3090), showing what Claude is doing. The graph still marks it `.working` (a distinct pulse),
+  // NOT `.on`, so the user-selection and AI-focus signals stay separate.
+  const aiComp = aiFocusedId ? components.find((c) => c.id === aiFocusedId && c.kitId === kitId) ?? null : null;
+  const focusComp = sel ?? aiComp;
 
-  const allVariants = sel ? sel.variants : [];
+  const allVariants = focusComp ? focusComp.variants : [];
   const activeVariant = allVariants.includes(variant) ? variant : allVariants[0] ?? "default";
-  const composes = sel ? resolveComposes(sel, components) : [];
+  const composes = focusComp ? resolveComposes(focusComp, components) : [];
 
   const selectKit = (id: string) => {
     // Switching kit re-scopes the graph but focuses nothing — the Inspector shows its empty state
@@ -165,8 +172,8 @@ export function DesignsWorkbench() {
                       // already active — the try-on rebuilds the preview).
   };
 
-  // Clicking anything other than a node (the canvas background) unfocuses → the Inspector returns to
-  // its empty state (#2818).
+  // Clicking anything other than a node (the canvas background) unfocuses → hides the Inspector (unless
+  // Claude is working a node) and the graph returns to full-width (#3090).
   const deselect = () => setCompId(null);
 
   // ── graph layout (#2455) — hierarchical top-down: composers above, dependencies below, role-tier
@@ -294,10 +301,11 @@ export function DesignsWorkbench() {
             />
           </GraphRail>
         }
-        // Details pane — ALWAYS visible (#2818): the Inspector renders its own "select a component"
-        // empty state when nothing is focused (`sel` null); focusing a graph node or a rail row fills
-        // it, and clicking the canvas background clears the selection back to that empty state (the pane
-        // stays put). Supersedes the #2705 hide-when-empty behavior.
+        // Details pane — selection-driven visibility (#3090, restoring #2705 over #2818): the Inspector
+        // renders ONLY when a component is focused (`focusComp` = the user's pick, else the node Claude is
+        // working), so the graph is full-width by default — a clean rail + graph at half-screen. Focusing a
+        // node or a rail row reveals it; clicking the canvas background hides it again. (In preview mode the
+        // right pane is always present — the themes/animations navigator — since it's reached from a live pick.)
         inspector={
           // In preview mode the right pane BECOMES the themes navigator (#2834): pick a theme here, the
           // center retints. Otherwise it's the per-component inspector, whose preview thumbnail opens
@@ -327,17 +335,19 @@ export function DesignsWorkbench() {
                 />
               )}
             </Box>
-          ) : (
+          ) : focusComp ? (
             <Inspector
-              sel={sel} kitName={kit?.name ?? ""} tab={tab} setTab={setTab}
+              sel={focusComp} kitName={kit?.name ?? ""} tab={tab} setTab={setTab}
               allVariants={allVariants} activeVariant={activeVariant} setVariant={setVariant}
               vp={vp} setVpKind={setVpKind}
               kitTheme={kitTheme} setKitTheme={setKitTheme} kitThemes={kitThemes}
               previewTheme={theme}
               composes={composes} onSelect={selectComp}
-              onExpand={() => setPreviewMode(true)}
+              // Expanding to the theme try-on needs a real user selection; if the pane is showing Claude's
+              // active node (no user pick), adopt it as the selection first so preview mode has a subject (#3090).
+              onExpand={() => { if (!sel && focusComp) setCompId(focusComp.id); setPreviewMode(true); }}
             />
-          )
+          ) : undefined
         }
         // Theme try-on (#2834): the expanded preview rides the untransformed `overlays` slot so it
         // covers the canvas (not the rail/inspector) and never pans/zooms. It renders only with an open
@@ -487,7 +497,7 @@ const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string }> = {
 // identity header · live preview (variant/theme/viewport + error card) · Overview/Source/Usage tabs ·
 // the generate-variants design bar.
 interface InspProps {
-  sel: ComponentRecord | null; kitName: string; tab: Tab; setTab: (t: Tab) => void;
+  sel: ComponentRecord; kitName: string; tab: Tab; setTab: (t: Tab) => void;
   allVariants: string[]; activeVariant: string; setVariant: (v: string) => void;
   vp: Viewport; setVpKind: (v: Viewport) => void;
   /** The preview's THEME axis (#2488/#2545): the hydrated theme collection + the applied selection.
@@ -501,18 +511,15 @@ interface InspProps {
 function Inspector(p: InspProps) {
   const sel = p.sel;
   // GraphCanvas owns the inspector column width now (#2766) — fill the wrapper it gives us; bring only
-  // the left border + elevated surface (the old `.ds-col ds-insp` shell classes are gone).
+  // the left border + elevated surface (the old `.ds-col ds-insp` shell classes are gone). The Inspector
+  // mounts ONLY with a focused component now (#3090), so there is no in-pane empty state.
   return (
     <Box data-testid="ds-inspector" style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", borderLeft: "1px solid var(--border)", background: "var(--bg-elev, var(--bg-soft))" }}>
       <Box className="ds-colhead">
         <Eyebrow size={9.5}>Inspector</Eyebrow>
         <Text size={10} tone="dim" style={{ display: "flex", alignItems: "center", gap: 5 }}><StatusDot color="var(--success)" size={6} />editable</Text>
       </Box>
-      {!sel ? (
-        <Box style={{ padding: 16 }}><Text size={12} tone="dim">Select a component — a graph node or a rail entry — to inspect it.</Text></Box>
-      ) : (
-        <>
-          {/* identity — always visible above the preview */}
+      {/* identity — always visible above the preview */}
           <Box style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", flex: "none" }}>
             <RoleDot role={sel.role} size={9} glow={4} style={{ marginTop: 5 }} />
             <Box style={{ flex: 1, minWidth: 0 }}>
@@ -589,9 +596,6 @@ function Inspector(p: InspProps) {
               )}
             </Box>
           </Box>
-
-        </>
-      )}
     </Box>
   );
 }
