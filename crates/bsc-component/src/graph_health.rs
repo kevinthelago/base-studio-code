@@ -175,6 +175,15 @@ const PREVIEW_IMPORTMAP_JSON: &str = include_str!("../../../src-tauri/data/ui/pr
 /// `@bsc/algorithms/<missing>` is. The Rust twin of `libraryModules.ts` / `graphHealth.ts`.
 const ALGORITHMS_JSON: &str = include_str!("../../../src-tauri/data/knowledge/algorithms.json");
 
+/// The DEFAULT sound kit seed (`src-tauri/data/sounds/signal.json`) — the SAME kit the frontend resolves a
+/// `@bsc/sounds/<id>` reference against (`libraryModules.ts` picks the first packaged built-in, `signal`).
+/// Embedded so the SOUNDS arm of the third import class (#3117) is recognized with no fs/network: a
+/// reference matching a real cue/voice resolves (the preview vendors a GENERATED player module — a sound has
+/// no JS source) and is NEVER flagged; a `@bsc/sounds/<missing>` is. The Rust twin of `soundNodeLookup` /
+/// `libraryModules.ts`. LOCKSTEP: if the default sound kit ever changes, update this embed — a test pins
+/// `signal` on both sides.
+const SOUND_KIT_JSON: &str = include_str!("../../../src-tauri/data/sounds/signal.json");
+
 /// The set of specifiers the preview can resolve — the import-map's keys. Cached; a malformed map yields
 /// an empty set (so the check flags nothing — fail safe, never a false alarm).
 fn resolvable_specifiers() -> &'static BTreeSet<String> {
@@ -238,9 +247,38 @@ fn algo_library_names_from(json: &str) -> BTreeSet<String> {
     out
 }
 
-/// Does a `@bsc/<segment>/<name>` LIBRARY reference resolve to a real, runnable library node (#3116)? Only
-/// the `algorithms` segment resolves in this slice; `<name>` (bare name OR exact id) must match a TS
-/// algorithm impl carrying code. A non-`@bsc/` spec returns false (gated by `is_library_specifier`). Mirrors
+/// The resolvable `@bsc/sounds/…` reference NAMES (#3117) — every CUE id (the playable product) + every
+/// VOICE id (a playable patch) in the DEFAULT sound kit. A PRIMITIVE is a raw source descriptor with no
+/// player (not importable/vendorable), so it's excluded — mirroring an algorithm primitive. Cached; a
+/// malformed seed yields an empty set, so every `@bsc/sounds/…` is then flagged — fail safe, never a false
+/// "resolves". Mirrors the resolvable set behind `soundNodeLookup` (crossGraphAdapter.ts).
+fn sound_library_names() -> &'static BTreeSet<String> {
+    static N: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+    N.get_or_init(|| sound_library_names_from(SOUND_KIT_JSON))
+}
+
+/// Pure over the kit seed JSON text (testable without the embed): the ids of every cue + voice in the kit
+/// (a primitive has no player → excluded). Malformed JSON → empty set.
+fn sound_library_names_from(json: &str) -> BTreeSet<String> {
+    let Ok(v) = serde_json::from_str::<Value>(json) else {
+        return BTreeSet::new();
+    };
+    let mut out = BTreeSet::new();
+    for key in ["cues", "voices"] {
+        for item in v.get(key).and_then(Value::as_array).into_iter().flatten() {
+            if let Some(id) = item.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+                out.insert(id.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Does a `@bsc/<segment>/<name>` LIBRARY reference resolve to a real, runnable library node (#3116/#3117)?
+/// The `algorithms` segment resolves against the TS algorithm kit (`<name>` = bare name OR exact id of an
+/// impl carrying code); the `sounds` segment resolves against the default sound kit (`<name>` = a cue or
+/// voice id — the preview vendors a generated player module). Any other segment (`ui`) has no vendor path
+/// here → false. A non-`@bsc/` spec returns false (gated by `is_library_specifier`). Mirrors
 /// `libraryModuleResolver(spec) !== null` (graphHealth.ts / libraryModules.ts).
 fn resolves_library(spec: &str) -> bool {
     let Some(rest) = spec.strip_prefix("@bsc/") else {
@@ -249,7 +287,14 @@ fn resolves_library(spec: &str) -> bool {
     let Some((segment, name)) = rest.split_once('/') else {
         return false;
     };
-    segment == "algorithms" && !name.is_empty() && algo_library_names().contains(name)
+    if name.is_empty() {
+        return false;
+    }
+    match segment {
+        "algorithms" => algo_library_names().contains(name),
+        "sounds" => sound_library_names().contains(name),
+        _ => false,
+    }
 }
 
 /// Is `spec` an ABSOLUTE URL — a `scheme:` prefix (the first `:` sits before any `/`, e.g. `https:`,
@@ -1422,7 +1467,7 @@ mod tests {
         assert!(resolves_library("@bsc/algorithms/fibonacci"), "the seeded TS fibonacci resolves by bare name");
         assert!(resolves_library("@bsc/algorithms/fibonacci.ts"), "…and by exact id");
         assert!(!resolves_library("@bsc/algorithms/nope"), "a missing algorithm does not resolve");
-        assert!(!resolves_library("@bsc/sounds/click"), "a graph with no vendor path here does not resolve");
+        assert!(!resolves_library("@bsc/ui/Sparkline"), "a graph with no vendor path here does not resolve");
         assert!(!resolves_library("d3-scale"), "a bare npm spec is not a library reference");
         assert!(is_library_specifier("@bsc/algorithms/fibonacci") && !is_library_specifier("@/x") && !is_library_specifier("d3"));
     }
@@ -1453,6 +1498,64 @@ mod tests {
         // include path or the seed drifts, the set empties and the flagship @bsc/algorithms/fibonacci would
         // be falsely flagged — guard that the seed still carries it.
         assert!(algo_library_names().contains("fibonacci"), "the packaged seed must carry the TS fibonacci");
+    }
+
+    // ── #3117: the SOUNDS arm of the third import class — @bsc/sounds/<id> cue references ─────────────
+
+    #[test]
+    fn sound_library_names_indexes_cues_and_voices_but_not_primitives() {
+        // Mirrors `soundNodeLookup`: a cue (the playable product) + a voice (a playable patch) are importable
+        // by id; a primitive is a raw descriptor with no player → excluded.
+        let json = r#"{"id":"signal",
+            "primitives":[{"id":"sine","name":"Sine","kind":"osc","waveform":"sine"}],
+            "voices":[{"id":"blip","name":"Blip","primitive":"sine","freq":880,"gain":0.3,
+                "env":{"attack":0.001,"decay":0.04,"sustain":0,"release":0.03}}],
+            "cues":[{"id":"click","name":"Click","category":"ui","layers":[{"voice":"blip","at":0}]}]}"#;
+        let names = sound_library_names_from(json);
+        assert!(names.contains("click"), "a cue is resolvable by id");
+        assert!(names.contains("blip"), "a voice is resolvable by id");
+        assert!(!names.contains("sine"), "a primitive (no player) is not importable → excluded");
+        assert!(sound_library_names_from("not json").is_empty(), "malformed seed → empty (fail safe)");
+    }
+
+    #[test]
+    fn resolves_library_recognizes_a_real_sound_cue_but_not_a_missing_one() {
+        // A `@bsc/sounds/<id>` reference resolves against the default sound kit (a cue or voice id); a missing
+        // name and an empty name never resolve.
+        assert!(resolves_library("@bsc/sounds/click"), "the seeded default-kit `click` cue resolves by id");
+        assert!(resolves_library("@bsc/sounds/blip"), "a voice resolves too (a playable patch)");
+        assert!(!resolves_library("@bsc/sounds/nope"), "a missing cue does not resolve");
+        assert!(!resolves_library("@bsc/sounds/"), "an empty name does not resolve");
+    }
+
+    #[test]
+    fn the_embedded_sound_seed_is_the_signal_kit_and_carries_click() {
+        // LOCKSTEP guard: the sounds arm embeds the DEFAULT kit `signal` — the first packaged built-in the
+        // frontend (`STARTER_KIT`) resolves against. If the default changes or the seed drifts, update BOTH
+        // this embed and the TS `KIT_FOR_GRAPH.sound` in lockstep.
+        let v: Value = serde_json::from_str(SOUND_KIT_JSON).expect("the embedded sound seed parses");
+        assert_eq!(v.get("id").and_then(Value::as_str), Some("signal"), "the embedded sound kit is `signal`");
+        assert!(sound_library_names().contains("click"), "the packaged default kit must carry the `click` cue");
+    }
+
+    #[test]
+    fn does_not_flag_a_resolvable_sound_import_but_flags_a_missing_one() {
+        // #3117 acceptance (Rust twin): a component importing @bsc/sounds/click is CLEAN; one importing
+        // @bsc/sounds/nope is flagged unresolvable-import with the LIBRARY reason, never a bare import-map
+        // miss. Both carry a real module srcText so no-implementation stays out of it.
+        let comps = [
+            json!({ "id":"play", "name":"PlayBtn", "kitId":"react-ui", "role":"composite", "used":2, "composes":[],
+                    "srcText":"import { play } from \"@bsc/sounds/click\";\nexport function PlayBtn(){ return play(); }" }),
+            json!({ "id":"bad", "name":"BadBtn", "kitId":"react-ui", "role":"composite", "used":2, "composes":[],
+                    "srcText":"import { play } from \"@bsc/sounds/nope\";\nexport function BadBtn(){ return play(); }" }),
+        ];
+        let fs = analyze(&comps);
+        let flagged: Vec<_> = fs.iter().filter(|f| f.category == "unresolvable-import").collect();
+        assert_eq!(flagged.len(), 1, "only the missing sound ref is flagged: {fs:?}");
+        assert_eq!(flagged[0].node_names, ["BadBtn"]);
+        assert!(flagged[0].why.contains("@bsc/sounds/nope"), "names the unresolvable sound ref");
+        assert!(flagged[0].why.contains("no matching node in the library"));
+        assert!(!flagged[0].why.contains("import-map"), "a library miss isn't reported as a bare import-map miss");
     }
 
     #[test]
