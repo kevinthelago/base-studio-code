@@ -42,6 +42,11 @@ const ROLE_PROFILE: Record<SessionRole, string> = {
   // read-only review is the closest packaged floor; its real launch path (`useLibrarianTerminal`)
   // renders the role gate + `restrictedAllow` directly, so this mapping only backs the generic surfaces.
   librarian: "pf_review",
+  // Curator (#3092, epic #3087): the reusable-library post-landing actor. Read-only review is the
+  // closest packaged floor; its real launch (P2b) renders the role gate + `restrictedAllow` (`bsc ui` +
+  // `bsc graph`) directly. Its store writes go through `bsc ui`/`bsc graph` (Bash + the `ui` write-scope),
+  // not the file-write tools, so the review profile's whole-tool write deny doesn't mask them.
+  curator: "pf_review",
 };
 
 /** The default profile id for a role (or the Sandboxed default when there's no role). */
