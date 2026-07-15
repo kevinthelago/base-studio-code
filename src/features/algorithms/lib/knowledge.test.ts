@@ -67,7 +67,9 @@ describe("implById / usedByImpl", () => {
 
 describe("language kits (#2863) — a kit is every impl of one tech, grouped by role", () => {
   it("kitTechs lists the seeded languages, TECHS-ordered", () => {
-    expect(kitTechs(KNOWLEDGE)).toEqual(["rust"]); // Rust-only seed (#2760)
+    // Rust-first, plus a minimal TypeScript kit seeded for the #3116 Component→Algorithm example
+    // (typescript.number + fibonacci.ts); TECHS order puts typescript first.
+    expect(kitTechs(KNOWLEDGE)).toEqual(["typescript", "rust"]);
   });
 
   it("kitImpls scopes to one language; kitImplsByRole splits primitives (language built-ins) from algorithms", () => {

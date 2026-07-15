@@ -28,13 +28,14 @@ beforeAll(() => {
 describe("AlgorithmsWorkspace", () => {
   it("renders a folder per language, its impls, and the on-graph relationships legend (#2909)", () => {
     render(<AlgorithmsWorkspace />);
-    // Each language is a folder head in the rail (mirroring the Components tech folders, #2899). The seed
-    // is Rust-only (#2760), so the one kit is Rust.
+    // Each language is a folder head in the rail (mirroring the Components tech folders, #2899). The seed is
+    // Rust-first plus a minimal TypeScript kit (the #3116 fibonacci example), so both folders render.
     expect(screen.getByText("Rust")).toBeTruthy();
-    // Folders default open, so the active (Rust) kit's impls show — as rail rows + canvas nodes.
+    expect(screen.getByText("TypeScript")).toBeTruthy();
+    // Folders default open, so the Rust kit's impls show as rail rows regardless of the active kit.
     expect(screen.getAllByText("merge_sort").length).toBeGreaterThan(0);
-    // The on-graph legend (not the inspector) keys the edge types present in the kit — `composes` is live
-    // (merge-sort.rs composes merge.rs).
+    // The on-graph legend (not the inspector) keys the edge types present in the active kit — `composes`
+    // is live (every seeded kit has a `composes` edge; e.g. fibonacci.ts composes typescript.number).
     expect(screen.getByText("Relationships")).toBeTruthy();
     expect(screen.getByText("composes")).toBeTruthy();
   });
@@ -55,9 +56,11 @@ describe("AlgorithmsWorkspace", () => {
 
   it("a primitive node is visually marked + shows as a descriptor with its std ref (#2899/#2972/#2980)", () => {
     const { container } = render(<AlgorithmsWorkspace />);
+    // Focus the Rust kit first (the TypeScript kit is default-active since the #3116 seed): selecting a Rust
+    // impl row switches the active kit, so its primitive draws on the canvas.
+    fireEvent.click(screen.getAllByText("Iterator")[0]); // a Rust primitive rail row → focuses the Rust kit
     // The primitive node carries the distinct `algo-prim` marker (violet dashed descriptor chip, #2980).
     expect(container.querySelector('[data-impl="rust.iterator"]')?.className).toContain("algo-prim");
-    fireEvent.click(screen.getAllByText("Iterator")[0]);
     expect(screen.getByText("primitive")).toBeTruthy();
     // A primitive is DESCRIBED by the language built-in it names, not re-coded (#2972) — shown on the
     // node meta AND the inspector, so the ref appears more than once.
