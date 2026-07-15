@@ -166,17 +166,27 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
   // Per-agent flow (#297): narrow the GitHub-propagation writes per the stream's push policy + gate.
   const paneFlow = s.paneFlows[paneId];
   const flowRules = flowPermissionRules(paneFlow);
-  // The profile's auto-run commands, plus the role's fixed store-CLI surface (#3095): a curator pane
-  // always auto-runs `bsc ui`/`bsc graph` (its harvest + graph-optimize channels) whether or not a
-  // profile assigned them. Empty for every other role, so this is a no-op elsewhere.
-  const allowedCommands = [...(prof?.allowedCommands ?? []), ...restrictedRoleCommands(role)];
+  // The role's fixed store-CLI surface (#3095): a curator pane always auto-runs `bsc ui`/`bsc graph`
+  // (its harvest + graph-optimize channels) whether or not a profile assigned them. Empty for every
+  // other role, so this is a no-op elsewhere.
+  const restrictedCommands = restrictedRoleCommands(role);
+  const allowedCommands = [...(prof?.allowedCommands ?? []), ...restrictedCommands];
+  // Tighten a role with a fixed store surface to `restrictedAllow` (#3098): suppress the Bash baseline
+  // tiers entirely (git/build/read-only), so the curator's WHOLE auto-run command surface is exactly
+  // the two store CLIs above — mirroring the standing-tab designer/librarian/architect. Bash-only:
+  // the verbatim tool rules (Read/Edit/…) still apply, so `Read` (added below) keeps the curator able
+  // to read generated source to `bsc ui set` it.
+  const restrictedAllow = restrictedCommands.length > 0;
   // Shell posture (#1572): the profile's bash tier scales the backend's auto-approve baseline.
   // No profile ⇒ the broad default ("allow").
   const bashPosture = prof?.bashPosture ?? "allow";
   // Denied commands (#304/#1916): user + role (minus the flow-granted pushes) + profile denies — the
   // SAME set wired into `$BSC_DENY_BASH` for the bsc-deny hook (see sessionDeniedCommands).
   const denied = sessionDeniedCommands(s, paneId);
-  const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? [])];
+  // A restricted role (#3098) suppresses the Bash baselines, so grant the `Read` tool explicitly —
+  // the curator reads generated component source before harvesting it via `bsc ui set`. Mirrors the
+  // designer hook's `[...write.allow, "Read"]`. The backend dedupes, so a redundant Read is harmless.
+  const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? []), ...(restrictedAllow ? ["Read"] : [])];
   // Confinement self-protection (#1916): the agent must not disable the FS-confinement hook or its own
   // permission set by editing them. Deny the file-write tools on `.claude/**` — the in-repo config the
   // bsc-confine hook itself can't catch (it only blocks paths OUTSIDE the repo root). The app stays
@@ -250,6 +260,10 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
     askToolRules,
     skills,
     bashPosture,
+    // Restricted allow-list (#3098): when set, `build_allow_rules` emits ONLY the wrapped
+    // allowedCommands — no Bash baselines/mandatory tier. True only for a role with a fixed store
+    // surface (curator today); false-y leaves the normal posture-scaled baselines intact.
+    restrictedAllow,
     // Permission posture (#1916): bypass=true ⇒ deny-list (auto-run; the PreToolUse hooks gate); false ⇒
     // allow-list (Claude's `default` mode — require approval). User-toggled in Settings; default true.
     bypass: s.bypassPermissions,

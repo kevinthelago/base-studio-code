@@ -177,8 +177,9 @@ export function hasScopedWriteCarveOut(cap: RoleCapability): boolean {
  *  component store + `bsc ui doctor --fix` to prune/merge) and `bsc graph` (harvest + `bsc graph
  *  curate --apply` for the algorithms graph). This is the FLEET-launch path; the standing-tab sessions
  *  (designer/librarian/architect) instead pin their WHOLE surface via `restrictedAllow` in their own
- *  launch hooks. Tightening the curator to `restrictedAllow` (these two as its ONLY surface) is the
- *  follow-up P2b-2 — here they layer ON TOP of the baseline tiers. */
+ *  launch hooks. A non-empty entry ALSO drives `restrictedAllow` on the fleet launch (#3098): the
+ *  wrapped commands become the session's ONLY auto-run Bash surface (the baseline tiers are
+ *  suppressed), so the curator is as tightly scoped as the standing restricted sessions. */
 const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> = {
   curator: ["bsc ui", "bsc graph"],
 };
