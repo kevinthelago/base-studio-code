@@ -10,6 +10,9 @@
 // + syntax gates yet produces no output, #3026) · unresolvable-import (a module imports
 // something the preview can't resolve: a bare npm package not in the import-map (#2934) OR an internal
 // `@/…`/relative import matching no kit component or runtime module (#2954) — throws at preview time) ·
+// reimplementation (an own-source component that DECLARES a symbol re-coding a node that already exists in
+// the library — an inline `function fibonacci` while `@bsc/algorithms/fibonacci` exists — instead of
+// importing it; the "compose, don't recreate" guardrail, #3118) ·
 // orphan (isolated, never-
 // referenced primitive/composite) · unwired-prop (declares props its own source never references — a
 // declared interface that does nothing, #2924) · phantom-compose (a user component declares `composes`
@@ -25,7 +28,7 @@ import reactUiArtifact from "@data/components/react-ui.json";
 import previewImportmap from "@data/ui/preview-importmap.json";
 import { buildComposesEdges } from "./compositionLayout";
 import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, type KitArtifact } from "./componentPreview";
-import { libraryModuleResolver } from "./libraryModules";
+import { libraryModuleResolver, libraryReimplTargets } from "./libraryModules";
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
 import type { ComponentRecord, PropSpec } from "./model";
 
@@ -196,7 +199,7 @@ const INTERNAL_TARGETS = new Set<string>([
 
 export type HealthCategory =
   | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "self-reference" | "unresolvable-import"
-  | "orphan" | "unwired-prop" | "phantom-compose" | "slot-shell";
+  | "reimplementation" | "orphan" | "unwired-prop" | "phantom-compose" | "slot-shell";
 
 /** Category → severity (higher = worse); drives ranking + which badge wins on a multi-flagged node.
  *  `unresolvable-import` (3) is a real defect — the component throws at preview time (a bare import the
@@ -210,6 +213,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "no-implementation": 3,
   "self-reference": 3,
   "unresolvable-import": 3,
+  reimplementation: 3,
   orphan: 2,
   "unwired-prop": 2,
   "phantom-compose": 2,
@@ -373,6 +377,30 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
     if (internal.length) reasons.push(`${fmtSpecs(internal)} (no such module in the kit or its runtime closure)`);
     findings.push({ category: "unresolvable-import", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
       why: `${c.name} imports ${reasons.join("; ")} — the preview can't resolve it, so it throws "module not found" when rendered` });
+  }
+
+  // reimplementation — the "compose, don't recreate" guardrail (#3118, epic #3114). An own-source
+  // component that DECLARES a symbol whose name EXACTLY matches an existing LIBRARY ALGORITHM is RE-CODING
+  // what it could import via `@bsc/algorithms/…` — an inline `function fibonacci` while
+  // `@bsc/algorithms/fibonacci` already exists. #3116 made those cross-graph references resolvable +
+  // vendorable (the preview runs the library impl with no inline copy); this closes the loop by steering
+  // the designer to compose the ONE canonical node instead of forking it. ALGORITHMS-ONLY by design (see
+  // `libraryReimplTargets`): sounds are excluded — a cue id like `click` collides with common handler
+  // names, and you don't re-code a cue as a function. Conservative to keep false positives out (worse than
+  // a miss here): EXACT whole-identifier match only (`declaresSymbol`), scanned on the source the preview
+  // actually builds (`ownModuleSource`), and SKIPPED when the component already imports that
+  // `@bsc/<segment>/<name>` node (it's already composing, not recreating). Rust twin: graph_health.rs.
+  const reimplTargets = libraryReimplTargets();
+  for (const c of comps) {
+    const src = ownModuleSource(c, comps);
+    if (!src) continue;
+    const specs = new Set(importSpecifiers(src));
+    const recoded = reimplTargets.filter((t) => declaresSymbol(src, t.name) && !specs.has(t.importSpec));
+    if (recoded.length === 0) continue;
+    const list = recoded.map((t) => `\`${t.name}\` (import \`${t.importSpec}\`)`).join(", ");
+    const one = recoded.length === 1;
+    findings.push({ category: "reimplementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
+      why: `${c.name} re-codes ${one ? "a library node that already exists" : "library nodes that already exist"}: ${list} — compose ${one ? "it" : "them"} from the library instead of re-coding (compose, don't recreate)` });
   }
 
   // unwired-prop — a component that declares props its own source never references (a declared interface

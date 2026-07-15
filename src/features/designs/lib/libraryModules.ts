@@ -19,7 +19,7 @@
 // Pure + React-free. The default lookups read the packaged seeds ({@link KNOWLEDGE} / {@link BUILTIN_KITS});
 // the mechanism is param-injected into the pure `componentPreviewFiles` so that module never imports a store.
 import { makeUrnResolver, type NodeLookup, type ResolvedNode, type UrnResolver } from "@/shared/lib/graph/crossGraph";
-import { formatNodeUrn, parseLibrarySpec, type NodeGraph } from "@/shared/lib/graph/nodeUrn";
+import { formatNodeUrn, parseLibrarySpec, LIBRARY_ROOT, LIBRARY_SEGMENT, type NodeGraph } from "@/shared/lib/graph/nodeUrn";
 import { KNOWLEDGE, algoNodeLookup } from "@/features/algorithms";
 import { BUILTIN_KITS, STARTER_KIT, soundNodeLookup } from "@/features/sounds";
 import type { LibraryModuleResolver } from "./componentPreview";
@@ -85,4 +85,62 @@ export const libraryModuleResolver: LibraryModuleResolver = (spec: string) => {
 function ensureExport(code: string, name: string): string {
   if (/\bexport\b/.test(code)) return code;
   return `${code.replace(/\s*$/, "")}\nexport { ${name} };\n`;
+}
+
+/** One LIBRARY NODE a Design Studio component could RE-CODE instead of importing (#3118, epic #3114) — a
+ *  candidate for the "compose, don't recreate" guardrail. `name` is the exact identifier a
+ *  reimplementation would DECLARE (an algorithm's bare name); `segment` is the `@bsc/<segment>` import
+ *  root the node lives under (always `algorithms` — see {@link libraryReimplTargets}); `importSpec` is the
+ *  exact `@bsc/…` library import to compose instead. */
+export interface LibraryReimplTarget {
+  /** The identifier a reimplementation would declare — the match key against a declared symbol. */
+  name: string;
+  /** The node's `@bsc/<segment>` import root — `algorithms` (the only reimplementation segment). */
+  segment: string;
+  /** The exact library import to compose instead — `@bsc/<segment>/<name>`. */
+  importSpec: string;
+}
+
+/** Is `s` a single valid JS identifier (so it COULD be a declared symbol)? Excludes empty, a leading
+ *  digit, and any non-`[A-Za-z0-9_$]` char — so a library name that can never appear as `function <name>`
+ *  (an extension-bearing algo id like `fibonacci.ts`) is not a reimplementation candidate. Kept in
+ *  lockstep with the Rust twin `is_js_identifier`. */
+function isJsIdentifier(s: string): boolean {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(s);
+}
+
+/**
+ * The library nodes a component could RE-CODE (#3118) — the TYPESCRIPT algorithm kit's algorithm impls,
+ * matched by their bare NAME. A node is listed IFF `@bsc/algorithms/<name>` resolves (via
+ * {@link resolveLibrarySpec}), so the guardrail only ever steers to a real, vendorable library node.
+ *
+ * ALGORITHMS-ONLY BY DESIGN. Sounds are DELIBERATELY excluded even though `@bsc/sounds/<id>` resolves +
+ * vendors (#3117 — that import path stays fully intact): a sound cue/voice id (`click`, `toggle`, `error`,
+ * `success`, `pop`, `tick`, …) collides with extremely common handler/function names, so a component that
+ * legitimately declares `function click()` would be wrongly flagged — and you don't "re-code" a cue as a
+ * function anyway (the asymmetry: you inline an ALGORITHM like fibonacci/dijkstra, not a sound). The value
+ * is asymmetric and the false-positive cost high, so the reimplementation detector matches algorithms only.
+ *
+ * Excluded from the algorithm set too: a primitive descriptor (a language built-in / raw source —
+ * DESCRIBED, not re-coded, #2972; carries no `code`) and a non-identifier name (which can never be a
+ * declared symbol). Pure; reads the packaged seed. Deduped by `importSpec`. Rust twin: `reimpl_targets`.
+ */
+export function libraryReimplTargets(): LibraryReimplTarget[] {
+  const out: LibraryReimplTarget[] = [];
+  const seen = new Set<string>();
+  const add = (name: string, segment: string) => {
+    if (!isJsIdentifier(name)) return;
+    const importSpec = `${LIBRARY_ROOT}/${segment}/${name}`;
+    if (seen.has(importSpec)) return;
+    seen.add(importSpec);
+    out.push({ name, segment, importSpec });
+  };
+  // Algorithms only (see the ALGORITHMS-ONLY note above): the TS kit's algorithm impls that ship real,
+  // reusable `code` (a primitive is a language built-in — DESCRIBED, not re-coded, #2972 — so it has no
+  // `code` and is excluded). Matched by the bare NAME a reimplementation declares (`fibonacci`), not the
+  // extension-bearing id (`fibonacci.ts`).
+  for (const im of KNOWLEDGE.implementations) {
+    if (im.tech === "typescript" && im.role === "algorithm" && im.code?.trim()) add(im.name, LIBRARY_SEGMENT.algo);
+  }
+  return out;
 }
