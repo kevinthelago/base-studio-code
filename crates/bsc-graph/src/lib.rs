@@ -77,6 +77,40 @@ pub fn save(g: &Value) -> Result<(), String> {
 
 // ── the per-language implementation tier (#2863/#2958) — a node IS its implementation ──
 
+/// The typed shape of a library implementation — the Rust mirror of the frontend `AlgoImpl` interface
+/// (`src/features/algorithms/lib/knowledge.ts`). The on-disk store is untyped JSON (a `serde_json::Value`)
+/// so unknown keys always round-trip; this struct documents the contract AND drives the serde round-trip
+/// tests. The `domain` + `tags` facets (#3120) are ADDITIVE: `#[serde(default, skip_serializing_if …)]`
+/// means an impl authored before the facet existed deserializes cleanly (domain `None`, tags empty) and
+/// re-serializes UNCHANGED (no empty `domain`/`tags` keys appear), so existing seed JSON is untouched.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AlgoImpl {
+    /// `<name>.<ext>` (algorithm) or `<tech>.<name>` (primitive).
+    pub id: String,
+    /// The language kit — `"typescript"` | `"rust"`.
+    pub tech: String,
+    /// The tier (#2863) — `"primitive"` | `"algorithm"`.
+    pub role: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// OTHER same-tech impl ids this builds on. Always emitted (a required contract field), defaulting to
+    /// `[]` when a source JSON omits it.
+    #[serde(default)]
+    pub composes: Vec<String>,
+    /// A primitive's std reference (`std::vec::Vec`); algorithms leave it unset (#2972).
+    #[serde(default, rename = "ref", skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// The DOMAIN facet (#3120) — the cross-language collection this impl belongs to (e.g. "logistics").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+    /// Free-form tags (#3120) — additive keywords for cross-cutting collections.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+}
+
 /// The implementation objects of the runtime graph (store-or-seed).
 pub fn implementations() -> Vec<Value> {
     implementations_of(&load())
@@ -85,6 +119,12 @@ pub fn implementations() -> Vec<Value> {
 /// The implementation objects of `g`.
 pub fn implementations_of(g: &Value) -> Vec<Value> {
     g.get("implementations").and_then(Value::as_array).cloned().unwrap_or_default()
+}
+
+/// Whether `im` belongs to `domain` (#3120) — the predicate behind `bsc graph impl list --domain`. An
+/// impl with no `domain` never matches, so the filter is purely additive (it hides only the untagged).
+pub fn impl_in_domain(im: &Value, domain: &str) -> bool {
+    im.get("domain").and_then(Value::as_str) == Some(domain)
 }
 
 // ── mutators (#2853) — pure over `&mut` the graph document; the CLI does load → mutate → save ──
@@ -281,5 +321,79 @@ mod tests {
             "an absent store reads the seed",
         );
         let _ = std::fs::remove_file(&tmp);
+    }
+
+    // ── #3120 domain facet ──
+
+    #[test]
+    fn algo_impl_without_domain_or_tags_deserializes_and_round_trips_unchanged() {
+        // Backward compat: an impl authored before the facet — no `domain`/`tags` — deserializes with the
+        // facet ABSENT (domain None, tags empty), and re-serializes WITHOUT gaining empty facet keys, so
+        // existing seed JSON is untouched.
+        let json = serde_json::json!({
+            "id": "merge.rs", "tech": "rust", "role": "algorithm", "name": "merge",
+            "summary": "Interleave two sorted slices.", "composes": ["rust.vec"], "code": "// merge"
+        });
+        let im: AlgoImpl = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(im.domain, None, "no domain when the JSON omits it");
+        assert!(im.tags.is_empty(), "tags default empty when the JSON omits them");
+        let back = serde_json::to_value(&im).unwrap();
+        assert!(back.get("domain").is_none(), "no empty `domain` key is emitted");
+        assert!(back.get("tags").is_none(), "no empty `tags` key is emitted");
+        assert_eq!(back, json, "the facet-less impl round-trips unchanged");
+    }
+
+    #[test]
+    fn algo_impl_carries_the_domain_and_tags_facets_when_present() {
+        let json = serde_json::json!({
+            "id": "dijkstra.rs", "tech": "rust", "role": "algorithm", "name": "dijkstra",
+            "composes": [], "code": "// dijkstra", "domain": "logistics", "tags": ["graph", "routing"]
+        });
+        let im: AlgoImpl = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(im.domain.as_deref(), Some("logistics"));
+        assert_eq!(im.tags, ["graph", "routing"]);
+        assert_eq!(serde_json::to_value(&im).unwrap(), json, "the facets round-trip");
+    }
+
+    #[test]
+    fn set_impl_persists_the_domain_facet_through_the_store() {
+        // `bsc graph impl set --domain` writes `domain`/`tags` onto the impl; save→load preserves them.
+        let mut g = seed();
+        let inserted = set_impl(&mut g, serde_json::json!({
+            "id": "dijkstra.rs", "tech": "rust", "role": "algorithm", "name": "dijkstra",
+            "composes": [], "code": "// dijkstra", "domain": "logistics", "tags": ["graph"]
+        })).unwrap();
+        assert!(!inserted, "a new impl inserts");
+        let stored = implementations_of(&g).into_iter().find(|im| im["id"] == "dijkstra.rs").unwrap();
+        assert_eq!(stored["domain"], "logistics");
+        assert_eq!(stored["tags"], serde_json::json!(["graph"]));
+
+        let tmp = std::env::temp_dir().join(format!(
+            "bsc-graph-domain-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
+        ));
+        save_at(&tmp, &g).unwrap();
+        let reloaded = implementations_of(&load_at(&tmp)).into_iter().find(|im| im["id"] == "dijkstra.rs").unwrap();
+        assert_eq!(reloaded["domain"], "logistics", "the domain survives a save/load round-trip");
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn impl_in_domain_filters_the_list_and_ignores_untagged_impls() {
+        // The predicate behind `impl list --domain` — matches only impls tagged with that domain, ACROSS
+        // languages, and never the untagged seed impls (so the filter is purely additive).
+        let mut g = seed();
+        set_impl(&mut g, serde_json::json!({ "id": "dijkstra.rs", "tech": "rust", "role": "algorithm", "name": "dijkstra", "composes": [], "code": "//", "domain": "logistics" })).unwrap();
+        set_impl(&mut g, serde_json::json!({ "id": "route.ts", "tech": "typescript", "role": "algorithm", "name": "route", "composes": [], "code": "//", "domain": "logistics" })).unwrap();
+        set_impl(&mut g, serde_json::json!({ "id": "blur.ts", "tech": "typescript", "role": "algorithm", "name": "blur", "composes": [], "code": "//", "domain": "graphics" })).unwrap();
+
+        let logistics: Vec<Value> = implementations_of(&g).into_iter().filter(|im| impl_in_domain(im, "logistics")).collect();
+        assert_eq!(logistics.len(), 2, "the logistics collection cross-cuts language (rust + typescript)");
+        assert!(logistics.iter().all(|im| im["domain"] == "logistics"));
+        assert_eq!(implementations_of(&g).into_iter().filter(|im| impl_in_domain(im, "graphics")).count(), 1);
+        // A seed impl (no domain) is never in a domain collection; an unknown domain matches nothing.
+        assert!(!impl_in_domain(&serde_json::json!({ "id": "merge.rs" }), "logistics"), "an untagged impl never matches");
+        assert_eq!(implementations_of(&g).into_iter().filter(|im| impl_in_domain(im, "nope")).count(), 0);
     }
 }

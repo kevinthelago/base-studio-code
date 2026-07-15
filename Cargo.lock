@@ -837,6 +837,7 @@ name = "bsc-graph"
 version = "0.1.0"
 dependencies = [
  "bsc-util",
+ "serde",
  "serde_json",
  "tree-sitter",
  "tree-sitter-rust",
