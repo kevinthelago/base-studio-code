@@ -54,6 +54,18 @@ describe("built-in orgs (#2193)", () => {
     expect(fleet.positions.some((p) => p.kind === "resource")).toBe(true);
   });
 
+  it("Fleet Alpha is the complete optimal roster — every seedable role-actor is a member (#3104)", () => {
+    const fleet = makeBuiltinOrgs().find((o) => o.id === "org-default-fleet")!;
+    const personaIds = new Set(fleet.positions.filter((p) => p.kind === "agent").map((p) => p.personaId));
+    // The team drives the fleet (#3101): each lifecycle role-actor the launch seeds from a team must be
+    // a member of the packaged default team, so a standard project spins up the full roster.
+    for (const id of ["persona-curator", "persona-documentor", "persona-reviewer", "persona-tester", "persona-juror", "persona-issuer"]) {
+      expect(personaIds.has(id), `default team is missing ${id}`).toBe(true);
+    }
+    // Still structurally clean with the added positions + steward/oversee edges (no dangling/unknown).
+    expect(orgIssues(fleet)).toEqual([]);
+  });
+
   it("every built-in org is structurally clean — no dangling edges / unknown archetypes", () => {
     for (const o of makeBuiltinOrgs()) {
       expect(orgIssues(o), `${o.id} has structural issues`).toEqual([]);
