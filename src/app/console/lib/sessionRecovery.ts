@@ -5,6 +5,7 @@
 // restored, per #1176).
 import { invoke } from "@tauri-apps/api/core";
 import { paneIdFor, parsePaneIdentity, isPlanningPaneId, type PaneIdentityKind } from "./paneIdentity";
+import { isStudioSessionPaneId } from "@/shared/lib/session/systemSessions";
 
 /** A session reconstructed by the backend from durable sources (#1266 S2 `discover_sessions`). */
 export interface DiscoveredSession {
@@ -72,13 +73,16 @@ export function openPaneIds(tabs: ReconcileTab[]): Set<string> {
  * `reapOnly` flag. Reap-only sessions are killed, never restored: manual scratch shells (#1176)
  * and `orphaned` shells of a deleted project (unrestorable — no plan, no project, #1279). The
  * dedicated PLANNER pane (`planning_<key>`) is dropped entirely — a planning session is re-entered
- * from the Projects page, not the recovery banner (#1579). This is the gap the recovery UI presents
+ * from the Projects page, not the recovery banner (#1579). The app-owned STUDIO sessions (designer /
+ * librarian / architect, `isStudioSessionPaneId`, #3137) are dropped for the same reason: their ids share
+ * the `<key>:<tail>` worker grammar, so without this they'd be surfaced as restorable workers, but they're
+ * app-owned singletons re-created when their workspace opens. This is the gap the recovery UI presents
  * for the user to decide on.
  */
 export function reconcileSessions(discovered: DiscoveredSession[], tabs: ReconcileTab[]): RecoverableSession[] {
   const open = openPaneIds(tabs);
   return discovered
-    .filter((d) => !open.has(d.paneId) && !isPlanningPaneId(d.paneId))
+    .filter((d) => !open.has(d.paneId) && !isPlanningPaneId(d.paneId) && !isStudioSessionPaneId(d.paneId))
     .map((d) => {
       const kind = parsePaneIdentity(d.paneId)?.kind ?? "unknown";
       return { ...d, kind, reapOnly: kind === "manual" || d.status === "orphaned" };
