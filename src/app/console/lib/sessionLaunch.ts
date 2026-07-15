@@ -14,7 +14,7 @@ import { resolveMcpServers, toBscAgentMcp, resolveHooks, toSessionPayloads } fro
 import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/skills";
 import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
-import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes } from "@/shared/lib/session/sessionRoles";
+import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands } from "@/shared/lib/session/sessionRoles";
 import { resolveProfileSettings } from "@/features/security";
 import { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner";
 import type { ConsoleProvider, ProviderLaunchConfig } from "@/app/console/lib/providers";
@@ -166,7 +166,10 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
   // Per-agent flow (#297): narrow the GitHub-propagation writes per the stream's push policy + gate.
   const paneFlow = s.paneFlows[paneId];
   const flowRules = flowPermissionRules(paneFlow);
-  const allowedCommands = prof?.allowedCommands ?? [];
+  // The profile's auto-run commands, plus the role's fixed store-CLI surface (#3095): a curator pane
+  // always auto-runs `bsc ui`/`bsc graph` (its harvest + graph-optimize channels) whether or not a
+  // profile assigned them. Empty for every other role, so this is a no-op elsewhere.
+  const allowedCommands = [...(prof?.allowedCommands ?? []), ...restrictedRoleCommands(role)];
   // Shell posture (#1572): the profile's bash tier scales the backend's auto-approve baseline.
   // No profile ⇒ the broad default ("allow").
   const bashPosture = prof?.bashPosture ?? "allow";
