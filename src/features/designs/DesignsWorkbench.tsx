@@ -581,6 +581,7 @@ const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string }> = {
   "no-implementation": { glyph: "∅", label: "no buildable implementation — a spec, not code" },
   "self-reference": { glyph: "↺", label: "self-referential stub — only renders itself; supply its real body" },
   "unresolvable-import": { glyph: "↯", label: "imports a package the preview can't resolve — throws at preview time" },
+  reimplementation: { glyph: "♻", label: "reimplements a library node — compose it via @bsc/… instead of re-coding it" },
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
   "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
   "phantom-compose": { glyph: "⇢", label: "phantom composes — declares a composition its source never renders (a false graph edge)" },
