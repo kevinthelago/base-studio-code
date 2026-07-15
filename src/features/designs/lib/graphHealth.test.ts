@@ -219,6 +219,59 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(analyzeGraphHealth([chart])).toEqual([]);
   });
 
+  // ── reimplementation guardrail — "compose, don't recreate" (#3118) ──────────────────────────────
+
+  it("flags an inline reimplementation of a library algorithm as reimplementation (#3118)", () => {
+    // An own-source component declaring `fibonacci` (no @bsc/algorithms/fibonacci import) re-codes the
+    // library algorithm. used>0 so no orphan; renders no JSX so no self-reference — ONLY reimplementation.
+    const widget = comp("FibWidget", "composite", 2, [], {
+      source: "export function fibonacci(n){ return n < 2 ? n : fibonacci(n-1) + fibonacci(n-2); }",
+    });
+    const fs = analyzeGraphHealth([widget]);
+    expect(fs.map((f) => f.category)).toEqual(["reimplementation"]);
+    expect(fs[0].severity).toBe(3);
+    expect(fs[0].nodeNames).toEqual(["FibWidget"]);
+    expect(fs[0].why).toContain("fibonacci"); // names the re-coded symbol
+    expect(fs[0].why).toContain("@bsc/algorithms/fibonacci"); // names the library import to compose instead
+  });
+
+  it("does NOT flag a component that imports the library algorithm (#3118)", () => {
+    // Imports + uses the library node (declares no local `fibonacci`) — already composing, and the library
+    // ref resolves, so it's clean overall.
+    const card = comp("FibCard", "composite", 2, [], {
+      source: 'import { fibonacci } from "@bsc/algorithms/fibonacci";\nexport function FibCard(){ return fibonacci(10); }',
+    });
+    expect(analyzeGraphHealth([card])).toEqual([]);
+  });
+
+  it("does NOT flag a declaration matching no library node (#3118)", () => {
+    // `Sparkline` is no library node → never a reimplementation.
+    const sp = comp("Sparkline", "composite", 2, [], { source: "export function Sparkline(){ return null; }" });
+    expect(analyzeGraphHealth([sp]).map((f) => f.category)).not.toContain("reimplementation");
+  });
+
+  it("does NOT flag a reimplementation when the component also imports the node (#3118)", () => {
+    // Degenerate belt-and-suspenders: importing @bsc/algorithms/fibonacci suppresses the flag even if a
+    // local `fibonacci` is also declared (the component is composing, not recreating).
+    const shadow = comp("FibShadow", "composite", 2, [], {
+      source: 'import { fibonacci } from "@bsc/algorithms/fibonacci";\nexport function fibonacci(n){ return n; }',
+    });
+    expect(analyzeGraphHealth([shadow]).map((f) => f.category)).not.toContain("reimplementation");
+  });
+
+  it("does NOT flag a symbol matching a SOUND cue id — the detector is algorithms-only (#3118)", () => {
+    // Sounds are DELIBERATELY excluded: cue/voice ids (`click`, `toggle`, `error`, …) collide with
+    // extremely common handler/function names, so `function click()` must NOT be flagged — and you don't
+    // re-code a cue as a function anyway. (`@bsc/sounds/…` import resolution + vendoring, #3117, is untouched.)
+    const fx = comp("ClickFx", "composite", 2, [], { source: "export function click(){ /* a click handler */ return null; }" });
+    expect(analyzeGraphHealth([fx]).map((f) => f.category)).not.toContain("reimplementation");
+  });
+
+  it("nodeHealth badges a reimplementation node (#3118)", () => {
+    const widget = comp("FibWidget", "composite", 2, [], { source: "export function fibonacci(n){ return n; }" });
+    expect(nodeHealth([widget]).get("FibWidget")).toBe("reimplementation");
+  });
+
   it("flags a component importing a nonexistent internal module as unresolvable-import (#2954)", () => {
     // The invisible `Code`→`../typography/type` / `Skeleton`→`./shimmer` class — an internal import
     // (`@/…` OR relative) resolving to no kit component or runtime module, now surfaced by the doctor.

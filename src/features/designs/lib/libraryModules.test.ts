@@ -1,7 +1,7 @@
 // Library-module resolution (#3116) — the Design Studio's bridge from a `@bsc/algorithms/…` import to the
 // resolved node + the vendorable preview module. Reads the PACKAGED seed (the flagship fibonacci.ts).
 import { describe, it, expect } from "vitest";
-import { resolveLibrarySpec, libraryModuleResolver } from "./libraryModules";
+import { resolveLibrarySpec, libraryModuleResolver, libraryReimplTargets } from "./libraryModules";
 
 describe("resolveLibrarySpec (#3116)", () => {
   it("resolves @bsc/algorithms/fibonacci against the TypeScript algorithm kit", () => {
@@ -86,5 +86,28 @@ describe("libraryModuleResolver — sounds (#3117)", () => {
   it("returns null for a sound primitive (no player) and a missing cue", () => {
     expect(libraryModuleResolver("@bsc/sounds/sine")).toBeNull(); // a primitive descriptor — no code
     expect(libraryModuleResolver("@bsc/sounds/nope")).toBeNull();
+  });
+});
+
+describe("libraryReimplTargets (#3118)", () => {
+  const targets = libraryReimplTargets();
+
+  it("lists the TS algorithm by bare name — ALGORITHMS-ONLY, sounds excluded", () => {
+    expect(targets).toContainEqual({ name: "fibonacci", segment: "algorithms", importSpec: "@bsc/algorithms/fibonacci" });
+    // Sounds are deliberately excluded (#3118): every candidate is an algorithm, and a sound cue id
+    // (`click`) — which collides with common handler names — is NOT a candidate.
+    expect(targets.every((t) => t.segment === "algorithms")).toBe(true);
+    expect(targets.some((t) => t.name === "click")).toBe(false);
+  });
+
+  it("excludes the algo id's extension form (fibonacci.ts) — only declarable identifiers", () => {
+    // The extension-bearing algo id can never be a `function <name>` declaration.
+    expect(targets.some((t) => t.name === "fibonacci.ts")).toBe(false);
+    expect(targets.some((t) => t.name.includes("."))).toBe(false);
+  });
+
+  it("only lists names that actually resolve to a library node", () => {
+    // Every candidate is a real, vendorable node — the guardrail never steers to a phantom import.
+    for (const t of targets) expect(resolveLibrarySpec(t.importSpec)).not.toBeNull();
   });
 });
