@@ -358,10 +358,39 @@ fn resolves_internal(spec: &str, from_rel: &str, targets: &BTreeSet<String>) -> 
 /// Buildable iff: its `src` is a packaged-artifact component shipping a real `source` (a BUILT-IN — its
 /// code lives in the artifact even though the store strips it, #2794), OR it carries its own non-empty
 /// `source`, OR its `srcText` is a real module rather than a usage snippet (`looks_buildable_module`).
-fn is_buildable(node: &Node, buildable: &BTreeSet<String>) -> bool {
+fn is_buildable(node: &Node, buildable: &BTreeSet<String>, kit_targets: &BTreeSet<String>) -> bool {
     (!node.src.is_empty() && buildable.contains(&node.src))
         || !node.source.trim().is_empty()
-        || looks_buildable_module(&node.src_text)
+        || is_preview_buildable(&node.src_text, &node.src, kit_targets)
+}
+
+/// Sibling-aware buildability of a preview MODULE (#3112) — the Rust mirror of `isPreviewBuildable`
+/// (componentPreview.ts). Like `looks_buildable_module`, but an internal (`@/`, `./`) import is ALLOWED
+/// when it resolves to a sibling in `kit_targets` (the kit's component `src` paths); an internal import
+/// that resolves to NOTHING still fails, as do a `…` placeholder and a missing `export`.
+fn is_preview_buildable(src_text: &str, from_rel: &str, kit_targets: &BTreeSet<String>) -> bool {
+    let s = src_text.trim();
+    if s.is_empty() || !contains_word(s, "export") || s.contains('…') {
+        return false;
+    }
+    import_specifiers(s)
+        .iter()
+        .all(|spec| !is_internal_specifier(spec) || resolves_internal(spec, from_rel, kit_targets))
+}
+
+/// The component's OWN module source — its `source`, else a `srcText` that is a real module — or `None`
+/// when neither (a built-in whose store `source` is stripped, #2794, or a usage-snippet spec). `kit_targets`
+/// (the kit's component `src` paths) makes a `srcText` that imports SIBLINGS count as a real (composing)
+/// module (#3112), so the health checks scan exactly the source the preview builds. Mirrors `ownModuleSource`
+/// (graphHealth.ts).
+fn own_module_source<'a>(node: &'a Node, kit_targets: &BTreeSet<String>) -> Option<&'a str> {
+    if !node.source.trim().is_empty() {
+        return Some(node.source.as_str());
+    }
+    if is_preview_buildable(&node.src_text, &node.src, kit_targets) {
+        return Some(node.src_text.as_str());
+    }
+    None
 }
 
 /// Rust port of `looksBuildableModule` (componentPreview.ts, #2828): does `src_text` look like a
@@ -445,14 +474,10 @@ fn jsx_tag_names(source: &str) -> BTreeSet<String> {
 /// ONLY element it renders is itself (`<Name/>`). It passes `looks_buildable_module` (it has an `export`)
 /// so `no-implementation` is blind to it, and it's syntactically valid so the write-time gate accepts it —
 /// but it produces no real output and recurses forever. Mirrors `isSelfReferentialStub` (graphHealth.ts).
-fn is_self_referential_stub(node: &Node) -> bool {
-    // The component's OWN module source: its `source`, else a `srcText` that is a real module. A
-    // non-module usage snippet is already `no-implementation`; a built-in's stripped source isn't ours.
-    let src = if !node.source.trim().is_empty() {
-        node.source.as_str()
-    } else if looks_buildable_module(&node.src_text) {
-        node.src_text.as_str()
-    } else {
+fn is_self_referential_stub(node: &Node, kit_targets: &BTreeSet<String>) -> bool {
+    // The component's OWN module source (sibling-aware, #3112). A non-module usage snippet is already
+    // `no-implementation`; a built-in's stripped source isn't ours.
+    let Some(src) = own_module_source(node, kit_targets) else {
         return false;
     };
     if node.name.is_empty() || !declares_symbol(src, &node.name) {
@@ -643,6 +668,11 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
     let node_by_id: BTreeMap<&str, &&Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
     let name_of = |id: &str| node_by_id.get(id).map(|n| n.name.clone()).unwrap_or_default();
 
+    // The kit's component `src` paths — what a user component's internal (`@/`, `./`) import can resolve
+    // to, so a srcText that COMPOSES a sibling builds and is scanned as the module it is (#3112).
+    let kit_targets: BTreeSet<String> =
+        nodes.iter().map(|n| n.src.clone()).filter(|s| !s.is_empty()).collect();
+
     // ── cycles (severity 4) — a `composes` loop; report each SCC of size > 1 (or a self-loop).
     for scc in strongly_connected(nodes, &out_ids) {
         let is_cycle = scc.len() > 1 || out_ids.get(scc[0]).is_some_and(|d| d.contains(&scc[0]));
@@ -668,7 +698,7 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
     // authored spec, e.g. a `page` like GraphExplorerPage). Independent of used/role/degree — an
     // unrenderable node is always flagged. Mirrors the frontend `analyzeGraphHealth` (graphHealth.ts).
     for n in nodes {
-        if is_buildable(n, buildable) {
+        if is_buildable(n, buildable, &kit_targets) {
             continue;
         }
         out.push(Finding {
@@ -693,7 +723,7 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
     // it) and the write-time syntax gate (it's valid), yet it produces no output and recurses forever —
     // the class the designer hit authoring D3 components as self-calls (#3026).
     for n in nodes {
-        if !is_self_referential_stub(n) {
+        if !is_self_referential_stub(n, &kit_targets) {
             continue;
         }
         out.push(Finding {
@@ -827,11 +857,7 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
     let mut targets = internal_targets().clone();
     targets.extend(nodes.iter().map(|n| n.src.clone()).filter(|s| !s.is_empty()));
     for n in nodes {
-        let src = if !n.source.trim().is_empty() {
-            n.source.as_str()
-        } else if looks_buildable_module(&n.src_text) {
-            n.src_text.as_str()
-        } else {
+        let Some(src) = own_module_source(n, &kit_targets) else {
             continue;
         };
         let resolvable = resolvable_specifiers();
@@ -885,11 +911,7 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
     // or a spec (no buildable module) is skipped. Guard: require ≥1 prop REFERENCED (so it uses NAMED
     // props — not a `{...props}` spreader) before flagging the unreferenced ones. Mirrors `graphHealth.ts`.
     for n in nodes {
-        let src = if !n.source.trim().is_empty() {
-            n.source.as_str()
-        } else if looks_buildable_module(&n.src_text) {
-            n.src_text.as_str()
-        } else {
+        let Some(src) = own_module_source(n, &kit_targets) else {
             continue;
         };
         if n.props.is_empty() || !n.props.iter().any(|p| contains_word(src, &p.0)) {
@@ -1527,6 +1549,35 @@ mod tests {
             "srcText": "import * as d3 from \"d3\";\nexport function OwnSrcText() { return null; }" });
         let fs = analyze(&[own_source, own_srctext]);
         assert!(fs.iter().all(|f| f.category != "no-implementation"), "own-source/module fixtures build: {fs:?}");
+    }
+
+    #[test]
+    fn a_user_component_that_composes_a_sibling_is_buildable() {
+        // #3112: a user-kit component whose `srcText` imports a SIBLING (by its `src` path) is a real,
+        // buildable module — the preview vendors the sibling — so it is NOT flagged no-implementation, and
+        // its `@/` import resolves to the kit sibling (not unresolvable-import).
+        let frame = json!({ "id": "cf", "name": "ChartFrame", "kitId": "d3", "role": "layout", "used": 1,
+            "composes": [], "src": "d3/ChartFrame.tsx", "source": "",
+            "srcText": "export function ChartFrame() { return null; }" });
+        let bar = json!({ "id": "bar", "name": "BarChart", "kitId": "d3", "role": "composite", "used": 1,
+            "composes": ["ChartFrame"], "src": "d3/BarChart.tsx", "source": "",
+            "srcText": "import { ChartFrame } from \"@/d3/ChartFrame\";\nexport function BarChart() { return <ChartFrame/>; }" });
+        let fs = analyze(&[frame, bar]);
+        assert!(fs.is_empty(), "a composing sibling-importer + its sibling are both clean: {fs:?}");
+    }
+
+    #[test]
+    fn a_user_component_importing_a_missing_sibling_is_not_buildable() {
+        // #3112: an internal import that resolves to NO sibling → not a buildable module → the honest
+        // no-implementation (mirrors `componentPreviewFiles` → null / `isPreviewBuildable` false).
+        let bar = json!({ "id": "bar", "name": "BarChart", "kitId": "d3", "role": "composite", "used": 1,
+            "composes": [], "src": "d3/BarChart.tsx", "source": "",
+            "srcText": "import { Nope } from \"@/d3/Nope\";\nexport function BarChart() { return null; }" });
+        let fs = analyze(&[bar]);
+        assert!(
+            fs.iter().any(|f| f.category == "no-implementation"),
+            "an import resolving to no sibling is not buildable: {fs:?}"
+        );
     }
 
     #[test]
