@@ -55,6 +55,18 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // kit's motion re-renders the preview (the object identity alone isn't a stable dep).
   const kits = useAppStore((s) => s.kits);
   const boundDefs = useMemo(() => resolveComponentAnimations(comp, kits), [comp, kits]);
+  // The other components in this component's kit — its SIBLINGS (#3112). A user-kit component may import
+  // and compose a sibling; `componentPreviewFiles` vendors the ones it imports into the build. A derived
+  // content key (like `animKey`) so editing a sibling's source rebuilds the preview.
+  const allComponents = useAppStore((s) => s.components);
+  const siblings = useMemo(
+    () => allComponents.filter((c) => c.kitId === comp.kitId && c.id !== comp.id),
+    [allComponents, comp.kitId, comp.id],
+  );
+  const siblingsKey = useMemo(
+    () => siblings.map((c) => `${c.src} ${c.source ?? c.srcText ?? ""}`).join(" "),
+    [siblings],
+  );
   // The motion actually played. A try-on ISOLATES the clicked animation — the preview plays ONLY it,
   // so clicking each animation in the menu previews THAT one. Without a try-on the component's full
   // bound motion plays. (Before #3075 the try-on appended to the full bound set, so every click
@@ -82,7 +94,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     setStatus("building");
     setError("");
     /* eslint-enable react-hooks/set-state-in-effect */
-    const build = componentPreviewFiles(comp, ARTIFACT);
+    const build = componentPreviewFiles(comp, ARTIFACT, siblings);
     if (!build) {
       setStatus("error");
       setError(
@@ -120,7 +132,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, animKey, exitKey, themeId, retry]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, siblingsKey, animKey, exitKey, themeId, retry]);
 
   // Surface runtime errors the iframe posts (an exception during the component's own render). Match ONLY
   // this frame's own iframe by source window (#2908) — the on-visit scan now runs its own hidden probe

@@ -50,8 +50,19 @@ export function buildSignature(c: ComponentRecord): string {
 export function scannableComponents(comps: ComponentRecord[], artifact: KitArtifact): ScannableComponent[] {
   const out: ScannableComponent[] = [];
   for (const c of comps) {
-    const build = componentPreviewFiles(c, artifact);
-    if (build) out.push({ id: c.id, sig: buildSignature(c), files: build.files, entry: build.entry });
+    // Same-kit siblings so a composing user component's imported siblings vendor into its build (#3112).
+    const siblings = comps.filter((s) => s.kitId === c.kitId && s.id !== c.id);
+    const build = componentPreviewFiles(c, artifact, siblings);
+    if (!build) continue;
+    // Only VENDORED sibling files add info beyond `buildSignature(c)`: a built-in's whole-artifact file
+    // set isn't record-derived and a non-composing component vendors nothing, so both keep
+    // sig === buildSignature(c) exactly (the pre-#3112 contract); a composer folds in its siblings.
+    const sibSrcs = new Set(siblings.map((s) => s.src).filter(Boolean));
+    const vendored = Object.keys(build.files).filter((k) => sibSrcs.has(k)).sort();
+    const sig = vendored.length
+      ? buildSignature(c) + vendored.map((k) => `${k} ${build.files[k]}`).join("")
+      : buildSignature(c);
+    out.push({ id: c.id, sig, files: build.files, entry: build.entry });
   }
   return out;
 }
