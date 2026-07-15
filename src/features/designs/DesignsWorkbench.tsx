@@ -143,7 +143,15 @@ export function DesignsWorkbench() {
   // focused anything — so the details pane is visible while a node is focused OR being worked on by
   // Claude (#3090), showing what Claude is doing. The graph still marks it `.working` (a distinct pulse),
   // NOT `.on`, so the user-selection and AI-focus signals stay separate.
-  const aiComp = aiFocusedId ? components.find((c) => c.id === aiFocusedId && c.kitId === kitId) ?? null : null;
+  // Dismissing Claude's auto-open (#3109): `deselect` records the AI node id here so the canvas-background
+  // unfocus closes the pane even when it's showing Claude's node, and keeps it closed while Claude stays on
+  // that node. A DIFFERENT node — or clicking the node yourself — re-opens it, so a dismissal silences ONE
+  // node, not Claude. (The activity poll re-emits the same id with new timestamps, but aiFocusedId's VALUE
+  // only changes on a genuinely different node, so this id-compare is stable against the re-emits.)
+  const [dismissedAiId, setDismissedAiId] = useState<string | null>(null);
+  const aiComp = aiFocusedId && aiFocusedId !== dismissedAiId
+    ? components.find((c) => c.id === aiFocusedId && c.kitId === kitId) ?? null
+    : null;
   const focusComp = sel ?? aiComp;
 
   const allVariants = focusComp ? focusComp.variants : [];
@@ -172,9 +180,10 @@ export function DesignsWorkbench() {
                       // already active — the try-on rebuilds the preview).
   };
 
-  // Clicking anything other than a node (the canvas background) unfocuses → hides the Inspector (unless
-  // Claude is working a node) and the graph returns to full-width (#3090).
-  const deselect = () => setCompId(null);
+  // Clicking anything other than a node (the canvas background) unfocuses → hides the Inspector and the
+  // graph returns to full-width (#3090). Also DISMISSES Claude's active node (#3109) so the pane closes
+  // even when it was showing Claude's node — otherwise there'd be no way to unfocus it.
+  const deselect = () => { setCompId(null); setDismissedAiId(aiFocusedId); };
 
   // ── graph layout (#2455) — hierarchical top-down: composers above, dependencies below, role-tier
   // banding for edge-less nodes, `used`-desc ordering within a row. Pure model: lib/compositionLayout.
