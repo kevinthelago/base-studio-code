@@ -193,6 +193,24 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(flagged[0].why).not.toContain("import-map"); // a library miss isn't reported as a bare npm miss
   });
 
+  it("resolves @bsc/sounds/click (not flagged) but flags @bsc/sounds/<missing> (#3117)", () => {
+    // The sounds arm of the third import class: a `@bsc/sounds/<id>` reference matching a real cue is a
+    // resolvable class (the preview vendors a generated player module) — never flagged; a missing one is.
+    const good = comp("PlayBtn", "composite", 2, [], {
+      source: undefined,
+      srcText: 'import { play } from "@bsc/sounds/click";\nexport function PlayBtn(){ return play(); }',
+    });
+    const bad = comp("BadBtn", "composite", 2, [], {
+      source: undefined,
+      srcText: 'import { play } from "@bsc/sounds/nope";\nexport function BadBtn(){ return play(); }',
+    });
+    const flagged = analyzeGraphHealth([good, bad]).filter((f) => f.category === "unresolvable-import");
+    expect(flagged.map((f) => f.nodeNames[0])).toEqual(["BadBtn"]); // only the missing sound ref
+    expect(flagged[0].why).toContain("@bsc/sounds/nope");
+    expect(flagged[0].why).toContain("no matching node in the library");
+    expect(flagged[0].why).not.toContain("import-map");
+  });
+
   it("leaves a normal component (no library import) unaffected by the library check (#3116)", () => {
     const chart = comp("Chart", "composite", 2, [], {
       source: undefined,
