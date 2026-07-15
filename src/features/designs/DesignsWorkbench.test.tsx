@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { DesignsWorkbench } from "./DesignsWorkbench";
 
 // The live preview builds with esbuild-wasm (can't run under jsdom); mock the bundler so the workbench
@@ -268,6 +268,28 @@ describe("selection-driven inspector visibility (#3090, restoring #2705) — vis
     // The graph marks it with the AI `.working` pulse, NOT the user's `.on` ring (the signals stay separate).
     expect(graphNode(working.name).className).toMatch(/\bworking\b/);
     expect(graphNode(working.name).className).not.toMatch(/\bon\b/);
+  });
+
+  it("clicking the canvas background DISMISSES Claude's active node so the pane can be closed (#3109)", () => {
+    const working = SEED_COMPONENTS.filter((c) => c.kitId === SEED_KITS[0].id)[0];
+    useAppStore.setState({ aiFocusedId: working.id });               // Claude's node auto-opens the pane…
+    const { container } = render(<DesignsWorkbench />);
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy();
+    fireEvent.click(canvas(container));                              // …and clicking the canvas unfocuses it
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull(); // dismissed → hidden (#3109)
+    expect(screen.queryByText(`${working.name}.tsx`)).toBeNull();
+  });
+
+  it("after a dismissal, a DIFFERENT node Claude moves to re-opens the inspector (#3109)", () => {
+    const kitComps = SEED_COMPONENTS.filter((c) => c.kitId === SEED_KITS[0].id);
+    const first = kitComps[0], second = kitComps.find((c) => c.id !== first.id)!;
+    useAppStore.setState({ aiFocusedId: first.id });
+    const { container } = render(<DesignsWorkbench />);
+    fireEvent.click(canvas(container));                             // dismiss `first`
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeNull();
+    act(() => { useAppStore.setState({ aiFocusedId: second.id }); }); // Claude moves to a different node
+    expect(container.querySelector('[data-testid="ds-inspector"]')).toBeTruthy(); // re-opens — dismissal was per-node
+    expect(screen.getByText(`${second.name}.tsx`)).toBeTruthy();
   });
 
   it("a user selection takes the Inspector even while Claude works a different node", () => {
