@@ -34,9 +34,11 @@ import { BUILTIN_PERSONAS } from "@/features/personas";
 // whole planner barrel here would cycle (planner → FocusedBodies → @/features/designs → Design
 // Studio → planner). `components` is an exempt importer (#2197) while its restructure lands.
 import { TERM_THEME } from "@/features/planner/session/planningTerminal";
+import { DESIGN_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 
-/** The designer session's stable pane id — one global session, keyed like `<project>:<stream>`. */
-export const DESIGNER_PANE_ID = "design-studio:designer";
+/** The designer session's stable pane id — one global, app-owned session (#3137: the single source of
+ *  truth lives in `systemSessions`, so crash recovery excludes it). */
+export const DESIGNER_PANE_ID = DESIGN_STUDIO_SESSION_ID;
 
 /** The designer's whole command surface: `bsc ui` plus the deprecated `bsc component` alias (#2469),
  *  emitted as the session's ONLY `Bash(<cmd> *)` allows via `restrictedAllow`. */
