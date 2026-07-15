@@ -33,6 +33,7 @@ export {
   DEP_MANIFEST_FILES,
   roleCapability,
   hasScopedWriteCarveOut,
+  restrictedRoleCommands,
 } from "./roleModel";
 
 export type { CommandClass, CommandDecision } from "./commandGate";
