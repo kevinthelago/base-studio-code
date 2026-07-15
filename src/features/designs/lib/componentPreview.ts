@@ -158,20 +158,44 @@ export function isPreviewBuildable(
   return true;
 }
 
+/** The data-state a preview renders in (#3135): `loaded` (demo/populated), `empty` (no data), or
+ *  `loading` (the component's loading/skeleton render). Drives how {@link samplePropValue} fills props. */
+export type PreviewState = "loaded" | "empty" | "loading";
+
+/** Is `p` a LOADING-family boolean — the toggle that puts a component into its loading/skeleton render
+ *  (`loading` / `busy` / `pending` / `isLoading`)? It's ON only in the `loading` state, off otherwise —
+ *  fixing the old "every boolean samples to true" quirk that previewed loading-components as skeletons. */
+function isLoadingProp(p: PropSpec): boolean {
+  const t = (p.type || "").toLowerCase();
+  return (t === "boolean" || t.includes("boolean")) && /^(loading|busy|pending|isloading)$/i.test(p.name);
+}
+
+/** Is `p` a COLLECTION prop — an array of data (`Row[]`, `array`)? The thing `empty` empties and `loaded`
+ *  fills. An OPTIONAL collection is OMITTED in loaded/loading so the component's own demo/default shows
+ *  (the demo-on-undefined convention, #3135); `empty` always passes an explicit `[]`. */
+function isCollectionProp(p: PropSpec): boolean {
+  const t = (p.type || "").toLowerCase();
+  return t.includes("[]") || t.includes("array");
+}
+
 /**
  * A best-effort sample value (as a JS source literal) for a prop, from its (loosely-typed) schema, or
  * `null` to omit it. Enough to render a component whose required props would otherwise be missing —
- * NOT a curated example. `children` is handled by the caller (it becomes the element's child).
+ * NOT a curated example. `children` is handled by the caller (it becomes the element's child). `state`
+ * (#3135) drives the data-state: `loading` turns on a loading-family boolean; `empty` passes an explicit
+ * `[]` for collections; `loaded` (default) omits an OPTIONAL collection so a demo-on-undefined component
+ * shows its demo. A REQUIRED collection always gets `[]` (so the component still renders).
  */
-export function samplePropValue(p: PropSpec): string | null {
+export function samplePropValue(p: PropSpec, state: PreviewState = "loaded"): string | null {
+  if (isLoadingProp(p)) return state === "loading" ? "true" : null;
   const t = (p.type || "").toLowerCase();
   const isFn = t.includes("=>") || t.includes("function") || t.includes("void") || /^on[A-Z]/.test(p.name);
   if (isFn) return "() => {}";
+  if (isCollectionProp(p)) return state === "empty" ? "[]" : p.req ? "[]" : null;
   if (t.includes("reactnode") || t.includes("node")) return JSON.stringify(prettyName(p.name));
   if (t === "string" || t.includes("string")) return JSON.stringify(sampleString(p.name));
   if (t === "number" || t.includes("number")) return numberSample(p.name);
   if (t === "boolean" || t.includes("boolean")) return "true";
-  if (t.includes("[]") || t.includes("array")) return "[]";
   // enum-like unions ("a" | "b") → the first literal.
   const firstLiteral = p.type.match(/"([^"]+)"/);
   if (firstLiteral) return JSON.stringify(firstLiteral[1]);
@@ -212,14 +236,14 @@ function numberSample(name: string): string {
  * sample props. Uses `createElement` (not JSX children) so children/props compose without JSX parsing
  * quirks. Resolves the component export by `name`, falling back to the default export.
  */
-export function bootstrapSource(comp: ComponentRecord, importSpec: string): string {
+export function bootstrapSource(comp: ComponentRecord, importSpec: string, state: PreviewState = "loaded"): string {
   const childText = comp.props.find((p) => p.name === "children")
     ? JSON.stringify(prettyName(comp.name))
     : null;
   const propEntries = comp.props
     .filter((p) => p.name !== "children")
     .map((p) => {
-      const v = samplePropValue(p);
+      const v = samplePropValue(p, state);
       return v == null ? null : `${JSON.stringify(p.name)}: ${v}`;
     })
     .filter(Boolean);
@@ -262,6 +286,7 @@ export function componentPreviewFiles(
   artifact: KitArtifact,
   siblings: readonly ComponentRecord[] = [],
   libResolver?: LibraryModuleResolver,
+  state: PreviewState = "loaded",
 ): ComponentPreviewBuild | null {
   const inArtifact = comp.src ? artifact.components.find((c) => c.src === comp.src && c.source) : undefined;
 
@@ -271,7 +296,7 @@ export function componentPreviewFiles(
     for (const c of artifact.components) if (c.source) files[c.src] = c.source;
     vendorLibraryModules(files, libResolver); // #3116: any `@bsc/…` a built-in references
     const importSpec = `@/${stripExt(inArtifact.src)}`;
-    files[PREVIEW_ENTRY] = bootstrapSource(comp, importSpec);
+    files[PREVIEW_ENTRY] = bootstrapSource(comp, importSpec, state);
     return { files, entry: PREVIEW_ENTRY };
   }
 
@@ -320,7 +345,7 @@ export function componentPreviewFiles(
     }
   }
   vendorLibraryModules(files, libResolver); // #3116: vendor any `@bsc/…` library imports (recursively)
-  files[PREVIEW_ENTRY] = bootstrapSource(comp, `@/${stripExt(path)}`);
+  files[PREVIEW_ENTRY] = bootstrapSource(comp, `@/${stripExt(path)}`, state);
   return { files, entry: PREVIEW_ENTRY };
 }
 
