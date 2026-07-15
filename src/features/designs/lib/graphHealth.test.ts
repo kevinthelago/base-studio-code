@@ -175,6 +175,32 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(flagged[0].why).toContain("d3-scale");
   });
 
+  it("resolves @bsc/algorithms/fibonacci (not flagged) but flags @bsc/algorithms/<missing> (#3116)", () => {
+    // The THIRD import class: a `@bsc/algorithms/…` cross-graph reference that matches a real library
+    // algorithm is a NEW resolvable class (the preview vendors its code) — never flagged; a missing one is.
+    const good = comp("FibCard", "composite", 2, [], {
+      source: undefined,
+      srcText: 'import { fibonacci } from "@bsc/algorithms/fibonacci";\nexport function FibCard(){ return fibonacci(10); }',
+    });
+    const bad = comp("BadCard", "composite", 2, [], {
+      source: undefined,
+      srcText: 'import { nope } from "@bsc/algorithms/nope";\nexport function BadCard(){ return nope(); }',
+    });
+    const flagged = analyzeGraphHealth([good, bad]).filter((f) => f.category === "unresolvable-import");
+    expect(flagged.map((f) => f.nodeNames[0])).toEqual(["BadCard"]); // only the missing library ref
+    expect(flagged[0].why).toContain("@bsc/algorithms/nope");
+    expect(flagged[0].why).toContain("no matching node in the library");
+    expect(flagged[0].why).not.toContain("import-map"); // a library miss isn't reported as a bare npm miss
+  });
+
+  it("leaves a normal component (no library import) unaffected by the library check (#3116)", () => {
+    const chart = comp("Chart", "composite", 2, [], {
+      source: undefined,
+      srcText: 'import React from "react";\nimport * as d3 from "d3";\nexport function Chart(){ return null; }',
+    });
+    expect(analyzeGraphHealth([chart])).toEqual([]);
+  });
+
   it("flags a component importing a nonexistent internal module as unresolvable-import (#2954)", () => {
     // The invisible `Code`→`../typography/type` / `Skeleton`→`./shimmer` class — an internal import
     // (`@/…` OR relative) resolving to no kit component or runtime module, now surfaced by the doctor.

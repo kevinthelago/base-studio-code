@@ -69,6 +69,12 @@ function componentPlugin(files: Record<string, string>, entry: string): Esbuild.
         if (/\.(css|scss|sass|less)$/.test(args.path)) return { path: CSS_NOOP, namespace: "empty" };
         // First-party `@/…` → the source file handed in (built-in kit source/runtime).
         if (args.path.startsWith("@/")) return { path: args.path.slice(2), namespace: "mem" };
+        // `@bsc/…` LIBRARY reference (#3116) → its VENDORED module in `files` (an algorithm's real code,
+        // keyed by the literal specifier + `.ts`; `componentPreviewFiles` put it there). Resolved like a
+        // first-party import — kept in the mem filesystem, NOT external — so the preview runs the library
+        // impl. A `@bsc/…` NOT vendored (an unresolvable reference) falls through to the mem loader's
+        // "module not found" — the honest build failure graphHealth flags as unresolvable-import.
+        if (args.path.startsWith("@bsc/")) return { path: args.path, namespace: "mem" };
         // Relative → resolve against the importer within the mem filesystem.
         if (args.path.startsWith(".")) return { path: resolveMemPath(args.importer, args.path), namespace: "mem" };
         // Anything else bare → external (React via the import-map; any other lib → esm.sh at large).

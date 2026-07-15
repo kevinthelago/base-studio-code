@@ -17,6 +17,7 @@
 // separate, static graph-health finding (the `no-implementation` category) — never scanned here.
 import type { RuntimeOutcome } from "@/shared/lib/preview/componentRuntimeProbe";
 import { componentPreviewFiles, type KitArtifact } from "./componentPreview";
+import { libraryModuleResolver } from "./libraryModules";
 import type { ComponentRecord } from "./model";
 
 /** One component's preview outcome — the value the graph badges off. `ok` = built clean, ran without
@@ -52,13 +53,14 @@ export function scannableComponents(comps: ComponentRecord[], artifact: KitArtif
   for (const c of comps) {
     // Same-kit siblings so a composing user component's imported siblings vendor into its build (#3112).
     const siblings = comps.filter((s) => s.kitId === c.kitId && s.id !== c.id);
-    const build = componentPreviewFiles(c, artifact, siblings);
+    const build = componentPreviewFiles(c, artifact, siblings, libraryModuleResolver);
     if (!build) continue;
-    // Only VENDORED sibling files add info beyond `buildSignature(c)`: a built-in's whole-artifact file
-    // set isn't record-derived and a non-composing component vendors nothing, so both keep
-    // sig === buildSignature(c) exactly (the pre-#3112 contract); a composer folds in its siblings.
+    // Only VENDORED sibling files + any `@bsc/…` LIBRARY module (#3116) add info beyond `buildSignature(c)`:
+    // a built-in's whole-artifact file set isn't record-derived and a non-composing component vendors
+    // nothing, so both keep sig === buildSignature(c) exactly (the pre-#3112 contract); a composer folds in
+    // its siblings, and a library-importer folds in the vendored impl so an algorithm edit re-queues it.
     const sibSrcs = new Set(siblings.map((s) => s.src).filter(Boolean));
-    const vendored = Object.keys(build.files).filter((k) => sibSrcs.has(k)).sort();
+    const vendored = Object.keys(build.files).filter((k) => sibSrcs.has(k) || k.startsWith("@bsc/")).sort();
     const sig = vendored.length
       ? buildSignature(c) + vendored.map((k) => `${k} ${build.files[k]}`).join("")
       : buildSignature(c);
