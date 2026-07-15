@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 import {
   KNOWLEDGE, TECHS, implById, usedByImpl,
   kitTechs, kitImpls, kitImplsByRole, kitGraph, groupImplsByLanguage, layoutKitGraph,
+  buildKnowledge, domainsOf, implsByDomain, kitImplsByDomain, type AlgoImpl,
 } from "./knowledge";
 
 describe("KNOWLEDGE seed (impl-only, #2958)", () => {
@@ -124,5 +125,46 @@ describe("language kits (#2863) — a kit is every impl of one tech, grouped by 
     expect(x("merge.rs")).toBeLessThan(x("merge-sort.rs"));
     expect(l.world.w).toBeGreaterThan(0);
     expect(l.world.h).toBeGreaterThan(0);
+  });
+});
+
+describe("domain facet (#3120) — a lightweight, cross-language collection tag", () => {
+  // A synthetic library with a domain facet across two languages, plus one untagged impl.
+  const im = (o: Partial<AlgoImpl> & Pick<AlgoImpl, "id" | "tech">): AlgoImpl =>
+    ({ role: "algorithm", name: o.id, composes: [], ...o });
+  const g = buildKnowledge({
+    implementations: [
+      im({ id: "dijkstra.rs", tech: "rust", domain: "logistics" }),
+      im({ id: "a-star.rs", tech: "rust", domain: "logistics" }),
+      im({ id: "route.ts", tech: "typescript", domain: "logistics" }),
+      im({ id: "blur.ts", tech: "typescript", domain: "graphics" }),
+      im({ id: "plain.rs", tech: "rust" }), // no domain — absent from every collection
+    ],
+  });
+
+  it("existing impls without a domain load — the facet is absent, not defaulted (backward compatible)", () => {
+    const ms = implById(KNOWLEDGE, "merge-sort.rs")!;
+    expect(ms.domain).toBeUndefined();
+    expect(ms.tags).toBeUndefined();
+    // The Rust-only seed carries no domain facet at all — so the rail hides the domain affordance.
+    expect(domainsOf(KNOWLEDGE)).toEqual([]);
+  });
+
+  it("domainsOf lists the distinct domains present, stable-sorted, ignoring untagged impls", () => {
+    expect(domainsOf(g)).toEqual(["graphics", "logistics"]);
+  });
+
+  it("implsByDomain pulls a domain's impls ACROSS languages (the cross-cutting collection)", () => {
+    expect(implsByDomain(g, "logistics").map((i) => i.id)).toEqual(["dijkstra.rs", "a-star.rs", "route.ts"]);
+    expect(implsByDomain(g, "graphics").map((i) => i.id)).toEqual(["blur.ts"]);
+    // A blank/unknown domain is an empty collection (never the untagged impls).
+    expect(implsByDomain(g, "nope")).toEqual([]);
+    expect(implsByDomain(g, "  ")).toEqual([]);
+  });
+
+  it("kitImplsByDomain narrows a single language kit to a domain (per-tech ∩ per-domain)", () => {
+    expect(kitImplsByDomain(g, "rust", "logistics").map((i) => i.id)).toEqual(["dijkstra.rs", "a-star.rs"]);
+    expect(kitImplsByDomain(g, "typescript", "logistics").map((i) => i.id)).toEqual(["route.ts"]);
+    expect(kitImplsByDomain(g, "rust", "graphics")).toEqual([]); // graphics has no Rust impl
   });
 });

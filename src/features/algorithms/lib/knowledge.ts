@@ -49,6 +49,15 @@ export interface AlgoImpl {
   /** An algorithm's real, reusable implementation in `tech`. Optional for a primitive — a language
    *  built-in is described (`ref` + `summary`), not re-coded (#2972). */
   code?: string;
+  /** Optional DOMAIN facet (#3120) — the lightweight, cross-language collection this impl belongs to
+   *  (e.g. "logistics", "graphics"). ADDITIVE + backward-compatible: impls authored before the facet
+   *  existed have no `domain` and are simply absent from every domain collection, so nothing breaks. A
+   *  domain cross-cuts language, so a domain app can pull its relevant subset of the library — all
+   *  `logistics` algorithms, across languages. Curated via `bsc graph impl set --domain <d>`. */
+  domain?: string;
+  /** Optional free-form tags (#3120) — additive keywords for search / cross-cutting collections. Absent
+   *  on existing impls; curated via `bsc graph impl set --tags a,b,c`. */
+  tags?: string[];
 }
 
 /** The knowledge model — the per-language implementation tier (#2958); the abstract concept ontology
@@ -105,6 +114,40 @@ export function kitImpls(graph: KnowledgeGraph, tech: Tech): AlgoImpl[] {
 /** A kit's implementations of one `role` (its primitives, or its algorithms). */
 export function kitImplsByRole(graph: KnowledgeGraph, tech: Tech, role: ImplRole): AlgoImpl[] {
   return graph.implementations.filter((im) => im.tech === tech && im.role === role);
+}
+
+// ── The domain facet (#3120) — a lightweight, cross-language collection tag. A domain (e.g. "logistics")
+// cross-cuts language, so a domain app can pull its relevant subset of the library. ADDITIVE: impls
+// without a `domain` are absent from every domain collection, so nothing that exists today breaks. Pure
+// lookups over `graph.implementations`, so the rail render + the tests share one model. ──
+
+/** The distinct domains present in the library, in a stable (alphabetical, case-insensitive) order.
+ *  Impls without a `domain` contribute nothing; the result is empty when the library carries no domain
+ *  facet (so the rail can hide the domain affordance entirely). Pure + deterministic. */
+export function domainsOf(graph: KnowledgeGraph): string[] {
+  const seen = new Set<string>();
+  for (const im of graph.implementations) {
+    const d = im.domain?.trim();
+    if (d) seen.add(d);
+  }
+  return [...seen].sort((a, b) => a.localeCompare(b));
+}
+
+/** Every implementation tagged with `domain`, in seed order — ACROSS languages, since a domain
+ *  cross-cuts tech (the "all logistics algorithms" collection). Empty for a blank/unknown domain. Pure. */
+export function implsByDomain(graph: KnowledgeGraph, domain: string): AlgoImpl[] {
+  const d = domain.trim();
+  if (!d) return [];
+  return graph.implementations.filter((im) => im.domain === d);
+}
+
+/** A language kit's implementations tagged with `domain` (per-tech ∩ per-domain) — mirrors
+ *  {@link kitImplsByRole}. Lets a caller narrow a single language folder to a domain collection while
+ *  keeping the language-folder structure intact. Pure. */
+export function kitImplsByDomain(graph: KnowledgeGraph, tech: Tech, domain: string): AlgoImpl[] {
+  const d = domain.trim();
+  if (!d) return [];
+  return graph.implementations.filter((im) => im.tech === tech && im.domain === d);
 }
 
 // ── The language-folder rail model (#2899) — mirror the Designs rail (kitGroups.ts): each LANGUAGE is a
