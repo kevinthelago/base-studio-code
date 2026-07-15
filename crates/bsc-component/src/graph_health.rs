@@ -44,7 +44,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct Finding {
     /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
     /// `unresolvable-import` | `reimplementation` | `orphan` | `unwired-prop` | `phantom-compose` |
-    /// `slot-shell`.
+    /// `no-empty-state` | `no-loading-state` | `slot-shell`.
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -157,6 +157,21 @@ fn is_node_slot_prop(name: &str, ty: &str) -> bool {
     }
     let t = ty.to_lowercase();
     t.contains("reactnode") || t.contains("node")
+}
+
+/// Is `ty` a COLLECTION/data prop — an array (`Row[]`, `array`)? A data component takes one; the preview's
+/// empty/loading state switch (#3135) is expected of it. Mirrors `isCollectionProp` (componentPreview.ts).
+fn is_collection_prop(ty: &str) -> bool {
+    let t = ty.to_lowercase();
+    t.contains("[]") || t.contains("array")
+}
+
+/// Is `(name, ty)` a LOADING-family boolean (`loading`/`busy`/`pending`/`isLoading`)? A data component with
+/// one can preview its loading/skeleton render (#3135). Mirrors `isLoadingProp` (componentPreview.ts).
+fn is_loading_prop(name: &str, ty: &str) -> bool {
+    let t = ty.to_lowercase();
+    (t == "boolean" || t.contains("boolean"))
+        && matches!(name.to_lowercase().as_str(), "loading" | "busy" | "pending" | "isloading")
 }
 
 /// The packaged `bsc/react-ui` kit artifact — the SAME embedded `react-ui.json` the kit store + the
@@ -1218,6 +1233,55 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
         });
     }
 
+    // ── no-empty-state / no-loading-state (severity 1, INFORMATIONAL, #3135): the preview's data-state
+    // switcher (loaded/empty/loading) can only SHOW a state a component SUPPORTS. A DATA component (has a
+    // collection/array prop), scanned from its own module source, is flagged when it lacks: (a) an EMPTY
+    // render — no `EmptyState` and no `Array.isArray`/`.length` empty-guard; or (b) a `loading`-family prop.
+    // Guides the designer session to add the missing state. Mirrors `analyzeGraphHealth` (graphHealth.ts).
+    for n in nodes {
+        let Some(src) = own_module_source(n, &kit_targets) else {
+            continue;
+        };
+        let collections: Vec<&str> =
+            n.props.iter().filter(|p| is_collection_prop(&p.1)).map(|p| p.0.as_str()).collect();
+        if collections.is_empty() {
+            continue;
+        }
+        if !src.contains("EmptyState") && !src.contains("Array.isArray") && !src.contains(".length") {
+            out.push(Finding {
+                category: "no-empty-state",
+                severity: 1,
+                kit: kit.to_string(),
+                node_ids: vec![n.id.clone()],
+                node_names: vec![n.name.clone()],
+                why: format!(
+                    "`{}` takes data ({}) but renders no distinct EMPTY state (no EmptyState, no empty-data branch) — its empty preview shows the same as loaded",
+                    n.name,
+                    collections.join(", ")
+                ),
+                suggested_action: format!(
+                    "add an EmptyState / empty-data render to `{}` so its empty state is viewable",
+                    n.name
+                ),
+            });
+        }
+        if !n.props.iter().any(|p| is_loading_prop(&p.0, &p.1)) {
+            out.push(Finding {
+                category: "no-loading-state",
+                severity: 1,
+                kit: kit.to_string(),
+                node_ids: vec![n.id.clone()],
+                node_names: vec![n.name.clone()],
+                why: format!(
+                    "`{}` takes data ({}) but exposes no `loading` prop — the preview can't show its LOADING state",
+                    n.name,
+                    collections.join(", ")
+                ),
+                suggested_action: format!("add a boolean `loading` prop to `{}` that renders a skeleton", n.name),
+            });
+        }
+    }
+
     // ── slot-shell (severity 1, INFORMATIONAL): a composite whose composed children arrive via ReactNode
     // CONTENT SLOTS. Standalone (no slots passed) it renders a demo/placeholder fallback, not its
     // assembled function — so a preview looks non-functional even though it isn't (#2921). Explains e.g.
@@ -1788,7 +1852,9 @@ mod tests {
             "srcText": "src", "source": "export function Dash({ title }){ return <h1>{title}</h1>; }",
             "props": [
                 { "name": "title", "type": "string" },
-                { "name": "data", "type": "Row[]" },
+                // `Row` (a record, not an array) so this stays a pure unwired-prop case — an ARRAY prop
+                // would also (correctly) trigger the #3135 no-empty-state/no-loading-state checks.
+                { "name": "data", "type": "Row" },
                 { "name": "onRefresh", "type": "() => void" }
             ]
         })];
@@ -2103,6 +2169,38 @@ mod tests {
             analyze(&comps).iter().all(|f| f.category != "phantom-compose"),
             "real render / slot-shell / stub / built-in are not phantom: {:?}",
             analyze(&comps)
+        );
+    }
+
+    #[test]
+    fn flags_a_data_component_lacking_empty_or_loading_state() {
+        // #3135: a chart with a data array rendered raw — no EmptyState/empty-guard, no `loading` prop.
+        let chart = json!({ "id": "bar", "name": "BarChart", "kitId": "d3", "role": "composite", "used": 2,
+            "composes": [], "src": "d3/BarChart.tsx",
+            "source": "export function BarChart({ data }){ return <svg>{data.map((d) => <rect key={d} />)}</svg>; }",
+            "props": [{ "name": "data", "type": "Datum[]" }] });
+        let fs = analyze(&[chart]);
+        assert!(fs.iter().any(|f| f.category == "no-empty-state"), "flags no-empty-state: {fs:?}");
+        assert!(fs.iter().any(|f| f.category == "no-loading-state"), "flags no-loading-state: {fs:?}");
+    }
+
+    #[test]
+    fn does_not_flag_data_states_when_empty_handled_and_loading_present_or_no_data_prop() {
+        let comps = [
+            // handles empty (Array.isArray) + a `loading` prop → supports both states.
+            json!({ "id": "good", "name": "Good", "kitId": "d3", "role": "composite", "used": 2, "composes": [],
+                "src": "d3/Good.tsx",
+                "source": "export function Good({ data, loading }){ if (loading) return <span/>; return <svg>{Array.isArray(data) ? data.map((d) => <rect key={d} />) : null}</svg>; }",
+                "props": [{ "name": "data", "type": "Datum[]" }, { "name": "loading", "type": "boolean" }] }),
+            // no collection prop at all → not a data component.
+            json!({ "id": "btn", "name": "Button", "kitId": "d3", "role": "primitive", "used": 5, "composes": [],
+                "src": "d3/Button.tsx", "source": "export function Button({ label }){ return <button>{label}</button>; }",
+                "props": [{ "name": "label", "type": "string" }] }),
+        ];
+        let fs = analyze(&comps);
+        assert!(
+            fs.iter().all(|f| f.category != "no-empty-state" && f.category != "no-loading-state"),
+            "empty-handled + loading-prop / no-data-prop are not flagged: {fs:?}"
         );
     }
 

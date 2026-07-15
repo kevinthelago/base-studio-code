@@ -15,7 +15,7 @@ import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { bundleComponent, buildComponentSrcDoc } from "@/shared/lib/preview/componentBundle";
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
 import { compileAnimationsCss, type AnimationDef } from "@/shared/ui/kit";
-import { componentPreviewFiles, type KitArtifact } from "./lib/componentPreview";
+import { componentPreviewFiles, type KitArtifact, type PreviewState } from "./lib/componentPreview";
 import { libraryModuleResolver } from "./lib/libraryModules";
 import { resolveComponentAnimations, resolveComposedAnimations, previewAnimDefs, type ComponentRecord } from "./lib/model";
 
@@ -25,7 +25,7 @@ const ARTIFACT = reactUiArtifact as unknown as KitArtifact;
 
 type Status = "building" | "ready" | "error";
 
-export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation }: {
+export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded" }: {
   comp: ComponentRecord;
   /** The selected theme's light/dark surface (its `base`). */
   theme: "dark" | "light";
@@ -43,6 +43,9 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   /** A kit animation to PLAY on the vehicle beyond what the component binds (#2942) — the Animations
    *  try-on: the studio passes the motion selected in the AnimationsMenu so it plays live here. */
   extraAnimation?: AnimationDef | null;
+  /** The data-state to preview (#3135): `loaded` (demo), `empty` (no data), or `loading` (skeleton).
+   *  Drives how the bootstrap samples props. Default `loaded`. */
+  previewState?: PreviewState;
 }) {
   const [status, setStatus] = useState<Status>("building");
   const [error, setError] = useState<string>("");
@@ -106,7 +109,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     setStatus("building");
     setError("");
     /* eslint-enable react-hooks/set-state-in-effect */
-    const build = componentPreviewFiles(comp, ARTIFACT, siblings, libraryModuleResolver);
+    const build = componentPreviewFiles(comp, ARTIFACT, siblings, libraryModuleResolver, previewState);
     if (!build) {
       setStatus("error");
       setError(
@@ -144,7 +147,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, siblingsKey, animKey, exitKey, themeId, retry]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, siblingsKey, animKey, exitKey, themeId, previewState, retry]);
 
   // Surface runtime errors the iframe posts (an exception during the component's own render). Match ONLY
   // this frame's own iframe by source window (#2908) — the on-visit scan now runs its own hidden probe
