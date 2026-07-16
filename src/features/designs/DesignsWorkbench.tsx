@@ -39,7 +39,7 @@ import { layoutBand } from "@/shared/lib/graph/crossGraph";
 import { parseNodeUrn, LIBRARY_SEGMENT } from "@/shared/lib/graph/nodeUrn";
 import { resolveComponentLibraryRefs } from "./lib/libraryComposition";
 import { layoutComposition, NODE_W, NODE_H } from "./lib/compositionLayout";
-import { analyzeGraphHealth, analyzeMotion, HEALTH_SEVERITY, type HealthCategory } from "./lib/graphHealth";
+import { analyzeGraphHealth, analyzeMotion, HEALTH_SEVERITY, HEALTH_BADGE, type HealthCategory } from "./lib/graphHealth";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
@@ -88,6 +88,9 @@ export function DesignsWorkbench() {
   // Per-component preview-BUILD status (#2838) — populated by the on-visit `useComponentScan` sweep;
   // the graph badges the `error` entries (a red build-error glyph, additive to the health badge).
   const componentBuildStatus = useAppStore((s) => s.componentBuildStatus);
+  // Per-component RUNTIME data-state blanks (#3191) — the on-visit scan's render-confirmed empty/loading
+  // blanks; folded into `nodeHealth` below so they badge like any other HealthCategory finding.
+  const componentStateHealth = useAppStore((s) => s.componentStateHealth);
   // The standard component-edit action (#3069) — updates the store + write-throughs `bsc ui set`; the
   // animation-variation default-switch reuses it exactly like any other component edit.
   const setComponent = useAppStore((s) => s.setComponent);
@@ -264,12 +267,16 @@ export function DesignsWorkbench() {
   const healthFindings = useMemo(() => [...analyzeGraphHealth(kitComps), ...analyzeMotion(kitComps)], [kitComps]);
   const nodeHealth = useMemo(() => {
     const m = new Map<string, HealthCategory>();
-    for (const f of healthFindings) for (const id of f.nodeIds) {
+    const consider = (id: string, cat: HealthCategory) => {
       const cur = m.get(id);
-      if (!cur || HEALTH_SEVERITY[f.category] > HEALTH_SEVERITY[cur]) m.set(id, f.category);
-    }
+      if (!cur || HEALTH_SEVERITY[cat] > HEALTH_SEVERITY[cur]) m.set(id, cat);
+    };
+    for (const f of healthFindings) for (const id of f.nodeIds) consider(id, f.category);
+    // Fold in the runtime data-state blanks (#3191) — render-confirmed by the scan, not analyzeGraphHealth —
+    // so `empty-empty-state` / `empty-loading-state` badge alongside the static findings (most-severe wins).
+    for (const [id, cats] of Object.entries(componentStateHealth)) for (const cat of cats) consider(id, cat);
     return m;
-  }, [healthFindings]);
+  }, [healthFindings, componentStateHealth]);
 
   const gvp = useGraphPage(world, [kitId]); // re-fit on mount + whenever the kit switches (band-aware world)
   // Auto-pan the AI-touched node into view (#2525) — center it, keeping zoom (least-disruptive). Only
@@ -609,29 +616,6 @@ function GuideCard({ tone, title, items, glyph }: { tone: "success" | "danger"; 
     </Box>
   );
 }
-
-// ── Graph node badges ─────────────────────────────────────────────────────────
-/** The health badge glyph + tooltip per category (#2680) — mirrors `bsc ui doctor`; read by the graph
- *  node cards in the page's one GraphCanvas (#2766, was the removed GraphView wrapper). */
-const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string }> = {
-  cycle: { glyph: "⟳", label: "on a composes cycle" },
-  "dangling-branch": { glyph: "⚠", label: "unused branch (nothing composes it, used = 0)" },
-  duplicate: { glyph: "⧉", label: "duplicate (same intrinsic / identical source)" },
-  "no-implementation": { glyph: "∅", label: "no buildable implementation — a spec, not code" },
-  "self-reference": { glyph: "↺", label: "self-referential stub — only renders itself; supply its real body" },
-  "unresolvable-import": { glyph: "↯", label: "imports a package the preview can't resolve — throws at preview time" },
-  reimplementation: { glyph: "♻", label: "reimplements a library node — compose it via @bsc/… instead of re-coding it" },
-  orphan: { glyph: "○", label: "orphan — isolated & unused" },
-  "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
-  "phantom-compose": { glyph: "⇢", label: "phantom composes — declares a composition its source never renders (a false graph edge)" },
-  "motion-dead-selector": { glyph: "⌁", label: "motion dead selector — an animation targets a class hook its source never renders" },
-  "motion-dash-no-pathlength": { glyph: "┅", label: "stroke-dash motion with no pathLength — a draw-in needs a known path length" },
-  "motion-transform-attr": { glyph: "⤥", label: "CSS transform keyframe fights an SVG transform= attribute — they don't compose" },
-  "motion-name-collision": { glyph: "⧗", label: "cross-component keyframe-name collision — two components' same-named animations clobber" },
-  "no-empty-state": { glyph: "◍", label: "no empty state — takes data but renders no distinct empty view; add an EmptyState" },
-  "no-loading-state": { glyph: "◌", label: "no loading state — takes data but has no `loading` prop; add one for a loading preview" },
-  "slot-shell": { glyph: "▤", label: "slot shell — previews a demo placeholder; fill its content slots to see its real function" },
-};
 
 // ── Inspector ────────────────────────────────────────────────────────────────
 // The full per-component detail surface (#2453) — it absorbed the removed Library center view:
