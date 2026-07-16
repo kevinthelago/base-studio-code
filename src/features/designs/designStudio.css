@@ -21,12 +21,13 @@
    guide) is structural and stays. */
 .ds-groupkids { margin: 2px 0 6px; padding-left: 8px; border-left: 1px solid var(--border-soft, var(--border)); }
 
-/* ── preview (lives in the inspector, #2453) ── */
-.ds-preview { flex: none; height: 34%; min-height: 200px; display: flex; flex-direction: column; border-top: 1px solid var(--border-soft, var(--border)); border-bottom: 1px solid var(--border); }
-.ds-prevctl { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--border-soft, var(--border)); }
-.ds-surface { flex: 1; min-height: 0; position: relative; overflow: hidden; background: repeating-conic-gradient(var(--bg-soft) 0% 25%, var(--bg-canvas, var(--bg)) 0% 50%) 50% / 20px 20px; }
-.ds-frame { position: absolute; inset: 0; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.ds-vplabel { position: absolute; left: 12px; bottom: 10px; font-family: var(--mono); font-size: 9.5px; color: var(--fg-dim); background: color-mix(in srgb, var(--bg) 70%, transparent); padding: 2px 7px; border-radius: 5px; border: 1px solid var(--border-soft, var(--border)); }
+/* ── preview (lives in the inspector, #2453) ── #3190: the preview is the inspector's PRIMARY surface —
+   it grows to fill the pane (flex, was a fixed 34% card) and the card chrome is gone (no section borders,
+   no checkered specimen backdrop, no frame padding) so the component reads edge-to-edge as itself. */
+.ds-preview { flex: 2 1 0; min-height: 200px; display: flex; flex-direction: column; }
+.ds-prevctl { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 7px 12px; }
+.ds-surface { flex: 1; min-height: 0; position: relative; overflow: hidden; background: var(--bg-canvas, var(--bg)); }
+.ds-frame { position: absolute; inset: 0; overflow: auto; }
 .ds-overlay { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; }
 
 /* ── tabs + panels (inspector detail, #2453) ── */

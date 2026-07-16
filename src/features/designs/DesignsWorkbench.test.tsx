@@ -61,9 +61,12 @@ describe("DesignsWorkbench (#2308)", () => {
   it("the inspector carries the library detail: live preview + Overview/Source/Usage tabs", () => {
     render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));                              // focus a node to reveal the details pane
-    expect(screen.getByText("Live preview")).toBeTruthy();           // preview + its switchers
+    expect(screen.getByText("Live preview")).toBeTruthy();           // the preview header
     expect(screen.getByLabelText("Theme")).toBeTruthy();             // the single Theme dropdown (#2545)
-    expect(screen.getByText("⤢ fluid")).toBeTruthy();
+    // #3190: the inspector preview now FILLS the pane — its variant + screen-size (sm/md/fluid) toggles
+    // were removed; only the data-state switcher stays in the header.
+    expect(screen.queryByText("⤢ fluid")).toBeNull();
+    expect(screen.getByText("loaded")).toBeTruthy();                 // the data-state switcher remains
     expect(screen.getByText("Props / API")).toBeTruthy();            // Overview is the default tab
     // The per-component generate-variants chat was removed (#2597) — the designer session drives edits.
     expect(screen.queryByLabelText("Describe a variant")).toBeNull();
