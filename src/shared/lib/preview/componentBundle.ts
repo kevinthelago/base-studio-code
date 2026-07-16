@@ -469,7 +469,7 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
     else if (d.__cmd === "zoomOut") zoomAt(1 / 1.2, c[0], c[1]);
     else if (d.__cmd === "fit") fit();
   });
-  fit(); if (INITIAL !== 1) { var c0 = centerXY(); zoomAt(INITIAL, c0[0], c0[1]); }  // centered initial zoom
+  fit(); if (INITIAL !== 1) { zoomAt(INITIAL, centerXY()[0], 0); }  // initial zoom anchored at the TOP so a page's headers stay visible (crop the bottom, not the top)
 })();
 </script>`;
 }

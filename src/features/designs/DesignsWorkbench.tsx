@@ -194,7 +194,7 @@ export function DesignsWorkbench() {
   }, [previewCanvas.w, previewCanvas.h, previewW]);
   // The engine opens ZOOMED IN (a page is letterboxed small by its render ratio, so 1:1 reads tiny);
   // pages get a stronger factor than 1:1 components.
-  const previewInitialZoom = sel && (sel.role === "page" || sel.role === "layout") ? 1.7 : 1.2;
+  const previewInitialZoom = sel && (sel.role === "page" || sel.role === "layout") ? 1.4 : 1.15;
   const [previewZoomApi, setPreviewZoomApi] = useState<{ zoomIn: () => void; zoomOut: () => void; fit: () => void } | null>(null);
 
   const allVariants = focusComp ? focusComp.variants : [];

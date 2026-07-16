@@ -378,13 +378,14 @@ describe("componentBundle — pan/zoom engine (#3190 crisp pass)", () => {
     document.body.appendChild(root);
     const src = gestureEngineScript({ initial: 2 }).replace(/^\s*<script>/, "").replace(/<\/script>\s*$/, "");
     (0, eval)(src);
-    const W = window.innerWidth, H = window.innerHeight;
+    const W = window.innerWidth;
 
-    // INITIAL: a centered zoom of 2 about the viewport center → the center stays fixed.
+    // INITIAL: a TOP-anchored zoom of 2 (horizontal center, y=0) → the top edge stays visible (a page's
+    // headers aren't cropped off the top), only the bottom crops.
     let t = parseT(root.style.transform)!;
     expect(t.scale).toBe(2);
-    expect(t.tx).toBeCloseTo(-W / 2, 6);   // (W/2) - (W/2)*2
-    expect(t.ty).toBeCloseTo(-H / 2, 6);
+    expect(t.tx).toBeCloseTo(-W / 2, 6);   // (W/2) − (W/2)*2 — horizontal center held
+    expect(t.ty).toBe(0);                  // y=0 held → top stays put
 
     // FIT resets to identity.
     window.dispatchEvent(new MessageEvent("message", { data: { __cmd: "fit" } }));
