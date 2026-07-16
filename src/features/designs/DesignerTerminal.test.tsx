@@ -27,6 +27,8 @@ vi.mock("@xterm/xterm", () => {
     onData = vi.fn(() => ({ dispose: vi.fn() }));
     focus = vi.fn();
     dispose = vi.fn();
+    attachCustomKeyEventHandler = vi.fn();
+    getSelection = vi.fn(() => "");
   }
   return { Terminal };
 });
