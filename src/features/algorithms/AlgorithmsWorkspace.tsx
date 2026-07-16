@@ -105,7 +105,11 @@ export function AlgorithmsWorkspace() {
       railWidth={230}
       inspector={<AlgorithmsInspector graph={graph} focusedImpl={focusedImpl} onSelectImpl={setSelectedImpl} />}
       inspectorResizable
-      inspectorWidth={340}
+      // Match the Components (Designs) inspector width and go a touch bigger (#3203), so the two
+      // libraries read consistently and the always-inline visualization preview (#3199) has room.
+      inspectorWidth={460}
+      inspectorMin={300}
+      inspectorMax={680}
       onBackgroundClick={() => setSelectedImpl(null)}
       // The always-on knowledge-librarian session (#2787), docked below the graph; the caller owns its
       // height + a `.resize-y` handle (GraphCanvas gives it a flex:none slot), mirroring Teams (#2759).
