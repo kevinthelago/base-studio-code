@@ -102,7 +102,7 @@ export function VizStage({ viz, implName, onBack }: { viz: VizExample; implName:
       </Row>
 
       <Box className="algo-viz-stage-body">
-        <TracePlayer factory={factory} renderers={viz.renderers} fps={4} autoPlay controls />
+        <TracePlayer factory={factory} renderers={viz.renderers} fps={4} autoPlay loop controls />
       </Box>
 
       <Stack gap={8} className="algo-viz-stage-state">
