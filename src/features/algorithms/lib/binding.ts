@@ -85,3 +85,39 @@ export function markStateAttrs(marks: Record<string, string> | undefined, key: s
   const mark = marks?.[key];
   return mark ? { "data-mark": mark } : {};
 }
+
+/** A 2-D-addressed op — the shape `cellOpStateAttrs` reads from matrix ops (#3221). A cell op names its
+ *  `at` `[row, col]`; a `region` op names its `rows`/`cols` inclusive ranges (with an optional `as` label). */
+export interface CellOp {
+  op: string;
+  at?: [number, number];
+  rows?: [number, number];
+  cols?: [number, number];
+  as?: string;
+}
+
+/**
+ * The `data-op` / `data-mark` for the cell at (`row`, `col`) in a matrix. A `read`/`write` op that targets
+ * the cell stamps `data-op` = its verb; a `region` op covering the cell stamps `data-mark` = its `as` label
+ * (or `data-op` = "region" when unlabelled). Last matching op wins. Pure — the 2-D twin of {@link
+ * opStateAttrs}.
+ */
+export function cellOpStateAttrs(ops: readonly CellOp[] | undefined, row: number, col: number): OpStateAttrs {
+  const attrs: OpStateAttrs = {};
+  for (const o of ops ?? []) {
+    if (o.at && o.at[0] === row && o.at[1] === col) {
+      attrs["data-op"] = o.op;
+    } else if (
+      o.rows &&
+      o.cols &&
+      row >= o.rows[0] &&
+      row <= o.rows[1] &&
+      col >= o.cols[0] &&
+      col <= o.cols[1]
+    ) {
+      if (o.as) attrs["data-mark"] = o.as;
+      else attrs["data-op"] = "region";
+    }
+  }
+  return attrs;
+}
