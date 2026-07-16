@@ -134,6 +134,7 @@ USAGE:
   bsc ui release list [--pretty]                 # every stored kit release's manifest (+ the packaged default)
   bsc ui release get <id@version> [--artifact]   # one manifest (or null); --artifact prints the artifact
   bsc ui release add <id> <version> [--kind component-kit|design-files] [--source URL] [--sha256 HEX] [--file PATH]
+  bsc ui release add <id> <version> --from-store <kit>   # assemble the artifact from the live kit in the component store
   bsc ui release remove <id@version>             # delete a materialized entry (packaged stays embedded)
   bsc ui release verify <id@version>             # recompute the artifact hash against the manifest
 
@@ -143,7 +144,12 @@ source? }` manifest + the artifact — shared by every blueprint that pins it. (
 mutable working kits of `bsc ui kit`, #2281/#2469: a RELEASE is a frozen published snapshot.) `add`
 reads the artifact from stdin (or --file), verifies --sha256 BEFORE writing (mismatch ⇒ nothing
 stored), and refuses to overwrite an existing version with different content (bump the version
-instead). The packaged `bsc/react-ui` kit resolves as a built-in entry with zero setup.",
+instead). It also REFUSES a hollow release (#3167): an empty artifact, or a component-kit that
+doesn't parse / carries zero components, is rejected with a non-zero error BEFORE anything is stored.
+--from-store <kit> assembles the artifact in one shot from the live kit in the component store
+(instead of hand-piping --file): it reads the kit record + every component whose kitId is <kit> and
+builds the same { id, version, kit, components } shape. The packaged `bsc/react-ui` kit resolves as a
+built-in entry with zero setup.",
     },
     CmdDoc {
         name: "emit-css",
@@ -1475,6 +1481,7 @@ fn cmd_kit(args: &[String], prog: &str) -> Result<(), String> {
     let mut source = None::<String>;
     let mut sha = None::<String>;
     let mut file = None::<String>;
+    let mut from_store = None::<String>;
     let (mut pretty, mut want_artifact) = (false, false);
     let mut positional: Vec<String> = Vec::new();
     let mut it = args.iter();
@@ -1485,6 +1492,7 @@ fn cmd_kit(args: &[String], prog: &str) -> Result<(), String> {
             "--source" => source = it.next().cloned(),
             "--sha256" => sha = it.next().cloned(),
             "--file" => file = it.next().cloned(),
+            "--from-store" => from_store = it.next().cloned(),
             "--pretty" => pretty = true,
             "--artifact" => want_artifact = true,
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
@@ -1523,16 +1531,33 @@ fn cmd_kit(args: &[String], prog: &str) -> Result<(), String> {
             }
         }
         "add" => {
-            let id = positional.get(1).ok_or("usage: bsc ui release add <id> <version> [--kind K] [--source URL] [--sha256 HEX] [--file PATH]")?;
+            let id = positional.get(1).ok_or("usage: bsc ui release add <id> <version> [--kind K] [--source URL] [--sha256 HEX] [--file PATH | --from-store KIT]")?;
             let version = positional.get(2).ok_or("usage: bsc ui release add <id> <version> …")?;
-            let content = match file {
-                Some(p) => std::fs::read_to_string(&p).map_err(|e| format!("cannot read {p}: {e}"))?,
-                None => {
-                    let mut s = String::new();
-                    std::io::stdin().read_to_string(&mut s).map_err(|e| format!("cannot read stdin: {e}"))?;
-                    s
+            // Source the artifact: assembled from a live kit in the component store (--from-store), else
+            // read from --file / stdin. The two sources are mutually exclusive.
+            let content = if let Some(kit_id) = &from_store {
+                if file.is_some() {
+                    return Err("give either --from-store <kit> or --file <path>, not both".into());
+                }
+                if kind != "component-kit" {
+                    return Err(format!(
+                        "--from-store assembles a component-kit from the component library, so it is incompatible with --kind {kind}"
+                    ));
+                }
+                assemble_from_store(id, version, kit_id)?
+            } else {
+                match &file {
+                    Some(p) => std::fs::read_to_string(p).map_err(|e| format!("cannot read {p}: {e}"))?,
+                    None => {
+                        let mut s = String::new();
+                        std::io::stdin().read_to_string(&mut s).map_err(|e| format!("cannot read stdin: {e}"))?;
+                        s
+                    }
                 }
             };
+            // Refuse a hollow / shapeless release BEFORE writing the immutable entry (#3167): an empty
+            // artifact, or a component-kit that doesn't parse or carries zero components, is rejected.
+            crate::kit::validate_artifact(&kind, &content)?;
             emit(&store.add_verified(id, version, &kind, source.as_deref(), &content, sha.as_deref())?)
         }
         "remove" => {
@@ -1549,6 +1574,55 @@ fn cmd_kit(args: &[String], prog: &str) -> Result<(), String> {
         }
         other => Err(format!("unknown release command '{other}' — want: list | get | add | remove | verify")),
     }
+}
+
+/// Open a bsc-component collection store the way `bsc ui` / `bsc component` locates it (#3167,
+/// `--from-store`): the shared `$ENV → ~/.base-studio-code/<segment>/` precedence (no `--dir` — that
+/// flag names the RELEASE store, not the component library). So `--from-store` reads the live library a
+/// designer session authored, honoring the SAME env overrides that session's component/kit stores use.
+fn component_collection(segment: &str, env: &str, noun: &'static str) -> Result<bsc_json_store::Store, String> {
+    let dir = bsc_cli_util::resolve_store_path(&None, env, || {
+        bsc_util::bsc_base_dir()
+            .map(|b| b.join(segment))
+            .ok_or_else(|| "could not resolve a home directory; set HOME/USERPROFILE".to_string())
+    })?;
+    Ok(bsc_json_store::Store::new(dir, noun))
+}
+
+/// Assemble a `component-kit` release artifact directly from the live component store (#3167,
+/// `--from-store <kit>`) — the one-shot alternative to hand-piping a `--file`. Reads the kit record
+/// (the flat kit collection, `BSC_COMPONENT_KIT_DIR`) + every component whose `kitId` is `<kit>` (the
+/// component collection, `BSC_COMPONENT_DIR`) and builds the same `{ id, version, kit, components }`
+/// shape `release add --file` expects, via [`crate::kit::assemble_artifact`]. `id`/`version` are the
+/// RELEASE's identity (the positional args). Errors loudly when the kit isn't in the store or has no
+/// components — the pipeline-failed cases #3167 is closing, surfaced before anything is stored.
+fn assemble_from_store(id: &str, version: &str, kit_id: &str) -> Result<String, String> {
+    // The components: the working component library (BSC_COMPONENT_DIR → ~/.base-studio-code/components/),
+    // filtered to this kit — the same read `bsc ui list` / the desktop library performs.
+    let comp_store = component_collection("components", "BSC_COMPONENT_DIR", "component")?;
+    let components: Vec<serde_json::Value> = comp_store
+        .list()
+        .iter()
+        .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+        .filter(|c| c.get("kitId").and_then(serde_json::Value::as_str) == Some(kit_id))
+        .collect();
+    if components.is_empty() {
+        return Err(format!(
+            "kit '{kit_id}' has no components in the store — nothing to release. Author components with `bsc ui set` (kitId: \"{kit_id}\") first."
+        ));
+    }
+    // The kit record: the flat kit collection (BSC_COMPONENT_KIT_DIR → ~/.base-studio-code/kits/).
+    let kit_store = component_collection("kits", "BSC_COMPONENT_KIT_DIR", "kit")?;
+    let kit = match kit_store.get(kit_id)? {
+        Some(j) => serde_json::from_str::<serde_json::Value>(&j)
+            .map_err(|e| format!("kit '{kit_id}' record is not valid JSON: {e}"))?,
+        None => {
+            return Err(format!(
+                "kit '{kit_id}' is not in the kit store — `bsc ui kit set` it first (or check the id)"
+            ))
+        }
+    };
+    Ok(crate::kit::assemble_artifact(id, version, kit, components))
 }
 
 /// `bsc ui emit-css` (#2489) — emit the palette pair a generated app ships: the semantic token
@@ -1758,7 +1832,7 @@ mod tests {
     #[test]
     fn release_help_explains_the_store_contract() {
         let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "release");
-        for needle in ["id@version", "immutable", "--sha256", "bsc/react-ui"] {
+        for needle in ["id@version", "immutable", "--sha256", "bsc/react-ui", "--from-store", "hollow"] {
             assert!(d.contains(needle), "release help mentions {needle}");
         }
         // `bsc ui release help` routes to the same detail without touching the store.
@@ -1776,10 +1850,11 @@ mod tests {
             args.extend(["--dir".to_string(), d.clone()]);
             run(args, "bsc ui")
         };
-        // add via --file (stdin isn't drivable in a unit test).
+        // add via --file (stdin isn't drivable in a unit test). A real component-kit shape (#3167: the
+        // add gate refuses anything that isn't { …, components: [ … ] } with ≥1 component).
         let artifact = dir.join("artifact-src.json");
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(&artifact, "{\"kit\":true}").unwrap();
+        std::fs::write(&artifact, "{\"id\":\"acme/neon\",\"version\":\"1.0.0\",\"kit\":{\"id\":\"neon\"},\"components\":[{\"id\":\"btn\",\"kitId\":\"neon\"}]}").unwrap();
         run_kit(&["add", "acme/neon", "1.0.0", "--file", artifact.to_str().unwrap()]).unwrap();
         run_kit(&["list", "--pretty"]).unwrap();
         run_kit(&["get", "acme/neon@1.0.0"]).unwrap();
@@ -1788,11 +1863,82 @@ mod tests {
         // A wrong --sha256 is a hard error (nothing stored).
         assert!(run_kit(&["add", "acme/other", "1.0.0", "--file", artifact.to_str().unwrap(), "--sha256", "beef"]).is_err());
         assert!(run_kit(&["get", "acme/other@1.0.0"]).is_ok(), "get of the never-stored entry still prints null");
+        // #3167: a HOLLOW artifact is refused BEFORE the immutable entry is written — nothing stored.
+        let empty = dir.join("empty.json");
+        std::fs::write(&empty, "").unwrap();
+        assert!(run_kit(&["add", "acme/hollow", "1.0.0", "--file", empty.to_str().unwrap()]).is_err(), "empty --file refused");
+        let zero = dir.join("zero.json");
+        std::fs::write(&zero, "{\"kit\":{},\"components\":[]}").unwrap();
+        assert!(run_kit(&["add", "acme/hollow", "1.0.0", "--file", zero.to_str().unwrap()]).is_err(), "zero-component artifact refused");
+        let junk = dir.join("junk.json");
+        std::fs::write(&junk, "{ not json").unwrap();
+        assert!(run_kit(&["add", "acme/hollow", "1.0.0", "--file", junk.to_str().unwrap()]).is_err(), "unparseable artifact refused");
+        assert_eq!(run_kit(&["get", "acme/hollow@1.0.0"]), Ok(()), "the refused entry never materialized");
         run_kit(&["remove", "acme/neon@1.0.0"]).unwrap();
         // Bad shapes error crisply.
         assert!(run_kit(&["get", "acme/neon"]).is_err(), "a ref without @version is rejected");
         assert!(run_kit(&["frobnicate"]).is_err());
+        // --from-store + --file together is a contradiction (rejected before any store read).
+        assert!(run_kit(&["add", "acme/x", "1.0.0", "--from-store", "neon", "--file", artifact.to_str().unwrap()]).is_err());
+        // --from-store with a design-files kind is incompatible (assembly is component-kit only).
+        assert!(run_kit(&["add", "acme/x", "1.0.0", "--from-store", "neon", "--kind", "design-files"]).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn release_add_from_store_assembles_a_non_empty_artifact() {
+        // --from-store reads the LIVE component library (BSC_COMPONENT_DIR / BSC_COMPONENT_KIT_DIR) — set
+        // both to scratch dirs under a lock (the env is process-global; every other test uses --dir).
+        static FROM_STORE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = FROM_STORE_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+
+        let base = std::env::temp_dir().join(format!("bsc-ui-from-store-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let comp_dir = base.join("components");
+        let kit_dir = base.join("kits");
+        let rel_dir = base.join("releases");
+        std::fs::create_dir_all(&comp_dir).unwrap();
+        std::fs::create_dir_all(&kit_dir).unwrap();
+
+        // Seed the component + kit collections the way a designer session would (bsc ui set / kit set).
+        let comp_store = bsc_json_store::Store::new(comp_dir.clone(), "component");
+        comp_store.set("btn", "{\"id\":\"btn\",\"name\":\"Button\",\"kitId\":\"neon\"}").unwrap();
+        comp_store.set("card", "{\"id\":\"card\",\"name\":\"Card\",\"kitId\":\"neon\"}").unwrap();
+        comp_store.set("other", "{\"id\":\"other\",\"name\":\"Other\",\"kitId\":\"elsewhere\"}").unwrap();
+        let kit_store = bsc_json_store::Store::new(kit_dir.clone(), "kit");
+        kit_store.set("neon", "{\"id\":\"neon\",\"name\":\"neon\",\"tech\":\"react\",\"style\":\"studio\"}").unwrap();
+
+        std::env::set_var("BSC_COMPONENT_DIR", &comp_dir);
+        std::env::set_var("BSC_COMPONENT_KIT_DIR", &kit_dir);
+
+        let run_rel = |rest: &[&str]| {
+            let mut args = vec!["release".to_string()];
+            args.extend(rest.iter().map(|s| s.to_string()));
+            args.extend(["--dir".to_string(), rel_dir.to_string_lossy().into_owned()]);
+            run(args, "bsc ui")
+        };
+        // One-shot: the release is ASSEMBLED from the live kit, not hand-piped through --file.
+        run_rel(&["add", "acme/neon", "1.0.0", "--from-store", "neon"]).unwrap();
+        run_rel(&["verify", "acme/neon@1.0.0"]).unwrap();
+
+        // The stored artifact is the assembled, non-empty component-kit — EXACTLY this kit's components
+        // (btn, card), not the component in the other kit; and it embeds the live kit record.
+        let release_store = crate::kit::KitStore::new(rel_dir.clone());
+        let artifact = release_store.artifact("acme/neon", "1.0.0").unwrap().expect("artifact stored");
+        let parsed: serde_json::Value = serde_json::from_str(&artifact).unwrap();
+        assert_eq!(parsed["id"], "acme/neon");
+        assert_eq!(parsed["version"], "1.0.0");
+        assert_eq!(parsed["kit"]["id"], "neon", "the live kit record is embedded");
+        let ids: Vec<&str> =
+            parsed["components"].as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
+        assert_eq!(ids, vec!["btn", "card"], "only this kit's components (never 'other'): {ids:?}");
+
+        // A kit with no components in the store is refused (nothing to release) — never a hollow entry.
+        assert!(run_rel(&["add", "acme/empty", "1.0.0", "--from-store", "nope"]).is_err(), "empty/unknown kit refused");
+
+        std::env::remove_var("BSC_COMPONENT_DIR");
+        std::env::remove_var("BSC_COMPONENT_KIT_DIR");
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     /// A fresh (created, empty) store dir so the component-verb tests never touch the user's real
