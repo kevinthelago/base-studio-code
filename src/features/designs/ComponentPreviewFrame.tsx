@@ -57,8 +57,9 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
    *  control interacts instead; hover/clicks always work. Omit ⇒ no gesture-forward (thumbnail). */
   onPreviewPan?: (dx: number, dy: number) => void;
   /** When set (the expanded preview, #3190), the iframe forwards a wheel that isn't over a scroll region
-   *  as a zoom: called with the wheel `deltaY` and the cursor's world x/y so the host zooms about it. */
-  onPreviewZoom?: (deltaY: number, wx: number, wy: number) => void;
+   *  as a zoom: called with the wheel `deltaY` and the cursor's PAGE x/y (resolved from the iframe's real
+   *  rendered rect), so the host zooms about the true cursor position — the same way its gutter wheel does. */
+  onPreviewZoom?: (deltaY: number, clientX: number, clientY: number) => void;
 }) {
   const [status, setStatus] = useState<Status>("building");
   const [error, setError] = useState<string>("");
@@ -235,7 +236,13 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
       }
       if (d.__preview === "panmove") { applyPan(d.x, d.y); return; }   // over the frame (iframe-reported)
       if (d.__preview === "panend") { endPan(); return; }              // released over the frame
-      if (d.__preview === "zoom") { zoomRef.current?.(d.dy, d.wx, d.wy); return; }
+      if (d.__preview === "zoom") {
+        // Resolve the cursor fraction against the iframe's REAL rendered rect → page coords, so the host
+        // zooms about the true cursor position regardless of border/offset/fit (#3190).
+        const rect = iframeRef.current?.getBoundingClientRect();
+        if (rect) zoomRef.current?.(d.dy, rect.left + d.fx * rect.width, rect.top + d.fy * rect.height);
+        return;
+      }
       // Errors/renders are PER-FRAME — match THIS iframe's window so a concurrent scan probe's error
       // doesn't leak into (and falsely fail) this live preview (#2908).
       if (e.source !== iframeRef.current?.contentWindow) return;
