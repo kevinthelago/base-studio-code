@@ -253,27 +253,33 @@ describe("useGraphViewport wheel listener lifecycle (#2454)", () => {
     expect(result.current.view.ty).toBe(before.ty - 8);
   });
 
-  it("zoomAtWorld zooms about a WORLD point, keeping it fixed on screen (#3190)", () => {
-    // The forwarded-wheel path: the iframe sends a world coord (its cursor-local x/y); the host zooms
-    // about it. The world point must map to the SAME screen position before and after.
+  it("zoomAtClient zooms about a PAGE point, keeping the world point under it fixed (#3190)", () => {
+    // The forwarded-wheel path: the host is handed the cursor's PAGE coords and converts them to
+    // viewport-relative via the live rect (jsdom rect is at 0,0 → page == viewport-relative). The world
+    // point under the cursor must map to the SAME screen position before and after — the anchor invariant.
     const { result } = renderHook(() => useGraphViewport({ w: 1000, h: 1000 }, { min: 0.2, max: 5 }));
+    const el = document.createElement("div"); // jsdom getBoundingClientRect → {left:0, top:0}
+    act(() => result.current.setVp(el));
     act(() => result.current.panBy(-40, 15)); // start from a panned view so tx/ty aren't trivially 0
-    const wx = 120, wy = 80;
+    const cx = 300, cy = 200;
     const before = result.current.view;
-    const screenXBefore = wx * before.scale + before.tx;
-    const screenYBefore = wy * before.scale + before.ty;
-    act(() => result.current.zoomAtWorld(1.5, wx, wy));
+    const worldX = (cx - before.tx) / before.scale, worldY = (cy - before.ty) / before.scale;
+    act(() => result.current.zoomAtClient(1.5, cx, cy));
     const after = result.current.view;
-    expect(after.scale).toBeCloseTo(before.scale * 1.5, 6);                 // scaled by the factor
-    expect(wx * after.scale + after.tx).toBeCloseTo(screenXBefore, 6);      // the world point held fixed
-    expect(wy * after.scale + after.ty).toBeCloseTo(screenYBefore, 6);
+    expect(after.scale).toBeCloseTo(before.scale * 1.5, 6);            // scaled by the factor
+    expect(worldX * after.scale + after.tx).toBeCloseTo(cx, 6);        // point under the cursor held fixed
+    expect(worldY * after.scale + after.ty).toBeCloseTo(cy, 6);
   });
 
-  it("zoomAtWorld clamps the scale to [min,max] (#3190)", () => {
+  it("zoomAtClient is a no-op before the viewport mounts, and clamps the scale to [min,max] (#3190)", () => {
     const { result } = renderHook(() => useGraphViewport({ w: 1000, h: 1000 }, { min: 0.4, max: 1.5 }));
-    act(() => result.current.zoomAtWorld(99, 10, 10));  // way past max
+    act(() => result.current.zoomAtClient(2, 10, 10));   // no viewport element yet → no move
+    expect(result.current.view).toEqual({ tx: 0, ty: 0, scale: 1 });
+    const el = document.createElement("div");
+    act(() => result.current.setVp(el));
+    act(() => result.current.zoomAtClient(99, 10, 10));  // way past max
     expect(result.current.view.scale).toBe(1.5);
-    act(() => result.current.zoomAtWorld(0.001, 10, 10)); // way past min
+    act(() => result.current.zoomAtClient(0.001, 10, 10)); // way past min
     expect(result.current.view.scale).toBe(0.4);
   });
 

@@ -297,11 +297,14 @@ describe("componentBundle — gesture-forward shim (#3190)", () => {
     document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, screenX: 4, screenY: 4 }));
     expect(posts).toEqual([]);
 
-    // ZOOM: a wheel over empty background → a `zoom` message with deltaY + the cursor's (world) x/y.
+    // ZOOM: a wheel over empty background → a `zoom` message with deltaY + the cursor as a FRACTION of the
+    // iframe viewport (the host resolves it against the iframe's real rect).
     posts.length = 0;
     bg.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -120, clientX: 40, clientY: 30 }));
     expect(posts).toHaveLength(1);
-    expect(posts[0]).toMatchObject({ __preview: "zoom", dy: -120, wx: 40, wy: 30 });
+    expect(posts[0]).toMatchObject({ __preview: "zoom", dy: -120 });
+    expect((posts[0] as { fx: number }).fx).toBeCloseTo(40 / window.innerWidth, 6);
+    expect((posts[0] as { fy: number }).fy).toBeCloseTo(30 / window.innerHeight, 6);
 
     // …but a wheel over a genuinely scrollable region (overflow-y:auto, taller content, room to scroll
     // down) is left alone so that region scrolls.

@@ -307,9 +307,11 @@ export function fitShimScript(fit: boolean): string {
  *   real control returns early → the component keeps it.
  * - **Wheel-zoom.** On a wheel that is NOT over a genuinely scrollable ancestor (one whose `overflow-y`
  *   is auto/scroll AND can still scroll further in the wheel's direction), it `preventDefault`s and posts
- *   `zoom` with the deltaY + the cursor's iframe-local x/y (which, for a component that fills the frame,
- *   equals the world coordinate) so the host can zoom about the cursor. Over a scrollable region it does
- *   nothing → that region scrolls normally.
+ *   `zoom` with the deltaY + the cursor as a FRACTION of the iframe viewport (fx,fy ∈ [0,1]). The host
+ *   resolves that against the iframe's REAL rendered rect → the true page position → zoom about the cursor
+ *   via the SAME path the gutter wheel uses. (Sending a fraction, not iframe-local px, means the anchor
+ *   never relies on "iframe px == world coords" — a border/offset/fit can't skew it.) Over a scrollable
+ *   region it does nothing → that region scrolls normally.
  *
  * Why `svg`/`canvas` count as interactive for the pan test: an interactive data-viz (d3 force graph,
  * zoomable chart) attaches its drag handlers PROGRAMMATICALLY to its `<svg>`/`<canvas>` and often sets no
@@ -364,7 +366,9 @@ export function gestureForwardScript(on: boolean): string {
   document.addEventListener("wheel", function (e) {
     if (scrollableAt(e.target, e.deltaY)) return;          // let a real scroll container scroll
     e.preventDefault();                                    // else: zoom the host about the cursor
-    send({ __preview: "zoom", dy: e.deltaY, wx: e.clientX, wy: e.clientY });
+    var w = window.innerWidth || document.documentElement.clientWidth || 1;
+    var h = window.innerHeight || document.documentElement.clientHeight || 1;
+    send({ __preview: "zoom", dy: e.deltaY, fx: e.clientX / w, fy: e.clientY / h });
   }, { capture: true, passive: false });
 })();
 </script>`;

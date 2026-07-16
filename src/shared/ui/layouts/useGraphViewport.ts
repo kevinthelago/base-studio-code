@@ -58,10 +58,11 @@ export interface GraphViewport {
    *  (e.g. an iframe forwarding a non-interactive drag, #3190), where `onCanvasDown` never sees a
    *  mousedown of its own. */
   panBy: (dx: number, dy: number) => void;
-  /** Zoom by `factor` (scale × factor, clamped) keeping the WORLD point (wx,wy) fixed on screen — for a
-   *  wheel gesture forwarded from OUTSIDE the viewport (#3190). The forwarding iframe fills the world
-   *  layer, so its cursor-local x/y ARE world coords; the host anchors the zoom there. */
-  zoomAtWorld: (factor: number, wx: number, wy: number) => void;
+  /** Zoom by `factor` (scale × factor, clamped) about a PAGE point (clientX,clientY) — for a wheel gesture
+   *  forwarded from OUTSIDE the viewport (#3190). Same math as the native wheel: converts the page point to
+   *  viewport-relative via the live bounding rect, so the anchor is exact regardless of the forwarder's
+   *  own geometry. */
+  zoomAtClient: (factor: number, clientX: number, clientY: number) => void;
   /** The `transform` style to spread onto the world layer. */
   worldTransform: React.CSSProperties;
 }
@@ -162,11 +163,14 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
     setView((v) => ({ ...v, tx: v.tx + dx, ty: v.ty + dy }));
   }, []);
 
-  /** Zoom by `factor` about the WORLD point (wx,wy) — a wheel forwarded from outside the viewport (#3190).
-   *  The world point's current screen position is `wx·scale + tx`; anchoring the zoom there keeps it fixed. */
-  const zoomAtWorld = useCallback((factor: number, wx: number, wy: number) => {
-    setView((v) => zoomAboutPoint(v, v.scale * factor, wx * v.scale + v.tx, wy * v.scale + v.ty, min, max));
-  }, [min, max]);
+  /** Zoom by `factor` about a PAGE point — a wheel forwarded from outside the viewport (#3190). Mirrors
+   *  `onWheel`: convert the page point to viewport-relative via the live rect, then zoom about it. */
+  const zoomAtClient = useCallback((factor: number, clientX: number, clientY: number) => {
+    const el = vpRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    zoomAbout(viewRef.current.scale * factor, clientX - r.left, clientY - r.top);
+  }, [zoomAbout]);
 
   /** Zoom by a factor around the viewport center (the +/- buttons). */
   const zoomBy = useCallback((f: number) => {
@@ -235,7 +239,7 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
   }, [onWheel]);
 
   return {
-    view, setVp, onCanvasDown, fit, centerOn, zoomBy, zoomTo, zoomToCentered, dragMoved, panBy, zoomAtWorld,
+    view, setVp, onCanvasDown, fit, centerOn, zoomBy, zoomTo, zoomToCentered, dragMoved, panBy, zoomAtClient,
     worldTransform: { transform: `translate(${view.tx}px,${view.ty}px) scale(${view.scale})`, transformOrigin: "0 0" },
   };
 }

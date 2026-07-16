@@ -12,7 +12,7 @@ vi.mock("./useGraphViewport", async (orig) => {
     useGraphViewport: () => ({
       view: { tx: 0, ty: 0, scale: 1 },
       setVp: () => {}, onCanvasDown: () => {}, fit: fitSpy, centerOn: () => {},
-      zoomBy: () => {}, zoomTo: () => {}, zoomToCentered: () => {}, panBy: () => {}, zoomAtWorld: () => {},
+      zoomBy: () => {}, zoomTo: () => {}, zoomToCentered: () => {}, panBy: () => {}, zoomAtClient: () => {},
       dragMoved: { current: false }, worldTransform: {},
     }),
   };

@@ -467,8 +467,8 @@ export function DesignsWorkbench() {
                 a real control (control tag / `[role]` / focusable / `cursor:pointer` / an svg|canvas viz
                 surface) is left for the component; a drag on empty space is forwarded as a pan (`onPreviewPan`
                 → `previewVp.panBy`). A wheel over a scroll region scrolls it; anywhere else it's forwarded as
-                a zoom about the cursor (`onPreviewZoom` → `previewVp.zoomAtWorld`) — so zoom works over the
-                component too, not just the gutter. Dragging/wheeling the GUTTER still routes through
+                a zoom about the cursor (`onPreviewZoom` → `previewVp.zoomAtClient`, anchored via the
+                iframe's real rect) — so zoom works over the component too, not just the gutter. Dragging/wheeling the GUTTER still routes through
                 `onCanvasDown` + the native wheel listener (the world Box is `data-node`, so `onCanvasDown`
                 bails on the frame). This supersedes #3188's declared-props guess (props miss internal handlers
                 + CSS :hover). +/−/fit buttons work either way. No will-change on the world (it blurs zoom-in). */}
@@ -489,7 +489,7 @@ export function DesignsWorkbench() {
                   extraAnimation={tryAnimDef}
                   previewState={previewState}
                   onPreviewPan={(dx, dy) => previewVp.panBy(dx, dy)}
-                  onPreviewZoom={(deltaY, wx, wy) => previewVp.zoomAtWorld(Math.exp(-deltaY * 0.0016), wx, wy)}
+                  onPreviewZoom={(deltaY, cx, cy) => previewVp.zoomAtClient(Math.exp(-deltaY * 0.0016), cx, cy)}
                 />
               </Box>
             </div>
