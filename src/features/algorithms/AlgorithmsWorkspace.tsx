@@ -46,7 +46,7 @@ export function AlgorithmsWorkspace() {
   // (not a bare boolean) so selecting a different node auto-returns to the graph — `vizExpanded` is the
   // derived "the current selection is the expanded one", no reset effect needed. Its registered viz, if any.
   const [expandedImplId, setExpandedImplId] = useState<string | null>(null);
-  const focusedViz = focusedImpl ? vizForImpl(focusedImpl.id) : undefined;
+  const focusedViz = focusedImpl ? vizForImpl(focusedImpl) : undefined;
   const vizExpanded = expandedImplId != null && expandedImplId === selectedImpl;
 
   // The active language's OWN graph (impls + composes edges, down to the primitive base) + its layout.

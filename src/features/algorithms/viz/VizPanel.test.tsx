@@ -6,7 +6,7 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import { VizStage } from "./VizPanel";
 import { vizForImpl } from "./examples/registry";
 
-const viz = vizForImpl("sort.ts")!; // the seeded array-sort visualization
+const viz = vizForImpl({ id: "sort.ts", name: "sort", kind: "sort" })!; // the array-sort visualization
 
 describe("VizStage — in-canvas take-over (#3205)", () => {
   it("renders a full player with controls + the seeded input, over the canvas", () => {

@@ -32,6 +32,12 @@ export type ImplRole = "primitive" | "algorithm";
  * (e.g. `merge-sort.rs` composes `merge.rs`, `rust.vec`, `rust.slice`). `id` is `<name>.<ext>` for an
  * algorithm, `<tech>.<name>` for a primitive.
  */
+/** The manipulation KINDS an algorithm can carry (#3210, epic #3209) — the "what it does" axis of the
+ *  animation (`sort`/`search`/…), paired with the DATA STRUCTURE it operates on to pick the live
+ *  visualization. Grows as more example animations land (matrix ops, etc.). */
+export const ALGO_KINDS = ["sort", "search", "traversal", "accumulate"] as const;
+export type AlgoKind = (typeof ALGO_KINDS)[number];
+
 export interface AlgoImpl {
   /** `<name>.<ext>` (algorithm) or `<tech>.<name>` (primitive) — e.g. "merge-sort.rs", "rust.iterator". */
   id: string;
@@ -58,6 +64,11 @@ export interface AlgoImpl {
   /** Optional free-form tags (#3120) — additive keywords for search / cross-cutting collections. Absent
    *  on existing impls; curated via `bsc graph impl set --tags a,b,c`. */
   tags?: string[];
+  /** Optional KIND facet (#3210) — the manipulation this algorithm performs (`sort`/`search`/…), the
+   *  "what it does" axis that (with its data structure) selects the live animation. ADDITIVE + backward-
+   *  compatible: the CREATOR assigns it (`bsc graph impl set --kind sort`), and a heuristic classifier
+   *  fills it for untyped impls; absent on impls authored before the facet, so nothing breaks. */
+  kind?: AlgoKind;
 }
 
 /** The knowledge model — the per-language implementation tier (#2958); the abstract concept ontology

@@ -141,6 +141,11 @@ pub struct AlgoImpl {
     /// Free-form tags (#3120) — additive keywords for cross-cutting collections.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// The KIND facet (#3210) — the manipulation this algorithm performs (`sort`/`search`/…), the axis
+    /// that (with its data structure) selects the live animation. Additive like `domain`: the creator
+    /// assigns it (`bsc graph impl set --kind`), a heuristic fills untyped impls; absent ⇒ omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 /// The implementation objects of the runtime graph (store-or-seed).
@@ -385,6 +390,35 @@ mod tests {
         assert_eq!(im.domain.as_deref(), Some("logistics"));
         assert_eq!(im.tags, ["graph", "routing"]);
         assert_eq!(serde_json::to_value(&im).unwrap(), json, "the facets round-trip");
+    }
+
+    // ── #3210 kind facet ──
+
+    #[test]
+    fn algo_impl_kind_facet_is_additive_round_trips_and_persists_via_set_impl() {
+        // Present → deserializes + re-serializes unchanged.
+        let json = serde_json::json!({
+            "id": "merge-sort.rs", "tech": "rust", "role": "algorithm", "name": "merge_sort",
+            "composes": [], "code": "// sort", "kind": "sort"
+        });
+        let im: AlgoImpl = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(im.kind.as_deref(), Some("sort"));
+        assert_eq!(serde_json::to_value(&im).unwrap(), json, "the kind facet round-trips");
+
+        // Absent → None, and no empty `kind` key is emitted (backward-compatible with pre-facet impls).
+        let bare = serde_json::json!({ "id": "x.rs", "tech": "rust", "role": "algorithm", "name": "x", "composes": [], "code": "//" });
+        let im2: AlgoImpl = serde_json::from_value(bare.clone()).unwrap();
+        assert_eq!(im2.kind, None);
+        assert!(serde_json::to_value(&im2).unwrap().get("kind").is_none(), "no empty kind key emitted");
+
+        // `bsc graph impl set --kind` (via set_impl) persists it.
+        let mut g = seed();
+        set_impl(&mut g, serde_json::json!({
+            "id": "quick-sort.rs", "tech": "rust", "role": "algorithm", "name": "quick_sort",
+            "composes": [], "code": "//", "kind": "sort"
+        })).unwrap();
+        let stored = implementations_of(&g).into_iter().find(|im| im["id"] == "quick-sort.rs").unwrap();
+        assert_eq!(stored["kind"], "sort");
     }
 
     #[test]

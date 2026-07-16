@@ -1,16 +1,20 @@
-// The impl → visualization registry (#3177, epic #3171) — the lookup the Algorithms inspector uses to
-// decide whether a focused implementation has a live Visualization pane, and, if so, WHAT to play. For
-// the array proof-of-loop this maps exactly the seeded `sort.ts` impl to its trace factory + the
-// <ArrayView> renderer.
+// The kind → visualization registry (#3177/#3210, epic #3171/#3209) — the lookup the Algorithms inspector
+// uses to decide whether a focused implementation has a live Visualization pane, and, if so, WHAT to play.
+//
+// KEYED BY KIND, NOT BY ID (#3210): an example is registered per MANIPULATION kind (`sort`/`search`/…),
+// and `vizForImpl` resolves an impl's kind (its assigned `kind`, else the heuristic classifier) and plays
+// that kind's example. So one `sort` example lights up the WHOLE sort family (bubble/merge/quick/heap/…),
+// not just `sort.ts` — the category-representative animation, per the epic's "driven by the data
+// structure, not per-algorithm" vision.
 //
 // SCOPE (a scoped-out follow-up): today the example generators are in-app modules (the plain fn + the
 // step-yielding trace, colocated). The durable end state is running a STORE-authored generator (the
 // librarian's `code`) through the shared preview iframe (`shared/lib/preview/`, #3177) so any library
-// impl animates without an in-app module. This registry is the seam that swaps to that: the inspector
-// asks `vizForImpl(id)` and renders a player; only the RESOLVER changes when store-authored generators
-// execute in the iframe.
+// impl animates without an in-app module.
 
 import type { Frame } from "../../lib/trace";
+import type { AlgoImpl, AlgoKind } from "../../lib/knowledge";
+import { classifyKind, type Classifiable } from "../../lib/classifyKind";
 import type { RendererRegistry } from "../registry";
 import { ArrayView } from "../renderers/ArrayView";
 import { SORT_MOCK, sortSteps, parseSortInput } from "./sort";
@@ -40,12 +44,12 @@ export interface VizExample {
   };
 }
 
-/** The impls that have a live Visualization pane, keyed by impl id. The array sort proof (#3178/#3177).
- *  `sortSteps` mutates its input in place, so both `factory` and `input.make` hand it a FRESH COPY (of the
- *  immutable {@link SORT_MOCK} / the parsed input) each call — keeping the source pristine so the engine's
- *  deterministic replay is exact. */
-export const VIZ_EXAMPLES: Record<string, VizExample> = {
-  "sort.ts": {
+/** The example animation for each MANIPULATION kind (#3210). Only `sort` exists today (the array proof,
+ *  #3178); search/traversal/accumulate land in S2 (#3211). A `Partial` map — a kind with no example yet
+ *  simply has no animation. `sortSteps` mutates in place, so `factory`/`input.make` hand it a FRESH COPY
+ *  (of the immutable {@link SORT_MOCK} / the parsed input) each call, keeping replay deterministic. */
+export const EXAMPLES_BY_KIND: Partial<Record<AlgoKind, VizExample>> = {
+  sort: {
     factory: () => sortSteps([...SORT_MOCK]),
     renderers: { array: ArrayView },
     input: {
@@ -57,8 +61,16 @@ export const VIZ_EXAMPLES: Record<string, VizExample> = {
   },
 };
 
-/** The visualization for an implementation id, or `undefined` when it has none (no Visualization pane).
- *  Pure lookup — the inspector renders the inline visualization only when this is defined (#3199). */
-export function vizForImpl(id: string): VizExample | undefined {
-  return VIZ_EXAMPLES[id];
+/** Resolve an implementation's kind (#3210): the CREATOR-assigned `kind` wins; otherwise the heuristic
+ *  classifier infers it. `null` when neither yields a kind (an untyped, unclassifiable impl). */
+export function resolveKind(impl: Pick<AlgoImpl, "kind"> & Classifiable): AlgoKind | null {
+  return impl.kind ?? classifyKind(impl);
+}
+
+/** The visualization for an implementation, or `undefined` when its kind has no example (or it has no
+ *  resolvable kind). Pure lookup over the resolved kind — the inspector renders the inline visualization
+ *  only when this is defined (#3199). So the whole sort family animates off the one `sort` example. */
+export function vizForImpl(impl: Pick<AlgoImpl, "kind"> & Classifiable): VizExample | undefined {
+  const kind = resolveKind(impl);
+  return kind ? EXAMPLES_BY_KIND[kind] : undefined;
 }
