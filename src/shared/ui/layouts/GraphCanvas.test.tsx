@@ -15,6 +15,8 @@ function fakeVp(over: Partial<GraphViewport> = {}): GraphViewport {
     zoomBy: () => {},
     zoomTo: () => {},
     zoomToCentered: () => {},
+    panBy: () => {},
+    zoomAtWorld: () => {},
     dragMoved: { current: false },
     worldTransform: { transform: "translate(0px,0px) scale(1)" },
     ...over,

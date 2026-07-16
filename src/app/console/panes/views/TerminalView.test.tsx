@@ -28,6 +28,8 @@ vi.mock("@xterm/xterm", () => {
     onData = vi.fn(() => ({ dispose: vi.fn() }));
     focus = focusSpy;
     dispose = vi.fn();
+    attachCustomKeyEventHandler = vi.fn();
+    getSelection = vi.fn(() => "");
   }
   return { Terminal };
 });
