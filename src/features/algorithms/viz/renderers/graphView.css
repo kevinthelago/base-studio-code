@@ -55,3 +55,16 @@
   pointer-events: none;
   user-select: none;
 }
+
+/* Edge weight labels (weighted graphs — Dijkstra) — a halo (paint-order stroke) keeps them legible over
+   the edge line. */
+.graph-weight {
+  fill: var(--fg);
+  font-size: 10.5px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  paint-order: stroke;
+  stroke: var(--bg, var(--bg-elev));
+  stroke-width: 3px;
+  pointer-events: none;
+  user-select: none;
+}
