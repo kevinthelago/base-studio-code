@@ -41,13 +41,13 @@ export function AlgorithmsInspector({ graph, focusedImpl, onSelectImpl }: {
     );
   }
 
-  // Key the body on the impl id so the Code | Visualization toggle resets to Code when the selection
-  // changes (a fresh mount) — the previous impl's pane never leaks into the next one.
+  // Key the body on the impl id so the visualization (its fullscreen open state, custom input) resets on
+  // a fresh mount when the selection changes — the previous impl's pane never leaks into the next one.
   return <ImplInspector key={focusedImpl.id} graph={graph} impl={focusedImpl} onSelectImpl={onSelectImpl} />;
 }
 
-/** The focused implementation's inspector body — its identity + code/visualization + builds-on/used-by.
- *  Split out so the Visualization toggle can hold local state that resets per impl (via the `key`). */
+/** The focused implementation's inspector body — its identity + inline visualization + code +
+ *  builds-on/used-by. Split out so `VizPanel`'s local state resets per impl (via the `key`). */
 function ImplInspector({ graph, impl, onSelectImpl }: {
   graph: KnowledgeGraph;
   impl: AlgoImpl;

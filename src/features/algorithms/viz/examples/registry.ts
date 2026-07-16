@@ -58,7 +58,7 @@ export const VIZ_EXAMPLES: Record<string, VizExample> = {
 };
 
 /** The visualization for an implementation id, or `undefined` when it has none (no Visualization pane).
- *  Pure lookup — the inspector shows the Code | Visualization toggle only when this is defined. */
+ *  Pure lookup — the inspector renders the inline visualization only when this is defined (#3199). */
 export function vizForImpl(id: string): VizExample | undefined {
   return VIZ_EXAMPLES[id];
 }
