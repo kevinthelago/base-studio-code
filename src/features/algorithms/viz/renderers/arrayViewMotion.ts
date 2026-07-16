@@ -1,95 +1,21 @@
-// The `array` viz kit's MOTION library (#3178, epic #3171/#2942) — the compare / swap / set / sorted
-// animations authored as KitAnimation DATA and compiled by the kit-motion engine (`compileAnimationsCss`),
-// NOT as hand-written CSS `@keyframes`. This is the epic's core vision: motion is data, so it's editable
-// in the Designer's Animations menu instead of baked into a renderer's stylesheet.
+// The `array` viz kit's MOTION wiring (#3178, epic #3171/#2942) — injects the compiled motion CSS
+// (compare / swap / set / sorted) into the live ArrayView. The animation DATA itself now lives in a
+// SHARED, feature-agnostic home (`@/shared/ui/kit/algoVizAnimations`) so BOTH consumers read ONE
+// definition: this renderer AND the Designs `algo-viz` builtin kit (#3194) — see that module's doc for
+// the why and the state-trigger seam. `ArrayView`'s root carries the applying classes
+// ({@link ALGO_VIZ_ANIM_CLASSES}); its cells only stamp `data-op` / `data-mark`. Change an animation's
+// data in the shared module → every array visualization AND the Design-Studio kit shelf update, no
+// renderer change.
 //
-// THE STATE-TRIGGER SEAM (#3058) — how "verb → data-state → animation" is expressed in the current
-// engine: there is no `trigger: "state"`; a state trigger is a KitAnimation whose `selector` IS the
-// data-state (`[data-op="swap"]`). The engine compiles it to a rule
-//
-//     .algo-viz-anim-swap [data-op="swap"] { animation: bsc-algo-viz-swap …; }
-//
-// which plays whenever a DESCENDANT of the applying-class root matches that state — i.e. exactly when
-// `ArrayView` stamps `data-op="swap"` on a cell (see lib/binding.ts). `ArrayView`'s root carries the
-// applying classes ({@link ALGO_VIZ_ANIM_CLASSES}); its cells still ONLY stamp `data-op` / `data-mark`.
-// Change an animation's data here → every array visualization updates, no renderer change.
-//
-// RESIDUAL (noted, not built here): these live as an in-code KitAnimation[] rather than a registered
-// `algo-viz` kit in the component-kit store, so they compile + play but are not yet LISTED/EDITED in the
-// AnimationsMenu. Registering this kit into the Designs kit store (so `AnimationsMenu` renders + persists
-// edits, and `applyAnimationsToRoot(kitAnimations(kits))` compiles it globally) is the follow-up — it
-// consumes this exact data (`ALGO_VIZ_ANIMATIONS`) unchanged.
+// The #3194 kit registration (RESIDUAL, now DONE): the Designs seed registers `ALGO_VIZ_ANIMATIONS` as a
+// recoverable builtin kit so `AnimationsMenu` lists + edits them; this renderer keeps its own dedicated
+// managed `<style>` (below) so the two paths never clobber each other.
 
-import { animClassName, compileAnimationsCss, kitAnimations, type KitAnimation } from "@/shared/ui/kit";
+import { animClassName, compileAnimationsCss, kitAnimations } from "@/shared/ui/kit";
+import { ALGO_VIZ_KIT_ID, ALGO_VIZ_ANIMATIONS } from "@/shared/ui/kit/algoVizAnimations";
 
-/** The array-visualization motion kit id — `.algo-viz-anim-<name>` + `@keyframes bsc-algo-viz-<name>`. */
-export const ALGO_VIZ_KIT_ID = "algo-viz";
-
-/**
- * The array viz kit's animations as DATA (#2942), each a STATE trigger keyed on the data-state selector
- * `ArrayView` stamps — so the compiled rule fires on exactly `[data-op="compare"]` / `[data-op="swap"]`
- * / `[data-op="set"]` / `[data-mark="sorted"]`. Token-based colors + durations; the engine wraps every
- * applying rule in `@media (prefers-reduced-motion: no-preference)`, so reduced-motion is handled for
- * free. Editable data — this is what a Designer Animations-menu integration would surface (see RESIDUAL).
- */
-export const ALGO_VIZ_ANIMATIONS: KitAnimation[] = [
-  // compare — a highlight pulse on the two compared cells.
-  {
-    name: "compare",
-    selector: '[data-op="compare"]',
-    duration: "500ms",
-    easing: "var(--ease-standard)",
-    set: { "z-index": "1" },
-    keyframes: {
-      "0%": { "box-shadow": "0 0 0 0 transparent", "border-color": "var(--border)" },
-      "45%": {
-        "box-shadow": "0 0 0 2px color-mix(in oklch, var(--state-wait), transparent 45%)",
-        "border-color": "var(--state-wait)",
-      },
-      "100%": { "box-shadow": "0 0 0 0 transparent", "border-color": "var(--border)" },
-    },
-  },
-  // swap — the two cells lift, tint to the accent, and settle back as they exchange.
-  {
-    name: "swap",
-    selector: '[data-op="swap"]',
-    duration: "420ms",
-    easing: "cubic-bezier(0.34, 1.4, 0.5, 1)",
-    set: { "z-index": "2" },
-    keyframes: {
-      "0%": {
-        transform: "translateY(0)",
-        "border-color": "var(--accent)",
-        background: "color-mix(in oklch, var(--accent), var(--bg-elev) 62%)",
-      },
-      "40%": { transform: "translateY(-12px) scale(1.05)" },
-      "100%": { transform: "translateY(0)" },
-    },
-  },
-  // set — a value flash (a fresh write into the cell).
-  {
-    name: "set",
-    selector: '[data-op="set"]',
-    duration: "500ms",
-    easing: "var(--ease-standard)",
-    keyframes: {
-      "0%": { background: "color-mix(in oklch, var(--accent), transparent 20%)" },
-      "100%": { background: "var(--bg-elev)" },
-    },
-  },
-  // sorted — a one-shot settle as a cell reaches its final place (its DURABLE green resting look is a
-  // static element style in arrayView.css, since a mark persists across frames — this is only the motion).
-  {
-    name: "sorted",
-    selector: '[data-mark="sorted"]',
-    duration: "300ms",
-    easing: "var(--ease-standard)",
-    keyframes: {
-      "0%": { transform: "translateY(-3px)" },
-      "100%": { transform: "translateY(0)" },
-    },
-  },
-];
+// Re-export the shared data so this renderer's public surface (and the algorithms barrel) is unchanged.
+export { ALGO_VIZ_KIT_ID, ALGO_VIZ_ANIMATIONS };
 
 /** The applying classes the renderer's root must carry so the state-scoped rules match its cells —
  *  the kit-binding convention (`the renderer puts .<kit>-anim-<name> on the element`). Derived from the
