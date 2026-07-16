@@ -61,9 +61,13 @@ describe("DesignsWorkbench (#2308)", () => {
   it("the inspector carries the library detail: live preview + Overview/Source/Usage tabs", () => {
     render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));                              // focus a node to reveal the details pane
-    expect(screen.getByText("Live preview")).toBeTruthy();           // preview + its switchers
+    expect(screen.getByTitle("Chip preview")).toBeTruthy();          // the live-preview iframe leads the pane
     expect(screen.getByLabelText("Theme")).toBeTruthy();             // the single Theme dropdown (#2545)
-    expect(screen.getByText("⤢ fluid")).toBeTruthy();
+    // #3190: the preview leads the inspector with NO control bar — the "Live preview" title, the data-state
+    // (loaded/empty/loading) buttons, and the variant + screen-size (sm/md/fluid) toggles are all gone.
+    expect(screen.queryByText("Live preview")).toBeNull();
+    expect(screen.queryByText("loaded")).toBeNull();
+    expect(screen.queryByText("⤢ fluid")).toBeNull();
     expect(screen.getByText("Props / API")).toBeTruthy();            // Overview is the default tab
     // The per-component generate-variants chat was removed (#2597) — the designer session drives edits.
     expect(screen.queryByLabelText("Describe a variant")).toBeNull();
@@ -449,7 +453,7 @@ describe("theme try-on preview (#2834)", () => {
     expect(screen.getByRole("button", { name: /Nord/ })).toBeTruthy();   // menu present
     fireEvent.click(screen.getByRole("button", { name: /Back to graph/ }));
     expect(screen.queryByRole("button", { name: /Nord/ })).toBeNull();   // menu gone
-    expect(screen.getByText("Live preview")).toBeTruthy();               // inspector restored
+    expect(screen.getByText("Props / API")).toBeTruthy();                // per-component inspector restored
   });
 
   it("the expanded center carries the theme's palette strip alongside the preview (#2834)", () => {
@@ -500,7 +504,7 @@ describe("theme try-on preview (#2834)", () => {
     expect(screen.getByRole("button", { name: "fit" })).toBeTruthy();
   });
 
-  it("the preview is always interactive; pan lives on the gutter, no toggle (#3188)", () => {
+  it("the preview is always interactive; dragging the wrapper OR the gutter pans (#3188/#3190)", () => {
     render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));
     fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
@@ -508,11 +512,17 @@ describe("theme try-on preview (#2834)", () => {
     expect(screen.queryByText("🖐 pan")).toBeNull();
     expect(screen.queryByText("select")).toBeNull();
     // EVERY component keeps pointer-events:auto so clicks/hover work (props don't reveal internal
-    // handlers / :hover). Panning is on the gutter — the world wrapper is data-node so onCanvasDown
-    // bails on the component frame and only the surrounding backdrop pans.
-    const worldWrap = () => screen.getByTitle("Chip preview").parentElement!.parentElement as HTMLElement;
-    expect(worldWrap().style.pointerEvents).toBe("auto");
-    expect(worldWrap().getAttribute("data-node")).toBe("preview");
+    // handlers / :hover). #3190: the world wrapper is NO LONGER a data-node — the iframe swallows its own
+    // mousedowns (forwarded as pan/interact), so the ONLY effect of the old `data-node` was to make
+    // `onCanvasDown` dead-zone the exposed wrapper edges. Now a press starting on the wrapper pans.
+    const worldWrap = screen.getByTitle("Chip preview").parentElement!.parentElement as HTMLElement;
+    expect(worldWrap.style.pointerEvents).toBe("auto");
+    expect(worldWrap.getAttribute("data-node")).toBeNull();
+    const viewport = worldWrap.parentElement as HTMLElement; // the pan/zoom canvas (onCanvasDown)
+    fireEvent.mouseDown(worldWrap, { clientX: 100, clientY: 100 });
+    expect(viewport.style.cursor).toBe("grabbing");          // onCanvasDown engaged — the wrapper pans
+    fireEvent.mouseUp(window);
+    expect(viewport.style.cursor).toBe("grab");              // released
   });
 
   it("preview mode hides the graph chrome (the composition-graph toolbar); it returns on exit (#2849)", () => {

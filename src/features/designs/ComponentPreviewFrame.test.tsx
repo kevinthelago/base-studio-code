@@ -64,10 +64,14 @@ describe("ComponentPreviewFrame — forwarded gesture handling (#3190)", () => {
     expect(onPreviewPan).toHaveBeenLastCalledWith(-5, 5);
   });
 
-  it("forwards a zoom message as an onPreviewZoom(deltaY, wx, wy) call", () => {
+  it("resolves a zoom fraction against the iframe's real rect into page coords for onPreviewZoom", () => {
     const onPreviewZoom = vi.fn();
-    render(<ComponentPreviewFrame comp={comp} theme="dark" themeId="t" themeVars={{}} width={640} height={440} onPreviewZoom={onPreviewZoom} />);
-    post({ __preview: "zoom", dy: -120, wx: 40, wy: 30 });
-    expect(onPreviewZoom).toHaveBeenCalledWith(-120, 40, 30);
+    const { container } = render(<ComponentPreviewFrame comp={comp} theme="dark" themeId="t" themeVars={{}} width={640} height={440} onPreviewZoom={onPreviewZoom} />);
+    // jsdom has no layout, so stub the iframe's rendered rect; the handler maps (fx,fy) → page coords.
+    const iframe = container.querySelector("iframe") as HTMLIFrameElement;
+    iframe.getBoundingClientRect = () => ({ left: 100, top: 50, width: 200, height: 100, right: 300, bottom: 150, x: 100, y: 50, toJSON: () => ({}) });
+    post({ __preview: "zoom", dy: -120, fx: 0.5, fy: 0.25 });
+    // pageX = 100 + 0.5*200 = 200 ; pageY = 50 + 0.25*100 = 75.
+    expect(onPreviewZoom).toHaveBeenCalledWith(-120, 200, 75);
   });
 });
