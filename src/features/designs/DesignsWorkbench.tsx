@@ -33,6 +33,7 @@ import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { useGraphPage } from "@/shared/ui/layouts/useGraphPage";
+import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 import { selectionNeighborhood } from "@/shared/lib/graph/selectionNeighborhood";
 import { layoutBand } from "@/shared/lib/graph/crossGraph";
@@ -169,13 +170,23 @@ export function DesignsWorkbench() {
   // The expanded preview's own pan/zoom viewport (#3154) — the shared graph viewport, reused so the
   // large preview moves + zooms like every other canvas. The graph's own viewport is hidden in preview
   // mode, so this is a SEPARATE instance. A zoomable canvas has no "fluid" width, so the preview gets a
-  // fixed world per breakpoint (fit-to-frame replaces fill). Re-fits on open + selection/breakpoint
-  // switch (stable keys — never the polled model, per the useGraphPage trap).
+  // fixed world per breakpoint. It opens ZOOMED IN (below) rather than fit-to-frame — hence the raw
+  // `useGraphViewport` (no useGraphPage fit-on-key).
   const previewW = vp === "sm" ? 380 : vp === "md" ? 640 : 1200;
-  const previewVp = useGraphPage({ w: previewW, h: 440 }, [sel?.id, vp, previewMode], { min: 0.2, max: 5, fitPad: 40 });
+  const previewVp = useGraphViewport({ w: previewW, h: 440 }, { min: 0.2, max: 5 });
   // Pull the viewport values out as locals (mirrors GraphCanvas) — `worldTransform` is a computed style
   // object, not a ref, but member-accessing `previewVp.*` in render trips the react-compiler ref rule.
-  const { setVp: setPreviewVp, onCanvasDown: onPreviewCanvasDown, worldTransform: previewWorldTransform } = previewVp;
+  const { setVp: setPreviewVp, onCanvasDown: onPreviewCanvasDown, worldTransform: previewWorldTransform, zoomToCentered: previewZoomToCentered } = previewVp;
+  // Initial view (#3190): start ZOOMED IN, not at a plain fit. A page is letterboxed small by its render
+  // ratio (the whitespace is intentional), so fit reads tiny — a centered magnify makes it usable and
+  // crops the side whitespace in. Pages get a stronger zoom than 1:1 components. Re-applied on open +
+  // selection/breakpoint switch (replaces useGraphPage's fit-on-key). Tune the factors to taste.
+  const previewInitialZoom = sel && (sel.role === "page" || sel.role === "layout") ? 1.7 : 1.2;
+  useEffect(() => {
+    if (!previewMode) return;
+    const id = requestAnimationFrame(() => previewZoomToCentered(previewInitialZoom));
+    return () => cancelAnimationFrame(id);
+  }, [sel?.id, vp, previewMode, previewInitialZoom, previewZoomToCentered]);
 
   const allVariants = focusComp ? focusComp.variants : [];
   const activeVariant = allVariants.includes(variant) ? variant : allVariants[0] ?? "default";
