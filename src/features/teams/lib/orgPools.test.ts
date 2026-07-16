@@ -32,7 +32,8 @@ describe("detectPools (#2199)", () => {
   it("collapses a homogeneous swarm into one pool", () => {
     const pools = detectPools(swarm, personas);
     expect(pools).toHaveLength(1);
-    expect(pools[0]).toMatchObject({ nodeId: "pool:p-worker", personaId: "p-worker", count: 3, homogeneous: true });
+    // A worker pool is planner-sized (#3143): the card shows no ×N.
+    expect(pools[0]).toMatchObject({ nodeId: "pool:p-worker", personaId: "p-worker", count: 3, homogeneous: true, plannerSized: true });
     expect(pools[0].memberNodeIds.sort()).toEqual(["w1", "w2", "w3"]);
   });
 
@@ -82,12 +83,27 @@ describe("detectPools (#2199)", () => {
     expect(detectPools(org, stale)).toHaveLength(1);
   });
 
-  it("respects an explicit un-pool (`pooled:false` beats the worker-role default) and single members", () => {
+  it("respects an explicit un-pool (`pooled:false` beats the worker-role default)", () => {
     const notPooled = personas.map((p) => (p.id === "p-worker" ? { ...p, pooled: false } : p));
     expect(detectPools(swarm, notPooled)).toHaveLength(0);
-    // one worker only → no pool even when pooled
+  });
+
+  it("a SINGLE planner-sized (worker) slot still collapses to a countless stack (#3143)", () => {
+    // The planner owns how many engineers exist (#2388), so ONE engineer node is a planner-sized SLOT,
+    // not a lone agent — it collapses to a stack whose card shows no ×N (Fleet Alpha's engineer, #3143).
     const single: Team = { ...swarm, positions: swarm.positions.slice(0, 2), relationships: [swarm.relationships[0]] };
-    expect(detectPools(single, personas)).toHaveLength(0);
+    const pools = detectPools(single, personas);
+    expect(pools).toHaveLength(1);
+    expect(pools[0]).toMatchObject({ nodeId: "pool:p-worker", count: 1, plannerSized: true });
+  });
+
+  it("a NON-worker pooled persona still needs a real swarm (≥2) to collapse (#3143 keeps the ≥2 floor)", () => {
+    // Only worker-role slots are planner-sized; a pooled non-worker with one member stays a singleton.
+    const pooledReviewer: Persona[] = personas.map((p) => (p.id === "p-reviewer" ? { ...p, pooled: true } : p));
+    const one: Team = { id: "o", name: "o", positions: [{ nodeId: "r1", kind: "agent", personaId: "p-reviewer" }], relationships: [] };
+    expect(detectPools(one, pooledReviewer)).toHaveLength(0);
+    const two: Team = { ...one, positions: [{ nodeId: "r1", kind: "agent", personaId: "p-reviewer" }, { nodeId: "r2", kind: "agent", personaId: "p-reviewer" }] };
+    expect(detectPools(two, pooledReviewer)).toMatchObject([{ count: 2, plannerSized: false }]);
   });
 
   it("never stacks the scaffold: a non-worker persona placed twice stays two singletons", () => {

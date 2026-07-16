@@ -45,9 +45,9 @@ describe("positionComms (#2193)", () => {
     const comms = positionComms(fleet, fleet.positions.find((p) => p.nodeId === "director")!, personas);
     // The director has one summary per edge it's on, each with a counterpart + form lanes.
     expect(comms.length).toBeGreaterThan(0);
-    const toWorkerA = comms.find((c) => c.counterpartNode === "worker-a");
-    expect(toWorkerA?.archetype).toBe("manages");
-    expect(toWorkerA?.sends.map((f) => f.id)).toContain("directive"); // manager sends directives down
+    const toEngineer = comms.find((c) => c.counterpartNode === "engineer");
+    expect(toEngineer?.archetype).toBe("manages");
+    expect(toEngineer?.sends.map((f) => f.id)).toContain("directive"); // manager sends directives down
   });
 });
 
