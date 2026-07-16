@@ -5,6 +5,7 @@ import { bscJson } from "@/shared/lib/core/bsc";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { attachTerminalClipboard } from "@/shared/lib/session/terminalClipboard";
 import "@xterm/xterm/css/xterm.css";
 import { log } from "@/shared/lib/core/log";
 import { recordPtyData, bumpTerminals } from "@/shared/lib/core/perf";
@@ -165,11 +166,13 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
     // size (a background tab mounted display:none by #187) caches bad metrics
     // and pushes the top lines out of frame. Returns true once opened. After
     // opening, fit to the real size and flush anything buffered while we waited.
+    let disposeClipboard: (() => void) | null = null; // copy-on-select + paste (#3157), armed once on open
     function openIfReady(): boolean {
       if (openedRef.current) return true;
       if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return false;
       term.open(el);
       openedRef.current = true;
+      disposeClipboard = attachTerminalClipboard(term, paneId);
       fitAddon.fit();
       if (pendingRef.current.size() > 0) term.write(pendingRef.current.flush());
       term.scrollToBottom(); // show the latest output on (re)mount, no scrolling (#68)
@@ -591,6 +594,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
       if (probeTimerRef.current) { clearTimeout(probeTimerRef.current); probeTimerRef.current = null; }
       el.removeEventListener("focusin", onFocusIn);
       disposeOnData.dispose();
+      disposeClipboard?.();
       unlistenRef.current?.();
       ro.disconnect();
       term.dispose();
