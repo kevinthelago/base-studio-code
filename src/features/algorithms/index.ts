@@ -4,3 +4,15 @@ export { AlgorithmsWorkspace } from "./AlgorithmsWorkspace";
 export * from "./lib/knowledge";
 // The cross-graph adapter (#3116) — the algo-graph NodeLookup another pillar composes into its resolver.
 export { algoNodeLookup } from "./lib/crossGraphAdapter";
+
+// Algorithm-visualization foundation (#3176, epic #3171) — the trace-frame contract, the streaming
+// engine, the verb→state binding helpers, the generic player, and the pluggable renderer registry the
+// per-structure renderers (#3178–#3185) plug into.
+export * from "./lib/trace";
+export * from "./lib/binding";
+export { makeTraceStream, DEFAULT_BUFFER_SIZE } from "./lib/traceStream";
+export type { TraceStream, TraceStreamOptions } from "./lib/traceStream";
+export { TracePlayer } from "./viz/TracePlayer";
+export type { TracePlayerProps } from "./viz/TracePlayer";
+export { fallbackRenderer, resolveRenderer } from "./viz/registry";
+export type { StructureRenderer, RendererRegistry } from "./viz/registry";
