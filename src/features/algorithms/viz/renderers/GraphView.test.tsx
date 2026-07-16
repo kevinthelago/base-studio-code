@@ -3,7 +3,7 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { GraphView } from "./GraphView";
-import { circularLayout } from "./graphLayout";
+import { circularLayout, coordinateLayout, layoutFor } from "./graphLayout";
 import type { GraphFrame } from "../../lib/trace";
 
 const frame: GraphFrame = {
@@ -46,5 +46,26 @@ describe("circularLayout (#3224)", () => {
     const points = Object.values(pos).map((p) => `${Math.round(p.x)},${Math.round(p.y)}`);
     expect(new Set(points).size).toBe(4); // all distinct
     expect(Object.values(pos).every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
+  });
+});
+
+describe("coordinateLayout / layoutFor (#3228)", () => {
+  it("uses node coordinates when all present (relative positions preserved), else null", () => {
+    const pos = coordinateLayout([
+      { id: "a", x: 0, y: 0 },
+      { id: "b", x: 10, y: 0 },
+      { id: "c", x: 0, y: 10 },
+    ]);
+    expect(pos).not.toBeNull();
+    expect(pos!.b.x).toBeGreaterThan(pos!.a.x); // b is to the right of a
+    expect(pos!.c.y).toBeGreaterThan(pos!.a.y); // c is below a
+    // not all nodes have coords → null (caller falls back to circular).
+    expect(coordinateLayout([{ id: "a" }, { id: "b", x: 1, y: 1 }])).toBeNull();
+  });
+
+  it("layoutFor falls back to a circular layout when nodes have no coordinates", () => {
+    const lf = layoutFor([{ id: "a" }, { id: "b" }, { id: "c" }]);
+    expect(Object.keys(lf)).toEqual(["a", "b", "c"]);
+    expect(Object.values(lf).every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
   });
 });

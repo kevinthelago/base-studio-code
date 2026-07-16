@@ -173,12 +173,98 @@ export function topologicalSort(g: TracedGraph): void {
   if (order.length === ids.length) g.path(order); // a valid order exists (the DAG has no cycle)
 }
 
-/** The visualizable graph algorithms, keyed by base name (#3224/#3226). a-star is deferred — a meaningful
- *  heuristic needs node coordinates (a spatial layout), a bigger change. */
+/** A SPATIAL weighted graph (nodes carry x/y) — A*'s heuristic (straight-line distance to the goal) guides
+ *  the search toward `g`, pruning the off-route nodes Dijkstra would still explore. Edge weights are the
+ *  straight-line distances, so the heuristic is admissible. */
+const SPATIAL_GRAPH: GraphInput = {
+  nodes: [
+    { id: "a", x: 0, y: 0 },
+    { id: "b", x: 2, y: 0 },
+    { id: "c", x: 1, y: 3 },
+    { id: "d", x: 4, y: 0 },
+    { id: "e", x: 4, y: 2 },
+    { id: "g", x: 6, y: 0 },
+  ],
+  edges: [
+    { from: "a", to: "b", weight: 2 },
+    { from: "a", to: "c", weight: 3.2 },
+    { from: "b", to: "d", weight: 2 },
+    { from: "b", to: "e", weight: 2.8 },
+    { from: "c", to: "e", weight: 3.2 },
+    { from: "d", to: "e", weight: 2 },
+    { from: "d", to: "g", weight: 2 },
+    { from: "e", to: "g", weight: 2.8 },
+  ],
+};
+
+/** Straight-line distance between two points; `0` when either lacks coordinates (A* → Dijkstra). */
+function euclid(a: { x: number; y: number } | null, b: { x: number; y: number } | null): number {
+  return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+}
+
+/** A* shortest path from the first node to the last — like Dijkstra, but the priority is g + h where h is
+ *  the straight-line distance to the goal, so the search is guided toward it (exploring fewer nodes). */
+export function aStar(g: TracedGraph): void {
+  const ids = g.ids();
+  if (ids.length === 0) return;
+  const start = ids[0];
+  const goal = ids[ids.length - 1];
+  const gScore = new Map<string, number>(ids.map((id) => [id, Infinity]));
+  const fScore = new Map<string, number>(ids.map((id) => [id, Infinity]));
+  const prev = new Map<string, string>();
+  const open = new Set<string>([start]);
+  const closed = new Set<string>();
+  const h = (id: string): number => euclid(g.coord(id), g.coord(goal));
+  gScore.set(start, 0);
+  fScore.set(start, h(start));
+  g.mark(start, "start");
+  g.mark(goal, "goal");
+  while (open.size > 0) {
+    let cur: string | null = null;
+    let best = Infinity;
+    for (const id of open) {
+      const f = fScore.get(id) ?? Infinity;
+      if (f < best) {
+        best = f;
+        cur = id;
+      }
+    }
+    if (cur === null) break;
+    open.delete(cur);
+    closed.add(cur);
+    g.current(cur);
+    g.visit(cur);
+    if (cur === goal) break; // reached — the heuristic guarantees this is optimal
+    for (const nb of g.neighbours(cur)) {
+      if (closed.has(nb.to)) continue;
+      g.relax(cur, nb.to);
+      const tentative = (gScore.get(cur) ?? Infinity) + nb.weight;
+      if (tentative < (gScore.get(nb.to) ?? Infinity)) {
+        prev.set(nb.to, cur);
+        gScore.set(nb.to, tentative);
+        fScore.set(nb.to, tentative + h(nb.to));
+        open.add(nb.to);
+        g.frontier(nb.to);
+      }
+    }
+  }
+  if (goal === start || prev.has(goal)) {
+    const path: string[] = [];
+    let c: string | undefined = goal;
+    while (c !== undefined) {
+      path.unshift(c);
+      c = prev.get(c);
+    }
+    g.path(path);
+  }
+}
+
+/** The visualizable graph algorithms, keyed by base name (#3224/#3226/#3228) — the full family. */
 export const GRAPH_PROGRAMS: Record<string, GraphProgram> = {
   bfs: { run: bfs, defaultInput: DEFAULT_GRAPH },
   dfs: { run: dfs, defaultInput: DEFAULT_GRAPH },
   dijkstra: { run: dijkstra, defaultInput: WEIGHTED_GRAPH },
+  "a-star": { run: aStar, defaultInput: SPATIAL_GRAPH },
   "topological-sort": { run: topologicalSort, defaultInput: DAG_GRAPH },
 };
 

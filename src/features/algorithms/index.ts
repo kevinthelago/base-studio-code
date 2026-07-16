@@ -33,7 +33,7 @@ export { MatrixView } from "./viz/renderers/MatrixView";
 export { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./viz/examples/matrixTransforms";
 // The `graph` datatype (#3224, epic #3220) — renderer + traversal/shortest-path programs.
 export { GraphView } from "./viz/renderers/GraphView";
-export { circularLayout } from "./viz/renderers/graphLayout";
+export { circularLayout, coordinateLayout, layoutFor } from "./viz/renderers/graphLayout";
 export { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "./viz/examples/graphAlgos";
 export { vizForImpl, resolveKind } from "./viz/examples/registry";
 export { classifyKind, type Classifiable } from "./lib/classifyKind";
