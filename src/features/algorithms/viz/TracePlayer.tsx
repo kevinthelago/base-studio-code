@@ -1,23 +1,30 @@
 // The generic trace player (#3176, epic #3171) — the ONE React driver over the streaming engine
-// (`makeTraceStream`) and the pluggable renderer registry. It drives the stream at play speed, exposes
-// play/pause/step-back/step-forward + a scrubber, and lays the frame's named panels side by side, each
-// dispatched to its structure's renderer (or the fallback). Every per-structure renderer (#3178–#3185)
+// (`makeTraceStream`) and the pluggable renderer registry. It lays the frame's named panels side by side,
+// each dispatched to its structure's renderer (or the fallback). Every per-structure renderer (#3178–#3185)
 // plugs in via the injected `renderers` map — this component never changes as they land.
+//
+// CONTROLS (#3207): the animation INFINITE-LOOPS on its own (no play/pause, no scrubber). The only
+// controls are STEP THROUGH — ‹ Step / Step › — which pause the loop to study a step, then it auto-resumes
+// after a short idle (RESUME_MS). Step forward wraps at the end so you can step around the loop.
 //
 // Animation TIMING is intentionally simple: a `setInterval` tick that pulls one frame per beat. The
 // STRUCTURE animations themselves are the kit's state-triggered motion (#3058), fired by the `data-op` /
 // `data-mark` states each renderer stamps (see lib/binding.ts) — not driven from here.
 
-import { createElement, useCallback, useEffect, useMemo, useState } from "react";
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
-import { IconButton } from "@/shared/ui/controls/IconButton";
+import { Button } from "@/shared/ui/controls/Button";
 import { normalizeFrame, type Frame, type StructureFrame } from "../lib/trace";
 import { makeTraceStream } from "../lib/traceStream";
 import { resolveRenderer, type RendererRegistry } from "./registry";
 import "./tracePlayer.css";
+
+/** After the user stops stepping, resume the infinite loop this long later (#3207) — long enough to study
+ *  a step, short enough that the animation returns to playing on its own (no play button). */
+const RESUME_MS = 2500;
 
 export interface TracePlayerProps {
   /** Produces a fresh trace generator from the algorithm's fixed input. MEMOIZE this at the call site
@@ -99,30 +106,40 @@ export function TracePlayer({ factory, renderers = {}, bufferSize, fps = 4, auto
     return () => clearInterval(id);
   }, [playing, stream, sync, fps, loop]);
 
-  const stepForward = useCallback(() => {
+  // Stepping through the algorithm (#3207): each step PAUSES the infinite loop so the user can study that
+  // step, then the loop AUTO-RESUMES after a short idle — so there is no play/pause button, it "just loops".
+  const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearResume = useCallback(() => {
+    if (resumeTimer.current) {
+      clearTimeout(resumeTimer.current);
+      resumeTimer.current = null;
+    }
+  }, []);
+  // Pause and, when looping, schedule the loop to resume after the user stops stepping.
+  const pauseThenResume = useCallback(() => {
     setPlaying(false);
-    stream.next();
+    clearResume();
+    if (loop) resumeTimer.current = setTimeout(() => setPlaying(true), RESUME_MS);
+  }, [loop, clearResume]);
+  useEffect(() => clearResume, [clearResume]); // clear the pending resume on unmount
+
+  const stepForward = useCallback(() => {
+    pauseThenResume();
+    // Wrap at the end so you can keep stepping through the loop (the viz is infinite).
+    if (stream.atEnd()) stream.seek(0);
+    else stream.next();
     sync();
-  }, [stream, sync]);
+  }, [stream, sync, pauseThenResume]);
 
   const stepBack = useCallback(() => {
-    setPlaying(false);
+    pauseThenResume();
     stream.seek(Math.max(0, stream.index() - 1));
     sync();
-  }, [stream, sync]);
-
-  const scrub = useCallback(
-    (i: number) => {
-      setPlaying(false);
-      stream.seek(i);
-      sync();
-    },
-    [stream, sync],
-  );
+  }, [stream, sync, pauseThenResume]);
 
   const panels = frame ? normalizeFrame(frame) : {};
   const entries = Object.entries(panels);
-  const scrubberMax = Math.max(0, maxIndex);
+  const knownSteps = Math.max(0, maxIndex);
 
   return (
     <Stack gap={12} className="trace-player">
@@ -139,28 +156,17 @@ export function TracePlayer({ factory, renderers = {}, bufferSize, fps = 4, auto
       </Row>
 
       {controls && (
-        <Row gap={8} className="trace-controls">
-          <IconButton aria-label={playing ? "Pause" : "Play"} onClick={() => setPlaying((p) => !p)}>
-            {playing ? "⏸" : "▶"}
-          </IconButton>
-          <IconButton aria-label="Step back" onClick={stepBack} disabled={index <= 0}>
-            ⏮
-          </IconButton>
-          <IconButton aria-label="Step forward" onClick={stepForward} disabled={stream.atEnd()}>
-            ⏭
-          </IconButton>
-          {/* eslint-disable-next-line no-restricted-syntax -- range scrubber; no shared primitive for <input type="range"> */}
-          <input
-            className="trace-scrubber"
-            type="range"
-            aria-label="Scrub"
-            min={0}
-            max={scrubberMax}
-            value={Math.max(0, index)}
-            onChange={(e) => scrub(Number(e.currentTarget.value))}
-          />
+        // Step-through only (#3207): no play/pause, no scrubber — the animation infinite-loops on its own
+        // and stepping pauses it to study a step (then it auto-resumes). Step forward wraps at the end.
+        <Row gap={8} align="center" className="trace-controls">
+          <Button variant="ghost" size="sm" aria-label="Step back" onClick={stepBack} disabled={index <= 0}>
+            ‹ Step
+          </Button>
+          <Button variant="ghost" size="sm" aria-label="Step forward" onClick={stepForward}>
+            Step ›
+          </Button>
           <Text mono size={11} tone="dim">
-            {index < 0 ? "—" : index} / {scrubberMax}
+            step {index < 0 ? "—" : index + 1}{knownSteps > 0 ? ` / ${knownSteps + 1}` : ""}
           </Text>
         </Row>
       )}
