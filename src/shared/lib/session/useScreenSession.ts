@@ -20,6 +20,7 @@ import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { attachTerminalClipboard } from "./terminalClipboard";
 import "@xterm/xterm/css/xterm.css";
 
 export interface ScreenSessionConfig<S = void> {
@@ -81,6 +82,7 @@ export function useScreenSession<S = void>(config: ScreenSessionConfig<S>): Scre
     term.open(el);
     termRef.current = term;
     fitRef.current  = fitAddon;
+    const disposeClipboard = attachTerminalClipboard(term, paneId); // copy-on-select + paste (#3157)
 
     term.onData((data) => {
       fireInvoke("pty_write", { paneId, data }, console.error);
@@ -142,6 +144,7 @@ export function useScreenSession<S = void>(config: ScreenSessionConfig<S>): Scre
       unlistenData.current?.();
       unlistenExit.current?.();
       ro.disconnect();
+      disposeClipboard();
       term.dispose();
       termRef.current = null;
       fitRef.current  = null;

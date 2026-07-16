@@ -8,7 +8,6 @@ import {
   resolveComposedAnimations,
   resolveNamedAnimation,
   selectAnimationPreset,
-  isInteractiveComponent,
   MOTION_PRESET_GROUP,
   previewAnimDefs,
   DATA_SHAPES,
@@ -291,24 +290,5 @@ describe("selectAnimationPreset (#3083)", () => {
     // Two ungrouped animations both play today; selecting one makes it the sole motion.
     const comp = mkComp({ animations: selectAnimationPreset([draw, fade], "fade-in") });
     expect(resolveComponentAnimations(comp, [mkKit({})]).map((d) => d.name)).toEqual(["fade-in"]);
-  });
-});
-
-describe("isInteractiveComponent (#3168)", () => {
-  it("is true when a component declares a callback/handler prop (function type or on* name)", () => {
-    // react-ui manifest expresses a callback as type:"function"…
-    expect(isInteractiveComponent(mkComp({ props: [{ name: "onSelect", type: "function", req: false, desc: "" }] }))).toBe(true);
-    // …and an on* name counts even if the type string is something else.
-    expect(isInteractiveComponent(mkComp({ props: [{ name: "onClick", type: "() => void", req: false, desc: "" }] }))).toBe(true);
-    // react-d3 store expresses it as an arrow type on a non-on* name.
-    expect(isInteractiveComponent(mkComp({ props: [{ name: "render", type: "(id: string) => void", req: false, desc: "" }] }))).toBe(true);
-  });
-
-  it("is false for a static component with only data/enum props (it becomes drag-to-pan)", () => {
-    expect(isInteractiveComponent(mkComp({ props: [
-      { name: "size", type: "enum", req: false, desc: "" },
-      { name: "data", type: "Datum[]", req: true, desc: "" },
-    ] }))).toBe(false);
-    expect(isInteractiveComponent(mkComp({ props: [] }))).toBe(false);
   });
 });

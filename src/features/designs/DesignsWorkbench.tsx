@@ -43,7 +43,7 @@ import { analyzeGraphHealth, analyzeMotion, HEALTH_SEVERITY, type HealthCategory
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
-import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNamedAnimation, selectAnimationPreset, isInteractiveComponent, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
+import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNamedAnimation, selectAnimationPreset, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
 import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useUiActivity } from "./lib/uiActivity";
 import { useComponentScan } from "./lib/useComponentScan";
@@ -178,11 +178,6 @@ export function DesignsWorkbench() {
   // Pull the viewport values out as locals (mirrors GraphCanvas) — `worldTransform` is a computed style
   // object, not a ref, but member-accessing `previewVp.*` in render trips the react-compiler ref rule.
   const { setVp: setPreviewVp, onCanvasDown: onPreviewCanvasDown, worldTransform: previewWorldTransform } = previewVp;
-  // Smart pan (#3168): an INTERACTIVE component (one with a mouse-handler prop) keeps its pointer events
-  // so you can use it; a static one becomes drag-to-pan. A sandboxed iframe can't be both interactive AND
-  // forward drags over the same pixels — and it swallows middle-mouse the same as left, so this
-  // per-component choice (not a modifier button) is the only thing that actually escapes that wall.
-  const previewInteractive = sel ? isInteractiveComponent(sel) : false;
 
   const allVariants = focusComp ? focusComp.variants : [];
   const activeVariant = allVariants.includes(variant) ? variant : allVariants[0] ?? "default";
@@ -459,17 +454,21 @@ export function DesignsWorkbench() {
                 result — so the try-on shows both at once. */}
             {activeTheme && <PaletteStrip theme={activeTheme} />}
             {/* Pan/zoom viewport (#3154): a raw div for the native wheel listener + backdrop drag (mirrors
-                GraphCanvas). The world layer carries the transform. Smart pan (#3168): a STATIC component
-                is pointer-events:none so click-drag pans + wheel zooms the canvas; an INTERACTIVE one
-                (isInteractiveComponent) keeps pointer-events so you can use it — the +/−/fit buttons zoom
+                GraphCanvas). The world layer carries the transform. The preview is ALWAYS interactive
+                (#3188): the component keeps pointer-events so clicks/hover work regardless of whether it
+                declares a callback prop (props aren't the whole story — internal handlers + CSS :hover
+                aren't visible from the store). Panning happens on the GUTTER around it: a sandboxed iframe
+                already stops a mousedown inside it from reaching the parent, so a drag ON the component
+                interacts while a drag on the surrounding backdrop hits this pan handler (the world Box is
+                also `data-node` so `onCanvasDown` bails on the component frame itself). +/−/fit zoom
                 either way. No will-change on the world (it blurs zoom-in). */}
             {/* eslint-disable-next-line no-restricted-syntax -- DOM ref (setVp) + native non-passive wheel listener target, like GraphCanvas's viewport (#3154) */}
             <div
               ref={setPreviewVp}
-              onMouseDown={previewInteractive ? undefined : onPreviewCanvasDown}
-              style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", cursor: previewInteractive ? "default" : "grab", background: "var(--bg-canvas, var(--bg))" }}
+              onMouseDown={onPreviewCanvasDown}
+              style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", cursor: "grab", background: "var(--bg-canvas, var(--bg))" }}
             >
-              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: 440, userSelect: "none", pointerEvents: previewInteractive ? "auto" : "none", ...previewWorldTransform }}>
+              <Box data-node="preview" style={{ position: "absolute", left: 0, top: 0, width: previewW, height: 440, userSelect: "none", pointerEvents: "auto", ...previewWorldTransform }}>
                 <ComponentPreviewFrame
                   comp={sel}
                   theme={theme}
