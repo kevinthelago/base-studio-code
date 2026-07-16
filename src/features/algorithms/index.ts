@@ -25,8 +25,11 @@ export { ArrayView } from "./viz/renderers/ArrayView";
 export { ALGO_VIZ_KIT_ID, ALGO_VIZ_ANIMATIONS, ALGO_VIZ_ANIM_CLASSES } from "./viz/renderers/arrayViewMotion";
 export { sortSteps, sort, SORT_MOCK, parseSortInput } from "./viz/examples/sort";
 // Instrumented execution (#3216) — the algorithm's real code drives the animation via the tracer.
-export { TracedArray, runAlgorithm } from "./lib/tracer";
+export { TracedArray, runAlgorithm, TracedMatrix, runMatrixAlgorithm } from "./lib/tracer";
 export { TRACE_PROGRAMS, programKey, programForImpl, type AlgoProgram } from "./viz/examples/sorts";
+// The `matrix` datatype (#3221, epic #3220) — renderer + transform programs.
+export { MatrixView } from "./viz/renderers/MatrixView";
+export { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./viz/examples/matrixTransforms";
 export { vizForImpl, resolveKind } from "./viz/examples/registry";
 export { classifyKind, type Classifiable } from "./lib/classifyKind";
 export type { VizExample } from "./viz/examples/registry";
