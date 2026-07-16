@@ -202,6 +202,24 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // so it's tail-able from a session's shell (`bsc ui preview-errors`) — the status itself is transient
   // React state. Keyed on `comp.id` so the fire-and-forget attributes the error to the CURRENT component.
   useEffect(() => {
+    // A forwarded pan applies a screen-space delta from the last position; the iframe reports it (over the
+    // frame) and the parent window reports it (over the gutter) in the SAME screenX/screenY space, so both
+    // feed one accumulator and the drag tracks seamlessly across the iframe⇄gutter boundary (#3190).
+    const applyPan = (x: number, y: number) => {
+      if (!panLast.current) return;
+      panRef.current?.(x - panLast.current.x, y - panLast.current.y);
+      panLast.current = { x, y };
+    };
+    // Once a forwarded drag leaves the iframe the iframe stops posting, but the PARENT window then receives
+    // the moves — so a forwarded panstart ALSO arms window move/up here to keep panning over the gutter and
+    // to end the drag if the mouse is released outside the iframe.
+    const winMove = (ev: MouseEvent) => applyPan(ev.screenX, ev.screenY);
+    const winUp = () => endPan();
+    function endPan() {
+      panLast.current = null;
+      window.removeEventListener("mousemove", winMove);
+      window.removeEventListener("mouseup", winUp);
+    }
     const onMsg = (e: MessageEvent) => {
       const d = e.data;
       if (!d || !d.__preview) return;
@@ -209,15 +227,14 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
       // shim (the expanded preview), so we DON'T gate them on the strict source-window match — that
       // equality is unreliable for a sandboxed opaque-origin iframe and was silently dropping every pan.
       // A thumbnail frame's listener also receives them but no-ops (its pan/zoom refs are undefined).
-      if (d.__preview === "panstart") { panLast.current = { x: d.x, y: d.y }; return; }
-      if (d.__preview === "panmove") {
-        if (panLast.current) {
-          panRef.current?.(d.x - panLast.current.x, d.y - panLast.current.y);
-          panLast.current = { x: d.x, y: d.y };
-        }
+      if (d.__preview === "panstart") {
+        panLast.current = { x: d.x, y: d.y };
+        window.addEventListener("mousemove", winMove);
+        window.addEventListener("mouseup", winUp);
         return;
       }
-      if (d.__preview === "panend") { panLast.current = null; return; }
+      if (d.__preview === "panmove") { applyPan(d.x, d.y); return; }   // over the frame (iframe-reported)
+      if (d.__preview === "panend") { endPan(); return; }              // released over the frame
       if (d.__preview === "zoom") { zoomRef.current?.(d.dy, d.wx, d.wy); return; }
       // Errors/renders are PER-FRAME — match THIS iframe's window so a concurrent scan probe's error
       // doesn't leak into (and falsely fail) this live preview (#2908).
@@ -230,7 +247,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
       }
     };
     window.addEventListener("message", onMsg);
-    return () => window.removeEventListener("message", onMsg);
+    return () => { window.removeEventListener("message", onMsg); endPan(); };
   }, [comp.id]);
 
   // #3139: a page-like preview renders at its natural viewport canvas + is contain-scaled (absolute,
