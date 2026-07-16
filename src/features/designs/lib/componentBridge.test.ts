@@ -11,7 +11,7 @@ vi.mock("@/shared/lib/core/bsc", () => ({
 
 import { bsc, bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import type { ComponentRecord, Kit } from "./model";
-import { dropComponent, dropKit, loadComponents, loadKits, pushComponent, pushKit } from "./componentBridge";
+import { dropComponent, dropKit, loadComponents, loadKits, pushComponent, pushKit, recordPreviewError } from "./componentBridge";
 import { dropKitUsage, loadKitUsage, pushKitUsage } from "./kitUsageBridge";
 
 beforeEach(() => {
@@ -64,6 +64,16 @@ describe("componentBridge → bsc ui (#2469)", () => {
     expect(bscWrite).toHaveBeenCalledWith(null, ["ui", "kit", "set"], kit);
     await dropKit("k1");
     expect(bscRun).toHaveBeenCalledWith(null, ["ui", "kit", "remove", "k1"]);
+  });
+
+  it("records a preview runtime error via `bsc ui preview-error <id>` with the message on stdin (#3165)", async () => {
+    await recordPreviewError("chart", "TypeError: x is undefined");
+    expect(bsc).toHaveBeenCalledWith(null, ["ui", "preview-error", "chart"], "TypeError: x is undefined");
+  });
+
+  it("recordPreviewError never throws when the bridge is unreachable (banner-only)", async () => {
+    vi.mocked(bsc).mockRejectedValueOnce(new Error("no bsc"));
+    await expect(recordPreviewError("chart", "boom")).resolves.toBeUndefined();
   });
 });
 

@@ -271,6 +271,48 @@ exist (an array index may equal the length to append, or `-` to push). The patch
 the `bsc ui set` JSX syntax gate (#2928). Errors when the component or the pointer's parent is absent. A
 ui-scope MUTATION (#2470).",
     },
+    CmdDoc {
+        name: "preview-props",
+        summary: "the schema-derived sample props the live preview passes a component, per state (#3165)",
+        usage: "\
+USAGE:
+  bsc ui preview-props <id> [--state loaded|empty|loading] [--dir D] [--pretty]
+
+Prints EXACTLY the props the Design Studio's build-and-iframe preview harness passes <id>'s component,
+for each data-state: { id, name, role, states: { loaded, empty, loading } }, each state
+{ props: [{ name, value }], child }. Every `value` is a JS-SOURCE literal/expression the iframe
+evaluates (e.g. `() => {}`, `window.innerWidth`, `Math.min(window.innerWidth, window.innerHeight)`, or a
+JSON-string like \"var(--accent)\") — NOT a JSON value — so a schema-derived sample that renders wrong
+(black bars, a NaN-collapsed chart) is inspectable from the shell. `child` is the element child text (or
+null). Mirrors the TS sampler (samplePropValue/bootstrapSource, componentPreview.ts); a shared parity
+fixture pins the two. --state narrows to one state. Read-only; errors when <id> is absent.",
+    },
+    CmdDoc {
+        name: "preview-errors",
+        summary: "tail the live preview's captured runtime errors (#3165)",
+        usage: "\
+USAGE:
+  bsc ui preview-errors [-n N] [--pretty]
+
+Prints the last N (default 20) preview runtime errors the Design Studio captured — the sandboxed
+iframe's throws + unhandled rejections the live preview would otherwise only show in-pane. Each record
+is { at, id, message } (a multi-line stack trace rides safely on one JSON line). Default compact JSON;
+--pretty indents. This is the durable, tail-able side of `bsc ui preview-error` (the frontend appends a
+record when a preview throws), so a preview runtime failure is observable from a session's shell. Read-only.",
+    },
+    CmdDoc {
+        name: "preview-error",
+        summary: "record a preview runtime error — the frontend's durable append path (#3165)",
+        usage: "\
+USAGE:
+  bsc ui preview-error <id>   # the error message / stack trace on stdin
+
+Appends one { at, id, message } record (message read from stdin) to the preview-error log
+(~/.base-studio-code/preview-errors.log, or $BSC_PREVIEW_ERROR_LOG), capped to the most recent 200. The
+Design Studio's live preview calls this when the sandboxed iframe posts `{__preview:\"error\"}`, so the
+throw becomes durable + tail-able via `bsc ui preview-errors`. A diagnostic append (not a store
+mutation), so it is not ui-scope gated. Prints the recorded id.",
+    },
 ];
 
 const KIT_COMMANDS: &[CmdDoc] = &[
@@ -523,6 +565,35 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 Ok(())
             } else {
                 cmd_remove_animation(&args[1..])
+            }
+        }
+        // `preview-props` (#3165) — the preview harness's schema-derived sample props for <id>, per
+        // data-state. A custom read (pure sampler in `crate::preview_props` mirrors the TS twin).
+        Some("preview-props") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "preview-props"));
+                Ok(())
+            } else {
+                cmd_preview_props(&args[1..])
+            }
+        }
+        // `preview-errors` (#3165) — tail the captured preview runtime errors (read).
+        Some("preview-errors") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "preview-errors"));
+                Ok(())
+            } else {
+                cmd_preview_errors(&args[1..])
+            }
+        }
+        // `preview-error <id>` (#3165) — the frontend's append path (message on stdin). A diagnostic
+        // append, NOT a store mutation, so it is intentionally NOT ui-scope gated.
+        Some("preview-error") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "preview-error"));
+                Ok(())
+            } else {
+                cmd_preview_error(&args[1..])
             }
         }
         // The granular writes (#3162): a one-field edit that skips the whole-record stdin round-trip.
@@ -1238,6 +1309,88 @@ fn cmd_usage(args: &[String], prog: &str) -> Result<(), String> {
             bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "usage")
         )),
     }
+}
+
+// ── preview observability (#3165) ─────────────────────────────────────────────────────────────────
+//
+// Two custom verbs make the Design Studio's build-and-iframe preview inspectable from a session's shell:
+//   • `preview-props` prints the schema-derived sample props the harness passes a component, per state —
+//     the pure sampler (`crate::preview_props`) mirrors the TS `samplePropValue`/`bootstrapSource`, pinned
+//     to it by a shared golden fixture (both sides assert it).
+//   • `preview-error` / `preview-errors` are the write/read of a durable JSONL log the frontend appends to
+//     when the sandboxed iframe posts `{__preview:"error"}` (`crate::preview_errors`) — so a preview
+//     runtime throw is observable, not just an ephemeral in-pane banner.
+
+/// `preview-props <id> [--state S] [--dir D] [--pretty]` (#3165) — print the schema-derived sample props
+/// the live preview harness passes <id>'s component, per data-state. A read verb (never scope-gated).
+fn cmd_preview_props(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut pretty, mut state, mut id) = (None::<String>, false, None::<String>, None::<String>);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--state" => state = it.next().cloned(),
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            positional => id = Some(positional.to_string()),
+        }
+    }
+    let id = id.ok_or("usage: preview-props <id> [--state loaded|empty|loading] [--pretty]")?;
+    if let Some(s) = &state {
+        if !matches!(s.as_str(), "loaded" | "empty" | "loading") {
+            return Err(format!("unknown state '{s}' — one of loaded | empty | loading"));
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let raw = store.get(&id)?.ok_or_else(|| format!("no component '{id}'"))?;
+    let rec: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    let name = rec.get("name").and_then(serde_json::Value::as_str).unwrap_or(&id);
+    let role = rec.get("role").and_then(serde_json::Value::as_str).unwrap_or("");
+    let props = crate::preview_props::props_from_record(&rec);
+    let mut states = crate::preview_props::preview_props_states(name, &props);
+    // --state narrows the states object to just the one requested (the shape stays `{ <state>: {…} }`).
+    if let Some(s) = &state {
+        let picked = states.get(s).cloned().unwrap_or(serde_json::Value::Null);
+        states = serde_json::json!({ s: picked });
+    }
+    let out = serde_json::json!({ "id": id, "name": name, "role": role, "states": states });
+    let json = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    println!("{}", json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `preview-errors [-n N] [--pretty]` (#3165) — tail the last N captured preview runtime errors. Read-only.
+fn cmd_preview_errors(args: &[String]) -> Result<(), String> {
+    let (mut n, mut pretty) = (20usize, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "-n" | "--limit" => {
+                n = it.next().and_then(|v| v.parse().ok()).ok_or("-n needs a number")?;
+            }
+            "--pretty" => pretty = true,
+            other if other.starts_with('-') => return Err(format!("unknown flag '{other}'")),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let arr = serde_json::Value::Array(crate::preview_errors::tail(n));
+    let json = if pretty { serde_json::to_string_pretty(&arr) } else { serde_json::to_string(&arr) };
+    println!("{}", json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `preview-error <id>` (#3165) — append a preview-error record (message read from stdin) to the durable
+/// log `preview-errors` tails. A diagnostic append, so NOT ui-scope gated.
+fn cmd_preview_error(args: &[String]) -> Result<(), String> {
+    let id = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .ok_or("usage: preview-error <id>   # error message / stack trace on stdin")?;
+    let mut message = String::new();
+    std::io::stdin().read_to_string(&mut message).map_err(|e| format!("cannot read stdin: {e}"))?;
+    crate::preview_errors::record(id, message.trim())?;
+    println!("{id}");
+    Ok(())
 }
 
 // ── component animations (#2869, epic #2865) ──────────────────────────────────────────────────────
@@ -2019,7 +2172,8 @@ mod tests {
             names,
             vec![
                 "list", "shapes", "get", "log", "set", "remove", "kit", "eslint-preset", "usage",
-                "doctor", "define-animation", "list-animations", "remove-animation", "set-src", "patch"
+                "doctor", "define-animation", "list-animations", "remove-animation", "set-src", "patch",
+                "preview-props", "preview-errors", "preview-error"
             ]
         );
         for c in command_docs() {
