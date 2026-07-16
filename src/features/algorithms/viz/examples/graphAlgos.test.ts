@@ -2,7 +2,7 @@
 // the animation is faithful), and the adjacency-list parser round-trips.
 import { describe, it, expect } from "vitest";
 import { TracedGraph, type GraphInput } from "../../lib/tracer";
-import { bfs, dfs, dijkstra, topologicalSort, GRAPH_PROGRAMS, parseGraphInput, graphToText } from "./graphAlgos";
+import { bfs, dfs, dijkstra, aStar, topologicalSort, GRAPH_PROGRAMS, parseGraphInput, graphToText } from "./graphAlgos";
 import type { GraphFrame } from "../../lib/trace";
 
 const G: GraphInput = {
@@ -46,6 +46,7 @@ describe("bfs (#3224)", () => {
     expect(GRAPH_PROGRAMS.bfs.run).toBe(bfs);
     expect(GRAPH_PROGRAMS.dfs.run).toBe(dfs);
     expect(GRAPH_PROGRAMS.dijkstra.run).toBe(dijkstra);
+    expect(GRAPH_PROGRAMS["a-star"].run).toBe(aStar);
     expect(GRAPH_PROGRAMS["topological-sort"].run).toBe(topologicalSort);
   });
 });
@@ -72,6 +73,14 @@ describe("dfs / dijkstra / topological-sort (#3226)", () => {
     expect(order.length).toBe(g.nodes.length);
     const rank = new Map(order.map((id, i) => [id, i]));
     expect(g.edges.every((e) => (rank.get(e.from) ?? 0) < (rank.get(e.to) ?? 0))).toBe(true);
+  });
+
+  it("a-star finds the shortest path and explores fewer nodes than Dijkstra (heuristic guides it)", () => {
+    const g = GRAPH_PROGRAMS["a-star"].defaultInput;
+    const fs = frames(aStar, g);
+    const pathOp = fs.flatMap((f) => f.ops ?? []).find((o) => o.op === "path") as { nodes: string[] } | undefined;
+    expect(pathOp?.nodes).toEqual(["a", "b", "d", "g"]); // the shortest route
+    expect(visitOrder(fs).length).toBeLessThan(visitOrder(frames(dijkstra, g)).length); // pruned
   });
 });
 
