@@ -498,7 +498,7 @@ describe("theme try-on preview (#2834)", () => {
     expect(screen.getByRole("button", { name: "fit" })).toBeTruthy();
   });
 
-  it("the preview is always interactive; pan lives on the gutter, no toggle (#3188)", () => {
+  it("the preview is always interactive; dragging the wrapper OR the gutter pans (#3188/#3190)", () => {
     render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));
     fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
@@ -506,11 +506,17 @@ describe("theme try-on preview (#2834)", () => {
     expect(screen.queryByText("🖐 pan")).toBeNull();
     expect(screen.queryByText("select")).toBeNull();
     // EVERY component keeps pointer-events:auto so clicks/hover work (props don't reveal internal
-    // handlers / :hover). Panning is on the gutter — the world wrapper is data-node so onCanvasDown
-    // bails on the component frame and only the surrounding backdrop pans.
-    const worldWrap = () => screen.getByTitle("Chip preview").parentElement!.parentElement as HTMLElement;
-    expect(worldWrap().style.pointerEvents).toBe("auto");
-    expect(worldWrap().getAttribute("data-node")).toBe("preview");
+    // handlers / :hover). #3190: the world wrapper is NO LONGER a data-node — the iframe swallows its own
+    // mousedowns (forwarded as pan/interact), so the ONLY effect of the old `data-node` was to make
+    // `onCanvasDown` dead-zone the exposed wrapper edges. Now a press starting on the wrapper pans.
+    const worldWrap = screen.getByTitle("Chip preview").parentElement!.parentElement as HTMLElement;
+    expect(worldWrap.style.pointerEvents).toBe("auto");
+    expect(worldWrap.getAttribute("data-node")).toBeNull();
+    const viewport = worldWrap.parentElement as HTMLElement; // the pan/zoom canvas (onCanvasDown)
+    fireEvent.mouseDown(worldWrap, { clientX: 100, clientY: 100 });
+    expect(viewport.style.cursor).toBe("grabbing");          // onCanvasDown engaged — the wrapper pans
+    fireEvent.mouseUp(window);
+    expect(viewport.style.cursor).toBe("grab");              // released
   });
 
   it("preview mode hides the graph chrome (the composition-graph toolbar); it returns on exit (#2849)", () => {

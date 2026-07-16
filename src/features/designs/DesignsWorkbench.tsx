@@ -463,17 +463,21 @@ export function DesignsWorkbench() {
                 surface) is left for the component; a drag on empty space is forwarded as a pan (`onPreviewPan`
                 → `previewVp.panBy`). A wheel over a scroll region scrolls it; anywhere else it's forwarded as
                 a zoom about the cursor (`onPreviewZoom` → `previewVp.zoomAtClient`, anchored via the
-                iframe's real rect) — so zoom works over the component too, not just the gutter. Dragging/wheeling the GUTTER still routes through
-                `onCanvasDown` + the native wheel listener (the world Box is `data-node`, so `onCanvasDown`
-                bails on the frame). This supersedes #3188's declared-props guess (props miss internal handlers
-                + CSS :hover). +/−/fit buttons work either way. No will-change on the world (it blurs zoom-in). */}
+                iframe's real rect) — so zoom works over the component too, not just the gutter. Any
+                PARENT-document press — the gutter AND the world-wrapper edges not covered by the iframe —
+                routes through `onCanvasDown` + the native wheel listener and pans (the wrapper is NOT a
+                `data-node`, #3190: it was, which dead-zoned those edges since `onCanvasDown` bails on a
+                `[data-node]` ancestor — but the iframe already swallows its OWN mousedowns, so the bail only
+                ever blocked the exposed wrapper, never the component). This supersedes #3188's declared-props
+                guess (props miss internal handlers + CSS :hover). +/−/fit buttons work either way. No
+                will-change on the world (it blurs zoom-in). */}
             {/* eslint-disable-next-line no-restricted-syntax -- DOM ref (setVp) + native non-passive wheel listener target, like GraphCanvas's viewport (#3154) */}
             <div
               ref={setPreviewVp}
               onMouseDown={onPreviewCanvasDown}
               style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", cursor: "grab", background: "var(--bg-canvas, var(--bg))" }}
             >
-              <Box data-node="preview" style={{ position: "absolute", left: 0, top: 0, width: previewW, height: 440, userSelect: "none", pointerEvents: "auto", ...previewWorldTransform }}>
+              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: 440, userSelect: "none", pointerEvents: "auto", ...previewWorldTransform }}>
                 <ComponentPreviewFrame
                   comp={sel}
                   theme={theme}
