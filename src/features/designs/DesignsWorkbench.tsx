@@ -168,6 +168,17 @@ export function DesignsWorkbench() {
     : null;
   const focusComp = sel ?? aiComp;
 
+  // The expanded preview's own pan/zoom viewport (#3154) — the shared graph viewport, reused so the
+  // large preview moves + zooms like every other canvas. The graph's own viewport is hidden in preview
+  // mode, so this is a SEPARATE instance. A zoomable canvas has no "fluid" width, so the preview gets a
+  // fixed world per breakpoint (fit-to-frame replaces fill). Re-fits on open + selection/breakpoint
+  // switch (stable keys — never the polled model, per the useGraphPage trap).
+  const previewW = vp === "sm" ? 380 : vp === "md" ? 640 : 1200;
+  const previewVp = useGraphPage({ w: previewW, h: 440 }, [sel?.id, vp, previewMode], { min: 0.2, max: 5, fitPad: 40 });
+  // Pull the viewport values out as locals (mirrors GraphCanvas) — `worldTransform` is a computed style
+  // object, not a ref, but member-accessing `previewVp.*` in render trips the react-compiler ref rule.
+  const { setVp: setPreviewVp, onCanvasDown: onPreviewCanvasDown, worldTransform: previewWorldTransform } = previewVp;
+
   const allVariants = focusComp ? focusComp.variants : [];
   const activeVariant = allVariants.includes(variant) ? variant : allVariants[0] ?? "default";
   const composes = focusComp ? resolveComposes(focusComp, components) : [];
@@ -433,23 +444,37 @@ export function DesignsWorkbench() {
               )}
               <SegmentedControl label="" options={PREVIEW_STATES.map((s) => ({ label: s, on: s === previewState, onClick: () => setPreviewState(s) }))} />
               <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === vp, onClick: () => setVpKind(k) }))} />
+              {/* Pan/zoom controls (#3154) — the same cluster every canvas uses, driving the preview's viewport. */}
+              <ZoomControls vp={previewVp} step={1.15} />
+              <Button variant="ghost" onClick={() => previewVp.fit()}>fit</Button>
               <Text mono size="xxs" tone="muted">{activeTheme?.label}</Text>
             </Box>
             {/* Palette strip (#2834): the theme's semantic swatches — the raw palette beside the applied
                 result — so the try-on shows both at once. */}
             {activeTheme && <PaletteStrip theme={activeTheme} />}
-            <Box style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, overflow: "auto" }}>
-              <ComponentPreviewFrame
-                comp={sel}
-                theme={theme}
-                themeId={kitTheme}
-                themeVars={activeTheme?.vars ?? {}}
-                width={VP[vp].w}
-                height={440}
-                extraAnimation={tryAnimDef}
-                previewState={previewState}
-              />
-            </Box>
+            {/* Pan/zoom viewport (#3154): a raw div for the native wheel listener + backdrop drag (mirrors
+                GraphCanvas). The world layer carries the transform; the preview inside is pointer-events:none
+                so wheel/drag reach the viewport backdrop (it's an inspect surface, not interactive here).
+                No will-change on the world (it blurs zoom-in) — same as GraphCanvas. */}
+            {/* eslint-disable-next-line no-restricted-syntax -- DOM ref (setVp) + native non-passive wheel listener target, like GraphCanvas's viewport (#3154) */}
+            <div
+              ref={setPreviewVp}
+              onMouseDown={onPreviewCanvasDown}
+              style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", cursor: "grab", background: "var(--bg-canvas, var(--bg))" }}
+            >
+              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: 440, userSelect: "none", pointerEvents: "none", ...previewWorldTransform }}>
+                <ComponentPreviewFrame
+                  comp={sel}
+                  theme={theme}
+                  themeId={kitTheme}
+                  themeVars={activeTheme?.vars ?? {}}
+                  width={previewW}
+                  height={440}
+                  extraAnimation={tryAnimDef}
+                  previewState={previewState}
+                />
+              </Box>
+            </div>
           </Box>
         ) : legend}
       >

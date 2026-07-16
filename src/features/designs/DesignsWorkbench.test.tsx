@@ -475,9 +475,24 @@ describe("theme try-on preview (#2834)", () => {
     fireEvent.click(graphNode("Chip"));
     fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
     const frame = () => screen.getByTitle("Chip preview").parentElement as HTMLElement;
-    expect(frame().style.width).toBe("100%");                            // default fluid
+    // #3154: the expanded preview is a pan/zoom canvas, so it renders at a FIXED world per breakpoint
+    // (fit-to-frame replaces "fluid"); `auto` maps to a desktop-width world.
+    expect(frame().style.width).toBe("1200px");                          // auto → desktop world
     fireEvent.click(screen.getByText("sm"));
     expect(frame().style.width).toBe("380px");                           // resized to the sm breakpoint
+    fireEvent.click(screen.getByText("md"));
+    expect(frame().style.width).toBe("640px");                           // …and the md breakpoint
+  });
+
+  it("the expanded preview has its own pan/zoom controls (#3154)", () => {
+    render(<DesignsWorkbench />);
+    fireEvent.click(graphNode("Chip"));
+    fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
+    // The preview's own ZoomControls (+/−) + a fit button are wired to the preview viewport. The graph's
+    // toolbar (its own ZoomControls) is hidden in preview mode, so these are unambiguously the preview's.
+    expect(screen.getByRole("button", { name: /zoom in/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /zoom out/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "fit" })).toBeTruthy();
   });
 
   it("preview mode hides the graph chrome (the composition-graph toolbar); it returns on exit (#2849)", () => {
