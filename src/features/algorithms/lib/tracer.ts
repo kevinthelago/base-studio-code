@@ -11,7 +11,7 @@
 //
 // This is the array tracer; TracedMatrix / TracedGraph / TracedTree follow the same shape as their
 // renderers land (#3179–#3185), so instrumented execution generalizes to every data type.
-import type { ArrayFrame, ArrayOp, Frame, MatrixFrame, MatrixOp } from "./trace";
+import type { ArrayFrame, ArrayOp, Frame, GraphFrame, GraphOp, MatrixFrame, MatrixOp } from "./trace";
 
 /** A durable per-cell mark an algorithm can set (matches the ArrayOp `mark` vocabulary). */
 export type ArrayMark = "sorted" | "pivot" | "min";
@@ -208,5 +208,115 @@ export function runMatrixAlgorithm(
     const m = new TracedMatrix(input);
     algo(m);
     yield* m.trace();
+  };
+}
+
+// ── the graph tracer (#3224) — nodes + edges; traversal / shortest-path verbs ──
+
+/** The topology an algorithm runs against — nodes + (weighted) edges. */
+export interface GraphInput {
+  nodes: { id: string; label?: string }[];
+  edges: { from: string; to: string; weight?: number }[];
+}
+/** A durable per-node search state (matches the GraphFrame `marks` vocabulary). */
+export type GraphMark = "start" | "goal" | "visited" | "frontier" | "current";
+/** A neighbour of a node — the other endpoint + the edge weight + the directed edge for `relax`. */
+export interface Neighbour {
+  to: string;
+  weight: number;
+  edge: [string, string];
+}
+
+/**
+ * An instrumented graph — a traversal / shortest-path algorithm operates on it, and every observable op
+ * appends a `GraphFrame`. `neighbours` is a silent read (the algorithm's traversal); `frontier` / `visit` /
+ * `current` set DURABLE node marks the renderer paints and `relax` fires on an edge — each records a frame.
+ * Marks persist across frames; ops are the transient verb. Edges are treated as UNDIRECTED for traversal.
+ */
+export class TracedGraph {
+  private readonly nodes: { id: string; label?: string }[];
+  private readonly edges: { from: string; to: string; weight?: number }[];
+  private readonly adj = new Map<string, Neighbour[]>();
+  private readonly marks: Record<string, GraphMark> = {};
+  private readonly cur: Record<string, string> = {};
+  private readonly log: GraphFrame[] = [];
+
+  constructor(input: GraphInput) {
+    this.nodes = input.nodes.map((n) => ({ ...n }));
+    this.edges = input.edges.map((e) => ({ ...e }));
+    for (const n of this.nodes) this.adj.set(n.id, []);
+    for (const e of this.edges) {
+      const w = e.weight ?? 1;
+      this.adj.get(e.from)?.push({ to: e.to, weight: w, edge: [e.from, e.to] });
+      this.adj.get(e.to)?.push({ to: e.from, weight: w, edge: [e.from, e.to] }); // undirected
+    }
+    this.emit();
+  }
+
+  /** The node ids in declaration order (the algorithm picks a start). */
+  ids(): string[] {
+    return this.nodes.map((n) => n.id);
+  }
+  /** A silent read of a node's neighbours (traversal logic — no frame). */
+  neighbours(id: string): Neighbour[] {
+    return this.adj.get(id) ?? [];
+  }
+
+  /** Set a durable start / goal mark (no transient op). */
+  mark(id: string, as: GraphMark): void {
+    this.marks[id] = as;
+    this.emit();
+  }
+  /** Enqueue/discover a node — a `frontier` op + durable `frontier` mark. */
+  frontier(id: string): void {
+    this.marks[id] = "frontier";
+    this.emit([{ op: "frontier", node: id }]);
+  }
+  /** Point the `current` cursor at the node being processed (a durable `current` mark). */
+  current(id: string): void {
+    this.cur.current = id;
+    this.marks[id] = "current";
+    this.emit();
+  }
+  /** Finish a node — a `visit` op + durable `visited` mark. */
+  visit(id: string): void {
+    this.marks[id] = "visited";
+    this.emit([{ op: "visit", node: id }]);
+  }
+  /** Relax / traverse an edge — a `relax` op on `[from, to]`. */
+  relax(from: string, to: string): void {
+    this.emit([{ op: "relax", edge: [from, to] }]);
+  }
+  /** Light a final route — a `path` op over the node sequence. */
+  path(nodes: string[]): void {
+    this.emit([{ op: "path", nodes: [...nodes] }]);
+  }
+
+  trace(): GraphFrame[] {
+    return [...this.log];
+  }
+
+  private emit(ops?: GraphOp[]): void {
+    const frame: GraphFrame = {
+      structure: "graph",
+      nodes: this.nodes.map((n) => ({ ...n })),
+      edges: this.edges.map((e) => ({ ...e })),
+    };
+    if (ops && ops.length) frame.ops = ops;
+    if (Object.keys(this.marks).length) frame.marks = { ...this.marks };
+    if (Object.keys(this.cur).length) frame.cursors = { ...this.cur };
+    this.log.push(frame);
+  }
+}
+
+/**
+ * Run a graph algorithm — a plain function over a {@link TracedGraph} — on `input`, returning a factory
+ * that yields its recorded trace as a fresh generator each call (replay-safe; `input` is never mutated).
+ */
+export function runGraphAlgorithm(algo: (g: TracedGraph) => void, input: GraphInput): () => Generator<Frame> {
+  return function* () {
+    const g = new TracedGraph(input);
+    algo(g);
+    yield* g.trace();
   };
 }
