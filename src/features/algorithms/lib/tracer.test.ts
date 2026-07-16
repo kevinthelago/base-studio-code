@@ -1,8 +1,8 @@
 // The instrumented-execution tracer (#3216) — TracedArray records the algorithm's real operations as
 // frames, and runAlgorithm exposes them as a replay-safe generator.
 import { describe, it, expect } from "vitest";
-import { TracedArray, runAlgorithm, TracedMatrix, runMatrixAlgorithm } from "./tracer";
-import type { ArrayFrame, MatrixFrame } from "./trace";
+import { TracedArray, runAlgorithm, TracedMatrix, runMatrixAlgorithm, TracedGraph, type GraphInput } from "./tracer";
+import type { ArrayFrame, MatrixFrame, GraphFrame } from "./trace";
 
 describe("TracedArray (#3216)", () => {
   it("emits an initial rest frame, then a frame per observable op", () => {
@@ -118,5 +118,43 @@ describe("TracedMatrix (#3221)", () => {
       [1, 2],
       [3, 4],
     ]);
+  });
+});
+
+// ── #3224 the graph tracer ──
+
+describe("TracedGraph (#3224)", () => {
+  const input: GraphInput = {
+    nodes: [{ id: "a" }, { id: "b" }, { id: "c" }],
+    edges: [
+      { from: "a", to: "b" },
+      { from: "b", to: "c" },
+    ],
+  };
+
+  it("exposes undirected neighbours and records frontier/visit/relax verbs + durable marks", () => {
+    const g = new TracedGraph(input);
+    expect(g.ids()).toEqual(["a", "b", "c"]);
+    expect(g.neighbours("b").map((n) => n.to).sort()).toEqual(["a", "c"]); // undirected
+    g.frontier("a");
+    g.visit("a");
+    g.relax("a", "b");
+    const f = g.trace();
+    expect(f.length).toBe(4); // initial + frontier + visit + relax
+    expect(f[1].ops).toEqual([{ op: "frontier", node: "a" }]);
+    expect(f[1].marks).toEqual({ a: "frontier" });
+    expect(f[2].ops).toEqual([{ op: "visit", node: "a" }]);
+    expect(f[2].marks).toEqual({ a: "visited" }); // durable — the mark persists/updates
+    expect(f[3].ops).toEqual([{ op: "relax", edge: ["a", "b"] }]);
+  });
+
+  it("current() sets a cursor + a current mark; every frame carries the full topology", () => {
+    const g = new TracedGraph(input);
+    g.current("b");
+    const last = g.trace()[g.trace().length - 1];
+    expect(last.cursors).toEqual({ current: "b" });
+    expect(last.marks).toEqual({ b: "current" });
+    expect(last.nodes.map((n: GraphFrame["nodes"][number]) => n.id)).toEqual(["a", "b", "c"]);
+    expect(last.edges.length).toBe(2);
   });
 });

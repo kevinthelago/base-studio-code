@@ -25,11 +25,16 @@ export { ArrayView } from "./viz/renderers/ArrayView";
 export { ALGO_VIZ_KIT_ID, ALGO_VIZ_ANIMATIONS, ALGO_VIZ_ANIM_CLASSES } from "./viz/renderers/arrayViewMotion";
 export { sortSteps, sort, SORT_MOCK, parseSortInput } from "./viz/examples/sort";
 // Instrumented execution (#3216) — the algorithm's real code drives the animation via the tracer.
-export { TracedArray, runAlgorithm, TracedMatrix, runMatrixAlgorithm } from "./lib/tracer";
+export { TracedArray, runAlgorithm, TracedMatrix, runMatrixAlgorithm, TracedGraph, runGraphAlgorithm } from "./lib/tracer";
+export type { GraphInput, GraphMark, Neighbour, CellWrite } from "./lib/tracer";
 export { TRACE_PROGRAMS, programKey, programForImpl, type AlgoProgram } from "./viz/examples/sorts";
 // The `matrix` datatype (#3221, epic #3220) — renderer + transform programs.
 export { MatrixView } from "./viz/renderers/MatrixView";
 export { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./viz/examples/matrixTransforms";
+// The `graph` datatype (#3224, epic #3220) — renderer + traversal/shortest-path programs.
+export { GraphView } from "./viz/renderers/GraphView";
+export { circularLayout } from "./viz/renderers/graphLayout";
+export { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "./viz/examples/graphAlgos";
 export { vizForImpl, resolveKind } from "./viz/examples/registry";
 export { classifyKind, type Classifiable } from "./lib/classifyKind";
 export type { VizExample } from "./viz/examples/registry";

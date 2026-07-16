@@ -15,13 +15,15 @@
 import type { Frame } from "../../lib/trace";
 import type { AlgoImpl, AlgoKind } from "../../lib/knowledge";
 import { classifyKind, type Classifiable } from "../../lib/classifyKind";
-import { runAlgorithm, runMatrixAlgorithm } from "../../lib/tracer";
+import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, type GraphInput } from "../../lib/tracer";
 import type { RendererRegistry } from "../registry";
 import { ArrayView } from "../renderers/ArrayView";
 import { MatrixView } from "../renderers/MatrixView";
+import { GraphView } from "../renderers/GraphView";
 import { parseSortInput } from "./sort";
 import { TRACE_PROGRAMS, programKey, type AlgoProgram } from "./sorts";
 import { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./matrixTransforms";
+import { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "./graphAlgos";
 
 /** A ready-to-play visualization: a stable default factory (the inline preview) + the per-structure
  *  renderers the player dispatches to + an editable INPUT seam (#3199) that powers the "your input" field. */
@@ -72,15 +74,33 @@ function matrixExampleFromProgram(program: MatrixProgram): VizExample {
   };
 }
 
-/** One VizExample per trace-program (array sorts + matrix transforms), built ONCE so each algorithm has a
- *  STABLE example identity — a fresh build per render would rebuild the player's stream every frame. Keyed
- *  by base name; each datatype contributes its own programs + renderer. */
+/** Build a stable graph {@link VizExample} that RUNS a traversal / shortest-path algorithm (#3224) via the
+ *  TracedGraph, with an adjacency-list "your input" seam. */
+function graphExampleFromProgram(program: GraphProgram): VizExample {
+  return {
+    factory: runGraphAlgorithm(program.run, program.defaultInput),
+    renderers: { graph: GraphView },
+    input: {
+      default: graphToText(program.defaultInput),
+      hint: "An adjacency list — one node per line: a: b, c",
+      parse: (text) => parseGraphInput(text),
+      make: (parsed) => runGraphAlgorithm(program.run, parsed as GraphInput)(),
+    },
+  };
+}
+
+/** One VizExample per trace-program (array sorts + matrix transforms + graph traversals), built ONCE so
+ *  each algorithm has a STABLE example identity — a fresh build per render would rebuild the player's stream
+ *  every frame. Keyed by base name; each datatype contributes its own programs + renderer. */
 const EXAMPLE_BY_KEY: Record<string, VizExample> = {
   ...Object.fromEntries(
     Object.entries(TRACE_PROGRAMS).map(([key, program]): [string, VizExample] => [key, exampleFromProgram(program)]),
   ),
   ...Object.fromEntries(
     Object.entries(MATRIX_PROGRAMS).map(([key, program]): [string, VizExample] => [key, matrixExampleFromProgram(program)]),
+  ),
+  ...Object.fromEntries(
+    Object.entries(GRAPH_PROGRAMS).map(([key, program]): [string, VizExample] => [key, graphExampleFromProgram(program)]),
   ),
 };
 
