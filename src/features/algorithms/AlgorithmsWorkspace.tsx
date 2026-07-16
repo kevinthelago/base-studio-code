@@ -21,6 +21,8 @@ import { AlgorithmsKitGraph } from "./AlgorithmsKitGraph";
 import { AlgorithmsInspector } from "./AlgorithmsInspector";
 import { AlgorithmsRail } from "./AlgorithmsRail";
 import { LibrarianTerminal } from "./LibrarianTerminal";
+import { VizStage } from "./viz/VizPanel";
+import { vizForImpl } from "./viz/examples/registry";
 import {
   TECHS, TECH_META, NODE_W, NODE_H, layoutKitGraph, kitGraph, kitTechs, implById,
   KIT_REL_META, KIT_REL_ORDER, type Tech,
@@ -38,6 +40,14 @@ export function AlgorithmsWorkspace() {
   // The selected implementation (a node in the active kit's graph), shown in the inspector.
   const [selectedImpl, setSelectedImpl] = useState<string | null>(null);
   const focusedImpl = selectedImpl ? implById(graph, selectedImpl) ?? null : null;
+
+  // The visualization take-over (#3205): when expanded, the focused impl's animation covers the graph
+  // canvas (rail + inspector stay), mirroring the Components theme try-on. Track WHICH impl is expanded
+  // (not a bare boolean) so selecting a different node auto-returns to the graph — `vizExpanded` is the
+  // derived "the current selection is the expanded one", no reset effect needed. Its registered viz, if any.
+  const [expandedImplId, setExpandedImplId] = useState<string | null>(null);
+  const focusedViz = focusedImpl ? vizForImpl(focusedImpl.id) : undefined;
+  const vizExpanded = expandedImplId != null && expandedImplId === selectedImpl;
 
   // The active language's OWN graph (impls + composes edges, down to the primitive base) + its layout.
   const kit = useMemo(() => kitGraph(graph, activeTech), [graph, activeTech]);
@@ -99,11 +109,16 @@ export function AlgorithmsWorkspace() {
       world={kitLayout.world}
       grid
       toolbar={toolbar}
-      overlays={legend}
+      // In-canvas visualization take-over (#3205): when the user expands a focused impl's inline preview,
+      // its animation covers the graph here (like the Designs theme try-on), with a ← Back to graph bar.
+      // Otherwise the on-graph relationship legend.
+      overlays={vizExpanded && focusedViz && focusedImpl
+        ? <VizStage viz={focusedViz} implName={focusedImpl.name} onBack={() => setExpandedImplId(null)} />
+        : legend}
       rail={<AlgorithmsRail graph={graph} activeTech={activeTech} selectedImpl={selectedImpl} onSelectImpl={selectImplFromRail} onSelectLang={selectLang} />}
       railResizable
       railWidth={230}
-      inspector={<AlgorithmsInspector graph={graph} focusedImpl={focusedImpl} onSelectImpl={setSelectedImpl} />}
+      inspector={<AlgorithmsInspector graph={graph} focusedImpl={focusedImpl} onSelectImpl={setSelectedImpl} onExpandViz={() => setExpandedImplId(selectedImpl)} />}
       inspectorResizable
       // Match the Components (Designs) inspector width and go a touch bigger (#3203), so the two
       // libraries read consistently and the always-inline visualization preview (#3199) has room.
