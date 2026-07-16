@@ -146,6 +146,11 @@ pub struct AlgoImpl {
     /// assigns it (`bsc graph impl set --kind`), a heuristic fills untyped impls; absent ⇒ omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
+    /// The VIZ-CODE facet (#3218) — the algorithm's VISUALIZATION as data: a JS trace-program (a function
+    /// over the TracedArray API) the sandboxed executor runs to derive the animation. Additive; the
+    /// librarian authors it (`bsc graph impl set --viz-code`); absent ⇒ omitted. Stored as `vizCode`.
+    #[serde(default, rename = "vizCode", skip_serializing_if = "Option::is_none")]
+    pub viz_code: Option<String>,
 }
 
 /// The implementation objects of the runtime graph (store-or-seed).
@@ -419,6 +424,33 @@ mod tests {
         })).unwrap();
         let stored = implementations_of(&g).into_iter().find(|im| im["id"] == "quick-sort.rs").unwrap();
         assert_eq!(stored["kind"], "sort");
+    }
+
+    #[test]
+    fn algo_impl_viz_code_facet_is_additive_round_trips_and_persists_via_set_impl() {
+        // Present (stored as `vizCode`) → deserializes to `viz_code` + re-serializes unchanged.
+        let json = serde_json::json!({
+            "id": "merge-sort.rs", "tech": "rust", "role": "algorithm", "name": "merge_sort",
+            "composes": [], "code": "// rust ref", "vizCode": "function run(a){ a.markSorted(); }"
+        });
+        let im: AlgoImpl = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(im.viz_code.as_deref(), Some("function run(a){ a.markSorted(); }"));
+        assert_eq!(serde_json::to_value(&im).unwrap(), json, "the vizCode facet round-trips");
+
+        // Absent → None, and no empty `vizCode` key is emitted.
+        let bare = serde_json::json!({ "id": "x.rs", "tech": "rust", "role": "algorithm", "name": "x", "composes": [], "code": "//" });
+        let im2: AlgoImpl = serde_json::from_value(bare).unwrap();
+        assert_eq!(im2.viz_code, None);
+        assert!(serde_json::to_value(&im2).unwrap().get("vizCode").is_none(), "no empty vizCode key emitted");
+
+        // `bsc graph impl set --viz-code` (via set_impl) persists it under `vizCode`.
+        let mut g = seed();
+        set_impl(&mut g, serde_json::json!({
+            "id": "route.ts", "tech": "typescript", "role": "algorithm", "name": "route",
+            "composes": [], "code": "//", "vizCode": "function run(a){}"
+        })).unwrap();
+        let stored = implementations_of(&g).into_iter().find(|im| im["id"] == "route.ts").unwrap();
+        assert_eq!(stored["vizCode"], "function run(a){}");
     }
 
     #[test]
