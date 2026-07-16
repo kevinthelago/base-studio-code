@@ -30,6 +30,13 @@ export const GraphView: StructureRenderer<"graph"> = ({ frame }: { frame: GraphF
       .filter((o): o is { op: "relax"; edge: [string, string] } => o.op === "relax")
       .map((o) => edgeKey(o.edge[0], o.edge[1])),
   );
+  // A `path` op (Dijkstra / topological result) lights its route — flash each consecutive edge (reuse relax).
+  for (const o of ops ?? []) {
+    if (o.op === "path") {
+      const seq = (o as { nodes: string[] }).nodes;
+      for (let i = 0; i < seq.length - 1; i++) relaxed.add(edgeKey(seq[i], seq[i + 1]));
+    }
+  }
   // Nodes stamp only from node-addressed verbs (visit/frontier); relax animates the EDGE, not its endpoints.
   const nodeOps = (ops ?? []).filter((o) => o.op === "visit" || o.op === "frontier");
 
@@ -41,16 +48,16 @@ export const GraphView: StructureRenderer<"graph"> = ({ frame }: { frame: GraphF
           const b = pos[e.to];
           if (!a || !b) return null;
           const on = relaxed.has(edgeKey(e.from, e.to));
+          const weighted = e.weight !== undefined && e.weight !== 1;
           return (
-            <line
-              key={`${e.from}-${e.to}`}
-              className="graph-edge"
-              x1={a.x}
-              y1={a.y}
-              x2={b.x}
-              y2={b.y}
-              {...(on ? { "data-op": "relax" } : {})}
-            />
+            <g key={`${e.from}-${e.to}`}>
+              <line className="graph-edge" x1={a.x} y1={a.y} x2={b.x} y2={b.y} {...(on ? { "data-op": "relax" } : {})} />
+              {weighted && (
+                <text className="graph-weight" x={(a.x + b.x) / 2} y={(a.y + b.y) / 2} textAnchor="middle" dominantBaseline="central">
+                  {e.weight}
+                </text>
+              )}
+            </g>
           );
         })}
         {nodes.map((nd) => {
