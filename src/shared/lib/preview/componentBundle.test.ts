@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { compileAnimationsCss, kitAnimations } from "@/shared/ui/kit";
 import {
-  resolveMemPath, lookupMem, buildComponentSrcDoc, exitShimScript, fitShimScript, gestureForwardScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
+  resolveMemPath, lookupMem, buildComponentSrcDoc, exitShimScript, fitShimScript, gestureForwardScript, gestureEngineScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
 } from "./componentBundle";
 
 // The esbuild-wasm bundle can't run under jsdom; these cover the PURE pieces (path resolution + srcdoc
@@ -341,6 +341,98 @@ describe("componentBundle — gesture-forward shim (#3190)", () => {
     restore();
     bg.remove();
     btn.remove();
+  });
+});
+
+describe("componentBundle — pan/zoom engine (#3190 crisp pass)", () => {
+  it("gestureEngineScript embeds the params + host-command handling; undefined ⇒ empty", () => {
+    expect(gestureEngineScript(undefined)).toBe("");
+    const s = gestureEngineScript({ initial: 1.7, min: 0.3, max: 6 });
+    expect(s.startsWith("\n<script>")).toBe(true);
+    expect(s).toContain("MIN = 0.3");
+    expect(s).toContain("MAX = 6");
+    expect(s).toContain("INITIAL = 1.7");
+    expect(s).toContain('getElementById("root")');   // transforms #root (a DOM transform → crisp)
+    expect(s).toContain("typeof d.__cmd");            // obeys host zoomIn/zoomOut/fit commands
+    expect(s).toContain("svg,canvas");                // reuses the interactive-surface guard
+  });
+
+  it("buildComponentSrcDoc injects the engine + overflow guard under zoomEngine, suppressing the fit-shim", () => {
+    const doc = buildComponentSrcDoc("X", { zoomEngine: { initial: 1.7 }, fitContent: true });
+    expect(doc).toContain("INITIAL = 1.7");                 // the engine, with its initial zoom
+    expect(doc).toContain("html,body{overflow:hidden}");    // the engine's clip / no-scrollbar CSS
+    expect(doc).not.toContain("content.offsetWidth");       // the scale-to-fit shim is suppressed
+    const bare = buildComponentSrcDoc("X");
+    expect(buildComponentSrcDoc("X", { zoomEngine: undefined })).toBe(bare); // off ⇒ byte-for-byte unchanged
+  });
+
+  // Parse "translate(<tx>px,<ty>px) scale(<s>)" — the transform the engine writes onto #root.
+  const parseT = (s: string) => {
+    const m = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)\s*scale\((-?[\d.]+)\)/.exec(s);
+    return m ? { tx: +m[1], ty: +m[2], scale: +m[3] } : null;
+  };
+
+  it("drives the engine in jsdom: initial zoom, drag-pan, wheel-zoom-about-cursor, host cmds, guards", () => {
+    const root = document.createElement("div");
+    root.id = "root";
+    document.body.appendChild(root);
+    const src = gestureEngineScript({ initial: 2 }).replace(/^\s*<script>/, "").replace(/<\/script>\s*$/, "");
+    (0, eval)(src);
+    const W = window.innerWidth;
+
+    // INITIAL: a TOP-anchored zoom of 2 (horizontal center, y=0) → the top edge stays visible (a page's
+    // headers aren't cropped off the top), only the bottom crops.
+    let t = parseT(root.style.transform)!;
+    expect(t.scale).toBe(2);
+    expect(t.tx).toBeCloseTo(-W / 2, 6);   // (W/2) − (W/2)*2 — horizontal center held
+    expect(t.ty).toBe(0);                  // y=0 held → top stays put
+
+    // FIT resets to identity.
+    window.dispatchEvent(new MessageEvent("message", { data: { __cmd: "fit" } }));
+    expect(parseT(root.style.transform)).toEqual({ tx: 0, ty: 0, scale: 1 });
+
+    // DRAG-PAN on a non-interactive target translates by the mouse delta (iframe-local px).
+    root.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, clientX: 100, clientY: 100 }));
+    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 130, clientY: 112 }));
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    expect(parseT(root.style.transform)).toEqual({ tx: 30, ty: 12, scale: 1 });
+
+    // WHEEL-ZOOM about the cursor: from identity, keep the content point under (200,150) fixed.
+    window.dispatchEvent(new MessageEvent("message", { data: { __cmd: "fit" } }));
+    root.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -120, clientX: 200, clientY: 150 }));
+    t = parseT(root.style.transform)!;
+    expect(t.scale).toBeGreaterThan(1);                       // zoomed in
+    expect(200 * t.scale + t.tx).toBeCloseTo(200, 3);         // the point under the cursor held fixed…
+    expect(150 * t.scale + t.ty).toBeCloseTo(150, 3);         // (content px 200/150 at identity)
+
+    // HOST +/− commands zoom about center.
+    window.dispatchEvent(new MessageEvent("message", { data: { __cmd: "fit" } }));
+    window.dispatchEvent(new MessageEvent("message", { data: { __cmd: "zoomIn" } }));
+    expect(parseT(root.style.transform)!.scale).toBeCloseTo(1.2, 6);
+    window.dispatchEvent(new MessageEvent("message", { data: { __cmd: "zoomOut" } }));
+    expect(parseT(root.style.transform)!.scale).toBeCloseTo(1, 6);
+
+    // A press on a real control does NOT pan (the component keeps the interaction).
+    const btn = document.createElement("button");
+    root.appendChild(btn);
+    const before = root.style.transform;
+    btn.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, clientX: 5, clientY: 5 }));
+    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 40, clientY: 40 }));
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    expect(root.style.transform).toBe(before);
+
+    // A wheel over a real scroll container scrolls it (no zoom).
+    const beforeW = root.style.transform;
+    const scroller = document.createElement("div");
+    scroller.style.overflowY = "auto";
+    Object.defineProperty(scroller, "scrollHeight", { value: 500, configurable: true });
+    Object.defineProperty(scroller, "clientHeight", { value: 100, configurable: true });
+    scroller.scrollTop = 0;
+    root.appendChild(scroller);
+    scroller.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 120, clientX: 5, clientY: 5 }));
+    expect(root.style.transform).toBe(beforeW);
+
+    root.remove();
   });
 });
 

@@ -504,25 +504,28 @@ describe("theme try-on preview (#2834)", () => {
     expect(screen.getByRole("button", { name: "fit" })).toBeTruthy();
   });
 
-  it("the preview is always interactive; dragging the wrapper OR the gutter pans (#3188/#3190)", () => {
+  it("the preview is interactive + driven by the in-iframe CRISP engine, not a host viewport (#3190)", () => {
     render(<DesignsWorkbench />);
     fireEvent.click(graphNode("Chip"));
     fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
     // No select/pan toggle, and no per-component gating.
     expect(screen.queryByText("🖐 pan")).toBeNull();
     expect(screen.queryByText("select")).toBeNull();
-    // EVERY component keeps pointer-events:auto so clicks/hover work (props don't reveal internal
-    // handlers / :hover). #3190: the world wrapper is NO LONGER a data-node — the iframe swallows its own
-    // mousedowns (forwarded as pan/interact), so the ONLY effect of the old `data-node` was to make
-    // `onCanvasDown` dead-zone the exposed wrapper edges. Now a press starting on the wrapper pans.
-    const worldWrap = screen.getByTitle("Chip preview").parentElement!.parentElement as HTMLElement;
+    // #3190 crisp pass: pan/zoom moved INSIDE the iframe (a DOM transform → sharp), so the host no longer
+    // owns a viewport — no `onCanvasDown`, no `data-node`. The frame stays pointer-events:auto so the
+    // engine inside receives drag/wheel, and the +/−/fit buttons RELAY to it via `__cmd` postMessages.
+    const iframe = screen.getByTitle("Chip preview") as HTMLIFrameElement;
+    const worldWrap = iframe.parentElement!.parentElement as HTMLElement;
     expect(worldWrap.style.pointerEvents).toBe("auto");
     expect(worldWrap.getAttribute("data-node")).toBeNull();
-    const viewport = worldWrap.parentElement as HTMLElement; // the pan/zoom canvas (onCanvasDown)
-    fireEvent.mouseDown(worldWrap, { clientX: 100, clientY: 100 });
-    expect(viewport.style.cursor).toBe("grabbing");          // onCanvasDown engaged — the wrapper pans
-    fireEvent.mouseUp(window);
-    expect(viewport.style.cursor).toBe("grab");              // released
+    const posts: unknown[] = [];
+    const win = iframe.contentWindow!;
+    const spy = vi.spyOn(win, "postMessage").mockImplementation(((m: unknown) => { posts.push(m); }) as typeof win.postMessage);
+    fireEvent.click(screen.getByRole("button", { name: /zoom in/ }));
+    fireEvent.click(screen.getByRole("button", { name: "fit" }));
+    expect(posts).toContainEqual({ __cmd: "zoomIn" });        // the +/−/fit buttons drive the engine
+    expect(posts).toContainEqual({ __cmd: "fit" });
+    spy.mockRestore();
   });
 
   it("preview mode hides the graph chrome (the composition-graph toolbar); it returns on exit (#2849)", () => {
