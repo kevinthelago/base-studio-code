@@ -1,0 +1,50 @@
+/* The generic trace player (#3176, epic #3171) — layout for the panels row + the transport controls.
+   Colors/tokens come from tokens.css; the per-structure renderers own their own element styles, and the
+   kit owns the state-triggered animation CSS (#3058). Only the player's own chrome lives here. */
+
+.trace-player {
+  width: 100%;
+  min-width: 0;
+}
+
+/* The named panels, side by side; each panel gets its own labelled column and scrolls independently. */
+.trace-panels {
+  align-items: stretch;
+  min-width: 0;
+  overflow-x: auto;
+}
+.trace-panel {
+  min-width: 0;
+  flex: 1 1 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev, var(--bg-soft));
+  overflow: auto;
+}
+
+/* The transport row — play/pause, step, scrubber, index readout. */
+.trace-controls {
+  min-width: 0;
+}
+.trace-scrubber {
+  flex: 1 1 auto;
+  min-width: 80px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* The fallback renderer (unregistered structure) — the structure name + a JSON dump of the frame. */
+.trace-fallback-json {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg, var(--bg-soft));
+  color: var(--fg);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+  tab-size: 2;
+}

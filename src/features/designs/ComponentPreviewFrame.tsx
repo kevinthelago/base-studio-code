@@ -14,8 +14,9 @@ import { Code } from "@/shared/ui/data/Code";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { bundleComponent, buildComponentSrcDoc } from "@/shared/lib/preview/componentBundle";
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
-import { compileAnimationsCss, type AnimationDef } from "@/shared/ui/kit";
+import { compileAnimationsCss, animClassName, type AnimationDef } from "@/shared/ui/kit";
 import { componentPreviewFiles, type KitArtifact, type PreviewState } from "./lib/componentPreview";
+import { recordPreviewError } from "./lib/componentBridge";
 import { libraryModuleResolver } from "./lib/libraryModules";
 import { resolveComponentAnimations, resolveComposedAnimations, previewAnimDefs, type ComponentRecord } from "./lib/model";
 
@@ -159,8 +160,10 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         // fire. The compiled CSS keeps its `prefers-reduced-motion` guard, so a reduced-motion viewer
         // sees the static component.
         const animCss = compileAnimationsCss(animDefs);
+        // #3163: derive the class hook via `animClassName` so a component-namespaced composed animation
+        // (`.<kit>-<component>-anim-<name>`) matches the same-namespaced keyframes the compiler emits.
         const rootClass = animDefs
-          .map((d) => `${d.kit}-anim-${d.name}`)
+          .map((d) => animClassName(d))
           .filter((c) => /^[a-z][a-z0-9-]+$/.test(c))
           .join(" ");
         const injectedCss = collectAppCss() + (themeCss ? `\n:root{${themeCss}}` : "") + (animCss ? `\n${animCss}` : "");
@@ -182,18 +185,22 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // Surface runtime errors the iframe posts (an exception during the component's own render). Match ONLY
   // this frame's own iframe by source window (#2908) — the on-visit scan now runs its own hidden probe
   // iframes concurrently, and without this filter their errors would leak into (and falsely fail) this
-  // live preview.
+  // live preview. #3165: ALSO persist the throw to the durable preview-error log (`bsc ui preview-error`)
+  // so it's tail-able from a session's shell (`bsc ui preview-errors`) — the status itself is transient
+  // React state. Keyed on `comp.id` so the fire-and-forget attributes the error to the CURRENT component.
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (e.source !== iframeRef.current?.contentWindow) return;
       if (e.data && e.data.__preview === "error") {
+        const message = String(e.data.message);
         setStatus("error");
-        setError(String(e.data.message));
+        setError(message);
+        void recordPreviewError(comp.id, message);
       }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, []);
+  }, [comp.id]);
 
   // #3139: a page-like preview renders at its natural viewport canvas + is contain-scaled (absolute,
   // top-anchored, centered); a component renders 1:1, filling the frame. Common chrome either way.

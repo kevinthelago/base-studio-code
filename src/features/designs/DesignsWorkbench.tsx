@@ -39,7 +39,7 @@ import { layoutBand } from "@/shared/lib/graph/crossGraph";
 import { parseNodeUrn, LIBRARY_SEGMENT } from "@/shared/lib/graph/nodeUrn";
 import { resolveComponentLibraryRefs } from "./lib/libraryComposition";
 import { layoutComposition, NODE_W, NODE_H } from "./lib/compositionLayout";
-import { analyzeGraphHealth, HEALTH_SEVERITY, type HealthCategory } from "./lib/graphHealth";
+import { analyzeGraphHealth, analyzeMotion, HEALTH_SEVERITY, type HealthCategory } from "./lib/graphHealth";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
@@ -260,7 +260,8 @@ export function DesignsWorkbench() {
   }, [kitComps, graph.edges.length, libComp.nodes]);
   // Graph health (#2680) — the same taxonomy `bsc ui doctor` reports (lib/graphHealth), mirrored to
   // badge dead/duplicated nodes. `nodeHealth` maps each flagged node to its MOST-SEVERE category.
-  const healthFindings = useMemo(() => analyzeGraphHealth(kitComps), [kitComps]);
+  // Topology findings + the #3163 MOTION findings (`bsc ui doctor --motion`) — badge both from the graph.
+  const healthFindings = useMemo(() => [...analyzeGraphHealth(kitComps), ...analyzeMotion(kitComps)], [kitComps]);
   const nodeHealth = useMemo(() => {
     const m = new Map<string, HealthCategory>();
     for (const f of healthFindings) for (const id of f.nodeIds) {
@@ -453,16 +454,21 @@ export function DesignsWorkbench() {
                 result — so the try-on shows both at once. */}
             {activeTheme && <PaletteStrip theme={activeTheme} />}
             {/* Pan/zoom viewport (#3154): a raw div for the native wheel listener + backdrop drag (mirrors
-                GraphCanvas). The world layer carries the transform; the preview inside is pointer-events:none
-                so wheel/drag reach the viewport backdrop (it's an inspect surface, not interactive here).
-                No will-change on the world (it blurs zoom-in) — same as GraphCanvas. */}
+                GraphCanvas). The world layer carries the transform. The preview is ALWAYS interactive
+                (#3188): the component keeps pointer-events so clicks/hover work regardless of whether it
+                declares a callback prop (props aren't the whole story — internal handlers + CSS :hover
+                aren't visible from the store). Panning happens on the GUTTER around it: a sandboxed iframe
+                already stops a mousedown inside it from reaching the parent, so a drag ON the component
+                interacts while a drag on the surrounding backdrop hits this pan handler (the world Box is
+                also `data-node` so `onCanvasDown` bails on the component frame itself). +/−/fit zoom
+                either way. No will-change on the world (it blurs zoom-in). */}
             {/* eslint-disable-next-line no-restricted-syntax -- DOM ref (setVp) + native non-passive wheel listener target, like GraphCanvas's viewport (#3154) */}
             <div
               ref={setPreviewVp}
               onMouseDown={onPreviewCanvasDown}
               style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", cursor: "grab", background: "var(--bg-canvas, var(--bg))" }}
             >
-              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: 440, userSelect: "none", pointerEvents: "none", ...previewWorldTransform }}>
+              <Box data-node="preview" style={{ position: "absolute", left: 0, top: 0, width: previewW, height: 440, userSelect: "none", pointerEvents: "auto", ...previewWorldTransform }}>
                 <ComponentPreviewFrame
                   comp={sel}
                   theme={theme}
@@ -618,6 +624,10 @@ const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string }> = {
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
   "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
   "phantom-compose": { glyph: "⇢", label: "phantom composes — declares a composition its source never renders (a false graph edge)" },
+  "motion-dead-selector": { glyph: "⌁", label: "motion dead selector — an animation targets a class hook its source never renders" },
+  "motion-dash-no-pathlength": { glyph: "┅", label: "stroke-dash motion with no pathLength — a draw-in needs a known path length" },
+  "motion-transform-attr": { glyph: "⤥", label: "CSS transform keyframe fights an SVG transform= attribute — they don't compose" },
+  "motion-name-collision": { glyph: "⧗", label: "cross-component keyframe-name collision — two components' same-named animations clobber" },
   "no-empty-state": { glyph: "◍", label: "no empty state — takes data but renders no distinct empty view; add an EmptyState" },
   "no-loading-state": { glyph: "◌", label: "no loading state — takes data but has no `loading` prop; add one for a loading preview" },
   "slot-shell": { glyph: "▤", label: "slot shell — previews a demo placeholder; fill its content slots to see its real function" },

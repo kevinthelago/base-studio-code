@@ -31,6 +31,7 @@ import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, type K
 import { libraryModuleResolver, libraryReimplTargets } from "./libraryModules";
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
 import type { ComponentRecord, PropSpec } from "./model";
+import type { KitAnimation } from "@/shared/ui/kit/animations";
 
 /** The specifiers the preview iframe can resolve — the exact keys of the preview import-map (react/three/
  *  d3/lucide-react/…). A bare import not in this set throws "Failed to resolve module specifier" at
@@ -214,6 +215,10 @@ const INTERNAL_TARGETS = new Set<string>([
 export type HealthCategory =
   | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "self-reference" | "unresolvable-import"
   | "reimplementation" | "orphan" | "unwired-prop" | "phantom-compose"
+  // MOTION checks (#3163, `bsc ui doctor --motion` / `analyzeMotion`) — mechanical faults an author used to
+  // hand-diagnose: a dead animation-selector hook, a stroke-dash draw with no pathLength, a CSS-transform
+  // keyframe fighting an SVG transform ATTRIBUTE, and a cross-component keyframe-name collision.
+  | "motion-dead-selector" | "motion-dash-no-pathlength" | "motion-transform-attr" | "motion-name-collision"
   | "no-empty-state" | "no-loading-state" | "slot-shell";
 
 /** Category → severity (higher = worse); drives ranking + which badge wins on a multi-flagged node.
@@ -232,6 +237,13 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   orphan: 2,
   "unwired-prop": 2,
   "phantom-compose": 2,
+  // Motion (#3163): a dead selector hook + a cross-component name collision are real faults (the motion
+  // targets nothing / two components' keyframes clobber) → 2; the two SVG traps are advisory (the motion
+  // still runs, just not as intended) → 1.
+  "motion-dead-selector": 2,
+  "motion-name-collision": 2,
+  "motion-dash-no-pathlength": 1,
+  "motion-transform-attr": 1,
   "no-empty-state": 1,
   "no-loading-state": 1,
   "slot-shell": 1,
@@ -487,6 +499,99 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
     if (slots.length === 0) continue;
     findings.push({ category: "slot-shell", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
       why: `${c.name} is a slot-driven composite — its composed children (${c.composes.join(", ")}) arrive via content slots (${slots.join(", ")}), so a standalone preview renders a demo placeholder, not its assembled function; fill the slots to see it` });
+  }
+
+  return findings.sort((a, b) => b.severity - a.severity || (a.nodeNames[0] ?? "").localeCompare(b.nodeNames[0] ?? ""));
+}
+
+// ── motion checks (#3163, `bsc ui doctor --motion`) ──────────────────────────────────────────────────
+// Four MECHANICAL faults an author used to hand-diagnose from a broken preview, now surfaced from the data.
+// They scan a component's INLINE animation defs (the object entries of `animations`; a name-ref string
+// points at the shared kit library, which the doctor doesn't resolve) against its rendered markup. The
+// Rust twin is `graph_health::analyze_motion` — keep both in lockstep (categories, severities, rules).
+
+/** The INLINE animation defs on a component (its `animations` object entries; name-ref strings skipped). */
+function inlineAnimations(c: ComponentRecord): KitAnimation[] {
+  return (c.animations ?? []).filter(
+    (a): a is KitAnimation => typeof a === "object" && a !== null && typeof (a as KitAnimation).name === "string",
+  );
+}
+
+/** The class HOOK tokens a `selector` targets — every `.<ident>` (#3163 check a). */
+function selectorClasses(selector: string): string[] {
+  return [...selector.matchAll(/\.([A-Za-z0-9_-]+)/g)].map((m) => m[1]);
+}
+
+/** The set of CSS declaration PROPERTIES an animation's keyframes touch (#3163 checks b/c). */
+function keyframeProps(anim: KitAnimation): Set<string> {
+  const props = new Set<string>();
+  for (const decls of Object.values(anim.keyframes ?? {})) for (const p of Object.keys(decls ?? {})) props.add(p);
+  return props;
+}
+
+/** The component's rendered markup to scan — its module `source` + usage `srcText` (a class hook /
+ *  pathLength / transform attribute may live in either). */
+function componentMarkup(c: ComponentRecord): string {
+  return `${c.source ?? ""}\n${c.srcText ?? ""}`;
+}
+
+/**
+ * Analyze a kit's components for MOTION-graph faults (#3163) — the `bsc ui doctor --motion` checks,
+ * mirrored from `graph_health::analyze_motion`. Ranked most-severe first (stable name tiebreak). Pure.
+ * Four checks:
+ *   (a) motion-dead-selector — an animation `selector` whose class hook the component's source never renders.
+ *   (b) motion-dash-no-pathlength — a stroke-dash(array|offset) keyframe on a component that sets no pathLength.
+ *   (c) motion-transform-attr — a CSS `transform` keyframe on a component using an SVG `transform=` ATTRIBUTE.
+ *   (d) motion-name-collision — an inline animation NAME declared by 2+ components in the same kit.
+ */
+export function analyzeMotion(comps: ComponentRecord[]): HealthFinding[] {
+  const findings: HealthFinding[] = [];
+  // (d) per-kit collision groups: `${kit} ${animName}` → the owning components (deduped by id).
+  const collisions = new Map<string, { id: string; name: string }[]>();
+
+  for (const c of comps) {
+    const anims = inlineAnimations(c);
+    if (anims.length === 0) continue;
+    const markup = componentMarkup(c);
+    for (const anim of anims) {
+      const props = keyframeProps(anim);
+      // (a) dead selector hook — the animation targets a class the source never renders.
+      if (anim.selector) {
+        const dead = selectorClasses(anim.selector).filter((cls) => !markup.includes(cls));
+        if (dead.length) {
+          findings.push({ category: "motion-dead-selector", severity: HEALTH_SEVERITY["motion-dead-selector"],
+            nodeIds: [c.id], nodeNames: [c.name],
+            why: `${c.name}'s animation \`${anim.name}\` targets ${dead.map((d) => `\`.${d}\``).join(", ")} but its source renders no such element — the animation matches nothing (a dead selector hook)` });
+        }
+      }
+      // (b) stroke-dash keyframe with no pathLength — a draw-in that needs a known geometry length.
+      const dash = [...props].filter((p) => p === "stroke-dashoffset" || p === "stroke-dasharray");
+      if (dash.length && !/pathlength/i.test(markup)) {
+        findings.push({ category: "motion-dash-no-pathlength", severity: HEALTH_SEVERITY["motion-dash-no-pathlength"],
+          nodeIds: [c.id], nodeNames: [c.name],
+          why: `${c.name}'s animation \`${anim.name}\` animates ${dash.map((d) => `\`${d}\``).join(", ")} but its source sets no \`pathLength\` — a stroke-dash draw needs a known path length to animate predictably` });
+      }
+      // (c) CSS transform keyframe on a transform-ATTRIBUTED SVG element — the two don't compose.
+      if (props.has("transform") && /transform\s*=/.test(markup)) {
+        findings.push({ category: "motion-transform-attr", severity: HEALTH_SEVERITY["motion-transform-attr"],
+          nodeIds: [c.id], nodeNames: [c.name],
+          why: `${c.name}'s animation \`${anim.name}\` sets a CSS \`transform\` keyframe, but its source uses an SVG \`transform=\` ATTRIBUTE — CSS transforms and the SVG transform attribute don't compose (animate the attribute, or drop the attribute and transform via CSS)` });
+      }
+      // (d) collect this inline name for the cross-component collision pass.
+      const key = `${c.kitId} ${anim.name}`;
+      const owners = collisions.get(key) ?? collisions.set(key, []).get(key)!;
+      if (!owners.some((o) => o.id === c.id)) owners.push({ id: c.id, name: c.name });
+    }
+  }
+
+  // (d) an inline animation NAME declared by 2+ components in a kit — a cross-component keyframe collision.
+  for (const [key, owners] of collisions) {
+    if (owners.length < 2) continue;
+    const animName = key.slice(key.indexOf(" ") + 1);
+    const sorted = [...owners].sort((a, b) => a.name.localeCompare(b.name));
+    findings.push({ category: "motion-name-collision", severity: HEALTH_SEVERITY["motion-name-collision"],
+      nodeIds: sorted.map((o) => o.id), nodeNames: sorted.map((o) => o.name),
+      why: `inline animation \`${animName}\` is declared by ${owners.length} components (${sorted.map((o) => o.name).join(", ")}) — same-named keyframes across components collide; namespace them (#3163) or lift the shared one into the kit's animation library` });
   }
 
   return findings.sort((a, b) => b.severity - a.severity || (a.nodeNames[0] ?? "").localeCompare(b.nodeNames[0] ?? ""));

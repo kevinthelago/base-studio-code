@@ -495,6 +495,21 @@ describe("theme try-on preview (#2834)", () => {
     expect(screen.getByRole("button", { name: "fit" })).toBeTruthy();
   });
 
+  it("the preview is always interactive; pan lives on the gutter, no toggle (#3188)", () => {
+    render(<DesignsWorkbench />);
+    fireEvent.click(graphNode("Chip"));
+    fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
+    // No select/pan toggle, and no per-component gating.
+    expect(screen.queryByText("🖐 pan")).toBeNull();
+    expect(screen.queryByText("select")).toBeNull();
+    // EVERY component keeps pointer-events:auto so clicks/hover work (props don't reveal internal
+    // handlers / :hover). Panning is on the gutter — the world wrapper is data-node so onCanvasDown
+    // bails on the component frame and only the surrounding backdrop pans.
+    const worldWrap = () => screen.getByTitle("Chip preview").parentElement!.parentElement as HTMLElement;
+    expect(worldWrap().style.pointerEvents).toBe("auto");
+    expect(worldWrap().getAttribute("data-node")).toBe("preview");
+  });
+
   it("preview mode hides the graph chrome (the composition-graph toolbar); it returns on exit (#2849)", () => {
     render(<DesignsWorkbench />);
     expect(screen.getByText(/Composition graph/)).toBeTruthy();          // graph header shown normally

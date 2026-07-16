@@ -41,17 +41,22 @@ struct Args {
     /// `list --full`: emit the COMPLETE stored objects as a plain array — the full-fidelity read the
     /// desktop library hydration needs (#2143). Ignored by other subcommands.
     full: bool,
+    /// `--raw` (#3166): byte-clean output for `while read` / `$( )` — raw UTF-8, LF-only, NO JSON
+    /// envelope/quoting. On `list` it prints one id per line; on `get` it prints the stored record raw
+    /// (CR-stripped). Neutralizes the CRLF + cp1252 traps that broke shell audits. Ignored elsewhere.
+    raw: bool,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { dir: None, pretty: false, full: false, positional: Vec::new() };
+    let mut a = Args { dir: None, pretty: false, full: false, raw: false, positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--dir" => a.dir = Some(it.next().ok_or("--dir needs a path")?),
             "--pretty" => a.pretty = true,
             "--full" => a.full = true,
+            "--raw" => a.raw = true,
             // `-h`/`--help` route to the help command (anywhere on the line).
             "-h" | "--help" => a.positional.insert(0, "help".into()),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
@@ -113,7 +118,15 @@ pub fn run_hooked_validated(
         // full JSON is one `get` away, or `list --full`). Each stored file is parsed leniently so an
         // odd-shaped file never aborts the list.
         "list" => {
-            if args.full {
+            if args.raw {
+                // Byte-clean id list (#3166): one id per line, LF-only, no JSON envelope — safe for
+                // `for id in $(bsc <noun> list --raw)` / `while read id`. Records with no usable id are
+                // skipped so the list never carries a blank or garbage line (the class of bug that let a
+                // `while read` audit silently run on zero rows and report success). `--raw` wins over
+                // `--full`/`--pretty` (they're JSON shapes; raw is the non-JSON one).
+                let ids: Vec<String> = store.list().iter().filter_map(|j| id_field(j)).collect();
+                bsc_cli_util::print_raw_lines(&ids);
+            } else if args.full {
                 // Full-fidelity read (#2143): every record's COMPLETE JSON object as a plain array.
                 // An unparseable file is skipped (matching the lenient lean path).
                 let full: Vec<Value> = store
@@ -132,7 +145,12 @@ pub fn run_hooked_validated(
         "get" => {
             let id = args.positional.get(1).ok_or_else(|| format!("usage: {prog} get <id>"))?;
             match store.get(id)? {
-                // Print the stored JSON verbatim (it's already JSON), or `null` when absent.
+                // `--raw` (#3166): the stored JSON straight to stdout as bytes, CR-stripped, LF-only,
+                // no `println!`/locale layer — safe for `$( )` capture (composes with the `--field`
+                // read #3162 adds: field present ⇒ that value raw, else the whole record raw). A miss
+                // prints NOTHING (empty capture), not the literal `null`. Else print verbatim / `null`.
+                Some(json) if args.raw => bsc_cli_util::print_raw(json.trim_end()),
+                None if args.raw => {}
                 Some(json) => println!("{}", json.trim_end()),
                 None => println!("null"),
             }
@@ -190,6 +208,20 @@ fn resolve_store(flag: &Option<String>, spec: &CliSpec) -> Result<Store, String>
             .ok_or_else(|| "could not resolve a home directory; set HOME/USERPROFILE".to_string())
     })?;
     Ok(Store::new(dir, spec.noun))
+}
+
+/// The `id` of a stored record's raw JSON, if present as a non-empty string — the lenient projection
+/// `list --raw` prints one-per-line (#3166). An unparseable file, a missing `id`, or a non-string /
+/// blank `id` all yield `None` (that record is skipped), so the raw id list is never polluted by a
+/// blank or garbage line. Trimmed to match [`id_of`]'s key normalization.
+pub fn id_field(json: &str) -> Option<String> {
+    serde_json::from_str::<Value>(json)
+        .ok()?
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// The `id` of a stored Value — required, non-empty (it keys the on-disk file). `noun` names the
@@ -293,6 +325,60 @@ mod tests {
     fn full_flag_parses_and_defaults_off() {
         assert!(!parse_args(vec!["list".into()]).unwrap().full, "default list is lean");
         assert!(parse_args(vec!["list".into(), "--full".into()]).unwrap().full, "--full opts into full objects");
+    }
+
+    #[test]
+    fn raw_flag_parses_and_defaults_off() {
+        // #3166: `--raw` selects byte-clean output; it's a known flag (no longer "unknown flag").
+        assert!(!parse_args(vec!["list".into()]).unwrap().raw, "default is JSON output");
+        assert!(parse_args(vec!["list".into(), "--raw".into()]).unwrap().raw, "--raw opts into raw output");
+        assert!(parse_args(vec!["get".into(), "x".into(), "--raw".into()]).unwrap().raw);
+        // It composes with the other flags without being swallowed.
+        let a = parse_args(vec!["list".into(), "--raw".into(), "--dir".into(), "/tmp/w".into()]).unwrap();
+        assert!(a.raw && a.dir.as_deref() == Some("/tmp/w"));
+    }
+
+    #[test]
+    fn id_field_extracts_a_non_empty_string_id_or_none() {
+        // The lenient projection `list --raw` maps each stored record through — the whole point is a
+        // clean, gap-free id list.
+        assert_eq!(id_field(r#"{"id":"button","name":"Button"}"#).as_deref(), Some("button"));
+        assert_eq!(id_field(r#"{"id":"  chip  "}"#).as_deref(), Some("chip"), "trimmed like id_of");
+        // No id / blank id / non-string id / unparseable ⇒ None (that record is skipped, no blank line).
+        assert_eq!(id_field(r#"{"name":"no id"}"#), None);
+        assert_eq!(id_field(r#"{"id":""}"#), None);
+        assert_eq!(id_field(r#"{"id":"   "}"#), None);
+        assert_eq!(id_field(r#"{"id":42}"#), None);
+        assert_eq!(id_field("not json"), None);
+    }
+
+    #[test]
+    fn raw_list_yields_one_clean_id_per_line_no_envelope_no_cr() {
+        // The acceptance shape: `list --raw` = each stored record's id on its own LF-terminated line,
+        // no JSON array/quotes, no `\r` — exactly what `while read id` / `$( )` needs. We assemble the
+        // same string the dispatch prints (`print_raw_lines` over the extracted ids) so the contract is
+        // asserted without capturing real stdout.
+        let stored = [
+            r#"{"id":"button","name":"Button"}"#,
+            r#"{"name":"skipped — no id"}"#, // dropped, not a blank line
+            r#"{"id":"chip"}"#,
+        ];
+        let ids: Vec<String> = stored.iter().filter_map(|j| id_field(j)).collect();
+        let out = bsc_cli_util::raw_lines(&ids);
+        assert_eq!(out, "button\nchip\n");
+        assert!(!out.contains('\r'), "LF-only, no carriage return");
+        assert!(!out.contains('"') && !out.contains('[') && !out.contains(']'), "no JSON envelope/quoting");
+        assert_eq!(out.lines().count(), 2, "one id per line, id-less record skipped");
+    }
+
+    #[test]
+    fn raw_get_output_is_the_record_bytes_lf_only() {
+        // `get --raw` prints the stored JSON straight through, CR-stripped to LF — so a CRLF-poisoned
+        // record can't leak a `\r` into a captured value. (Same builder the dispatch writes via.)
+        let stored = "{\r\n  \"id\": \"button\"\r\n}";
+        let out = bsc_cli_util::raw_line(stored.trim_end());
+        assert!(!out.contains('\r'));
+        assert!(out.ends_with('\n') && !out.ends_with("\n\n"), "exactly one trailing LF");
     }
 
     #[test]
