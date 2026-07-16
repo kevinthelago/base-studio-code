@@ -19,6 +19,10 @@ export type { StructureRenderer, RendererRegistry } from "./viz/registry";
 
 // The `array` renderer (#3178) + the seeded sort proof (#3177) — the array proof-of-loop.
 export { ArrayView } from "./viz/renderers/ArrayView";
+// The array viz kit's MOTION as KitAnimation data (#2942) — compiled by the engine; exported so a
+// future Designs kit-store integration can register + edit it in the AnimationsMenu (see the module's
+// RESIDUAL note).
+export { ALGO_VIZ_KIT_ID, ALGO_VIZ_ANIMATIONS, ALGO_VIZ_ANIM_CLASSES } from "./viz/renderers/arrayViewMotion";
 export { sortSteps, sort, SORT_MOCK } from "./viz/examples/sort";
 export { vizForImpl, VIZ_EXAMPLES } from "./viz/examples/registry";
 export type { VizExample } from "./viz/examples/registry";
