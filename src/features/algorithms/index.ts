@@ -24,5 +24,6 @@ export { ArrayView } from "./viz/renderers/ArrayView";
 // RESIDUAL note).
 export { ALGO_VIZ_KIT_ID, ALGO_VIZ_ANIMATIONS, ALGO_VIZ_ANIM_CLASSES } from "./viz/renderers/arrayViewMotion";
 export { sortSteps, sort, SORT_MOCK } from "./viz/examples/sort";
-export { vizForImpl, VIZ_EXAMPLES } from "./viz/examples/registry";
+export { vizForImpl, resolveKind, EXAMPLES_BY_KIND } from "./viz/examples/registry";
+export { classifyKind, type Classifiable } from "./lib/classifyKind";
 export type { VizExample } from "./viz/examples/registry";
