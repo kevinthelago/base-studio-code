@@ -148,11 +148,43 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         }
         // `dump` — the whole graph document (the `implementations` tier), store-or-seed.
         "dump" => emit(&crate::load()),
+        // `doctor [--fix]` (#3212) — diagnose the library's visualization typing + coverage: untyped /
+        // invalid-kind / mistyped / missing-viz. `--fix` assigns the heuristic kind to UNTYPED-but-
+        // classifiable impls (never overwriting an assigned kind), then re-diagnoses.
+        "doctor" => {
+            let fix = args.iter().any(|a| a == "--fix");
+            let mut g = crate::load();
+            if fix {
+                let mut fixed = Vec::new();
+                for im in crate::implementations_of(&g) {
+                    if im.get("role").and_then(Value::as_str) != Some("algorithm") {
+                        continue;
+                    }
+                    if im.get("kind").and_then(Value::as_str).is_none() {
+                        if let Some(k) = crate::classify_kind(&im) {
+                            let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                            let mut next = im.clone();
+                            next["kind"] = Value::String(k.to_string());
+                            crate::set_impl(&mut g, next)?;
+                            fixed.push(serde_json::json!({ "id": id, "kind": k }));
+                        }
+                    }
+                }
+                if !fixed.is_empty() {
+                    crate::save(&g)?;
+                }
+                let remaining = crate::doctor(&g);
+                emit(&serde_json::json!({ "fixed": fixed, "remaining": remaining, "remaining_count": remaining.len() }))
+            } else {
+                let findings = crate::doctor(&g);
+                emit(&serde_json::json!({ "findings": findings, "count": findings.len() }))
+            }
+        }
         "help" | "-h" | "--help" => {
             print!("{}", help(prog));
             Ok(())
         }
-        other => Err(format!("unknown graph command '{other}' — read: impl list | dump | harvest <dir> | curate <dir>; write: impl set | impl remove\n\n{}", help(prog))),
+        other => Err(format!("unknown graph command '{other}' — read: impl list | dump | harvest <dir> | curate <dir> | doctor; write: impl set | impl remove\n\n{}", help(prog))),
     }
 }
 
@@ -181,7 +213,8 @@ fn help(prog: &str) -> String {
          {prog} impl list [--tech <t>] [--role r] [--domain <d>]   # a language kit's implementations (#2863); --domain filters to a cross-language collection (#3120)\n  \
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir> [--tech T] [--worthy-only] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745)\n  \
-         {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n\n\
+         {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
+         {prog} doctor [--fix] [--pretty]               # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
          {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>]   # upsert a language-kit impl (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program\n  \
          {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n\n\

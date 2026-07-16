@@ -230,6 +230,128 @@ pub fn remove_impl(g: &mut Value, id: &str) -> bool {
     true
 }
 
+// ── the doctor (#3212) — diagnose visualization typing + coverage ──
+
+/// The known manipulation kinds — MUST match the frontend `ALGO_KINDS` (`src/features/algorithms/lib/
+/// knowledge.ts`). A kind outside this set is `invalid-kind`.
+pub const KINDS: [&str; 5] = ["sort", "search", "traversal", "accumulate", "transform"];
+
+/// The base-name viz PROGRAMS that exist in-app today — MUST mirror the frontend registry's `EXAMPLE_BY_KEY`
+/// keys EXACTLY (`TRACE_PROGRAMS` + `MATRIX_PROGRAMS` + `GRAPH_PROGRAMS` in `viz/examples/`). An algorithm
+/// whose base name is here animates even without stored `vizCode`; one that is NOT here (e.g. the generic
+/// `sort`, `fibonacci`) has no visualization and is reported `missing-viz`. As #3230 moves visualizations to
+/// persisted `vizCode`, this list shrinks toward empty.
+pub const VIZ_PROGRAMS: [&str; 13] = [
+    "bubble-sort", "insertion-sort", "quick-sort", "heap-sort", "merge-sort", // array sorts
+    "transpose", "rotate", "reflect", // matrix transforms
+    "bfs", "dfs", "dijkstra", "a-star", "topological-sort", // graph traversals
+];
+
+/// Normalize an impl id to its base-algorithm key — MUST mirror the frontend `programKey`: strip the
+/// extension, lowercase, unify separators (`merge-sort.rs` / `merge_sort` → `merge-sort`).
+pub fn base_name(id: &str) -> String {
+    let stem = id.rsplit_once('.').map_or(id, |(s, _)| s);
+    stem.to_lowercase().replace([' ', '_'], "-")
+}
+
+/// The heuristic kind classifier — MUST mirror the frontend `classifyKind` (name/id/tags, then a light
+/// code hint). Ordered so ambiguous names disambiguate; `None` when nothing matches.
+pub fn classify_kind(im: &Value) -> Option<&'static str> {
+    let field = |k: &str| im.get(k).and_then(Value::as_str).unwrap_or("");
+    let tags = im
+        .get("tags")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" "))
+        .unwrap_or_default();
+    let hay = format!("{} {} {}", field("name"), field("id"), tags).to_lowercase();
+    let has = |ws: &[&str]| ws.iter().any(|w| hay.contains(w));
+    if has(&["bfs", "dfs", "traverse", "traversal", "walk", "breadth-first", "depth-first"]) {
+        return Some("traversal");
+    }
+    if has(&["sort"]) {
+        return Some("sort");
+    }
+    if has(&["transpose", "rotate", "reflect", "transform", "flip", "mirror"]) {
+        return Some("transform");
+    }
+    if has(&["search", "find", "lookup", "bisect"]) {
+        return Some("search");
+    }
+    if has(&["fib", "factorial", "prefix-sum", "prefixsum", "accumulate", "cumulative", "reduce", "scan"]) {
+        return Some("accumulate");
+    }
+    // A light code-pattern fallback for un-obvious names.
+    let code = field("code").to_lowercase();
+    if code.contains("mid") && (code.contains("lo") || code.contains("hi")) {
+        return Some("search");
+    }
+    if code.contains("swap") {
+        return Some("sort");
+    }
+    None
+}
+
+/// A doctor finding (#3212). `category` is one of `untyped` | `invalid-kind` | `mistyped` | `missing-viz`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Finding {
+    pub id: String,
+    pub category: &'static str,
+    pub detail: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<String>,
+}
+
+/// Diagnose the algorithm library's visualization typing + coverage (#3212). Reports each ALGORITHM (not
+/// primitives) that is `untyped` (no `kind`), carries an `invalid-kind` or a likely-`mistyped` one, or has
+/// `missing-viz` (no `vizCode` AND no in-app program). Pure over the graph.
+pub fn doctor(g: &Value) -> Vec<Finding> {
+    let mut out = Vec::new();
+    for im in implementations_of(g) {
+        if im.get("role").and_then(Value::as_str) != Some("algorithm") {
+            continue; // primitives describe a built-in — nothing to type or visualize
+        }
+        let id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+        let inferred = classify_kind(&im);
+        match im.get("kind").and_then(Value::as_str) {
+            None => out.push(Finding {
+                id: id.clone(),
+                category: "untyped",
+                detail: "no `kind` assigned".into(),
+                suggestion: inferred.map(|k| format!("looks like `{k}` — `bsc graph doctor --fix` or `impl set --kind {k}`")),
+            }),
+            Some(k) if !KINDS.contains(&k) => out.push(Finding {
+                id: id.clone(),
+                category: "invalid-kind",
+                detail: format!("kind `{k}` is not one of: {}", KINDS.join(" | ")),
+                suggestion: inferred.map(|s| format!("did you mean `{s}`?")),
+            }),
+            Some(k) => {
+                if let Some(s) = inferred {
+                    if s != k {
+                        out.push(Finding {
+                            id: id.clone(),
+                            category: "mistyped",
+                            detail: format!("kind is `{k}` but the name/code looks like `{s}`"),
+                            suggestion: Some(format!("`{s}`")),
+                        });
+                    }
+                }
+            }
+        }
+        let has_viz_code = im.get("vizCode").and_then(Value::as_str).is_some_and(|s| !s.trim().is_empty());
+        let has_program = VIZ_PROGRAMS.contains(&base_name(&id).as_str());
+        if !has_viz_code && !has_program {
+            out.push(Finding {
+                id: id.clone(),
+                category: "missing-viz",
+                detail: "no visualization — neither a stored `vizCode` nor a built-in program".into(),
+                suggestion: Some("author a `vizCode` trace-program: `bsc graph impl set --viz-code …`".into()),
+            });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -599,5 +721,89 @@ mod tests {
             "load() surfaces the packaged algorithm from a stale on-disk store",
         );
         let _ = std::fs::remove_file(&tmp);
+    }
+
+    // ── #3212 doctor — visualization typing + coverage diagnosis ──
+
+    fn algo(id: &str, extra: Value) -> Value {
+        let mut im = serde_json::json!({ "id": id, "tech": "typescript", "role": "algorithm", "name": id, "composes": [], "code": "//" });
+        if let Value::Object(o) = extra {
+            for (k, v) in o {
+                im[k] = v;
+            }
+        }
+        im
+    }
+
+    #[test]
+    fn base_name_mirrors_program_key() {
+        // Strip the extension, lowercase, unify separators — merge-sort.rs / merge_sort → merge-sort.
+        assert_eq!(base_name("merge-sort.rs"), "merge-sort");
+        assert_eq!(base_name("Merge_Sort"), "merge-sort");
+        assert_eq!(base_name("bfs.ts"), "bfs");
+        assert_eq!(base_name("topological-sort.rs"), "topological-sort");
+        assert_eq!(base_name("a-star.rs"), "a-star");
+    }
+
+    #[test]
+    fn classify_kind_reads_name_id_tags_then_code() {
+        let t = |v: Value| classify_kind(&v);
+        // *-first-search → traversal (before the sort family swallows it).
+        assert_eq!(t(algo("breadth-first-search.ts", serde_json::json!({}))), Some("traversal"));
+        assert_eq!(t(algo("bfs.ts", serde_json::json!({}))), Some("traversal"));
+        // topological-SORT is a sort by name.
+        assert_eq!(t(algo("topological-sort.ts", serde_json::json!({}))), Some("sort"));
+        assert_eq!(t(algo("quick-sort.ts", serde_json::json!({}))), Some("sort"));
+        assert_eq!(t(algo("transpose.ts", serde_json::json!({}))), Some("transform"));
+        assert_eq!(t(algo("binary-search.ts", serde_json::json!({}))), Some("search"));
+        assert_eq!(t(algo("fibonacci.ts", serde_json::json!({}))), Some("accumulate"));
+        // A tag can drive the classification when the name is opaque.
+        assert_eq!(t(algo("thing.ts", serde_json::json!({ "tags": ["sorting"] }))), Some("sort"));
+        // Fallback to a light code hint: mid+lo/hi → search; swap → sort.
+        assert_eq!(t(algo("mystery.ts", serde_json::json!({ "code": "let mid = (lo+hi)/2" }))), Some("search"));
+        assert_eq!(t(algo("mystery2.ts", serde_json::json!({ "code": "swap(a,b)" }))), Some("sort"));
+        // Truly opaque → None (never guesses).
+        assert_eq!(t(algo("zzz.ts", serde_json::json!({ "code": "return 1" }))), None);
+    }
+
+    #[test]
+    fn doctor_flags_untyped_invalid_mistyped_and_missing_viz() {
+        let g = serde_json::json!({ "implementations": [
+            // primitives are skipped entirely
+            { "id": "typescript.number", "tech": "typescript", "role": "primitive", "name": "number", "ref": "number", "composes": [] },
+            // untyped but classifiable (bfs → traversal) AND has an in-app program → only the `untyped` finding
+            algo("bfs.ts", serde_json::json!({})),
+            // typed correctly + has a program → clean, no finding
+            algo("quick-sort.ts", serde_json::json!({ "kind": "sort" })),
+            // kind not in the vocabulary
+            algo("weird.ts", serde_json::json!({ "kind": "bogus", "vizCode": "function run(){}" })),
+            // mistyped: named a sort but tagged search
+            algo("heap-sort.ts", serde_json::json!({ "kind": "search" })),
+            // typed fine but no program and no vizCode → missing-viz
+            algo("bellman-ford.ts", serde_json::json!({ "kind": "traversal" })),
+        ]});
+        let fs = doctor(&g);
+        let by = |cat: &str| fs.iter().filter(|f| f.category == cat).map(|f| f.id.as_str()).collect::<Vec<_>>();
+
+        assert_eq!(by("untyped"), ["bfs.ts"], "only the untyped impl is flagged untyped");
+        assert!(fs.iter().find(|f| f.id == "bfs.ts").unwrap().suggestion.as_deref().unwrap().contains("traversal"), "the untyped finding suggests the inferred kind");
+        assert_eq!(by("invalid-kind"), ["weird.ts"]);
+        assert_eq!(by("mistyped"), ["heap-sort.ts"]);
+        assert_eq!(by("missing-viz"), ["bellman-ford.ts"], "only the impl with neither program nor vizCode");
+        // The primitive and the clean, program-backed sort produce nothing.
+        assert!(!fs.iter().any(|f| f.id == "typescript.number"), "primitives are never diagnosed");
+        assert!(!fs.iter().any(|f| f.id == "quick-sort.ts"), "a correctly-typed, program-backed algorithm is clean");
+    }
+
+    #[test]
+    fn doctor_treats_a_stored_viz_code_as_visualization_coverage() {
+        // An impl with no in-app program is NOT missing-viz once it carries a (non-empty) vizCode.
+        let g = serde_json::json!({ "implementations": [
+            algo("custom.ts", serde_json::json!({ "kind": "sort", "vizCode": "function run(a){ a.mark(0); }" })),
+            algo("blank.ts", serde_json::json!({ "kind": "sort", "vizCode": "   " })),
+        ]});
+        let fs = doctor(&g);
+        assert!(!fs.iter().any(|f| f.id == "custom.ts" && f.category == "missing-viz"), "a real vizCode counts as coverage");
+        assert!(fs.iter().any(|f| f.id == "blank.ts" && f.category == "missing-viz"), "a whitespace-only vizCode does NOT count");
     }
 }
