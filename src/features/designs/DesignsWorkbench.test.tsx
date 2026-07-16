@@ -495,6 +495,19 @@ describe("theme try-on preview (#2834)", () => {
     expect(screen.getByRole("button", { name: "fit" })).toBeTruthy();
   });
 
+  it("defaults to SELECT (component interactive); the pan tool makes it drag/zoom (#3156)", () => {
+    render(<DesignsWorkbench />);
+    fireEvent.click(graphNode("Chip"));
+    fireEvent.click(screen.getByRole("button", { name: /Expand Chip preview/ }));
+    // The world wrapper around the preview iframe carries the pointer-events gate.
+    const worldWrap = () => screen.getByTitle("Chip preview").parentElement!.parentElement as HTMLElement;
+    expect(worldWrap().style.pointerEvents).toBe("auto");   // select (default): the component is interactive
+    fireEvent.click(screen.getByText("🖐 pan"));
+    expect(worldWrap().style.pointerEvents).toBe("none");    // pan: drag/wheel the canvas instead
+    fireEvent.click(screen.getByText("select"));
+    expect(worldWrap().style.pointerEvents).toBe("auto");   // back to interactive
+  });
+
   it("preview mode hides the graph chrome (the composition-graph toolbar); it returns on exit (#2849)", () => {
     render(<DesignsWorkbench />);
     expect(screen.getByText(/Composition graph/)).toBeTruthy();          // graph header shown normally

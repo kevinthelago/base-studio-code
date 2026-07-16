@@ -119,6 +119,10 @@ export function DesignsWorkbench() {
   // preview over the graph, where the selected component is the vehicle for viewing each theme. The
   // left rail keeps navigating components while it's open; "← Back to graph" closes it.
   const [previewMode, setPreviewMode] = useState(false);
+  // The expanded preview's tool (#3156): `select` (default) keeps the component INTERACTIVE (an iframe
+  // can't be both interactive and forward drags to the pan handler over the same pixels); `pan` makes it
+  // pointer-events:none so click-drag pans + wheel zooms. The +/−/fit buttons zoom in either mode.
+  const [panMode, setPanMode] = useState(false);
   // Preview-mode right-pane axis (#2942): try on the palette (Themes) or the kit's MOTION (Animations).
   const [rightAxis, setRightAxis] = useState<"themes" | "animations">("themes");
   // The kit animation PLAYED on the vehicle — the motion try-on (#2942), or null.
@@ -444,6 +448,12 @@ export function DesignsWorkbench() {
               )}
               <SegmentedControl label="" options={PREVIEW_STATES.map((s) => ({ label: s, on: s === previewState, onClick: () => setPreviewState(s) }))} />
               <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === vp, onClick: () => setVpKind(k) }))} />
+              {/* Tool toggle (#3156): select keeps the component interactive; pan lets you drag/wheel the
+                  canvas. Default select so interactive components (ForceGraph, …) work in the preview. */}
+              <SegmentedControl label="" options={[
+                { label: "select", on: !panMode, onClick: () => setPanMode(false) },
+                { label: "🖐 pan", on: panMode, onClick: () => setPanMode(true) },
+              ]} />
               {/* Pan/zoom controls (#3154) — the same cluster every canvas uses, driving the preview's viewport. */}
               <ZoomControls vp={previewVp} step={1.15} />
               <Button variant="ghost" onClick={() => previewVp.fit()}>fit</Button>
@@ -453,16 +463,16 @@ export function DesignsWorkbench() {
                 result — so the try-on shows both at once. */}
             {activeTheme && <PaletteStrip theme={activeTheme} />}
             {/* Pan/zoom viewport (#3154): a raw div for the native wheel listener + backdrop drag (mirrors
-                GraphCanvas). The world layer carries the transform; the preview inside is pointer-events:none
-                so wheel/drag reach the viewport backdrop (it's an inspect surface, not interactive here).
-                No will-change on the world (it blurs zoom-in) — same as GraphCanvas. */}
+                GraphCanvas). The world layer carries the transform. In PAN mode (#3156) the preview is
+                pointer-events:none so wheel/drag reach the viewport backdrop; in SELECT mode it's
+                interactive and only the buttons zoom. No will-change on the world (it blurs zoom-in). */}
             {/* eslint-disable-next-line no-restricted-syntax -- DOM ref (setVp) + native non-passive wheel listener target, like GraphCanvas's viewport (#3154) */}
             <div
               ref={setPreviewVp}
-              onMouseDown={onPreviewCanvasDown}
-              style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", cursor: "grab", background: "var(--bg-canvas, var(--bg))" }}
+              onMouseDown={panMode ? onPreviewCanvasDown : undefined}
+              style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", cursor: panMode ? "grab" : "default", background: "var(--bg-canvas, var(--bg))" }}
             >
-              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: 440, userSelect: "none", pointerEvents: "none", ...previewWorldTransform }}>
+              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: 440, userSelect: "none", pointerEvents: panMode ? "none" : "auto", ...previewWorldTransform }}>
                 <ComponentPreviewFrame
                   comp={sel}
                   theme={theme}
