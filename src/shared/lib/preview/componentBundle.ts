@@ -167,6 +167,13 @@ export interface ComponentSrcDocOptions {
    *  the component. Hover + clicks always work. Set only where the host listens (the expanded preview);
    *  absent ⇒ no script (byte-for-byte unchanged srcdoc). */
   forwardGestures?: boolean;
+  /** Run a self-contained pan/zoom ENGINE inside the iframe (#3190 crisp pass). The zoom is a DOM
+   *  transform on the mounted content (`#root`), which the browser re-rasterizes SHARPLY at any scale —
+   *  unlike CSS-scaling the iframe element (a composited texture that upsamples → blur). The engine owns
+   *  drag-pan + wheel-zoom-about-cursor (leaving real controls + scroll regions alone) and obeys host
+   *  `{__cmd:"zoomIn"|"zoomOut"|"fit"}` messages for the +/−/fit buttons. `initial` is a centered zoom
+   *  applied on load. Mutually exclusive with `forwardGestures`. Absent ⇒ no engine. */
+  zoomEngine?: { initial?: number; min?: number; max?: number };
 }
 
 /**
@@ -383,11 +390,96 @@ export function gestureForwardScript(on: boolean): string {
 }
 
 /**
+ * The pan/zoom ENGINE (#3190 crisp pass) — a self-contained `<script>` that pans + zooms the mounted
+ * content by transforming `#root` (a DOM transform → the browser re-rasterizes SHARPLY at any scale,
+ * unlike CSS-scaling the iframe element, a composited texture that blurs). All coordinates are
+ * iframe-local (clientX/clientY), so there's no host↔iframe coordinate conversion. It:
+ *   • pans on a non-interactive left-drag (a real control / scroll region is left alone);
+ *   • zooms about the cursor on a wheel that isn't over a scroll region;
+ *   • obeys host `{__cmd:"zoomIn"|"zoomOut"|"fit"}` messages (the +/−/fit buttons — zoom about center /
+ *     reset to identity);
+ *   • applies a centered `initial` zoom on load.
+ * Returns "" when off. Vanilla, capture-phase; reuses the same interactive/scroll heuristics as the
+ * forwarder. `#root` gets `transform-origin: 0 0`; the iframe clips the overflow.
+ */
+export function gestureEngineScript(cfg: { initial?: number; min?: number; max?: number } | undefined): string {
+  if (!cfg) return "";
+  const initial = cfg.initial ?? 1;
+  const min = cfg.min ?? 0.2;
+  const max = cfg.max ?? 8;
+  return `\n<script>
+(function () {
+  var SEL = 'a,button,input,select,textarea,label,summary,option,svg,canvas,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="switch"],[role="tab"],[role="menuitem"],[role="option"],[role="slider"],[contenteditable]';
+  var MIN = ${min}, MAX = ${max}, INITIAL = ${initial};
+  function interactive(el) {
+    for (var n = el; n && n !== document.documentElement && n !== document.body; n = n.parentElement) {
+      if (n.nodeType !== 1) continue;
+      if (n.matches && n.matches(SEL)) return true;
+      var ti = n.getAttribute && n.getAttribute("tabindex");
+      if (ti != null && ti !== "-1") return true;
+      try { if (getComputedStyle(n).cursor === "pointer") return true; } catch (e) {}
+    }
+    return false;
+  }
+  function scrollableAt(el, dy) {
+    for (var n = el; n && n !== document.documentElement; n = n.parentElement) {
+      if (n.nodeType !== 1) continue;
+      if (n.scrollHeight <= n.clientHeight) continue;
+      var oy; try { oy = getComputedStyle(n).overflowY; } catch (e) { continue; }
+      if (oy !== "auto" && oy !== "scroll") continue;
+      if (dy < 0 && n.scrollTop > 0) return true;
+      if (dy > 0 && n.scrollTop + n.clientHeight < n.scrollHeight - 1) return true;
+    }
+    return false;
+  }
+  var view = { tx: 0, ty: 0, scale: 1 };
+  var target = null;
+  function tgt() { if (!target) target = document.getElementById("root"); return target; }
+  function apply() { var t = tgt(); if (t) { t.style.transformOrigin = "0 0"; t.style.transform = "translate(" + view.tx + "px," + view.ty + "px) scale(" + view.scale + ")"; } }
+  function clampS(s) { return Math.min(MAX, Math.max(MIN, s)); }
+  function zoomAt(factor, px, py) {
+    var ns = clampS(view.scale * factor);
+    if (ns === view.scale) return;
+    var wx = (px - view.tx) / view.scale, wy = (py - view.ty) / view.scale;   // content point under (px,py)
+    view.tx = px - wx * ns; view.ty = py - wy * ns; view.scale = ns; apply();  // …held fixed after the zoom
+  }
+  function centerXY() { return [ (window.innerWidth || document.documentElement.clientWidth || 1) / 2, (window.innerHeight || document.documentElement.clientHeight || 1) / 2 ]; }
+  function fit() { view = { tx: 0, ty: 0, scale: 1 }; apply(); }
+  var panning = false, lastX = 0, lastY = 0;
+  document.addEventListener("mousedown", function (e) {
+    if (e.button !== 0 || interactive(e.target)) return;   // a real control → let the component have it
+    e.preventDefault(); panning = true; lastX = e.clientX; lastY = e.clientY; document.body.style.cursor = "grabbing";
+  }, true);
+  document.addEventListener("mousemove", function (e) {
+    if (!panning) return;
+    view.tx += e.clientX - lastX; view.ty += e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; apply();
+  }, true);
+  function endPan() { if (!panning) return; panning = false; document.body.style.cursor = ""; }
+  document.addEventListener("mouseup", endPan, true);
+  window.addEventListener("blur", endPan);
+  document.addEventListener("wheel", function (e) {
+    if (scrollableAt(e.target, e.deltaY)) return;          // let a real scroll container scroll
+    e.preventDefault();                                    // else: zoom about the cursor (crisp DOM)
+    zoomAt(Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY);
+  }, { capture: true, passive: false });
+  window.addEventListener("message", function (e) {
+    var d = e.data; if (!d || typeof d.__cmd !== "string") return;
+    var c = centerXY();
+    if (d.__cmd === "zoomIn") zoomAt(1.2, c[0], c[1]);
+    else if (d.__cmd === "zoomOut") zoomAt(1 / 1.2, c[0], c[1]);
+    else if (d.__cmd === "fit") fit();
+  });
+  fit(); if (INITIAL !== 1) { var c0 = centerXY(); zoomAt(INITIAL, c0[0], c0[1]); }  // centered initial zoom
+})();
+</script>`;
+}
+
+/**
  * Assemble the sandboxed-iframe srcdoc: import-map for the externals + the injected app CSS + the bundle
  * as a module, posting `ready`/`error` to the parent. Pure.
  */
 export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOptions = {}): string {
-  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, forwardGestures = false, scrollY = false } = opts;
+  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, forwardGestures = false, scrollY = false, zoomEngine } = opts;
   // #3057: the exit-runtime shim, injected right after `#root` and BEFORE the module script so the
   // observer is watching before React mounts (and later unmounts) subtrees. "" when no exit selectors —
   // the non-exit srcdoc is then byte-for-byte unchanged.
@@ -395,7 +487,7 @@ export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOpti
   // #3141: the scale-to-fit shim, injected AFTER the module script so it runs post-mount (measures the
   // mounted component). "" for pages (scaled parent-side per #3139) so their srcdoc is unchanged. #3190:
   // suppressed under scrollY — that mode wants natural size + scroll, not scale-to-fit.
-  const fitShim = fitShimScript(fitContent && !scrollY);
+  const fitShim = fitShimScript(fitContent && !scrollY && !zoomEngine);
   // #3190: scrollY override — turn the flex-centered mount wrapper into a growing top-anchored block so
   // tall content flows down and `#root` (overflow:auto) scrolls it, instead of centering (which strands
   // the top out of reach) or scaling. `!important` beats the wrapper's inline flex/height.
@@ -403,12 +495,16 @@ export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOpti
   // #3190: the gesture-forward shim — lets a non-interactive drag pan + a non-scroll wheel zoom the host
   // viewport (the iframe decides per event and postMessages the survivors out). "" (unchanged) when off.
   const gestureShim = gestureForwardScript(forwardGestures);
+  // #3190 crisp pass: the in-iframe pan/zoom ENGINE — transforms `#root` (crisp DOM) instead of forwarding
+  // to a host CSS scale (a blurry iframe texture). Clip cleanly + no scrollbars while it drives the view.
+  const engineShim = gestureEngineScript(zoomEngine);
+  const engineCss = zoomEngine ? `\n<style>html,body{overflow:hidden}#root{overflow:hidden}</style>` : "";
   return `<!doctype html><html data-theme="${theme}"><head><meta charset="utf-8" />
 <style>html,body,#root{margin:0;height:100%;box-sizing:border-box}#root{overflow:auto}*,*::before,*::after{box-sizing:inherit}
 /* Fit oversized preview media (d3 charts/graphs, images) within the frame rather than overflowing it (#2915).
    Aspect-preserving on replaced/viewBox elements; the definite height chain above lets max-height:100% resolve.
    Fluid (width:100%) components are unaffected — the caps only bite oversized fixed-dimension media. */
-#root svg,#root canvas,#root img,#root video{max-width:100%;max-height:100%}</style>${scrollCss}
+#root svg,#root canvas,#root img,#root video{max-width:100%;max-height:100%}</style>${scrollCss}${engineCss}
 <style>${injectedCss}</style>
 <script type="importmap">${JSON.stringify({ imports: importmap })}</script>
 </head><body><div id="root"${rootClass ? ` class="${rootClass}"` : ""}></div>${exitShim}
@@ -430,6 +526,6 @@ setTimeout(() => {
     parent.postMessage({ __preview: "rendered", empty: empty }, "*");
   } catch (e) { /* measurement is best-effort */ }
 }, 400);
-</script>${fitShim}${gestureShim}
+</script>${fitShim}${gestureShim}${engineShim}
 </body></html>`;
 }

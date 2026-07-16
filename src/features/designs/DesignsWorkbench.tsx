@@ -15,7 +15,7 @@
 // `graphEdge`, #2418; the top-down hierarchy layout lives in `lib/compositionLayout`, #2455); GraphCanvas
 // owns the rail/inspector widths, so `useDragResize` sizes only the designer-terminal dock now. Data
 // comes from the global store via the `bsc ui` bridge.
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
 import { DesignerTerminal } from "./DesignerTerminal";
@@ -33,7 +33,6 @@ import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { useGraphPage } from "@/shared/ui/layouts/useGraphPage";
-import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 import { selectionNeighborhood } from "@/shared/lib/graph/selectionNeighborhood";
 import { layoutBand } from "@/shared/lib/graph/crossGraph";
@@ -167,26 +166,36 @@ export function DesignsWorkbench() {
     : null;
   const focusComp = sel ?? aiComp;
 
-  // The expanded preview's own pan/zoom viewport (#3154) — the shared graph viewport, reused so the
-  // large preview moves + zooms like every other canvas. The graph's own viewport is hidden in preview
-  // mode, so this is a SEPARATE instance. A zoomable canvas has no "fluid" width, so the preview gets a
-  // fixed world per breakpoint. It opens ZOOMED IN (below) rather than fit-to-frame — hence the raw
-  // `useGraphViewport` (no useGraphPage fit-on-key).
+  // The expanded try-on's pan/zoom (#3190 CRISP pass). The host no longer CSS-scales the iframe — that
+  // blurs a composited texture. Instead the iframe runs its own DOM-transform pan/zoom ENGINE (crisp),
+  // and the host just FRAMES the fixed design viewport (previewW×previewH) into the canvas at a
+  // DOWNSCALE-ONLY fit (never upscales → the iframe stays 1:1-or-smaller → sharp). The measured canvas
+  // drives the fit; the engine hands back its +/−/fit API for the buttons.
   const previewW = vp === "sm" ? 380 : vp === "md" ? 640 : 1200;
-  const previewVp = useGraphViewport({ w: previewW, h: 440 }, { min: 0.2, max: 5 });
-  // Pull the viewport values out as locals (mirrors GraphCanvas) — `worldTransform` is a computed style
-  // object, not a ref, but member-accessing `previewVp.*` in render trips the react-compiler ref rule.
-  const { setVp: setPreviewVp, onCanvasDown: onPreviewCanvasDown, worldTransform: previewWorldTransform, zoomToCentered: previewZoomToCentered } = previewVp;
-  // Initial view (#3190): start ZOOMED IN, not at a plain fit. A page is letterboxed small by its render
-  // ratio (the whitespace is intentional), so fit reads tiny — a centered magnify makes it usable and
-  // crops the side whitespace in. Pages get a stronger zoom than 1:1 components. Re-applied on open +
-  // selection/breakpoint switch (replaces useGraphPage's fit-on-key). Tune the factors to taste.
+  const previewH = 440;
+  const [previewCanvas, setPreviewCanvas] = useState({ w: 0, h: 0 });
+  const previewRo = useRef<ResizeObserver | null>(null);
+  const mountPreviewCanvas = useCallback((el: HTMLDivElement | null) => {
+    previewRo.current?.disconnect();
+    if (el && typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(() => setPreviewCanvas((s) => (s.w === el.clientWidth && s.h === el.clientHeight ? s : { w: el.clientWidth, h: el.clientHeight })));
+      ro.observe(el);
+      previewRo.current = ro;
+    }
+  }, []);
+  useEffect(() => () => previewRo.current?.disconnect(), []);
+  // Centered, downscale-only fit of the design frame into the canvas (scale ≤ 1). A FIXED framing — the
+  // user's zoom happens inside the iframe, not here — so it never re-fits away an in-progress zoom.
+  const previewFit = useMemo(() => {
+    const pad = 24, cw = previewCanvas.w, ch = previewCanvas.h;
+    if (!cw || !ch) return { scale: 1, tx: 0, ty: 0 };
+    const scale = Math.min(1, (cw - pad * 2) / previewW, (ch - pad * 2) / previewH);
+    return { scale, tx: (cw - previewW * scale) / 2, ty: (ch - previewH * scale) / 2 };
+  }, [previewCanvas.w, previewCanvas.h, previewW]);
+  // The engine opens ZOOMED IN (a page is letterboxed small by its render ratio, so 1:1 reads tiny);
+  // pages get a stronger factor than 1:1 components.
   const previewInitialZoom = sel && (sel.role === "page" || sel.role === "layout") ? 1.7 : 1.2;
-  useEffect(() => {
-    if (!previewMode) return;
-    const id = requestAnimationFrame(() => previewZoomToCentered(previewInitialZoom));
-    return () => cancelAnimationFrame(id);
-  }, [sel?.id, vp, previewMode, previewInitialZoom, previewZoomToCentered]);
+  const [previewZoomApi, setPreviewZoomApi] = useState<{ zoomIn: () => void; zoomOut: () => void; fit: () => void } | null>(null);
 
   const allVariants = focusComp ? focusComp.variants : [];
   const activeVariant = allVariants.includes(variant) ? variant : allVariants[0] ?? "default";
@@ -458,49 +467,40 @@ export function DesignsWorkbench() {
               )}
               <SegmentedControl label="" options={PREVIEW_STATES.map((s) => ({ label: s, on: s === previewState, onClick: () => setPreviewState(s) }))} />
               <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === vp, onClick: () => setVpKind(k) }))} />
-              {/* Pan/zoom controls (#3154) — the same cluster every canvas uses, driving the preview's viewport. */}
-              <ZoomControls vp={previewVp} step={1.15} />
-              <Button variant="ghost" onClick={() => previewVp.fit()}>fit</Button>
+              {/* Zoom controls (#3190) — post to the iframe's crisp pan/zoom engine (not a host viewport). */}
+              <Box style={{ display: "flex", gap: 4 }}>
+                <Button variant="ghost" onClick={() => previewZoomApi?.zoomOut()} aria-label="zoom out">−</Button>
+                <Button variant="ghost" onClick={() => previewZoomApi?.zoomIn()} aria-label="zoom in">+</Button>
+                <Button variant="ghost" onClick={() => previewZoomApi?.fit()}>fit</Button>
+              </Box>
               <Text mono size="xxs" tone="muted">{activeTheme?.label}</Text>
             </Box>
             {/* Palette strip (#2834): the theme's semantic swatches — the raw palette beside the applied
                 result — so the try-on shows both at once. */}
             {activeTheme && <PaletteStrip theme={activeTheme} />}
-            {/* Pan/zoom viewport (#3154): a raw div for the native wheel listener + backdrop drag (mirrors
-                GraphCanvas). The world layer carries the transform. Smart gesture routing (#3190): the
-                component stays fully interactive (pointer-events on), and the iframe itself — the only side
-                that can see its own DOM — decides per event, forwarding the survivors to the host. A drag on
-                a real control (control tag / `[role]` / focusable / `cursor:pointer` / an svg|canvas viz
-                surface) is left for the component; a drag on empty space is forwarded as a pan (`onPreviewPan`
-                → `previewVp.panBy`). A wheel over a scroll region scrolls it; anywhere else it's forwarded as
-                a zoom about the cursor (`onPreviewZoom` → `previewVp.zoomAtClient`, anchored via the
-                iframe's real rect) — so zoom works over the component too, not just the gutter. Any
-                PARENT-document press — the gutter AND the world-wrapper edges not covered by the iframe —
-                routes through `onCanvasDown` + the native wheel listener and pans (the wrapper is NOT a
-                `data-node`, #3190: it was, which dead-zoned those edges since `onCanvasDown` bails on a
-                `[data-node]` ancestor — but the iframe already swallows its OWN mousedowns, so the bail only
-                ever blocked the exposed wrapper, never the component). This supersedes #3188's declared-props
-                guess (props miss internal handlers + CSS :hover). +/−/fit buttons work either way. No
-                will-change on the world (it blurs zoom-in). */}
-            {/* eslint-disable-next-line no-restricted-syntax -- DOM ref (setVp) + native non-passive wheel listener target, like GraphCanvas's viewport (#3154) */}
+            {/* Crisp pan/zoom (#3190): the host is just the FRAME. It measures this canvas and places the
+                design viewport (previewW×previewH) at a fixed downscale-only fit (never upscales → the
+                iframe texture stays 1:1-or-smaller → sharp). ALL pan/zoom happens INSIDE the iframe as a
+                DOM transform on `#root` (the browser re-rasterizes crisply at any scale, unlike a
+                CSS-scaled iframe). The +/−/fit buttons post commands to that engine; drag/wheel are handled
+                by the engine directly. Interactive controls + scroll regions are left alone by the engine. */}
+            {/* eslint-disable-next-line no-restricted-syntax -- callback ref: a ResizeObserver reads this canvas's px size to size the fixed fit (#3190) */}
             <div
-              ref={setPreviewVp}
-              onMouseDown={onPreviewCanvasDown}
-              style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", cursor: "grab", background: "var(--bg-canvas, var(--bg))" }}
+              ref={mountPreviewCanvas}
+              style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", background: "var(--bg-canvas, var(--bg))" }}
             >
-              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: 440, userSelect: "none", pointerEvents: "auto", ...previewWorldTransform }}>
+              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: previewH, userSelect: "none", pointerEvents: "auto", transform: `translate(${previewFit.tx}px,${previewFit.ty}px) scale(${previewFit.scale})`, transformOrigin: "0 0" }}>
                 <ComponentPreviewFrame
                   comp={sel}
                   theme={theme}
                   themeId={kitTheme}
                   themeVars={activeTheme?.vars ?? {}}
                   width={previewW}
-                  height={440}
+                  height={previewH}
                   extraAnimation={tryAnimDef}
                   previewState={previewState}
-                  onPreviewPan={(dx, dy) => previewVp.panBy(dx, dy)}
-                  onPreviewZoom={(deltaY, cx, cy) => previewVp.zoomAtClient(Math.exp(-deltaY * 0.0016), cx, cy)}
-                  scrollY
+                  zoomEngine={{ initial: previewInitialZoom }}
+                  registerZoomApi={setPreviewZoomApi}
                 />
               </Box>
             </div>
