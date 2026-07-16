@@ -1,0 +1,169 @@
+/* The <ArrayView> renderer (#3178, epic #3171) — element styles + the state-bound animations.
+ *
+ * THE BINDING SEAM: the renderer only stamps `data-op` / `data-mark` (via lib/binding.ts); every
+ * animation below is keyed on one of those state selectors — `[data-op="compare"]`, `[data-op="swap"]`,
+ * `[data-op="set"]`, `[data-mark="sorted"]`. That is the stable contract. For THIS proof the transitions
+ * are hand-authored @keyframes; migrating them to designer-authored KitAnimations (#2942, editable in the
+ * Animations menu) plugs into the SAME selectors and needs no renderer change. Tokens from tokens.css;
+ * all motion is guarded by prefers-reduced-motion. */
+
+.array-view {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 10px 6px 6px;
+  min-height: 172px;
+  overflow-x: auto;
+}
+
+.array-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+/* Cursor pills sit above the cell; the min-height reserves the row so cells don't jump as pills appear. */
+.array-cursors {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 15px;
+  justify-content: flex-end;
+}
+.array-cursor-pill {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-dim);
+  white-space: nowrap;
+}
+
+.array-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  width: 30px;
+  height: 120px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  overflow: hidden;
+}
+
+.array-bar {
+  display: block;
+  width: 100%;
+  background: color-mix(in oklch, var(--info), transparent 58%);
+  border-top: 2px solid var(--info);
+  /* The value change eases so a set/swap slides the bar rather than snapping. */
+  transition: height 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.array-val {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--fg);
+  text-shadow: 0 1px 2px var(--bg-elev);
+  pointer-events: none;
+}
+
+/* ── compare — a highlight pulse on the two compared cells ───────────────────────────────────── */
+@keyframes array-compare-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    border-color: var(--border);
+  }
+  45% {
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--state-wait), transparent 45%);
+    border-color: var(--state-wait);
+  }
+}
+.array-cell[data-op="compare"] {
+  animation: array-compare-pulse 0.5s ease-in-out;
+  z-index: 1;
+}
+.array-cell[data-op="compare"] .array-bar {
+  background: color-mix(in oklch, var(--state-wait), transparent 58%);
+  border-top-color: var(--state-wait);
+}
+
+/* ── swap — the two cells lift and cross-fade to the accent as they exchange ──────────────────── */
+@keyframes array-swap-lift {
+  0% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-12px) scale(1.05);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+.array-cell[data-op="swap"] {
+  animation: array-swap-lift 0.42s cubic-bezier(0.34, 1.4, 0.5, 1);
+  border-color: var(--accent);
+  z-index: 2;
+}
+.array-cell[data-op="swap"] .array-bar {
+  background: color-mix(in oklch, var(--accent), transparent 45%);
+  border-top-color: var(--accent);
+}
+
+/* ── set — a value flash (a fresh write into the cell) ────────────────────────────────────────── */
+@keyframes array-set-flash {
+  0% {
+    background: color-mix(in oklch, var(--accent), transparent 20%);
+  }
+  100% {
+    background: var(--bg-elev);
+  }
+}
+.array-cell[data-op="set"] {
+  animation: array-set-flash 0.5s ease-out;
+}
+
+/* ── mark: sorted — a settled / locked style the cell keeps for the rest of the run ───────────── */
+@keyframes array-sorted-settle {
+  0% {
+    transform: translateY(-3px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+.array-cell[data-mark="sorted"] {
+  animation: array-sorted-settle 0.3s ease-out;
+  border-color: color-mix(in oklch, var(--success), transparent 40%);
+  background: color-mix(in oklch, var(--success), var(--bg-elev) 82%);
+}
+.array-cell[data-mark="sorted"] .array-bar {
+  background: color-mix(in oklch, var(--success), transparent 58%);
+  border-top-color: var(--success);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .array-cell,
+  .array-cell[data-op="compare"],
+  .array-cell[data-op="swap"],
+  .array-cell[data-op="set"],
+  .array-cell[data-mark="sorted"] {
+    animation: none;
+  }
+  .array-bar {
+    transition: none;
+  }
+}

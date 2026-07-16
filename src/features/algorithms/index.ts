@@ -16,3 +16,9 @@ export { TracePlayer } from "./viz/TracePlayer";
 export type { TracePlayerProps } from "./viz/TracePlayer";
 export { fallbackRenderer, resolveRenderer } from "./viz/registry";
 export type { StructureRenderer, RendererRegistry } from "./viz/registry";
+
+// The `array` renderer (#3178) + the seeded sort proof (#3177) — the array proof-of-loop.
+export { ArrayView } from "./viz/renderers/ArrayView";
+export { sortSteps, sort, SORT_MOCK } from "./viz/examples/sort";
+export { vizForImpl, VIZ_EXAMPLES } from "./viz/examples/registry";
+export type { VizExample } from "./viz/examples/registry";
