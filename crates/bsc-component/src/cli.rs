@@ -43,13 +43,15 @@ const COMPONENT_COMMANDS: &[CmdDoc] = &[
         summary: "every component's {id, name, kitId, role, group, shapes} (JSON)",
         usage: "\
 USAGE:
-  bsc ui list [--shape <shape>] [--full] [--pretty]
+  bsc ui list [--shape <shape>] [--full] [--pretty] [--raw]
 
 Prints every component's { id, name, kitId, role, group, shapes } as JSON (compact; --pretty for indented).
 --shape filters to the components whose `shapes` field stamps <shape> — the kit's IDEAL renderings
 for that data shape (#2475; one of list · linked-list · tree · graph · table · key-value — see
 `bsc ui shapes`). --full emits the COMPLETE component objects (variants + props + composes + guidance
-+ source + …) as a plain array — the full-fidelity read the desktop library hydration needs.",
++ source + …) as a plain array — the full-fidelity read the desktop library hydration needs.
+--raw (#3166) drops the JSON entirely and prints ONE id per line, raw UTF-8, LF-only — byte-clean for
+`for id in $(bsc ui list --raw)` / `while read id` (no CRLF or cp1252 traps; honors --shape, ignores --full/--pretty).",
     },
     CmdDoc {
         name: "shapes",
@@ -71,9 +73,11 @@ filter, `bsc ui list --shape <shape>`).",
         summary: "print one component (JSON, verbatim) or null",
         usage: "\
 USAGE:
-  bsc ui get <id> [--pretty]
+  bsc ui get <id> [--pretty] [--raw]
 
-Prints the stored component JSON for <id> verbatim, or `null` if absent.",
+Prints the stored component JSON for <id> verbatim, or `null` if absent. --raw (#3166) writes the
+record as raw UTF-8 bytes, LF-only (CR-stripped), no locale layer — safe for `VALUE=$(bsc ui get <id>
+--raw)`; a missing id prints NOTHING (empty capture) rather than the literal `null`.",
     },
     CmdDoc {
         name: "set",
@@ -219,15 +223,16 @@ const KIT_COMMANDS: &[CmdDoc] = &[
         summary: "every kit's {id, name, stack} (JSON)",
         usage: "\
 USAGE:
-  bsc ui kit list [--full] [--pretty]
+  bsc ui kit list [--full] [--pretty] [--raw]
 
 Every kit's { id, name, stack } as JSON (compact; --pretty for indented). --full emits the complete
-kit objects (incl. the dot color) as a plain array.",
+kit objects (incl. the dot color) as a plain array. --raw (#3166) prints ONE kit id per line, raw
+UTF-8, LF-only — byte-clean for `while read id` / `$( )`.",
     },
     CmdDoc {
         name: "get",
         summary: "print one kit (JSON, verbatim) or null",
-        usage: "USAGE:\n  bsc ui kit get <id> [--pretty]\n\nThe stored kit JSON for <id> verbatim, or `null` if absent.",
+        usage: "USAGE:\n  bsc ui kit get <id> [--pretty] [--raw]\n\nThe stored kit JSON for <id> verbatim, or `null` if absent. --raw (#3166) writes the record as raw UTF-8 bytes, LF-only, no locale layer — safe for `$( )` capture; a miss prints nothing.",
     },
     CmdDoc {
         name: "set",
@@ -621,11 +626,13 @@ fn cmd_shapes(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `list --shape <shape> [--full] [--dir D] [--pretty]` — the filtered twin of the store `list`
+/// `list --shape <shape> [--full] [--dir D] [--pretty] [--raw]` — the filtered twin of the store `list`
 /// (#2475): only the components whose `shapes` field stamps <shape>, in the SAME lean projection
-/// (or --full objects). Validates the shape BEFORE any store is touched.
+/// (or --full objects, or --raw ids). Validates the shape BEFORE any store is touched. `--raw` (#3166)
+/// keeps the shared byte-clean id-per-line output consistent with the plain `list --raw`.
 fn cmd_list_shape(args: &[String]) -> Result<(), String> {
-    let (mut dir, mut pretty, mut full, mut shape) = (None::<String>, false, false, None::<String>);
+    let (mut dir, mut pretty, mut full, mut raw, mut shape) =
+        (None::<String>, false, false, false, None::<String>);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -633,6 +640,7 @@ fn cmd_list_shape(args: &[String]) -> Result<(), String> {
             "--dir" => dir = it.next().cloned(),
             "--pretty" => pretty = true,
             "--full" => full = true,
+            "--raw" => raw = true,
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             _ => {}
         }
@@ -640,8 +648,14 @@ fn cmd_list_shape(args: &[String]) -> Result<(), String> {
     let shape = shape.ok_or("--shape needs a value (see `bsc ui shapes`)")?;
     require_shape(&shape)?;
     let store = open_component_store(&dir)?;
-    let raw = store.list();
-    let selected: Vec<&String> = raw.iter().filter(|j| json_has_shape(j, &shape)).collect();
+    let stored = store.list();
+    let selected: Vec<&String> = stored.iter().filter(|j| json_has_shape(j, &shape)).collect();
+    if raw {
+        // Byte-clean id list of the filtered set — same contract as the shared `list --raw` (#3166).
+        let ids: Vec<String> = selected.iter().filter_map(|j| bsc_json_store::cli::id_field(j)).collect();
+        bsc_cli_util::print_raw_lines(&ids);
+        return Ok(());
+    }
     let out: Vec<serde_json::Value> = if full {
         selected.iter().filter_map(|j| serde_json::from_str(j).ok()).collect()
     } else {
