@@ -1,9 +1,10 @@
-// The Algorithms inspector (#2761) + its Visualization pane (#3177/#3199). The animation is ALWAYS
-// rendered inline (no Code | Visualization toggle) as an auto-playing preview above the code; clicking
-// it fills the screen with a full player + an editable "provide your own state" input. An impl without
-// a registered visualization keeps exactly today's code-only pane.
-import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+// The Algorithms inspector (#2761) + its inline Visualization preview (#3177/#3199/#3205). The animation
+// is ALWAYS rendered inline (no Code | Visualization toggle) as an auto-playing preview above the code.
+// Clicking it does NOT open a modal — it lifts to the workbench (`onExpandViz`), which promotes the
+// animation to the full graph canvas (`VizStage`, covered by its own test). An impl without a registered
+// visualization keeps exactly today's code-only pane.
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { AlgorithmsInspector } from "./AlgorithmsInspector";
 import type { AlgoImpl, KnowledgeGraph } from "./lib/knowledge";
 
@@ -29,10 +30,11 @@ const FIB: AlgoImpl = {
 };
 
 const graph: KnowledgeGraph = { implementations: [SORT, FIB] };
+const noop = () => {};
 
-describe("AlgorithmsInspector — Visualization pane (#3177/#3199)", () => {
+describe("AlgorithmsInspector — inline Visualization preview (#3199/#3205)", () => {
   it("renders the visualization inline (no toggle) as a preview above the code", () => {
-    const { container } = render(<AlgorithmsInspector graph={graph} focusedImpl={SORT} />);
+    const { container } = render(<AlgorithmsInspector graph={graph} focusedImpl={SORT} onExpandViz={noop} />);
     // No Code | Visualization toggle anymore.
     expect(screen.queryByRole("button", { name: "Code" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Visualization" })).toBeNull();
@@ -45,48 +47,33 @@ describe("AlgorithmsInspector — Visualization pane (#3177/#3199)", () => {
     expect(container.querySelector(".algo-code")?.textContent).toContain("sortSteps");
   });
 
-  it("clicking the preview fills the screen with a full player + an editable input", () => {
-    render(<AlgorithmsInspector graph={graph} focusedImpl={SORT} />);
+  it("clicking the preview lifts the expand to the workbench (onExpandViz), NOT a modal", () => {
+    const onExpandViz = vi.fn();
+    render(<AlgorithmsInspector graph={graph} focusedImpl={SORT} onExpandViz={onExpandViz} />);
     fireEvent.click(screen.getByRole("button", { name: /expand visualization/i }));
-    const dialog = screen.getByRole("dialog", { name: "Visualization" });
-    // The fullscreen player has full controls (the inline preview did not).
-    expect(within(dialog).getByLabelText("Step forward")).toBeTruthy();
-    // The editable "provide your own state" field is seeded with the example default.
-    const input = within(dialog).getByRole("textbox") as HTMLInputElement;
-    expect(input.value).toBe("5, 2, 9, 1, 6, 3, 8, 4, 7");
-    expect(within(dialog).getByRole("button", { name: "Run" })).toBeTruthy();
+    expect(onExpandViz).toHaveBeenCalledTimes(1);
+    // No dialog/modal is mounted by the inspector — the take-over is the workbench's overlay.
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("Run re-runs the trace on the user's own input", () => {
-    render(<AlgorithmsInspector graph={graph} focusedImpl={SORT} />);
-    fireEvent.click(screen.getByRole("button", { name: /expand visualization/i }));
-    const dialog = screen.getByRole("dialog", { name: "Visualization" });
-    const input = within(dialog).getByRole("textbox");
-    fireEvent.change(input, { target: { value: "3, 1, 2" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Run" }));
-    // Frame 0 of the custom input renders exactly its 3 cells in the fullscreen stage.
-    const stage = dialog.querySelector(".algo-viz-fullscreen-stage")!;
-    expect(stage.querySelectorAll(".array-cell").length).toBe(3);
+  it("Enter/Space on the focused preview also expands (keyboard affordance)", () => {
+    const onExpandViz = vi.fn();
+    render(<AlgorithmsInspector graph={graph} focusedImpl={SORT} onExpandViz={onExpandViz} />);
+    const preview = screen.getByRole("button", { name: /expand visualization/i });
+    fireEvent.keyDown(preview, { key: "Enter" });
+    fireEvent.keyDown(preview, { key: " " });
+    expect(onExpandViz).toHaveBeenCalledTimes(2);
   });
 
-  it("invalid input surfaces an error and keeps the last good run", () => {
-    render(<AlgorithmsInspector graph={graph} focusedImpl={SORT} />);
-    fireEvent.click(screen.getByRole("button", { name: /expand visualization/i }));
-    const dialog = screen.getByRole("dialog", { name: "Visualization" });
-    const stage = dialog.querySelector(".algo-viz-fullscreen-stage")!;
-    const before = stage.querySelectorAll(".array-cell").length; // the default 9-cell run
-    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "abc" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Run" }));
-    expect(within(dialog).getByText(/is not a number/i)).toBeTruthy();
-    // The prior run is untouched — the invalid Run did not rebuild the player.
-    expect(stage.querySelectorAll(".array-cell").length).toBe(before);
-  });
-
-  it("shows no visualization for an impl without one — code only, no preview", () => {
-    const { container } = render(<AlgorithmsInspector graph={graph} focusedImpl={FIB} />);
+  it("shows no preview without onExpandViz, or for an impl without a visualization", () => {
+    // No expand handler wired → no inline preview (the workbench always wires it; this guards the gate).
+    const { container: a } = render(<AlgorithmsInspector graph={graph} focusedImpl={SORT} />);
+    expect(a.querySelector(".array-cell")).toBeNull();
+    // A viz-less impl → code only, no preview, even with a handler.
+    const { container: b } = render(<AlgorithmsInspector graph={graph} focusedImpl={FIB} onExpandViz={noop} />);
     expect(screen.queryByRole("button", { name: /expand visualization/i })).toBeNull();
-    expect(container.querySelector(".array-cell")).toBeNull();
-    expect(container.querySelector(".algo-code")?.textContent).toContain("fibonacci");
+    expect(b.querySelector(".array-cell")).toBeNull();
+    expect(b.querySelector(".algo-code")?.textContent).toContain("fibonacci");
   });
 
   it("prompts for a selection in the empty state", () => {
