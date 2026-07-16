@@ -31,7 +31,7 @@ const PAGE_ASPECT = 1.15;
 
 type Status = "building" | "ready" | "error";
 
-export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", onPreviewPan, onPreviewZoom }: {
+export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", onPreviewPan, onPreviewZoom, scrollY }: {
   comp: ComponentRecord;
   /** The selected theme's light/dark surface (its `base`). */
   theme: "dark" | "light";
@@ -60,6 +60,9 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
    *  as a zoom: called with the wheel `deltaY` and the cursor's PAGE x/y (resolved from the iframe's real
    *  rendered rect), so the host zooms about the true cursor position — the same way its gutter wheel does. */
   onPreviewZoom?: (deltaY: number, clientX: number, clientY: number) => void;
+  /** Render a COMPONENT at natural size and let tall content scroll vertically instead of scaling it to
+   *  fit (#3190) — the expanded try-on. Ignored for pages (they scale parent-side). Omit for thumbnails. */
+  scrollY?: boolean;
 }) {
   const [status, setStatus] = useState<Status>("building");
   const [error, setError] = useState<string>("");
@@ -183,7 +186,10 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         const injectedCss = collectAppCss() + (themeCss ? `\n:root{${themeCss}}` : "") + (animCss ? `\n${animCss}` : "");
         // #3141: pages/layouts are scaled parent-side (the canvas above); a component that overflows the
         // frame gets the in-iframe scale-to-fit shim instead so it shows whole rather than clipping.
-        const srcDoc = buildComponentSrcDoc(js, { injectedCss, theme, rootClass, exitSelectors, fitContent: !pageLike, forwardGestures: !!(onPreviewPan || onPreviewZoom) });
+        // #3190: a scrollable component renders at natural size (no fit-shim) and scrolls tall content;
+        // otherwise a non-page mount scales-to-fit (#3141). Pages always scale parent-side (#3139).
+        const doScroll = !!scrollY && !pageLike;
+        const srcDoc = buildComponentSrcDoc(js, { injectedCss, theme, rootClass, exitSelectors, fitContent: !pageLike && !doScroll, scrollY: doScroll, forwardGestures: !!(onPreviewPan || onPreviewZoom) });
         if (iframeRef.current) iframeRef.current.srcdoc = srcDoc;
         setStatus("ready");
       } catch (e) {
@@ -194,7 +200,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, themeId, previewState, retry]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, themeId, previewState, scrollY, retry]);
 
   // Surface runtime errors the iframe posts (an exception during the component's own render). Match ONLY
   // this frame's own iframe by source window (#2908) — the on-visit scan now runs its own hidden probe
