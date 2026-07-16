@@ -1,0 +1,235 @@
+{
+  "_note": "Cross-language parity fixture (#3165) for the preview-harness prop sampler. `previewProps(comp)` in componentPreview.ts (the TS source of truth) and `preview_props::preview_props_states` in crates/bsc-component (the `bsc ui preview-props` verb) MUST both produce each case's `expected` (the golden). Each prop `value` is a JS-SOURCE literal/expression (what samplePropValue returns) — e.g. `() => {}`, `window.innerWidth`, or a JSON.stringify'd string like \"\\\"var(--accent)\\\"\" — NOT a JSON value. Asserted by componentPreview.test.ts (TS) and preview_props.rs (Rust). Edit both sides in lockstep.",
+  "cases": [
+    {
+      "desc": "chart with dimensions, an optional collection, a loading flag, a handler — the black-bars/NaN scenario",
+      "comp": {
+        "name": "Chart",
+        "props": [
+          { "name": "data", "type": "Row[]", "req": false },
+          { "name": "width", "type": "number", "req": false },
+          { "name": "height", "type": "number", "req": false },
+          { "name": "loading", "type": "boolean", "req": false },
+          { "name": "onSelect", "type": "(r) => void", "req": false }
+        ]
+      },
+      "expected": {
+        "loaded": {
+          "props": [
+            { "name": "width", "value": "window.innerWidth" },
+            { "name": "height", "value": "window.innerHeight" },
+            { "name": "onSelect", "value": "() => {}" }
+          ],
+          "child": null
+        },
+        "empty": {
+          "props": [
+            { "name": "data", "value": "[]" },
+            { "name": "width", "value": "window.innerWidth" },
+            { "name": "height", "value": "window.innerHeight" },
+            { "name": "onSelect", "value": "() => {}" }
+          ],
+          "child": null
+        },
+        "loading": {
+          "props": [
+            { "name": "width", "value": "window.innerWidth" },
+            { "name": "height", "value": "window.innerHeight" },
+            { "name": "loading", "value": "true" },
+            { "name": "onSelect", "value": "() => {}" }
+          ],
+          "child": null
+        }
+      }
+    },
+    {
+      "desc": "primitive with children + string/color/enum/number props (state-independent)",
+      "comp": {
+        "name": "Badge",
+        "props": [
+          { "name": "children", "type": "ReactNode", "req": false },
+          { "name": "label", "type": "string", "req": false },
+          { "name": "color", "type": "string", "req": false },
+          { "name": "tone", "type": "\"neutral\" | \"danger\"", "req": false },
+          { "name": "count", "type": "number", "req": true }
+        ]
+      },
+      "expected": {
+        "loaded": {
+          "props": [
+            { "name": "label", "value": "\"Label\"" },
+            { "name": "color", "value": "\"var(--accent)\"" },
+            { "name": "tone", "value": "\"neutral\"" },
+            { "name": "count", "value": "3" }
+          ],
+          "child": "\"Badge\""
+        },
+        "empty": {
+          "props": [
+            { "name": "label", "value": "\"Label\"" },
+            { "name": "color", "value": "\"var(--accent)\"" },
+            { "name": "tone", "value": "\"neutral\"" },
+            { "name": "count", "value": "3" }
+          ],
+          "child": "\"Badge\""
+        },
+        "loading": {
+          "props": [
+            { "name": "label", "value": "\"Label\"" },
+            { "name": "color", "value": "\"var(--accent)\"" },
+            { "name": "tone", "value": "\"neutral\"" },
+            { "name": "count", "value": "3" }
+          ],
+          "child": "\"Badge\""
+        }
+      }
+    },
+    {
+      "desc": "loading-family (busy), fraction (progress), canvas size, style-dim (strokeWidth), required array",
+      "comp": {
+        "name": "Meter",
+        "props": [
+          { "name": "busy", "type": "boolean", "req": false },
+          { "name": "progress", "type": "number", "req": false },
+          { "name": "size", "type": "number", "req": false },
+          { "name": "strokeWidth", "type": "number", "req": false },
+          { "name": "items", "type": "array", "req": true }
+        ]
+      },
+      "expected": {
+        "loaded": {
+          "props": [
+            { "name": "progress", "value": "0.6" },
+            { "name": "size", "value": "Math.min(window.innerWidth, window.innerHeight)" },
+            { "name": "strokeWidth", "value": "3" },
+            { "name": "items", "value": "[]" }
+          ],
+          "child": null
+        },
+        "empty": {
+          "props": [
+            { "name": "progress", "value": "0.6" },
+            { "name": "size", "value": "Math.min(window.innerWidth, window.innerHeight)" },
+            { "name": "strokeWidth", "value": "3" },
+            { "name": "items", "value": "[]" }
+          ],
+          "child": null
+        },
+        "loading": {
+          "props": [
+            { "name": "busy", "value": "true" },
+            { "name": "progress", "value": "0.6" },
+            { "name": "size", "value": "Math.min(window.innerWidth, window.innerHeight)" },
+            { "name": "strokeWidth", "value": "3" },
+            { "name": "items", "value": "[]" }
+          ],
+          "child": null
+        }
+      }
+    },
+    {
+      "desc": "login/user string samples, plain boolean, name-based function, unknown type omitted",
+      "comp": {
+        "name": "UserCard",
+        "props": [
+          { "name": "login", "type": "string", "req": false },
+          { "name": "author", "type": "string", "req": false },
+          { "name": "active", "type": "boolean", "req": false },
+          { "name": "variant", "type": "Variant", "req": false },
+          { "name": "render", "type": "() => JSX.Element", "req": false }
+        ]
+      },
+      "expected": {
+        "loaded": {
+          "props": [
+            { "name": "login", "value": "\"octocat\"" },
+            { "name": "author", "value": "\"octocat\"" },
+            { "name": "active", "value": "true" },
+            { "name": "render", "value": "() => {}" }
+          ],
+          "child": null
+        },
+        "empty": {
+          "props": [
+            { "name": "login", "value": "\"octocat\"" },
+            { "name": "author", "value": "\"octocat\"" },
+            { "name": "active", "value": "true" },
+            { "name": "render", "value": "() => {}" }
+          ],
+          "child": null
+        },
+        "loading": {
+          "props": [
+            { "name": "login", "value": "\"octocat\"" },
+            { "name": "author", "value": "\"octocat\"" },
+            { "name": "active", "value": "true" },
+            { "name": "render", "value": "() => {}" }
+          ],
+          "child": null
+        }
+      }
+    },
+    {
+      "desc": "name-based dimension heuristics: onClick handler, maxWidth/minHeight suffixes, w/h shorthands, extent, opacity ratio",
+      "comp": {
+        "name": "Panel",
+        "props": [
+          { "name": "onClick", "type": "MouseEventHandler", "req": false },
+          { "name": "maxWidth", "type": "number", "req": false },
+          { "name": "minHeight", "type": "number", "req": false },
+          { "name": "w", "type": "number", "req": false },
+          { "name": "h", "type": "number", "req": false },
+          { "name": "extent", "type": "number", "req": false },
+          { "name": "opacity", "type": "number", "req": false }
+        ]
+      },
+      "expected": {
+        "loaded": {
+          "props": [
+            { "name": "onClick", "value": "() => {}" },
+            { "name": "maxWidth", "value": "window.innerWidth" },
+            { "name": "minHeight", "value": "window.innerHeight" },
+            { "name": "w", "value": "window.innerWidth" },
+            { "name": "h", "value": "window.innerHeight" },
+            { "name": "extent", "value": "Math.min(window.innerWidth, window.innerHeight)" },
+            { "name": "opacity", "value": "0.6" }
+          ],
+          "child": null
+        },
+        "empty": {
+          "props": [
+            { "name": "onClick", "value": "() => {}" },
+            { "name": "maxWidth", "value": "window.innerWidth" },
+            { "name": "minHeight", "value": "window.innerHeight" },
+            { "name": "w", "value": "window.innerWidth" },
+            { "name": "h", "value": "window.innerHeight" },
+            { "name": "extent", "value": "Math.min(window.innerWidth, window.innerHeight)" },
+            { "name": "opacity", "value": "0.6" }
+          ],
+          "child": null
+        },
+        "loading": {
+          "props": [
+            { "name": "onClick", "value": "() => {}" },
+            { "name": "maxWidth", "value": "window.innerWidth" },
+            { "name": "minHeight", "value": "window.innerHeight" },
+            { "name": "w", "value": "window.innerWidth" },
+            { "name": "h", "value": "window.innerHeight" },
+            { "name": "extent", "value": "Math.min(window.innerWidth, window.innerHeight)" },
+            { "name": "opacity", "value": "0.6" }
+          ],
+          "child": null
+        }
+      }
+    },
+    {
+      "desc": "no props at all — empty object literal, no child",
+      "comp": { "name": "Divider", "props": [] },
+      "expected": {
+        "loaded": { "props": [], "child": null },
+        "empty": { "props": [], "child": null },
+        "loading": { "props": [], "child": null }
+      }
+    }
+  ]
+}

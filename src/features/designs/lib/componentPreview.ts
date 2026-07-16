@@ -231,22 +231,62 @@ function numberSample(name: string): string {
   return /value|fraction|ratio|progress|percent|opacity/i.test(name) ? "0.6" : "3";
 }
 
+/** One sampled prop the preview harness passes: its `name` and its VALUE as a JS-source
+ *  literal/expression — exactly what {@link samplePropValue} returns (e.g. `"() => {}"`,
+ *  `"window.innerWidth"`, `"\"Label\""`). NOT a JSON value: it's source the iframe evaluates. */
+export interface PreviewProp {
+  name: string;
+  value: string;
+}
+
+/** The props (+ their sampled JS-source values) and the child text the bootstrap passes a component in
+ *  ONE state — the inspectable form of what {@link bootstrapSource} mounts. `children` is excluded from
+ *  `props` (it becomes the element child, carried in `child`). */
+export interface PreviewProps {
+  props: PreviewProp[];
+  child: string | null;
+}
+
+/** The props the bootstrap passes `comp` in `state` — each non-`children` prop that samples to a
+ *  non-`null` value, in `comp.props` (schema) order. The structured twin of the object literal
+ *  {@link bootstrapSource} builds; `bsc ui preview-props` mirrors it (a shared parity fixture pins them). */
+export function previewPropList(comp: ComponentRecord, state: PreviewState = "loaded"): PreviewProp[] {
+  const out: PreviewProp[] = [];
+  for (const p of comp.props) {
+    if (p.name === "children") continue;
+    const v = samplePropValue(p, state);
+    if (v != null) out.push({ name: p.name, value: v });
+  }
+  return out;
+}
+
+/** The child text the bootstrap passes when `comp` declares a `children` prop
+ *  (`JSON.stringify(prettyName(name))`), else `null`. State-independent (children never varies by state). */
+export function previewChild(comp: ComponentRecord): string | null {
+  return comp.props.some((p) => p.name === "children") ? JSON.stringify(prettyName(comp.name)) : null;
+}
+
+/** The inspectable props the preview harness passes `comp` in EVERY data-state (#3165) — exactly what
+ *  {@link bootstrapSource} mounts, per state. The `bsc ui preview-props` verb replicates this in Rust; a
+ *  shared JSON fixture (`previewProps.fixtures.json`) is asserted on BOTH sides to keep them in lockstep. */
+export function previewProps(comp: ComponentRecord): Record<PreviewState, PreviewProps> {
+  const child = previewChild(comp);
+  return {
+    loaded: { props: previewPropList(comp, "loaded"), child },
+    empty: { props: previewPropList(comp, "empty"), child },
+    loading: { props: previewPropList(comp, "loading"), child },
+  };
+}
+
 /**
  * The bootstrap entry source: import the component by `importSpec` and mount it into `#root` with the
  * sample props. Uses `createElement` (not JSX children) so children/props compose without JSX parsing
- * quirks. Resolves the component export by `name`, falling back to the default export.
+ * quirks. Resolves the component export by `name`, falling back to the default export. Builds the props
+ * from {@link previewPropList} / {@link previewChild} (the SAME source `bsc ui preview-props` inspects).
  */
 export function bootstrapSource(comp: ComponentRecord, importSpec: string, state: PreviewState = "loaded"): string {
-  const childText = comp.props.find((p) => p.name === "children")
-    ? JSON.stringify(prettyName(comp.name))
-    : null;
-  const propEntries = comp.props
-    .filter((p) => p.name !== "children")
-    .map((p) => {
-      const v = samplePropValue(p, state);
-      return v == null ? null : `${JSON.stringify(p.name)}: ${v}`;
-    })
-    .filter(Boolean);
+  const childText = previewChild(comp);
+  const propEntries = previewPropList(comp, state).map((e) => `${JSON.stringify(e.name)}: ${e.value}`);
   const propsLiteral = `{ ${propEntries.join(", ")} }`;
   const childArg = childText ? `, ${childText}` : "";
   // Role-aware mount wrapper (#3139). A PAGE/LAYOUT is authored for a full viewport (flex:1 / height:100%),
