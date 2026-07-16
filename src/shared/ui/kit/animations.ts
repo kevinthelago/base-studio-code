@@ -69,6 +69,14 @@ export interface KitAnimation {
 export interface AnimationDef extends KitAnimation {
   /** The kit's CSS class base (its id, e.g. `react-ui`). */
   kit: string;
+  /** The OWNING COMPONENT (#3163) — when set, the compiled `@keyframes` + applying class are namespaced
+   *  `bsc-<kit>-<component>-<name>` / `.<kit>-<component>-anim-<name>` so two DIFFERENT components' same-
+   *  named animations compile to DISTINCT keyframes instead of one silently clobbering the other (the
+   *  invisible collision a multi-component preview hit when a chart + a composed piece both named an
+   *  animation `draw-in`). Absent ⇒ the plain, un-namespaced `bsc-<kit>-<name>` / `.<kit>-anim-<name>`
+   *  (a single-component preview — existing behavior). Sanitized to a safe ident segment by the compiler
+   *  ({@link animClassName}), so a PascalCase component name (`Sparkline`) is accepted. */
+  component?: string;
 }
 
 const STYLE_ID = "bsc-ui-animations";
@@ -95,6 +103,32 @@ function safeValue(v: unknown): v is string {
   return typeof v === "string" && v.length > 0 && !UNSAFE_VALUE.test(v);
 }
 
+/** Sanitize a component name/id into a safe CSS-identifier SEGMENT for keyframe/class namespacing
+ *  (#3163): lowercased, every non-`[a-z0-9-]` run collapsed to `-`, leading/trailing `-` stripped. Empty
+ *  (or an all-unsafe input) ⇒ "" — the caller then falls back to the un-namespaced form. So a PascalCase
+ *  component name (`Sparkline` → `sparkline`, `Bar Chart` → `bar-chart`) namespaces cleanly. */
+function identSegment(s: string): string {
+  const slug = (s ?? "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+  return SAFE_IDENT.test(slug) ? slug : "";
+}
+
+/** The `@keyframes` NAME for a def — namespaced by its owning {@link AnimationDef.component} when one is
+ *  set (#3163), so two components' same-named animations compile to DISTINCT keyframes instead of one
+ *  clobbering the other. Absent/unsafe `component` ⇒ the plain `bsc-<kit>-<name>` (existing behavior). */
+function animKeyframeName(d: AnimationDef): string {
+  const seg = identSegment(d.component ?? "");
+  return seg ? `bsc-${d.kit}-${seg}-${d.name}` : `bsc-${d.kit}-${d.name}`;
+}
+
+/** The applying CLASS hook for a def — the component-namespaced twin of {@link animKeyframeName}
+ *  (#3163): `.<kit>-<component>-anim-<name>` when a `component` is set, else `.<kit>-anim-<name>`. The
+ *  renderer (ComponentPreviewFrame) stamps this EXACT class on `#root`, so it always matches the compiled
+ *  rule — exported so the preview derives the class the same way the compiler names the keyframes. */
+export function animClassName(d: { kit: string; name: string; component?: string }): string {
+  const seg = identSegment(d.component ?? "");
+  return seg ? `${d.kit}-${seg}-anim-${d.name}` : `${d.kit}-anim-${d.name}`;
+}
+
 /** Compile one animation's `@keyframes` block, or "" when no stop/declaration passes the guards. */
 function keyframesCss(d: AnimationDef): string {
   const stops: string[] = [];
@@ -105,7 +139,7 @@ function keyframesCss(d: AnimationDef): string {
       .map(([prop, value]) => `    ${prop}: ${value};`);
     if (lines.length) stops.push(`  ${stop} {\n${lines.join("\n")}\n  }`);
   }
-  return stops.length ? `@keyframes bsc-${d.kit}-${d.name} {\n${stops.join("\n")}\n}` : "";
+  return stops.length ? `@keyframes ${animKeyframeName(d)} {\n${stops.join("\n")}\n}` : "";
 }
 
 /**
@@ -131,8 +165,10 @@ export function compileAnimationsCss(defs: AnimationDef[]): string {
     const dur = safeValue(d.duration) ? d.duration! : DUR_DEFAULT;
     const ease = safeValue(d.easing) ? d.easing! : EASE_DEFAULT;
     const delay = safeValue(d.delay) ? ` ${d.delay}` : "";
-    const anim = `bsc-${d.kit}-${d.name}`;
-    const cls = `.${d.kit}-anim-${d.name}`;
+    // #3163: the keyframe name + applying class are namespaced by `component` (when set) so a chart and
+    // its composed pieces can each carry a same-named animation without one clobbering the other.
+    const anim = animKeyframeName(d);
+    const cls = `.${animClassName(d)}`;
     // #3054: scope to a child when a safe selector is given (descendant combinator); else the root class.
     const scoped = SAFE_SELECTOR.test(d.selector ?? "") ? `${cls} ${d.selector!.trim()}` : cls;
     // #3057: `exit` keys the rule on a `[data-bsc-exit]` marker — DORMANT until the exit-runtime sets it
