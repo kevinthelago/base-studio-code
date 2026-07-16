@@ -4,14 +4,18 @@
 // labeled pills above their indices.
 //
 // The renderer NEVER writes animation CSS — it only stamps the state (see `lib/binding.ts`). The
-// designed `compare` / `swap` / `set` / `sorted` animations bind to those `[data-op=…]` / `[data-mark=…]`
-// selectors in `arrayView.css` (this proof's stand-in for the designer-authored KitAnimations, #2942 —
-// see docs/algorithm-visualization.md). Change an animation once → every sort visualization updates.
+// `compare` / `swap` / `set` / `sorted` animations are DESIGNER-AUTHORED KitAnimation data (#2942)
+// compiled by the kit-motion engine (`arrayViewMotion.ts`), bound to those `[data-op=…]` / `[data-mark=…]`
+// data-states. This renderer binds them the standard kit way: its ROOT carries the applying classes
+// ({@link ALGO_VIZ_ANIM_CLASSES}) and it ensures the compiled kit CSS is injected; the cells still ONLY
+// stamp `data-op` / `data-mark`. Change an animation's data once → every array visualization updates.
 
+import { useEffect } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { opStateAttrs } from "../../lib/binding";
 import type { ArrayFrame } from "../../lib/trace";
 import type { StructureRenderer } from "../registry";
+import { ALGO_VIZ_ANIM_CLASSES, ensureArrayViewMotion } from "./arrayViewMotion";
 import "./arrayView.css";
 
 /** The numeric magnitude of a cell (strings — non-numeric labels — contribute no bar). */
@@ -39,12 +43,20 @@ function cursorsByIndex(cursors: ArrayFrame["cursors"]): Map<number, string[]> {
  * (the player advances frames; the kit animations fire off the stamped states).
  */
 export const ArrayView: StructureRenderer<"array"> = ({ frame }: { frame: ArrayFrame }) => {
+  // Ensure the kit's compiled motion CSS (arrayViewMotion.ts) is present — the state-triggered
+  // animations bound to the data-states this renderer stamps. Idempotent; no per-render cost.
+  useEffect(() => {
+    ensureArrayViewMotion();
+  }, []);
+
   const { data, ops, cursors } = frame;
   const max = Math.max(1, ...data.map(magnitude));
   const cursorPills = cursorsByIndex(cursors);
 
   return (
-    <Box className="array-view" role="list" aria-label="array">
+    // The root carries the kit's applying classes so the `[data-op=…]` / `[data-mark=…]` state rules
+    // scope to its cells (the standard kit-binding — the cells themselves only stamp the state).
+    <Box className={`array-view ${ALGO_VIZ_ANIM_CLASSES}`} role="list" aria-label="array">
       {data.map((v, i) => {
         const names = cursorPills.get(i) ?? [];
         // A visible floor so a value of 0 / a string still shows a nub instead of nothing.

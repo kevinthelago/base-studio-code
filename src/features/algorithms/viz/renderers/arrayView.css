@@ -1,11 +1,10 @@
-/* The <ArrayView> renderer (#3178, epic #3171) — element styles + the state-bound animations.
+/* The <ArrayView> renderer (#3178, epic #3171) — ELEMENT / LAYOUT styles ONLY.
  *
- * THE BINDING SEAM: the renderer only stamps `data-op` / `data-mark` (via lib/binding.ts); every
- * animation below is keyed on one of those state selectors — `[data-op="compare"]`, `[data-op="swap"]`,
- * `[data-op="set"]`, `[data-mark="sorted"]`. That is the stable contract. For THIS proof the transitions
- * are hand-authored @keyframes; migrating them to designer-authored KitAnimations (#2942, editable in the
- * Animations menu) plugs into the SAME selectors and needs no renderer change. Tokens from tokens.css;
- * all motion is guarded by prefers-reduced-motion. */
+ * The MOTION is NOT here: the compare / swap / set / sorted animations are designer-authored
+ * KitAnimation DATA compiled by the kit-motion engine (arrayViewMotion.ts → compileAnimationsCss),
+ * injected as a managed <style> and bound to the `[data-op=…]` / `[data-mark=…]` data-states this
+ * renderer stamps. This file keeps only the structural styles + the DURABLE resting look of a `sorted`
+ * mark (a persistent state style, not an animation). Tokens from tokens.css. */
 
 .array-view {
   display: flex;
@@ -65,7 +64,7 @@
   background: color-mix(in oklch, var(--info), transparent 58%);
   border-top: 2px solid var(--info);
   /* The value change eases so a set/swap slides the bar rather than snapping. */
-  transition: height 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+  transition: height 0.2s ease;
 }
 
 .array-val {
@@ -80,73 +79,9 @@
   pointer-events: none;
 }
 
-/* ── compare — a highlight pulse on the two compared cells ───────────────────────────────────── */
-@keyframes array-compare-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 transparent;
-    border-color: var(--border);
-  }
-  45% {
-    box-shadow: 0 0 0 2px color-mix(in oklch, var(--state-wait), transparent 45%);
-    border-color: var(--state-wait);
-  }
-}
-.array-cell[data-op="compare"] {
-  animation: array-compare-pulse 0.5s ease-in-out;
-  z-index: 1;
-}
-.array-cell[data-op="compare"] .array-bar {
-  background: color-mix(in oklch, var(--state-wait), transparent 58%);
-  border-top-color: var(--state-wait);
-}
-
-/* ── swap — the two cells lift and cross-fade to the accent as they exchange ──────────────────── */
-@keyframes array-swap-lift {
-  0% {
-    transform: translateY(0);
-  }
-  40% {
-    transform: translateY(-12px) scale(1.05);
-  }
-  100% {
-    transform: translateY(0);
-  }
-}
-.array-cell[data-op="swap"] {
-  animation: array-swap-lift 0.42s cubic-bezier(0.34, 1.4, 0.5, 1);
-  border-color: var(--accent);
-  z-index: 2;
-}
-.array-cell[data-op="swap"] .array-bar {
-  background: color-mix(in oklch, var(--accent), transparent 45%);
-  border-top-color: var(--accent);
-}
-
-/* ── set — a value flash (a fresh write into the cell) ────────────────────────────────────────── */
-@keyframes array-set-flash {
-  0% {
-    background: color-mix(in oklch, var(--accent), transparent 20%);
-  }
-  100% {
-    background: var(--bg-elev);
-  }
-}
-.array-cell[data-op="set"] {
-  animation: array-set-flash 0.5s ease-out;
-}
-
-/* ── mark: sorted — a settled / locked style the cell keeps for the rest of the run ───────────── */
-@keyframes array-sorted-settle {
-  0% {
-    transform: translateY(-3px);
-  }
-  100% {
-    transform: translateY(0);
-  }
-}
+/* The DURABLE resting look of a cell that has reached its sorted place — a persistent state style (the
+   `sorted` MOTION itself is a KitAnimation in arrayViewMotion.ts). */
 .array-cell[data-mark="sorted"] {
-  animation: array-sorted-settle 0.3s ease-out;
   border-color: color-mix(in oklch, var(--success), transparent 40%);
   background: color-mix(in oklch, var(--success), var(--bg-elev) 82%);
 }
@@ -156,13 +91,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .array-cell,
-  .array-cell[data-op="compare"],
-  .array-cell[data-op="swap"],
-  .array-cell[data-op="set"],
-  .array-cell[data-mark="sorted"] {
-    animation: none;
-  }
   .array-bar {
     transition: none;
   }

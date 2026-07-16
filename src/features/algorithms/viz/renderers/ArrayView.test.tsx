@@ -1,8 +1,10 @@
 // The <ArrayView> renderer (#3178) — it stamps the right data-op / data-mark on the cells an op targets
-// (via opStateAttrs), renders the values, and draws the frame's cursors as labeled pills.
+// (via opStateAttrs), renders the values, draws the frame's cursors as labeled pills, and binds the
+// data-defined kit motion (#2942) — its root carries the applying classes + it injects the compiled CSS.
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { ArrayView } from "./ArrayView";
+import { ALGO_VIZ_ANIM_CLASSES, ALGO_VIZ_MOTION_CSS } from "./arrayViewMotion";
 import type { ArrayFrame } from "../../lib/trace";
 
 /** Render an ArrayFrame and return its cell elements (in index order) + the container. */
@@ -13,6 +15,17 @@ function renderFrame(frame: ArrayFrame) {
 }
 
 describe("ArrayView (#3178)", () => {
+  it("binds the data-defined kit motion: root carries the applying classes + injects the compiled CSS", () => {
+    document.getElementById("bsc-algo-viz-animations")?.remove();
+    const { container } = render(<ArrayView frame={{ structure: "array", data: [1, 2] }} />);
+    // The renderer BINDS the kit animations the standard way — its root wears the applying classes.
+    const root = container.querySelector<HTMLElement>(".array-view")!;
+    for (const cls of ALGO_VIZ_ANIM_CLASSES.split(" ")) expect(root.classList.contains(cls)).toBe(true);
+    // …and it ensures the engine-compiled kit motion CSS is present (state-triggered on the data-states).
+    const style = document.getElementById("bsc-algo-viz-animations");
+    expect(style?.textContent).toBe(ALGO_VIZ_MOTION_CSS);
+  });
+
   it("renders one cell per value, showing the value", () => {
     const { cells } = renderFrame({ structure: "array", data: [5, 1, 3] });
     expect(cells).toHaveLength(3);
