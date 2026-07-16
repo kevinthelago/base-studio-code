@@ -304,6 +304,15 @@
       "summary": "The nth Fibonacci number (F0 = 0, F1 = 1), iterated bottom-up in O(n) — the TypeScript twin of fibonacci.rs and the #3116 Component→Algorithm example: a React component imports it via @bsc/algorithms/fibonacci and the Design Studio preview vendors this code so it runs the library impl live.",
       "composes": ["typescript.number"],
       "code": "export function fibonacci(n: number): number {\n  if (n < 2) return n;\n  let a = 0,\n    b = 1;\n  for (let i = 2; i <= n; i++) {\n    const next = a + b;\n    a = b;\n    b = next;\n  }\n  return b;\n}\n"
+    },
+    {
+      "id": "sort.ts",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "sort",
+      "summary": "In-place insertion sort authored as a step-yielding generator (#3171 generator-as-source): the plain `sort` drains it to order the array, and the Algorithms Visualization pane animates the SAME yields — compare/swap/set verbs bound to the <ArrayView> renderer's designed animations. The array proof-of-loop (#3178/#3177) for the algorithm-visualization epic.",
+      "composes": ["typescript.number"],
+      "code": "import type { ArrayFrame } from \"@bsc/algorithms/trace\";\n\n/** Insertion sort as a step-yielding generator (generator-as-source, #3171): mutates `a` in place and\n *  yields one ArrayFrame per step. The plain `sort` drains it to order the array; the Algorithms\n *  Visualization pane animates the same yields - compare/swap verbs bound to <ArrayView>'s animations. */\nexport function* sortSteps(a: number[]): Generator<ArrayFrame> {\n  yield { structure: \"array\", data: [...a] };\n  for (let i = 1; i < a.length; i++) {\n    let j = i;\n    while (j > 0) {\n      yield { structure: \"array\", data: [...a], ops: [{ op: \"compare\", at: [j - 1, j] }], cursors: { i, j } };\n      if (a[j - 1] <= a[j]) break;\n      [a[j - 1], a[j]] = [a[j], a[j - 1]];\n      yield { structure: \"array\", data: [...a], ops: [{ op: \"swap\", at: [j - 1, j] }], cursors: { i, j } };\n      j--;\n    }\n  }\n  yield { structure: \"array\", data: [...a], ops: a.map((_, k) => ({ op: \"mark\", at: k, as: \"sorted\" })) };\n}\n\n/** Sort ascending by draining the generator (one source of truth). Pure - never mutates the input. */\nexport const sort = (input: number[]): number[] => {\n  const a = [...input];\n  const steps = sortSteps(a);\n  while (!steps.next().done) { /* drain - sortSteps mutates `a` in place */ }\n  return a;\n};\n"
     }
   ]
 }
