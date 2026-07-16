@@ -677,19 +677,14 @@ function Inspector(p: InspProps) {
           </Box>
 
           {/* live preview — folded in from the removed Library center view (#2453). #3190: the inspector's
-              PRIMARY surface — it fills the pane (see .ds-preview), the card chrome is gone, and the header
-              keeps ONLY the data-state switcher (the variant + screen-size toggles were removed). */}
+              lead surface — no card, no control bar (the "Live preview" title + the data-state buttons were
+              removed), so the preview sits right under the identity header. It's sized a touch below the
+              detail tabs (see .ds-preview) rather than dominating the pane.
+              Live preview (#2824): the component is BUILT (esbuild-wasm) from its real source and rendered in
+              a sandboxed iframe — its own build/error state inside — filling the surface (fluid width, full
+              height) so it reads at real size. */}
           <Box className="ds-preview">
-            <Box className="ds-prevctl">
-              <Eyebrow size={9.5}>Live preview</Eyebrow>
-              <SegmentedControl label="" options={PREVIEW_STATES.map((s) => ({ label: s, on: s === p.previewState, onClick: () => p.setPreviewState(s) }))} />
-              {/* The theme switcher moved up beside the component name (#3085). */}
-            </Box>
             <Box className="ds-surface">
-              {/* Live preview (#2824): the component is BUILT (esbuild-wasm) from its real source and
-                  rendered in a sandboxed iframe — built-in kit or any user/library component — its own
-                  build/error state inside. Replaces the specimen mocks + real-component fixtures. It fills
-                  the surface (#3190) — fluid width, full height — so the component reads at real size. */}
               <Box className="ds-frame">
                 <ComponentPreviewFrame
                   comp={sel}
