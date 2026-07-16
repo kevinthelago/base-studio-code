@@ -23,6 +23,7 @@ export function classifyKind(impl: Classifiable): AlgoKind | null {
 
   if (has("bfs", "dfs", "traverse", "traversal", "walk", "breadth-first", "depth-first")) return "traversal";
   if (has("sort")) return "sort";
+  if (has("transpose", "rotate", "reflect", "transform", "flip", "mirror")) return "transform";
   if (has("search", "find", "lookup", "bisect")) return "search";
   if (has("fib", "factorial", "prefix-sum", "prefixsum", "accumulate", "cumulative", "reduce", "scan")) return "accumulate";
 
