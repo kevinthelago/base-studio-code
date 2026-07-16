@@ -81,6 +81,9 @@
 .ds-health-orphan { color: var(--fg-dim); }
 .ds-health-unwired-prop { color: var(--warning, var(--state-wait)); border-color: color-mix(in srgb, var(--warning, var(--state-wait)) 45%, var(--border)); }
 .ds-health-slot-shell { color: var(--info, var(--accent)); border-color: color-mix(in srgb, var(--info, var(--accent)) 45%, var(--border)); }
+/* #3163 motion findings — dead selector + name collision are faults (warning tone); the two SVG traps are advisory (info tone). */
+.ds-health-motion-dead-selector, .ds-health-motion-name-collision { color: var(--warning, var(--state-wait)); border-color: color-mix(in srgb, var(--warning, var(--state-wait)) 45%, var(--border)); }
+.ds-health-motion-dash-no-pathlength, .ds-health-motion-transform-attr { color: var(--info, var(--accent)); border-color: color-mix(in srgb, var(--info, var(--accent)) 45%, var(--border)); }
 .ds-healthcount { font-family: var(--mono); font-size: 10px; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius: 5px; padding: 1px 7px; margin-left: 8px; white-space: nowrap; }
 
 /* Preview build-error badge (#2838) — the on-visit component scan (`useComponentScan`) esbuild-builds

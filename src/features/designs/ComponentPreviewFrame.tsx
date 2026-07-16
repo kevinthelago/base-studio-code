@@ -14,7 +14,7 @@ import { Code } from "@/shared/ui/data/Code";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { bundleComponent, buildComponentSrcDoc } from "@/shared/lib/preview/componentBundle";
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
-import { compileAnimationsCss, type AnimationDef } from "@/shared/ui/kit";
+import { compileAnimationsCss, animClassName, type AnimationDef } from "@/shared/ui/kit";
 import { componentPreviewFiles, type KitArtifact, type PreviewState } from "./lib/componentPreview";
 import { libraryModuleResolver } from "./lib/libraryModules";
 import { resolveComponentAnimations, resolveComposedAnimations, previewAnimDefs, type ComponentRecord } from "./lib/model";
@@ -159,8 +159,10 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         // fire. The compiled CSS keeps its `prefers-reduced-motion` guard, so a reduced-motion viewer
         // sees the static component.
         const animCss = compileAnimationsCss(animDefs);
+        // #3163: derive the class hook via `animClassName` so a component-namespaced composed animation
+        // (`.<kit>-<component>-anim-<name>`) matches the same-namespaced keyframes the compiler emits.
         const rootClass = animDefs
-          .map((d) => `${d.kit}-anim-${d.name}`)
+          .map((d) => animClassName(d))
           .filter((c) => /^[a-z][a-z0-9-]+$/.test(c))
           .join(" ");
         const injectedCss = collectAppCss() + (themeCss ? `\n:root{${themeCss}}` : "") + (animCss ? `\n${animCss}` : "");
