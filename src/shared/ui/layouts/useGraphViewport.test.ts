@@ -234,6 +234,25 @@ describe("useGraphViewport wheel listener lifecycle (#2454)", () => {
     expect(result.current.view.tx).toBe(-800 * 0.7 / 2); // world box, exactly as the #2545 path
   });
 
+  it("panBy translates the view by a raw screen-space delta, keeping zoom (#3190)", () => {
+    // The externally-driven pan (an iframe forwarding a non-interactive drag): no mousedown of the
+    // viewport's own, so onCanvasDown never fires — panBy nudges tx/ty directly by the screen delta.
+    const { result } = renderHook(() => useGraphViewport({ w: 1000, h: 1000 }));
+    const el = document.createElement("div");
+    act(() => result.current.setVp(el));
+    act(() => result.current.zoomBy(1.4)); // pan must be independent of the current zoom
+    const before = result.current.view;
+    expect(before.scale).not.toBe(1); // sanity: we're panning at a non-unit zoom
+    act(() => result.current.panBy(30, -12));
+    expect(result.current.view.scale).toBe(before.scale);     // zoom untouched
+    expect(result.current.view.tx).toBe(before.tx + 30);      // screen px map 1:1 (translate applied after scale)
+    expect(result.current.view.ty).toBe(before.ty - 12);
+    // Deltas accumulate across a drag's successive moves.
+    act(() => result.current.panBy(-5, 4));
+    expect(result.current.view.tx).toBe(before.tx + 25);
+    expect(result.current.view.ty).toBe(before.ty - 8);
+  });
+
   it("centerOn pans the given world point toward the viewport center, keeping zoom (#2525)", () => {
     const { result } = renderHook(() => useGraphViewport({ w: 1000, h: 1000 }));
     // No-op before the viewport element mounts (no ref yet).

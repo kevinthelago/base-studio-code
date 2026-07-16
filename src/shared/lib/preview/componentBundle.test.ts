@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { compileAnimationsCss, kitAnimations } from "@/shared/ui/kit";
 import {
-  resolveMemPath, lookupMem, buildComponentSrcDoc, exitShimScript, fitShimScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
+  resolveMemPath, lookupMem, buildComponentSrcDoc, exitShimScript, fitShimScript, panForwardScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
 } from "./componentBundle";
 
 // The esbuild-wasm bundle can't run under jsdom; these cover the PURE pieces (path resolution + srcdoc
@@ -210,6 +210,93 @@ describe("componentBundle — scale-to-fit shim (#3141)", () => {
     await new Promise((r) => setTimeout(r, 200));
     expect(fits.content.style.transform).toBe("none");
     document.body.removeChild(fits.root);
+  });
+});
+
+describe("componentBundle — pan-forward shim (#3190)", () => {
+  it("injects the shim (interactive guard + panstart/move/end forwarding) when panForward is set", () => {
+    const doc = buildComponentSrcDoc("/*B*/", { panForward: true });
+    expect(doc).toContain('__preview: type');                 // posts the pan events to the host
+    expect(doc).toContain('"panstart"');                      // …starting with panstart
+    expect(doc).toContain('"panmove"');                       // …then panmove
+    expect(doc).toContain('"panend"');                        // …then panend
+    expect(doc).toContain("e.button !== 0");                  // only a LEFT drag pans
+    expect(doc).toContain('cursor === "pointer"');            // a cursor:pointer ancestor counts as interactive
+    expect(doc).toContain("e.preventDefault()");              // a non-interactive press is claimed for panning
+    // The pan shim comes AFTER the module script (its listeners don't need the component mounted, but it
+    // rides in with the other post-body shims).
+    expect(doc.indexOf('__preview: type')).toBeGreaterThan(doc.indexOf('<script type="module">'));
+  });
+
+  it("injects NOTHING when panForward is off — the srcdoc is byte-for-byte unchanged", () => {
+    const bare = buildComponentSrcDoc("X");
+    expect(buildComponentSrcDoc("X", { panForward: false })).toBe(bare);
+    for (const doc of [bare, buildComponentSrcDoc("X", { panForward: false })]) {
+      expect(doc).not.toContain('__preview: type');
+      expect(doc).not.toContain('"panstart"');
+    }
+  });
+
+  it("panForwardScript returns a plain script when on; empty string otherwise", () => {
+    expect(panForwardScript(false)).toBe("");
+    const shim = panForwardScript(true);
+    expect(shim.startsWith("\n<script>")).toBe(true);         // a plain (non-module) capture-phase script
+    expect(shim).toContain('[role="button"]');               // ARIA controls count as interactive
+    expect(shim).toContain('[contenteditable]');             // …as does an editable region
+    expect(shim).toContain("svg,canvas");                    // …and a data-viz drawing surface (#3168 regression)
+    expect(shim).toContain('ti !== "-1"');                   // a focusable (tabindex) ancestor counts too
+    expect(shim).toContain("screenX");                       // forwards absolute screen coords (delta host-side)
+  });
+
+  it("drives the runtime in jsdom: a background drag forwards pan events; a button press does not", () => {
+    // Execute the shim in this jsdom global (strip the <script> wrapper). Indirect eval → global scope.
+    const src = panForwardScript(true).replace(/^\s*<script>/, "").replace(/<\/script>\s*$/, "");
+    const posts: Array<{ type: string; x: number; y: number }> = [];
+    const origPost = window.parent.postMessage;
+    // jsdom's window.parent === window; capture what the shim posts to the host.
+    (window.parent as unknown as { postMessage: (m: unknown) => void }).postMessage = (m: unknown) => {
+      const d = m as { __preview: string; x: number; y: number };
+      posts.push({ type: d.__preview, x: d.x, y: d.y });
+    };
+
+    const bg = document.createElement("div");   // empty background — a drag here should pan
+    const btn = document.createElement("button"); // a real control — a drag here must NOT pan
+    document.body.append(bg, btn);
+    (0, eval)(src);
+
+    // A left press on the background → panstart, then panmove deltas, then panend.
+    bg.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, screenX: 10, screenY: 20 }));
+    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, screenX: 15, screenY: 26 }));
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    expect(posts.map((p) => p.type)).toEqual(["panstart", "panmove", "panend"]);
+    expect(posts[0]).toMatchObject({ x: 10, y: 20 });
+    expect(posts[1]).toMatchObject({ x: 15, y: 26 }); // absolute coords; the host computes (5,6)
+
+    // A press on a button forwards nothing — the component keeps the interaction.
+    posts.length = 0;
+    btn.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, screenX: 5, screenY: 5 }));
+    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, screenX: 9, screenY: 9 }));
+    expect(posts).toEqual([]);
+
+    // A press inside a chart's SVG surface (a d3 graph node) forwards nothing — the graph stays draggable.
+    posts.length = 0;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    svg.appendChild(circle);
+    document.body.appendChild(svg);
+    circle.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, screenX: 3, screenY: 3 }));
+    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, screenX: 7, screenY: 7 }));
+    expect(posts).toEqual([]);
+    document.body.removeChild(svg);
+
+    // A non-left (e.g. right) press on the background is ignored too.
+    bg.dispatchEvent(new MouseEvent("mousedown", { button: 2, bubbles: true, screenX: 1, screenY: 1 }));
+    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, screenX: 4, screenY: 4 }));
+    expect(posts).toEqual([]);
+
+    window.parent.postMessage = origPost;
+    document.body.removeChild(bg);
+    document.body.removeChild(btn);
   });
 });
 

@@ -31,7 +31,7 @@ const PAGE_ASPECT = 1.15;
 
 type Status = "building" | "ready" | "error";
 
-export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded" }: {
+export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", onPreviewPan }: {
   comp: ComponentRecord;
   /** The selected theme's light/dark surface (its `base`). */
   theme: "dark" | "light";
@@ -52,6 +52,10 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   /** The data-state to preview (#3135): `loaded` (demo), `empty` (no data), or `loading` (skeleton).
    *  Drives how the bootstrap samples props. Default `loaded`. */
   previewState?: PreviewState;
+  /** When set (the expanded preview, #3190), the iframe forwards a NON-interactive drag as a pan: this is
+   *  called with each screen-space delta `(dx,dy)` so the host can pan its viewport. A drag on a real
+   *  control interacts instead; hover/clicks always work. Omit ⇒ no pan-forward (thumbnail). */
+  onPreviewPan?: (dx: number, dy: number) => void;
 }) {
   const [status, setStatus] = useState<Status>("building");
   const [error, setError] = useState<string>("");
@@ -60,6 +64,11 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // here since the frame is inline-styled and self-contained (works wherever it's mounted).
   const [hint, setHint] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  // #3190: the pan-forward handler + the last screen position of an in-flight forwarded drag, held in
+  // refs so the message listener stays subscribed across renders (the callback's identity may churn).
+  const panRef = useRef<((dx: number, dy: number) => void) | undefined>(onPreviewPan);
+  useEffect(() => { panRef.current = onPreviewPan; }, [onPreviewPan]);
+  const panLast = useRef<{ x: number; y: number } | null>(null);
   // Measure the frame so page-like components can render at a natural viewport canvas and scale-to-fit
   // (#3139) — a full-viewport page squeezed into the raw frame overflows/clips; scaling shows the whole
   // thing. Only pages/layouts scale; a component keeps its 1:1, centered mount.
@@ -169,7 +178,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         const injectedCss = collectAppCss() + (themeCss ? `\n:root{${themeCss}}` : "") + (animCss ? `\n${animCss}` : "");
         // #3141: pages/layouts are scaled parent-side (the canvas above); a component that overflows the
         // frame gets the in-iframe scale-to-fit shim instead so it shows whole rather than clipping.
-        const srcDoc = buildComponentSrcDoc(js, { injectedCss, theme, rootClass, exitSelectors, fitContent: !pageLike });
+        const srcDoc = buildComponentSrcDoc(js, { injectedCss, theme, rootClass, exitSelectors, fitContent: !pageLike, panForward: !!onPreviewPan });
         if (iframeRef.current) iframeRef.current.srcdoc = srcDoc;
         setStatus("ready");
       } catch (e) {
@@ -196,7 +205,17 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         setStatus("error");
         setError(message);
         void recordPreviewError(comp.id, message);
+        return;
       }
+      // #3190: the iframe forwarded a NON-interactive drag — pan the host viewport by the screen-space
+      // delta between consecutive `panmove`s (absolute screenX/Y, so it's page-scroll/scale independent).
+      const d = e.data;
+      if (!d || !d.__preview) return;
+      if (d.__preview === "panstart") { panLast.current = { x: d.x, y: d.y }; }
+      else if (d.__preview === "panmove" && panLast.current) {
+        panRef.current?.(d.x - panLast.current.x, d.y - panLast.current.y);
+        panLast.current = { x: d.x, y: d.y };
+      } else if (d.__preview === "panend") { panLast.current = null; }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
