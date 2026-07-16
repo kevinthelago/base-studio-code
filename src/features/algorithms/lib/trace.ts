@@ -82,7 +82,7 @@ export type GraphOp =
  *  pointers (`{ current: "b" }`). */
 export interface GraphFrame {
   structure: "graph";
-  nodes: { id: string; label?: string; value?: number | string }[];
+  nodes: { id: string; label?: string; value?: number | string; x?: number; y?: number }[];
   edges: { from: string; to: string; weight?: number }[];
   ops?: GraphOp[];
   marks?: Record<string, "start" | "goal" | "visited" | "frontier" | "current">;

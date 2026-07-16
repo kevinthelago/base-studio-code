@@ -9,7 +9,7 @@ import { markStateAttrs, nodeOpStateAttrs } from "../../lib/binding";
 import type { GraphFrame } from "../../lib/trace";
 import type { StructureRenderer } from "../registry";
 import { GRAPH_VIZ_ANIM_CLASSES, ensureGraphViewMotion } from "./graphViewMotion";
-import { circularLayout, GRAPH_VIEW as VIEW } from "./graphLayout";
+import { layoutFor, GRAPH_VIEW as VIEW } from "./graphLayout";
 import "./graphView.css";
 
 const NODE_R = 19;
@@ -23,7 +23,7 @@ export const GraphView: StructureRenderer<"graph"> = ({ frame }: { frame: GraphF
   }, []);
 
   const { nodes, edges, ops, marks } = frame;
-  const pos = circularLayout(nodes.map((n) => n.id));
+  const pos = layoutFor(nodes);
   // The edges relaxed THIS frame (undirected) — stamped data-op="relax" so they flash.
   const relaxed = new Set(
     (ops ?? [])
