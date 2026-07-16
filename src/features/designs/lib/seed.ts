@@ -7,15 +7,21 @@
 // global `bsc ui` store lands (then `hydrateComponents` replaces it).
 import type { ComponentRecord, Kit } from "./model";
 import { makeBuiltinKits } from "./builtinKits";
+import { makeAlgoVizKit } from "./algoVizKit";
 import { reconcileSeed, type SeedReconcile } from "./seedRefresh";
 
 const { kits, components } = makeBuiltinKits();
+// The `algo-viz` builtin kit (#3194) — the algorithm-visualization motion library as a recoverable kit.
+// Assembled in code (its motion is a TS constant, not JSON) and seeded UNCONDITIONALLY below (it's a new,
+// self-contained builtin, not the react-ui default #3029 disabled).
+const { kits: algoKits, components: algoComponents } = makeAlgoVizKit();
 
-/** The packaged built-in kits (the generated react-ui kit), from `@data/components/*.json`. */
-export const SEED_KITS: Kit[] = kits;
+/** The packaged built-in kits — the generated react-ui kit (`@data/components/*.json`) + the `algo-viz`
+ *  viz kit (#3194). Enumerated by the stamping + round-trip drift guards. */
+export const SEED_KITS: Kit[] = [...kits, ...algoKits];
 
-/** The packaged built-in components — the generated react-ui kit's records. */
-export const SEED_COMPONENTS: ComponentRecord[] = components;
+/** The packaged built-in components — react-ui's records + the `algo-viz` demo component (#3194). */
+export const SEED_COMPONENTS: ComponentRecord[] = [...components, ...algoComponents];
 
 /** TEMPORARY (#3029) — the packaged default `react-ui` kit is being REDEFINED by hand via the designer
  *  session (the generated-from-manifest default was lacking). While that's in progress the reconcile
@@ -27,10 +33,13 @@ export const SEED_COMPONENTS: ComponentRecord[] = components;
  *  at the new packaged kit) — a one-line revert. */
 export const DEFAULT_KIT_SEEDED = false;
 
-/** The seed the reconcile converges the store toward — the packaged built-ins when seeding is enabled,
- *  else empty (retire the current default, add nothing). See {@link DEFAULT_KIT_SEEDED}. */
-const seededKits = DEFAULT_KIT_SEEDED ? SEED_KITS : [];
-const seededComponents = DEFAULT_KIT_SEEDED ? SEED_COMPONENTS : [];
+/** The seed the reconcile converges the store toward. The `algo-viz` viz kit (#3194) seeds
+ *  UNCONDITIONALLY — it's a new, self-contained builtin (not the react-ui default #3029 is redefining by
+ *  hand), so it's recoverable + shadow-proof (re-added if the store lacks it) even while
+ *  {@link DEFAULT_KIT_SEEDED} is off. react-ui stays gated on the flag: when it's off the reconcile
+ *  retires react-ui's pristine copies (add nothing) and seeds only algo-viz; when it's on both seed. */
+const seededKits = DEFAULT_KIT_SEEDED ? SEED_KITS : algoKits;
+const seededComponents = DEFAULT_KIT_SEEDED ? SEED_COMPONENTS : algoComponents;
 
 /** Reconcile the store's loaded components with the packaged built-ins (#2483, hash-based refresh —
  *  the full verdict table lives on {@link reconcileSeed}): a PRISTINE built-in copy (its content

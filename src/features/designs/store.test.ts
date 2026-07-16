@@ -11,6 +11,12 @@ import * as bridge from "./lib/componentBridge";
 import * as themeBridge from "./lib/themeBridge";
 import * as usageBridge from "./lib/kitUsageBridge";
 import { setActiveKitThemes, activeKitThemes, themeById } from "@/shared/ui/kit";
+import { ALGO_VIZ_KIT_ID } from "@/shared/ui/kit/algoVizAnimations";
+
+// The always-on `algo-viz` builtin (#3194) seeds regardless of DEFAULT_KIT_SEEDED, so the #3029
+// "default kit disabled" hydrate tests below expect it to survive/recover while react-ui retires.
+const ALGO_KITS = SEED_KITS.filter((k) => k.id === ALGO_VIZ_KIT_ID);
+const ALGO_COMPS = SEED_COMPONENTS.filter((c) => c.kitId === ALGO_VIZ_KIT_ID);
 
 describe("components store slice (#2281)", () => {
   beforeEach(() => {
@@ -26,31 +32,34 @@ describe("components store slice (#2281)", () => {
     expect(useAppStore.getState().kits).toEqual(SEED_KITS);
   });
 
-  // TEMPORARY (#3029): the packaged default kit is disabled while it's redefined via the designer, so
-  // the reconcile seeds NOTHING — an empty store is NOT re-seeded. Restore this to the original "empty
-  // store re-seeds every built-in, pushing it back through the bridge" assertion when the seed returns.
-  it.skipIf(DEFAULT_KIT_SEEDED)("hydrateComponents does NOT re-seed while the default kit is disabled — an empty store stays empty", async () => {
+  // TEMPORARY (#3029/#3194): the packaged react-ui DEFAULT kit is disabled while it's redefined via the
+  // designer, so it seeds NOTHING — but the always-on `algo-viz` builtin (#3194) IS recovered into an
+  // empty store. Restore the react-ui half to "empty store re-seeds every built-in" when the default returns.
+  it.skipIf(DEFAULT_KIT_SEEDED)("hydrateComponents seeds ONLY the always-on algo-viz builtin into an empty store while the default kit is disabled (#3194)", async () => {
     vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([]);
     vi.spyOn(bridge, "loadKits").mockResolvedValueOnce([]);
     const pushC = vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
     const pushK = vi.spyOn(bridge, "pushKit").mockResolvedValue(undefined);
     await useAppStore.getState().hydrateComponents();
-    expect(useAppStore.getState().components).toEqual([]);
-    expect(useAppStore.getState().kits).toEqual([]);
-    expect(pushC).not.toHaveBeenCalled();
-    expect(pushK).not.toHaveBeenCalled();
+    // react-ui stays disabled (nothing of it seeds); algo-viz is appended + pushed (recover/shadow-proof).
+    expect(useAppStore.getState().kits).toEqual(ALGO_KITS);
+    expect(useAppStore.getState().components).toEqual(ALGO_COMPS);
+    expect(pushK).toHaveBeenCalledTimes(ALGO_KITS.length);
+    expect(pushC).toHaveBeenCalledTimes(ALGO_COMPS.length);
+    expect(pushK).toHaveBeenCalledWith(expect.objectContaining({ id: ALGO_VIZ_KIT_ID }));
   });
 
-  // TEMPORARY (#3029): the current default (react-ui) retires from an EXISTING store on the next boot —
-  // its pristine built-ins left the seed, so the #2483 reconcile drops them. Remove when the seed returns.
-  it.skipIf(DEFAULT_KIT_SEEDED)("hydrateComponents retires the now-unseeded default built-ins from an existing store", async () => {
+  // TEMPORARY (#3029/#3194): the current default (react-ui) retires from an EXISTING store on the next
+  // boot — its pristine built-ins left the seed, so the #2483 reconcile drops them — while the always-on
+  // algo-viz builtin (#3194) survives. Remove the react-ui half when the default returns.
+  it.skipIf(DEFAULT_KIT_SEEDED)("hydrateComponents retires the now-unseeded default built-ins but keeps algo-viz (#3194)", async () => {
     vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce(SEED_COMPONENTS);
     vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
     const dropC = vi.spyOn(bridge, "dropComponent").mockResolvedValue(undefined);
     const dropK = vi.spyOn(bridge, "dropKit").mockResolvedValue(undefined);
     await useAppStore.getState().hydrateComponents();
-    expect(useAppStore.getState().kits).toEqual([]);
-    expect(useAppStore.getState().components).toEqual([]);
+    expect(useAppStore.getState().kits).toEqual(ALGO_KITS);
+    expect(useAppStore.getState().components).toEqual(ALGO_COMPS);
     expect(dropK).toHaveBeenCalledWith("react-ui");
     expect(dropC).toHaveBeenCalled();
   });
