@@ -108,6 +108,63 @@ pub fn split_ref(kit_ref: &str) -> Result<(&str, &str), String> {
     }
 }
 
+/// Refuse a HOLLOW or shapeless release BEFORE the immutable entry is written (#3167). Releases saved a
+/// designer's session, but `add` used to accept whatever bytes it was handed — so a silently-failed
+/// assembly pipeline could store an empty or componentless "kit". A release must carry a real payload:
+///
+/// - **any kind:** empty / whitespace-only content is refused (an empty `--file`, or nothing on stdin —
+///   the pipeline produced no bytes);
+/// - **`component-kit`:** the content must parse as a JSON OBJECT holding a NON-EMPTY `components`
+///   array — the exact shape `release add` stores — so a parse failure, a non-object, a missing
+///   `components`, or zero components is refused (a silently-failed assembly, never a real kit);
+/// - **`design-files`:** an opaque `.dc.html` bundle, so only the non-empty floor applies.
+///
+/// The `release add` verb calls this before [`KitStore::add`]/[`KitStore::add_verified`], so no path can
+/// persist a hollow entry. (The store itself stays content-agnostic — it hashes opaque bytes — so this
+/// shape gate lives at the one user-facing entry point, not in the immutable-store primitive.)
+pub fn validate_artifact(kind: &str, content: &str) -> Result<(), String> {
+    if content.trim().is_empty() {
+        return Err(
+            "refusing to store an EMPTY release artifact — the release produced no bytes (an empty --file, or nothing on stdin)"
+                .to_string(),
+        );
+    }
+    if kind == "component-kit" {
+        let value: Value = serde_json::from_str(content).map_err(|e| {
+            format!(
+                "release artifact is not valid JSON: {e} — a component-kit release must be the kit artifact object {{ id, version, kit, components }}"
+            )
+        })?;
+        let components = value.get("components").and_then(Value::as_array).ok_or_else(|| {
+            "release artifact has no `components` array — it isn't a kit artifact ({ id, version, kit, components }); refusing to store a shapeless release"
+                .to_string()
+        })?;
+        if components.is_empty() {
+            return Err(
+                "release artifact has ZERO components — refusing to store a hollow release (the assembly produced no components)"
+                    .to_string(),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Assemble a `component-kit` release artifact from a live kit + its components (#3167, the
+/// `--from-store` one-shot) — so a release no longer has to be hand-piped through `--file`. Produces the
+/// SAME shape `release add --file` expects: a JSON object `{ id, version, kit, components }`, where `kit`
+/// is the kit record from the component library and `components` is every component the caller gathered
+/// for it. `id`/`version` are the RELEASE's store identity (the positional `add` args), NOT the working
+/// kit's own id. Serialized pretty with a trailing newline — the artifact's canonical form (matching the
+/// packaged `react-ui.json`). The emptiness floor is [`validate_artifact`], which the `add` verb runs on
+/// this result, so an assembly that gathered no components is refused there rather than silently stored.
+pub fn assemble_artifact(id: &str, version: &str, kit: Value, components: Vec<Value>) -> String {
+    let artifact = json!({ "id": id, "version": version, "kit": kit, "components": components });
+    // Pretty + trailing newline mirrors the generator's canonical bytes (`JSON.stringify(…, 2) + "\n"`).
+    let mut s = serde_json::to_string_pretty(&artifact).unwrap_or_else(|_| "{}".to_string());
+    s.push('\n');
+    s
+}
+
 /// A handle to the versioned kit store rooted at a directory (`~/.base-studio-code/kits/` by
 /// default). All operations resolve store-first, then fall back to the packaged entry.
 pub struct KitStore {
@@ -469,5 +526,61 @@ mod tests {
         assert_eq!(split_ref("bsc/react-ui@1.0.0").unwrap(), ("bsc/react-ui", "1.0.0"));
         assert!(split_ref("bsc/react-ui").is_err());
         assert!(split_ref("@1.0.0").is_err());
+    }
+
+    // ── release-hardening: refuse hollow artifacts + assemble from the store (#3167) ─────────────
+
+    #[test]
+    fn validate_artifact_refuses_empty_zero_component_and_unparseable() {
+        // Empty / whitespace-only content is refused for BOTH kinds (an empty --file / bare stdin).
+        for kind in ["component-kit", "design-files"] {
+            assert!(validate_artifact(kind, "").unwrap_err().contains("EMPTY"), "empty {kind} refused");
+            assert!(validate_artifact(kind, "   \n\t ").unwrap_err().contains("EMPTY"), "whitespace {kind} refused");
+        }
+        // component-kit: unparseable JSON is refused (a silently-corrupted pipeline output).
+        assert!(validate_artifact("component-kit", "{ not json").unwrap_err().contains("not valid JSON"));
+        // component-kit: valid JSON but the WRONG shape — no `components` array — is refused.
+        assert!(validate_artifact("component-kit", "{\"kit\":true}").unwrap_err().contains("no `components`"));
+        assert!(validate_artifact("component-kit", "[1,2,3]").unwrap_err().contains("no `components`"), "a bare array isn't a kit");
+        assert!(validate_artifact("component-kit", "\"a string\"").unwrap_err().contains("no `components`"));
+        // component-kit: an EMPTY components array is the hollow-release case — refused with a clear reason.
+        let hollow = "{\"id\":\"acme/neon\",\"version\":\"1.0.0\",\"kit\":{},\"components\":[]}";
+        assert!(validate_artifact("component-kit", hollow).unwrap_err().contains("ZERO components"));
+        // A real, shaped component-kit passes.
+        let good = "{\"id\":\"acme/neon\",\"version\":\"1.0.0\",\"kit\":{\"id\":\"neon\"},\"components\":[{\"id\":\"btn\",\"kitId\":\"neon\"}]}";
+        validate_artifact("component-kit", good).unwrap();
+        // design-files: only the non-empty floor applies — opaque HTML passes (no JSON shape demanded).
+        validate_artifact("design-files", "<!doctype html>…").unwrap();
+    }
+
+    #[test]
+    fn assemble_artifact_builds_a_shaped_non_empty_release_that_validates() {
+        let kit = json!({ "id": "neon", "name": "neon", "tech": "react", "style": "studio" });
+        let components = vec![
+            json!({ "id": "btn", "name": "Button", "kitId": "neon" }),
+            json!({ "id": "card", "name": "Card", "kitId": "neon" }),
+        ];
+        // The RELEASE identity (id@version) is the positional args, NOT the working kit's own id.
+        let content = assemble_artifact("acme/neon", "2.0.0", kit.clone(), components.clone());
+        let parsed: Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed["id"], "acme/neon");
+        assert_eq!(parsed["version"], "2.0.0");
+        assert_eq!(parsed["kit"], kit, "the kit record rides verbatim");
+        assert_eq!(parsed["components"].as_array().unwrap().len(), 2, "every gathered component is present");
+        assert!(content.ends_with("\n"), "canonical trailing newline");
+        // The assembled artifact is exactly the shape the `add` verb's validation gate accepts.
+        validate_artifact("component-kit", &content).unwrap();
+        // …and a store round-trips it (proving it's a real, verifiable component-kit entry).
+        let (s, _dir) = tmp_store();
+        s.add("acme/neon", "2.0.0", "component-kit", None, &content).unwrap();
+        s.verify("acme/neon", "2.0.0").unwrap();
+    }
+
+    #[test]
+    fn assemble_artifact_with_no_components_is_caught_by_the_validation_gate() {
+        // An assembly that gathered nothing yields an empty `components` array — refused by the gate the
+        // `add` verb runs, so a hollow --from-store release is never stored.
+        let content = assemble_artifact("acme/neon", "1.0.0", json!({ "id": "neon" }), vec![]);
+        assert!(validate_artifact("component-kit", &content).unwrap_err().contains("ZERO components"));
     }
 }

@@ -89,6 +89,74 @@ pub fn emit<T: Serialize>(pretty: bool, json: bool, value: &T, lean: impl FnOnce
     }
 }
 
+/// Collapse every carriage return into a line feed so raw output is **LF-only**: `\r\n` → `\n` and a
+/// lone `\r` → `\n`. The first half of the `--raw` contract (#3166) — a store value that picked up
+/// Windows line endings can't inject a stray `\r` into a `$( )`-captured value or split a `while read`
+/// loop on a phantom line.
+fn normalize_lf(s: &str) -> String {
+    s.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+/// The exact bytes [`print_raw`] emits for `s`: CR-normalized to LF, then trailing newlines collapsed
+/// to **exactly one** `\n`. Pure (no I/O) so the byte-clean contract is unit-testable without capturing
+/// stdout — the printer just writes this to the stdout handle. See [`print_raw`] for the hazards it
+/// neutralizes.
+pub fn raw_line(s: &str) -> String {
+    let normalized = normalize_lf(s);
+    format!("{}\n", normalized.trim_end_matches('\n'))
+}
+
+/// The exact bytes [`print_raw_lines`] emits for `lines`: each item passed through [`raw_line`]
+/// (CR-normalized, trailing newlines collapsed to one) and concatenated in order — the "one clean id
+/// per line" shape (`bsc <noun> list --raw`, #3166). Per-item collapsing means a CRLF-poisoned item
+/// (`"id\r"`) yields ONE clean line, never a phantom blank one. Empty iterator ⇒ `""`. Pure → testable.
+pub fn raw_lines<I, S>(lines: I) -> String
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut out = String::new();
+    for line in lines {
+        out.push_str(&raw_line(line.as_ref()));
+    }
+    out
+}
+
+/// Write `s` to stdout as raw UTF-8 bytes, LF-only, with exactly one trailing newline — the byte-clean
+/// `--raw` read (#3166). Safe for `VALUE=$(bsc <noun> get <id> --raw)` capture on every platform.
+///
+/// Two hazards this neutralizes, the pair that broke `while read` audits (one silently ran on zero rows
+/// and reported success):
+/// - **CRLF poisoning** — every `\r` is normalized away ([`normalize_lf`]), so a value carrying Windows
+///   line endings can't leak a carriage return into the captured string.
+/// - **the cp1252 print trap** — bytes are written straight to the stdout handle via `write_all` (no
+///   `println!`/locale layer), so non-ASCII UTF-8 is emitted verbatim, and a closed/broken pipe is
+///   swallowed rather than panicking.
+pub fn print_raw(s: &str) {
+    write_stdout_bytes(raw_line(s).as_bytes());
+}
+
+/// Write each item of `lines` on its own LF-terminated line, raw UTF-8, bytes-direct — the shared
+/// "one clean id per line" output every store's `list --raw` uses (#3166). Same CRLF + cp1252
+/// neutralization as [`print_raw`]; an empty iterator prints nothing at all.
+pub fn print_raw_lines<I, S>(lines: I)
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    write_stdout_bytes(raw_lines(lines).as_bytes());
+}
+
+/// Write `bytes` straight to the locked stdout handle — no `println!`, no locale/code-page layer — and
+/// flush, swallowing any error (a broken pipe must not panic an embedded read). The single I/O sink
+/// [`print_raw`]/[`print_raw_lines`] share.
+fn write_stdout_bytes(bytes: &[u8]) {
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    let _ = out.write_all(bytes);
+    let _ = out.flush();
+}
+
 /// The env var carrying a session's per-store access scopes (#2470) — a JSON object of store name →
 /// access tier, e.g. `{"ui":"read"}`, rendered from the session's ROLE by the desktop at launch
 /// (`sessionScopes` in `sessionLaunch.ts`) and injected into `pty_create`'s env.
@@ -214,6 +282,51 @@ pub fn unknown_command(prog: &str, tagline: &str, cmds: &[CmdDoc], cmd: &str) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── the `--raw` byte-clean output contract (#3166) ──────────────────────────────────────────────
+
+    #[test]
+    fn raw_line_strips_cr_and_forces_exactly_one_trailing_lf() {
+        // CRLF poisoning is neutralized: every `\r\n` and lone `\r` collapses to `\n` — no carriage
+        // return survives into a captured value.
+        assert!(!raw_line("a\r\nb").contains('\r'));
+        assert_eq!(raw_line("a\r\nb"), "a\nb\n");
+        assert_eq!(raw_line("a\rb"), "a\nb\n");
+        // A value with no line ending gets exactly one trailing LF...
+        assert_eq!(raw_line("solo"), "solo\n");
+        // ...and one that already ends in newline(s) (incl. CRLF) is collapsed to a single LF, never
+        // doubled — so `$( )` capture isn't polluted by a blank trailing line.
+        assert_eq!(raw_line("x\n"), "x\n");
+        assert_eq!(raw_line("x\n\n\n"), "x\n");
+        assert_eq!(raw_line("x\r\n"), "x\n");
+    }
+
+    #[test]
+    fn raw_line_preserves_non_ascii_utf8_verbatim() {
+        // The cp1252 trap: non-ASCII must ride through untouched (bytes-direct on the print side).
+        assert_eq!(raw_line("café — ✓ 日本語"), "café — ✓ 日本語\n");
+    }
+
+    #[test]
+    fn raw_line_carries_no_json_envelope_or_quoting() {
+        // Raw is the value itself — no wrapping array/quotes a JSON envelope would add.
+        let out = raw_line("plain-id");
+        assert!(!out.contains('"'), "no quoting: {out:?}");
+        assert!(!out.contains('[') && !out.contains(']'), "no array envelope: {out:?}");
+        assert_eq!(out, "plain-id\n");
+    }
+
+    #[test]
+    fn raw_lines_prints_one_item_per_lf_terminated_line() {
+        // The `list --raw` shape: one id per line, LF-only, no quotes/brackets, empty ⇒ "".
+        let out = raw_lines(["button", "chip", "card"]);
+        assert_eq!(out, "button\nchip\ncard\n");
+        assert!(!out.contains('\r'));
+        assert!(!out.contains('"') && !out.contains('[') && !out.contains(']'));
+        // Line count == item count (no phantom split from a stray CR in an item).
+        assert_eq!(raw_lines(["a\r", "b"]).lines().count(), 2);
+        assert_eq!(raw_lines::<[&str; 0], &str>([]), "");
+    }
 
     #[test]
     fn cli_main_maps_ok_and_err_to_exit_codes() {

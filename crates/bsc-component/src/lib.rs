@@ -17,5 +17,8 @@
 pub mod cli;
 pub mod graph_health;
 pub mod motion;
+pub mod preview_errors;
+pub mod preview_props;
+pub mod record;
 pub mod syntax;
 pub mod usage;
