@@ -62,11 +62,6 @@ import "./designStudio.css";
 
 type Tab = "overview" | "source" | "usage";
 type Viewport = "sm" | "md" | "auto";
-const VP: Record<Viewport, { w: string; label: string }> = {
-  sm: { w: "380px", label: "375 · mobile" },
-  md: { w: "640px", label: "768 · tablet" },
-  auto: { w: "100%", label: "fluid · fills panel" },
-};
 
 // Cross-graph library band (#3116) — the fenced top band of algorithm nodes a kit's components `require`.
 /** The preview data-state axis (#3135) — the switcher's options, in order. */
@@ -677,31 +672,32 @@ function Inspector(p: InspProps) {
             <Text mono size={10} tone="muted" style={{ border: "1px solid var(--border)", borderRadius: 5, padding: "2px 7px", marginTop: 2 }}>v{sel.version}</Text>
           </Box>
 
-          {/* live preview — folded in from the removed Library center view (#2453) */}
+          {/* live preview — folded in from the removed Library center view (#2453). #3190: the inspector's
+              PRIMARY surface — it fills the pane (see .ds-preview), the card chrome is gone, and the header
+              keeps ONLY the data-state switcher (the variant + screen-size toggles were removed). */}
           <Box className="ds-preview">
             <Box className="ds-prevctl">
               <Eyebrow size={9.5}>Live preview</Eyebrow>
-              <SegmentedControl label="" options={p.allVariants.map((v) => ({ label: v, on: v === p.activeVariant, onClick: () => p.setVariant(v) }))} />
               <SegmentedControl label="" options={PREVIEW_STATES.map((s) => ({ label: s, on: s === p.previewState, onClick: () => p.setPreviewState(s) }))} />
-              <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === p.vp, onClick: () => p.setVpKind(k) }))} />
               {/* The theme switcher moved up beside the component name (#3085). */}
             </Box>
             <Box className="ds-surface">
               {/* Live preview (#2824): the component is BUILT (esbuild-wasm) from its real source and
                   rendered in a sandboxed iframe — built-in kit or any user/library component — its own
-                  build/error state inside. Replaces the specimen mocks + real-component fixtures. */}
+                  build/error state inside. Replaces the specimen mocks + real-component fixtures. It fills
+                  the surface (#3190) — fluid width, full height — so the component reads at real size. */}
               <Box className="ds-frame">
                 <ComponentPreviewFrame
                   comp={sel}
                   theme={p.previewTheme}
                   themeId={p.kitTheme}
                   themeVars={p.kitThemes.find((t) => t.id === p.kitTheme)?.vars ?? {}}
-                  width={VP[p.vp].w}
+                  width="100%"
+                  height="100%"
                   onExpand={p.onExpand}
                   previewState={p.previewState}
                 />
               </Box>
-              <Text as="div" className="ds-vplabel">{VP[p.vp].label}</Text>
             </Box>
           </Box>
 
