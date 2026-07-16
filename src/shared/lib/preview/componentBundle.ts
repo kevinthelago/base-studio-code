@@ -152,6 +152,14 @@ export interface ComponentSrcDocOptions {
    *  scaled parent-side (#3139), so leave this off for them to avoid double-scaling. Absent ⇒ no shim
    *  (byte-for-byte unchanged srcdoc). */
   fitContent?: boolean;
+  /** Render the component at NATURAL size and let tall content SCROLL vertically instead of scaling it to
+   *  fit (#3190). The expanded try-on wants real size + scroll (a form/table taller than the frame is
+   *  reachable by scrolling, not squished); the fit-shim (`fitContent`) is for the small thumbnails. When
+   *  set: the fit-shim is suppressed and the flex-centered mount wrapper is overridden to a growing block
+   *  (`display:block; height:auto; min-height:100%`) so content flows top-to-bottom and `#root` (already
+   *  `overflow:auto`) scrolls. The wheel then scrolls it (the gesture shim leaves a scrollable region
+   *  alone). Mutually exclusive with `fitContent`. Absent ⇒ no override (byte-for-byte unchanged srcdoc). */
+  scrollY?: boolean;
   /** Forward viewport gestures (pan + zoom) from inside the iframe to the parent (#3190). The iframe owns
    *  its DOM, so it decides per event: a non-interactive drag is `postMessage`d as `panstart`/`panmove`/
    *  `panend` (the host pans); a wheel that isn't over a scrollable region is sent as `zoom` (the host
@@ -379,14 +387,19 @@ export function gestureForwardScript(on: boolean): string {
  * as a module, posting `ready`/`error` to the parent. Pure.
  */
 export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOptions = {}): string {
-  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, forwardGestures = false } = opts;
+  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, forwardGestures = false, scrollY = false } = opts;
   // #3057: the exit-runtime shim, injected right after `#root` and BEFORE the module script so the
   // observer is watching before React mounts (and later unmounts) subtrees. "" when no exit selectors —
   // the non-exit srcdoc is then byte-for-byte unchanged.
   const exitShim = exitShimScript(exitSelectors);
   // #3141: the scale-to-fit shim, injected AFTER the module script so it runs post-mount (measures the
-  // mounted component). "" for pages (scaled parent-side per #3139) so their srcdoc is unchanged.
-  const fitShim = fitShimScript(fitContent);
+  // mounted component). "" for pages (scaled parent-side per #3139) so their srcdoc is unchanged. #3190:
+  // suppressed under scrollY — that mode wants natural size + scroll, not scale-to-fit.
+  const fitShim = fitShimScript(fitContent && !scrollY);
+  // #3190: scrollY override — turn the flex-centered mount wrapper into a growing top-anchored block so
+  // tall content flows down and `#root` (overflow:auto) scrolls it, instead of centering (which strands
+  // the top out of reach) or scaling. `!important` beats the wrapper's inline flex/height.
+  const scrollCss = scrollY ? `\n<style>#root>*{display:block!important;height:auto!important;min-height:100%}</style>` : "";
   // #3190: the gesture-forward shim — lets a non-interactive drag pan + a non-scroll wheel zoom the host
   // viewport (the iframe decides per event and postMessages the survivors out). "" (unchanged) when off.
   const gestureShim = gestureForwardScript(forwardGestures);
@@ -395,7 +408,7 @@ export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOpti
 /* Fit oversized preview media (d3 charts/graphs, images) within the frame rather than overflowing it (#2915).
    Aspect-preserving on replaced/viewBox elements; the definite height chain above lets max-height:100% resolve.
    Fluid (width:100%) components are unaffected — the caps only bite oversized fixed-dimension media. */
-#root svg,#root canvas,#root img,#root video{max-width:100%;max-height:100%}</style>
+#root svg,#root canvas,#root img,#root video{max-width:100%;max-height:100%}</style>${scrollCss}
 <style>${injectedCss}</style>
 <script type="importmap">${JSON.stringify({ imports: importmap })}</script>
 </head><body><div id="root"${rootClass ? ` class="${rootClass}"` : ""}></div>${exitShim}

@@ -213,6 +213,26 @@ describe("componentBundle — scale-to-fit shim (#3141)", () => {
   });
 });
 
+describe("componentBundle — scrollY natural-size mode (#3190)", () => {
+  it("overrides the mount wrapper to a growing block so tall content scrolls (#root already overflow:auto)", () => {
+    const doc = buildComponentSrcDoc("X", { scrollY: true });
+    expect(doc).toContain("#root>*{display:block!important;height:auto!important;min-height:100%}"); // wrapper → growing block
+    expect(doc).toContain("#root{overflow:auto}"); // the scroll container (base CSS, unchanged)
+  });
+
+  it("suppresses the scale-to-fit shim under scrollY (natural size, not scaled) — even if fitContent is set", () => {
+    const doc = buildComponentSrcDoc("X", { scrollY: true, fitContent: true });
+    expect(doc).not.toContain("content.offsetWidth"); // the fit-shim's measure — absent
+    expect(doc).toContain("#root>*{display:block!important"); // the scroll override instead
+  });
+
+  it("injects NOTHING when scrollY is off — the srcdoc is byte-for-byte unchanged", () => {
+    const bare = buildComponentSrcDoc("X");
+    expect(buildComponentSrcDoc("X", { scrollY: false })).toBe(bare);
+    expect(bare).not.toContain("display:block!important");
+  });
+});
+
 describe("componentBundle — gesture-forward shim (#3190)", () => {
   it("injects the shim (pan + zoom forwarding, interactive/scroll guards) when forwardGestures is set", () => {
     const doc = buildComponentSrcDoc("/*B*/", { forwardGestures: true });

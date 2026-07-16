@@ -490,6 +490,7 @@ export function DesignsWorkbench() {
                   previewState={previewState}
                   onPreviewPan={(dx, dy) => previewVp.panBy(dx, dy)}
                   onPreviewZoom={(deltaY, cx, cy) => previewVp.zoomAtClient(Math.exp(-deltaY * 0.0016), cx, cy)}
+                  scrollY
                 />
               </Box>
             </div>
