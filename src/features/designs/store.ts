@@ -8,7 +8,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import type { ComponentRecord, Kit } from "./lib/model";
-import type { ComponentBuildStatus } from "./lib/componentScan";
+import type { ComponentBuildStatus, RuntimeStateCategory } from "./lib/componentScan";
 import type { KitConsumer, KitChange, Dispatch } from "./lib/propagation";
 import type { SeedNotice } from "./lib/seedRefresh";
 import { kitUsageId, makeChange, planPropagation, dispatchKey } from "./lib/propagation";
@@ -131,6 +131,14 @@ export interface ComponentsSlice {
   componentBuildStatus: Record<string, ComponentBuildStatus>;
   /** Record one component's build outcome — the scan's per-result write (upsert by id). */
   setComponentBuildStatus: (id: string, status: ComponentBuildStatus) => void;
+
+  /** Per-component RUNTIME data-state blanks (#3191) — component id → the render-confirmed
+   *  `empty-empty-state` / `empty-loading-state` categories, populated by the same on-visit scan. The
+   *  Design Studio graph folds these into its health badges (`nodeHealth`). TRANSIENT: not persisted (a
+   *  fresh scan repopulates on each visit). */
+  componentStateHealth: Record<string, RuntimeStateCategory[]>;
+  /** Record one component's data-state blanks — the scan's per-result write (upsert by id; `[]` clears). */
+  setComponentStateHealth: (id: string, categories: RuntimeStateCategory[]) => void;
 }
 
 export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSlice> = (set, get) => ({
@@ -305,4 +313,9 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
 
   setComponentBuildStatus: (id, status) =>
     set((s) => ({ componentBuildStatus: { ...s.componentBuildStatus, [id]: status } })),
+
+  componentStateHealth: {},
+
+  setComponentStateHealth: (id, categories) =>
+    set((s) => ({ componentStateHealth: { ...s.componentStateHealth, [id]: categories } })),
 });
