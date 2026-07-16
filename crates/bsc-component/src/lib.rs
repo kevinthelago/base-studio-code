@@ -16,5 +16,6 @@
 
 pub mod cli;
 pub mod graph_health;
+pub mod record;
 pub mod syntax;
 pub mod usage;
