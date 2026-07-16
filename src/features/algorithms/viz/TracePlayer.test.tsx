@@ -95,4 +95,47 @@ describe("TracePlayer (#3176)", () => {
       vi.useRealTimers();
     }
   });
+
+  // ── #3207 step-through-only controls ──
+
+  it("shows step-through controls only — no play/pause, no scrubber", () => {
+    const { container } = render(<TracePlayer factory={arrayTrace} renderers={{ array: ArrayView }} controls />);
+    expect(screen.getByLabelText("Step back")).toBeTruthy();
+    expect(screen.getByLabelText("Step forward")).toBeTruthy();
+    expect(screen.queryByLabelText("Play")).toBeNull();
+    expect(screen.queryByLabelText("Pause")).toBeNull();
+    expect(screen.queryByLabelText("Scrub")).toBeNull();
+    expect(container.querySelector(".trace-scrubber")).toBeNull();
+  });
+
+  it("step forward wraps to the start at the end (infinite stepping)", () => {
+    render(<TracePlayer factory={arrayTrace} renderers={{ array: ArrayView }} loop />);
+    const fwd = () => fireEvent.click(screen.getByLabelText("Step forward"));
+    fwd();
+    expect(screen.getByTestId("array-view").textContent).toBe("0,1");
+    fwd();
+    expect(screen.getByTestId("array-view").textContent).toBe("0,1,2"); // last frame
+    fwd();
+    expect(screen.getByTestId("array-view").textContent).toBe("0"); // wrapped back to the start
+  });
+
+  it("stepping pauses the infinite loop, which auto-resumes after idle", () => {
+    vi.useFakeTimers();
+    try {
+      render(<TracePlayer factory={arrayTrace} renderers={{ array: ArrayView }} autoPlay loop fps={10} />);
+      act(() => void vi.advanceTimersByTime(100)); // auto-playing → "0,1"
+      expect(screen.getByTestId("array-view").textContent).toBe("0,1");
+      // Step back → pauses; the loop no longer advances on its beat.
+      act(() => void fireEvent.click(screen.getByLabelText("Step back")));
+      const paused = screen.getByTestId("array-view").textContent; // "0"
+      act(() => void vi.advanceTimersByTime(100));
+      expect(screen.getByTestId("array-view").textContent).toBe(paused); // still paused
+      // After the idle window (RESUME_MS = 2500), the loop resumes and advances again.
+      act(() => void vi.advanceTimersByTime(2500));
+      act(() => void vi.advanceTimersByTime(100));
+      expect(screen.getByTestId("array-view").textContent).not.toBe(paused);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
