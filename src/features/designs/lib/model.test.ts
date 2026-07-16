@@ -113,17 +113,33 @@ describe("previewAnimDefs — the try-on ISOLATES the clicked animation (#3075)"
 describe("resolveComposedAnimations — pair each composed import with its motion (#3130)", () => {
   const frame = mkComp({ id: "frame", name: "Frame", animations: [draw] });
   const axis = mkComp({ id: "axis", name: "Axis", animations: [fade] });
-  it("unions the active animations of the siblings a component composes", () => {
+  it("unions the active animations of the siblings a component composes, namespaced by owner (#3163)", () => {
     const chart = mkComp({ id: "chart", name: "Chart", composes: ["Frame", "Axis"] });
     const defs = resolveComposedAnimations(chart, [chart, frame, axis], [mkKit({})]);
     expect(defs.map((d) => d.name)).toEqual(["draw", "fade-in"]);
     expect(defs.every((d) => d.kit === "react-ui")).toBe(true);
+    // #3163: each composed def is stamped with its OWNING sibling so the compiler namespaces its keyframes.
+    expect(defs.map((d) => d.component)).toEqual(["Frame", "Axis"]);
   });
-  it("dedupes a shared animation across composed siblings (kit:name)", () => {
+  it("dedupes a BYTE-IDENTICAL shared animation across composed siblings (once), by content", () => {
     const a = mkComp({ id: "a", name: "A", animations: [fade] });
     const b = mkComp({ id: "b", name: "B", animations: [fade] });
     const chart = mkComp({ id: "chart", name: "Chart", composes: ["A", "B"] });
+    // A & B carry the IDENTICAL `fade` → it contributes exactly once (a genuinely shared animation).
     expect(resolveComposedAnimations(chart, [chart, a, b], [mkKit({})]).map((d) => d.name)).toEqual(["fade-in"]);
+  });
+  it("keeps two DIFFERENT same-named animations, namespaced by their owning component (#3163)", () => {
+    // The invisible collision: A and B both name an animation `spin` but with DIFFERENT keyframes. Before
+    // #3163 the kit:name dedup dropped one; now BOTH survive, each namespaced by its owner so the compiled
+    // keyframes don't clobber.
+    const spinA: KitAnimation = { name: "spin", keyframes: { from: { opacity: "0" }, to: { opacity: "1" } } };
+    const spinB: KitAnimation = { name: "spin", keyframes: { from: { transform: "rotate(0)" }, to: { transform: "rotate(360deg)" } } };
+    const a = mkComp({ id: "a", name: "A", animations: [spinA] });
+    const b = mkComp({ id: "b", name: "B", animations: [spinB] });
+    const chart = mkComp({ id: "chart", name: "Chart", composes: ["A", "B"] });
+    const defs = resolveComposedAnimations(chart, [chart, a, b], [mkKit({})]);
+    expect(defs.map((d) => d.name)).toEqual(["spin", "spin"]);
+    expect(defs.map((d) => d.component)).toEqual(["A", "B"]);
   });
   it("yields nothing when it composes nothing, and ignores a cross-kit or missing composed name", () => {
     expect(resolveComposedAnimations(mkComp({ composes: [] }), [], [mkKit({})])).toEqual([]);

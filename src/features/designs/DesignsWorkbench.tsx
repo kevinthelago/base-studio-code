@@ -39,7 +39,7 @@ import { layoutBand } from "@/shared/lib/graph/crossGraph";
 import { parseNodeUrn, LIBRARY_SEGMENT } from "@/shared/lib/graph/nodeUrn";
 import { resolveComponentLibraryRefs } from "./lib/libraryComposition";
 import { layoutComposition, NODE_W, NODE_H } from "./lib/compositionLayout";
-import { analyzeGraphHealth, HEALTH_SEVERITY, type HealthCategory } from "./lib/graphHealth";
+import { analyzeGraphHealth, analyzeMotion, HEALTH_SEVERITY, type HealthCategory } from "./lib/graphHealth";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
@@ -265,7 +265,8 @@ export function DesignsWorkbench() {
   }, [kitComps, graph.edges.length, libComp.nodes]);
   // Graph health (#2680) — the same taxonomy `bsc ui doctor` reports (lib/graphHealth), mirrored to
   // badge dead/duplicated nodes. `nodeHealth` maps each flagged node to its MOST-SEVERE category.
-  const healthFindings = useMemo(() => analyzeGraphHealth(kitComps), [kitComps]);
+  // Topology findings + the #3163 MOTION findings (`bsc ui doctor --motion`) — badge both from the graph.
+  const healthFindings = useMemo(() => [...analyzeGraphHealth(kitComps), ...analyzeMotion(kitComps)], [kitComps]);
   const nodeHealth = useMemo(() => {
     const m = new Map<string, HealthCategory>();
     for (const f of healthFindings) for (const id of f.nodeIds) {
@@ -624,6 +625,10 @@ const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string }> = {
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
   "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
   "phantom-compose": { glyph: "⇢", label: "phantom composes — declares a composition its source never renders (a false graph edge)" },
+  "motion-dead-selector": { glyph: "⌁", label: "motion dead selector — an animation targets a class hook its source never renders" },
+  "motion-dash-no-pathlength": { glyph: "┅", label: "stroke-dash motion with no pathLength — a draw-in needs a known path length" },
+  "motion-transform-attr": { glyph: "⤥", label: "CSS transform keyframe fights an SVG transform= attribute — they don't compose" },
+  "motion-name-collision": { glyph: "⧗", label: "cross-component keyframe-name collision — two components' same-named animations clobber" },
   "no-empty-state": { glyph: "◍", label: "no empty state — takes data but renders no distinct empty view; add an EmptyState" },
   "no-loading-state": { glyph: "◌", label: "no loading state — takes data but has no `loading` prop; add one for a loading preview" },
   "slot-shell": { glyph: "▤", label: "slot shell — previews a demo placeholder; fill its content slots to see its real function" },

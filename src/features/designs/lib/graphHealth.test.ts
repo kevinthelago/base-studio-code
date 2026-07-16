@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { analyzeGraphHealth, nodeHealth } from "./graphHealth";
+import { analyzeGraphHealth, analyzeMotion, nodeHealth } from "./graphHealth";
 import type { ComponentRecord, Role } from "./model";
+import type { KitAnimation } from "@/shared/ui/kit/animations";
 
 /** Minimal component fixture — only the fields the analyzer reads matter. Carries a real `source` so
  *  the no-implementation check (#2839) never fires on it and the topology tests stay about topology;
@@ -394,5 +395,74 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     const cats = analyzeGraphHealth([good, button]).map((f) => f.category);
     expect(cats).not.toContain("no-empty-state");
     expect(cats).not.toContain("no-loading-state");
+  });
+});
+
+// ── motion checks (#3163, `bsc ui doctor --motion`) ─────────────────────────────────────────────────
+describe("analyzeMotion (#3163, mirrors bsc ui doctor --motion)", () => {
+  const kf = (props: Record<string, string>): KitAnimation["keyframes"] => ({ from: props, to: props });
+  const anim = (over: Partial<KitAnimation> & { name: string }): KitAnimation => ({ keyframes: kf({ opacity: "1" }), ...over });
+
+  it("(a) flags an animation selector whose class hook the source never renders — a dead selector", () => {
+    const dead = comp("Chart", "composite", 2, [], {
+      source: "export function Chart(){ return <svg><rect/></svg>; }", srcText: "",
+      animations: [anim({ name: "spin", selector: ".bar", keyframes: kf({ transform: "scale(1)" }) })],
+    });
+    const fs = analyzeMotion([dead]);
+    expect(fs.map((f) => f.category)).toContain("motion-dead-selector");
+    expect(fs.find((f) => f.category === "motion-dead-selector")?.why).toContain("`.bar`");
+    // A component whose source DOES render the `.bar` class hook is not flagged.
+    const live = comp("Chart2", "composite", 2, [], {
+      source: "export function Chart2(){ return <svg><rect className=\"bar\"/></svg>; }", srcText: "",
+      animations: [anim({ name: "spin", selector: ".bar", keyframes: kf({ transform: "scale(1)" }) })],
+    });
+    expect(analyzeMotion([live]).map((f) => f.category)).not.toContain("motion-dead-selector");
+  });
+
+  it("(b) flags a stroke-dash keyframe on a component that sets no pathLength", () => {
+    const draw = comp("Path", "composite", 2, [], {
+      source: "export function Path(){ return <svg><path d=\"M0 0\"/></svg>; }", srcText: "",
+      animations: [anim({ name: "draw", keyframes: kf({ "stroke-dashoffset": "0" }) })],
+    });
+    expect(analyzeMotion([draw]).map((f) => f.category)).toContain("motion-dash-no-pathlength");
+    // A component that sets pathLength is fine (the draw has a known geometry length).
+    const ok = comp("Path2", "composite", 2, [], {
+      source: "export function Path2(){ return <svg><path pathLength={1} d=\"M0 0\"/></svg>; }", srcText: "",
+      animations: [anim({ name: "draw", keyframes: kf({ "stroke-dashoffset": "0" }) })],
+    });
+    expect(analyzeMotion([ok]).map((f) => f.category)).not.toContain("motion-dash-no-pathlength");
+  });
+
+  it("(c) flags a CSS transform keyframe on a component using an SVG transform= attribute", () => {
+    const clash = comp("Group", "composite", 2, [], {
+      source: "export function Group(){ return <svg><g transform=\"translate(4,4)\"><rect/></g></svg>; }", srcText: "",
+      animations: [anim({ name: "rot", keyframes: kf({ transform: "rotate(90deg)" }) })],
+    });
+    expect(analyzeMotion([clash]).map((f) => f.category)).toContain("motion-transform-attr");
+    // A CSS-transform keyframe with NO SVG transform attribute in the source is fine.
+    const cssOnly = comp("Box", "composite", 2, [], {
+      source: "export function Box(){ return <div className=\"box\"/>; }", srcText: "",
+      animations: [anim({ name: "rot", keyframes: kf({ transform: "rotate(90deg)" }) })],
+    });
+    expect(analyzeMotion([cssOnly]).map((f) => f.category)).not.toContain("motion-transform-attr");
+  });
+
+  it("(d) flags a cross-component inline keyframe-name collision, but not a shared kit-library name-ref", () => {
+    const a = comp("Bar", "composite", 2, [], { animations: [anim({ name: "draw", keyframes: kf({ opacity: "1" }) })] });
+    const b = comp("Line", "composite", 2, [], { animations: [anim({ name: "draw", keyframes: kf({ opacity: "1" }) })] });
+    const fs = analyzeMotion([a, b]);
+    const collision = fs.find((f) => f.category === "motion-name-collision");
+    expect(collision).toBeTruthy();
+    expect(collision?.nodeNames).toEqual(["Bar", "Line"]);
+    expect(collision?.nodeIds).toEqual(["Bar", "Line"]);
+    // Two components that merely NAME-REF the same kit animation (strings) do NOT collide — that's sharing.
+    const c = comp("A", "composite", 2, [], { animations: ["draw"] });
+    const d = comp("B", "composite", 2, [], { animations: ["draw"] });
+    expect(analyzeMotion([c, d]).map((f) => f.category)).not.toContain("motion-name-collision");
+  });
+
+  it("returns nothing for components with no inline animations (name-refs / none)", () => {
+    expect(analyzeMotion([comp("X", "composite", 2)])).toEqual([]);
+    expect(analyzeMotion([comp("Y", "composite", 2, [], { animations: ["fade-in", "pulse"] })])).toEqual([]);
   });
 });
