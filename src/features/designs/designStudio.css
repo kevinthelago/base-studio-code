@@ -21,11 +21,11 @@
    guide) is structural and stays. */
 .ds-groupkids { margin: 2px 0 6px; padding-left: 8px; border-left: 1px solid var(--border-soft, var(--border)); }
 
-/* ── preview (lives in the inspector, #2453) ── #3190: the preview is the inspector's PRIMARY surface —
-   it grows to fill the pane (flex, was a fixed 34% card) and the card chrome is gone (no section borders,
-   no checkered specimen backdrop, no frame padding) so the component reads edge-to-edge as itself. */
-.ds-preview { flex: 2 1 0; min-height: 200px; display: flex; flex-direction: column; }
-.ds-prevctl { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 7px 12px; }
+/* ── preview (lives in the inspector, #2453) ── #3190: the inspector's LEAD surface — no card chrome (no
+   section borders, no checkered specimen backdrop, no frame padding, no control bar) so the component
+   reads edge-to-edge, sitting right under the identity header. Sized a touch above the detail tabs
+   (`flex: 1.5` vs the tabs' `flex: 1` ≈ 60/40), not dominating the pane. */
+.ds-preview { flex: 1.5 1 0; min-height: 180px; display: flex; flex-direction: column; }
 .ds-surface { flex: 1; min-height: 0; position: relative; overflow: hidden; background: var(--bg-canvas, var(--bg)); }
 .ds-frame { position: absolute; inset: 0; overflow: auto; }
 .ds-overlay { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; }
