@@ -7,7 +7,8 @@
 // WORKERS are deliberately NOT seeded here: a worker needs `owns` globs + `issues` only the planner can
 // size, so worker/engineer positions stay planner-owned. The DIRECTOR is its own launch slot
 // (`FleetDirector`), TRIAGE is per-repo, and the standing Studio roles (designer/architect/librarian) +
-// the planner + marketer aren't fleet members — so none of those seed either.
+// the planner aren't fleet members — so none of those seed either. The MARKETER is opt-in (#2431): it
+// only seeds when a team explicitly places one (Fleet Alpha does, #3143), never by default elsewhere.
 //
 // Pure (no React/Tauri) so it's unit-testable; the launch path (`usePlanPublish`, A-2) composes the
 // result into the `FleetPlan` before `fleetStartProject`.
@@ -20,7 +21,7 @@ import type { AgentStream } from "./planFleet";
  *  owned globs/issues (unlike a worker). One session each; deduped by role so a team never launches two
  *  curators/documentors/… and a planner-authored stream for a role always wins over the team's. */
 export const SEEDABLE_TEAM_ROLES: ReadonlySet<SessionRole> = new Set<SessionRole>([
-  "curator", "documentor", "reviewer", "tester", "juror", "issuer",
+  "curator", "documentor", "reviewer", "tester", "juror", "issuer", "marketer",
 ]);
 
 /** Slug a team position's `nodeId` into a fleet stream id: lowercase, `[a-z0-9-]`, collapsed — so it is

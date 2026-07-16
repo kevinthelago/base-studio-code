@@ -54,16 +54,24 @@ describe("built-in orgs (#2193)", () => {
     expect(fleet.positions.some((p) => p.kind === "resource")).toBe(true);
   });
 
-  it("Fleet Alpha is the complete optimal roster — every seedable role-actor is a member (#3104)", () => {
+  it("Fleet Alpha is the curated build fleet — its role-actors seed + launch, tester/documentor don't (#3143)", () => {
     const fleet = makeBuiltinOrgs().find((o) => o.id === "org-default-fleet")!;
     const personaIds = new Set(fleet.positions.filter((p) => p.kind === "agent").map((p) => p.personaId));
-    // The team drives the fleet (#3101): each lifecycle role-actor the launch seeds from a team must be
-    // a member of the packaged default team, so a standard project spins up the full roster.
-    for (const id of ["persona-curator", "persona-documentor", "persona-reviewer", "persona-tester", "persona-juror", "persona-issuer"]) {
+    // The team drives the fleet (#3101): each member role-actor the launch seeds is present. #3143 curated
+    // this down — workers own their own testing + docs, so no tester/documentor actor; the auditor is the
+    // real compliance persona; the marketer is opt-in but placed here so it launches with the fleet.
+    for (const id of ["persona-director", "persona-worker", "persona-reviewer", "persona-auditor", "persona-issuer", "persona-curator", "persona-marketer"]) {
       expect(personaIds.has(id), `default team is missing ${id}`).toBe(true);
     }
-    // Still structurally clean with the added positions + steward/oversee edges (no dangling/unknown).
+    // The dropped actors (workers self-serve) are NOT members.
+    for (const id of ["persona-tester", "persona-documentor"]) {
+      expect(personaIds.has(id), `default team should not carry ${id}`).toBe(false);
+    }
+    // Exactly one engineer slot — the planner sizes the real count (#3143), so no fixed engineer count.
+    expect(fleet.positions.filter((p) => p.personaId === "persona-worker")).toHaveLength(1);
+    // Structurally clean (no dangling edges / unknown archetypes) with the iterates compliance loop.
     expect(orgIssues(fleet)).toEqual([]);
+    expect(fleet.relationships.some((r) => r.archetype === "iterates" && r.from === "auditor")).toBe(true);
   });
 
   it("every built-in org is structurally clean — no dangling edges / unknown archetypes", () => {
@@ -96,7 +104,7 @@ describe("deriveCommunication (#2193)", () => {
 
   it("derives a manager's outgoing directives + incoming escalations from the graph", () => {
     const comms = deriveCommunication(fleet, "director");
-    // The director MANAGES worker-a → sends directives/decisions down, receives escalations/reports up.
+    // The director MANAGES the engineer → sends directives/decisions down, receives escalations/reports up.
     const sends = comms.filter((c) => c.dir === "out").map((c) => c.form.id);
     const gets = comms.filter((c) => c.dir === "in").map((c) => c.form.id);
     expect(sends).toContain("directive");
@@ -106,8 +114,8 @@ describe("deriveCommunication (#2193)", () => {
   });
 
   it("orients an archetype's forward/backward lanes by which end the node is on", () => {
-    // worker-a is the REPORT end of `manages` (director → worker-a): its lanes are the mirror image.
-    const worker = deriveCommunication(fleet, "worker-a");
+    // The engineer is the REPORT end of `manages` (director → engineer): its lanes are the mirror image.
+    const worker = deriveCommunication(fleet, "engineer");
     expect(worker.filter((c) => c.dir === "out").map((c) => c.form.id)).toContain("escalation");
     expect(worker.filter((c) => c.dir === "in").map((c) => c.form.id)).toContain("directive");
   });

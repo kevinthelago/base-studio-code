@@ -55,10 +55,10 @@ describe("org store slice (#2193)", () => {
   it("removePosition drops the node AND every edge touching it", () => {
     vi.spyOn(bridge, "pushOrg").mockResolvedValue(undefined);
     const id = useAppStore.getState().cloneOrg("org-default-fleet");
-    useAppStore.getState().removePosition(id, "worker-a");
+    useAppStore.getState().removePosition(id, "engineer");
     const org = useAppStore.getState().teams.find((o) => o.id === id)!;
-    expect(org.positions.some((p) => p.nodeId === "worker-a")).toBe(false);
-    expect(org.relationships.some((r) => r.from === "worker-a" || r.to === "worker-a")).toBe(false);
+    expect(org.positions.some((p) => p.nodeId === "engineer")).toBe(false);
+    expect(org.relationships.some((r) => r.from === "engineer" || r.to === "engineer")).toBe(false);
   });
 
   it("addRelationship + removeRelationship mutate the edge set", () => {
@@ -75,19 +75,19 @@ describe("org store slice (#2193)", () => {
   it("updateRelationship changes an edge's archetype (#2199 inspector)", () => {
     vi.spyOn(bridge, "pushOrg").mockResolvedValue(undefined);
     const id = useAppStore.getState().cloneOrg("org-default-fleet");
-    useAppStore.getState().updateRelationship(id, "r-mgr-a", { archetype: "oversees" });
-    const rel = useAppStore.getState().teams.find((o) => o.id === id)!.relationships.find((r) => r.id === "r-mgr-a")!;
+    useAppStore.getState().updateRelationship(id, "r-mgr-eng", { archetype: "oversees" });
+    const rel = useAppStore.getState().teams.find((o) => o.id === id)!.relationships.find((r) => r.id === "r-mgr-eng")!;
     expect(rel.archetype).toBe("oversees");
-    expect(rel.id).toBe("r-mgr-a"); // id is preserved
+    expect(rel.id).toBe("r-mgr-eng"); // id is preserved
   });
 
   it("updatePosition repoints a position's persona + moves it (#2199 drag/picker)", () => {
     vi.spyOn(bridge, "pushOrg").mockResolvedValue(undefined);
     const id = useAppStore.getState().cloneOrg("org-default-fleet");
-    useAppStore.getState().updatePosition(id, "worker-a", { personaId: "persona-reviewer", x: 12, y: 34 });
-    const pos = useAppStore.getState().teams.find((o) => o.id === id)!.positions.find((p) => p.nodeId === "worker-a")!;
+    useAppStore.getState().updatePosition(id, "engineer", { personaId: "persona-reviewer", x: 12, y: 34 });
+    const pos = useAppStore.getState().teams.find((o) => o.id === id)!.positions.find((p) => p.nodeId === "engineer")!;
     expect(pos.personaId).toBe("persona-reviewer");
-    expect(pos).toMatchObject({ x: 12, y: 34, nodeId: "worker-a" });
+    expect(pos).toMatchObject({ x: 12, y: 34, nodeId: "engineer" });
   });
 
   it("setTeamsZoom remembers a per-org zoom (#2199 view state)", () => {
