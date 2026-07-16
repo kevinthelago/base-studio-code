@@ -152,13 +152,13 @@ export interface ComponentSrcDocOptions {
    *  scaled parent-side (#3139), so leave this off for them to avoid double-scaling. Absent ⇒ no shim
    *  (byte-for-byte unchanged srcdoc). */
   fitContent?: boolean;
-  /** Forward a NON-interactive drag to the parent as a pan (#3190). The iframe owns its DOM, so it
-   *  decides on mousedown: a press on an interactive element (control tag / `[role]` / focusable /
-   *  `cursor:pointer`) is left for the component; a press on empty/background space is `preventDefault`ed
-   *  and the drag is `postMessage`d out as `panstart`/`panmove`/`panend` so the host can pan its viewport.
-   *  Hover + clicks on real controls always work. Set only where the host listens (the expanded preview);
+  /** Forward viewport gestures (pan + zoom) from inside the iframe to the parent (#3190). The iframe owns
+   *  its DOM, so it decides per event: a non-interactive drag is `postMessage`d as `panstart`/`panmove`/
+   *  `panend` (the host pans); a wheel that isn't over a scrollable region is sent as `zoom` (the host
+   *  zooms about the cursor). A press on a real control, and a wheel over a scroll container, are left for
+   *  the component. Hover + clicks always work. Set only where the host listens (the expanded preview);
    *  absent ⇒ no script (byte-for-byte unchanged srcdoc). */
-  panForward?: boolean;
+  forwardGestures?: boolean;
 }
 
 /**
@@ -296,21 +296,33 @@ export function fitShimScript(fit: boolean): string {
 }
 
 /**
- * The pan-forward shim (#3190) — a self-contained `<script>` that lets the iframe DECIDE pan-vs-interact
- * (only it can see its own DOM). On a left mousedown whose target is NOT interactive (no control tag /
- * `[role]` / focusable / `cursor:pointer` / `svg`/`canvas` ancestor), it `preventDefault`s and posts
- * `panstart` to the parent, then forwards `panmove` (with absolute screen coords, so the host computes
- * pixel deltas) and `panend`. A press on a real control returns early → the component handles it.
+ * The gesture-forward shim (#3190) — a self-contained `<script>` that lets the iframe DECIDE, per event,
+ * whether a gesture belongs to the component or to the host viewport (only the iframe can see its own
+ * DOM). It postMessages the surviving gestures out to the parent (which listens without a strict
+ * source-window match, since these message shapes are emitted ONLY by this shim):
  *
- * Why `svg`/`canvas` count as interactive: an interactive data-viz (d3 force graph, zoomable chart)
- * attaches its drag/zoom handlers PROGRAMMATICALLY to its `<svg>`/`<canvas>` and often sets no
+ * - **Drag-pan.** On a left mousedown whose target is NOT interactive (no control tag / `[role]` /
+ *   focusable / `cursor:pointer` / `svg`/`canvas` ancestor), it `preventDefault`s and posts `panstart`,
+ *   then `panmove` (absolute screen coords → the host computes pixel deltas) and `panend`. A press on a
+ *   real control returns early → the component keeps it.
+ * - **Wheel-zoom.** On a wheel that is NOT over a genuinely scrollable ancestor (one whose `overflow-y`
+ *   is auto/scroll AND can still scroll further in the wheel's direction), it `preventDefault`s and posts
+ *   `zoom` with the deltaY + the cursor's iframe-local x/y (which, for a component that fills the frame,
+ *   equals the world coordinate) so the host can zoom about the cursor. Over a scrollable region it does
+ *   nothing → that region scrolls normally.
+ *
+ * Why `svg`/`canvas` count as interactive for the pan test: an interactive data-viz (d3 force graph,
+ * zoomable chart) attaches its drag handlers PROGRAMMATICALLY to its `<svg>`/`<canvas>` and often sets no
  * `cursor:pointer`/role — and a page script CANNOT enumerate `addEventListener` listeners — so the
  * drawing surface is the only structural signal that "this whole area is draggable". Treating it as
  * interactive keeps those graphs live (the exact regression from #3168); a rare decorative-svg component
- * simply pans via the surrounding gutter instead. Returns "" when off, so a non-forwarding srcdoc (the
- * thumbnail) is byte-for-byte unchanged. Vanilla, capture-phase.
+ * simply pans via the surrounding gutter. (Wheel-zoom still works over an svg — it's not a scroll
+ * container — so zoom is available everywhere the user isn't scrolling.)
+ *
+ * Returns "" when off, so a non-forwarding srcdoc (the thumbnail) is byte-for-byte unchanged. Vanilla,
+ * capture-phase.
  */
-export function panForwardScript(on: boolean): string {
+export function gestureForwardScript(on: boolean): string {
   if (!on) return "";
   return `\n<script>
 (function () {
@@ -325,19 +337,35 @@ export function panForwardScript(on: boolean): string {
     }
     return false;
   }
+  function scrollableAt(el, dy) {
+    for (var n = el; n && n !== document.documentElement; n = n.parentElement) {
+      if (n.nodeType !== 1) continue;
+      if (n.scrollHeight <= n.clientHeight) continue;
+      var oy; try { oy = getComputedStyle(n).overflowY; } catch (e) { continue; }
+      if (oy !== "auto" && oy !== "scroll") continue;
+      if (dy < 0 && n.scrollTop > 0) return true;                                  // room to scroll up
+      if (dy > 0 && n.scrollTop + n.clientHeight < n.scrollHeight - 1) return true; // room to scroll down
+    }
+    return false;
+  }
+  function send(msg) { try { parent.postMessage(msg, "*"); } catch (err) {} }
   var panning = false;
-  function post(type, e) { try { parent.postMessage({ __preview: type, x: e ? e.screenX : 0, y: e ? e.screenY : 0 }, "*"); } catch (err) {} }
   document.addEventListener("mousedown", function (e) {
     if (e.button !== 0 || interactive(e.target)) return;   // a real control → let the component have it
     e.preventDefault();                                    // else: empty space → this drag pans the host
     panning = true;
     document.body.style.cursor = "grabbing";
-    post("panstart", e);
+    send({ __preview: "panstart", x: e.screenX, y: e.screenY });
   }, true);
-  document.addEventListener("mousemove", function (e) { if (panning) post("panmove", e); }, true);
-  function end() { if (!panning) return; panning = false; document.body.style.cursor = ""; post("panend"); }
+  document.addEventListener("mousemove", function (e) { if (panning) send({ __preview: "panmove", x: e.screenX, y: e.screenY }); }, true);
+  function end() { if (!panning) return; panning = false; document.body.style.cursor = ""; send({ __preview: "panend" }); }
   document.addEventListener("mouseup", end, true);
   window.addEventListener("blur", end);
+  document.addEventListener("wheel", function (e) {
+    if (scrollableAt(e.target, e.deltaY)) return;          // let a real scroll container scroll
+    e.preventDefault();                                    // else: zoom the host about the cursor
+    send({ __preview: "zoom", dy: e.deltaY, wx: e.clientX, wy: e.clientY });
+  }, { capture: true, passive: false });
 })();
 </script>`;
 }
@@ -347,7 +375,7 @@ export function panForwardScript(on: boolean): string {
  * as a module, posting `ready`/`error` to the parent. Pure.
  */
 export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOptions = {}): string {
-  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, panForward = false } = opts;
+  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, forwardGestures = false } = opts;
   // #3057: the exit-runtime shim, injected right after `#root` and BEFORE the module script so the
   // observer is watching before React mounts (and later unmounts) subtrees. "" when no exit selectors —
   // the non-exit srcdoc is then byte-for-byte unchanged.
@@ -355,8 +383,9 @@ export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOpti
   // #3141: the scale-to-fit shim, injected AFTER the module script so it runs post-mount (measures the
   // mounted component). "" for pages (scaled parent-side per #3139) so their srcdoc is unchanged.
   const fitShim = fitShimScript(fitContent);
-  // #3190: the pan-forward shim — lets a non-interactive drag pan the host viewport. "" (unchanged) off.
-  const panShim = panForwardScript(panForward);
+  // #3190: the gesture-forward shim — lets a non-interactive drag pan + a non-scroll wheel zoom the host
+  // viewport (the iframe decides per event and postMessages the survivors out). "" (unchanged) when off.
+  const gestureShim = gestureForwardScript(forwardGestures);
   return `<!doctype html><html data-theme="${theme}"><head><meta charset="utf-8" />
 <style>html,body,#root{margin:0;height:100%;box-sizing:border-box}#root{overflow:auto}*,*::before,*::after{box-sizing:inherit}
 /* Fit oversized preview media (d3 charts/graphs, images) within the frame rather than overflowing it (#2915).
@@ -384,6 +413,6 @@ setTimeout(() => {
     parent.postMessage({ __preview: "rendered", empty: empty }, "*");
   } catch (e) { /* measurement is best-effort */ }
 }, 400);
-</script>${fitShim}${panShim}
+</script>${fitShim}${gestureShim}
 </body></html>`;
 }

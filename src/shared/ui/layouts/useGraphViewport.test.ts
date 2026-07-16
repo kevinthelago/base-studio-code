@@ -253,6 +253,30 @@ describe("useGraphViewport wheel listener lifecycle (#2454)", () => {
     expect(result.current.view.ty).toBe(before.ty - 8);
   });
 
+  it("zoomAtWorld zooms about a WORLD point, keeping it fixed on screen (#3190)", () => {
+    // The forwarded-wheel path: the iframe sends a world coord (its cursor-local x/y); the host zooms
+    // about it. The world point must map to the SAME screen position before and after.
+    const { result } = renderHook(() => useGraphViewport({ w: 1000, h: 1000 }, { min: 0.2, max: 5 }));
+    act(() => result.current.panBy(-40, 15)); // start from a panned view so tx/ty aren't trivially 0
+    const wx = 120, wy = 80;
+    const before = result.current.view;
+    const screenXBefore = wx * before.scale + before.tx;
+    const screenYBefore = wy * before.scale + before.ty;
+    act(() => result.current.zoomAtWorld(1.5, wx, wy));
+    const after = result.current.view;
+    expect(after.scale).toBeCloseTo(before.scale * 1.5, 6);                 // scaled by the factor
+    expect(wx * after.scale + after.tx).toBeCloseTo(screenXBefore, 6);      // the world point held fixed
+    expect(wy * after.scale + after.ty).toBeCloseTo(screenYBefore, 6);
+  });
+
+  it("zoomAtWorld clamps the scale to [min,max] (#3190)", () => {
+    const { result } = renderHook(() => useGraphViewport({ w: 1000, h: 1000 }, { min: 0.4, max: 1.5 }));
+    act(() => result.current.zoomAtWorld(99, 10, 10));  // way past max
+    expect(result.current.view.scale).toBe(1.5);
+    act(() => result.current.zoomAtWorld(0.001, 10, 10)); // way past min
+    expect(result.current.view.scale).toBe(0.4);
+  });
+
   it("centerOn pans the given world point toward the viewport center, keeping zoom (#2525)", () => {
     const { result } = renderHook(() => useGraphViewport({ w: 1000, h: 1000 }));
     // No-op before the viewport element mounts (no ref yet).
