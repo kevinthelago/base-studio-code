@@ -1,7 +1,7 @@
-/* VizPanel (#3199) — the always-on inline visualization preview + its fill-screen view. */
+/* VizPanel (#3199/#3205) — the always-on inline visualization preview + its in-canvas take-over stage. */
 
 /* The inline preview: a compact, clickable thumbnail that auto-plays + loops, like a component
-   thumbnail on the Components page. Hover/focus reveals an expand cue; clicking fills the screen. */
+   thumbnail on the Components page. Hover/focus reveals an expand cue; clicking takes over the graph. */
 .algo-viz-preview {
   position: relative;
   display: block;
@@ -52,38 +52,33 @@
   transform: translateY(0);
 }
 
-/* The fill-screen view — a large card centered by ModalScrim, laid out head / stage / state. */
-.algo-viz-fullscreen {
-  width: min(1000px, 92vw);
-  height: min(760px, 88vh);
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg, 12px);
-  box-shadow: var(--shadow-lg, 0 24px 64px rgba(0, 0, 0, 0.45));
-  overflow: hidden;
+/* The in-canvas take-over (#3205): rides GraphCanvas's overlays slot (absolute inset:0, set inline),
+   covering the graph — rail + inspector stay. Laid out head / body / state, like the Designs try-on. */
+.algo-viz-stage-head {
+  flex: none;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-soft, var(--border));
+  background: var(--bg-elev);
 }
 
-.algo-viz-fullscreen-head {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-}
-
-/* The player stage grows to fill; the trace centers, and a tall trace scrolls rather than clipping. */
-.algo-viz-fullscreen-stage {
+/* The player body grows to fill; the trace centers, and a tall trace scrolls rather than clipping. */
+.algo-viz-stage-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: 24px;
 }
-.algo-viz-fullscreen-stage .trace-player {
+.algo-viz-stage-body .trace-player {
   width: 100%;
+  max-width: 900px;
 }
 
 /* The "provide your own state" input row, pinned under the stage. */
-.algo-viz-state {
+.algo-viz-stage-state {
+  flex: none;
   padding: 12px 14px;
   border-top: 1px solid var(--border);
   background: var(--bg-elev);
