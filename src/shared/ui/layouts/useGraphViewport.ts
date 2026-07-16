@@ -54,6 +54,14 @@ export interface GraphViewport {
   zoomToCentered: (scale: number) => void;
   /** True during a pan-drag so the click that ends it doesn't select a node/edge. */
   dragMoved: React.MutableRefObject<boolean>;
+  /** Pan by a screen-space delta (px) — for a pan gesture driven from OUTSIDE the viewport element
+   *  (e.g. an iframe forwarding a non-interactive drag, #3190), where `onCanvasDown` never sees a
+   *  mousedown of its own. */
+  panBy: (dx: number, dy: number) => void;
+  /** Zoom by `factor` (scale × factor, clamped) keeping the WORLD point (wx,wy) fixed on screen — for a
+   *  wheel gesture forwarded from OUTSIDE the viewport (#3190). The forwarding iframe fills the world
+   *  layer, so its cursor-local x/y ARE world coords; the host anchors the zoom there. */
+  zoomAtWorld: (factor: number, wx: number, wy: number) => void;
   /** The `transform` style to spread onto the world layer. */
   worldTransform: React.CSSProperties;
 }
@@ -149,6 +157,17 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
     setView((v) => centerView(v, el.clientWidth, el.clientHeight, wx, wy));
   }, []);
 
+  /** Pan by a screen-space delta (px) — for a gesture forwarded from outside the viewport (#3190). */
+  const panBy = useCallback((dx: number, dy: number) => {
+    setView((v) => ({ ...v, tx: v.tx + dx, ty: v.ty + dy }));
+  }, []);
+
+  /** Zoom by `factor` about the WORLD point (wx,wy) — a wheel forwarded from outside the viewport (#3190).
+   *  The world point's current screen position is `wx·scale + tx`; anchoring the zoom there keeps it fixed. */
+  const zoomAtWorld = useCallback((factor: number, wx: number, wy: number) => {
+    setView((v) => zoomAboutPoint(v, v.scale * factor, wx * v.scale + v.tx, wy * v.scale + v.ty, min, max));
+  }, [min, max]);
+
   /** Zoom by a factor around the viewport center (the +/- buttons). */
   const zoomBy = useCallback((f: number) => {
     const el = vpRef.current;
@@ -216,7 +235,7 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
   }, [onWheel]);
 
   return {
-    view, setVp, onCanvasDown, fit, centerOn, zoomBy, zoomTo, zoomToCentered, dragMoved,
+    view, setVp, onCanvasDown, fit, centerOn, zoomBy, zoomTo, zoomToCentered, dragMoved, panBy, zoomAtWorld,
     worldTransform: { transform: `translate(${view.tx}px,${view.ty}px) scale(${view.scale})`, transformOrigin: "0 0" },
   };
 }
