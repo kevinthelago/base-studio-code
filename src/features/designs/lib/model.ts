@@ -150,22 +150,6 @@ export interface ComponentRecord {
   animations?: (string | KitAnimation)[];
 }
 
-/** Does this component RESPOND to the mouse — i.e. does it invite click/drag/select interaction (#3168)?
- *  The Design Studio's expanded preview uses this to decide between letting you INTERACT with the
- *  component vs stealing drags to PAN the canvas: an iframe can't do both over the same pixels, so an
- *  interactive component keeps its pointer events and a static one becomes drag-to-pan.
- *
- *  The reliable signal is the declared PROPS — a callback/handler prop (`onSelect`/`onClick`/`onChange`,
- *  or a function-typed prop). `srcText` is only a short usage snippet (not the implementation) and
- *  `source` is absent in the store, so internal handlers aren't visible; the component's API is. Kits
- *  express a callback type as either `"function"` (react-ui manifest) or an arrow type like
- *  `"(id: string) => void"` (react-d3), so both are matched. Pure. */
-export function isInteractiveComponent(comp: ComponentRecord): boolean {
-  return comp.props.some(
-    (p) => /^on[A-Z]/.test(p.name) || p.type === "function" || /=>/.test(p.type),
-  );
-}
-
 /** The shared zero-state title — Design Studio and the Planner Components pane must say the same
  *  thing about the same empty library (#2420). */
 export const NO_COMPONENTS_TITLE = "No components yet";
