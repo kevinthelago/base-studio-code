@@ -67,7 +67,7 @@ function ImplInspector({ graph, impl, onSelectImpl, onExpandViz }: {
 
   // The impl's live visualization (#3177), if any. When present it's ALWAYS rendered inline above the
   // code (#3199); impls without one keep exactly today's code-only pane.
-  const viz = vizForImpl(impl.id);
+  const viz = vizForImpl(impl);
 
   return (
     <Box style={PANEL}>
