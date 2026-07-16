@@ -41,15 +41,29 @@ export function lookupMem(files: Record<string, string>, path: string): { conten
   return null;
 }
 
-let initPromise: Promise<typeof Esbuild> | null = null;
+// esbuild-wasm's `initialize()` is a ONE-SHOT global (it boots a Web Worker + the WASM module, both of
+// which live in the persistent node_modules singleton, NOT re-executed by HMR). So the init promise is
+// cached on `globalThis`, not just a module-level let: a Vite hot-replace of THIS module resets the
+// module-level binding but MUST NOT re-`initialize()` the already-live singleton — that throws
+// `Cannot call "initialize" more than once`, and (before this) the rejection got cached, wedging EVERY
+// subsequent preview build until a full reload (#3190). The `globalThis` cache survives HMR; the catch is
+// the belt-and-suspenders so an already-initialized throw resolves to the live module instead of sticking.
+const ESBUILD_INIT = Symbol.for("bsc.esbuildInit");
+type EsbuildInitHost = { [ESBUILD_INIT]?: Promise<typeof Esbuild> };
 function ensureEsbuild(): Promise<typeof Esbuild> {
-  if (!initPromise) {
-    initPromise = import("esbuild-wasm").then(async (m) => {
-      await m.initialize({ wasmURL, worker: true });
+  const host = globalThis as unknown as EsbuildInitHost;
+  if (!host[ESBUILD_INIT]) {
+    host[ESBUILD_INIT] = import("esbuild-wasm").then(async (m) => {
+      try {
+        await m.initialize({ wasmURL, worker: true });
+      } catch (e) {
+        // Already booted by a prior module instance (HMR) — reuse the live singleton, don't fail the build.
+        if (!/more than once/i.test(String((e as Error)?.message ?? e))) throw e;
+      }
       return m;
     });
   }
-  return initPromise;
+  return host[ESBUILD_INIT];
 }
 
 /** Is a bare (non-relative, non-`@/`) specifier — an npm package left external (→ esm.sh). */
