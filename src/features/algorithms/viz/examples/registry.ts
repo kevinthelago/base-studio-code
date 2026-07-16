@@ -1,76 +1,76 @@
-// The kind → visualization registry (#3177/#3210, epic #3171/#3209) — the lookup the Algorithms inspector
+// The impl → visualization registry (#3177/#3216, epic #3171/#3215) — the lookup the Algorithms inspector
 // uses to decide whether a focused implementation has a live Visualization pane, and, if so, WHAT to play.
 //
-// KEYED BY KIND, NOT BY ID (#3210): an example is registered per MANIPULATION kind (`sort`/`search`/…),
-// and `vizForImpl` resolves an impl's kind (its assigned `kind`, else the heuristic classifier) and plays
-// that kind's example. So one `sort` example lights up the WHOLE sort family (bubble/merge/quick/heap/…),
-// not just `sort.ts` — the category-representative animation, per the epic's "driven by the data
-// structure, not per-algorithm" vision.
+// PROGRAM-DRIVEN (#3216): the trace comes from RUNNING the algorithm's own trace-program against an
+// instrumented structure (see lib/tracer.ts + viz/examples/sorts.ts), keyed by the algorithm's base name.
+// So each algorithm animates by ITS OWN mechanics — bubble/insertion/quick/heap/merge look different
+// because they ARE different. An impl with no program shows NO animation (never a wrong category one).
+// This SUPERSEDES the category-representative per-kind example (#3209 S2). `kind` (#3210) stays for the
+// datatype-renderer pick + `bsc graph doctor`; `resolveKind` is retained for those.
 //
-// SCOPE (a scoped-out follow-up): today the example generators are in-app modules (the plain fn + the
-// step-yielding trace, colocated). The durable end state is running a STORE-authored generator (the
-// librarian's `code`) through the shared preview iframe (`shared/lib/preview/`, #3177) so any library
-// impl animates without an in-app module.
+// SCOPE (slice B, #3215): today the programs are in-app modules. The durable end state runs the program
+// from the impl's STORED code in the preview sandbox (`shared/lib/preview/`, #3177), so the librarian
+// authors visualizations as data — no per-algorithm app change.
 
 import type { Frame } from "../../lib/trace";
 import type { AlgoImpl, AlgoKind } from "../../lib/knowledge";
 import { classifyKind, type Classifiable } from "../../lib/classifyKind";
+import { runAlgorithm } from "../../lib/tracer";
 import type { RendererRegistry } from "../registry";
 import { ArrayView } from "../renderers/ArrayView";
-import { SORT_MOCK, sortSteps, parseSortInput } from "./sort";
+import { parseSortInput } from "./sort";
+import { TRACE_PROGRAMS, programKey, type AlgoProgram } from "./sorts";
 
-/** A ready-to-play visualization for one implementation: a stable default factory (the inline preview) +
- *  the per-structure renderers the player dispatches to + an editable INPUT seam (#3199) that powers the
- *  fullscreen "provide your own state" field. */
+/** A ready-to-play visualization: a stable default factory (the inline preview) + the per-structure
+ *  renderers the player dispatches to + an editable INPUT seam (#3199) that powers the "your input" field. */
 export interface VizExample {
-  /** Produces a fresh trace generator from the impl's fixed mock input. STABLE identity (defined once
-   *  here), so the inspector can hand it straight to `<TracePlayer factory>` without re-memoizing. */
+  /** A fresh trace generator from the default input. STABLE identity (built once per algorithm below), so
+   *  the inspector hands it straight to `<TracePlayer factory>` without re-memoizing. */
   factory: () => Generator<Frame>;
   /** The renderers this example needs (array → {@link ArrayView}). */
   renderers: RendererRegistry;
-  /** The editable input driving the trace (#3199) — the "state" the user provides in the fullscreen view.
-   *  `parse` turns the field text into typed input (throwing a helpful Error on invalid input); `make`
-   *  builds a FRESH trace from it. `make(parse(default))` reproduces `factory`'s trace. `parse`/`make`
-   *  share one input type per example; the seam is `unknown` here so the registry can hold mixed shapes. */
+  /** The editable input driving the trace (#3199) — `parse` turns the field text into typed input (throwing
+   *  a helpful Error on invalid input); `make` RE-RUNS the program on it. `make(parse(default))` reproduces
+   *  `factory`. The seam is `unknown` so the registry can hold mixed input shapes. */
   input: {
-    /** Default input as text, seeding the fullscreen field. */
     default: string;
-    /** A short hint shown under the field (what to type). */
     hint: string;
-    /** Parse the field text into typed input; throws an `Error` (message shown to the user) on invalid. */
     parse: (text: string) => unknown;
-    /** Build a fresh trace generator from parsed input — a fresh copy per call, so replay stays exact. */
     make: (parsed: unknown) => Generator<Frame>;
   };
 }
 
-/** The example animation for each MANIPULATION kind (#3210). Only `sort` exists today (the array proof,
- *  #3178); search/traversal/accumulate land in S2 (#3211). A `Partial` map — a kind with no example yet
- *  simply has no animation. `sortSteps` mutates in place, so `factory`/`input.make` hand it a FRESH COPY
- *  (of the immutable {@link SORT_MOCK} / the parsed input) each call, keeping replay deterministic. */
-export const EXAMPLES_BY_KIND: Partial<Record<AlgoKind, VizExample>> = {
-  sort: {
-    factory: () => sortSteps([...SORT_MOCK]),
+/** Build a stable {@link VizExample} that RUNS `program` (its real code) via the tracer — the default
+ *  factory plus the "your input" seam that re-runs the same program on the user's numbers. */
+function exampleFromProgram(program: AlgoProgram): VizExample {
+  return {
+    factory: runAlgorithm(program.run, program.defaultInput),
     renderers: { array: ArrayView },
     input: {
-      default: SORT_MOCK.join(", "),
-      hint: "Comma- or space-separated numbers to sort",
+      default: program.defaultInput.join(", "),
+      hint: "Comma- or space-separated numbers",
       parse: (text) => parseSortInput(text),
-      make: (parsed) => sortSteps([...(parsed as number[])]),
+      make: (parsed) => runAlgorithm(program.run, parsed as number[])(),
     },
-  },
-};
+  };
+}
+
+/** One VizExample per trace-program, built ONCE so each algorithm has a STABLE example identity (a fresh
+ *  build per render would rebuild the player's stream every frame). */
+const EXAMPLE_BY_KEY: Record<string, VizExample> = Object.fromEntries(
+  Object.entries(TRACE_PROGRAMS).map(([key, program]): [string, VizExample] => [key, exampleFromProgram(program)]),
+);
 
 /** Resolve an implementation's kind (#3210): the CREATOR-assigned `kind` wins; otherwise the heuristic
- *  classifier infers it. `null` when neither yields a kind (an untyped, unclassifiable impl). */
+ *  classifier infers it. Retained for the datatype-renderer pick + `bsc graph doctor` (the viz TRACE now
+ *  comes from the program, not the kind). `null` when neither yields a kind. */
 export function resolveKind(impl: Pick<AlgoImpl, "kind"> & Classifiable): AlgoKind | null {
   return impl.kind ?? classifyKind(impl);
 }
 
-/** The visualization for an implementation, or `undefined` when its kind has no example (or it has no
- *  resolvable kind). Pure lookup over the resolved kind — the inspector renders the inline visualization
- *  only when this is defined (#3199). So the whole sort family animates off the one `sort` example. */
-export function vizForImpl(impl: Pick<AlgoImpl, "kind"> & Classifiable): VizExample | undefined {
-  const kind = resolveKind(impl);
-  return kind ? EXAMPLES_BY_KIND[kind] : undefined;
+/** The visualization for an implementation — its OWN trace-program's example (#3216), or `undefined` when
+ *  the algorithm has no program yet (so it shows no animation, never a wrong one). Keyed by the algorithm's
+ *  base name, so the named sort family animates from real code, each distinctly. */
+export function vizForImpl(impl: Pick<AlgoImpl, "id" | "name">): VizExample | undefined {
+  return EXAMPLE_BY_KEY[programKey(impl)];
 }

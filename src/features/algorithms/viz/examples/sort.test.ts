@@ -103,16 +103,17 @@ describe("parseSortInput (#3199 custom state)", () => {
   });
 });
 
-describe("sort example input seam (#3199)", () => {
-  it("resolves a visualization for any sort-kind impl and nothing for an unclassifiable one", () => {
-    // The whole sort family resolves to the one sort example (#3210), by kind — not by exact id.
-    expect(vizForImpl({ id: "sort.ts", name: "sort", kind: "sort" })).toBeDefined();
-    expect(vizForImpl({ id: "merge-sort.rs", name: "merge_sort" })).toBeDefined(); // classified → sort
-    expect(vizForImpl({ id: "nope.rs", name: "nope" })).toBeUndefined(); // no kind, unclassifiable
+describe("sort example input seam (#3199/#3216)", () => {
+  it("resolves each named sort algorithm to its OWN program, and nothing for an unknown one", () => {
+    // Program-driven (#3216): keyed by the algorithm's base name, not by kind — each sort has its own.
+    expect(vizForImpl({ id: "sort.ts", name: "sort" })).toBeDefined();
+    expect(vizForImpl({ id: "merge-sort.rs", name: "merge_sort" })).toBeDefined();
+    expect(vizForImpl({ id: "quick-sort.rs", name: "quick_sort" })).toBeDefined();
+    expect(vizForImpl({ id: "nope.rs", name: "nope" })).toBeUndefined(); // no program
   });
 
-  it("make(parse(default)) reproduces the fixed-mock factory trace", () => {
-    const viz = vizForImpl({ id: "sort.ts", name: "sort", kind: "sort" })!;
+  it("make(parse(default)) reproduces the default factory trace", () => {
+    const viz = vizForImpl({ id: "sort.ts", name: "sort" })!;
     const fromDefault = [...viz.input.make(viz.input.parse(viz.input.default))].map((f) => (f as ArrayFrame).data);
     const fromFactory = [...viz.factory()].map((f) => (f as ArrayFrame).data);
     expect(fromDefault).toEqual(fromFactory);
