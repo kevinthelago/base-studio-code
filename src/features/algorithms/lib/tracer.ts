@@ -213,9 +213,9 @@ export function runMatrixAlgorithm(
 
 // ── the graph tracer (#3224) — nodes + edges; traversal / shortest-path verbs ──
 
-/** The topology an algorithm runs against — nodes + (weighted) edges. */
+/** The topology an algorithm runs against — nodes (with optional coordinates) + (weighted) edges. */
 export interface GraphInput {
-  nodes: { id: string; label?: string }[];
+  nodes: { id: string; label?: string; x?: number; y?: number }[];
   edges: { from: string; to: string; weight?: number }[];
 }
 /** A durable per-node search state (matches the GraphFrame `marks` vocabulary). */
@@ -234,7 +234,7 @@ export interface Neighbour {
  * Marks persist across frames; ops are the transient verb. Edges are treated as UNDIRECTED for traversal.
  */
 export class TracedGraph {
-  private readonly nodes: { id: string; label?: string }[];
+  private readonly nodes: { id: string; label?: string; x?: number; y?: number }[];
   private readonly edges: { from: string; to: string; weight?: number }[];
   private readonly adj = new Map<string, Neighbour[]>();
   private readonly marks: Record<string, GraphMark> = {};
@@ -256,6 +256,11 @@ export class TracedGraph {
   /** The node ids in declaration order (the algorithm picks a start). */
   ids(): string[] {
     return this.nodes.map((n) => n.id);
+  }
+  /** A node's coordinates for a spatial heuristic (A*), or `null` when it has none. Silent. */
+  coord(id: string): { x: number; y: number } | null {
+    const n = this.nodes.find((m) => m.id === id);
+    return n && n.x !== undefined && n.y !== undefined ? { x: n.x, y: n.y } : null;
   }
   /** A silent read of a node's neighbours (traversal logic — no frame). UNDIRECTED (both endpoints). */
   neighbours(id: string): Neighbour[] {
