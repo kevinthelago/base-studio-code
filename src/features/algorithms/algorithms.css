@@ -73,6 +73,17 @@
   tab-size: 2;
 }
 
+/* The inspector's Visualization pane (#3177) — frames the <TracePlayer> the same way `.algo-code`
+   frames the source, so the Code | Visualization toggle swaps between two matched panels. */
+.algo-viz-pane {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg, var(--bg-soft));
+  min-width: 0;
+  overflow-x: auto;
+}
+
 /* The "has an implementation in the active tech" badge on a node card. */
 .algo-impl-badge {
   position: absolute;
