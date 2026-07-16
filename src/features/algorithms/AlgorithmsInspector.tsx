@@ -3,10 +3,10 @@
 // inspector is impl-only (the abstract concept-node view was removed with #2961). Empty state prompts a
 // selection; each builds-on / used-by row jumps to that impl.
 //
-// Visualization pane (#3177/#3199, epic #3171): when the focused impl has a registered visualization
-// (`vizForImpl`), the animation is ALWAYS rendered inline as an auto-playing preview (no Code |
-// Visualization toggle) above the code, and clicking it fills the screen with a full player + an
-// editable "provide your own state" input (`VizPanel`) — mirroring the Components-page preview.
+// Visualization pane (#3177/#3199/#3205, epic #3171): when the focused impl has a registered
+// visualization (`vizForImpl`), the animation is ALWAYS rendered inline as an auto-playing preview (no
+// Code | Visualization toggle) above the code. Clicking it lifts to the workbench (`onExpandViz`), which
+// promotes the animation to the full graph canvas (`VizStage`) — mirroring the Components-page try-on.
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
@@ -14,18 +14,21 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Chip } from "@/shared/ui/data/Chip";
 import { TECH_META, implById, usedByImpl, type KnowledgeGraph, type AlgoImpl } from "./lib/knowledge";
-import { VizPanel } from "./viz/VizPanel";
+import { VizPreview } from "./viz/VizPanel";
 import { vizForImpl } from "./viz/examples/registry";
 
 const PANEL = { width: "100%", height: "100%", borderLeft: "1px solid var(--border)", overflowY: "auto", background: "var(--bg-panel)" } as const;
 
-export function AlgorithmsInspector({ graph, focusedImpl, onSelectImpl }: {
+export function AlgorithmsInspector({ graph, focusedImpl, onSelectImpl, onExpandViz }: {
   graph: KnowledgeGraph;
   /** The focused implementation (#2863) — a node in the per-kit graph, or a free-standing primitive from
    *  the rail. Its code + builds-on / used-by. */
   focusedImpl?: AlgoImpl | null;
   /** Jump to another implementation (#2863) — the per-kit graph navigates impl→impl (builds-on / used-by). */
   onSelectImpl?: (id: string) => void;
+  /** Expand the inline visualization to the full graph canvas (#3205) — lifted to the workbench, which
+   *  renders `VizStage` in the GraphCanvas overlays slot. Omit ⇒ the inline preview is non-clickable. */
+  onExpandViz?: () => void;
 }) {
   if (!focusedImpl) {
     return (
@@ -41,17 +44,18 @@ export function AlgorithmsInspector({ graph, focusedImpl, onSelectImpl }: {
     );
   }
 
-  // Key the body on the impl id so the visualization (its fullscreen open state, custom input) resets on
-  // a fresh mount when the selection changes — the previous impl's pane never leaks into the next one.
-  return <ImplInspector key={focusedImpl.id} graph={graph} impl={focusedImpl} onSelectImpl={onSelectImpl} />;
+  // Key the body on the impl id so the inline preview resets on a fresh mount when the selection changes
+  // — the previous impl's pane never leaks into the next one.
+  return <ImplInspector key={focusedImpl.id} graph={graph} impl={focusedImpl} onSelectImpl={onSelectImpl} onExpandViz={onExpandViz} />;
 }
 
-/** The focused implementation's inspector body — its identity + inline visualization + code +
- *  builds-on/used-by. Split out so `VizPanel`'s local state resets per impl (via the `key`). */
-function ImplInspector({ graph, impl, onSelectImpl }: {
+/** The focused implementation's inspector body — its identity + inline visualization preview + code +
+ *  builds-on/used-by. Split out so the preview resets per impl (via the `key`). */
+function ImplInspector({ graph, impl, onSelectImpl, onExpandViz }: {
   graph: KnowledgeGraph;
   impl: AlgoImpl;
   onSelectImpl?: (id: string) => void;
+  onExpandViz?: () => void;
 }) {
   // A concept IS its implementation (#2958), so this is the whole inspector: the impl's code + the impls
   // it builds on (composes, down to the primitive base) and the ones that build on it (the reverse).
@@ -83,9 +87,9 @@ function ImplInspector({ graph, impl, onSelectImpl }: {
           </Row>
         )}
 
-        {/* The visualization is always rendered inline (#3199) — an auto-playing preview; click it to
-            fill the screen and try your own input. The code stays below it. */}
-        {viz && <VizPanel viz={viz} />}
+        {/* The visualization is always rendered inline (#3199) — an auto-playing preview; clicking it
+            promotes the animation to the full graph canvas (#3205, via the workbench). Code stays below. */}
+        {viz && onExpandViz && <VizPreview viz={viz} onExpand={onExpandViz} />}
 
         {impl.code && <Box as="pre" className="algo-code mono">{impl.code}</Box>}
 
