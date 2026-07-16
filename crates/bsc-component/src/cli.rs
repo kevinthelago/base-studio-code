@@ -70,14 +70,19 @@ filter, `bsc ui list --shape <shape>`).",
     },
     CmdDoc {
         name: "get",
-        summary: "print one component (JSON, verbatim) or null",
+        summary: "print one component (JSON, verbatim) or null — or ONE field with --field (#3162)",
         usage: "\
 USAGE:
   bsc ui get <id> [--pretty] [--raw]
+  bsc ui get <id> --field <json-pointer> [--raw] [--pretty]
 
 Prints the stored component JSON for <id> verbatim, or `null` if absent. --raw (#3166) writes the
 record as raw UTF-8 bytes, LF-only (CR-stripped), no locale layer — safe for `VALUE=$(bsc ui get <id>
---raw)`; a missing id prints NOTHING (empty capture) rather than the literal `null`.",
+--raw)`; a missing id prints NOTHING (empty capture) rather than the literal `null`. With --field
+(#3162), prints just the value at the RFC-6901 JSON pointer <json-pointer> (e.g. `/name`, `/props/0/req`,
+`/srcText`; a leading `/` is optional) — errors when the component OR the field is absent; --raw unwraps
+a string value (no quotes/escaping) via the SAME raw printer, so a shell `$(...)` capture is clean (a
+non-string value prints as compact JSON), and without --raw the value prints as JSON (--pretty indents).",
     },
     CmdDoc {
         name: "log",
@@ -237,6 +242,34 @@ USAGE:
 
 Removes the animation named <name> from the component's `animations` array and writes the record back.
 A ui-scope MUTATION (#2470); errors when the component (or an animation with that name) is absent.",
+    },
+    CmdDoc {
+        name: "set-src",
+        summary: "replace ONLY a component's srcText from stdin (gated by the JSX syntax check) (#3162)",
+        usage: "\
+USAGE:
+  bsc ui set-src <id>   # the new srcText on stdin (raw text, not JSON)
+
+Replaces JUST the `srcText` field of component <id> with stdin, leaving every other field untouched — the
+granular write that avoids a whole-record round-trip (and its ~10KB stdin ceiling) for a one-field source
+edit. The new source passes the SAME write-time JSX syntax gate as `bsc ui set` (#2928): a module
+`srcText` that won't build (e.g. an unterminated string) is REJECTED before anything is written. Errors
+when the component is absent (author it first with `bsc ui set`). A ui-scope MUTATION (#2470).",
+    },
+    CmdDoc {
+        name: "patch",
+        summary: "set ONE field of a component by JSON pointer; value parsed as JSON (#3162)",
+        usage: "\
+USAGE:
+  bsc ui patch <id> <json-pointer> <value>
+
+Sets a single field of component <id> at the RFC-6901 JSON pointer <json-pointer> (e.g. `/name`,
+`/props/0/req`; a leading `/` is optional), leaving every other field untouched — the granular write for
+a one-field edit. <value> is parsed as JSON (so `true`, `42`, `[1,2]`, `\"text\"` keep their type),
+falling back to a bare string when it is not valid JSON. The pointer's PARENT container must already
+exist (an array index may equal the length to append, or `-` to push). The patched record still passes
+the `bsc ui set` JSX syntax gate (#2928). Errors when the component or the pointer's parent is absent. A
+ui-scope MUTATION (#2470).",
     },
 ];
 
@@ -492,6 +525,31 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 cmd_remove_animation(&args[1..])
             }
         }
+        // The granular writes (#3162): a one-field edit that skips the whole-record stdin round-trip.
+        // `set-src` (replace only `srcText`, through the same #2928 syntax gate) and `patch` (set one
+        // field by JSON pointer) are ui-scope MUTATIONS — each honors the runtime `ui` write-scope
+        // BEFORE touching stdin/the store (in its own fn, like `doctor --fix`), and stamps the write
+        // (#3164) via the shared `stamped_set` boundary.
+        Some("set-src") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "set-src"));
+                Ok(())
+            } else {
+                cmd_set_src(&args[1..])
+            }
+        }
+        Some("patch") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "patch"));
+                Ok(())
+            } else {
+                cmd_patch(&args[1..])
+            }
+        }
+        // `get --field <json-pointer> [--raw]` (#3162) prints ONE field — intercepted here (the shared
+        // store CLI rejects unknown flags); a plain `get <id>` (incl. the whole-record `--raw`, #3166)
+        // still delegates unchanged. A read verb.
+        Some("get") if args.iter().any(|a| a == "--field") => cmd_get_field(&args[1..]),
         // `log` (#3164) is a custom read — the record's history stamp (rev/updatedAt/updatedBy).
         Some("log") => {
             if args.get(1).map(String::as_str) == Some("help") {
@@ -1551,6 +1609,206 @@ fn cmd_kit_remove_animation(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+// ── granular writes (#3162) ──────────────────────────────────────────────────────────────────────
+//
+// `set-src` / `patch` / `get --field`: edit or read ONE field of a component record without a
+// whole-record round-trip (and its ~10KB stdin ceiling). Every WRITE path still runs the `set` write-
+// time JSX syntax gate (`validate_component_batch`, #2928) so a granular write can't smuggle in a
+// module `srcText` that won't build. The core mutations (`replace_src` / `apply_patch`) are pure of
+// stdin/print so tests drive them directly; the `cmd_*` wrappers add arg/stdin parsing + the ui-scope
+// gate (honored BEFORE stdin/the store are touched, like `doctor --fix`).
+
+/// Normalize a user-supplied JSON pointer: a leading `/` is optional for ergonomics, so `name` and
+/// `/name` both address the top-level `name` field (the empty string stays empty — the whole doc).
+fn normalize_pointer(p: &str) -> String {
+    if p.is_empty() || p.starts_with('/') {
+        p.to_string()
+    } else {
+        format!("/{p}")
+    }
+}
+
+/// Set `value` at the RFC-6901 JSON pointer `pointer` within `root`, replacing (or inserting, for an
+/// object key or an array append slot) exactly that one field. The pointer's PARENT container must
+/// already exist — this is a granular field write, not a deep-create. An array token is a numeric index
+/// (which may equal the length to append) or `-` (push). Escapes: `~1`→`/`, `~0`→`~`. Pure → unit-tested.
+fn set_at_pointer(root: &mut serde_json::Value, pointer: &str, value: serde_json::Value) -> Result<(), String> {
+    use serde_json::Value;
+    let tokens: Vec<String> = if pointer.is_empty() {
+        Vec::new()
+    } else {
+        pointer[1..].split('/').map(|t| t.replace("~1", "/").replace("~0", "~")).collect()
+    };
+    let Some((last, parents)) = tokens.split_last() else {
+        // An empty pointer would replace the whole record — refuse (patch is a FIELD write).
+        return Err("a JSON pointer must name at least one field (e.g. `/name`)".to_string());
+    };
+    // Walk to the parent container; each intermediate level must already exist.
+    let mut cur = root;
+    for tok in parents {
+        cur = match cur {
+            Value::Object(map) => map
+                .get_mut(tok)
+                .ok_or_else(|| format!("no object key '{tok}' along the pointer '{pointer}'"))?,
+            Value::Array(arr) => {
+                let i: usize =
+                    tok.parse().map_err(|_| format!("pointer token '{tok}' is not a valid array index"))?;
+                arr.get_mut(i).ok_or_else(|| format!("array index {i} out of range along '{pointer}'"))?
+            }
+            _ => return Err(format!("pointer '{pointer}' descends into a non-container at '{tok}'")),
+        };
+    }
+    // Set the final token on the parent container.
+    match cur {
+        Value::Object(map) => {
+            map.insert(last.clone(), value);
+            Ok(())
+        }
+        Value::Array(arr) => {
+            if last == "-" {
+                arr.push(value);
+                return Ok(());
+            }
+            let i: usize = last
+                .parse()
+                .map_err(|_| format!("pointer token '{last}' is not a valid array index (or `-` to append)"))?;
+            match i.cmp(&arr.len()) {
+                std::cmp::Ordering::Less => {
+                    arr[i] = value;
+                    Ok(())
+                }
+                std::cmp::Ordering::Equal => {
+                    arr.push(value);
+                    Ok(())
+                }
+                std::cmp::Ordering::Greater => Err(format!(
+                    "array index {i} is out of range (len {}) — a patch cannot leave holes",
+                    arr.len()
+                )),
+            }
+        }
+        _ => Err(format!("cannot set '{last}': the parent along '{pointer}' is not an object or array")),
+    }
+}
+
+/// Replace ONLY component `id`'s `srcText` with `src`, leaving every other field untouched, then run the
+/// SAME write-time JSX syntax gate as `set` (#2928) before writing. The write funnels through
+/// [`stamped_set`] so it bumps `rev`/`updatedAt`/`updatedBy` like every other `bsc ui` mutation (#3164).
+/// Errors when the component is absent. Pure of stdin/print so tests drive it directly.
+fn replace_src(store: &bsc_json_store::Store, id: &str, src: &str) -> Result<(), String> {
+    let mut record = load_component_object(store, id)?;
+    record
+        .as_object_mut()
+        .expect("load_component_object guarantees an object")
+        .insert("srcText".to_string(), serde_json::Value::String(src.to_string()));
+    validate_component_batch(std::slice::from_ref(&record))?;
+    stamped_set(store, id, record, &crate::record::resolve_writer(None))
+}
+
+/// Set `value` at `pointer` on component `id`'s record, then run the `set` syntax gate (#2928) — so a
+/// `patch /srcText …` can't smuggle in a module that won't build. The write funnels through
+/// [`stamped_set`] so it bumps `rev`/`updatedAt`/`updatedBy` like every other `bsc ui` mutation (#3164).
+/// Errors when the component (or the pointer's parent) is absent. Pure of stdin/print so tests drive it.
+fn apply_patch(
+    store: &bsc_json_store::Store,
+    id: &str,
+    pointer: &str,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    let mut record = load_component_object(store, id)?;
+    set_at_pointer(&mut record, &normalize_pointer(pointer), value)?;
+    validate_component_batch(std::slice::from_ref(&record))?;
+    stamped_set(store, id, record, &crate::record::resolve_writer(None))
+}
+
+/// Render ONE resolved field value for `get --field` to the string to emit: `raw` unwraps a string (no
+/// quotes/escaping) so a shell capture is clean — a non-string value still prints as compact JSON;
+/// otherwise JSON (pretty indents). The raw string is EMITTED via the shared [`bsc_cli_util::print_raw`]
+/// (#3166) by the caller, so `--field --raw` is byte-identical to the whole-record `--raw`. Pure → unit-tested.
+fn field_output(value: &serde_json::Value, raw: bool, pretty: bool) -> Result<String, String> {
+    if raw {
+        return Ok(match value {
+            serde_json::Value::String(s) => s.clone(),
+            other => serde_json::to_string(other).map_err(|e| e.to_string())?,
+        });
+    }
+    if pretty {
+        serde_json::to_string_pretty(value).map_err(|e| e.to_string())
+    } else {
+        serde_json::to_string(value).map_err(|e| e.to_string())
+    }
+}
+
+/// `set-src <id> [--dir D]` (#3162) — replace ONLY component <id>'s `srcText` from stdin. A ui-scope
+/// MUTATION: the write-scope is honored BEFORE stdin/the store are touched (so a read-scoped session
+/// refuses immediately without blocking on stdin).
+fn cmd_set_src(args: &[String]) -> Result<(), String> {
+    let (pos, dir, _pretty) = parse_anim_args(args)?;
+    let id = pos.first().ok_or("usage: bsc ui set-src <id>   # the new srcText on stdin")?;
+    bsc_cli_util::require_write_scope("ui")?;
+    let mut src = String::new();
+    std::io::stdin().read_to_string(&mut src).map_err(|e| format!("cannot read stdin: {e}"))?;
+    let store = open_component_store(&dir)?;
+    replace_src(&store, id, &src)?;
+    bsc_util::emit_ui_activity("component", id);
+    println!("{id}");
+    Ok(())
+}
+
+/// `patch <id> <json-pointer> <value> [--dir D]` (#3162) — set ONE field by JSON pointer, parsing
+/// <value> as JSON (else a bare string). A ui-scope MUTATION (gated before the store is touched).
+fn cmd_patch(args: &[String]) -> Result<(), String> {
+    const USAGE: &str = "usage: bsc ui patch <id> <json-pointer> <value>";
+    let (pos, dir, _pretty) = parse_anim_args(args)?;
+    let id = pos.first().ok_or(USAGE)?;
+    let pointer = pos.get(1).ok_or(USAGE)?;
+    let raw_value = pos.get(2).ok_or(USAGE)?;
+    bsc_cli_util::require_write_scope("ui")?;
+    // JSON when it parses, else a bare string (so `/name Button` stores "Button" without the quotes).
+    let value: serde_json::Value = serde_json::from_str(raw_value)
+        .unwrap_or_else(|_| serde_json::Value::String(raw_value.clone()));
+    let store = open_component_store(&dir)?;
+    apply_patch(&store, id, pointer, value)?;
+    bsc_util::emit_ui_activity("component", id);
+    println!("{id}");
+    Ok(())
+}
+
+/// `get <id> --field <json-pointer> [--raw] [--dir D] [--pretty]` (#3162) — print ONE field resolved by
+/// JSON pointer. A read verb (never scope-gated); errors when the component OR the field is absent.
+fn cmd_get_field(args: &[String]) -> Result<(), String> {
+    let (mut id, mut dir, mut field) = (None::<String>, None::<String>, None::<String>);
+    let (mut raw, mut pretty) = (false, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--field" => field = it.next().cloned(),
+            "--raw" => raw = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            positional if id.is_none() => id = Some(positional.to_string()),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let id = id.ok_or("usage: bsc ui get <id> --field <json-pointer> [--raw]")?;
+    let field = field.ok_or("--field needs a JSON pointer value (e.g. `/name`)")?;
+    let store = open_component_store(&dir)?;
+    let record = load_component_object(&store, &id)?;
+    let value = record
+        .pointer(&normalize_pointer(&field))
+        .ok_or_else(|| format!("no field '{field}' in component '{id}'"))?;
+    let out = field_output(value, raw, pretty)?;
+    if raw {
+        // Compose with the shared #3166 raw printer so `--field --raw` behaves IDENTICALLY to the
+        // whole-record `--raw`: LF-only (CR-stripped), bytes-direct (no locale layer), one trailing LF.
+        bsc_cli_util::print_raw(&out);
+    } else {
+        println!("{out}");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1761,7 +2019,7 @@ mod tests {
             names,
             vec![
                 "list", "shapes", "get", "log", "set", "remove", "kit", "eslint-preset", "usage",
-                "doctor", "define-animation", "list-animations", "remove-animation"
+                "doctor", "define-animation", "list-animations", "remove-animation", "set-src", "patch"
             ]
         );
         for c in command_docs() {
@@ -2302,6 +2560,183 @@ mod tests {
         // Help stays reachable read-scoped.
         assert!(run(vec!["define-animation".into(), "help".into()], "bsc ui").is_ok());
         std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+    }
+
+    // ── granular writes (#3162) ──────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn normalize_pointer_adds_an_optional_leading_slash() {
+        assert_eq!(normalize_pointer("/name"), "/name");
+        assert_eq!(normalize_pointer("name"), "/name");
+        assert_eq!(normalize_pointer("props/0/req"), "/props/0/req");
+        // The empty string stays empty (the whole-document pointer).
+        assert_eq!(normalize_pointer(""), "");
+    }
+
+    #[test]
+    fn set_at_pointer_sets_replaces_appends_and_errors_on_a_missing_parent() {
+        use serde_json::json;
+        let mut v = json!({ "name": "Old", "props": [{ "name": "a", "req": false }] });
+        // Replace an existing object key + a nested array-element field.
+        set_at_pointer(&mut v, "/name", json!("New")).unwrap();
+        assert_eq!(v["name"], "New");
+        set_at_pointer(&mut v, "/props/0/req", json!(true)).unwrap();
+        assert_eq!(v["props"][0]["req"], true);
+        // Insert a NEW object key (the field didn't exist yet).
+        set_at_pointer(&mut v, "/group", json!("forms")).unwrap();
+        assert_eq!(v["group"], "forms");
+        // Append to an array by index == len, and via the `-` push token.
+        set_at_pointer(&mut v, "/props/1", json!({ "name": "b" })).unwrap();
+        set_at_pointer(&mut v, "/props/-", json!({ "name": "c" })).unwrap();
+        assert_eq!(v["props"][1]["name"], "b");
+        assert_eq!(v["props"][2]["name"], "c");
+        // RFC-6901 escapes: ~1 → / and ~0 → ~.
+        set_at_pointer(&mut v, "/a~1b", json!(1)).unwrap();
+        assert_eq!(v["a/b"], 1);
+        // Errors: a missing intermediate parent, an out-of-range index (no holes), the whole-doc
+        // pointer (a patch is a FIELD write), and descending into a non-container.
+        assert!(set_at_pointer(&mut v, "/missing/deep", json!(1)).is_err());
+        assert!(set_at_pointer(&mut v, "/props/9", json!(1)).is_err());
+        assert!(set_at_pointer(&mut v, "", json!(1)).is_err());
+        assert!(set_at_pointer(&mut v, "/name/x", json!(1)).is_err());
+    }
+
+    #[test]
+    fn set_src_replaces_only_srctext_and_gates_a_broken_module() {
+        let dir = tmp_store_dir("set-src");
+        let store = bsc_json_store::Store::new(dir, "component");
+        store
+            .set("btn", r#"{"id":"btn","name":"Button","kitId":"react-ui","role":"primitive","srcText":"old"}"#)
+            .unwrap();
+
+        // Replaces ONLY srcText — every other field is untouched.
+        let good = "export function Button(){ return <button/>; }";
+        replace_src(&store, "btn", good).unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("btn").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["srcText"], good);
+        assert_eq!(rec["name"], "Button");
+        assert_eq!(rec["kitId"], "react-ui");
+        assert_eq!(rec["role"], "primitive");
+        assert_eq!(rec["id"], "btn");
+
+        // A corrupt module srcText is rejected by the #2928 gate BEFORE anything is written — the stored
+        // record is left exactly as it was.
+        let err = replace_src(&store, "btn", "export const s = [1,2].join(\"\n\");").unwrap_err();
+        assert!(err.contains("unterminated string literal"), "{err}");
+        let rec2: serde_json::Value = serde_json::from_str(&store.get("btn").unwrap().unwrap()).unwrap();
+        assert_eq!(rec2["srcText"], good, "the rejected write left srcText untouched");
+
+        // An absent component errors, naming it.
+        assert!(replace_src(&store, "ghost", "x").unwrap_err().contains("ghost"));
+    }
+
+    #[test]
+    fn patch_sets_one_field_by_pointer_and_gates_a_srctext_patch() {
+        use serde_json::json;
+        let dir = tmp_store_dir("patch");
+        let store = bsc_json_store::Store::new(dir, "component");
+        store
+            .set("card", r#"{"id":"card","name":"Card","kitId":"react-ui","props":[{"name":"a","req":false}]}"#)
+            .unwrap();
+
+        // Patch a top-level field and a nested array-element field; every other field stays put.
+        apply_patch(&store, "card", "/name", json!("Panel")).unwrap();
+        apply_patch(&store, "card", "/props/0/req", json!(true)).unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("card").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["name"], "Panel");
+        assert_eq!(rec["props"][0]["req"], true);
+        assert_eq!(rec["kitId"], "react-ui");
+        assert_eq!(rec["id"], "card");
+
+        // A `patch /srcText` still passes through the #2928 gate — a broken module is refused and NOT
+        // stored (the granular write can't bypass the syntax check).
+        let err = apply_patch(&store, "card", "/srcText", json!("export const s = [1,2].join(\"\n\");")).unwrap_err();
+        assert!(err.contains("unterminated string literal"), "{err}");
+        let rec2: serde_json::Value = serde_json::from_str(&store.get("card").unwrap().unwrap()).unwrap();
+        assert!(rec2.get("srcText").is_none(), "the rejected srcText patch was never stored");
+
+        // A missing parent and an absent component both error.
+        assert!(apply_patch(&store, "card", "/deep/x", json!(1)).is_err());
+        assert!(apply_patch(&store, "ghost", "/name", json!("x")).unwrap_err().contains("ghost"));
+    }
+
+    #[test]
+    fn field_output_raw_unwraps_strings_and_jsons_everything_else() {
+        use serde_json::json;
+        // --raw: a string prints unquoted (clean shell capture); a non-string prints as compact JSON.
+        assert_eq!(field_output(&json!("Button"), true, false).unwrap(), "Button");
+        assert_eq!(field_output(&json!(true), true, false).unwrap(), "true");
+        assert_eq!(field_output(&json!(42), true, false).unwrap(), "42");
+        assert_eq!(field_output(&json!({ "a": 1 }), true, false).unwrap(), "{\"a\":1}");
+        // Without --raw a string keeps its JSON quotes; --pretty indents a container.
+        assert_eq!(field_output(&json!("Button"), false, false).unwrap(), "\"Button\"");
+        assert!(field_output(&json!({ "a": 1 }), false, true).unwrap().contains('\n'));
+    }
+
+    #[test]
+    fn get_field_runs_through_the_cli_and_errors_on_a_missing_field() {
+        let dir = tmp_store_dir("get-field");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store.set("card", r#"{"id":"card","name":"Card","props":[{"name":"a"}]}"#).unwrap();
+        // Reads run Ok end-to-end — with and without the leading `/`, raw + json, and a nested pointer.
+        for a in [
+            vec!["get", "card", "--field", "/name", "--raw", "--dir", &dir],
+            vec!["get", "card", "--field", "name", "--dir", &dir],
+            vec!["get", "card", "--field", "/props/0/name", "--dir", &dir],
+        ] {
+            assert!(run(a.iter().map(|s| s.to_string()).collect(), "bsc ui").is_ok(), "read runs: {a:?}");
+        }
+        // A missing field errors, naming both the field and the component.
+        let err = run(
+            vec!["get".into(), "card".into(), "--field".into(), "/nope".into(), "--dir".into(), dir.clone()],
+            "bsc ui",
+        )
+        .unwrap_err();
+        assert!(err.contains("nope") && err.contains("card"), "{err}");
+        // A plain `get` (no --field) is NOT intercepted — it still delegates to the store CLI.
+        assert!(run(vec!["get".into(), "card".into(), "--dir".into(), dir], "bsc ui").is_ok());
+    }
+
+    #[test]
+    fn granular_writes_refuse_under_a_read_ui_scope_before_stdin_or_the_store() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
+        // set-src is a MUTATION: it refuses at the write-scope gate BEFORE reading stdin (so no --dir /
+        // stdin is passed — the gate fires first and the test can never block on stdin).
+        let err = run(vec!["set-src".into(), "x".into()], "bsc ui").unwrap_err();
+        assert!(err.contains("'ui'") && err.contains("read-only"), "set-src read-scope refusal: {err}");
+        // patch refuses the same way, before the store is touched.
+        let err = run(vec!["patch".into(), "x".into(), "/name".into(), "Button".into()], "bsc ui").unwrap_err();
+        assert!(err.contains("'ui'") && err.contains("read-only"), "patch read-scope refusal: {err}");
+        // `get --field` is a READ — reachable under the read scope (against a scratch --dir).
+        let dir = tmp_store_dir("granular-read-scope");
+        bsc_json_store::Store::new(dir.clone(), "component")
+            .set("card", r#"{"id":"card","name":"Card"}"#)
+            .unwrap();
+        assert!(run(
+            vec!["get".into(), "card".into(), "--field".into(), "/name".into(), "--raw".into(), "--dir".into(), dir],
+            "bsc ui"
+        )
+        .is_ok());
+        // Help stays reachable read-scoped for both writers.
+        assert!(run(vec!["set-src".into(), "help".into()], "bsc ui").is_ok());
+        assert!(run(vec!["patch".into(), "help".into()], "bsc ui").is_ok());
+        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+    }
+
+    #[test]
+    fn granular_write_verbs_appear_in_help_with_their_detail() {
+        let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMPONENT_COMMANDS);
+        for c in ["set-src", "patch"] {
+            assert!(ov.contains(c), "overview lists {c}");
+        }
+        let s = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "set-src");
+        assert!(s.contains("stdin") && s.contains("syntax gate"), "set-src detail: {s}");
+        let p = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "patch");
+        assert!(p.contains("JSON pointer") && p.contains("parsed as JSON"), "patch detail: {p}");
+        // The `get` detail now documents the --field/--raw form.
+        let g = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "get");
+        assert!(g.contains("--field") && g.contains("--raw"), "get detail documents --field/--raw: {g}");
     }
 
     // ── record history / attribution / optimistic concurrency (#3164) ────────────────────────────
