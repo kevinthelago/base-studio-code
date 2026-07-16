@@ -39,6 +39,7 @@ const SCAN_CONCURRENCY = 3;
  */
 export function useComponentScan(active: boolean, comps: ComponentRecord[], artifact: KitArtifact = ARTIFACT): void {
   const setStatus = useAppStore((s) => s.setComponentBuildStatus);
+  const setStateHealth = useAppStore((s) => s.setComponentStateHealth);
   // The signature we last recorded a result for, per component id — survives kit switches + revisits, so
   // an already-built component is never re-bundled unless its source changed.
   const scannedSigs = useRef<Map<string, string>>(new Map());
@@ -57,12 +58,15 @@ export function useComponentScan(active: boolean, comps: ComponentRecord[], arti
       pending,
       bundleComponent,
       SCAN_CONCURRENCY,
-      (id, status) => {
+      (id, status, stateBlanks) => {
         if (cancelled) return;
         // Mark the signature only once its result lands, so a cancelled build is re-queued next run
         // (never marked-but-unscanned).
         scannedSigs.current.set(id, sigById.get(id) ?? "");
         setStatus(id, status);
+        // Render-confirmed data-state blanks (#3191) — folded into the graph's health badges. Always write
+        // (even `[]`) so a fixed component clears its prior blank badge on re-scan.
+        setStateHealth(id, stateBlanks);
       },
       () => cancelled,
       // Runtime probe (#2908): run each build-clean component in a hidden iframe to catch a throw the
@@ -70,5 +74,5 @@ export function useComponentScan(active: boolean, comps: ComponentRecord[], arti
       (js) => probeComponentRuntime(js, appCss),
     );
     return () => { cancelled = true; };
-  }, [active, comps, artifact, setStatus]);
+  }, [active, comps, artifact, setStatus, setStateHealth]);
 }

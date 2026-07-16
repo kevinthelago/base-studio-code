@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   buildSignature, scannableComponents, pendingScans, runPooled, toBuildStatus, buildAndProbe, scanComponents,
-  type ScannableComponent, type ComponentBuildStatus, type RunFn,
+  probeStateBlanks,
+  type ScannableComponent, type ComponentBuildStatus, type RunFn, type StateProbe, type RuntimeStateCategory,
 } from "./componentScan";
 import type { KitArtifact } from "./componentPreview";
 import type { ComponentRecord } from "./model";
@@ -45,8 +46,34 @@ describe("scannableComponents", () => {
     const stub: ComponentRecord = { ...base, id: "ghost", name: "Ghost", src: "nowhere/Ghost.tsx" }; // no artifact source, no module srcText
     const out = scannableComponents([buildable, stub], ARTIFACT);
     expect(out.map((s) => s.id)).toEqual(["card"]); // the stub is NOT a build FAILURE — it's excluded here
-    expect(out[0].sig).toBe(buildSignature(buildable));
+    expect(out[0].sig).toBe(buildSignature(buildable)); // no collection/loading prop ⇒ sig unchanged by #3191
     expect(out[0].entry).toBeTruthy();
+    expect(out[0].states).toBeUndefined(); // a propless built-in has no data-state to render-probe
+  });
+
+  it("adds an empty-state probe for a data (collection) component and a loading-state probe for a loading one (#3191)", () => {
+    const dataComp: ComponentRecord = {
+      ...base, id: "chart", name: "Chart", src: "user/Chart.tsx",
+      source: "export function Chart({ rows }){ return <ul>{rows.map((r) => <li key={r}/>)}</ul>; }",
+      props: [{ name: "rows", type: "Row[]", req: false, desc: "" }],
+    };
+    const loadingComp: ComponentRecord = {
+      ...base, id: "panel", name: "Panel", src: "user/Panel.tsx",
+      source: "export function Panel({ loading }){ return loading ? null : <div>ok</div>; }",
+      props: [{ name: "loading", type: "boolean", req: false, desc: "" }],
+    };
+    const button: ComponentRecord = {
+      ...base, id: "btn", name: "Button", src: "user/Button.tsx",
+      source: "export function Button({ label }){ return <button>{label}</button>; }",
+      props: [{ name: "label", type: "string", req: false, desc: "" }],
+    };
+    const byId = new Map(scannableComponents([dataComp, loadingComp, button], ARTIFACT).map((s) => [s.id, s]));
+    expect(byId.get("chart")?.states?.map((s) => s.category)).toEqual(["empty-empty-state"]);
+    expect(byId.get("panel")?.states?.map((s) => s.category)).toEqual(["empty-loading-state"]);
+    expect(byId.get("btn")?.states).toBeUndefined(); // no collection/loading prop → never state-probed
+    // The state build reuses the same file set, only the sampled props differ, so it's a real bundle input.
+    expect(byId.get("chart")?.states?.[0].files).toBeTruthy();
+    expect(byId.get("chart")?.states?.[0].entry).toBeTruthy();
   });
 });
 
@@ -217,5 +244,97 @@ describe("scanComponents — build + runtime sweep with mock bundle/run", () => 
     // Cancelled from the start → the pool runs but nothing is recorded.
     await scanComponents(items, bundle, 2, onResult, () => true);
     expect(onResult).not.toHaveBeenCalled();
+  });
+});
+
+describe("probeStateBlanks — render-confirm data-state blanks (#3191)", () => {
+  const state = (category: RuntimeStateCategory, entry: string): StateProbe => ({ category, files: { entry }, entry: "entry" });
+
+  it("flags a state that renders BLANK (ok && empty) but not one that renders content", async () => {
+    const bundle = vi.fn(async (files: Record<string, string>) => files.entry);
+    // The empty-state build renders blank; the loading-state build renders content.
+    const run: RunFn = async (js) => (js === "blank" ? { ok: true, empty: true } : { ok: true, empty: false });
+    const states = [state("empty-empty-state", "blank"), state("empty-loading-state", "full")];
+    expect(await probeStateBlanks(states, bundle, run)).toEqual(["empty-empty-state"]);
+  });
+
+  it("flags both categories when both states render blank", async () => {
+    const bundle = vi.fn(async () => "js");
+    const run: RunFn = async () => ({ ok: true, empty: true });
+    const states = [state("empty-empty-state", "a"), state("empty-loading-state", "b")];
+    expect(await probeStateBlanks(states, bundle, run)).toEqual(["empty-empty-state", "empty-loading-state"]);
+  });
+
+  it("does NOT flag a state that renders content — a real EmptyState / skeleton (the not-flagged side)", async () => {
+    const bundle = vi.fn(async () => "js");
+    const run: RunFn = async () => ({ ok: true, empty: false });
+    expect(await probeStateBlanks([state("empty-empty-state", "js")], bundle, run)).toEqual([]);
+  });
+
+  it("skips a state whose build fails or whose probe throws (inconclusive ⇒ never a false flag)", async () => {
+    const bundle = vi.fn(async (files: Record<string, string>) => {
+      if (files.entry === "nobuild") throw new Error("Transform failed");
+      return files.entry;
+    });
+    const run: RunFn = async (js) => {
+      if (js === "probefail") throw new Error("iframe blew up");
+      return { ok: true, empty: true };
+    };
+    const states = [state("empty-empty-state", "nobuild"), state("empty-loading-state", "probefail")];
+    expect(await probeStateBlanks(states, bundle, run)).toEqual([]);
+  });
+
+  it("does not flag a state that THROWS at runtime (a throw is not a blank render)", async () => {
+    const bundle = vi.fn(async () => "js");
+    const run: RunFn = async () => ({ ok: false, message: "data.map is not a function" });
+    expect(await probeStateBlanks([state("empty-empty-state", "js")], bundle, run)).toEqual([]);
+  });
+});
+
+describe("scanComponents — data-state blank reporting (#3191)", () => {
+  /** A scannable whose LOADED build echoes its id and that carries one state probe echoing `stateEntry`. */
+  const withState = (id: string, category: RuntimeStateCategory, stateEntry: string): ScannableComponent => ({
+    id, sig: id, files: { entry: id }, entry: "entry",
+    states: [{ category, files: { entry: stateEntry }, entry: "entry" }],
+  });
+
+  it("reports the render-confirmed blank state of a component that renders fine loaded", async () => {
+    const items = [withState("chart", "empty-empty-state", "emptyblank")];
+    const bundle = vi.fn(async (files: Record<string, string>) => files.entry);
+    // loaded ("chart") renders content; the empty-state build ("emptyblank") renders blank.
+    const run: RunFn = async (js) => (js === "emptyblank" ? { ok: true, empty: true } : { ok: true, empty: false });
+    const results = new Map<string, RuntimeStateCategory[]>();
+    await scanComponents(items, bundle, 2, (id, _status, blanks) => results.set(id, blanks), () => false, run);
+    expect(results.get("chart")).toEqual(["empty-empty-state"]);
+  });
+
+  it("reports NO blank when the component's empty state renders content (a real EmptyState message)", async () => {
+    const items = [withState("good", "empty-empty-state", "emptyfull")];
+    const bundle = vi.fn(async (files: Record<string, string>) => files.entry);
+    const run: RunFn = async () => ({ ok: true, empty: false }); // every state renders content
+    const results = new Map<string, RuntimeStateCategory[]>();
+    await scanComponents(items, bundle, 2, (id, _s, b) => results.set(id, b), () => false, run);
+    expect(results.get("good")).toEqual([]);
+  });
+
+  it("does NOT probe states when the LOADED render is itself blank (that's the #2926 signal, not a state fault)", async () => {
+    const items = [withState("blankLoaded", "empty-empty-state", "emptyblank")];
+    const bundle = vi.fn(async (files: Record<string, string>) => files.entry);
+    const run: RunFn = async () => ({ ok: true, empty: true }); // loaded blank → status "empty"
+    const results = new Map<string, RuntimeStateCategory[]>();
+    const statuses = new Map<string, string>();
+    await scanComponents(items, bundle, 2, (id, status, b) => { results.set(id, b); statuses.set(id, status.state); }, () => false, run);
+    expect(statuses.get("blankLoaded")).toBe("empty");
+    expect(results.get("blankLoaded")).toEqual([]);
+    expect(bundle).toHaveBeenCalledTimes(1); // only the loaded build ran — the state build was skipped
+  });
+
+  it("reports [] for a stateless component (no states probed) — e.g. a Button", async () => {
+    const items = [sc("button")]; // no `states`
+    const bundle = vi.fn(async () => "js");
+    const run: RunFn = async () => ({ ok: true, empty: false });
+    const results = new Map<string, RuntimeStateCategory[]>();
+    await scanComponents(items, bundle, 2, (id, _s, b) => results.set(id, b), () => false, run);
+    expect(results.get("button")).toEqual([]);
   });
 });
