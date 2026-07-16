@@ -35,7 +35,7 @@ export type ImplRole = "primitive" | "algorithm";
 /** The manipulation KINDS an algorithm can carry (#3210, epic #3209) — the "what it does" axis of the
  *  animation (`sort`/`search`/…), paired with the DATA STRUCTURE it operates on to pick the live
  *  visualization. Grows as more example animations land (matrix ops, etc.). */
-export const ALGO_KINDS = ["sort", "search", "traversal", "accumulate"] as const;
+export const ALGO_KINDS = ["sort", "search", "traversal", "accumulate", "transform"] as const;
 export type AlgoKind = (typeof ALGO_KINDS)[number];
 
 export interface AlgoImpl {

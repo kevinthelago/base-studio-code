@@ -313,6 +313,36 @@
       "summary": "In-place insertion sort authored as a step-yielding generator (#3171 generator-as-source): the plain `sort` drains it to order the array, and the Algorithms Visualization pane animates the SAME yields — compare/swap/set verbs bound to the <ArrayView> renderer's designed animations. The array proof-of-loop (#3178/#3177) for the algorithm-visualization epic.",
       "composes": ["typescript.number"],
       "code": "import type { ArrayFrame } from \"@bsc/algorithms/trace\";\n\n/** Insertion sort as a step-yielding generator (generator-as-source, #3171): mutates `a` in place and\n *  yields one ArrayFrame per step. The plain `sort` drains it to order the array; the Algorithms\n *  Visualization pane animates the same yields - compare/swap verbs bound to <ArrayView>'s animations. */\nexport function* sortSteps(a: number[]): Generator<ArrayFrame> {\n  yield { structure: \"array\", data: [...a] };\n  for (let i = 1; i < a.length; i++) {\n    let j = i;\n    while (j > 0) {\n      yield { structure: \"array\", data: [...a], ops: [{ op: \"compare\", at: [j - 1, j] }], cursors: { i, j } };\n      if (a[j - 1] <= a[j]) break;\n      [a[j - 1], a[j]] = [a[j], a[j - 1]];\n      yield { structure: \"array\", data: [...a], ops: [{ op: \"swap\", at: [j - 1, j] }], cursors: { i, j } };\n      j--;\n    }\n  }\n  yield { structure: \"array\", data: [...a], ops: a.map((_, k) => ({ op: \"mark\", at: k, as: \"sorted\" })) };\n}\n\n/** Sort ascending by draining the generator (one source of truth). Pure - never mutates the input. */\nexport const sort = (input: number[]): number[] => {\n  const a = [...input];\n  const steps = sortSteps(a);\n  while (!steps.next().done) { /* drain - sortSteps mutates `a` in place */ }\n  return a;\n};\n"
+    },
+    {
+      "id": "transpose.ts",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "transpose",
+      "kind": "transform",
+      "summary": "Transpose a square matrix in place — swap each (i, j) with (j, i) across the main diagonal. The Algorithms Visualization animates the diagonal swaps via the <MatrixView> renderer (#3221).",
+      "composes": ["typescript.number"],
+      "code": "export function transpose(m: number[][]): number[][] {\n  const a = m.map((r) => [...r]);\n  const n = a.length;\n  for (let i = 0; i < n; i++)\n    for (let j = i + 1; j < n; j++) [a[i][j], a[j][i]] = [a[j][i], a[i][j]];\n  return a;\n}\n"
+    },
+    {
+      "id": "rotate.ts",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "rotate",
+      "kind": "transform",
+      "summary": "Rotate a square matrix 90° clockwise in place — a four-way cycle per ring (all four cells move together). Animated cell-by-cell in the Matrix visualization (#3221).",
+      "composes": ["typescript.number"],
+      "code": "export function rotate90(m: number[][]): number[][] {\n  const a = m.map((r) => [...r]);\n  const n = a.length;\n  for (let l = 0; l < Math.floor(n / 2); l++) {\n    const f = l, e = n - 1 - l;\n    for (let i = f; i < e; i++) {\n      const o = i - f, t = a[f][i];\n      a[f][i] = a[e - o][f];\n      a[e - o][f] = a[e][e - o];\n      a[e][e - o] = a[i][e];\n      a[i][e] = t;\n    }\n  }\n  return a;\n}\n"
+    },
+    {
+      "id": "reflect.ts",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "reflect",
+      "kind": "transform",
+      "summary": "Reflect a square matrix horizontally (mirror left↔right) — swap columns c and n-1-c in every row. Animated as column swaps in the Matrix visualization (#3221).",
+      "composes": ["typescript.number"],
+      "code": "export function reflect(m: number[][]): number[][] {\n  const a = m.map((r) => [...r]);\n  const n = a[0].length;\n  for (const r of a)\n    for (let c = 0; c < Math.floor(n / 2); c++) [r[c], r[n - 1 - c]] = [r[n - 1 - c], r[c]];\n  return a;\n}\n"
     }
   ]
 }

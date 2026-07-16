@@ -15,11 +15,13 @@
 import type { Frame } from "../../lib/trace";
 import type { AlgoImpl, AlgoKind } from "../../lib/knowledge";
 import { classifyKind, type Classifiable } from "../../lib/classifyKind";
-import { runAlgorithm } from "../../lib/tracer";
+import { runAlgorithm, runMatrixAlgorithm } from "../../lib/tracer";
 import type { RendererRegistry } from "../registry";
 import { ArrayView } from "../renderers/ArrayView";
+import { MatrixView } from "../renderers/MatrixView";
 import { parseSortInput } from "./sort";
 import { TRACE_PROGRAMS, programKey, type AlgoProgram } from "./sorts";
+import { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./matrixTransforms";
 
 /** A ready-to-play visualization: a stable default factory (the inline preview) + the per-structure
  *  renderers the player dispatches to + an editable INPUT seam (#3199) that powers the "your input" field. */
@@ -55,11 +57,32 @@ function exampleFromProgram(program: AlgoProgram): VizExample {
   };
 }
 
-/** One VizExample per trace-program, built ONCE so each algorithm has a STABLE example identity (a fresh
- *  build per render would rebuild the player's stream every frame). */
-const EXAMPLE_BY_KEY: Record<string, VizExample> = Object.fromEntries(
-  Object.entries(TRACE_PROGRAMS).map(([key, program]): [string, VizExample] => [key, exampleFromProgram(program)]),
-);
+/** Build a stable matrix {@link VizExample} that RUNS a matrix transform (#3221) via the TracedMatrix, with
+ *  a square-grid "your input" seam. */
+function matrixExampleFromProgram(program: MatrixProgram): VizExample {
+  return {
+    factory: runMatrixAlgorithm(program.run, program.defaultInput),
+    renderers: { matrix: MatrixView },
+    input: {
+      default: matrixToText(program.defaultInput),
+      hint: "A square grid — cells by comma/space, rows by ';' (e.g. 1,2 ; 3,4)",
+      parse: (text) => parseMatrixInput(text),
+      make: (parsed) => runMatrixAlgorithm(program.run, parsed as number[][])(),
+    },
+  };
+}
+
+/** One VizExample per trace-program (array sorts + matrix transforms), built ONCE so each algorithm has a
+ *  STABLE example identity — a fresh build per render would rebuild the player's stream every frame. Keyed
+ *  by base name; each datatype contributes its own programs + renderer. */
+const EXAMPLE_BY_KEY: Record<string, VizExample> = {
+  ...Object.fromEntries(
+    Object.entries(TRACE_PROGRAMS).map(([key, program]): [string, VizExample] => [key, exampleFromProgram(program)]),
+  ),
+  ...Object.fromEntries(
+    Object.entries(MATRIX_PROGRAMS).map(([key, program]): [string, VizExample] => [key, matrixExampleFromProgram(program)]),
+  ),
+};
 
 /** Resolve an implementation's kind (#3210): the CREATOR-assigned `kind` wins; otherwise the heuristic
  *  classifier infers it. Retained for the datatype-renderer pick + `bsc graph doctor` (the viz TRACE now
