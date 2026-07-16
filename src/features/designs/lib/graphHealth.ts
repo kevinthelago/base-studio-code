@@ -21,6 +21,10 @@
 // a standalone preview renders a demo placeholder, #2921).
 // "Unused" = no composer AND used === 0; a page/layout with used > 0 is a legit entry point, never flagged.
 //
+// Two categories — empty-empty-state / empty-loading-state (#3191) — are RUNTIME-only: they are in the
+// HealthCategory union (with a severity + a badge) but are NOT produced here; the on-visit iframe scan
+// (componentScan.ts) render-confirms a blank empty/loading state and folds them into the graph badges.
+//
 // The no-implementation check reuses the EXACT preview logic (`componentPreviewFiles`, #2824/#2828):
 // the store strips a built-in's artifact `source` (#2794), so a built-in still builds from the packaged
 // artifact — only a node in NEITHER the artifact NOR carrying its own module/`source` is flagged.
@@ -219,7 +223,16 @@ export type HealthCategory =
   // hand-diagnose: a dead animation-selector hook, a stroke-dash draw with no pathLength, a CSS-transform
   // keyframe fighting an SVG transform ATTRIBUTE, and a cross-component keyframe-name collision.
   | "motion-dead-selector" | "motion-dash-no-pathlength" | "motion-transform-attr" | "motion-name-collision"
-  | "no-empty-state" | "no-loading-state" | "slot-shell";
+  | "no-empty-state" | "no-loading-state"
+  // RUNTIME data-state blanks (#3191) — a component that BUILDS clean and renders fine LOADED but produces
+  // a BLANK #root in a real app state: `empty-empty-state` (no output when its data is empty — no
+  // empty-state message) / `empty-loading-state` (no output while loading — no skeleton/spinner). Unlike
+  // the STATIC no-empty-state/no-loading-state (#3135, "the source has no empty/loading branch"), these are
+  // RENDER-CONFIRMED: the on-visit iframe scan mounts the empty/loading preview state and measures a blank
+  // #root (componentScan.ts). NOT produced by `analyzeGraphHealth` (it can't run a component) — and NOT
+  // mirrored in the static Rust doctor, which keeps only the #3135 complements it can compute.
+  | "empty-empty-state" | "empty-loading-state"
+  | "slot-shell";
 
 /** Category → severity (higher = worse); drives ranking + which badge wins on a multi-flagged node.
  *  `unresolvable-import` (3) is a real defect — the component throws at preview time (a bare import the
@@ -246,7 +259,39 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "motion-transform-attr": 1,
   "no-empty-state": 1,
   "no-loading-state": 1,
+  // Runtime data-state blanks (#3191) — a real but mild defect (renders fine loaded, blanks in a real app
+  // state), the unwired-prop/orphan tier (2). Render-confirmed by the scan, so ABOVE the static #3135
+  // no-empty/no-loading advisories (1): when a node hits both, the confirmed blank wins the badge.
+  "empty-empty-state": 2,
+  "empty-loading-state": 2,
   "slot-shell": 1,
+};
+
+/** The badge glyph + tooltip per category (#2680) — mirrors `bsc ui doctor`; read by the Design Studio
+ *  graph node cards (`DesignsWorkbench`). Typed as a TOTAL `Record<HealthCategory, …>`, so the compiler
+ *  forces an entry for EVERY category (the #3026 gap stays closed — a new category can't ship without a
+ *  badge). Co-located with {@link HEALTH_SEVERITY} (both keyed by category) in this pure module so it's
+ *  testable without loading the workbench component. */
+export const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string }> = {
+  cycle: { glyph: "⟳", label: "on a composes cycle" },
+  "dangling-branch": { glyph: "⚠", label: "unused branch (nothing composes it, used = 0)" },
+  duplicate: { glyph: "⧉", label: "duplicate (same intrinsic / identical source)" },
+  "no-implementation": { glyph: "∅", label: "no buildable implementation — a spec, not code" },
+  "self-reference": { glyph: "↺", label: "self-referential stub — only renders itself; supply its real body" },
+  "unresolvable-import": { glyph: "↯", label: "imports a package the preview can't resolve — throws at preview time" },
+  reimplementation: { glyph: "♻", label: "reimplements a library node — compose it via @bsc/… instead of re-coding it" },
+  orphan: { glyph: "○", label: "orphan — isolated & unused" },
+  "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
+  "phantom-compose": { glyph: "⇢", label: "phantom composes — declares a composition its source never renders (a false graph edge)" },
+  "motion-dead-selector": { glyph: "⌁", label: "motion dead selector — an animation targets a class hook its source never renders" },
+  "motion-dash-no-pathlength": { glyph: "┅", label: "stroke-dash motion with no pathLength — a draw-in needs a known path length" },
+  "motion-transform-attr": { glyph: "⤥", label: "CSS transform keyframe fights an SVG transform= attribute — they don't compose" },
+  "motion-name-collision": { glyph: "⧗", label: "cross-component keyframe-name collision — two components' same-named animations clobber" },
+  "no-empty-state": { glyph: "◍", label: "no empty state — takes data but renders no distinct empty view; add an EmptyState" },
+  "no-loading-state": { glyph: "◌", label: "no loading state — takes data but has no `loading` prop; add one for a loading preview" },
+  "empty-empty-state": { glyph: "⬚", label: "blank empty state — renders NOTHING when its data is empty; add an empty-state message" },
+  "empty-loading-state": { glyph: "◐", label: "blank loading state — renders NOTHING while loading; add a skeleton/spinner" },
+  "slot-shell": { glyph: "▤", label: "slot shell — previews a demo placeholder; fill its content slots to see its real function" },
 };
 
 export interface HealthFinding {

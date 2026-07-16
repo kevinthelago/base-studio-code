@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { analyzeGraphHealth, analyzeMotion, nodeHealth } from "./graphHealth";
+import { analyzeGraphHealth, analyzeMotion, nodeHealth, HEALTH_SEVERITY, HEALTH_BADGE } from "./graphHealth";
 import type { ComponentRecord, Role } from "./model";
 import type { KitAnimation } from "@/shared/ui/kit/animations";
 
@@ -464,5 +464,41 @@ describe("analyzeMotion (#3163, mirrors bsc ui doctor --motion)", () => {
   it("returns nothing for components with no inline animations (name-refs / none)", () => {
     expect(analyzeMotion([comp("X", "composite", 2)])).toEqual([]);
     expect(analyzeMotion([comp("Y", "composite", 2, [], { animations: ["fade-in", "pulse"] })])).toEqual([]);
+  });
+});
+
+describe("runtime data-state categories (#3191)", () => {
+  it("carries the two RUNTIME blank-state categories at the mild-warning tier (2, above the #3135 advisories)", () => {
+    expect(HEALTH_SEVERITY["empty-empty-state"]).toBe(2);
+    expect(HEALTH_SEVERITY["empty-loading-state"]).toBe(2);
+    // Above the static #3135 advisories, so a render-confirmed blank wins the badge over a static one.
+    expect(HEALTH_SEVERITY["empty-empty-state"]).toBeGreaterThan(HEALTH_SEVERITY["no-empty-state"]);
+    expect(HEALTH_SEVERITY["empty-loading-state"]).toBeGreaterThan(HEALTH_SEVERITY["no-loading-state"]);
+  });
+
+  it("is NEVER produced by the static analyzer — these are render-confirmed by the scan, not analyzeGraphHealth", () => {
+    // A data component with a raw-render collection + a loading prop: the STATIC analyzer emits the #3135
+    // no-empty-state advisory, but never the RUNTIME empty-*-state categories (it can't run the component).
+    const chart = comp("BarChart", "composite", 2, [], {
+      source: "export function BarChart({ data, loading }){ return <svg>{data.map((d) => <rect key={d}/>)}</svg>; }",
+      props: [{ name: "data", type: "Datum[]", req: false, desc: "" }, { name: "loading", type: "boolean", req: false, desc: "" }],
+    });
+    const cats = analyzeGraphHealth([chart]).map((f) => f.category);
+    expect(cats).not.toContain("empty-empty-state");
+    expect(cats).not.toContain("empty-loading-state");
+  });
+
+  it("HEALTH_BADGE has a glyph + label for EVERY category — the #3026 gap stays closed (#3191)", () => {
+    // HEALTH_SEVERITY is a total Record<HealthCategory, number>, so its keys ARE the complete category set;
+    // assert HEALTH_BADGE covers each (the compiler already enforces this via the Record type — this pins it
+    // at runtime too, since #3026 was a category shipping without a badge).
+    for (const cat of Object.keys(HEALTH_SEVERITY)) {
+      const badge = HEALTH_BADGE[cat as keyof typeof HEALTH_BADGE];
+      expect(badge, `missing HEALTH_BADGE entry for "${cat}"`).toBeTruthy();
+      expect(badge.glyph.length, `empty glyph for "${cat}"`).toBeGreaterThan(0);
+      expect(badge.label.length, `empty label for "${cat}"`).toBeGreaterThan(0);
+    }
+    expect(HEALTH_BADGE["empty-empty-state"].glyph).toBeTruthy();
+    expect(HEALTH_BADGE["empty-loading-state"].glyph).toBeTruthy();
   });
 });

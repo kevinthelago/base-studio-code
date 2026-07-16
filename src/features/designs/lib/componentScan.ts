@@ -15,10 +15,23 @@
 // SCOPE: only components that HAVE buildable source (`componentPreviewFiles` non-null) and then FAIL are
 // this scan's concern. A component with NO buildable source (`componentPreviewFiles` === null) is a
 // separate, static graph-health finding (the `no-implementation` category) — never scanned here.
+//
+// STATE BLANKS (#3191): the same sweep also render-confirms a component's supported data-STATES. A DATA
+// component (collection prop) is built in the `empty` state and a component with a `loading` prop in the
+// `loading` state; a build-clean, renders-fine-LOADED component that produces a BLANK #root in one of those
+// states is flagged `empty-empty-state` / `empty-loading-state` (RUNTIME-only HealthCategory values — the
+// static `analyzeGraphHealth`/Rust doctor can't render, so they never emit these). This is the render angle
+// on the #3135 static no-empty/no-loading advisories: it catches a component that HAS an empty/loading
+// branch which itself renders nothing (e.g. `data.length ? list : null`), which the static heuristic misses.
 import type { RuntimeOutcome } from "@/shared/lib/preview/componentRuntimeProbe";
-import { componentPreviewFiles, type KitArtifact } from "./componentPreview";
+import { componentPreviewFiles, isCollectionProp, isLoadingProp, type KitArtifact } from "./componentPreview";
+import type { HealthCategory } from "./graphHealth";
 import { libraryModuleResolver } from "./libraryModules";
 import type { ComponentRecord } from "./model";
+
+/** The two RUNTIME data-state health categories the scan render-confirms (#3191) — a subset of
+ *  {@link HealthCategory} (the `Extract` binds them to real members, so a typo fails to compile). */
+export type RuntimeStateCategory = Extract<HealthCategory, "empty-empty-state" | "empty-loading-state">;
 
 /** One component's preview outcome — the value the graph badges off. `ok` = built clean, ran without
  *  throwing, AND rendered something; `error` carries a readable message for the node's tooltip and a
@@ -29,6 +42,15 @@ export type ComponentBuildStatus =
   | { state: "error"; kind: "build" | "runtime"; message: string }
   | { state: "empty"; message: string };
 
+/** A per-STATE preview build to render-confirm for a BLANK #root (#3191) — the empty/loading data-state a
+ *  component supports. `category` is the finding it yields when that state renders nothing; `files`/`entry`
+ *  build that state's preview (the same file set as loaded — only the sampled props differ). */
+export interface StateProbe {
+  category: RuntimeStateCategory;
+  files: Record<string, string>;
+  entry: string;
+}
+
 /** A component queued for the build scan: its id, a change-signature (so an edit re-queues just it), and
  *  the in-memory files + entry to hand esbuild. */
 export interface ScannableComponent {
@@ -37,6 +59,10 @@ export interface ScannableComponent {
   sig: string;
   files: Record<string, string>;
   entry: string;
+  /** Extra per-state preview builds to render-confirm for a blank (#3191) — present only for a component
+   *  that HAS the relevant state (a collection prop → `empty`; a `loading` prop → `loading`). Undefined
+   *  for a component with no such state (a Button), so it is never probed for a state it can't have. */
+  states?: StateProbe[];
 }
 
 /** A component's build signature — the fields that decide what gets bundled. A change to any of them
@@ -61,10 +87,25 @@ export function scannableComponents(comps: ComponentRecord[], artifact: KitArtif
     // its siblings, and a library-importer folds in the vendored impl so an algorithm edit re-queues it.
     const sibSrcs = new Set(siblings.map((s) => s.src).filter(Boolean));
     const vendored = Object.keys(build.files).filter((k) => sibSrcs.has(k) || k.startsWith("@bsc/")).sort();
-    const sig = vendored.length
+    // Runtime data-state probes (#3191): a DATA component (collection prop) also gets an `empty`-state build
+    // and a component with a LOADING prop a `loading`-state build, so the scan can render-confirm a BLANK
+    // #root in that state. Same file set as loaded — only the sampled props differ (`samplePropValue` empties
+    // collections / turns on the loading prop) — so each reuses `componentPreviewFiles(..., state)`.
+    const states: StateProbe[] = [];
+    if (c.props.some(isCollectionProp)) {
+      const s = componentPreviewFiles(c, artifact, siblings, libraryModuleResolver, "empty");
+      if (s) states.push({ category: "empty-empty-state", files: s.files, entry: s.entry });
+    }
+    if (c.props.some(isLoadingProp)) {
+      const s = componentPreviewFiles(c, artifact, siblings, libraryModuleResolver, "loading");
+      if (s) states.push({ category: "empty-loading-state", files: s.files, entry: s.entry });
+    }
+    // Fold the qualifying states into the sig so adding/removing a collection/loading prop re-queues the
+    // component. Appends "" for a stateless component ⇒ sig === buildSignature(c) exactly (pre-#3191 contract).
+    const sig = (vendored.length
       ? buildSignature(c) + vendored.map((k) => `${k} ${build.files[k]}`).join("")
-      : buildSignature(c);
-    out.push({ id: c.id, sig, files: build.files, entry: build.entry });
+      : buildSignature(c)) + states.map((s) => s.category).join("");
+    out.push({ id: c.id, sig, files: build.files, entry: build.entry, states: states.length ? states : undefined });
   }
   return out;
 }
@@ -144,6 +185,35 @@ export async function buildAndProbe(item: ScannableComponent, bundle: BundleFn, 
 }
 
 /**
+ * Render-confirm each supported data-STATE of a build-clean component (#3191), returning the categories it
+ * renders BLANK in. For each state build, BUILD it then RUN it; a clean mount that renders NOTHING
+ * (`ok && empty`) yields that state's category. A build error, a runtime throw, or a non-blank render yields
+ * nothing — conservative: only a demonstrable, render-confirmed blank flags (a real EmptyState / skeleton
+ * renders content ⇒ never flagged). Called ONLY when the component rendered fine LOADED, so a finding here
+ * is precisely "works normally but blanks in this state". Pure given `bundle`/`run` (the hook wires the real
+ * esbuild bundle + iframe probe; tests pass mocks).
+ */
+export async function probeStateBlanks(states: StateProbe[], bundle: BundleFn, run: RunFn): Promise<RuntimeStateCategory[]> {
+  const blanks: RuntimeStateCategory[] = [];
+  for (const s of states) {
+    let js: string;
+    try {
+      js = await bundle(s.files, s.entry);
+    } catch {
+      continue; // a state build that won't compile isn't a blank-render signal — skip it
+    }
+    let outcome: RuntimeOutcome;
+    try {
+      outcome = await run(js);
+    } catch {
+      continue; // probe-infra failure ⇒ inconclusive, never a false flag
+    }
+    if (outcome.ok && outcome.empty) blanks.push(s.category);
+  }
+  return blanks;
+}
+
+/**
  * Scan each buildable component (build + optional runtime probe), throttled to `concurrency` in flight,
  * reporting ok / build-error / runtime-error per id via `onResult`. A build failure (esbuild) OR a runtime
  * throw (`run`) is recorded as an error status — one bad component never aborts the sweep. `isCancelled`
@@ -153,19 +223,27 @@ export async function buildAndProbe(item: ScannableComponent, bundle: BundleFn, 
  *
  * The scan's spine, kept pure (no React, no esbuild, no DOM): the hook passes the real `bundleComponent`
  * + `probeComponentRuntime` + a store setter; a test passes mocks and asserts the derived statuses.
+ *
+ * `onResult`'s third arg is the render-confirmed data-state blanks (#3191) — the `empty-empty-state` /
+ * `empty-loading-state` categories the component blanks in, probed ONLY when it built + rendered fine LOADED
+ * (a blank-loaded #2926 / errored component is already reported, so its state probes would be noise). Empty
+ * for a component with no such fault or no probed states; a 2-arg `onResult` callback simply ignores it.
  */
 export async function scanComponents(
   scannable: ScannableComponent[],
   bundle: BundleFn,
   concurrency: number,
-  onResult: (id: string, status: ComponentBuildStatus) => void,
+  onResult: (id: string, status: ComponentBuildStatus, stateBlanks: RuntimeStateCategory[]) => void,
   isCancelled: () => boolean = () => false,
   run: RunFn = NO_RUNTIME_PROBE,
 ): Promise<void> {
   await runPooled(scannable, concurrency, async (item) => {
     if (isCancelled()) return;
     const status = await buildAndProbe(item, bundle, run);
+    const stateBlanks = status.state === "ok" && item.states?.length
+      ? await probeStateBlanks(item.states, bundle, run)
+      : [];
     if (isCancelled()) return;
-    onResult(item.id, status);
+    onResult(item.id, status, stateBlanks);
   });
 }

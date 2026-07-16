@@ -164,16 +164,19 @@ export type PreviewState = "loaded" | "empty" | "loading";
 
 /** Is `p` a LOADING-family boolean — the toggle that puts a component into its loading/skeleton render
  *  (`loading` / `busy` / `pending` / `isLoading`)? It's ON only in the `loading` state, off otherwise —
- *  fixing the old "every boolean samples to true" quirk that previewed loading-components as skeletons. */
-function isLoadingProp(p: PropSpec): boolean {
+ *  fixing the old "every boolean samples to true" quirk that previewed loading-components as skeletons.
+ *  Exported (#3191) so the on-visit scan gates its loading-state blank probe on the SAME predicate that
+ *  drives the sampled prop, keeping the finding and the render in lockstep. */
+export function isLoadingProp(p: PropSpec): boolean {
   const t = (p.type || "").toLowerCase();
   return (t === "boolean" || t.includes("boolean")) && /^(loading|busy|pending|isloading)$/i.test(p.name);
 }
 
 /** Is `p` a COLLECTION prop — an array of data (`Row[]`, `array`)? The thing `empty` empties and `loaded`
  *  fills. An OPTIONAL collection is OMITTED in loaded/loading so the component's own demo/default shows
- *  (the demo-on-undefined convention, #3135); `empty` always passes an explicit `[]`. */
-function isCollectionProp(p: PropSpec): boolean {
+ *  (the demo-on-undefined convention, #3135); `empty` always passes an explicit `[]`. Exported (#3191) so
+ *  the scan gates its empty-state blank probe on the SAME predicate that empties the sampled collection. */
+export function isCollectionProp(p: PropSpec): boolean {
   const t = (p.type || "").toLowerCase();
   return t.includes("[]") || t.includes("array");
 }
