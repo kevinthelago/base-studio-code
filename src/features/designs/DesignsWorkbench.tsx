@@ -454,15 +454,17 @@ export function DesignsWorkbench() {
                 result — so the try-on shows both at once. */}
             {activeTheme && <PaletteStrip theme={activeTheme} />}
             {/* Pan/zoom viewport (#3154): a raw div for the native wheel listener + backdrop drag (mirrors
-                GraphCanvas). The world layer carries the transform. Smart pan-vs-interact (#3190): the
+                GraphCanvas). The world layer carries the transform. Smart gesture routing (#3190): the
                 component stays fully interactive (pointer-events on), and the iframe itself — the only side
-                that can see its own DOM — decides on each mousedown. A press on a real control (control
-                tag / `[role]` / focusable / `cursor:pointer` / an svg|canvas viz surface) is left for the
-                component; a press on empty space is forwarded out as a pan (`onPreviewPan` →
-                `previewVp.panBy`). Dragging the GUTTER
-                around the frame still pans via `onCanvasDown` (the world Box is `data-node`, so it bails on
-                the frame). This supersedes #3188's declared-props guess (props miss internal handlers + CSS
-                :hover). +/−/fit zoom either way. No will-change on the world (it blurs zoom-in). */}
+                that can see its own DOM — decides per event, forwarding the survivors to the host. A drag on
+                a real control (control tag / `[role]` / focusable / `cursor:pointer` / an svg|canvas viz
+                surface) is left for the component; a drag on empty space is forwarded as a pan (`onPreviewPan`
+                → `previewVp.panBy`). A wheel over a scroll region scrolls it; anywhere else it's forwarded as
+                a zoom about the cursor (`onPreviewZoom` → `previewVp.zoomAtWorld`) — so zoom works over the
+                component too, not just the gutter. Dragging/wheeling the GUTTER still routes through
+                `onCanvasDown` + the native wheel listener (the world Box is `data-node`, so `onCanvasDown`
+                bails on the frame). This supersedes #3188's declared-props guess (props miss internal handlers
+                + CSS :hover). +/−/fit buttons work either way. No will-change on the world (it blurs zoom-in). */}
             {/* eslint-disable-next-line no-restricted-syntax -- DOM ref (setVp) + native non-passive wheel listener target, like GraphCanvas's viewport (#3154) */}
             <div
               ref={setPreviewVp}
@@ -480,6 +482,7 @@ export function DesignsWorkbench() {
                   extraAnimation={tryAnimDef}
                   previewState={previewState}
                   onPreviewPan={(dx, dy) => previewVp.panBy(dx, dy)}
+                  onPreviewZoom={(deltaY, wx, wy) => previewVp.zoomAtWorld(Math.exp(-deltaY * 0.0016), wx, wy)}
                 />
               </Box>
             </div>

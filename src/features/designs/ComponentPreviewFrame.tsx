@@ -31,7 +31,7 @@ const PAGE_ASPECT = 1.15;
 
 type Status = "building" | "ready" | "error";
 
-export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", onPreviewPan }: {
+export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", onPreviewPan, onPreviewZoom }: {
   comp: ComponentRecord;
   /** The selected theme's light/dark surface (its `base`). */
   theme: "dark" | "light";
@@ -54,8 +54,11 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   previewState?: PreviewState;
   /** When set (the expanded preview, #3190), the iframe forwards a NON-interactive drag as a pan: this is
    *  called with each screen-space delta `(dx,dy)` so the host can pan its viewport. A drag on a real
-   *  control interacts instead; hover/clicks always work. Omit ⇒ no pan-forward (thumbnail). */
+   *  control interacts instead; hover/clicks always work. Omit ⇒ no gesture-forward (thumbnail). */
   onPreviewPan?: (dx: number, dy: number) => void;
+  /** When set (the expanded preview, #3190), the iframe forwards a wheel that isn't over a scroll region
+   *  as a zoom: called with the wheel `deltaY` and the cursor's world x/y so the host zooms about it. */
+  onPreviewZoom?: (deltaY: number, wx: number, wy: number) => void;
 }) {
   const [status, setStatus] = useState<Status>("building");
   const [error, setError] = useState<string>("");
@@ -64,10 +67,11 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // here since the frame is inline-styled and self-contained (works wherever it's mounted).
   const [hint, setHint] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  // #3190: the pan-forward handler + the last screen position of an in-flight forwarded drag, held in
-  // refs so the message listener stays subscribed across renders (the callback's identity may churn).
+  // #3190: the forwarded-gesture handlers + the last screen position of an in-flight forwarded drag, held
+  // in refs so the message listener stays subscribed across renders (the callbacks' identity may churn).
   const panRef = useRef<((dx: number, dy: number) => void) | undefined>(onPreviewPan);
-  useEffect(() => { panRef.current = onPreviewPan; }, [onPreviewPan]);
+  const zoomRef = useRef<((deltaY: number, wx: number, wy: number) => void) | undefined>(onPreviewZoom);
+  useEffect(() => { panRef.current = onPreviewPan; zoomRef.current = onPreviewZoom; }, [onPreviewPan, onPreviewZoom]);
   const panLast = useRef<{ x: number; y: number } | null>(null);
   // Measure the frame so page-like components can render at a natural viewport canvas and scale-to-fit
   // (#3139) — a full-viewport page squeezed into the raw frame overflows/clips; scaling shows the whole
@@ -178,7 +182,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         const injectedCss = collectAppCss() + (themeCss ? `\n:root{${themeCss}}` : "") + (animCss ? `\n${animCss}` : "");
         // #3141: pages/layouts are scaled parent-side (the canvas above); a component that overflows the
         // frame gets the in-iframe scale-to-fit shim instead so it shows whole rather than clipping.
-        const srcDoc = buildComponentSrcDoc(js, { injectedCss, theme, rootClass, exitSelectors, fitContent: !pageLike, panForward: !!onPreviewPan });
+        const srcDoc = buildComponentSrcDoc(js, { injectedCss, theme, rootClass, exitSelectors, fitContent: !pageLike, forwardGestures: !!(onPreviewPan || onPreviewZoom) });
         if (iframeRef.current) iframeRef.current.srcdoc = srcDoc;
         setStatus("ready");
       } catch (e) {
@@ -199,23 +203,31 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // React state. Keyed on `comp.id` so the fire-and-forget attributes the error to the CURRENT component.
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
+      const d = e.data;
+      if (!d || !d.__preview) return;
+      // #3190: forwarded viewport gestures (pan/zoom). These shapes are emitted ONLY by the gesture-forward
+      // shim (the expanded preview), so we DON'T gate them on the strict source-window match — that
+      // equality is unreliable for a sandboxed opaque-origin iframe and was silently dropping every pan.
+      // A thumbnail frame's listener also receives them but no-ops (its pan/zoom refs are undefined).
+      if (d.__preview === "panstart") { panLast.current = { x: d.x, y: d.y }; return; }
+      if (d.__preview === "panmove") {
+        if (panLast.current) {
+          panRef.current?.(d.x - panLast.current.x, d.y - panLast.current.y);
+          panLast.current = { x: d.x, y: d.y };
+        }
+        return;
+      }
+      if (d.__preview === "panend") { panLast.current = null; return; }
+      if (d.__preview === "zoom") { zoomRef.current?.(d.dy, d.wx, d.wy); return; }
+      // Errors/renders are PER-FRAME — match THIS iframe's window so a concurrent scan probe's error
+      // doesn't leak into (and falsely fail) this live preview (#2908).
       if (e.source !== iframeRef.current?.contentWindow) return;
-      if (e.data && e.data.__preview === "error") {
-        const message = String(e.data.message);
+      if (d.__preview === "error") {
+        const message = String(d.message);
         setStatus("error");
         setError(message);
         void recordPreviewError(comp.id, message);
-        return;
       }
-      // #3190: the iframe forwarded a NON-interactive drag — pan the host viewport by the screen-space
-      // delta between consecutive `panmove`s (absolute screenX/Y, so it's page-scroll/scale independent).
-      const d = e.data;
-      if (!d || !d.__preview) return;
-      if (d.__preview === "panstart") { panLast.current = { x: d.x, y: d.y }; }
-      else if (d.__preview === "panmove" && panLast.current) {
-        panRef.current?.(d.x - panLast.current.x, d.y - panLast.current.y);
-        panLast.current = { x: d.x, y: d.y };
-      } else if (d.__preview === "panend") { panLast.current = null; }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
