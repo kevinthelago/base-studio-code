@@ -1,7 +1,8 @@
 // The seeded sort proof (#3177) — `sortSteps` yields a monotonically-improving (by inversion count)
 // sequence that ends fully sorted, and `sort` returns the sorted array (draining the same generator).
 import { describe, it, expect } from "vitest";
-import { sortSteps, sort, SORT_MOCK } from "./sort";
+import { sortSteps, sort, SORT_MOCK, parseSortInput } from "./sort";
+import { vizForImpl } from "./registry";
 import type { ArrayFrame } from "../../lib/trace";
 
 /** The number of inversions in `a` — pairs out of order. A perfect measure of "sortedness": strictly
@@ -84,5 +85,34 @@ describe("sort (#3177)", () => {
     const copy = [...input];
     sort(input);
     expect(input).toEqual(copy);
+  });
+});
+
+describe("parseSortInput (#3199 custom state)", () => {
+  it("parses comma- and/or whitespace-separated numbers", () => {
+    expect(parseSortInput("5, 2, 9, 1")).toEqual([5, 2, 9, 1]);
+    expect(parseSortInput("3 1 2")).toEqual([3, 1, 2]);
+    expect(parseSortInput(" 4 ,5,  6 ")).toEqual([4, 5, 6]);
+    expect(parseSortInput("-2, 0, 3.5")).toEqual([-2, 0, 3.5]);
+  });
+
+  it("throws a helpful Error on empty input, a non-number, or an unwatchable length", () => {
+    expect(() => parseSortInput("   ")).toThrow(/at least one number/i);
+    expect(() => parseSortInput("5, abc, 2")).toThrow(/"abc" is not a number/);
+    expect(() => parseSortInput(Array.from({ length: 41 }, () => "1").join(","))).toThrow(/under 40/i);
+  });
+});
+
+describe("VIZ_EXAMPLES input seam (#3199)", () => {
+  it("registers a visualization for sort.ts and nothing for an unknown id", () => {
+    expect(vizForImpl("sort.ts")).toBeDefined();
+    expect(vizForImpl("nope.rs")).toBeUndefined();
+  });
+
+  it("make(parse(default)) reproduces the fixed-mock factory trace", () => {
+    const viz = vizForImpl("sort.ts")!;
+    const fromDefault = [...viz.input.make(viz.input.parse(viz.input.default))].map((f) => (f as ArrayFrame).data);
+    const fromFactory = [...viz.factory()].map((f) => (f as ArrayFrame).data);
+    expect(fromDefault).toEqual(fromFactory);
   });
 });

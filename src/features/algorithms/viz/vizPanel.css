@@ -1,0 +1,90 @@
+/* VizPanel (#3199) — the always-on inline visualization preview + its fill-screen view. */
+
+/* The inline preview: a compact, clickable thumbnail that auto-plays + loops, like a component
+   thumbnail on the Components page. Hover/focus reveals an expand cue; clicking fills the screen. */
+.algo-viz-preview {
+  position: relative;
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-elev);
+  padding: 10px 12px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.algo-viz-preview:hover,
+.algo-viz-preview:focus-visible {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--bg-elev), var(--accent) 6%);
+  outline: none;
+}
+/* The inline preview never shows player controls (controls={false}); keep it tidy if any slip in. */
+.algo-viz-preview .trace-controls {
+  display: none;
+}
+
+/* The expand affordance — hidden until hover/focus, top-right. */
+.algo-viz-expand-cue {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fg);
+  background: color-mix(in oklch, var(--bg-panel), transparent 8%);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  pointer-events: none;
+}
+.algo-viz-preview:hover .algo-viz-expand-cue,
+.algo-viz-preview:focus-visible .algo-viz-expand-cue {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* The fill-screen view — a large card centered by ModalScrim, laid out head / stage / state. */
+.algo-viz-fullscreen {
+  width: min(1000px, 92vw);
+  height: min(760px, 88vh);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-lg, 0 24px 64px rgba(0, 0, 0, 0.45));
+  overflow: hidden;
+}
+
+.algo-viz-fullscreen-head {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* The player stage grows to fill; the trace centers, and a tall trace scrolls rather than clipping. */
+.algo-viz-fullscreen-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.algo-viz-fullscreen-stage .trace-player {
+  width: 100%;
+}
+
+/* The "provide your own state" input row, pinned under the stage. */
+.algo-viz-state {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+}

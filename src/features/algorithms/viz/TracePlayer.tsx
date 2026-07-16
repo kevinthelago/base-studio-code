@@ -30,6 +30,15 @@ export interface TracePlayerProps {
   bufferSize?: number;
   /** Playback speed — frames per second. Default 4 (watchable; the viz teaches, it doesn't benchmark). */
   fps?: number;
+  /** Start playing on mount (and on every stream re-init) instead of paused (#3199) — the inline preview
+   *  is alive like a component thumbnail, no click needed. Default false (the fullscreen player). */
+  autoPlay?: boolean;
+  /** On reaching the end, seek back to frame 0 and keep playing (#3199) — a continuous loop for the inline
+   *  preview. Default false (the fullscreen player stops at the end so the user can scrub). */
+  loop?: boolean;
+  /** Render the play/step/scrub control bar. Default true; the compact inline preview passes false so it's
+   *  just the moving picture (#3199). */
+  controls?: boolean;
 }
 
 /** One panel: dispatch its frame to the registered renderer for its structure, or the fallback. Uses
@@ -47,7 +56,7 @@ function PanelView({ name, frame, renderers }: { name: string; frame: StructureF
   );
 }
 
-export function TracePlayer({ factory, renderers = {}, bufferSize, fps = 4 }: TracePlayerProps) {
+export function TracePlayer({ factory, renderers = {}, bufferSize, fps = 4, autoPlay = false, loop = false, controls = true }: TracePlayerProps) {
   const stream = useMemo(() => makeTraceStream(factory, { bufferSize }), [factory, bufferSize]);
   const [frame, setFrame] = useState<Frame | null>(null);
   const [index, setIndex] = useState(-1);
@@ -62,23 +71,33 @@ export function TracePlayer({ factory, renderers = {}, bufferSize, fps = 4 }: Tr
     setMaxIndex((m) => Math.max(m, i));
   }, [stream]);
 
-  // Show the first frame whenever the stream (re)initializes.
+  // Show the first frame whenever the stream (re)initializes; auto-play when asked (#3199 inline preview).
   useEffect(() => {
     stream.seek(0);
     sync();
-    setPlaying(false);
-  }, [stream, sync]);
+    setPlaying(autoPlay);
+  }, [stream, sync, autoPlay]);
 
-  // The play loop: pull one frame per beat; stop at the end of the trace.
+  // The play loop: pull one frame per beat. At the end, loop back to 0 (#3199 inline preview) or stop.
   useEffect(() => {
     if (!playing) return;
     const id = setInterval(() => {
       const f = stream.next();
-      sync();
-      if (f == null) setPlaying(false); // reached the end
+      if (f == null) {
+        // Reached the end: restart from frame 0 when looping, else stop and hold the final frame.
+        if (loop) {
+          stream.seek(0);
+          sync();
+        } else {
+          sync();
+          setPlaying(false);
+        }
+      } else {
+        sync();
+      }
     }, Math.max(1, Math.round(1000 / fps)));
     return () => clearInterval(id);
-  }, [playing, stream, sync, fps]);
+  }, [playing, stream, sync, fps, loop]);
 
   const stepForward = useCallback(() => {
     setPlaying(false);
@@ -119,30 +138,32 @@ export function TracePlayer({ factory, renderers = {}, bufferSize, fps = 4 }: Tr
         )}
       </Row>
 
-      <Row gap={8} className="trace-controls">
-        <IconButton aria-label={playing ? "Pause" : "Play"} onClick={() => setPlaying((p) => !p)}>
-          {playing ? "⏸" : "▶"}
-        </IconButton>
-        <IconButton aria-label="Step back" onClick={stepBack} disabled={index <= 0}>
-          ⏮
-        </IconButton>
-        <IconButton aria-label="Step forward" onClick={stepForward} disabled={stream.atEnd()}>
-          ⏭
-        </IconButton>
-        {/* eslint-disable-next-line no-restricted-syntax -- range scrubber; no shared primitive for <input type="range"> */}
-        <input
-          className="trace-scrubber"
-          type="range"
-          aria-label="Scrub"
-          min={0}
-          max={scrubberMax}
-          value={Math.max(0, index)}
-          onChange={(e) => scrub(Number(e.currentTarget.value))}
-        />
-        <Text mono size={11} tone="dim">
-          {index < 0 ? "—" : index} / {scrubberMax}
-        </Text>
-      </Row>
+      {controls && (
+        <Row gap={8} className="trace-controls">
+          <IconButton aria-label={playing ? "Pause" : "Play"} onClick={() => setPlaying((p) => !p)}>
+            {playing ? "⏸" : "▶"}
+          </IconButton>
+          <IconButton aria-label="Step back" onClick={stepBack} disabled={index <= 0}>
+            ⏮
+          </IconButton>
+          <IconButton aria-label="Step forward" onClick={stepForward} disabled={stream.atEnd()}>
+            ⏭
+          </IconButton>
+          {/* eslint-disable-next-line no-restricted-syntax -- range scrubber; no shared primitive for <input type="range"> */}
+          <input
+            className="trace-scrubber"
+            type="range"
+            aria-label="Scrub"
+            min={0}
+            max={scrubberMax}
+            value={Math.max(0, index)}
+            onChange={(e) => scrub(Number(e.currentTarget.value))}
+          />
+          <Text mono size={11} tone="dim">
+            {index < 0 ? "—" : index} / {scrubberMax}
+          </Text>
+        </Row>
+      )}
     </Stack>
   );
 }

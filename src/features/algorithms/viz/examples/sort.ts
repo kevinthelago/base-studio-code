@@ -56,6 +56,24 @@ export function* sortSteps(a: number[]): Generator<ArrayFrame> {
 }
 
 /**
+ * Parse the fullscreen custom-state field (#3199) into a number array — the "provide your own state"
+ * input for the sort visualization. Accepts values separated by commas and/or whitespace. Throws a
+ * helpful `Error` (message shown under the field) on empty input, a non-numeric token, or an
+ * unwatchably-long list — so the fullscreen view surfaces the problem and keeps the last good run.
+ */
+export function parseSortInput(text: string): number[] {
+  const tokens = text.split(/[\s,]+/).map((t) => t.trim()).filter((t) => t.length > 0);
+  if (tokens.length === 0) throw new Error("Enter at least one number, e.g. 5, 2, 9, 1");
+  const nums = tokens.map((t) => {
+    const n = Number(t);
+    if (!Number.isFinite(n)) throw new Error(`"${t}" is not a number`);
+    return n;
+  });
+  if (nums.length > 40) throw new Error("Keep it under 40 values so the animation stays watchable");
+  return nums;
+}
+
+/**
  * Sort `input` ascending by DRAINING {@link sortSteps} (generator-as-source, #3171) — the same generator
  * that animates the visualization also computes the result, so there is one source of truth. PURE:
  * operates on a copy and never mutates `input`.
