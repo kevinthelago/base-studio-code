@@ -2,13 +2,21 @@
 // identity, role, code, and what it builds on / is used by. A concept IS its implementation, so the
 // inspector is impl-only (the abstract concept-node view was removed with #2961). Empty state prompts a
 // selection; each builds-on / used-by row jumps to that impl.
+//
+// Visualization pane (#3177, epic #3171): when the focused impl has a registered visualization
+// (`vizForImpl`), a Code | Visualization toggle swaps the code panel for a live <TracePlayer> that
+// animates the impl's trace through the per-structure renderers — the array-sort proof-of-loop.
+import { useState } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Chip } from "@/shared/ui/data/Chip";
+import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { TECH_META, implById, usedByImpl, type KnowledgeGraph, type AlgoImpl } from "./lib/knowledge";
+import { TracePlayer } from "./viz/TracePlayer";
+import { vizForImpl } from "./viz/examples/registry";
 
 const PANEL = { width: "100%", height: "100%", borderLeft: "1px solid var(--border)", overflowY: "auto", background: "var(--bg-panel)" } as const;
 
@@ -34,31 +42,69 @@ export function AlgorithmsInspector({ graph, focusedImpl, onSelectImpl }: {
     );
   }
 
+  // Key the body on the impl id so the Code | Visualization toggle resets to Code when the selection
+  // changes (a fresh mount) — the previous impl's pane never leaks into the next one.
+  return <ImplInspector key={focusedImpl.id} graph={graph} impl={focusedImpl} onSelectImpl={onSelectImpl} />;
+}
+
+/** The focused implementation's inspector body — its identity + code/visualization + builds-on/used-by.
+ *  Split out so the Visualization toggle can hold local state that resets per impl (via the `key`). */
+function ImplInspector({ graph, impl, onSelectImpl }: {
+  graph: KnowledgeGraph;
+  impl: AlgoImpl;
+  onSelectImpl?: (id: string) => void;
+}) {
   // A concept IS its implementation (#2958), so this is the whole inspector: the impl's code + the impls
   // it builds on (composes, down to the primitive base) and the ones that build on it (the reverse).
-  const isPrim = focusedImpl.role === "primitive";
-  const buildsOn = focusedImpl.composes.map((id) => implById(graph, id)).filter((im): im is AlgoImpl => !!im);
-  const usedBy = usedByImpl(graph, focusedImpl.id);
+  const isPrim = impl.role === "primitive";
+  const buildsOn = impl.composes.map((id) => implById(graph, id)).filter((im): im is AlgoImpl => !!im);
+  const usedBy = usedByImpl(graph, impl.id);
   const ell = { minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } as const;
   const jump = (im: AlgoImpl) => onSelectImpl?.(im.id);
+
+  // The impl's live visualization (#3177), if any. Only impls with one show the Code | Visualization
+  // toggle; everything else keeps exactly today's code-only pane.
+  const viz = vizForImpl(impl.id);
+  const [showViz, setShowViz] = useState(false);
+
   return (
     <Box style={PANEL}>
       <Stack gap={12} style={{ padding: 16 }}>
         <Row gap={8} align="center" style={{ minWidth: 0 }}>
           <Box style={{ width: 10, height: 10, borderRadius: 3, background: isPrim ? "var(--violet)" : "var(--accent)", flex: "none" }} />
-          <Text weight={600} size={15} style={ell}>{focusedImpl.name}</Text>
-          <Chip>{focusedImpl.role}</Chip>
+          <Text weight={600} size={15} style={ell}>{impl.name}</Text>
+          <Chip>{impl.role}</Chip>
         </Row>
-        <Eyebrow size={10}>{isPrim ? "Language built-in" : "Implementation"} · {TECH_META[focusedImpl.tech]?.label ?? focusedImpl.tech}</Eyebrow>
-        {focusedImpl.summary && <Text size={12} tone="muted">{focusedImpl.summary}</Text>}
+        <Eyebrow size={10}>{isPrim ? "Language built-in" : "Implementation"} · {TECH_META[impl.tech]?.label ?? impl.tech}</Eyebrow>
+        {impl.summary && <Text size={12} tone="muted">{impl.summary}</Text>}
         {/* A primitive is a DESCRIPTOR of a language built-in (#2972) — its std `ref`, not a reimplementation. */}
-        {focusedImpl.ref && (
+        {impl.ref && (
           <Row gap={8} align="center" style={{ minWidth: 0 }}>
             <Text mono size="xxs" tone="dim" style={{ letterSpacing: ".06em", textTransform: "uppercase", flex: "none" }}>Built-in</Text>
-            <Text as="code" mono size={12} style={ell}>{focusedImpl.ref}</Text>
+            <Text as="code" mono size={12} style={ell}>{impl.ref}</Text>
           </Row>
         )}
-        {focusedImpl.code && <Box as="pre" className="algo-code mono">{focusedImpl.code}</Box>}
+
+        {/* Code | Visualization toggle — only when this impl has a registered visualization (#3177). */}
+        {viz && (
+          <SegmentedControl
+            variant="joined"
+            options={[
+              { label: "Code", on: !showViz, onClick: () => setShowViz(false) },
+              { label: "Visualization", on: showViz, onClick: () => setShowViz(true) },
+            ]}
+          />
+        )}
+
+        {viz && showViz ? (
+          // The live visualization: the impl's trace animated through the per-structure renderers.
+          <Box className="algo-viz-pane">
+            <TracePlayer factory={viz.factory} renderers={viz.renderers} fps={3} />
+          </Box>
+        ) : (
+          impl.code && <Box as="pre" className="algo-code mono">{impl.code}</Box>
+        )}
+
         <ImplLinks label="Builds on" glyph="↳" impls={buildsOn} onJump={jump} />
         <ImplLinks label="Used by" glyph="↰" impls={usedBy} onJump={jump} />
       </Stack>
