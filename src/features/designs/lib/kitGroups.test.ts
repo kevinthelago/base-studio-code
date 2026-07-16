@@ -39,12 +39,15 @@ describe("groupKits — always technology → style (#2506)", () => {
     expect(styles.every((s) => s.children.length === 0)).toBe(true);
   });
 
-  it("the real packaged seed renders React → Studio → components (#2506 — no flatten)", () => {
+  it("the real packaged seed renders React → Studio + Data viz → components (#2506/#3194 — no flatten)", () => {
+    // Two packaged kits, BOTH under the react tech: react-ui (studio) + algo-viz (data-viz, #3194),
+    // each a single-kit style whose header IS the kit.
     const t = groupKits(SEED_KITS);
     expect(t.map((n) => asGroup(n).label)).toEqual(["react"]);
     const styles = asGroup(t[0]).children.map(asGroup);
-    expect(styles.map((s) => s.label)).toEqual(["studio"]);
-    expect(styles[0].kit?.id).toBe("react-ui"); // the style header IS the one packaged kit
+    expect(styles.map((s) => s.label)).toEqual(["studio", "data-viz"]);
+    expect(styles[0].kit?.id).toBe("react-ui"); // the studio style header IS react-ui
+    expect(styles[1].kit?.id).toBe("algo-viz"); // the data-viz style header IS algo-viz
     expect(flatIds(t)).toEqual(SEED_KITS.map((k) => k.id));
   });
 
