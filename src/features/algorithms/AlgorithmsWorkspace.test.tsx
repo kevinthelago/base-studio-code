@@ -13,6 +13,7 @@ vi.mock("@xterm/xterm", () => {
     cols = 80; rows = 24; options: Record<string, unknown> = {};
     loadAddon = vi.fn(); open = vi.fn(); write = vi.fn();
     onData = vi.fn(() => ({ dispose: vi.fn() })); focus = vi.fn(); dispose = vi.fn();
+    attachCustomKeyEventHandler = vi.fn(); getSelection = vi.fn(() => "");
   }
   return { Terminal };
 });

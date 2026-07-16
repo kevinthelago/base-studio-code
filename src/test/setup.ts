@@ -47,6 +47,10 @@ vi.mock("@xterm/xterm", () => {
     onData = vi.fn(() => ({ dispose: vi.fn() }));
     focus = vi.fn();
     dispose = vi.fn();
+    // The clipboard wiring (#3157) calls these on every open terminal; stub them so terminal-mounting
+    // tests (DesignsWorkbench, console panes, algorithms/teams terminals, …) don't crash on mount.
+    attachCustomKeyEventHandler = vi.fn();
+    getSelection = vi.fn(() => "");
   }
   return { Terminal };
 });
