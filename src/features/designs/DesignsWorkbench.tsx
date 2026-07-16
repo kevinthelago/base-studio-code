@@ -33,6 +33,7 @@ import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
 import { GraphCanvas, ZoomControls } from "@/shared/ui/layouts/GraphCanvas";
 import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { useGraphPage } from "@/shared/ui/layouts/useGraphPage";
+import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { graphEdge } from "@/shared/lib/graph/edgePath";
 import { selectionNeighborhood } from "@/shared/lib/graph/selectionNeighborhood";
 import { layoutBand } from "@/shared/lib/graph/crossGraph";
@@ -62,11 +63,6 @@ import "./designStudio.css";
 
 type Tab = "overview" | "source" | "usage";
 type Viewport = "sm" | "md" | "auto";
-const VP: Record<Viewport, { w: string; label: string }> = {
-  sm: { w: "380px", label: "375 · mobile" },
-  md: { w: "640px", label: "768 · tablet" },
-  auto: { w: "100%", label: "fluid · fills panel" },
-};
 
 // Cross-graph library band (#3116) — the fenced top band of algorithm nodes a kit's components `require`.
 /** The preview data-state axis (#3135) — the switcher's options, in order. */
@@ -174,13 +170,23 @@ export function DesignsWorkbench() {
   // The expanded preview's own pan/zoom viewport (#3154) — the shared graph viewport, reused so the
   // large preview moves + zooms like every other canvas. The graph's own viewport is hidden in preview
   // mode, so this is a SEPARATE instance. A zoomable canvas has no "fluid" width, so the preview gets a
-  // fixed world per breakpoint (fit-to-frame replaces fill). Re-fits on open + selection/breakpoint
-  // switch (stable keys — never the polled model, per the useGraphPage trap).
+  // fixed world per breakpoint. It opens ZOOMED IN (below) rather than fit-to-frame — hence the raw
+  // `useGraphViewport` (no useGraphPage fit-on-key).
   const previewW = vp === "sm" ? 380 : vp === "md" ? 640 : 1200;
-  const previewVp = useGraphPage({ w: previewW, h: 440 }, [sel?.id, vp, previewMode], { min: 0.2, max: 5, fitPad: 40 });
+  const previewVp = useGraphViewport({ w: previewW, h: 440 }, { min: 0.2, max: 5 });
   // Pull the viewport values out as locals (mirrors GraphCanvas) — `worldTransform` is a computed style
   // object, not a ref, but member-accessing `previewVp.*` in render trips the react-compiler ref rule.
-  const { setVp: setPreviewVp, onCanvasDown: onPreviewCanvasDown, worldTransform: previewWorldTransform } = previewVp;
+  const { setVp: setPreviewVp, onCanvasDown: onPreviewCanvasDown, worldTransform: previewWorldTransform, zoomToCentered: previewZoomToCentered } = previewVp;
+  // Initial view (#3190): start ZOOMED IN, not at a plain fit. A page is letterboxed small by its render
+  // ratio (the whitespace is intentional), so fit reads tiny — a centered magnify makes it usable and
+  // crops the side whitespace in. Pages get a stronger zoom than 1:1 components. Re-applied on open +
+  // selection/breakpoint switch (replaces useGraphPage's fit-on-key). Tune the factors to taste.
+  const previewInitialZoom = sel && (sel.role === "page" || sel.role === "layout") ? 1.7 : 1.2;
+  useEffect(() => {
+    if (!previewMode) return;
+    const id = requestAnimationFrame(() => previewZoomToCentered(previewInitialZoom));
+    return () => cancelAnimationFrame(id);
+  }, [sel?.id, vp, previewMode, previewInitialZoom, previewZoomToCentered]);
 
   const allVariants = focusComp ? focusComp.variants : [];
   const activeVariant = allVariants.includes(variant) ? variant : allVariants[0] ?? "default";
@@ -467,18 +473,22 @@ export function DesignsWorkbench() {
                 a real control (control tag / `[role]` / focusable / `cursor:pointer` / an svg|canvas viz
                 surface) is left for the component; a drag on empty space is forwarded as a pan (`onPreviewPan`
                 → `previewVp.panBy`). A wheel over a scroll region scrolls it; anywhere else it's forwarded as
-                a zoom about the cursor (`onPreviewZoom` → `previewVp.zoomAtWorld`) — so zoom works over the
-                component too, not just the gutter. Dragging/wheeling the GUTTER still routes through
-                `onCanvasDown` + the native wheel listener (the world Box is `data-node`, so `onCanvasDown`
-                bails on the frame). This supersedes #3188's declared-props guess (props miss internal handlers
-                + CSS :hover). +/−/fit buttons work either way. No will-change on the world (it blurs zoom-in). */}
+                a zoom about the cursor (`onPreviewZoom` → `previewVp.zoomAtClient`, anchored via the
+                iframe's real rect) — so zoom works over the component too, not just the gutter. Any
+                PARENT-document press — the gutter AND the world-wrapper edges not covered by the iframe —
+                routes through `onCanvasDown` + the native wheel listener and pans (the wrapper is NOT a
+                `data-node`, #3190: it was, which dead-zoned those edges since `onCanvasDown` bails on a
+                `[data-node]` ancestor — but the iframe already swallows its OWN mousedowns, so the bail only
+                ever blocked the exposed wrapper, never the component). This supersedes #3188's declared-props
+                guess (props miss internal handlers + CSS :hover). +/−/fit buttons work either way. No
+                will-change on the world (it blurs zoom-in). */}
             {/* eslint-disable-next-line no-restricted-syntax -- DOM ref (setVp) + native non-passive wheel listener target, like GraphCanvas's viewport (#3154) */}
             <div
               ref={setPreviewVp}
               onMouseDown={onPreviewCanvasDown}
               style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", cursor: "grab", background: "var(--bg-canvas, var(--bg))" }}
             >
-              <Box data-node="preview" style={{ position: "absolute", left: 0, top: 0, width: previewW, height: 440, userSelect: "none", pointerEvents: "auto", ...previewWorldTransform }}>
+              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: 440, userSelect: "none", pointerEvents: "auto", ...previewWorldTransform }}>
                 <ComponentPreviewFrame
                   comp={sel}
                   theme={theme}
@@ -489,7 +499,8 @@ export function DesignsWorkbench() {
                   extraAnimation={tryAnimDef}
                   previewState={previewState}
                   onPreviewPan={(dx, dy) => previewVp.panBy(dx, dy)}
-                  onPreviewZoom={(deltaY, wx, wy) => previewVp.zoomAtWorld(Math.exp(-deltaY * 0.0016), wx, wy)}
+                  onPreviewZoom={(deltaY, cx, cy) => previewVp.zoomAtClient(Math.exp(-deltaY * 0.0016), cx, cy)}
+                  scrollY
                 />
               </Box>
             </div>
@@ -676,31 +687,27 @@ function Inspector(p: InspProps) {
             <Text mono size={10} tone="muted" style={{ border: "1px solid var(--border)", borderRadius: 5, padding: "2px 7px", marginTop: 2 }}>v{sel.version}</Text>
           </Box>
 
-          {/* live preview — folded in from the removed Library center view (#2453) */}
+          {/* live preview — folded in from the removed Library center view (#2453). #3190: the inspector's
+              lead surface — no card, no control bar (the "Live preview" title + the data-state buttons were
+              removed), so the preview sits right under the identity header. It's sized a touch below the
+              detail tabs (see .ds-preview) rather than dominating the pane.
+              Live preview (#2824): the component is BUILT (esbuild-wasm) from its real source and rendered in
+              a sandboxed iframe — its own build/error state inside — filling the surface (fluid width, full
+              height) so it reads at real size. */}
           <Box className="ds-preview">
-            <Box className="ds-prevctl">
-              <Eyebrow size={9.5}>Live preview</Eyebrow>
-              <SegmentedControl label="" options={p.allVariants.map((v) => ({ label: v, on: v === p.activeVariant, onClick: () => p.setVariant(v) }))} />
-              <SegmentedControl label="" options={PREVIEW_STATES.map((s) => ({ label: s, on: s === p.previewState, onClick: () => p.setPreviewState(s) }))} />
-              <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === p.vp, onClick: () => p.setVpKind(k) }))} />
-              {/* The theme switcher moved up beside the component name (#3085). */}
-            </Box>
             <Box className="ds-surface">
-              {/* Live preview (#2824): the component is BUILT (esbuild-wasm) from its real source and
-                  rendered in a sandboxed iframe — built-in kit or any user/library component — its own
-                  build/error state inside. Replaces the specimen mocks + real-component fixtures. */}
               <Box className="ds-frame">
                 <ComponentPreviewFrame
                   comp={sel}
                   theme={p.previewTheme}
                   themeId={p.kitTheme}
                   themeVars={p.kitThemes.find((t) => t.id === p.kitTheme)?.vars ?? {}}
-                  width={VP[p.vp].w}
+                  width="100%"
+                  height="100%"
                   onExpand={p.onExpand}
                   previewState={p.previewState}
                 />
               </Box>
-              <Text as="div" className="ds-vplabel">{VP[p.vp].label}</Text>
             </Box>
           </Box>
 
