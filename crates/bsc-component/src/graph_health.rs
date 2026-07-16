@@ -1393,6 +1393,230 @@ fn strongly_connected<'a>(nodes: &[&'a Node], out_ids: &BTreeMap<&'a str, Vec<&'
     t.sccs
 }
 
+// ── motion checks (#3163, `bsc ui doctor --motion`) ──────────────────────────────────────────────────
+// Four MECHANICAL faults an author used to hand-diagnose from a broken preview, surfaced from the data.
+// They scan a component's INLINE animation defs (the object entries of `animations`; a name-ref string
+// points at the shared kit library, which the doctor doesn't resolve, so it's skipped) against its
+// rendered markup (`source` + `srcText`). The TS twin is `analyzeMotion` (graphHealth.ts) — keep both in
+// lockstep (categories, severities, rules, the collision pass). Reported through the SAME `Finding` shape
+// as the topology checks, so the CLI merges them under `--motion`.
+
+/// The INLINE animation defs on a component's `animations` array — the object entries with a string
+/// `name` (a name-ref string is skipped). Mirrors TS `inlineAnimations`.
+fn inline_animations(v: &Value) -> Vec<&Value> {
+    v.get("animations")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter(|e| e.is_object() && e.get("name").and_then(Value::as_str).is_some())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The class HOOK tokens a `selector` targets — every `.<ident>` (`ident` = `[A-Za-z0-9_-]+`). Mirrors
+/// the TS `selectorClasses` regex `/\.([A-Za-z0-9_-]+)/g`. #3163 check (a).
+fn selector_classes(selector: &str) -> Vec<String> {
+    let bytes = selector.as_bytes();
+    let is_tok = |c: u8| (c as char).is_ascii_alphanumeric() || c == b'-' || c == b'_';
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'.' {
+            let start = i + 1;
+            let mut k = start;
+            while k < bytes.len() && is_tok(bytes[k]) {
+                k += 1;
+            }
+            if k > start {
+                out.push(selector[start..k].to_string());
+            }
+            i = k.max(start); // past the token (or the lone `.`)
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// The set of CSS declaration PROPERTIES an animation's keyframes touch. Mirrors TS `keyframeProps`.
+fn keyframe_props(anim: &Value) -> BTreeSet<String> {
+    let mut props = BTreeSet::new();
+    if let Some(kf) = anim.get("keyframes").and_then(Value::as_object) {
+        for decls in kf.values() {
+            if let Some(obj) = decls.as_object() {
+                for p in obj.keys() {
+                    props.insert(p.clone());
+                }
+            }
+        }
+    }
+    props
+}
+
+/// Whether `markup` contains an SVG `transform=` ATTRIBUTE — the literal `transform`, optional
+/// whitespace, then `=` (mirrors the TS `/transform\s*=/`, substring, no word boundary). Distinct from a
+/// CSS `transform:` declaration. #3163 check (c).
+fn has_transform_attr(markup: &str) -> bool {
+    let bytes = markup.as_bytes();
+    let needle = b"transform";
+    let mut i = 0;
+    while i + needle.len() <= bytes.len() {
+        if &bytes[i..i + needle.len()] == needle {
+            let mut j = i + needle.len();
+            while j < bytes.len() && (bytes[j] as char).is_whitespace() {
+                j += 1;
+            }
+            if j < bytes.len() && bytes[j] == b'=' {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Analyze components for MOTION-graph faults (#3163) — the `bsc ui doctor --motion` checks, the Rust
+/// twin of `analyzeMotion` (graphHealth.ts). Ranked most-severe first (stable name tiebreak). Pure.
+/// Four checks: (a) `motion-dead-selector` (an animation `selector` whose class hook the source never
+/// renders) · (b) `motion-dash-no-pathlength` (a stroke-dash keyframe on a component with no `pathLength`)
+/// · (c) `motion-transform-attr` (a CSS `transform` keyframe on a component using an SVG `transform=`
+/// attribute) · (d) `motion-name-collision` (an inline animation NAME declared by 2+ components in a kit).
+pub fn analyze_motion(components: &[Value]) -> Vec<Finding> {
+    let mut out: Vec<Finding> = Vec::new();
+    // (d) per-kit collision groups: (kit, animName) → owners [(id, name)], deduped by id, insertion order.
+    let mut collisions: BTreeMap<(String, String), Vec<(String, String)>> = BTreeMap::new();
+
+    for v in components {
+        let id = match v.get("id").and_then(Value::as_str) {
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => continue,
+        };
+        let name = {
+            let n = s(v, "name");
+            if n.is_empty() {
+                id.clone()
+            } else {
+                n
+            }
+        };
+        let kit = s(v, "kitId");
+        let markup = format!("{}\n{}", s(v, "source"), s(v, "srcText"));
+        let anims = inline_animations(v);
+        if anims.is_empty() {
+            continue;
+        }
+        for anim in &anims {
+            let anim_name = s(anim, "name");
+            let props = keyframe_props(anim);
+
+            // (a) dead selector hook — the animation targets a class the source never renders.
+            if let Some(selector) =
+                anim.get("selector").and_then(Value::as_str).filter(|s| !s.is_empty())
+            {
+                let dead: Vec<String> = selector_classes(selector)
+                    .into_iter()
+                    .filter(|cls| !markup.contains(cls.as_str()))
+                    .collect();
+                if !dead.is_empty() {
+                    let list = dead.iter().map(|d| format!("`.{d}`")).collect::<Vec<_>>().join(", ");
+                    out.push(Finding {
+                        category: "motion-dead-selector",
+                        severity: 2,
+                        kit: kit.clone(),
+                        node_ids: vec![id.clone()],
+                        node_names: vec![name.clone()],
+                        why: format!(
+                            "`{name}`'s animation `{anim_name}` targets {list} but its source renders no such element — the animation matches nothing (a dead selector hook)"
+                        ),
+                        suggested_action: format!(
+                            "render the element `{anim_name}` targets in `{name}`'s source, or fix the animation's `selector`"
+                        ),
+                    });
+                }
+            }
+
+            // (b) stroke-dash keyframe with no pathLength — a draw-in needs a known geometry length.
+            let dash: Vec<&str> = props
+                .iter()
+                .filter(|p| p.as_str() == "stroke-dashoffset" || p.as_str() == "stroke-dasharray")
+                .map(String::as_str)
+                .collect();
+            if !dash.is_empty() && !markup.to_ascii_lowercase().contains("pathlength") {
+                let list = dash.iter().map(|d| format!("`{d}`")).collect::<Vec<_>>().join(", ");
+                out.push(Finding {
+                    category: "motion-dash-no-pathlength",
+                    severity: 1,
+                    kit: kit.clone(),
+                    node_ids: vec![id.clone()],
+                    node_names: vec![name.clone()],
+                    why: format!(
+                        "`{name}`'s animation `{anim_name}` animates {list} but its source sets no `pathLength` — a stroke-dash draw needs a known path length to animate predictably"
+                    ),
+                    suggested_action: format!(
+                        "set `pathLength` on the animated path in `{name}` so its stroke-dash draw has a stable length"
+                    ),
+                });
+            }
+
+            // (c) CSS transform keyframe on a transform-ATTRIBUTED SVG element — the two don't compose.
+            if props.contains("transform") && has_transform_attr(&markup) {
+                out.push(Finding {
+                    category: "motion-transform-attr",
+                    severity: 1,
+                    kit: kit.clone(),
+                    node_ids: vec![id.clone()],
+                    node_names: vec![name.clone()],
+                    why: format!(
+                        "`{name}`'s animation `{anim_name}` sets a CSS `transform` keyframe, but its source uses an SVG `transform=` ATTRIBUTE — CSS transforms and the SVG transform attribute don't compose (animate the attribute, or drop the attribute and transform via CSS)"
+                    ),
+                    suggested_action: format!(
+                        "move the transform in `{name}` to CSS (drop the SVG `transform=` attribute), or animate the attribute instead of a CSS `transform` keyframe"
+                    ),
+                });
+            }
+
+            // (d) collect this inline name for the cross-component collision pass.
+            if !anim_name.is_empty() {
+                let owners = collisions.entry((kit.clone(), anim_name.clone())).or_default();
+                if !owners.iter().any(|(oid, _)| oid == &id) {
+                    owners.push((id.clone(), name.clone()));
+                }
+            }
+        }
+    }
+
+    // (d) an inline animation NAME declared by 2+ components in a kit — a cross-component collision.
+    for ((kit, anim_name), owners) in &collisions {
+        if owners.len() < 2 {
+            continue;
+        }
+        let mut sorted = owners.clone();
+        sorted.sort_by(|a, b| a.1.cmp(&b.1));
+        let names: Vec<String> = sorted.iter().map(|(_, n)| n.clone()).collect();
+        out.push(Finding {
+            category: "motion-name-collision",
+            severity: 2,
+            kit: kit.clone(),
+            node_ids: sorted.iter().map(|(i, _)| i.clone()).collect(),
+            node_names: names.clone(),
+            why: format!(
+                "inline animation `{anim_name}` is declared by {} components ({}) — same-named keyframes across components collide; namespace them (#3163) or lift the shared one into the kit's animation library",
+                owners.len(),
+                names.join(", ")
+            ),
+            suggested_action: format!(
+                "namespace the per-component animations (#3163), or lift `{anim_name}` into the kit's shared animation library and reference it by name from each component"
+            ),
+        });
+    }
+
+    out.sort_by(|a, b| {
+        b.severity.cmp(&a.severity).then_with(|| a.node_names.first().cmp(&b.node_names.first()))
+    });
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2246,5 +2470,101 @@ mod tests {
         // path or the artifact shape drifts, the roster empties and every built-in would be falsely
         // flagged — so guard that it stays non-empty.
         assert!(!buildable_srcs().is_empty(), "the embedded react-ui artifact roster must not be empty");
+    }
+
+    // ── motion checks (#3163) — the Rust twin of `analyzeMotion` (graphHealth.ts) ────────────────────
+
+    fn motion_cats(fs: &[Finding]) -> Vec<&str> {
+        fs.iter().map(|f| f.category).collect()
+    }
+
+    #[test]
+    fn motion_helpers_mirror_the_ts_twin() {
+        assert_eq!(selector_classes(".bar .cell rect"), vec!["bar".to_string(), "cell".to_string()]);
+        assert_eq!(selector_classes(".foo.bar"), vec!["foo".to_string(), "bar".to_string()]);
+        assert!(selector_classes("rect").is_empty(), "a bare tag selector has no class hook");
+        // `transform=` (attribute) is detected; a CSS `transform:` declaration is NOT.
+        assert!(has_transform_attr("<g transform=\"translate(1,2)\">"));
+        assert!(has_transform_attr("<g transform = \"x\">")); // optional whitespace like /transform\\s*=/
+        assert!(!has_transform_attr("style={{ transform: 'rotate(1deg)' }}"));
+    }
+
+    #[test]
+    fn flags_a_dead_animation_selector_hook_but_not_a_rendered_one() {
+        // (a) `spin` targets `.bar`, but the source renders no such class → dead selector.
+        let dead = json!({ "id": "chart", "name": "Chart", "kitId": "k",
+            "source": "export function Chart(){ return <svg><rect/></svg>; }", "srcText": "",
+            "animations": [{ "name": "spin", "selector": ".bar", "keyframes": { "from": { "transform": "scale(1)" } } }] });
+        let fs = analyze_motion(std::slice::from_ref(&dead));
+        assert!(motion_cats(&fs).contains(&"motion-dead-selector"), "flags a dead selector: {fs:?}");
+        let f = fs.iter().find(|f| f.category == "motion-dead-selector").unwrap();
+        assert_eq!(f.severity, 2);
+        assert!(f.why.contains("`.bar`"), "names the dead class hook: {}", f.why);
+        // A component that DOES render the `.bar` hook is not flagged.
+        let live = json!({ "id": "chart2", "name": "Chart2", "kitId": "k",
+            "source": "export function Chart2(){ return <svg><rect className=\"bar\"/></svg>; }", "srcText": "",
+            "animations": [{ "name": "spin", "selector": ".bar", "keyframes": { "from": { "transform": "scale(1)" } } }] });
+        assert!(!motion_cats(&analyze_motion(std::slice::from_ref(&live))).contains(&"motion-dead-selector"));
+    }
+
+    #[test]
+    fn flags_a_stroke_dash_keyframe_without_pathlength() {
+        // (b) a draw-in animating stroke-dashoffset, but the source sets no pathLength.
+        let draw = json!({ "id": "p", "name": "Path", "kitId": "k",
+            "source": "export function Path(){ return <svg><path d=\"M0 0\"/></svg>; }", "srcText": "",
+            "animations": [{ "name": "draw", "keyframes": { "from": { "stroke-dashoffset": "100" }, "to": { "stroke-dashoffset": "0" } } }] });
+        assert!(motion_cats(&analyze_motion(std::slice::from_ref(&draw))).contains(&"motion-dash-no-pathlength"));
+        let f = analyze_motion(std::slice::from_ref(&draw));
+        assert_eq!(f.iter().find(|f| f.category == "motion-dash-no-pathlength").unwrap().severity, 1);
+        // With pathLength set, it is fine.
+        let ok = json!({ "id": "p2", "name": "Path2", "kitId": "k",
+            "source": "export function Path2(){ return <svg><path pathLength={1} d=\"M0 0\"/></svg>; }", "srcText": "",
+            "animations": [{ "name": "draw", "keyframes": { "from": { "stroke-dashoffset": "100" } } }] });
+        assert!(!motion_cats(&analyze_motion(std::slice::from_ref(&ok))).contains(&"motion-dash-no-pathlength"));
+    }
+
+    #[test]
+    fn flags_a_css_transform_keyframe_fighting_an_svg_transform_attribute() {
+        // (c) a CSS transform keyframe on a component that uses an SVG transform= ATTRIBUTE.
+        let clash = json!({ "id": "g", "name": "Group", "kitId": "k",
+            "source": "export function Group(){ return <svg><g transform=\"translate(4,4)\"><rect/></g></svg>; }", "srcText": "",
+            "animations": [{ "name": "rot", "keyframes": { "from": { "transform": "rotate(0)" }, "to": { "transform": "rotate(90deg)" } } }] });
+        assert!(motion_cats(&analyze_motion(std::slice::from_ref(&clash))).contains(&"motion-transform-attr"));
+        // A CSS-only transform (no SVG transform attribute) is fine.
+        let css_only = json!({ "id": "b", "name": "Box", "kitId": "k",
+            "source": "export function Box(){ return <div className=\"box\"/>; }", "srcText": "",
+            "animations": [{ "name": "rot", "keyframes": { "from": { "transform": "rotate(0)" } } }] });
+        assert!(!motion_cats(&analyze_motion(std::slice::from_ref(&css_only))).contains(&"motion-transform-attr"));
+    }
+
+    #[test]
+    fn flags_a_cross_component_inline_name_collision_but_not_a_shared_name_ref() {
+        // (d) two components in one kit each declare an INLINE `draw` → a cross-component collision.
+        let a = json!({ "id": "bar", "name": "Bar", "kitId": "k",
+            "animations": [{ "name": "draw", "keyframes": { "from": { "opacity": "0" }, "to": { "opacity": "1" } } }] });
+        let b = json!({ "id": "line", "name": "Line", "kitId": "k",
+            "animations": [{ "name": "draw", "keyframes": { "from": { "opacity": "0" }, "to": { "opacity": "1" } } }] });
+        let fs = analyze_motion(&[a, b]);
+        let c = fs.iter().find(|f| f.category == "motion-name-collision").expect("collision flagged");
+        assert_eq!(c.severity, 2);
+        assert_eq!(c.node_names, vec!["Bar", "Line"]);
+        assert_eq!(c.node_ids, vec!["bar", "line"]);
+        assert!(c.why.contains("`draw`"), "names the colliding animation: {}", c.why);
+        // Two components that NAME-REF the same kit animation (strings) are SHARING, not colliding.
+        let x = json!({ "id": "x", "name": "X", "kitId": "k", "animations": ["draw"] });
+        let y = json!({ "id": "y", "name": "Y", "kitId": "k", "animations": ["draw"] });
+        assert!(!motion_cats(&analyze_motion(&[x, y])).contains(&"motion-name-collision"));
+        // …and the collision is per-KIT — the same inline name in two DIFFERENT kits does not collide.
+        let k1 = json!({ "id": "k1", "name": "K1", "kitId": "kit1", "animations": [{ "name": "draw", "keyframes": { "from": { "opacity": "0" } } }] });
+        let k2 = json!({ "id": "k2", "name": "K2", "kitId": "kit2", "animations": [{ "name": "draw", "keyframes": { "from": { "opacity": "0" } } }] });
+        assert!(!motion_cats(&analyze_motion(&[k1, k2])).contains(&"motion-name-collision"));
+    }
+
+    #[test]
+    fn analyze_motion_is_empty_for_name_refs_or_no_animations() {
+        let none = json!({ "id": "x", "name": "X", "kitId": "k", "source": "export const C = () => null;" });
+        assert!(analyze_motion(std::slice::from_ref(&none)).is_empty());
+        let refs = json!({ "id": "y", "name": "Y", "kitId": "k", "animations": ["fade-in", "pulse"] });
+        assert!(analyze_motion(std::slice::from_ref(&refs)).is_empty(), "name-refs alone raise no motion finding");
     }
 }

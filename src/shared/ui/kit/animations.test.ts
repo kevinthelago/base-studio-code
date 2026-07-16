@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { compileAnimationsCss, applyAnimationsToRoot, kitAnimations, type AnimationDef } from "./animations";
+import { compileAnimationsCss, applyAnimationsToRoot, kitAnimations, animClassName, type AnimationDef } from "./animations";
 
 const fade: AnimationDef = {
   kit: "react-ui",
@@ -52,6 +52,48 @@ describe("compileAnimationsCss (#2942)", () => {
     expect(css).toContain("@keyframes bsc-vue-ui-fade-in {");
     expect(css).toContain(".react-ui-anim-fade-in {");
     expect(css).toContain(".vue-ui-anim-fade-in {");
+  });
+});
+
+describe("compileAnimationsCss — component namespacing (#3163)", () => {
+  it("namespaces the keyframes + class by `component` so two components' same-named anims don't collide", () => {
+    // Two DIFFERENT `draw-in` animations owned by two components in the same kit — before namespacing
+    // they compiled to the SAME `@keyframes bsc-react-ui-draw-in` and one silently clobbered the other.
+    const a: AnimationDef = { kit: "react-ui", name: "draw-in", component: "BarChart",
+      keyframes: { from: { opacity: "0" }, to: { opacity: "1" } } };
+    const b: AnimationDef = { kit: "react-ui", name: "draw-in", component: "Sparkline",
+      keyframes: { from: { "stroke-dashoffset": "100" }, to: { "stroke-dashoffset": "0" } } };
+    const css = compileAnimationsCss([a, b]);
+    // Distinct, component-namespaced keyframes + matching applying classes — no collision.
+    expect(css).toContain("@keyframes bsc-react-ui-barchart-draw-in {");
+    expect(css).toContain("@keyframes bsc-react-ui-sparkline-draw-in {");
+    expect(css).toContain(".react-ui-barchart-anim-draw-in { animation: bsc-react-ui-barchart-draw-in ");
+    expect(css).toContain(".react-ui-sparkline-anim-draw-in { animation: bsc-react-ui-sparkline-draw-in ");
+    // The keyframe name the class references matches the block it applies (the whole point).
+    expect(css).not.toContain("@keyframes bsc-react-ui-draw-in {"); // never the un-namespaced (colliding) form
+  });
+
+  it("sanitizes a PascalCase / spaced component name into a safe ident segment", () => {
+    const css = compileAnimationsCss([{ ...fade, component: "Bar Chart" }]);
+    expect(css).toContain("@keyframes bsc-react-ui-bar-chart-fade-in {");
+    expect(css).toContain(".react-ui-bar-chart-anim-fade-in {");
+  });
+
+  it("is byte-identical to the un-namespaced output when `component` is absent (existing behavior)", () => {
+    // A single-component preview (no `component`) compiles exactly as before — zero regression.
+    expect(compileAnimationsCss([fade])).toBe(compileAnimationsCss([{ ...fade, component: undefined }]));
+    expect(compileAnimationsCss([fade])).toContain("@keyframes bsc-react-ui-fade-in {");
+    // An empty / all-unsafe component name falls back to the un-namespaced form (never a broken ident).
+    expect(compileAnimationsCss([{ ...fade, component: "" }])).toContain("@keyframes bsc-react-ui-fade-in {");
+    expect(compileAnimationsCss([{ ...fade, component: "***" }])).toContain("@keyframes bsc-react-ui-fade-in {");
+  });
+
+  it("animClassName mirrors the compiled class hook (compiler + renderer agree)", () => {
+    expect(animClassName({ kit: "react-ui", name: "fade-in" })).toBe("react-ui-anim-fade-in");
+    expect(animClassName({ kit: "react-ui", name: "draw-in", component: "BarChart" })).toBe("react-ui-barchart-anim-draw-in");
+    // The class the renderer stamps is a substring of the rule the compiler emits.
+    const css = compileAnimationsCss([{ ...fade, name: "draw-in", component: "BarChart" }]);
+    expect(css).toContain(`.${animClassName({ kit: "react-ui", name: "draw-in", component: "BarChart" })} {`);
   });
 });
 

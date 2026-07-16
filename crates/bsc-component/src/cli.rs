@@ -177,7 +177,16 @@ planning (a project seeded from a kit-bearing blueprint uses that kit).",
         usage: "\
 USAGE:
   bsc ui doctor [--kit K] [--json] [--pretty]     # the health report (read-only)
+  bsc ui doctor --motion [--kit K] [--json]       # ALSO run the four mechanical MOTION checks (#3163)
   bsc ui doctor --fix [--kit K] [--yes]           # OPTIMIZE: merge byte-identical dups + prune dead roots (dry-run unless --yes)
+
+--motion (#3163) ADDS four mechanical animation checks to the report: MOTION-DEAD-SELECTOR (an animation
+`selector` whose class hook the component's source never renders — it matches nothing), MOTION-DASH-NO-
+PATHLENGTH (a stroke-dash(offset|array) keyframe on a component that sets no `pathLength` — a draw needs a
+known path length), MOTION-TRANSFORM-ATTR (a CSS `transform` keyframe on a component using an SVG
+`transform=` ATTRIBUTE — the two don't compose), and MOTION-NAME-COLLISION (an inline animation NAME
+declared by 2+ components in the same kit — their keyframes clobber). They scan each component's INLINE
+animation defs (a name-ref string points at the kit's shared library and is not checked).
 
 Traverses each kit's composition graph (nodes = components, edges = `composes`) and reports the
 dead/duplicated design a growing kit accumulates: CYCLE (a composes loop), DANGLING-BRANCH (an unused
@@ -374,6 +383,21 @@ requires a `selector`.",
         usage: "USAGE:\n  bsc ui kit list-animations <kit-id> [--pretty]\n\nPrints the kit's `animations` array as JSON (an empty array when it has none). Read-only; errors when the kit is absent.",
     },
     CmdDoc {
+        name: "emit-motion-css",
+        summary: "print the COMPILED motion CSS — keyframes + rules + delays (make the motion inspectable, #3163)",
+        usage: "\
+USAGE:
+  bsc ui kit emit-motion-css [--kit K]
+
+Compiles the authored motion to the SAME CSS the render-preview plays and prints it — the `@keyframes`
+blocks + the `prefers-reduced-motion`-guarded applying rules (with any `set` declarations, `delay`, and the
+per-element stagger ramp) — so an author can SEE the motion instead of guessing from the data. Covers BOTH
+the KIT motion libraries (`@keyframes bsc-<kit>-<name>` on `.<kit>-anim-<name>`) and each component's INLINE
+animations, the latter NAMESPACED by their owning component (`bsc-<kit>-<component>-<name>`, #3163) so two
+components' same-named animations don't collide. --kit scopes to one kit (else every kit). Read-only; the
+same closed safety grammar as `define-animation` — an unsafe def is skipped, never emitted.",
+    },
+    CmdDoc {
         name: "remove-animation",
         summary: "drop a named animation from a kit's library (#2942)",
         usage: "USAGE:\n  bsc ui kit remove-animation <kit-id> <name> [--pretty]\n\nRemoves the animation named <name> from the kit's `animations` library. A ui-scope MUTATION; errors when the kit or the named animation is absent.",
@@ -477,7 +501,11 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 Some("remove-animation") if args.get(2).map(String::as_str) != Some("help") => {
                     cmd_kit_remove_animation(&args[2..])
                 }
-                Some(v @ ("define-animation" | "list-animations" | "remove-animation")) => {
+                // #3163: the COMPILED-motion emitter — a custom read over the kit + component stores.
+                Some("emit-motion-css") if args.get(2).map(String::as_str) != Some("help") => {
+                    cmd_emit_motion_css(&args[2..])
+                }
+                Some(v @ ("define-animation" | "list-animations" | "remove-animation" | "emit-motion-css")) => {
                     print!("{}", bsc_cli_util::help_for(&kit_prog, TAGLINE, KIT_COMMANDS, v));
                     Ok(())
                 }
@@ -1003,7 +1031,7 @@ fn cmd_list_shape(args: &[String]) -> Result<(), String> {
 /// analyzer always groups by kit, so edges never cross kits regardless).
 fn cmd_doctor(args: &[String]) -> Result<(), String> {
     let (mut dir, mut kit, mut json, mut pretty) = (None::<String>, None::<String>, false, false);
-    let (mut fix, mut yes) = (false, false);
+    let (mut fix, mut yes, mut motion) = (false, false, false);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -1013,6 +1041,10 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
             "--pretty" => pretty = true,
             "--fix" => fix = true,
             "--yes" => yes = true,
+            // #3163: ADD the four mechanical MOTION checks to the report (an animation selector whose class
+            // hook the source never renders · a stroke-dash keyframe with no pathLength · a CSS transform
+            // keyframe fighting an SVG transform= attribute · a cross-component keyframe-name collision).
+            "--motion" => motion = true,
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             other => return Err(format!("unexpected argument '{other}'")),
         }
@@ -1037,7 +1069,18 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
         return doctor_fix(&store, &comps, yes);
     }
 
-    let findings = crate::graph_health::analyze(&comps);
+    let mut findings = crate::graph_health::analyze(&comps);
+    if motion {
+        // #3163: append the motion findings and re-rank the combined report (most-severe first, stable
+        // kit + node-name tiebreak — the SAME ordering `analyze` uses).
+        findings.extend(crate::graph_health::analyze_motion(&comps));
+        findings.sort_by(|a, b| {
+            b.severity
+                .cmp(&a.severity)
+                .then_with(|| a.kit.cmp(&b.kit))
+                .then_with(|| a.node_names.first().cmp(&b.node_names.first()))
+        });
+    }
 
     if json {
         let arr: Vec<serde_json::Value> = findings.iter().map(crate::graph_health::Finding::to_value).collect();
@@ -1759,6 +1802,84 @@ fn cmd_kit_remove_animation(args: &[String]) -> Result<(), String> {
     remove_named_animation(&store, id, name)?;
     bsc_util::emit_ui_activity("kit", id);
     println!("removed animation '{name}' from kit '{id}'");
+    Ok(())
+}
+
+/// Gather the authored motion (kit libraries + component INLINE defs) into flat AnimationDefs and compile
+/// them to CSS (#3163). KIT-level animations emit un-namespaced (`bsc-<kit>-<name>`); a component's inline
+/// animations are NAMESPACED by the owning component (`bsc-<kit>-<component>-<name>`) so two components'
+/// same-named animations don't collide. A name-ref string on a component points at the kit's shared
+/// library (already emitted from the kit pass), so only object entries are taken here. `kit` scopes to one
+/// kit id. Pure over the two stores → driven directly by tests.
+fn collect_motion_css(
+    kit: Option<&str>,
+    kit_store: &bsc_json_store::Store,
+    comp_store: &bsc_json_store::Store,
+) -> String {
+    let scoped = |kit_id: &str| kit.is_none_or(|k| k == kit_id);
+    let mut defs: Vec<serde_json::Value> = Vec::new();
+
+    // KIT-level motion libraries → `bsc-<kit>-<name>` (no component namespace).
+    for raw in kit_store.list() {
+        let Ok(k) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        let kit_id = k.get("id").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if !scoped(kit_id) {
+            continue;
+        }
+        if let Some(anims) = k.get("animations").and_then(serde_json::Value::as_array) {
+            for a in anims {
+                if let Some(def) = crate::motion::anim_def(a, kit_id, None) {
+                    defs.push(def);
+                }
+            }
+        }
+    }
+
+    // COMPONENT INLINE motion → namespaced by the owning component (#3163).
+    for raw in comp_store.list() {
+        let Ok(c) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        let kit_id = c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if !scoped(kit_id) {
+            continue;
+        }
+        let name = c.get("name").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if let Some(anims) = c.get("animations").and_then(serde_json::Value::as_array) {
+            for a in anims {
+                if a.is_object() {
+                    if let Some(def) = crate::motion::anim_def(a, kit_id, Some(name)) {
+                        defs.push(def);
+                    }
+                }
+            }
+        }
+    }
+
+    crate::motion::compile_animations_css(&defs)
+}
+
+/// `kit emit-motion-css [--kit K]` (#3163) — compile the authored motion (kit libraries + component inline
+/// defs) to CSS and print it, so an author can SEE the keyframes/rules/delays instead of guessing from the
+/// data. A custom READ over BOTH the kit and component stores (never scope-gated). `--dir`/`--component-dir`
+/// override the two store paths (for tests).
+fn cmd_emit_motion_css(args: &[String]) -> Result<(), String> {
+    let (mut kit, mut kit_dir, mut comp_dir) = (None::<String>, None::<String>, None::<String>);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--kit" => kit = it.next().cloned(),
+            "--dir" => kit_dir = it.next().cloned(),
+            "--component-dir" => comp_dir = it.next().cloned(),
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let kit_store = open_kit_store(&kit_dir)?;
+    let comp_store = open_component_store(&comp_dir)?;
+    println!("{}", collect_motion_css(kit.as_deref(), &kit_store, &comp_store));
     Ok(())
 }
 
