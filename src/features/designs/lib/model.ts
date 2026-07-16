@@ -299,10 +299,13 @@ export function resolveComponentAnimations(comp: ComponentRecord, kits: Kit[]): 
 
 /** The ACTIVE animation defs of the siblings a component COMPOSES (#3130) — pair each rendered import
  *  with its motion. For every name in `comp.composes`, find that same-kit component in `comps` and take
- *  its {@link resolveComponentAnimations} (the one-per-group active set); deduped by `kit:name` across
- *  the imports (a kit's chart primitives all share `fade-in`). The preview UNIONS these with the
- *  component's own motion — the composed pieces (a chart's ChartFrame / Axis) then animate in too, not
- *  just the top component's own marks. A component that composes nothing yields `[]`. Pure (React-free). */
+ *  its {@link resolveComponentAnimations} (the one-per-group active set). Each composed def is NAMESPACED
+ *  by its owning sibling (#3163, `AnimationDef.component = sib.name`) so two composed pieces that name an
+ *  animation the same (`draw-in`) compile to DISTINCT keyframes instead of one clobbering the other; a
+ *  genuinely SHARED animation (byte-identical content across siblings — a kit's chart primitives all using
+ *  the same `fade-in`) still contributes exactly ONCE (deduped by content, not by name). The preview
+ *  UNIONS these with the component's own motion — the composed pieces (a chart's ChartFrame / Axis) then
+ *  animate in too, not just the top component's own marks. Composes nothing ⇒ `[]`. Pure (React-free). */
 export function resolveComposedAnimations(
   comp: ComponentRecord,
   comps: ComponentRecord[],
@@ -315,10 +318,12 @@ export function resolveComposedAnimations(
     const sib = byName.get(name);
     if (!sib || sib.kitId !== comp.kitId) continue;
     for (const def of resolveComponentAnimations(sib, kits)) {
-      const key = `${def.kit}:${def.name}`;
+      // Dedup by CONTENT (the def sans-`component`), so a shared animation across siblings contributes
+      // once — but keep two DIFFERENT animations that merely share a name (they'll be namespaced apart).
+      const key = JSON.stringify(def);
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push(def);
+      out.push({ ...def, component: sib.name });
     }
   }
   return out;
