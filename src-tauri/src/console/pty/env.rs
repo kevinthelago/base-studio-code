@@ -110,10 +110,12 @@ pub(crate) fn sidecar_status() -> [(&'static str, Option<std::path::PathBuf>); 2
 // `BASH_ENV` assume `cat`/`grep`/`sed`/`date`/… present). When we bundle those (issue #1277), we
 // PREPEND/APPEND the bundled bin dirs to the session PATH.
 //
-// CRITICAL (additive-only): a bundled dir is added ONLY when it actually exists on disk. With no
-// bundle staged (every build today, and dev), `session_path_prefix`/`session_path_suffix` are empty
-// and `session_env` adds NO `PATH` entry at all — byte-identical to inheriting the parent PATH. A
-// regression here breaks every session, so the disk gate is the whole safety story.
+// CRITICAL (additive-only): a bundled dir is added ONLY when it actually exists on disk. The `bsc`
+// shim dir (#3159) follows the same gate — added ONLY when a `bsc` is bundled (`bsc_bin_path()`), which
+// a real session always has and the test target never does. So with nothing staged AND no `bsc` (the
+// test target), `session_path_prefix`/`session_path_suffix` are empty and `session_env` adds NO `PATH`
+// entry at all — byte-identical to inheriting the parent PATH. A regression here breaks every session,
+// so the disk gate is the whole safety story.
 //
 // Layout the resolvers expect (staged at release time; see `scripts/stage-sidecar.mjs`):
 //   <exe_dir>/gh[.exe]                      — `gh` (Tauri externalBin stages sidecars beside the exe)
@@ -147,17 +149,73 @@ fn bundled_gh_dir(exe_dir: &std::path::Path, windows: bool) -> Option<std::path:
     gh.exists().then(|| exe_dir.to_path_buf())
 }
 
-/// The existing bundled dirs to PREPEND to a session PATH (Windows PortableGit), or empty when no
-/// bundle is staged. Disk-reading wrapper over [`portable_git_bin_candidates`].
+// ── The session-local `bsc` shim (#3159) ────────────────────────────────────────────────────────────
+// In a session `bsc` is a bash FUNCTION (`bsc() { … "$BSC_BIN" "$@"; }`, console/shell_rc). A function
+// lives only inside that shell — it is NOT on PATH and is NOT inherited by non-bash children, so a
+// SUBPROCESS (`python subprocess.run("bsc")`, a `while read | cmd` pipe) can't find `bsc` and has to
+// special-case the absolute `$BSC_BIN`. The shim is a tiny real executable named `bsc` on the SESSION's
+// PATH that just forwards to `$BSC_BIN` (an env var, which children DO inherit), so a bare `bsc`
+// resolves from subprocesses too. This is the agent's SANDBOX PATH — the user's OS PATH stays behind
+// the consent-gated `PathExposeBanner` (#2734) and is never touched here.
+
+/// POSIX shim (bash/sh subprocesses): exec the absolute `$BSC_BIN`, NEVER a bare `bsc` (that would
+/// re-enter this shim). LF-only + a `#!/bin/sh` shebang. Guards an unset `$BSC_BIN` with the same 127
+/// exit the `bsc()` shell helper uses.
+const BSC_SHIM_SH: &str = "#!/bin/sh\n# base-studio-code session shim (#3159): forward `bsc` to the bundled binary so a bare `bsc`\n# resolves from subprocesses (a shell function isn't inherited). Sandbox PATH only; never the OS PATH.\nif [ -z \"${BSC_BIN:-}\" ]; then echo \"bsc: BSC_BIN is unset\" >&2; exit 127; fi\nexec \"$BSC_BIN\" \"$@\"\n";
+
+/// Windows shim (native subprocesses resolve `bsc` → `bsc.cmd` via PATHEXT). CRLF; forwards to
+/// `%BSC_BIN%`. The message avoids parens so it needn't be escaped inside the `if (...)` block.
+const BSC_SHIM_CMD: &str = "@echo off\r\nrem base-studio-code session shim (#3159): forward `bsc` to %BSC_BIN% for subprocesses.\r\nif \"%BSC_BIN%\"==\"\" ( echo bsc: BSC_BIN is unset 1>&2 & exit /b 127 )\r\n\"%BSC_BIN%\" %*\r\n";
+
+/// The shim files to stage: a POSIX `bsc` everywhere, plus a `bsc.cmd` on Windows (native subprocesses
+/// resolve the `.cmd` via PATHEXT; git-bash subprocesses use the POSIX `bsc`). Pure — for testing.
+fn bsc_shim_files(windows: bool) -> Vec<(&'static str, &'static str)> {
+    let mut files = vec![("bsc", BSC_SHIM_SH)];
+    if windows {
+        files.push(("bsc.cmd", BSC_SHIM_CMD));
+    }
+    files
+}
+
+/// Stage the `bsc` shim into `<base>/shim` and return that dir — but ONLY when a real `bsc` is bundled
+/// (`bsc_bin_path().is_some()`), since the shim has nothing to forward to otherwise. Idempotent (writes
+/// only on a content change, so it doesn't churn every session). `None` ⇒ no bundled `bsc` or a write
+/// failure ⇒ the shim dir is not added to PATH (disk-gated, like the bundled-toolchain folding).
+fn session_shim_dir() -> Option<std::path::PathBuf> {
+    bsc_bin_path()?; // no bundled bsc → nothing to forward to → no shim
+    let dir = bsc_base_dir().join("shim");
+    std::fs::create_dir_all(&dir).ok()?;
+    for (name, body) in bsc_shim_files(cfg!(windows)) {
+        let path = dir.join(name);
+        let stale = std::fs::read(&path).map(|b| b != body.as_bytes()).unwrap_or(true);
+        if stale && std::fs::write(&path, body).is_err() {
+            return None;
+        }
+        #[cfg(unix)]
+        if !name.ends_with(".cmd") {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
+        }
+    }
+    Some(dir)
+}
+
+/// The existing bundled dirs to PREPEND to a session PATH: the `bsc` shim (#3159) — so a bare `bsc`
+/// resolves from subprocesses — then Windows PortableGit. Disk-gated: each dir is added only when it
+/// actually exists (the shim only when a `bsc` is bundled), so a bundle-less/test session adds neither.
 fn session_path_prefix() -> Vec<std::path::PathBuf> {
-    let Some(exe_dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf()))
-    else {
-        return Vec::new();
-    };
-    portable_git_bin_candidates(&exe_dir, cfg!(windows))
-        .into_iter()
-        .filter(|p| p.is_dir())
-        .collect()
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(shim) = session_shim_dir() {
+        dirs.push(shim); // the bsc shim wins for a bare `bsc`
+    }
+    if let Some(exe_dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
+        dirs.extend(
+            portable_git_bin_candidates(&exe_dir, cfg!(windows))
+                .into_iter()
+                .filter(|p| p.is_dir()),
+        );
+    }
+    dirs
 }
 
 /// The existing bundled dirs to APPEND to a session PATH (a bundled `gh`, as a fallback), or empty.
@@ -431,8 +489,8 @@ pub(super) fn wire_bsc_env(
 #[cfg(test)]
 mod tests {
     use super::{
-        bundled_gh_dir, compose_path, plan_db_for_cwd, portable_git_bin_candidates, session_env,
-        session_skill_group_for_pane, sidecar_candidates,
+        bsc_shim_files, bundled_gh_dir, compose_path, plan_db_for_cwd, portable_git_bin_candidates,
+        session_env, session_skill_group_for_pane, sidecar_candidates, BSC_SHIM_CMD, BSC_SHIM_SH,
     };
     use crate::bsc_base_dir;
     use std::collections::HashMap;
@@ -494,6 +552,30 @@ mod tests {
         // A user-installed gh (already on the base PATH) stays ahead of the bundled fallback.
         let out = compose_path(&[], Some("/usr/local/bin:/usr/bin"), &[PathBuf::from("/app")], ':').unwrap();
         assert_eq!(out, "/usr/local/bin:/usr/bin:/app");
+    }
+
+    #[test]
+    fn bsc_shim_is_posix_everywhere_plus_a_cmd_on_windows() {
+        // POSIX-only platforms stage a single `bsc`; Windows adds a `bsc.cmd` (native subprocesses
+        // resolve `bsc` → `bsc.cmd` via PATHEXT; git-bash subprocesses use the POSIX `bsc`).
+        assert_eq!(bsc_shim_files(false).iter().map(|(n, _)| *n).collect::<Vec<_>>(), vec!["bsc"]);
+        assert_eq!(bsc_shim_files(true).iter().map(|(n, _)| *n).collect::<Vec<_>>(), vec!["bsc", "bsc.cmd"]);
+    }
+
+    #[test]
+    fn bsc_shim_forwards_to_bsc_bin_and_never_re_enters_itself() {
+        // POSIX shim: a real shebang, LF-only (a CRLF shebang breaks on unix), execs the ABSOLUTE
+        // $BSC_BIN — never a bare `bsc`, which would recurse back into this on-PATH shim — and guards
+        // an unset $BSC_BIN with the same 127 the `bsc()` shell helper uses.
+        assert!(BSC_SHIM_SH.starts_with("#!/bin/sh\n"));
+        assert!(!BSC_SHIM_SH.contains('\r'), "the POSIX shim must be LF-only");
+        assert!(BSC_SHIM_SH.contains("exec \"$BSC_BIN\" \"$@\""));
+        assert!(!BSC_SHIM_SH.contains("exec \"bsc\""), "must not re-enter itself");
+        assert!(BSC_SHIM_SH.contains("BSC_BIN is unset") && BSC_SHIM_SH.contains("exit 127"));
+        // Windows shim: forwards to %BSC_BIN%, guards unset, and is CRLF for cmd.exe.
+        assert!(BSC_SHIM_CMD.contains("\"%BSC_BIN%\" %*"));
+        assert!(BSC_SHIM_CMD.contains("BSC_BIN is unset") && BSC_SHIM_CMD.contains("exit /b 127"));
+        assert!(BSC_SHIM_CMD.contains("\r\n"), "the .cmd shim is CRLF");
     }
 
     #[test]
