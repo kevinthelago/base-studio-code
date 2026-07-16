@@ -81,10 +81,11 @@ describe("TeamsPanel initial selection (#2333)", () => {
 });
 
 describe("pool card gesture — drag moves the stack (#2439); the member drill was dropped (#2750)", () => {
-  // Fleet Alpha's two engineers stack (#2436), so the entered panel renders one pool card. The card
-  // is the [data-node] wrapper around the ×N badge (the drill hint text was dropped, #2750).
+  // Fleet Alpha's engineer is a planner-sized slot (#3143) that stacks (#2436), so the entered panel
+  // renders one pool card. Its card shows a "planner-sized" caption, not a ×N badge — the [data-node]
+  // wrapper around that caption (the drill hint text was dropped, #2750).
   const poolCard = (): HTMLElement =>
-    screen.getByText(/^×\d+$/).closest("[data-node]") as HTMLElement;
+    screen.getByText("planner-sized").closest("[data-node]") as HTMLElement;
 
   it("a drag shifts every member by the same delta", () => {
     render(<TeamsPanel />);
@@ -92,7 +93,7 @@ describe("pool card gesture — drag moves the stack (#2439); the member drill w
     const orgBefore = useAppStore.getState().teams[0];
     const before = new Map(orgBefore.positions.map((p) => [p.nodeId, nodeBox(p)]));
     const members = orgBefore.positions.filter((p) => p.personaId === "persona-worker").map((p) => p.nodeId);
-    expect(members.length).toBeGreaterThanOrEqual(2); // sanity: the stacked engineers
+    expect(members.length).toBeGreaterThanOrEqual(1); // sanity: the planner-sized engineer slot (#3143)
 
     const card = poolCard();
     fireEvent.pointerDown(card, { clientX: 100, clientY: 100 });
@@ -124,7 +125,7 @@ describe("auto-organize lays out the rendered graph (#2451)", () => {
     render(<TeamsPanel />);
     enter(FLEET);
     const before = new Map(workers().map((p) => [p.nodeId, nodeBox(p)]));
-    expect(before.size).toBeGreaterThanOrEqual(2);
+    expect(before.size).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(screen.getByText("⤢ Auto organize"));
 

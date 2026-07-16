@@ -1,9 +1,11 @@
-// Team pools (#2199, #2436) — consolidating a swarm of agents into ONE stacked node so large graphs
-// stay readable. A POOL is ≥2 positions on the same STACKABLE persona: `pooled`, or worker-role by
+// Team pools (#2199, #2436, #3143) — consolidating a swarm of agents into ONE stacked node so large
+// graphs stay readable. A POOL is positions on the same STACKABLE persona: `pooled`, or worker-role by
 // default (explicit `pooled:false` opts out) — the org graph is the SCAFFOLD (director · reviewer ·
-// auditor · intake · anchors) plus a stacked engineer slot per worker persona; the planner owns how
-// many engineers exist (#2388), so per-engineer wiring detail belongs in the DRILL-IN, not the top
-// view. Heterogeneous external wiring no longer prevents stacking (#2436 — it kept Fleet Alpha's own
+// auditor · intake · anchors) plus a stacked engineer slot per worker persona. The planner owns how many
+// engineers exist (#2388), so a WORKER-role (planner-sized) slot collapses to a stack even from ONE
+// placement and its card shows NO count (#3143) — a single engineer node still means "the planner
+// creates however many". Other stackable personas need a real swarm (≥2) to collapse and show `×N`.
+// Per-engineer wiring detail belongs in the DRILL-IN, not the top view. Heterogeneous external wiring no longer prevents stacking (#2436 — it kept Fleet Alpha's own
 // engineers from ever collapsing): the collapse UNIONS external edges onto the stack, and the pool's
 // `homogeneous` flag records whether members are truly interchangeable (identical external relationship
 // signatures) so the UI can mark mixed-wiring stacks. Edges among members (a peer mesh) are internal —
@@ -30,11 +32,14 @@ export interface Pool {
   personaId: string;
   /** The member position nodeIds (the real positions the pool stands in for). */
   memberNodeIds: string[];
-  /** How many instances (= memberNodeIds.length). */
+  /** How many instances (= memberNodeIds.length). Not shown for a `plannerSized` slot (#3143). */
   count: number;
   /** True when every member has the identical external relationship signature (truly interchangeable);
    *  false = mixed wiring, unioned onto the stack — the drill-in shows who has what. */
   homogeneous: boolean;
+  /** A WORKER-role (planner-sized) slot: the planner owns the count (#2388), so the card renders as a
+   *  countless "planner-sized" stack rather than `×N` — and it collapses even from a SINGLE member. */
+  plannerSized: boolean;
 }
 
 /** The external relationship signature of a position: every edge to a node OUTSIDE `memberSet`, as a
@@ -56,6 +61,10 @@ function externalSignature(org: Team, nodeId: string, memberSet: Set<string>): s
  *  Deterministic (positions in author order). */
 export function detectPools(org: Team, personas: Persona[]): Pool[] {
   const stackable = new Set(personas.filter(isStackable).map((p) => p.id));
+  // Planner-sized personas (worker role — the planner owns the count, #2388/#3143): their slot collapses
+  // to a countless stack even from ONE placement, since a single engineer node still means "the planner
+  // creates however many". Every OTHER stackable persona needs a real swarm (≥2) to collapse.
+  const plannerSizedIds = new Set(personas.filter((p) => p.role === "worker").map((p) => p.id));
   const byPersona = new Map<string, Position[]>();
   for (const p of org.positions) {
     if (p.kind === "agent" && p.personaId && stackable.has(p.personaId)) {
@@ -64,11 +73,12 @@ export function detectPools(org: Team, personas: Persona[]): Pool[] {
   }
   const pools: Pool[] = [];
   for (const [personaId, members] of byPersona) {
-    if (members.length < 2) continue;
+    const plannerSized = plannerSizedIds.has(personaId);
+    if (members.length < 2 && !plannerSized) continue;
     const memberSet = new Set(members.map((m) => m.nodeId));
     const sig0 = externalSignature(org, members[0].nodeId, memberSet);
     const homogeneous = members.every((m) => externalSignature(org, m.nodeId, memberSet) === sig0);
-    pools.push({ nodeId: `pool:${personaId}`, personaId, memberNodeIds: members.map((m) => m.nodeId), count: members.length, homogeneous });
+    pools.push({ nodeId: `pool:${personaId}`, personaId, memberNodeIds: members.map((m) => m.nodeId), count: members.length, homogeneous, plannerSized });
   }
   return pools;
 }
