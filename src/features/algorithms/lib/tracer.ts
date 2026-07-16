@@ -257,9 +257,21 @@ export class TracedGraph {
   ids(): string[] {
     return this.nodes.map((n) => n.id);
   }
-  /** A silent read of a node's neighbours (traversal logic — no frame). */
+  /** A silent read of a node's neighbours (traversal logic — no frame). UNDIRECTED (both endpoints). */
   neighbours(id: string): Neighbour[] {
     return this.adj.get(id) ?? [];
+  }
+  /** A silent read of a node's OUTGOING neighbours only (directed, `from → to`) — for topological sort. */
+  outNeighbours(id: string): Neighbour[] {
+    return this.edges
+      .filter((e) => e.from === id)
+      .map((e) => ({ to: e.to, weight: e.weight ?? 1, edge: [e.from, e.to] as [string, string] }));
+  }
+  /** The in-degree of every node (count of incoming directed edges) — Kahn's topological sort. Silent. */
+  inDegrees(): Map<string, number> {
+    const deg = new Map<string, number>(this.nodes.map((n) => [n.id, 0]));
+    for (const e of this.edges) deg.set(e.to, (deg.get(e.to) ?? 0) + 1);
+    return deg;
   }
 
   /** Set a durable start / goal mark (no transient op). */
