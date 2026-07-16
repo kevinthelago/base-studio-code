@@ -16,6 +16,7 @@ const PERSONAS: Persona[] = [
   persona("persona-reviewer", "reviewer", "Reviewer"),
   persona("persona-juror", "juror", "Auditor"),
   persona("persona-issuer", "issuer", "Intake"),
+  persona("persona-marketer", "marketer", "Marketer"),
   persona("persona-worker", "worker", "Engineer"),
   persona("persona-director", "director", "Director"),
 ];
@@ -50,8 +51,17 @@ describe("teamRoleStreams (#3102)", () => {
     expect(roles).toEqual(new Set(["curator", "documentor", "reviewer", "juror", "issuer"]));
     expect(roles.has("worker")).toBe(false);
     expect(roles.has("director")).toBe(false);
-    // The seedable set is exactly the six lifecycle actors.
-    expect(SEEDABLE_TEAM_ROLES).toEqual(new Set(["curator", "documentor", "reviewer", "tester", "juror", "issuer"]));
+    // The seedable set is the seven lifecycle actors; the marketer is opt-in (#3143) — seeds only when a
+    // team explicitly places one (Fleet Alpha does), never a default like the others.
+    expect(SEEDABLE_TEAM_ROLES).toEqual(new Set(["curator", "documentor", "reviewer", "tester", "juror", "issuer", "marketer"]));
+  });
+
+  it("seeds a marketer stream when the team places one (#3143 — opt-in, so it launches with the fleet)", () => {
+    const t = team([agent("marketer", "persona-marketer", "Marketer"), agent("w", "persona-worker")]);
+    const out = teamRoleStreams(t, PERSONAS, []);
+    // The marketer is seeded (it's in SEEDABLE_TEAM_ROLES now); the worker is not (planner-owned).
+    expect(out.map((s) => s.persona)).toEqual(["persona-marketer"]);
+    expect(out[0]).toMatchObject({ id: "marketer", name: "Marketer", persona: "persona-marketer", repo: "", owns: [] });
   });
 
   it("ignores external/resource positions and unknown/absent persona ids", () => {
