@@ -69,6 +69,12 @@ export interface AlgoImpl {
    *  compatible: the CREATOR assigns it (`bsc graph impl set --kind sort`), and a heuristic classifier
    *  fills it for untyped impls; absent on impls authored before the facet, so nothing breaks. */
   kind?: AlgoKind;
+  /** Optional VIZ-CODE facet (#3218, epic #3215) — the algorithm's VISUALIZATION as data: a JS
+   *  trace-program (a function over the TracedArray API) the sandboxed executor runs to DERIVE the
+   *  animation from the real algorithm. The visualizable form of an impl whose reference `code` can't run
+   *  in the browser (e.g. Rust). ADDITIVE; the librarian authors it (`bsc graph impl set --viz-code`).
+   *  Absent ⇒ the impl falls back to an in-app trace-program (the sort family) or shows no animation. */
+  vizCode?: string;
 }
 
 /** The knowledge model — the per-language implementation tier (#2958); the abstract concept ontology
