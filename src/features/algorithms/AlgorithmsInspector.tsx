@@ -3,19 +3,18 @@
 // inspector is impl-only (the abstract concept-node view was removed with #2961). Empty state prompts a
 // selection; each builds-on / used-by row jumps to that impl.
 //
-// Visualization pane (#3177, epic #3171): when the focused impl has a registered visualization
-// (`vizForImpl`), a Code | Visualization toggle swaps the code panel for a live <TracePlayer> that
-// animates the impl's trace through the per-structure renderers — the array-sort proof-of-loop.
-import { useState } from "react";
+// Visualization pane (#3177/#3199, epic #3171): when the focused impl has a registered visualization
+// (`vizForImpl`), the animation is ALWAYS rendered inline as an auto-playing preview (no Code |
+// Visualization toggle) above the code, and clicking it fills the screen with a full player + an
+// editable "provide your own state" input (`VizPanel`) — mirroring the Components-page preview.
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Chip } from "@/shared/ui/data/Chip";
-import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { TECH_META, implById, usedByImpl, type KnowledgeGraph, type AlgoImpl } from "./lib/knowledge";
-import { TracePlayer } from "./viz/TracePlayer";
+import { VizPanel } from "./viz/VizPanel";
 import { vizForImpl } from "./viz/examples/registry";
 
 const PANEL = { width: "100%", height: "100%", borderLeft: "1px solid var(--border)", overflowY: "auto", background: "var(--bg-panel)" } as const;
@@ -42,13 +41,13 @@ export function AlgorithmsInspector({ graph, focusedImpl, onSelectImpl }: {
     );
   }
 
-  // Key the body on the impl id so the Code | Visualization toggle resets to Code when the selection
-  // changes (a fresh mount) — the previous impl's pane never leaks into the next one.
+  // Key the body on the impl id so the visualization (its fullscreen open state, custom input) resets on
+  // a fresh mount when the selection changes — the previous impl's pane never leaks into the next one.
   return <ImplInspector key={focusedImpl.id} graph={graph} impl={focusedImpl} onSelectImpl={onSelectImpl} />;
 }
 
-/** The focused implementation's inspector body — its identity + code/visualization + builds-on/used-by.
- *  Split out so the Visualization toggle can hold local state that resets per impl (via the `key`). */
+/** The focused implementation's inspector body — its identity + inline visualization + code +
+ *  builds-on/used-by. Split out so `VizPanel`'s local state resets per impl (via the `key`). */
 function ImplInspector({ graph, impl, onSelectImpl }: {
   graph: KnowledgeGraph;
   impl: AlgoImpl;
@@ -62,10 +61,9 @@ function ImplInspector({ graph, impl, onSelectImpl }: {
   const ell = { minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } as const;
   const jump = (im: AlgoImpl) => onSelectImpl?.(im.id);
 
-  // The impl's live visualization (#3177), if any. Only impls with one show the Code | Visualization
-  // toggle; everything else keeps exactly today's code-only pane.
+  // The impl's live visualization (#3177), if any. When present it's ALWAYS rendered inline above the
+  // code (#3199); impls without one keep exactly today's code-only pane.
   const viz = vizForImpl(impl.id);
-  const [showViz, setShowViz] = useState(false);
 
   return (
     <Box style={PANEL}>
@@ -85,25 +83,11 @@ function ImplInspector({ graph, impl, onSelectImpl }: {
           </Row>
         )}
 
-        {/* Code | Visualization toggle — only when this impl has a registered visualization (#3177). */}
-        {viz && (
-          <SegmentedControl
-            variant="joined"
-            options={[
-              { label: "Code", on: !showViz, onClick: () => setShowViz(false) },
-              { label: "Visualization", on: showViz, onClick: () => setShowViz(true) },
-            ]}
-          />
-        )}
+        {/* The visualization is always rendered inline (#3199) — an auto-playing preview; click it to
+            fill the screen and try your own input. The code stays below it. */}
+        {viz && <VizPanel viz={viz} />}
 
-        {viz && showViz ? (
-          // The live visualization: the impl's trace animated through the per-structure renderers.
-          <Box className="algo-viz-pane">
-            <TracePlayer factory={viz.factory} renderers={viz.renderers} fps={3} />
-          </Box>
-        ) : (
-          impl.code && <Box as="pre" className="algo-code mono">{impl.code}</Box>
-        )}
+        {impl.code && <Box as="pre" className="algo-code mono">{impl.code}</Box>}
 
         <ImplLinks label="Builds on" glyph="↳" impls={buildsOn} onJump={jump} />
         <ImplLinks label="Used by" glyph="↰" impls={usedBy} onJump={jump} />

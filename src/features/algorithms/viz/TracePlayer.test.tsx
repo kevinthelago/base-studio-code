@@ -1,8 +1,8 @@
 // The generic trace player (#3176) — render smoke: it renders the registered renderer for a structure,
 // falls back (JSON dump) for an unregistered one, lays out multi-structure panels, and step-forward
 // advances the frame.
-import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { TracePlayer } from "./TracePlayer";
 import type { StructureRenderer } from "./registry";
 import type { Frame } from "../lib/trace";
@@ -59,5 +59,40 @@ describe("TracePlayer (#3176)", () => {
     expect(screen.getByTestId("array-view").textContent).toBe("0,1"); // frame 1
     fireEvent.click(screen.getByLabelText("Step forward"));
     expect(screen.getByTestId("array-view").textContent).toBe("0,1,2"); // frame 2
+  });
+
+  // ── #3199 inline-preview props ──
+
+  it("hides the transport when controls is false (the inline preview is just the picture)", () => {
+    render(<TracePlayer factory={arrayTrace} renderers={{ array: ArrayView }} controls={false} />);
+    expect(screen.getByTestId("array-view").textContent).toBe("0"); // still shows frames
+    expect(screen.queryByLabelText("Step forward")).toBeNull();
+    expect(screen.queryByLabelText("Play")).toBeNull();
+  });
+
+  it("auto-plays without a click when autoPlay is set", () => {
+    vi.useFakeTimers();
+    try {
+      render(<TracePlayer factory={arrayTrace} renderers={{ array: ArrayView }} autoPlay fps={10} />);
+      expect(screen.getByTestId("array-view").textContent).toBe("0"); // frame 0 at mount
+      act(() => void vi.advanceTimersByTime(100)); // one 100ms beat (fps 10)
+      expect(screen.getByTestId("array-view").textContent).toBe("0,1"); // advanced with no click
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("loops back to frame 0 at the end when loop is set", () => {
+    vi.useFakeTimers();
+    try {
+      render(<TracePlayer factory={arrayTrace} renderers={{ array: ArrayView }} autoPlay loop fps={10} />);
+      act(() => void vi.advanceTimersByTime(100)); // → "0,1"
+      act(() => void vi.advanceTimersByTime(100)); // → "0,1,2" (last frame)
+      expect(screen.getByTestId("array-view").textContent).toBe("0,1,2");
+      act(() => void vi.advanceTimersByTime(100)); // end reached → loop restarts at frame 0
+      expect(screen.getByTestId("array-view").textContent).toBe("0");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

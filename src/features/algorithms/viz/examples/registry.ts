@@ -13,30 +13,52 @@
 import type { Frame } from "../../lib/trace";
 import type { RendererRegistry } from "../registry";
 import { ArrayView } from "../renderers/ArrayView";
-import { SORT_MOCK, sortSteps } from "./sort";
+import { SORT_MOCK, sortSteps, parseSortInput } from "./sort";
 
-/** A ready-to-play visualization for one implementation: a memoizable factory (a fresh, deterministic
- *  trace generator per call) + the per-structure renderers the player dispatches to. */
+/** A ready-to-play visualization for one implementation: a stable default factory (the inline preview) +
+ *  the per-structure renderers the player dispatches to + an editable INPUT seam (#3199) that powers the
+ *  fullscreen "provide your own state" field. */
 export interface VizExample {
   /** Produces a fresh trace generator from the impl's fixed mock input. STABLE identity (defined once
    *  here), so the inspector can hand it straight to `<TracePlayer factory>` without re-memoizing. */
   factory: () => Generator<Frame>;
   /** The renderers this example needs (array → {@link ArrayView}). */
   renderers: RendererRegistry;
+  /** The editable input driving the trace (#3199) — the "state" the user provides in the fullscreen view.
+   *  `parse` turns the field text into typed input (throwing a helpful Error on invalid input); `make`
+   *  builds a FRESH trace from it. `make(parse(default))` reproduces `factory`'s trace. `parse`/`make`
+   *  share one input type per example; the seam is `unknown` here so the registry can hold mixed shapes. */
+  input: {
+    /** Default input as text, seeding the fullscreen field. */
+    default: string;
+    /** A short hint shown under the field (what to type). */
+    hint: string;
+    /** Parse the field text into typed input; throws an `Error` (message shown to the user) on invalid. */
+    parse: (text: string) => unknown;
+    /** Build a fresh trace generator from parsed input — a fresh copy per call, so replay stays exact. */
+    make: (parsed: unknown) => Generator<Frame>;
+  };
 }
 
 /** The impls that have a live Visualization pane, keyed by impl id. The array sort proof (#3178/#3177).
- *  `sortSteps` mutates its input in place, so the factory hands it a FRESH COPY of the immutable
- *  {@link SORT_MOCK} each call — keeping the mock pristine so the engine's deterministic replay is exact. */
+ *  `sortSteps` mutates its input in place, so both `factory` and `input.make` hand it a FRESH COPY (of the
+ *  immutable {@link SORT_MOCK} / the parsed input) each call — keeping the source pristine so the engine's
+ *  deterministic replay is exact. */
 export const VIZ_EXAMPLES: Record<string, VizExample> = {
   "sort.ts": {
     factory: () => sortSteps([...SORT_MOCK]),
     renderers: { array: ArrayView },
+    input: {
+      default: SORT_MOCK.join(", "),
+      hint: "Comma- or space-separated numbers to sort",
+      parse: (text) => parseSortInput(text),
+      make: (parsed) => sortSteps([...(parsed as number[])]),
+    },
   },
 };
 
 /** The visualization for an implementation id, or `undefined` when it has none (no Visualization pane).
- *  Pure lookup — the inspector shows the Code | Visualization toggle only when this is defined. */
+ *  Pure lookup — the inspector renders the inline visualization only when this is defined (#3199). */
 export function vizForImpl(id: string): VizExample | undefined {
   return VIZ_EXAMPLES[id];
 }
