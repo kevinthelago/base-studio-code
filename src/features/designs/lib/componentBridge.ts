@@ -80,3 +80,11 @@ export async function pushKit(kit: Kit): Promise<void> {
 export async function dropKit(id: string): Promise<void> {
   try { await bscRun(null, ["ui", "kit", "remove", id]); } catch { /* store unreachable — cache-only */ }
 }
+
+/** Record a captured preview RUNTIME error to the durable log `bsc ui preview-errors` tails (#3165). The
+ *  message (a stack trace) rides on the child's stdin. Fire-and-forget: never throws — an old bundled
+ *  `bsc` without the verb just no-ops the observability (the in-pane error banner still shows). Makes a
+ *  preview throw — otherwise only ephemeral React state — readable from a session's shell. */
+export async function recordPreviewError(id: string, message: string): Promise<void> {
+  try { await bsc(null, ["ui", "preview-error", id], message); } catch { /* bridge/binary absent — banner-only */ }
+}
