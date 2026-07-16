@@ -39,6 +39,8 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 if let Some(t) = flag_value(&args, "--tags") { im["tags"] = list_flag(Some(t.as_str())); }
                 // The kind facet (#3210) — the manipulation type that selects the live animation. Additive.
                 if let Some(k) = flag_value(&args, "--kind") { im["kind"] = Value::String(k); }
+                // The viz-code facet (#3218) — the algorithm's visualization as a JS trace-program. Additive.
+                if let Some(v) = flag_value(&args, "--viz-code") { im["vizCode"] = Value::String(v); }
                 let mut g = crate::load();
                 let replaced = crate::set_impl(&mut g, im.clone())?;
                 crate::save(&g)?;
@@ -181,7 +183,7 @@ fn help(prog: &str) -> String {
          {prog} harvest <dir> [--tech T] [--worthy-only] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745)\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
-         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate]   # upsert a language-kit impl (#2863/#2972); --domain/--tags are #3120, --kind is the #3210 animation type\n  \
+         {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>]   # upsert a language-kit impl (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program\n  \
          {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
          Implementation techs (#2770): typescript · rust — each `composes` other same-tech impls, rooted in the language's primitives.\n\
