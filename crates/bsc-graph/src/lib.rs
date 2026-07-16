@@ -48,13 +48,45 @@ pub fn load_at(path: &Path) -> Value {
         .unwrap_or_else(seed)
 }
 
-/// The runtime graph — the writable store (store-or-seed). Every reader resolves against this, so a
-/// read after a write reflects the write.
+/// The runtime graph — the writable store (store-or-seed), RECONCILED against the packaged seed
+/// (#3198). Every reader resolves against this, so a read after a write reflects the write AND a
+/// packaged algorithm added after the store was first written still surfaces.
 pub fn load() -> Value {
-    match store_path() {
+    let mut g = match store_path() {
         Some(p) => load_at(&p),
         None => seed(),
+    };
+    reconcile_seed(&mut g);
+    g
+}
+
+/// Append any packaged-seed implementation whose `id` is ABSENT from `g` (#3198) — the seed reconcile
+/// that keeps a writable store from SHADOWING algorithms added to the packaged seed later (the same
+/// class the Designs kit solved with #2483). It never overwrites an existing id, so a librarian's edit
+/// to a seed impl and every harvested/custom impl are preserved; a seed impl the store lacks — never
+/// had it, or the user removed it — is (re-)added, so packaged algorithms always surface AND are
+/// RECOVERABLE (delete one, it returns on next load). Custom (non-seed) impls stay fully removable.
+/// Returns whether it changed `g`. Order-stable: the store's own impls keep their order; missing seed
+/// impls are appended in seed order.
+pub fn reconcile_seed(g: &mut Value) -> bool {
+    let have: std::collections::HashSet<String> = implementations_of(g)
+        .iter()
+        .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_owned))
+        .collect();
+    let missing: Vec<Value> = implementations_of(&seed())
+        .into_iter()
+        .filter(|im| {
+            im.get("id").and_then(Value::as_str).map(|id| !have.contains(id)).unwrap_or(false)
+        })
+        .collect();
+    if missing.is_empty() {
+        return false;
     }
+    let arr = ensure_array(g, "implementations");
+    for im in missing {
+        arr.push(im);
+    }
+    true
 }
 
 /// Persist the graph to `path` (pretty JSON), creating the parent dir — write a temp sibling then
@@ -395,5 +427,111 @@ mod tests {
         // A seed impl (no domain) is never in a domain collection; an unknown domain matches nothing.
         assert!(!impl_in_domain(&serde_json::json!({ "id": "merge.rs" }), "logistics"), "an untagged impl never matches");
         assert_eq!(implementations_of(&g).into_iter().filter(|im| impl_in_domain(im, "nope")).count(), 0);
+    }
+
+    // ── #3198 seed reconcile — the writable store must not shadow packaged algorithms ──
+
+    /// A store id absent from the seed. Seeded (`_stale_store`) with the Rust kit only, mimicking a
+    /// store written before the TypeScript impls were packaged.
+    fn stale_rust_only_store() -> Value {
+        let full = seed();
+        let rust_only: Vec<Value> = implementations_of(&full)
+            .into_iter()
+            .filter(|im| im.get("tech").and_then(Value::as_str) == Some("rust"))
+            .collect();
+        serde_json::json!({ "implementations": rust_only })
+    }
+
+    #[test]
+    fn reconcile_appends_seed_impls_the_store_lacks() {
+        // A store written before `sort.ts`/`fibonacci.ts` were packaged (Rust-only) gets them back.
+        let mut g = stale_rust_only_store();
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "sort.ts"), "the stale store lacks sort.ts");
+        let changed = reconcile_seed(&mut g);
+        assert!(changed, "reconcile added the missing seed impls");
+        for id in ["sort.ts", "fibonacci.ts", "typescript.number"] {
+            assert!(
+                implementations_of(&g).iter().any(|im| im["id"] == id),
+                "the packaged '{id}' now surfaces after reconcile",
+            );
+        }
+    }
+
+    #[test]
+    fn reconcile_is_a_noop_when_the_store_already_has_every_seed_impl() {
+        // A store equal to the seed is unchanged (no duplicates, no churn).
+        let mut g = seed();
+        let n0 = implementations_of(&g).len();
+        assert!(!reconcile_seed(&mut g), "nothing to add → no change");
+        assert_eq!(implementations_of(&g).len(), n0, "no duplicate impls appended");
+    }
+
+    #[test]
+    fn reconcile_never_overwrites_a_user_edit_to_a_seed_impl() {
+        // A store whose impl shares a seed id but differs (a librarian edit) is KEPT verbatim — reconcile
+        // only fills GAPS by id, it never clobbers an existing impl.
+        let mut g = seed();
+        set_impl(&mut g, serde_json::json!({
+            "id": "sort.ts", "tech": "typescript", "role": "algorithm", "name": "sort (my edit)",
+            "composes": [], "code": "// hand-tuned"
+        })).unwrap();
+        reconcile_seed(&mut g);
+        let sort = implementations_of(&g).into_iter().find(|im| im["id"] == "sort.ts").unwrap();
+        assert_eq!(sort["name"], "sort (my edit)", "the user's edit survives reconcile");
+        assert_eq!(sort["code"], "// hand-tuned");
+        assert_eq!(
+            implementations_of(&g).iter().filter(|im| im["id"] == "sort.ts").count(),
+            1,
+            "no duplicate is appended for an id already present",
+        );
+    }
+
+    #[test]
+    fn reconcile_leaves_custom_non_seed_impls_untouched() {
+        // A harvested/custom impl (not in the seed) is neither removed nor duplicated by reconcile.
+        let mut g = stale_rust_only_store();
+        set_impl(&mut g, serde_json::json!({
+            "id": "my-thing.ts", "tech": "typescript", "role": "algorithm", "name": "myThing", "composes": [], "code": "//"
+        })).unwrap();
+        reconcile_seed(&mut g);
+        assert_eq!(
+            implementations_of(&g).iter().filter(|im| im["id"] == "my-thing.ts").count(),
+            1,
+            "the custom impl is preserved exactly once",
+        );
+    }
+
+    #[test]
+    fn reconcile_re_adds_a_removed_seed_impl_so_seed_algorithms_are_recoverable() {
+        // Deleting a seed impl does not stick — the next reconcile re-adds it (the "undeletable / at least
+        // recoverable" behavior). A custom impl removed the same way stays gone (see the test above).
+        let mut g = seed();
+        assert!(remove_impl(&mut g, "sort.ts"), "sort.ts existed");
+        assert!(!implementations_of(&g).iter().any(|im| im["id"] == "sort.ts"), "it's gone after remove");
+        assert!(reconcile_seed(&mut g), "reconcile re-added the removed seed impl");
+        assert!(
+            implementations_of(&g).iter().any(|im| im["id"] == "sort.ts"),
+            "the seed algorithm is recoverable — it returns on the next load",
+        );
+    }
+
+    #[test]
+    fn load_path_reconciles_a_stale_store_on_disk() {
+        // The end-to-end guard: a stale store file on disk, read via `load_at` + reconcile (what `load()`
+        // does), yields the packaged TypeScript impls — the exact bug ("I only see rust algorithms").
+        let tmp = std::env::temp_dir().join(format!(
+            "bsc-graph-reconcile-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
+        ));
+        save_at(&tmp, &stale_rust_only_store()).unwrap();
+        let mut on_disk = load_at(&tmp); // store-or-seed (no reconcile) — the stale store
+        assert!(!implementations_of(&on_disk).iter().any(|im| im["id"] == "sort.ts"), "raw load is stale");
+        reconcile_seed(&mut on_disk); // what load() layers on top
+        assert!(
+            implementations_of(&on_disk).iter().any(|im| im["id"] == "sort.ts"),
+            "load() surfaces the packaged algorithm from a stale on-disk store",
+        );
+        let _ = std::fs::remove_file(&tmp);
     }
 }
