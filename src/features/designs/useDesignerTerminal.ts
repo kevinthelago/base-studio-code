@@ -40,9 +40,13 @@ import { DESIGN_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
  *  truth lives in `systemSessions`, so crash recovery excludes it). */
 export const DESIGNER_PANE_ID = DESIGN_STUDIO_SESSION_ID;
 
-/** The designer's whole command surface: `bsc ui` plus the deprecated `bsc component` alias (#2469),
- *  emitted as the session's ONLY `Bash(<cmd> *)` allows via `restrictedAllow`. */
-export const DESIGNER_ALLOWED_COMMANDS = ["bsc ui", "bsc component"];
+/** The designer's whole command surface, emitted as the session's ONLY `Bash(<cmd> *)` allows via
+ *  `restrictedAllow` — each entry is a PREFIX. `bsc ui` (+ the deprecated `bsc component` alias, #2469)
+ *  is the design surface; `bsc request new`/`bsc request list` (#3300) is the designer→debug channel —
+ *  on a `bsc ui` wall it FILES a request for the debug session to fix (#3298) instead of asking for
+ *  out-of-surface permissions. `resolve` is deliberately NOT here — draining the queue is the debug
+ *  session's contract, not the designer's. */
+export const DESIGNER_ALLOWED_COMMANDS = ["bsc ui", "bsc component", "bsc request new", "bsc request list"];
 
 export interface DesignerTerminalHandle {
   /** Host element for the xterm canvas — attach to the terminal container div. */
