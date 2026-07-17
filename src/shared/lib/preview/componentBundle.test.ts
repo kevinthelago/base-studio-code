@@ -367,6 +367,18 @@ describe("componentBundle — pan/zoom engine (#3190 crisp pass)", () => {
     expect(buildComponentSrcDoc("X", { zoomEngine: undefined })).toBe(bare); // off ⇒ byte-for-byte unchanged
   });
 
+  // #3251 regression: the engine's drag lives INSIDE the iframe, so its selection guard must ship in the
+  // SRCDOC. The host wrapper's `user-select:none` cannot cross a document boundary — when that was the
+  // only guard, a press-and-move started a native text selection instead of panning.
+  it("the engine's srcdoc suppresses text selection, exempting form fields (#3251)", () => {
+    const doc = buildComponentSrcDoc("X", { zoomEngine: { initial: 1.15 } });
+    expect(doc).toContain("body{user-select:none;-webkit-user-select:none}");
+    // …but a previewed input/textarea keeps its caret + selection (mirrors the engine's DRAG_NATIVE).
+    expect(doc).toContain("input,textarea,select,[contenteditable]{user-select:text;-webkit-user-select:text}");
+    // Scoped to the engine only: a non-engine preview is untouched.
+    expect(buildComponentSrcDoc("X")).not.toContain("user-select");
+  });
+
   // Parse "translate(<tx>px,<ty>px) scale(<s>)" — the transform the engine writes onto #root.
   const parseT = (s: string) => {
     const m = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)\s*scale\((-?[\d.]+)\)/.exec(s);
@@ -450,6 +462,30 @@ describe("componentBundle — pan/zoom engine (#3190 crisp pass)", () => {
     root.appendChild(scroller);
     scroller.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 120, clientX: 5, clientY: 5 }));
     expect(root.style.transform).toBe(beforeS);
+
+    root.remove();
+  });
+
+  // #3251 regression: an <img>/<a> press starts a NATIVE drag, which cancels the mousemove stream and
+  // kills the pan mid-gesture. The engine cancels it; a form field keeps its own (DRAG_NATIVE).
+  it("cancels a native dragstart on non-form targets, so an image/link drag still pans (#3251)", () => {
+    const root = document.createElement("div");
+    root.id = "root";
+    document.body.appendChild(root);
+    const src = gestureEngineScript({ initial: 1 }).replace(/^\s*<script>/, "").replace(/<\/script>\s*$/, "");
+    (0, eval)(src);
+
+    const img = document.createElement("img");
+    root.appendChild(img);
+    const imgDrag = new Event("dragstart", { bubbles: true, cancelable: true });
+    img.dispatchEvent(imgDrag);
+    expect(imgDrag.defaultPrevented).toBe(true);      // native image-drag cancelled → the pan survives
+
+    const input = document.createElement("input");
+    root.appendChild(input);
+    const inputDrag = new Event("dragstart", { bubbles: true, cancelable: true });
+    input.dispatchEvent(inputDrag);
+    expect(inputDrag.defaultPrevented).toBe(false);   // a form field keeps its native drag
 
     root.remove();
   });

@@ -462,6 +462,9 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
   function endPan() { pending = false; panning = false; document.body.style.cursor = ""; }
   document.addEventListener("mouseup", endPan, true);
   window.addEventListener("blur", endPan);
+  // #3251: an <img>/<a> press starts a NATIVE drag, which cancels the mousemove stream — the pan would
+  // die mid-gesture. Cancel it (form fields keep theirs, matching DRAG_NATIVE).
+  document.addEventListener("dragstart", function (e) { if (!dragNative(e.target)) e.preventDefault(); }, true);
   document.addEventListener("click", function (e) { if (moved) { e.preventDefault(); e.stopPropagation(); moved = false; } }, true);
   // WHEEL: pans/scrolls the content by default (so overflow is navigable); ctrl/⌘ + wheel zooms about the
   // cursor. An inner scroll container scrolls itself.
@@ -507,7 +510,15 @@ export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOpti
   // #3190 crisp pass: the in-iframe pan/zoom ENGINE — transforms `#root` (crisp DOM) instead of forwarding
   // to a host CSS scale (a blurry iframe texture). Clip cleanly + no scrollbars while it drives the view.
   const engineShim = gestureEngineScript(zoomEngine);
-  const engineCss = zoomEngine ? `\n<style>html,body{overflow:hidden}#root{overflow:hidden}</style>` : "";
+  // #3251: the engine's drag lives INSIDE the iframe, so the selection guard must too — the host
+  // wrapper's `user-select:none` cannot cross a document boundary. Without this, a press-and-move
+  // starts a native text selection instead of panning. Form fields keep caret + selection (mirrors the
+  // engine's own DRAG_NATIVE list, which already leaves their native drag alone).
+  const engineCss = zoomEngine
+    ? `\n<style>html,body{overflow:hidden}#root{overflow:hidden}`
+      + `body{user-select:none;-webkit-user-select:none}`
+      + `input,textarea,select,[contenteditable]{user-select:text;-webkit-user-select:text}</style>`
+    : "";
   return `<!doctype html><html data-theme="${theme}"><head><meta charset="utf-8" />
 <style>html,body,#root{margin:0;height:100%;box-sizing:border-box}#root{overflow:auto}*,*::before,*::after{box-sizing:inherit}
 /* Fit oversized preview media (d3 charts/graphs, images) within the frame rather than overflowing it (#2915).
