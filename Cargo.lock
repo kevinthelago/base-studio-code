@@ -750,7 +750,6 @@ dependencies = [
  "bsc-sound",
  "bsc-studio",
  "bsc-teams",
- "bsc-todo",
  "bsc-ui",
  "bsc-util",
  "compliance",
@@ -769,7 +768,6 @@ version = "0.1.0"
 dependencies = [
  "bsc-files",
  "bsc-llm",
- "bsc-todo",
  "bsc-util",
  "glob",
  "regex",
@@ -939,20 +937,6 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
-]
-
-[[package]]
-name = "bsc-todo"
-version = "0.1.0"
-dependencies = [
- "bsc-cli-util",
- "bsc-files",
- "bsc-sqlite-util",
- "bsc-util",
- "plandb",
- "rusqlite",
- "serde",
- "serde_json",
 ]
 
 [[package]]

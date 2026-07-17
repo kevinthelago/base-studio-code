@@ -427,11 +427,8 @@ pub(super) fn wire_bsc_env(
     // store the `bsc skill` subcommand reads/writes (a no-arg `bsc-skill` fire stays the #406 telemetry
     // hook). Unlike BSC_PLAN_DB (per-project, cwd-derived), this is global — set for every pane.
     cmd.env("BSC_SKILL_DB", to_bash_path(&base.join("skills.db").to_string_lossy()));
-    // bsc todo (#1872, GLOBAL scope): point every session at the one shared workflow-runbook store so
-    // the global todo list is reachable from any session (and rendered into each bsc-agent turn). The
-    // FEATURE scope reads $BSC_PLAN_DB (set above, cwd-derived); this is the global sibling — set for
-    // every pane, like $BSC_SKILL_DB.
-    cmd.env("BSC_TODO_DB", to_bash_path(&base.join("todos.db").to_string_lossy()));
+    // (The `bsc todo` surface + its $BSC_TODO_DB were removed in #3278 — the local-first consolidation
+    // onto the one `bsc plan` issue surface.)
     // bsc data (#1446): the project's per-project DuckDB data store — the canonical Data Model +
     // PlatformScan the planner reads at the UI-kickoff stage via `bsc data`. $BSC_DATA_DB is the
     // project's .duckdb (cwd-derived, like BSC_PLAN_DB).
