@@ -13,7 +13,6 @@ import type { MarketConfig } from "@/features/planner/lib/marketConfig";
 import type { TransformationRow } from "@/features/planner/lib/transformations";
 import type { SourceConfig } from "@/features/planner/lib/sourceConfig";
 import type { IntegrationConfig } from "@/features/planner/lib/integrationConfig";
-import type { DataModel } from "@/features/planner/data/dataModel";
 import type { IntegrationStrategy } from "@/features/planner/lib/integrationStrategy";
 import type { DirectorDrive } from "@/features/planner/fleet/directorDrive";
 
@@ -131,22 +130,6 @@ export interface PlanState {
   blueprints:         Blueprint[];
   activeBlueprintId:  string;
   setActiveBlueprint: (id: string) => void;
-  // Canonical Data Models (#780) — the schema library the data blueprints map into and
-  // the build side later generates over. Seeded with a starter CRM model; persisted.
-  dataModels:         DataModel[];
-  activeDataModelId:  string;
-  setActiveDataModel: (id: string) => void;
-  /** Add a new empty Data Model; returns its id. */
-  addDataModel:       () => string;
-  /** Replace a model wholesale (the editor computes the next model from the pure transforms). */
-  setDataModel:       (id: string, model: DataModel) => void;
-  /** Delete a model; if it was active, the active id falls back to the first remaining. */
-  removeDataModel:    (id: string) => void;
-  /** Per-project, per-entity load verification (#ls-reconcile-ui).
-   *  projectKey → entityKey → verified. A verified load has passed the quality gate and
-   *  is ready for cutover; persisted so it survives app restarts. */
-  loadVerified:       Record<string, Record<string, boolean>>;
-  setLoadVerified:    (projectKey: string, entity: string, verified: boolean) => void;
   // Which blueprint each project was last seeded/reset from (#647), keyed by project key.
   // Lets the planner detect when the selected blueprint differs from the project's and
   // offer to reset. Set on first seed + on an explicit blueprint switch.
