@@ -5,7 +5,7 @@
 // in TabBar, shared with every other page.
 
 import { Pencil } from "lucide-react";
-import { TabBar, type TabItem } from "./TabBar";
+import { TabBar, type TabItem } from "@/shared/ui/layouts/TabBar";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";

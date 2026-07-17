@@ -9,7 +9,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { projectRepoCwd } from "@/shared/lib/core/projectPaths";
-import { TabBar, type TabItem } from "@/app/chrome/TabBar";
+import { TabBar, type TabItem } from "@/shared/ui/layouts/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { useReopenProject } from "./ReopenProjectModal";
 import type { LocalProjectLite } from "./drafts";
