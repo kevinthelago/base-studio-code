@@ -163,6 +163,13 @@ export interface ProjectsState {
   autoTriage: Record<string, boolean>;
   /** Flip a project's auto-triage toggle (persisted). Default (absent) is OFF = surface-only. */
   setAutoTriage: (projectKey: string, on: boolean) => void;
+  // Per-node Glance OFF toggle (#3239) — the user has DEACTIVATED this node from its details pane, so
+  // it renders greyed (health `off`) on the network and reads "off" over any live status. Persisted so it
+  // continues from the last session; keyed by the Glance node id (a project's plan key). Sparse map:
+  // absent ⇒ the node is ON (its normal derived status). Cleaned on project delete/rename.
+  glanceOff: Record<string, boolean>;
+  /** Turn a Glance node off (deactivate, greyed) or back on (persisted). Default (absent) is ON. */
+  setGlanceNodeOff: (nodeId: string, off: boolean) => void;
   // Per-project KIT AUTO-DISPATCH toggle (#2277). When ON, the kit-change drain (useKitDispatch) delivers
   // a BREAKING kit change queued for this consumer to a rail — a live fleet → its director via bsc-issue →
   // bsc-assign; no live fleet → a plain kit-update GitHub issue in the consumer repo. When OFF (the

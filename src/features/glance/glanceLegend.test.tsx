@@ -13,6 +13,7 @@ describe("GlanceOverlays legend (#2561)", () => {
     expect(screen.getByText("depends on")).toBeTruthy();
     expect(screen.getByText("data flow")).toBeTruthy();
     expect(screen.queryByText("API contract")).toBeNull();
+    expect(screen.getByText("off")).toBeTruthy(); // #3239: the HEALTH legend documents the deactivated state
   });
 
   it("L1 (drill): FUNCTION groups + the Org archetypes present in the drilled fleet", () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useGlanceProjects, mergeGlanceProjects, applyLiveness, applyFaultHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged, resolveProjectCategory } from "./useGlanceProjects";
+import { useGlanceProjects, mergeGlanceProjects, applyLiveness, applyFaultHealth, applyOffHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged, resolveProjectCategory } from "./useGlanceProjects";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
 import type { MinimalGhProject } from "@/shared/lib/github/githubState";
 import type { ProjectLite } from "./glanceData";
@@ -225,6 +225,34 @@ describe("applyFaultHealth — worst fault → warning/error + reason (#2541)", 
     const out = applyFaultHealth(projects, { a: fault("fatal", "panic") });
     expect(out.find((p) => p.id === "a")?.health).toBe("error");
     expect(out.find((p) => p.id === "b")).toEqual(projects[1]); // no fault → left as-is (stays healthy/live path)
+  });
+});
+
+describe("applyOffHealth — the manual OFF toggle wins over every derived status (#3239)", () => {
+  const projects: ProjectLite[] = [
+    { id: "a", name: "A", health: "error", activity: "building", reason: "boom", faults: 2 },
+    { id: "b", name: "B", health: "healthy", activity: "live" },
+  ];
+
+  it("forces health 'off' and drops the fault reason for a deactivated node (mute beats an error)", () => {
+    const out = applyOffHealth(projects, { a: true });
+    expect(out.find((p) => p.id === "a")).toMatchObject({ health: "off", reason: undefined });
+    // The activity axis is untouched (the canvas renders "off" over it) — off is a HEALTH value.
+    expect(out.find((p) => p.id === "a")?.activity).toBe("building");
+  });
+
+  it("leaves an ON (absent) node untouched", () => {
+    const out = applyOffHealth(projects, { a: true });
+    expect(out.find((p) => p.id === "b")).toEqual(projects[1]);
+  });
+
+  it("treats a falsy entry as ON (sparse map: absent/false ⇒ on)", () => {
+    const out = applyOffHealth(projects, { a: false });
+    expect(out.find((p) => p.id === "a")?.health).toBe("error"); // not deactivated
+  });
+
+  it("an empty off-map returns the nodes unchanged", () => {
+    expect(applyOffHealth(projects, {})).toEqual(projects);
   });
 });
 

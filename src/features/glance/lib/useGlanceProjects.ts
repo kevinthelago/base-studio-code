@@ -177,6 +177,17 @@ export function applyFaultHealth(projects: ProjectLite[], faults: Record<string,
   });
 }
 
+/**
+ * Overlay the user's manual OFF toggle onto the node set (#3239) — the one caller-driven HEALTH value.
+ * A project the user has deactivated (its id is truthy in `off`) reads health `off` and drops its fault
+ * `reason`, so the node greys and reads "off" regardless of what it was doing. Applied OUTERMOST (after
+ * liveness/running/stall/fault) so the deliberate mute WINS over every derived status — "if it's not idle
+ * then it should be off". Sparse map (absent ⇒ on); pure. Keyed by the project id (== the node id).
+ */
+export function applyOffHealth(projects: ProjectLite[], off: Record<string, boolean>): ProjectLite[] {
+  return projects.map((p) => (off[p.id] ? { ...p, health: "off", reason: undefined } : p));
+}
+
 /** Poll the backend for the set of currently-live project keys (#2263). Polling also DRIVES backend
  *  down-detection: the sweep records an "app down" fault for any project that has just gone silent. */
 export function useProjectLiveness(enabled = true): ReadonlySet<string> {
