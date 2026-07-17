@@ -1,0 +1,19 @@
+[package]
+name = "bsc-navigate"
+version = "0.1.0"
+edition = "2021"
+description = "Steer the RUNNING app to a view (#3274, epic #3260): the `bsc navigate` CLI + its request/result contract. `bsc shot` can SEE the app but nothing could STEER it, so an external session could only photograph whatever happened to be on screen. Tauri-free; rides the shared bsc-appchan transport."
+
+[lib]
+name = "bsc_navigate"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bsc-util = { path = "../bsc-util" }
+bsc-cli-util = { path = "../bsc-cli-util" }
+# The ONE bsc→app request channel (#3274) — shared with `bsc shot`, so there is no second transport.
+bsc-appchan = { path = "../bsc-appchan" }
+
+[dev-dependencies]
+tempfile = "3"

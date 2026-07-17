@@ -86,6 +86,13 @@ describe("canLaunchTriage / triageLockReason (#444/#551 triage gate)", () => {
     expect(canLaunchTriage({ ...ok, published: false })).toBe(false);
     expect(triageLockReason({ ...ok, published: false })).toMatch(/Publish/);
   });
+  it("has NO GitHub dependency — a locally-committed project launches offline (#3281 local-first)", () => {
+    // `published` is `!!activeProjectId`, which #3280's commitLocal flips with the LOCAL project key —
+    // no GitHub token, board, or connection anywhere in this gate. So the same `ok` inputs a local
+    // commit produces launch the fleet. This is the evidence the offline fleet path is unblocked.
+    expect(canLaunchTriage(ok)).toBe(true);
+    expect(triageLockReason(ok)).toBeNull();
+  });
   it("locks without repos / without a fleet / while busy, with a reason each", () => {
     expect(triageLockReason({ ...ok, hasRepos: false })).toMatch(/repository/i);
     expect(triageLockReason({ ...ok, hasFleet: false })).toMatch(/fleet/i);

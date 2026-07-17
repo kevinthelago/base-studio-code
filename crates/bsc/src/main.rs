@@ -27,6 +27,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control"),
     ("files", "file-ops toolkit: read/write/edit/list/info"),
     ("shot", "capture the RUNNING app's real pixels — a webview snapshot (needs the app running)"),
+    ("navigate", "steer the RUNNING app to a view — so a capture can target something"),
     ("loop", "conversation loop store: two participants exchange turns until a signal ends it, or never (#3262)"),
     ("graph", "algorithms knowledge library: per-language implementations (impl list · dump · harvest · curate)"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
@@ -80,6 +81,7 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "logs" => logs::cli::run(rest, "bsc logs"),
         "files" => bsc_files::cli::run(rest, "bsc files"),
         "shot" => bsc_shot::cli::run(rest, "bsc shot"),
+        "navigate" => bsc_navigate::cli::run(rest, "bsc navigate"),
         "loop" => bsc_loop::cli::run(rest, "bsc loop"),
         "graph" => bsc_graph::cli::run(rest, "bsc graph"),
         #[cfg(feature = "data")]
