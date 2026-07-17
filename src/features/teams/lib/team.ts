@@ -148,9 +148,9 @@ const DEBUGGER_NODE = "debugger";
 /**
  * A RUNTIME overlay on the Studio Network (#3317): when the debug session is toggled on (Settings,
  * `debugSession`, #3298), the **debugger** joins the graph and SERVES the designer — it drains the
- * `bsc request` queue, fixing the `bsc ui` tooling the designer reports. The debug session is a
- * full-capability, role-LESS session, so its node is persona-less (a labeled `agent`; `positionDisplay`
- * falls back to the label). Not persisted — the seed stays the always-on network; dragging the overlay
+ * `bsc request` queue, fixing the `bsc ui` tooling the designer reports. Backed by the `persona-debugger`
+ * identity (the app's full-capability `debugger` role, #3322); the live session still launches bypass via
+ * `useDebugTerminal`. Not persisted — the seed stays the always-on network; dragging the overlay
  * no-ops against the stored team. A no-op when off, for a non-studio team, or if already present.
  */
 export function augmentStudioNetworkForDebug(org: Team, debugOn: boolean): Team {
@@ -160,7 +160,7 @@ export function augmentStudioNetworkForDebug(org: Team, debugOn: boolean): Team 
     ...org,
     positions: [
       ...org.positions,
-      { nodeId: DEBUGGER_NODE, kind: "agent", label: "Debugger", x: 144, y: 48 },
+      { nodeId: DEBUGGER_NODE, kind: "agent", personaId: "persona-debugger", x: 144, y: 48 },
     ],
     relationships: [
       ...org.relationships,

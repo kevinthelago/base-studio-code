@@ -66,6 +66,11 @@ export type SessionRole =
   // `bsc graph` auto-runs. The Algorithms graph stays the read-only viewer; the librarian stores +
   // curates the knowledge graph (nodes, relationships, the reality lens) via that one CLI.
   | "librarian"
+  // Debugger (#3322): the app's OWN full-capability maintenance session — fixes the `bsc ui` tooling the
+  // designer reports via `bsc request` (#3298). Broad app-maintenance caps (git+github+code+ui write); the
+  // session actually launches full-cap/bypass via `useDebugTerminal`, so this table entry backs its graph
+  // identity + any generic role→profile surface, not the live session's gate.
+  | "debugger"
   // Marketer (#2431): the opt-in marketing persona's role — takes the market-research stage's
   // artifacts and drafts in-repo collateral (landing/README copy, launch posts, SEO content,
   // release announcements). Least-privilege like `documentor`: `code: "none"` with a marketing-content

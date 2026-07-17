@@ -16,7 +16,7 @@ import type { BlueprintTeam } from "@/features/planner/stages/blueprintTypes";
  *  triage · documentor · designer — intake, routing, docs, UI) = client. The bucket drives the colour;
  *  the real session role rides as `roleLabel` + the legend reads the function-group names at L1. */
 const ROLE_TO_GROLE: Record<string, GRole> = {
-  planner: "infra", director: "infra",
+  planner: "infra", director: "infra", debugger: "infra",
   worker: "service",
   reviewer: "data", tester: "data", juror: "data",
   issuer: "client", triage: "client", documentor: "client", designer: "client",

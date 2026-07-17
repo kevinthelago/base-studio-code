@@ -14,7 +14,8 @@
     "architect": { "role": "architect", "github": "none",  "git": "none",  "code": "none",  "net": "none", "ui": "none",  "writeGlobs": [] },
     "librarian": { "role": "librarian", "github": "none",  "git": "none",  "code": "none",  "net": "none", "ui": "none",  "writeGlobs": [] },
     "curator":   { "role": "curator",   "github": "none",  "git": "read",  "code": "none",  "net": "none", "ui": "write", "writeGlobs": [] },
-    "marketer":  { "role": "marketer",  "github": "read",  "git": "read",  "code": "none",  "net": "read", "ui": "read", "writeGlobs": ["marketing/**/*.md", "marketing/**/*.mdx", "content/**/*.md", "content/**/*.mdx", "README*", "**/README*", "CHANGELOG*", "**/CHANGELOG*"] }
+    "marketer":  { "role": "marketer",  "github": "read",  "git": "read",  "code": "none",  "net": "read", "ui": "read", "writeGlobs": ["marketing/**/*.md", "marketing/**/*.mdx", "content/**/*.md", "content/**/*.mdx", "README*", "**/README*", "CHANGELOG*", "**/CHANGELOG*"] },
+    "debugger":  { "role": "debugger",  "github": "write", "git": "write", "code": "write", "net": "read", "ui": "write", "writeGlobs": [] }
   },
   "dbOwnedPlanFiles": ["deploy.md", "deploy.json", "phases.json", "issues.json", "fleet.json", "repos.json", "features.json"],
   "depManifestFiles": ["package.json", "package-lock.json", "Cargo.toml", "Cargo.lock", "pnpm-lock.yaml", "yarn.lock"]
