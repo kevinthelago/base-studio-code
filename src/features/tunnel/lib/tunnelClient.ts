@@ -11,25 +11,6 @@ import type {
 } from "./tunnel";
 import type { CanonicalFile } from "@/features/planner";
 
-/** Structured result from `tunnelCheckRelay` (T3b). All error cases are in the `error`
- *  field — the command never throws so the Settings card can render a result either way. */
-export interface RelayDiag {
-  /** Whether the relay's `/health` probe returned HTTP 200. */
-  reachable: boolean;
-  /** `service` from the relay `/health` body. */
-  service: string | null;
-  /** `version` from the relay `/health` body. */
-  version: string | null;
-  /** Round-trip latency for the probe (milliseconds). */
-  latencyMs: number;
-  /** Human-readable error message when the probe fails. */
-  error: string | null;
-  /** Whether the desktop's own relay WebSocket (host leg) is currently open. */
-  hostConnected: boolean;
-  /** Number of paired mobile clients (guest legs) connected right now. */
-  clientCount: number;
-}
-
 /** Mint a room + pairing secret and dial the relay. Returns the updated status. */
 export const tunnelStart = (relayUrl: string): Promise<TunnelStatus> =>
   invoke("tunnel_start", { relayUrl });
@@ -65,7 +46,13 @@ export const tunnelSetPlanState = (projectId: string, files: CanonicalFile[]): P
   invoke("tunnel_set_plan_state", { projectId, files });
 
 /** Acknowledge a plan push from mobile after the frontend has applied the files to the
- *  hub directory. Broadcasts `plan_sync_ack` back to the mobile client. */
+ *  hub directory. Broadcasts `plan_sync_ack` back to the mobile client.
+ *
+ *  UNCALLED, and deliberately kept (#3244): this is the second half of an UNFINISHED flow,
+ *  not dead code. Rust emits `tunnel://plan-sync-push` when mobile pushes a plan
+ *  (mobile/tunnel/transport.rs), expecting the frontend to apply the files and ack here —
+ *  but no listener for that event exists, so a mobile plan push is silently dropped and
+ *  never acked. Deleting this binding would erase the evidence of the gap. See #3248. */
 export const tunnelAckPlanPush = (projectId: string, applied: boolean): Promise<void> =>
   invoke("tunnel_ack_plan_push", { projectId, applied });
 
@@ -106,40 +93,6 @@ export const tunnelEmitPlanEvent = (projectId: string, ev: PlanEventInput): Prom
     section: ev.section, stage: ev.stage, message: ev.message, run: ev.run,
   });
 
-/** Probe the relay's `/health` endpoint and return per-leg connection diagnostics (T3b).
- *  Always resolves (never rejects) — check `error` for failure details. */
-export const tunnelCheckRelay = (relayUrl: string): Promise<RelayDiag> =>
-  invoke("tunnel_check_relay", { relayUrl });
-
-// ── F2: fleet / coordination ─────────────────────────────────────────────────
-
-/** Wire shape for one agent session in the fleet roster. Mirrors Rust `FleetSession`. */
-export interface FleetSession {
-  session: string;
-  /** "running" | "blocked" | "waiting" | "asking" | "idle" */
-  status: string;
-  /** Present and non-empty when `status == "blocked"`. */
-  blockedOn?: string[];
-  waitReason?: string | null;
-  question?: string | null;
-  /** ms-epoch timestamp of the last status change. */
-  at: number;
-}
-
-/** Push the current fleet roster to connected mobile clients. Replayed on connect. */
-export const tunnelSetFleetState = (sessions: FleetSession[]): Promise<void> =>
-  invoke("tunnel_set_fleet_state", { sessions });
-
-/** Broadcast a single coordination event to connected clients.
- *  When `kind` is "waiting" or "asking", also triggers an FCM push (F4). */
-export const tunnelEmitCoordEvent = (
-  kind: string,
-  session?: string,
-  refKey?: string,
-  at?: number,
-): Promise<void> =>
-  invoke("tunnel_emit_coord_event", { kind, session: session ?? null, refKey: refKey ?? null, at: at ?? Date.now() });
-
 // ── A2: automations ──────────────────────────────────────────────────────────
 
 /** Wire shape for one automation descriptor. Mirrors Rust `AutomationFrame`. */
@@ -159,32 +112,9 @@ export interface AutomationFrame {
 export const tunnelSetAutomations = (automations: AutomationFrame[]): Promise<void> =>
   invoke("tunnel_set_automations", { automations });
 
-/** Push an automation-ran notification (informational, no FCM push). */
-export const tunnelAutomationRan = (id: string, at: number, status: string, note: string): Promise<void> =>
-  invoke("tunnel_automation_ran", { id, at, status, note });
-
 /** Push an automation-failed notification. Also queues an FCM push (A4). */
 export const tunnelAutomationFailed = (id: string, at: number, error: string, name: string): Promise<void> =>
   invoke("tunnel_automation_failed", { id, at, error, name });
-
-// ── M2: MCP extensions ───────────────────────────────────────────────────────
-
-/** Wire shape for one MCP server / hook descriptor. Mirrors Rust `McpExtFrame`. */
-export interface McpExtFrame {
-  id: string;
-  /** "mcp" | "hook" */
-  kind: string;
-  name: string;
-  enabled: boolean;
-  /** "stdio" | "http" — present for MCP servers, null for hooks. */
-  transport?: string | null;
-  url?: string | null;
-}
-
-/** Push the full MCP extension list to connected mobile clients. Read-only on mobile.
- *  Replayed on connect. */
-export const tunnelSetMcpState = (extensions: McpExtFrame[]): Promise<void> =>
-  invoke("tunnel_set_mcp_state", { extensions });
 
 // ── M3: hook telemetry (#937) ─────────────────────────────────────────────────
 
@@ -240,9 +170,11 @@ export type StoreDomain = (typeof STORE_DOMAINS)[number];
  *  (mobile drops stale frames); `json` is the opaque serialized projection. Stored Rust-side
  *  (last per domain) and replayed on connect.
  *
- *  The bespoke pushes (`tunnelSetFleetState` / `tunnelSetAutomations` / `tunnelSetMcpState` /
- *  `tunnelSetHookTelemetry`) stay wire-compatible alongside this; retiring them onto
- *  store_state domains is a follow-up once mobile consumes the new frames. */
+ *  This has superseded the bespoke fleet/MCP pushes on the desktop side: their frontend
+ *  bindings are gone (#3244) and those domains now ride store_state. The Rust commands
+ *  (`tunnel_set_fleet_state` / `tunnel_set_mcp_state`) stay registered and wire-compatible
+ *  until mobile consumes the new frames — retiring them is a cross-repo follow-up.
+ *  `tunnelSetAutomations` / `tunnelSetHookTelemetry` are still bespoke and live. */
 export const tunnelSetStoreState = (domain: string, rev: number, json: string): Promise<void> =>
   invoke("tunnel_set_store_state", { domain, rev, json });
 

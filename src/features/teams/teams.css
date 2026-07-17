@@ -3,7 +3,6 @@
    can't express cleanly. */
 .teams-card { transition: border-color .12s, box-shadow .12s, background .12s; }
 .teams-card:hover { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 16%, transparent), 0 6px 18px rgba(0, 0, 0, .35); }
-.teams-card--add:hover { background: color-mix(in oklch, var(--accent) 8%, transparent); color: var(--fg); }
 /* The left-rail team + position rows now render through the shared RailRow primitive (#2789). */
 
 /* The docked team-architect session (#2755) now renders through the shared SessionDock (#2808); its
