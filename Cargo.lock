@@ -746,6 +746,7 @@ dependencies = [
  "bsc-data",
  "bsc-files",
  "bsc-graph",
+ "bsc-loop",
  "bsc-navigate",
  "bsc-persona",
  "bsc-project",
@@ -882,6 +883,17 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "bsc-loop"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "rusqlite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
