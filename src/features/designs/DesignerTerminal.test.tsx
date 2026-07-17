@@ -83,7 +83,9 @@ describe("useDesignerTerminal launch wiring (#2471)", () => {
     // The whole command surface: bsc ui + the deprecated bsc component alias (#2469-safe), plus the
     // designer→debug channel (#3300) — file/list requests, but NOT resolve (the debug session's job).
     expect(settings.allowedCommands).toEqual(DESIGNER_ALLOWED_COMMANDS);
-    expect(settings.allowedCommands).toEqual(["bsc ui", "bsc component", "bsc shot", "bsc loop", "bsc request new", "bsc request list"]);
+    expect(settings.allowedCommands).toEqual(["bsc ui", "bsc component", "bsc shot preview", "bsc loop", "bsc request new", "bsc request list"]);
+    // The designer gets the CROPPED preview only — NOT the full-screen `bsc shot take` (the debug session's).
+    expect(settings.allowedCommands).not.toContain("bsc shot");
     expect(settings.allowedCommands).not.toContain("bsc request resolve");
     // git + gh are denied OUTRIGHT (the role's `none` tiers → the bare tools, not write prefixes).
     expect(settings.deniedCommands).toContain("git");

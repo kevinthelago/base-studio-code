@@ -33,15 +33,20 @@ pub struct Rect {
     pub h: u32,
 }
 
-/// What `bsc shot take` asks for.
+/// What `bsc shot take` / `bsc shot preview` ask for.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShotRequest {
-    /// Crop region; `None` ⇒ the whole webview.
+    /// Crop region; `None` ⇒ the whole webview (or the `target`'s resolved rect).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rect: Option<Rect>,
     /// Where the PNG should be written. `None` ⇒ the app picks `<shots>/<id>.png`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub out: Option<String>,
+    /// A NAMED region the app resolves ITSELF from a rect the frontend registered (e.g. `"preview"` →
+    /// the Design Studio's component-preview element). `bsc shot preview` sets this so the caller need
+    /// not know the pixel coordinates. Ignored when `rect` is set (an explicit rect wins). #3308.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
 }
 
 /// What the app answers with on success.
@@ -86,7 +91,7 @@ mod tests {
     #[test]
     fn the_request_round_trips_through_the_shared_envelope() {
         let dir = tempfile::tempdir().unwrap();
-        let req = ShotRequest { rect: Some(Rect { x: 1, y: 2, w: 3, h: 4 }), out: Some("C:/x.png".into()) };
+        let req = ShotRequest { rect: Some(Rect { x: 1, y: 2, w: 3, h: 4 }), out: Some("C:/x.png".into()), target: None };
         bsc_appchan::write_request(dir.path(), "a", KIND, 1, &req).unwrap();
 
         let env = bsc_appchan::pending(dir.path()).unwrap().pop().unwrap();
