@@ -96,6 +96,8 @@ mod tests {
             "variants",
             "wraps",
             "ONLY",              // the scope guard
+            "bsc graph impl list",   // #2940: reuse-first before commissioning the librarian
+            "bsc-commission librarian", // #2940: the studio-network data-generation channel
         ] {
             assert!(seed.contains(needle), "designer seed must mention `{needle}`");
         }

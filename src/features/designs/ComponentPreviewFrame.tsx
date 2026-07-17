@@ -16,6 +16,7 @@ import { bundleComponent, buildComponentSrcDoc } from "@/shared/lib/preview/comp
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
 import { compileAnimationsCss, animClassName, type AnimationDef } from "@/shared/ui/kit";
 import { componentPreviewFiles, type KitArtifact, type PreviewState } from "./lib/componentPreview";
+import { usePreviewData } from "./usePreviewData";
 import { recordPreviewError } from "./lib/componentBridge";
 import { libraryModuleResolver } from "./lib/libraryModules";
 import { resolveComponentAnimations, resolveComposedAnimations, previewAnimDefs, type ComponentRecord } from "./lib/model";
@@ -143,14 +144,19 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   );
   const exitKey = exitSelectors.join("|");
 
-  // Rebuild when the selection / theme / retry changes (keyed on stable fields, not the object identity).
+  // Studio network (#2940): a bound librarian algorithm's generated dataset for this component's preview
+  // props (`{ prop: JS-source literal }`), or `{}`. Resolves async (sandbox run); the reference is stable
+  // (a shared EMPTY until it lands) so it rebuilds the preview exactly once when the data arrives.
+  const previewData = usePreviewData(comp);
+
+  // Rebuild when the selection / theme / retry / resolved preview-data changes (keyed on stable fields).
   useEffect(() => {
     let cancelled = false;
     /* eslint-disable react-hooks/set-state-in-effect -- reset to the building state on each rebuild */
     setStatus("building");
     setError("");
     /* eslint-enable react-hooks/set-state-in-effect */
-    const build = componentPreviewFiles(comp, ARTIFACT, siblings, libraryModuleResolver, previewState);
+    const build = componentPreviewFiles(comp, ARTIFACT, siblings, libraryModuleResolver, previewState, previewData);
     if (!build) {
       setStatus("error");
       setError(
@@ -202,7 +208,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, themeId, previewState, scrollY, zoomEngine?.initial, retry]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, themeId, previewState, scrollY, zoomEngine?.initial, retry, previewData]);
 
   // #3190 crisp pass: hand the host the engine's +/−/fit controls. The engine lives in the iframe, so each
   // call posts a `__cmd` message to it; re-registered whenever the iframe rebuilds (`retry`/comp switch).
