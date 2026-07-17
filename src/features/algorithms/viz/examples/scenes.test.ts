@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { TracedScene, TracedStack, runScene, type GraphInput } from "../../lib/tracer";
-import { isPanelsFrame, type PanelsFrame, type ArrayFrame, type GraphFrame, type StackFrame } from "../../lib/trace";
+import { TracedScene, TracedStack, TracedScalar, runScene, type GraphInput } from "../../lib/tracer";
+import { isPanelsFrame, type PanelsFrame, type ArrayFrame, type GraphFrame, type StackFrame, type ScalarFrame } from "../../lib/trace";
 import { dijkstraScene, bfsScene } from "./scenes";
 import { WEIGHTED_GRAPH, DEFAULT_GRAPH } from "./graphAlgos";
 import { programVizForImpl } from "./registry";
@@ -42,10 +42,10 @@ describe("TracedScene / runScene — synchronized multi-structure panels (#3259)
 describe("dijkstraScene — the canonical multi-structure algorithm (#3259)", () => {
   const frames = [...runScene(dijkstraScene, WEIGHTED_GRAPH as GraphInput)()];
 
-  it("runs as a graph + distance-array scene, in sync", () => {
+  it("runs as a graph + distance-array + scalar-state scene, in sync (#3268)", () => {
     expect(frames.length).toBeGreaterThan(1);
     expect(frames.every(isPanelsFrame)).toBe(true);
-    expect(Object.keys((frames[0] as PanelsFrame).panels).sort()).toEqual(["distance", "graph"]);
+    expect(Object.keys((frames[0] as PanelsFrame).panels).sort()).toEqual(["distance", "graph", "state"]);
   });
 
   it("the distance panel ends at the real shortest distances while the graph is fully explored", () => {
@@ -57,14 +57,29 @@ describe("dijkstraScene — the canonical multi-structure algorithm (#3259)", ()
     expect(graphMarks.a).toBe("start");
     expect(Object.values(graphMarks).filter((m) => m === "visited").length).toBeGreaterThan(0);
   });
+
+  it("the scalar state tracks the settling — the counter reaches every node, the pointer ends on the last (#3268)", () => {
+    const last = (frames[frames.length - 1] as PanelsFrame).panels;
+    const state = last.state as ScalarFrame;
+    expect(state.values.settled).toBe(6);   // all six reachable nodes finalized
+    expect(state.values.current).toBe("f"); // the last node settled (largest shortest-path distance)
+    expect(state.values.dist).toBe(13);     // its finalized distance
+    // The state panel actually moved — some frame `set` the current pointer and some `add`ed to the counter.
+    const stateOps = frames.flatMap((f) =>
+      Object.values(((f as PanelsFrame).panels.state as ScalarFrame | undefined)?.ops ?? {}).map((o) => o.op),
+    );
+    expect(stateOps).toContain("set");
+    expect(stateOps).toContain("add");
+  });
 });
 
-describe("registry — dijkstra is now a SCENE (#3259)", () => {
-  it("resolves to a multi-structure example: graph + array renderers, panel frames", () => {
+describe("registry — dijkstra is now a SCENE (#3259 · #3268)", () => {
+  it("resolves to a multi-structure example: graph + array + scalar renderers, panel frames", () => {
     const viz = programVizForImpl({ id: "dijkstra.rs", name: "dijkstra" })!;
     expect(viz).toBeDefined();
     expect(viz.renderers.graph).toBeDefined();
     expect(viz.renderers.array).toBeDefined(); // the scene adds the distance array (was graph-only pre-#3259)
+    expect(viz.renderers.scalar).toBeDefined(); // the scene adds the scalar state panel (#3268)
     expect([...viz.factory()].every(isPanelsFrame)).toBe(true);
   });
 });
@@ -124,5 +139,34 @@ describe("registry — bfs is now a SCENE with a queue panel (#3266)", () => {
     expect(viz.renderers.graph).toBeDefined();
     expect(viz.renderers.stack).toBeDefined(); // the scene adds the queue panel
     expect([...viz.factory()].every(isPanelsFrame)).toBe(true);
+  });
+});
+
+describe("TracedScalar — named counters / accumulators / current pointer (#3268)", () => {
+  it("set replaces, add accumulates, compare reads without changing", () => {
+    const s = new TracedScalar({ n: 0 });
+    s.set("cur", "b");
+    s.add("n", 3);
+    s.add("n", 2);
+    expect(s.get("cur")).toBe("b");
+    expect(s.get("n")).toBe(5);
+    expect(s.compare("n", 10)).toBe(-1); // 5 < 10
+    expect(s.get("n")).toBe(5); // compare didn't change the value
+  });
+
+  it("records a frame per op — the values snapshot + the op keyed by the touched variable NAME", () => {
+    const s = new TracedScalar({ n: 0 });
+    s.add("n", 1);
+    const frames = s.trace();
+    expect(frames[0].values).toEqual({ n: 0 }); // at rest
+    const last = frames[frames.length - 1];
+    expect(last.values).toEqual({ n: 1 });
+    expect(last.ops?.n?.op).toBe("add"); // ops is a per-variable record, not a positional array
+  });
+
+  it("add treats a non-numeric / absent variable as 0", () => {
+    const s = new TracedScalar();
+    s.add("count", 4);
+    expect(s.get("count")).toBe(4);
   });
 });
