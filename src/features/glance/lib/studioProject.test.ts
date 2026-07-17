@@ -30,4 +30,10 @@ describe("studioProject (#3319)", () => {
     const others = BUILTIN_ORGS.filter((t) => t.id !== STUDIO_NETWORK_ID);
     expect(buildStudioFleetData(others, BUILTIN_PERSONAS, false)).toBeNull();
   });
+
+  it("marks library resource positions so the canvas draws them distinctly, not as agents (#3322)", () => {
+    const d = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, false)!;
+    expect(d.rawNodes.find((n) => n.id === "library")?.resource).toBe(true);
+    expect(d.rawNodes.find((n) => n.id === "designer")?.resource).toBeFalsy(); // an agent is not a resource
+  });
 });

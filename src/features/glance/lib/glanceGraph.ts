@@ -172,6 +172,9 @@ export interface GRawNode {
    *  graph when the project is complete. Clicking it morphs open the app preview (`GlancePreviewMorph`)
    *  the way an agent node morphs open its terminal. The canvas renders it distinctly (▷). */
   preview?: boolean;
+  /** A shared-RESOURCE node (#3322) — a team position of `kind:"resource"` (a library a session stewards,
+   *  not an agent). The canvas renders it as a distinct dashed card so it never reads as a worker/agent. */
+  resource?: boolean;
   /** The node KIND (#2571 → generalized #3119) — `"kit"` for a UI-kit node, `"library"` for a generalized
    *  cross-graph library node (algorithm / sound), else a PROJECT node. ABSENT ⇒ `"project"` so existing
    *  nodes/tests are unaffected; the canvas + inspector render a library node distinctly (its graph glyph
