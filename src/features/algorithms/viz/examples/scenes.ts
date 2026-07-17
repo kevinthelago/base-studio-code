@@ -201,35 +201,43 @@ export function bfsScene(scene: TracedScene, input: GraphInput): void {
 }
 
 /**
- * Merge sort as a SCENE (#3284) — an `array` panel (sorted in place) + a `merge` buffer panel that makes
- * the two runs VISIBLE. Bottom-up: copy each run pair into the buffer (they appear), then merge them back
- * into the array — a real `buf.compare(i, j)` flashes the two run fronts (the merge decision the flat
- * single-array trace hid), `cursors` mark the fronts, and `arr.set(k, …)` lands the winner. Real merge sort;
- * the buffer is the auxiliary array merge sort actually needs. This is the first ARRAY-seeded scene.
+ * Merge sort as a SCENE (#3284 · #3286) — an `array` panel (sorted in place) plus the two runs as SEPARATE
+ * `leftRun` / `rightRun` panels, extracted from the array each merge. `scene.compareAcross(leftRun, i,
+ * rightRun, j)` flashes both run fronts in ONE beat (the merge decision), and `scene.move(winner, …, array,
+ * k)` slides the winner into the output — the merge decision AND the placement are now CROSS-PANEL, one beat
+ * each. This is the demonstrator for the cross-panel verbs: the two runs live in different panels, exactly
+ * the shape a single-array trace hid.
  */
 export function mergeSortScene(scene: TracedScene, input: readonly number[]): void {
   const n = input.length;
-  const arr = scene.array("array", input);      // sorted in place — the winners land here
-  const buf = scene.array("merge", [...input]); // the scratch buffer that holds the two runs
+  const arr = scene.array("array", input); // sorted in place — the winners land here
 
   for (let width = 1; width < n; width *= 2) {
     for (let lo = 0; lo < n; lo += 2 * width) {
       const mid = Math.min(lo + width, n);
       const hi = Math.min(lo + 2 * width, n);
-      // Copy the current range into the buffer — the two sorted runs become visible.
-      for (let k = lo; k < hi; k++) buf.set(k, arr.get(k));
-      // Merge buf[lo..mid) and buf[mid..hi) back into arr, comparing the two fronts.
-      let i = lo;
-      let j = mid;
-      for (let k = lo; k < hi; k++) {
-        buf.cursor("i", i < mid ? i : null); // the two front-pointers walk the runs
-        buf.cursor("j", j < hi ? j : null);
-        let takeLeft: boolean;
-        if (i >= mid) takeLeft = false;
-        else if (j >= hi) takeLeft = true;
-        else takeLeft = buf.compare(i, j) <= 0; // the merge decision — both fronts flash
-        arr.set(k, buf.get(takeLeft ? i++ : j++)); // the winner slides into the output
+      if (mid >= hi) continue; // a lone tail run — already sorted, nothing to merge
+
+      // Extract the two runs into their own panels (silent reads of the array's current values).
+      const leftVals: number[] = [];
+      const rightVals: number[] = [];
+      for (let k = lo; k < mid; k++) leftVals.push(arr.get(k));
+      for (let k = mid; k < hi; k++) rightVals.push(arr.get(k));
+      const leftRun = scene.array("leftRun", leftVals);
+      const rightRun = scene.array("rightRun", rightVals);
+
+      // Merge the two run panels back into arr[lo..hi), comparing + moving ACROSS panels.
+      let i = 0;
+      let j = 0;
+      let k = lo;
+      while (i < leftVals.length && j < rightVals.length) {
+        leftRun.cursor("i", i); // the two front-pointers walk their runs
+        rightRun.cursor("j", j);
+        if (scene.compareAcross(leftRun, i, rightRun, j) <= 0) scene.move(leftRun, i++, arr, k++);
+        else scene.move(rightRun, j++, arr, k++);
       }
+      while (i < leftVals.length) scene.move(leftRun, i++, arr, k++); // drain the remaining run
+      while (j < rightVals.length) scene.move(rightRun, j++, arr, k++);
     }
   }
   arr.markSorted();
