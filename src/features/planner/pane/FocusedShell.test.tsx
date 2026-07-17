@@ -196,6 +196,21 @@ describe("StageFooter (#652)", () => {
     expect(screen.getByText(/Update GitHub/)).toBeInTheDocument();
     expect(screen.queryByText(/Publish to GitHub/)).not.toBeInTheDocument();
   });
+  it("an explicit publishLabel wins over the published 'Update GitHub' default (#3280 local-first)", () => {
+    // Offline there is no board to update — the caller's "Recommit plan" must show even when published.
+    render(
+      <StageFooter
+        stage={stage({ index: 1 })}
+        action={{ kind: "publish", enabled: true }}
+        published
+        publishLabel="✓ Recommit plan"
+        onBack={vi.fn()}
+        onPrimary={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Recommit plan/)).toBeInTheDocument();
+    expect(screen.queryByText(/Update GitHub/)).not.toBeInTheDocument();
+  });
   it("disables back on the first stage", () => {
     render(<StageFooter stage={stage({ index: 0 })} action={{ kind: "approve-continue", enabled: true }} onBack={vi.fn()} onPrimary={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
