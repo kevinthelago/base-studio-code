@@ -172,6 +172,31 @@ export function GlanceCanvas(p: CanvasProps) {
 
       {/* nodes */}
       {model.nodes.map((n) => {
+        // A shared-RESOURCE node (#3322) — a library a session stewards, NOT an agent. A distinct dashed
+        // card (⬡ + "resource") in a muted tone, so it never reads as a worker/agent node.
+        if (n.resource) {
+          const selected = p.selNodeId === n.id;
+          const inFocus = focus ? focus.nodes.has(n.id) : true;
+          const push = pushMap.get(n.id);
+          const accent = "var(--fg-muted)";
+          const border = selected ? "var(--accent)" : focus && inFocus ? accent : "var(--border-soft)";
+          return (
+            <Box key={n.id} data-glance-node={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
+              style={{ position: "absolute", left: n.x, top: n.y, width: NW, height: NH, cursor: "pointer",
+                transform: push ? `translate(${push.dx}px, ${push.dy}px)` : undefined,
+                zIndex: selected ? 6 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: `opacity .18s ease, transform ${MORPH_EASE}` }}>
+              <Box style={{ width: "100%", height: "100%", background: "var(--bg-soft)", border: `1.5px dashed ${border}`,
+                borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
+                boxShadow: selected ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)" : "0 2px 8px rgba(0,0,0,.35)" }}>
+                <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Text as="span" style={{ color: accent, flex: "none", fontSize: 12, lineHeight: 1 }}>⬡</Text>
+                  <Text as="span" mono size={13} weight={600} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.slug}</Text>
+                </Box>
+                <Text as="span" mono size={10} style={{ marginTop: 9, textTransform: "uppercase", letterSpacing: ".5px", color: accent }}>resource</Text>
+              </Box>
+            </Box>
+          );
+        }
         // A cross-graph LIBRARY node (#2571 kit → generalized #3119) reads distinctly — a dashed card in
         // its graph's accent, with the graph glyph (◆/∑/♪), the kind word (kit/algorithm/sound), and the
         // count of consuming projects (the edges INTO it) — so it never looks like a project node. The `ui`

@@ -140,7 +140,9 @@ export function buildOrgFleetData(org: Team, personas: Persona[]): GlanceData {
     const p = nodePersona(persona) ?? fallbackPersona(pos.label ?? persona?.name ?? pos.nodeId, role);
     p.comms = projectComms(org, pos, personas); // who this agent talks to + how (#2563)
     // Rests at idle (#2551) — a planned position isn't "building" until its session is actually live.
-    return { id: pos.nodeId, slug: pos.label ?? persona?.name ?? pos.nodeId, role: gRole(role), roleLabel: role, health: "idle" as const, activity: "idle" as const, persona: p };
+    // A `resource` position (a library, not an agent) is marked so the canvas draws it distinctly (#3322)
+    // instead of the persona-less "worker" fallback role reading as an agent node.
+    return { id: pos.nodeId, slug: pos.label ?? persona?.name ?? pos.nodeId, role: gRole(role), roleLabel: role, health: "idle" as const, activity: "idle" as const, persona: p, resource: pos.kind === "resource" || undefined };
   });
   const ids = new Set(rawNodes.map((n) => n.id));
   const rawEdges: GRawEdge[] = [];
