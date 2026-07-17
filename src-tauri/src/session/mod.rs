@@ -13,3 +13,4 @@ pub mod llm;
 pub mod designer;
 pub mod architect;
 pub mod librarian;
+pub mod debug;
