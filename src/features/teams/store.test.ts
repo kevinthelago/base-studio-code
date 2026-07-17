@@ -23,6 +23,27 @@ describe("org store slice (#2193)", () => {
     expect(push).toHaveBeenCalledWith(expect.objectContaining({ id: "org-default-fleet" }));
   });
 
+  it("hydrateOrgs refreshes a STALE on-disk built-in to the packaged structure + pushes it back (#3330)", async () => {
+    const base = BUILTIN_ORGS.find((o) => o.id === "org-default-fleet")!;
+    // A built-in frozen on disk at an old version (renamed, emptied) — the stale-seed shape.
+    const stale = { id: "org-default-fleet", name: "Old fleet", positions: [], relationships: [], builtin: true };
+    vi.spyOn(bridge, "loadOrgs").mockResolvedValueOnce([stale]);
+    const push = vi.spyOn(bridge, "pushOrg").mockResolvedValue(undefined);
+    await useAppStore.getState().hydrateOrgs();
+    const fleet = useAppStore.getState().teams.find((o) => o.id === "org-default-fleet")!;
+    expect(fleet.name).toBe(base.name);                       // rendered fresh, not "Old fleet"
+    expect(fleet.positions).toEqual(base.positions);
+    expect(push).toHaveBeenCalledWith(expect.objectContaining({ id: "org-default-fleet", name: base.name }));
+  });
+
+  it("hydrateOrgs does NOT re-push a built-in whose on-disk copy already matches the packaged def (#3330)", async () => {
+    const fresh = BUILTIN_ORGS.map((o) => ({ ...o })); // on-disk == packaged for every built-in
+    vi.spyOn(bridge, "loadOrgs").mockResolvedValueOnce(fresh);
+    const push = vi.spyOn(bridge, "pushOrg").mockResolvedValue(undefined);
+    await useAppStore.getState().hydrateOrgs();
+    expect(push).not.toHaveBeenCalled(); // no drift → no needless write storm each boot
+  });
+
   it("addOrg appends an editable org and returns its id", () => {
     vi.spyOn(bridge, "pushOrg").mockResolvedValue(undefined);
     const before = useAppStore.getState().teams.length;
