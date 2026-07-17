@@ -4,7 +4,6 @@ import { Titlebar } from "@/app/chrome/Titlebar";
 import { ConsoleWorkspace } from "@/app/console";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { detachedTabId, detachedSection } from "@/app/console/lib/detachWindow";
-import { detachedDebug, DebugTerminal } from "@/features/debug";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
@@ -32,10 +31,9 @@ function renderDetachedSection(page: string, section: string): React.ReactNode {
   }
 }
 
-/** True when this window was opened as a detached tab/section (a tear-off, #430/#463) or the debug
- *  session window (?debug=1, #3298). */
+/** True when this window was opened as a detached tab/section (a tear-off, #430/#463). */
 export function isDetachedWindow(): boolean {
-  return detachedTabId() !== null || detachedSection() !== null || detachedDebug();
+  return detachedTabId() !== null || detachedSection() !== null;
 }
 
 /**
@@ -46,26 +44,8 @@ export function isDetachedWindow(): boolean {
 export function DetachedWindow() {
   const [detachId] = useState(() => detachedTabId());
   const [detSection] = useState(() => detachedSection());
-  const [isDebug] = useState(() => detachedDebug());
   const tabs = useAppStore((s) => s.tabs);
   const hasHydrated = useAppStore((s) => s.hasHydrated);
-
-  // Debug session window (#3298): minimal chrome, just the full-window debug terminal. It mounts xterm
-  // directly on its own ref (useScreenSession, like the planner) — no TerminalHost/TerminalSlot needed.
-  if (isDebug) {
-    return (
-      <Box className="app">
-        <Titlebar workspace="Debug session" />
-        <Box className="shell">
-          <Box className="main">
-            <Box className="page">
-              {hasHydrated && <DebugTerminal />}
-            </Box>
-          </Box>
-        </Box>
-      </Box>
-    );
-  }
 
   // Detached page-section window: minimal chrome, just that page's section.
   if (detSection) {
