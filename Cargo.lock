@@ -523,6 +523,7 @@ dependencies = [
  "bsc-data",
  "bsc-llm",
  "bsc-project",
+ "bsc-shot",
  "bsc-tunnel",
  "bsc-util",
  "errordb",
@@ -534,6 +535,7 @@ dependencies = [
  "log",
  "logs",
  "plandb",
+ "png 0.17.16",
  "portable-pty",
  "rand 0.10.2",
  "reqwest 0.12.28",
@@ -555,6 +557,8 @@ dependencies = [
  "tiny_http",
  "tokio",
  "tokio-tungstenite",
+ "webview2-com",
+ "windows 0.61.3",
  "windows-sys 0.61.2",
 ]
 
@@ -742,6 +746,7 @@ dependencies = [
  "bsc-graph",
  "bsc-persona",
  "bsc-project",
+ "bsc-shot",
  "bsc-sound",
  "bsc-studio",
  "bsc-teams",
@@ -885,6 +890,17 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "bsc-shot"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-util",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
