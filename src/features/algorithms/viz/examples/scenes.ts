@@ -4,13 +4,42 @@
 // each program declares NAMED panels (`scene.graph`, `scene.array`) and drives them with the ordinary
 // tracer verbs; the scene folds every op into a `PanelsFrame` and the player lays the panels side by side.
 import { type TracedScene, type TracedTree, type GraphInput } from "../../lib/tracer";
-import { WEIGHTED_GRAPH, DEFAULT_GRAPH } from "./graphAlgos";
+import { WEIGHTED_GRAPH, DEFAULT_GRAPH, graphToText, parseGraphInput } from "./graphAlgos";
+import { SORT_MOCK, parseSortInput } from "./sort";
 
-/** A scene program keyed by BASE NAME (like the other program registries). `run` gets the scene + the
- *  seed input (the graph, for the current graph-seeded scenes); `defaultInput` seeds the preview. */
+/** A scene's INPUT SEAM (#3284) — its default seed plus how to render/parse that seed as the editable "your
+ *  input" text. A scene declares its own seam so it can seed on a graph, a number array, … (not just a
+ *  graph); `serialize`/`parse` round-trip the seed to/from the field text. */
+export interface SceneSeed<I> {
+  default: I;
+  hint: string;
+  serialize: (input: I) => string;
+  parse: (text: string) => I;
+}
+
+/** A multi-structure scene program keyed by BASE NAME. `run` drives the scene from the seed input; `seed`
+ *  carries the default + its input seam. The input type is ERASED to `unknown` in the stored form (so
+ *  `SCENE_PROGRAMS` is one uniform map across graph- and array-seeded scenes) — {@link defineScene} keeps
+ *  authoring type-safe and does the erasing cast in ONE place. */
 export interface SceneProgram {
-  run: (scene: TracedScene, input: GraphInput) => void;
-  defaultInput: GraphInput;
+  run: (scene: TracedScene, input: unknown) => void;
+  seed: SceneSeed<unknown>;
+}
+
+/** Pair a typed scene `run` with a matching typed {@link SceneSeed}, erasing the input type so the result
+ *  drops into the uniform `SCENE_PROGRAMS` map. The one cast site — authoring stays fully typed. */
+function defineScene<I>(run: (scene: TracedScene, input: I) => void, seed: SceneSeed<I>): SceneProgram {
+  return { run: run as (scene: TracedScene, input: unknown) => void, seed: seed as SceneSeed<unknown> };
+}
+
+/** A graph seed seam — the adjacency-list "your input" field (Dijkstra / BFS). */
+function graphSeed(def: GraphInput): SceneSeed<GraphInput> {
+  return { default: def, hint: "An adjacency list — one node per line: a: b, c", serialize: graphToText, parse: parseGraphInput };
+}
+
+/** A number-array seed seam — the comma/space field (the sorts). */
+function arraySeed(def: readonly number[]): SceneSeed<readonly number[]> {
+  return { default: def, hint: "Comma- or space-separated numbers", serialize: (a) => a.join(", "), parse: parseSortInput };
 }
 
 /** The ∞ sentinel for the distance array — the array panel holds numbers, so an unreached node reads as a
@@ -171,9 +200,46 @@ export function bfsScene(scene: TracedScene, input: GraphInput): void {
   }
 }
 
+/**
+ * Merge sort as a SCENE (#3284) — an `array` panel (sorted in place) + a `merge` buffer panel that makes
+ * the two runs VISIBLE. Bottom-up: copy each run pair into the buffer (they appear), then merge them back
+ * into the array — a real `buf.compare(i, j)` flashes the two run fronts (the merge decision the flat
+ * single-array trace hid), `cursors` mark the fronts, and `arr.set(k, …)` lands the winner. Real merge sort;
+ * the buffer is the auxiliary array merge sort actually needs. This is the first ARRAY-seeded scene.
+ */
+export function mergeSortScene(scene: TracedScene, input: readonly number[]): void {
+  const n = input.length;
+  const arr = scene.array("array", input);      // sorted in place — the winners land here
+  const buf = scene.array("merge", [...input]); // the scratch buffer that holds the two runs
+
+  for (let width = 1; width < n; width *= 2) {
+    for (let lo = 0; lo < n; lo += 2 * width) {
+      const mid = Math.min(lo + width, n);
+      const hi = Math.min(lo + 2 * width, n);
+      // Copy the current range into the buffer — the two sorted runs become visible.
+      for (let k = lo; k < hi; k++) buf.set(k, arr.get(k));
+      // Merge buf[lo..mid) and buf[mid..hi) back into arr, comparing the two fronts.
+      let i = lo;
+      let j = mid;
+      for (let k = lo; k < hi; k++) {
+        buf.cursor("i", i < mid ? i : null); // the two front-pointers walk the runs
+        buf.cursor("j", j < hi ? j : null);
+        let takeLeft: boolean;
+        if (i >= mid) takeLeft = false;
+        else if (j >= hi) takeLeft = true;
+        else takeLeft = buf.compare(i, j) <= 0; // the merge decision — both fronts flash
+        arr.set(k, buf.get(takeLeft ? i++ : j++)); // the winner slides into the output
+      }
+    }
+  }
+  arr.markSorted();
+}
+
 /** The scene programs, keyed by base name (merged LAST into the registry, so a scene supersedes any
- *  single-structure program of the same name — e.g. `dijkstra` → graph+dist, `bfs` → graph+queue). */
+ *  single-structure program of the same name — e.g. `dijkstra` → graph+dist, `bfs` → graph+queue,
+ *  `merge-sort` → array+buffer). Each carries its own input {@link SceneSeed} (graph or number-array). */
 export const SCENE_PROGRAMS: Record<string, SceneProgram> = {
-  dijkstra: { run: dijkstraScene, defaultInput: WEIGHTED_GRAPH },
-  bfs: { run: bfsScene, defaultInput: DEFAULT_GRAPH },
+  dijkstra: defineScene(dijkstraScene, graphSeed(WEIGHTED_GRAPH)),
+  bfs: defineScene(bfsScene, graphSeed(DEFAULT_GRAPH)),
+  "merge-sort": defineScene(mergeSortScene, arraySeed(SORT_MOCK)),
 };
