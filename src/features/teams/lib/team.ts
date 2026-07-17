@@ -8,6 +8,7 @@
 import formsEmbedded from "@data/teams/communication-forms.json";
 import archetypesEmbedded from "@data/teams/archetypes.json";
 import { overlayFile, overlayGlob } from "@/shared/lib/core/configOverrides";
+import { slugify } from "@/shared/lib/core/format";
 
 /** The canonical orientation a form typically flows (a HINT; an archetype's lane placement wins). */
 export type FormDirection = "down" | "up" | "lateral" | "in" | "out";
@@ -141,6 +142,35 @@ export function makeBuiltinOrgs(): Team[] {
 /** The packaged orgs (currently the Default fleet), so the designer is populated on day one. */
 export const BUILTIN_ORGS: Team[] = makeBuiltinOrgs();
 
+/** The built-in Studio Network team (#2940) — the id the debug overlay below keys off. */
+export const STUDIO_NETWORK_ID = "org-planning-studio";
+const DEBUGGER_NODE = "debugger";
+
+/**
+ * A RUNTIME overlay on the Studio Network (#3317): when the debug session is toggled on (Settings,
+ * `debugSession`, #3298), the **debugger** joins the graph and SERVES the designer — it drains the
+ * `bsc request` queue, fixing the `bsc ui` tooling the designer reports. Backed by the `persona-debugger`
+ * identity (the app's full-capability `debugger` role, #3322); the live session launches bypass on the
+ * shared TerminalHost via `DebugSessionMount` (#3326). Not persisted — the seed stays the always-on
+ * network; dragging the overlay
+ * no-ops against the stored team. A no-op when off, for a non-studio team, or if already present.
+ */
+export function augmentStudioNetworkForDebug(org: Team, debugOn: boolean): Team {
+  if (!debugOn || org.id !== STUDIO_NETWORK_ID) return org;
+  if (org.positions.some((p) => p.nodeId === DEBUGGER_NODE)) return org;
+  return {
+    ...org,
+    positions: [
+      ...org.positions,
+      { nodeId: DEBUGGER_NODE, kind: "agent", personaId: "persona-debugger", x: 144, y: 48 },
+    ],
+    relationships: [
+      ...org.relationships,
+      { id: "r-serves-debugger", archetype: "serves", from: DEBUGGER_NODE, to: "designer", bow: -30 },
+    ],
+  };
+}
+
 // ── Derivation: the communication summary the UI shows (the generate-from-facets payoff) ─────────
 /** One derived communication edge for a position: a form flowing IN or OUT, the other node, and the
  *  archetype it came from. */
@@ -194,7 +224,7 @@ export function orgIssues(org: Team): string[] {
 // ── CRUD helpers (mirror personas) ───────────────────────────────────────────────────────────────
 /** Slugify an org name into an id fragment. */
 export function orgSlug(name: string): string {
-  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "org";
+  return slugify(name) || "org";
 }
 
 /** A blank user team — the "new team" template (the data entity is still an `Team`; the display noun is
@@ -210,10 +240,24 @@ export function blankOrg(id: string): Team {
 export function reconcileOrgs(persisted: Team[]): Team[] {
   const byId = new Map(persisted.map((o) => [o.id, o]));
   const out: Team[] = BUILTIN_ORGS.map((base) => {
-    const saved = byId.get(base.id);
+    // A built-in team's STRUCTURE is PACKAGED-AUTHORITATIVE (#3330). The app evolves its own built-in teams
+    // (the Studio Network grew across #3317/#3322/#2940), but the on-disk store (`~/.base-studio-code/orgs/`)
+    // is seeded once and frozen at that version — so a `{ ...base, ...saved }` merge let the stale on-disk
+    // copy shadow every later packaged update. We now always take the packaged `base` for a built-in id, so
+    // updates to the packaged JSON reach every install. To customize a built-in, CLONE it (→ a user team,
+    // carried through untouched below). The on-disk copy is refreshed to match by `hydrateOrgs`.
     byId.delete(base.id);
-    return saved ? { ...base, ...saved, id: base.id, builtin: true } : base;
+    return base;
   });
+  // On-disk-only USER teams (non-built-in ids) are preserved verbatim — only their `builtin` flag is forced
+  // false so a stale/hand-set flag can't masquerade a user team as a built-in.
   for (const o of byId.values()) out.push({ ...o, builtin: false });
   return out;
+}
+
+/** A stable content key for a team's authored STRUCTURE (name + blurb + positions + relationships), used to
+ *  detect on-disk drift from the packaged built-in (#3330) so `hydrateOrgs` re-pushes only what changed —
+ *  never the `builtin` flag or ids, which are structural constants. */
+export function orgStructureKey(o: Team): string {
+  return JSON.stringify([o.name, o.blurb, o.positions, o.relationships]);
 }

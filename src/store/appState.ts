@@ -23,13 +23,13 @@ export const DEMOABLE_KEYS = [
   "localDraftProjects", "triagedProjects", "projectLinks", "issueLinks", "hiddenProjectIds", "achievements",
   // Libraries (built-ins are reconciled on load; these carry the user/demo additions + selection)
   "blueprints", "activeBlueprintId", "skills", "skillGroups", "personas", "teams", "teamsZoom",
-  "dataModels", "activeDataModelId", "mcpServers", "hooks",
+  "mcpServers", "hooks",
   // Automations
   "schedules", "commands", "automations",
   // Per-project plan / fleet / UI-plan data
   "planStages", "planConfirmedStages", "planSkippedStages", "planAuthoredBlueprint", "planDeployConfig", "planMarketConfig", "planTransformations",
   "planAutomations", "planStageConfig", "projectBlueprintId", "uiScreens", "uiApproved",
-  "planFleet", "planFleetTopology", "planFleetDirectorDrive", "pinnedContext", "loadVerified",
+  "planFleet", "planFleetTopology", "planFleetDirectorDrive", "pinnedContext",
   // Agent config · startup/triage prompt docs · repo visibility · per-session skill mapping
   "agentProfiles", "configProfiles",
   "defaultStartupPromptDoc", "projectStartupPromptDoc", "repoStartupPromptDoc", "repoTriagePromptDoc",

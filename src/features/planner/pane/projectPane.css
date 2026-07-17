@@ -48,19 +48,6 @@
 }
 .role i { width: 5px; height: 5px; border-radius: 50%; display: block; }
 
-/* (.tri moved to the shared <SegmentedControl variant="joined">, #1874) */
-
-.posture { display: inline-flex; gap: 2px; }
-.posture i {
-  width: 10px; height: 10px; border-radius: 2px; display: block;
-  font-family: var(--mono); font-size: 7px; line-height: 10px; text-align: center;
-  color: var(--bg-canvas);
-}
-.posture i.allow { background: var(--success); }
-.posture i.ask   { background: var(--accent); }
-.posture i.deny  { background: color-mix(in oklch, var(--danger), transparent 25%); }
-.posture i.off   { background: var(--bg-elev2); }
-
 .preset {
   padding: 2px 9px; border-radius: 99px;
   font-family: var(--mono); font-size: 9.5px; cursor: pointer;
@@ -68,13 +55,6 @@
 }
 .preset.on { background: color-mix(in oklch, var(--accent), transparent 84%);
   border-color: var(--accent-dim); color: var(--accent); }
-
-.av {
-  width: 17px; height: 17px; border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-weight: 700; font-size: 9px; color: var(--on-accent);
-  border: 1.5px solid var(--bg-panel);
-}
 
 .track { height: 5px; border-radius: 3px; background: var(--bg-elev2); overflow: hidden; }
 .track > i { display: block; height: 100%; background: var(--accent); }
@@ -227,6 +207,11 @@
 .fp .ph-gate.wait .gd { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
 .fp .ph-gate.fail { color: var(--danger); border-color: color-mix(in oklch, var(--danger), transparent 60%); }
 .fp .ph-gate.fail .gd { background: var(--danger); }
+/* The gate pill doubles as the stage-guidance disclosure toggle (#3257): a clickable chip with a caret. */
+.fp button.ph-gate { cursor: pointer; appearance: none; line-height: 1; }
+.fp button.ph-gate:hover { border-color: color-mix(in oklch, currentColor, transparent 45%); }
+.fp .ph-gate.open { background: var(--bg-elev2); }
+.fp .ph-gate .ph-caret { font-size: 8px; opacity: .65; margin-left: 1px; }
 
 /* lock / done banner */
 .fp .lock-banner { display: flex; align-items: center; gap: 9px; margin: 12px 16px 0;

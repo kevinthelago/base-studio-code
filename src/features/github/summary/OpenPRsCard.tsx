@@ -7,7 +7,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
-import { CardEmpty, SkeletonRows } from "./cardStates";
+import { CardEmpty, SkeletonRows } from "@/shared/ui/feedback/CardStates";
 
 export function OpenPRsAllRepos({ prs, loading }: {
   prs: OpenPR[];

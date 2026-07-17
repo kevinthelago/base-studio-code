@@ -9,6 +9,7 @@ import {
   type BlueprintStage,
 } from "./blueprints";
 import { evalGate, evalRequirement, gateReasons, type PlanSignals } from "./stageGate";
+import type { StagePrompt } from "../session/plannerConductor";
 
 // "complete" = done IN sequence (at/behind the current position); "ahead" = done OUT of
 // sequence (gate met past the current position — "banked"); "skipped" = an OPTIONAL section
@@ -132,6 +133,15 @@ export type GatePill = "pass" | "wait";
  *  pipeline gate): "pass" once the stage's gateRule is satisfied, else "wait". */
 export function gatePill(stage: Stage): GatePill {
   return stage.status === "complete" || stage.status === "ahead" ? "pass" : "wait";
+}
+
+/** Whether a stage has any GUIDANCE to reveal (#3257) — the gate's unmet requirements (while it's
+ *  blocking) and/or a suggested next-step prompt. Drives whether the gate pill acts as a disclosure
+ *  TOGGLE for the guidance card: with nothing to reveal the pill stays a plain status chip. */
+export function hasStageGuidance(stage: Stage, pill: GatePill, prompt?: StagePrompt, onInject?: (text: string) => void): boolean {
+  const showReqs = pill !== "pass" && (stage.unmet ?? []).length > 0;
+  const showPrompt = !!prompt && !!onInject;
+  return showReqs || showPrompt;
 }
 
 export type FooterKind = "back-to-current" | "jump-to-current" | "approve-continue" | "route-design" | "publish";

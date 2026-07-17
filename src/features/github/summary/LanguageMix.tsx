@@ -9,7 +9,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
 import { Text } from "@/shared/ui/typography/Text";
 import { langColor, SUMMARY_REPO_SAMPLE } from "../lib/githubSummary";
-import { CardEmpty, SkeletonRows } from "./cardStates";
+import { CardEmpty, SkeletonRows } from "@/shared/ui/feedback/CardStates";
 
 export function LanguageMix({ langTotals, repoCount, totalRepos, loading }: {
   langTotals: Record<string, number>;

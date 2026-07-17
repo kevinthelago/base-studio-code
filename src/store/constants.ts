@@ -49,15 +49,21 @@ export function renderTriageDelta(
  * issues authored by base-studio-code (the `bsc-generated` label) and treats every other open
  * issue as untrusted — so a hand-created or injected issue isn't acted on. Off → all open issues.
  */
-export function buildTriagePrompt(restrictToBsc: boolean, delta?: string): string {
+export function buildTriagePrompt(restrictToBsc: boolean, delta?: string, local?: boolean): string {
+  // #1004: a non-empty delta leads the prompt so the agent resumes from what changed (token-aware).
+  const resume = delta && delta.length > 0 ? delta + " " : "";
+  // #3281 local-first: with no GitHub, the issues live in plan.db — fetch + work them via `bsc plan`,
+  // not `gh`. Every plan.db issue is planner-authored, so the #738 restrict-to-bsc untrusted-external-
+  // issue guard doesn't apply (there is no external channel) — the local path ignores `restrictToBsc`.
+  if (local) {
+    return resume + PROMPTS.triage.leadLocal + PROMPTS.triage.fetchLocal + PROMPTS.triage.rubricLocal;
+  }
   const fetch = restrictToBsc
     ? fillTemplate(PROMPTS.triage.fetchRestricted, {
         LABEL: BSC_ISSUE_LABEL,
         LIST_ARGS: triageIssueListArgs(true),
       })
     : fillTemplate(PROMPTS.triage.fetchAll, { LIST_ARGS: triageIssueListArgs(false) });
-  // #1004: a non-empty delta leads the prompt so the agent resumes from what changed (token-aware).
-  const resume = delta && delta.length > 0 ? delta + " " : "";
   return resume + PROMPTS.triage.lead + fetch + PROMPTS.triage.rubric;
 }
 

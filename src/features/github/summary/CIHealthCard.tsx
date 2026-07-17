@@ -7,7 +7,7 @@ import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
 import { Card } from "@/shared/ui/data/Card";
 import type { CiRow } from "../lib/githubSummary";
-import { CardEmpty, SkeletonRows } from "./cardStates";
+import { CardEmpty, SkeletonRows } from "@/shared/ui/feedback/CardStates";
 
 export function CIHealthCard({ matrix, loading }: {
   matrix: CiRow[];

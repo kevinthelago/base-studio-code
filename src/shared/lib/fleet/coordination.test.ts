@@ -232,6 +232,59 @@ describe("event ingestion — parseCoordLine", () => {
     const { state } = ingestCoordLog([line, line]);
     expect(state.briefs).toHaveLength(1);
   });
+
+  it("parses + folds a studio commission (#2940): planner→designer lands in state.commissions", () => {
+    // Wire form: ts \t session \t commission \t <target> \t <body> \t <ref?>. Mirrors a brief; the
+    // session column is the requesting studio pane, `id` is `<from>@<at>` for delivery correlation.
+    expect(parseCoordLine(`${TS}\tplanner\tcommission\tdesigner\tneed a weekly-activity heatmap`))
+      .toEqual({ type: "commission", from: "planner", target: "designer", body: "need a weekly-activity heatmap", ref: undefined, id: `planner@${at}`, at });
+    const s = applyCoordEvent(emptyCoordState(), { type: "commission", from: "planner", target: "designer", body: "need a heatmap", id: `planner@${at}`, at }).state;
+    expect(s.commissions).toEqual([{ id: `planner@${at}`, from: "planner", target: "designer", body: "need a heatmap", ref: undefined, at }]);
+  });
+
+  it("a commission carries a CoordRef + routes to the librarian too (#2940)", () => {
+    const ev = parseCoordLine(`${TS}\tdesigner\tcommission\tlibrarian\talgorithm to generate heatmap mock data\t#42`);
+    expect(ev).toEqual({ type: "commission", from: "designer", target: "librarian", body: "algorithm to generate heatmap mock data", ref: { kind: "issue", number: 42 }, id: `designer@${at}`, at });
+    const s = applyCoordEvent(emptyCoordState(), ev!).state;
+    expect(s.commissions).toHaveLength(1);
+    expect(s.commissions[0]).toMatchObject({ from: "designer", target: "librarian", ref: { kind: "issue", number: 42 } });
+  });
+
+  it("rejects a commission with no target or no body (#2940)", () => {
+    expect(parseCoordLine(`${TS}\tplanner\tcommission\t\tbody but no target`)).toBeNull();
+    expect(parseCoordLine(`${TS}\tplanner\tcommission\tdesigner\t`)).toBeNull();
+  });
+
+  it("a deliver stamps the authored artifact id on its matching commission (#2940)", () => {
+    // Wire form: ts \t session \t deliver \t <commissionId> \t <artifactId>. The session column is the
+    // delivering studio; correlation is by the commission id (not the pane).
+    const id = `planner@${at}`;
+    expect(parseCoordLine(`${TS}\tdesigner\tdeliver\t${id}\treact-d3:heatmap`))
+      .toEqual({ type: "deliver", commissionId: id, artifactId: "react-d3:heatmap", from: "designer", at });
+    let s = applyCoordEvent(emptyCoordState(), { type: "commission", from: "planner", target: "designer", body: "need a heatmap", id, at }).state;
+    s = applyCoordEvent(s, { type: "deliver", commissionId: id, artifactId: "react-d3:heatmap", from: "designer", at: at + 1 }).state;
+    expect(s.commissions).toEqual([{ id, from: "planner", target: "designer", body: "need a heatmap", ref: undefined, at, delivered: "react-d3:heatmap" }]);
+  });
+
+  it("rejects a deliver missing the commission id or the artifact id (#2940)", () => {
+    expect(parseCoordLine(`${TS}\tdesigner\tdeliver\t\treact-d3:heatmap`)).toBeNull();
+    expect(parseCoordLine(`${TS}\tdesigner\tdeliver\tplanner@1\t`)).toBeNull();
+  });
+
+  it("a deliver with no matching open commission is a harmless no-op (#2940)", () => {
+    const s = applyCoordEvent(emptyCoordState(), { type: "deliver", commissionId: "ghost@9", artifactId: "x:y", from: "designer", at }).state;
+    expect(s.commissions).toEqual([]);
+  });
+
+  it("ingestCoordLog round-trips a commission→deliver into a delivered commission (#2940)", () => {
+    const id = `planner@${at}`;
+    const { state } = ingestCoordLog([
+      `${TS}\tplanner\tcommission\tdesigner\tneed a heatmap`,
+      `${TS}\tdesigner\tdeliver\t${id}\treact-d3:heatmap`,
+    ]);
+    expect(state.commissions).toHaveLength(1);
+    expect(state.commissions[0].delivered).toBe("react-d3:heatmap");
+  });
 });
 
 describe("event ingestion — applyCoordEvent + ingestCoordLog", () => {
@@ -480,7 +533,7 @@ describe("cycle / deadlock detection", () => {
   // Park `session` blocked on each of `on` (as session: refs).
   const block = (session: string, ...on: string[]): Waiter =>
     ({ session, deps: on.map(sess), registeredAt: 0 });
-  const state = (...waiters: Waiter[]) => ({ latches: {}, waiters, waiting: [], asking: [], issues: [], maintaining: [], briefs: [] });
+  const state = (...waiters: Waiter[]) => ({ latches: {}, waiters, waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [] });
 
   it("parses + keys the session ref grammar", () => {
     expect(parseRef("session:t0p2")).toEqual({ kind: "session", id: "t0p2" });
@@ -518,7 +571,7 @@ describe("cycle / deadlock detection", () => {
 
   it("a satisfied dep breaks the edge, so it is no longer a deadlock", () => {
     const s = { latches: { "session:B": { state: "satisfied" as const, source: "merged" as const, at: 1 } },
-                waiters: [block("A", "B"), block("B", "A")], waiting: [], asking: [], issues: [], maintaining: [], briefs: [] };
+                waiters: [block("A", "B"), block("B", "A")], waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [] };
     // B's dep on A still stands, but A's dep on B is satisfied -> A->B edge gone -> no ring.
     expect(detectDeadlocks(s)).toEqual([]);
   });
@@ -530,7 +583,7 @@ describe("cycle / deadlock detection", () => {
         { session: "A", deps: [{ kind: "issue" as const, number: 2 }], registeredAt: 0 },
         { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
       ],
-      waiting: [], asking: [], issues: [], maintaining: [], briefs: [],
+      waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [],
     };
     expect(detectDeadlocks(s)).toEqual([]);
   });
@@ -543,7 +596,7 @@ describe("cycle / deadlock detection", () => {
         { session: "A", deps: [{ kind: "contract" as const, name: "Y" }], registeredAt: 0 },
         { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
       ],
-      waiting: [], asking: [], issues: [], maintaining: [], briefs: [],
+      waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [],
     };
     const producerOf = buildProducerOf([
       { session: "A", issues: ["#1"] },
@@ -614,7 +667,7 @@ describe("buildProducerOf — plan-derived resolver (#199 AC#7)", () => {
         { session: "A", deps: [{ kind: "file" as const, path: "src/api/x.ts" }], registeredAt: 0 },
         { session: "B", deps: [{ kind: "issue" as const, number: 1 }], registeredAt: 0 },
       ],
-      waiting: [], asking: [], issues: [], maintaining: [], briefs: [],
+      waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [],
     };
     const producerOf = buildProducerOf([
       { session: "A", issues: ["#1"], owns: ["src/db/**"] },
@@ -648,7 +701,7 @@ describe("producesFromPaneStreams — pane-id bridge for the resolver (#199 AC#7
         { session: "t0p1", deps: [{ kind: "file" as const, path: "src/api/x.ts" }], registeredAt: 0 },
         { session: "t0p2", deps: [{ kind: "issue" as const, number: 7 }], registeredAt: 0 },
       ],
-      waiting: [], asking: [], issues: [], maintaining: [], briefs: [],
+      waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [],
     };
     const paneStreams = {
       t0p1: { id: "db",  name: "DB",  repo: "o/r", owns: ["src/db/**"],  issues: ["#7"], dependsOn: [] },
@@ -697,7 +750,7 @@ describe("coordNotifications — mobile push payloads (#366)", () => {
 
   it("emits a deadlocked notification for a wait-for cycle and outranks stalled", () => {
     // A<->B deadlock; the same refs are unsatisfied (no producer can clear them).
-    const s = { latches: {}, waiters: [w("A", [sess("B")]), w("B", [sess("A")])], waiting: [], asking: [], issues: [], maintaining: [], briefs: [] };
+    const s = { latches: {}, waiters: [w("A", [sess("B")]), w("B", [sess("A")])], waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [] };
     const notes = coordNotifications(s);
     expect(notes.map((n) => n.kind)).toEqual(["deadlocked", "deadlocked"]);
     expect(notes.map((n) => n.session).sort()).toEqual(["A", "B"]);
@@ -706,7 +759,7 @@ describe("coordNotifications — mobile push payloads (#366)", () => {
 
   it("a deadlocked-AND-failed session reports deadlocked only (most severe wins)", () => {
     // A waits on session:B (the deadlock edge) and on a failed issue. One notification.
-    let s: CoordState = { latches: {}, waiters: [w("A", [sess("B"), issue(9)]), w("B", [sess("A")])], waiting: [], asking: [], issues: [], maintaining: [], briefs: [] };
+    let s: CoordState = { latches: {}, waiters: [w("A", [sess("B"), issue(9)]), w("B", [sess("A")])], waiting: [], asking: [], issues: [], maintaining: [], briefs: [], commissions: [] };
     s = fail(s, issue(9), "nope", 1).state;
     const notes = coordNotifications(s);
     const byId = Object.fromEntries(notes.map((n) => [n.session, n.kind]));

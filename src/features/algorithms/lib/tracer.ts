@@ -11,7 +11,7 @@
 //
 // This is the array tracer; TracedMatrix / TracedGraph / TracedTree follow the same shape as their
 // renderers land (#3179–#3185), so instrumented execution generalizes to every data type.
-import type { ArrayFrame, ArrayOp, Frame, GraphFrame, GraphOp, MatrixFrame, MatrixOp } from "./trace";
+import type { ArrayFrame, ArrayOp, Frame, GraphFrame, GraphOp, MatrixFrame, MatrixOp, PanelsFrame, ScalarFrame, ScalarOp, StackFrame, StackOp, StructureFrame, TreeFrame, TreeOp } from "./trace";
 
 /** A durable per-cell mark an algorithm can set (matches the ArrayOp `mark` vocabulary). */
 export type ArrayMark = "sorted" | "pivot" | "min";
@@ -83,11 +83,17 @@ export class TracedArray {
     return [...this.log];
   }
 
+  /** Route emitted frames to a {@link TracedScene} (#3259) so this structure can fold into a synchronized
+   *  panel. Set once, right after construction; unset ⇒ standalone (single-structure) behavior. */
+  private sink?: (f: StructureFrame) => void;
+  setSink(fn: (f: StructureFrame) => void): void { this.sink = fn; }
+
   private emit(ops?: ArrayOp[]): void {
     const frame: ArrayFrame = { structure: "array", data: [...this.a] };
     if (ops && ops.length) frame.ops = ops;
     if (Object.keys(this.cur).length) frame.cursors = { ...this.cur };
     this.log.push(frame);
+    this.sink?.(frame);
   }
 }
 
@@ -188,11 +194,16 @@ export class TracedMatrix {
     return this.m.map((row) => [...row]);
   }
 
+  /** Route emitted frames to a {@link TracedScene} (#3259) — see {@link TracedArray.setSink}. */
+  private sink?: (f: StructureFrame) => void;
+  setSink(fn: (f: StructureFrame) => void): void { this.sink = fn; }
+
   private emit(ops?: MatrixOp[]): void {
     const frame: MatrixFrame = { structure: "matrix", data: this.m.map((row) => [...row]) };
     if (ops && ops.length) frame.ops = ops;
     if (Object.keys(this.cur).length) frame.cursors = { ...this.cur };
     this.log.push(frame);
+    this.sink?.(frame);
   }
 }
 
@@ -313,6 +324,10 @@ export class TracedGraph {
     return [...this.log];
   }
 
+  /** Route emitted frames to a {@link TracedScene} (#3259) — see {@link TracedArray.setSink}. */
+  private sink?: (f: StructureFrame) => void;
+  setSink(fn: (f: StructureFrame) => void): void { this.sink = fn; }
+
   private emit(ops?: GraphOp[]): void {
     const frame: GraphFrame = {
       structure: "graph",
@@ -323,6 +338,7 @@ export class TracedGraph {
     if (Object.keys(this.marks).length) frame.marks = { ...this.marks };
     if (Object.keys(this.cur).length) frame.cursors = { ...this.cur };
     this.log.push(frame);
+    this.sink?.(frame);
   }
 }
 
@@ -335,5 +351,429 @@ export function runGraphAlgorithm(algo: (g: TracedGraph) => void, input: GraphIn
     const g = new TracedGraph(input);
     algo(g);
     yield* g.trace();
+  };
+}
+
+// ── the stack tracer (#3266) — LIFO / FIFO / deque ──
+
+/** The stack discipline — a stack (LIFO), a queue (FIFO), or a double-ended deque. Picks which END
+ *  `pop` removes from; `push` always appends to the back/top. */
+export type StackMode = "stack" | "queue" | "deque";
+
+/**
+ * An instrumented stack / queue / deque — an algorithm's frontier structure (BFS's queue, DFS's stack).
+ * `push` appends, `pop` removes the active end (the TOP for a stack/deque, the FRONT for a queue), `peek`
+ * reads an index. Every op appends a `StackFrame` the `<StackView>` renderer animates. Values may be
+ * strings (e.g. `"b:3"`), so a scene can label frontier entries.
+ */
+export class TracedStack {
+  private readonly s: (number | string)[];
+  private readonly mode: StackMode;
+  private readonly log: StackFrame[] = [];
+  private readonly cur: Record<string, number> = {};
+
+  constructor(mode: StackMode = "stack", initial: readonly (number | string)[] = []) {
+    this.s = [...initial];
+    this.mode = mode;
+    this.emit(); // the structure at rest
+  }
+
+  /** The number of entries — read freely (no frame). */
+  get size(): number {
+    return this.s.length;
+  }
+
+  /** Append an entry at the back/top — records a `push` frame. */
+  push(v: number | string): void {
+    this.s.push(v);
+    this.emit([{ op: "push" }]);
+  }
+
+  /** Remove + return the active end (the TOP for stack/deque, the FRONT for queue) — records a `pop` frame. */
+  pop(): number | string | undefined {
+    const v = this.mode === "queue" ? this.s.shift() : this.s.pop();
+    this.emit([{ op: "pop" }]);
+    return v;
+  }
+
+  /** Read the entry at `i` without removing it — records a `peek` frame. */
+  peek(i: number): number | string {
+    this.emit([{ op: "peek", at: i }]);
+    return this.s[i];
+  }
+
+  /** Move a named index pointer (drawn on the next frame); `null` clears it. */
+  cursor(name: string, i: number | null): void {
+    if (i == null) delete this.cur[name];
+    else this.cur[name] = i;
+  }
+
+  /** The recorded trace (a fresh snapshot array). */
+  trace(): StackFrame[] {
+    return [...this.log];
+  }
+
+  /** Route emitted frames to a {@link TracedScene} (#3259) — see {@link TracedArray.setSink}. */
+  private sink?: (f: StructureFrame) => void;
+  setSink(fn: (f: StructureFrame) => void): void { this.sink = fn; }
+
+  private emit(ops?: StackOp[]): void {
+    const frame: StackFrame = { structure: "stack", data: [...this.s] };
+    if (this.mode !== "stack") frame.mode = this.mode;
+    if (ops && ops.length) frame.ops = ops;
+    if (Object.keys(this.cur).length) frame.cursors = { ...this.cur };
+    this.log.push(frame);
+    this.sink?.(frame);
+  }
+}
+
+/**
+ * Run a stack/queue algorithm — a plain function over a {@link TracedStack} — returning a factory that
+ * yields its recorded trace as a fresh generator each call (replay-safe).
+ */
+export function runStackAlgorithm(algo: (s: TracedStack) => void, mode: StackMode = "stack"): () => Generator<Frame> {
+  return function* () {
+    const s = new TracedStack(mode);
+    algo(s);
+    yield* s.trace();
+  };
+}
+
+// ── the scalar tracer (#3268) — named counters / accumulators / the current pointer ──
+
+/**
+ * Instrumented SCALAR state — the named variables (counters, running sums, min/max, the current pointer)
+ * that ride alongside a main structure in almost every larger algorithm. `set`/`add`/`compare` are the
+ * verbs the `<ScalarView>` renderer animates; each records a `ScalarFrame` whose `ops` map is keyed by the
+ * touched variable NAME (unlike the other structures' positional op arrays). `get` is a silent read.
+ * Values may be numbers (counters/sums) or strings (a current node id), mixed per variable.
+ */
+export class TracedScalar {
+  private readonly vals: Record<string, number | string> = {};
+  private readonly log: ScalarFrame[] = [];
+
+  constructor(initial: Record<string, number | string> = {}) {
+    Object.assign(this.vals, initial);
+    this.emit(); // the initial frame — the variables at rest
+  }
+
+  /** A silent read of variable `name` (the algorithm's internal logic — records no frame). */
+  get(name: string): number | string | undefined {
+    return this.vals[name];
+  }
+
+  /** Set `name` to `v` — records a `set` frame stamped on that variable. */
+  set(name: string, v: number | string): void {
+    this.vals[name] = v;
+    this.emit({ [name]: { op: "set" } });
+  }
+
+  /** Add `delta` to a numeric accumulator `name` (a non-numeric / absent value starts at 0) — records an
+   *  `add` frame. */
+  add(name: string, delta: number): void {
+    const cur = typeof this.vals[name] === "number" ? (this.vals[name] as number) : 0;
+    this.vals[name] = cur + delta;
+    this.emit({ [name]: { op: "add", delta } });
+  }
+
+  /** Compare `name` against `other` — records a `compare` frame; returns sign(value - other) (`-1|0|1`),
+   *  treating a non-numeric / absent value as 0. */
+  compare(name: string, other: number): number {
+    this.emit({ [name]: { op: "compare", other } });
+    const cur = typeof this.vals[name] === "number" ? (this.vals[name] as number) : 0;
+    return Math.sign(cur - other);
+  }
+
+  /** The recorded trace (a fresh snapshot array). */
+  trace(): ScalarFrame[] {
+    return [...this.log];
+  }
+
+  /** Route emitted frames to a {@link TracedScene} (#3259) — see {@link TracedArray.setSink}. */
+  private sink?: (f: StructureFrame) => void;
+  setSink(fn: (f: StructureFrame) => void): void { this.sink = fn; }
+
+  private emit(ops?: Record<string, ScalarOp>): void {
+    const frame: ScalarFrame = { structure: "scalar", values: { ...this.vals } };
+    if (ops && Object.keys(ops).length) frame.ops = ops;
+    this.log.push(frame);
+    this.sink?.(frame);
+  }
+}
+
+/**
+ * Run a scalar-state algorithm — a plain function over a {@link TracedScalar} — returning a factory that
+ * yields its recorded trace as a fresh generator each call (replay-safe).
+ */
+export function runScalarAlgorithm(
+  algo: (s: TracedScalar) => void,
+  initial: Record<string, number | string> = {},
+): () => Generator<Frame> {
+  return function* () {
+    const s = new TracedScalar(initial);
+    algo(s);
+    yield* s.trace();
+  };
+}
+
+// ── the tree tracer (#3270) — trees / heaps / BSTs (parent-pointer nodes) ──
+
+/** A durable per-node tree state (matches the TreeFrame `marks` vocabulary). */
+export type TreeMark = "current" | "path" | "target";
+/** One tree node — a stable id, its value, and its parent id (absent for the root). */
+export interface TreeNode {
+  id: string;
+  value: number | string;
+  parent?: string;
+}
+
+/**
+ * An instrumented tree (which also models a HEAP or BST) — a tree/heap algorithm operates on it and every
+ * observable op appends a `TreeFrame`. Nodes are addressed by a STABLE id; the parent pointers give the
+ * `<TreeView>` renderer the shape (it derives the layout). `insert` grows a node, `remove` drops one,
+ * `swap` exchanges two nodes' VALUES (the heap sift — positions stay fixed, values move), `visit`/`mark`
+ * set a durable state, `compare` fires a transient read. `value` is a silent read.
+ */
+export class TracedTree {
+  private readonly nodes: TreeNode[] = [];
+  private readonly byId = new Map<string, TreeNode>();
+  private readonly marks: Record<string, TreeMark> = {};
+  private readonly log: TreeFrame[] = [];
+
+  constructor(initial: readonly TreeNode[] = []) {
+    for (const n of initial) this.addNode(n);
+    this.emit(); // the tree at rest
+  }
+
+  private addNode(n: TreeNode): void {
+    const copy: TreeNode = { id: n.id, value: n.value, ...(n.parent !== undefined ? { parent: n.parent } : {}) };
+    this.nodes.push(copy);
+    this.byId.set(n.id, copy);
+  }
+
+  /** The node count — read freely (no frame). */
+  get size(): number {
+    return this.nodes.length;
+  }
+
+  /** A silent read of a node's value (the algorithm's internal logic — records no frame). */
+  value(id: string): number | string | undefined {
+    return this.byId.get(id)?.value;
+  }
+
+  /** Add a node under `parent` (omit `parent` for the root) — records an `insert` frame stamped on it. */
+  insert(id: string, value: number | string, parent?: string): void {
+    this.addNode({ id, value, parent });
+    // TreeOp.insert requires a `parent`; a root names itself (the frame node's own `parent` stays absent).
+    this.emit([{ op: "insert", node: id, parent: parent ?? id }]);
+  }
+
+  /** Remove a node (and any durable mark) — records a `remove` frame. */
+  remove(id: string): void {
+    const i = this.nodes.findIndex((n) => n.id === id);
+    if (i >= 0) {
+      this.nodes.splice(i, 1);
+      this.byId.delete(id);
+    }
+    delete this.marks[id];
+    this.emit([{ op: "remove", node: id }]);
+  }
+
+  /** Exchange the VALUES of two nodes (the heap sift — the tree shape is unchanged) — records a `swap`. */
+  swap(a: string, b: string): void {
+    const na = this.byId.get(a);
+    const nb = this.byId.get(b);
+    if (na && nb) {
+      const t = na.value;
+      na.value = nb.value;
+      nb.value = t;
+    }
+    this.emit([{ op: "swap", at: [a, b] }]);
+  }
+
+  /** Compare two nodes' values — records a `compare` frame; returns sign(a - b) for numeric values. */
+  compare(a: string, b: string): number {
+    this.emit([{ op: "compare", at: [a, b] }]);
+    const va = this.byId.get(a)?.value;
+    const vb = this.byId.get(b)?.value;
+    return typeof va === "number" && typeof vb === "number" ? Math.sign(va - vb) : 0;
+  }
+
+  /** Finish / touch a node — a `visit` op + durable `current` mark. */
+  visit(id: string): void {
+    this.marks[id] = "current";
+    this.emit([{ op: "visit", node: id }]);
+  }
+
+  /** Set a durable node mark (`current`/`path`/`target`) with no transient op. */
+  mark(id: string, as: TreeMark): void {
+    this.marks[id] = as;
+    this.emit();
+  }
+
+  /** The recorded trace (a fresh snapshot array). */
+  trace(): TreeFrame[] {
+    return [...this.log];
+  }
+
+  /** Route emitted frames to a {@link TracedScene} (#3259) — see {@link TracedArray.setSink}. */
+  private sink?: (f: StructureFrame) => void;
+  setSink(fn: (f: StructureFrame) => void): void { this.sink = fn; }
+
+  private emit(ops?: TreeOp[]): void {
+    const frame: TreeFrame = {
+      structure: "tree",
+      nodes: this.nodes.map((n) => ({ ...n })),
+    };
+    if (ops && ops.length) frame.ops = ops;
+    if (Object.keys(this.marks).length) frame.marks = { ...this.marks };
+    this.log.push(frame);
+    this.sink?.(frame);
+  }
+}
+
+/**
+ * Run a tree/heap algorithm — a plain function over a {@link TracedTree} — returning a factory that yields
+ * its recorded trace as a fresh generator each call (replay-safe).
+ */
+export function runTreeAlgorithm(
+  algo: (t: TracedTree) => void,
+  initial: readonly TreeNode[] = [],
+): () => Generator<Frame> {
+  return function* () {
+    const t = new TracedTree(initial);
+    algo(t);
+    yield* t.trace();
+  };
+}
+
+// ── the scene tracer (#3259) — MULTI-STRUCTURE decomposition ──
+//
+// A larger algorithm isn't one structure: Dijkstra is a graph + a distance array (+ a heap, later). A
+// `TracedScene` hands the algorithm several NAMED structures backed by the same `Traced*` classes, folds
+// their ops into ONE synchronized `PanelsFrame` stream, and the player lays the panels side by side. Each
+// op on any panel advances a beat whose frame is that panel's op-state + every other panel at its current
+// state — so you watch the structures move TOGETHER. `runScene` is the multi-structure `runAlgorithm`.
+
+/** A structure the scene can attach — the existing `Traced*` classes, seen through the two hooks the scene
+ *  needs: read the constructor's resting frame, and redirect subsequent frames to the scene. */
+interface Sinkable {
+  trace(): StructureFrame[];
+  setSink(fn: (f: StructureFrame) => void): void;
+}
+
+/**
+ * A multi-structure trace context (#3259). `scene.array("dist", …)` / `scene.graph("g", …)` return the
+ * ordinary `Traced*` instance (so the algorithm uses the SAME `compare`/`swap`/`visit`/`relax` vocabulary),
+ * but each op is folded into a synchronized {@link PanelsFrame} keyed by the panel name. The first op emits
+ * a resting snapshot of every panel; each op after emits the acting panel's op-frame beside the others at
+ * rest. Panels declared before the first op all appear in that resting frame.
+ */
+export class TracedScene {
+  private readonly initial: Record<string, StructureFrame> = {};
+  private readonly current: Record<string, StructureFrame> = {};
+  private readonly log: PanelsFrame[] = [];
+  private started = false;
+  private batching = false; // while set, panel ops fold into ONE beat (a cross-panel verb) — see beginBatch
+
+  private attach<T extends Sinkable>(name: string, s: T): T {
+    const rest = s.trace()[0]; // the constructor's at-rest frame (structures emit one on creation)
+    this.initial[name] = rest;
+    this.current[name] = rest;
+    s.setSink((f) => {
+      this.current[name] = f;
+      if (!this.batching) this.pushFrame(); // a batched op just updates `current`; endBatch pushes once
+    });
+    return s;
+  }
+
+  /** Push one synchronized beat — beat 0 (every declared panel at rest) on the first, then the current map. */
+  private pushFrame(): void {
+    if (!this.started) {
+      this.started = true;
+      this.log.push({ panels: { ...this.initial } }); // beat 0 — every declared panel at rest
+    }
+    this.log.push({ panels: { ...this.current } });
+  }
+
+  /** Open a CROSS-PANEL beat (#3286): ops on several panels fold into ONE `PanelsFrame` until {@link
+   *  endBatch}, so a move / cross-compare animates as a single synchronized step. */
+  private beginBatch(): void {
+    this.batching = true;
+  }
+  /** Close the cross-panel beat, emitting the accumulated panel changes as one synchronized frame. */
+  private endBatch(): void {
+    this.batching = false;
+    this.pushFrame();
+  }
+
+  /** A named array panel (its `data`/ops render via `<ArrayView>`). */
+  array(name: string, input: readonly number[]): TracedArray {
+    return this.attach(name, new TracedArray(input));
+  }
+  /** A named matrix panel (renders via `<MatrixView>`). */
+  matrix(name: string, input: readonly (readonly number[])[]): TracedMatrix {
+    return this.attach(name, new TracedMatrix(input));
+  }
+  /** A named graph panel (renders via `<GraphView>`). */
+  graph(name: string, input: GraphInput): TracedGraph {
+    return this.attach(name, new TracedGraph(input));
+  }
+  /** A named stack / queue / deque panel (renders via `<StackView>`). */
+  stack(name: string, mode: StackMode = "stack", initial: readonly (number | string)[] = []): TracedStack {
+    return this.attach(name, new TracedStack(mode, initial));
+  }
+  /** A named scalar-state panel — counters / accumulators / the current pointer (renders via `<ScalarView>`). */
+  scalar(name: string, initial: Record<string, number | string> = {}): TracedScalar {
+    return this.attach(name, new TracedScalar(initial));
+  }
+  /** A named tree / heap / BST panel (parent-pointer nodes; renders via `<TreeView>`). */
+  tree(name: string, initial: readonly TreeNode[] = []): TracedTree {
+    return this.attach(name, new TracedTree(initial));
+  }
+
+  // ── cross-panel verbs (#3286) — operations that span two array panels animate as ONE beat ──
+
+  /**
+   * Compare a cell in array panel `a` against a cell in array panel `b` — BOTH cells flash in ONE
+   * synchronized beat, returning `sign(a[i] - b[j])`. The cross-panel twin of a single array's `compare`:
+   * the merge decision between two runs living in different panels.
+   */
+  compareAcross(a: TracedArray, i: number, b: TracedArray, j: number): number {
+    this.beginBatch();
+    a.compare(i, i); // highlight the front of `a` (a self-pair marks just cell i) …
+    b.compare(j, j); // … and the front of `b`, in the same beat
+    this.endBatch();
+    return Math.sign(a.get(i) - b.get(j));
+  }
+
+  /**
+   * Move the value at `from[i]` into `to[k]` — the source cell highlights and the destination write animate
+   * TOGETHER in one beat, so the value visibly slides between panels.
+   */
+  move(from: TracedArray, i: number, to: TracedArray, k: number): void {
+    const v = from.get(i);
+    this.beginBatch();
+    from.compare(i, i); // the source cell highlights as the value leaves …
+    to.set(k, v); // … and lands in the destination, same beat
+    this.endBatch();
+  }
+
+  /** The recorded synchronized panel trace — a resting snapshot when the program did no ops. */
+  frames(): PanelsFrame[] {
+    return this.started ? [...this.log] : [{ panels: { ...this.initial } }];
+  }
+}
+
+/**
+ * Run a MULTI-STRUCTURE algorithm against a {@link TracedScene} (#3259) — the scene twin of
+ * {@link runAlgorithm}. The program declares its named panels from `input` and drives them; the returned
+ * factory yields the synchronized `PanelsFrame` trace as a fresh generator each call (replay-safe).
+ */
+export function runScene<I>(program: (scene: TracedScene, input: I) => void, input: I): () => Generator<Frame> {
+  return function* () {
+    const scene = new TracedScene();
+    program(scene, input);
+    yield* scene.frames();
   };
 }

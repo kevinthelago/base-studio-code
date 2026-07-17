@@ -70,11 +70,15 @@ pub fn run() {
         .manage(tunnel::TunnelState::new())
         .manage(perf::PerfState::new(perf_db()))
         .manage(logs::LogState::new(logs::LogConfig::default()))
+        // In-flight `bsc navigate` requests (#3274): the appchan watcher parks on a receiver here and
+        // `navigate_ack` (invoked by the frontend once it has applied the view) delivers into it.
+        .manage(crate::navigate::NavPending::default())
         .manage(scope_registry.clone())
         // Runtime fault-ingest collector (#2261): the loopback receiver a generated app POSTs
         // faults/heartbeats to. Started (bound + accept loop spawned) in `setup` below.
         .manage(collector::CollectorState::new())
         .manage(project::preview::PreviewServers::default())
+        .manage(crate::shot::ShotTargets::default())
         .manage(UncleanShutdown(unclean_shutdown))
         .setup(move |app| {
             // Install the dual-sink GraphLogger (#1389) in place of tauri-plugin-log — FIRST, so the
@@ -165,6 +169,11 @@ pub fn run() {
             // Spawn the background performance sampler.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(perf::run_sampler(handle));
+            // Answer `bsc shot` capture requests (#3261, epic #3260). `bsc` cannot call us — the bridge
+            // only runs app→bsc — so the CLI drops a request in ~/.base-studio-code/shots/ and this
+            // watcher snapshots the webview and answers. Cheap poll on a worker thread; a missing dir
+            // just disables captures rather than aborting startup.
+            crate::appchan::spawn_watcher(app.handle().clone());
             // Start the localhost fault-ingest receiver (#2261): binds 127.0.0.1:0 and runs its accept
             // loop on a background thread. A bind failure is logged and leaves the port at 0 (ingest
             // unavailable) rather than aborting startup.
@@ -241,6 +250,8 @@ pub fn run() {
             session::designer::setup_designer_workspace,
             session::architect::setup_architect_workspace,
             session::librarian::setup_librarian_workspace,
+            session::debug::debug_repo_root,
+            crate::shot::set_shot_target_rect,
             session::sandbox::wsl_sandbox_status,
             session::sandbox::provision_sandbox,
             session::sandbox::sandbox_run,
@@ -254,6 +265,7 @@ pub fn run() {
             session::sandbox::ensure_sandbox_worktree,
             session::sandbox::ensure_sandbox_user,
             app::recovery::was_unclean_shutdown,
+            crate::navigate::navigate_ack,
             github::readiness::github_readiness,
             github::readiness::preflight,
             github::readiness::get_preferred_shell,
@@ -285,6 +297,7 @@ pub fn run() {
             tunnel::tunnel_emit_plan_event,
             tunnel::tunnel_emit_plan_status,
             tunnel::tunnel_ack_plan_push,
+            tunnel::apply_pushed_plan_files,
             tunnel::tunnel_check_relay,
             tunnel::tunnel_set_fleet_state,
             tunnel::tunnel_emit_coord_event,

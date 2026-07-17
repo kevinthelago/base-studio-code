@@ -16,7 +16,7 @@ import type { BlueprintTeam } from "@/features/planner/stages/blueprintTypes";
  *  triage · documentor · designer — intake, routing, docs, UI) = client. The bucket drives the colour;
  *  the real session role rides as `roleLabel` + the legend reads the function-group names at L1. */
 const ROLE_TO_GROLE: Record<string, GRole> = {
-  planner: "infra", director: "infra",
+  planner: "infra", director: "infra", debugger: "infra",
   worker: "service",
   reviewer: "data", tester: "data", juror: "data",
   issuer: "client", triage: "client", documentor: "client", designer: "client",
@@ -140,7 +140,9 @@ export function buildOrgFleetData(org: Team, personas: Persona[]): GlanceData {
     const p = nodePersona(persona) ?? fallbackPersona(pos.label ?? persona?.name ?? pos.nodeId, role);
     p.comms = projectComms(org, pos, personas); // who this agent talks to + how (#2563)
     // Rests at idle (#2551) — a planned position isn't "building" until its session is actually live.
-    return { id: pos.nodeId, slug: pos.label ?? persona?.name ?? pos.nodeId, role: gRole(role), roleLabel: role, health: "idle" as const, activity: "idle" as const, persona: p };
+    // A `resource` position (a library, not an agent) is marked so the canvas draws it distinctly (#3322)
+    // instead of the persona-less "worker" fallback role reading as an agent node.
+    return { id: pos.nodeId, slug: pos.label ?? persona?.name ?? pos.nodeId, role: gRole(role), roleLabel: role, health: "idle" as const, activity: "idle" as const, persona: p, resource: pos.kind === "resource" || undefined };
   });
   const ids = new Set(rawNodes.map((n) => n.id));
   const rawEdges: GRawEdge[] = [];

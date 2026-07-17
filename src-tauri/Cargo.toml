@@ -71,6 +71,15 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # and every `bsc-*` CLI agree on which on-disk store they read/write. `platform/paths.rs`
 # delegates `home_dir`/`bsc_base_dir` here.
 bsc-util = { path = "../crates/bsc-util" }
+# `bsc shot` (#3261): the request/response protocol the CLI and this watcher share. Tauri-free by
+# design — only the platform capture lives app-side.
+bsc-shot = { path = "../crates/bsc-shot" }
+# The ONE bsc→app request channel + the navigate verb (#3274, epic #3260).
+bsc-appchan = { path = "../crates/bsc-appchan" }
+bsc-navigate = { path = "../crates/bsc-navigate" }
+# PNG decode/encode for the --rect crop (CapturePreview hands back the WHOLE webview). `png` not
+# `image`: it is the only format CapturePreview emits, and it keeps the binary off a codec matrix.
+png = "0.17"
 
 # Unified log engine (#1607/#1389): the pure scope-graph policy (`logs::scope`) shared by the desktop
 # `GraphLogger` and the `bsc log` CLI, so one config type + one matching rule govern both surfaces.
@@ -138,4 +147,16 @@ windows-sys = { version = "0.61", features = [
     "Win32_Security",
     "Win32_System_JobObjects",
     "Win32_System_Threading",
+] }
+# `bsc shot` (#3261): the WebView2 snapshot. `CapturePreview` renders the webview's COMPOSITED output —
+# pixel-identical to what the user sees, including the sandboxed preview iframe, and immune to
+# occlusion/minimize/screen-lock (an OS window grab is not). Both crates are already in the tree via
+# Tauri; pinned to the versions it resolves so we never link two `windows` majors.
+webview2-com = "0.38"
+# `Com_StructuredStorage` for CreateStreamOnHGlobal (the capture sink); `Foundation` for the HGLOBAL
+# it takes. Pinned to the version Tauri already resolves so we never link two `windows` majors.
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
 ] }

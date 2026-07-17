@@ -520,9 +520,12 @@ name = "base-studio-code"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "bsc-appchan",
  "bsc-data",
  "bsc-llm",
+ "bsc-navigate",
  "bsc-project",
+ "bsc-shot",
  "bsc-tunnel",
  "bsc-util",
  "errordb",
@@ -534,6 +537,7 @@ dependencies = [
  "log",
  "logs",
  "plandb",
+ "png 0.17.16",
  "portable-pty",
  "rand 0.10.2",
  "reqwest 0.12.28",
@@ -555,6 +559,8 @@ dependencies = [
  "tiny_http",
  "tokio",
  "tokio-tungstenite",
+ "webview2-com",
+ "windows 0.61.3",
  "windows-sys 0.61.2",
 ]
 
@@ -740,12 +746,15 @@ dependencies = [
  "bsc-data",
  "bsc-files",
  "bsc-graph",
+ "bsc-loop",
+ "bsc-navigate",
  "bsc-persona",
  "bsc-project",
+ "bsc-request",
+ "bsc-shot",
  "bsc-sound",
  "bsc-studio",
  "bsc-teams",
- "bsc-todo",
  "bsc-ui",
  "bsc-util",
  "compliance",
@@ -764,14 +773,24 @@ version = "0.1.0"
 dependencies = [
  "bsc-files",
  "bsc-llm",
- "bsc-todo",
  "bsc-util",
  "glob",
+ "plandb",
  "regex",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "bsc-appchan"
+version = "0.1.0"
+dependencies = [
+ "bsc-util",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -868,6 +887,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-loop"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-navigate"
+version = "0.1.0"
+dependencies = [
+ "bsc-appchan",
+ "bsc-cli-util",
+ "bsc-util",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "bsc-persona"
 version = "0.1.0"
 dependencies = [
@@ -885,6 +927,29 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "bsc-request"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-shot"
+version = "0.1.0"
+dependencies = [
+ "bsc-appchan",
+ "bsc-cli-util",
+ "bsc-util",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -923,20 +988,6 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
-]
-
-[[package]]
-name = "bsc-todo"
-version = "0.1.0"
-dependencies = [
- "bsc-cli-util",
- "bsc-files",
- "bsc-sqlite-util",
- "bsc-util",
- "plandb",
- "rusqlite",
- "serde",
- "serde_json",
 ]
 
 [[package]]

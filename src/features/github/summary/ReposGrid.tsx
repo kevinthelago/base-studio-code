@@ -6,7 +6,7 @@ import { langColor, type RepoCardData } from "../lib/githubSummary";
 import { Spark } from "@/shared/ui/charts";
 import { Skeleton } from "@/shared/ui/feedback/Skeleton";
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
-import { CardEmpty } from "./cardStates";
+import { CardEmpty } from "@/shared/ui/feedback/CardStates";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";

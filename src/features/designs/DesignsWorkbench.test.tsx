@@ -15,9 +15,19 @@ import { SEED_THEMES } from "./lib/themes";
 import type { Kit } from "./lib/model";
 import { useAppStore } from "@/store";
 
-/** Reset the library slice to the seed before each test (the store is a singleton). */
+/** Reset the library slice to the seed before each test (the store is a singleton). #3274 lifted the
+ *  kit + component SELECTION out of DesignsWorkbench's local state into the store, so it is now part of
+ *  that singleton and must be reset here too — otherwise a selection from one test bleeds into the next
+ *  (the "hidden on mount" cases in particular assume nothing is focused). */
 beforeEach(() => {
-  useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, kitThemes: SEED_THEMES, aiFocusedId: null });
+  useAppStore.setState({
+    components: SEED_COMPONENTS,
+    kits: SEED_KITS,
+    kitThemes: SEED_THEMES,
+    aiFocusedId: null,
+    designsKitId: "",
+    designsCompId: null,
+  });
 });
 
 /** The rail entry for a component (its name also renders on the graph node + inspector header). */
@@ -313,21 +323,26 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     id: "vue-kit", name: "vue-kit", tech: "vue", style: "material", stack: "Vue · TypeScript", dot: "var(--accent)",
   };
 
-  it("the packaged library renders grouped at BOTH levels: react (tech) → studio + data-viz kits → components (#3194)", () => {
+  it("the packaged library renders grouped at BOTH levels: react (tech) → studio kit + data-viz group → components (#3194/#3242)", () => {
     const { container } = render(<DesignsWorkbench />);
-    // Level 1 — the technology group header (no #2487 auto-flatten anymore). Both packaged kits share
-    // the react tech, so there's still ONE tech group.
+    // Level 1 — the react tech header (all kits share react) + the multi-kit `data-viz` STYLE group (three
+    // viz kits now: algo-viz + matrix-viz + graph-viz, #3242), both `.ds-grouphead`.
     const heads = [...container.querySelectorAll(".ds-grouphead")];
-    expect(heads.map((h) => h.textContent)).toEqual([expect.stringContaining("react")]);
+    expect(heads.map((h) => h.textContent)).toEqual([
+      expect.stringContaining("react"), expect.stringContaining("data-viz"),
+    ]);
     expect(heads[0].getAttribute("aria-expanded")).toBe("true"); // default OPEN
-    // Level 2 — two single-kit style headers under react: studio (react-ui) + data-viz (algo-viz,
-    // #3194). Each header IS its kit: labelled with the STYLE, no redundant kit row beneath.
+    // Level 2 — the single-kit `studio` style merges into a kithead (labelled by STYLE); the data-viz
+    // group's three kits are kitheads labelled by KIT NAME.
     const kitHeads = [...container.querySelectorAll(".ds-kithead")];
-    expect(kitHeads.length).toBe(2);
-    expect(kitHeads[0].textContent).toContain("studio");
-    expect(kitHeads[0].textContent).not.toContain("react-ui");
-    expect(kitHeads[1].textContent).toContain("data-viz");
-    // The components list directly under the style header (the kit defaults open).
+    expect(kitHeads.map((h) => h.textContent)).toEqual([
+      expect.stringContaining("studio"),
+      expect.stringContaining("Algorithm Viz"),
+      expect.stringContaining("Matrix Viz"),
+      expect.stringContaining("Graph Viz"),
+    ]);
+    expect(kitHeads[0].textContent).not.toContain("react-ui"); // the merged studio head is labelled by style
+    // The components list directly under the studio style header (the kit defaults open).
     expect(railRow("Chip")).toBeTruthy();
   });
 
@@ -335,14 +350,17 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     useAppStore.setState({ kits: [...SEED_KITS, vueKit] });
     const { container } = render(<DesignsWorkbench />);
     const heads = [...container.querySelectorAll(".ds-grouphead")];
+    // react tech + its multi-kit data-viz style group (#3242), then the vue tech.
     expect(heads.map((h) => h.textContent)).toEqual([
-      expect.stringContaining("react"), expect.stringContaining("vue"),
+      expect.stringContaining("react"), expect.stringContaining("data-viz"), expect.stringContaining("vue"),
     ]);
-    // Groups default OPEN — each kit's merged style header is visible beneath its tech header
-    // (react → studio + data-viz #3194, then vue → material).
+    // Groups default OPEN — the studio kithead + the three data-viz kits (by name) under react, then vue's
+    // merged material kithead.
     const kitHeads = [...container.querySelectorAll(".ds-kithead")];
     expect(kitHeads.map((h) => h.textContent)).toEqual([
-      expect.stringContaining("studio"), expect.stringContaining("data-viz"), expect.stringContaining("material"),
+      expect.stringContaining("studio"),
+      expect.stringContaining("Algorithm Viz"), expect.stringContaining("Matrix Viz"), expect.stringContaining("Graph Viz"),
+      expect.stringContaining("material"),
     ]);
   });
 
@@ -375,10 +393,11 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     const bare: Kit = { id: "bare", name: "bare-kit", stack: "?", dot: "var(--accent)" };
     useAppStore.setState({ kits: [...SEED_KITS, bare] });
     const { container } = render(<DesignsWorkbench />);
-    // react + the trailing missing-field tech bucket; the bare kit merges into its "other" style head.
+    // react (+ its multi-kit data-viz style group #3242) + the trailing missing-field tech bucket; the bare
+    // kit merges into its "other" style head.
     const heads = [...container.querySelectorAll(".ds-grouphead")];
     expect(heads.map((h) => h.textContent)).toEqual([
-      expect.stringContaining("react"), expect.stringContaining("other"),
+      expect.stringContaining("react"), expect.stringContaining("data-viz"), expect.stringContaining("other"),
     ]);
     expect(container.querySelectorAll(".ds-kithead").length).toBe(SEED_KITS.length + 1);
   });
@@ -387,15 +406,16 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     const twin: Kit = { id: "react-ui-2", name: "react-ui-2", tech: "react", style: "studio", stack: "React", dot: "var(--accent)" };
     useAppStore.setState({ kits: [...SEED_KITS, twin] });
     const { container } = render(<DesignsWorkbench />);
-    // react tech header + the multi-kit studio style header stays a group (react-ui + twin); the
-    // single-kit data-viz style (algo-viz, #3194) is NOT a grouphead — it merges into a kit head.
+    // react tech header + TWO multi-kit style groups: studio (react-ui + twin) and data-viz (the three viz
+    // kits, #3242). Both styles now hold several kits, so both are groupheads.
     expect([...container.querySelectorAll(".ds-grouphead")].map((h) => h.textContent)).toEqual([
-      expect.stringContaining("react"), expect.stringContaining("studio"),
+      expect.stringContaining("react"), expect.stringContaining("studio"), expect.stringContaining("data-viz"),
     ]);
-    // studio's two kit rows (named by KIT), then the merged data-viz style head (named by style).
+    // studio's two kit rows, then data-viz's three kit rows — all named by KIT.
     const kitHeads = [...container.querySelectorAll(".ds-kithead")];
     expect(kitHeads.map((h) => h.textContent)).toEqual([
-      expect.stringContaining("react-ui"), expect.stringContaining("react-ui-2"), expect.stringContaining("data-viz"),
+      expect.stringContaining("react-ui"), expect.stringContaining("react-ui-2"),
+      expect.stringContaining("Algorithm Viz"), expect.stringContaining("Matrix Viz"), expect.stringContaining("Graph Viz"),
     ]);
   });
 });

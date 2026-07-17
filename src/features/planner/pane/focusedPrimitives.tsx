@@ -1,16 +1,13 @@
 // Small, self-contained UI atoms for the focused ProjectPane bodies (#1560, split verbatim out of
-// FocusedBodies.tsx). Pure presentational components + the role / capability / context-kind palettes
-// they read. No state, no effects.
-import type { Posture, Perm, Agent } from "./projectPaneData";
+// FocusedBodies.tsx). Pure presentational components + the role / context-kind palettes they read.
+// No state, no effects.
 import "./projectPane.css";
-import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { StatTile } from "@/shared/ui/data/StatTile";
 import { Box } from "@/shared/ui/layout/Box";
 
 interface Role { c: string; label: string }
-interface Cap { k: string; g: string; label: string }
 
-/* role palette + caps */
+/* role palette */
 export const ROLES: Record<string, Role> = {
   planner:  { c: "oklch(0.72 0.10 230)", label: "planner" },
   worker:   { c: "oklch(0.80 0.14 70)",  label: "worker" },
@@ -20,16 +17,6 @@ export const ROLES: Record<string, Role> = {
   director: { c: "oklch(0.70 0.14 350)", label: "director" },
 };
 
-export const CAPS: Cap[] = [
-  { k: "read",   g: "R", label: "read files" },
-  { k: "edit",   g: "E", label: "edit files" },
-  { k: "create", g: "C", label: "create & delete" },
-  { k: "run",    g: "$", label: "run commands" },
-  { k: "net",    g: "N", label: "network" },
-  { k: "push",   g: "⇡", label: "commit & push" },
-  { k: "pkg",    g: "P", label: "install packages" },
-];
-
 export const CTX_KIND: Record<string, string> = {
   spec:   "oklch(0.72 0.10 230)",
   claude: "oklch(0.80 0.14 70)",
@@ -38,10 +25,6 @@ export const CTX_KIND: Record<string, string> = {
 };
 
 /* primitives */
-export function Dot({ s }: { s: string }) {
-  return <Box as="span" className={"sdot " + s} />;
-}
-
 export function RoleChip({ role, mute }: { role: string; mute?: boolean }) {
   const R = ROLES[role] || { c: "var(--fg-dim)", label: role };
   return (
@@ -50,37 +33,6 @@ export function RoleChip({ role, mute }: { role: string; mute?: boolean }) {
     }}>
       <i style={{ background: R.c }} />{R.label}
     </Box>
-  );
-}
-
-export function Avatar({ id, sz = 17, agents = [] }: { id: string; sz?: number; agents?: Agent[] }) {
-  const a = agents.find((x) => x.id === id);
-  const color = a ? a.color : "var(--fg-dim)";
-  const initial = a ? a.initial : "?";
-  return <Box as="span" className="av" bg={color} style={{ width: sz, height: sz, fontSize: sz * 0.53 }}>{initial}</Box>;
-}
-
-export function PostureBar({ perm }: { perm: Perm }) {
-  return (
-    <Box as="span" className="posture" title="read · edit · create · run · net · push · pkg">
-      {CAPS.map((c) => (
-        <i key={c.k} className={perm[c.k]} title={`${c.label}: ${perm[c.k]}`} />
-      ))}
-    </Box>
-  );
-}
-
-export function Tri({ value, onChange }: { value: Posture; onChange?: (v: Posture) => void }) {
-  return (
-    <SegmentedControl
-      variant="joined"
-      options={(["allow", "ask", "deny"] as Posture[]).map((v) => ({
-        label: v,
-        on: value === v,
-        onClick: () => onChange && onChange(v),
-        tone: v,
-      }))}
-    />
   );
 }
 

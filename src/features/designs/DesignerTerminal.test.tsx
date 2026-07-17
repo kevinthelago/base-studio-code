@@ -80,9 +80,13 @@ describe("useDesignerTerminal launch wiring (#2471)", () => {
     expect(settings.cwd).toBe(DESIGN_DIR);
     expect(settings.restrictedAllow).toBe(true);
     expect(settings.replacePermissions).toBe(true);
-    // The whole command surface: bsc ui + the deprecated bsc component alias (#2469-safe).
+    // The whole command surface: bsc ui + the deprecated bsc component alias (#2469-safe), plus the
+    // designer→debug channel (#3300) — file/list requests, but NOT resolve (the debug session's job).
     expect(settings.allowedCommands).toEqual(DESIGNER_ALLOWED_COMMANDS);
-    expect(settings.allowedCommands).toEqual(["bsc ui", "bsc component"]);
+    expect(settings.allowedCommands).toEqual(["bsc ui", "bsc component", "bsc shot preview", "bsc loop", "bsc request new", "bsc request list"]);
+    // The designer gets the CROPPED preview only — NOT the full-screen `bsc shot take` (the debug session's).
+    expect(settings.allowedCommands).not.toContain("bsc shot");
+    expect(settings.allowedCommands).not.toContain("bsc request resolve");
     // git + gh are denied OUTRIGHT (the role's `none` tiers → the bare tools, not write prefixes).
     expect(settings.deniedCommands).toContain("git");
     expect(settings.deniedCommands).toContain("gh");
@@ -104,6 +108,8 @@ describe("useDesignerTerminal launch wiring (#2471)", () => {
     expect(pty.initCmd).toContain("claude --continue");
     expect(String(pty.startupPrompt)).toContain("bsc ui");
     expect(String(pty.startupPrompt)).toContain("bsc ui validate");
+    // The designer→debug charter (#3300): on a bsc ui wall, file a request instead of asking for perms.
+    expect(String(pty.startupPrompt)).toContain("bsc request new");
     // The runtime scope doc (#2470 integration): the designer is the one ui:"write" launch.
     expect(pty.env).toEqual({ BSC_SCOPES: JSON.stringify({ ui: "write" }) });
   });

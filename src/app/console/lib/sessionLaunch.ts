@@ -15,6 +15,7 @@ import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/sk
 import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
 import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands } from "@/shared/lib/session/sessionRoles";
+import { isFullCapabilitySession } from "@/shared/lib/session/systemSessions";
 import { resolveProfileSettings } from "@/features/security";
 import { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner";
 import type { ConsoleProvider, ProviderLaunchConfig } from "@/app/console/lib/providers";
@@ -72,6 +73,14 @@ export function buildAgentEnv(
   // carries the role/user denies through the bypassPermissions flip.
   const denies = sessionDeniedCommands(s, paneId);
   if (denies.length > 0) e.BSC_DENY_BASH = denies.join("\n");
+  // Per-stream plan scoping (#3279): a WORKER pane owns exactly one fleet stream, so scope its
+  // `bsc plan` to that stream — it reads + touches only its own issues (the plandb CLI enforces it).
+  // `fleetPaneStreams[paneId]` is set only for worker panes at fleet launch; coordinating roles
+  // (director/planner/triage/reviewer/…) get NO $BSC_STREAM and keep full cross-stream access, which
+  // they need to integrate + judge. Gate on the worker role too, so a non-worker stream pane (a
+  // reviewer/juror that judges another stream's landing) isn't accidentally boxed into its own.
+  const streamId = s.fleetPaneStreams[paneId]?.id;
+  if (streamId && s.paneRoles[paneId] === "worker") e.BSC_STREAM = streamId;
   if (providerId === "bsc-agent") {
     Object.assign(e, bscAgentEnv(resolveLlmConfig(s)));
     // Gate the runtime by the pane's role (least-privilege parity with Claude); no role ⇒ permissive.
@@ -266,7 +275,10 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
     restrictedAllow,
     // Permission posture (#1916): bypass=true ⇒ deny-list (auto-run; the PreToolUse hooks gate); false ⇒
     // allow-list (Claude's `default` mode — require approval). User-toggled in Settings; default true.
-    bypass: s.bypassPermissions,
+    // A full-capability app-owned session (the DEBUG session, #3326) is ALWAYS bypass regardless of the
+    // global toggle — it's the unrestricted maintenance session by definition, and this carve-out
+    // preserves its old bespoke `useScreenSession` posture now that it launches on the shared TerminalHost.
+    bypass: isFullCapabilitySession(paneId) ? true : s.bypassPermissions,
   };
 }
 
@@ -328,5 +340,9 @@ export function resolveEffectiveInitCmd(
  */
 export function resolveStartupPromptFreshOnly(s: AppStore, paneId: string, isClaudeProvider: boolean): boolean {
   if (!isClaudeProvider || isManualPaneId(paneId)) return false;
-  return !!s.restoreRequested[paneId];
+  // The DEBUG session (#3326) resumes with `claude --continue` across app restarts, so its inline charter
+  // must be fresh-only too — delivered on the first launch (no history) but suppressed when it resumes an
+  // existing conversation. The backend's `fresh_only && has_history` guard makes this exact: fresh launch
+  // still fires. Reproduces the old `useScreenSession` launch's hardcoded `startupPromptFreshOnly: true`.
+  return !!s.restoreRequested[paneId] || isFullCapabilitySession(paneId);
 }

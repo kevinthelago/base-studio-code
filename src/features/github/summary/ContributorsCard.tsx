@@ -7,7 +7,7 @@ import { Card } from "@/shared/ui/data/Card";
 import { FillBar } from "@/shared/ui/data/FillBar";
 import { Text } from "@/shared/ui/typography/Text";
 import type { Contributor } from "../lib/githubSummary";
-import { CardEmpty, SkeletonRows } from "./cardStates";
+import { CardEmpty, SkeletonRows } from "@/shared/ui/feedback/CardStates";
 
 export function ContributorsCard({ contributors, loading }: {
   contributors: Contributor[];

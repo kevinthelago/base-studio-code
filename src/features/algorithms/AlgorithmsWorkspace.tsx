@@ -22,7 +22,7 @@ import { AlgorithmsInspector } from "./AlgorithmsInspector";
 import { AlgorithmsRail } from "./AlgorithmsRail";
 import { LibrarianTerminal } from "./LibrarianTerminal";
 import { VizStage } from "./viz/VizPanel";
-import { vizForImpl } from "./viz/examples/registry";
+import { useVizForImpl } from "./viz/useVizForImpl";
 import {
   TECHS, TECH_META, NODE_W, NODE_H, layoutKitGraph, kitGraph, kitTechs, implById,
   KIT_REL_META, KIT_REL_ORDER, type Tech,
@@ -46,7 +46,7 @@ export function AlgorithmsWorkspace() {
   // (not a bare boolean) so selecting a different node auto-returns to the graph — `vizExpanded` is the
   // derived "the current selection is the expanded one", no reset effect needed. Its registered viz, if any.
   const [expandedImplId, setExpandedImplId] = useState<string | null>(null);
-  const focusedViz = focusedImpl ? vizForImpl(focusedImpl) : undefined;
+  const focusedViz = useVizForImpl(focusedImpl);
   const vizExpanded = expandedImplId != null && expandedImplId === selectedImpl;
 
   // The active language's OWN graph (impls + composes edges, down to the primitive base) + its layout.

@@ -17,19 +17,25 @@ function reasonText(u: { label: string; detail?: string }): string {
 }
 
 /**
- * The Stage Guidance card (#2862) — the always-visible panel that pairs the gate's REQUIREMENTS with
- * the suggested next-step PROMPT, replacing the easy-to-miss "?" helper and the click-to-reveal gate
- * "why?" popover. Shows the unmet requirements inline (`stage.unmet`) while the gate is blocking, and
- * the single current-step prompt (#2859) with a legible Inject button. Once the gate passes it
- * collapses to a "Gate ready" row. Renders nothing when there's neither a requirement nor a prompt.
+ * The Stage Guidance card (#2862) — the panel that pairs the gate's REQUIREMENTS with the suggested
+ * next-step PROMPT. Shows the unmet requirements inline (`stage.unmet`) while the gate is blocking, and
+ * the single current-step prompt (#2859) with a legible Inject button. Once the gate passes it collapses
+ * to a "Gate ready" row. Renders nothing when there's neither a requirement nor a prompt.
+ *
+ * DISCLOSURE (#3257): `open` is the gate-pill toggle state — `false` collapses the card entirely (the
+ * default in the focused pane, so the surface stays clean until the user opens the gate). `undefined`
+ * keeps it always-shown (the pre-#3257 behavior, for any caller that doesn't wire the toggle).
  */
-export function StageGuidanceCard({ stage, pill, prompt, onInject }: {
+export function StageGuidanceCard({ stage, pill, prompt, onInject, open }: {
   stage: Stage;
   pill: GatePill;
   /** The current-step prompt for this stage (#2859) — absent when the stage has none. */
   prompt?: StagePrompt;
   onInject?: (text: string) => void;
+  /** Disclosure state (#3257) — `false` hides the card; the gate pill toggles it. `undefined` ⇒ shown. */
+  open?: boolean;
 }) {
+  if (open === false) return null; // collapsed by the gate-pill toggle (#3257)
   const unmet = stage.unmet ?? [];
   const showReqs = pill !== "pass" && unmet.length > 0;
   const showPrompt = !!prompt && !!onInject;
@@ -96,22 +102,38 @@ export function Stepper({ stages, selectedIdx, onSelect, highlight }: {
 }
 
 /** Eyebrow + title + blurb + a SLIM gate status pill for the focused stage. The pill is at-a-glance
- *  status only (pass/wait, with a hover tooltip of what's left, #805); the requirement DETAIL + the
- *  suggested prompt moved to the {@link StageGuidanceCard} (#2862). */
-export function StageHeader({ stage, pill }: {
+ *  status (pass/wait, with a hover tooltip of what's left, #805); when `onToggleGate` is wired (#3257) it
+ *  DOUBLES as the disclosure control for the {@link StageGuidanceCard} — a clickable chip with a caret
+ *  that reflects `open`. Absent ⇒ a static status chip (the pre-#3257 behavior). The requirement DETAIL +
+ *  the suggested prompt live in the guidance card (#2862). */
+export function StageHeader({ stage, pill, open, onToggleGate }: {
   stage: Stage;
   pill: GatePill;
+  /** Whether the guidance card is open (#3257) — reflected on the pill (caret + `.open`). */
+  open?: boolean;
+  /** When set, the gate pill TOGGLES the guidance card (#3257); absent ⇒ a static status chip. */
+  onToggleGate?: () => void;
 }) {
   const unmet = stage.unmet ?? [];
   const tip = pill !== "pass" && unmet.length > 0 ? "Still needed: " + unmet.map(reasonText).join("; ") : undefined;
+  const cls = "ph-gate " + pill + (open ? " open" : "");
   return (
     <Box className="ph-head">
       <Box className="ph-title">
         <h2>{stage.name}</h2>
-        <Box as="span" className={"ph-gate " + pill} title={tip}>
-          <Box as="span" className="gd" />
-          gate
-        </Box>
+        {onToggleGate ? (
+          // eslint-disable-next-line no-restricted-syntax -- bespoke `.ph-gate` toggle chip (styled by the `.fp .ph-gate` CSS, not the .btn kit)
+          <button type="button" className={cls} title={tip} aria-expanded={!!open} aria-label="Toggle gate details" onClick={onToggleGate}>
+            <Box as="span" className="gd" />
+            gate
+            <Box as="span" className="ph-caret" aria-hidden>{open ? "▾" : "▸"}</Box>
+          </button>
+        ) : (
+          <Box as="span" className={cls} title={tip}>
+            <Box as="span" className="gd" />
+            gate
+          </Box>
+        )}
       </Box>
       <p className="ph-blurb">{stage.blurb}</p>
     </Box>
@@ -161,8 +183,10 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
 }) {
   const primaryLabel =
     action.kind === "approve-continue" && !action.enabled ? "gate blocking…"
-    : action.kind === "publish" && published ? "⟳ Update GitHub"
+    // An explicit publishLabel WINS over the "Update GitHub" re-sync default (#3280): offline there's no
+    // board to update, so the caller's "Recommit plan" must show even when `published` is true.
     : action.kind === "publish" && publishLabel ? publishLabel
+    : action.kind === "publish" && published ? "⟳ Update GitHub"
     : FOOTER_LABEL[action.kind];
   const primary = action.kind === "approve-continue" || action.kind === "route-design" || action.kind === "publish";
   // When the gate is blocking the advance button, the tooltip says what's still needed (#805).

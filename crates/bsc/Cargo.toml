@@ -35,12 +35,18 @@ bsc-component = { path = "../bsc-component" }
 bsc-ui = { path = "../bsc-ui" }
 logs = { path = "../logs" }
 bsc-files = { path = "../bsc-files" }
+# `bsc shot` — capture the running app's real pixels via a webview snapshot (#3261, epic #3260).
+bsc-shot = { path = "../bsc-shot" }
+# `bsc navigate` — steer the running app to a view so a capture can target it (#3274, epic #3260).
+bsc-navigate = { path = "../bsc-navigate" }
+# `bsc loop` — the conversation loop store: two participants exchange turns until a signal, or never (#3262, epic #3260).
+bsc-loop = { path = "../bsc-loop" }
+# `bsc request` — the improvement-request store: the designer→debug channel for bsc ui gaps (#3295, epic #3260).
+bsc-request = { path = "../bsc-request" }
 # `bsc graph` — the Algorithms knowledge graph (#2761): concepts + relationships, queryable read-only.
 bsc-graph = { path = "../bsc-graph" }
 plandb = { path = "../plandb" }
 errordb = { path = "../errordb" }
-# `bsc todo` — the two-scope agent todo store (#1872): global runbook here, feature scope in plandb.
-bsc-todo = { path = "../bsc-todo" }
 # DuckDB-backed `bsc data` — optional so `--no-default-features` yields a lean binary (#1877).
 bsc-data = { path = "../data", optional = true }
 # `bsc mcp <server>` — the bundled native MCP servers, now subcommands of the umbrella (#1877). Each

@@ -15,24 +15,21 @@
 import type { Frame } from "../../lib/trace";
 import type { AlgoImpl, AlgoKind } from "../../lib/knowledge";
 import { classifyKind, type Classifiable } from "../../lib/classifyKind";
-import {
-  runAlgorithm,
-  runMatrixAlgorithm,
-  runGraphAlgorithm,
-  type GraphInput,
-  type TracedArray,
-  type TracedMatrix,
-  type TracedGraph,
-} from "../../lib/tracer";
-import { compileVizProgram } from "./vizProgram";
+import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScene, type GraphInput } from "../../lib/tracer";
+import { runInSandbox } from "./vizSandbox";
+import type { VizRun } from "./vizProgram";
 import type { RendererRegistry } from "../registry";
 import { ArrayView } from "../renderers/ArrayView";
 import { MatrixView } from "../renderers/MatrixView";
 import { GraphView } from "../renderers/GraphView";
+import { StackView } from "../renderers/StackView";
+import { ScalarView } from "../renderers/ScalarView";
+import { TreeView } from "../renderers/TreeView";
 import { parseSortInput } from "./sort";
 import { TRACE_PROGRAMS, programKey, type AlgoProgram } from "./sorts";
 import { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./matrixTransforms";
 import { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "./graphAlgos";
+import { SCENE_PROGRAMS, type SceneProgram } from "./scenes";
 
 /** A ready-to-play visualization: a stable default factory (the inline preview) + the per-structure
  *  renderers the player dispatches to + an editable INPUT seam (#3199) that powers the "your input" field. */
@@ -43,13 +40,23 @@ export interface VizExample {
   /** The renderers this example needs (array → {@link ArrayView}). */
   renderers: RendererRegistry;
   /** The editable input driving the trace (#3199) — `parse` turns the field text into typed input (throwing
-   *  a helpful Error on invalid input); `make` RE-RUNS the program on it. `make(parse(default))` reproduces
-   *  `factory`. The seam is `unknown` so the registry can hold mixed input shapes. */
+   *  a helpful Error on invalid input); `make` RE-RUNS the program on it, returning a fresh trace factory.
+   *  It is ASYNC (#3233): a stored-`vizCode` re-run goes through the sandbox Worker; in-app programs resolve
+   *  immediately. `await make(parse(default))` reproduces `factory`. The seam is `unknown` so the registry
+   *  can hold mixed input shapes. */
   input: {
     default: string;
     hint: string;
     parse: (text: string) => unknown;
-    make: (parsed: unknown) => Generator<Frame>;
+    make: (parsed: unknown) => Promise<() => Generator<Frame>>;
+  };
+}
+
+/** A stable trace factory that REPLAYS a precomputed frame array — a fresh generator per call, so the
+ *  player can restart from frame 0. Used to replay the sandbox's Worker-computed frames on the main thread. */
+function replay(frames: Frame[]): () => Generator<Frame> {
+  return function* () {
+    yield* frames;
   };
 }
 
@@ -63,7 +70,7 @@ function exampleFromProgram(program: AlgoProgram): VizExample {
       default: program.defaultInput.join(", "),
       hint: "Comma- or space-separated numbers",
       parse: (text) => parseSortInput(text),
-      make: (parsed) => runAlgorithm(program.run, parsed as number[])(),
+      make: async (parsed) => runAlgorithm(program.run, parsed as number[]),
     },
   };
 }
@@ -78,7 +85,7 @@ function matrixExampleFromProgram(program: MatrixProgram): VizExample {
       default: matrixToText(program.defaultInput),
       hint: "A square grid — cells by comma/space, rows by ';' (e.g. 1,2 ; 3,4)",
       parse: (text) => parseMatrixInput(text),
-      make: (parsed) => runMatrixAlgorithm(program.run, parsed as number[][])(),
+      make: async (parsed) => runMatrixAlgorithm(program.run, parsed as number[][]),
     },
   };
 }
@@ -93,14 +100,46 @@ function graphExampleFromProgram(program: GraphProgram): VizExample {
       default: graphToText(program.defaultInput),
       hint: "An adjacency list — one node per line: a: b, c",
       parse: (text) => parseGraphInput(text),
-      make: (parsed) => runGraphAlgorithm(program.run, parsed as GraphInput)(),
+      make: async (parsed) => runGraphAlgorithm(program.run, parsed as GraphInput),
     },
   };
 }
 
-/** One VizExample per trace-program (array sorts + matrix transforms + graph traversals), built ONCE so
- *  each algorithm has a STABLE example identity — a fresh build per render would rebuild the player's stream
- *  every frame. Keyed by base name; each datatype contributes its own programs + renderer. */
+/** Every per-structure renderer, so any panel a scene declares (graph / array / matrix / stack / scalar /
+ *  tree) resolves. Shared by the in-app scene builder AND the stored-`vizCode` `scene` seam (#3275), so an
+ *  in-app scene and a persisted-data one render identically. */
+const SCENE_RENDERERS: RendererRegistry = {
+  array: ArrayView,
+  matrix: MatrixView,
+  graph: GraphView,
+  stack: StackView,
+  scalar: ScalarView,
+  tree: TreeView,
+};
+
+/** Build a stable MULTI-STRUCTURE {@link VizExample} (#3259) — runs a scene program via `runScene`, so its
+ *  synchronized panels lay out side by side. Every per-structure renderer is registered so any panel the
+ *  scene declares (graph / array / matrix / stack / scalar / tree) resolves. Each scene carries its OWN
+ *  input seam (#3284), so the "your input" field edits whatever the scene seeds on (a graph, a number
+ *  array, …). */
+function sceneExampleFromProgram(program: SceneProgram): VizExample {
+  return {
+    factory: runScene(program.run, program.seed.default),
+    renderers: SCENE_RENDERERS,
+    input: {
+      default: program.seed.serialize(program.seed.default),
+      hint: program.seed.hint,
+      parse: program.seed.parse,
+      make: async (parsed) => runScene(program.run, parsed),
+    },
+  };
+}
+
+/** One VizExample per trace-program (array sorts + matrix transforms + graph traversals + multi-structure
+ *  SCENES), built ONCE so each algorithm has a STABLE example identity — a fresh build per render would
+ *  rebuild the player's stream every frame. Keyed by base name; each datatype contributes its own programs
+ *  + renderer. SCENES are merged LAST, so a scene supersedes a single-structure program of the same name
+ *  (e.g. `dijkstra` upgrades from a lone graph to graph + distance panels, #3259). */
 const EXAMPLE_BY_KEY: Record<string, VizExample> = {
   ...Object.fromEntries(
     Object.entries(TRACE_PROGRAMS).map(([key, program]): [string, VizExample] => [key, exampleFromProgram(program)]),
@@ -111,6 +150,9 @@ const EXAMPLE_BY_KEY: Record<string, VizExample> = {
   ...Object.fromEntries(
     Object.entries(GRAPH_PROGRAMS).map(([key, program]): [string, VizExample] => [key, graphExampleFromProgram(program)]),
   ),
+  ...Object.fromEntries(
+    Object.entries(SCENE_PROGRAMS).map(([key, program]): [string, VizExample] => [key, sceneExampleFromProgram(program)]),
+  ),
 };
 
 /** Resolve an implementation's kind (#3210): the CREATOR-assigned `kind` wins; otherwise the heuristic
@@ -120,50 +162,81 @@ export function resolveKind(impl: Pick<AlgoImpl, "kind"> & Classifiable): AlgoKi
   return impl.kind ?? classifyKind(impl);
 }
 
-/** Compiled stored-`vizCode` examples, cached BY CODE STRING (#3232). The cache gives the built example a
- *  STABLE identity across renders — vizForImpl is called every render, and a fresh compile each time would
- *  rebuild the player's frame stream every frame. A malformed program caches as `undefined` so a bad string
- *  neither recompiles-and-rethrows each render nor blanks a covered algorithm (it falls back to the program). */
-const CODE_EXAMPLE_CACHE = new Map<string, VizExample | undefined>();
+/** The per-datatype renderer + input seam for a sandbox-run stored program. Keeps `buildVizExampleFromCode`
+ *  declarative; mirrors the in-app builders' choices so a stored program and an equivalent in-app one render
+ *  identically. */
+const DATATYPE_SEAM = {
+  array: {
+    renderers: { array: ArrayView } as RendererRegistry,
+    hint: "Comma- or space-separated numbers",
+    serialize: (input: VizRun["input"]) => (input as number[]).join(", "),
+    parse: (text: string) => parseSortInput(text),
+  },
+  matrix: {
+    renderers: { matrix: MatrixView } as RendererRegistry,
+    hint: "A square grid — cells by comma/space, rows by ';' (e.g. 1,2 ; 3,4)",
+    serialize: (input: VizRun["input"]) => matrixToText(input as number[][]),
+    parse: (text: string) => parseMatrixInput(text),
+  },
+  graph: {
+    renderers: { graph: GraphView } as RendererRegistry,
+    hint: "An adjacency list — one node per line: a: b, c",
+    serialize: (input: VizRun["input"]) => graphToText(input as GraphInput),
+    parse: (text: string) => parseGraphInput(text),
+  },
+  // A stored SCENE (#3275): every renderer registered (its panels can be any structure); seeds on a graph.
+  scene: {
+    renderers: SCENE_RENDERERS,
+    hint: "An adjacency list — one node per line: a: b, c",
+    serialize: (input: VizRun["input"]) => graphToText(input as GraphInput),
+    parse: (text: string) => parseGraphInput(text),
+  },
+} as const;
 
-/** Build a {@link VizExample} from an impl's STORED `vizCode` (#3232) — the persisted-data counterpart of
- *  the in-app programs. Compiles + validates the descriptor, then dispatches by `datatype` to the same
- *  builder the in-app programs use. Returns `undefined` (and logs) when the code is malformed, so the caller
- *  falls back to the in-app program rather than showing a broken/blank pane. Cached by code string. */
-export function vizExampleFromCode(vizCode: string): VizExample | undefined {
-  if (CODE_EXAMPLE_CACHE.has(vizCode)) return CODE_EXAMPLE_CACHE.get(vizCode);
-
-  let example: VizExample | undefined;
-  try {
-    const d = compileVizProgram(vizCode);
-    switch (d.datatype) {
-      case "array":
-        example = exampleFromProgram({ run: d.run as (a: TracedArray) => void, defaultInput: d.input as number[] });
-        break;
-      case "matrix":
-        example = matrixExampleFromProgram({ run: d.run as (m: TracedMatrix) => void, defaultInput: d.input as number[][] });
-        break;
-      case "graph":
-        example = graphExampleFromProgram({ run: d.run as (g: TracedGraph) => void, defaultInput: d.input as GraphInput });
-        break;
-    }
-  } catch (err) {
-    console.warn(`[algorithms] stored vizCode ignored — ${(err as Error).message}`);
-    example = undefined;
-  }
-  CODE_EXAMPLE_CACHE.set(vizCode, example);
-  return example;
+/** Build a {@link VizExample} from a sandbox {@link VizRun} of a stored `vizCode` (#3233). The default
+ *  factory REPLAYS the Worker-computed frames; the "your input" `make` re-runs the SAME code in the sandbox
+ *  on the user's input (async). */
+function buildVizExampleFromCode(code: string, run: VizRun): VizExample {
+  const seam = DATATYPE_SEAM[run.datatype];
+  return {
+    factory: replay(run.frames),
+    renderers: seam.renderers,
+    input: {
+      default: seam.serialize(run.input),
+      hint: seam.hint,
+      parse: seam.parse,
+      make: async (parsed) => replay((await runInSandbox(code, parsed)).frames),
+    },
+  };
 }
 
-/** The visualization for an implementation — its STORED `vizCode` program (#3232) if present + valid, else
- *  its OWN in-app trace-program (#3216), else `undefined` (so the algorithm shows no animation, never a
- *  wrong one). Stored `vizCode` is the durable, per-algorithm form; the in-app programs (sort family, matrix
- *  transforms, graph traversals) are the SEED/reference and the fallback. A malformed `vizCode` falls through
- *  to the in-app program, so a bad string never blanks an algorithm that would otherwise animate. */
-export function vizForImpl(impl: Pick<AlgoImpl, "id" | "name" | "vizCode">): VizExample | undefined {
-  if (impl.vizCode && impl.vizCode.trim()) {
-    const fromCode = vizExampleFromCode(impl.vizCode);
-    if (fromCode) return fromCode;
+/** Compiled stored-`vizCode` examples, cached BY CODE STRING as a Promise (#3233) — one sandbox run per
+ *  distinct program, and a STABLE resolved example across renders (a fresh build would rebuild the player's
+ *  stream). A malformed / timed-out program resolves to `undefined` (logged), so the caller falls back to
+ *  the in-app program rather than a broken/blank pane. */
+const CODE_EXAMPLE_CACHE = new Map<string, Promise<VizExample | undefined>>();
+
+/** Resolve an impl's STORED `vizCode` into a {@link VizExample} by running it in the sandbox Worker (#3233)
+ *  — the persisted-data counterpart of the in-app programs. `undefined` when the code is malformed, throws,
+ *  or times out. Cached by code string. */
+export function resolveVizExample(vizCode: string): Promise<VizExample | undefined> {
+  let p = CODE_EXAMPLE_CACHE.get(vizCode);
+  if (!p) {
+    p = runInSandbox(vizCode)
+      .then((run) => buildVizExampleFromCode(vizCode, run))
+      .catch((err: unknown) => {
+        console.warn(`[algorithms] stored vizCode ignored — ${err instanceof Error ? err.message : String(err)}`);
+        return undefined;
+      });
+    CODE_EXAMPLE_CACHE.set(vizCode, p);
   }
+  return p;
+}
+
+/** An implementation's IN-APP trace-program visualization (#3216), or `undefined` when it has none. Resolves
+ *  synchronously (the program runs on the main thread — it is trusted app code). A stored `vizCode` is
+ *  layered on top asynchronously by {@link useVizForImpl} (it runs in the sandbox Worker). Keyed by base
+ *  name, so the named sort family + matrix/graph algorithms animate from real code, each distinctly. */
+export function programVizForImpl(impl: { id: string; name?: string }): VizExample | undefined {
   return EXAMPLE_BY_KEY[programKey(impl)];
 }
