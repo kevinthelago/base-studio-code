@@ -76,6 +76,23 @@ export function parseCoordLine(line: string): CoordEvent | null {
       const ref = parseRef(rest[2] ?? "") ?? undefined;
       return { type: "brief", from: session, target, body, ref, id: `${session}@${at}`, at };
     }
+    case "commission": {
+      // payload = <target> \t <body> \t <ref?> (mirrors `brief`, #2940). The `session` column is
+      // the requesting studio pane; `id` (`<from>@<at>`) is what a `deliver` references back.
+      const target = (rest[0] ?? "").trim();
+      if (!target) return null;
+      const body = rest[1] ?? "";
+      if (!body.trim()) return null;
+      const ref = parseRef(rest[2] ?? "") ?? undefined;
+      return { type: "commission", from: session, target, body, ref, id: `${session}@${at}`, at };
+    }
+    case "deliver": {
+      // payload = <commissionId> \t <artifactId>. The `session` column is the delivering studio.
+      const commissionId = (rest[0] ?? "").trim();
+      const artifactId = (rest[1] ?? "").trim();
+      if (!commissionId || !artifactId) return null;
+      return { type: "deliver", commissionId, artifactId, from: session, at };
+    }
     case "verdict": {
       // payload = <target> \t <pass|reject> \t <reason?> \t <relevant?>; the juror is the session column.
       const target = (rest[0] ?? "").trim();
@@ -122,7 +139,7 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
     case "woke": {
       // `maintaining` is carried (not cleared): once a worker enters maintenance it STAYS a
       // maintenance worker across dispatches — auto-end permanently skips it (that IS the mode).
-      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session), waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session), issues: s.issues, maintaining: s.maintaining, briefs: s.briefs }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
+      return { state: { latches: s.latches, waiters: s.waiters.filter((w) => w.session !== e.session), waiting: s.waiting.filter((w) => w.session !== e.session), asking: s.asking.filter((a) => a.session !== e.session), issues: s.issues, maintaining: s.maintaining, briefs: s.briefs, commissions: s.commissions }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
     }
     case "ask": {
       const asking = [
@@ -203,6 +220,25 @@ export function applyCoordEvent(s: CoordState, e: CoordEvent): {
         { id: e.id, from: e.from, target: e.target, body: e.body, ref: e.ref, at: e.at },
       ];
       return { state: { ...s, briefs }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
+    }
+    case "commission": {
+      // A studio session commissioned another for an artifact (#2940). Append to the open list
+      // (dedup by id so a replayed log doesn't double it). Like a brief, no consuming event
+      // removes it — a `deliver` sets `delivered`; the pump guards its once-per-commission routing.
+      const commissions = [
+        ...s.commissions.filter((c) => c.id !== e.id),
+        { id: e.id, from: e.from, target: e.target, body: e.body, ref: e.ref, at: e.at },
+      ];
+      return { state: { ...s, commissions }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
+    }
+    case "deliver": {
+      // The target studio delivered the authored artifact (#2940). Stamp `delivered` on the matching
+      // commission so the pump surfaces the id back to the requester. An unmatched deliver (no open
+      // commission for the id — e.g. a truncated log) is a no-op rather than an error.
+      const commissions = s.commissions.map((c) =>
+        c.id === e.commissionId ? { ...c, delivered: e.artifactId } : c,
+      );
+      return { state: { ...s, commissions }, woken: [], ready: false, stalled: [], answered: [], assigned: [] };
     }
     case "verdict":
       // Verdicts don't move the latch/waiter state — the foreman tallies them off the
