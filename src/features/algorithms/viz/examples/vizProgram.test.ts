@@ -22,6 +22,13 @@ describe("compileVizProgram", () => {
     expect(d.input).toEqual({ nodes: [{ id: "a" }], edges: [] });
   });
 
+  it("compiles a valid scene descriptor (multi-structure, seeds on a graph) (#3275)", () => {
+    const code = `({ datatype: "scene", input: { nodes: [{ id: "a" }], edges: [] }, run(scene, input) { scene.graph("g", input); } })`;
+    const d = compileVizProgram(code);
+    expect(d.datatype).toBe("scene");
+    expect(d.input).toEqual({ nodes: [{ id: "a" }], edges: [] });
+  });
+
   it("rejects empty / whitespace code", () => {
     expect(() => compileVizProgram("")).toThrow(/empty/);
     expect(() => compileVizProgram("   ")).toThrow(/empty/);
@@ -50,6 +57,8 @@ describe("compileVizProgram", () => {
     expect(() => compileVizProgram(`({ datatype: "matrix", input: [1, 2], run() {} })`)).toThrow(/does not match datatype "matrix"/);
     // graph datatype but no nodes/edges
     expect(() => compileVizProgram(`({ datatype: "graph", input: {}, run() {} })`)).toThrow(/does not match datatype "graph"/);
+    // scene datatype but a flat array (a scene seeds on a graph)
+    expect(() => compileVizProgram(`({ datatype: "scene", input: [1], run() {} })`)).toThrow(/does not match datatype "scene"/);
     // non-finite numbers are rejected
     expect(() => compileVizProgram(`({ datatype: "array", input: [1, NaN], run() {} })`)).toThrow(/does not match datatype "array"/);
   });
