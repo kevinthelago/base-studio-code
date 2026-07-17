@@ -12,7 +12,6 @@ import type { DeployConfig } from "@/features/planner/lib/deployConfig";
 import type { MarketConfig } from "@/features/planner/lib/marketConfig";
 import type { TransformationRow } from "@/features/planner/lib/transformations";
 import type { SourceConfig } from "@/features/planner/lib/sourceConfig";
-import type { IntegrationConfig } from "@/features/planner/lib/integrationConfig";
 import type { IntegrationStrategy } from "@/features/planner/lib/integrationStrategy";
 import type { DirectorDrive } from "@/features/planner/fleet/directorDrive";
 
@@ -75,11 +74,6 @@ export interface PlanState {
    *  signal derives from it. Secret credentials are NEVER stored here (they live in the OS keychain). */
   planSourceConfig: Record<string, SourceConfig>;
   setPlanSourceConfig: (projectId: string, cfg: SourceConfig) => void;
-  /** Per-project Integration config (#1207) — the destination/sink + sync strategy the Integration
-   *  blueprint's Destination and Sync stages edit; the `destinationDefined` / `syncDefined` gate
-   *  signals derive from it. */
-  planIntegrationConfig: Record<string, IntegrationConfig>;
-  setPlanIntegrationConfig: (projectId: string, cfg: IntegrationConfig) => void;
   /** Per-project DEFAULT GitHub repo visibility for new repos at publish (#…). Absent ⇒ false ⇒
    *  PRIVATE; a per-repo override (`repoPublic`) wins over it. Set the default for the project (and
    *  the fallback for repos with no override). */
