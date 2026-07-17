@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { TracedScene, TracedStack, TracedScalar, runScene, type GraphInput } from "../../lib/tracer";
-import { isPanelsFrame, type PanelsFrame, type ArrayFrame, type GraphFrame, type StackFrame, type ScalarFrame } from "../../lib/trace";
+import { TracedScene, TracedStack, TracedScalar, TracedTree, runScene, type GraphInput } from "../../lib/tracer";
+import { isPanelsFrame, type PanelsFrame, type ArrayFrame, type GraphFrame, type StackFrame, type ScalarFrame, type TreeFrame } from "../../lib/trace";
 import { dijkstraScene, bfsScene } from "./scenes";
 import { WEIGHTED_GRAPH, DEFAULT_GRAPH } from "./graphAlgos";
 import { programVizForImpl } from "./registry";
@@ -42,10 +42,22 @@ describe("TracedScene / runScene — synchronized multi-structure panels (#3259)
 describe("dijkstraScene — the canonical multi-structure algorithm (#3259)", () => {
   const frames = [...runScene(dijkstraScene, WEIGHTED_GRAPH as GraphInput)()];
 
-  it("runs as a graph + distance-array + scalar-state scene, in sync (#3268)", () => {
+  it("runs as a graph + heap + distance-array + scalar-state scene, in sync (#3268 · #3270)", () => {
     expect(frames.length).toBeGreaterThan(1);
     expect(frames.every(isPanelsFrame)).toBe(true);
-    expect(Object.keys((frames[0] as PanelsFrame).panels).sort()).toEqual(["distance", "graph", "state"]);
+    expect(Object.keys((frames[0] as PanelsFrame).panels).sort()).toEqual(["distance", "graph", "heap", "state"]);
+  });
+
+  it("the priority-queue heap drives the selection then fully drains (#3270)", () => {
+    const last = (frames[frames.length - 1] as PanelsFrame).panels;
+    expect((last.heap as TreeFrame).nodes).toEqual([]); // every entry popped — the PQ empties
+    // The heap actually did work — entries inserted and sifted (swap).
+    const heapOps = frames.flatMap((f) => ((f as PanelsFrame).panels.heap as TreeFrame | undefined)?.ops ?? []).map((o) => o.op);
+    expect(heapOps).toContain("insert");
+    expect(heapOps).toContain("swap");
+    // The heap grew past the root at some point (a real tree, not just one node).
+    const maxNodes = Math.max(...frames.map((f) => ((f as PanelsFrame).panels.heap as TreeFrame | undefined)?.nodes.length ?? 0));
+    expect(maxNodes).toBeGreaterThan(1);
   });
 
   it("the distance panel ends at the real shortest distances while the graph is fully explored", () => {
@@ -73,13 +85,14 @@ describe("dijkstraScene — the canonical multi-structure algorithm (#3259)", ()
   });
 });
 
-describe("registry — dijkstra is now a SCENE (#3259 · #3268)", () => {
-  it("resolves to a multi-structure example: graph + array + scalar renderers, panel frames", () => {
+describe("registry — dijkstra is now a SCENE (#3259 · #3268 · #3270)", () => {
+  it("resolves to a multi-structure example: graph + array + scalar + tree renderers, panel frames", () => {
     const viz = programVizForImpl({ id: "dijkstra.rs", name: "dijkstra" })!;
     expect(viz).toBeDefined();
     expect(viz.renderers.graph).toBeDefined();
     expect(viz.renderers.array).toBeDefined(); // the scene adds the distance array (was graph-only pre-#3259)
     expect(viz.renderers.scalar).toBeDefined(); // the scene adds the scalar state panel (#3268)
+    expect(viz.renderers.tree).toBeDefined(); // the scene adds the priority-queue heap panel (#3270)
     expect([...viz.factory()].every(isPanelsFrame)).toBe(true);
   });
 });
@@ -168,5 +181,47 @@ describe("TracedScalar — named counters / accumulators / current pointer (#326
     const s = new TracedScalar();
     s.add("count", 4);
     expect(s.get("count")).toBe(4);
+  });
+});
+
+describe("TracedTree — trees / heaps / BSTs (#3270)", () => {
+  it("insert grows nodes under their parent; the frame carries the parent pointers", () => {
+    const t = new TracedTree();
+    t.insert("r", 5); // root — no parent
+    t.insert("a", 8, "r");
+    t.insert("b", 3, "r");
+    expect(t.size).toBe(3);
+    const last = t.trace().slice(-1)[0];
+    expect(last.nodes.map((n) => n.id)).toEqual(["r", "a", "b"]);
+    expect(last.nodes.find((n) => n.id === "r")!.parent).toBeUndefined(); // the root has no parent
+    expect(last.nodes.find((n) => n.id === "a")!.parent).toBe("r");
+    expect(last.ops?.[0]).toMatchObject({ op: "insert", node: "b" }); // last op stamped the new node
+  });
+
+  it("swap exchanges two nodes' VALUES (the heap sift) — the tree shape is unchanged", () => {
+    const t = new TracedTree([
+      { id: "r", value: 9 },
+      { id: "a", value: 2, parent: "r" },
+    ]);
+    t.swap("r", "a");
+    expect(t.value("r")).toBe(2); // values exchanged
+    expect(t.value("a")).toBe(9);
+    const last = t.trace().slice(-1)[0];
+    expect(last.nodes.find((n) => n.id === "a")!.parent).toBe("r"); // parent pointer intact
+    expect(last.ops?.[0]).toMatchObject({ op: "swap", at: ["r", "a"] });
+  });
+
+  it("remove drops a node (and its mark); visit sets a durable current mark", () => {
+    const t = new TracedTree([
+      { id: "r", value: 1 },
+      { id: "a", value: 2, parent: "r" },
+    ]);
+    t.visit("a");
+    expect(t.trace().slice(-1)[0].marks?.a).toBe("current");
+    t.remove("a");
+    const last = t.trace().slice(-1)[0];
+    expect(last.nodes.map((n) => n.id)).toEqual(["r"]); // gone from the tree
+    expect(last.marks?.a).toBeUndefined(); // its mark cleared
+    expect(last.ops?.[0]).toMatchObject({ op: "remove", node: "a" });
   });
 });

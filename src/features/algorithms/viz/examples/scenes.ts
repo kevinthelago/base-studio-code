@@ -3,7 +3,7 @@
 // multi-structure twin of the single-datatype programs (sorts.ts / matrixTransforms.ts / graphAlgos.ts):
 // each program declares NAMED panels (`scene.graph`, `scene.array`) and drives them with the ordinary
 // tracer verbs; the scene folds every op into a `PanelsFrame` and the player lays the panels side by side.
-import { type TracedScene, type GraphInput } from "../../lib/tracer";
+import { type TracedScene, type TracedTree, type GraphInput } from "../../lib/tracer";
 import { WEIGHTED_GRAPH, DEFAULT_GRAPH } from "./graphAlgos";
 
 /** A scene program keyed by BASE NAME (like the other program registries). `run` gets the scene + the
@@ -17,13 +17,85 @@ export interface SceneProgram {
  *  large value (every real distance in the sample graph is well under it). */
 const INF = 99;
 
+/** One priority-queue entry — a node and its tentative distance (the heap key). */
+interface HeapEntry {
+  dist: number;
+  node: string;
+}
+
 /**
- * Dijkstra as a SCENE (#3259 · #3268) — three panels animating TOGETHER: a `graph`, a `distance` array, and
- * a `state` SCALAR readout (the node being finalized + how many are settled). This is the canonical
- * multi-structure example the frame model cites: you watch the graph get explored (current → visit → relax)
- * WHILE the distance array fills in (a cell flashes on each improvement) AND the scalar state ticks (the
- * current pointer moves, the settled counter increments) — so every mechanic a single-graph trace hides
- * becomes a co-star. Real Dijkstra over the SAME `TracedGraph`; the distances + state mirror its progress.
+ * A binary MIN-heap (keyed by `dist`) that mirrors itself into a {@link TracedTree} panel (#3270) — this is
+ * Dijkstra's real priority queue drawn as a heap tree. Node id = the entry's array index (`h<i>`), parent =
+ * `h<floor((i-1)/2)>`, so the heap-as-array IS a complete binary tree. A `push` sifts up; a `pop` swaps
+ * root↔last, removes the last, then sifts down (the canonical heap ops) — each reflected as insert / swap /
+ * remove on the tree, so the sift animates. Used with LAZY DELETION: Dijkstra pushes a fresh entry per
+ * improvement and skips a popped entry whose node is already settled.
+ */
+class HeapPanel {
+  private readonly h: HeapEntry[] = [];
+  constructor(private readonly tree: TracedTree) {}
+
+  get size(): number {
+    return this.h.length;
+  }
+
+  private id(i: number): string {
+    return `h${i}`;
+  }
+  private label(e: HeapEntry): string {
+    return `${e.node}:${e.dist}`;
+  }
+
+  /** Enqueue `(dist, node)` — insert at the back, then sift up. */
+  push(dist: number, node: string): void {
+    let i = this.h.length;
+    const entry = { dist, node };
+    this.h.push(entry);
+    this.tree.insert(this.id(i), this.label(entry), i === 0 ? undefined : this.id(Math.floor((i - 1) / 2)));
+    while (i > 0) {
+      const p = Math.floor((i - 1) / 2);
+      if (this.h[p].dist <= this.h[i].dist) break;
+      [this.h[i], this.h[p]] = [this.h[p], this.h[i]];
+      this.tree.swap(this.id(i), this.id(p)); // exchange the two nodes' values (the sift)
+      i = p;
+    }
+  }
+
+  /** Extract the min — swap root↔last, drop the last node, then sift down. */
+  pop(): HeapEntry | undefined {
+    if (this.h.length === 0) return undefined;
+    const last = this.h.length - 1;
+    this.tree.visit(this.id(0)); // highlight the min sitting at the root
+    if (last > 0) {
+      [this.h[0], this.h[last]] = [this.h[last], this.h[0]];
+      this.tree.swap(this.id(0), this.id(last)); // move the min to the last slot
+    }
+    const min = this.h.pop()!; // remove the min (now at the end)
+    this.tree.remove(this.id(last)); // drop the last tree node
+    let i = 0;
+    const nn = this.h.length;
+    for (;;) {
+      const l = 2 * i + 1;
+      const r = 2 * i + 2;
+      let s = i;
+      if (l < nn && this.h[l].dist < this.h[s].dist) s = l;
+      if (r < nn && this.h[r].dist < this.h[s].dist) s = r;
+      if (s === i) break;
+      [this.h[i], this.h[s]] = [this.h[s], this.h[i]];
+      this.tree.swap(this.id(i), this.id(s));
+      i = s;
+    }
+    return min;
+  }
+}
+
+/**
+ * Dijkstra as a SCENE (#3259 · #3268 · #3270) — FOUR panels animating TOGETHER: a `graph`, its priority-queue
+ * `heap` (a min-heap tree), a `distance` array, and a `state` SCALAR readout. This is the canonical
+ * multi-structure example, now with Dijkstra's *complete* mechanics on screen: you watch the graph get
+ * explored (current → visit → relax) WHILE the heap sifts each frontier entry into place and pops the
+ * smallest, the distance array fills in, and the scalar state ticks. Real lazy-deletion Dijkstra over the
+ * SAME `TracedGraph` — the heap is the actual priority queue driving the selection, not a mirror.
  */
 export function dijkstraScene(scene: TracedScene, input: GraphInput): void {
   const g = scene.graph("graph", input);
@@ -32,17 +104,18 @@ export function dijkstraScene(scene: TracedScene, input: GraphInput): void {
   const idx = new Map(ids.map((id, i) => [id, i]));
 
   const distVals: number[] = ids.map((_, i) => (i === 0 ? 0 : INF)); // start at 0, everything else ∞
+  const heap = new HeapPanel(scene.tree("heap")); // the priority queue, drawn as a min-heap tree
   const dist = scene.array("distance", distVals);
   const state = scene.scalar("state", { current: "—", dist: 0, settled: 0 }); // the running state readout
   const visited = new Array<boolean>(n).fill(false);
 
   g.mark(ids[0], "start");
-  for (let k = 0; k < n; k++) {
-    // Pick the unvisited node with the smallest tentative distance.
-    let u = -1;
-    let best = INF + 1;
-    for (let i = 0; i < n; i++) if (!visited[i] && distVals[i] < best) { best = distVals[i]; u = i; }
-    if (u < 0 || best >= INF) break; // done — the rest are unreachable
+  heap.push(0, ids[0]); // enqueue the start
+  g.frontier(ids[0]);
+  while (heap.size > 0) {
+    const top = heap.pop()!; // extract the min-distance frontier entry
+    const u = idx.get(top.node);
+    if (u === undefined || visited[u]) continue; // stale entry (lazy deletion) — already settled
 
     visited[u] = true;
     g.current(ids[u]);              // point at the node being settled
@@ -59,8 +132,9 @@ export function dijkstraScene(scene: TracedScene, input: GraphInput): void {
       const cand = distVals[u] + nb.weight;
       if (cand < distVals[v]) {
         distVals[v] = cand;
-        dist.set(v, cand);     // the improved distance lands — the array cell flashes
-        g.frontier(nb.to);     // (re-)enter the frontier
+        dist.set(v, cand);       // the improved distance lands — the array cell flashes
+        heap.push(cand, nb.to);  // enqueue the improved entry into the priority queue
+        g.frontier(nb.to);       // (re-)enter the frontier
       }
     }
   }
