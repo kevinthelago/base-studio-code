@@ -35,3 +35,14 @@ export const STUDIO_SESSION_PANE_IDS: readonly string[] = [
 export function isStudioSessionPaneId(id: string): boolean {
   return STUDIO_SESSION_PANE_IDS.includes(id);
 }
+
+/** Whether `id` is a FULL-CAPABILITY app-owned session that must ALWAYS launch bypass + role-less,
+ *  regardless of the global permission posture (`bypassPermissions`) — the DEBUG session (#3326). Unlike a
+ *  fleet/console pane, whose posture comes from the store (role/profile/flow + the global bypass toggle),
+ *  the debug session is BY DEFINITION the unrestricted maintenance session in the base-studio-code source
+ *  tree; `buildSessionSettings` forces `bypass:true` for it so migrating it onto the shared TerminalHost
+ *  (off its old bespoke `useScreenSession` launch) preserves its hardcoded posture. Role-less is automatic
+ *  — no `paneRoles` entry is set for it, so no role gate applies. */
+export function isFullCapabilitySession(id: string): boolean {
+  return id === DEBUG_STUDIO_SESSION_ID;
+}
