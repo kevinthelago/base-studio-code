@@ -18,6 +18,32 @@ const ARTIFACT: KitArtifact = {
   runtime: { "shared/lib/core/format.ts": "export const fmt = (x) => String(x);" },
 };
 
+describe("bootstrapSource preview-data override (#2940)", () => {
+  // An OPTIONAL collection prop the sampler omits in `loaded` (so a demo-on-undefined component shows its
+  // own demo). The studio-network override injects a bound algorithm's dataset in its place.
+  const chart: ComponentRecord = { ...base, name: "Heatmap", props: [prop("label", "string"), prop("data", "HeatDatum[]")] };
+
+  it("injects a bound prop the sampler OMITTED, as a JS-source literal", () => {
+    const withoutOverride = bootstrapSource(chart, "@/x", "loaded");
+    expect(withoutOverride).not.toContain('"data":'); // optional collection → omitted by default
+
+    const src = bootstrapSource(chart, "@/x", "loaded", { data: JSON.stringify([{ x: "mon", y: "0", value: 3 }]) });
+    expect(src).toContain('"data": [{"x":"mon","y":"0","value":3}]');
+    // The sampled scalar prop is still present alongside the override.
+    expect(src).toContain('"label":');
+  });
+
+  it("REPLACES a sampled prop's value when overridden", () => {
+    const src = bootstrapSource(chart, "@/x", "loaded", { label: JSON.stringify("Generated") });
+    expect(src).toContain('"label": "Generated"');
+  });
+
+  it("ignores a `children` override (children mount as the element child, not a prop)", () => {
+    const src = bootstrapSource(chart, "@/x", "loaded", { children: '"nope"' });
+    expect(src).not.toContain('"children":');
+  });
+});
+
 describe("componentPreviewFiles (#2824)", () => {
   it("assembles a BUILT-IN from the artifact: its source + runtime closure + all components + a bootstrap", () => {
     const build = componentPreviewFiles(base, ARTIFACT)!;
