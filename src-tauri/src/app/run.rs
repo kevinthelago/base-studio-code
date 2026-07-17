@@ -165,6 +165,11 @@ pub fn run() {
             // Spawn the background performance sampler.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(perf::run_sampler(handle));
+            // Answer `bsc shot` capture requests (#3261, epic #3260). `bsc` cannot call us — the bridge
+            // only runs app→bsc — so the CLI drops a request in ~/.base-studio-code/shots/ and this
+            // watcher snapshots the webview and answers. Cheap poll on a worker thread; a missing dir
+            // just disables captures rather than aborting startup.
+            crate::shot::spawn_watcher(app.handle().clone());
             // Start the localhost fault-ingest receiver (#2261): binds 127.0.0.1:0 and runs its accept
             // loop on a background thread. A bind failure is logged and leaves the port at 0 (ingest
             // unavailable) rather than aborting startup.
