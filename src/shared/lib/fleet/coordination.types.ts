@@ -52,6 +52,12 @@ export interface CoordState {
    *  Appended (never auto-cleared); the director reconciles the plan and routes any carried
    *  `ref` onward via `bsc-assign`. */
   briefs: ReceivedBrief[];
+  /** Open commissions in the studio network (#2940): a studio session (planner/designer) asked
+   *  another (designer/librarian) to author an artifact. The pump routes each to the target studio
+   *  session; a matching `deliver` sets `delivered` (the authored artifact's id) so the pump can
+   *  surface the result back to the requester. Appended + dedup by id; never auto-removed (the
+   *  surfacing is guarded once-per-commission by the pump, like {@link ReceivedBrief}). */
+  commissions: OpenCommission[];
 }
 
 /** A structured plan update the planner streamed to a running director/issuer (#2377). The
@@ -72,6 +78,27 @@ export interface ReceivedBrief {
   ref?: CoordRef;
   /** When pushed (ms epoch). */
   at: number;
+}
+
+/** A commission in the studio-session network (#2940): a studio session asked another to author an
+ *  artifact into its own store (designer → a `bsc ui` component; librarian → a `bsc graph` impl).
+ *  Modelled like {@link ReceivedBrief}; a `deliver` correlates back by {@link id} and sets
+ *  {@link delivered}. */
+export interface OpenCommission {
+  /** Stable key (`<from>@<at>`) — the id a `deliver` references to resolve + route the result back. */
+  id: string;
+  /** The requesting studio session (the emitter's pane id, e.g. the planner or designer pane). */
+  from: string;
+  /** The target studio — `"designer"` | `"librarian"` (or a specific session id). */
+  target: string;
+  /** What to author (the spec / need). */
+  body: string;
+  /** Optional structured ref the requester carried (a `#issue`, a `file:`, a `contract:`). */
+  ref?: CoordRef;
+  /** When commissioned (ms epoch). */
+  at: number;
+  /** Set once a matching `deliver` arrives: the authored artifact's id (component id / impl id). */
+  delivered?: string;
 }
 
 /** A shaped issue the issuer captured, awaiting the director's `bsc-assign` (#376). The
@@ -164,6 +191,10 @@ export type CoordEvent =
   | { type: "maintain"; session: string; note?: string; at: number }
   // Planner brief (#2377): the planner streams a mid-build plan update to a director/issuer.
   | { type: "brief"; from: string; target: string; body: string; ref?: CoordRef; id: string; at: number }
+  // Studio network (#2940): a studio session commissions another to author an artifact; the target
+  // delivers its id back. `commission` mirrors `brief`; `deliver` correlates by the commission id.
+  | { type: "commission"; from: string; target: string; body: string; ref?: CoordRef; id: string; at: number }
+  | { type: "deliver"; commissionId: string; artifactId: string; from: string; at: number }
   // Verification jury (#394): a juror reports a structured verdict on a landing; the
   // foreman tallies them and, on reject, drives the existing revert+ping reflex.
   | { type: "verdict"; juror: string; target: string; verdict: JuryVerdict; reason?: string; relevant?: boolean; at: number };
