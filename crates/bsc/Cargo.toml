@@ -37,6 +37,8 @@ logs = { path = "../logs" }
 bsc-files = { path = "../bsc-files" }
 # `bsc shot` — capture the running app's real pixels via a webview snapshot (#3261, epic #3260).
 bsc-shot = { path = "../bsc-shot" }
+# `bsc loop` — the conversation loop store: two participants exchange turns until a signal, or never (#3262, epic #3260).
+bsc-loop = { path = "../bsc-loop" }
 # `bsc graph` — the Algorithms knowledge graph (#2761): concepts + relationships, queryable read-only.
 bsc-graph = { path = "../bsc-graph" }
 plandb = { path = "../plandb" }
