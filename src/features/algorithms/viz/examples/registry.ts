@@ -119,17 +119,18 @@ const SCENE_RENDERERS: RendererRegistry = {
 
 /** Build a stable MULTI-STRUCTURE {@link VizExample} (#3259) — runs a scene program via `runScene`, so its
  *  synchronized panels lay out side by side. Every per-structure renderer is registered so any panel the
- *  scene declares (graph / array / matrix / stack / scalar / tree) resolves. The "your input" seam edits the
- *  seed graph. */
+ *  scene declares (graph / array / matrix / stack / scalar / tree) resolves. Each scene carries its OWN
+ *  input seam (#3284), so the "your input" field edits whatever the scene seeds on (a graph, a number
+ *  array, …). */
 function sceneExampleFromProgram(program: SceneProgram): VizExample {
   return {
-    factory: runScene(program.run, program.defaultInput),
+    factory: runScene(program.run, program.seed.default),
     renderers: SCENE_RENDERERS,
     input: {
-      default: graphToText(program.defaultInput),
-      hint: "An adjacency list — one node per line: a: b, c",
-      parse: (text) => parseGraphInput(text),
-      make: async (parsed) => runScene(program.run, parsed as GraphInput),
+      default: program.seed.serialize(program.seed.default),
+      hint: program.seed.hint,
+      parse: program.seed.parse,
+      make: async (parsed) => runScene(program.run, parsed),
     },
   };
 }
