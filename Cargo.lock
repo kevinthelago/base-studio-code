@@ -520,8 +520,10 @@ name = "base-studio-code"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "bsc-appchan",
  "bsc-data",
  "bsc-llm",
+ "bsc-navigate",
  "bsc-project",
  "bsc-shot",
  "bsc-tunnel",
@@ -745,6 +747,7 @@ dependencies = [
  "bsc-files",
  "bsc-graph",
  "bsc-loop",
+ "bsc-navigate",
  "bsc-persona",
  "bsc-project",
  "bsc-shot",
@@ -777,6 +780,16 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "bsc-appchan"
+version = "0.1.0"
+dependencies = [
+ "bsc-util",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -884,6 +897,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-navigate"
+version = "0.1.0"
+dependencies = [
+ "bsc-appchan",
+ "bsc-cli-util",
+ "bsc-util",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "bsc-persona"
 version = "0.1.0"
 dependencies = [
@@ -907,6 +932,7 @@ dependencies = [
 name = "bsc-shot"
 version = "0.1.0"
 dependencies = [
+ "bsc-appchan",
  "bsc-cli-util",
  "bsc-util",
  "serde",

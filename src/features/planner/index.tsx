@@ -20,6 +20,9 @@ export {
   validateManifest, wrapExtension, encodeShareCode, decodeShareCode,
   type ExtensionManifest, type ValidateResult,
 } from "./lib/gist/manifest";
+// The Planner's page vocabulary (#3274): `bsc navigate page <id>` validates against it, so the shell
+// needs the real list rather than a hand-copied one that could drift from the tabs actually rendered.
+export { PROJECT_MODES } from "./list/projectModes";
 export { installFromGist, publishGist } from "./lib/gist/gist";
 // #1545: github's screen renders planner's project views (a one-way UI dependency now that planner
 // no longer reaches into github); the app's director pump + console launch reach planner fleet logic
