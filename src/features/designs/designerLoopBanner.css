@@ -1,0 +1,68 @@
+/* The design-loop status pill + kill switch (#3292) — a fixed, top-center overlay so it's reachable from
+ * anywhere in the Design Studio while a `--until false` loop runs. Layout/element styles only. */
+.designer-loop-banner {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 6px 5px 12px;
+  border-radius: 999px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  font-size: 12px;
+}
+
+.dlb-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: dlb-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dlb-dot {
+    animation: none;
+  }
+}
+@keyframes dlb-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.dlb-label {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.dlb-meta {
+  color: var(--fg-muted);
+}
+
+.dlb-stop {
+  appearance: none;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 12px;
+  border-radius: 999px;
+  color: var(--on-danger, #fff);
+  background: var(--danger, #d64545);
+  border: 1px solid transparent;
+}
+.dlb-stop:hover {
+  filter: brightness(1.08);
+}
+.dlb-stop:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
