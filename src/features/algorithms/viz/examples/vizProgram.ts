@@ -14,14 +14,24 @@
 // It is self-contained (carries its own default input so the preview + "your input" field work) and does
 // NOT depend on `kind` — the descriptor names its own datatype, so nothing is inferred or guessed.
 //
-// TRUST + ISOLATION (#3233): `vizCode` reaches the store ONLY via the packaged seed or the role-gated
-// `bsc graph impl set --viz-code` — both trusted, exactly as trusted as the in-app trace-programs that
-// already execute on the main thread. The Studio share/apply path does NOT carry the algorithms graph
-// today (TODO #2889). So compiling with `new Function` on the main thread matches the current trust model.
-// When #2889 makes the graph Studio-importable (untrusted `vizCode`), execution must move into a Web
-// Worker / iframe sandbox — this module is the deliberately-isolated seam for that swap (#3233).
+// ISOLATION (#3233): this module is PURE (compile + run over the tracer, no DOM). It is imported by the
+// dedicated Web Worker (`vizWorker.ts`) so `compileVizProgram`'s `new Function` and the algorithm's `run`
+// execute in the WORKER's isolated global scope — never on the main thread, and never with DOM access. The
+// main thread reaches it only through `vizSandbox.runInSandbox` (which posts to the worker); it also imports
+// it directly as the inline fallback when `Worker` is unavailable (test / SSR), where trusted test code runs
+// it on the main thread. A runaway program (e.g. `while(true)`) wedges only the worker, which the sandbox
+// terminates on timeout — the main thread never freezes.
 
-import type { GraphInput } from "../../lib/tracer";
+import {
+  runAlgorithm,
+  runMatrixAlgorithm,
+  runGraphAlgorithm,
+  type GraphInput,
+  type TracedArray,
+  type TracedMatrix,
+  type TracedGraph,
+} from "../../lib/tracer";
+import type { Frame } from "../../lib/trace";
 
 /** The structure a stored trace-program drives — selects the runner, renderer, and input seam. */
 export type VizDatatype = "array" | "matrix" | "graph";
@@ -32,7 +42,7 @@ export interface VizProgramDescriptor {
   datatype: VizDatatype;
   input: number[] | number[][] | GraphInput;
   // The compiled algorithm. Loosely typed here (a bottom-typed param is assignable to any Traced class);
-  // `vizExampleFromCode` narrows it to the datatype's `TracedArray|TracedMatrix|TracedGraph` signature.
+  // `runVizProgram` narrows it to the datatype's `TracedArray|TracedMatrix|TracedGraph` signature.
   run: (structure: never) => void;
 }
 
@@ -110,3 +120,35 @@ const INPUT_SHAPE: Record<VizDatatype, string> = {
   matrix: "a number[][]",
   graph: "a { nodes, edges } object",
 };
+
+/** The result of running a stored trace-program: its datatype, the input it ran on (the descriptor default
+ *  or a caller override), and the recorded frame trace. Frames are plain, structured-cloneable data — so
+ *  the Web Worker (#3233) posts them straight back to the main thread for replay. */
+export interface VizRun {
+  datatype: VizDatatype;
+  input: number[] | number[][] | GraphInput;
+  frames: Frame[];
+}
+
+/**
+ * Compile a stored `vizCode` and RUN it against the matching Traced structure, collecting the full frame
+ * trace (#3233). Pure — this is the unit the Web Worker executes in isolation; the main thread calls it only
+ * as the no-Worker fallback (tests / SSR).
+ *
+ * @param code the impl's `vizCode` — a `{ datatype, input, run }` descriptor expression.
+ * @param inputOverride when set, runs the program on this input instead of the descriptor's default (the
+ *   "your input" seam). Its shape is validated by the tracer for the descriptor's datatype.
+ * @returns the datatype, the input used, and the recorded frames.
+ * @throws whatever {@link compileVizProgram} throws (malformed code) or the algorithm throws at runtime.
+ */
+export function runVizProgram(code: string, inputOverride?: unknown): VizRun {
+  const d = compileVizProgram(code);
+  const input = (inputOverride ?? d.input) as VizRun["input"];
+  const frames =
+    d.datatype === "array"
+      ? [...runAlgorithm(d.run as (a: TracedArray) => void, input as number[])()]
+      : d.datatype === "matrix"
+        ? [...runMatrixAlgorithm(d.run as (m: TracedMatrix) => void, input as number[][])()]
+        : [...runGraphAlgorithm(d.run as (g: TracedGraph) => void, input as GraphInput)()];
+  return { datatype: d.datatype, input, frames };
+}
