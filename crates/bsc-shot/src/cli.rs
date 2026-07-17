@@ -76,6 +76,30 @@ PAIR IT WITH NAVIGATE
     bsc navigate component <kit> <component> && bsc shot take",
     },
     CmdDoc {
+        name: "preview",
+        summary: "capture JUST the Design Studio's component preview (auto-cropped)",
+        usage: "\
+USAGE:
+  bsc shot preview [--frames <N>] [--interval <ms>] [--out <path>] [--timeout <ms>] [--json|--pretty]
+
+Captures JUST the component preview — the app resolves the Design Studio's preview element's rect
+ITSELF and crops to it, so you don't pass coordinates. This is the DESIGNER's ground truth: the
+component, not the whole app chrome.
+
+  --frames <N>     a BURST of N frames (for animations) — same as `take` (see `bsc shot take help`).
+  --interval <ms>  gap between burst frames (default 120).
+  --out <path>     where to write the PNG (base for a burst). Default <shots>/<id>.png.
+  --timeout <ms>   how long to wait for the app, per frame (default 8000).
+
+STEER FIRST
+  The preview shows the SELECTED component, so land one first:
+    bsc navigate component <kit> <component> && bsc shot preview
+
+NO COMPONENT SHOWN
+  If the Design Studio isn't showing a component (no preview element registered), this errors clearly
+  rather than capturing the whole screen — navigate to a component and retry.",
+    },
+    CmdDoc {
         name: "pending",
         summary: "unanswered channel requests (JSON) — what the app's watcher would serve",
         usage: "\
@@ -180,6 +204,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
 
     match cmd.as_str() {
         "take" => cmd_take(&args),
+        "preview" => cmd_preview(&args),
         "pending" => cmd_pending(&args),
         "sweep" => cmd_sweep(&args),
         "dir" => cmd_dir(&args),
@@ -187,7 +212,25 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     }
 }
 
+/// `bsc shot take` — capture the whole webview (or an explicit `--rect`), full-screen. The full-cap
+/// surface (the debug session); the designer is restricted to `preview` (#3308).
 fn cmd_take(args: &Args) -> Result<(), String> {
+    run_capture(args, None)
+}
+
+/// `bsc shot preview` — capture JUST the Design Studio's component preview: the app resolves the "preview"
+/// target's rect itself (#3308). `--rect` is meaningless here (the target IS the region), so reject it
+/// rather than silently ignore. This is the designer's only shot verb.
+fn cmd_preview(args: &Args) -> Result<(), String> {
+    if args.rect.is_some() {
+        return Err("`bsc shot preview` crops to the component preview itself — drop --rect (use `bsc shot take --rect` for a manual region)".into());
+    }
+    run_capture(args, Some("preview"))
+}
+
+/// The shared capture path for `take`/`preview`: one frame, or a `--frames` burst. `target` is `None` for
+/// the whole webview (`take`) or `Some("preview")` for the app-resolved component-preview crop.
+fn run_capture(args: &Args, target: Option<&str>) -> Result<(), String> {
     let chan = bsc_appchan::chan_dir()?;
     let now = bsc_util::now_ms();
     let _ = bsc_appchan::sweep_stale(&chan, now, STALE_MS); // best-effort: never block a capture
@@ -201,7 +244,7 @@ fn cmd_take(args: &Args) -> Result<(), String> {
     // Single frame: the original behavior + output (a bare path, or { path, w, h }).
     if frames == 1 {
         let id = bsc_appchan::new_id(now);
-        let res = capture_one(&chan, &id, now, args.rect, args.out.clone(), timeout)?;
+        let res = capture_one(&chan, &id, now, args.rect, args.out.clone(), target, timeout)?;
         bsc_cli_util::emit(args.pretty, args.json, &res, || res.path.clone());
         return Ok(());
     }
@@ -220,7 +263,7 @@ fn cmd_take(args: &Args) -> Result<(), String> {
             Some(base) => insert_suffix(base, n, pad),
             None => shots.join(format!("{id}.png")).to_string_lossy().into_owned(),
         };
-        match capture_one(&chan, &id, bsc_util::now_ms(), args.rect, Some(out), timeout) {
+        match capture_one(&chan, &id, bsc_util::now_ms(), args.rect, Some(out), target, timeout) {
             Ok(res) => results.push(res),
             // Keep the frames already captured — a partial burst is still useful; report how many landed.
             Err(e) => {
@@ -242,18 +285,20 @@ fn cmd_take(args: &Args) -> Result<(), String> {
     Ok(())
 }
 
-/// One webview snapshot: request → wait → prove the PNG is real. Shared by the single `take` and each
+/// One webview snapshot: request → wait → prove the PNG is real. Shared by the single capture and each
 /// burst frame. A capture that silently produced nothing (or a non-PNG) must NOT read as success — that
 /// is the failure this whole surface exists to avoid.
+#[allow(clippy::too_many_arguments)]
 fn capture_one(
     chan: &std::path::Path,
     id: &str,
     now: i64,
     rect: Option<Rect>,
     out: Option<String>,
+    target: Option<&str>,
     timeout: i64,
 ) -> Result<ShotResult, String> {
-    let req = ShotRequest { rect, out };
+    let req = ShotRequest { rect, out, target: target.map(String::from) };
     bsc_appchan::write_request(chan, id, KIND, now, &req)?;
     let reply = bsc_appchan::poll_reply(chan, id, timeout, POLL_INTERVAL_MS, || {
         format!(
@@ -395,5 +440,13 @@ mod tests {
         assert_eq!(insert_suffix("C:/a.b/out", 4, 2), "C:/a.b/out-04");
         // Padding follows the requested width (the frame-count's digit count).
         assert_eq!(insert_suffix("f.png", 7, 3), "f-007.png");
+    }
+
+    #[test]
+    fn preview_rejects_an_explicit_rect() {
+        // `preview` crops to the component preview itself; --rect would be ambiguous, so it's a stated
+        // error (returned BEFORE any channel I/O), not a silent no-op.
+        let a = parse_args(vec!["preview".into(), "--rect".into(), "1,2,3,4".into()]).unwrap();
+        assert!(cmd_preview(&a).is_err());
     }
 }
