@@ -19,6 +19,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
 import { DesignerTerminal } from "./DesignerTerminal";
+import { DesignerLoopBanner } from "./DesignerLoopBanner";
+import { useDesignerLoopPump } from "./useDesignerLoopPump";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
@@ -131,6 +133,7 @@ export function DesignsWorkbench() {
   // Live-focus (#2525): the designer session is ALWAYS mounted (#2597), so poll its activity stream
   // for the whole Design Studio lifecycle; clear the focus when the studio unmounts.
   useUiActivity(true);
+  useDesignerLoopPump(); // #3292: drive the open designer loop (bsc loop) from this long-lived workspace
   useEffect(() => () => useAppStore.getState().setAiFocused(null), []);
 
   // The always-on designer terminal's height (#2624) — a row-resize handle above it; `invert` because
@@ -337,6 +340,7 @@ export function DesignsWorkbench() {
   // graph header. Modals + notice cards are siblings of the canvas.
   return (
     <>
+      <DesignerLoopBanner />
       {shareOpen && (
         <KitShareModal
           kit={kit ?? null}
