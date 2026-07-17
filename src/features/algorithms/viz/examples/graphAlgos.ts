@@ -12,7 +12,7 @@ export interface GraphProgram {
 
 /** A small, connected example graph (6 nodes) — legible under the renderer's circular layout, and shows a
  *  clear BFS wavefront from `a`. */
-const DEFAULT_GRAPH: GraphInput = {
+export const DEFAULT_GRAPH: GraphInput = {
   nodes: ["a", "b", "c", "d", "e", "f"].map((id) => ({ id })),
   edges: [
     { from: "a", to: "b" },
