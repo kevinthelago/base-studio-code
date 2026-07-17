@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { BUILTIN_ORGS, STUDIO_NETWORK_ID } from "@/features/teams";
 import { BUILTIN_PERSONAS } from "@/features/personas";
-import { buildStudioFleetData, BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID } from "./studioProject";
+import { buildStudioFleetData, studioPaneIdForNode, BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID } from "./studioProject";
+import { DEBUG_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 
 describe("studioProject (#3319)", () => {
   it("the base-studio-code project id is namespaced so it can't collide with a real project slug", () => {
@@ -35,5 +36,22 @@ describe("studioProject (#3319)", () => {
     const d = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, false)!;
     expect(d.rawNodes.find((n) => n.id === "library")?.resource).toBe(true);
     expect(d.rawNodes.find((n) => n.id === "designer")?.resource).toBeFalsy(); // an agent is not a resource
+  });
+});
+
+describe("studioPaneIdForNode (#3326)", () => {
+  it("maps the debugger node to the TerminalHost-hosted debug session pane id", () => {
+    expect(studioPaneIdForNode("debugger")).toBe(DEBUG_STUDIO_SESSION_ID);
+    // The mapped id is the ACTUAL node id `buildStudioFleetData` emits when the toggle is on — so the
+    // morph wiring can't drift from the graph node.
+    const on = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, true)!;
+    const debugNodeId = on.rawNodes.find((n) => n.id === "debugger")!.id;
+    expect(studioPaneIdForNode(debugNodeId)).toBe(DEBUG_STUDIO_SESSION_ID);
+  });
+
+  it("returns null for the not-yet-migrated studios and any non-studio node (a click just selects them)", () => {
+    for (const id of ["designer", "librarian", "architect", "library", "proj:auth", "director"]) {
+      expect(studioPaneIdForNode(id)).toBeNull();
+    }
   });
 });

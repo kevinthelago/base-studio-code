@@ -35,7 +35,8 @@ import { fleetPaneId } from "@/app/console/lib/paneIdentity";
 import { buildGraph, focusSets, isLibraryNode, HEALTH_META, ROLE_COLOR, NW, NH } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
-import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData } from "./lib/studioProject";
+import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, studioPaneIdForNode } from "./lib/studioProject";
+import { DEBUG_PANE_ID } from "@/features/debug";
 import { useProjectComplete } from "./lib/useProjectComplete";
 import { usePreviewReview } from "./usePreviewReview";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
@@ -62,6 +63,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // its debugger node.
   const teams = useAppStore((s) => s.teams);
   const debugSession = useAppStore((s) => s.debugSession);
+  const setDebugSession = useAppStore((s) => s.setDebugSession);
   // The blueprint LIBRARY + the drilled project's blueprint id (#2572) — so the fleet drill can overlay
   // the project blueprint's authored TEAM relationships (an Org) onto the derived coordination.
   const blueprints = useAppStore((s) => s.blueprints);
@@ -234,11 +236,22 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   const pickNode = (id: string) => { setSel({ type: "node", id }); setShowCycle(false); };
   const pickEdge = (id: string) => { setSel({ type: "edge", id }); setShowCycle(false); };
+  // The app-owned studio session pane id for a node in the base-studio-code drill (#3326) — the DEBUGGER
+  // node maps to the TerminalHost-hosted debug session (`DebugSessionMount`); other studio nodes / any
+  // non-studio drill return null. Non-null ⇒ this node opens an app-owned session, not a fleet cell.
+  const studioPaneId = (nodeId: string): string | null =>
+    drill === BASE_STUDIO_PROJECT_ID ? studioPaneIdForNode(nodeId) : null;
   // A node is LIVE — its terminal openable via the in-graph morph — iff its identity pane id
   // (`<project>:<stream>` or `<project>:director`) is a live cell of a launched fleet tab. EVERY fleet
-  // node — workers AND the director — gets the morph (#2534/#2542). Drilled only.
-  const isLiveAgent = (nodeId: string) =>
-    !!drill && nodeHasLiveSession(fleetPaneId(drill, nodeId), livePaneIds);
+  // node — workers AND the director — gets the morph (#2534/#2542). Drilled only. In the base-studio-code
+  // drill (#3326) a STUDIO node is openable whenever it maps to an app-owned session that's ON: the
+  // debugger node's session is kept warm by DebugSessionMount whenever the `debugSession` toggle is on —
+  // and since the node only EXISTS in the graph when the toggle is on, it's always openable when shown.
+  const isLiveAgent = (nodeId: string) => {
+    if (!drill) return false;
+    if (studioPaneId(nodeId)) return debugSession;
+    return nodeHasLiveSession(fleetPaneId(drill, nodeId), livePaneIds);
+  };
   // On the L0 network: a click drills into that project's fleet. Inside a fleet a click checks in on a
   // LIVE agent (morph → terminal, #2401) or selects a non-live one. (Project links are LLM-authored, not
   // drawn by hand — the manual connect-mode was removed, #2737 direction.)
@@ -294,7 +307,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   // The dock shows ONLY while the open node is still a live agent in the CURRENT fleet — so drilling
   // out (or a nav-history back/forward that swaps `drill`) closes it by derivation, no reset effect.
-  const chatPaneId = drill && chatNode && isLiveAgent(chatNode) ? fleetPaneId(drill, chatNode) : null;
+  const chatPaneId = drill && chatNode && isLiveAgent(chatNode)
+    ? (studioPaneId(chatNode) ?? fleetPaneId(drill, chatNode))
+    : null;
   const chatMeta = chatPaneId ? model.nodes.find((n) => n.id === chatNode) : null;
   // The preview morph shows only while the drill still HAS a preview node — drilling out / to an incomplete
   // project closes it by derivation. `source` is null until the verify-build produces one (#2623 slice 3).
@@ -441,7 +456,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           // The live-agent terminal morphs open IN the graph, as an oversized node (#2534).
           chat={chatPaneId && chatNode ? { nodeId: chatNode, paneId: chatPaneId, name: chatMeta?.slug ?? "agent", role: chatMeta?.roleLabel } : null}
           onCloseChat={() => setChatNode(null)}
-          onEndChat={chatPaneId ? () => endSession(chatPaneId) : undefined}
+          // Ending the DEBUG session means turning the toggle OFF (which unmounts DebugSessionMount → clean
+          // PTY teardown → the node disappears) — NOT the fleet killPane path (#3326). Fleet nodes end their
+          // one PTY as before.
+          onEndChat={chatPaneId ? () => {
+            if (chatPaneId === DEBUG_PANE_ID) { setDebugSession(false); setChatNode(null); }
+            else endSession(chatPaneId);
+          } : undefined}
           preview={previewOn && drill ? {
             nodeId: PREVIEW_NODE_ID, name: drillNode?.slug ?? "app",
             source: previewSources[drill] ?? null,

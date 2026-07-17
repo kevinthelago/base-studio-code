@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import {
   isStudioSessionPaneId,
+  isFullCapabilitySession,
   STUDIO_SESSION_PANE_IDS,
   DESIGN_STUDIO_SESSION_ID,
   ALGORITHMS_STUDIO_SESSION_ID,
@@ -30,5 +31,23 @@ describe("isStudioSessionPaneId (#3137)", () => {
     expect([...STUDIO_SESSION_PANE_IDS].sort()).toEqual(
       ["algorithms-studio:librarian", "debug-studio:debugger", "design-studio:designer", "teams-studio:architect"],
     );
+  });
+});
+
+describe("isFullCapabilitySession (#3326)", () => {
+  it("is true ONLY for the debug session — the always-bypass carve-out", () => {
+    expect(isFullCapabilitySession(DEBUG_STUDIO_SESSION_ID)).toBe(true);
+  });
+
+  it("is false for the other studios (they keep their bespoke launch postures)", () => {
+    for (const id of [DESIGN_STUDIO_SESSION_ID, ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID]) {
+      expect(isFullCapabilitySession(id)).toBe(false);
+    }
+  });
+
+  it("is false for fleet / manual / planner ids (they follow the global posture)", () => {
+    for (const id of ["proj:auth", "proj:director", "own/web:triage", "man:scratch:p0", "planning_proj"]) {
+      expect(isFullCapabilitySession(id)).toBe(false);
+    }
   });
 });
