@@ -4,7 +4,7 @@
 // each program declares NAMED panels (`scene.graph`, `scene.array`) and drives them with the ordinary
 // tracer verbs; the scene folds every op into a `PanelsFrame` and the player lays the panels side by side.
 import { type TracedScene, type GraphInput } from "../../lib/tracer";
-import { WEIGHTED_GRAPH } from "./graphAlgos";
+import { WEIGHTED_GRAPH, DEFAULT_GRAPH } from "./graphAlgos";
 
 /** A scene program keyed by BASE NAME (like the other program registries). `run` gets the scene + the
  *  seed input (the graph, for the current graph-seeded scenes); `defaultInput` seeds the preview. */
@@ -61,8 +61,40 @@ export function dijkstraScene(scene: TracedScene, input: GraphInput): void {
   }
 }
 
+/**
+ * BFS as a SCENE (#3266) — a `graph` panel + a FIFO `queue` panel animating TOGETHER. The frontier queue
+ * is the structure that MAKES it breadth-first: neighbours are enqueued (push to the back) as they're
+ * discovered, and the FRONT is dequeued to visit next, so nodes come out in distance-from-start order.
+ * Real BFS over the SAME `TracedGraph`; the queue mirrors its frontier faithfully (push/pop = enqueue/
+ * dequeue). This is the honest fit for the stack/queue renderer — unlike Dijkstra's PRIORITY queue (a heap).
+ */
+export function bfsScene(scene: TracedScene, input: GraphInput): void {
+  const g = scene.graph("graph", input);
+  const q = scene.stack("queue", "queue"); // FIFO frontier — front dequeues, back enqueues
+  const start = g.ids()[0];
+  if (!start) return;
+  const seen = new Set<string>([start]);
+
+  g.mark(start, "start");
+  q.push(start);        // enqueue the start
+  g.frontier(start);
+  while (q.size > 0) {
+    const u = q.pop() as string; // dequeue the FRONT
+    g.current(u);
+    g.visit(u);
+    for (const nb of g.neighbours(u)) {
+      if (seen.has(nb.to)) continue;
+      seen.add(nb.to);
+      g.relax(u, nb.to); // light the tree edge to the newly discovered node
+      q.push(nb.to);     // enqueue it
+      g.frontier(nb.to);
+    }
+  }
+}
+
 /** The scene programs, keyed by base name (merged LAST into the registry, so a scene supersedes any
- *  single-structure program of the same name — e.g. `dijkstra` upgrades from a lone graph to graph+dist). */
+ *  single-structure program of the same name — e.g. `dijkstra` → graph+dist, `bfs` → graph+queue). */
 export const SCENE_PROGRAMS: Record<string, SceneProgram> = {
   dijkstra: { run: dijkstraScene, defaultInput: WEIGHTED_GRAPH },
+  bfs: { run: bfsScene, defaultInput: DEFAULT_GRAPH },
 };
