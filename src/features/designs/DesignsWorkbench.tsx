@@ -489,7 +489,10 @@ export function DesignsWorkbench() {
               ref={mountPreviewCanvas}
               style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", background: "var(--bg-canvas, var(--bg))" }}
             >
-              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: previewH, userSelect: "none", pointerEvents: "auto", transform: `translate(${previewFit.tx}px,${previewFit.ty}px) scale(${previewFit.scale})`, transformOrigin: "0 0" }}>
+              {/* #3251: no `user-select:none` here — it read as the drag's selection guard but is a no-op
+                  (this wrapper's only child is the iframe, and CSS does not cross a document boundary).
+                  The guard lives in the engine's own srcdoc CSS, where the drag actually happens. */}
+              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: previewH, pointerEvents: "auto", transform: `translate(${previewFit.tx}px,${previewFit.ty}px) scale(${previewFit.scale})`, transformOrigin: "0 0" }}>
                 <ComponentPreviewFrame
                   comp={sel}
                   theme={theme}
