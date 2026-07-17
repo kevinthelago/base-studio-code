@@ -674,20 +674,37 @@ export class TracedScene {
   private readonly current: Record<string, StructureFrame> = {};
   private readonly log: PanelsFrame[] = [];
   private started = false;
+  private batching = false; // while set, panel ops fold into ONE beat (a cross-panel verb) — see beginBatch
 
   private attach<T extends Sinkable>(name: string, s: T): T {
     const rest = s.trace()[0]; // the constructor's at-rest frame (structures emit one on creation)
     this.initial[name] = rest;
     this.current[name] = rest;
     s.setSink((f) => {
-      if (!this.started) {
-        this.started = true;
-        this.log.push({ panels: { ...this.initial } }); // beat 0 — every declared panel at rest
-      }
       this.current[name] = f;
-      this.log.push({ panels: { ...this.current } });
+      if (!this.batching) this.pushFrame(); // a batched op just updates `current`; endBatch pushes once
     });
     return s;
+  }
+
+  /** Push one synchronized beat — beat 0 (every declared panel at rest) on the first, then the current map. */
+  private pushFrame(): void {
+    if (!this.started) {
+      this.started = true;
+      this.log.push({ panels: { ...this.initial } }); // beat 0 — every declared panel at rest
+    }
+    this.log.push({ panels: { ...this.current } });
+  }
+
+  /** Open a CROSS-PANEL beat (#3286): ops on several panels fold into ONE `PanelsFrame` until {@link
+   *  endBatch}, so a move / cross-compare animates as a single synchronized step. */
+  private beginBatch(): void {
+    this.batching = true;
+  }
+  /** Close the cross-panel beat, emitting the accumulated panel changes as one synchronized frame. */
+  private endBatch(): void {
+    this.batching = false;
+    this.pushFrame();
   }
 
   /** A named array panel (its `data`/ops render via `<ArrayView>`). */
@@ -713,6 +730,33 @@ export class TracedScene {
   /** A named tree / heap / BST panel (parent-pointer nodes; renders via `<TreeView>`). */
   tree(name: string, initial: readonly TreeNode[] = []): TracedTree {
     return this.attach(name, new TracedTree(initial));
+  }
+
+  // ── cross-panel verbs (#3286) — operations that span two array panels animate as ONE beat ──
+
+  /**
+   * Compare a cell in array panel `a` against a cell in array panel `b` — BOTH cells flash in ONE
+   * synchronized beat, returning `sign(a[i] - b[j])`. The cross-panel twin of a single array's `compare`:
+   * the merge decision between two runs living in different panels.
+   */
+  compareAcross(a: TracedArray, i: number, b: TracedArray, j: number): number {
+    this.beginBatch();
+    a.compare(i, i); // highlight the front of `a` (a self-pair marks just cell i) …
+    b.compare(j, j); // … and the front of `b`, in the same beat
+    this.endBatch();
+    return Math.sign(a.get(i) - b.get(j));
+  }
+
+  /**
+   * Move the value at `from[i]` into `to[k]` — the source cell highlights and the destination write animate
+   * TOGETHER in one beat, so the value visibly slides between panels.
+   */
+  move(from: TracedArray, i: number, to: TracedArray, k: number): void {
+    const v = from.get(i);
+    this.beginBatch();
+    from.compare(i, i); // the source cell highlights as the value leaves …
+    to.set(k, v); // … and lands in the destination, same beat
+    this.endBatch();
   }
 
   /** The recorded synchronized panel trace — a resting snapshot when the program did no ops. */

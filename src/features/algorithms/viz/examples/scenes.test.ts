@@ -226,14 +226,45 @@ describe("TracedTree — trees / heaps / BSTs (#3270)", () => {
   });
 });
 
-describe("mergeSortScene — merge sort as an array + buffer scene (#3284)", () => {
+describe("cross-panel verbs — compareAcross / move batch two panels into ONE beat (#3286)", () => {
+  it("compareAcross flashes both panels' cells in a single frame + returns the comparison", () => {
+    let result: number | undefined;
+    const prog = (scene: TracedScene) => {
+      const a = scene.array("a", [3, 7]);
+      const b = scene.array("b", [5, 1]);
+      result = scene.compareAcross(a, 0, b, 0); // 3 vs 5
+    };
+    const frames = [...runScene(prog, null)()];
+    expect(result).toBe(-1); // sign(3 - 5)
+    expect(frames.length).toBe(2); // beat 0 (rest) + ONE cross-panel beat — not two
+    const beat = (frames[1] as PanelsFrame).panels;
+    expect((beat.a as ArrayFrame).ops?.[0].op).toBe("compare"); // both panels acted…
+    expect((beat.b as ArrayFrame).ops?.[0].op).toBe("compare"); // …in the SAME frame
+  });
+
+  it("move writes the destination + highlights the source in one frame", () => {
+    const prog = (scene: TracedScene) => {
+      const from = scene.array("from", [9, 4]);
+      const to = scene.array("to", [0, 0]);
+      scene.move(from, 1, to, 0); // 4 → to[0]
+    };
+    const frames = [...runScene(prog, null)()];
+    expect(frames.length).toBe(2);
+    const beat = (frames[1] as PanelsFrame).panels;
+    expect((beat.to as ArrayFrame).data).toEqual([4, 0]); // the moved value landed
+    expect((beat.to as ArrayFrame).ops?.[0].op).toBe("set");
+    expect((beat.from as ArrayFrame).ops?.[0].op).toBe("compare"); // source highlighted, same frame
+  });
+});
+
+describe("mergeSortScene — merge sort as two run-arrays via cross-panel verbs (#3284 · #3286)", () => {
   const input = [5, 2, 9, 1, 6];
   const frames = [...runScene(mergeSortScene, input)()];
 
-  it("runs as an `array` + `merge` two-panel scene, in sync (the first array-seeded scene)", () => {
+  it("runs as an `array` + `leftRun` + `rightRun` scene, in sync", () => {
     expect(frames.length).toBeGreaterThan(1);
     expect(frames.every(isPanelsFrame)).toBe(true);
-    expect(Object.keys((frames[0] as PanelsFrame).panels).sort()).toEqual(["array", "merge"]);
+    expect(Object.keys((frames[0] as PanelsFrame).panels).sort()).toEqual(["array", "leftRun", "rightRun"]);
   });
 
   it("the array panel ends fully sorted", () => {
@@ -241,9 +272,12 @@ describe("mergeSortScene — merge sort as an array + buffer scene (#3284)", () 
     expect((last.array as ArrayFrame).data).toEqual([1, 2, 5, 6, 9]);
   });
 
-  it("the buffer makes the runs visible — real compare ops fire on it (the merge decision the flat trace hid)", () => {
-    const bufOps = frames.flatMap((f) => ((f as PanelsFrame).panels.merge as ArrayFrame | undefined)?.ops ?? []).map((o) => o.op);
-    expect(bufOps).toContain("compare"); // the two fronts are actually compared, not read silently
+  it("the two runs are compared ACROSS panels, and winners move into the output", () => {
+    // compareAcross → compare ops on BOTH run panels; the runs are genuinely distinct structures.
+    const leftOps = frames.flatMap((f) => ((f as PanelsFrame).panels.leftRun as ArrayFrame | undefined)?.ops ?? []).map((o) => o.op);
+    const rightOps = frames.flatMap((f) => ((f as PanelsFrame).panels.rightRun as ArrayFrame | undefined)?.ops ?? []).map((o) => o.op);
+    expect(leftOps).toContain("compare");
+    expect(rightOps).toContain("compare");
     // the winners land in the OUTPUT array via `set` (a merge writes, it never swaps).
     const arrOps = frames.flatMap((f) => ((f as PanelsFrame).panels.array as ArrayFrame | undefined)?.ops ?? []).map((o) => o.op);
     expect(arrOps).toContain("set");
