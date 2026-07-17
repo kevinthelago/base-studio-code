@@ -78,6 +78,7 @@ pub fn run() {
         // faults/heartbeats to. Started (bound + accept loop spawned) in `setup` below.
         .manage(collector::CollectorState::new())
         .manage(project::preview::PreviewServers::default())
+        .manage(crate::shot::ShotTargets::default())
         .manage(UncleanShutdown(unclean_shutdown))
         .setup(move |app| {
             // Install the dual-sink GraphLogger (#1389) in place of tauri-plugin-log — FIRST, so the
@@ -250,6 +251,7 @@ pub fn run() {
             session::architect::setup_architect_workspace,
             session::librarian::setup_librarian_workspace,
             session::debug::debug_repo_root,
+            crate::shot::set_shot_target_rect,
             session::sandbox::wsl_sandbox_status,
             session::sandbox::provision_sandbox,
             session::sandbox::sandbox_run,
