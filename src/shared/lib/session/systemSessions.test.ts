@@ -6,16 +6,18 @@ import {
   DESIGN_STUDIO_SESSION_ID,
   ALGORITHMS_STUDIO_SESSION_ID,
   TEAMS_STUDIO_SESSION_ID,
+  DEBUG_STUDIO_SESSION_ID,
 } from "./systemSessions";
 
 describe("isStudioSessionPaneId (#3137)", () => {
   it("matches each app-owned studio session id", () => {
-    for (const id of [DESIGN_STUDIO_SESSION_ID, ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID]) {
+    for (const id of [DESIGN_STUDIO_SESSION_ID, ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID, DEBUG_STUDIO_SESSION_ID]) {
       expect(isStudioSessionPaneId(id)).toBe(true);
     }
     expect(STUDIO_SESSION_PANE_IDS).toContain("design-studio:designer");
     expect(STUDIO_SESSION_PANE_IDS).toContain("algorithms-studio:librarian");
     expect(STUDIO_SESSION_PANE_IDS).toContain("teams-studio:architect");
+    expect(STUDIO_SESSION_PANE_IDS).toContain("debug-studio:debugger");
   });
 
   it("does NOT match real fleet / manual / planner ids (they share the `<key>:<tail>` shape)", () => {
@@ -24,9 +26,9 @@ describe("isStudioSessionPaneId (#3137)", () => {
     }
   });
 
-  it("is exactly the three studios (a new studio must be added here to be excluded)", () => {
+  it("is exactly the four studios (a new studio must be added here to be excluded)", () => {
     expect([...STUDIO_SESSION_PANE_IDS].sort()).toEqual(
-      ["algorithms-studio:librarian", "design-studio:designer", "teams-studio:architect"],
+      ["algorithms-studio:librarian", "debug-studio:debugger", "design-studio:designer", "teams-studio:architect"],
     );
   });
 });
