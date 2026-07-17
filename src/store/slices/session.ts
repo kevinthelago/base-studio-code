@@ -11,7 +11,7 @@ import { setMapEntry } from "../updateHelpers";
 // allowed-command tiers were retired (#1457) — profiles own command auto-approval. This slice
 // keeps the global denied-command block-list and the session-wide flags/models.
 type SessionSlice = Pick<AppStore,
-  "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "bypassPermissions" | "setBypassPermissions" | "sandboxConsoles" | "setSandboxConsoles" | "debugSession" | "setDebugSession" | "showConsolePage" | "setShowConsolePage" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
+  "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "bypassPermissions" | "setBypassPermissions" | "sandboxConsoles" | "setSandboxConsoles" | "debugSession" | "setDebugSession" | "showConsolePage" | "setShowConsolePage" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel" | "activeStudioTargets" | "setActiveStudioTargets"
 >;
 
 export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = (set) => ({
@@ -73,4 +73,11 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       paneModels: {},
       setPaneModel: (paneId, m) =>
         set((s) => ({ paneModels: setMapEntry(s.paneModels, paneId, m) })),
+
+      // Studio network (#2940): which app-owned studio sessions the pump wants reachable right now
+      // (targets with open commissions). Transient (NOT persisted) — it drives the lazy-mount hosts
+      // in ConsoleWorkspace, which launch the designer/librarian session on demand and tear it down
+      // when the list empties.
+      activeStudioTargets: [],
+      setActiveStudioTargets: (t) => set({ activeStudioTargets: t }),
 });
