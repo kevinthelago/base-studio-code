@@ -249,6 +249,7 @@ pub fn run() {
             session::designer::setup_designer_workspace,
             session::architect::setup_architect_workspace,
             session::librarian::setup_librarian_workspace,
+            session::debug::debug_repo_root,
             session::sandbox::wsl_sandbox_status,
             session::sandbox::provision_sandbox,
             session::sandbox::sandbox_run,

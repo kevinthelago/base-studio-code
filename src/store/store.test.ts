@@ -107,6 +107,16 @@ describe("sandboxConsoles setting (#1988)", () => {
   });
 });
 
+describe("debugSession setting (#3298)", () => {
+  it("is off by default and toggles via the setter", () => {
+    expect(useAppStore.getState().debugSession).toBe(false);
+    useAppStore.getState().setDebugSession(true);
+    expect(useAppStore.getState().debugSession).toBe(true);
+    useAppStore.getState().setDebugSession(false);
+    expect(useAppStore.getState().debugSession).toBe(false);
+  });
+});
+
 describe("bypassPermissions posture (#1916/#2050)", () => {
   it("defaults to the safe allow-list (OFF) and toggles via the setter", () => {
     // #2050: the shipped default is the allow-list (bypass off) — a fresh install is safe-by-default.
