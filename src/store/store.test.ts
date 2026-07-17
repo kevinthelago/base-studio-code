@@ -117,6 +117,18 @@ describe("debugSession setting (#3298)", () => {
   });
 });
 
+describe("activeStudioTargets (studio network #2940)", () => {
+  it("is empty by default and the pump can publish the reachable set", () => {
+    expect(useAppStore.getState().activeStudioTargets).toEqual([]);
+    useAppStore.getState().setActiveStudioTargets(["designer"]);
+    expect(useAppStore.getState().activeStudioTargets).toEqual(["designer"]);
+    useAppStore.getState().setActiveStudioTargets(["designer", "librarian"]);
+    expect(useAppStore.getState().activeStudioTargets).toEqual(["designer", "librarian"]);
+    useAppStore.getState().setActiveStudioTargets([]);
+    expect(useAppStore.getState().activeStudioTargets).toEqual([]);
+  });
+});
+
 describe("bypassPermissions posture (#1916/#2050)", () => {
   it("defaults to the safe allow-list (OFF) and toggles via the setter", () => {
     // #2050: the shipped default is the allow-list (bypass off) — a fresh install is safe-by-default.

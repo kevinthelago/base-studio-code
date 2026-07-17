@@ -13,26 +13,36 @@ import { Box } from "@/shared/ui/layout/Box";
  *
  * @param active whether this page is the currently-shown one (drives `display: flex | none`).
  * @param gate   single-owner guard; while false the page never latches and unmounts if already shown.
+ * @param keepAlive mount the page (hidden) even if it was never actively shown — and, crucially, UNMOUNT
+ *   it again when this drops (unless it was later shown normally). This is the on-demand reachability
+ *   hook (#2940): the studio-network pump keeps a target studio session alive only while a commission is
+ *   open, reusing this ONE single-owner mount (never a second PTY owner), and lets it tear down after.
  * @param fallback if provided, children are wrapped in `<Suspense>` (for a lazily-imported page).
  * @param style  merged over the flex-column box defaults (e.g. `{ flexDirection: "row" }`).
  */
 export function KeptMountedPage({
   active,
   gate = true,
+  keepAlive = false,
   fallback,
   style,
   children,
 }: {
   active: boolean;
   gate?: boolean;
+  keepAlive?: boolean;
   fallback?: ReactNode;
   style?: CSSProperties;
   children: ReactNode;
 }) {
+  // `everShown` latches ONLY on a real activation — so a page the user actually opened stays mounted
+  // for the session (its live PTY survives a mode switch). `keepAlive` mounts without latching, so a
+  // session brought up purely to fulfil a commission unmounts (releasing its PTY) when it clears.
   const everShown = useRef(false);
   if (active && gate) everShown.current = true;
-  // Not yet shown, or the single-owner gate has dropped → render nothing (and release the PTY).
-  if (!everShown.current || !gate) return null;
+  // The single-owner gate dropped, or the page is neither latched-open nor kept-alive → render nothing
+  // (and release the PTY).
+  if (!gate || !(everShown.current || keepAlive)) return null;
 
   const body = fallback !== undefined ? <Suspense fallback={fallback}>{children}</Suspense> : children;
   return (

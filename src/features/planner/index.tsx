@@ -64,6 +64,7 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
     planningPitch,
     planningTitle,
     planningSessionKey,
+    activeStudioTargets,
   } = useAppStore();
 
   // The page modes ride the shared <Screen> shell (#1876), store-controlled so the tab bar and
@@ -161,6 +162,7 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
       <KeptMountedPage
         active={mode === "designs"}
         gate={!pageOverride && !designDetached}
+        keepAlive={activeStudioTargets.includes("designer")}
         fallback={<Box style={{ flex: 1 }} />}
         style={{ flexDirection: "row" }}
       >
@@ -181,6 +183,7 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
       <KeptMountedPage
         active={mode === "algorithms"}
         gate={!pageOverride && !algorithmsDetached}
+        keepAlive={activeStudioTargets.includes("librarian")}
         fallback={<Box style={{ flex: 1 }} />}
         style={{ flexDirection: "row" }}
       >
