@@ -74,6 +74,9 @@ bsc-util = { path = "../crates/bsc-util" }
 # `bsc shot` (#3261): the request/response protocol the CLI and this watcher share. Tauri-free by
 # design — only the platform capture lives app-side.
 bsc-shot = { path = "../crates/bsc-shot" }
+# The ONE bsc→app request channel + the navigate verb (#3274, epic #3260).
+bsc-appchan = { path = "../crates/bsc-appchan" }
+bsc-navigate = { path = "../crates/bsc-navigate" }
 # PNG decode/encode for the --rect crop (CapturePreview hands back the WHOLE webview). `png` not
 # `image`: it is the only format CapturePreview emits, and it keeps the binary off a codec matrix.
 png = "0.17"
