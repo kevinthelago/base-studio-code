@@ -32,7 +32,7 @@ import { ArchitectTerminal } from "./ArchitectTerminal";
 import { useDragResize } from "@/shared/hooks/useDragResize";
 import { useDockEntrance } from "@/shared/hooks/useDockEntrance";
 import { useCrumbEntity } from "@/shared/hooks/useCrumbEntity";
-import { RELATIONSHIP_ARCHETYPES, type Position } from "./lib/team";
+import { RELATIONSHIP_ARCHETYPES, augmentStudioNetworkForDebug, type Position } from "./lib/team";
 import { autoLayout, nodeBox, contentBounds, CANVAS_W, CANVAS_H, type Box as GBox } from "./lib/orgLayout";
 import { teamsBounds } from "./lib/teamsLayout";
 import { detectPools, collapseOrg, poolLayoutSizes, applyPoolLayout } from "./lib/orgPools";
@@ -57,7 +57,11 @@ export function TeamsPanel() {
   // a card and the user drills IN by clicking one (no header dropdown). `atTeams` also catches a stale
   // id whose team was deleted, so we never render a missing team.
   const [orgId, setOrgId] = useState<string | null>(null);
-  const org = orgId ? orgs.find((o) => o.id === orgId) : undefined;
+  // The debug session (#3298, Settings toggle) joins the Studio Network graph as a runtime overlay when
+  // on (#3317) — a node the seed doesn't carry, so it's added here on the derived org, not persisted.
+  const debugSession = useAppStore((s) => s.debugSession);
+  const rawOrg = orgId ? orgs.find((o) => o.id === orgId) : undefined;
+  const org = rawOrg ? augmentStudioNetworkForDebug(rawOrg, debugSession) : undefined;
   // Name the entered team in the titlebar crumb (#3041) — "" on the teams overview.
   useCrumbEntity("teams", org?.name ?? "");
   const savedZoom = useAppStore((s) => s.teamsZoom[orgId ?? ""]);
