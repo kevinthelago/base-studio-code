@@ -11,7 +11,7 @@
 //
 // This is the array tracer; TracedMatrix / TracedGraph / TracedTree follow the same shape as their
 // renderers land (#3179–#3185), so instrumented execution generalizes to every data type.
-import type { ArrayFrame, ArrayOp, Frame, GraphFrame, GraphOp, MatrixFrame, MatrixOp, PanelsFrame, ScalarFrame, ScalarOp, StackFrame, StackOp, StructureFrame } from "./trace";
+import type { ArrayFrame, ArrayOp, Frame, GraphFrame, GraphOp, MatrixFrame, MatrixOp, PanelsFrame, ScalarFrame, ScalarOp, StackFrame, StackOp, StructureFrame, TreeFrame, TreeOp } from "./trace";
 
 /** A durable per-cell mark an algorithm can set (matches the ArrayOp `mark` vocabulary). */
 export type ArrayMark = "sorted" | "pivot" | "min";
@@ -516,6 +516,137 @@ export function runScalarAlgorithm(
   };
 }
 
+// ── the tree tracer (#3270) — trees / heaps / BSTs (parent-pointer nodes) ──
+
+/** A durable per-node tree state (matches the TreeFrame `marks` vocabulary). */
+export type TreeMark = "current" | "path" | "target";
+/** One tree node — a stable id, its value, and its parent id (absent for the root). */
+export interface TreeNode {
+  id: string;
+  value: number | string;
+  parent?: string;
+}
+
+/**
+ * An instrumented tree (which also models a HEAP or BST) — a tree/heap algorithm operates on it and every
+ * observable op appends a `TreeFrame`. Nodes are addressed by a STABLE id; the parent pointers give the
+ * `<TreeView>` renderer the shape (it derives the layout). `insert` grows a node, `remove` drops one,
+ * `swap` exchanges two nodes' VALUES (the heap sift — positions stay fixed, values move), `visit`/`mark`
+ * set a durable state, `compare` fires a transient read. `value` is a silent read.
+ */
+export class TracedTree {
+  private readonly nodes: TreeNode[] = [];
+  private readonly byId = new Map<string, TreeNode>();
+  private readonly marks: Record<string, TreeMark> = {};
+  private readonly log: TreeFrame[] = [];
+
+  constructor(initial: readonly TreeNode[] = []) {
+    for (const n of initial) this.addNode(n);
+    this.emit(); // the tree at rest
+  }
+
+  private addNode(n: TreeNode): void {
+    const copy: TreeNode = { id: n.id, value: n.value, ...(n.parent !== undefined ? { parent: n.parent } : {}) };
+    this.nodes.push(copy);
+    this.byId.set(n.id, copy);
+  }
+
+  /** The node count — read freely (no frame). */
+  get size(): number {
+    return this.nodes.length;
+  }
+
+  /** A silent read of a node's value (the algorithm's internal logic — records no frame). */
+  value(id: string): number | string | undefined {
+    return this.byId.get(id)?.value;
+  }
+
+  /** Add a node under `parent` (omit `parent` for the root) — records an `insert` frame stamped on it. */
+  insert(id: string, value: number | string, parent?: string): void {
+    this.addNode({ id, value, parent });
+    // TreeOp.insert requires a `parent`; a root names itself (the frame node's own `parent` stays absent).
+    this.emit([{ op: "insert", node: id, parent: parent ?? id }]);
+  }
+
+  /** Remove a node (and any durable mark) — records a `remove` frame. */
+  remove(id: string): void {
+    const i = this.nodes.findIndex((n) => n.id === id);
+    if (i >= 0) {
+      this.nodes.splice(i, 1);
+      this.byId.delete(id);
+    }
+    delete this.marks[id];
+    this.emit([{ op: "remove", node: id }]);
+  }
+
+  /** Exchange the VALUES of two nodes (the heap sift — the tree shape is unchanged) — records a `swap`. */
+  swap(a: string, b: string): void {
+    const na = this.byId.get(a);
+    const nb = this.byId.get(b);
+    if (na && nb) {
+      const t = na.value;
+      na.value = nb.value;
+      nb.value = t;
+    }
+    this.emit([{ op: "swap", at: [a, b] }]);
+  }
+
+  /** Compare two nodes' values — records a `compare` frame; returns sign(a - b) for numeric values. */
+  compare(a: string, b: string): number {
+    this.emit([{ op: "compare", at: [a, b] }]);
+    const va = this.byId.get(a)?.value;
+    const vb = this.byId.get(b)?.value;
+    return typeof va === "number" && typeof vb === "number" ? Math.sign(va - vb) : 0;
+  }
+
+  /** Finish / touch a node — a `visit` op + durable `current` mark. */
+  visit(id: string): void {
+    this.marks[id] = "current";
+    this.emit([{ op: "visit", node: id }]);
+  }
+
+  /** Set a durable node mark (`current`/`path`/`target`) with no transient op. */
+  mark(id: string, as: TreeMark): void {
+    this.marks[id] = as;
+    this.emit();
+  }
+
+  /** The recorded trace (a fresh snapshot array). */
+  trace(): TreeFrame[] {
+    return [...this.log];
+  }
+
+  /** Route emitted frames to a {@link TracedScene} (#3259) — see {@link TracedArray.setSink}. */
+  private sink?: (f: StructureFrame) => void;
+  setSink(fn: (f: StructureFrame) => void): void { this.sink = fn; }
+
+  private emit(ops?: TreeOp[]): void {
+    const frame: TreeFrame = {
+      structure: "tree",
+      nodes: this.nodes.map((n) => ({ ...n })),
+    };
+    if (ops && ops.length) frame.ops = ops;
+    if (Object.keys(this.marks).length) frame.marks = { ...this.marks };
+    this.log.push(frame);
+    this.sink?.(frame);
+  }
+}
+
+/**
+ * Run a tree/heap algorithm — a plain function over a {@link TracedTree} — returning a factory that yields
+ * its recorded trace as a fresh generator each call (replay-safe).
+ */
+export function runTreeAlgorithm(
+  algo: (t: TracedTree) => void,
+  initial: readonly TreeNode[] = [],
+): () => Generator<Frame> {
+  return function* () {
+    const t = new TracedTree(initial);
+    algo(t);
+    yield* t.trace();
+  };
+}
+
 // ── the scene tracer (#3259) — MULTI-STRUCTURE decomposition ──
 //
 // A larger algorithm isn't one structure: Dijkstra is a graph + a distance array (+ a heap, later). A
@@ -578,6 +709,10 @@ export class TracedScene {
   /** A named scalar-state panel — counters / accumulators / the current pointer (renders via `<ScalarView>`). */
   scalar(name: string, initial: Record<string, number | string> = {}): TracedScalar {
     return this.attach(name, new TracedScalar(initial));
+  }
+  /** A named tree / heap / BST panel (parent-pointer nodes; renders via `<TreeView>`). */
+  tree(name: string, initial: readonly TreeNode[] = []): TracedTree {
+    return this.attach(name, new TracedTree(initial));
   }
 
   /** The recorded synchronized panel trace — a resting snapshot when the program did no ops. */
