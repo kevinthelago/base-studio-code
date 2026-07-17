@@ -482,8 +482,8 @@ export function DesignsWorkbench() {
                 design viewport (previewW×previewH) at a fixed downscale-only fit (never upscales → the
                 iframe texture stays 1:1-or-smaller → sharp). ALL pan/zoom happens INSIDE the iframe as a
                 DOM transform on `#root` (the browser re-rasterizes crisply at any scale, unlike a
-                CSS-scaled iframe). The +/−/fit buttons post commands to that engine; drag/wheel are handled
-                by the engine directly. Interactive controls + scroll regions are left alone by the engine. */}
+                CSS-scaled iframe). Drag pans anywhere (a click still interacts); the wheel scrolls/pans the
+                content, ⌘/ctrl+wheel zooms; the +/−/fit buttons post commands to the engine. */}
             {/* eslint-disable-next-line no-restricted-syntax -- callback ref: a ResizeObserver reads this canvas's px size to size the fixed fit (#3190) */}
             <div
               ref={mountPreviewCanvas}
