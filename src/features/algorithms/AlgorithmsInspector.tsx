@@ -15,7 +15,7 @@ import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import { Chip } from "@/shared/ui/data/Chip";
 import { TECH_META, implById, usedByImpl, type KnowledgeGraph, type AlgoImpl } from "./lib/knowledge";
 import { VizPreview } from "./viz/VizPanel";
-import { vizForImpl } from "./viz/examples/registry";
+import { useVizForImpl } from "./viz/useVizForImpl";
 
 const PANEL = { width: "100%", height: "100%", borderLeft: "1px solid var(--border)", overflowY: "auto", background: "var(--bg-panel)" } as const;
 
@@ -66,8 +66,9 @@ function ImplInspector({ graph, impl, onSelectImpl, onExpandViz }: {
   const jump = (im: AlgoImpl) => onSelectImpl?.(im.id);
 
   // The impl's live visualization (#3177), if any. When present it's ALWAYS rendered inline above the
-  // code (#3199); impls without one keep exactly today's code-only pane.
-  const viz = vizForImpl(impl);
+  // code (#3199); impls without one keep exactly today's code-only pane. A stored `vizCode` resolves via
+  // the sandbox worker (#3233) — the in-app program shows first, then the stored program replaces it.
+  const viz = useVizForImpl(impl);
 
   return (
     <Box style={PANEL}>
