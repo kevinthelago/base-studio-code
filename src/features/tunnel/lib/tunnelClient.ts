@@ -45,16 +45,27 @@ export const tunnelSetSessions = (sessions: SessionMeta[]): Promise<void> =>
 export const tunnelSetPlanState = (projectId: string, files: CanonicalFile[]): Promise<void> =>
   invoke("tunnel_set_plan_state", { projectId, files });
 
-/** Acknowledge a plan push from mobile after the frontend has applied the files to the
- *  hub directory. Broadcasts `plan_sync_ack` back to the mobile client.
- *
- *  UNCALLED, and deliberately kept (#3244): this is the second half of an UNFINISHED flow,
- *  not dead code. Rust emits `tunnel://plan-sync-push` when mobile pushes a plan
- *  (mobile/tunnel/transport.rs), expecting the frontend to apply the files and ack here —
- *  but no listener for that event exists, so a mobile plan push is silently dropped and
- *  never acked. Deleting this binding would erase the evidence of the gap. See #3248. */
+/** Acknowledge a plan push from mobile after the frontend applies the files to the hub directory
+ *  (#3248). Broadcasts `plan_sync_ack` back to the mobile client so it learns the outcome. Called by
+ *  {@link applyPushedPlanPush} — the `tunnel://plan-sync-push` listener path (Tunnel.tsx). */
 export const tunnelAckPlanPush = (projectId: string, applied: boolean): Promise<void> =>
   invoke("tunnel_ack_plan_push", { projectId, applied });
+
+/** Handle a `tunnel://plan-sync-push` (#3248): apply the plan files a mobile client pushed to the
+ *  project's hub dir (a PATH-SAFE backend write — `apply_pushed_plan_files` refuses `..`/absolute
+ *  paths), then ACK the outcome back to mobile via {@link tunnelAckPlanPush}. On ANY failure we ack
+ *  `applied: false` rather than leave the phone hanging. Returns whether the push landed. */
+export async function applyPushedPlanPush(projectId: string, files: CanonicalFile[]): Promise<boolean> {
+  let applied = false;
+  try {
+    await invoke("apply_pushed_plan_files", { projectId, files });
+    applied = true;
+  } catch (e) {
+    console.error("tunnel: applying a pushed plan failed:", e);
+  }
+  await tunnelAckPlanPush(projectId, applied).catch((e) => console.error("tunnel: plan-push ack failed:", e));
+  return applied;
+}
 
 // ── Live planning session (PT1 / #934 / #986) ─────────────────────────────────
 // Project the LIVE planner UI state to a paired phone — distinct from tunnelSetPlanState
