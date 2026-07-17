@@ -9,6 +9,7 @@
 import type * as Esbuild from "esbuild-wasm";
 import wasmURL from "esbuild-wasm/esbuild.wasm?url";
 import importmapEmbedded from "@data/ui/preview-importmap.json";
+import { collapseSegments } from "./importPath";
 
 /** The esm.sh import-map for the externals (React et al.), shared with the skeleton preview (#2419). */
 export const COMPONENT_IMPORTMAP: Record<string, string> = importmapEmbedded;
@@ -19,14 +20,7 @@ export const COMPONENT_EXTERNALS = Object.keys(COMPONENT_IMPORTMAP);
 /** Resolve a relative import against its importer's directory. Pure. */
 export function resolveMemPath(importer: string, spec: string): string {
   const fromDir = importer.includes("/") ? importer.slice(0, importer.lastIndexOf("/")) : "";
-  const parts = (fromDir ? fromDir.split("/") : []).concat(spec.split("/"));
-  const out: string[] = [];
-  for (const p of parts) {
-    if (p === "" || p === ".") continue;
-    if (p === "..") out.pop();
-    else out.push(p);
-  }
-  return out.join("/");
+  return collapseSegments((fromDir ? fromDir.split("/") : []).concat(spec.split("/")));
 }
 
 /** Look up an in-memory file, trying common TS/JS extensions + index files. Pure. */

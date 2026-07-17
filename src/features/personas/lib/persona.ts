@@ -9,6 +9,7 @@
 // persona resolves role + prompt + skills + model in one step) is the follow-up phase.
 import type { SessionRole } from "@/shared/lib/session/sessionRoles";
 import { overlayGlob, overlayRaw } from "@/shared/lib/core/configOverrides";
+import { slugify } from "@/shared/lib/core/format";
 import workerProtocolMd from "@data/fleet/worker-protocol.md?raw";
 import directorProtocolMd from "@data/fleet/director-protocol.md?raw";
 
@@ -92,7 +93,7 @@ export const BUILTIN_PERSONAS: Persona[] = makeBuiltinPersonas();
 
 /** Slugify a persona name into an id fragment (user personas mint `persona-<slug>-<n>` in the store). */
 export function personaSlug(name: string): string {
-  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "persona";
+  return slugify(name) || "persona";
 }
 
 /** A blank user persona seeded onto a role — the "new persona" template. */

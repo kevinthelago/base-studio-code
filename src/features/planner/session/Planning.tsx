@@ -59,7 +59,7 @@ import { usePlannerTunnelSync } from "./usePlannerTunnelSync";
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
 import { oneShotComplete } from "@/shared/lib/core/claudeComplete";
 import { resolveLlmConfig, hasLlmKey } from "@/shared/lib/core/llmConfig";
-import { TERM_THEME } from "./planningTerminal";
+import { TERM_THEME } from "@/app/console/lib/terminalConstants";
 import { PlanningHeader } from "./PlanningHeader";
 import { PlanningNotices } from "./PlanningNotices";
 import { PublishProgressView } from "./PublishProgressView";

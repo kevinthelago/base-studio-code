@@ -11,22 +11,8 @@ import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Card } from "@/shared/ui/data/Card";
 import { Text } from "@/shared/ui/typography/Text";
 import { Box } from "@/shared/ui/layout/Box";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
-import { Skeleton, SkeletonChart } from "@/shared/ui/feedback/Skeleton";
-
-/** A compact empty state for a card body (#2243) — the card frame + head stay; the body shows this. */
-function CardEmpty({ icon = "○", title, hint }: { icon?: React.ReactNode; title: string; hint?: string }) {
-  return <EmptyState size="sm" iconVariant="dashed" icon={icon} title={title} description={hint} style={{ padding: "20px 12px" }} />;
-}
-
-/** A stack of shimmer rows — a loading placeholder for a bar-list card body (#2243). */
-function SkeletonRows({ rows = 5, h = 20 }: { rows?: number; h?: number }) {
-  return (
-    <Stack gap={8}>
-      {Array.from({ length: rows }).map((_, i) => <Skeleton key={i} h={h} radius={5} />)}
-    </Stack>
-  );
-}
+import { SkeletonChart } from "@/shared/ui/feedback/Skeleton";
+import { CardEmpty, SkeletonRows } from "@/shared/ui/feedback/CardStates";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

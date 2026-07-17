@@ -22,6 +22,7 @@
 // The bootstrap imports the component and mounts it with sample props derived from its prop schema, so a
 // component with required props still renders something representative (not a curated mock).
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
+import { resolveInternalBase } from "@/shared/lib/preview/importPath";
 import type { ComponentRecord, PropSpec } from "./model";
 
 /**
@@ -81,28 +82,6 @@ function importSpecs(source: string): string[] {
  *  opposed to a bare npm specifier or an absolute path/URL? Only these resolve against sibling modules. */
 function isInternalSpec(spec: string): boolean {
   return spec.startsWith("@/") || spec.startsWith("./") || spec.startsWith("../");
-}
-
-/** Resolve an INTERNAL import `spec` (imported FROM `fromRel`, a `src/`-relative path) to its
- *  `src/`-relative module BASE (no extension), or `null` when it isn't internal. `@/x` → `x`; a
- *  relative path joins onto the importer's dir with `.`/`..` collapsed. */
-function resolveInternalBase(spec: string, fromRel: string): string | null {
-  let segs: string[];
-  if (spec.startsWith("@/")) {
-    segs = spec.slice(2).split("/");
-  } else if (spec.startsWith("./") || spec.startsWith("../")) {
-    const fromDir = fromRel.includes("/") ? fromRel.slice(0, fromRel.lastIndexOf("/")) : "";
-    segs = (fromDir ? fromDir.split("/") : []).concat(spec.split("/"));
-  } else {
-    return null;
-  }
-  const out: string[] = [];
-  for (const seg of segs) {
-    if (seg === "" || seg === ".") continue;
-    if (seg === "..") out.pop();
-    else out.push(seg);
-  }
-  return out.join("/");
 }
 
 /** A user component's own IMPLEMENTATION source — its explicit `source`, else a non-empty `srcText`
