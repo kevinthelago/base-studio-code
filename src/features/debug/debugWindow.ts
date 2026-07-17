@@ -7,7 +7,9 @@
 
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
-/** The fixed OS-window label — one debug window at a time. */
+/** The fixed OS-window label — one debug window at a time. MUST stay in sync with a `windows` entry in
+ *  `src-tauri/capabilities/default.json` (#3313) — otherwise Tauri denies the window `event.listen`
+ *  (the terminal's PTY listeners), the store, and the titlebar's window controls. */
 export const DEBUG_WINDOW_LABEL = "debug-session";
 
 /** True in the window opened with `?debug=1` (the debug session's host window). Pure (search injectable
