@@ -13,8 +13,7 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
 import { Chip } from "@/shared/ui/data/Chip";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
-import { Skeleton } from "@/shared/ui/feedback/Skeleton";
+import { CardEmpty, SkeletonRows } from "@/shared/ui/feedback/CardStates";
 import { buildFleetHealth, HEALTH_LABEL, type PermEvent } from "./lib/fleetHealth";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
 
@@ -45,10 +44,10 @@ export function FleetHealth({ workers }: { workers: LiveWorker[] }) {
           ? <Text as="span" mono size={10.5} style={{ color: dangerCount > 0 ? "var(--danger)" : "var(--warn, #f2b155)" }}>{health.total}</Text>
           : undefined} />
       {!permLoaded && !health.hasIssues
-        ? <Stack gap={6}>{[0, 1, 2].map((i) => <Skeleton key={i} h={30} radius={6} />)}</Stack>
+        ? <SkeletonRows rows={3} h={30} />
         : !health.hasIssues
-        ? <EmptyState size="sm" iconVariant="dashed" icon="✓" title="All clear"
-            description="Permission denials, stalls, quarantines, and blocked workers show up here." style={{ padding: "20px 12px" }} />
+        ? <CardEmpty icon="✓" title="All clear"
+            hint="Permission denials, stalls, quarantines, and blocked workers show up here." />
         : (
           <Stack gap={5}>
             {health.items.slice(0, 12).map((it, i) => (
