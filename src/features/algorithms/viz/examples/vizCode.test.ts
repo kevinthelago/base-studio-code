@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import type { ArrayFrame } from "../../lib/trace";
+import { isPanelsFrame, type ArrayFrame, type PanelsFrame } from "../../lib/trace";
 import { runVizProgram } from "./vizProgram";
 import { resolveVizExample, programVizForImpl } from "./registry";
 
@@ -21,6 +21,18 @@ const MATRIX_VIZCODE = `({
   run(m) { m.read(0, 0); m.read(1, 1); },
 })`;
 
+// A MULTI-STRUCTURE scene descriptor (#3275) — a graph + a "seen" array marched together. Proves a scene
+// can be authored + persisted as stored vizCode (not just an in-app program) and run through the sandbox.
+const SCENE_VIZCODE = `({
+  datatype: "scene",
+  input: { nodes: [{ id: "a" }, { id: "b" }, { id: "c" }], edges: [{ from: "a", to: "b" }, { from: "b", to: "c" }] },
+  run(scene, input) {
+    const g = scene.graph("graph", input);
+    const seen = scene.array("seen", [0, 0, 0]);
+    g.ids().forEach((id, i) => { g.visit(id); seen.set(i, 1); });
+  },
+})`;
+
 describe("runVizProgram — the pure compile+run core (#3233)", () => {
   it("runs the real array program (frames end sorted, swaps recorded)", () => {
     const { datatype, frames } = runVizProgram(BUBBLE_VIZCODE);
@@ -37,6 +49,15 @@ describe("runVizProgram — the pure compile+run core (#3233)", () => {
 
   it("dispatches by datatype (matrix descriptor)", () => {
     expect(runVizProgram(MATRIX_VIZCODE).datatype).toBe("matrix");
+  });
+
+  it("runs a SCENE descriptor as synchronized panels (#3275)", () => {
+    const { datatype, frames } = runVizProgram(SCENE_VIZCODE);
+    expect(datatype).toBe("scene");
+    expect(frames.every(isPanelsFrame)).toBe(true); // every frame is a multi-panel frame
+    const last = (frames[frames.length - 1] as PanelsFrame).panels;
+    expect(Object.keys(last).sort()).toEqual(["graph", "seen"]); // both declared panels present
+    expect((last.seen as ArrayFrame).data).toEqual([1, 1, 1]); // every node marked seen, in sync with the graph
   });
 
   it("throws on malformed code", () => {
@@ -64,6 +85,15 @@ describe("resolveVizExample — sandbox-run stored vizCode (#3233)", () => {
     const viz = (await resolveVizExample(MATRIX_VIZCODE))!;
     expect(viz.renderers.matrix).toBeDefined();
     expect(viz.renderers.array).toBeUndefined();
+  });
+
+  it("builds a SCENE example — every structure renderer registered, panel frames (#3275)", async () => {
+    const viz = (await resolveVizExample(SCENE_VIZCODE))!;
+    expect(viz).toBeDefined();
+    expect(viz.renderers.graph).toBeDefined();
+    expect(viz.renderers.array).toBeDefined();
+    expect(viz.renderers.tree).toBeDefined(); // a scene may declare ANY structure, so all are registered
+    expect([...viz.factory()].every(isPanelsFrame)).toBe(true);
   });
 
   it("caches by code string (one sandbox run, stable resolved example)", async () => {
