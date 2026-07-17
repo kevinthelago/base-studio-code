@@ -1,0 +1,48 @@
+/* The <ScalarView> renderer (#3268, epic #3171) — ELEMENT / LAYOUT styles ONLY.
+ *
+ * The MOTION is NOT here: the set / add / compare animations are KitAnimation DATA compiled by the
+ * kit-motion engine (scalarViewMotion.ts → compileAnimationsCss), injected as a managed <style> and bound
+ * to the `[data-op=…]` data-states this renderer stamps. This file keeps only structural styles. Tokens
+ * from tokens.css. */
+
+.scalar-view {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 8px;
+  min-height: 172px;
+}
+
+.scalar-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 56px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+
+.scalar-name {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.scalar-val {
+  font-size: 16px;
+  line-height: 1.1;
+  color: var(--fg);
+}
+
+.scalar-empty {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-dim);
+  padding: 8px 0;
+}
