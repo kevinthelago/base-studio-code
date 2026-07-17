@@ -53,9 +53,6 @@ mod repos;
 mod schema;
 mod sessions;
 mod skipped;
-/// Agent todo lists — the feature scope (#1872). `pub` so the global sibling store (`crates/bsc-todo`)
-/// reuses the [`todos::Todo`] type + the connection-level `add`/`list`/… helpers over its own db.
-pub mod todos;
 mod transformations;
 mod triage;
 mod ui;
@@ -69,7 +66,6 @@ pub use features::PlanFeature;
 pub use issues::{is_valid_status, IssueSummary, PlanIssue, STATUSES};
 pub use lessons::Lesson;
 pub use sessions::FleetSession;
-pub use todos::Todo;
 
 use rusqlite::{params, Connection};
 use std::path::Path;

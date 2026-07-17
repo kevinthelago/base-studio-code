@@ -5,7 +5,7 @@ edition = "2021"
 description = "Screenshot request protocol (#3261): the file-based request/response channel `bsc shot` uses to ask the RUNNING app for a webview snapshot, plus the `bsc shot` CLI. Tauri-free — the desktop app (the watcher/capturer) and the tiny CLI both depend on it."
 
 # Tauri-free core so the lean `bsc` umbrella binary can reuse it without dragging the desktop app in
-# (matches plandb/skilldb/bsc-todo).
+# (matches plandb/skilldb).
 [lib]
 name = "bsc_shot"
 
