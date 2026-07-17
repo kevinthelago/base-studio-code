@@ -233,6 +233,12 @@ mod tests {
         assert!(process_md().contains("plan-only"), "plan-only framing missing");
         assert!(process_md().contains("entirely the user's responsibility"),
             "user-owns-publish framing missing");
+        // Studio commissioning (#2940): the reuse-first directive names both targets + the reuse-check
+        // command before the emitter, so the planner reuses the library before commissioning new work.
+        assert!(process_md().contains("bsc-commission designer"), "component commissioning directive missing");
+        assert!(process_md().contains("bsc-commission librarian"), "algorithm commissioning directive missing");
+        assert!(process_md().contains("bsc ui list") && process_md().contains("bsc graph impl list"),
+            "reuse-first check must precede commissioning");
     }
 
     #[test]
