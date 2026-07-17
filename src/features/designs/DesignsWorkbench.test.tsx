@@ -15,9 +15,19 @@ import { SEED_THEMES } from "./lib/themes";
 import type { Kit } from "./lib/model";
 import { useAppStore } from "@/store";
 
-/** Reset the library slice to the seed before each test (the store is a singleton). */
+/** Reset the library slice to the seed before each test (the store is a singleton). #3274 lifted the
+ *  kit + component SELECTION out of DesignsWorkbench's local state into the store, so it is now part of
+ *  that singleton and must be reset here too — otherwise a selection from one test bleeds into the next
+ *  (the "hidden on mount" cases in particular assume nothing is focused). */
 beforeEach(() => {
-  useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, kitThemes: SEED_THEMES, aiFocusedId: null });
+  useAppStore.setState({
+    components: SEED_COMPONENTS,
+    kits: SEED_KITS,
+    kitThemes: SEED_THEMES,
+    aiFocusedId: null,
+    designsKitId: "",
+    designsCompId: null,
+  });
 });
 
 /** The rail entry for a component (its name also renders on the graph node + inspector header). */

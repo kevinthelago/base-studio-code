@@ -114,6 +114,23 @@ export interface ComponentsSlice {
    *  consumer, so a non-live one's change would never leave — and reappear after a restart). */
   dismissKitChange: (changeId: string) => void;
 
+  /** The Design Studio's SELECTED kit + component (#3274). Lifted out of `DesignsWorkbench`'s local
+   *  `useState` because two surfaces now need it: the user clicking a node, and `bsc navigate component
+   *  <kit> <component>` steering the app so a capture can target something. While it was local state
+   *  nothing outside the UI could select a component, so `bsc shot` could only photograph whatever
+   *  happened to be on screen.
+   *
+   *  TRANSIENT — deliberately NOT persisted. `designsCompId` starting null on each boot is what keeps
+   *  the Inspector hidden-when-empty (#3090, restoring #2705); persisting it would reopen the app
+   *  pre-focused and quietly undo that. `designsKitId` empty ⇒ the workbench falls back to the first
+   *  kit, exactly as the old lazy `useState(() => kits[0]?.id)` did. */
+  designsKitId: string;
+  /** `null` ⇒ nothing focused (the Inspector hides unless the AI is working a node). */
+  designsCompId: string | null;
+  /** Select a kit; clears the component selection (a component belongs to exactly one kit). */
+  setDesignsKit: (id: string) => void;
+  setDesignsComp: (id: string | null) => void;
+
   /** The library id the designer AI most-recently touched (#2525) — a component/kit/theme id from a
    *  `bsc ui set/remove` mutation the `useUiActivity` poll observed. The Design Studio live-focuses it
    *  (pulsing `.working` node + auto-pan). `null` when idle or the designer session ended. */
@@ -283,6 +300,13 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
 
   dismissKitDispatch: (projectKey, changeId) =>
     set((s) => ({ kitDispatches: s.kitDispatches.filter((d) => !(d.projectKey === projectKey && d.change.id === changeId)) })),
+
+  // #3274: empty kit ⇒ the workbench falls back to the first kit (matching the old lazy useState);
+  // null component ⇒ Inspector hidden-when-empty (#3090). Neither is persisted.
+  designsKitId: "",
+  designsCompId: null,
+  setDesignsKit: (id) => set({ designsKitId: id, designsCompId: null }),
+  setDesignsComp: (id) => set({ designsCompId: id }),
 
   aiFocusedId: null,
 

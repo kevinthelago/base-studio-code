@@ -70,6 +70,9 @@ pub fn run() {
         .manage(tunnel::TunnelState::new())
         .manage(perf::PerfState::new(perf_db()))
         .manage(logs::LogState::new(logs::LogConfig::default()))
+        // In-flight `bsc navigate` requests (#3274): the appchan watcher parks on a receiver here and
+        // `navigate_ack` (invoked by the frontend once it has applied the view) delivers into it.
+        .manage(crate::navigate::NavPending::default())
         .manage(scope_registry.clone())
         // Runtime fault-ingest collector (#2261): the loopback receiver a generated app POSTs
         // faults/heartbeats to. Started (bound + accept loop spawned) in `setup` below.
@@ -169,7 +172,7 @@ pub fn run() {
             // only runs app→bsc — so the CLI drops a request in ~/.base-studio-code/shots/ and this
             // watcher snapshots the webview and answers. Cheap poll on a worker thread; a missing dir
             // just disables captures rather than aborting startup.
-            crate::shot::spawn_watcher(app.handle().clone());
+            crate::appchan::spawn_watcher(app.handle().clone());
             // Start the localhost fault-ingest receiver (#2261): binds 127.0.0.1:0 and runs its accept
             // loop on a background thread. A bind failure is logged and leaves the port at 0 (ingest
             // unavailable) rather than aborting startup.
@@ -259,6 +262,7 @@ pub fn run() {
             session::sandbox::ensure_sandbox_worktree,
             session::sandbox::ensure_sandbox_user,
             app::recovery::was_unclean_shutdown,
+            crate::navigate::navigate_ack,
             github::readiness::github_readiness,
             github::readiness::preflight,
             github::readiness::get_preferred_shell,

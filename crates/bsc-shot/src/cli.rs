@@ -5,27 +5,23 @@
 //!   bsc shot help          # compact menu
 //!   bsc shot take help     # detailed help for ONE command
 //!
-//! The channel is a directory both sides watch (`~/.base-studio-code/shots/`, or `BSC_SHOT_DIR`) — see
-//! the crate docs for why it is a file channel and not an IPC call.
+//! Two directories, deliberately: the CHANNEL ([`bsc_appchan::chan_dir`], shared with `bsc navigate`)
+//! carries the request/reply files; `~/.base-studio-code/shots/` (or `BSC_SHOT_DIR`) holds the PNGs the
+//! caller owns. Sweeping the transport must never be able to delete someone's screenshots.
 
-use crate::{
-    is_png, new_id, pending_requests, read_response, shots_dir, sweep_stale, write_request, Rect, ShotRequest,
-};
+use crate::{is_png, shots_dir, Rect, ShotRequest, ShotResult, KIND};
 use bsc_cli_util::CmdDoc;
-use std::path::PathBuf;
 
 const TAGLINE: &str = "capture the RUNNING app's real pixels — a webview snapshot (#3261)";
 
-/// How long a `take` waits for the app before giving up. The app answers in well under a second when
-/// it is running; this bound exists so a request made with NO app running fails fast and clearly
-/// instead of hanging a loop iteration forever.
+/// How long a `take` waits for the app. The app answers in well under a second when it is running; this
+/// bound exists so a request made with NO app running fails fast and clearly instead of hanging a loop
+/// iteration forever.
 const DEFAULT_TIMEOUT_MS: i64 = 8_000;
-
-/// How often the poll loop re-reads the response file.
 const POLL_INTERVAL_MS: u64 = 40;
 
 /// Requests older than this are swept on each `take` — an abandoned CLI (Ctrl-C'd mid-poll) or one made
-/// while no app was running must not accumulate, nor be re-served later to nobody.
+/// while no app was running must not accumulate, nor be served later to nobody.
 const STALE_MS: i64 = 60_000;
 
 const COMMANDS: &[CmdDoc] = &[
@@ -37,53 +33,58 @@ USAGE:
   bsc shot take [--rect x,y,w,h] [--out <path>] [--timeout <ms>] [--json|--pretty]
 
 Asks the RUNNING desktop app to snapshot its webview and writes a PNG. Prints the path (--json emits
-{ path, w, h, at }).
+{ path, w, h }).
 
   --rect x,y,w,h   crop to a region, in CSS pixels from the webview's top-left. Omit for the whole
                    webview. The frontend knows a preview iframe's getBoundingClientRect(), so
                    'just the component' is a crop, not a second capture path.
   --out <path>     where to write the PNG. Default: <shots dir>/<id>.png
-  --timeout <ms>   how long to wait for the app (default 8000). The app answers in well under a
-                   second; this bound is so a request with NO app running fails fast instead of
-                   hanging.
+  --timeout <ms>   how long to wait for the app (default 8000).
 
 WHAT IT CAPTURES
   The webview's COMPOSITED output — pixel-identical to what you see, including the sandboxed preview
-  iframe, and a render rather than a screen grab. So it is immune to occlusion, minimize and screen
-  lock: the overnight case (#3260) does not silently produce black frames.
+  iframe, and a render rather than a screen grab. Verified: a capture taken while the window was
+  MINIMIZED is byte-identical to a visible one, so the overnight case (#3260) cannot silently produce
+  black frames.
 
 REQUIRES THE APP RUNNING
-  `bsc` cannot call the app (the bridge only runs app→bsc), so this drops a request in the shots dir
-  and waits for the app's watcher to answer. No app ⇒ a clear timeout error, never a hang.",
+  `bsc` cannot call the app (the bridge only runs app→bsc), so this drops a request in the channel dir
+  and waits for the app's watcher. No app ⇒ a clear timeout error, never a hang.
+
+PAIR IT WITH NAVIGATE
+  A shot captures whatever is on screen. To target something, steer first:
+    bsc navigate component <kit> <component> && bsc shot take",
     },
     CmdDoc {
         name: "pending",
-        summary: "unanswered capture requests (JSON) — what the app's watcher would serve",
+        summary: "unanswered channel requests (JSON) — what the app's watcher would serve",
         usage: "\
 USAGE:
   bsc shot pending [--json|--pretty]
 
-Every request with no response beside it, oldest first. Diagnostic: if `take` times out, this shows
-whether the request landed (⇒ the app/watcher is not running) or never got written.",
+Every request with no reply beside it, oldest first, across ALL verbs (shot + navigate share one
+channel). Diagnostic: if `take` times out, this shows whether the request landed (⇒ the app/watcher is
+not running) or was never written.",
     },
     CmdDoc {
         name: "sweep",
-        summary: "drop aged request/response files (never the PNGs)",
+        summary: "drop aged request/reply files (never the PNGs)",
         usage: "\
 USAGE:
   bsc shot sweep [--max-age <ms>] [--json]
 
-Removes request/response files older than --max-age (default 60000). PNGs are never swept — the
-caller owns those. `take` sweeps automatically; this is the manual escape hatch.",
+Removes channel request/reply files older than --max-age (default 60000). PNGs are never swept — they
+live in a different directory precisely so this cannot eat them. `take` sweeps automatically.",
     },
     CmdDoc {
         name: "dir",
-        summary: "the shots directory path",
+        summary: "the shots (PNG) directory and the channel directory",
         usage: "\
 USAGE:
-  bsc shot dir
+  bsc shot dir [--json]
 
-Prints the channel directory (BSC_SHOT_DIR, else ~/.base-studio-code/shots).",
+Prints both: the PNG output dir (BSC_SHOT_DIR, else ~/.base-studio-code/shots) and the request channel
+(BSC_APPCHAN_DIR, else ~/.base-studio-code/appreq).",
     },
 ];
 
@@ -105,10 +106,7 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
         match tok.as_str() {
             "--json" => a.json = true,
             "--pretty" => a.pretty = true,
-            "--rect" => {
-                let v = it.next().ok_or("--rect needs x,y,w,h")?;
-                a.rect = Some(parse_rect(&v)?);
-            }
+            "--rect" => a.rect = Some(parse_rect(&it.next().ok_or("--rect needs x,y,w,h")?)?),
             "--out" => a.out = Some(it.next().ok_or("--out needs a path")?),
             "--timeout" => {
                 let v = it.next().ok_or("--timeout needs a value in ms")?;
@@ -126,7 +124,7 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
 }
 
 /// `x,y,w,h`. A zero-area rect is rejected here rather than sent to the app to fail — the CLI can tell
-/// the caller exactly what was wrong, the app can only say "capture failed".
+/// the caller exactly what was wrong; the app could only say "capture failed".
 pub fn parse_rect(s: &str) -> Result<Rect, String> {
     let parts: Vec<&str> = s.split(',').map(|p| p.trim()).collect();
     if parts.len() != 4 {
@@ -154,96 +152,74 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "take" => cmd_take(&args),
         "pending" => cmd_pending(&args),
         "sweep" => cmd_sweep(&args),
-        "dir" => {
-            println!("{}", shots_dir()?.display());
-            Ok(())
-        }
+        "dir" => cmd_dir(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
 
 fn cmd_take(args: &Args) -> Result<(), String> {
-    let dir = shots_dir()?;
+    let chan = bsc_appchan::chan_dir()?;
     let now = bsc_util::now_ms();
+    let _ = bsc_appchan::sweep_stale(&chan, now, STALE_MS); // best-effort: never block a capture
 
-    // Best-effort: a sweep failure must not block a capture.
-    let _ = sweep_stale(&dir, now, STALE_MS);
-
-    let id = new_id(now);
-    let req = ShotRequest {
-        id: id.clone(),
-        rect: args.rect,
-        out: args.out.clone(),
-        at: now,
-    };
-    write_request(&dir, &req)?;
+    let id = bsc_appchan::new_id(now);
+    let req = ShotRequest { rect: args.rect, out: args.out.clone() };
+    bsc_appchan::write_request(&chan, &id, KIND, now, &req)?;
 
     let timeout = args.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
-    let res = poll_response(&dir, &id, timeout)?;
-
-    if let Some(err) = res.error {
-        return Err(format!("capture failed: {err}"));
-    }
-    let path = res.path.ok_or("the app answered with neither a path nor an error")?;
+    let reply = bsc_appchan::poll_reply(&chan, &id, timeout, POLL_INTERVAL_MS, || {
+        format!(
+            "timed out after {timeout}ms waiting for the app to answer.\n\
+             The request is at {}.\n\
+             Is the desktop app running? `bsc` cannot capture on its own — the app's watcher does the \
+             snapshot. `bsc shot pending` shows whether the request landed.",
+            bsc_appchan::request_path(&chan, &id).display()
+        )
+    })?;
+    let res: ShotResult = bsc_appchan::take_payload(reply).map_err(|e| format!("capture failed: {e}"))?;
 
     // Prove the app wrote a real image. A capture that silently produced nothing (or something that is
     // not a PNG) must not report success — that is the failure this whole surface exists to avoid.
-    let bytes = std::fs::read(&path).map_err(|e| format!("the app reported {path} but it cannot be read: {e}"))?;
+    let bytes = std::fs::read(&res.path)
+        .map_err(|e| format!("the app reported {} but it cannot be read: {e}", res.path))?;
     if !is_png(&bytes) {
-        return Err(format!("the app wrote {path} but it is not a PNG ({} bytes)", bytes.len()));
+        return Err(format!("the app wrote {} but it is not a PNG ({} bytes)", res.path, bytes.len()));
     }
 
-    let out = serde_json::json!({ "path": path, "w": res.w, "h": res.h, "at": res.at });
-    bsc_cli_util::emit(args.pretty, args.json, &out, || path.clone());
+    bsc_cli_util::emit(args.pretty, args.json, &res, || res.path.clone());
     Ok(())
 }
 
-/// Block until the app answers `id`, or `timeout_ms` elapses.
-fn poll_response(dir: &std::path::Path, id: &str, timeout_ms: i64) -> Result<crate::ShotResponse, String> {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms.max(0) as u64);
-    loop {
-        if let Some(res) = read_response(dir, id)? {
-            return Ok(res);
-        }
-        if std::time::Instant::now() >= deadline {
-            let req = crate::request_path(dir, id);
-            return Err(format!(
-                "timed out after {timeout_ms}ms waiting for the app to answer.\n\
-                 The request is at {}.\n\
-                 Is the desktop app running? `bsc` cannot capture on its own — the app's watcher does the \
-                 snapshot. `bsc shot pending` shows whether the request landed.",
-                req.display()
-            ));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS));
-    }
-}
-
 fn cmd_pending(args: &Args) -> Result<(), String> {
-    let dir = shots_dir()?;
-    let pending = pending_requests(&dir)?;
+    let chan = bsc_appchan::chan_dir()?;
+    let pending = bsc_appchan::pending(&chan)?;
     bsc_cli_util::emit(args.pretty, args.json, &pending, || {
         if pending.is_empty() {
-            "no pending capture requests".to_string()
+            "no pending requests".to_string()
         } else {
-            pending.iter().map(|r| format!("{}  at={}", r.id, r.at)).collect::<Vec<_>>().join("\n")
+            pending.iter().map(|e| format!("{}  {}  at={}", e.id, e.kind, e.at)).collect::<Vec<_>>().join("\n")
         }
     });
     Ok(())
 }
 
 fn cmd_sweep(args: &Args) -> Result<(), String> {
-    let dir = shots_dir()?;
-    let n = sweep_stale(&dir, bsc_util::now_ms(), args.max_age_ms.unwrap_or(STALE_MS))?;
+    let chan = bsc_appchan::chan_dir()?;
+    let n = bsc_appchan::sweep_stale(&chan, bsc_util::now_ms(), args.max_age_ms.unwrap_or(STALE_MS))?;
     bsc_cli_util::emit(args.pretty, args.json, &serde_json::json!({ "removed": n }), || {
         format!("removed {n} stale file(s)")
     });
     Ok(())
 }
 
-/// The default PNG destination for a request that carried no `--out` — the app resolves it the same way.
-pub fn resolve_out(dir: &std::path::Path, req: &ShotRequest) -> PathBuf {
-    req.out.as_ref().map(PathBuf::from).unwrap_or_else(|| crate::default_png_path(dir, &req.id))
+fn cmd_dir(args: &Args) -> Result<(), String> {
+    let shots = shots_dir()?;
+    let chan = bsc_appchan::chan_dir()?;
+    let v = serde_json::json!({ "shots": shots.display().to_string(), "channel": chan.display().to_string() });
+    bsc_cli_util::emit(args.pretty, args.json, &v, || {
+        format!("shots:   {}\nchannel: {}", shots.display(), chan.display())
+    });
+    Ok(())
 }
 
 #[cfg(test)]
@@ -265,32 +241,6 @@ mod tests {
         assert!(parse_rect("-1,2,3,4").is_err(), "negative");
         assert!(parse_rect("1,2,0,4").is_err(), "zero width has no pixels");
         assert!(parse_rect("1,2,3,0").is_err(), "zero height has no pixels");
-    }
-
-    #[test]
-    fn resolve_out_prefers_the_explicit_path_else_the_default() {
-        let dir = std::path::Path::new("/shots");
-        let mut req = ShotRequest { id: "a".into(), rect: None, out: None, at: 0 };
-        assert_eq!(resolve_out(dir, &req), crate::default_png_path(dir, "a"));
-        req.out = Some("/tmp/x.png".into());
-        assert_eq!(resolve_out(dir, &req), PathBuf::from("/tmp/x.png"));
-    }
-
-    #[test]
-    fn take_times_out_with_an_actionable_message_when_no_app_answers() {
-        // The overnight failure mode: nobody is listening. It must fail FAST and say why, not hang.
-        let dir = tempfile::tempdir().unwrap();
-        let err = poll_response(dir.path(), "nobody", 30).unwrap_err();
-        assert!(err.contains("timed out"), "{err}");
-        assert!(err.contains("Is the desktop app running?"), "must name the likely cause: {err}");
-    }
-
-    #[test]
-    fn poll_returns_the_response_as_soon_as_it_appears() {
-        let dir = tempfile::tempdir().unwrap();
-        crate::write_response(dir.path(), &crate::ShotResponse::ok("a", "p.png", 10, 20, 1)).unwrap();
-        let got = poll_response(dir.path(), "a", 1_000).unwrap();
-        assert_eq!(got.w, Some(10));
     }
 
     #[test]
