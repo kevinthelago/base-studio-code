@@ -40,7 +40,7 @@ import { usePreviewReview } from "./usePreviewReview";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import { useGlanceProjects, applyFaultHealth } from "./lib/useGlanceProjects";
 import { useGlanceFaults } from "./lib/useGlanceFaults";
-import { applyStallHealth } from "./lib/agentStall";
+import { applyStallHealth, applyFleetLiveStatus } from "./lib/agentStall";
 import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
 import { useProjectFleet } from "./lib/useProjectFleet";
 import "./glance.css";
@@ -95,6 +95,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // cell on the next launch, so this is self-reversing — "Relaunch fleet" respawns it fresh.
   const setPaneDisabled = useAppStore((s) => s.setPaneDisabled);
   const setPaneStatus = useAppStore((s) => s.setPaneStatus);
+  // The per-pane run status — drives the fleet-drill agent nodes' live activity (#3252, `applyFleetLiveStatus`).
+  const paneStatus = useAppStore((s) => s.paneStatus);
   // Confirm before the BULK "End sessions" (#3052) — stopping a whole fleet at once warrants a guard.
   const { confirm, dialog: endAllDialog } = useConfirmDialog();
   // HEALTH axis (#2541, was #2265): the worst unresolved fault per project (from `bsc errors`) overlaid
@@ -182,10 +184,20 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     // Add the preview node when the project has finished building (idempotent, no-op while building).
     return withPreviewNode(base, drillComplete);
   }, [drillNode, effectiveFleet, personas, drillTeam, drillComplete]);
-  const fleetModel = useMemo(() => (fleetData ? buildGraph(fleetData.rawNodes, fleetData.rawEdges) : null), [fleetData]);
-  // The ACTIVE graph — the drilled fleet, else the project network. Everything downstream (canvas,
-  // sidebar, focus, cycles, viewport) reads these, so the whole page swaps its graph on drill.
-  const data = fleetData ?? projectData;
+  // Overlay the LIVE session state onto the drilled fleet's agent nodes (#3252) — the L1 twin of the L0
+  // stall/fault overlays: an agent lifts off its planned idle to building/waiting/warning per its session.
+  // Applied to rawNodes BEFORE buildGraph so the rollup + inherited-health recompute over the live values.
+  const liveFleetData = useMemo(
+    () =>
+      fleetData && drill
+        ? { ...fleetData, rawNodes: applyFleetLiveStatus(fleetData.rawNodes, drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now }) }
+        : fleetData,
+    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now],
+  );
+  const fleetModel = useMemo(() => (liveFleetData ? buildGraph(liveFleetData.rawNodes, liveFleetData.rawEdges) : null), [liveFleetData]);
+  // The ACTIVE graph — the drilled fleet (with live status), else the project network. Everything downstream
+  // (canvas, sidebar, focus, cycles, viewport) reads these, so the whole page swaps its graph on drill.
+  const data = liveFleetData ?? projectData;
   const model = fleetModel ?? projectModel;
 
   const vp = useGraphViewport({ w: model.worldW, h: model.worldH });
