@@ -35,6 +35,7 @@ import { fleetPaneId } from "@/app/console/lib/paneIdentity";
 import { buildGraph, focusSets, isLibraryNode, HEALTH_META, ROLE_COLOR, NW, NH } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
+import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData } from "./lib/studioProject";
 import { useProjectComplete } from "./lib/useProjectComplete";
 import { usePreviewReview } from "./usePreviewReview";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
@@ -57,6 +58,10 @@ const GLANCE_TABS: TabItem[] = [
 export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const planFleet = useAppStore((s) => s.planFleet);
   const personas = useAppStore((s) => s.personas);
+  // The base-studio-code default project (#3319) renders the Studio Network team; the debug toggle gates
+  // its debugger node.
+  const teams = useAppStore((s) => s.teams);
+  const debugSession = useAppStore((s) => s.debugSession);
   // The blueprint LIBRARY + the drilled project's blueprint id (#2572) — so the fleet drill can overlay
   // the project blueprint's authored TEAM relationships (an Org) onto the derived coordination.
   const blueprints = useAppStore((s) => s.blueprints);
@@ -112,7 +117,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // Overlay order: base (merge+liveness) → STALL (waiting/warn) → FAULT (error) last, so a real error
   // beats a stall and both beat the resting state.
   const projects = useMemo(
-    () => applyFaultHealth(applyStallHealth(projectsBase, coord.state.waiting, now), faults),
+    // The base-studio-code default project (#3319) is always present alongside the user's real projects —
+    // the app's own studio sessions live under it; drilling it renders the Studio Network team.
+    () => [...applyFaultHealth(applyStallHealth(projectsBase, coord.state.waiting, now), faults), BASE_STUDIO_PROJECT],
     [projectsBase, coord.state.waiting, faults, now],
   );
   // L0 — the project-network graph (nodes = real projects + UI-kit nodes #2571, edges = the user-drawn
@@ -172,6 +179,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const previewReview = usePreviewReview(drill);
   const fleetData = useMemo(() => {
     if (!drillNode) return null;
+    // The synthetic base-studio-code project (#3319) drills into the app's OWN studio-session graph — the
+    // Studio Network team, with the debugger node gated by the Settings toggle (#3317). No plan.db fleet.
+    if (drillNode.id === BASE_STUDIO_PROJECT_ID) return buildStudioFleetData(teams, personas, debugSession);
     // Team-driven fleet (#3101/#3103): fold the team's ROLE-ACTOR streams (curator/documentor/…) into
     // the drilled graph so what SHOWS matches what LAUNCHES — the same `teamRoleStreams` the launch
     // composes (`usePlanPublish`). A team position for a seedable role becomes a node even before the
@@ -183,7 +193,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       : buildFleetData({ id: drillNode.id, name: drillNode.slug });
     // Add the preview node when the project has finished building (idempotent, no-op while building).
     return withPreviewNode(base, drillComplete);
-  }, [drillNode, effectiveFleet, personas, drillTeam, drillComplete]);
+  }, [drillNode, effectiveFleet, personas, drillTeam, drillComplete, teams, debugSession]);
   // Overlay the LIVE session state onto the drilled fleet's agent nodes (#3252) — the L1 twin of the L0
   // stall/fault overlays: an agent lifts off its planned idle to building/waiting/warning per its session.
   // Applied to rawNodes BEFORE buildGraph so the rollup + inherited-health recompute over the live values.
