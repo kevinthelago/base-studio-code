@@ -22,6 +22,7 @@ import type { RendererRegistry } from "../registry";
 import { ArrayView } from "../renderers/ArrayView";
 import { MatrixView } from "../renderers/MatrixView";
 import { GraphView } from "../renderers/GraphView";
+import { StackView } from "../renderers/StackView";
 import { parseSortInput } from "./sort";
 import { TRACE_PROGRAMS, programKey, type AlgoProgram } from "./sorts";
 import { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./matrixTransforms";
@@ -108,7 +109,7 @@ function graphExampleFromProgram(program: GraphProgram): VizExample {
 function sceneExampleFromProgram(program: SceneProgram): VizExample {
   return {
     factory: runScene(program.run, program.defaultInput),
-    renderers: { array: ArrayView, matrix: MatrixView, graph: GraphView },
+    renderers: { array: ArrayView, matrix: MatrixView, graph: GraphView, stack: StackView },
     input: {
       default: graphToText(program.defaultInput),
       hint: "An adjacency list — one node per line: a: b, c",
