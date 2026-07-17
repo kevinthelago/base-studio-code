@@ -261,21 +261,6 @@ fn compose_path(
     Some(parts.join(&sep.to_string()))
 }
 
-/// The `PATH` a session should run with, given the caller's optional PATH override (else the app's
-/// inherited PATH) — bundled toolchain dirs folded in per the resolution policy. `None` ⇒ no bundle
-/// staged ⇒ leave PATH alone. Disk-reading; the pure composition lives in [`compose_path`].
-fn bundled_session_path(caller_path: Option<&str>) -> Option<String> {
-    let prefix = session_path_prefix();
-    let suffix = session_path_suffix();
-    if prefix.is_empty() && suffix.is_empty() {
-        return None;
-    }
-    let owned_env = caller_path.is_none().then(|| std::env::var("PATH").ok()).flatten();
-    let base = caller_path.or(owned_env.as_deref());
-    let sep = if cfg!(windows) { ';' } else { ':' };
-    compose_path(&prefix, base, &suffix, sep)
-}
-
 /// Build the environment for a session shell.
 ///
 /// The embedded xterm is a full xterm-256color terminal, but `TERM`/`COLORTERM`
@@ -290,6 +275,23 @@ fn bundled_session_path(caller_path: Option<&str>) -> Option<String> {
 /// parent PATH. The added `PATH` is applied like any other var: a caller-supplied `PATH` becomes the
 /// base the bundled dirs wrap.
 pub(crate) fn session_env(caller: &HashMap<String, String>) -> Vec<(String, String)> {
+    // The bundled toolchain dirs are PROBED here — disk-reading, and `session_shim_dir` may CREATE the
+    // shim under `~/.base-studio-code`. The pure env assembly is `session_env_with`, so a test injects
+    // its own bundle premise (`&[]` = no bundle) instead of consulting — and mutating — the real home
+    // (#3271: the old test's "no bundle" premise silently broke the moment `bsc` was resolvable).
+    session_env_with(caller, &session_path_prefix(), &session_path_suffix())
+}
+
+/// Assemble a session shell environment given the ALREADY-PROBED bundled `prefix`/`suffix` dirs. The
+/// PATH is folded in ONLY when a bundle is staged (`prefix`|`suffix` non-empty) — the #1277 additive-only
+/// guarantee: an empty bundle leaves `PATH` untouched (byte-identical to inheriting it). It reads the
+/// ambient `PATH` only as the fold base, and only when a bundle would use it — so a test states its own
+/// premise deterministically with `session_env_with(caller, &[], &[])`, touching no real state.
+fn session_env_with(
+    caller: &HashMap<String, String>,
+    prefix: &[std::path::PathBuf],
+    suffix: &[std::path::PathBuf],
+) -> Vec<(String, String)> {
     let mut env: Vec<(String, String)> = vec![
         ("TERM".to_string(), "xterm-256color".to_string()),
         ("COLORTERM".to_string(), "truecolor".to_string()),
@@ -301,11 +303,13 @@ pub(crate) fn session_env(caller: &HashMap<String, String>) -> Vec<(String, Stri
             env.push((k.clone(), v.clone()));
         }
     }
-    // Fold the bundled host toolchain into PATH — additive-only: `bundled_session_path` returns None
-    // (⇒ no change) unless a bundle is actually staged beside the exe. The base is any caller PATH,
-    // else the app's inherited PATH.
+    // Fold the bundled host toolchain into PATH — additive-only: nothing is added unless a bundle dir is
+    // present. The base is any caller PATH, else the app's inherited PATH.
     let caller_path = env.iter().find(|(k, _)| k == "PATH").map(|(_, v)| v.clone());
-    if let Some(path) = bundled_session_path(caller_path.as_deref()) {
+    let owned_env = caller_path.is_none().then(|| std::env::var("PATH").ok()).flatten();
+    let base = caller_path.as_deref().or(owned_env.as_deref());
+    let sep = if cfg!(windows) { ';' } else { ':' };
+    if let Some(path) = compose_path(prefix, base, suffix, sep) {
         match env.iter_mut().find(|(k, _)| k == "PATH") {
             Some(slot) => slot.1 = path,
             None => env.push(("PATH".to_string(), path)),
@@ -487,7 +491,7 @@ pub(super) fn wire_bsc_env(
 mod tests {
     use super::{
         bsc_shim_files, bundled_gh_dir, compose_path, plan_db_for_cwd, portable_git_bin_candidates,
-        session_env, session_skill_group_for_pane, sidecar_candidates, BSC_SHIM_CMD, BSC_SHIM_SH,
+        session_env_with, session_skill_group_for_pane, sidecar_candidates, BSC_SHIM_CMD, BSC_SHIM_SH,
     };
     use crate::bsc_base_dir;
     use std::collections::HashMap;
@@ -577,18 +581,34 @@ mod tests {
 
     #[test]
     fn session_env_adds_no_path_entry_when_no_bundle_is_staged() {
-        // In the test target no toolchain is staged beside the exe, so session_env must NOT introduce
-        // a PATH var — the additive-only guarantee that a no-bundle session is unchanged (#1277).
-        let env = session_env(&HashMap::new());
+        // #1277 additive guarantee, stated as the FUNCTION's contract (not the machine's state, #3271):
+        // given NO bundled dirs, session_env introduces no PATH — a no-bundle session inherits it
+        // unchanged. Injecting empty prefix/suffix keeps this deterministic + touches no real state
+        // (the old `session_env(...)` form probed — and CREATED — `~/.base-studio-code/shim`, so the
+        // test broke as soon as `bsc` was resolvable and mutated the user's home as a side effect).
+        let env = session_env_with(&HashMap::new(), &[], &[]);
         assert!(!env.iter().any(|(k, _)| k == "PATH"), "no bundle ⇒ no synthesized PATH entry");
         // A caller PATH still flows through untouched (nothing bundled to fold in).
         let mut caller = HashMap::new();
         caller.insert("PATH".to_string(), "/only/this".to_string());
-        let env = session_env(&caller);
+        let env = session_env_with(&caller, &[], &[]);
         assert_eq!(
             env.iter().find(|(k, _)| k == "PATH").map(|(_, v)| v.as_str()),
             Some("/only/this"),
         );
+    }
+
+    #[test]
+    fn session_env_prepends_a_staged_bundle_dir_to_path() {
+        use std::path::PathBuf;
+        // The OTHER half of #1277: WHEN a bundle dir is staged it PREPENDS the caller's PATH, so a bare
+        // `bsc`/`git` resolves the bundled one. Injected, so no real bundle is needed (#3271).
+        let mut caller = HashMap::new();
+        caller.insert("PATH".to_string(), "/usr/bin".to_string());
+        let env = session_env_with(&caller, &[PathBuf::from("/bundle/shim")], &[]);
+        let path = env.iter().find(|(k, _)| k == "PATH").map(|(_, v)| v.as_str()).expect("bundle ⇒ PATH added");
+        let sep = if cfg!(windows) { ';' } else { ':' };
+        assert_eq!(path, format!("/bundle/shim{sep}/usr/bin"), "the bundled dir wins over the caller PATH");
     }
 
     #[test]
@@ -627,8 +647,8 @@ mod tests {
     #[test]
     fn session_env_sets_xterm_term_by_default() {
         // TERM/COLORTERM were previously unset on the spawned shell; default them
-        // so claude's TUI (ghost-text autocomplete, truecolor) works.
-        let env = session_env(&HashMap::new());
+        // so claude's TUI (ghost-text autocomplete, truecolor) works. No-bundle premise (#3271).
+        let env = session_env_with(&HashMap::new(), &[], &[]);
         assert!(env.iter().any(|(k, v)| k == "TERM" && v == "xterm-256color"));
         assert!(env.iter().any(|(k, v)| k == "COLORTERM" && v == "truecolor"));
     }
@@ -638,7 +658,7 @@ mod tests {
         let mut caller = HashMap::new();
         caller.insert("TERM".to_string(), "screen-256color".to_string());
         caller.insert("GH_TOKEN".to_string(), "secret".to_string());
-        let env = session_env(&caller);
+        let env = session_env_with(&caller, &[], &[]); // no-bundle premise (#3271)
         // caller TERM wins, with no duplicate entry
         assert_eq!(env.iter().filter(|(k, _)| k == "TERM").count(), 1);
         assert!(env.iter().any(|(k, v)| k == "TERM" && v == "screen-256color"));
