@@ -15,7 +15,16 @@
 import type { Frame } from "../../lib/trace";
 import type { AlgoImpl, AlgoKind } from "../../lib/knowledge";
 import { classifyKind, type Classifiable } from "../../lib/classifyKind";
-import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, type GraphInput } from "../../lib/tracer";
+import {
+  runAlgorithm,
+  runMatrixAlgorithm,
+  runGraphAlgorithm,
+  type GraphInput,
+  type TracedArray,
+  type TracedMatrix,
+  type TracedGraph,
+} from "../../lib/tracer";
+import { compileVizProgram } from "./vizProgram";
 import type { RendererRegistry } from "../registry";
 import { ArrayView } from "../renderers/ArrayView";
 import { MatrixView } from "../renderers/MatrixView";
@@ -111,9 +120,50 @@ export function resolveKind(impl: Pick<AlgoImpl, "kind"> & Classifiable): AlgoKi
   return impl.kind ?? classifyKind(impl);
 }
 
-/** The visualization for an implementation — its OWN trace-program's example (#3216), or `undefined` when
- *  the algorithm has no program yet (so it shows no animation, never a wrong one). Keyed by the algorithm's
- *  base name, so the named sort family animates from real code, each distinctly. */
-export function vizForImpl(impl: Pick<AlgoImpl, "id" | "name">): VizExample | undefined {
+/** Compiled stored-`vizCode` examples, cached BY CODE STRING (#3232). The cache gives the built example a
+ *  STABLE identity across renders — vizForImpl is called every render, and a fresh compile each time would
+ *  rebuild the player's frame stream every frame. A malformed program caches as `undefined` so a bad string
+ *  neither recompiles-and-rethrows each render nor blanks a covered algorithm (it falls back to the program). */
+const CODE_EXAMPLE_CACHE = new Map<string, VizExample | undefined>();
+
+/** Build a {@link VizExample} from an impl's STORED `vizCode` (#3232) — the persisted-data counterpart of
+ *  the in-app programs. Compiles + validates the descriptor, then dispatches by `datatype` to the same
+ *  builder the in-app programs use. Returns `undefined` (and logs) when the code is malformed, so the caller
+ *  falls back to the in-app program rather than showing a broken/blank pane. Cached by code string. */
+export function vizExampleFromCode(vizCode: string): VizExample | undefined {
+  if (CODE_EXAMPLE_CACHE.has(vizCode)) return CODE_EXAMPLE_CACHE.get(vizCode);
+
+  let example: VizExample | undefined;
+  try {
+    const d = compileVizProgram(vizCode);
+    switch (d.datatype) {
+      case "array":
+        example = exampleFromProgram({ run: d.run as (a: TracedArray) => void, defaultInput: d.input as number[] });
+        break;
+      case "matrix":
+        example = matrixExampleFromProgram({ run: d.run as (m: TracedMatrix) => void, defaultInput: d.input as number[][] });
+        break;
+      case "graph":
+        example = graphExampleFromProgram({ run: d.run as (g: TracedGraph) => void, defaultInput: d.input as GraphInput });
+        break;
+    }
+  } catch (err) {
+    console.warn(`[algorithms] stored vizCode ignored — ${(err as Error).message}`);
+    example = undefined;
+  }
+  CODE_EXAMPLE_CACHE.set(vizCode, example);
+  return example;
+}
+
+/** The visualization for an implementation — its STORED `vizCode` program (#3232) if present + valid, else
+ *  its OWN in-app trace-program (#3216), else `undefined` (so the algorithm shows no animation, never a
+ *  wrong one). Stored `vizCode` is the durable, per-algorithm form; the in-app programs (sort family, matrix
+ *  transforms, graph traversals) are the SEED/reference and the fallback. A malformed `vizCode` falls through
+ *  to the in-app program, so a bad string never blanks an algorithm that would otherwise animate. */
+export function vizForImpl(impl: Pick<AlgoImpl, "id" | "name" | "vizCode">): VizExample | undefined {
+  if (impl.vizCode && impl.vizCode.trim()) {
+    const fromCode = vizExampleFromCode(impl.vizCode);
+    if (fromCode) return fromCode;
+  }
   return EXAMPLE_BY_KEY[programKey(impl)];
 }
