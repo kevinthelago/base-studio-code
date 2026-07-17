@@ -928,6 +928,7 @@ describe("triageStartProject", () => {
   });
 
   it("sets the verbatim triage prompt text on every triage pane", () => {
+    useAppStore.setState({ githubToken: "tok" }); // the verbatim GitHub triage prompt is the connected path (#3281)
     useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
     const { paneStartupPromptText } = useAppStore.getState();
     expect(paneStartupPromptText[tri("proj", "o/a")]).toBe(TRIAGE_PROMPT);
@@ -956,6 +957,7 @@ describe("triageStartProject", () => {
   it("uses a per-repo triage script (doc) and skips the verbatim prompt for that pane", () => {
     useAppStore.setState({
       repoTriagePromptDoc: { "P1::o/b": "projects/P1/prompts/b-triage.md" },
+      githubToken: "tok", // the verbatim GitHub triage prompt is the connected path (#3281)
     });
     useAppStore.getState().triageStartProject("proj", ["o/a", "o/b"], "P1");
     const { paneStartupPromptDocs, paneStartupPromptText } = useAppStore.getState();
