@@ -80,22 +80,27 @@ describe("built-in orgs (#2193)", () => {
     }
   });
 
-  it("includes the Planning Studio network (#2940) — the designer serves the planner and stewards the library", () => {
+  it("includes the Studio Network (#2940) — planner ↔ designer ↔ librarian, each serving + stewarding", () => {
     const studio = makeBuiltinOrgs().find((o) => o.id === "org-planning-studio")!;
     expect(studio).toBeTruthy();
     expect(studio.builtin).toBe(true);
-    // planner (requester) + designer (provider/steward) + the shared component-library resource
+    // The three studio sessions (planner requester · designer + librarian providers) + both libraries.
     expect(studio.positions.map((p) => p.personaId)).toEqual(
-      expect.arrayContaining(["persona-planner", "persona-designer"]),
+      expect.arrayContaining(["persona-planner", "persona-designer", "persona-librarian"]),
     );
-    expect(studio.positions.some((p) => p.kind === "resource")).toBe(true);
-    // the designer SERVES the planner (component requests → fulfilled) and STEWARDS the shared library
-    expect(
-      studio.relationships.some((r) => r.archetype === "serves" && r.from === "designer" && r.to === "planner"),
-    ).toBe(true);
-    expect(
-      studio.relationships.some((r) => r.archetype === "stewards" && r.from === "designer" && r.to === "library"),
-    ).toBe(true);
+    expect(studio.positions.filter((p) => p.kind === "resource").length).toBeGreaterThanOrEqual(2);
+    const serves = (from: string, to: string) =>
+      studio.relationships.some((r) => r.archetype === "serves" && r.from === from && r.to === to);
+    const stewards = (from: string, to: string) =>
+      studio.relationships.some((r) => r.archetype === "stewards" && r.from === from && r.to === to);
+    // designer/librarian SERVE the planner (commissions → fulfilled); the designer also commissions the
+    // librarian (the algorithms-drive-previews payoff), so the librarian serves the designer too.
+    expect(serves("designer", "planner")).toBe(true);
+    expect(serves("librarian", "planner")).toBe(true);
+    expect(serves("librarian", "designer")).toBe(true);
+    // each STEWARDS only its own library (the designer bsc ui, the librarian bsc graph).
+    expect(stewards("designer", "library")).toBe(true);
+    expect(stewards("librarian", "algorithms")).toBe(true);
   });
 });
 
