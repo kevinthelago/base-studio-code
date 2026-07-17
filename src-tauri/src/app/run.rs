@@ -297,6 +297,7 @@ pub fn run() {
             tunnel::tunnel_emit_plan_event,
             tunnel::tunnel_emit_plan_status,
             tunnel::tunnel_ack_plan_push,
+            tunnel::apply_pushed_plan_files,
             tunnel::tunnel_check_relay,
             tunnel::tunnel_set_fleet_state,
             tunnel::tunnel_emit_coord_event,

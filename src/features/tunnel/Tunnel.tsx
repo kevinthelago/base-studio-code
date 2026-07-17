@@ -20,7 +20,9 @@ import {
   tunnelStatus,
   tunnelSetInputGranted,
   tunnelUnpair,
+  applyPushedPlanPush,
 } from "./lib/tunnelClient";
+import type { CanonicalFile } from "@/features/planner";
 import {
   runRelayProbe,
   emptyLegs,
@@ -124,6 +126,22 @@ export function TunnelSettings() {
     const unlisten = listen("tunnel://input-requested", () => setInputRequested(true));
     return () => { unlisten.then((off) => off()); };
   }, [running]);
+
+  // #3248: complete the mobile→desktop flows that had no listener. A plan PUSH from the phone is
+  // applied to the hub dir (path-safe) and acked back; an EXPIRED room is surfaced so the card doesn't
+  // read as connected.
+  useEffect(() => {
+    if (!running) return;
+    const push = listen<{ projectId: string; files: CanonicalFile[] }>(
+      "tunnel://plan-sync-push",
+      (e) => { void applyPushedPlanPush(e.payload.projectId, e.payload.files); },
+    );
+    const expired = listen("tunnel://room-expired", () => {
+      setErr("The tunnel room expired — re-pair from the phone to reconnect.");
+      tunnelStatus().then(sync).catch(() => { /* transient; keep last */ });
+    });
+    return () => { push.then((off) => off()); expired.then((off) => off()); };
+  }, [running, sync]);
 
   const onToggleInput = useCallback(async () => {
     const next = !(status?.inputGranted ?? false);
