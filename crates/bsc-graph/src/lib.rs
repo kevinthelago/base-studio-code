@@ -238,11 +238,13 @@ pub const KINDS: [&str; 5] = ["sort", "search", "traversal", "accumulate", "tran
 
 /// The base-name viz PROGRAMS that exist in-app today — MUST mirror the frontend registry's `EXAMPLE_BY_KEY`
 /// keys EXACTLY (`TRACE_PROGRAMS` + `MATRIX_PROGRAMS` + `GRAPH_PROGRAMS` in `viz/examples/`). An algorithm
-/// whose base name is here animates even without stored `vizCode`; one that is NOT here (e.g. the generic
-/// `sort`, `fibonacci`) has no visualization and is reported `missing-viz`. As #3230 moves visualizations to
+/// whose base name is here animates even without stored `vizCode`; one that is NOT here (e.g. `fibonacci`)
+/// has no visualization and is reported `missing-viz`. NOTE the generic `sort` IS here — `TRACE_PROGRAMS`
+/// has a (unquoted) `sort:` entry mapping to insertion sort, so `sort.ts` animates in-app (its omission
+/// here made the doctor false-positive `sort.ts` as missing-viz, #3237). As #3230 moves visualizations to
 /// persisted `vizCode`, this list shrinks toward empty.
-pub const VIZ_PROGRAMS: [&str; 13] = [
-    "bubble-sort", "insertion-sort", "quick-sort", "heap-sort", "merge-sort", // array sorts
+pub const VIZ_PROGRAMS: [&str; 14] = [
+    "bubble-sort", "insertion-sort", "quick-sort", "heap-sort", "merge-sort", "sort", // array sorts
     "transpose", "rotate", "reflect", // matrix transforms
     "bfs", "dfs", "dijkstra", "a-star", "topological-sort", // graph traversals
 ];
@@ -805,5 +807,18 @@ mod tests {
         let fs = doctor(&g);
         assert!(!fs.iter().any(|f| f.id == "custom.ts" && f.category == "missing-viz"), "a real vizCode counts as coverage");
         assert!(fs.iter().any(|f| f.id == "blank.ts" && f.category == "missing-viz"), "a whitespace-only vizCode does NOT count");
+    }
+
+    #[test]
+    fn generic_sort_is_a_known_program_not_missing_viz() {
+        // Regression (#3237): `TRACE_PROGRAMS` has an (unquoted) `sort:` entry, so `sort.ts` animates in-app
+        // even without a stored vizCode. VIZ_PROGRAMS must include "sort" so the doctor does NOT
+        // false-positive it as missing-viz.
+        assert!(VIZ_PROGRAMS.contains(&"sort"), "the generic `sort` program is a known viz");
+        let g = serde_json::json!({ "implementations": [
+            algo("sort.ts", serde_json::json!({ "kind": "sort" })), // typed, NO vizCode
+        ]});
+        let fs = doctor(&g);
+        assert!(!fs.iter().any(|f| f.id == "sort.ts"), "sort.ts is fully covered by its in-app program — no findings");
     }
 }
