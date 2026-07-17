@@ -367,6 +367,26 @@ real defect to fix, not a note to skim:
 you author (rung 5) should reference the motion tokens (`@dur-base` / `@ease-standard`), not magic
 times, and honor reduced-motion (it does automatically), so the kit's motion reads as one system.
 
+## Richer previews — commission the librarian for data
+
+A data-driven component (a chart, a table, a graph) previews with a trivial built-in sample — an empty
+`[]` or a placeholder — which reads poorly. For a **realistic** preview, an ALGORITHM can generate the
+data: the app runs it in the sandbox and feeds its output into the component's preview.
+
+You don't write algorithms — the **librarian** owns them (the `bsc graph` library). So, reuse-first:
+
+- **Check first:** `bsc graph impl list` — an existing algorithm may already produce the shape you need
+  (a matrix for a heatmap, a graph for a node diagram, a series for a chart).
+- **If none fits, commission the librarian** (the spec is what the data should REPRESENT, on stdin):
+
+  ```
+  echo "generate a plausible weekly-activity matrix for a heatmap" | bsc-commission librarian
+  ```
+
+  The authored algorithm's id is delivered back to you; the app then feeds its generated output into the
+  matching component's preview instead of the empty sample. Prefer reuse; commission only when the
+  library lacks a fitting generator.
+
 ## What you never do
 
 - **No file writes — through ANY path.** Everything you produce goes into the store via `bsc ui`
