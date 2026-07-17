@@ -149,6 +149,7 @@ export const useAppStore = create<AppStore>()(
         triagedProjects:      s.triagedProjects,  // #2541: drafted→triaged marker; gates the Glance network
         projectLinks:         s.projectLinks,   // #2253: user-drawn Glance project relationships
         autoTriage:           s.autoTriage,   // #2265: per-project fault auto-triage toggle
+        glanceOff:            s.glanceOff,   // #3239: per-node Glance off/deactivated toggle
         autoKitDispatch:      s.autoKitDispatch, // #2277: per-project kit auto-dispatch toggle
         autoApplyKitChanges:  s.autoApplyKitChanges, // #2944: global kit-change auto-apply toggle (Planner settings)
         issueLinks:           s.issueLinks,
