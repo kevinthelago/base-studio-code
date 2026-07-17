@@ -44,6 +44,8 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
       // and `ui: write` (the ONE write grant — the component/kit store; `bsc graph` for algorithms comes
       // via the restricted allow-list at launch). No writeGlobs — its writes go to the stores, not files.
       curator:    "none/read/none/none/write",
+      // Debugger (#3322): the app's own full-cap maintenance session — write on git/GitHub/code + ui.
+      debugger:   "write/write/write/read/write",
     });
   });
 
