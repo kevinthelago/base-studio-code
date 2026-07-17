@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/schema/acl/capability.schema.json",
   "identifier": "default",
-  "description": "Default capability — grants core Tauri APIs to the main window, detached tab windows, and the debug session window.",
-  "windows": ["main", "tab-*", "debug-session"],
+  "description": "Default capability — grants core Tauri APIs to the main window and detached tab windows.",
+  "windows": ["main", "tab-*"],
   "permissions": [
     "core:default",
     "core:window:allow-close",
