@@ -61,11 +61,19 @@ export function VizStage({ viz, implName, onBack }: { viz: VizExample; implName:
   // updater) — a new identity re-memoizes the player's stream, i.e. a fresh replay from frame 0.
   const [factory, setFactory] = useState<() => Generator<Frame>>(() => viz.factory);
 
-  const run = useCallback(() => {
+  const run = useCallback(async () => {
+    // Parse is synchronous (surfaces an input error immediately); make is async (#3233) — a stored-vizCode
+    // re-run goes through the sandbox worker. On any failure the last good run is kept.
+    let parsed: unknown;
     try {
-      const parsed = viz.input.parse(text);
-      const next = () => viz.input.make(parsed);
-      setFactory(() => next);
+      parsed = viz.input.parse(text);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    try {
+      const nextFactory = await viz.input.make(parsed);
+      setFactory(() => nextFactory);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -118,12 +126,12 @@ export function VizStage({ viz, implName, onBack }: { viz: VizExample; implName:
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  run();
+                  void run();
                 }
               }}
             />
           </Box>
-          <Button onClick={run}>Run</Button>
+          <Button onClick={() => void run()}>Run</Button>
         </Row>
         {error ? (
           <InlineError>{error}</InlineError>

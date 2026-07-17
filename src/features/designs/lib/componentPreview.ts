@@ -22,6 +22,7 @@
 // The bootstrap imports the component and mounts it with sample props derived from its prop schema, so a
 // component with required props still renders something representative (not a curated mock).
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
+import { resolveInternalBase } from "@/shared/lib/preview/importPath";
 import type { ComponentRecord, PropSpec } from "./model";
 
 /**
@@ -81,28 +82,6 @@ function importSpecs(source: string): string[] {
  *  opposed to a bare npm specifier or an absolute path/URL? Only these resolve against sibling modules. */
 function isInternalSpec(spec: string): boolean {
   return spec.startsWith("@/") || spec.startsWith("./") || spec.startsWith("../");
-}
-
-/** Resolve an INTERNAL import `spec` (imported FROM `fromRel`, a `src/`-relative path) to its
- *  `src/`-relative module BASE (no extension), or `null` when it isn't internal. `@/x` → `x`; a
- *  relative path joins onto the importer's dir with `.`/`..` collapsed. */
-function resolveInternalBase(spec: string, fromRel: string): string | null {
-  let segs: string[];
-  if (spec.startsWith("@/")) {
-    segs = spec.slice(2).split("/");
-  } else if (spec.startsWith("./") || spec.startsWith("../")) {
-    const fromDir = fromRel.includes("/") ? fromRel.slice(0, fromRel.lastIndexOf("/")) : "";
-    segs = (fromDir ? fromDir.split("/") : []).concat(spec.split("/"));
-  } else {
-    return null;
-  }
-  const out: string[] = [];
-  for (const seg of segs) {
-    if (seg === "" || seg === ".") continue;
-    if (seg === "..") out.pop();
-    else out.push(seg);
-  }
-  return out.join("/");
 }
 
 /** A user component's own IMPLEMENTATION source — its explicit `source`, else a non-empty `srcText`
@@ -287,9 +266,23 @@ export function previewProps(comp: ComponentRecord): Record<PreviewState, Previe
  * quirks. Resolves the component export by `name`, falling back to the default export. Builds the props
  * from {@link previewPropList} / {@link previewChild} (the SAME source `bsc ui preview-props` inspects).
  */
-export function bootstrapSource(comp: ComponentRecord, importSpec: string, state: PreviewState = "loaded"): string {
+export function bootstrapSource(
+  comp: ComponentRecord,
+  importSpec: string,
+  state: PreviewState = "loaded",
+  previewData: Record<string, string> = {},
+): string {
   const childText = previewChild(comp);
-  const propEntries = previewPropList(comp, state).map((e) => `${JSON.stringify(e.name)}: ${e.value}`);
+  // The sampled props (schema order), then any resolved preview-data OVERRIDES layered on top (#2940): a
+  // bound prop renders the algorithm-generated dataset (a JS-source literal, e.g. `JSON.stringify(graph)`)
+  // instead of its `[]`/trivial sample, and a bound prop the sampler OMITTED (an optional collection) is
+  // added. `previewPropList` itself stays pure, so the Rust `bsc ui preview-props` parity fixture is
+  // unaffected — the override is a preview-time render concern, not part of the static props contract.
+  const byName = new Map(previewPropList(comp, state).map((e) => [e.name, e.value] as const));
+  for (const [name, value] of Object.entries(previewData)) {
+    if (name !== "children") byName.set(name, value);
+  }
+  const propEntries = [...byName].map(([name, value]) => `${JSON.stringify(name)}: ${value}`);
   const propsLiteral = `{ ${propEntries.join(", ")} }`;
   const childArg = childText ? `, ${childText}` : "";
   // Role-aware mount wrapper (#3139). A PAGE/LAYOUT is authored for a full viewport (flex:1 / height:100%),
@@ -337,6 +330,7 @@ export function componentPreviewFiles(
   siblings: readonly ComponentRecord[] = [],
   libResolver?: LibraryModuleResolver,
   state: PreviewState = "loaded",
+  previewData: Record<string, string> = {},
 ): ComponentPreviewBuild | null {
   const inArtifact = comp.src ? artifact.components.find((c) => c.src === comp.src && c.source) : undefined;
 
@@ -346,7 +340,7 @@ export function componentPreviewFiles(
     for (const c of artifact.components) if (c.source) files[c.src] = c.source;
     vendorLibraryModules(files, libResolver); // #3116: any `@bsc/…` a built-in references
     const importSpec = `@/${stripExt(inArtifact.src)}`;
-    files[PREVIEW_ENTRY] = bootstrapSource(comp, importSpec, state);
+    files[PREVIEW_ENTRY] = bootstrapSource(comp, importSpec, state, previewData);
     return { files, entry: PREVIEW_ENTRY };
   }
 
@@ -395,7 +389,7 @@ export function componentPreviewFiles(
     }
   }
   vendorLibraryModules(files, libResolver); // #3116: vendor any `@bsc/…` library imports (recursively)
-  files[PREVIEW_ENTRY] = bootstrapSource(comp, `@/${stripExt(path)}`, state);
+  files[PREVIEW_ENTRY] = bootstrapSource(comp, `@/${stripExt(path)}`, state, previewData);
   return { files, entry: PREVIEW_ENTRY };
 }
 

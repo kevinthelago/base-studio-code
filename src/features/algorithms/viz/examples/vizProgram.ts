@@ -6,34 +6,54 @@
 // CONTRACT — `vizCode` is a JS expression that evaluates to a self-describing descriptor:
 //
 //   ({
-//     datatype: "array",         // "array" | "matrix" | "graph" — picks the runner + renderer + input seam
-//     input: [5, 2, 9, 1, 6],    // the DEFAULT input (number[] | number[][] | GraphInput)
+//     datatype: "array",         // "array" | "matrix" | "graph" | "scene" — picks the runner + renderer(s) + input seam
+//     input: [5, 2, 9, 1, 6],    // the DEFAULT input (number[] | number[][] | GraphInput; a scene seeds on a GraphInput)
 //     run(a) { … },              // the real algorithm, written against the Traced<Structure> API
 //   })
+//
+// A `"scene"` (#3275) is the MULTI-STRUCTURE case: its `run(scene, input)` drives a `TracedScene`
+// (`scene.graph("g", …)` / `scene.array("dist", …)` / …), and it renders as synchronized panels — the
+// persisted-data twin of the in-app scene programs (`scenes.ts`). It seeds on a GraphInput (like the graph
+// datatype) and every structure renderer is registered so any panel it declares resolves.
 //
 // It is self-contained (carries its own default input so the preview + "your input" field work) and does
 // NOT depend on `kind` — the descriptor names its own datatype, so nothing is inferred or guessed.
 //
-// TRUST + ISOLATION (#3233): `vizCode` reaches the store ONLY via the packaged seed or the role-gated
-// `bsc graph impl set --viz-code` — both trusted, exactly as trusted as the in-app trace-programs that
-// already execute on the main thread. The Studio share/apply path does NOT carry the algorithms graph
-// today (TODO #2889). So compiling with `new Function` on the main thread matches the current trust model.
-// When #2889 makes the graph Studio-importable (untrusted `vizCode`), execution must move into a Web
-// Worker / iframe sandbox — this module is the deliberately-isolated seam for that swap (#3233).
+// ISOLATION (#3233): this module is PURE (compile + run over the tracer, no DOM). It is imported by the
+// dedicated Web Worker (`vizWorker.ts`) so `compileVizProgram`'s `new Function` and the algorithm's `run`
+// execute in the WORKER's isolated global scope — never on the main thread, and never with DOM access. The
+// main thread reaches it only through `vizSandbox.runInSandbox` (which posts to the worker); it also imports
+// it directly as the inline fallback when `Worker` is unavailable (test / SSR), where trusted test code runs
+// it on the main thread. A runaway program (e.g. `while(true)`) wedges only the worker, which the sandbox
+// terminates on timeout — the main thread never freezes.
 
-import type { GraphInput } from "../../lib/tracer";
+import {
+  runAlgorithm,
+  runMatrixAlgorithm,
+  runGraphAlgorithm,
+  runScene,
+  type GraphInput,
+  type TracedArray,
+  type TracedMatrix,
+  type TracedGraph,
+  type TracedScene,
+} from "../../lib/tracer";
+import type { Frame } from "../../lib/trace";
 
-/** The structure a stored trace-program drives — selects the runner, renderer, and input seam. */
-export type VizDatatype = "array" | "matrix" | "graph";
+/** The structure a stored trace-program drives — selects the runner, renderer(s), and input seam. `scene`
+ *  is the multi-structure case (`run(scene, input)` over a TracedScene → synchronized panels). */
+export type VizDatatype = "array" | "matrix" | "graph" | "scene";
 
-/** A compiled, validated stored trace-program. `run` is typed per {@link datatype} by the caller (it is a
- *  `(structure) => void` written against the matching Traced class); `input` is the datatype's default. */
+/** A compiled, validated stored trace-program. `run` is typed per {@link datatype} by the caller (a
+ *  `(structure) => void` over the matching Traced class, or a scene's `(scene, input) => void`); `input`
+ *  is the datatype's default. */
 export interface VizProgramDescriptor {
   datatype: VizDatatype;
   input: number[] | number[][] | GraphInput;
-  // The compiled algorithm. Loosely typed here (a bottom-typed param is assignable to any Traced class);
-  // `vizExampleFromCode` narrows it to the datatype's `TracedArray|TracedMatrix|TracedGraph` signature.
-  run: (structure: never) => void;
+  // The compiled algorithm. Loosely typed here (never-typed params are assignable to any Traced signature,
+  // and a rest tuple lets a scene's TWO-arg `run(scene, input)` fit too); `runVizProgram` narrows it to the
+  // datatype's real signature (`TracedArray|TracedMatrix|TracedGraph`, or `(TracedScene, GraphInput)`).
+  run: (...args: never[]) => void;
 }
 
 /** True when `v` is a finite-number array (the array-datatype default input). */
@@ -85,8 +105,8 @@ export function compileVizProgram(code: string): VizProgramDescriptor {
   const d = raw as Record<string, unknown>;
 
   const datatype = d.datatype;
-  if (datatype !== "array" && datatype !== "matrix" && datatype !== "graph") {
-    throw new Error(`vizCode.datatype must be "array" | "matrix" | "graph" (got ${JSON.stringify(datatype)})`);
+  if (datatype !== "array" && datatype !== "matrix" && datatype !== "graph" && datatype !== "scene") {
+    throw new Error(`vizCode.datatype must be "array" | "matrix" | "graph" | "scene" (got ${JSON.stringify(datatype)})`);
   }
   if (typeof d.run !== "function") {
     throw new Error("vizCode.run must be a function over the Traced structure");
@@ -96,7 +116,7 @@ export function compileVizProgram(code: string): VizProgramDescriptor {
   const ok =
     (datatype === "array" && isNumberArray(input)) ||
     (datatype === "matrix" && isNumberGrid(input)) ||
-    (datatype === "graph" && isGraphInput(input));
+    ((datatype === "graph" || datatype === "scene") && isGraphInput(input)); // a scene seeds on a graph
   if (!ok) {
     throw new Error(`vizCode.input does not match datatype "${datatype}" (expected ${INPUT_SHAPE[datatype]})`);
   }
@@ -109,4 +129,39 @@ const INPUT_SHAPE: Record<VizDatatype, string> = {
   array: "a number[]",
   matrix: "a number[][]",
   graph: "a { nodes, edges } object",
+  scene: "a { nodes, edges } object (the scene's seed graph)",
 };
+
+/** The result of running a stored trace-program: its datatype, the input it ran on (the descriptor default
+ *  or a caller override), and the recorded frame trace. Frames are plain, structured-cloneable data — so
+ *  the Web Worker (#3233) posts them straight back to the main thread for replay. */
+export interface VizRun {
+  datatype: VizDatatype;
+  input: number[] | number[][] | GraphInput;
+  frames: Frame[];
+}
+
+/**
+ * Compile a stored `vizCode` and RUN it against the matching Traced structure, collecting the full frame
+ * trace (#3233). Pure — this is the unit the Web Worker executes in isolation; the main thread calls it only
+ * as the no-Worker fallback (tests / SSR).
+ *
+ * @param code the impl's `vizCode` — a `{ datatype, input, run }` descriptor expression.
+ * @param inputOverride when set, runs the program on this input instead of the descriptor's default (the
+ *   "your input" seam). Its shape is validated by the tracer for the descriptor's datatype.
+ * @returns the datatype, the input used, and the recorded frames.
+ * @throws whatever {@link compileVizProgram} throws (malformed code) or the algorithm throws at runtime.
+ */
+export function runVizProgram(code: string, inputOverride?: unknown): VizRun {
+  const d = compileVizProgram(code);
+  const input = (inputOverride ?? d.input) as VizRun["input"];
+  const frames =
+    d.datatype === "array"
+      ? [...runAlgorithm(d.run as (a: TracedArray) => void, input as number[])()]
+      : d.datatype === "matrix"
+        ? [...runMatrixAlgorithm(d.run as (m: TracedMatrix) => void, input as number[][])()]
+        : d.datatype === "graph"
+          ? [...runGraphAlgorithm(d.run as (g: TracedGraph) => void, input as GraphInput)()]
+          : [...runScene(d.run as (scene: TracedScene, input: GraphInput) => void, input as GraphInput)()];
+  return { datatype: d.datatype, input, frames };
+}

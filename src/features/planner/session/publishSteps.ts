@@ -235,6 +235,25 @@ export async function ensureProjectBoard(
 // ── 3. Issues — generated from the FEATURES (one issue per feature, #plan-db): added to the board,
 //      assigned to its stream's login, with feature sub-issues nested. No milestones (#1912).
 //      Idempotent, fail-CLOSED on a repo whose existing-issue fetch fails. ──
+/**
+ * The LOCAL half of publish (#3280): parse the features section into `PlanIssue`s and materialize them
+ * into plan.db, so the fleet/director have issues to coordinate on WITHOUT any GitHub round-trip. Used
+ * both by `createIssues` (before the GitHub push) and by the GitHub-less commit path.
+ *
+ * Idempotent — `upsertIssue` keys on `ref`, so committing locally and later publishing over the same
+ * rows never duplicates. Returns the parsed issues for the caller (createIssues then pushes them).
+ */
+export async function materializeIssues(
+  featuresContent: string,
+  hooks: { upsertIssue: (iss: PlanIssue) => Promise<void> },
+): Promise<PlanIssue[]> {
+  const planIssues = featuresToPlanIssues(parseFeaturesFile(featuresContent));
+  for (const iss of planIssues) {
+    await hooks.upsertIssue(iss);
+  }
+  return planIssues;
+}
+
 export async function createIssues(
   api: GhApi,
   upd: Upd,
@@ -248,11 +267,8 @@ export async function createIssues(
   hooks: { upsertIssue: (iss: PlanIssue) => Promise<void> },
 ): Promise<void> {
   const { repos, featuresContent, projectId, streams, viewerLogin } = opts;
-  const planIssues = featuresToPlanIssues(parseFeaturesFile(featuresContent));
-  // Materialize them into the plan store too, so the fleet/director have issues to coordinate on.
-  for (const iss of planIssues) {
-    await hooks.upsertIssue(iss);
-  }
+  // The LOCAL half — materialize into plan.db — is shared with the GitHub-less commit path (#3280).
+  const planIssues = await materializeIssues(featuresContent, hooks);
   for (const [repoIdx, fullName] of repos.entries()) {
     // Check what already exists BEFORE creating so a re-sync never duplicates. Fail CLOSED: if we
     // can't fetch the repo's issues, skip creating here.

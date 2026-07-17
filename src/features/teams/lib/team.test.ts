@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   BUILTIN_ORGS, COMMUNICATION_FORMS, RELATIONSHIP_ARCHETYPES,
-  makeBuiltinOrgs, reconcileOrgs, blankOrg, orgSlug, orgIssues, deriveCommunication,
-  archetypeById, formById, type Team,
+  makeBuiltinOrgs, reconcileOrgs, orgStructureKey, blankOrg, orgSlug, orgIssues, deriveCommunication,
+  archetypeById, formById, augmentStudioNetworkForDebug, STUDIO_NETWORK_ID, type Team,
 } from "./team";
 
 describe("org vocabulary (#2193)", () => {
@@ -80,22 +80,43 @@ describe("built-in orgs (#2193)", () => {
     }
   });
 
-  it("includes the Planning Studio network (#2940) — the designer serves the planner and stewards the library", () => {
+  it("includes the Studio Network (#2940/#3317) — the four studio sessions, each serving + stewarding", () => {
     const studio = makeBuiltinOrgs().find((o) => o.id === "org-planning-studio")!;
     expect(studio).toBeTruthy();
     expect(studio.builtin).toBe(true);
-    // planner (requester) + designer (provider/steward) + the shared component-library resource
+    // The four app-owned studio sessions (planner · designer · librarian · architect) + their libraries.
     expect(studio.positions.map((p) => p.personaId)).toEqual(
-      expect.arrayContaining(["persona-planner", "persona-designer"]),
+      expect.arrayContaining(["persona-planner", "persona-designer", "persona-librarian", "persona-architect"]),
     );
-    expect(studio.positions.some((p) => p.kind === "resource")).toBe(true);
-    // the designer SERVES the planner (component requests → fulfilled) and STEWARDS the shared library
-    expect(
-      studio.relationships.some((r) => r.archetype === "serves" && r.from === "designer" && r.to === "planner"),
-    ).toBe(true);
-    expect(
-      studio.relationships.some((r) => r.archetype === "stewards" && r.from === "designer" && r.to === "library"),
-    ).toBe(true);
+    expect(studio.positions.filter((p) => p.kind === "resource").length).toBeGreaterThanOrEqual(3);
+    const serves = (from: string, to: string) =>
+      studio.relationships.some((r) => r.archetype === "serves" && r.from === from && r.to === to);
+    const stewards = (from: string, to: string) =>
+      studio.relationships.some((r) => r.archetype === "stewards" && r.from === from && r.to === to);
+    // designer/librarian SERVE the planner (commissions → fulfilled); the librarian also serves the
+    // designer (the algorithms-drive-previews payoff).
+    expect(serves("designer", "planner")).toBe(true);
+    expect(serves("librarian", "planner")).toBe(true);
+    expect(serves("librarian", "designer")).toBe(true);
+    // each STEWARDS only its own library (designer bsc ui, librarian bsc graph, architect the teams).
+    expect(stewards("designer", "library")).toBe(true);
+    expect(stewards("librarian", "algorithms")).toBe(true);
+    expect(stewards("architect", "teams")).toBe(true);
+  });
+
+  it("augmentStudioNetworkForDebug adds the debugger (serves designer) IFF the debug session is on (#3317)", () => {
+    const studio = makeBuiltinOrgs().find((o) => o.id === STUDIO_NETWORK_ID)!;
+    // Off → unchanged (same reference).
+    expect(augmentStudioNetworkForDebug(studio, false)).toBe(studio);
+    // On → a debugger node (backed by persona-debugger, #3322) + a serves→designer edge, added (not persisted).
+    const on = augmentStudioNetworkForDebug(studio, true);
+    const dbg = on.positions.find((p) => p.nodeId === "debugger")!;
+    expect(dbg).toMatchObject({ kind: "agent", personaId: "persona-debugger" });
+    expect(on.relationships.some((r) => r.archetype === "serves" && r.from === "debugger" && r.to === "designer")).toBe(true);
+    // Idempotent, and a no-op for a non-studio team.
+    expect(augmentStudioNetworkForDebug(on, true).positions.filter((p) => p.nodeId === "debugger")).toHaveLength(1);
+    const fleet = makeBuiltinOrgs().find((o) => o.id === "org-default-fleet")!;
+    expect(augmentStudioNetworkForDebug(fleet, true)).toBe(fleet);
   });
 });
 
@@ -156,19 +177,41 @@ describe("reconcileOrgs (#2193)", () => {
     expect(out.every((o) => o.builtin)).toBe(true);
   });
 
-  it("preserves user edits to a built-in but restores builtin identity", () => {
+  it("makes a built-in's STRUCTURE packaged-authoritative — a stale on-disk copy can't shadow it (#3330)", () => {
+    // A built-in frozen on disk at an OLD version (here: renamed + emptied of positions/relationships, the
+    // exact shape of the stale org-planning-studio seed) must be REPLACED by the packaged def, so app updates
+    // to a built-in team reach every install. (Old behavior kept the stale saved copy → updates never landed.)
+    const base = BUILTIN_ORGS.find((o) => o.id === "org-default-fleet")!;
     const persisted: Team[] = [
-      { id: "org-default-fleet", name: "My fleet", positions: [], relationships: [], builtin: false },
+      { id: "org-default-fleet", name: "Old name", positions: [], relationships: [], builtin: true },
     ];
     const fleet = reconcileOrgs(persisted).find((o) => o.id === "org-default-fleet")!;
-    expect(fleet.name).toBe("My fleet");   // edit kept
-    expect(fleet.builtin).toBe(true);      // identity restored — cannot become deletable
+    expect(fleet.name).toBe(base.name);                       // packaged name wins, not the stale "Old name"
+    expect(fleet.positions).toEqual(base.positions);          // packaged structure restored
+    expect(fleet.relationships).toEqual(base.relationships);
+    expect(fleet.builtin).toBe(true);
   });
 
-  it("keeps user-authored orgs as non-builtin", () => {
+  it("keeps user-authored orgs (non-built-in ids) untouched, as non-builtin", () => {
     const persisted: Team[] = [{ id: "org-mine", name: "Mine", positions: [], relationships: [] }];
-    const mine = reconcileOrgs(persisted).find((o) => o.id === "org-mine")!;
+    const out = reconcileOrgs(persisted);
+    const mine = out.find((o) => o.id === "org-mine")!;
+    expect(mine.name).toBe("Mine");
     expect(mine.builtin).toBe(false);
+    // ...and the built-ins are still all present alongside it.
+    expect(out.filter((o) => o.builtin).length).toBe(BUILTIN_ORGS.length);
+  });
+});
+
+describe("orgStructureKey (#3330)", () => {
+  it("is equal for structurally-identical teams and differs when positions/relationships/name/blurb change", () => {
+    const a = BUILTIN_ORGS.find((o) => o.id === STUDIO_NETWORK_ID)!;
+    expect(orgStructureKey(a)).toBe(orgStructureKey({ ...a }));
+    expect(orgStructureKey(a)).not.toBe(orgStructureKey({ ...a, name: "Renamed" }));
+    expect(orgStructureKey(a)).not.toBe(orgStructureKey({ ...a, positions: a.positions.slice(0, 1) }));
+    expect(orgStructureKey(a)).not.toBe(orgStructureKey({ ...a, relationships: [] }));
+    // The builtin flag / id are NOT part of the structure key (they're constants, not authored drift).
+    expect(orgStructureKey(a)).toBe(orgStructureKey({ ...a, builtin: false, id: "whatever" }));
   });
 });
 

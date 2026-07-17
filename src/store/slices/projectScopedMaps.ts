@@ -9,7 +9,7 @@
 //
 // The four sites cover **slightly different subsets** — e.g. `clearPlan` resets the plan maps but not
 // the per-project preference maps (`autoTriage`, drafts, …); only `rekeyProjectData` touches
-// `loadVerified` / `planFleetTopology`; only the plan.ts sites touch `reposPublic` / `stagePreview`.
+// `planFleetTopology`; only the plan.ts sites touch `reposPublic` / `stagePreview`.
 // This file is the ONE source of truth: each map declares exactly which of the four operations it
 // participates in, and the generic helpers below drive all four ops from it — so the subsets can no
 // longer drift, while each op's exact set is preserved byte-for-byte.
@@ -49,10 +49,8 @@ const PROJECT_MAP_OPS: Partial<Record<keyof AppStore, ProjectMapOp[]>> = {
   planStageConfig:         ["delete", "rekey", "clearPlan"],
   projectBlueprintId:      ["delete", "rekey", "clearPlan"],
   // Plan-config maps the plan.ts sites reset; rekey also moves them, delete drops them via… no —
-  // planSourceConfig / planIntegrationConfig are NOT in deleteLocalProject's set (only rekey + the
-  // two plan.ts reset sites).
+  // planSourceConfig is NOT in deleteLocalProject's set (only rekey + the two plan.ts reset sites).
   planSourceConfig:        ["rekey", "applyBlueprint", "clearPlan"],
-  planIntegrationConfig:   ["rekey", "applyBlueprint", "clearPlan"],
   // Only the two plan.ts reset sites touch these (never delete/rekey).
   reposPublic:             ["applyBlueprint", "clearPlan"],
   planInjectionAck:        ["applyBlueprint", "clearPlan"],
@@ -71,7 +69,6 @@ const PROJECT_MAP_OPS: Partial<Record<keyof AppStore, ProjectMapOp[]>> = {
   // reach these fleet/verification maps).
   planFleetTopology:       ["rekey"],
   planFleetDirectorDrive:  ["rekey"],
-  loadVerified:            ["rekey"],
 };
 
 /**

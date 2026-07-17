@@ -1,15 +1,23 @@
 {
   "id": "org-planning-studio",
   "order": 3,
-  "name": "Planning Studio",
-  "blurb": "The planner sources its visuals by requesting components from the designer, who is the sole steward of the shared bsc ui library — so a planning session pairs chat with live, on-brand visuals (#2940).",
+  "name": "Studio Network",
+  "blurb": "The app-owned studio sessions that collaborate during a planning session: the planner sources live visuals from the designer and algorithms from the librarian, the designer commissions the librarian to generate data for richer component previews, and the architect designs the teams. Each session stewards only its own library — the designer the bsc ui components, the librarian the bsc graph algorithms, the architect the teams; the planner authors nothing. When the debug session is toggled on (Settings), the debugger joins and fixes the bsc ui tooling the designer reports (#2940/#3298).",
   "positions": [
-    { "nodeId": "planner",  "kind": "agent",    "personaId": "persona-planner",  "x": 200, "y": 96 },
-    { "nodeId": "designer", "kind": "agent",    "personaId": "persona-designer", "x": 568, "y": 96 },
-    { "nodeId": "library",  "kind": "resource", "label": "Component library", "x": 384, "y": 312 }
+    { "nodeId": "planner",    "kind": "agent",    "personaId": "persona-planner",    "x": 384, "y": 48  },
+    { "nodeId": "designer",   "kind": "agent",    "personaId": "persona-designer",   "x": 144, "y": 216 },
+    { "nodeId": "librarian",  "kind": "agent",    "personaId": "persona-librarian",  "x": 624, "y": 216 },
+    { "nodeId": "architect",  "kind": "agent",    "personaId": "persona-architect",  "x": 384, "y": 300 },
+    { "nodeId": "library",    "kind": "resource", "label": "Component library",  "x": 144, "y": 396 },
+    { "nodeId": "algorithms", "kind": "resource", "label": "Algorithm library",  "x": 624, "y": 396 },
+    { "nodeId": "teams",      "kind": "resource", "label": "Teams library",      "x": 384, "y": 480 }
   ],
   "relationships": [
-    { "id": "r-serves",   "archetype": "serves",   "from": "designer", "to": "planner", "bow": -30 },
-    { "id": "r-stewards", "archetype": "stewards", "from": "designer", "to": "library", "bow": 26 }
+    { "id": "r-serves-designer",   "archetype": "serves",   "from": "designer",  "to": "planner",    "bow": -28 },
+    { "id": "r-serves-librarian",  "archetype": "serves",   "from": "librarian", "to": "planner",    "bow": 28  },
+    { "id": "r-serves-des-lib",    "archetype": "serves",   "from": "librarian", "to": "designer",   "bow": 34  },
+    { "id": "r-stewards-designer", "archetype": "stewards", "from": "designer",  "to": "library",    "bow": 22  },
+    { "id": "r-stewards-librarian","archetype": "stewards", "from": "librarian", "to": "algorithms", "bow": -22 },
+    { "id": "r-stewards-architect","archetype": "stewards", "from": "architect", "to": "teams",      "bow": 0   }
   ]
 }

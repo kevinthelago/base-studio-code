@@ -10,8 +10,8 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Skeleton, SkeletonChart } from "@/shared/ui/feedback/Skeleton";
+import { CardEmpty } from "@/shared/ui/feedback/CardStates";
 import { fmtClock } from "@/shared/lib/core/format";
 
 // MCP Analytics tab (#879) — KPI cards + 3 charts + a call-results log over the MCP tool-call
@@ -23,11 +23,6 @@ import { fmtClock } from "@/shared/lib/core/format";
 const DAYS = 14;
 
 const fmtMs = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`);
-
-/** A compact empty state for a telemetry card body (#2246) — the panel frame + head stay; the body shows this. */
-function CardEmpty({ title, hint }: { title: string; hint?: string }) {
-  return <EmptyState size="sm" iconVariant="dashed" icon="○" title={title} description={hint} style={{ padding: "20px 12px" }} />;
-}
 
 /** A stack of shimmer bar-rows (label line + track) — a loading placeholder for a per-server bar card (#2246). */
 function SkeletonBars({ rows = 4 }: { rows?: number }) {

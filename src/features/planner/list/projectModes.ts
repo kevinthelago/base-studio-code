@@ -2,7 +2,7 @@
 // (`features/planner/index.tsx`) and its tests share one source of truth. Drives the shared
 // <Screen> tab bar: each mode can be torn off into its own window (#430/#463).
 
-import type { TabItem } from "@/app/chrome/TabBar";
+import type { TabItem } from "@/shared/ui/layouts/TabBar";
 
 export const PROJECT_MODES: TabItem[] = [
   { id: "projects",   label: "Projects",    hint: "plan a project" },

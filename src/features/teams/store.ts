@@ -6,7 +6,7 @@
 import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import {
-  BUILTIN_ORGS, blankOrg, orgSlug, reconcileOrgs,
+  BUILTIN_ORGS, blankOrg, orgSlug, reconcileOrgs, orgStructureKey,
   type Team, type Position, type Relationship,
 } from "./lib/team";
 import { loadOrgs, pushOrg, dropOrg } from "./lib/orgBridge";
@@ -79,10 +79,17 @@ export const createOrgSlice: StateCreator<AppStore, [], [], OrgSlice> = (set, ge
       if (!loaded) return; // bridge unreachable — keep the seeded built-ins
       const reconciled = reconcileOrgs(loaded);
       set({ teams: reconciled });
-      // Persist any built-in the store didn't have yet (first run / a new packaged org), so the store —
-      // the source of truth a session/planner reads — carries the full library.
-      const had = new Set(loaded.map((o) => o.id));
-      for (const o of reconciled) if (!had.has(o.id)) void pushOrg(o);
+      // Refresh the on-disk store so `bsc teams` (sessions + the planner) sees the SAME reconciled library
+      // the UI does (#3330). Push back any built-in that's MISSING (first run / a new packaged org) OR whose
+      // on-disk copy has DRIFTED from the packaged def — the latter is the stale-seed fix: a built-in seeded
+      // at an old version (frozen on disk) is re-pushed to the current packaged structure. User teams are
+      // never touched here (they aren't in BUILTIN_ORGS / reconciled built-ins).
+      const savedKey = new Map(loaded.map((o) => [o.id, orgStructureKey(o)]));
+      for (const o of reconciled) {
+        if (!o.builtin) continue;
+        const prior = savedKey.get(o.id);
+        if (prior === undefined || prior !== orgStructureKey(o)) void pushOrg(o);
+      }
     },
 
     addOrg: () => {

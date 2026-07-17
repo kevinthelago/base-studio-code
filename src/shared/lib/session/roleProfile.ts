@@ -42,6 +42,11 @@ const ROLE_PROFILE: Record<SessionRole, string> = {
   // read-only review is the closest packaged floor; its real launch path (`useLibrarianTerminal`)
   // renders the role gate + `restrictedAllow` directly, so this mapping only backs the generic surfaces.
   librarian: "pf_review",
+  // Debugger (#3322): the app's full-cap maintenance session WRITES code, so like the worker it launches
+  // under the write-permitting Autonomous profile; its real launch (`DebugSessionMount` on TerminalHost,
+  // #3326) renders bypass directly via the `isFullCapabilitySession` carve-out, so this only backs the
+  // generic role→profile surfaces.
+  debugger: "pf_auto",
   // Curator (#3092, epic #3087): the reusable-library post-landing actor. Read-only review is the
   // closest packaged floor; its real launch (P2b) renders the role gate + `restrictedAllow` (`bsc ui` +
   // `bsc graph`) directly. Its store writes go through `bsc ui`/`bsc graph` (Bash + the `ui` write-scope),

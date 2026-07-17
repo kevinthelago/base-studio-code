@@ -16,12 +16,17 @@ export const DESIGN_STUDIO_SESSION_ID = "design-studio:designer";
 export const ALGORITHMS_STUDIO_SESSION_ID = "algorithms-studio:librarian";
 /** The Teams studio's app-owned architect session. */
 export const TEAMS_STUDIO_SESSION_ID = "teams-studio:architect";
+/** The Debug studio's app-owned debugger session (#3298) — a full-capability session in the
+ *  base-studio-code SOURCE tree that works the `bsc request` improvement queue (fixing `bsc ui`),
+ *  hosted in its own OS window and toggled from Settings. */
+export const DEBUG_STUDIO_SESSION_ID = "debug-studio:debugger";
 
 /** Every fixed, app-owned studio session pane id. */
 export const STUDIO_SESSION_PANE_IDS: readonly string[] = [
   DESIGN_STUDIO_SESSION_ID,
   ALGORITHMS_STUDIO_SESSION_ID,
   TEAMS_STUDIO_SESSION_ID,
+  DEBUG_STUDIO_SESSION_ID,
 ];
 
 /** Whether `id` is a fixed, app-owned studio session (designer / librarian / architect) — excluded from
@@ -29,4 +34,15 @@ export const STUDIO_SESSION_PANE_IDS: readonly string[] = [
  *  restored from the recovery banner. */
 export function isStudioSessionPaneId(id: string): boolean {
   return STUDIO_SESSION_PANE_IDS.includes(id);
+}
+
+/** Whether `id` is a FULL-CAPABILITY app-owned session that must ALWAYS launch bypass + role-less,
+ *  regardless of the global permission posture (`bypassPermissions`) — the DEBUG session (#3326). Unlike a
+ *  fleet/console pane, whose posture comes from the store (role/profile/flow + the global bypass toggle),
+ *  the debug session is BY DEFINITION the unrestricted maintenance session in the base-studio-code source
+ *  tree; `buildSessionSettings` forces `bypass:true` for it so migrating it onto the shared TerminalHost
+ *  (off its old bespoke `useScreenSession` launch) preserves its hardcoded posture. Role-less is automatic
+ *  — no `paneRoles` entry is set for it, so no role gate applies. */
+export function isFullCapabilitySession(id: string): boolean {
+  return id === DEBUG_STUDIO_SESSION_ID;
 }

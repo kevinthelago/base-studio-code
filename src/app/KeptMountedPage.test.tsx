@@ -40,4 +40,36 @@ describe("KeptMountedPage", () => {
     rerender(<KeptMountedPage active={true} gate={false}><div data-testid="child" /></KeptMountedPage>);
     expect(queryByTestId("child")).toBeNull();
   });
+
+  it("keepAlive mounts the page HIDDEN even if it was never actively shown (#2940)", () => {
+    // The studio-network reachability hook: a commission brings the target studio up (mounted, but not
+    // the active view) so the pump can inject into its session.
+    const { queryByTestId, container } = render(
+      <KeptMountedPage active={false} keepAlive={true}><div data-testid="child" /></KeptMountedPage>,
+    );
+    expect(queryByTestId("child")).not.toBeNull();
+    expect((container.firstElementChild as HTMLElement).style.display).toBe("none");
+  });
+
+  it("a keepAlive-only page UNMOUNTS when keepAlive drops — the on-demand teardown (#2940)", () => {
+    // Never actively shown → not latched → when the commission clears (keepAlive false) the page
+    // unmounts and releases its PTY. This is what keeps idle cost at zero.
+    const { queryByTestId, rerender } = render(
+      <KeptMountedPage active={false} keepAlive={true}><div data-testid="child" /></KeptMountedPage>,
+    );
+    expect(queryByTestId("child")).not.toBeNull();
+    rerender(<KeptMountedPage active={false} keepAlive={false}><div data-testid="child" /></KeptMountedPage>);
+    expect(queryByTestId("child")).toBeNull();
+  });
+
+  it("a page shown normally STAYS mounted after keepAlive drops (the normal latch wins, #2940)", () => {
+    // If the user actually opened the studio, it must survive a commission ending — only the
+    // commission-ONLY case tears down.
+    const { queryByTestId, rerender, container } = render(
+      <KeptMountedPage active={true} keepAlive={true}><div data-testid="child" /></KeptMountedPage>,
+    );
+    rerender(<KeptMountedPage active={false} keepAlive={false}><div data-testid="child" /></KeptMountedPage>);
+    expect(queryByTestId("child")).not.toBeNull();
+    expect((container.firstElementChild as HTMLElement).style.display).toBe("none");
+  });
 });

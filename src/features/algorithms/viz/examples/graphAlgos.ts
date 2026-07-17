@@ -12,7 +12,7 @@ export interface GraphProgram {
 
 /** A small, connected example graph (6 nodes) — legible under the renderer's circular layout, and shows a
  *  clear BFS wavefront from `a`. */
-const DEFAULT_GRAPH: GraphInput = {
+export const DEFAULT_GRAPH: GraphInput = {
   nodes: ["a", "b", "c", "d", "e", "f"].map((id) => ({ id })),
   edges: [
     { from: "a", to: "b" },
@@ -70,7 +70,7 @@ export function dfs(g: TracedGraph): void {
 }
 
 /** A weighted graph for the shortest-path algorithms — the edge weights drive the visit ORDER. */
-const WEIGHTED_GRAPH: GraphInput = {
+export const WEIGHTED_GRAPH: GraphInput = {
   nodes: ["a", "b", "c", "d", "e", "f"].map((id) => ({ id })),
   edges: [
     { from: "a", to: "b", weight: 4 },

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, providerLaunchConfig, SCOPE_DENY_ALL } from "./sessionLaunch";
+import { DEBUG_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 import { aiderProvider } from "@/app/console/lib/providers/providers/aider";
 import { roleCapability, roleDeniedCommands, roleDeniedTools, scopeWriteGlobs, bscAgentPerms, sessionScopes } from "@/shared/lib/session/sessionRoles";
 import { flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
@@ -14,6 +15,7 @@ import type { AgentFlow } from "@/features/planner/fleet/agentFlow";
 function mkStore(overrides: Record<string, unknown> = {}): AppStore {
   return {
     paneRoles: {}, paneRoleGlobs: {}, paneFlows: {}, paneProfiles: {}, agentProfiles: [],
+    fleetPaneStreams: {},
     deniedCommands: [],
     paneMcpServers: {}, mcpServers: [], paneHooks: {}, hooks: [],
     paneSkills: {}, skills: [], sessionSkillOverrides: {}, sessionSkillGroups: {}, skillGroups: [],
@@ -52,6 +54,25 @@ describe("buildAgentEnv", () => {
     expect(buildAgentEnv(mkStore({ paneRoles: { p: "triage" } }), "p", "claude", "")?.BSC_SCOPE_GLOBS).toBe(SCOPE_DENY_ALL);
     // A worker (code:write) with no globs is NOT deny-all — it writes code within its worktree.
     expect(buildAgentEnv(mkStore({ paneRoles: { p: "worker" } }), "p", "claude", "")?.BSC_SCOPE_GLOBS).toBeUndefined();
+  });
+
+  it("scopes a WORKER pane's bsc plan to its own stream via BSC_STREAM (#3279)", () => {
+    // The safety-critical boundary: a worker sees + touches only its own stream's issues (the plandb
+    // CLI enforces $BSC_STREAM). fleetPaneStreams carries the raw stream id — it must equal
+    // PlanIssue.stream exactly, so use the id verbatim, not a slug.
+    const s = mkStore({ paneRoles: { p: "worker" }, fleetPaneStreams: { p: { id: "auth-login" } } });
+    expect(buildAgentEnv(s, "p", "claude", "")?.BSC_STREAM).toBe("auth-login");
+  });
+
+  it("does NOT scope coordinating roles — they need cross-stream access (#3279)", () => {
+    // A director/planner/triage/reviewer pane must keep full access to integrate + judge across
+    // streams. Even if a stream is bridged to the pane, a non-worker role gets no $BSC_STREAM.
+    for (const role of ["director", "reviewer", "triage", "planner"]) {
+      const s = mkStore({ paneRoles: { p: role }, fleetPaneStreams: { p: { id: "auth-login" } } });
+      expect(buildAgentEnv(s, "p", "claude", "")?.BSC_STREAM).toBeUndefined();
+    }
+    // A worker pane with NO bridged stream (a bare manual worker) also gets none — nothing to scope to.
+    expect(buildAgentEnv(mkStore({ paneRoles: { p: "worker" } }), "p", "claude", "")?.BSC_STREAM).toBeUndefined();
   });
 
   it("emits BSC_SCOPES (the role's per-store access tiers) on every gated pane (#2470)", () => {
@@ -162,6 +183,20 @@ describe("buildSessionSettings", () => {
     // `.claude/**` to remove the hook or widen its own permissions (#1916).
     expect(out.denyToolRules).toEqual(expect.arrayContaining(
       ["Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)", "NotebookEdit(.claude/**)"]));
+  });
+
+  it("honours the global bypass posture for an ordinary pane", () => {
+    expect(buildSessionSettings(mkStore({ bypassPermissions: false }), "p").bypass).toBe(false);
+    expect(buildSessionSettings(mkStore({ bypassPermissions: true }), "p").bypass).toBe(true);
+  });
+
+  it("forces bypass=true for the DEBUG session regardless of the global posture (#3326)", () => {
+    // The full-capability maintenance session is always bypass + role-less — no paneRoles entry, so no
+    // role gate — even when the user's global posture is the allow-list.
+    const out = buildSessionSettings(mkStore({ bypassPermissions: false }), DEBUG_STUDIO_SESSION_ID);
+    expect(out.bypass).toBe(true);
+    expect(out.allowedCommands).toEqual([]); // role-less: no restricted role surface
+    expect(out.denyToolRules).not.toContain("Task"); // no worker sub-agent block
   });
 
   it("installs the audit/confine/scope/taint hooks + worker Stop-bounce for a worker role", () => {
@@ -299,5 +334,11 @@ describe("resolveStartupPromptFreshOnly (#2052)", () => {
   it("is false for a non-claude provider", () => {
     const s = mkStore({ restoreRequested: { t0p0: true } });
     expect(resolveStartupPromptFreshOnly(s, "t0p0", false)).toBe(false);
+  });
+
+  it("is true for the DEBUG session even without a restore — its charter is fresh-only across resumes (#3326)", () => {
+    // The debug session launches with `claude --continue`, so its inline charter must drop on a resume
+    // (delivered only on the first, history-less launch). Matches the old useScreenSession's freshOnly:true.
+    expect(resolveStartupPromptFreshOnly(mkStore(), DEBUG_STUDIO_SESSION_ID, true)).toBe(true);
   });
 });

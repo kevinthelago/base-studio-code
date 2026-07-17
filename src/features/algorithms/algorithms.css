@@ -73,55 +73,6 @@
   tab-size: 2;
 }
 
-/* The "has an implementation in the active tech" badge on a node card. */
-.algo-impl-badge {
-  position: absolute;
-  top: 5px;
-  right: 7px;
-  font-size: 9px;
-  line-height: 1;
-  color: var(--accent);
-  opacity: 0.85;
-  pointer-events: none;
-}
-
-/* The extracted-from-code implementation-count badge (#2777) — how many REAL implementations
-   `bsc graph extract` found for this concept. Sits BOTTOM-right (distinct from the top-right "</>"
-   impl badge) so both can show at once. Neutral by default; the Canvas paints it a WARNING tone via
-   inline style when the concept is a DUPLICATE (>1 site) — the headline dedup signal. */
-.algo-dedup-badge {
-  position: absolute;
-  bottom: 5px;
-  right: 7px;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 9.5px;
-  font-weight: 600;
-  line-height: 1;
-  color: var(--fg-dim);
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  pointer-events: none;
-}
-
-/* The intent-vs-reality drift indicator (#2781) — a concept whose DECLARED composition (seed
-   `composes` edges) diverges from its EXTRACTED calls (real code). Sits TOP-LEFT — visually distinct
-   from the top-right "</>" impl badge and the bottom-right dedup count — in a WARNING tone. A gentle
-   "review this" nudge, not an error; only painted once a scan has run. */
-.algo-drift-badge {
-  position: absolute;
-  top: 5px;
-  left: 9px;
-  font-size: 10px;
-  line-height: 1;
-  color: var(--state-wait, var(--danger));
-  pointer-events: none;
-}
 
 /* Left-rail node rows now render through the shared RailRow / RailGroupHeader primitives (#2789);
    the former bespoke `.algo-railrow` rules were removed with that migration. */

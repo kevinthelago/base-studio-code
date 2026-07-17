@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { Stepper, StageHeader, StageGuidanceCard, StageFooter, LockBanner, DoneBanner } from "./FocusedShell";
-import type { Stage } from "../stages/focusedPlan";
+import { hasStageGuidance, type Stage } from "../stages/focusedPlan";
 
 const stage = (over: Partial<Stage> = {}): Stage => ({
   key: "discovery", name: "Discovery", glyph: "◆", blurb: "Discovery", gate: "all topics resolved",
@@ -89,6 +89,28 @@ describe("StageHeader (#652)", () => {
     // but the pill keeps an at-a-glance hover tooltip of what's left
     expect(screen.getByText("gate").closest(".ph-gate")).toHaveAttribute("title", expect.stringContaining("resolve the discovery topics"));
   });
+
+  // #3257 — the gate pill doubles as the guidance-card disclosure toggle when `onToggleGate` is wired.
+  it("without onToggleGate the pill is a STATIC chip (not a button)", () => {
+    const { container } = render(<StageHeader stage={stage()} pill="wait" />);
+    expect(container.querySelector("button.ph-gate")).toBeNull();
+    expect(container.querySelector("span.ph-gate")).toBeTruthy();
+  });
+
+  it("with onToggleGate the pill is a button that toggles + reflects open state (caret + aria-expanded + .open)", () => {
+    const onToggleGate = vi.fn();
+    const { container, rerender } = render(<StageHeader stage={stage()} pill="wait" open={false} onToggleGate={onToggleGate} />);
+    const pill = container.querySelector("button.ph-gate")!;
+    expect(pill).toBeTruthy();
+    expect(pill).toHaveAttribute("aria-expanded", "false");
+    expect(pill.textContent).toContain("▸"); // collapsed caret
+    fireEvent.click(pill);
+    expect(onToggleGate).toHaveBeenCalledTimes(1);
+    rerender(<StageHeader stage={stage()} pill="wait" open onToggleGate={onToggleGate} />);
+    expect(container.querySelector("button.ph-gate")).toHaveAttribute("aria-expanded", "true");
+    expect(container.querySelector(".ph-gate.open")).toBeTruthy();
+    expect(container.querySelector("button.ph-gate")!.textContent).toContain("▾"); // open caret
+  });
 });
 
 describe("StageGuidanceCard (#2862)", () => {
@@ -128,6 +150,30 @@ describe("StageGuidanceCard (#2862)", () => {
     const { container } = render(<StageGuidanceCard stage={stage({ unmet: [] })} pill="pass" />);
     expect(container.querySelector(".stage-guide")).toBeNull();
   });
+
+  // #3257 — the disclosure toggle: `open={false}` collapses the card even when there IS content.
+  it("is hidden when open={false} despite having content, and shown when open (or undefined)", () => {
+    const p = stage({ unmet: [{ label: "resolve the discovery topics" }] });
+    const { container, rerender } = render(<StageGuidanceCard stage={p} pill="wait" open={false} />);
+    expect(container.querySelector(".stage-guide")).toBeNull(); // collapsed
+    rerender(<StageGuidanceCard stage={p} pill="wait" open />);
+    expect(container.querySelector(".stage-guide")).toBeTruthy(); // revealed
+    rerender(<StageGuidanceCard stage={p} pill="wait" />); // no `open` prop → pre-#3257 always-shown
+    expect(container.querySelector(".stage-guide")).toBeTruthy();
+  });
+});
+
+describe("hasStageGuidance (#3257)", () => {
+  it("true when the gate is blocking with unmet requirements", () => {
+    expect(hasStageGuidance(stage({ unmet: [{ label: "x" }] }), "wait")).toBe(true);
+  });
+  it("true when there's a suggested prompt + inject handler", () => {
+    expect(hasStageGuidance(stage({ unmet: [] }), "pass", { label: "L", text: "T" }, vi.fn())).toBe(true);
+  });
+  it("false when the gate passes with no prompt (nothing to reveal)", () => {
+    expect(hasStageGuidance(stage({ unmet: [{ label: "x" }] }), "pass")).toBe(false); // unmet is stale once passed
+    expect(hasStageGuidance(stage({ unmet: [] }), "wait")).toBe(false);
+  });
 });
 
 describe("StageFooter (#652)", () => {
@@ -149,6 +195,21 @@ describe("StageFooter (#652)", () => {
     rerender(<StageFooter stage={stage({ index: 1 })} action={{ kind: "publish", enabled: true }} published onBack={vi.fn()} onPrimary={vi.fn()} />);
     expect(screen.getByText(/Update GitHub/)).toBeInTheDocument();
     expect(screen.queryByText(/Publish to GitHub/)).not.toBeInTheDocument();
+  });
+  it("an explicit publishLabel wins over the published 'Update GitHub' default (#3280 local-first)", () => {
+    // Offline there is no board to update — the caller's "Recommit plan" must show even when published.
+    render(
+      <StageFooter
+        stage={stage({ index: 1 })}
+        action={{ kind: "publish", enabled: true }}
+        published
+        publishLabel="✓ Recommit plan"
+        onBack={vi.fn()}
+        onPrimary={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Recommit plan/)).toBeInTheDocument();
+    expect(screen.queryByText(/Update GitHub/)).not.toBeInTheDocument();
   });
   it("disables back on the first stage", () => {
     render(<StageFooter stage={stage({ index: 0 })} action={{ kind: "approve-continue", enabled: true }} onBack={vi.fn()} onPrimary={vi.fn()} />);

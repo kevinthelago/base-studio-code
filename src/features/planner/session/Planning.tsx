@@ -59,7 +59,7 @@ import { usePlannerTunnelSync } from "./usePlannerTunnelSync";
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
 import { oneShotComplete } from "@/shared/lib/core/claudeComplete";
 import { resolveLlmConfig, hasLlmKey } from "@/shared/lib/core/llmConfig";
-import { TERM_THEME } from "./planningTerminal";
+import { TERM_THEME } from "@/app/console/lib/terminalConstants";
 import { PlanningHeader } from "./PlanningHeader";
 import { PlanningNotices } from "./PlanningNotices";
 import { PublishProgressView } from "./PublishProgressView";
@@ -81,7 +81,7 @@ export function Planning({ visible }: { visible: boolean }) {
     planDeployConfig, setPlanDeployConfig,
     planMarketConfig,
     planTransformations,
-    planSourceConfig, planIntegrationConfig,
+    planSourceConfig,
     reposPublic, repoPublic,
     injectionHardGate, planInjectionAck, acknowledgePlanInjections,
     planSkippedStages, skipPlanStage,
@@ -115,7 +115,7 @@ export function Planning({ visible }: { visible: boolean }) {
     planDeployConfig: s.planDeployConfig, setPlanDeployConfig: s.setPlanDeployConfig,
     planMarketConfig: s.planMarketConfig,
     planTransformations: s.planTransformations,
-    planSourceConfig: s.planSourceConfig, planIntegrationConfig: s.planIntegrationConfig,
+    planSourceConfig: s.planSourceConfig,
     reposPublic: s.reposPublic, repoPublic: s.repoPublic,
     injectionHardGate: s.injectionHardGate, planInjectionAck: s.planInjectionAck,
     acknowledgePlanInjections: s.acknowledgePlanInjections,
@@ -383,11 +383,6 @@ export function Planning({ visible }: { visible: boolean }) {
     () => planSourceConfig[effectiveProjectId],
     [planSourceConfig, effectiveProjectId],
   );
-  // Integration stage (#1207): the destination/sink + sync strategy; drives destinationDefined/syncDefined.
-  const intgCfg = useMemo(
-    () => planIntegrationConfig[effectiveProjectId],
-    [planIntegrationConfig, effectiveProjectId],
-  );
   const paneData = useMemo(
     () => buildProjectPaneData({
       fleet:    planFleet[effectiveProjectId],
@@ -496,7 +491,7 @@ export function Planning({ visible }: { visible: boolean }) {
     sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
     confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
-    deployCfg, marketCfg, transformationRows, intgCfg, isAuthoring, authoringSig,
+    deployCfg, marketCfg, transformationRows, isAuthoring, authoringSig,
   });
 
   // The focused-pane SELECTION + its derived footer/pill/prompts live in usePlanFocusedPane, called
@@ -835,8 +830,14 @@ export function Planning({ visible }: { visible: boolean }) {
                 // Once a board exists, the publish action reads as "Update GitHub" — a re-sync of
                 // the plan, not a first publish (handlePublish sets activeProjectId on create) (#823).
                 published: !!activeProjectId,
-                // An authoring project publishes a gist, not a GitHub board (#923).
-                publishLabel: isAuthoring ? "⎙ Publish blueprint" : undefined,
+                // An authoring project publishes a gist, not a GitHub board (#923). #3280 local-first:
+                // with no GitHub token the action COMMITS the plan to plan.db (no board to publish/update),
+                // so the label says so — "Commit plan" (first) / "Recommit plan" (re-materialize).
+                publishLabel: isAuthoring
+                  ? "⎙ Publish blueprint"
+                  : !githubToken
+                    ? (activeProjectId ? "✓ Recommit plan" : "✓ Commit plan")
+                    : undefined,
                 // The user deliberately skips the active optional stage (#921); the gate resolves
                 // and the selection re-follows to the next live stage.
                 onSkip: () => { onSkipStage(); setFocusSel(null); },

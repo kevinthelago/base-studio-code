@@ -9,10 +9,12 @@ import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { useHotkeys } from "./useHotkeys";
+import { useNavigateBridge } from "./useNavigateBridge";
 import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 import { ConsoleWorkspace } from "@/app/console";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
+import { DebugSessionMount } from "@/features/debug";
 import { useConsoleTabs } from "@/app/console/useConsoleTabs";
 import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
 import { AutomationsStatus } from "@/features/automations";
@@ -33,6 +35,9 @@ import {
 
 export default function App() {
   useHotkeys();
+  // #3274: apply `bsc navigate` requests from the appchan watcher (Rust emits `bsc://navigate`), so an
+  // external session can steer the app to a view before capturing it.
+  useNavigateBridge();
   useScheduler();
   useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
   useStoreProjector(); // generic store_state projector: scoped domains + the alert pipeline (#2498)
@@ -162,6 +167,9 @@ export default function App() {
       {/* Console tab dialogs (new-tab layout picker + close-confirm) — owned by useConsoleTabs. */}
       {consoleTabs.dialogs}
     </Box>
+    {/* Keeps the app-owned DEBUG session's PTY warm on TerminalHost while the Settings flag is on (#3326),
+        so the Glance `debugger` node's morph can re-parent it in. Renders off-screen / null. */}
+    <DebugSessionMount />
     </TerminalHost>
   );
 }

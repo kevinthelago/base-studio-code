@@ -13,8 +13,8 @@ import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
-import { Skeleton, SkeletonChart } from "@/shared/ui/feedback/Skeleton";
+import { SkeletonChart } from "@/shared/ui/feedback/Skeleton";
+import { CardEmpty, SkeletonRows } from "@/shared/ui/feedback/CardStates";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
@@ -27,20 +27,6 @@ import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
 import type { ThroughputSlice } from "@/shared/lib/github/fleetGithub";
 
 const GRID = "150px 96px 1fr 70px 22px";
-
-/** A compact empty state for a card body (#2234) — the card frame + head stay; the body shows this. */
-function CardEmpty({ icon = "○", title, hint }: { icon?: React.ReactNode; title: string; hint?: string }) {
-  return <EmptyState size="sm" iconVariant="dashed" icon={icon} title={title} description={hint} style={{ padding: "20px 12px" }} />;
-}
-
-/** A stack of shimmer rows — a loading placeholder for a list/table/chart card body (#2234). */
-function SkeletonRows({ rows = 4, h = 30 }: { rows?: number; h?: number }) {
-  return (
-    <Stack gap={6}>
-      {Array.from({ length: rows }).map((_, i) => <Skeleton key={i} h={h} radius={6} />)}
-    </Stack>
-  );
-}
 
 function WorkerBoard({ workers, onOpen }: { workers: LiveWorker[]; onOpen: (w: LiveWorker) => void }) {
   return (

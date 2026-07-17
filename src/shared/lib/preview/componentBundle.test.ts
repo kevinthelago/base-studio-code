@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { compileAnimationsCss, kitAnimations } from "@/shared/ui/kit";
 import {
-  resolveMemPath, lookupMem, buildComponentSrcDoc, exitShimScript, fitShimScript, gestureForwardScript, gestureEngineScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
+  resolveMemPath, lookupMem, buildComponentSrcDoc, exitShimScript, fitShimScript, gestureEngineScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
 } from "./componentBundle";
 
 // The esbuild-wasm bundle can't run under jsdom; these cover the PURE pieces (path resolution + srcdoc
@@ -233,117 +233,6 @@ describe("componentBundle — scrollY natural-size mode (#3190)", () => {
   });
 });
 
-describe("componentBundle — gesture-forward shim (#3190)", () => {
-  it("injects the shim (pan + zoom forwarding, interactive/scroll guards) when forwardGestures is set", () => {
-    const doc = buildComponentSrcDoc("/*B*/", { forwardGestures: true });
-    expect(doc).toContain('"panstart"');                      // drag → panstart
-    expect(doc).toContain('"panmove"');                       // …then panmove
-    expect(doc).toContain('"panend"');                        // …then panend
-    expect(doc).toContain('"zoom"');                          // wheel → zoom
-    expect(doc).toContain("e.button !== 0");                  // only a LEFT drag pans
-    expect(doc).toContain('cursor === "pointer"');            // a cursor:pointer ancestor counts as interactive
-    expect(doc).toContain("scrollableAt");                    // …and a scrollable ancestor keeps the wheel
-    expect(doc).toContain("e.preventDefault()");              // a claimed gesture is preventDefaulted
-    // The shim rides in with the other post-body shims (after the module script).
-    expect(doc.indexOf('"panstart"')).toBeGreaterThan(doc.indexOf('<script type="module">'));
-  });
-
-  it("injects NOTHING when forwardGestures is off — the srcdoc is byte-for-byte unchanged", () => {
-    const bare = buildComponentSrcDoc("X");
-    expect(buildComponentSrcDoc("X", { forwardGestures: false })).toBe(bare);
-    for (const doc of [bare, buildComponentSrcDoc("X", { forwardGestures: false })]) {
-      expect(doc).not.toContain('"panstart"');
-      expect(doc).not.toContain("scrollableAt");
-    }
-  });
-
-  it("gestureForwardScript returns a plain script when on; empty string otherwise", () => {
-    expect(gestureForwardScript(false)).toBe("");
-    const shim = gestureForwardScript(true);
-    expect(shim.startsWith("\n<script>")).toBe(true);         // a plain (non-module) capture-phase script
-    expect(shim).toContain('[role="button"]');               // ARIA controls count as interactive
-    expect(shim).toContain('[contenteditable]');             // …as does an editable region
-    expect(shim).toContain("svg,canvas");                    // …and a data-viz drawing surface (#3168 regression)
-    expect(shim).toContain('ti !== "-1"');                   // a focusable (tabindex) ancestor counts too
-    expect(shim).toContain("screenX");                       // pan forwards absolute screen coords (delta host-side)
-    expect(shim).toContain("passive: false");                // the wheel listener can preventDefault to zoom
-  });
-
-  // A harness: run the shim in jsdom, capturing everything it posts to the (mocked) parent.
-  function runShim() {
-    const src = gestureForwardScript(true).replace(/^\s*<script>/, "").replace(/<\/script>\s*$/, "");
-    const posts: Array<Record<string, number | string>> = [];
-    const orig = window.parent.postMessage;
-    (window.parent as unknown as { postMessage: (m: unknown) => void }).postMessage = (m: unknown) => posts.push(m as Record<string, number | string>);
-    (0, eval)(src);
-    return { posts, restore: () => { window.parent.postMessage = orig; } };
-  }
-
-  // ONE runtime test (the shim registers un-removable document listeners on eval, so a second run would
-  // double-fire) exercising both pan and zoom routing.
-  it("drives pan + zoom in jsdom: background gestures forward; controls/scroll regions are left alone", () => {
-    const { posts, restore } = runShim();
-    const bg = document.createElement("div");     // empty background — gestures here forward
-    const btn = document.createElement("button"); // a real control — a drag here must NOT pan
-    document.body.append(bg, btn);
-
-    // PAN: a left press on the background → panstart, then panmove deltas, then panend.
-    bg.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, screenX: 10, screenY: 20 }));
-    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, screenX: 15, screenY: 26 }));
-    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-    expect(posts.map((p) => p.__preview)).toEqual(["panstart", "panmove", "panend"]);
-    expect(posts[0]).toMatchObject({ x: 10, y: 20 });
-    expect(posts[1]).toMatchObject({ x: 15, y: 26 }); // absolute coords; the host computes (5,6)
-
-    // A press on a button forwards nothing — the component keeps the interaction.
-    posts.length = 0;
-    btn.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, screenX: 5, screenY: 5 }));
-    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, screenX: 9, screenY: 9 }));
-    expect(posts).toEqual([]);
-
-    // A press inside a chart's SVG surface (a d3 graph node) forwards nothing — the graph stays draggable.
-    posts.length = 0;
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    svg.appendChild(circle);
-    document.body.appendChild(svg);
-    circle.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, screenX: 3, screenY: 3 }));
-    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, screenX: 7, screenY: 7 }));
-    expect(posts).toEqual([]);
-    svg.remove();
-
-    // A non-left (e.g. right) press on the background is ignored too.
-    bg.dispatchEvent(new MouseEvent("mousedown", { button: 2, bubbles: true, screenX: 1, screenY: 1 }));
-    document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, screenX: 4, screenY: 4 }));
-    expect(posts).toEqual([]);
-
-    // ZOOM: a wheel over empty background → a `zoom` message with deltaY + the cursor as a FRACTION of the
-    // iframe viewport (the host resolves it against the iframe's real rect).
-    posts.length = 0;
-    bg.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -120, clientX: 40, clientY: 30 }));
-    expect(posts).toHaveLength(1);
-    expect(posts[0]).toMatchObject({ __preview: "zoom", dy: -120 });
-    expect((posts[0] as { fx: number }).fx).toBeCloseTo(40 / window.innerWidth, 6);
-    expect((posts[0] as { fy: number }).fy).toBeCloseTo(30 / window.innerHeight, 6);
-
-    // …but a wheel over a genuinely scrollable region (overflow-y:auto, taller content, room to scroll
-    // down) is left alone so that region scrolls.
-    posts.length = 0;
-    const scroller = document.createElement("div");
-    scroller.style.overflowY = "auto";
-    Object.defineProperty(scroller, "scrollHeight", { value: 500, configurable: true });
-    Object.defineProperty(scroller, "clientHeight", { value: 100, configurable: true });
-    scroller.scrollTop = 0; // at top → room to scroll DOWN
-    bg.appendChild(scroller);
-    scroller.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 120, clientX: 5, clientY: 5 }));
-    expect(posts).toEqual([]);
-
-    restore();
-    bg.remove();
-    btn.remove();
-  });
-});
-
 describe("componentBundle — pan/zoom engine (#3190 crisp pass)", () => {
   it("gestureEngineScript embeds the params + host-command handling; undefined ⇒ empty", () => {
     expect(gestureEngineScript(undefined)).toBe("");
@@ -365,6 +254,18 @@ describe("componentBundle — pan/zoom engine (#3190 crisp pass)", () => {
     expect(doc).not.toContain("content.offsetWidth");       // the scale-to-fit shim is suppressed
     const bare = buildComponentSrcDoc("X");
     expect(buildComponentSrcDoc("X", { zoomEngine: undefined })).toBe(bare); // off ⇒ byte-for-byte unchanged
+  });
+
+  // #3251 regression: the engine's drag lives INSIDE the iframe, so its selection guard must ship in the
+  // SRCDOC. The host wrapper's `user-select:none` cannot cross a document boundary — when that was the
+  // only guard, a press-and-move started a native text selection instead of panning.
+  it("the engine's srcdoc suppresses text selection, exempting form fields (#3251)", () => {
+    const doc = buildComponentSrcDoc("X", { zoomEngine: { initial: 1.15 } });
+    expect(doc).toContain("body{user-select:none;-webkit-user-select:none}");
+    // …but a previewed input/textarea keeps its caret + selection (mirrors the engine's DRAG_NATIVE).
+    expect(doc).toContain("input,textarea,select,[contenteditable]{user-select:text;-webkit-user-select:text}");
+    // Scoped to the engine only: a non-engine preview is untouched.
+    expect(buildComponentSrcDoc("X")).not.toContain("user-select");
   });
 
   // Parse "translate(<tx>px,<ty>px) scale(<s>)" — the transform the engine writes onto #root.
@@ -450,6 +351,30 @@ describe("componentBundle — pan/zoom engine (#3190 crisp pass)", () => {
     root.appendChild(scroller);
     scroller.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 120, clientX: 5, clientY: 5 }));
     expect(root.style.transform).toBe(beforeS);
+
+    root.remove();
+  });
+
+  // #3251 regression: an <img>/<a> press starts a NATIVE drag, which cancels the mousemove stream and
+  // kills the pan mid-gesture. The engine cancels it; a form field keeps its own (DRAG_NATIVE).
+  it("cancels a native dragstart on non-form targets, so an image/link drag still pans (#3251)", () => {
+    const root = document.createElement("div");
+    root.id = "root";
+    document.body.appendChild(root);
+    const src = gestureEngineScript({ initial: 1 }).replace(/^\s*<script>/, "").replace(/<\/script>\s*$/, "");
+    (0, eval)(src);
+
+    const img = document.createElement("img");
+    root.appendChild(img);
+    const imgDrag = new Event("dragstart", { bubbles: true, cancelable: true });
+    img.dispatchEvent(imgDrag);
+    expect(imgDrag.defaultPrevented).toBe(true);      // native image-drag cancelled → the pan survives
+
+    const input = document.createElement("input");
+    root.appendChild(input);
+    const inputDrag = new Event("dragstart", { bubbles: true, cancelable: true });
+    input.dispatchEvent(inputDrag);
+    expect(inputDrag.defaultPrevented).toBe(false);   // a form field keeps its native drag
 
     root.remove();
   });

@@ -19,7 +19,7 @@ import { resolveAllInstalledMcp, toSessionPayloads, mcpAllowRules } from "@/feat
 import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
 import { plannerLaunchConfig } from "./plannerLaunch";
 import { resolvePlannerSandbox } from "./plannerSandbox";
-import { TERM_THEME } from "./planningTerminal";
+import { TERM_THEME } from "@/app/console/lib/terminalConstants";
 import type { Command, Schedule } from "@/shared/data/mock";
 
 export interface PlannerTerminalOpts {

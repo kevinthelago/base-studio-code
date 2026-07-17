@@ -1,0 +1,18 @@
+[package]
+name = "bsc-appchan"
+version = "0.1.0"
+edition = "2021"
+description = "The bsc→app request channel (#3274, epic #3260): a file-based request/response transport for asking the RUNNING desktop app to do something (capture, navigate, …). `bsc` cannot call the app — the bridge only runs app→bsc — so requests ride a directory both sides watch, the shape coord.log already uses. Tauri-free: the app's watcher and every tiny CLI share it."
+
+# Tauri-free core so the lean `bsc` umbrella binary reuses it without dragging the desktop app in
+# (matches plandb/skilldb/bsc-todo).
+[lib]
+name = "bsc_appchan"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bsc-util = { path = "../bsc-util" }
+
+[dev-dependencies]
+tempfile = "3"

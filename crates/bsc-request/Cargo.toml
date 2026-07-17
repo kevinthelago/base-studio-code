@@ -1,0 +1,20 @@
+[package]
+name = "bsc-request"
+version = "0.1.0"
+edition = "2021"
+description = "Improvement-request store (SQLite) for base-studio-code (#3295, epic #3260) — the designer→debug channel: a confined session (bsc ui) files discrete, grounded requests a full-capability debug session reads and resolves. Contractual (each request stands alone), not a conversation."
+
+# Tauri-free core lib + the `bsc request` subcommand, so the umbrella binary, the app, and any session
+# reuse it without relinking the whole app (mirrors plandb/errordb/bsc-loop).
+[lib]
+name = "bsc_request"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# `bundled` compiles SQLite from source (matches src-tauri) for cross-platform reliability.
+rusqlite = { version = "0.40", features = ["bundled"] }
+# Shared SQLite open + busy_timeout plumbing (the `conn` feature) — so a CLI write never races the app.
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
+# Shared CLI scaffold: cli_main + resolve_store_path (--db→env→default) + the CmdDoc help system.
+bsc-cli-util = { path = "../bsc-cli-util" }

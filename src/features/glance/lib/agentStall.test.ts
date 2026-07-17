@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { applyStallHealth, projectKeyOfSession, STALL_WARN_MS, type WaitLite } from "./agentStall";
+import { applyStallHealth, applyFleetLiveStatus, projectKeyOfSession, STALL_WARN_MS, type WaitLite, type FleetLiveSignals } from "./agentStall";
 import type { ProjectLite } from "./glanceData";
+import type { GRawNode } from "./glanceGraph";
+import { fleetPaneId } from "@/app/console/lib/paneIdentity";
 
 const T0 = 1_720_000_000_000; // a fixed "now" base
 const projects: ProjectLite[] = [
@@ -55,5 +57,60 @@ describe("applyStallHealth (#2541 watchdog)", () => {
 
   it("no waiting sessions → the input is returned untouched", () => {
     expect(applyStallHealth(projects, [], T0)).toBe(projects);
+  });
+});
+
+describe("applyFleetLiveStatus (#3252 — fleet-drill live agent status)", () => {
+  const PROJ = "proj";
+  // A planned fleet at rest — director + one worker + the preview node, all seeded idle by buildOrgFleetData.
+  const nodes: GRawNode[] = [
+    { id: "director", slug: "director", role: "infra", health: "idle", activity: "idle" },
+    { id: "auth", slug: "auth", role: "service", health: "idle", activity: "idle" },
+    { id: "__preview__", slug: "preview", role: "client", health: "healthy", activity: "live", preview: true },
+  ];
+  const dir = fleetPaneId(PROJ, "director"); // "proj:director"
+  const auth = fleetPaneId(PROJ, "auth");
+  const sig = (over: Partial<FleetLiveSignals>): FleetLiveSignals => ({
+    livePaneIds: new Set(), paneStatus: {}, waiting: [], now: T0, ...over,
+  });
+  const out = (over: Partial<FleetLiveSignals>) => applyFleetLiveStatus(nodes, PROJ, sig(over));
+  const node = (r: GRawNode[], id: string) => r.find((n) => n.id === id)!;
+
+  it("an UNLAUNCHED agent stays at planned rest (idle/idle)", () => {
+    const r = out({}); // nothing launched
+    expect(node(r, "director")).toMatchObject({ health: "idle", activity: "idle" });
+    expect(node(r, "auth")).toMatchObject({ health: "idle", activity: "idle" });
+  });
+
+  it("a launched + RUNNING agent reads healthy · building — INCLUDING the director", () => {
+    const r = out({ livePaneIds: new Set([dir, auth]), paneStatus: { [dir]: "run", [auth]: "run" } });
+    expect(node(r, "director")).toMatchObject({ health: "healthy", activity: "building" });
+    expect(node(r, "auth")).toMatchObject({ health: "healthy", activity: "building" });
+  });
+
+  it("a launched but QUIET agent (between prompts) reads subtly-live: healthy · idle", () => {
+    const r = out({ livePaneIds: new Set([dir]) }); // launched, not running, not waiting
+    expect(node(r, "director")).toMatchObject({ health: "healthy", activity: "idle" });
+  });
+
+  it("a launched agent parked on a FRESH bsc-wait reads healthy · waiting", () => {
+    const r = out({ livePaneIds: new Set([auth]), waiting: [{ session: auth, reason: "awaiting review", at: T0 - 60_000 }] });
+    expect(node(r, "auth")).toMatchObject({ health: "healthy", activity: "waiting" });
+    expect(node(r, "auth").reason).toBeUndefined();
+  });
+
+  it("an OVERSTAYED wait escalates to warning · waiting with a duration reason", () => {
+    const r = out({ livePaneIds: new Set([auth]), waiting: [{ session: auth, reason: "no instructions", at: T0 - 12 * 60_000 }] });
+    expect(node(r, "auth")).toMatchObject({ health: "warning", activity: "waiting", reason: "no instructions · 12m" });
+  });
+
+  it("waiting beats running (a parked session isn't 'building' even if its pane still reads run)", () => {
+    const r = out({ livePaneIds: new Set([auth]), paneStatus: { [auth]: "run" }, waiting: [{ session: auth, reason: "hold", at: T0 - 60_000 }] });
+    expect(node(r, "auth").activity).toBe("waiting");
+  });
+
+  it("the preview node is left untouched (not an agent)", () => {
+    const r = out({ livePaneIds: new Set([dir, auth]), paneStatus: { [dir]: "run" } });
+    expect(node(r, "__preview__")).toEqual(nodes[2]); // healthy/live/preview, unchanged
   });
 });

@@ -19,6 +19,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/store";
 import { KitShareModal } from "./KitShareModal";
 import { DesignerTerminal } from "./DesignerTerminal";
+import { DesignerLoopBanner } from "./DesignerLoopBanner";
+import { useDesignerLoopPump } from "./useDesignerLoopPump";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
@@ -91,11 +93,18 @@ export function DesignsWorkbench() {
   const setComponent = useAppStore((s) => s.setComponent);
 
   const firstFor = (kitId: string) => components.find((c) => c.kitId === kitId);
-  const [kitId, setKitId] = useState(() => kits[0]?.id ?? "");
+  // #3274: kit + component selection lives in the STORE, not local state — `bsc navigate component`
+  // needs to set it from outside the UI so a capture can target something. Behaviour is unchanged:
+  // neither is persisted, so an empty stored kit falls back to the first (what the old lazy
+  // `useState(() => kits[0]?.id)` did) and the component still starts null each boot (#3090).
+  const storedKitId = useAppStore((s) => s.designsKitId);
+  const setKitId = useAppStore((s) => s.setDesignsKit);
+  const kitId = storedKitId || kits[0]?.id || "";
   // The user-FOCUSED component — null when nothing is focused → the Inspector is hidden unless Claude is
   // working a node (#3090, restoring #2705's hide-when-empty over #2818). Focusing a node (or a rail row)
   // sets it; clicking the canvas clears it.
-  const [compId, setCompId] = useState<string | null>(null);
+  const compId = useAppStore((s) => s.designsCompId);
+  const setCompId = useAppStore((s) => s.setDesignsComp);
   const [tab, setTab] = useState<Tab>("overview");
   const [variant, setVariant] = useState(() => firstFor(kits[0]?.id ?? "")?.variants[0] ?? "default");
   // The preview's DATA-STATE axis (#3135): loaded (demo) · empty (no data) · loading (skeleton).
@@ -124,6 +133,7 @@ export function DesignsWorkbench() {
   // Live-focus (#2525): the designer session is ALWAYS mounted (#2597), so poll its activity stream
   // for the whole Design Studio lifecycle; clear the focus when the studio unmounts.
   useUiActivity(true);
+  useDesignerLoopPump(); // #3292: drive the open designer loop (bsc loop) from this long-lived workspace
   useEffect(() => () => useAppStore.getState().setAiFocused(null), []);
 
   // The always-on designer terminal's height (#2624) — a row-resize handle above it; `invert` because
@@ -330,6 +340,7 @@ export function DesignsWorkbench() {
   // graph header. Modals + notice cards are siblings of the canvas.
   return (
     <>
+      <DesignerLoopBanner />
       {shareOpen && (
         <KitShareModal
           kit={kit ?? null}
@@ -489,7 +500,10 @@ export function DesignsWorkbench() {
               ref={mountPreviewCanvas}
               style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", background: "var(--bg-canvas, var(--bg))" }}
             >
-              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: previewH, userSelect: "none", pointerEvents: "auto", transform: `translate(${previewFit.tx}px,${previewFit.ty}px) scale(${previewFit.scale})`, transformOrigin: "0 0" }}>
+              {/* #3251: no `user-select:none` here — it read as the drag's selection guard but is a no-op
+                  (this wrapper's only child is the iframe, and CSS does not cross a document boundary).
+                  The guard lives in the engine's own srcdoc CSS, where the drag actually happens. */}
+              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: previewH, pointerEvents: "auto", transform: `translate(${previewFit.tx}px,${previewFit.ty}px) scale(${previewFit.scale})`, transformOrigin: "0 0" }}>
                 <ComponentPreviewFrame
                   comp={sel}
                   theme={theme}
@@ -698,6 +712,7 @@ function Inspector(p: InspProps) {
             <Box className="ds-surface">
               <Box className="ds-frame">
                 <ComponentPreviewFrame
+                  shotTarget
                   comp={sel}
                   theme={p.previewTheme}
                   themeId={p.kitTheme}

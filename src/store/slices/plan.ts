@@ -9,7 +9,6 @@ import { packagedUiKitPin, resolveBlueprintUiKit } from "@/features/planner/blue
 import { canonicalTopicKey } from "@/features/planner/stages/planTopics";
 import { emptyFleet } from "@/features/planner/fleet/planFleet";
 import { defaultStageConfig, discoveryOnlyStageConfig } from "@/features/planner/stages/planStages";
-import { seedDataModels, emptyDataModel } from "@/features/planner/data/dataModel";
 import { normalizeFlow, resolveFlow } from "@/features/planner/fleet/agentFlow";
 import { setMapEntry } from "../updateHelpers";
 import { dropProjectScoped } from "./projectScopedMaps";
@@ -45,7 +44,7 @@ function recordBlueprintKit(get: () => AppStore, projectId: string, blueprintId:
 }
 
 type PlanSlice = Pick<AppStore,
-  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "markStageConfirmedLocal" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planMarketConfig" | "setPlanMarketConfig" | "planTransformations" | "setPlanTransformations" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "markStageSkippedLocal" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
+  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "markStageConfirmedLocal" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planMarketConfig" | "setPlanMarketConfig" | "planTransformations" | "setPlanTransformations" | "planSourceConfig" | "setPlanSourceConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "markStageSkippedLocal" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
@@ -163,9 +162,6 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       planSourceConfig: {},
       setPlanSourceConfig: (projectId, cfg) =>
         set((s) => ({ planSourceConfig: setMapEntry(s.planSourceConfig, projectId, cfg) })),
-      planIntegrationConfig: {},
-      setPlanIntegrationConfig: (projectId, cfg) =>
-        set((s) => ({ planIntegrationConfig: setMapEntry(s.planIntegrationConfig, projectId, cfg) })),
       reposPublic: {},
       setReposPublic: (projectId, isPublic) =>
         set((s) => ({ reposPublic: setMapEntry(s.reposPublic, projectId, isPublic) })),
@@ -279,27 +275,6 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         resolveBlueprintUiKit(get().blueprints.find((b) => b.id === id), get().githubToken);
       },
 
-      dataModels: seedDataModels(),
-      activeDataModelId: "dm-crm",
-      setActiveDataModel: (id) => set({ activeDataModelId: id }),
-      addDataModel: () => {
-        const id = `dm-${Date.now().toString(36)}`;
-        set((s) => ({ dataModels: [...s.dataModels, emptyDataModel(id)], activeDataModelId: id }));
-        return id;
-      },
-      setDataModel: (id, model) =>
-        set((s) => ({ dataModels: s.dataModels.map((m) => (m.id === id ? { ...model, id } : m)) })),
-      removeDataModel: (id) =>
-        set((s) => {
-          const dataModels = s.dataModels.filter((m) => m.id !== id);
-          const activeDataModelId = s.activeDataModelId === id ? (dataModels[0]?.id ?? "") : s.activeDataModelId;
-          return { dataModels, activeDataModelId };
-        }),
-      loadVerified: {},
-      setLoadVerified: (projectKey, entity, verified) =>
-        set((s) => ({
-          loadVerified: setMapEntry(s.loadVerified, projectKey, { ...(s.loadVerified[projectKey] ?? {}), [entity]: verified }),
-        })),
       projectBlueprintId: {},
       setProjectBlueprintId: (projectId, blueprintId) => {
         set((s) => ({ projectBlueprintId: setMapEntry(s.projectBlueprintId, projectId, blueprintId) }));

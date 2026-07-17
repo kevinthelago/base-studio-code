@@ -17,13 +17,13 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
     // librarian (#2787 — the Algorithms tab's knowledge-store session).
     for (const id of [
       "persona-planner", "persona-worker", "persona-director", "persona-triage", "persona-reviewer",
-      "persona-tester", "persona-issuer", "persona-juror", "persona-auditor", "persona-marketer", "persona-documentor", "persona-designer", "persona-architect", "persona-librarian",
+      "persona-tester", "persona-issuer", "persona-juror", "persona-auditor", "persona-marketer", "persona-documentor", "persona-designer", "persona-architect", "persona-librarian", "persona-debugger",
     ]) {
       expect(built.some((p) => p.id === id)).toBe(true);
     }
-    // Ordered by each def's `order` field: planner leads, the librarian trails (order 12, after architect).
+    // Ordered by each def's `order` field: planner leads, the debugger trails (order 13, after the librarian #3322).
     expect(built[0]?.id).toBe("persona-planner");
-    expect(built[built.length - 1]?.id).toBe("persona-librarian");
+    expect(built[built.length - 1]?.id).toBe("persona-debugger");
     // `order`/`protocolFile` are load-time-only — they must not leak onto the assembled Persona.
     expect(built.every((p) => !("order" in p) && !("protocolFile" in p))).toBe(true);
   });
@@ -51,6 +51,11 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
     // ...and teach the graduated bsc ui ladder (#2585): the discover verbs, the per-rung edit
     // verbs, and the default-to-the-highest-rung rule that makes the runtime design loop reachable.
     for (const needle of ["ladder", "highest rung", "bsc ui tokens", "bsc ui components", "set-token", "define-variant"]) {
+      expect(designer.startPrompt).toContain(needle);
+    }
+    // ...and, on a bsc ui wall, file a request for the debug session instead of asking for out-of-surface
+    // permissions (#3300 — the designer→debug channel), grounded in the failing command.
+    for (const needle of ["bsc request new", "bsc request list --open", "FAILING COMMAND"]) {
       expect(designer.startPrompt).toContain(needle);
     }
   });

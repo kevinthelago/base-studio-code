@@ -35,6 +35,13 @@ export { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } f
 export { GraphView } from "./viz/renderers/GraphView";
 export { circularLayout, coordinateLayout, layoutFor } from "./viz/renderers/graphLayout";
 export { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "./viz/examples/graphAlgos";
-export { vizForImpl, resolveKind } from "./viz/examples/registry";
+export { programVizForImpl, resolveVizExample, resolveKind } from "./viz/examples/registry";
+export { useVizForImpl } from "./viz/useVizForImpl";
 export { classifyKind, type Classifiable } from "./lib/classifyKind";
 export type { VizExample } from "./viz/examples/registry";
+// Studio network (#2940): run an impl's vizCode in the sandbox → a normalized dataset a component
+// preview can bind to (the algorithms-drive-previews payoff).
+export { runInSandbox } from "./viz/examples/vizSandbox";
+export type { VizRun } from "./viz/examples/vizProgram";
+export { vizRunToDataset } from "./viz/vizDataset";
+export type { VizDataset } from "./viz/vizDataset";
