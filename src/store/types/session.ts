@@ -2,6 +2,7 @@
 // auto-resume, gate overrides, default/per-pane model, fleet harness). Split from store/types (#1634).
 import type { ConsoleAutoFocusMode } from "@/app/console/lib/focusQueue";
 import type { ModelId } from "@/app/console/panes/PaneMenu";
+import type { StudioTarget } from "@/shared/lib/fleet/studioNetworkDrive";
 
 /** Session-behavior slice of {@link AppStore}. */
 export interface SessionState {
@@ -53,6 +54,12 @@ export interface SessionState {
    *  and a console-active workspace falls back to Glance (derived in App). */
   showConsolePage: boolean;
   setShowConsolePage: (v: boolean) => void;
+  /** #2940 (studio network): the app-owned studio sessions the pump currently wants reachable —
+   *  targets ("designer"/"librarian") with at least one open commission. Written by
+   *  `useStudioNetworkPump` each tick; read by ConsoleWorkspace's lazy-mount hosts, which launch the
+   *  target session on demand and tear it down when the list empties. SESSION-ONLY (not persisted). */
+  activeStudioTargets: StudioTarget[];
+  setActiveStudioTargets: (t: StudioTarget[]) => void;
   /** #199: auto-relaunch a parked pane when its deps land (opt-in; off by default). */
   coordAutoWake: boolean;
   setCoordAutoWake: (v: boolean) => void;
