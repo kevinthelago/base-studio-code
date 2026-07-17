@@ -40,9 +40,12 @@ import { DESIGN_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
  *  truth lives in `systemSessions`, so crash recovery excludes it). */
 export const DESIGNER_PANE_ID = DESIGN_STUDIO_SESSION_ID;
 
-/** The designer's whole command surface: `bsc ui` plus the deprecated `bsc component` alias (#2469),
- *  emitted as the session's ONLY `Bash(<cmd> *)` allows via `restrictedAllow`. */
-export const DESIGNER_ALLOWED_COMMANDS = ["bsc ui", "bsc component"];
+/** The designer's whole command surface, emitted as the session's ONLY `Bash(<cmd> *)` allows via
+ *  `restrictedAllow` — each entry is a PREFIX, so `"bsc ui"` auto-runs EVERY `bsc ui` subcommand
+ *  (theme/tokens/resolve/generate/doctor/…). `bsc component` is the deprecated `bsc ui` alias (#2469).
+ *  `bsc shot` (#3261) captures the running app's pixels and `bsc loop` (#3262) drives the design loop —
+ *  both must AUTO-RUN so the loop (#3292) iterates unattended (`bsc loop say` + `bsc shot` per turn). */
+export const DESIGNER_ALLOWED_COMMANDS = ["bsc ui", "bsc component", "bsc shot", "bsc loop"];
 
 export interface DesignerTerminalHandle {
   /** Host element for the xterm canvas — attach to the terminal container div. */
