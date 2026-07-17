@@ -207,6 +207,11 @@
 .fp .ph-gate.wait .gd { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
 .fp .ph-gate.fail { color: var(--danger); border-color: color-mix(in oklch, var(--danger), transparent 60%); }
 .fp .ph-gate.fail .gd { background: var(--danger); }
+/* The gate pill doubles as the stage-guidance disclosure toggle (#3257): a clickable chip with a caret. */
+.fp button.ph-gate { cursor: pointer; appearance: none; line-height: 1; }
+.fp button.ph-gate:hover { border-color: color-mix(in oklch, currentColor, transparent 45%); }
+.fp .ph-gate.open { background: var(--bg-elev2); }
+.fp .ph-gate .ph-caret { font-size: 8px; opacity: .65; margin-left: 1px; }
 
 /* lock / done banner */
 .fp .lock-banner { display: flex; align-items: center; gap: 9px; margin: 12px 16px 0;
