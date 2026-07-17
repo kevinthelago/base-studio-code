@@ -105,6 +105,18 @@ function graphExampleFromProgram(program: GraphProgram): VizExample {
   };
 }
 
+/** Every per-structure renderer, so any panel a scene declares (graph / array / matrix / stack / scalar /
+ *  tree) resolves. Shared by the in-app scene builder AND the stored-`vizCode` `scene` seam (#3275), so an
+ *  in-app scene and a persisted-data one render identically. */
+const SCENE_RENDERERS: RendererRegistry = {
+  array: ArrayView,
+  matrix: MatrixView,
+  graph: GraphView,
+  stack: StackView,
+  scalar: ScalarView,
+  tree: TreeView,
+};
+
 /** Build a stable MULTI-STRUCTURE {@link VizExample} (#3259) — runs a scene program via `runScene`, so its
  *  synchronized panels lay out side by side. Every per-structure renderer is registered so any panel the
  *  scene declares (graph / array / matrix / stack / scalar / tree) resolves. The "your input" seam edits the
@@ -112,7 +124,7 @@ function graphExampleFromProgram(program: GraphProgram): VizExample {
 function sceneExampleFromProgram(program: SceneProgram): VizExample {
   return {
     factory: runScene(program.run, program.defaultInput),
-    renderers: { array: ArrayView, matrix: MatrixView, graph: GraphView, stack: StackView, scalar: ScalarView, tree: TreeView },
+    renderers: SCENE_RENDERERS,
     input: {
       default: graphToText(program.defaultInput),
       hint: "An adjacency list — one node per line: a: b, c",
@@ -167,6 +179,13 @@ const DATATYPE_SEAM = {
   },
   graph: {
     renderers: { graph: GraphView } as RendererRegistry,
+    hint: "An adjacency list — one node per line: a: b, c",
+    serialize: (input: VizRun["input"]) => graphToText(input as GraphInput),
+    parse: (text: string) => parseGraphInput(text),
+  },
+  // A stored SCENE (#3275): every renderer registered (its panels can be any structure); seeds on a graph.
+  scene: {
+    renderers: SCENE_RENDERERS,
     hint: "An adjacency list — one node per line: a: b, c",
     serialize: (input: VizRun["input"]) => graphToText(input as GraphInput),
     parse: (text: string) => parseGraphInput(text),
