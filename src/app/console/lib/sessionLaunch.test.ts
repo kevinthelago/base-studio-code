@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, providerLaunchConfig, SCOPE_DENY_ALL } from "./sessionLaunch";
+import { DEBUG_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 import { aiderProvider } from "@/app/console/lib/providers/providers/aider";
 import { roleCapability, roleDeniedCommands, roleDeniedTools, scopeWriteGlobs, bscAgentPerms, sessionScopes } from "@/shared/lib/session/sessionRoles";
 import { flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
@@ -184,6 +185,20 @@ describe("buildSessionSettings", () => {
       ["Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)", "NotebookEdit(.claude/**)"]));
   });
 
+  it("honours the global bypass posture for an ordinary pane", () => {
+    expect(buildSessionSettings(mkStore({ bypassPermissions: false }), "p").bypass).toBe(false);
+    expect(buildSessionSettings(mkStore({ bypassPermissions: true }), "p").bypass).toBe(true);
+  });
+
+  it("forces bypass=true for the DEBUG session regardless of the global posture (#3326)", () => {
+    // The full-capability maintenance session is always bypass + role-less — no paneRoles entry, so no
+    // role gate — even when the user's global posture is the allow-list.
+    const out = buildSessionSettings(mkStore({ bypassPermissions: false }), DEBUG_STUDIO_SESSION_ID);
+    expect(out.bypass).toBe(true);
+    expect(out.allowedCommands).toEqual([]); // role-less: no restricted role surface
+    expect(out.denyToolRules).not.toContain("Task"); // no worker sub-agent block
+  });
+
   it("installs the audit/confine/scope/taint hooks + worker Stop-bounce for a worker role", () => {
     const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } });
     const out = buildSessionSettings(s, "p");
@@ -319,5 +334,11 @@ describe("resolveStartupPromptFreshOnly (#2052)", () => {
   it("is false for a non-claude provider", () => {
     const s = mkStore({ restoreRequested: { t0p0: true } });
     expect(resolveStartupPromptFreshOnly(s, "t0p0", false)).toBe(false);
+  });
+
+  it("is true for the DEBUG session even without a restore — its charter is fresh-only across resumes (#3326)", () => {
+    // The debug session launches with `claude --continue`, so its inline charter must drop on a resume
+    // (delivered only on the first, history-less launch). Matches the old useScreenSession's freshOnly:true.
+    expect(resolveStartupPromptFreshOnly(mkStore(), DEBUG_STUDIO_SESSION_ID, true)).toBe(true);
   });
 });

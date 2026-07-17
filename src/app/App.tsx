@@ -14,6 +14,7 @@ import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 import { ConsoleWorkspace } from "@/app/console";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
+import { DebugSessionMount } from "@/features/debug";
 import { useConsoleTabs } from "@/app/console/useConsoleTabs";
 import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
 import { AutomationsStatus } from "@/features/automations";
@@ -166,6 +167,9 @@ export default function App() {
       {/* Console tab dialogs (new-tab layout picker + close-confirm) — owned by useConsoleTabs. */}
       {consoleTabs.dialogs}
     </Box>
+    {/* Keeps the app-owned DEBUG session's PTY warm on TerminalHost while the Settings flag is on (#3326),
+        so the Glance `debugger` node's morph can re-parent it in. Renders off-screen / null. */}
+    <DebugSessionMount />
     </TerminalHost>
   );
 }
