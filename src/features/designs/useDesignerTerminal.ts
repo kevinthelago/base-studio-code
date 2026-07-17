@@ -43,12 +43,13 @@ export const DESIGNER_PANE_ID = DESIGN_STUDIO_SESSION_ID;
 /** The designer's whole command surface, emitted as the session's ONLY `Bash(<cmd> *)` allows via
  *  `restrictedAllow` — each entry is a PREFIX, so `"bsc ui"` auto-runs EVERY `bsc ui` subcommand
  *  (theme/tokens/resolve/generate/doctor/…). `bsc component` is the deprecated `bsc ui` alias (#2469).
- *  `bsc shot` (#3261) captures the running app's pixels and `bsc loop` (#3262) drives the design loop —
- *  both must AUTO-RUN so the loop (#3292) iterates unattended (`bsc loop say` + `bsc shot` per turn).
- *  `bsc request new`/`bsc request list` (#3300) is the designer→debug channel — on a `bsc ui` wall it
- *  FILES a request for the debug session to fix (#3298) instead of asking for out-of-surface
- *  permissions; `resolve` is deliberately NOT here (draining the queue is the debug session's contract). */
-export const DESIGNER_ALLOWED_COMMANDS = ["bsc ui", "bsc component", "bsc shot", "bsc loop", "bsc request new", "bsc request list"];
+ *  `bsc shot preview` (#3308) captures JUST the component preview (auto-cropped — the designer's ground
+ *  truth is the component, NOT the whole screen; the full `bsc shot take` is the debug session's alone)
+ *  and `bsc loop` (#3262) drives the design loop — both AUTO-RUN so the loop (#3292) iterates unattended
+ *  (`bsc loop say` + `bsc shot preview` per turn). `bsc request new`/`bsc request list` (#3300) is the
+ *  designer→debug channel — on a `bsc ui` wall it FILES a request for the debug session to fix (#3298)
+ *  instead of asking for out-of-surface permissions; `resolve` is NOT here (that's the debug contract). */
+export const DESIGNER_ALLOWED_COMMANDS = ["bsc ui", "bsc component", "bsc shot preview", "bsc loop", "bsc request new", "bsc request list"];
 
 export interface DesignerTerminalHandle {
   /** Host element for the xterm canvas — attach to the terminal container div. */

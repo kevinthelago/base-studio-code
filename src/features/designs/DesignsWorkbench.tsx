@@ -712,6 +712,7 @@ function Inspector(p: InspProps) {
             <Box className="ds-surface">
               <Box className="ds-frame">
                 <ComponentPreviewFrame
+                  shotTarget
                   comp={sel}
                   theme={p.previewTheme}
                   themeId={p.kitTheme}
