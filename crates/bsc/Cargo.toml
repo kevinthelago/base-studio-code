@@ -35,6 +35,8 @@ bsc-component = { path = "../bsc-component" }
 bsc-ui = { path = "../bsc-ui" }
 logs = { path = "../logs" }
 bsc-files = { path = "../bsc-files" }
+# `bsc shot` — capture the running app's real pixels via a webview snapshot (#3261, epic #3260).
+bsc-shot = { path = "../bsc-shot" }
 # `bsc graph` — the Algorithms knowledge graph (#2761): concepts + relationships, queryable read-only.
 bsc-graph = { path = "../bsc-graph" }
 plandb = { path = "../plandb" }

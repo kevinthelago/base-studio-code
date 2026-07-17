@@ -1,0 +1,20 @@
+[package]
+name = "bsc-shot"
+version = "0.1.0"
+edition = "2021"
+description = "Screenshot request protocol (#3261): the file-based request/response channel `bsc shot` uses to ask the RUNNING app for a webview snapshot, plus the `bsc shot` CLI. Tauri-free — the desktop app (the watcher/capturer) and the tiny CLI both depend on it."
+
+# Tauri-free core so the lean `bsc` umbrella binary can reuse it without dragging the desktop app in
+# (matches plandb/skilldb/bsc-todo).
+[lib]
+name = "bsc_shot"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# `bsc_base_dir()` (the ~/.base-studio-code root) + `now_ms()` — the same helpers every store crate uses.
+bsc-util = { path = "../bsc-util" }
+bsc-cli-util = { path = "../bsc-cli-util" }
+
+[dev-dependencies]
+tempfile = "3"
