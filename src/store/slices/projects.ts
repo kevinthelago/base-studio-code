@@ -299,7 +299,9 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 // Secure default (#738): triage only bsc-authored issues unless the user opts out.
                 // #1004: lead with this repo's since-last-run delta (if prepareTriageRun supplied one)
                 // so a re-run resumes from what changed rather than re-ingesting the whole project.
-                newPaneStartupPromptText[key] = buildTriagePrompt(s.restrictToBscIssues, deltas?.[fullName ?? ""]);
+                // #3281 local-first: no GitHub token ⇒ triage the plan.db issues via `bsc plan`, not
+                // `gh issue list`. (When connected, the GitHub-issue triage is unchanged.)
+                newPaneStartupPromptText[key] = buildTriagePrompt(s.restrictToBscIssues, deltas?.[fullName ?? ""], !s.githubToken);
                 // Resolution moved to the assignments module (#324/#326): startup
                 // prompt is the override cascade; reference context accumulates.
                 const doc = resolveStartupPrompt(assignments, { projectId, repo: fullName ?? "" });

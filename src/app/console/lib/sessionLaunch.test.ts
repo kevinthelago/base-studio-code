@@ -14,6 +14,7 @@ import type { AgentFlow } from "@/features/planner/fleet/agentFlow";
 function mkStore(overrides: Record<string, unknown> = {}): AppStore {
   return {
     paneRoles: {}, paneRoleGlobs: {}, paneFlows: {}, paneProfiles: {}, agentProfiles: [],
+    fleetPaneStreams: {},
     deniedCommands: [],
     paneMcpServers: {}, mcpServers: [], paneHooks: {}, hooks: [],
     paneSkills: {}, skills: [], sessionSkillOverrides: {}, sessionSkillGroups: {}, skillGroups: [],
@@ -52,6 +53,25 @@ describe("buildAgentEnv", () => {
     expect(buildAgentEnv(mkStore({ paneRoles: { p: "triage" } }), "p", "claude", "")?.BSC_SCOPE_GLOBS).toBe(SCOPE_DENY_ALL);
     // A worker (code:write) with no globs is NOT deny-all — it writes code within its worktree.
     expect(buildAgentEnv(mkStore({ paneRoles: { p: "worker" } }), "p", "claude", "")?.BSC_SCOPE_GLOBS).toBeUndefined();
+  });
+
+  it("scopes a WORKER pane's bsc plan to its own stream via BSC_STREAM (#3279)", () => {
+    // The safety-critical boundary: a worker sees + touches only its own stream's issues (the plandb
+    // CLI enforces $BSC_STREAM). fleetPaneStreams carries the raw stream id — it must equal
+    // PlanIssue.stream exactly, so use the id verbatim, not a slug.
+    const s = mkStore({ paneRoles: { p: "worker" }, fleetPaneStreams: { p: { id: "auth-login" } } });
+    expect(buildAgentEnv(s, "p", "claude", "")?.BSC_STREAM).toBe("auth-login");
+  });
+
+  it("does NOT scope coordinating roles — they need cross-stream access (#3279)", () => {
+    // A director/planner/triage/reviewer pane must keep full access to integrate + judge across
+    // streams. Even if a stream is bridged to the pane, a non-worker role gets no $BSC_STREAM.
+    for (const role of ["director", "reviewer", "triage", "planner"]) {
+      const s = mkStore({ paneRoles: { p: role }, fleetPaneStreams: { p: { id: "auth-login" } } });
+      expect(buildAgentEnv(s, "p", "claude", "")?.BSC_STREAM).toBeUndefined();
+    }
+    // A worker pane with NO bridged stream (a bare manual worker) also gets none — nothing to scope to.
+    expect(buildAgentEnv(mkStore({ paneRoles: { p: "worker" } }), "p", "claude", "")?.BSC_STREAM).toBeUndefined();
   });
 
   it("emits BSC_SCOPES (the role's per-store access tiers) on every gated pane (#2470)", () => {

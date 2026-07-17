@@ -183,8 +183,10 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
 }) {
   const primaryLabel =
     action.kind === "approve-continue" && !action.enabled ? "gate blocking…"
-    : action.kind === "publish" && published ? "⟳ Update GitHub"
+    // An explicit publishLabel WINS over the "Update GitHub" re-sync default (#3280): offline there's no
+    // board to update, so the caller's "Recommit plan" must show even when `published` is true.
     : action.kind === "publish" && publishLabel ? publishLabel
+    : action.kind === "publish" && published ? "⟳ Update GitHub"
     : FOOTER_LABEL[action.kind];
   const primary = action.kind === "approve-continue" || action.kind === "route-design" || action.kind === "publish";
   // When the gate is blocking the advance button, the tooltip says what's still needed (#805).

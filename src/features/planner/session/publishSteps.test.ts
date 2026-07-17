@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   type GhApi, type Upd,
   publishRepositories, scaffoldRepositories, ensureProjectBoard,
-  createIssues, applyStreamLabels, seedPublishStatus,
+  createIssues, applyStreamLabels, seedPublishStatus, materializeIssues,
 } from "./publishSteps";
 import type { GhStatusMap, GhItemState } from "./GitHubStructureCard";
 import type { AgentStream } from "../fleet/planFleet";
@@ -158,6 +158,38 @@ describe("ensureProjectBoard", () => {
 
 // ── createIssues ─────────────────────────────────────────────────────────────────
 // Issues are generated from the FEATURES (one per feature, #plan-db) — no milestones (#1912).
+describe("materializeIssues (the local half — #3280)", () => {
+  const features = JSON.stringify([
+    { slug: "login", name: "Add login", acceptance: ["works"] },
+    { slug: "logout", name: "Add logout", acceptance: ["works"] },
+  ]);
+
+  it("parses features → issues and upserts them into plan.db, with NO GitHub call", async () => {
+    const upserted: string[] = [];
+    const issues = await materializeIssues(features, { upsertIssue: async (iss) => { upserted.push(iss.ref); } });
+    // One issue per feature, materialized — this is exactly what lets the fleet launch offline.
+    expect(issues.map(i => i.ref)).toEqual(["login", "logout"]);
+    expect(upserted).toEqual(["login", "logout"]);
+    // No `api` is even passed — materialization is GitHub-free by construction.
+  });
+
+  it("is idempotent by ref — commit-then-publish over the same rows never duplicates", async () => {
+    const refs: string[] = [];
+    const upsert = async (iss: { ref: string }) => { refs.push(iss.ref); };
+    await materializeIssues(features, { upsertIssue: upsert });
+    await materializeIssues(features, { upsertIssue: upsert }); // publish later re-materializes
+    // Same refs re-upserted (the store keys on ref); the caller never sees a dupe.
+    expect(refs.length).toBe(4);
+    expect(new Set(refs)).toEqual(new Set(["login", "logout"]));
+  });
+
+  it("empty features ⇒ no issues, no writes", async () => {
+    const upsert = vi.fn(async () => {});
+    expect(await materializeIssues("[]", { upsertIssue: upsert })).toEqual([]);
+    expect(upsert).not.toHaveBeenCalled();
+  });
+});
+
 describe("createIssues (generated from features)", () => {
   const noop = { upsertIssue: vi.fn(async () => {}) };
   const features = JSON.stringify([{ slug: "login", name: "Add login", acceptance: ["works"] }]);

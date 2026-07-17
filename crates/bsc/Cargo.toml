@@ -43,8 +43,6 @@ bsc-navigate = { path = "../bsc-navigate" }
 bsc-graph = { path = "../bsc-graph" }
 plandb = { path = "../plandb" }
 errordb = { path = "../errordb" }
-# `bsc todo` — the two-scope agent todo store (#1872): global runbook here, feature scope in plandb.
-bsc-todo = { path = "../bsc-todo" }
 # DuckDB-backed `bsc data` — optional so `--no-default-features` yields a lean binary (#1877).
 bsc-data = { path = "../data", optional = true }
 # `bsc mcp <server>` — the bundled native MCP servers, now subcommands of the umbrella (#1877). Each

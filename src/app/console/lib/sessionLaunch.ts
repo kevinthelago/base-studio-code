@@ -72,6 +72,14 @@ export function buildAgentEnv(
   // carries the role/user denies through the bypassPermissions flip.
   const denies = sessionDeniedCommands(s, paneId);
   if (denies.length > 0) e.BSC_DENY_BASH = denies.join("\n");
+  // Per-stream plan scoping (#3279): a WORKER pane owns exactly one fleet stream, so scope its
+  // `bsc plan` to that stream — it reads + touches only its own issues (the plandb CLI enforces it).
+  // `fleetPaneStreams[paneId]` is set only for worker panes at fleet launch; coordinating roles
+  // (director/planner/triage/reviewer/…) get NO $BSC_STREAM and keep full cross-stream access, which
+  // they need to integrate + judge. Gate on the worker role too, so a non-worker stream pane (a
+  // reviewer/juror that judges another stream's landing) isn't accidentally boxed into its own.
+  const streamId = s.fleetPaneStreams[paneId]?.id;
+  if (streamId && s.paneRoles[paneId] === "worker") e.BSC_STREAM = streamId;
   if (providerId === "bsc-agent") {
     Object.assign(e, bscAgentEnv(resolveLlmConfig(s)));
     // Gate the runtime by the pane's role (least-privilege parity with Claude); no role ⇒ permissive.
