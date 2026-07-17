@@ -9,8 +9,8 @@
 import { useCallback, useMemo, useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { bscJson } from "@/shared/lib/core/bsc";
-import { type TabItem } from "@/app/chrome/TabBar";
-import { Screen } from "@/app/chrome/Screen";
+import { type TabItem } from "@/shared/ui/layouts/TabBar";
+import { Screen } from "@/shared/ui/layouts/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { usePromptDialog, useConfirmDialog } from "@/shared/ui/overlay/promptDialog";
 import { APP_ROLES, type AgentProfile, type Tier, type ToolKey } from "./lib/agentProfiles";
