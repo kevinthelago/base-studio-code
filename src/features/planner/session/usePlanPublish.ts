@@ -30,6 +30,7 @@ import { publishGist } from "@/features/planner/lib/gist/gist";
 import {
   type GhApi, type Upd, seedPublishStatus,
   publishRepositories, scaffoldRepositories, ensureProjectBoard, createIssues, applyStreamLabels,
+  materializeIssues,
 } from "./publishSteps";
 
 export type PublishPhase = "idle" | "running" | "done" | "error";
@@ -316,8 +317,36 @@ export function usePlanPublish(deps: PlanPublishDeps) {
     }
   }
 
+  /** The LOCAL commit (#3280) — materialize the plan's issues into plan.db and mark the project active,
+   *  with NO GitHub round-trip. This is what lets the fleet launch offline: `activeProjectId` set to the
+   *  local project key flips `published` true (`canLaunchTriage`) and works as a key everywhere; a later
+   *  publish upgrades it to the GitHub node id over the SAME plan.db rows (upsert-by-ref, no dupes).
+   *  Shares publish's injection gate — never promote unreviewed markers to the fleet. */
+  async function commitLocal() {
+    if (!injectionGateState.cleared) {
+      const n = injectionGateState.findings.length;
+      setTriageError(injectionGateState.mode === "blocked"
+        ? `Commit blocked: ${n} possible prompt-injection marker${n !== 1 ? "s" : ""} in the plan must be removed (hard-block is on in Settings).`
+        : `Review the ${n} possible prompt-injection marker${n !== 1 ? "s" : ""} flagged in the plan, then acknowledge them before committing.`);
+      return;
+    }
+    setTriageError(null);
+    const featuresContent = sections.find(s => s.k === "features")?.content ?? "";
+    await materializeIssues(featuresContent, { upsertIssue: (iss) => bscWrite(effectiveProjectId, ["plan", "add"], iss) });
+    const goalContent  = sections.find(s => s.k === "goal")?.content ?? "";
+    const projectTitle = deriveProjectTitle(planningTitle, goalContent, activeProjectName);
+    // The local key IS activeProjectId here (no GitHub number) — publish later overwrites it with the
+    // ProjectV2 node id. Reopening from the board derives the hub key from the name, so nothing bridges.
+    useAppStore.getState().setActiveProjectMeta(effectiveProjectId, projectTitle, publishRepos[0] ?? "", 0, publishRepos);
+  }
+
   async function handlePublish() {
     if (isAuthoring) { await publishAuthoredBlueprint(); return; }
+    // #3280 local-first: with no GitHub token, "publish" commits the plan LOCALLY (plan.db) instead of
+    // erroring — the fleet can then launch offline. Publishing to GitHub stays the optional path when
+    // connected. (publishBlockReason's no-token case is now unreachable from here; the no-repo case
+    // below still fires when connected.)
+    if (!githubToken) { await commitLocal(); return; }
     // Don't fail silently (#969): surface WHY publish can't proceed, so the user isn't left thinking
     // they published when nothing happened (which then leaves the fleet-launch button locked with no
     // explanation). The common case is a blueprint with no Repos stage ⇒ no repo ever linked.

@@ -835,8 +835,14 @@ export function Planning({ visible }: { visible: boolean }) {
                 // Once a board exists, the publish action reads as "Update GitHub" — a re-sync of
                 // the plan, not a first publish (handlePublish sets activeProjectId on create) (#823).
                 published: !!activeProjectId,
-                // An authoring project publishes a gist, not a GitHub board (#923).
-                publishLabel: isAuthoring ? "⎙ Publish blueprint" : undefined,
+                // An authoring project publishes a gist, not a GitHub board (#923). #3280 local-first:
+                // with no GitHub token the action COMMITS the plan to plan.db (no board to publish/update),
+                // so the label says so — "Commit plan" (first) / "Recommit plan" (re-materialize).
+                publishLabel: isAuthoring
+                  ? "⎙ Publish blueprint"
+                  : !githubToken
+                    ? (activeProjectId ? "✓ Recommit plan" : "✓ Commit plan")
+                    : undefined,
                 // The user deliberately skips the active optional stage (#921); the gate resolves
                 // and the selection re-follows to the next live stage.
                 onSkip: () => { onSkipStage(); setFocusSel(null); },
