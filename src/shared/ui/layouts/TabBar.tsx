@@ -137,7 +137,6 @@ export function TabBar({
 
   return (
     <>
-      {/* eslint-disable-next-line no-restricted-syntax -- measured tabstrip needs a real DOM ref + drag handlers */}
       <div
         ref={stripRef}
         className={"tabstrip" + (dragIdx !== null ? " dragging" : "")}
@@ -173,7 +172,6 @@ export function TabBar({
           >
             {t.status !== undefined && <Box as="span" className={"dot " + t.status} />}
             {editingId === t.id ? (
-              // eslint-disable-next-line no-restricted-syntax -- bespoke inline tab-rename input needs a real DOM ref (select-on-edit) + tab-scoped styling
               <input
                 className="mono"
                 ref={editRef}
@@ -209,7 +207,6 @@ export function TabBar({
           </Box>
         ))}
         {onAdd && (
-          // eslint-disable-next-line no-restricted-syntax -- bespoke `.tab-add` button (styled by the tabstrip CSS, not the .btn kit)
           <button className="tab-add" onClick={onAdd}>+</button>
         )}
       </div>
@@ -226,7 +223,6 @@ export function TabBar({
       )}
 
       {menu && renderMenu && createPortal(
-        // eslint-disable-next-line no-restricted-syntax -- portal menu needs a real DOM ref for measured placement (Box isn't forwardRef)
         <div ref={menuRef} className="mono" style={{
           position: "fixed", top: menu.y, left: menu.x, zIndex: 2000,
           background: "var(--bg-panel)", border: "1px solid var(--border-soft)",

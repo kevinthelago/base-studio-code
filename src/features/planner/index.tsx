@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { useAppStore } from "@/store";
-import { Screen } from "@/app/chrome/Screen";
+import { Screen } from "@/shared/ui/layouts/Screen";
 import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { Stack } from "@/shared/ui/layout/Stack";

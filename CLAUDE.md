@@ -93,7 +93,9 @@ base-studio-code/
 │   ├── app/                 # the SHELL — knows every feature; features don't know it
 │   │   ├── main.tsx  App.tsx   #   Vite entry + the Titlebar/Rail/screen-switcher shell
 │   │   ├── registry.ts      #   canonical Workspace → {label, icon} (#1879); the rail + titlebar both read it
-│   │   ├── chrome/          #   Rail, Titlebar, Screen (shared tabbed shell, #1878), Tabstrip, TabBar, StatusBar
+│   │   ├── chrome/          #   the SHELL-PRIVATE chrome: Rail, Titlebar, Tabstrip, StatusBar, locationCrumb
+│   │   │                    #   (Screen + TabBar moved to shared/ui/layouts/ in #3245 — every Workspace
+│   │   │                    #    composes them, so they are shared UI, not shell-private)
 │   │   ├── console/         #   the execution surface: ConsoleWorkspace + panes/ + lib/ (pane system)
 │   │   ├── safety/          #   the crash layer: ErrorBoundary + fatalOverlay (self-installing DOM crash overlay, #1905)
 │   │   └── *Banner.tsx      #   crash/quarantine/readiness banners
@@ -123,7 +125,7 @@ feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`
 `hooks/`, `screens/`, `data/` are gone). Rules:
 
 - **Page-structure vocabulary (#1878/#1879):** one word per level — the **Rail** switches
-  **Workspaces**; a Workspace is composed of a **Screen** (the shared tabbed shell, `app/chrome/Screen.tsx`)
+  **Workspaces**; a Workspace is composed of a **Screen** (the shared tabbed shell, `shared/ui/layouts/Screen.tsx`)
   that shows one **Page** at a time over a **PageTabs** strip (`usePageTabs` + `TabBar`). Rail
   destinations are `*Workspace` (`registry.ts` `Workspace` type + `activeWorkspace`); Settings sections
   are Pages (`features/settings/pages/*Page`). Console keeps its own nested **Tab → Pane → View**. Full
