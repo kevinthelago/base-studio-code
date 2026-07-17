@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { TracedScene, runScene, type GraphInput } from "../../lib/tracer";
-import { isPanelsFrame, type PanelsFrame, type ArrayFrame, type GraphFrame } from "../../lib/trace";
-import { dijkstraScene } from "./scenes";
-import { WEIGHTED_GRAPH } from "./graphAlgos";
+import { TracedScene, TracedStack, runScene, type GraphInput } from "../../lib/tracer";
+import { isPanelsFrame, type PanelsFrame, type ArrayFrame, type GraphFrame, type StackFrame } from "../../lib/trace";
+import { dijkstraScene, bfsScene } from "./scenes";
+import { WEIGHTED_GRAPH, DEFAULT_GRAPH } from "./graphAlgos";
 import { programVizForImpl } from "./registry";
 
 describe("TracedScene / runScene — synchronized multi-structure panels (#3259)", () => {
@@ -65,6 +65,64 @@ describe("registry — dijkstra is now a SCENE (#3259)", () => {
     expect(viz).toBeDefined();
     expect(viz.renderers.graph).toBeDefined();
     expect(viz.renderers.array).toBeDefined(); // the scene adds the distance array (was graph-only pre-#3259)
+    expect([...viz.factory()].every(isPanelsFrame)).toBe(true);
+  });
+});
+
+describe("TracedStack — LIFO / FIFO / deque (#3266)", () => {
+  it("a QUEUE pops the FRONT; a STACK pops the TOP", () => {
+    const q = new TracedStack("queue");
+    q.push(1); q.push(2); q.push(3);
+    expect(q.pop()).toBe(1); // FIFO — front out first
+    expect(q.size).toBe(2);
+
+    const s = new TracedStack("stack");
+    s.push(1); s.push(2);
+    expect(s.pop()).toBe(2); // LIFO — top out first
+  });
+
+  it("records a frame per op — the data + the op verb + the mode", () => {
+    const q = new TracedStack("queue");
+    q.push(7);
+    const frames = q.trace();
+    expect(frames[0].data).toEqual([]); // at rest
+    const last = frames[frames.length - 1];
+    expect(last.data).toEqual([7]);
+    expect(last.ops?.[0].op).toBe("push");
+    expect(last.mode).toBe("queue");
+  });
+});
+
+describe("bfsScene — the canonical multi-structure BFS (#3266)", () => {
+  const frames = [...runScene(bfsScene, DEFAULT_GRAPH as GraphInput)()];
+
+  it("runs as a graph + FIFO-queue scene, in sync", () => {
+    expect(frames.length).toBeGreaterThan(1);
+    expect(frames.every(isPanelsFrame)).toBe(true);
+    expect(Object.keys((frames[0] as PanelsFrame).panels).sort()).toEqual(["graph", "queue"]);
+  });
+
+  it("the frontier queue enqueues then fully DRAINS while the graph is explored breadth-first", () => {
+    const last = (frames[frames.length - 1] as PanelsFrame).panels;
+    expect((last.queue as StackFrame).data).toEqual([]); // BFS drains the queue
+    expect((last.queue as StackFrame).mode).toBe("queue");
+    // Every node ends visited, the first one is the start.
+    const graphMarks = (last.graph as GraphFrame).marks ?? {};
+    expect(graphMarks.a).toBe("start");
+    expect(Object.values(graphMarks).filter((m) => m === "visited").length).toBe(DEFAULT_GRAPH.nodes.length);
+    // The queue actually moved — some frame shows a push and some a pop.
+    const queueOps = frames.flatMap((f) => ((f as PanelsFrame).panels.queue as StackFrame | undefined)?.ops ?? []).map((o) => o.op);
+    expect(queueOps).toContain("push");
+    expect(queueOps).toContain("pop");
+  });
+});
+
+describe("registry — bfs is now a SCENE with a queue panel (#3266)", () => {
+  it("resolves to a multi-structure example: graph + stack renderers, panel frames", () => {
+    const viz = programVizForImpl({ id: "bfs.rs", name: "bfs" })!;
+    expect(viz).toBeDefined();
+    expect(viz.renderers.graph).toBeDefined();
+    expect(viz.renderers.stack).toBeDefined(); // the scene adds the queue panel
     expect([...viz.factory()].every(isPanelsFrame)).toBe(true);
   });
 });

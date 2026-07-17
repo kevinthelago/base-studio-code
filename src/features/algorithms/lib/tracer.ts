@@ -11,7 +11,7 @@
 //
 // This is the array tracer; TracedMatrix / TracedGraph / TracedTree follow the same shape as their
 // renderers land (#3179–#3185), so instrumented execution generalizes to every data type.
-import type { ArrayFrame, ArrayOp, Frame, GraphFrame, GraphOp, MatrixFrame, MatrixOp, PanelsFrame, StructureFrame } from "./trace";
+import type { ArrayFrame, ArrayOp, Frame, GraphFrame, GraphOp, MatrixFrame, MatrixOp, PanelsFrame, StackFrame, StackOp, StructureFrame } from "./trace";
 
 /** A durable per-cell mark an algorithm can set (matches the ArrayOp `mark` vocabulary). */
 export type ArrayMark = "sorted" | "pivot" | "min";
@@ -354,6 +354,91 @@ export function runGraphAlgorithm(algo: (g: TracedGraph) => void, input: GraphIn
   };
 }
 
+// ── the stack tracer (#3266) — LIFO / FIFO / deque ──
+
+/** The stack discipline — a stack (LIFO), a queue (FIFO), or a double-ended deque. Picks which END
+ *  `pop` removes from; `push` always appends to the back/top. */
+export type StackMode = "stack" | "queue" | "deque";
+
+/**
+ * An instrumented stack / queue / deque — an algorithm's frontier structure (BFS's queue, DFS's stack).
+ * `push` appends, `pop` removes the active end (the TOP for a stack/deque, the FRONT for a queue), `peek`
+ * reads an index. Every op appends a `StackFrame` the `<StackView>` renderer animates. Values may be
+ * strings (e.g. `"b:3"`), so a scene can label frontier entries.
+ */
+export class TracedStack {
+  private readonly s: (number | string)[];
+  private readonly mode: StackMode;
+  private readonly log: StackFrame[] = [];
+  private readonly cur: Record<string, number> = {};
+
+  constructor(mode: StackMode = "stack", initial: readonly (number | string)[] = []) {
+    this.s = [...initial];
+    this.mode = mode;
+    this.emit(); // the structure at rest
+  }
+
+  /** The number of entries — read freely (no frame). */
+  get size(): number {
+    return this.s.length;
+  }
+
+  /** Append an entry at the back/top — records a `push` frame. */
+  push(v: number | string): void {
+    this.s.push(v);
+    this.emit([{ op: "push" }]);
+  }
+
+  /** Remove + return the active end (the TOP for stack/deque, the FRONT for queue) — records a `pop` frame. */
+  pop(): number | string | undefined {
+    const v = this.mode === "queue" ? this.s.shift() : this.s.pop();
+    this.emit([{ op: "pop" }]);
+    return v;
+  }
+
+  /** Read the entry at `i` without removing it — records a `peek` frame. */
+  peek(i: number): number | string {
+    this.emit([{ op: "peek", at: i }]);
+    return this.s[i];
+  }
+
+  /** Move a named index pointer (drawn on the next frame); `null` clears it. */
+  cursor(name: string, i: number | null): void {
+    if (i == null) delete this.cur[name];
+    else this.cur[name] = i;
+  }
+
+  /** The recorded trace (a fresh snapshot array). */
+  trace(): StackFrame[] {
+    return [...this.log];
+  }
+
+  /** Route emitted frames to a {@link TracedScene} (#3259) — see {@link TracedArray.setSink}. */
+  private sink?: (f: StructureFrame) => void;
+  setSink(fn: (f: StructureFrame) => void): void { this.sink = fn; }
+
+  private emit(ops?: StackOp[]): void {
+    const frame: StackFrame = { structure: "stack", data: [...this.s] };
+    if (this.mode !== "stack") frame.mode = this.mode;
+    if (ops && ops.length) frame.ops = ops;
+    if (Object.keys(this.cur).length) frame.cursors = { ...this.cur };
+    this.log.push(frame);
+    this.sink?.(frame);
+  }
+}
+
+/**
+ * Run a stack/queue algorithm — a plain function over a {@link TracedStack} — returning a factory that
+ * yields its recorded trace as a fresh generator each call (replay-safe).
+ */
+export function runStackAlgorithm(algo: (s: TracedStack) => void, mode: StackMode = "stack"): () => Generator<Frame> {
+  return function* () {
+    const s = new TracedStack(mode);
+    algo(s);
+    yield* s.trace();
+  };
+}
+
 // ── the scene tracer (#3259) — MULTI-STRUCTURE decomposition ──
 //
 // A larger algorithm isn't one structure: Dijkstra is a graph + a distance array (+ a heap, later). A
@@ -408,6 +493,10 @@ export class TracedScene {
   /** A named graph panel (renders via `<GraphView>`). */
   graph(name: string, input: GraphInput): TracedGraph {
     return this.attach(name, new TracedGraph(input));
+  }
+  /** A named stack / queue / deque panel (renders via `<StackView>`). */
+  stack(name: string, mode: StackMode = "stack", initial: readonly (number | string)[] = []): TracedStack {
+    return this.attach(name, new TracedStack(mode, initial));
   }
 
   /** The recorded synchronized panel trace — a resting snapshot when the program did no ops. */
