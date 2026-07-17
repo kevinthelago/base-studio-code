@@ -13,6 +13,9 @@ path = "src/main.rs"
 [dependencies]
 # Shared leaf utilities (#1646): base dir + epoch clock + civil-date formatting.
 bsc-util = { path = "../bsc-util" }
+# #3279: the worker's own open issues (stream-scoped) folded into each turn's system prompt — the
+# on-plan context that replaced the #3278-removed todo injection.
+plandb = { path = "../plandb" }
 # The file-structure engine, reused IN-PROCESS by the `list_files`/`file_info` tools (the standalone
 # `bsc-files` binary is the same lib). Avoids a subprocess + the Windows binary-path resolution.
 bsc-files = { path = "../bsc-files" }

@@ -211,8 +211,11 @@ pub(crate) fn compact_messages(
 /// scrapped the todo store). #3279 reintroduces a per-turn injection — the worker's own open issues
 /// from a stream-scoped `bsc plan mine` — and will re-add the block param + its compaction-survival
 /// test then, together with the source, so no always-empty argument sits here in the meantime.
-fn compose_turn_system(system: &str) -> String {
-    format!("{AGENT_INSTRUCTIONS}\n\n{system}")
+fn compose_turn_system(system: &str, block: Option<&str>) -> String {
+    match block {
+        Some(b) if !b.trim().is_empty() => format!("{AGENT_INSTRUCTIONS}\n\n{system}\n\n{b}"),
+        _ => format!("{AGENT_INSTRUCTIONS}\n\n{system}"),
+    }
 }
 
 /// Run the agent loop: build a [`Turn`] from the conversation + tools, ask the
@@ -263,10 +266,12 @@ pub async fn run_agent<P: LlmProvider>(
     loop {
         let mut answered = false;
         for step in 0..max_steps {
-            // #3279 reintroduces a per-turn injection here — the worker's own open issues from a
-            // stream-scoped `bsc plan mine`, re-rendered every turn so it rides in `system` (never in
-            // `messages`) and `compact_messages` can't elide it. Removed with the todo store in #3278.
-            let turn_system = compose_turn_system(system);
+            // #3279: fold the worker's OWN open issues (stream-scoped `$BSC_STREAM`) into the system
+            // prompt EVERY turn. It rides in `system` (never in `messages`), so the compaction below —
+            // which only touches `messages` — can't elide it; it's re-rendered from plan.db each turn.
+            // Best-effort + None-safe (no plan.db / no stream / no open issues ⇒ nothing injected).
+            let assigned = plandb::scope::render_assigned_from_env();
+            let turn_system = compose_turn_system(system, assigned.as_deref());
             let system_tokens = estimate_tokens(&turn_system);
             // Compact older turns to fit the model's context window (#1831) — a clone for THIS request;
             // the persisted `messages` keep the full history (a later `--continue` loses nothing it
@@ -531,15 +536,36 @@ mod tests {
     }
 
     #[test]
-    fn compose_turn_system_prepends_the_preamble_to_the_caller_prompt() {
-        // The per-turn injection (once the todo checklist, #1872) was removed with the todo store in
-        // #3278; #3279 reintroduces it as a stream-scoped `bsc plan mine` render + re-adds the
-        // "survives compaction" coverage there, with the new source. What remains: the fixed preamble
-        // is always present ahead of the caller's system prompt.
-        let sys = compose_turn_system("PROJECT CONTEXT");
+    fn compose_turn_system_injects_the_assigned_issues_and_they_survive_compaction() {
+        // #3279: the worker's own open issues (stream-scoped) are folded into `system`, so the model
+        // always sees them — and because they're in `system` and NOT in `messages`, `compact_messages`
+        // (which only touches `messages`) can never elide them. This proves both halves. (Source moved
+        // from the #3278-removed todo store to `plandb::scope::render_assigned_from_env`.)
+        let block = "# Your open issues (stream 'ui') — work only these\n- [open] F1  Write the DDL";
+
+        let sys = compose_turn_system("PROJECT CONTEXT", Some(block));
         assert!(sys.contains("PROJECT CONTEXT"));
+        assert!(sys.contains("F1") && sys.contains("Write the DDL"));
         assert!(sys.contains(AGENT_INSTRUCTIONS), "the preamble is always present");
         assert!(sys.find(AGENT_INSTRUCTIONS) < sys.find("PROJECT CONTEXT"), "preamble comes first");
+
+        // A None / blank block is omitted (prompt stays clean when there's nothing assigned).
+        assert!(!compose_turn_system("PC", None).contains("F1"));
+        assert!(!compose_turn_system("PC", Some("   ")).contains("Your open issues"));
+
+        // Survives compaction: elide a long conversation, then confirm the block is STILL present in
+        // the re-composed system for the next turn (it was never in `messages`).
+        let mut msgs = vec![Msg::User("TASK".into())];
+        for _ in 0..10 {
+            msgs.push(Msg::Assistant { text: String::new(), tool_calls: vec![] });
+            msgs.push(Msg::User("x".repeat(400)));
+        }
+        msgs.push(Msg::User("LATEST".into()));
+        let (compacted, did) = compact_messages(estimate_tokens(&sys), msgs, 600, 100);
+        assert!(did, "the middle was elided");
+        let in_messages = compacted.iter().any(|m| matches!(m, Msg::User(s) if s.contains("F1")));
+        assert!(!in_messages, "the issue block is never carried in messages");
+        assert!(compose_turn_system("PROJECT CONTEXT", Some(block)).contains("F1"), "re-composing surfaces it again");
     }
 
     /// The injected instructions must teach a local model the thing it kept getting wrong: a CLI like
