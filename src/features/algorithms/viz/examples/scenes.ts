@@ -18,11 +18,12 @@ export interface SceneProgram {
 const INF = 99;
 
 /**
- * Dijkstra as a SCENE (#3259) — a `graph` panel + a `distance` array panel animating TOGETHER. This is the
- * canonical multi-structure example the frame model cites: you watch the graph get explored (current →
- * visit → relax) WHILE the distance array fills in (a cell flashes on each improvement), so the mechanic
- * that a single-graph trace hides — the distances being computed — becomes the co-star. Real Dijkstra over
- * the SAME `TracedGraph`; the distances are mirrored into the array panel as they update.
+ * Dijkstra as a SCENE (#3259 · #3268) — three panels animating TOGETHER: a `graph`, a `distance` array, and
+ * a `state` SCALAR readout (the node being finalized + how many are settled). This is the canonical
+ * multi-structure example the frame model cites: you watch the graph get explored (current → visit → relax)
+ * WHILE the distance array fills in (a cell flashes on each improvement) AND the scalar state ticks (the
+ * current pointer moves, the settled counter increments) — so every mechanic a single-graph trace hides
+ * becomes a co-star. Real Dijkstra over the SAME `TracedGraph`; the distances + state mirror its progress.
  */
 export function dijkstraScene(scene: TracedScene, input: GraphInput): void {
   const g = scene.graph("graph", input);
@@ -32,6 +33,7 @@ export function dijkstraScene(scene: TracedScene, input: GraphInput): void {
 
   const distVals: number[] = ids.map((_, i) => (i === 0 ? 0 : INF)); // start at 0, everything else ∞
   const dist = scene.array("distance", distVals);
+  const state = scene.scalar("state", { current: "—", dist: 0, settled: 0 }); // the running state readout
   const visited = new Array<boolean>(n).fill(false);
 
   g.mark(ids[0], "start");
@@ -43,9 +45,12 @@ export function dijkstraScene(scene: TracedScene, input: GraphInput): void {
     if (u < 0 || best >= INF) break; // done — the rest are unreachable
 
     visited[u] = true;
-    g.current(ids[u]);   // point at the node being settled
-    dist.mark(u, "min"); // lock in its distance cell
-    g.visit(ids[u]);     // finish it
+    g.current(ids[u]);              // point at the node being settled
+    dist.mark(u, "min");            // lock in its distance cell
+    state.set("current", ids[u]);   // which node we're finalizing
+    state.set("dist", distVals[u]); // its now-final shortest distance
+    state.add("settled", 1);        // one more node done
+    g.visit(ids[u]);                // finish it
 
     for (const nb of g.neighbours(ids[u])) {
       const v = idx.get(nb.to);

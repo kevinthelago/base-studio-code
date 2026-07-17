@@ -11,7 +11,7 @@
 //
 // This is the array tracer; TracedMatrix / TracedGraph / TracedTree follow the same shape as their
 // renderers land (#3179–#3185), so instrumented execution generalizes to every data type.
-import type { ArrayFrame, ArrayOp, Frame, GraphFrame, GraphOp, MatrixFrame, MatrixOp, PanelsFrame, StackFrame, StackOp, StructureFrame } from "./trace";
+import type { ArrayFrame, ArrayOp, Frame, GraphFrame, GraphOp, MatrixFrame, MatrixOp, PanelsFrame, ScalarFrame, ScalarOp, StackFrame, StackOp, StructureFrame } from "./trace";
 
 /** A durable per-cell mark an algorithm can set (matches the ArrayOp `mark` vocabulary). */
 export type ArrayMark = "sorted" | "pivot" | "min";
@@ -439,6 +439,83 @@ export function runStackAlgorithm(algo: (s: TracedStack) => void, mode: StackMod
   };
 }
 
+// ── the scalar tracer (#3268) — named counters / accumulators / the current pointer ──
+
+/**
+ * Instrumented SCALAR state — the named variables (counters, running sums, min/max, the current pointer)
+ * that ride alongside a main structure in almost every larger algorithm. `set`/`add`/`compare` are the
+ * verbs the `<ScalarView>` renderer animates; each records a `ScalarFrame` whose `ops` map is keyed by the
+ * touched variable NAME (unlike the other structures' positional op arrays). `get` is a silent read.
+ * Values may be numbers (counters/sums) or strings (a current node id), mixed per variable.
+ */
+export class TracedScalar {
+  private readonly vals: Record<string, number | string> = {};
+  private readonly log: ScalarFrame[] = [];
+
+  constructor(initial: Record<string, number | string> = {}) {
+    Object.assign(this.vals, initial);
+    this.emit(); // the initial frame — the variables at rest
+  }
+
+  /** A silent read of variable `name` (the algorithm's internal logic — records no frame). */
+  get(name: string): number | string | undefined {
+    return this.vals[name];
+  }
+
+  /** Set `name` to `v` — records a `set` frame stamped on that variable. */
+  set(name: string, v: number | string): void {
+    this.vals[name] = v;
+    this.emit({ [name]: { op: "set" } });
+  }
+
+  /** Add `delta` to a numeric accumulator `name` (a non-numeric / absent value starts at 0) — records an
+   *  `add` frame. */
+  add(name: string, delta: number): void {
+    const cur = typeof this.vals[name] === "number" ? (this.vals[name] as number) : 0;
+    this.vals[name] = cur + delta;
+    this.emit({ [name]: { op: "add", delta } });
+  }
+
+  /** Compare `name` against `other` — records a `compare` frame; returns sign(value - other) (`-1|0|1`),
+   *  treating a non-numeric / absent value as 0. */
+  compare(name: string, other: number): number {
+    this.emit({ [name]: { op: "compare", other } });
+    const cur = typeof this.vals[name] === "number" ? (this.vals[name] as number) : 0;
+    return Math.sign(cur - other);
+  }
+
+  /** The recorded trace (a fresh snapshot array). */
+  trace(): ScalarFrame[] {
+    return [...this.log];
+  }
+
+  /** Route emitted frames to a {@link TracedScene} (#3259) — see {@link TracedArray.setSink}. */
+  private sink?: (f: StructureFrame) => void;
+  setSink(fn: (f: StructureFrame) => void): void { this.sink = fn; }
+
+  private emit(ops?: Record<string, ScalarOp>): void {
+    const frame: ScalarFrame = { structure: "scalar", values: { ...this.vals } };
+    if (ops && Object.keys(ops).length) frame.ops = ops;
+    this.log.push(frame);
+    this.sink?.(frame);
+  }
+}
+
+/**
+ * Run a scalar-state algorithm — a plain function over a {@link TracedScalar} — returning a factory that
+ * yields its recorded trace as a fresh generator each call (replay-safe).
+ */
+export function runScalarAlgorithm(
+  algo: (s: TracedScalar) => void,
+  initial: Record<string, number | string> = {},
+): () => Generator<Frame> {
+  return function* () {
+    const s = new TracedScalar(initial);
+    algo(s);
+    yield* s.trace();
+  };
+}
+
 // ── the scene tracer (#3259) — MULTI-STRUCTURE decomposition ──
 //
 // A larger algorithm isn't one structure: Dijkstra is a graph + a distance array (+ a heap, later). A
@@ -497,6 +574,10 @@ export class TracedScene {
   /** A named stack / queue / deque panel (renders via `<StackView>`). */
   stack(name: string, mode: StackMode = "stack", initial: readonly (number | string)[] = []): TracedStack {
     return this.attach(name, new TracedStack(mode, initial));
+  }
+  /** A named scalar-state panel — counters / accumulators / the current pointer (renders via `<ScalarView>`). */
+  scalar(name: string, initial: Record<string, number | string> = {}): TracedScalar {
+    return this.attach(name, new TracedScalar(initial));
   }
 
   /** The recorded synchronized panel trace — a resting snapshot when the program did no ops. */
