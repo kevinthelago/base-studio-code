@@ -81,7 +81,7 @@ export function Planning({ visible }: { visible: boolean }) {
     planDeployConfig, setPlanDeployConfig,
     planMarketConfig,
     planTransformations,
-    planSourceConfig, planIntegrationConfig,
+    planSourceConfig,
     reposPublic, repoPublic,
     injectionHardGate, planInjectionAck, acknowledgePlanInjections,
     planSkippedStages, skipPlanStage,
@@ -115,7 +115,7 @@ export function Planning({ visible }: { visible: boolean }) {
     planDeployConfig: s.planDeployConfig, setPlanDeployConfig: s.setPlanDeployConfig,
     planMarketConfig: s.planMarketConfig,
     planTransformations: s.planTransformations,
-    planSourceConfig: s.planSourceConfig, planIntegrationConfig: s.planIntegrationConfig,
+    planSourceConfig: s.planSourceConfig,
     reposPublic: s.reposPublic, repoPublic: s.repoPublic,
     injectionHardGate: s.injectionHardGate, planInjectionAck: s.planInjectionAck,
     acknowledgePlanInjections: s.acknowledgePlanInjections,
@@ -383,11 +383,6 @@ export function Planning({ visible }: { visible: boolean }) {
     () => planSourceConfig[effectiveProjectId],
     [planSourceConfig, effectiveProjectId],
   );
-  // Integration stage (#1207): the destination/sink + sync strategy; drives destinationDefined/syncDefined.
-  const intgCfg = useMemo(
-    () => planIntegrationConfig[effectiveProjectId],
-    [planIntegrationConfig, effectiveProjectId],
-  );
   const paneData = useMemo(
     () => buildProjectPaneData({
       fleet:    planFleet[effectiveProjectId],
@@ -496,7 +491,7 @@ export function Planning({ visible }: { visible: boolean }) {
     sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
     confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
-    deployCfg, marketCfg, transformationRows, intgCfg, isAuthoring, authoringSig,
+    deployCfg, marketCfg, transformationRows, isAuthoring, authoringSig,
   });
 
   // The focused-pane SELECTION + its derived footer/pill/prompts live in usePlanFocusedPane, called

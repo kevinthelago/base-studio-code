@@ -49,10 +49,8 @@ const PROJECT_MAP_OPS: Partial<Record<keyof AppStore, ProjectMapOp[]>> = {
   planStageConfig:         ["delete", "rekey", "clearPlan"],
   projectBlueprintId:      ["delete", "rekey", "clearPlan"],
   // Plan-config maps the plan.ts sites reset; rekey also moves them, delete drops them via… no —
-  // planSourceConfig / planIntegrationConfig are NOT in deleteLocalProject's set (only rekey + the
-  // two plan.ts reset sites).
+  // planSourceConfig is NOT in deleteLocalProject's set (only rekey + the two plan.ts reset sites).
   planSourceConfig:        ["rekey", "applyBlueprint", "clearPlan"],
-  planIntegrationConfig:   ["rekey", "applyBlueprint", "clearPlan"],
   // Only the two plan.ts reset sites touch these (never delete/rekey).
   reposPublic:             ["applyBlueprint", "clearPlan"],
   planInjectionAck:        ["applyBlueprint", "clearPlan"],
