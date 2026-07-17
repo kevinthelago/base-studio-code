@@ -17,13 +17,13 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
     // librarian (#2787 — the Algorithms tab's knowledge-store session).
     for (const id of [
       "persona-planner", "persona-worker", "persona-director", "persona-triage", "persona-reviewer",
-      "persona-tester", "persona-issuer", "persona-juror", "persona-auditor", "persona-marketer", "persona-documentor", "persona-designer", "persona-architect", "persona-librarian",
+      "persona-tester", "persona-issuer", "persona-juror", "persona-auditor", "persona-marketer", "persona-documentor", "persona-designer", "persona-architect", "persona-librarian", "persona-debugger",
     ]) {
       expect(built.some((p) => p.id === id)).toBe(true);
     }
-    // Ordered by each def's `order` field: planner leads, the librarian trails (order 12, after architect).
+    // Ordered by each def's `order` field: planner leads, the debugger trails (order 13, after the librarian #3322).
     expect(built[0]?.id).toBe("persona-planner");
-    expect(built[built.length - 1]?.id).toBe("persona-librarian");
+    expect(built[built.length - 1]?.id).toBe("persona-debugger");
     // `order`/`protocolFile` are load-time-only — they must not leak onto the assembled Persona.
     expect(built.every((p) => !("order" in p) && !("protocolFile" in p))).toBe(true);
   });

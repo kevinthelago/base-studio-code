@@ -108,11 +108,10 @@ describe("built-in orgs (#2193)", () => {
     const studio = makeBuiltinOrgs().find((o) => o.id === STUDIO_NETWORK_ID)!;
     // Off → unchanged (same reference).
     expect(augmentStudioNetworkForDebug(studio, false)).toBe(studio);
-    // On → a persona-less debugger node + a serves→designer edge, added (not persisted to the seed).
+    // On → a debugger node (backed by persona-debugger, #3322) + a serves→designer edge, added (not persisted).
     const on = augmentStudioNetworkForDebug(studio, true);
     const dbg = on.positions.find((p) => p.nodeId === "debugger")!;
-    expect(dbg).toMatchObject({ kind: "agent", label: "Debugger" });
-    expect(dbg.personaId).toBeUndefined();
+    expect(dbg).toMatchObject({ kind: "agent", personaId: "persona-debugger" });
     expect(on.relationships.some((r) => r.archetype === "serves" && r.from === "debugger" && r.to === "designer")).toBe(true);
     // Idempotent, and a no-op for a non-studio team.
     expect(augmentStudioNetworkForDebug(on, true).positions.filter((p) => p.nodeId === "debugger")).toHaveLength(1);
