@@ -9,6 +9,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { bscJson } from "@/shared/lib/core/bsc";
+import { slugify } from "@/shared/lib/core/format";
 import { type TabItem } from "@/shared/ui/layouts/TabBar";
 import { Screen } from "@/shared/ui/layouts/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
@@ -166,7 +167,7 @@ export function SecurityWorkspace({ pageOverride }: { pageOverride?: string } = 
     const name = (await prompt({ title: "New role", label: "Role name", placeholder: "e.g. Reviewer", confirmLabel: "Create" }))?.trim();
     if (!name) return;
     const taken = new Set(profiles.map((p) => p.id));
-    const base = "pf_" + (name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "role");
+    const base = "pf_" + (slugify(name) || "role");
     let id = base;
     for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
     const colors = ["oklch(0.7 0.12 290)", "oklch(0.72 0.12 175)", "oklch(0.78 0.14 70)", "oklch(0.68 0.18 25)", "oklch(0.72 0.10 230)"];
