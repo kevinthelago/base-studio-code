@@ -24,8 +24,11 @@ export type GCategory = "greenfield" | "transform" | "harden" | "maintain" | "da
 /** Axis 1 — HEALTH (#2541): the top-left dot colour + the attention/propagation signal. An escalation
  *  ladder that rolls UP the dependency chain (a node shows the worst of itself + everything it depends
  *  on). `idle`/`healthy` never propagate — only `warning`/`error` do. Sourced from the worst unresolved
- *  `bsc errors` FaultLevel; this REPLACES the old separate fault badge. */
-export type GHealth = "idle" | "healthy" | "warning" | "error";
+ *  `bsc errors` FaultLevel; this REPLACES the old separate fault badge. `off` (#3239) is the one MANUAL
+ *  value — the user has deactivated the node from its details pane; it renders greyed, wins over the live
+ *  status ("if it's not idle then it should be off"), and — being rank 0 — never propagates and never
+ *  inherits a downstream error (see {@link rollUpHealth}). */
+export type GHealth = "idle" | "healthy" | "warning" | "error" | "off";
 /** Axis 2 — ACTIVITY (#2541): the bottom-right lifecycle word — what the project is doing right now.
  *  `idle` is the RESTING default (#2551): a triaged project with nothing running reads idle, NOT
  *  building — `building` means agents are ACTUALLY running (derived from live sessions, never a
@@ -138,7 +141,7 @@ export interface GNodePersona {
 
 /** Severity rank for the health rollup — only `warning`/`error` (rank ≥ 1) propagate up dependency
  *  edges; `idle` and `healthy` are both "no problem" (rank 0) and stay put. */
-export const HEALTH_RANK: Record<GHealth, number> = { idle: 0, healthy: 0, warning: 1, error: 2 };
+export const HEALTH_RANK: Record<GHealth, number> = { idle: 0, healthy: 0, warning: 1, error: 2, off: 0 };
 
 /** A project node as supplied by the data adapter (before layout). */
 export interface GRawNode {
@@ -249,6 +252,8 @@ export const HEALTH_META: Record<GHealth, { label: string; color: string; pulse:
   healthy: { label: "healthy", color: "var(--graph-health-healthy)", pulse: false },
   warning: { label: "warning", color: "var(--graph-health-warning)", pulse: false },
   error: { label: "error", color: "var(--graph-health-error)", pulse: true },
+  // #3239 — the user-deactivated node: a muted grey dot, never pulsing. The manual "turned off" state.
+  off: { label: "off", color: "var(--graph-health-off)", pulse: false },
 };
 /** Axis 2 — ACTIVITY → the bottom-right lifecycle word (#2541). Colour is the health axis's job; this
  *  is just the label + whether it animates (a live app / building fleet reads as active). */
@@ -351,6 +356,10 @@ export function rollUpHealth(
   const deps = new Map<string, string[]>(nodes.map((n) => [n.id, []]));
   for (const e of edges) deps.get(e.from)?.push(e.to); // `from depends on to`
   const worstFrom = (start: string): GHealth => {
+    // A user-deactivated node stays `off` (#3239): the deliberate mute wins over any downstream error,
+    // so an off node never lights up because of a dependency. (`off` is rank 0, so it also never
+    // propagates OUT — a node depending on an off node is unaffected.)
+    if (own.get(start) === "off") return "off";
     let worst = own.get(start) ?? "idle";
     const seen = new Set<string>([start]);
     const stack = [...(deps.get(start) ?? [])];

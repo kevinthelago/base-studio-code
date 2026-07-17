@@ -62,6 +62,8 @@ const PROJECT_MAP_OPS: Partial<Record<keyof AppStore, ProjectMapOp[]>> = {
   // reset sites deliberately leave these alone).
   projectStartupPromptDoc: ["delete", "rekey"],
   autoTriage:              ["delete", "rekey"],
+  glanceOff:               ["delete", "rekey"], // #3239: drop a deleted project's off flag; move it on rename
+
   triagedProjects:         ["delete", "rekey"],
   autoKitDispatch:         ["delete", "rekey"],
   localDraftProjects:      ["delete", "rekey"],

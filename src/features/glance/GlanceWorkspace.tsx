@@ -38,7 +38,7 @@ import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForPro
 import { useProjectComplete } from "./lib/useProjectComplete";
 import { usePreviewReview } from "./usePreviewReview";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
-import { useGlanceProjects, applyFaultHealth } from "./lib/useGlanceProjects";
+import { useGlanceProjects, applyFaultHealth, applyOffHealth } from "./lib/useGlanceProjects";
 import { useGlanceFaults } from "./lib/useGlanceFaults";
 import { applyStallHealth } from "./lib/agentStall";
 import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
@@ -90,6 +90,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // Per-project auto-triage toggle (#2265) — gates the fault→fix loop; surfaced in the node inspector.
   const autoTriage = useAppStore((s) => s.autoTriage);
   const setAutoTriage = useAppStore((s) => s.setAutoTriage);
+  // Per-node OFF toggle (#3239) — the user has deactivated these nodes; they render greyed (health `off`)
+  // and read "off" over any live status. Persisted, so it continues from the last session.
+  const glanceOff = useAppStore((s) => s.glanceOff);
+  const setGlanceNodeOff = useAppStore((s) => s.setGlanceNodeOff);
   // Ending a stuck agent's session (#3049): disabling the cell drops it from livePaneIds (so the node
   // stops reading as live) and setPaneStatus clears a stale "run" dot. fleetStartProject re-enables the
   // cell on the next launch, so this is self-reversing — "Relaunch fleet" respawns it fresh.
@@ -107,11 +111,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const coord = useCoordLog({ ms: STALL_POLL_MS });
   const [now, setNow] = useState(0);
   usePoll(async (isCancelled) => { if (!isCancelled()) setNow(Date.now()); }, STALL_POLL_MS, []);
-  // Overlay order: base (merge+liveness) → STALL (waiting/warn) → FAULT (error) last, so a real error
-  // beats a stall and both beat the resting state.
+  // Overlay order: base (merge+liveness) → STALL (waiting/warn) → FAULT (error) → OFF (#3239) last, so a
+  // real error beats a stall and both beat the resting state — but the user's manual OFF beats them all
+  // ("if it's not idle then it should be off").
   const projects = useMemo(
-    () => applyFaultHealth(applyStallHealth(projectsBase, coord.state.waiting, now), faults),
-    [projectsBase, coord.state.waiting, faults, now],
+    () => applyOffHealth(applyFaultHealth(applyStallHealth(projectsBase, coord.state.waiting, now), faults), glanceOff),
+    [projectsBase, coord.state.waiting, faults, now, glanceOff],
   );
   // L0 — the project-network graph (nodes = real projects + UI-kit nodes #2571, edges = the user-drawn
   // relationships #2253 + one kit→project edge per consumer #2571).
@@ -231,6 +236,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     // A cross-graph LIBRARY node (#2571 kit → generalized #3119: kit/algorithm/sound) has no fleet to
     // drill into — a click just SELECTS it (→ the library inspector).
     else if (isLibraryNode(projectModel.nodes.find((n) => n.id === id) ?? {})) pickNode(id);
+    // An OFF (deactivated) node (#3239): a click SELECTS it (→ the details pane, where the user turns it
+    // back on) rather than drilling into a fleet the user has muted.
+    else if (glanceOff[id]) pickNode(id);
     else { setDrill(id); setSel(null); setShowCycle(false); }
   };
   const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); setChatNode(null); setPreviewOpen(false); };
@@ -407,6 +415,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         onRemoveEdge={!drill && !data.sample ? removeProjectLink : undefined}
         autoTriageOn={!drill && sel.type === "node" ? !!autoTriage[sel.id] : undefined}
         onToggleAutoTriage={!drill && sel.type === "node" ? (on) => setAutoTriage(sel.id, on) : undefined}
+        // The per-node OFF toggle (#3239) — only on the L0 project network (a drilled fleet node has none).
+        offOn={!drill && sel.type === "node" ? !!glanceOff[sel.id] : undefined}
+        onToggleOff={!drill && sel.type === "node" ? (off) => setGlanceNodeOff(sel.id, off) : undefined}
         // Open the real PTY stream (#2369) — only for a drilled, LIVE agent node.
         onOpenStream={sel.type === "node" && isLiveAgent(sel.id) ? (id) => setChatNode(id) : undefined} /> : undefined}
     >
