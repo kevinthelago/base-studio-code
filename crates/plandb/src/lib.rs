@@ -51,6 +51,9 @@ mod market;
 mod mcp;
 mod repos;
 mod schema;
+/// Per-stream access scoping (#3279): a worker session sees + touches only its own stream's issues.
+/// `pub` so the app/bridge can reuse the same pure rules the `bsc plan` CLI enforces.
+pub mod scope;
 mod sessions;
 mod skipped;
 mod transformations;
