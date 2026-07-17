@@ -15,7 +15,7 @@
 import type { Frame } from "../../lib/trace";
 import type { AlgoImpl, AlgoKind } from "../../lib/knowledge";
 import { classifyKind, type Classifiable } from "../../lib/classifyKind";
-import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, type GraphInput } from "../../lib/tracer";
+import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScene, type GraphInput } from "../../lib/tracer";
 import { runInSandbox } from "./vizSandbox";
 import type { VizRun } from "./vizProgram";
 import type { RendererRegistry } from "../registry";
@@ -26,6 +26,7 @@ import { parseSortInput } from "./sort";
 import { TRACE_PROGRAMS, programKey, type AlgoProgram } from "./sorts";
 import { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./matrixTransforms";
 import { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "./graphAlgos";
+import { SCENE_PROGRAMS, type SceneProgram } from "./scenes";
 
 /** A ready-to-play visualization: a stable default factory (the inline preview) + the per-structure
  *  renderers the player dispatches to + an editable INPUT seam (#3199) that powers the "your input" field. */
@@ -101,9 +102,27 @@ function graphExampleFromProgram(program: GraphProgram): VizExample {
   };
 }
 
-/** One VizExample per trace-program (array sorts + matrix transforms + graph traversals), built ONCE so
- *  each algorithm has a STABLE example identity — a fresh build per render would rebuild the player's stream
- *  every frame. Keyed by base name; each datatype contributes its own programs + renderer. */
+/** Build a stable MULTI-STRUCTURE {@link VizExample} (#3259) — runs a scene program via `runScene`, so its
+ *  synchronized panels lay out side by side. All three per-structure renderers are registered so any panel
+ *  the scene declares (graph / array / matrix) resolves. The "your input" seam edits the seed graph. */
+function sceneExampleFromProgram(program: SceneProgram): VizExample {
+  return {
+    factory: runScene(program.run, program.defaultInput),
+    renderers: { array: ArrayView, matrix: MatrixView, graph: GraphView },
+    input: {
+      default: graphToText(program.defaultInput),
+      hint: "An adjacency list — one node per line: a: b, c",
+      parse: (text) => parseGraphInput(text),
+      make: async (parsed) => runScene(program.run, parsed as GraphInput),
+    },
+  };
+}
+
+/** One VizExample per trace-program (array sorts + matrix transforms + graph traversals + multi-structure
+ *  SCENES), built ONCE so each algorithm has a STABLE example identity — a fresh build per render would
+ *  rebuild the player's stream every frame. Keyed by base name; each datatype contributes its own programs
+ *  + renderer. SCENES are merged LAST, so a scene supersedes a single-structure program of the same name
+ *  (e.g. `dijkstra` upgrades from a lone graph to graph + distance panels, #3259). */
 const EXAMPLE_BY_KEY: Record<string, VizExample> = {
   ...Object.fromEntries(
     Object.entries(TRACE_PROGRAMS).map(([key, program]): [string, VizExample] => [key, exampleFromProgram(program)]),
@@ -113,6 +132,9 @@ const EXAMPLE_BY_KEY: Record<string, VizExample> = {
   ),
   ...Object.fromEntries(
     Object.entries(GRAPH_PROGRAMS).map(([key, program]): [string, VizExample] => [key, graphExampleFromProgram(program)]),
+  ),
+  ...Object.fromEntries(
+    Object.entries(SCENE_PROGRAMS).map(([key, program]): [string, VizExample] => [key, sceneExampleFromProgram(program)]),
   ),
 };
 

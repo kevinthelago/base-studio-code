@@ -11,7 +11,7 @@
 //
 // This is the array tracer; TracedMatrix / TracedGraph / TracedTree follow the same shape as their
 // renderers land (#3179–#3185), so instrumented execution generalizes to every data type.
-import type { ArrayFrame, ArrayOp, Frame, GraphFrame, GraphOp, MatrixFrame, MatrixOp } from "./trace";
+import type { ArrayFrame, ArrayOp, Frame, GraphFrame, GraphOp, MatrixFrame, MatrixOp, PanelsFrame, StructureFrame } from "./trace";
 
 /** A durable per-cell mark an algorithm can set (matches the ArrayOp `mark` vocabulary). */
 export type ArrayMark = "sorted" | "pivot" | "min";
@@ -83,11 +83,17 @@ export class TracedArray {
     return [...this.log];
   }
 
+  /** Route emitted frames to a {@link TracedScene} (#3259) so this structure can fold into a synchronized
+   *  panel. Set once, right after construction; unset ⇒ standalone (single-structure) behavior. */
+  private sink?: (f: StructureFrame) => void;
+  setSink(fn: (f: StructureFrame) => void): void { this.sink = fn; }
+
   private emit(ops?: ArrayOp[]): void {
     const frame: ArrayFrame = { structure: "array", data: [...this.a] };
     if (ops && ops.length) frame.ops = ops;
     if (Object.keys(this.cur).length) frame.cursors = { ...this.cur };
     this.log.push(frame);
+    this.sink?.(frame);
   }
 }
 
@@ -188,11 +194,16 @@ export class TracedMatrix {
     return this.m.map((row) => [...row]);
   }
 
+  /** Route emitted frames to a {@link TracedScene} (#3259) — see {@link TracedArray.setSink}. */
+  private sink?: (f: StructureFrame) => void;
+  setSink(fn: (f: StructureFrame) => void): void { this.sink = fn; }
+
   private emit(ops?: MatrixOp[]): void {
     const frame: MatrixFrame = { structure: "matrix", data: this.m.map((row) => [...row]) };
     if (ops && ops.length) frame.ops = ops;
     if (Object.keys(this.cur).length) frame.cursors = { ...this.cur };
     this.log.push(frame);
+    this.sink?.(frame);
   }
 }
 
@@ -313,6 +324,10 @@ export class TracedGraph {
     return [...this.log];
   }
 
+  /** Route emitted frames to a {@link TracedScene} (#3259) — see {@link TracedArray.setSink}. */
+  private sink?: (f: StructureFrame) => void;
+  setSink(fn: (f: StructureFrame) => void): void { this.sink = fn; }
+
   private emit(ops?: GraphOp[]): void {
     const frame: GraphFrame = {
       structure: "graph",
@@ -323,6 +338,7 @@ export class TracedGraph {
     if (Object.keys(this.marks).length) frame.marks = { ...this.marks };
     if (Object.keys(this.cur).length) frame.cursors = { ...this.cur };
     this.log.push(frame);
+    this.sink?.(frame);
   }
 }
 
@@ -335,5 +351,80 @@ export function runGraphAlgorithm(algo: (g: TracedGraph) => void, input: GraphIn
     const g = new TracedGraph(input);
     algo(g);
     yield* g.trace();
+  };
+}
+
+// ── the scene tracer (#3259) — MULTI-STRUCTURE decomposition ──
+//
+// A larger algorithm isn't one structure: Dijkstra is a graph + a distance array (+ a heap, later). A
+// `TracedScene` hands the algorithm several NAMED structures backed by the same `Traced*` classes, folds
+// their ops into ONE synchronized `PanelsFrame` stream, and the player lays the panels side by side. Each
+// op on any panel advances a beat whose frame is that panel's op-state + every other panel at its current
+// state — so you watch the structures move TOGETHER. `runScene` is the multi-structure `runAlgorithm`.
+
+/** A structure the scene can attach — the existing `Traced*` classes, seen through the two hooks the scene
+ *  needs: read the constructor's resting frame, and redirect subsequent frames to the scene. */
+interface Sinkable {
+  trace(): StructureFrame[];
+  setSink(fn: (f: StructureFrame) => void): void;
+}
+
+/**
+ * A multi-structure trace context (#3259). `scene.array("dist", …)` / `scene.graph("g", …)` return the
+ * ordinary `Traced*` instance (so the algorithm uses the SAME `compare`/`swap`/`visit`/`relax` vocabulary),
+ * but each op is folded into a synchronized {@link PanelsFrame} keyed by the panel name. The first op emits
+ * a resting snapshot of every panel; each op after emits the acting panel's op-frame beside the others at
+ * rest. Panels declared before the first op all appear in that resting frame.
+ */
+export class TracedScene {
+  private readonly initial: Record<string, StructureFrame> = {};
+  private readonly current: Record<string, StructureFrame> = {};
+  private readonly log: PanelsFrame[] = [];
+  private started = false;
+
+  private attach<T extends Sinkable>(name: string, s: T): T {
+    const rest = s.trace()[0]; // the constructor's at-rest frame (structures emit one on creation)
+    this.initial[name] = rest;
+    this.current[name] = rest;
+    s.setSink((f) => {
+      if (!this.started) {
+        this.started = true;
+        this.log.push({ panels: { ...this.initial } }); // beat 0 — every declared panel at rest
+      }
+      this.current[name] = f;
+      this.log.push({ panels: { ...this.current } });
+    });
+    return s;
+  }
+
+  /** A named array panel (its `data`/ops render via `<ArrayView>`). */
+  array(name: string, input: readonly number[]): TracedArray {
+    return this.attach(name, new TracedArray(input));
+  }
+  /** A named matrix panel (renders via `<MatrixView>`). */
+  matrix(name: string, input: readonly (readonly number[])[]): TracedMatrix {
+    return this.attach(name, new TracedMatrix(input));
+  }
+  /** A named graph panel (renders via `<GraphView>`). */
+  graph(name: string, input: GraphInput): TracedGraph {
+    return this.attach(name, new TracedGraph(input));
+  }
+
+  /** The recorded synchronized panel trace — a resting snapshot when the program did no ops. */
+  frames(): PanelsFrame[] {
+    return this.started ? [...this.log] : [{ panels: { ...this.initial } }];
+  }
+}
+
+/**
+ * Run a MULTI-STRUCTURE algorithm against a {@link TracedScene} (#3259) — the scene twin of
+ * {@link runAlgorithm}. The program declares its named panels from `input` and drives them; the returned
+ * factory yields the synchronized `PanelsFrame` trace as a fresh generator each call (replay-safe).
+ */
+export function runScene<I>(program: (scene: TracedScene, input: I) => void, input: I): () => Generator<Frame> {
+  return function* () {
+    const scene = new TracedScene();
+    program(scene, input);
+    yield* scene.frames();
   };
 }
