@@ -28,7 +28,6 @@
 .ds-preview { flex: 1.5 1 0; min-height: 180px; display: flex; flex-direction: column; }
 .ds-surface { flex: 1; min-height: 0; position: relative; overflow: hidden; background: var(--bg-canvas, var(--bg)); }
 .ds-frame { position: absolute; inset: 0; overflow: auto; }
-.ds-overlay { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; }
 
 /* ── tabs + panels (inspector detail, #2453) ── */
 .ds-tabs { height: 36px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--border-soft, var(--border)); }
@@ -102,7 +101,8 @@
 
 /* The decorative motion pass (#2344 — preview/view/row/edge enters) was REMOVED: the Design Studio
    was the only animated page; a motion vocabulary is deferred until the design system is in place.
-   The functional loading indicators stay (ds-spin/ds-pulse above + ds-skel below). */
+   The loading indicators this note used to point at (ds-spin/ds-pulse/ds-skel) are gone too — the
+   Studio's loading states ride the shared Skeleton primitive (#3244). */
 
 /* ── designer session panel (#2471/#2597) — the ALWAYS-ON terminal docked at the bottom of the
    center column, below the composition graph. Fixed height so the graph (pane) keeps priority; the
@@ -110,11 +110,3 @@
 /* The designer-session dock now renders through the shared SessionDock (#2808); its former
    `.ds-terminal`/`.ds-termhost` rules were removed with that extraction. */
 
-/* loading preview (#2302) — a component's skeleton in the Studio rides the app's ONE shimmer
-   keyframe (`skeleton-shimmer`, tokens.css), so the loading state uses the same motion vocabulary as
-   every Skeleton elsewhere; the gradient colors are inline (the preview's dark/light sandbox). */
-.ds-skel { animation: skeleton-shimmer 1.1s linear infinite; }
-
-@media (prefers-reduced-motion: reduce) {
-  .ds-skel { animation: none; }
-}

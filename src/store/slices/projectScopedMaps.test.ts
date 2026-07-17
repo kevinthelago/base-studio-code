@@ -85,7 +85,8 @@ describe("projectScopedMaps registry", () => {
     expect("A" in asMap(out, "reposPublic")).toBe(false);
     // …but autoTriage (delete/rekey only) must NOT be returned by clearPlan.
     expect(asMap(out, "autoTriage" as keyof AppStore)).toBeUndefined();
-    expect(asMap(out, "loadVerified" as keyof AppStore)).toBeUndefined();
+    // …nor a rekey-only map.
+    expect(asMap(out, "planFleetTopology" as keyof AppStore)).toBeUndefined();
   });
 
   it("dropProjectScoped(applyBlueprint) excludes the re-seeded maps planStageConfig/projectBlueprintId", () => {
