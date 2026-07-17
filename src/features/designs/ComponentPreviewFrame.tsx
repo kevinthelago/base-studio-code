@@ -5,6 +5,7 @@
 // user-authored components built on any npm library (d3, three, …), which load from esm.sh in the iframe
 // with no install. The app's live styles are injected so built-ins render themed.
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import reactUiArtifact from "@data/components/react-ui.json";
 import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
@@ -32,7 +33,7 @@ const PAGE_ASPECT = 1.15;
 
 type Status = "building" | "ready" | "error";
 
-export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", scrollY, zoomEngine, registerZoomApi }: {
+export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", scrollY, zoomEngine, registerZoomApi, shotTarget }: {
   comp: ComponentRecord;
   /** The selected theme's light/dark surface (its `base`). */
   theme: "dark" | "light";
@@ -63,6 +64,10 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   /** Receives the engine's +/−/fit control API (or `null` on teardown) so the host can wire its zoom
    *  buttons — the engine lives in the iframe, so the buttons post `__cmd` messages to it (#3190). */
   registerZoomApi?: (api: { zoomIn: () => void; zoomOut: () => void; fit: () => void } | null) => void;
+  /** #3308: mark THIS frame as the app's `"preview"` shot target — the inspector's lead preview passes it
+   *  so `bsc shot preview` crops the webview to just this component (the designer's ground truth). Only
+   *  ONE mounted frame should set it. */
+  shotTarget?: boolean;
 }) {
   const [status, setStatus] = useState<Status>("building");
   const [error, setError] = useState<string>("");
@@ -243,6 +248,34 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
   }, [comp.id]);
+
+  // #3308: when this is the designated shot target (the inspector's lead preview), keep its on-screen rect
+  // registered with the backend so `bsc shot preview` crops the webview to JUST this component (the
+  // designer's ground truth), not the whole app. Best-effort (safeInvoke swallows); the ResizeObserver's
+  // initial callback publishes the first real rect once laid out; cleared on unmount so a stale rect never
+  // mis-crops a later shot. getBoundingClientRect is CSS px from the viewport top-left — the crop's frame.
+  useEffect(() => {
+    if (!shotTarget) return;
+    const el = frameRef.current;
+    if (!el) return;
+    const publish = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return; // not laid out yet — the RO will re-fire with a real size
+      void safeInvoke("set_shot_target_rect", {
+        target: "preview",
+        rect: { x: Math.max(0, Math.floor(r.left)), y: Math.max(0, Math.floor(r.top)), w: Math.ceil(r.width), h: Math.ceil(r.height) },
+      }, undefined);
+    };
+    publish();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(publish) : null;
+    ro?.observe(el);
+    window.addEventListener("resize", publish);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", publish);
+      void safeInvoke("set_shot_target_rect", { target: "preview", rect: null }, undefined);
+    };
+  }, [shotTarget]);
 
   // #3139: a page-like preview renders at its natural viewport canvas + is contain-scaled (absolute,
   // top-anchored, centered); a component renders 1:1, filling the frame. Common chrome either way.

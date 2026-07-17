@@ -17,11 +17,53 @@
 //! hand the bytes back through a channel; the WAIT happens on the caller's thread. Blocking inside the
 //! closure would stall the message pump that has to deliver the very completion being waited on.
 
-use bsc_shot::{default_png_path, is_png, shots_dir, ShotRequest, ShotResult};
+use bsc_shot::{default_png_path, is_png, shots_dir, Rect, ShotRequest, ShotResult};
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::time::Duration;
 
 mod crop;
+
+/// On-screen rects the frontend registers for NAMED shot targets — e.g. `"preview"` → the Design Studio's
+/// component-preview element. `bsc shot preview` names a target and the app crops the webview to its
+/// registered rect, so the caller never needs pixel coordinates (#3308). Managed Tauri state; the frontend
+/// keeps it fresh (mount / resize) and clears it on unmount.
+#[derive(Default)]
+pub struct ShotTargets(pub Mutex<HashMap<String, Rect>>);
+
+/// Register (or clear, when `rect` is `None`) a named shot target's on-screen rect. A best-effort frontend
+/// call — a stale/missing rect only degrades a `preview` shot to a clear error, never a crash.
+#[tauri::command]
+pub(crate) fn set_shot_target_rect(target: String, rect: Option<Rect>, targets: tauri::State<'_, ShotTargets>) {
+    let mut map = targets.0.lock().unwrap_or_else(|e| e.into_inner());
+    match rect {
+        Some(r) => {
+            map.insert(target, r);
+        }
+        None => {
+            map.remove(&target);
+        }
+    }
+}
+
+/// The rect the frontend registered for `target`, or a STATED error naming what to do — never a silent
+/// fall-through to a whole-screen capture. Pure over the map so it's testable without a Tauri app.
+fn resolve_from(map: &HashMap<String, Rect>, target: &str) -> Result<Rect, String> {
+    map.get(target).copied().ok_or_else(|| {
+        format!(
+            "no '{target}' shot target is registered — the Design Studio isn't showing a component. \
+             Run `bsc navigate component <kit> <component>` first, then retry."
+        )
+    })
+}
+
+fn resolve_target(app: &tauri::AppHandle, target: &str) -> Result<Rect, String> {
+    use tauri::Manager;
+    let targets = app.state::<ShotTargets>();
+    let guard = targets.0.lock().unwrap_or_else(|e| e.into_inner());
+    resolve_from(&guard, target)
+}
 
 /// How long to wait for `CapturePreview`'s completion handler. Shorter than the CLI's timeout so the
 /// caller gets our real error rather than a bare timeout.
@@ -32,11 +74,20 @@ pub fn capture(app: &tauri::AppHandle, id: &str, req: &ShotRequest) -> Result<Sh
     let shots = shots_dir()?;
     let out: PathBuf = req.out.as_ref().map(PathBuf::from).unwrap_or_else(|| default_png_path(&shots, id));
 
+    // Resolve the crop rect BEFORE capturing, so an unregistered target fails fast (no wasted snapshot):
+    // an explicit rect wins; else a named target (e.g. "preview") resolves to the frontend-registered
+    // rect; else the whole webview.
+    let rect = match (req.rect, req.target.as_deref()) {
+        (Some(r), _) => Some(r),
+        (None, Some(t)) => Some(resolve_target(app, t)?),
+        (None, None) => None,
+    };
+
     let png = capture_webview_png(app)?;
     if !is_png(&png) {
         return Err(format!("the webview returned {} bytes that are not a PNG", png.len()));
     }
-    let (bytes, w, h) = match req.rect {
+    let (bytes, w, h) = match rect {
         Some(rect) => crop::crop_png(&png, rect)?,
         None => {
             let (w, h) = crop::png_dimensions(&png)?;
@@ -156,3 +207,27 @@ fn capture_webview_png(_app: &tauri::AppHandle) -> Result<Vec<u8>, String> {
 
 // Clamping lives in `crop::crop_png` (where the image's real dimensions are known) and is tested there.
 // Nothing here duplicates it: a second clamp would be a second source of truth for the same rule.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_named_target_registers_resolves_and_clears() {
+        // The command + resolver are thin wrappers over this map — prove the register→resolve→clear
+        // contract (and that an unregistered target is a STATED error) without a Tauri app.
+        let targets = ShotTargets::default();
+        let rect = Rect { x: 10, y: 20, w: 300, h: 200 };
+
+        // Unregistered ⇒ a clear error, not a whole-screen fallback.
+        assert!(resolve_from(&targets.0.lock().unwrap(), "preview").is_err());
+
+        // Register (what set_shot_target_rect(Some) does) ⇒ resolves to the rect.
+        targets.0.lock().unwrap().insert("preview".into(), rect);
+        assert_eq!(resolve_from(&targets.0.lock().unwrap(), "preview").unwrap(), rect);
+
+        // Clear (set_shot_target_rect(None)) ⇒ back to the error.
+        targets.0.lock().unwrap().remove("preview");
+        assert!(resolve_from(&targets.0.lock().unwrap(), "preview").is_err());
+    }
+}
