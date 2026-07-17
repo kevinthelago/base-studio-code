@@ -1,0 +1,20 @@
+[package]
+name = "bsc-loop"
+version = "0.1.0"
+edition = "2021"
+description = "Loop store (SQLite) for base-studio-code (#3262) — a conversation primitive: two participants exchange turns until a termination signal fires, or never. The store `bsc loop` reads/writes; generalizes the coord channel."
+
+# Tauri-free core lib + the `bsc loop` subcommand, so the umbrella binary, the app, and `bsc-agent` all
+# reuse it without relinking the whole app (mirrors plandb/errordb/skilldb).
+[lib]
+name = "bsc_loop"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# `bundled` compiles SQLite from source (matches src-tauri) for cross-platform reliability.
+rusqlite = { version = "0.40", features = ["bundled"] }
+# Shared SQLite open + busy_timeout plumbing (the `conn` feature) — so a CLI write never races the app.
+bsc-sqlite-util = { path = "../bsc-sqlite-util", features = ["conn"] }
+# Shared CLI scaffold: cli_main + resolve_store_path (--db→env→default) + the CmdDoc help system.
+bsc-cli-util = { path = "../bsc-cli-util" }

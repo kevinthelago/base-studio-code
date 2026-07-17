@@ -93,11 +93,18 @@ export function DesignsWorkbench() {
   const setComponent = useAppStore((s) => s.setComponent);
 
   const firstFor = (kitId: string) => components.find((c) => c.kitId === kitId);
-  const [kitId, setKitId] = useState(() => kits[0]?.id ?? "");
+  // #3274: kit + component selection lives in the STORE, not local state — `bsc navigate component`
+  // needs to set it from outside the UI so a capture can target something. Behaviour is unchanged:
+  // neither is persisted, so an empty stored kit falls back to the first (what the old lazy
+  // `useState(() => kits[0]?.id)` did) and the component still starts null each boot (#3090).
+  const storedKitId = useAppStore((s) => s.designsKitId);
+  const setKitId = useAppStore((s) => s.setDesignsKit);
+  const kitId = storedKitId || kits[0]?.id || "";
   // The user-FOCUSED component — null when nothing is focused → the Inspector is hidden unless Claude is
   // working a node (#3090, restoring #2705's hide-when-empty over #2818). Focusing a node (or a rail row)
   // sets it; clicking the canvas clears it.
-  const [compId, setCompId] = useState<string | null>(null);
+  const compId = useAppStore((s) => s.designsCompId);
+  const setCompId = useAppStore((s) => s.setDesignsComp);
   const [tab, setTab] = useState<Tab>("overview");
   const [variant, setVariant] = useState(() => firstFor(kits[0]?.id ?? "")?.variants[0] ?? "default");
   // The preview's DATA-STATE axis (#3135): loaded (demo) · empty (no data) · loading (skeleton).

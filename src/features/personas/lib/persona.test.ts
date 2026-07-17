@@ -53,6 +53,11 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
     for (const needle of ["ladder", "highest rung", "bsc ui tokens", "bsc ui components", "set-token", "define-variant"]) {
       expect(designer.startPrompt).toContain(needle);
     }
+    // ...and, on a bsc ui wall, file a request for the debug session instead of asking for out-of-surface
+    // permissions (#3300 — the designer→debug channel), grounded in the failing command.
+    for (const needle of ["bsc request new", "bsc request list --open", "FAILING COMMAND"]) {
+      expect(designer.startPrompt).toContain(needle);
+    }
   });
 
   it("the issuer persona (#2509) decomposes a modification into transformations at intake", () => {

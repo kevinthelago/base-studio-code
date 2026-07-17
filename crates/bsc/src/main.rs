@@ -27,6 +27,9 @@ const COMMANDS: &[(&str, &str)] = &[
     ("logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control"),
     ("files", "file-ops toolkit: read/write/edit/list/info"),
     ("shot", "capture the RUNNING app's real pixels — a webview snapshot (needs the app running)"),
+    ("navigate", "steer the RUNNING app to a view — so a capture can target something"),
+    ("loop", "conversation loop store: two participants exchange turns until a signal ends it, or never (#3262)"),
+    ("request", "improvement-request store: the designer→debug channel for bsc ui surface gaps (#3295)"),
     ("graph", "algorithms knowledge library: per-language implementations (impl list · dump · harvest · curate)"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
     ("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance"),
@@ -79,6 +82,9 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "logs" => logs::cli::run(rest, "bsc logs"),
         "files" => bsc_files::cli::run(rest, "bsc files"),
         "shot" => bsc_shot::cli::run(rest, "bsc shot"),
+        "navigate" => bsc_navigate::cli::run(rest, "bsc navigate"),
+        "loop" => bsc_loop::cli::run(rest, "bsc loop"),
+        "request" => bsc_request::cli::run(rest, "bsc request"),
         "graph" => bsc_graph::cli::run(rest, "bsc graph"),
         #[cfg(feature = "data")]
         "data" => bsc_data::cli::run(rest, "bsc data"),
@@ -167,6 +173,20 @@ mod tests {
         // #3080: the sound-kit store is mounted + listed. Help path — no store required.
         assert!(dispatch("sound", vec!["help".into()]).is_ok());
         assert!(top_help().contains("user sound-kit store"), "the sound row describes the store");
+    }
+
+    #[test]
+    fn loop_dispatches_and_appears_in_the_overview() {
+        // #3262: the conversation loop store is mounted + listed. Help path — no store required.
+        assert!(dispatch("loop", vec!["help".into()]).is_ok());
+        assert!(top_help().contains("conversation loop store"), "the loop row describes the store");
+    }
+
+    #[test]
+    fn request_dispatches_and_appears_in_the_overview() {
+        // #3295: the improvement-request store is mounted + listed. Help path — no store required.
+        assert!(dispatch("request", vec!["help".into()]).is_ok());
+        assert!(top_help().contains("improvement-request store"), "the request row describes the store");
     }
 
     #[test]

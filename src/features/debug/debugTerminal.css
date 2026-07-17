@@ -1,0 +1,4 @@
+/* Debug session window body (#3298) — the debug terminal fills its whole OS window, so override the
+   SessionDock's fixed 340px dock height to grow into the window instead. */
+.debug-window-body { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+.debug-window-body .session-dock { flex: 1; height: auto; border-top: none; }
