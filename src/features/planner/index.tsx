@@ -5,7 +5,6 @@ import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
-import { ProjectsEmpty } from "./list/Empty";
 import { ProjectsList } from "./list/ProjectsList";
 import { Planning } from "./session/Planning";
 import { TeamsPanel } from "@/features/teams";
@@ -55,7 +54,6 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
   useProjectScan();
 
   const {
-    githubConnected,
     projectsPageMode,
     setProjectsPageMode,
     projectsView,
@@ -90,15 +88,10 @@ export function ProjectsWorkspace({ pageOverride }: { pageOverride?: string } = 
   // the fallbacks keep older in-flight sessions working if the key was never set.
   const planningKey = planningSessionKey || activeProjectId || `${planningTitle}::${planningPitch}`;
 
-  // Not connected (main window only): the connect prompt owns the whole screen, no tabs. A detached
-  // section window still renders its body (it shares the connected store).
-  if (!githubConnected && !pageOverride) {
-    return (
-      <Stack style={{ flex: 1, minHeight: 0 }}>
-        <ProjectsEmpty />
-      </Stack>
-    );
-  }
+  // #3280 local-first: GitHub is OPTIONAL. The Planner opens with no connection — you draft, commit the
+  // plan to plan.db, and launch the fleet offline; publishing to GitHub is an optional step when
+  // connected. (Was a hard `!githubConnected → ProjectsEmpty` wall; the ProjectsList degrades on its own
+  // — drafts + local-committed projects render, GitHub board data just isn't merged in.)
 
   return (
     <Screen
