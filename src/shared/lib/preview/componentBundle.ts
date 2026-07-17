@@ -409,15 +409,12 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
   const max = cfg.max ?? 8;
   return `\n<script>
 (function () {
-  var SEL = 'a,button,input,select,textarea,label,summary,option,svg,canvas,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="switch"],[role="tab"],[role="menuitem"],[role="option"],[role="slider"],[contenteditable]';
   var MIN = ${min}, MAX = ${max}, INITIAL = ${initial};
-  function interactive(el) {
+  // A press on a form field keeps its NATIVE drag (text selection / caret); everything else drag-pans.
+  var DRAG_NATIVE = 'input,textarea,select,[contenteditable]';
+  function dragNative(el) {
     for (var n = el; n && n !== document.documentElement && n !== document.body; n = n.parentElement) {
-      if (n.nodeType !== 1) continue;
-      if (n.matches && n.matches(SEL)) return true;
-      var ti = n.getAttribute && n.getAttribute("tabindex");
-      if (ti != null && ti !== "-1") return true;
-      try { if (getComputedStyle(n).cursor === "pointer") return true; } catch (e) {}
+      if (n.nodeType === 1 && n.matches && n.matches(DRAG_NATIVE)) return true;
     }
     return false;
   }
@@ -445,22 +442,34 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
   }
   function centerXY() { return [ (window.innerWidth || document.documentElement.clientWidth || 1) / 2, (window.innerHeight || document.documentElement.clientHeight || 1) / 2 ]; }
   function fit() { view = { tx: 0, ty: 0, scale: 1 }; apply(); }
-  var panning = false, lastX = 0, lastY = 0;
+  // DRAG-PAN: a press-and-MOVE (past a small threshold) pans — ANYWHERE, even over a button — so a
+  // component that fills the frame is still draggable; a press-WITHOUT-move stays a CLICK (the control
+  // keeps it, since a moved drag suppresses the trailing click).
+  var pending = false, panning = false, moved = false, sx = 0, sy = 0, lx = 0, ly = 0;
   document.addEventListener("mousedown", function (e) {
-    if (e.button !== 0 || interactive(e.target)) return;   // a real control → let the component have it
-    e.preventDefault(); panning = true; lastX = e.clientX; lastY = e.clientY; document.body.style.cursor = "grabbing";
+    if (e.button !== 0 || dragNative(e.target)) return;
+    pending = true; moved = false; sx = lx = e.clientX; sy = ly = e.clientY;
   }, true);
   document.addEventListener("mousemove", function (e) {
-    if (!panning) return;
-    view.tx += e.clientX - lastX; view.ty += e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; apply();
+    if (!pending) return;
+    if (!panning) {
+      if (Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) < 5) return;   // below the drag threshold → not a pan yet
+      panning = true; document.body.style.cursor = "grabbing";
+    }
+    moved = true; e.preventDefault();
+    view.tx += e.clientX - lx; view.ty += e.clientY - ly; lx = e.clientX; ly = e.clientY; apply();
   }, true);
-  function endPan() { if (!panning) return; panning = false; document.body.style.cursor = ""; }
+  function endPan() { pending = false; panning = false; document.body.style.cursor = ""; }
   document.addEventListener("mouseup", endPan, true);
   window.addEventListener("blur", endPan);
+  document.addEventListener("click", function (e) { if (moved) { e.preventDefault(); e.stopPropagation(); moved = false; } }, true);
+  // WHEEL: pans/scrolls the content by default (so overflow is navigable); ctrl/⌘ + wheel zooms about the
+  // cursor. An inner scroll container scrolls itself.
   document.addEventListener("wheel", function (e) {
-    if (scrollableAt(e.target, e.deltaY)) return;          // let a real scroll container scroll
-    e.preventDefault();                                    // else: zoom about the cursor (crisp DOM)
-    zoomAt(Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY);
+    if (scrollableAt(e.target, e.deltaY)) return;
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) { zoomAt(Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY); }
+    else { view.tx -= e.deltaX; view.ty -= e.deltaY; apply(); }
   }, { capture: true, passive: false });
   window.addEventListener("message", function (e) {
     var d = e.data; if (!d || typeof d.__cmd !== "string") return;
