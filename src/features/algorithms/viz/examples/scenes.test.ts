@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { TracedScene, TracedStack, TracedScalar, TracedTree, runScene, type GraphInput } from "../../lib/tracer";
 import { isPanelsFrame, type PanelsFrame, type ArrayFrame, type GraphFrame, type StackFrame, type ScalarFrame, type TreeFrame } from "../../lib/trace";
-import { dijkstraScene, bfsScene } from "./scenes";
+import { dijkstraScene, bfsScene, mergeSortScene } from "./scenes";
 import { WEIGHTED_GRAPH, DEFAULT_GRAPH } from "./graphAlgos";
 import { programVizForImpl } from "./registry";
 
@@ -223,5 +223,42 @@ describe("TracedTree — trees / heaps / BSTs (#3270)", () => {
     expect(last.nodes.map((n) => n.id)).toEqual(["r"]); // gone from the tree
     expect(last.marks?.a).toBeUndefined(); // its mark cleared
     expect(last.ops?.[0]).toMatchObject({ op: "remove", node: "a" });
+  });
+});
+
+describe("mergeSortScene — merge sort as an array + buffer scene (#3284)", () => {
+  const input = [5, 2, 9, 1, 6];
+  const frames = [...runScene(mergeSortScene, input)()];
+
+  it("runs as an `array` + `merge` two-panel scene, in sync (the first array-seeded scene)", () => {
+    expect(frames.length).toBeGreaterThan(1);
+    expect(frames.every(isPanelsFrame)).toBe(true);
+    expect(Object.keys((frames[0] as PanelsFrame).panels).sort()).toEqual(["array", "merge"]);
+  });
+
+  it("the array panel ends fully sorted", () => {
+    const last = (frames[frames.length - 1] as PanelsFrame).panels;
+    expect((last.array as ArrayFrame).data).toEqual([1, 2, 5, 6, 9]);
+  });
+
+  it("the buffer makes the runs visible — real compare ops fire on it (the merge decision the flat trace hid)", () => {
+    const bufOps = frames.flatMap((f) => ((f as PanelsFrame).panels.merge as ArrayFrame | undefined)?.ops ?? []).map((o) => o.op);
+    expect(bufOps).toContain("compare"); // the two fronts are actually compared, not read silently
+    // the winners land in the OUTPUT array via `set` (a merge writes, it never swaps).
+    const arrOps = frames.flatMap((f) => ((f as PanelsFrame).panels.array as ArrayFrame | undefined)?.ops ?? []).map((o) => o.op);
+    expect(arrOps).toContain("set");
+    expect(arrOps).not.toContain("swap");
+  });
+});
+
+describe("registry — merge-sort is now an array-seeded SCENE (#3284)", () => {
+  it("resolves to a two-panel scene with the array renderer + a NUMBER-array input seam", () => {
+    const viz = programVizForImpl({ id: "merge-sort.rs", name: "merge_sort" })!;
+    expect(viz).toBeDefined();
+    expect(viz.renderers.array).toBeDefined();
+    expect([...viz.factory()].every(isPanelsFrame)).toBe(true); // a scene now, not a flat single array
+    // the "your input" seam round-trips a number array, not a graph.
+    expect(viz.input.parse("3, 1, 2")).toEqual([3, 1, 2]);
+    expect(viz.input.default).not.toContain(":"); // a number list, not an adjacency list ("a: b, c")
   });
 });
