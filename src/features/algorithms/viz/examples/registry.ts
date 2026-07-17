@@ -24,6 +24,7 @@ import { MatrixView } from "../renderers/MatrixView";
 import { GraphView } from "../renderers/GraphView";
 import { StackView } from "../renderers/StackView";
 import { ScalarView } from "../renderers/ScalarView";
+import { TreeView } from "../renderers/TreeView";
 import { parseSortInput } from "./sort";
 import { TRACE_PROGRAMS, programKey, type AlgoProgram } from "./sorts";
 import { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./matrixTransforms";
@@ -106,12 +107,12 @@ function graphExampleFromProgram(program: GraphProgram): VizExample {
 
 /** Build a stable MULTI-STRUCTURE {@link VizExample} (#3259) — runs a scene program via `runScene`, so its
  *  synchronized panels lay out side by side. Every per-structure renderer is registered so any panel the
- *  scene declares (graph / array / matrix / stack / scalar) resolves. The "your input" seam edits the seed
- *  graph. */
+ *  scene declares (graph / array / matrix / stack / scalar / tree) resolves. The "your input" seam edits the
+ *  seed graph. */
 function sceneExampleFromProgram(program: SceneProgram): VizExample {
   return {
     factory: runScene(program.run, program.defaultInput),
-    renderers: { array: ArrayView, matrix: MatrixView, graph: GraphView, stack: StackView, scalar: ScalarView },
+    renderers: { array: ArrayView, matrix: MatrixView, graph: GraphView, stack: StackView, scalar: ScalarView, tree: TreeView },
     input: {
       default: graphToText(program.defaultInput),
       hint: "An adjacency list — one node per line: a: b, c",
