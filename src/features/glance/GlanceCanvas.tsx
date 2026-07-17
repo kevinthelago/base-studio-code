@@ -14,7 +14,7 @@ import { partAroundPanel, type MorphRect } from "./lib/glancePush";
 import { archetypeById, hueColor } from "@/features/teams";
 
 const ERR = "var(--graph-health-error)";
-const HEALTH_ROWS: GHealth[] = ["idle", "healthy", "warning", "error"];
+const HEALTH_ROWS: GHealth[] = ["idle", "healthy", "warning", "error", "off"];
 
 // The neighbour-parting motion is driven off the SAME easing + duration as the panel's grow (the
 // `.glance-card` transition in glance.css) — keep these in sync — so the panel growing and the graph
@@ -213,12 +213,15 @@ export function GlanceCanvas(p: CanvasProps) {
         const inherited = n.healthInherited;                 // lit only by a downstream dep → muted, no pulse
         const isError = n.rollupHealth === "error";
         const degraded = isError || n.rollupHealth === "warning";
+        // The user-deactivated node (#3239): render it greyed + calm — the OFF health wins over the live
+        // status word (a building/live node still reads "off") and mutes every activity pulse.
+        const isOff = n.rollupHealth === "off";
         // Axis 2 — ACTIVITY (#2541): the bottom-right word — but when this node's OWN health is degraded,
-        // swap in the REASON (the fault title) so the user sees WHY the dot changed.
+        // swap in the REASON (the fault title) so the user sees WHY the dot changed; an OFF node reads "off".
         const ownDegraded = n.health === "warning" || n.health === "error";
-        const bottomText = ownDegraded && n.reason ? n.reason : ACTIVITY_META[n.activity].label;
-        const bottomColor = degraded ? health.color : "var(--fg-muted)";
-        const bottomPulse = !degraded && ACTIVITY_META[n.activity].pulse;
+        const bottomText = isOff ? "off" : ownDegraded && n.reason ? n.reason : ACTIVITY_META[n.activity].label;
+        const bottomColor = isOff || degraded ? health.color : "var(--fg-muted)";
+        const bottomPulse = !isOff && !degraded && ACTIVITY_META[n.activity].pulse;
 
         const selected = p.selNodeId === n.id;
         const inFocus = focus ? focus.nodes.has(n.id) : true;
@@ -233,6 +236,7 @@ export function GlanceCanvas(p: CanvasProps) {
         // (downstream) error softer, so the eye lands on the source. Beats the cycle tint; selection wins.
         const border = selected ? "var(--accent)"
           : n.preview ? "var(--accent)"  // the ▷ preview node (#2623) — the finished-app surface, accented
+          : isOff ? "var(--border-soft)"  // #3239: a deactivated node reads calm — a muted, neutral border
           : isError ? (inherited ? `color-mix(in oklch, ${ERR} 42%, transparent)` : ERR)
           : hazardCycle ? `color-mix(in oklch, ${ERR} 55%, transparent)`
           : loopHue ? `color-mix(in oklch, ${loopHue} 55%, transparent)`
@@ -242,12 +246,15 @@ export function GlanceCanvas(p: CanvasProps) {
           : "0 2px 8px rgba(0,0,0,.45)";
         // Pushed clear of the open terminal panel, if it overlaps (#2662) — the panel makes room.
         const push = pushMap.get(n.id);
+        // A deactivated node (#3239) is dimmed in place — muted, but a touch more visible while selected so
+        // its open details pane (where it's turned back on) still reads as the focus.
+        const offOpacity = isOff ? (selected ? 0.72 : 0.42) : 1;
         return (
           <Box key={n.id} data-glance-node={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
             style={{ position: "absolute", left: n.x, top: n.y, width: NW, height: NH, cursor: "pointer",
               transform: push ? `translate(${push.dx}px, ${push.dy}px)` : undefined,
               // Part in lockstep with the panel's grow (MORPH_EASE), so the two are one motion (#2671).
-              zIndex: selected ? 6 : isError && !inherited ? 5 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: `opacity .18s ease, transform ${MORPH_EASE}` }}>
+              zIndex: selected ? 6 : isError && !inherited ? 5 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? offOpacity : REST_N) : offOpacity, transition: `opacity .18s ease, transform ${MORPH_EASE}` }}>
             <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${border}`,
               borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
               boxShadow, transition: "border-color .15s, box-shadow .15s" }}>

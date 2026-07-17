@@ -36,7 +36,7 @@ import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 import { bscJson } from "@/shared/lib/core/bsc";
 
 type ProjectsSlice = Pick<AppStore,
-  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "rekeyProjectData" | "autoTriage" | "setAutoTriage" | "autoKitDispatch" | "setAutoKitDispatch" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
+  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "rekeyProjectData" | "autoTriage" | "setAutoTriage" | "glanceOff" | "setGlanceNodeOff" | "autoKitDispatch" | "setAutoKitDispatch" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
 >;
 
 export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> = (set, get) => ({
@@ -77,7 +77,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           planStages: {}, planConfirmedStages: {}, planAuthoredBlueprint: {}, planSkippedStages: {}, planDeployConfig: {}, planMarketConfig: {}, planTransformations: {},
           planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stageRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {},
-          issueLinks: {}, autoTriage: {}, autoKitDispatch: {}, projectStartupPromptDoc: {},
+          issueLinks: {}, autoTriage: {}, glanceOff: {}, autoKitDispatch: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
           activeProjectId: null, activeProjectName: "", activeProjectRepo: "",
           activeProjectNumber: 0, activeProjectRepos: [],
@@ -96,6 +96,11 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
       autoTriage: {},
       setAutoTriage: (projectKey, on) =>
         set((s) => ({ autoTriage: on ? { ...s.autoTriage, [projectKey]: true } : deleteMapEntry(s.autoTriage, projectKey) })),
+      // Per-node Glance OFF toggle (#3239) — default ON (absent). Turning ON drops the entry so the map
+      // stays sparse (absent ⇒ on), like autoTriage; turning OFF records the deactivated node id.
+      glanceOff: {},
+      setGlanceNodeOff: (nodeId, off) =>
+        set((s) => ({ glanceOff: off ? { ...s.glanceOff, [nodeId]: true } : deleteMapEntry(s.glanceOff, nodeId) })),
       // Per-project kit auto-dispatch toggle (#2277) — default OFF (notify-only). `false` drops the entry
       // so the map stays sparse (absent ⇒ off), like autoTriage.
       autoKitDispatch: {},

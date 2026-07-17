@@ -41,6 +41,11 @@ interface InspectorProps {
   autoTriageOn?: boolean;
   /** Flip the selected project's auto-triage toggle (#2265). */
   onToggleAutoTriage?: (on: boolean) => void;
+  /** Whether the selected node is currently OFF/deactivated (#3239). Undefined ⇒ don't render the
+   *  activate/deactivate control (a drilled fleet node, or an edge). */
+  offOn?: boolean;
+  /** Turn the selected node off (deactivate, greyed) or back on (#3239). */
+  onToggleOff?: (off: boolean) => void;
   /** Open the selected agent's REAL PTY stream in the dock (#2369). Provided only for a drilled, LIVE
    *  agent node — its presence is what renders the "Open stream" action. */
   onOpenStream?: (nodeId: string) => void;
@@ -72,7 +77,7 @@ function Header({ title, onClose }: { title: string; onClose: () => void }) {
   );
 }
 
-export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, onRemoveEdge, autoTriageOn, onToggleAutoTriage, onOpenStream }: InspectorProps) {
+export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, onRemoveEdge, autoTriageOn, onToggleAutoTriage, offOn, onToggleOff, onOpenStream }: InspectorProps) {
   if (selType === "node" && selId) {
     const n = model.nodes.find((x) => x.id === selId);
     if (!n) return null;
@@ -160,6 +165,29 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
               ? <StatTile k="REASON" v={<Text as="span" mono size={11} style={{ color: health.color, lineHeight: 1.4 }}>{n.reason}</Text>} />
               : <Box />}
           </Grid>
+
+          {/* Activate / deactivate this node (#3239): the manual OFF toggle. Turning it off greys the node
+              on the network (health `off`) over any live status; turning it on restores its derived status.
+              Persisted, so it continues from the last session. Only on the L0 project network (onToggleOff
+              supplied) — a drilled fleet node has none. */}
+          {onToggleOff && (
+            <Box style={{ marginTop: 14, background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 8, padding: "11px 12px" }}>
+              <Row justify="between" align="center" gap={10}>
+                <Box style={{ minWidth: 0 }}>
+                  <Text as="div" mono size={12} weight={600} style={{ color: offOn ? "var(--graph-health-off)" : "var(--fg)" }}>
+                    {offOn ? "Node is off" : "Node is active"}
+                  </Text>
+                  <Text as="div" size={10.5} tone="dim" style={{ lineHeight: 1.4, marginTop: 2 }}>
+                    {offOn ? "greyed on the graph — deactivated" : "shown with its live status"}
+                  </Text>
+                </Box>
+                <Button variant={offOn ? "primary" : "ghost"} onClick={() => onToggleOff(!offOn)}
+                  aria-label={offOn ? "turn node on" : "turn node off"} style={{ flex: "none" }}>
+                  {offOn ? "Turn on" : "Turn off"}
+                </Button>
+              </Row>
+            </Box>
+          )}
 
           {inCycle && (cycleLoop
             ? <Row gap={9} align="start" style={{ marginTop: 14, background: LOOP_BG, border: `1px solid ${LOOP_BD}`, borderRadius: 8, padding: "10px 12px" }}>

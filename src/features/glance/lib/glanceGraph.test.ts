@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildGraph, focusSets, rollUpHealth, kitNodeId, usesKitEdgeId, NW, NH,
   libraryNodeId, requiresEdgeId, libIdOfNode, isLibraryNode, libraryGraphOf, isLibraryEdge, LIBRARY_META,
+  HEALTH_META, HEALTH_RANK,
   type GRawNode, type GRawEdge,
 } from "./glanceGraph";
 import { layoutBand } from "@/shared/lib/graph/crossGraph";
@@ -356,5 +357,36 @@ describe("buildGlanceData (#2206 / #2253 / #2272)", () => {
     ]);
     expect(data.rawEdges.map((e) => e.id)).toEqual(["l1"]);
     expect(data.sample).toBe(false);
+  });
+});
+
+describe("off health status (#3239) — the user's manual deactivate", () => {
+  it("HEALTH_META + HEALTH_RANK carry a greyed, non-propagating 'off'", () => {
+    expect(HEALTH_META.off).toMatchObject({ label: "off", pulse: false });
+    expect(HEALTH_META.off.color).toContain("graph-health-off");
+    expect(HEALTH_RANK.off).toBe(0); // rank 0 → never propagates up a dependency chain
+  });
+
+  it("rollUpHealth keeps an OFF node off even when a dependency is in error (the mute wins)", () => {
+    const r = rollUpHealth(
+      [{ id: "dep", health: "error" }, { id: "app", health: "off" }],
+      [{ from: "app", to: "dep" }], // app depends on the errored dep
+    );
+    expect(r.get("app")).toEqual({ health: "off", inherited: false });
+    expect(r.get("dep")).toEqual({ health: "error", inherited: false }); // the dep itself is untouched
+  });
+
+  it("an OFF node never propagates its state to a dependent (rank 0)", () => {
+    const r = rollUpHealth(
+      [{ id: "muted", health: "off" }, { id: "app", health: "idle" }],
+      [{ from: "app", to: "muted" }], // app depends on the off node
+    );
+    expect(r.get("app")).toEqual({ health: "idle", inherited: false });
+  });
+
+  it("buildGraph stamps rollupHealth 'off' onto a deactivated node", () => {
+    const g = buildGraph([{ id: "a", role: "service", health: "off", activity: "building" }], []);
+    expect(g.nodes[0].rollupHealth).toBe("off");
+    expect(g.nodes[0].healthInherited).toBe(false);
   });
 });
