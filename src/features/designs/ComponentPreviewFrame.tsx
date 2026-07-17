@@ -31,7 +31,7 @@ const PAGE_ASPECT = 1.15;
 
 type Status = "building" | "ready" | "error";
 
-export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", onPreviewPan, onPreviewZoom, scrollY, zoomEngine, registerZoomApi }: {
+export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", scrollY, zoomEngine, registerZoomApi }: {
   comp: ComponentRecord;
   /** The selected theme's light/dark surface (its `base`). */
   theme: "dark" | "light";
@@ -52,20 +52,12 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   /** The data-state to preview (#3135): `loaded` (demo), `empty` (no data), or `loading` (skeleton).
    *  Drives how the bootstrap samples props. Default `loaded`. */
   previewState?: PreviewState;
-  /** When set (the expanded preview, #3190), the iframe forwards a NON-interactive drag as a pan: this is
-   *  called with each screen-space delta `(dx,dy)` so the host can pan its viewport. A drag on a real
-   *  control interacts instead; hover/clicks always work. Omit ⇒ no gesture-forward (thumbnail). */
-  onPreviewPan?: (dx: number, dy: number) => void;
-  /** When set (the expanded preview, #3190), the iframe forwards a wheel that isn't over a scroll region
-   *  as a zoom: called with the wheel `deltaY` and the cursor's PAGE x/y (resolved from the iframe's real
-   *  rendered rect), so the host zooms about the true cursor position — the same way its gutter wheel does. */
-  onPreviewZoom?: (deltaY: number, clientX: number, clientY: number) => void;
   /** Render a COMPONENT at natural size and let tall content scroll vertically instead of scaling it to
    *  fit (#3190) — the expanded try-on. Ignored for pages (they scale parent-side). Omit for thumbnails. */
   scrollY?: boolean;
   /** Run the in-iframe pan/zoom ENGINE (#3190 crisp pass) — a CRISP DOM-transform zoom (vs the blurry
-   *  host CSS scale). `initial` is a centered zoom applied on load. Supersedes onPreviewPan/onPreviewZoom
-   *  (they're inert when this is set). Omit for thumbnails. */
+   *  host CSS scale). `initial` is a centered zoom applied on load. The engine owns pan + zoom entirely:
+   *  an iframe is a composited texture, so scaling it host-side blurs (a981b8b8). Omit for thumbnails. */
   zoomEngine?: { initial?: number };
   /** Receives the engine's +/−/fit control API (or `null` on teardown) so the host can wire its zoom
    *  buttons — the engine lives in the iframe, so the buttons post `__cmd` messages to it (#3190). */
@@ -80,10 +72,6 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   // #3190: the forwarded-gesture handlers + the last screen position of an in-flight forwarded drag, held
   // in refs so the message listener stays subscribed across renders (the callbacks' identity may churn).
-  const panRef = useRef<((dx: number, dy: number) => void) | undefined>(onPreviewPan);
-  const zoomRef = useRef<((deltaY: number, wx: number, wy: number) => void) | undefined>(onPreviewZoom);
-  useEffect(() => { panRef.current = onPreviewPan; zoomRef.current = onPreviewZoom; }, [onPreviewPan, onPreviewZoom]);
-  const panLast = useRef<{ x: number; y: number } | null>(null);
   // Measure the frame so page-like components can render at a natural viewport canvas and scale-to-fit
   // (#3139) — a full-viewport page squeezed into the raw frame overflows/clips; scaling shows the whole
   // thing. Only pages/layouts scale; a component keeps its 1:1, centered mount.
@@ -202,7 +190,6 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         const srcDoc = buildComponentSrcDoc(js, {
           injectedCss, theme, rootClass, exitSelectors,
           fitContent: !pageLike && !doScroll, scrollY: doScroll,
-          forwardGestures: !zoomEngine && !!(onPreviewPan || onPreviewZoom),
           zoomEngine: zoomEngine ? { initial: zoomEngine.initial } : undefined,
         });
         if (iframeRef.current) iframeRef.current.srcdoc = srcDoc;
@@ -234,46 +221,9 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // so it's tail-able from a session's shell (`bsc ui preview-errors`) — the status itself is transient
   // React state. Keyed on `comp.id` so the fire-and-forget attributes the error to the CURRENT component.
   useEffect(() => {
-    // A forwarded pan applies a screen-space delta from the last position; the iframe reports it (over the
-    // frame) and the parent window reports it (over the gutter) in the SAME screenX/screenY space, so both
-    // feed one accumulator and the drag tracks seamlessly across the iframe⇄gutter boundary (#3190).
-    const applyPan = (x: number, y: number) => {
-      if (!panLast.current) return;
-      panRef.current?.(x - panLast.current.x, y - panLast.current.y);
-      panLast.current = { x, y };
-    };
-    // Once a forwarded drag leaves the iframe the iframe stops posting, but the PARENT window then receives
-    // the moves — so a forwarded panstart ALSO arms window move/up here to keep panning over the gutter and
-    // to end the drag if the mouse is released outside the iframe.
-    const winMove = (ev: MouseEvent) => applyPan(ev.screenX, ev.screenY);
-    const winUp = () => endPan();
-    function endPan() {
-      panLast.current = null;
-      window.removeEventListener("mousemove", winMove);
-      window.removeEventListener("mouseup", winUp);
-    }
     const onMsg = (e: MessageEvent) => {
       const d = e.data;
       if (!d || !d.__preview) return;
-      // #3190: forwarded viewport gestures (pan/zoom). These shapes are emitted ONLY by the gesture-forward
-      // shim (the expanded preview), so we DON'T gate them on the strict source-window match — that
-      // equality is unreliable for a sandboxed opaque-origin iframe and was silently dropping every pan.
-      // A thumbnail frame's listener also receives them but no-ops (its pan/zoom refs are undefined).
-      if (d.__preview === "panstart") {
-        panLast.current = { x: d.x, y: d.y };
-        window.addEventListener("mousemove", winMove);
-        window.addEventListener("mouseup", winUp);
-        return;
-      }
-      if (d.__preview === "panmove") { applyPan(d.x, d.y); return; }   // over the frame (iframe-reported)
-      if (d.__preview === "panend") { endPan(); return; }              // released over the frame
-      if (d.__preview === "zoom") {
-        // Resolve the cursor fraction against the iframe's REAL rendered rect → page coords, so the host
-        // zooms about the true cursor position regardless of border/offset/fit (#3190).
-        const rect = iframeRef.current?.getBoundingClientRect();
-        if (rect) zoomRef.current?.(d.dy, rect.left + d.fx * rect.width, rect.top + d.fy * rect.height);
-        return;
-      }
       // Errors/renders are PER-FRAME — match THIS iframe's window so a concurrent scan probe's error
       // doesn't leak into (and falsely fail) this live preview (#2908).
       if (e.source !== iframeRef.current?.contentWindow) return;
@@ -285,7 +235,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
       }
     };
     window.addEventListener("message", onMsg);
-    return () => { window.removeEventListener("message", onMsg); endPan(); };
+    return () => window.removeEventListener("message", onMsg);
   }, [comp.id]);
 
   // #3139: a page-like preview renders at its natural viewport canvas + is contain-scaled (absolute,

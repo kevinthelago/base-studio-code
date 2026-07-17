@@ -160,19 +160,16 @@ export interface ComponentSrcDocOptions {
    *  `overflow:auto`) scrolls. The wheel then scrolls it (the gesture shim leaves a scrollable region
    *  alone). Mutually exclusive with `fitContent`. Absent ⇒ no override (byte-for-byte unchanged srcdoc). */
   scrollY?: boolean;
-  /** Forward viewport gestures (pan + zoom) from inside the iframe to the parent (#3190). The iframe owns
-   *  its DOM, so it decides per event: a non-interactive drag is `postMessage`d as `panstart`/`panmove`/
-   *  `panend` (the host pans); a wheel that isn't over a scrollable region is sent as `zoom` (the host
-   *  zooms about the cursor). A press on a real control, and a wheel over a scroll container, are left for
-   *  the component. Hover + clicks always work. Set only where the host listens (the expanded preview);
-   *  absent ⇒ no script (byte-for-byte unchanged srcdoc). */
-  forwardGestures?: boolean;
   /** Run a self-contained pan/zoom ENGINE inside the iframe (#3190 crisp pass). The zoom is a DOM
    *  transform on the mounted content (`#root`), which the browser re-rasterizes SHARPLY at any scale —
    *  unlike CSS-scaling the iframe element (a composited texture that upsamples → blur). The engine owns
    *  drag-pan + wheel-zoom-about-cursor (leaving real controls + scroll regions alone) and obeys host
    *  `{__cmd:"zoomIn"|"zoomOut"|"fit"}` messages for the +/−/fit buttons. `initial` is a centered zoom
-   *  applied on load. Mutually exclusive with `forwardGestures`. Absent ⇒ no engine. */
+   *  applied on load. Absent ⇒ no engine.
+   *
+   *  This SUPERSEDED the gesture-forward shim (host-side pan/zoom via postMessage), which a981b8b8
+   *  disconnected and #3251 removed: forwarding existed to drive a host CSS scale, and that is exactly
+   *  what blurs. The iframe owns the viewport now, so there is nothing to forward. */
   zoomEngine?: { initial?: number; min?: number; max?: number };
 }
 
@@ -311,96 +308,20 @@ export function fitShimScript(fit: boolean): string {
 }
 
 /**
- * The gesture-forward shim (#3190) — a self-contained `<script>` that lets the iframe DECIDE, per event,
- * whether a gesture belongs to the component or to the host viewport (only the iframe can see its own
- * DOM). It postMessages the surviving gestures out to the parent (which listens without a strict
- * source-window match, since these message shapes are emitted ONLY by this shim):
- *
- * - **Drag-pan.** On a left mousedown whose target is NOT interactive (no control tag / `[role]` /
- *   focusable / `cursor:pointer` / `svg`/`canvas` ancestor), it `preventDefault`s and posts `panstart`,
- *   then `panmove` (absolute screen coords → the host computes pixel deltas) and `panend`. A press on a
- *   real control returns early → the component keeps it.
- * - **Wheel-zoom.** On a wheel that is NOT over a genuinely scrollable ancestor (one whose `overflow-y`
- *   is auto/scroll AND can still scroll further in the wheel's direction), it `preventDefault`s and posts
- *   `zoom` with the deltaY + the cursor as a FRACTION of the iframe viewport (fx,fy ∈ [0,1]). The host
- *   resolves that against the iframe's REAL rendered rect → the true page position → zoom about the cursor
- *   via the SAME path the gutter wheel uses. (Sending a fraction, not iframe-local px, means the anchor
- *   never relies on "iframe px == world coords" — a border/offset/fit can't skew it.) Over a scrollable
- *   region it does nothing → that region scrolls normally.
- *
- * Why `svg`/`canvas` count as interactive for the pan test: an interactive data-viz (d3 force graph,
- * zoomable chart) attaches its drag handlers PROGRAMMATICALLY to its `<svg>`/`<canvas>` and often sets no
- * `cursor:pointer`/role — and a page script CANNOT enumerate `addEventListener` listeners — so the
- * drawing surface is the only structural signal that "this whole area is draggable". Treating it as
- * interactive keeps those graphs live (the exact regression from #3168); a rare decorative-svg component
- * simply pans via the surrounding gutter. (Wheel-zoom still works over an svg — it's not a scroll
- * container — so zoom is available everywhere the user isn't scrolling.)
- *
- * Returns "" when off, so a non-forwarding srcdoc (the thumbnail) is byte-for-byte unchanged. Vanilla,
- * capture-phase.
- */
-export function gestureForwardScript(on: boolean): string {
-  if (!on) return "";
-  return `\n<script>
-(function () {
-  var SEL = 'a,button,input,select,textarea,label,summary,option,svg,canvas,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="switch"],[role="tab"],[role="menuitem"],[role="option"],[role="slider"],[contenteditable]';
-  function interactive(el) {
-    for (var n = el; n && n !== document.documentElement && n !== document.body; n = n.parentElement) {
-      if (n.nodeType !== 1) continue;
-      if (n.matches && n.matches(SEL)) return true;
-      var ti = n.getAttribute && n.getAttribute("tabindex");
-      if (ti != null && ti !== "-1") return true;
-      try { if (getComputedStyle(n).cursor === "pointer") return true; } catch (e) {}
-    }
-    return false;
-  }
-  function scrollableAt(el, dy) {
-    for (var n = el; n && n !== document.documentElement; n = n.parentElement) {
-      if (n.nodeType !== 1) continue;
-      if (n.scrollHeight <= n.clientHeight) continue;
-      var oy; try { oy = getComputedStyle(n).overflowY; } catch (e) { continue; }
-      if (oy !== "auto" && oy !== "scroll") continue;
-      if (dy < 0 && n.scrollTop > 0) return true;                                  // room to scroll up
-      if (dy > 0 && n.scrollTop + n.clientHeight < n.scrollHeight - 1) return true; // room to scroll down
-    }
-    return false;
-  }
-  function send(msg) { try { parent.postMessage(msg, "*"); } catch (err) {} }
-  var panning = false;
-  document.addEventListener("mousedown", function (e) {
-    if (e.button !== 0 || interactive(e.target)) return;   // a real control → let the component have it
-    e.preventDefault();                                    // else: empty space → this drag pans the host
-    panning = true;
-    document.body.style.cursor = "grabbing";
-    send({ __preview: "panstart", x: e.screenX, y: e.screenY });
-  }, true);
-  document.addEventListener("mousemove", function (e) { if (panning) send({ __preview: "panmove", x: e.screenX, y: e.screenY }); }, true);
-  function end() { if (!panning) return; panning = false; document.body.style.cursor = ""; send({ __preview: "panend" }); }
-  document.addEventListener("mouseup", end, true);
-  window.addEventListener("blur", end);
-  document.addEventListener("wheel", function (e) {
-    if (scrollableAt(e.target, e.deltaY)) return;          // let a real scroll container scroll
-    e.preventDefault();                                    // else: zoom the host about the cursor
-    var w = window.innerWidth || document.documentElement.clientWidth || 1;
-    var h = window.innerHeight || document.documentElement.clientHeight || 1;
-    send({ __preview: "zoom", dy: e.deltaY, fx: e.clientX / w, fy: e.clientY / h });
-  }, { capture: true, passive: false });
-})();
-</script>`;
-}
-
-/**
  * The pan/zoom ENGINE (#3190 crisp pass) — a self-contained `<script>` that pans + zooms the mounted
  * content by transforming `#root` (a DOM transform → the browser re-rasterizes SHARPLY at any scale,
  * unlike CSS-scaling the iframe element, a composited texture that blurs). All coordinates are
  * iframe-local (clientX/clientY), so there's no host↔iframe coordinate conversion. It:
- *   • pans on a non-interactive left-drag (a real control / scroll region is left alone);
- *   • zooms about the cursor on a wheel that isn't over a scroll region;
+ *   • pans on a left-drag past a 5px threshold — ANYWHERE, even over a button (a press-without-move
+ *     stays a click; a form field keeps its native drag);
+ *   • zooms about the cursor on ⌘/ctrl + wheel; a plain wheel pans (a scroll region scrolls itself);
  *   • obeys host `{__cmd:"zoomIn"|"zoomOut"|"fit"}` messages (the +/−/fit buttons — zoom about center /
  *     reset to identity);
- *   • applies a centered `initial` zoom on load.
- * Returns "" when off. Vanilla, capture-phase; reuses the same interactive/scroll heuristics as the
- * forwarder. `#root` gets `transform-origin: 0 0`; the iframe clips the overflow.
+ *   • applies a centered `initial` zoom on load;
+ *   • cancels the native text-selection + image/link drag that would otherwise fight the pan (#3251 —
+ *     the guard must live HERE, in the iframe, since the host's CSS cannot cross the document boundary).
+ * Returns "" when off. Vanilla, capture-phase. `#root` gets `transform-origin: 0 0`; the iframe clips
+ * the overflow.
  */
 export function gestureEngineScript(cfg: { initial?: number; min?: number; max?: number } | undefined): string {
   if (!cfg) return "";
@@ -462,6 +383,9 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
   function endPan() { pending = false; panning = false; document.body.style.cursor = ""; }
   document.addEventListener("mouseup", endPan, true);
   window.addEventListener("blur", endPan);
+  // #3251: an <img>/<a> press starts a NATIVE drag, which cancels the mousemove stream — the pan would
+  // die mid-gesture. Cancel it (form fields keep theirs, matching DRAG_NATIVE).
+  document.addEventListener("dragstart", function (e) { if (!dragNative(e.target)) e.preventDefault(); }, true);
   document.addEventListener("click", function (e) { if (moved) { e.preventDefault(); e.stopPropagation(); moved = false; } }, true);
   // WHEEL: pans/scrolls the content by default (so overflow is navigable); ctrl/⌘ + wheel zooms about the
   // cursor. An inner scroll container scrolls itself.
@@ -488,7 +412,7 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
  * as a module, posting `ready`/`error` to the parent. Pure.
  */
 export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOptions = {}): string {
-  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, forwardGestures = false, scrollY = false, zoomEngine } = opts;
+  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, scrollY = false, zoomEngine } = opts;
   // #3057: the exit-runtime shim, injected right after `#root` and BEFORE the module script so the
   // observer is watching before React mounts (and later unmounts) subtrees. "" when no exit selectors —
   // the non-exit srcdoc is then byte-for-byte unchanged.
@@ -501,13 +425,18 @@ export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOpti
   // tall content flows down and `#root` (overflow:auto) scrolls it, instead of centering (which strands
   // the top out of reach) or scaling. `!important` beats the wrapper's inline flex/height.
   const scrollCss = scrollY ? `\n<style>#root>*{display:block!important;height:auto!important;min-height:100%}</style>` : "";
-  // #3190: the gesture-forward shim — lets a non-interactive drag pan + a non-scroll wheel zoom the host
-  // viewport (the iframe decides per event and postMessages the survivors out). "" (unchanged) when off.
-  const gestureShim = gestureForwardScript(forwardGestures);
   // #3190 crisp pass: the in-iframe pan/zoom ENGINE — transforms `#root` (crisp DOM) instead of forwarding
   // to a host CSS scale (a blurry iframe texture). Clip cleanly + no scrollbars while it drives the view.
   const engineShim = gestureEngineScript(zoomEngine);
-  const engineCss = zoomEngine ? `\n<style>html,body{overflow:hidden}#root{overflow:hidden}</style>` : "";
+  // #3251: the engine's drag lives INSIDE the iframe, so the selection guard must too — the host
+  // wrapper's `user-select:none` cannot cross a document boundary. Without this, a press-and-move
+  // starts a native text selection instead of panning. Form fields keep caret + selection (mirrors the
+  // engine's own DRAG_NATIVE list, which already leaves their native drag alone).
+  const engineCss = zoomEngine
+    ? `\n<style>html,body{overflow:hidden}#root{overflow:hidden}`
+      + `body{user-select:none;-webkit-user-select:none}`
+      + `input,textarea,select,[contenteditable]{user-select:text;-webkit-user-select:text}</style>`
+    : "";
   return `<!doctype html><html data-theme="${theme}"><head><meta charset="utf-8" />
 <style>html,body,#root{margin:0;height:100%;box-sizing:border-box}#root{overflow:auto}*,*::before,*::after{box-sizing:inherit}
 /* Fit oversized preview media (d3 charts/graphs, images) within the frame rather than overflowing it (#2915).
@@ -535,6 +464,6 @@ setTimeout(() => {
     parent.postMessage({ __preview: "rendered", empty: empty }, "*");
   } catch (e) { /* measurement is best-effort */ }
 }, 400);
-</script>${fitShim}${gestureShim}${engineShim}
+</script>${fitShim}${engineShim}
 </body></html>`;
 }
