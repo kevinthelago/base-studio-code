@@ -9,6 +9,7 @@ import { useAppStore } from "@/store";
 import { Box } from "@/shared/ui/layout/Box";
 import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { useHotkeys } from "./useHotkeys";
+import { useNavigateBridge } from "./useNavigateBridge";
 import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 import { ConsoleWorkspace } from "@/app/console";
@@ -33,6 +34,9 @@ import {
 
 export default function App() {
   useHotkeys();
+  // #3274: apply `bsc navigate` requests from the appchan watcher (Rust emits `bsc://navigate`), so an
+  // external session can steer the app to a view before capturing it.
+  useNavigateBridge();
   useScheduler();
   useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
   useStoreProjector(); // generic store_state projector: scoped domains + the alert pipeline (#2498)

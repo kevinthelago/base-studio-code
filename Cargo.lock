@@ -520,8 +520,10 @@ name = "base-studio-code"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "bsc-appchan",
  "bsc-data",
  "bsc-llm",
+ "bsc-navigate",
  "bsc-project",
  "bsc-shot",
  "bsc-tunnel",
@@ -744,8 +746,11 @@ dependencies = [
  "bsc-data",
  "bsc-files",
  "bsc-graph",
+ "bsc-loop",
+ "bsc-navigate",
  "bsc-persona",
  "bsc-project",
+ "bsc-request",
  "bsc-shot",
  "bsc-sound",
  "bsc-studio",
@@ -776,6 +781,16 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "bsc-appchan"
+version = "0.1.0"
+dependencies = [
+ "bsc-util",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -872,6 +887,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-loop"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bsc-navigate"
+version = "0.1.0"
+dependencies = [
+ "bsc-appchan",
+ "bsc-cli-util",
+ "bsc-util",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "bsc-persona"
 version = "0.1.0"
 dependencies = [
@@ -892,9 +930,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "bsc-request"
+version = "0.1.0"
+dependencies = [
+ "bsc-cli-util",
+ "bsc-sqlite-util",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bsc-shot"
 version = "0.1.0"
 dependencies = [
+ "bsc-appchan",
  "bsc-cli-util",
  "bsc-util",
  "serde",

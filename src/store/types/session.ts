@@ -42,6 +42,12 @@ export interface SessionState {
    *  so it's a scratch/verification shell until project files are relocated into the distro. */
   sandboxConsoles: boolean;
   setSandboxConsoles: (v: boolean) => void;
+  /** #3298: whether the DEBUG session's window is open — a full-capability Claude session in the
+   *  base-studio-code SOURCE tree that works the `bsc request` improvement queue (fixing `bsc ui`).
+   *  SESSION-ONLY (not persisted): the OS window is session-only, so this defaults off each start and
+   *  the toggle opens/closes the window. */
+  debugSession: boolean;
+  setDebugSession: (v: boolean) => void;
   /** #2372: show the legacy Console page as a rail destination. OFF by default — the graph (Glance)
    *  is the execution surface; the console page is being retired. When off, its rail entry is hidden
    *  and a console-active workspace falls back to Glance (derived in App). */
