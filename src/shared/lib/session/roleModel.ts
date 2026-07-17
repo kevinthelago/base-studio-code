@@ -68,8 +68,9 @@ export type SessionRole =
   | "librarian"
   // Debugger (#3322): the app's OWN full-capability maintenance session — fixes the `bsc ui` tooling the
   // designer reports via `bsc request` (#3298). Broad app-maintenance caps (git+github+code+ui write); the
-  // session actually launches full-cap/bypass via `useDebugTerminal`, so this table entry backs its graph
-  // identity + any generic role→profile surface, not the live session's gate.
+  // session actually launches full-cap/bypass on TerminalHost via `DebugSessionMount` (the always-bypass
+  // `isFullCapabilitySession` carve-out, role-less — #3326), so this table entry backs its graph identity +
+  // any generic role→profile surface, not the live session's gate.
   | "debugger"
   // Marketer (#2431): the opt-in marketing persona's role — takes the market-research stage's
   // artifacts and drafts in-repo collateral (landing/README copy, launch posts, SEO content,
