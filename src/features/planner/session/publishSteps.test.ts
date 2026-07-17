@@ -174,12 +174,13 @@ describe("materializeIssues (the local half — #3280)", () => {
   });
 
   it("is idempotent by ref — commit-then-publish over the same rows never duplicates", async () => {
-    const upsert = vi.fn(async () => {});
+    const refs: string[] = [];
+    const upsert = async (iss: { ref: string }) => { refs.push(iss.ref); };
     await materializeIssues(features, { upsertIssue: upsert });
     await materializeIssues(features, { upsertIssue: upsert }); // publish later re-materializes
     // Same refs re-upserted (the store keys on ref); the caller never sees a dupe.
-    expect(upsert).toHaveBeenCalledTimes(4);
-    expect(new Set(upsert.mock.calls.map(c => (c[0] as { ref: string }).ref))).toEqual(new Set(["login", "logout"]));
+    expect(refs.length).toBe(4);
+    expect(new Set(refs)).toEqual(new Set(["login", "logout"]));
   });
 
   it("empty features ⇒ no issues, no writes", async () => {
