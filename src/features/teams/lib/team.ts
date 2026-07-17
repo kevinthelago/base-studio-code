@@ -239,10 +239,24 @@ export function blankOrg(id: string): Team {
 export function reconcileOrgs(persisted: Team[]): Team[] {
   const byId = new Map(persisted.map((o) => [o.id, o]));
   const out: Team[] = BUILTIN_ORGS.map((base) => {
-    const saved = byId.get(base.id);
+    // A built-in team's STRUCTURE is PACKAGED-AUTHORITATIVE (#3330). The app evolves its own built-in teams
+    // (the Studio Network grew across #3317/#3322/#2940), but the on-disk store (`~/.base-studio-code/orgs/`)
+    // is seeded once and frozen at that version — so a `{ ...base, ...saved }` merge let the stale on-disk
+    // copy shadow every later packaged update. We now always take the packaged `base` for a built-in id, so
+    // updates to the packaged JSON reach every install. To customize a built-in, CLONE it (→ a user team,
+    // carried through untouched below). The on-disk copy is refreshed to match by `hydrateOrgs`.
     byId.delete(base.id);
-    return saved ? { ...base, ...saved, id: base.id, builtin: true } : base;
+    return base;
   });
+  // On-disk-only USER teams (non-built-in ids) are preserved verbatim — only their `builtin` flag is forced
+  // false so a stale/hand-set flag can't masquerade a user team as a built-in.
   for (const o of byId.values()) out.push({ ...o, builtin: false });
   return out;
+}
+
+/** A stable content key for a team's authored STRUCTURE (name + blurb + positions + relationships), used to
+ *  detect on-disk drift from the packaged built-in (#3330) so `hydrateOrgs` re-pushes only what changed —
+ *  never the `builtin` flag or ids, which are structural constants. */
+export function orgStructureKey(o: Team): string {
+  return JSON.stringify([o.name, o.blurb, o.positions, o.relationships]);
 }
