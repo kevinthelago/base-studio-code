@@ -8,6 +8,7 @@
 import formsEmbedded from "@data/teams/communication-forms.json";
 import archetypesEmbedded from "@data/teams/archetypes.json";
 import { overlayFile, overlayGlob } from "@/shared/lib/core/configOverrides";
+import { slugify } from "@/shared/lib/core/format";
 
 /** The canonical orientation a form typically flows (a HINT; an archetype's lane placement wins). */
 export type FormDirection = "down" | "up" | "lateral" | "in" | "out";
@@ -223,7 +224,7 @@ export function orgIssues(org: Team): string[] {
 // ── CRUD helpers (mirror personas) ───────────────────────────────────────────────────────────────
 /** Slugify an org name into an id fragment. */
 export function orgSlug(name: string): string {
-  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "org";
+  return slugify(name) || "org";
 }
 
 /** A blank user team — the "new team" template (the data entity is still an `Team`; the display noun is

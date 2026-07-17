@@ -34,6 +34,7 @@ import { buildComposesEdges } from "./compositionLayout";
 import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, type KitArtifact } from "./componentPreview";
 import { libraryModuleResolver, libraryReimplTargets } from "./libraryModules";
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
+import { resolveInternalBase } from "@/shared/lib/preview/importPath";
 import type { ComponentRecord, PropSpec } from "./model";
 import type { KitAnimation } from "@/shared/ui/kit/animations";
 
@@ -168,28 +169,6 @@ function isBareSpecifier(spec: string): boolean {
  *  closure, not the preview import-map (#2954). Rust twin: `is_internal_specifier`. */
 function isInternalSpecifier(spec: string): boolean {
   return spec.startsWith("@/") || spec.startsWith("./") || spec.startsWith("../");
-}
-
-/** Resolve an INTERNAL import `spec` — imported FROM module `fromRel` (a `src/`-relative path) — to its
- *  `src/`-relative module BASE (no extension), or `null` when it isn't internal. `@/x` → `x`; a relative
- *  path is joined onto the importer's dir and `.`/`..` segments collapsed. Rust twin: `resolve_internal_base`. */
-function resolveInternalBase(spec: string, fromRel: string): string | null {
-  let segs: string[];
-  if (spec.startsWith("@/")) {
-    segs = spec.slice(2).split("/");
-  } else if (spec.startsWith("./") || spec.startsWith("../")) {
-    const fromDir = fromRel.includes("/") ? fromRel.slice(0, fromRel.lastIndexOf("/")) : "";
-    segs = (fromDir ? fromDir.split("/") : []).concat(spec.split("/"));
-  } else {
-    return null;
-  }
-  const out: string[] = [];
-  for (const seg of segs) {
-    if (seg === "" || seg === ".") continue;
-    if (seg === "..") out.pop();
-    else out.push(seg);
-  }
-  return out.join("/");
 }
 
 /** Does an INTERNAL import `spec` (from module `fromRel`) resolve to a component or runtime module the

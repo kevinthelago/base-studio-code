@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import { bscJson } from "@/shared/lib/core/bsc";
 import { useAppStore } from "@/store";
 import { parseHookLog, aggregateHookTelemetry, type HookAnalytics } from "@/features/mcp";
@@ -8,8 +7,8 @@ import { Grid } from "@/shared/ui/layout/Grid";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
-import { Skeleton, SkeletonChart } from "@/shared/ui/feedback/Skeleton";
+import { SkeletonChart } from "@/shared/ui/feedback/Skeleton";
+import { CardEmpty, SkeletonRows } from "@/shared/ui/feedback/CardStates";
 
 // Hook Analytics tab (#865 PR 2) — KPI cards + 3 charts over the hook-fire telemetry
 // (~/.base-studio-code/hooks.log via `bsc logs tail hook` + hookTelemetry.ts). The over-time chart + KPI
@@ -19,16 +18,6 @@ import { Skeleton, SkeletonChart } from "@/shared/ui/feedback/Skeleton";
 // skeleton while the async log loads, a compact empty state when there's no telemetry, else the content.
 
 const DAYS = 14;
-
-/** A compact empty state for a card body (#2247) — the panel frame + head stay; the body shows this. */
-function CardEmpty({ icon = "○", title, hint }: { icon?: ReactNode; title: string; hint?: string }) {
-  return <EmptyState size="sm" iconVariant="dashed" icon={icon} title={title} description={hint} style={{ padding: "20px 12px" }} />;
-}
-
-/** A stack of shimmer rows — a loading placeholder for a telemetry-panel body (#2247). */
-function SkeletonRows({ rows = 3, h = 34 }: { rows?: number; h?: number }) {
-  return <Stack gap={10}>{Array.from({ length: rows }).map((_, i) => <Skeleton key={i} h={h} radius={6} />)}</Stack>;
-}
 
 export function HookAnalyticsTab() {
   // Select the raw array (stable ref) and derive in a memo — a selector returning
@@ -76,7 +65,7 @@ export function HookAnalyticsTab() {
         {/* Fires per hook */}
         <TelemetryPanel title="Fires per hook" hint="by event · matcher">
           {loading
-            ? <SkeletonRows />
+            ? <SkeletonRows rows={3} h={34} />
             : <ItemBars
                 rows={an.perHook.map(h => ({ key: h.hook, label: h.hook, meta: h.event, value: h.fires, fraction: h.fires / maxHookFires }))}
                 empty={<CardEmpty title="No hook fires yet" hint="Per-hook fire counts appear here once your hooks run." />}
@@ -86,7 +75,7 @@ export function HookAnalyticsTab() {
         {/* Blocks vs allows */}
         <TelemetryPanel title="Blocks vs allows" hint="PreToolUse hooks only">
           {loading
-            ? <SkeletonRows />
+            ? <SkeletonRows rows={3} h={34} />
             : an.perPreHook.length === 0
             ? <CardEmpty title="No PreToolUse decisions yet" hint="Allow vs block splits for PreToolUse hooks appear here." />
             : <Stack gap={14}>

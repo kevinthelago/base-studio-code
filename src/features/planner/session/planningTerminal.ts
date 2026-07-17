@@ -1,22 +1,7 @@
-// Planner terminal/ANSI helpers, split out of Planning.tsx (#1332): the xterm theme, the
-// ANSI-escape stripper, and a viewport-content probe used to avoid re-sending an already-pasted prompt.
+// Planner terminal/ANSI helpers, split out of Planning.tsx (#1332): the ANSI-escape stripper and
+// a viewport-content probe used to avoid re-sending an already-pasted prompt. (The xterm TERM_THEME
+// lives in @/app/console/lib/terminalConstants — the single home shared by every terminal, #3246.)
 import type { Terminal } from "@xterm/xterm";
-
-export const TERM_THEME: import("@xterm/xterm").ITheme = {
-  background:          "#181a1f",
-  foreground:          "#eeeae4",
-  cursor:              "#c4923a",
-  cursorAccent:        "#181a1f",
-  selectionBackground: "#c4923a44",
-  black:               "#181a1f", brightBlack:   "#44474f",
-  red:                 "#d4554f", brightRed:     "#e06c75",
-  green:               "#5fb467", brightGreen:   "#98c379",
-  yellow:              "#c4923a", brightYellow:  "#e5c07b",
-  blue:                "#5694c7", brightBlue:    "#61afef",
-  magenta:             "#9b59b6", brightMagenta: "#c678dd",
-  cyan:                "#4aabb5", brightCyan:    "#64d5e4",
-  white:               "#939aa4", brightWhite:   "#eeeae4",
-};
 
 // Covers all common VT/ANSI escape sequences:
 //   CSI  \x1b [ <0x20-0x3f>* <0x40-0x7e>   — includes private ?/>/< params
