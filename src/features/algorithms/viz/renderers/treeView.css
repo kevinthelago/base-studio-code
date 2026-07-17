@@ -1,0 +1,61 @@
+/* TreeView (#3270) — an SVG node-link diagram for a tree / heap / BST. Durable node states are static
+   colours here; the transient insert/swap/visit/compare animations are injected by treeViewMotion.ts and
+   fire off data-op. Structural/element styles only. Tokens from tokens.css. */
+.tree-view {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  min-height: 172px;
+}
+
+.tree-svg {
+  width: min(340px, 100%);
+  height: auto;
+  overflow: visible;
+}
+
+.tree-edge {
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.tree-node {
+  fill: var(--bg-elev);
+  stroke: var(--border);
+  stroke-width: 1.5;
+  /* scale animations pivot about the node's own centre */
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Durable per-node states (the frame's `marks`) — resting colours the animations settle into. */
+.tree-node[data-mark="current"] {
+  fill: color-mix(in oklch, var(--accent), var(--bg-elev) 62%);
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+.tree-node[data-mark="target"] {
+  stroke: var(--violet);
+  stroke-width: 2.5;
+}
+.tree-node[data-mark="path"] {
+  fill: color-mix(in oklch, var(--info), var(--bg-elev) 58%);
+  stroke: var(--info);
+}
+
+.tree-node-label {
+  fill: var(--fg);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  pointer-events: none;
+  user-select: none;
+}
+
+.tree-empty {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-dim);
+  padding: 8px 0;
+}
