@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   BUILTIN_ORGS, COMMUNICATION_FORMS, RELATIONSHIP_ARCHETYPES,
-  makeBuiltinOrgs, reconcileOrgs, blankOrg, orgSlug, orgIssues, deriveCommunication,
+  makeBuiltinOrgs, reconcileOrgs, orgStructureKey, blankOrg, orgSlug, orgIssues, deriveCommunication,
   archetypeById, formById, augmentStudioNetworkForDebug, STUDIO_NETWORK_ID, type Team,
 } from "./team";
 
@@ -177,19 +177,41 @@ describe("reconcileOrgs (#2193)", () => {
     expect(out.every((o) => o.builtin)).toBe(true);
   });
 
-  it("preserves user edits to a built-in but restores builtin identity", () => {
+  it("makes a built-in's STRUCTURE packaged-authoritative — a stale on-disk copy can't shadow it (#3330)", () => {
+    // A built-in frozen on disk at an OLD version (here: renamed + emptied of positions/relationships, the
+    // exact shape of the stale org-planning-studio seed) must be REPLACED by the packaged def, so app updates
+    // to a built-in team reach every install. (Old behavior kept the stale saved copy → updates never landed.)
+    const base = BUILTIN_ORGS.find((o) => o.id === "org-default-fleet")!;
     const persisted: Team[] = [
-      { id: "org-default-fleet", name: "My fleet", positions: [], relationships: [], builtin: false },
+      { id: "org-default-fleet", name: "Old name", positions: [], relationships: [], builtin: true },
     ];
     const fleet = reconcileOrgs(persisted).find((o) => o.id === "org-default-fleet")!;
-    expect(fleet.name).toBe("My fleet");   // edit kept
-    expect(fleet.builtin).toBe(true);      // identity restored — cannot become deletable
+    expect(fleet.name).toBe(base.name);                       // packaged name wins, not the stale "Old name"
+    expect(fleet.positions).toEqual(base.positions);          // packaged structure restored
+    expect(fleet.relationships).toEqual(base.relationships);
+    expect(fleet.builtin).toBe(true);
   });
 
-  it("keeps user-authored orgs as non-builtin", () => {
+  it("keeps user-authored orgs (non-built-in ids) untouched, as non-builtin", () => {
     const persisted: Team[] = [{ id: "org-mine", name: "Mine", positions: [], relationships: [] }];
-    const mine = reconcileOrgs(persisted).find((o) => o.id === "org-mine")!;
+    const out = reconcileOrgs(persisted);
+    const mine = out.find((o) => o.id === "org-mine")!;
+    expect(mine.name).toBe("Mine");
     expect(mine.builtin).toBe(false);
+    // ...and the built-ins are still all present alongside it.
+    expect(out.filter((o) => o.builtin).length).toBe(BUILTIN_ORGS.length);
+  });
+});
+
+describe("orgStructureKey (#3330)", () => {
+  it("is equal for structurally-identical teams and differs when positions/relationships/name/blurb change", () => {
+    const a = BUILTIN_ORGS.find((o) => o.id === STUDIO_NETWORK_ID)!;
+    expect(orgStructureKey(a)).toBe(orgStructureKey({ ...a }));
+    expect(orgStructureKey(a)).not.toBe(orgStructureKey({ ...a, name: "Renamed" }));
+    expect(orgStructureKey(a)).not.toBe(orgStructureKey({ ...a, positions: a.positions.slice(0, 1) }));
+    expect(orgStructureKey(a)).not.toBe(orgStructureKey({ ...a, relationships: [] }));
+    // The builtin flag / id are NOT part of the structure key (they're constants, not authored drift).
+    expect(orgStructureKey(a)).toBe(orgStructureKey({ ...a, builtin: false, id: "whatever" }));
   });
 });
 
