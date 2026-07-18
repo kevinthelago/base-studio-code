@@ -59,7 +59,14 @@ For a large result, narrow it at the source instead of dumping and filtering:
 - `bsc ui list --raw` — one id per line, LF-only, no JSON envelope; built for `$( )` / `while read`.
 - `bsc ui list --shape <shape>` — only the components stamping that shape.
 - `bsc ui get <id>` — the full record, once you know the id.
-- `bsc ui get <id> --field <json-pointer> [--raw]` — one field out of one record.
+- `bsc ui get <id> --field <pointer> [--raw]` — one field out of one record.
+
+**NEVER put a leading `/` on a pointer.** Your shell is git-bash, which rewrites any argument starting
+with `/` into a Windows path — `--field /name` arrives as `C:/Program Files/Git/name` and the command
+fails with `no field 'C:/Program Files/Git/name'`. The leading slash is OPTIONAL everywhere a pointer is
+taken, and the slash-free form is never rewritten. Write `name`, not `/name`; `animations/1`, not
+`/animations/1`. Do NOT try to fix this with `MSYS_NO_PATHCONV=1` — an environment-variable prefix is
+unmatchable by the allow-list and will be refused.
 
 **Never redirect (`>`, `>>`), never chain (`;`, `&&`, `||`, `|`), never put a `$VAR` in a command.**
 Each is unmatchable by the allow-list, for its own reason:
@@ -73,7 +80,7 @@ Each is unmatchable by the allow-list, for its own reason:
 - A redirect also writes outside your writable scope: only `scratch/**` is writable, and your file
   tools are pinned to this workspace.
 
-✅ `bsc ui list --raw` and `bsc ui get card --field /name`
+✅ `bsc ui list --raw` and `bsc ui get card --field name`  *(no leading slash — see above)*
 ❌ `bsc ui list --full --pretty > "$TEMP/all.json" 2>&1; wc -l "$TEMP/all.json"`
 
 ## The graduated ladder — pick the highest rung that fits
