@@ -15,20 +15,20 @@ describe("GlanceInspector node Resume (#glance-resume)", () => {
   it("renders a Resume action for an agent node and calls onResumeNode with the node id", () => {
     const onResumeNode = vi.fn();
     render(<GlanceInspector model={model} selType="node" selId="api" onSelectNode={() => {}} onClose={() => {}} onResumeNode={onResumeNode} nodeLive={false} />);
-    const btn = screen.getByRole("button", { name: /Resume agent/i });
+    const btn = screen.getByRole("button", { name: /Resume session/i });
     fireEvent.click(btn);
     expect(onResumeNode).toHaveBeenCalledWith("api");
   });
 
-  it("labels the action 'Open in console' when the agent is live (jump vs relaunch)", () => {
+  it("labels the action 'Open session' when the agent is live (jump vs relaunch)", () => {
     render(<GlanceInspector model={model} selType="node" selId="api" onSelectNode={() => {}} onClose={() => {}} onResumeNode={() => {}} nodeLive={true} />);
-    expect(screen.getByRole("button", { name: /Open in console/i })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Resume agent/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /Open session/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Resume session/i })).toBeNull();
   });
 
   it("does not render a Resume action when onResumeNode is absent (e.g. the L0 project view)", () => {
     render(<GlanceInspector model={model} selType="node" selId="api" onSelectNode={() => {}} onClose={() => {}} />);
-    expect(screen.queryByRole("button", { name: /Resume agent/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Open in console/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Resume session/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Open session/i })).toBeNull();
   });
 });

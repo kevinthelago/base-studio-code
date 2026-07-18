@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { BUILTIN_ORGS, STUDIO_NETWORK_ID } from "@/features/teams";
 import { BUILTIN_PERSONAS } from "@/features/personas";
-import { buildStudioFleetData, studioPaneIdForNode, BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID } from "./studioProject";
-import { DEBUG_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
+import { buildStudioFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID } from "./studioProject";
+import {
+  DEBUG_STUDIO_SESSION_ID, DESIGN_STUDIO_SESSION_ID,
+  ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID,
+} from "@/shared/lib/session/systemSessions";
 
 describe("studioProject (#3319)", () => {
   it("the base-studio-code project id is namespaced so it can't collide with a real project slug", () => {
@@ -49,9 +52,62 @@ describe("studioPaneIdForNode (#3326)", () => {
     expect(studioPaneIdForNode(debugNodeId)).toBe(DEBUG_STUDIO_SESSION_ID);
   });
 
-  it("returns null for the not-yet-migrated studios and any non-studio node (a click just selects them)", () => {
-    for (const id of ["designer", "librarian", "architect", "library", "proj:auth", "director"]) {
+  // #glance-resume: the designer/librarian/architect now map to their OWN app-owned session ids too, so
+  // the graph recognises a running studio session instead of treating the node as session-less.
+  it("maps every studio agent node to its stable app-owned session id", () => {
+    expect(studioPaneIdForNode("designer")).toBe(DESIGN_STUDIO_SESSION_ID);
+    expect(studioPaneIdForNode("librarian")).toBe(ALGORITHMS_STUDIO_SESSION_ID);
+    expect(studioPaneIdForNode("architect")).toBe(TEAMS_STUDIO_SESSION_ID);
+    // The mapped ids are the ACTUAL node ids buildStudioFleetData emits, so the wiring can't drift.
+    const d = buildStudioFleetData(BUILTIN_ORGS, BUILTIN_PERSONAS, false)!;
+    for (const id of ["designer", "librarian", "architect"]) {
+      expect(d.rawNodes.some((n) => n.id === id)).toBe(true);
+      expect(studioPaneIdForNode(id)).not.toBeNull();
+    }
+  });
+
+  it("returns null for resource/library nodes, the dynamic planner, and any non-studio node", () => {
+    for (const id of ["library", "algorithms", "teams", "planner", "proj:auth", "director"]) {
       expect(studioPaneIdForNode(id)).toBeNull();
     }
+  });
+});
+
+describe("studioNodeHome (#glance-resume)", () => {
+  it("sends the debugger to the in-graph morph (it's hosted on the shared TerminalHost)", () => {
+    expect(studioNodeHome("debugger")).toEqual({ kind: "morph" });
+  });
+
+  it("sends each workspace-hosted studio session to its own page", () => {
+    expect(studioNodeHome("designer")).toEqual({ kind: "page", pageMode: "designs" });
+    expect(studioNodeHome("librarian")).toEqual({ kind: "page", pageMode: "algorithms" });
+    expect(studioNodeHome("architect")).toEqual({ kind: "page", pageMode: "teams" });
+  });
+
+  it("has no home for a resource/library node or a non-studio node (nothing to open)", () => {
+    for (const id of ["library", "algorithms", "teams", "planner", "director"]) {
+      expect(studioNodeHome(id)).toBeNull();
+    }
+  });
+});
+
+describe("studioSessionLive (#glance-resume)", () => {
+  const none = { debugSession: false, paneClaudeActive: {}, paneStatus: {} };
+
+  it("reads the debugger from the Settings debug toggle", () => {
+    expect(studioSessionLive("debugger", { ...none, debugSession: true })).toBe(true);
+    expect(studioSessionLive("debugger", none)).toBe(false);
+  });
+
+  it("recognises a RUNNING designer session (the node reflects the live session, not a planned position)", () => {
+    expect(studioSessionLive("designer", { ...none, paneClaudeActive: { [DESIGN_STUDIO_SESSION_ID]: true } })).toBe(true);
+    expect(studioSessionLive("designer", { ...none, paneStatus: { [DESIGN_STUDIO_SESSION_ID]: "run" } })).toBe(true);
+    expect(studioSessionLive("designer", { ...none, paneStatus: { [DESIGN_STUDIO_SESSION_ID]: "on" } })).toBe(true);
+  });
+
+  it("is false when the session isn't up, and for a node with no session at all", () => {
+    expect(studioSessionLive("designer", none)).toBe(false);
+    expect(studioSessionLive("designer", { ...none, paneStatus: { [DESIGN_STUDIO_SESSION_ID]: "idle" } })).toBe(false);
+    expect(studioSessionLive("library", { ...none, debugSession: true })).toBe(false);
   });
 });
