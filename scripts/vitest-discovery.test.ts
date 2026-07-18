@@ -24,6 +24,14 @@ describe("vitest discovery excludes: content", () => {
     expect(testExclude).toContain("**/.claude/worktrees/**");
   });
 
+  it("excludes e2e/ — the Playwright suite vitest must never collect (#3409)", () => {
+    // #3264 added `e2e/`, a PLAYWRIGHT suite run by `npm run test:e2e`. It was kept out of
+    // `tsconfig.json` but never out of `test.exclude`, so a root `vitest run` collected
+    // `previewInteraction.spec.ts` and failed on `Failed to resolve import "@playwright/test"` —
+    // that package resolves only where playwright was installed. Intent is not exclusion; assert it.
+    expect(testExclude).toContain("e2e/**");
+  });
+
   it("PRESERVES vitest's default excludes rather than replacing them", () => {
     // Replacing (instead of spreading) configDefaults.exclude would silently re-admit
     // node_modules/dist to discovery — a far worse leak than the one being fixed.
