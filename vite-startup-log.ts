@@ -20,7 +20,11 @@ const LOG_FILE = path.resolve(process.cwd(), ".vite-dev.log");
 const SLOW_REQUEST_MS = 150;
 /** Emit the per-load summary this many ms after the last module request (load quiesced). */
 const SETTLE_MS = 3000;
-const ANSI = /\[[0-9;]*m/g;
+// ESC (U+001B) is the ANSI escape introducer; stripping colour codes out of Vite's logger
+// output requires matching that control char literally. Written as the \u001b escape rather
+// than the raw ESC byte this line used to embed, so the source stays plain ASCII.
+// eslint-disable-next-line no-control-regex -- intentional, see above: matching ESC is the point.
+const ANSI = /\u001b\[[0-9;]*m/g;
 
 function stamp(): string {
   const d = new Date();
