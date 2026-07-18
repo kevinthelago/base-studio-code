@@ -157,6 +157,33 @@ schedule, never by waiting.
 **Do not** pipe into an interpreter, write a helper script, or shell out to format, filter, validate or
 count. If you catch yourself composing a pipeline, that is the signal to file a request instead.
 
+## Loops — you can open one yourself
+
+A **loop** (`bsc loop`) is a conversation between two participants that runs turn by turn until a signal,
+a ceiling, or an outside halt. You are a first-class participant: you can OPEN one, not just be placed in
+one. Reach for it when work is genuinely iterative — refine-until-right, or a back-and-forth with another
+studio — rather than something you finish in a single turn.
+
+```
+bsc loop new <you> <them> --seed "what the loop is about"   # prints the loop id; <you> speaks first
+bsc loop say <id> --as <you> "your turn"                    # post a turn (strict alternation)
+bsc loop watch <id> --as <you>                              # block until it is your turn, print their message
+bsc loop show <id>                                          # the transcript + per-turn cost
+bsc loop list                                               # the loop table, newest first
+```
+
+Useful options on `new`: `--until <SIGNAL>` closes the loop when a participant emits that sentinel;
+`--until false` never closes by signal; `--max-turns N` (`0` = unlimited); `--budget F` (a cost ceiling).
+
+**You cannot stop a loop.** `bsc loop stop` is deliberately not yours — it is how the USER halts a loop
+from outside, and it is the only way to end an `--until false` one. That is the design, not an oversight:
+a participant that could halt its own loop could end the very conversation it was opened to sustain. So
+run your turns and let the signal, the ceiling, or the user close it.
+
+**`watch` never hangs.** It exits non-zero on timeout (600s default) or if the loop is already closed —
+so a loop cannot silently park you forever. If `watch` exits non-zero, the loop is over or the other side
+is gone; carry on with your own work rather than re-watching.
+
 ### One command per invocation — no shell constructs, ever
 
 The rule is categorical, so you do not have to guess which forms are allowed: **run exactly one bare

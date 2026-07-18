@@ -760,8 +760,10 @@ describe("architect role (#2755)", () => {
 });
 
 describe("restrictedRoleCommands (curator store surface, #3095)", () => {
+  const LOOP = ["bsc loop new", "bsc loop say", "bsc loop watch", "bsc loop show", "bsc loop list"];
+
   it("hands the curator its two store CLIs — bsc ui (components) + bsc graph (algorithms)", () => {
-    expect(restrictedRoleCommands("curator")).toEqual(["bsc ui", "bsc graph"]);
+    expect(restrictedRoleCommands("curator")).toEqual(["bsc ui", "bsc graph", ...LOOP]);
   });
 
   // The standing studio sessions' confinement now lives on the ROLE — it used to be pinned inside each
@@ -770,10 +772,30 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
   // deliberately-confined session, so they are asserted verbatim rather than derived.
   it("pins each standing studio session's whole surface, byte-identical to its old launch hook", () => {
     expect(restrictedRoleCommands("designer")).toEqual(
-      ["bsc ui", "bsc component", "bsc shot preview", "bsc loop", "bsc request new", "bsc request list"]);
-    expect(restrictedRoleCommands("librarian")).toEqual(["bsc graph", "bsc request new", "bsc request list"]);
-    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc request new", "bsc request list"]);
-    expect(restrictedRoleCommands("sound-designer")).toEqual(["bsc sound", "bsc request new", "bsc request list"]);
+      ["bsc ui", "bsc component", "bsc shot preview", ...LOOP, "bsc request new", "bsc request list"]);
+    expect(restrictedRoleCommands("librarian")).toEqual(["bsc graph", ...LOOP, "bsc request new", "bsc request list"]);
+    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", ...LOOP, "bsc request new", "bsc request list"]);
+    expect(restrictedRoleCommands("sound-designer")).toEqual(["bsc sound", ...LOOP, "bsc request new", "bsc request list"]);
+  });
+
+  // Every studio surface is a loop PARTICIPANT (#3262): it can open a loop and converse in it.
+  it("gives every restricted studio surface the loop participant verbs", () => {
+    for (const role of ["curator", "designer", "librarian", "architect", "sound-designer"] as const) {
+      expect(restrictedRoleCommands(role)).toEqual(expect.arrayContaining(LOOP));
+    }
+  });
+
+  // `bsc loop stop` is the ONLY way to halt an `--until false` loop, and the CLI withholds it from
+  // participants by design ("a separate verb from `say`, so a participant cannot reach it"). The bare
+  // `"bsc loop"` prefix used to grant it: it expands to `Bash(bsc loop *)`, which matches `bsc loop stop`
+  // — so a session could end the infinite loop it exists to run. Halting stays outside the conversation.
+  it("never grants `bsc loop stop` — a participant cannot halt its own loop", () => {
+    for (const role of ["curator", "designer", "librarian", "architect", "sound-designer"] as const) {
+      const cmds = restrictedRoleCommands(role);
+      expect(cmds).not.toContain("bsc loop stop");
+      // The bare prefix is what silently re-grants `stop` via the `Bash(<cmd> *)` rule — it must not return.
+      expect(cmds).not.toContain("bsc loop");
+    }
   });
 
   // #3369: `sound-designer` shares a WORD with `designer` but is a DISTINCT role. Any lookup that
@@ -835,6 +857,6 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
   it("returns a fresh array each call so callers can spread/mutate without corrupting the source", () => {
     const a = restrictedRoleCommands("curator");
     a.push("bsc plan");
-    expect(restrictedRoleCommands("curator")).toEqual(["bsc ui", "bsc graph"]);
+    expect(restrictedRoleCommands("curator")).toEqual(["bsc ui", "bsc graph", ...LOOP]);
   });
 });

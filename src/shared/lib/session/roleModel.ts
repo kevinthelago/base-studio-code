@@ -214,12 +214,44 @@ export function hasScopedWriteCarveOut(cap: RoleCapability): boolean {
  *   • sound-designer — the sound-kit store (synthesis descriptors: primitives, voices, cues, kits).
  *   • architect  — the teams + persona (agent-identity) stores.
  *   • curator    — the post-landing harvest + graph-optimize actor (fleet-launched). */
+/**
+ * The loop verbs a studio surface may run as a PARTICIPANT in a `bsc loop` (#3262) — every studio can
+ * open a loop and converse in it.
+ *
+ * `bsc loop stop` is deliberately ABSENT. It is the only way to halt an `--until false` (infinite) loop,
+ * and the CLI withholds it from participants on purpose — a separate verb from `say` precisely so a
+ * participant cannot reach it. Granting the bare `"bsc loop"` prefix would expand to `Bash(bsc loop *)`
+ * and match `bsc loop stop`, handing the session the halt verb and letting it end the very loop it is
+ * supposed to run forever. Enumerating the participant verbs keeps the CLI's invariant intact through
+ * the permission layer; halting stays with the user and the debug session.
+ */
+const LOOP_PARTICIPANT_COMMANDS = [
+  "bsc loop new",
+  "bsc loop say",
+  "bsc loop watch",
+  "bsc loop show",
+  "bsc loop list",
+] as const;
+
 const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> = {
-  curator: ["bsc ui", "bsc graph"],
-  designer: ["bsc ui", "bsc component", "bsc shot preview", "bsc loop", "bsc request new", "bsc request list"],
-  librarian: ["bsc graph", "bsc request new", "bsc request list"],
-  "sound-designer": ["bsc sound", "bsc request new", "bsc request list"],
-  architect: ["bsc teams", "bsc persona", "bsc request new", "bsc request list"],
+  curator: ["bsc ui", "bsc graph", ...LOOP_PARTICIPANT_COMMANDS],
+  designer: [
+    "bsc ui",
+    "bsc component",
+    "bsc shot preview",
+    ...LOOP_PARTICIPANT_COMMANDS,
+    "bsc request new",
+    "bsc request list",
+  ],
+  librarian: ["bsc graph", ...LOOP_PARTICIPANT_COMMANDS, "bsc request new", "bsc request list"],
+  "sound-designer": ["bsc sound", ...LOOP_PARTICIPANT_COMMANDS, "bsc request new", "bsc request list"],
+  architect: [
+    "bsc teams",
+    "bsc persona",
+    ...LOOP_PARTICIPANT_COMMANDS,
+    "bsc request new",
+    "bsc request list",
+  ],
 };
 
 /**
