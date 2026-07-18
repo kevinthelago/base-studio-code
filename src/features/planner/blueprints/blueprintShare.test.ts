@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, coerceTeam, coerceUiKit, coerceFleetPolicy, bundledSkillsFromManifest } from "./blueprintShare";
+import { blueprintToManifest, manifestToBlueprint, coerceBlueprint, coerceTeam, coerceUiKit, coerceSoundKit, coerceFleetPolicy, bundledSkillsFromManifest } from "./blueprintShare";
 import type { BlueprintTeam, FleetPolicy } from "../stages/blueprints";
 import { DEFAULT_FLOW } from "../fleet/agentFlow";
 import { resolveBlueprintSkillPayloads, type SkillPayload } from "./blueprintSkills";
@@ -384,6 +384,62 @@ describe("UI-kit pin (#2465)", () => {
     const persisted = JSON.parse((set![1] as { stdin: string }).stdin) as Blueprint;
     expect(persisted.id).toBe(id);
     expect(persisted.uiKit).toEqual(pin()); // the pin travels inside the blueprint JSON, verbatim
+    useAppStore.getState().removeBlueprint(id);
+  });
+});
+
+describe("sound-kit pin (#3372)", () => {
+  const spin = () => ({ id: "bsc/signal", version: "1.0.0", hash: "d".repeat(64), source: "https://gist.github.com/acme/s" });
+
+  it("coerceBlueprint preserves the pin byte-faithfully; a blueprint without one stays without one", () => {
+    const withPin = coerceBlueprint({
+      id: "x", name: "Pinned", soundKit: spin(),
+      sections: [{ key: "discovery", name: "Discovery" }],
+    });
+    expect(withPin!.soundKit).toEqual(spin());
+    const without = coerceBlueprint({ id: "x", name: "Plain", sections: [{ key: "discovery", name: "Discovery" }] });
+    expect("soundKit" in without!).toBe(false);
+  });
+
+  it("round-trips the pin through the share manifest AND the store-JSON + poll path", () => {
+    const bp: Blueprint = { ...sample(), soundKit: spin() };
+    const back = manifestToBlueprint(blueprintToManifest(bp));
+    expect(back.ok).toBe(true);
+    if (back.ok) expect(back.blueprint.soundKit).toEqual(spin());
+    // `bsc blueprint set` persists verbatim; the poll path re-coerces — the pin must survive both.
+    const restored = JSON.parse(JSON.stringify(bp)) as Blueprint;
+    expect(coerceBlueprint(restored, { allowEmptySections: true })!.soundKit).toEqual(spin());
+  });
+
+  it("coerceSoundKit requires id+version+hash (an unverifiable pin is dropped, not carried)", () => {
+    expect(coerceSoundKit(undefined)).toBeUndefined();
+    expect(coerceSoundKit("nope")).toBeUndefined();
+    expect(coerceSoundKit([])).toBeUndefined();
+    expect(coerceSoundKit({ id: "a/b", version: "1.0.0" })).toBeUndefined();   // no hash
+    expect(coerceSoundKit({ id: "a/b", hash: "h" })).toBeUndefined();          // no version
+    expect(coerceSoundKit({ version: "1.0.0", hash: "h" })).toBeUndefined();   // no id
+    // source is optional and dropped when empty/non-string; there is NO themeId twin.
+    expect(coerceSoundKit({ id: "a/b", version: "1.0.0", hash: "h" })).toEqual({ id: "a/b", version: "1.0.0", hash: "h" });
+    expect(coerceSoundKit({ id: "a/b", version: "1.0.0", hash: "h", source: 42 })).toEqual({ id: "a/b", version: "1.0.0", hash: "h" });
+    expect(coerceSoundKit({ ...spin(), themeId: "soft" })).toEqual(spin());
+    // A malformed pin never nulls the whole blueprint — it just imports unpinned.
+    const bp = coerceBlueprint({ id: "x", name: "X", soundKit: { id: "a/b" }, sections: [{ key: "discovery", name: "Discovery" }] });
+    expect(bp).not.toBeNull();
+    expect("soundKit" in bp!).toBe(false);
+  });
+
+  it("store: updateBlueprintMeta persists the pin through `bsc blueprint set`", () => {
+    useAppStore.setState({ blueprints: makeBlueprints(), activeBlueprintId: "default" });
+    const id = useAppStore.getState().addBlueprint();
+    vi.mocked(invoke).mockClear();
+    useAppStore.getState().updateBlueprintMeta(id, { soundKit: spin() });
+    const argsOf = (call: unknown[]) => (call[1] as { args?: string[] } | undefined)?.args;
+    const set = vi.mocked(invoke).mock.calls.find(
+      (call) => call[0] === "bsc" && JSON.stringify(argsOf(call)) === JSON.stringify(["blueprint", "set"]),
+    );
+    expect(set).toBeTruthy();
+    const persisted = JSON.parse((set![1] as { stdin: string }).stdin) as Blueprint;
+    expect(persisted.soundKit).toEqual(spin()); // the pin travels inside the blueprint JSON, verbatim
     useAppStore.getState().removeBlueprint(id);
   });
 });
