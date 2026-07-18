@@ -8,6 +8,16 @@
 //
 // Pure (no React/Tauri) so the validation + edit transforms are unit-testable and the
 // store can seed from it directly — mirrors how blueprints.ts works.
+//
+// SCOPE: this module owns the SHAPE (`DataModel`/`Entity`/`Field`) and the SHAPING OPS over it —
+// it is NOT the canonical Data Model. The canonical model is the per-project DuckDB store in
+// crates/data, reached via `bsc data model get` / `bsc data model set` (#1446); the Source pane
+// derives a model from a scan (`lib/dataModelDerivation.ts`) and persists it there.
+//
+// The edit transforms (`addEntity` / `updateEntity` / `removeEntity` / `addField` / `updateField` /
+// `removeField` / `toggleIdentity`) are the PENDING SHAPING SURFACE — the intended implementation of
+// "the user shapes the derived result" — and have no UI caller yet (#3249). They are deliberately
+// kept: not dead code (#3244).
 
 export type FieldType = "string" | "number" | "bool" | "date" | "money" | "ref" | "enum";
 

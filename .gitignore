@@ -8,6 +8,12 @@ dist-ssr/
 # Test coverage output
 coverage/
 
+# Playwright (opt-in e2e harness, #3264) — run artifacts + the downloaded browser's traces
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
 # Tauri / Cargo build artifacts
 /target/
 src-tauri/target/

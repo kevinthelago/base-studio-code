@@ -127,6 +127,10 @@ export interface BlueprintCard {
   hasTeam: boolean;
   /** The pinned UI kit (#2465), pared to identity. */
   uiKit?: { id: string; version: string; themeId?: string };
+  /** The pinned SOUND kit (#3372), pared to identity the same way — the hash stays desktop-side
+   *  (mobile renders WHICH kit, it never resolves or verifies one). Additive + optional, so an
+   *  older mobile build simply ignores it. */
+  soundKit?: { id: string; version: string };
 }
 
 export interface BlueprintsPayload {
@@ -150,6 +154,7 @@ export function buildBlueprintsPayload(input: {
       stageCount: b.sections.length,
       hasTeam: !!b.team && b.team.positions.length > 0,
       uiKit: b.uiKit ? { id: b.uiKit.id, version: b.uiKit.version, themeId: b.uiKit.themeId } : undefined,
+      soundKit: b.soundKit ? { id: b.soundKit.id, version: b.soundKit.version } : undefined,
     })),
     activeTeam: active?.team && active.team.positions.length > 0 ? active.team : null,
   };

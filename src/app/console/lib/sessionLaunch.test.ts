@@ -256,18 +256,20 @@ describe("buildSessionSettings", () => {
     expect(out.bashPosture).toBe(build.tools.bash);
   });
 
+  // Every studio surface is a `bsc loop` participant (#3262); `stop` is withheld — see sessionRoles.test.ts.
+  const CURATOR_LOOP = ["bsc loop new", "bsc loop say", "bsc loop watch", "bsc loop show", "bsc loop list"];
   it("grants a curator pane its fixed bsc ui/graph store surface on top of the profile (#3095)", () => {
     // No profile assigned ⇒ the curator's WHOLE auto-run surface is the two store CLIs it harvests +
     // optimizes with (`bsc ui`, `bsc graph`). Layered, not replaced — see the profile case below.
     const bare = buildSessionSettings(mkStore({ paneRoles: { p: "curator" } }), "p");
-    expect(bare.allowedCommands).toEqual(["bsc ui", "bsc graph"]);
+    expect(bare.allowedCommands).toEqual(["bsc ui", "bsc graph", ...CURATOR_LOOP]);
     // With a profile, the fixed surface is APPENDED to the profile's own allowedCommands.
     const withProf = buildSessionSettings(
       mkStore({ paneRoles: { p: "curator" }, paneProfiles: { p: "pf_auto" }, agentProfiles: PROFILES }),
       "p",
     );
     const prof = resolveProfileSettings(PROFILES.find((x) => x.id === "pf_auto")!);
-    expect(withProf.allowedCommands).toEqual([...prof.allowedCommands, "bsc ui", "bsc graph"]);
+    expect(withProf.allowedCommands).toEqual([...prof.allowedCommands, "bsc ui", "bsc graph", ...CURATOR_LOOP]);
     // Every OTHER role is unchanged — the store surface is curator-only, so a worker never auto-runs it.
     const worker = buildSessionSettings(mkStore({ paneRoles: { p: "worker" } }), "p");
     expect(worker.allowedCommands).not.toContain("bsc ui");
@@ -419,5 +421,47 @@ describe("resolveStartupPromptFreshOnly (#2052)", () => {
     for (const id of [DESIGN_STUDIO_SESSION_ID, ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID]) {
       expect(resolveStartupPromptFreshOnly(mkStore(), id, true)).toBe(true);
     }
+  });
+});
+
+// #3423: `paneRoles` is written only by `seedStudioLaunchState`, inside `StudioSessionMount`'s effect —
+// which renders only for a studio in `wantedStudios`, a transient set that is empty after every restart.
+// A studio opened in that window launched with NO role, and a missing role means no gate, no
+// restrictedAllow and no denies: an unconfined general shell on the app's most restricted surface.
+// The role is now derived from the (stable, app-owned) pane id, so confinement travels with identity.
+describe("studio confinement survives an unseeded store (#3423)", () => {
+  const STUDIOS = [DESIGN_STUDIO_SESSION_ID, ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID];
+
+  it("a studio pane with an EMPTY paneRoles is still confined — the regression", () => {
+    for (const paneId of STUDIOS) {
+      const r = buildSessionSettings(mkStore({ paneRoles: {} }), paneId);
+      expect(r.restrictedAllow).toBe(true);
+      expect(r.allowedCommands.length).toBeGreaterThan(0);
+      // A confined studio must NEVER be flipped to bypass — that ignores permissions.deny outright.
+      expect(r.bypass).toBe(false);
+    }
+  });
+
+  it("derives the SAME settings whether the store seeded the role or not", () => {
+    const seeded = buildSessionSettings(mkStore({ paneRoles: { [DESIGN_STUDIO_SESSION_ID]: "designer" } }), DESIGN_STUDIO_SESSION_ID);
+    const bare = buildSessionSettings(mkStore({ paneRoles: {} }), DESIGN_STUDIO_SESSION_ID);
+    expect(bare.allowedCommands).toEqual(seeded.allowedCommands);
+    expect(bare.deniedCommands).toEqual(seeded.deniedCommands);
+    expect(bare.restrictedAllow).toEqual(seeded.restrictedAllow);
+  });
+
+  it("each studio pane derives its OWN role, never another's surface", () => {
+    const designer = buildSessionSettings(mkStore({ paneRoles: {} }), DESIGN_STUDIO_SESSION_ID);
+    const librarian = buildSessionSettings(mkStore({ paneRoles: {} }), ALGORITHMS_STUDIO_SESSION_ID);
+    expect(designer.allowedCommands).toContain("bsc ui");
+    expect(librarian.allowedCommands).not.toContain("bsc ui");
+    expect(librarian.allowedCommands).toContain("bsc graph");
+  });
+
+  // The fallback is studio-ONLY: a normal pane with no role keeps its existing (unrestricted) behaviour,
+  // so this cannot silently confine a manual console.
+  it("leaves a non-studio pane's roleless behaviour unchanged", () => {
+    const r = buildSessionSettings(mkStore({ paneRoles: {} }), "t0p0");
+    expect(r.restrictedAllow).toBeFalsy();
   });
 });

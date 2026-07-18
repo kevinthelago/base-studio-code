@@ -19,17 +19,18 @@ const SORT: AlgoImpl = {
   code: "export function* sortSteps(a: number[]) { /* ... */ }",
 };
 
-// A plain impl with NO registered visualization — the control group for "code-only, no preview".
-const FIB: AlgoImpl = {
-  id: "fibonacci.ts",
-  tech: "typescript",
+// A plain impl with NO registered visualization — the control group for "code-only, no preview". (It used
+// to be fibonacci, which gained a scalar/accumulate program in #3220; gcd has no trace-program yet.)
+const NO_VIZ: AlgoImpl = {
+  id: "euclid-gcd.rs",
+  tech: "rust",
   role: "algorithm",
-  name: "fibonacci",
+  name: "gcd",
   composes: [],
-  code: "export function fibonacci(n: number): number { return n; }",
+  code: "pub fn gcd(a: u64, b: u64) -> u64 { if b == 0 { a } else { gcd(b, a % b) } }",
 };
 
-const graph: KnowledgeGraph = { implementations: [SORT, FIB] };
+const graph: KnowledgeGraph = { implementations: [SORT, NO_VIZ] };
 const noop = () => {};
 
 describe("AlgorithmsInspector — inline Visualization preview (#3199/#3205)", () => {
@@ -70,10 +71,10 @@ describe("AlgorithmsInspector — inline Visualization preview (#3199/#3205)", (
     const { container: a } = render(<AlgorithmsInspector graph={graph} focusedImpl={SORT} />);
     expect(a.querySelector(".array-cell")).toBeNull();
     // A viz-less impl → code only, no preview, even with a handler.
-    const { container: b } = render(<AlgorithmsInspector graph={graph} focusedImpl={FIB} onExpandViz={noop} />);
+    const { container: b } = render(<AlgorithmsInspector graph={graph} focusedImpl={NO_VIZ} onExpandViz={noop} />);
     expect(screen.queryByRole("button", { name: /expand visualization/i })).toBeNull();
     expect(b.querySelector(".array-cell")).toBeNull();
-    expect(b.querySelector(".algo-code")?.textContent).toContain("fibonacci");
+    expect(b.querySelector(".algo-code")?.textContent).toContain("gcd");
   });
 
   it("prompts for a selection in the empty state", () => {

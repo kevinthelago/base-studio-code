@@ -24,6 +24,15 @@ describe("vitest discovery excludes: content", () => {
     expect(testExclude).toContain("**/.claude/worktrees/**");
   });
 
+  it("excludes the e2e/ Playwright harness (#3264/#3409/#3411)", () => {
+    // e2e/ is deliberately outside the default gate, but its specs match vitest's default
+    // `*.spec.ts` include glob. The exclusion was documented in CLAUDE.md yet never listed here,
+    // so a root run collected `e2e/previewInteraction.spec.ts` and the suite died on
+    // `@playwright/test` — a browser dep the zero-install worktree workflow is specifically not
+    // meant to require. Intent is not exclusion; assert it.
+    expect(testExclude).toContain("e2e/**");
+  });
+
   it("PRESERVES vitest's default excludes rather than replacing them", () => {
     // Replacing (instead of spreading) configDefaults.exclude would silently re-admit
     // node_modules/dist to discovery — a far worse leak than the one being fixed.

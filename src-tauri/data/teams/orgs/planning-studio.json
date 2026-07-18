@@ -2,7 +2,7 @@
   "id": "org-planning-studio",
   "order": 3,
   "name": "Studio Network",
-  "blurb": "The app-owned studio sessions that collaborate during a planning session: the planner sources live visuals from the designer and algorithms from the librarian, the designer commissions the librarian to generate data for richer component previews, the architect designs the teams, and the sound-designer authors the sound kits. Each session stewards only its own library — the designer the bsc ui components, the librarian the bsc graph algorithms, the architect the teams, the sound-designer the bsc sound kits; the planner authors nothing. When the debug session is toggled on (Settings), the debugger joins and fixes the bsc ui tooling the designer reports (#2940/#3298).",
+  "blurb": "The app-owned studio sessions that collaborate during a planning session: the planner sources live visuals from the designer and algorithms from the librarian, the designer commissions the librarian to generate data for richer component previews, the architect designs the teams the plan runs on, and the sound-designer authors the sound kits. Each session stewards only its own library — the designer the bsc ui components, the librarian the bsc graph algorithms, the architect the teams, the sound-designer the bsc sound kits; the planner authors nothing. When the debug session is toggled on (Settings), the debugger joins and fixes the bsc ui tooling the designer reports (#2940/#3298).",
   "positions": [
     { "nodeId": "planner",    "kind": "agent",    "personaId": "persona-planner",    "x": 384, "y": 48  },
     { "nodeId": "designer",   "kind": "agent",    "personaId": "persona-designer",   "x": 144, "y": 216 },
@@ -21,6 +21,7 @@
     { "id": "r-stewards-designer", "archetype": "stewards", "from": "designer",  "to": "library",    "bow": 22  },
     { "id": "r-stewards-librarian","archetype": "stewards", "from": "librarian", "to": "algorithms", "bow": -22 },
     { "id": "r-stewards-architect","archetype": "stewards", "from": "architect", "to": "teams",      "bow": 0   },
+    { "id": "r-serves-architect",  "archetype": "serves",   "from": "architect", "to": "planner",    "bow": -40 },
     { "id": "r-serves-sound-designer",   "archetype": "serves",   "from": "sound-designer", "to": "planner", "bow": 40 },
     { "id": "r-stewards-sound-designer", "archetype": "stewards", "from": "sound-designer", "to": "sounds",  "bow": 0  }
   ]

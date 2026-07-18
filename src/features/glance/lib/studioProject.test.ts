@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { BUILTIN_ORGS, STUDIO_NETWORK_ID } from "@/features/teams";
 import { BUILTIN_PERSONAS } from "@/features/personas";
-import { buildStudioFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID } from "./studioProject";
+import { buildStudioFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus, BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID } from "./studioProject";
 import {
   DEBUG_STUDIO_SESSION_ID, DESIGN_STUDIO_SESSION_ID,
   ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID,
@@ -113,5 +113,57 @@ describe("studioSessionLive (#glance-resume)", () => {
     expect(studioSessionLive("designer", none)).toBe(false);
     expect(studioSessionLive("designer", { ...none, paneStatus: { [DESIGN_STUDIO_SESSION_ID]: "idle" } })).toBe(false);
     expect(studioSessionLive("library", { ...none, debugSession: true })).toBe(false);
+  });
+});
+
+// #3421: studio nodes are keyed by their STABLE app-owned session id, not `fleetPaneId(project, node)`.
+// Running the fleet overlay over them looked up `<project>:designer`, which never exists — so no studio
+// node was ever found live. Invisible while unmatched nodes fell through to idle; #3415 made them read
+// `off`, pinning every studio node `off` however its session was doing.
+describe("applyStudioLiveStatus (#3421)", () => {
+  const node = (id: string) => ({ id, slug: id, role: "service" as const, roleLabel: id, health: "idle" as const, activity: "idle" as const });
+  const sig = (over: Partial<{ debugSession: boolean; paneClaudeActive: Record<string, boolean>; paneStatus: Record<string, string | undefined> }> = {}) =>
+    ({ debugSession: false, paneClaudeActive: {}, paneStatus: {}, ...over });
+  const of = (nodes: ReturnType<typeof node>[], s: ReturnType<typeof sig>) =>
+    Object.fromEntries(applyStudioLiveStatus(nodes, s).map((n) => [n.id, { health: n.health, activity: n.activity }]));
+
+  it("a studio with no mounted session reads off — not idle", () => {
+    expect(of([node("designer")], sig())).toEqual({ designer: { health: "off", activity: "idle" } });
+  });
+
+  it("a MOUNTED but quiet studio reads idle — the session exists, it just is not working", () => {
+    const r = of([node("designer")], sig({ paneClaudeActive: { [DESIGN_STUDIO_SESSION_ID]: true } }));
+    expect(r).toEqual({ designer: { health: "idle", activity: "idle" } });
+  });
+
+  it("a WORKING studio reads healthy · building", () => {
+    const r = of([node("designer")], sig({ paneStatus: { [DESIGN_STUDIO_SESSION_ID]: "run" } }));
+    expect(r).toEqual({ designer: { health: "healthy", activity: "building" } });
+  });
+
+  // The regression itself: turning a studio ON must move it off `off`.
+  it("turning a studio on moves it off `off` — the #3421 regression", () => {
+    const before = of([node("designer")], sig());
+    const after = of([node("designer")], sig({ paneStatus: { [DESIGN_STUDIO_SESSION_ID]: "run" } }));
+    expect(before.designer.health).toBe("off");
+    expect(after.designer.health).not.toBe("off");
+  });
+
+  it("keys each studio by its OWN session id — one running studio never lights up another", () => {
+    const r = of([node("designer"), node("librarian"), node("architect")], sig({ paneStatus: { [ALGORITHMS_STUDIO_SESSION_ID]: "run" } }));
+    expect(r.librarian.health).toBe("healthy");
+    expect(r.designer.health).toBe("off");
+    expect(r.architect.health).toBe("off");
+  });
+
+  it("the debugger follows the debugSession flag, not a pane status", () => {
+    expect(of([node("debugger")], sig({ debugSession: true })).debugger.health).toBe("idle");
+    expect(of([node("debugger")], sig({ debugSession: false })).debugger.health).toBe("off");
+  });
+
+  // A library has no session — forcing it `off` would misreport it as a dead one.
+  it("leaves a node with no fixed session untouched (a library, the dynamic planner)", () => {
+    const lib = { ...node("algorithms"), health: "idle" as const };
+    expect(applyStudioLiveStatus([lib], sig())).toEqual([lib]);
   });
 });

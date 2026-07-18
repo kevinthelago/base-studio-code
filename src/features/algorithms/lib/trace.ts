@@ -16,6 +16,32 @@
 /** The data structures a renderer exists for (#3171). Same visual vocabulary as the components'
  *  `DataShape` — one language across both pillars. `tree` also renders heaps; `stack` also renders
  *  queues/deques (via its `mode`); `matrix` also renders grids/DP tables. */
+/** WHERE in the trace-program's source the op that produced a frame came from (#3250) — a half-open
+ *  character range into the program source, plus the 1-based line of `start` for a readable readout.
+ *
+ *  PROVENANCE, not a guess: the range is captured at COMPILE time by AST-instrumenting each tracer call
+ *  (`viz/examples/vizInstrument.ts`), so a repeated op (quicksort's two `swap` branches) points at the
+ *  call that actually ran — something a `.swap(` text search cannot disambiguate. Offsets index the
+ *  `source` string the run reports (`VizRun.source`), which is the exact string that was parsed — so the
+ *  code column and the highlight can never drift apart. */
+export interface SourceRange {
+  /** Inclusive start offset into the trace-program source. */
+  start: number;
+  /** Exclusive end offset. */
+  end: number;
+  /** 1-based line number of {@link start} — for the "line N" readout beside the animation. */
+  line: number;
+}
+
+/** The metadata every frame may carry, independent of its structure (#3250). Kept as its own interface so
+ *  each frame type opts in by `extends`-ing it — which preserves the discriminated union's narrowing on
+ *  `structure` (an intersection over the union would not). */
+export interface FrameMeta {
+  /** The source range of the op that produced this frame, when the program was compiled with source
+   *  instrumentation (stored `vizCode` only — an in-app TS program has no runtime source to point at). */
+  loc?: SourceRange;
+}
+
 export type StructureName =
   | "array"
   | "matrix"
@@ -29,17 +55,25 @@ export type StructureName =
 /* ─────────────────────────────── array (also sorts / scans) ─────────────────────────────── */
 
 /** An array VERB (#3171) — the transient per-frame operation the `swap`/`compare`/`set` animations bind
- *  to. `mark` is durable-ish (a cell reaching a terminal state: `sorted`/`pivot`/`min`). `at` is the
- *  cell index, or the index PAIR a compare/swap spans. */
+ *  to. `mark` is durable-ish (a cell reaching a terminal state: `sorted`/`pivot`/`min`/`found`). `at` is
+ *  the cell index, or the index PAIR a compare/swap spans.
+ *
+ *  `probe` (#3220) is the SEARCH verb: one cell examined against an EXTERNAL target. It is deliberately
+ *  distinct from `compare`, which spans an index PAIR — a search has no second cell to compare with, so a
+ *  self-pair `compare` would misrepresent it (and animate two cells for a one-cell read). Its terminal
+ *  twin is the `found` mark: the cell the search landed on, emitted LAST (like `sorted`), so it survives
+ *  as the trace's resting state rather than being superseded by a later verb. (Not to be confused with
+ *  the unrelated {@link TableOp} `probe`, which addresses a hash BUCKET.) */
 export type ArrayOp =
   | { op: "compare"; at: [number, number] }
+  | { op: "probe"; at: number }
   | { op: "swap"; at: [number, number] }
   | { op: "set"; at: number }
-  | { op: "mark"; at: number; as: "sorted" | "pivot" | "min" };
+  | { op: "mark"; at: number; as: "sorted" | "pivot" | "min" | "found" };
 
 /** One frame of an array's evolution. `data` is the current cell values; `cursors` are named pointers
  *  (`{ i: 3, j: 5 }`) a renderer draws as carets under cells. */
-export interface ArrayFrame {
+export interface ArrayFrame extends FrameMeta {
   structure: "array";
   data: (number | string)[];
   ops?: ArrayOp[];
@@ -58,7 +92,7 @@ export type MatrixOp =
 
 /** One frame of a 2-D grid's evolution. `heat` opts the renderer into a value→color heat map (magnitude
  *  visualization) rather than printing raw values — for changes-over-time / DP-fill traces. */
-export interface MatrixFrame {
+export interface MatrixFrame extends FrameMeta {
   structure: "matrix";
   data: (number | string)[][];
   ops?: MatrixOp[];
@@ -92,7 +126,7 @@ export type GraphOp =
  * Keeping them in one field made a traversal state clobber the anchor, so a rendered BFS/Dijkstra could not
  * show its own origin or (once reached) its goal.
  */
-export interface GraphFrame {
+export interface GraphFrame extends FrameMeta {
   structure: "graph";
   nodes: { id: string; label?: string; value?: number | string; x?: number; y?: number }[];
   edges: { from: string; to: string; weight?: number }[];
@@ -118,7 +152,7 @@ export type ListOp =
 
 /** One frame of a linked list's evolution. `data` is the node values in list order; `doubly` opts into
  *  rendering back-pointers. `cursors` are named pointers (`{ head: 0, cur: 2 }`). */
-export interface ListFrame {
+export interface ListFrame extends FrameMeta {
   structure: "linked-list";
   data: (number | string)[];
   ops?: ListOp[];
@@ -141,7 +175,7 @@ export type TreeOp =
 
 /** One frame of a tree/heap's evolution. `nodes` carry each node's `value` + its `parent` id (the root's
  *  is absent) — the renderer derives the layout. `marks` are durable per-node states (current/path/target). */
-export interface TreeFrame {
+export interface TreeFrame extends FrameMeta {
   structure: "tree";
   nodes: { id: string; value: number | string; parent?: string }[];
   ops?: TreeOp[];
@@ -162,7 +196,7 @@ export type TableOp =
 /** One frame of a hash table / map. `rows` are the entries (each optionally assigned to a `bucket`);
  *  `buckets` is the table's bucket count (so the renderer can draw empty slots). `cursors` are named
  *  key pointers. */
-export interface TableFrame {
+export interface TableFrame extends FrameMeta {
   structure: "table";
   rows: { key: string; value: number | string; bucket?: number }[];
   buckets?: number;
@@ -181,7 +215,7 @@ export type StackOp =
 
 /** One frame of a LIFO/FIFO. `data` is bottom→top order; `mode` picks the discipline (default `stack`) so
  *  ONE renderer covers stacks, queues, and deques. `cursors` are named index pointers. */
-export interface StackFrame {
+export interface StackFrame extends FrameMeta {
   structure: "stack";
   data: (number | string)[];
   mode?: "stack" | "queue" | "deque";
@@ -201,7 +235,7 @@ export type ScalarOp =
 /** One frame of the named scalar variables (counters, sums, min/max, flags). `values` is the current
  *  variable map; `ops` is a per-VARIABLE verb map (keyed by name, unlike the other structures' op arrays);
  *  `timeline` opts into a sparkline of each variable's history rather than a single readout. */
-export interface ScalarFrame {
+export interface ScalarFrame extends FrameMeta {
   structure: "scalar";
   values: Record<string, number | string>;
   ops?: Record<string, ScalarOp>;
@@ -223,7 +257,7 @@ export type StructureFrame =
 
 /** A multi-structure frame (#3171) — a NAMED map of per-structure panels animating in sync (Dijkstra →
  *  `{ graph, heap, dist }`). The key is the panel's label; each value is a single-structure frame. */
-export interface PanelsFrame {
+export interface PanelsFrame extends FrameMeta {
   panels: Record<string, StructureFrame>;
 }
 

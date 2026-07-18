@@ -12,7 +12,7 @@
 // Edges are deduped by `crossGraphEdgeId`; a component with NO `@bsc/…` import contributes nothing (an empty
 // result ⇒ the band is omitted entirely, byte-identical today).
 import { crossGraphEdgeId, type CrossGraphEdge, type ResolvedNode } from "@/shared/lib/graph/crossGraph";
-import { formatNodeUrn, isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
+import { formatNodeUrn, isLibrarySpec, parseNodeUrn, type NodeGraph } from "@/shared/lib/graph/nodeUrn";
 import { resolveLibrarySpec } from "./libraryModules";
 import type { ComponentRecord } from "./model";
 
@@ -75,4 +75,51 @@ export function resolveComponentLibraryRefs(comps: readonly ComponentRecord[]): 
     }
   }
   return { edges, nodes: [...nodesByUrn.values()] };
+}
+
+/** One (kit → library node) dependency, rolled up from the component level (#3133) — "some component of
+ *  `kitId` requires this library node". The APP-LEVEL projection of {@link resolveComponentLibraryRefs}:
+ *  Glance joins it against the kit-consumer index (`kitUsage`) to draw a PROJECT's `requires` edges, so it
+ *  carries only what a band node needs (identity + label), never a component or a blob of `code`. */
+export interface KitLibraryRef {
+  /** The consuming kit — the join key against `kitUsage`'s `kitId`. */
+  kitId: string;
+  /** The library graph the required node lives in. Never `"ui"` (see {@link resolveKitLibraryRefs}). */
+  graph: NodeGraph;
+  /** The required node's canonical in-graph id (`fibonacci.ts`, `click`) — the band node's library id. */
+  id: string;
+  /** The node's display name (`fibonacci`) — the band card's label. */
+  label: string;
+}
+
+/**
+ * Roll a component library composition UP to the KIT level (#3133) — every (kit, library node) pair the
+ * components declare, deduped, in first-seen order. This is the app-graph's data source: a project consumes
+ * kits (`kitUsage`), a kit's components require library nodes, so a project transitively requires them.
+ *
+ * Derived from {@link resolveComponentLibraryRefs} (one scan, no second regex pass): each `requires` edge's
+ * `fromUrn` is `ui:<kitId>/<componentId>`, so the kit falls straight out of the URN.
+ *
+ * `ui`-graph targets are EXCLUDED: a `ui` library node id would be `kit:<id>`, colliding with the Glance
+ * node id of an actual UI kit. Today `resolveLibrarySpec` never resolves the `ui` graph, so this is a fence
+ * against a future `@bsc/ui/…` vendor path silently corrupting the app graph, not live filtering.
+ *
+ * Cost is one pass over the derived edges — the expensive part is the source scan inside
+ * `resolveComponentLibraryRefs`, so callers should memoize on the component list. Pure + deterministic.
+ */
+export function resolveKitLibraryRefs(comps: readonly ComponentRecord[]): KitLibraryRef[] {
+  const { edges, nodes } = resolveComponentLibraryRefs(comps);
+  const nodeByUrn = new Map(nodes.map((n) => [n.urn, n]));
+  const out: KitLibraryRef[] = [];
+  const seen = new Set<string>();
+  for (const e of edges) {
+    const from = parseNodeUrn(e.fromUrn);
+    const node = nodeByUrn.get(e.toUrn);
+    if (!from || !node || node.graph === "ui") continue;
+    const key = `${from.kit}\u0000${node.urn}`; // one ref per (kit, node) — N components of a kit ⇒ 1 ref
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ kitId: from.kit, graph: node.graph, id: node.id, label: node.label });
+  }
+  return out;
 }

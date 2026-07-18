@@ -2,7 +2,7 @@
   "directive": "**Function** — this project is a SINGLE-PURPOSE serverless function, NOT a multi-feature app. Establish its whole spec in ONE lean pass and write it to `function.md`: the TASK (the one job it does), the TRIGGER (how it's invoked — a manual run, a cron schedule, an HTTP/webhook call, an event, or an MCP tool an agent calls), its INPUTS → OUTPUT contract, and the RUNTIME (language + serverless target). Keep it to one function, one job — do not decompose it into a product. Propose, interrogate with the user, write `function.md`, then present it and let the USER confirm the section — never advance the stage yourself.",
   "name": "Function",
   "glyph": "λ",
-  "icon": "zap",
+  "icon": "bolt",
   "hue": 50,
   "gate": "spec confirmed",
   "deps": [],

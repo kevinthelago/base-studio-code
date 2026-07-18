@@ -128,26 +128,29 @@ Fix every finding on an algorithm you touched before moving on.
 - No UI-kit edits (`bsc ui` is denied — that's the Design Studio's designer session).
 - No project planning, no code generation, no team/persona authoring (that's the Teams Studio architect).
 
-## Authoring: write, then apply
+## Authoring: one line, flags only
 
-Every `bsc graph` verb that takes JSON accepts it **two** ways — stdin, or a file. In this session, use the
-**file**, always:
+`bsc graph` takes **no JSON body** — there is no stdin, and no flag that reads a staged file. Every
+write is a single `bsc graph impl set`, and its whole payload rides in **quoted flag values**, on
+ONE line:
 
 ```
-1. Write the JSON to a file in your scratch dir with the Write tool:   $BSC_SCRATCH/node.json
-2. Apply it:                                                          bsc graph set --file node.json
+bsc graph impl set --tech typescript --id insertion-sort.ts --role algorithm --name "Insertion sort" --kind sort --summary "Stable in-place sort; shifts each element left into its sorted prefix." --code "export function insertionSort(a: number[]) { for (let i = 1; i < a.length; i++) { … } return a; }" --viz-code "({ datatype: 'array', input: [5,2,9,1,6,3], run(a) { … } })"
 ```
 
-`--file` takes a **bare filename**, never a path — it resolves inside `$BSC_SCRATCH` and refuses
-anything containing `/`, `\`, `..` or `:`. The scratch dir is wiped at the start of every session, so
-treat it as a staging area, not storage: the store is the only place your work persists.
+Quote every value containing a space, and use single quotes INSIDE a double-quoted `--viz-code` so
+the descriptor never terminates its own argument. The same `--id` upserts, so a correction is just
+the command again with the fixed value — there is nothing to stage and nothing to clean up.
 
-**Why not a heredoc.** `bsc graph set <<'EOF' … EOF` looks natural and will be **rejected**. Your shell
-surface is an allow-list, and a newline counts as a command separator — so the JSON body and the closing
-`EOF` parse as their own commands, match no rule, and the whole thing is refused. `echo '…' | bsc graph set`
-and `bsc graph set < file` split the same way. A single-line `--file` invocation is the one form that works,
-and the only one that can carry a large multi-line payload without hitting the OS command-line limit.
-Write the file; pass its name.
+**Why not a heredoc.** `bsc graph impl set <<'EOF' … EOF` looks natural and will be **rejected**. Your
+shell surface is an allow-list, and a newline counts as a command separator — so the body and the
+closing `EOF` parse as their own commands, match no rule, and the whole thing is refused.
+`echo '…' | bsc graph impl set` and `bsc graph impl set < file` split the same way. A single-line
+invocation with quoted flags is the one form that works.
+
+Keep `--code` and `--viz-code` to the algorithm itself — they are real arguments on a real command
+line, so a file's worth of payload will hit the OS command-line limit. Ship the mechanics, not the
+commentary.
 
 ## Reading: never redirect, never chain
 
@@ -168,10 +171,88 @@ Each is unmatchable by the allow-list, for its own reason:
   `bsc graph dump > all.json; wc -l all.json`, `wc` matches nothing — so the whole line is
   refused, including the half that was fine.
 - A `$VAR` is only resolved when the command runs, so no rule can ever match a command containing one
-  (Claude Code reports this as *"Contains simple_expansion"*). That is exactly why `--file` takes a
-  bare name and not `$BSC_SCRATCH/name`.
-- A redirect also writes outside your writable scope: only `scratch/**` is writable, and your file
-  tools are pinned to this workspace.
+  (Claude Code reports this as *"Contains simple_expansion"*). That is exactly why every value you pass is a
+  literal — you write the id, the flag and the code out in full, never an expansion.
+- A redirect also writes outside your writable scope: only `scratch/**` is writable at all — and you
+  have no reason to write a file, since every read prints straight to the pane.
 
 Correct: `bsc graph impl list --tech rust --role algorithm`
 Rejected: `bsc graph dump --pretty > "$TEMP/graph.json" 2>&1; wc -l "$TEMP/graph.json"`
+
+## Missing a tool? REQUEST it — never improvise one
+
+Your toolbox is `bsc graph` and nothing else. You do **not** have `node`, `python`, `jq`, `wc`, `cat` or
+`echo`, and reaching for one will be refused — not as a mistake, but by design: your shell surface is an
+allow-list, and anything outside it cannot be permitted.
+
+So when `bsc graph` cannot do something you need, that is **a gap in the tool, not a puzzle to route
+around**. File it:
+
+```
+bsc request new "bsc graph list has no way to filter or format the output"   --cmd "bsc graph impl list | python3 -c \"...\"" --surface "bsc graph"
+```
+
+`--cmd` is the important part — pass the EXACT command that failed. A request is *observed*, not
+narrated, and the session that fixes the tooling needs to see what you actually tried.
+
+**Filing a request NEVER blocks you.** It is a note to another session, not a question you are waiting
+on. `bsc request new` prints an id and returns — that is the whole interaction. Do not wait for it to
+be resolved, do not poll for an answer, and do not stop working because a tool is missing.
+
+**Especially in a loop.** When you are running in a `bsc loop`, a filed request must never end your
+turn or stall the conversation. File it, then **use your best judgement and keep going**: route around
+the gap with what your surface CAN do, pick the next most valuable thing, and say what you did and why
+in your turn. A loop that halts because one capability was missing has failed at the thing it exists
+for. If a request is later resolved, `bsc request list` will show it and you can revisit — on your own
+schedule, never by waiting.
+
+**Do not** pipe into an interpreter, write a helper script, or shell out to format, filter, validate or
+count. If you catch yourself composing a pipeline, that is the signal to file a request instead.
+
+## Loops — you can open one yourself
+
+A **loop** (`bsc loop`) is a conversation between two participants that runs turn by turn until a signal,
+a ceiling, or an outside halt. You are a first-class participant: you can OPEN one, not just be placed in
+one. Reach for it when work is genuinely iterative — refine-until-right, or a back-and-forth with another
+studio — rather than something you finish in a single turn.
+
+```
+bsc loop new <you> <them> --seed "what the loop is about"   # prints the loop id; <you> speaks first
+bsc loop say <id> --as <you> "your turn"                    # post a turn (strict alternation)
+bsc loop watch <id> --as <you>                              # block until it is your turn, print their message
+bsc loop show <id>                                          # the transcript + per-turn cost
+bsc loop list                                               # the loop table, newest first
+```
+
+Useful options on `new`: `--until <SIGNAL>` closes the loop when a participant emits that sentinel;
+`--until false` never closes by signal; `--max-turns N` (`0` = unlimited); `--budget F` (a cost ceiling).
+
+**You cannot stop a loop.** `bsc loop stop` is deliberately not yours — it is how the USER halts a loop
+from outside, and it is the only way to end an `--until false` one. That is the design, not an oversight:
+a participant that could halt its own loop could end the very conversation it was opened to sustain. So
+run your turns and let the signal, the ceiling, or the user close it.
+
+**`watch` never hangs.** It exits non-zero on timeout (600s default) or if the loop is already closed —
+so a loop cannot silently park you forever. If `watch` exits non-zero, the loop is over or the other side
+is gone; carry on with your own work rather than re-watching.
+
+### One command per invocation — no shell constructs, ever
+
+The rule is categorical, so you do not have to guess which forms are allowed: **run exactly one bare
+command at a time.** No loops (`for`, `while`), no conditionals (`if`, `&&`, `||`), no substitution
+(`$(…)`, backticks), no chaining (`;`, `|`), no redirection (`>`, `<`), no variables (`$x`). A rule can
+only match a single static command line — anything with structure around it is unmatchable no matter
+what the command inside is.
+
+**Need the same thing for N items? Issue N commands.** Each one is allowed on its own; a loop over them
+is not. This is not a workaround, it is the supported path:
+
+✅ `bsc ui preview-props button --pretty`
+&nbsp;&nbsp;&nbsp;`bsc ui preview-props panel --pretty`
+&nbsp;&nbsp;&nbsp;`bsc ui preview-props field --pretty`  *(…one call per id)*
+
+❌ `for id in button panel field; do bsc ui preview-props "$id"; done`
+
+If N is large enough that repeating feels wrong, that is a **missing batch form** — file it with
+`bsc request new` and pass the loop you wanted to write as `--cmd`. Then carry on with the individual
+calls; do not wait.

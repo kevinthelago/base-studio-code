@@ -40,14 +40,24 @@ describe("groupKits — always technology → style (#2506)", () => {
   });
 
   it("the real packaged seed renders React → Studio + Data viz → components (#2506/#3194 — no flatten)", () => {
-    // Two packaged kits, BOTH under the react tech: react-ui (studio) + algo-viz (data-viz, #3194),
-    // each a single-kit style whose header IS the kit.
+    // Every packaged kit sits under the react tech: react-ui (studio) + the viz kits (data-viz).
+    // #3242 added matrix-viz + graph-viz alongside algo-viz, so data-viz went from a SINGLE-kit style
+    // (header IS the kit) to a MULTI-kit one (header is a group over real kit rows) — this asserts
+    // whichever shape the seed's own cardinality implies, so the next viz kit can't silently break it.
     const t = groupKits(SEED_KITS);
     expect(t.map((n) => asGroup(n).label)).toEqual(["react"]);
     const styles = asGroup(t[0]).children.map(asGroup);
     expect(styles.map((s) => s.label)).toEqual(["studio", "data-viz"]);
-    expect(styles[0].kit?.id).toBe("react-ui"); // the studio style header IS react-ui
-    expect(styles[1].kit?.id).toBe("algo-viz"); // the data-viz style header IS algo-viz
+    const [studio, dataViz] = styles;
+    // studio holds react-ui alone → the merged single-kit header.
+    expect(studio.kit?.id).toBe("react-ui");
+    expect(studio.children).toHaveLength(0);
+    // data-viz holds the three viz kits → a real group with a kit row each, no header merge.
+    expect(dataViz.kit).toBeUndefined();
+    expect(dataViz.count).toBe(3);
+    expect(dataViz.children.map((n) => n.kind)).toEqual(["kit", "kit", "kit"]);
+    expect(flatIds(dataViz.children)).toEqual(["algo-viz", "matrix-viz", "graph-viz"]);
+    // Nothing is dropped or reordered by the grouping, whatever the cardinality.
     expect(flatIds(t)).toEqual(SEED_KITS.map((k) => k.id));
   });
 

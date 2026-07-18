@@ -76,10 +76,13 @@ describe("applyFleetLiveStatus (#3252 — fleet-drill live agent status)", () =>
   const out = (over: Partial<FleetLiveSignals>) => applyFleetLiveStatus(nodes, PROJ, sig(over));
   const node = (r: GRawNode[], id: string) => r.find((n) => n.id === id)!;
 
-  it("an UNLAUNCHED agent stays at planned rest (idle/idle)", () => {
+  // No session behind the node ⇒ `off`, distinct from a session that exists and is merely quiet.
+  // While both read `idle`, an absent session was indistinguishable from a resting one — and its
+  // (correctly) empty log view looked like a broken log rather than a session that was never launched.
+  it("an UNLAUNCHED agent reads OFF — no session exists", () => {
     const r = out({}); // nothing launched
-    expect(node(r, "director")).toMatchObject({ health: "idle", activity: "idle" });
-    expect(node(r, "auth")).toMatchObject({ health: "idle", activity: "idle" });
+    expect(node(r, "director")).toMatchObject({ health: "off", activity: "idle" });
+    expect(node(r, "auth")).toMatchObject({ health: "off", activity: "idle" });
   });
 
   it("a launched + RUNNING agent reads healthy · building — INCLUDING the director", () => {
@@ -88,9 +91,11 @@ describe("applyFleetLiveStatus (#3252 — fleet-drill live agent status)", () =>
     expect(node(r, "auth")).toMatchObject({ health: "healthy", activity: "building" });
   });
 
-  it("a launched but QUIET agent (between prompts) reads subtly-live: healthy · idle", () => {
+  it("a launched but QUIET agent (between prompts) reads idle — it EXISTS but is not working", () => {
     const r = out({ livePaneIds: new Set([dir]) }); // launched, not running, not waiting
-    expect(node(r, "director")).toMatchObject({ health: "healthy", activity: "idle" });
+    expect(node(r, "director")).toMatchObject({ health: "idle", activity: "idle" });
+    // ...and it is NOT the same as a node with no session at all — that one is `off`.
+    expect(node(r, "auth")).toMatchObject({ health: "off", activity: "idle" });
   });
 
   it("a launched agent parked on a FRESH bsc-wait reads healthy · waiting", () => {

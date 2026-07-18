@@ -8,6 +8,40 @@
 
 use serde_json::Value;
 
+/// The dispatcher's verb surface — MUST match the `match verb` arms in [`run`].
+///
+/// Exported so the packaged studio prose that TEACHES this CLI (the librarian spec,
+/// `src-tauri/data/librarian/claude.md`) can be checked against the code rather than against a second
+/// hand-written list (#3391). #2961 removed the concept ontology and its `list`/`neighbors`/`path`/
+/// `link` verbs, but the spec kept teaching them and its test kept asserting them — spec and test
+/// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
+/// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
+/// now-unknown verb its prose still names.
+pub const VERBS: [&str; 6] = ["impl", "harvest", "curate", "dump", "doctor", "help"];
+
+/// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
+pub const IMPL_SUBVERBS: [&str; 3] = ["set", "remove", "list"];
+
+/// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
+pub const FLAGS: [&str; 16] = [
+    "--pretty",
+    "--id",
+    "--tech",
+    "--role",
+    "--name",
+    "--summary",
+    "--ref",
+    "--code",
+    "--domain",
+    "--tags",
+    "--kind",
+    "--viz-code",
+    "--composes",
+    "--worthy-only",
+    "--apply",
+    "--fix",
+];
+
 pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     let pretty = args.iter().any(|a| a == "--pretty");
     let positional: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
@@ -222,4 +256,43 @@ fn help(prog: &str) -> String {
          Implementation techs (#2770): typescript · rust — each `composes` other same-tech impls, rooted in the language's primitives.\n\
          The library is the per-language implementation tier; `harvest`/`curate` (#2745) mine a project's real code into candidate implementations.\n",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// [`VERBS`] is only trustworthy as a source of truth if it tracks the dispatcher, so pin it to
+    /// the `match` (#3391): every listed verb must dispatch, and an unlisted one must be rejected.
+    #[test]
+    fn verbs_match_the_dispatcher() {
+        for verb in VERBS {
+            // `impl`/`harvest`/`curate` bail on their own usage error before touching the store;
+            // `dump`/`doctor`/`help` read it. Either way, NONE may be an unknown-command rejection.
+            let err = run(vec![verb.to_string()], "bsc graph").err().unwrap_or_default();
+            assert!(
+                !err.contains("unknown graph command"),
+                "`{verb}` is in VERBS but the dispatcher rejects it: {err}",
+            );
+        }
+        let err = run(vec!["neighbors".to_string()], "bsc graph").unwrap_err();
+        assert!(
+            err.contains("unknown graph command"),
+            "a verb outside VERBS must be rejected — `neighbors` is one of the concept-ontology \
+             verbs #2961 deleted; got: {err}",
+        );
+    }
+
+    /// The help text is the CLI's own account of its surface, so every exported const must appear in
+    /// it — a flag or subverb added to the `match` without reaching help (or this list) fails here.
+    #[test]
+    fn exported_surface_is_covered_by_the_help_text() {
+        let help = help("bsc graph");
+        for sub in IMPL_SUBVERBS {
+            assert!(help.contains(&format!("impl {sub}")), "help omits `impl {sub}`");
+        }
+        for flag in FLAGS {
+            assert!(help.contains(flag), "help omits `{flag}`");
+        }
+    }
 }

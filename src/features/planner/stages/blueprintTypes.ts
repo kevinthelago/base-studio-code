@@ -254,6 +254,28 @@ export interface BlueprintUiKit {
   themeId?: string;
 }
 
+/** The SOUND KIT a blueprint pins (#3372, epic #3071 phase 4) — the sounds twin of
+ *  {@link BlueprintUiKit}, deliberately the SAME lockfile discipline: the kit is REFERENCED, never
+ *  embedded, against the global versioned sound-kit release store
+ *  (`~/.base-studio-code/sound-kits/<id>/<version>/`, the Rust `bsc sound release` CLI, #3371).
+ *  Exact pins only — no ranges (reproducibility). A new blueprint default-pins the packaged
+ *  `bsc/signal` kit ({@link Blueprint.soundKit} set in `addBlueprint`), which resolves against the
+ *  store's embedded fallback and so needs no fetch.
+ *
+ *  NO `themeId` twin: a theme restyles a component kit's tokens, and a sound kit has no token
+ *  contract to restyle — its cues ARE the palette. Adding a dead field "for symmetry" would invent
+ *  a knob nothing reads. */
+export interface BlueprintSoundKit {
+  /** Publisher-scoped kit id (e.g. `"bsc/signal"`). */
+  id: string;
+  /** Exact semver of the pinned artifact (immutable once published). */
+  version: string;
+  /** sha256 (lowercase hex) of the artifact bytes — the canonical SoundKit object, NOT a wrapper. */
+  hash: string;
+  /** Typed-gist URL to fetch from when the id@version is missing locally. */
+  source?: string;
+}
+
 /** A blueprint's DESIGN contribution (#2646, epic #2606) — the categorical dimensions it introduces
  *  that need design-token backing (a `simulation` node-kind, say), plus an optional theme by reference.
  *  Downloading a blueprint RECONCILES this against the local design contract: categories the contract
@@ -307,6 +329,10 @@ export interface Blueprint {
    *  `id@version` artifact in the global kit store; see {@link BlueprintUiKit}. Absent ⇒ no pin
    *  (existing blueprints are unaffected); a NEW blueprint default-pins the packaged kit. */
   uiKit?: BlueprintUiKit;
+  /** The SOUND kit this blueprint pins (#3372) — the same lockfile entry one pillar over, against
+   *  the versioned sound-kit release store; see {@link BlueprintSoundKit}. Absent ⇒ no pin
+   *  (existing blueprints are unaffected); a NEW blueprint default-pins the packaged `bsc/signal`. */
+  soundKit?: BlueprintSoundKit;
   /** The blueprint's DESIGN contribution (#2646) — the categorical keys it introduces + an optional
    *  theme ref; reconciled against the local design contract on download. Absent ⇒ nothing to reconcile
    *  (existing blueprints unaffected). See {@link BlueprintDesign}. */

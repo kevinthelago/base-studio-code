@@ -11,6 +11,12 @@ export {
   type ComponentRecord, type Kit, type PropSpec, type Role, type KitRule, type KitRuleKind,
 } from "./lib/model";
 export { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
+// Cross-graph library composition (#3116/#3117) + its KIT-level roll-up (#3133) — the (kit → algorithm /
+// sound) `requires` pairs Glance joins against `kitUsage` to draw a project's real library dependencies.
+export {
+  resolveComponentLibraryRefs, resolveKitLibraryRefs,
+  type LibraryComposition, type KitLibraryRef,
+} from "./lib/libraryComposition";
 // Kit lint rules → eslint preset (#2279) — the generator the planner bakes into a generated app.
 export {
   deriveRules, mergeRules, kitRules, componentRules, ruleMessage, toEslintRules, toEslintPreset, ESCAPE_HATCH,

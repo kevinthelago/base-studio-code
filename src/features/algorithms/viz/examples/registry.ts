@@ -15,7 +15,7 @@
 import type { Frame } from "../../lib/trace";
 import type { AlgoImpl, AlgoKind } from "../../lib/knowledge";
 import { classifyKind, type Classifiable } from "../../lib/classifyKind";
-import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScene, type GraphInput } from "../../lib/tracer";
+import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScalarAlgorithm, runScene, type GraphInput } from "../../lib/tracer";
 import { runInSandbox } from "./vizSandbox";
 import type { VizRun } from "./vizProgram";
 import type { RendererRegistry } from "../registry";
@@ -29,6 +29,8 @@ import { parseSortInput } from "./sort";
 import { TRACE_PROGRAMS, programKey, type AlgoProgram } from "./sorts";
 import { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./matrixTransforms";
 import { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "./graphAlgos";
+import { SEARCH_PROGRAMS, parseSearchInput, searchToText, type SearchInput, type SearchProgram } from "./searches";
+import { SCALAR_PROGRAMS, parseScalarInput, scalarToText, type ScalarProgram } from "./scalarAlgos";
 import { SCENE_PROGRAMS, type SceneProgram } from "./scenes";
 
 /** A ready-to-play visualization: a stable default factory (the inline preview) + the per-structure
@@ -39,6 +41,14 @@ export interface VizExample {
   factory: () => Generator<Frame>;
   /** The renderers this example needs (array → {@link ArrayView}). */
   renderers: RendererRegistry;
+  /** The trace-program SOURCE to show beside the animation, with the executing op highlighted (#3250).
+   *
+   *  Present only for a STORED `vizCode` example — that string is the code that actually ran, so its
+   *  offsets are real provenance. An in-app program is a compiled TS module with no runtime source, and
+   *  an impl's reference `code` facet (often Rust) is a non-executed twin whose lines do not correspond
+   *  to these frames — pairing the animation with either would be a confident lie, so both leave this
+   *  `undefined` and the stage simply shows no code column. */
+  source?: string;
   /** The editable input driving the trace (#3199) — `parse` turns the field text into typed input (throwing
    *  a helpful Error on invalid input); `make` RE-RUNS the program on it, returning a fresh trace factory.
    *  It is ASYNC (#3233): a stored-`vizCode` re-run goes through the sandbox Worker; in-app programs resolve
@@ -71,6 +81,38 @@ function exampleFromProgram(program: AlgoProgram): VizExample {
       hint: "Comma- or space-separated numbers",
       parse: (text) => parseSortInput(text),
       make: async (parsed) => runAlgorithm(program.run, parsed as number[]),
+    },
+  };
+}
+
+/** Build a stable search {@link VizExample} that RUNS a search (#3220) via the TracedArray — the same
+ *  `<ArrayView>` the sorts use, but the trace is `probe`/`found` instead of compare/swap. The input seam
+ *  carries BOTH halves of a search (the values AND the target), so "your input" can change either. */
+function searchExampleFromProgram(program: SearchProgram): VizExample {
+  const trace = (input: SearchInput) => runAlgorithm((a) => void program.run(a, input.target), input.values);
+  return {
+    factory: trace(program.defaultInput),
+    renderers: { array: ArrayView },
+    input: {
+      default: searchToText(program.defaultInput),
+      hint: "Numbers, then the target after a '|' (e.g. 1, 3, 5 | 3)",
+      parse: (text) => parseSearchInput(text),
+      make: async (parsed) => trace(parsed as SearchInput),
+    },
+  };
+}
+
+/** Build a stable scalar {@link VizExample} that RUNS an accumulate program (#3220) via the TracedScalar —
+ *  the `<ScalarView>` named-variable chips, seeded from the program's single `n` parameter. */
+function scalarExampleFromProgram(program: ScalarProgram): VizExample {
+  return {
+    factory: runScalarAlgorithm(program.run, program.defaultInput),
+    renderers: { scalar: ScalarView },
+    input: {
+      default: scalarToText(program.defaultInput),
+      hint: "A single whole number, n (e.g. 10)",
+      parse: (text) => parseScalarInput(text),
+      make: async (parsed) => runScalarAlgorithm(program.run, parsed as Record<string, number | string>),
     },
   };
 }
@@ -135,14 +177,21 @@ function sceneExampleFromProgram(program: SceneProgram): VizExample {
   };
 }
 
-/** One VizExample per trace-program (array sorts + matrix transforms + graph traversals + multi-structure
- *  SCENES), built ONCE so each algorithm has a STABLE example identity — a fresh build per render would
- *  rebuild the player's stream every frame. Keyed by base name; each datatype contributes its own programs
- *  + renderer. SCENES are merged LAST, so a scene supersedes a single-structure program of the same name
- *  (e.g. `dijkstra` upgrades from a lone graph to graph + distance panels, #3259). */
+/** One VizExample per trace-program (array sorts + array searches + scalar accumulates + matrix transforms
+ *  + graph traversals + multi-structure SCENES), built ONCE so each algorithm has a STABLE example identity
+ *  — a fresh build per render would rebuild the player's stream every frame. Keyed by base name; each
+ *  datatype contributes its own programs + renderer. SCENES are merged LAST, so a scene supersedes a
+ *  single-structure program of the same name (e.g. `dijkstra` upgrades from a lone graph to graph +
+ *  distance panels, #3259). */
 const EXAMPLE_BY_KEY: Record<string, VizExample> = {
   ...Object.fromEntries(
     Object.entries(TRACE_PROGRAMS).map(([key, program]): [string, VizExample] => [key, exampleFromProgram(program)]),
+  ),
+  ...Object.fromEntries(
+    Object.entries(SEARCH_PROGRAMS).map(([key, program]): [string, VizExample] => [key, searchExampleFromProgram(program)]),
+  ),
+  ...Object.fromEntries(
+    Object.entries(SCALAR_PROGRAMS).map(([key, program]): [string, VizExample] => [key, scalarExampleFromProgram(program)]),
   ),
   ...Object.fromEntries(
     Object.entries(MATRIX_PROGRAMS).map(([key, program]): [string, VizExample] => [key, matrixExampleFromProgram(program)]),
@@ -201,6 +250,9 @@ function buildVizExampleFromCode(code: string, run: VizRun): VizExample {
   return {
     factory: replay(run.frames),
     renderers: seam.renderers,
+    // The run reports the exact source its frame `loc`s index into (#3250) — never `code`, which may
+    // differ from it by leading/trailing whitespace and would shift every highlight.
+    source: run.source,
     input: {
       default: seam.serialize(run.input),
       hint: seam.hint,

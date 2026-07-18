@@ -1908,12 +1908,34 @@ fn cmd_emit_motion_css(args: &[String]) -> Result<(), String> {
 
 /// Normalize a user-supplied JSON pointer: a leading `/` is optional for ergonomics, so `name` and
 /// `/name` both address the top-level `name` field (the empty string stays empty — the whole doc).
-fn normalize_pointer(p: &str) -> String {
-    if p.is_empty() || p.starts_with('/') {
-        p.to_string()
-    } else {
-        format!("/{p}")
+///
+/// Rejects a pointer that git-bash's MSYS path conversion has REWRITTEN. Any argument starting with `/`
+/// is treated by MSYS as a unix path and rewritten to the git install root — so `--field /name` reaches
+/// the process as `C:/Program Files/Git/name`. The old failure was `no field 'C:/Program Files/Git/name'`,
+/// which reads as a missing field and sent a caller hunting for the wrong thing; the studio sessions run
+/// in git-bash, so every pointer they passed the documented way silently mis-addressed (#3383).
+///
+/// We ERROR rather than recover: the mangled form is `<install-root><pointer>` and the root's length is
+/// not knowable in-process, so stripping it would be a guess at WHICH field was meant — and a wrong guess
+/// on `patch` writes the wrong field. A drive-letter prefix is an unambiguous tell (no legitimate pointer
+/// token starts with `C:`), so this only ever fires on genuine damage, and it names the fix.
+fn normalize_pointer(p: &str) -> Result<String, String> {
+    let b = p.as_bytes();
+    if b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'/' || b[2] == b'\\') {
+        // Deliberately NOT reconstructing the intended pointer: the mangled form is
+        // `<install-root><pointer>` and the root's length is unknowable here, so any tail we picked
+        // would be a guess — and naming the wrong field on `patch` steers a wrong WRITE. State the
+        // rule instead; the caller knows which field they meant.
+        return Err(format!(
+            "'{p}' is not a JSON pointer — a leading '/' was rewritten by git-bash path conversion.\n\
+             Re-run WITHOUT the leading slash (`name`, `animations/1`), not with it (`/name`). The \
+             leading '/' is optional everywhere a pointer is taken, and the slash-free form is never \
+             rewritten.\n\
+             Do NOT prefix the command with MSYS_NO_PATHCONV=1 — a restricted session cannot run an \
+             environment-variable assignment."
+        ));
     }
+    Ok(if p.is_empty() || p.starts_with('/') { p.to_string() } else { format!("/{p}") })
 }
 
 /// Set `value` at the RFC-6901 JSON pointer `pointer` within `root`, replacing (or inserting, for an
@@ -2004,7 +2026,7 @@ fn apply_patch(
     value: serde_json::Value,
 ) -> Result<(), String> {
     let mut record = load_component_object(store, id)?;
-    set_at_pointer(&mut record, &normalize_pointer(pointer), value)?;
+    set_at_pointer(&mut record, &normalize_pointer(pointer)?, value)?;
     validate_component_batch(std::slice::from_ref(&record))?;
     stamped_set(store, id, record, &crate::record::resolve_writer(None))
 }
@@ -2084,7 +2106,7 @@ fn cmd_get_field(args: &[String]) -> Result<(), String> {
     let store = open_component_store(&dir)?;
     let record = load_component_object(&store, &id)?;
     let value = record
-        .pointer(&normalize_pointer(&field))
+        .pointer(&normalize_pointer(&field)?)
         .ok_or_else(|| format!("no field '{field}' in component '{id}'"))?;
     let out = field_output(value, raw, pretty)?;
     if raw {
@@ -2892,11 +2914,41 @@ mod tests {
 
     #[test]
     fn normalize_pointer_adds_an_optional_leading_slash() {
-        assert_eq!(normalize_pointer("/name"), "/name");
-        assert_eq!(normalize_pointer("name"), "/name");
-        assert_eq!(normalize_pointer("props/0/req"), "/props/0/req");
+        assert_eq!(normalize_pointer("/name").unwrap(), "/name");
+        assert_eq!(normalize_pointer("name").unwrap(), "/name");
+        assert_eq!(normalize_pointer("props/0/req").unwrap(), "/props/0/req");
         // The empty string stays empty (the whole-document pointer).
-        assert_eq!(normalize_pointer(""), "");
+        assert_eq!(normalize_pointer("").unwrap(), "");
+    }
+
+    // #3383: git-bash rewrites any arg starting with `/` to the git install root, so the DOCUMENTED
+    // `--field /name` reached the process as `C:/Program Files/Git/name` and failed as a missing field.
+    // Every studio session runs in git-bash, so this hit every pointer they passed the documented way.
+    #[test]
+    fn normalize_pointer_rejects_an_msys_mangled_pointer_and_names_the_fix() {
+        for mangled in [
+            "C:/Program Files/Git/name",
+            "C:/Program Files/Git/animations/1",
+            r"D:\msys64\name",
+        ] {
+            let err = normalize_pointer(mangled).expect_err("a drive-letter prefix is never a pointer");
+            assert!(err.contains("git-bash path conversion"), "explains the cause: {err}");
+            // Names the SLASH-FREE form to use, not just the failure.
+            assert!(err.contains("WITHOUT the leading slash"), "names the fix: {err}");
+            // It must NOT invent a field name — the intended pointer is unrecoverable here, and a
+            // guessed one would steer a wrong WRITE on `patch`.
+            assert!(!err.contains("use `"), "never guesses the field: {err}");
+            // ...and steers off the workaround a restricted session cannot run.
+            assert!(err.contains("MSYS_NO_PATHCONV"), "warns off the env prefix: {err}");
+        }
+        assert!(normalize_pointer("C:/Program Files/Git/name").unwrap_err().contains("`name`"));
+    }
+
+    // A pointer that merely CONTAINS a colon is untouched — only a leading `X:/` or `X:\` is MSYS damage.
+    #[test]
+    fn normalize_pointer_leaves_a_legitimate_pointer_with_a_colon_alone() {
+        assert_eq!(normalize_pointer("props/a:b").unwrap(), "/props/a:b");
+        assert_eq!(normalize_pointer("/props/a:b").unwrap(), "/props/a:b");
     }
 
     #[test]
