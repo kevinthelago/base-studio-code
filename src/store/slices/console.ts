@@ -16,7 +16,7 @@ import { newTabId } from "../helpers";
 import { setMapEntry, deleteMapEntry, deleteMapEntries, updateArrayItem } from "../updateHelpers";
 
 type ConsoleSlice = Pick<AppStore,
-  "activeWorkspace" | "setWorkspace" | "hasHydrated" | "setHasHydrated" | "tabs" | "activeTabIdx" | "paneMenuOpenIdx" | "focusedPaneIdx" | "fullscreenPaneIdx" | "consoleBroadcast" | "setConsoleBroadcast" | "focusQueue" | "focusTarget" | "setFocusTarget" | "enqueueFocus" | "removeFocus" | "clearFocusQueue" | "reconcileFocusQueue" | "advanceFocus" | "terminalFontSize" | "setTerminalFontSize" | "accent" | "setAccent" | "kitTheme" | "setKitTheme" | "soundNotifications" | "setSoundNotifications" | "keybindings" | "setKeybinding" | "resetKeybinding" | "resetAllKeybindings" | "paneViews" | "paneNames" | "paneCwds" | "paneWasClaude" | "uncleanShutdown" | "setUncleanShutdown" | "restoreRequested" | "restoreSessionsFromCrash" | "achievements" | "unlockAchievement" | "setPaneWasClaude" | "setPaneCwd" | "paneStatus" | "setPaneStatus" | "quarantinedPanes" | "markQuarantine" | "clearQuarantine" | "acknowledgeQuarantine" | "wardenSince" | "clearProjectQuarantine" | "endedPanes" | "markPaneEnded" | "reopenPane" | "dormantPanes" | "paneLastActivity" | "idleReaper" | "reapPane" | "resumePane" | "setIdleReaperConfig" | "recomputeTabState" | "clearTabStatuses" | "paneInitCmds" | "setPaneInitCmd" | "paneStartupPromptDocs" | "paneCheckpointDocs" | "paneStartupPromptText" | "paneContinue" | "disabledPanes" | "setPaneDisabled" | "paneRoles" | "setPaneRole" | "agentProfiles" | "setAgentProfiles" | "updateAgentProfile" | "panePermsStale" | "clearPanePermsStale" | "paneRedrawNonce" | "requestPaneRedraw" | "paneProfiles" | "paneRoleGlobs" | "paneRepos" | "paneFlows" | "paneProviders" | "setPaneProvider" | "paneWslDistro" | "paneClaudeActive" | "setPaneClaudeActive" | "setPaneProfile" | "setActiveTab" | "addTab" | "closeTab" | "moveTab" | "renameTab" | "setTabState" | "setTabLayout" | "setPaneMenu" | "setFocusedPane" | "setFullscreenPane" | "focusedAgentName" | "setFocusedAgentName" | "setPaneView" | "setAllPanesView" | "setPaneName" | "liveAgents" | "bumpLiveAgents" | "paneDirectorDrive" | "paneDirectorMode" | "paneStream"
+  "activeWorkspace" | "setWorkspace" | "hasHydrated" | "setHasHydrated" | "tabs" | "activeTabIdx" | "paneMenuOpenIdx" | "focusedPaneIdx" | "fullscreenPaneIdx" | "consoleBroadcast" | "setConsoleBroadcast" | "focusQueue" | "focusTarget" | "setFocusTarget" | "enqueueFocus" | "removeFocus" | "clearFocusQueue" | "reconcileFocusQueue" | "advanceFocus" | "terminalFontSize" | "setTerminalFontSize" | "accent" | "setAccent" | "kitTheme" | "setKitTheme" | "soundNotifications" | "setSoundNotifications" | "keybindings" | "setKeybinding" | "resetKeybinding" | "resetAllKeybindings" | "paneViews" | "paneNames" | "paneCwds" | "paneWasClaude" | "uncleanShutdown" | "setUncleanShutdown" | "restoreRequested" | "restoreSessionsFromCrash" | "achievements" | "unlockAchievement" | "setPaneWasClaude" | "setPaneCwd" | "paneStatus" | "setPaneStatus" | "quarantinedPanes" | "markQuarantine" | "clearQuarantine" | "acknowledgeQuarantine" | "wardenSince" | "clearProjectQuarantine" | "endedPanes" | "markPaneEnded" | "reopenPane" | "dormantPanes" | "paneLastActivity" | "idleReaper" | "reapPane" | "resumePane" | "resumePaneSession" | "setIdleReaperConfig" | "recomputeTabState" | "clearTabStatuses" | "paneInitCmds" | "setPaneInitCmd" | "paneStartupPromptDocs" | "paneCheckpointDocs" | "paneStartupPromptText" | "paneContinue" | "disabledPanes" | "setPaneDisabled" | "paneRoles" | "setPaneRole" | "agentProfiles" | "setAgentProfiles" | "updateAgentProfile" | "panePermsStale" | "clearPanePermsStale" | "paneRedrawNonce" | "requestPaneRedraw" | "paneProfiles" | "paneRoleGlobs" | "paneRepos" | "paneFlows" | "paneProviders" | "setPaneProvider" | "paneWslDistro" | "paneClaudeActive" | "setPaneClaudeActive" | "setPaneProfile" | "setActiveTab" | "addTab" | "closeTab" | "moveTab" | "renameTab" | "setTabState" | "setTabLayout" | "setPaneMenu" | "setFocusedPane" | "setFullscreenPane" | "focusedAgentName" | "setFocusedAgentName" | "setPaneView" | "setAllPanesView" | "setPaneName" | "liveAgents" | "bumpLiveAgents" | "paneDirectorDrive" | "paneDirectorMode" | "paneStream"
 >;
 
 export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = (set, get) => ({
@@ -249,6 +249,31 @@ export const createConsoleSlice: StateCreator<AppStore, [], [], ConsoleSlice> = 
           if (!s.dormantPanes[paneId]) return {};
           return { dormantPanes: deleteMapEntry(s.dormantPanes, paneId), paneLastActivity: setMapEntry(s.paneLastActivity, paneId, Date.now()) };
         }),
+      // Resume a single dormant fleet/agent session in place (#glance-resume). The Glance node
+      // "Resume" action lands here for a NON-live agent whose build tab is still open: clearing the
+      // ended/disabled/dormant flags remounts JUST this pane's terminal (see PaneAt), and
+      // `restoreRequested` makes that remount resolve to `claude --continue` (resolveInitCmd) so the
+      // agent's prior conversation resumes. Only this pane is touched — no runId bump — so live
+      // siblings in the same tab are untouched. Returns false when no OPEN tab hosts the id, so the
+      // caller falls back to a full fleet relaunch (which reopens the build tab).
+      resumePaneSession: (paneId) => {
+        const s = get();
+        const owner = findPaneOwnerTab(s.tabs, paneId);
+        if (!owner) return false;
+        const disabledPanes = deleteMapEntry(s.disabledPanes, paneId);
+        set({
+          endedPanes: deleteMapEntry(s.endedPanes, paneId),
+          disabledPanes,
+          dormantPanes: deleteMapEntry(s.dormantPanes, paneId),
+          restoreRequested: setMapEntry(s.restoreRequested, paneId, true),
+          paneLastActivity: setMapEntry(s.paneLastActivity, paneId, Date.now()),
+          // Re-enabling a cell changes which panes count toward the tab's rollup, so re-roll it
+          // (mirrors setPaneDisabled) — otherwise the tab dot can stay stale.
+          tabs: s.tabs.map((t, i) =>
+            i === owner.tabIdx ? { ...t, state: aggregateTabState(t, i, s.paneStatus, disabledPanes) } : t),
+        });
+        return true;
+      },
       setIdleReaperConfig: (cfg) =>
         set((s) => ({ idleReaper: { ...s.idleReaper, ...cfg } })),
       recomputeTabState: (tabIdx) =>

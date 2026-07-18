@@ -209,11 +209,6 @@ html, body {
   margin-left:5px; padding:0 5px; border-radius:8px; font-size:9.5px;
   background:var(--bg-elev2); color:var(--fg-muted); border:1px solid var(--border-soft);
 }
-/* Page-level actions in the header strip (#3343): pushed to the right edge and vertically centered in
-   the 34px bar (the strip itself is align-items:end for the tabs). */
-.tabstrip-actions{
-  margin-left:auto; align-self:center; display:flex; align-items:center; gap:8px; padding-left:12px;
-}
 /* tear-off preview: a small window mock that follows the cursor when a tab is
    dragged out of the strip (drop = open in a new window, #430). */
 .tab-tearoff-preview{
