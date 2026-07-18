@@ -591,7 +591,7 @@ describe("designer role (#2471)", () => {
     // runtime scope doc lets it drive `bsc ui set/remove` where every other role is read-scoped.
     expect(designer.ui).toBe("write");
     expect(sessionScopes(designer)).toEqual({ ui: "write" });
-    expect(designer.writeGlobs).toEqual([]);
+    expect(designer.writeGlobs).toEqual(["scratch/**"]);   // #3373: the sealed staging dir, nothing else
   });
 
   it("roleDeniedCommands denies git AND gh outright (the whole tools) and nothing on the kit store", () => {
@@ -609,16 +609,40 @@ describe("designer role (#2471)", () => {
     expect(roleDeniedTools(designer)).toEqual(["WebFetch", "WebSearch"]);
   });
 
-  it("every file-write tool is denied outright, with NO carve-out (kits live in the store, not files)", () => {
+  // #3373 CHANGED THIS PROPERTY DELIBERATELY. The designer used to be write-denied through every path,
+  // because kits live in the store, not in files. But a heredoc cannot be allow-listed (newlines are
+  // command separators), so JSON-on-stdin — its ONLY authoring channel — was unusable, and the spec
+  // forbade every alternative. It now stages a payload in a sealed `scratch/**` dir and applies it with
+  // `bsc ui set --file <name>`.
+  //
+  // The carve-out is EXACTLY that dir. These assertions are the boundary: project code stays denied.
+  it("writes ONLY its sealed scratch dir — project code is still denied through every path", () => {
+    expect(hasScopedWriteCarveOut(designer)).toBe(true);
+    expect(designer.writeGlobs).toEqual(["scratch/**"]);
+
     const rules = roleWriteRules(designer);
-    expect(rules.deny).toEqual(WRITE_TOOLS);
-    expect(rules.allow).toEqual([]);
-    expect(hasScopedWriteCarveOut(designer)).toBe(false);
-    // Even handed globs, the designer stays fully write-denied (not a carve-out role).
-    const withGlobs = roleCapability("designer", { writeGlobs: ["**"] });
-    expect(hasScopedWriteCarveOut(withGlobs)).toBe(false);
-    expect(roleWriteRules(withGlobs).deny).toEqual(WRITE_TOOLS);
-    expect(canWritePath(withGlobs, "src/App.tsx")).toBe(false);
+    // A carve-out emits per-glob ALLOWS and no whole-tool deny (deny > allow would mask the allows).
+    expect(rules.deny).toEqual([]);
+    expect(rules.allow).toEqual(WRITE_TOOLS.map((t) => `${t}(scratch/**)`));
+
+    // The boundary itself: inside the scratch dir yes, anywhere else no.
+    expect(canWritePath(designer, "scratch/kit.json")).toBe(true);
+    expect(canWritePath(designer, "scratch/nested/kit.json")).toBe(true);
+    expect(canWritePath(designer, "src/App.tsx")).toBe(false);
+    expect(canWritePath(designer, "CLAUDE.md")).toBe(false);          // its own spec
+    expect(canWritePath(designer, ".claude/settings.json")).toBe(false); // its own permissions
+    expect(canWritePath(designer, "kit.json")).toBe(false);           // workspace root, not scratch
+  });
+
+  it("the carve-out cannot be widened by handing it broader globs", () => {
+    // A stale/edited config-dir override must not be able to turn the scratch carve-out into a general
+    // write grant without also changing `code`, which the role table pins to "none".
+    const wide = roleCapability("designer", { writeGlobs: ["**"] });
+    expect(canWritePath(wide, "src/App.tsx")).toBe(true);  // globs ARE authoritative once carved out…
+    // …so the real guard is that the SHIPPED role's globs are exactly the scratch dir, asserted above,
+    // and that `code` stays "none" so no implicit write tier exists.
+    expect(designer.code).toBe("none");
+    expect(ROLE_DEFAULTS.designer.writeGlobs).toEqual(["scratch/**"]);
   });
 
   it("checkCommand blocks every git/gh invocation, reads included", () => {
@@ -632,10 +656,14 @@ describe("designer role (#2471)", () => {
 
   it("bscAgentPerms renders the same wall for the bsc-agent runtime", () => {
     const p = bscAgentPerms(designer);
-    expect(p.deny_tools).toEqual(["write_file", "edit_file"]);
+    // #3373: the scratch carve-out mirrors here too — the write tools are available, scoped to the
+    // one staging dir. A divergence between the runtimes would mean the same role is confined
+    // differently depending on which shell drives it.
+    expect(p.deny_tools).toEqual([]);
+    expect(p.write_globs).toEqual(["scratch/**"]);
     expect(p.deny_bash).toContain("git");
     expect(p.deny_bash).toContain("gh");
-    expect(p.write_globs).toEqual([]);
+    expect(p.deny_bash).toContain("cp");   // shell mutation stays denied despite the carve-out
   });
 });
 
@@ -654,7 +682,7 @@ describe("architect role (#2755)", () => {
     expect(architect.net).toBe("none");
     expect(architect.ui).toBe("none");
     expect(sessionScopes(architect)).toEqual({ ui: "none" });
-    expect(architect.writeGlobs).toEqual([]);
+    expect(architect.writeGlobs).toEqual(["scratch/**"]);   // #3373: the sealed staging dir, nothing else
   });
 
   it("roleDeniedCommands denies git, gh, AND the ui-kit store (bsc ui + the alias) outright", () => {
@@ -678,16 +706,36 @@ describe("architect role (#2755)", () => {
     expect(roleDeniedTools(architect)).toEqual(["WebFetch", "WebSearch"]);
   });
 
-  it("every file-write tool is denied outright, with NO carve-out (teams/personas live in the stores)", () => {
+  // #3373, same change as the designer: teams/personas still live in the stores, but the architect
+  // needs a place to STAGE the JSON it applies with `bsc teams set --file <name>`, because a heredoc
+  // cannot be allow-listed. The carve-out is exactly that sealed dir.
+  it("writes ONLY its sealed scratch dir — project code is still denied through every path", () => {
+    expect(hasScopedWriteCarveOut(architect)).toBe(true);
+    expect(architect.writeGlobs).toEqual(["scratch/**"]);
+
     const rules = roleWriteRules(architect);
-    expect(rules.deny).toEqual(WRITE_TOOLS);
-    expect(rules.allow).toEqual([]);
-    expect(hasScopedWriteCarveOut(architect)).toBe(false);
-    // Even handed globs, the architect stays fully write-denied (not a carve-out role).
-    const withGlobs = roleCapability("architect", { writeGlobs: ["**"] });
-    expect(hasScopedWriteCarveOut(withGlobs)).toBe(false);
-    expect(roleWriteRules(withGlobs).deny).toEqual(WRITE_TOOLS);
-    expect(canWritePath(withGlobs, "src/App.tsx")).toBe(false);
+    expect(rules.deny).toEqual([]);
+    expect(rules.allow).toEqual(WRITE_TOOLS.map((t) => `${t}(scratch/**)`));
+
+    expect(canWritePath(architect, "scratch/team.json")).toBe(true);
+    expect(canWritePath(architect, "src/App.tsx")).toBe(false);
+    expect(canWritePath(architect, "CLAUDE.md")).toBe(false);
+  });
+
+  // The carve-out grants the write TOOLS on one dir; it must NOT un-deny file-mutating SHELL commands.
+  // `roleDeniedCommands` lifts those for a carve-out role (the director writes its commons with bash),
+  // so a restricted role is explicitly excluded — its spec says in as many words not to reach for bash
+  // to sidestep the file rules, and its whole shell surface is one store CLI.
+  it("still denies the file-mutating shell commands despite having a carve-out", () => {
+    for (const cap of [ROLE_DEFAULTS.designer, ROLE_DEFAULTS.architect]) {
+      const denies = roleDeniedCommands(cap);
+      for (const cmd of ["tee", "cp", "mv", "sed -i", "dd", "vim"]) {
+        expect(denies).toContain(cmd);
+      }
+    }
+    // Contrast: the director's carve-out IS shell-written, so it keeps them.
+    const commonsDirector = roleCapability("director", { writeGlobs: ["*.md"] });
+    expect(roleDeniedCommands(commonsDirector)).not.toContain("cp");
   });
 
   it("checkCommand blocks every git/gh invocation, reads included", () => {
@@ -702,11 +750,12 @@ describe("architect role (#2755)", () => {
 
   it("bscAgentPerms renders the same wall for the bsc-agent runtime", () => {
     const p = bscAgentPerms(architect);
-    expect(p.deny_tools).toEqual(["write_file", "edit_file"]);
+    expect(p.deny_tools).toEqual([]);            // #3373 scratch carve-out, mirrored from the Claude side
+    expect(p.write_globs).toEqual(["scratch/**"]);
     expect(p.deny_bash).toContain("git");
     expect(p.deny_bash).toContain("gh");
     expect(p.deny_bash).toContain("bsc ui"); // ui:none flows through to the agent runtime too
-    expect(p.write_globs).toEqual([]);
+    expect(p.deny_bash).toContain("cp");     // shell mutation stays denied despite the carve-out
   });
 });
 

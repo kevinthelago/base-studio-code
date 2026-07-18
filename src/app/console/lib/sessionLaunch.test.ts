@@ -57,7 +57,9 @@ describe("buildAgentEnv", () => {
       const e = buildAgentEnv(mkStore({ paneRoles: { p: role } }), "p", "claude", "ghp_x");
       expect(e?.GH_TOKEN, `${role} must not receive a GitHub token`).toBeUndefined();
       // The rest of the gated-pane env is unaffected — it still gets its write-scope + store scopes.
-      expect(e?.BSC_SCOPE_GLOBS).toBe(SCOPE_DENY_ALL);
+      // Since #3373 that scope is the sealed staging dir rather than the deny-all sentinel: bsc-scope
+      // hard-blocks every write OUTSIDE `scratch/**`, which is the same wall with one door in it.
+      expect(e?.BSC_SCOPE_GLOBS).toBe("scratch/**");
     }
   });
 
@@ -318,10 +320,11 @@ describe("buildSessionSettings", () => {
       expect(out.bypass).toBe(false);
       expect(buildSessionSettings(mkStore({ paneRoles: { p: role }, bypassPermissions: true }), "p").bypass).toBe(false);
       // The runtime scope doc the studio launch also carried (`BSC_SCOPES`) still comes out of the env
-      // builder, and a code:none role with no globs hard-blocks every write via the bsc-scope sentinel.
+      // builder. Since #3373 the write scope is the sealed staging dir (`scratch/**`) rather than the
+      // deny-all sentinel — bsc-scope hard-blocks every write outside it, surviving bypassPermissions.
       const env = buildAgentEnv(s, "p", "claude", "")!;
       expect(env.BSC_SCOPES).toBe(JSON.stringify(sessionScopes(cap)));
-      expect(env.BSC_SCOPE_GLOBS).toBe(SCOPE_DENY_ALL);
+      expect(env.BSC_SCOPE_GLOBS).toBe("scratch/**");
     },
   );
 
