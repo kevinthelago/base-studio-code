@@ -14,7 +14,7 @@
 import type { ArrayFrame, ArrayOp, Frame, GraphFrame, GraphOp, MatrixFrame, MatrixOp, PanelsFrame, ScalarFrame, ScalarOp, StackFrame, StackOp, StructureFrame, TreeFrame, TreeOp } from "./trace";
 
 /** A durable per-cell mark an algorithm can set (matches the ArrayOp `mark` vocabulary). */
-export type ArrayMark = "sorted" | "pivot" | "min";
+export type ArrayMark = "sorted" | "pivot" | "min" | "found";
 
 /**
  * An instrumented array — the algorithm operates on it, and every observable operation appends an
@@ -56,6 +56,14 @@ export class TracedArray {
     this.emit([{ op: "swap", at: [i, j] }]);
   }
 
+  /** Examine ONE cell against an external target (the SEARCH verb, #3220) — records a `probe` frame and
+   *  returns the value, so the caller does the target test itself. Distinct from {@link compare}, which
+   *  spans an index pair: a search compares against a value that is not in the array. */
+  probe(i: number): number {
+    this.emit([{ op: "probe", at: i }]);
+    return this.a[i];
+  }
+
   /** Write `v` at index `i` — records a `set` frame. */
   set(i: number, v: number): void {
     this.a[i] = v;
@@ -68,9 +76,20 @@ export class TracedArray {
     else this.cur[name] = i;
   }
 
-  /** Mark one cell with a durable state (`pivot`/`min`/`sorted`) — records a `mark` frame. */
+  /** Mark one cell with a durable state (`pivot`/`min`/`sorted`/`found`) — records a `mark` frame. */
   mark(i: number, as: ArrayMark): void {
     this.emit([{ op: "mark", at: i, as }]);
+  }
+
+  /**
+   * Terminal frame — the cell a SEARCH landed on (#3220). The search-family twin of {@link markSorted}:
+   * a program calls it once, as its LAST act, so the mark is the trace's resting state and no later verb
+   * can supersede it. Deliberately NOT a separate durable axis: unlike a graph's `start`/`goal` roles
+   * (which the walker keeps moving over, #3378), nothing runs after a `found` — so there is no state to
+   * clobber it, and the array frame keeps its single, simple op vocabulary.
+   */
+  found(i: number): void {
+    this.mark(i, "found");
   }
 
   /** Terminal frame — mark every cell `sorted` (the settled resting state a sort ends on). */

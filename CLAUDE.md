@@ -37,6 +37,33 @@ Every feature or bug fix must include tests as part of the same branch — never
 
 Mocks for Tauri APIs (`invoke`, `listen`, `plugin-store`) are pre-configured in `src/test/setup.ts` and apply to every test file automatically.
 
+### Browser interaction tests (`e2e/`, opt-in — #3264)
+
+jsdom has **no text selection, no native drag, no layout and no CSS cascade**, so it structurally cannot
+observe a whole class of preview bug — #3251 (drag stopped panning the Design Studio preview) shipped with
+green tests three times for exactly this reason. `e2e/` holds a Playwright harness that drives the **real**
+preview srcdoc in headless Chromium: a Vite-served page calls the shipped `bundleComponent` →
+`collectAppCss` → `buildComponentSrcDoc` chain and mounts the result in a `sandbox="allow-scripts"` iframe,
+so there is no forked render path. Reach for it when a change's correctness depends on real input, real
+layout, or the real cascade — and NOT for logic a vitest unit test can already see.
+
+```bash
+npx playwright install chromium   # ONE TIME — the browser is not implied by `npm install`
+npm run test:e2e                  # boots Vite on :1421 and drives Chromium (~15s)
+npm run test:e2e -- --headed      # watch it happen
+npm run typecheck:e2e             # e2e/ has its OWN tsconfig (see below)
+```
+
+**It is deliberately outside the default gate.** `e2e/` is excluded from `tsconfig.json` and from vitest
+discovery, so `npm run typecheck` / `npm test` cannot break for a checkout that has not reinstalled — the
+zero-install nested-worktree workflow (#1669) stays intact and no worktree agent pays for a browser it never
+asked for. `npm run lint` **does** cover `e2e/`, so the dir is never unchecked by accident.
+
+> **Gotcha — gesture granularity is load-bearing.** The preview's pan engine ignores movement under a 5px
+> threshold. A coarse drag (`{ steps: 24 }` over 300px) crosses it on the first move, so the engine
+> `preventDefault`s before the browser can start a selection and the #3251 bug becomes **invisible**. Drive
+> drags at ~2px per move, as `dragBy` in `previewInteraction.spec.ts` does.
+
 ## Commands
 
 ```bash

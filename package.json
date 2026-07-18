@@ -18,7 +18,9 @@
     "format:check": "prettier --check src",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -39,6 +41,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.1",
     "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
