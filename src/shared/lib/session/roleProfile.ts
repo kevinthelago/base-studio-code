@@ -30,17 +30,14 @@ const ROLE_PROFILE: Record<SessionRole, string> = {
   // its writes to the marketing globs.
   marketer: "pf_auto",
   planner: "sys_planner",
-  // Designer (#2471): the Design Studio's UI-kit session. Read-only review is the closest packaged
-  // floor; its real launch path (`useDesignerTerminal`) renders the role gate + `restrictedAllow`
-  // directly, so this mapping only backs the generic role→profile surfaces.
+  // Designer (#2471) / Architect (#2755) / Librarian (#2787): the three app-owned studio sessions.
+  // Read-only review is the closest packaged floor, but this mapping ONLY backs the generic role→profile
+  // UI surfaces — it is NOT applied at launch. Their real launch (`StudioSessionMount` on TerminalHost,
+  // #3357) sets `paneRoles` and deliberately NO `paneProfiles` entry, because `buildSessionSettings` ADDS
+  // a profile's allowedCommands to the role's `restrictedAllow` surface — i.e. assigning a profile here
+  // would WIDEN a session confined to one store CLI. Don't wire this into a launch path.
   designer: "pf_review",
-  // Architect (#2755): the Teams Studio's team-authoring session. Same as the designer — read-only
-  // review is the closest packaged floor; its real launch path (`useArchitectTerminal`) renders the
-  // role gate + `restrictedAllow` directly, so this mapping only backs the generic role→profile surfaces.
   architect: "pf_review",
-  // Librarian (#2787): the Algorithms tab's knowledge-store session. Same as the designer/architect —
-  // read-only review is the closest packaged floor; its real launch path (`useLibrarianTerminal`)
-  // renders the role gate + `restrictedAllow` directly, so this mapping only backs the generic surfaces.
   librarian: "pf_review",
   // Debugger (#3322): the app's full-cap maintenance session WRITES code, so like the worker it launches
   // under the write-permitting Autonomous profile; its real launch (`DebugSessionMount` on TerminalHost,

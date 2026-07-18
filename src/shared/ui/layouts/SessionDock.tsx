@@ -10,8 +10,13 @@ import { Eyebrow } from "@/shared/ui/typography/Eyebrow";
 import "./sessionDock.css";
 
 export interface SessionDockProps {
-  /** The xterm host element ref (from the feature's `use*Terminal` hook). */
-  containerRef: RefObject<HTMLDivElement | null>;
+  /** The xterm host element ref, for a caller that mounts its OWN terminal onto a real DOM node.
+   *  Mutually exclusive with `children` — pass exactly one. */
+  containerRef?: RefObject<HTMLDivElement | null>;
+  /** Body rendered in place of the ref'd host div. The studio docks (#3357) pass a <TerminalSlot>: their
+   *  terminal is owned by the app-level TerminalHost and re-parented INTO the slot, so there is no
+   *  dock-owned xterm to attach a ref to. Wins over `containerRef` when both are given. */
+  children?: ReactNode;
   /** The head's eyebrow title (e.g. "◆ Team architect · teams & personas via bsc"). */
   title: ReactNode;
   /** The head's right-aligned dim mono subtitle (e.g. "teams-studio · restricted"). */
@@ -23,15 +28,19 @@ export interface SessionDockProps {
 }
 
 /** The shared docked-session terminal panel. See {@link SessionDockProps}. */
-export function SessionDock({ containerRef, title, subtitle, height, testid }: SessionDockProps) {
+export function SessionDock({ containerRef, children, title, subtitle, height, testid }: SessionDockProps) {
   return (
     <Box className="session-dock" data-testid={testid} style={height !== undefined ? { height } : undefined}>
       <Box className="session-dock-head">
         <Eyebrow size={9.5}>{title}</Eyebrow>
         {subtitle != null && <Text mono size="xxs" tone="dim">{subtitle}</Text>}
       </Box>
-      {/* xterm mounts onto this real DOM node via ref (shared/ui primitives aren't forwardRef). */}
-      <div ref={containerRef} className="session-dock-host" />
+      {children != null ? (
+        <Box className="session-dock-host session-dock-slot">{children}</Box>
+      ) : (
+        /* xterm mounts onto this real DOM node via ref (shared/ui primitives aren't forwardRef). */
+        <div ref={containerRef} className="session-dock-host" />
+      )}
     </Box>
   );
 }

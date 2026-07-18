@@ -8,3 +8,6 @@
 .session-dock { flex: none; height: 340px; min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--bg-elev, var(--bg-soft)); }
 .session-dock-head { height: 38px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--border-soft, var(--border)); }
 .session-dock-host { flex: 1; min-height: 0; min-width: 0; padding: 4px 8px; background: #181a1f; /* TERM_THEME background */ }
+/* Slot variant (#3357): the body is a <TerminalSlot>, whose element sizes itself with `flex: 1` — so the
+   host must be a flex COLUMN or the re-parented terminal collapses to zero height. */
+.session-dock-slot { display: flex; flex-direction: column; }

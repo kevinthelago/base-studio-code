@@ -31,10 +31,24 @@ export interface SlotTerminalProps {
    *  The host sources launch/data props from the primary claim so a Glance-owned terminal still reports
    *  cwd/status back to the console; visibility/focus always follow the current owner. */
   primary?: boolean;
+  /** True for an off-screen HOLDING claim that exists only to keep the PTY alive (the app-owned session
+   *  mounts, #3326/#3357) — it must never take ownership away from a real surface. Ownership is normally
+   *  "last claim wins", but a holding claim can register at an arbitrary time (its cwd resolves async), so
+   *  without this it could land AFTER a visible dock and park the terminal off-screen. A parked claim owns
+   *  the terminal only when it is the ONLY kind of claim left. */
+  parked?: boolean;
 }
 
-/** A registered claim on a paneId's terminal. Claims are ordered by registration; the LAST is the current
- *  owner (the surface that visually hosts + drives the terminal). `propsRef` is read live at portal-render
+/** The claim that visually HOSTS the terminal: the last non-parked claim, else the last claim (every
+ *  remaining claim is a parked holding mount). Pure — exported for the unit test. */
+export function ownerClaim<T extends { propsRef: { readonly current: SlotTerminalProps } }>(claims: readonly T[]): T | undefined {
+  for (let i = claims.length - 1; i >= 0; i--) if (!claims[i].propsRef.current.parked) return claims[i];
+  return claims[claims.length - 1];
+}
+
+/** A registered claim on a paneId's terminal. Claims are ordered by registration; the last non-`parked`
+ *  claim is the current owner (see {@link ownerClaim}) — the surface that visually hosts + drives the
+ *  terminal. `propsRef` is read live at portal-render
  *  time so callback-identity churn never forces a host re-render (only visible/focus changes do, via touch). */
 interface Claim {
   slotId: string;
@@ -118,7 +132,7 @@ export function TerminalHost({ children }: { children: ReactNode }) {
     const containers = containersRef.current;
     for (const [paneId, container] of containers) {
       const claims = map.get(paneId);
-      const owner = claims && claims[claims.length - 1];
+      const owner = claims && ownerClaim(claims);
       if (owner?.el) {
         if (container.parentElement !== owner.el) owner.el.appendChild(container);
       } else if (map.has(paneId)) {
@@ -143,7 +157,7 @@ export function TerminalHost({ children }: { children: ReactNode }) {
       <div ref={holdingRef} style={{ display: "none" }} aria-hidden />
       {activePaneIds.map((paneId) => {
         const claims = registryRef.current.get(paneId)!;
-        const owner = claims[claims.length - 1];
+        const owner = ownerClaim(claims)!;
         // Launch/data props from the primary (console) claim; visibility/focus from the current owner.
         const primary = claims.find((c) => c.propsRef.current.primary) ?? owner;
         const op = owner.propsRef.current;
