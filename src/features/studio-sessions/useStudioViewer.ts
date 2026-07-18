@@ -29,3 +29,30 @@ export function useStudioViewer(id: StudioId | null | undefined, showing = true)
     return () => { useAppStore.getState().removeStudioViewer(id); };
   }, [id, showing]);
 }
+
+/**
+ * The MANY form of {@link useStudioViewer} — register this surface as a viewer of every studio in `ids`.
+ *
+ * Needed since #3361, where several node morphs can be open at once: the single-id hook cannot be called
+ * in a loop (a variable hook count breaks the rules of hooks), and calling it once with only the
+ * most-recently-opened id would leave every other open studio unpinned — so the reaper could kill a
+ * session the user is looking at in another morph.
+ *
+ * Keyed on the joined id list, so opening a second studio re-runs the effect: the cleanup decrements the
+ * already-open studios and the body immediately re-increments them. That transient dip to 0 is harmless —
+ * the reaper only ARMS a timer at 0 and re-checks the live count when it fires (tens of minutes later),
+ * by which point the count is back up.
+ */
+export function useStudioViewers(ids: readonly StudioId[], showing = true): void {
+  const key = ids.join(",");
+  useEffect(() => {
+    if (!showing || !key) return;
+    const list = key.split(",") as StudioId[];
+    const st = useAppStore.getState();
+    for (const id of list) { st.openStudio(id); st.addStudioViewer(id); }
+    return () => {
+      const s = useAppStore.getState();
+      for (const id of list) s.removeStudioViewer(id);
+    };
+  }, [key, showing]);
+}
