@@ -4,6 +4,7 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
+import { testExclude } from "./vitest.excludes";
 
 export default defineConfig({
   plugins: [react()],
@@ -20,6 +21,8 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
+    // Test DISCOVERY excludes — keeps a ROOT run out of nested worktrees. See vitest.excludes.ts (#3379).
+    exclude: testExclude,
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
