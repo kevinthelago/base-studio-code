@@ -93,6 +93,32 @@ describe("blueprints — seed library", () => {
     }
   });
 
+  it("the layout stages close the schema → shape → component loop (#2478)", () => {
+    // #2475 gave the planner "which component renders shape X" (`bsc ui shapes`). #2478 supplies the
+    // OTHER half — "what shape IS this entity's data" — inferred from the canonical Data Model by
+    // `bsc data shapes` (crates/data `shape.rs`). Both stages that pick a layout must teach it, or the
+    // session is back to judging the taxonomy by hand.
+    for (const key of ["ui", "test_ui"]) {
+      const def = STAGE_DEFS[key];
+      expect(def, `${key} stage def exists`).toBeTruthy();
+      for (const text of [def.prompt ?? "", def.directive ?? ""]) {
+        expect(text, `${key} teaches the schema→shape verb`).toContain("bsc data shapes");
+      }
+      // The inference returns RANKED candidates with reasons, never one guess — and a tie goes to
+      // the user (a lone self-reference is a tree only if an item has ONE parent).
+      const both = `${def.prompt ?? ""}\n${def.directive ?? ""}`.toLowerCase();
+      expect(both, `${key} says the candidates are ranked`).toContain("rank");
+      expect(
+        both.includes("ask the user") || both.includes("put the question to the user"),
+        `${key} tells the session to ask when the top candidates tie`,
+      ).toBe(true);
+      // The vocabulary the two CLIs share — pinned so the prose can't teach a rejected token.
+      for (const shape of ["list", "linked-list", "tree", "graph", "table", "key-value"]) {
+        expect(both, `${key} names the ${shape} shape`).toContain(shape);
+      }
+    }
+  });
+
   it("test_ui teaches the theme pairing + the swappable-CSS emission (#2489)", () => {
     const def = STAGE_DEFS.test_ui;
     // Both faces of the seed teach the whole loop: enumerate themes, choose WITH the user, record
