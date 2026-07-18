@@ -170,7 +170,19 @@ export function roleCapability(role: SessionRole, override: Partial<RoleCapabili
  *  #2431). Every OTHER `code: "none"` role (triage, tester, reviewer, juror, issuer, designer) stays
  *  fully write-denied even if handed globs — the stewardship can't be accidentally granted to a
  *  non-carve-out role. */
-const CARVE_OUT_ROLES: ReadonlySet<SessionRole> = new Set<SessionRole>(["director", "documentor", "marketer"]);
+const CARVE_OUT_ROLES: ReadonlySet<SessionRole> = new Set<SessionRole>([
+  "director", "documentor", "marketer",
+  // The RESTRICTED studio sessions (#3373). Their carve-out is not project content at all — it is a
+  // single sealed SCRATCH dir inside their own workspace (`scratch/**`), the staging area for a payload
+  // they then apply with `bsc <store> set --file <name>`. They need it because a heredoc cannot be
+  // allow-listed (newlines are command separators), which left them unable to author anything.
+  //
+  // This is a NARROWER grant than it looks: `bsc-confine` already pins their file tools to the session
+  // cwd (their own workspace), `bsc-scope` then pins writes to `scratch/**` within it, `--file` reads
+  // only bare names from that same dir, and the dir is wiped at every launch. They still cannot touch
+  // project code, their own `CLAUDE.md`, or `.claude/**` (denied on every pane).
+  "designer", "architect", "librarian", "sound-designer",
+]);
 
 /**
  * Whether a capability has an explicit, scoped write carve-out (#851 / #1555): a `code: "none"` role
