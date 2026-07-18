@@ -1,133 +1,65 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, cleanup, waitFor, fireEvent } from "@testing-library/react";
-import { invoke } from "@tauri-apps/api/core";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { ArchitectTerminal } from "./ArchitectTerminal";
-import { ARCHITECT_PANE_ID, ARCHITECT_ALLOWED_COMMANDS } from "./useArchitectTerminal";
 import { TeamsPanel } from "./TeamsPanel";
+import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { useAppStore } from "@/store";
+import { STUDIO_SESSIONS } from "@/features/studio-sessions";
 
 /**
- * #2755 — the Teams Studio's team-architect session: launch wiring (workspace → restricted settings →
- * pty_create with the persona kickoff BAKED into the launch arg). #2759 — the dock is now present on
- * BOTH graph levels (the Teams overview AND an entered team) and PERSISTS across the switch (one PTY,
- * the same DOM node, never killed on navigation). A mirror of DesignerTerminal.test.tsx.
+ * #2755 — the Teams Studio's architect dock, REWRITTEN for #3357.
+ *
+ * The dock no longer owns the session: the architect was migrated off its bespoke `useArchitectTerminal`
+ * (`useScreenSession`) xterm onto the shared TerminalHost, so the dock is a VIEWER that drops a
+ * <TerminalSlot> for the stable pane id — which is what lets the Glance `architect` node MORPH into the
+ * live session. This is also the biggest behavioural WIN of the three: leaving the Teams page used to
+ * UNMOUNT this dock and `pty_kill` the architect outright, so the session died on every navigation.
+ * Launch wiring is asserted in `features/studio-sessions/StudioSessionMount.test.tsx`, and the restricted
+ * permission payload in `app/console/lib/sessionLaunch.test.ts`.
  */
 
-// xterm can't initialize in jsdom (open() needs real DOM measurements) — stub it (same pattern as
-// DesignerTerminal.test.tsx / TerminalView.test.tsx).
-vi.mock("@xterm/xterm", () => {
-  class Terminal {
-    cols = 80;
-    rows = 24;
-    options: Record<string, unknown> = {};
-    loadAddon = vi.fn();
-    open = vi.fn();
-    write = vi.fn();
-    onData = vi.fn(() => ({ dispose: vi.fn() }));
-    focus = vi.fn();
-    dispose = vi.fn();
-    attachCustomKeyEventHandler = vi.fn();
-    getSelection = vi.fn(() => "");
-  }
-  return { Terminal };
-});
-vi.mock("@xterm/addon-fit", () => {
-  class FitAddon {
-    fit = vi.fn();
-  }
-  return { FitAddon };
-});
-vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+// Stub the real terminal — this file is about the dock's claim + lifecycle registration, not xterm/PTY.
+vi.mock("@/app/console/panes/views/TerminalView", () => ({
+  TerminalView: ({ paneId }: { paneId: string }) => <div data-testid="tv" data-pane={paneId} />,
+}));
 
-const TEAMS_DIR = "C:/Users/x/.base-studio-code/teams-studio";
-const invokeMock = vi.mocked(invoke);
-
-/** All calls to a given command, as their args objects. */
-const callsTo = (cmd: string) =>
-  invokeMock.mock.calls.filter(([c]) => c === cmd).map(([, args]) => args as Record<string, unknown>);
-
-beforeAll(() => {
-  // jsdom reports 0 layout; run rAF synchronously so the mount-time launch chain fires in-test.
-  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => { cb(0); return 0; });
-  vi.stubGlobal("cancelAnimationFrame", () => {});
-  vi.stubGlobal("ResizeObserver", class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  });
-});
+/** The pane ids the rendered <TerminalSlot>s claimed, read off the host's stable container nodes. */
+const claimedPanes = (root: HTMLElement) =>
+  Array.from(root.querySelectorAll("[data-terminal-container]")).map((el) => (el as HTMLElement).dataset.terminalContainer);
 
 beforeEach(() => {
-  useAppStore.setState({ teamsDrill: null });
-  invokeMock.mockClear();
-  invokeMock.mockImplementation(async (cmd: string) =>
-    cmd === "setup_architect_workspace" ? ({ teams_dir: TEAMS_DIR } as never) : (null as never));
+  useAppStore.setState({
+    wantedStudios: [], studioViewers: {},
+    activeWorkspace: "projects", projectsPageMode: "teams",
+  });
 });
-
 afterEach(() => cleanup());
 
-describe("useArchitectTerminal launch wiring (#2755)", () => {
-  it("sets up the workspace, writes the RESTRICTED role-gated settings, then launches at the workspace cwd", async () => {
-    render(<ArchitectTerminal />);
-
-    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
-
-    // 1 · the workspace command ran first (it mints the cwd + the architect-spec CLAUDE.md).
-    expect(callsTo("setup_architect_workspace")).toHaveLength(1);
-
-    // 2 · ensure_session_settings: the architect role gate rendered with the restricted allow-list.
-    const [settings] = callsTo("ensure_session_settings");
-    expect(settings.cwd).toBe(TEAMS_DIR);
-    expect(settings.restrictedAllow).toBe(true);
-    expect(settings.replacePermissions).toBe(true);
-    // The whole command surface: bsc teams + bsc persona.
-    expect(settings.allowedCommands).toEqual(ARCHITECT_ALLOWED_COMMANDS);
-    expect(settings.allowedCommands).toEqual(["bsc teams", "bsc persona"]);
-    // git + gh are denied OUTRIGHT (the role's `none` tiers → the bare tools, not write prefixes);
-    // `bsc ui` is denied too (ui:none — the architect never touches the UI-kit store).
-    expect(settings.deniedCommands).toContain("git");
-    expect(settings.deniedCommands).toContain("gh");
-    expect(settings.deniedCommands).toContain("bsc ui");
-    // Every file-write tool + the web tools are denied (code:none, net:none).
-    for (const t of ["Edit", "Write", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch"]) {
-      expect(settings.denyToolRules).toContain(t);
-    }
-    // No write-glob allows leak in (the architect has no carve-out); Read stays granted.
-    expect(settings.allowToolRules).toEqual(["Read"]);
-
-    // 3 · pty_create: the stable pane id, the workspace cwd, resume behavior, and the persona kickoff
-    // BAKED into the launch arg (never typed after idle detection).
-    const [pty] = callsTo("pty_create");
-    expect(pty.paneId).toBe(ARCHITECT_PANE_ID);
-    expect(pty.paneId).toBe("teams-studio:architect");
-    expect(pty.cwd).toBe(TEAMS_DIR);
-    expect(pty.continueSession).toBe(true);
-    expect(pty.startupPromptFreshOnly).toBe(true);
-    expect(pty.initCmd).toContain("claude --continue");
-    expect(String(pty.startupPrompt)).toContain("bsc teams");
-    expect(String(pty.startupPrompt)).toContain("bsc persona");
-    // The runtime scope doc (#2470 integration): the architect renders ui:"none" (not a kit session).
-    expect(pty.env).toEqual({ BSC_SCOPES: JSON.stringify({ ui: "none" }) });
+describe("ArchitectTerminal dock (#3357)", () => {
+  it("claims the architect's stable pane id on the shared TerminalHost", () => {
+    const { container } = render(<TerminalHost><ArchitectTerminal /></TerminalHost>);
+    expect(screen.getByTestId("architect-terminal")).toBeInTheDocument();
+    expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.architect.paneId);
   });
 
-  it("does NOT launch when the workspace setup fails (no ungated session on an empty cwd)", async () => {
-    invokeMock.mockImplementation(async (cmd: string) => {
-      if (cmd === "setup_architect_workspace") throw new Error("boom");
-      return null as never;
-    });
-    render(<ArchitectTerminal />);
-    await waitFor(() => expect(callsTo("setup_architect_workspace")).toHaveLength(1));
-    expect(callsTo("ensure_session_settings")).toHaveLength(0);
-    expect(callsTo("pty_create")).toHaveLength(0);
+  it("showing the Teams page STARTS the session (lazy) and holds a viewer", () => {
+    render(<TerminalHost><ArchitectTerminal /></TerminalHost>);
+    expect(useAppStore.getState().wantedStudios).toContain("architect");
+    expect(useAppStore.getState().studioViewers.architect).toBe(1);
   });
 
-  it("only unmounting (leaving the Teams tab) kills the PTY", async () => {
-    const { unmount } = render(<ArchitectTerminal />);
-    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
-    expect(callsTo("pty_kill")).toHaveLength(0);
+  it("leaving the Teams page NO LONGER kills the session — the regression this migration fixes", () => {
+    // TeamsPanel unmounts when the planner switches off the Teams page, which used to run the hook's
+    // cleanup and `pty_kill` the architect. The session must now outlive the dock entirely.
+    const { unmount } = render(<TerminalHost><ArchitectTerminal /></TerminalHost>);
     unmount();
-    expect(callsTo("pty_kill")).toHaveLength(1);
-    expect(callsTo("pty_kill")[0].paneId).toBe(ARCHITECT_PANE_ID);
+    expect(useAppStore.getState().studioViewers.architect).toBe(0);
+    expect(useAppStore.getState().wantedStudios).toContain("architect");
+  });
+
+  it("is inert with no <TerminalHost> ancestor (renders in isolation without crashing)", () => {
+    expect(() => render(<ArchitectTerminal />)).not.toThrow();
+    expect(screen.getByTestId("architect-terminal")).toBeInTheDocument();
   });
 });
 
@@ -138,30 +70,25 @@ describe("TeamsPanel architect dock — present on ALL graph levels (#2759)", ()
   /** Climb back to the overview via the "Teams" breadcrumb crumb. */
   const toTeams = () => fireEvent.click(screen.getByText("Teams"));
 
-  it("is present on the top-level Teams overview (not only inside a team)", async () => {
-    render(<TeamsPanel />);
-    // The overview now docks the architect session too — a team is created/refined from here.
+  it("is present on the top-level Teams overview (not only inside a team)", () => {
+    const { container } = render(<TerminalHost><TeamsPanel /></TerminalHost>);
     expect(screen.getByTestId("architect-terminal")).toBeInTheDocument();
-    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
+    expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.architect.paneId);
   });
 
-  it("persists across the overview↔team switch — the SAME node, one PTY, never killed on navigation", async () => {
-    render(<TeamsPanel />);
+  it("persists across the overview↔team switch — the SAME node, one claim, never re-created", () => {
+    render(<TerminalHost><TeamsPanel /></TerminalHost>);
     const onOverview = screen.getByTestId("architect-terminal");
-    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
 
-    // Enter a team → React reconciles ONE GraphCanvas/terminal, so the dock is the SAME DOM node
-    // (a remount would give a fresh node and a second pty_create).
+    // Enter a team → React reconciles ONE GraphCanvas/dock, so it is the SAME DOM node (a remount would
+    // give a fresh node, and — before #3357 — a second pty_create).
     const team = useAppStore.getState().teams[0].name;
     enter(team);
     expect(screen.getByTestId("architect-terminal")).toBe(onOverview);
 
-    // Climb back to the overview → still the same node.
+    // Climb back to the overview → still the same node, still exactly one claim on the architect's pane.
     toTeams();
     expect(screen.getByTestId("architect-terminal")).toBe(onOverview);
-
-    // The session launched EXACTLY once and was never torn down while navigating levels.
-    expect(callsTo("pty_create")).toHaveLength(1);
-    expect(callsTo("pty_kill")).toHaveLength(0);
+    expect(useAppStore.getState().studioViewers.architect).toBe(1);
   });
 });

@@ -95,3 +95,42 @@ describe("TerminalHost (#2378)", () => {
     expect(rec.unmounts).toEqual(["proj:api"]);
   });
 });
+
+// #3357: the app-owned session mounts (DebugSessionMount / StudioSessionMount) are off-screen HOLDING
+// claims that exist only to keep the PTY alive. Their cwd resolves ASYNC, so they can register AFTER a
+// visible dock — under plain "last claim wins" that would silently park a terminal the user is looking at
+// off-screen. `parked` makes such a claim own the terminal only when it is the last one standing.
+describe("TerminalHost parked holding claims (#3357)", () => {
+  /** A studio: a visible page dock plus the off-screen holding mount, in either registration order. */
+  function StudioHarness({ mountFirst }: { mountFirst: boolean }) {
+    const mount = <div key="m" data-testid="holding"><TerminalSlot paneId="design-studio:designer" primary parked visible={false} initialCwd="/design" /></div>;
+    const dock = <div key="d" data-testid="page-dock"><TerminalSlot paneId="design-studio:designer" visible /></div>;
+    return <TerminalHost>{mountFirst ? [mount, dock] : [dock, mount]}</TerminalHost>;
+  }
+
+  it("never takes ownership from a visible surface, whichever registered first", () => {
+    for (const mountFirst of [true, false]) {
+      const { getByTestId, unmount } = render(<StudioHarness mountFirst={mountFirst} />);
+      const tv = getByTestId("tv");
+      expect(tv.closest("[data-testid='page-dock']")).toBeTruthy();
+      expect(tv.getAttribute("data-visible")).toBe("true");   // the dock's visibility, not the mount's
+      expect(tv.getAttribute("data-cwd")).toBe("/design");    // launch props still come from the primary
+      unmount();
+    }
+  });
+
+  it("owns the terminal (parked, off-screen) once it is the last claim standing", () => {
+    const { getByTestId, rerender } = render(<StudioHarness mountFirst />);
+    const tv = getByTestId("tv");
+    rerender(
+      <TerminalHost>
+        <div data-testid="holding"><TerminalSlot paneId="design-studio:designer" primary parked visible={false} initialCwd="/design" /></div>
+      </TerminalHost>,
+    );
+    // The dock closed (page switch / morph close): the SAME terminal parks in the holding mount — not
+    // torn down, which is what keeps the session warm for the Glance morph.
+    expect(getByTestId("tv")).toBe(tv);
+    expect(tv.closest("[data-testid='holding']")).toBeTruthy();
+    expect(rec.unmounts).toEqual([]);
+  });
+});

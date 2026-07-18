@@ -15,6 +15,7 @@ import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTe
 import { ConsoleWorkspace } from "@/app/console";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { DebugSessionMount } from "@/features/debug";
+import { StudioSessionHosts } from "@/features/studio-sessions";
 import { useConsoleTabs } from "@/app/console/useConsoleTabs";
 import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
 import { AutomationsStatus } from "@/features/automations";
@@ -172,6 +173,10 @@ export default function App() {
     {/* Keeps the app-owned DEBUG session's PTY warm on TerminalHost while the Settings flag is on (#3326),
         so the Glance `debugger` node's morph can re-parent it in. Renders off-screen / null. */}
     <DebugSessionMount />
+    {/* Keeps each WANTED app-owned studio session (designer/librarian/architect) warm on TerminalHost
+        (#3357), so its page dock and its Glance node morph can both re-parent the one live terminal in.
+        Lazily started by whichever surface first shows it; reclaimed by the 30-minute idle reaper. */}
+    <StudioSessionHosts />
     </TerminalHost>
   );
 }

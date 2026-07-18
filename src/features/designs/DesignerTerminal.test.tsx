@@ -1,227 +1,117 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
-import { invoke } from "@tauri-apps/api/core";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { render, screen, cleanup } from "@testing-library/react";
 import { DesignerTerminal } from "./DesignerTerminal";
-import { DESIGNER_PANE_ID, DESIGNER_ALLOWED_COMMANDS } from "./useDesignerTerminal";
 import { DesignsWorkbench } from "./DesignsWorkbench";
 import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
 import { KeptMountedPage } from "@/app/KeptMountedPage";
+import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { useAppStore } from "@/store";
+import { STUDIO_SESSIONS } from "@/features/studio-sessions";
 
 /**
- * #2471 — the Design Studio's designer session: launch wiring (workspace → restricted settings →
- * pty_create with the persona kickoff BAKED into the launch arg) and the collapse contract (the
- * panel CSS-hides; the PTY is NOT killed).
+ * #2471/#2597 — the Design Studio's always-on designer dock, REWRITTEN for #3357.
+ *
+ * The dock used to OWN the session: it mounted its own xterm via `useDesignerTerminal`
+ * (`useScreenSession`) and its unmount fired `pty_kill`. That terminal could not be re-parented, which is
+ * exactly why the Glance `designer` node could not morph into it. The session now lives on the shared
+ * TerminalHost (`StudioSessionHosts` → `StudioSessionMount`), so this dock is a VIEWER: it drops a
+ * <TerminalSlot> for the stable pane id and registers itself with the studios lifecycle. The launch wiring
+ * moved with it — asserted in `features/studio-sessions/StudioSessionMount.test.tsx` (seeded launch inputs) and
+ * `app/console/lib/sessionLaunch.test.ts` (the restricted permission payload).
+ *
+ * What must still hold here, and what these tests guard:
+ *  • the dock renders (always-on, no toggle button) and is docked in the studio's GraphCanvas;
+ *  • it claims the DESIGNER's stable pane id — so the host hands it that one terminal, never a second;
+ *  • showing the page OPENS the session (the lazy start) and holds a viewer;
+ *  • leaving the page (kept-mounted, CSS-hidden) RELEASES the viewer but does NOT kill the session — the
+ *    reversal of the old contract, and the thing that lets the Glance morph keep showing it.
  */
 
-// xterm can't initialize in jsdom (open() needs real DOM measurements) — stub it (same pattern as
-// TerminalView.test.tsx).
-vi.mock("@xterm/xterm", () => {
-  class Terminal {
-    cols = 80;
-    rows = 24;
-    options: Record<string, unknown> = {};
-    loadAddon = vi.fn();
-    open = vi.fn();
-    write = vi.fn();
-    onData = vi.fn(() => ({ dispose: vi.fn() }));
-    focus = vi.fn();
-    dispose = vi.fn();
-    attachCustomKeyEventHandler = vi.fn();
-    getSelection = vi.fn(() => "");
-  }
-  return { Terminal };
-});
-vi.mock("@xterm/addon-fit", () => {
-  class FitAddon {
-    fit = vi.fn();
-  }
-  return { FitAddon };
-});
-vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+// Stub the real terminal: this file is about the DOCK's claim + lifecycle registration, not about xterm
+// or the PTY launch (covered in StudioSessionMount.test.tsx / sessionLaunch.test.ts).
+vi.mock("@/app/console/panes/views/TerminalView", () => ({
+  TerminalView: ({ paneId }: { paneId: string }) => <div data-testid="tv" data-pane={paneId} />,
+}));
 
-const DESIGN_DIR = "C:/Users/x/.base-studio-code/design-studio";
-const invokeMock = vi.mocked(invoke);
+/** The pane id a rendered <TerminalSlot> claimed, read off the host's stable container node. */
+const claimedPanes = (root: HTMLElement) =>
+  Array.from(root.querySelectorAll("[data-terminal-container]")).map((el) => (el as HTMLElement).dataset.terminalContainer);
 
-/** All calls to a given command, as their args objects. */
-const callsTo = (cmd: string) =>
-  invokeMock.mock.calls.filter(([c]) => c === cmd).map(([, args]) => args as Record<string, unknown>);
-
-beforeAll(() => {
-  // jsdom reports 0 layout; run rAF synchronously so the mount-time launch chain fires in-test.
-  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => { cb(0); return 0; });
-  vi.stubGlobal("cancelAnimationFrame", () => {});
-  vi.stubGlobal("ResizeObserver", class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  });
-});
+/** Put the shell on the Designs page (what `useStudioPageShowing` reads), or somewhere else. */
+const showDesigns = (on: boolean) =>
+  useAppStore.setState({ activeWorkspace: on ? "projects" : "glance", projectsPageMode: "designs" });
 
 beforeEach(() => {
-  invokeMock.mockClear();
-  invokeMock.mockImplementation(async (cmd: string) =>
-    cmd === "setup_designer_workspace" ? ({ design_dir: DESIGN_DIR } as never) : (null as never));
+  useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, wantedStudios: [], studioViewers: {} });
+  showDesigns(true);
 });
-
 afterEach(() => cleanup());
 
-describe("useDesignerTerminal launch wiring (#2471)", () => {
-  it("sets up the workspace, writes the RESTRICTED role-gated settings, then launches at the workspace cwd", async () => {
-    render(<DesignerTerminal />);
-
-    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
-
-    // 1 · the workspace command ran first (it mints the cwd + the designer-spec CLAUDE.md).
-    expect(callsTo("setup_designer_workspace")).toHaveLength(1);
-
-    // 2 · ensure_session_settings: the designer role gate rendered with the restricted allow-list.
-    const [settings] = callsTo("ensure_session_settings");
-    expect(settings.cwd).toBe(DESIGN_DIR);
-    expect(settings.restrictedAllow).toBe(true);
-    expect(settings.replacePermissions).toBe(true);
-    // The whole command surface: bsc ui + the deprecated bsc component alias (#2469-safe), plus the
-    // designer→debug channel (#3300) — file/list requests, but NOT resolve (the debug session's job).
-    expect(settings.allowedCommands).toEqual(DESIGNER_ALLOWED_COMMANDS);
-    expect(settings.allowedCommands).toEqual(["bsc ui", "bsc component", "bsc shot preview", "bsc loop", "bsc request new", "bsc request list"]);
-    // The designer gets the CROPPED preview only — NOT the full-screen `bsc shot take` (the debug session's).
-    expect(settings.allowedCommands).not.toContain("bsc shot");
-    expect(settings.allowedCommands).not.toContain("bsc request resolve");
-    // git + gh are denied OUTRIGHT (the role's `none` tiers → the bare tools, not write prefixes).
-    expect(settings.deniedCommands).toContain("git");
-    expect(settings.deniedCommands).toContain("gh");
-    // Every file-write tool + the web tools are denied (code:none, net:none).
-    for (const t of ["Edit", "Write", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch"]) {
-      expect(settings.denyToolRules).toContain(t);
-    }
-    // No write-glob allows leak in (the designer has no carve-out); Read stays granted.
-    expect(settings.allowToolRules).toEqual(["Read"]);
-
-    // 3 · pty_create: the stable pane id, the workspace cwd, resume behavior, and the persona
-    // kickoff BAKED into the launch arg (never typed after idle detection).
-    const [pty] = callsTo("pty_create");
-    expect(pty.paneId).toBe(DESIGNER_PANE_ID);
-    expect(pty.paneId).toBe("design-studio:designer");
-    expect(pty.cwd).toBe(DESIGN_DIR);
-    expect(pty.continueSession).toBe(true);
-    expect(pty.startupPromptFreshOnly).toBe(true);
-    expect(pty.initCmd).toContain("claude --continue");
-    expect(String(pty.startupPrompt)).toContain("bsc ui");
-    expect(String(pty.startupPrompt)).toContain("bsc ui validate");
-    // The designer→debug charter (#3300): on a bsc ui wall, file a request instead of asking for perms.
-    expect(String(pty.startupPrompt)).toContain("bsc request new");
-    // The runtime scope doc (#2470 integration): the designer is the one ui:"write" launch.
-    expect(pty.env).toEqual({ BSC_SCOPES: JSON.stringify({ ui: "write" }) });
+describe("DesignerTerminal dock (#3357)", () => {
+  it("claims the designer's stable pane id on the shared TerminalHost", () => {
+    const { container } = render(<TerminalHost><DesignerTerminal /></TerminalHost>);
+    expect(screen.getByTestId("designer-terminal")).toBeInTheDocument();
+    expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.designer.paneId);
   });
 
-  it("does NOT launch when the workspace setup fails (no ungated session on an empty cwd)", async () => {
-    invokeMock.mockImplementation(async (cmd: string) => {
-      if (cmd === "setup_designer_workspace") throw new Error("boom");
-      return null as never;
-    });
-    render(<DesignerTerminal />);
-    await waitFor(() => expect(callsTo("setup_designer_workspace")).toHaveLength(1));
-    expect(callsTo("ensure_session_settings")).toHaveLength(0);
-    expect(callsTo("pty_create")).toHaveLength(0);
+  it("opening the page STARTS the session (lazy) and holds a viewer while it is shown", () => {
+    render(<TerminalHost><DesignerTerminal /></TerminalHost>);
+    expect(useAppStore.getState().wantedStudios).toContain("designer");
+    expect(useAppStore.getState().studioViewers.designer).toBe(1);
   });
 
-  it("stays mounted and visible (always-on, no collapse); only unmounting kills the PTY (#2597)", async () => {
-    const { unmount } = render(<DesignerTerminal />);
-    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
-
-    // The panel is always visible — there is no display:none collapse state anymore.
-    const panel = screen.getByTestId("designer-terminal");
-    expect(panel).toBeInTheDocument();
-    expect(panel.style.display).not.toBe("none");
-    expect(callsTo("pty_kill")).toHaveLength(0);
-
-    // Only a real unmount (leaving the Design Studio) tears the session down.
-    unmount();
-    expect(callsTo("pty_kill")).toHaveLength(1);
-    expect(callsTo("pty_kill")[0].paneId).toBe(DESIGNER_PANE_ID);
+  it("is inert with no <TerminalHost> ancestor (renders in isolation without crashing)", () => {
+    expect(() => render(<DesignerTerminal />)).not.toThrow();
+    expect(screen.getByTestId("designer-terminal")).toBeInTheDocument();
   });
 });
 
 describe("DesignsWorkbench always-on designer panel (#2597)", () => {
-  beforeEach(() => {
-    useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS });
-  });
-
-  it("mounts the designer session immediately, docked in the studio's GraphCanvas, with no toggle button", async () => {
-    render(<DesignsWorkbench />);
-    // Present from the first render — no ✦ Designer button gates it; the panel is docked below the graph
-    // in the studio's GraphCanvas shell (#2766), not a full-width overlay, and it spawns exactly one PTY.
+  it("docks the designer session in the studio's GraphCanvas from the first render, with no toggle button", () => {
+    render(<TerminalHost><DesignsWorkbench /></TerminalHost>);
     const panel = screen.getByTestId("designer-terminal");
     expect(panel).toBeInTheDocument();
     expect(panel.style.display).not.toBe("none");
     expect(screen.queryByRole("button", { name: /Designer/ })).toBeNull();
     expect(panel.closest(".ds-graph")).toBeTruthy();
-    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
   });
 });
 
-describe("designer PTY survives a planner-tab switch (kept-mounted, #2826)", () => {
-  // The Design Studio is a Planner tab (projectsPageMode "designs"), rendered through the SAME
-  // `KeptMountedPage` treatment ProjectsWorkspace gives it (src/features/planner/index.tsx): switching
-  // to another planner tab toggles the page's `active` (display: flex ↔ none) WITHOUT unmounting, so the
-  // always-on designer session is never torn down and its PTY is never relaunched. Before the page rode
-  // KeptMountedPage the tab switch unmounted DesignsWorkbench → DesignerTerminal → the shared
-  // useScreenSession cleanup fired pty_kill, and returning re-spawned it. This reproduces the switch via
-  // the `active` prop and asserts the PTY lifecycle across an away-and-back cycle: one pty_create, no
-  // pty_kill, no relaunch — the guard that would have caught the original bug.
-  it("keeps the session mounted (CSS-hidden) across a tab switch and never relaunches the PTY", async () => {
+describe("designer session survives a planner-tab switch (#2826, re-based on #3357)", () => {
+  // The Design Studio is a Planner tab rendered through `KeptMountedPage`: switching planner tabs toggles
+  // `active` (display: flex ↔ none) WITHOUT unmounting. Before #3357 the session's survival depended on
+  // that mount surviving — a real unmount (the tear-off gate) killed the PTY. Now survival is owned by
+  // TerminalHost, so BOTH a hide AND a full unmount leave the session running; only the idle reaper (or an
+  // explicit End session) reclaims it. This asserts the new contract at both levels.
+  it("releases only the VIEWER when the page is hidden — the session stays wanted (and warm)", () => {
     const { rerender, container } = render(
-      <KeptMountedPage active={true}>
-        <DesignerTerminal />
-      </KeptMountedPage>,
+      <TerminalHost><KeptMountedPage active={true}><DesignerTerminal /></KeptMountedPage></TerminalHost>,
     );
-    // On the Designs tab: the session mounts and spawns exactly one PTY.
-    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
     const wrapper = container.firstElementChild as HTMLElement;
-    expect(wrapper.style.display).toBe("flex"); // shown
-    expect(screen.getByTestId("designer-terminal")).toBeInTheDocument();
+    expect(wrapper.style.display).toBe("flex");
+    expect(useAppStore.getState().studioViewers.designer).toBe(1);
 
-    // Switch to another planner tab → active=false. The page CSS-hides but STAYS mounted: no pty_kill.
-    rerender(
-      <KeptMountedPage active={false}>
-        <DesignerTerminal />
-      </KeptMountedPage>,
-    );
-    expect(wrapper.style.display).toBe("none"); // hidden, not unmounted
-    expect(screen.getByTestId("designer-terminal")).toBeInTheDocument();
-    expect(callsTo("pty_kill")).toHaveLength(0);
+    // Switch planner tabs: the page CSS-hides and the shell's page mode moves off "designs".
+    showDesigns(false);
+    rerender(<TerminalHost><KeptMountedPage active={false}><DesignerTerminal /></KeptMountedPage></TerminalHost>);
+    expect(screen.getByTestId("designer-terminal")).toBeInTheDocument(); // still mounted, just hidden
+    expect(useAppStore.getState().studioViewers.designer).toBe(0);       // …but no longer WATCHED
+    expect(useAppStore.getState().wantedStudios).toContain("designer");  // session kept warm
 
-    // Switch back to the Designs tab → active=true. Same mount — the PTY was never re-created.
-    rerender(
-      <KeptMountedPage active={true}>
-        <DesignerTerminal />
-      </KeptMountedPage>,
-    );
-    expect(screen.getByTestId("designer-terminal")).toBeInTheDocument();
-    expect(callsTo("pty_create")).toHaveLength(1); // NOT 2 — no relaunch
-    expect(callsTo("pty_kill")).toHaveLength(0);
+    // Back to Designs: the same session is re-shown (never re-created).
+    showDesigns(true);
+    rerender(<TerminalHost><KeptMountedPage active={true}><DesignerTerminal /></KeptMountedPage></TerminalHost>);
+    expect(useAppStore.getState().studioViewers.designer).toBe(1);
+    expect(useAppStore.getState().wantedStudios).toEqual(["designer"]);
   });
 
-  it("fully tears the session down (pty_kill) only when the page is UNMOUNTED — e.g. torn off (gate drops)", async () => {
-    // The single-owner gate: when the Designs tab is torn into its own window, the main window's
-    // KeptMountedPage `gate` drops to false → it returns null and unmounts, releasing the one PTY for the
-    // detached window. That real unmount (unlike a tab switch) MUST run the cleanup and kill the PTY.
-    const { rerender } = render(
-      <KeptMountedPage active={true} gate={true}>
-        <DesignerTerminal />
-      </KeptMountedPage>,
-    );
-    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
-    expect(callsTo("pty_kill")).toHaveLength(0);
-
-    // gate=false → KeptMountedPage returns null → the page unmounts → the PTY is killed.
-    rerender(
-      <KeptMountedPage active={true} gate={false}>
-        <DesignerTerminal />
-      </KeptMountedPage>,
-    );
-    expect(screen.queryByTestId("designer-terminal")).toBeNull();
-    expect(callsTo("pty_kill")).toHaveLength(1);
-    expect(callsTo("pty_kill")[0].paneId).toBe(DESIGNER_PANE_ID);
+  it("UNMOUNTING the dock no longer tears the session down — the terminal is the host's, not the dock's", () => {
+    const { unmount } = render(<TerminalHost><DesignerTerminal /></TerminalHost>);
+    expect(useAppStore.getState().wantedStudios).toContain("designer");
+    unmount();
+    // The old contract killed the PTY here (the tear-off gate case). The session now outlives the dock so
+    // the Glance morph can still show it; reclamation is the reaper's job alone.
+    expect(useAppStore.getState().studioViewers.designer).toBe(0);
+    expect(useAppStore.getState().wantedStudios).toContain("designer");
   });
 });
