@@ -36,7 +36,7 @@ import { resumeProjectFleet } from "./lib/resumeProject";
 import { buildGraph, focusSets, isLibraryNode, HEALTH_META, ROLE_COLOR, NW, NH } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
-import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, studioPaneIdForNode } from "./lib/studioProject";
+import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive } from "./lib/studioProject";
 import { DEBUG_PANE_ID } from "@/features/debug";
 import { useProjectComplete } from "./lib/useProjectComplete";
 import { usePreviewReview } from "./usePreviewReview";
@@ -96,6 +96,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const setFocusedPane = useAppStore((s) => s.setFocusedPane);
   const resumePaneSession = useAppStore((s) => s.resumePaneSession);
   const findFleetTabIdx = useAppStore((s) => s.findFleetTabIdx);
+  // Opening a base-studio-code studio node reveals its session on its own workspace page (#glance-resume);
+  // `paneClaudeActive` tells us whether that stable-id session is already running.
+  const setProjectsPageMode = useAppStore((s) => s.setProjectsPageMode);
+  const paneClaudeActive = useAppStore((s) => s.paneClaudeActive);
   const projectLinks = useAppStore((s) => s.projectLinks);
   const removeProjectLink = useAppStore((s) => s.removeProjectLink);
   // The UI-kit consumer index + kit library (#2571): drives the kit NODES on the L0 network (one per
@@ -259,17 +263,25 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // non-studio drill return null. Non-null ⇒ this node opens an app-owned session, not a fleet cell.
   const studioPaneId = (nodeId: string): string | null =>
     drill === BASE_STUDIO_PROJECT_ID ? studioPaneIdForNode(nodeId) : null;
-  // A node is LIVE — its terminal openable via the in-graph morph — iff its identity pane id
+  // A node is MORPHABLE — its terminal openable inline via the in-graph morph — iff its identity pane id
   // (`<project>:<stream>` or `<project>:director`) is a live cell of a launched fleet tab. EVERY fleet
   // node — workers AND the director — gets the morph (#2534/#2542). Drilled only. In the base-studio-code
-  // drill (#3326) a STUDIO node is openable whenever it maps to an app-owned session that's ON: the
-  // debugger node's session is kept warm by DebugSessionMount whenever the `debugSession` toggle is on —
-  // and since the node only EXISTS in the graph when the toggle is on, it's always openable when shown.
+  // drill only the DEBUGGER morphs (#3326): it's the one studio session hosted on the shared TerminalHost
+  // (kept warm by DebugSessionMount, and its node only EXISTS while the toggle is on). The designer /
+  // librarian / architect run on their own workspace surfaces the morph can't re-parent — they open in
+  // their page instead (see `onResumeNode`), so they must NOT take the morph path.
   const isLiveAgent = (nodeId: string) => {
     if (!drill) return false;
-    if (studioPaneId(nodeId)) return debugSession;
+    if (drill === BASE_STUDIO_PROJECT_ID) return nodeId === "debugger" && debugSession;
     return nodeHasLiveSession(fleetPaneId(drill, nodeId), livePaneIds);
   };
+  // Whether a node's SESSION is actually running (#glance-resume) — the studio analogue of morph-liveness.
+  // Drives the details-pane action's wording (open a running session vs resume a stopped one). A studio
+  // node reads its app-owned session's live signals; a fleet node is live when its cell is live.
+  const nodeActive = (nodeId: string) =>
+    drill === BASE_STUDIO_PROJECT_ID
+      ? studioSessionLive(nodeId, { debugSession, paneClaudeActive, paneStatus })
+      : isLiveAgent(nodeId);
   // On the L0 network: a click drills into that project's fleet. Inside a fleet a click checks in on a
   // LIVE agent (morph → terminal, #2401) or selects a non-live one. (Project links are LLM-authored, not
   // drawn by hand — the manual connect-mode was removed, #2737 direction.)
@@ -368,7 +380,19 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // Node Resume: jump to a live agent's Console pane; for a dormant agent, resume just that pane in place
   // when its build tab is still open, else bring the whole fleet back and land on it.
   const onResumeNode = (nodeId: string) => {
-    if (!canResume || !drill) return;
+    if (!drill) return;
+    // base-studio-code studio node (#3319/#glance-resume): open its app-owned session at its HOME. These
+    // sessions have STABLE ids, so revealing them re-uses the running session (or mounts it if it isn't
+    // up) — we never start a second one. The debugger opens inline (TerminalHost → the graph morph); the
+    // designer / librarian / architect open on their own workspace page.
+    if (drill === BASE_STUDIO_PROJECT_ID) {
+      const home = studioNodeHome(nodeId);
+      if (!home) return;                                   // a library/resource node — no session to open
+      if (home.kind === "morph") setChatNode(nodeId);
+      else { setWorkspace("projects"); setProjectsPageMode(home.pageMode); }
+      return;
+    }
+    if (!canResume) return;
     const paneId = fleetPaneId(drill, nodeId);
     if (livePaneIds.has(paneId)) { jumpToConsolePane(paneId); return; }
     setResumeMsg(null);
@@ -542,10 +566,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         onToggleOff={!drill && sel.type === "node" ? (off) => setGlanceNodeOff(sel.id, off) : undefined}
         // Open the real PTY stream (#2369) — only for a drilled, LIVE agent node.
         onOpenStream={sel.type === "node" && isLiveAgent(sel.id) ? (id) => setChatNode(id) : undefined}
-        // Resume this agent's session (#glance-resume) — a drilled REAL fleet node (not the studio project,
-        // not the preview node). Jumps to its Console pane when live, else relaunches that one agent.
-        onResumeNode={canResume && sel.type === "node" && sel.id !== PREVIEW_NODE_ID ? onResumeNode : undefined}
-        nodeLive={sel.type === "node" ? isLiveAgent(sel.id) : undefined} /> : undefined}
+        // Resume this node's session (#glance-resume). A drilled REAL fleet node jumps to its Console pane
+        // when live, else relaunches that one agent. A base-studio-code STUDIO node opens its app-owned
+        // session at its home (re-using the running one) — offered for the nodes that HAVE a session.
+        onResumeNode={sel.type === "node" && sel.id !== PREVIEW_NODE_ID
+          && (canResume || (drill === BASE_STUDIO_PROJECT_ID && !!studioNodeHome(sel.id)))
+          ? onResumeNode : undefined}
+        nodeLive={sel.type === "node" ? nodeActive(sel.id) : undefined} /> : undefined}
     >
       {/* keyed so drilling in/out remounts + replays the shared transition (graphCanvas.css, #2418) */}
       <Box key={drill ?? "network"} className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>
