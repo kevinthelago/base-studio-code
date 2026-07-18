@@ -101,6 +101,11 @@ export interface ConsoleState {
   // boot (like the accent). "default" = the base look. Registry: src/shared/ui/kit/theme.ts.
   kitTheme: string;
   setKitTheme: (id: string) => void;
+  // Opt-in notification sounds (#3082; persisted, default OFF; toggled in Settings → Appearance).
+  // When on, useNotificationSounds() plays a Signal-kit cue on fleet coord events (landing/merge →
+  // success, failure → error, a worker pausing → notify).
+  soundNotifications: boolean;
+  setSoundNotifications: (on: boolean) => void;
   // Custom keyboard shortcut overrides (#771): rebindable-shortcut id → chord
   // string (e.g. "Ctrl+Shift+KeyC"). Only overrides are stored; useHotkeys falls
   // back to DEFAULT_BINDINGS for any id absent here. Persisted; edited in
