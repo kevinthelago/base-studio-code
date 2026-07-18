@@ -127,4 +127,75 @@ mod tests {
             assert!(seed.contains(needle), "sound-designer seed must teach the reading term `{needle}`");
         }
     }
+
+    /// #3371 — the versioned release store is reachable from a sound-designer session with NO role
+    /// change. The session launches `restrictedAllow` with the single granted surface `bsc sound`
+    /// (`roleModel.ts`: `"sound-designer": ["bsc sound"]`), which `build_allow_rules` emits as
+    /// `Bash(bsc sound *)`. That rule prefix-matches `bsc sound release …` exactly as it matches
+    /// `bsc sound set`, so the designer can CUT a release from what it just authored without widening
+    /// its surface by one rule. Asserted rather than assumed: `release` is a nested verb, and a
+    /// narrower grant (`Bash(bsc sound set *)`-style, per-verb) would silently strand the publish step
+    /// behind a permission prompt.
+    #[test]
+    fn sound_designer_grant_covers_the_release_verb_without_a_role_change() {
+        use crate::session::settings::{write_session_settings, SessionSettingsSpec};
+        let dir = scratch();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".claude")).unwrap();
+
+        // The sound-designer launch shape (#3369): ONE granted command surface, baselines suppressed.
+        const GRANT: &str = "bsc sound";
+        write_session_settings(&SessionSettingsSpec {
+            allowed_commands: &[GRANT.into()],
+            restricted_allow: true,
+            replace_permissions: true,
+            bypass: false,
+            ..SessionSettingsSpec::for_dir(&dir.to_string_lossy())
+        })
+        .unwrap();
+
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join(".claude").join("settings.json")).unwrap())
+                .unwrap();
+        let allow: Vec<String> = v["permissions"]["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_str().unwrap().to_string())
+            .collect();
+
+        // The grant is present in both invocation forms (#3359) and is the WHOLE Bash surface.
+        assert!(allow.contains(&format!("Bash({GRANT} *)")), "granted with args: {allow:?}");
+        assert!(allow.contains(&format!("Bash({GRANT})")), "granted bare: {allow:?}");
+        assert!(!allow.iter().any(|r| r == "Bash"), "restrictedAllow emits no bare Bash: {allow:?}");
+
+        // Claude Code's `Bash(<prefix> *)` matches any command starting with `<prefix> `. Every release
+        // invocation the issue specifies is therefore auto-runnable under the EXISTING grant.
+        let covered = |cmd: &str| {
+            allow.iter().any(|rule| {
+                rule.strip_prefix("Bash(")
+                    .and_then(|r| r.strip_suffix(" *)"))
+                    .is_some_and(|prefix| cmd.strip_prefix(prefix).is_some_and(|rest| rest.starts_with(' ')))
+            })
+        };
+        for cmd in [
+            "bsc sound release list",
+            "bsc sound release get bsc/signal@1.0.0",
+            "bsc sound release add bsc/neon 1.0.0 --from-store neon",
+            "bsc sound release remove bsc/neon@1.0.0",
+            "bsc sound release verify bsc/neon@1.0.0",
+            "bsc sound set", // the pre-existing authoring verb still matches the same rule
+        ] {
+            assert!(covered(cmd), "`{cmd}` must auto-run under the sound-designer grant: {allow:?}");
+        }
+        // The surface did NOT have to grow: no per-verb `bsc sound release` rule was needed.
+        assert!(
+            !allow.iter().any(|r| r.contains("bsc sound release")),
+            "release rides the existing `bsc sound` prefix — no extra grant: {allow:?}"
+        );
+        // …and the confinement still holds: a SIBLING store CLI is not reachable.
+        assert!(!covered("bsc ui release list"), "the sound-designer never gains the UI store");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

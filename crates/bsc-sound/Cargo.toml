@@ -13,5 +13,11 @@ name = "bsc_sound"
 # The shared verbatim-JSON-per-id store + CLI scaffold (#2158) — this crate supplies only the
 # sound-kit nouns + lean `list` fields via a CliSpec.
 bsc-json-store = { path = "../bsc-json-store" }
-# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog.
+# Shared CLI scaffold (#1762): `CmdDoc` for the per-command help catalog + `resolve_store_path`.
 bsc-cli-util = { path = "../bsc-cli-util" }
+# Base-dir resolution for the default release-store root (~/.base-studio-code/sound-kits, #3371).
+bsc-util = { path = "../bsc-util" }
+serde_json = "1"
+# Content hashing for the release store's id@version integrity (#3371) — the same version `bsc-ui`'s
+# twin store locks, so this adds no new dependency to the workspace graph.
+sha2 = "0.11"
