@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <title>preview interaction harness</title>
+    <style>
+      /* The page is a bare mount point: the iframe sits at the viewport origin at a KNOWN size, so a
+         Playwright page coordinate is also an iframe-local coordinate and no offset math is needed. */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+      #preview {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 800px;
+        height: 600px;
+        border: 0;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- sandbox="allow-scripts" — byte-identical to the live preview (ComponentPreviewFrame.tsx:300) and
+         to the runtime probe (#2908). No allow-same-origin, so the srcdoc runs at an OPAQUE origin, which
+         is the trust boundary the shipped code actually enforces. -->
+    <iframe id="preview" sandbox="allow-scripts"></iframe>
+    <script type="module" src="/e2e/harness/previewHarness.ts"></script>
+  </body>
+</html>
