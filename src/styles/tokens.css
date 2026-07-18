@@ -266,10 +266,27 @@ html, body {
   --btn-bg: var(--bg-elev);
   --btn-bg-hover: var(--bg-elev2);
   --btn-border: var(--border-soft);
+  --btn-border-width: 1px;
   --btn-fg: var(--fg);
   --btn-radius: var(--r-md);
+  --btn-height: 28px;
+  --btn-pad-x: 12px;
+  --btn-gap: 6px;
+  --btn-font-family: var(--mono);
+  --btn-font-size: 11px;
+  --btn-font-weight: 400;
+  --btn-disabled-opacity: 0.4;
   --btn-primary-bg: var(--accent);
   --btn-primary-fg: #1a120a;
+  --btn-primary-border: transparent;
+  --btn-primary-font-weight: 600;
+  --btn-primary-hover-brightness: 1.05;
+  --btn-ghost-bg: transparent;
+  --btn-danger-fg: var(--danger);
+  --btn-danger-border: color-mix(in oklch, var(--danger), transparent 70%);
+  --btn-sm-height: 24px;
+  --btn-sm-pad-x: 9px;
+  --btn-sm-font-size: 10.5px;
   --field-bg: var(--bg-canvas);
   --field-border: var(--border-soft);
   --field-fg: var(--fg);
@@ -281,19 +298,25 @@ html, body {
 }
 
 /* generic UI primitives */
+/* Button is the EXHAUSTED component (#3394, first slice of #2553): every VISUAL property resolves from
+   a `--btn-*` token the design store owns, so the designer LLM restyles it — new variant included —
+   entirely through `bsc ui`, live, with zero React edits. Only STRUCTURE/BEHAVIOUR stays hardcoded
+   (`display`, `align-items`, `cursor`): #2553's reach table puts those outside the designer's line.
+   Every default is today's literal value, so introducing the tokens is a zero-visual-change commit. */
 .btn{
-  height:28px; padding:0 12px; border-radius:var(--btn-radius);
-  background:var(--btn-bg); border:1px solid var(--btn-border);
-  color:var(--btn-fg); font-family:var(--mono); font-size:11px; cursor:pointer;
-  display:inline-flex; align-items:center; gap:6px;
+  height:var(--btn-height); padding:0 var(--btn-pad-x); border-radius:var(--btn-radius);
+  background:var(--btn-bg); border:var(--btn-border-width) solid var(--btn-border);
+  color:var(--btn-fg); font-family:var(--btn-font-family); font-size:var(--btn-font-size);
+  font-weight:var(--btn-font-weight); cursor:pointer;
+  display:inline-flex; align-items:center; gap:var(--btn-gap);
 }
 .btn:hover{ background:var(--btn-bg-hover); }
-.btn.primary{ background:var(--btn-primary-bg); color:var(--btn-primary-fg); border-color:transparent; font-weight:600; }
-.btn.primary:hover{ filter:brightness(1.05); }
-.btn.ghost{ background:transparent; }
-.btn.danger{ color:var(--danger); border-color:color-mix(in oklch, var(--danger), transparent 70%); }
-.btn.sm{ height:24px; font-size:10.5px; padding:0 9px; }
-.btn:disabled{ opacity:.4; cursor:default; }
+.btn.primary{ background:var(--btn-primary-bg); color:var(--btn-primary-fg); border-color:var(--btn-primary-border); font-weight:var(--btn-primary-font-weight); }
+.btn.primary:hover{ filter:brightness(var(--btn-primary-hover-brightness)); }
+.btn.ghost{ background:var(--btn-ghost-bg); }
+.btn.danger{ color:var(--btn-danger-fg); border-color:var(--btn-danger-border); }
+.btn.sm{ height:var(--btn-sm-height); font-size:var(--btn-sm-font-size); padding:0 var(--btn-sm-pad-x); }
+.btn:disabled{ opacity:var(--btn-disabled-opacity); cursor:default; }
 
 /* ===== blueprints page (#513/#514) ===== */
 /* toggle switch */
