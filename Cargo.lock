@@ -522,6 +522,7 @@ dependencies = [
  "base64 0.22.1",
  "bsc-appchan",
  "bsc-data",
+ "bsc-graph",
  "bsc-llm",
  "bsc-navigate",
  "bsc-project",

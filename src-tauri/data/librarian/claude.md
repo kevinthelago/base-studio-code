@@ -128,26 +128,29 @@ Fix every finding on an algorithm you touched before moving on.
 - No UI-kit edits (`bsc ui` is denied — that's the Design Studio's designer session).
 - No project planning, no code generation, no team/persona authoring (that's the Teams Studio architect).
 
-## Authoring: write, then apply
+## Authoring: one line, flags only
 
-Every `bsc graph` verb that takes JSON accepts it **two** ways — stdin, or a file. In this session, use the
-**file**, always:
+`bsc graph` takes **no JSON body** — there is no stdin, and no flag that reads a staged file. Every
+write is a single `bsc graph impl set`, and its whole payload rides in **quoted flag values**, on
+ONE line:
 
 ```
-1. Write the JSON to a file in your scratch dir with the Write tool:   $BSC_SCRATCH/node.json
-2. Apply it:                                                          bsc graph set --file node.json
+bsc graph impl set --tech typescript --id insertion-sort.ts --role algorithm --name "Insertion sort" --kind sort --summary "Stable in-place sort; shifts each element left into its sorted prefix." --code "export function insertionSort(a: number[]) { for (let i = 1; i < a.length; i++) { … } return a; }" --viz-code "({ datatype: 'array', input: [5,2,9,1,6,3], run(a) { … } })"
 ```
 
-`--file` takes a **bare filename**, never a path — it resolves inside `$BSC_SCRATCH` and refuses
-anything containing `/`, `\`, `..` or `:`. The scratch dir is wiped at the start of every session, so
-treat it as a staging area, not storage: the store is the only place your work persists.
+Quote every value containing a space, and use single quotes INSIDE a double-quoted `--viz-code` so
+the descriptor never terminates its own argument. The same `--id` upserts, so a correction is just
+the command again with the fixed value — there is nothing to stage and nothing to clean up.
 
-**Why not a heredoc.** `bsc graph set <<'EOF' … EOF` looks natural and will be **rejected**. Your shell
-surface is an allow-list, and a newline counts as a command separator — so the JSON body and the closing
-`EOF` parse as their own commands, match no rule, and the whole thing is refused. `echo '…' | bsc graph set`
-and `bsc graph set < file` split the same way. A single-line `--file` invocation is the one form that works,
-and the only one that can carry a large multi-line payload without hitting the OS command-line limit.
-Write the file; pass its name.
+**Why not a heredoc.** `bsc graph impl set <<'EOF' … EOF` looks natural and will be **rejected**. Your
+shell surface is an allow-list, and a newline counts as a command separator — so the body and the
+closing `EOF` parse as their own commands, match no rule, and the whole thing is refused.
+`echo '…' | bsc graph impl set` and `bsc graph impl set < file` split the same way. A single-line
+invocation with quoted flags is the one form that works.
+
+Keep `--code` and `--viz-code` to the algorithm itself — they are real arguments on a real command
+line, so a file's worth of payload will hit the OS command-line limit. Ship the mechanics, not the
+commentary.
 
 ## Reading: never redirect, never chain
 
@@ -168,10 +171,10 @@ Each is unmatchable by the allow-list, for its own reason:
   `bsc graph dump > all.json; wc -l all.json`, `wc` matches nothing — so the whole line is
   refused, including the half that was fine.
 - A `$VAR` is only resolved when the command runs, so no rule can ever match a command containing one
-  (Claude Code reports this as *"Contains simple_expansion"*). That is exactly why `--file` takes a
-  bare name and not `$BSC_SCRATCH/name`.
-- A redirect also writes outside your writable scope: only `scratch/**` is writable, and your file
-  tools are pinned to this workspace.
+  (Claude Code reports this as *"Contains simple_expansion"*). That is exactly why every value you pass is a
+  literal — you write the id, the flag and the code out in full, never an expansion.
+- A redirect also writes outside your writable scope: only `scratch/**` is writable at all — and you
+  have no reason to write a file, since every read prints straight to the pane.
 
 Correct: `bsc graph impl list --tech rust --role algorithm`
 Rejected: `bsc graph dump --pretty > "$TEMP/graph.json" 2>&1; wc -l "$TEMP/graph.json"`
