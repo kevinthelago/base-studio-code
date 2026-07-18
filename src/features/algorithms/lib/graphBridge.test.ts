@@ -6,7 +6,14 @@ vi.mock("@/shared/lib/core/bsc", () => ({ bscJson: (...a: unknown[]) => bscJson(
 import { loadGraph } from "./graphBridge";
 
 describe("graphBridge.loadGraph (#2856)", () => {
-  beforeEach(() => bscJson.mockReset());
+  // Block body, NOT the concise `() => bscJson.mockReset()` (#3390): `mockReset()` RETURNS the mock, and
+  // vitest treats a function returned from `beforeEach` as an after-each TEARDOWN and invokes it. That
+  // stray invocation ran whatever implementation the test had installed — so the rejecting test below
+  // produced a second, unawaited rejected promise, and the resulting UNHANDLED rejection failed a test
+  // whose assertion had actually passed.
+  beforeEach(() => {
+    bscJson.mockReset();
+  });
 
   it("builds the impl-only model from a valid `bsc graph dump` doc (#2961)", async () => {
     bscJson.mockResolvedValue({
