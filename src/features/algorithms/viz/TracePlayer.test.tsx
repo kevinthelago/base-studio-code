@@ -117,6 +117,15 @@ describe("TracePlayer (#3176)", () => {
     expect(screen.getByTestId("array-view").textContent).toBe("0,1,2"); // last frame
     fwd();
     expect(screen.getByTestId("array-view").textContent).toBe("0"); // wrapped back to the start
+    // …and the wrap is not a one-off: stepping keeps working around the loop. This guards the #3390 shape
+    // of the bug specifically — the wrap used to cost a DEAD CLICK (the first click on the last frame did
+    // nothing because `atEnd()` still read false), so an off-by-one here is visible as a stalled step.
+    fwd();
+    expect(screen.getByTestId("array-view").textContent).toBe("0,1");
+    fwd();
+    expect(screen.getByTestId("array-view").textContent).toBe("0,1,2");
+    fwd();
+    expect(screen.getByTestId("array-view").textContent).toBe("0"); // wraps again, every lap
   });
 
   it("stepping pauses the infinite loop, which auto-resumes after idle", () => {
