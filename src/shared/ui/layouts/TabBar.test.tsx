@@ -36,4 +36,15 @@ describe("TabBar", () => {
     fireEvent.click(screen.getByText("Coordination"));
     expect(onSelect).toHaveBeenCalledWith("coordination");
   });
+
+  it("renders page-level actions in the trailing .tabstrip-actions slot (#3343)", () => {
+    render(<TabBar tabs={TABS} activeId="board" onSelect={() => {}} actions={<button>Act</button>} />);
+    const action = screen.getByText("Act");
+    expect(action.closest(".tabstrip-actions")).toBeTruthy();
+  });
+
+  it("renders no actions slot when actions is omitted (#3343)", () => {
+    const { container } = render(<TabBar tabs={TABS} activeId="board" onSelect={() => {}} />);
+    expect(container.querySelector(".tabstrip-actions")).toBeNull();
+  });
 });
