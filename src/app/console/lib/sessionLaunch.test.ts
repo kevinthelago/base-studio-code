@@ -256,18 +256,20 @@ describe("buildSessionSettings", () => {
     expect(out.bashPosture).toBe(build.tools.bash);
   });
 
+  // Every studio surface is a `bsc loop` participant (#3262); `stop` is withheld — see sessionRoles.test.ts.
+  const CURATOR_LOOP = ["bsc loop new", "bsc loop say", "bsc loop watch", "bsc loop show", "bsc loop list"];
   it("grants a curator pane its fixed bsc ui/graph store surface on top of the profile (#3095)", () => {
     // No profile assigned ⇒ the curator's WHOLE auto-run surface is the two store CLIs it harvests +
     // optimizes with (`bsc ui`, `bsc graph`). Layered, not replaced — see the profile case below.
     const bare = buildSessionSettings(mkStore({ paneRoles: { p: "curator" } }), "p");
-    expect(bare.allowedCommands).toEqual(["bsc ui", "bsc graph"]);
+    expect(bare.allowedCommands).toEqual(["bsc ui", "bsc graph", ...CURATOR_LOOP]);
     // With a profile, the fixed surface is APPENDED to the profile's own allowedCommands.
     const withProf = buildSessionSettings(
       mkStore({ paneRoles: { p: "curator" }, paneProfiles: { p: "pf_auto" }, agentProfiles: PROFILES }),
       "p",
     );
     const prof = resolveProfileSettings(PROFILES.find((x) => x.id === "pf_auto")!);
-    expect(withProf.allowedCommands).toEqual([...prof.allowedCommands, "bsc ui", "bsc graph"]);
+    expect(withProf.allowedCommands).toEqual([...prof.allowedCommands, "bsc ui", "bsc graph", ...CURATOR_LOOP]);
     // Every OTHER role is unchanged — the store surface is curator-only, so a worker never auto-runs it.
     const worker = buildSessionSettings(mkStore({ paneRoles: { p: "worker" } }), "p");
     expect(worker.allowedCommands).not.toContain("bsc ui");
