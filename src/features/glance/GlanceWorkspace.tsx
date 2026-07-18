@@ -38,7 +38,7 @@ import { resumeProjectFleet } from "./lib/resumeProject";
 import { buildGraph, focusSets, isLibraryNode, HEALTH_META, ROLE_COLOR } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
-import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive } from "./lib/studioProject";
+import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus } from "./lib/studioProject";
 import { DEBUG_PANE_ID } from "@/features/debug";
 import { isStudioId, useStudioViewers } from "@/features/studio-sessions";
 import { useProjectComplete } from "./lib/useProjectComplete";
@@ -258,9 +258,18 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const liveFleetData = useMemo(
     () =>
       fleetData && drill
-        ? { ...fleetData, rawNodes: applyFleetLiveStatus(fleetData.rawNodes, drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now }) }
+        ? {
+            ...fleetData,
+            // The base-studio project's nodes are STUDIO sessions, keyed by their stable app-owned pane id
+            // (`studioPaneIdForNode`) — not `fleetPaneId(project, node)`. Running the fleet overlay over them
+            // looked up a pane that never exists, so none was ever found live (#3421).
+            rawNodes:
+              drill === BASE_STUDIO_PROJECT_ID
+                ? applyStudioLiveStatus(fleetData.rawNodes, { debugSession, paneClaudeActive, paneStatus })
+                : applyFleetLiveStatus(fleetData.rawNodes, drill, { livePaneIds, paneStatus, waiting: coord.state.waiting, now }),
+          }
         : fleetData,
-    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now],
+    [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive],
   );
   const fleetModel = useMemo(() => (liveFleetData ? buildGraph(liveFleetData.rawNodes, liveFleetData.rawEdges) : null), [liveFleetData]);
   // The ACTIVE graph — the drilled fleet (with live status), else the project network. Everything downstream
