@@ -11,6 +11,7 @@ import {
 } from "@/shared/lib/session/systemSessions";
 import { buildOrgFleetData } from "./glanceFleet";
 import type { GlanceData, ProjectLite } from "./glanceData";
+import type { GHealth, GActivity, GRawNode } from "./glanceGraph";
 
 /** The synthetic project's id. Namespaced with a colon so it can NEVER collide with a real project slug
  *  (`projectSlug` is `[a-z0-9-]`, no colon). */
@@ -96,4 +97,46 @@ export function studioSessionLive(
   if (!sid) return false;
   if (nodeId === "debugger") return signals.debugSession;
   return !!signals.paneClaudeActive[sid] || signals.paneStatus[sid] === "run" || signals.paneStatus[sid] === "on";
+}
+
+/** The store signals {@link applyStudioLiveStatus} reads — the same set {@link studioSessionLive} takes. */
+export interface StudioLiveSignals {
+  debugSession: boolean;
+  paneClaudeActive: Record<string, boolean>;
+  paneStatus: Record<string, string | undefined>;
+}
+
+/**
+ * Overlay the LIVE session state onto the base-studio-code project's studio nodes (#3421) — the studio
+ * twin of `applyFleetLiveStatus`, and it exists because the two key their nodes DIFFERENTLY.
+ *
+ * A fleet node's pane id is `fleetPaneId(projectKey, nodeId)` (`<project>:<stream>`); a studio node's is
+ * its STABLE app-owned session id from {@link studioPaneIdForNode} (`DESIGN_STUDIO_SESSION_ID`, …). Running
+ * the fleet overlay over studio nodes therefore looked up `base-studio-code:designer`, which never exists,
+ * so no studio node was ever found live. That mis-keying was invisible while an unmatched node fell through
+ * to the raw `idle/idle` default (a plausible resting state) — #3415 made an unlaunched node read `off`,
+ * which pinned every studio node `off` no matter what its session was doing.
+ *
+ * Health follows the #3415 model — existence AND work, not mere launch:
+ *
+ *   - no session mounted                          → off · idle
+ *   - mounted but quiet                           → idle · idle
+ *   - mounted + working (`paneStatus === "run"`)  → healthy · building
+ *
+ * A node with NO fixed session (the `resource` libraries, the dynamic planner) is left untouched: it has no
+ * runtime state of its own, so forcing it `off` would misreport a library as a dead session. Pure — apply to
+ * `rawNodes` BEFORE `buildGraph` so the rollup recomputes over the live values.
+ */
+export function applyStudioLiveStatus(nodes: GRawNode[], signals: StudioLiveSignals): GRawNode[] {
+  return nodes.map((n) => {
+    if (n.preview) return n; // not a session node — its own state stands
+    const sid = studioPaneIdForNode(n.id);
+    if (!sid) return n; // a library/resource or the dynamic planner — no session to report on
+    if (!studioSessionLive(n.id, signals)) {
+      return { ...n, health: "off" as GHealth, activity: "idle" as GActivity };
+    }
+    return signals.paneStatus[sid] === "run"
+      ? { ...n, health: "healthy" as GHealth, activity: "building" as GActivity }
+      : { ...n, health: "idle" as GHealth, activity: "idle" as GActivity };
+  });
 }
