@@ -145,11 +145,26 @@ describe("domain facet (#3120) — a lightweight, cross-language collection tag"
   });
 
   it("existing impls without a domain load — the facet is absent, not defaulted (backward compatible)", () => {
+    // The facet stays OPTIONAL: a general-purpose sort belongs to no domain and is left untagged
+    // (#3134 tags only the impls a domain app would actually pull), so it carries neither key.
     const ms = implById(KNOWLEDGE, "merge-sort.rs")!;
     expect(ms.domain).toBeUndefined();
     expect(ms.tags).toBeUndefined();
-    // The Rust-only seed carries no domain facet at all — so the rail hides the domain affordance.
-    expect(domainsOf(KNOWLEDGE)).toEqual([]);
+  });
+
+  it("the packaged seed ships domain collections, so the rail's domain filter is populated (#3134)", () => {
+    // #3120 shipped the facet but left the seed untagged, which HID the rail affordance out of the box.
+    // #3134 tags the seed, so `domainsOf` is non-empty and the "a logistics app pulls from its logistics
+    // algorithms" example is real without manual `bsc graph impl set --domain` curation.
+    expect(domainsOf(KNOWLEDGE)).toEqual(["graphics", "logistics", "signal-processing"]);
+    expect(implsByDomain(KNOWLEDGE, "logistics").map((i) => i.id)).toEqual([
+      "bfs.rs", "dfs.rs", "dijkstra.rs", "a-star.rs", "topological-sort.rs",
+    ]);
+    expect(implsByDomain(KNOWLEDGE, "graphics").map((i) => i.id)).toEqual([
+      "transpose.ts", "rotate.ts", "reflect.ts",
+    ]);
+    // Primitives are language built-ins, never domain members.
+    expect(KNOWLEDGE.implementations.filter((i) => i.role === "primitive" && i.domain)).toEqual([]);
   });
 
   it("domainsOf lists the distinct domains present, stable-sorted, ignoring untagged impls", () => {
