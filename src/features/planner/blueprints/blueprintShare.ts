@@ -3,7 +3,7 @@
 // manifest (fresh uids, defensive field coercion — never trusts the payload shape).
 // Pure; pairs with lib/gist/manifest.ts.
 
-import { type Blueprint, type BlueprintStage, type BlueprintTeam, type BlueprintUiKit, type BlueprintDesign, type FleetPolicy, uid, dedupeSections } from "../stages/blueprints";
+import { type Blueprint, type BlueprintStage, type BlueprintTeam, type BlueprintUiKit, type BlueprintSoundKit, type BlueprintDesign, type FleetPolicy, uid, dedupeSections } from "../stages/blueprints";
 import { flowOrUndefined } from "../fleet/agentFlow";
 import { wrapExtension, type ExtensionManifest } from "@/features/planner/lib/gist/manifest";
 import { type SkillPayload } from "./blueprintSkills";
@@ -107,6 +107,21 @@ export function coerceUiKit(v: unknown): BlueprintUiKit | undefined {
   };
 }
 
+/** Coerce a blueprint's SOUND-kit pin (#3372) out of an untrusted payload — the sounds twin of
+ *  {@link coerceUiKit}, same discipline: a pin is only as good as its integrity data, so ALL of
+ *  id/version/hash are required (a hash-less pin can't be verified on fetch) and anything malformed
+ *  ⇒ `undefined` (the blueprint just stays unpinned). `source` (the typed-gist URL) stays optional.
+ *  No `themeId` twin — a sound kit has no theme (see {@link BlueprintSoundKit}). */
+export function coerceSoundKit(v: unknown): BlueprintSoundKit | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const id = str(o.id);
+  const version = str(o.version);
+  const hash = str(o.hash);
+  if (!id || !version || !hash) return undefined;
+  return { id, version, hash, ...(str(o.source) ? { source: str(o.source) } : {}) };
+}
+
 /** Coerce a blueprint's fleet POLICY (#1854 Phase b / #2460) out of an untrusted payload — the
  *  default per-stream profile + flow the planner instantiates for this project type's fleet.
  *  `profile` is a reference-by-id (any non-empty string; an unknown id already falls through to
@@ -163,6 +178,10 @@ export function coerceBlueprint(
   // UI-kit pin (#2465) — the whitelist below silently strips unknown fields (the #2450 lesson),
   // so the pin MUST be coerced explicitly or it would vanish on every import/poll round-trip.
   const uiKit = coerceUiKit(o.uiKit);
+  // Sound-kit pin (#3372) — SAME whitelist discipline as uiKit: without explicit coercion the pin
+  // would vanish on every import/share/poll round-trip and a shared blueprint would silently lose
+  // the sound kit it prescribes.
+  const soundKit = coerceSoundKit(o.soundKit);
   // Fleet policy (#1854 Phase b / #2460) — same whitelist discipline: without explicit coercion
   // every import/share/poll round-trip would silently strip the default per-stream profile+flow,
   // reverting the blueprint's fleet to launch defaults.
@@ -189,6 +208,7 @@ export function coerceBlueprint(
     ...(fleetPolicy ? { fleetPolicy } : {}),
     ...(team ? { team } : {}),
     ...(uiKit ? { uiKit } : {}),
+    ...(soundKit ? { soundKit } : {}),
     ...(design ? { design } : {}),
   };
 }
