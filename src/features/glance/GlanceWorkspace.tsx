@@ -27,6 +27,7 @@ import { GraphRail } from "@/shared/ui/layouts/GraphRail";
 import { RailRow } from "@/shared/ui/layouts/RailRow";
 import { SearchField } from "@/shared/ui/controls/SearchField";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
+import { resolveKitLibraryRefs } from "@/features/designs";
 import { Fleet } from "@/features/planner/fleet/Fleet";
 import { teamRoleStreams } from "@/features/planner/fleet/teamFleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
@@ -108,6 +109,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // distinct kit in use, edged to every consuming project — showing which projects share a kit).
   const kitUsage = useAppStore((s) => s.kitUsage);
   const kits = useAppStore((s) => s.kits);
+  // The cross-graph LIBRARY dimension (#3133): the algorithms/sounds each kit's components import. Memoized
+  // on `components` ALONE — deriving it scans every component's source, and `projects` below re-identifies
+  // on each status tick (faults/stall/`now`), so folding the scan into the `projectData` memo would re-run
+  // it on every poll. This way the scan runs only when the component library actually changes.
+  const components = useAppStore((s) => s.components);
+  const libraryRefs = useMemo(() => resolveKitLibraryRefs(components), [components]);
   // Per-project auto-triage toggle (#2265) — gates the fault→fix loop; surfaced in the node inspector.
   const autoTriage = useAppStore((s) => s.autoTriage);
   const setAutoTriage = useAppStore((s) => s.setAutoTriage);
@@ -144,9 +151,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     () => [...applyOffHealth(applyFaultHealth(applyStallHealth(projectsBase, coord.state.waiting, now), faults), glanceOff), BASE_STUDIO_PROJECT],
     [projectsBase, coord.state.waiting, faults, now, glanceOff],
   );
-  // L0 — the project-network graph (nodes = real projects + UI-kit nodes #2571, edges = the user-drawn
-  // relationships #2253 + one kit→project edge per consumer #2571).
-  const projectData = useMemo(() => buildGlanceData(projects, projectLinks, kitUsage, kits), [projects, projectLinks, kitUsage, kits]);
+  // L0 — the project-network graph (nodes = real projects + UI-kit nodes #2571 + the algorithm/sound
+  // library nodes their kits require #3133, edges = the user-drawn relationships #2253 + one kit→project
+  // edge per consumer #2571 + the transitive project→library `requires` edges #3133).
+  const projectData = useMemo(
+    () => buildGlanceData(projects, projectLinks, kitUsage, kits, libraryRefs),
+    [projects, projectLinks, kitUsage, kits, libraryRefs],
+  );
   const projectModel = useMemo(() => buildGraph(projectData.rawNodes, projectData.rawEdges), [projectData]);
 
   const { tabs, activeId, select, reorder, tearOff } = usePageTabs("glance", GLANCE_TABS);
