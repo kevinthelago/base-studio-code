@@ -2,7 +2,7 @@
 //! objects. The pipeline:
 //!
 //! ```text
-//! declarative op-tree (Node)  →  SDF evaluation  →  surface-nets polygonization  →  Mesh  →  STL / glTF
+//! declarative op-tree (Node)  →  SDF evaluation  →  dual-contouring polygonization  →  Mesh  →  STL / glTF
 //! ```
 //!
 //! Two exports, two audiences: **STL** ([`stl`]) is the maker/slicer interchange, **glTF/GLB**
@@ -18,10 +18,12 @@ pub mod gltf;
 pub mod math;
 pub mod mesh;
 pub mod node;
+pub mod qef;
 pub mod stl;
 
 pub use gltf::{to_glb, to_gltf_json};
 pub use math::{Aabb, Vec3};
-pub use mesh::{polygonize, Mesh};
+pub use mesh::{polygonize, polygonize_with, Mesh, Method};
 pub use node::Node;
+pub use qef::Qef;
 pub use stl::to_binary_stl;
