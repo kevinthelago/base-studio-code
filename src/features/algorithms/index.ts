@@ -26,8 +26,15 @@ export { ALGO_VIZ_KIT_ID, ALGO_VIZ_ANIMATIONS, ALGO_VIZ_ANIM_CLASSES } from "./v
 export { sortSteps, sort, SORT_MOCK, parseSortInput } from "./viz/examples/sort";
 // Instrumented execution (#3216) — the algorithm's real code drives the animation via the tracer.
 export { TracedArray, runAlgorithm, TracedMatrix, runMatrixAlgorithm, TracedGraph, runGraphAlgorithm } from "./lib/tracer";
-export type { GraphInput, GraphMark, GraphRole, Neighbour, CellWrite } from "./lib/tracer";
+export type { ArrayMark, GraphInput, GraphMark, GraphRole, Neighbour, CellWrite } from "./lib/tracer";
 export { TRACE_PROGRAMS, programKey, programForImpl, type AlgoProgram } from "./viz/examples/sorts";
+// Array SEARCH (#3220) — the `probe`/`found` vocabulary over the SAME ArrayView the sorts use.
+export { SEARCH_PROGRAMS, linearSearch, binarySearch, parseSearchInput, searchToText } from "./viz/examples/searches";
+export type { SearchInput, SearchProgram } from "./viz/examples/searches";
+// The `scalar` datatype (#3220) — renderer + the accumulate programs (fibonacci).
+export { ScalarView } from "./viz/renderers/ScalarView";
+export { TracedScalar, runScalarAlgorithm } from "./lib/tracer";
+export { SCALAR_PROGRAMS, fibonacci, parseScalarInput, scalarToText, type ScalarProgram } from "./viz/examples/scalarAlgos";
 // The `matrix` datatype (#3221, epic #3220) — renderer + transform programs.
 export { MatrixView } from "./viz/renderers/MatrixView";
 export { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } from "./viz/examples/matrixTransforms";

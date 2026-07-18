@@ -7,9 +7,10 @@
 //!
 //! Everything is millimetres. The op-tree is the source of truth an AI authors (describe *what the
 //! part is*, not matrices); booleans + a smooth-min fillet (`smooth_union`) cover the common CSG moves.
-//! Tauri-free and dependency-light so the same crate powers the CLI here, the future `bsc cad`
-//! subcommand, and a WASM/web build. Trade-offs vs OCCT/B-rep (no true STEP, no named topology, …) are
+//! Tauri-free and dependency-light so the same crate powers the `bsc cad` subcommand ([`cli`], #3387)
+//! and a WASM/web build. Trade-offs vs OCCT/B-rep (no true STEP, no named topology, …) are
 //! tracked on #2621; the icebox split into a standalone package is #2620.
+pub mod cli;
 pub mod math;
 pub mod mesh;
 pub mod node;

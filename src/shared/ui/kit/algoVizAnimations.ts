@@ -1,5 +1,6 @@
 // The `algo-viz` kit's MOTION library as DATA (#2942/#3194, epic #3171) — the compare / swap / set /
-// sorted animations authored as {@link KitAnimation} data, compiled by the kit-motion engine
+// sorted (+ the search pair probe / found, #3220) animations authored as {@link KitAnimation} data,
+// compiled by the kit-motion engine
 // (`compileAnimationsCss`), NOT as hand-written CSS `@keyframes`. This is the epic's core vision: motion
 // is data, so it's editable in the Designer's Animations menu instead of baked into a renderer's
 // stylesheet.
@@ -82,6 +83,38 @@ export const ALGO_VIZ_ANIMATIONS: KitAnimation[] = [
     keyframes: {
       "0%": { background: "color-mix(in oklch, var(--accent), transparent 20%)" },
       "100%": { background: "var(--bg-elev)" },
+    },
+  },
+  // probe — the SEARCH verb (#3220): ONE cell examined against an external target. Deliberately unlike
+  // `compare` (which pulses a PAIR): a tight accent ring that closes in on the single cell, so a search
+  // reads as "inspect this one" rather than "weigh these two".
+  {
+    name: "probe",
+    selector: '[data-op="probe"]',
+    duration: "460ms",
+    easing: "var(--ease-standard)",
+    set: { "z-index": "1" },
+    keyframes: {
+      "0%": { "box-shadow": "0 0 0 6px transparent", "border-color": "var(--border)" },
+      "50%": {
+        "box-shadow": "0 0 0 2px color-mix(in oklch, var(--accent), transparent 35%)",
+        "border-color": "var(--accent)",
+      },
+      "100%": { "box-shadow": "0 0 0 0 transparent", "border-color": "var(--border)" },
+    },
+  },
+  // found — the search's terminal hit (#3220): a one-shot pop as the target is located (its DURABLE accent
+  // resting look is a static element style in arrayView.css, since the mark ends the trace).
+  {
+    name: "found",
+    selector: '[data-mark="found"]',
+    duration: "420ms",
+    easing: "cubic-bezier(0.34, 1.4, 0.5, 1)",
+    set: { "z-index": "2" },
+    keyframes: {
+      "0%": { transform: "scale(1)" },
+      "45%": { transform: "scale(1.12)" },
+      "100%": { transform: "scale(1)" },
     },
   },
   // sorted — a one-shot settle as a cell reaches its final place (its DURABLE green resting look is a

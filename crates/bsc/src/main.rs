@@ -31,6 +31,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("loop", "conversation loop store: two participants exchange turns until a signal ends it, or never (#3262)"),
     ("request", "improvement-request store: the designer→debug channel for bsc ui surface gaps (#3295)"),
     ("graph", "algorithms knowledge library: per-language implementations (impl list · dump · harvest · curate)"),
+    ("cad", "mesh/SDF geometry kernel (mm): mesh an op-tree spec into a binary STL"),
     ("data", "canonical data model (DuckDB): model · scan · tables · connector"),
     ("mcp", "bundled MCP servers (stdio JSON-RPC): research · compliance"),
     ("hook", "internal PreToolUse deny hooks (run by Claude Code, not by hand)"),
@@ -86,6 +87,7 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         "loop" => bsc_loop::cli::run(rest, "bsc loop"),
         "request" => bsc_request::cli::run(rest, "bsc request"),
         "graph" => bsc_graph::cli::run(rest, "bsc graph"),
+        "cad" => bsc_cad::cli::run(rest, "bsc cad"),
         #[cfg(feature = "data")]
         "data" => bsc_data::cli::run(rest, "bsc data"),
         "mcp" => run_mcp(rest),
@@ -187,6 +189,23 @@ mod tests {
         // #3295: the improvement-request store is mounted + listed. Help path — no store required.
         assert!(dispatch("request", vec!["help".into()]).is_ok());
         assert!(top_help().contains("improvement-request store"), "the request row describes the store");
+    }
+
+    #[test]
+    fn cad_dispatches_and_appears_in_the_overview() {
+        // #3387: the geometry kernel (#2621) is mounted + listed, so a live session reaches it via
+        // $BSC_BIN with no PATH changes. Help path — no spec file required.
+        assert!(dispatch("cad", vec!["help".into()]).is_ok());
+        assert!(top_help().contains("mesh/SDF geometry kernel"), "the cad row describes the kernel");
+    }
+
+    #[test]
+    fn an_unmounted_command_is_still_refused() {
+        // The counterpart to every "X dispatches" test: adding `cad` must not have widened the
+        // fallthrough. An unknown command errors with the overview attached.
+        let e = dispatch("cadd", vec![]).unwrap_err();
+        assert!(e.contains("unknown command 'cadd'"));
+        assert!(e.contains("COMMANDS:"), "the refusal carries the command overview");
     }
 
     #[test]
