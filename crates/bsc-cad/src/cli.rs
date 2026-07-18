@@ -15,7 +15,7 @@
 //! Reachable from a live session with no PATH changes: `bsc` is in the mandatory baseline command set
 //! (`data/permissions/base.json`) and is execed by absolute path from `$BSC_BIN`.
 
-use crate::{polygonize, to_binary_stl, Node};
+use crate::{polygonize_with, to_binary_stl, Method, Node};
 use bsc_cli_util::CmdDoc;
 use serde::Serialize;
 
@@ -34,16 +34,20 @@ USAGE:
   bsc cad mesh <spec.json> [-o <out.stl>] [--res <N>] [--json|--pretty]
 
 Evaluates the declarative op-tree in <spec.json> as a signed-distance field, polygonizes it
-(surface nets) into a watertight mesh, and writes a binary STL. Everything is MILLIMETRES.
+(dual contouring) into a watertight mesh, and writes a binary STL. Everything is MILLIMETRES.
 
   <spec.json>      the op-tree, e.g. {\"op\":\"box\",\"size\":[20,10,5]}
   -o, --out <f>    output STL path (default: <spec-stem>.stl, in the CURRENT directory)
   --res <N>        cells along the longest axis (default: 96) — higher = finer, and cost grows
                    roughly with N³, so raise it only once the shape is right.
+  --method <m>     dual (default) | surface-nets. `dual` is feature-preserving dual contouring:
+                   it solves each cell's tangent planes so edges and corners stay CRISP.
+                   `surface-nets` is the older mean-of-crossings placement, which rounds every
+                   sharp feature off — kept for comparison, not recommended for output.
 
 THE OP-TREE
   Primitives (mm):  box{size:[x,y,z]} · sphere{r} · cylinder{r,h}
-  Transforms:       translate{by,node} · rotate{axis,angle,node} · scale{by,node}
+  Transforms:       translate{by,node} · rotate{deg,axis,node} · scale{factor,node}
   Booleans:         union{nodes} · difference{base,tools} · intersect{nodes}
   Fillet:           smooth_union{k,nodes} — k is the blend radius in mm (SDF smooth-min)
 
@@ -52,7 +56,12 @@ THE OP-TREE
 
 OUTPUT
   Lean text (default) prints the stats block. --json/--pretty emit them structured:
-  { spec, out, resolution, bounds_mm, vertices, triangles, watertight, volume_mm3, bytes, empty }.
+  { spec, out, resolution, method, bounds_mm, vertices, triangles, watertight, volume_mm3,
+    max_deviation_mm, mean_deviation_mm, bytes, empty }.
+
+  The two deviation numbers are how far the mesh's vertices sit off the TRUE surface (max and
+  mean |SDF|, mm). MAX is the sharp-feature check: a polygonizer that rounds edges shows a max a
+  sizeable fraction of a cell, while the mean stays small because flat faces are easy either way.
 
 EMPTY MESHES ARE NOT AN ERROR
   A spec whose solids never overlap (or whose difference removes everything) polygonizes to zero
@@ -68,23 +77,33 @@ struct MeshStats {
     spec: String,
     out: String,
     resolution: usize,
+    /// Which polygonizer placed the vertices — `dual-contouring` (default) or `surface-nets`.
+    method: &'static str,
     /// Bounding-box size in mm, `[x, y, z]` — from the op-tree's analytic bbox, not the mesh.
     bounds_mm: [f64; 3],
     vertices: usize,
     triangles: usize,
     watertight: bool,
     volume_mm3: f64,
+    /// Worst distance from a mesh vertex to the true surface (mm) — the sharp-feature check (#3388).
+    /// Rounding an edge means pulling that cell's vertex off the surface, so a blunt polygonizer
+    /// shows a max on the order of a cell while a feature-preserving one stays near zero.
+    max_deviation_mm: f64,
+    /// Mean distance from a mesh vertex to the true surface (mm). Small under either method — flat
+    /// faces are easy — which is why `max_deviation_mm` is the number that discriminates.
+    mean_deviation_mm: f64,
     /// Size of the written STL in bytes.
     bytes: usize,
     /// Zero-triangle mesh — a valid outcome (see the `mesh` help), surfaced so a caller can branch.
     empty: bool,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct Args {
     positional: Vec<String>,
     out: Option<String>,
     res: Option<usize>,
+    method: Option<Method>,
     json: bool,
     pretty: bool,
 }
@@ -108,6 +127,12 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
                     return Err(format!("--res must be at least 2 cells, got {n}"));
                 }
                 a.res = Some(n);
+            }
+            "--method" => {
+                let v = it.next().ok_or("--method needs a name: dual | surface-nets")?;
+                a.method = Some(Method::parse(&v).ok_or_else(|| {
+                    format!("--method: unknown polygonizer '{v}' (expected: dual | surface-nets)")
+                })?);
             }
             other if other.starts_with("--") => return Err(format!("unknown flag: {other}")),
             other => a.positional.push(other.to_string()),
@@ -146,21 +171,26 @@ fn cmd_mesh(args: &Args) -> Result<(), String> {
         serde_json::from_str(&text).map_err(|e| format!("invalid spec '{spec_path}': {e}"))?;
 
     let res = args.res.unwrap_or(DEFAULT_RES);
-    let mesh = polygonize(&node, res);
+    let method = args.method.unwrap_or_default();
+    let mesh = polygonize_with(&node, res, method);
     let out_path = args.out.clone().unwrap_or_else(|| default_out(spec_path));
     let bytes = to_binary_stl(&mesh);
     std::fs::write(&out_path, &bytes).map_err(|e| format!("cannot write '{out_path}': {e}"))?;
 
     let sz = node.bbox().size();
+    let (max_dev, mean_dev) = mesh.surface_deviation(&node);
     let stats = MeshStats {
         spec: spec_path.clone(),
         out: out_path,
         resolution: res,
+        method: method.as_str(),
         bounds_mm: [sz.x, sz.y, sz.z],
         vertices: mesh.positions.len(),
         triangles: mesh.triangle_count(),
         watertight: mesh.is_watertight(),
         volume_mm3: mesh.volume(),
+        max_deviation_mm: max_dev,
+        mean_deviation_mm: mean_dev,
         bytes: bytes.len(),
         empty: mesh.is_empty(),
     };
@@ -184,21 +214,26 @@ fn lean(s: &MeshStats) -> String {
         "bsc cad · {}\n  \
          bounds      {:.2} × {:.2} × {:.2} mm\n  \
          resolution  {} cells / longest axis\n  \
+         method      {}\n  \
          vertices    {}\n  \
          triangles   {}\n  \
          watertight  {}\n  \
          volume      {:.1} mm³  ({:.2} cm³)\n  \
+         deviation   {:.4} mm max · {:.4} mm mean  (vertex off the true surface)\n  \
          wrote       {}  ({} bytes)",
         s.spec,
         s.bounds_mm[0],
         s.bounds_mm[1],
         s.bounds_mm[2],
         s.resolution,
+        s.method,
         s.vertices,
         s.triangles,
         s.watertight,
         s.volume_mm3,
         s.volume_mm3 / 1000.0,
+        s.max_deviation_mm,
+        s.mean_deviation_mm,
         s.out,
         s.bytes,
     );
@@ -217,11 +252,14 @@ mod tests {
             spec: "bracket.json".into(),
             out: "bracket.stl".into(),
             resolution: 96,
+            method: "dual-contouring",
             bounds_mm: [40.0, 24.0, 20.0],
             vertices: 12,
             triangles: 4,
             watertight: true,
             volume_mm3: 2500.0,
+            max_deviation_mm: 0.0012,
+            mean_deviation_mm: 0.0003,
             bytes: 284,
             empty: false,
         }
@@ -286,6 +324,26 @@ mod tests {
         assert_eq!(a.out.as_deref(), Some("part.stl"));
         assert_eq!(a.res, Some(128));
         assert!(a.json);
+        assert_eq!(a.method, None, "absent --method means the default polygonizer");
+    }
+
+    #[test]
+    fn method_selects_the_polygonizer_and_defaults_to_sharp() {
+        use crate::Method;
+        // The default must be the feature-preserving one: a caller that says nothing gets crisp
+        // edges, and `surface-nets` is the deliberate opt-out (#3388).
+        assert_eq!(parse_args(vec!["mesh".into()]).unwrap().method.unwrap_or_default(),
+                   Method::DualContouring);
+        let a = parse_args(vec!["mesh".into(), "--method".into(), "surface-nets".into()]).unwrap();
+        assert_eq!(a.method, Some(Method::SurfaceNets));
+        let d = parse_args(vec!["mesh".into(), "--method".into(), "dual".into()]).unwrap();
+        assert_eq!(d.method, Some(Method::DualContouring));
+
+        // An unknown method is refused by NAME rather than silently falling back — a typo that
+        // quietly meshed with the rounding polygonizer would be the worst possible outcome here.
+        let err = parse_args(vec!["mesh".into(), "--method".into(), "marching".into()]).unwrap_err();
+        assert!(err.contains("marching") && err.contains("dual"), "{err}");
+        assert!(parse_args(vec!["mesh".into(), "--method".into()]).is_err(), "--method needs a value");
     }
 
     #[test]
@@ -310,6 +368,8 @@ mod tests {
         let s = lean(&stats());
         assert!(s.contains("40.00 × 24.00 × 20.00 mm"));
         assert!(s.contains("triangles   4"));
+        assert!(s.contains("method      dual-contouring"), "the polygonizer is reported");
+        assert!(s.contains("0.0012 mm max"), "the sharp-feature metric is reported");
         assert!(s.contains("bracket.stl  (284 bytes)"));
         assert!(!s.contains("empty mesh"), "a real mesh carries no empty note");
 
