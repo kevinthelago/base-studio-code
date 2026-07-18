@@ -35,6 +35,36 @@ USAGE:
 Needs a store (--db <path> or $BSC_DATA_DB).",
     },
     CmdDoc {
+        name: "shapes",
+        summary: "infer each entity's ideal data shape from the Data Model (#2478)",
+        usage: "\
+USAGE:
+  bsc data shapes [<entity>] [--json|--pretty]
+
+Derives every entity's ideal DATA SHAPE from the canonical Data Model's structure — so a layout is
+picked mechanically instead of by judging the taxonomy by hand. With <entity>, prints just that one.
+
+Shapes are the six-shape vocabulary (#2475): list · linked-list · tree · graph · table · key-value.
+The slugs are byte-identical to the picker's, so the output feeds straight into it:
+
+  bsc data shapes                      # what shape IS each entity's data
+  bsc ui shapes <shape>                # which kit components ideally render that shape
+
+WHAT IT READS: a `ref` field IS a foreign key — its `ref` names the target entity. A SELF-referencing
+ref (a ref back to its own entity) is what distinguishes a hierarchy from a flat collection.
+
+HEURISTICS: self-referencing ref → tree (graph when several self-refs admit multiple parents) ·
+a next/prev self-ref or a numeric sequence column → linked-list · a join table (nearly all refs, ≥2
+distinct targets) or a join-heavy entity (≥3 targets) → graph · a name column + a value column →
+key-value · otherwise a plain collection → table when column-dense, list when lean. Every entity
+also offers key-value as its single-record DETAIL view.
+
+Each entity gets RANKED CANDIDATES (strongest first), each with a `confidence`
+(strong|likely|possible) and the `reason` it fired — never one guessed answer. The schema genuinely
+cannot tell a tree from a graph when an item MAY have several parents, so both are offered and the
+planner asks. Read-only; needs a store (--db <path> or $BSC_DATA_DB).",
+    },
+    CmdDoc {
         name: "scan",
         summary: "read/write the Platform Behavior Summary (PlatformScan)",
         usage: "\
@@ -243,6 +273,44 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             let store = MetaStore::open(&db).map_err(|e| e.to_string())?;
             let model: DataModel = bsc_sqlite_util::read_stdin_json_one("DataModel")?;
             store.set_model(&model, args.refined).map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        // Shape inference (#2478) — reads the MetaStore only (the schema, not the loaded rows), so
+        // it works before any data is materialized.
+        ("shapes", _) => {
+            let store = MetaStore::open(&db).map_err(|e| e.to_string())?;
+            let model = store
+                .get_model()
+                .map_err(|e| e.to_string())?
+                .map(|(m, _refined)| m)
+                .ok_or("no Data Model in the store — run `bsc data model set` first")?;
+            let all = crate::shape::infer_shapes(&model);
+            // An explicit <entity> narrows to one — and an unknown key is an error, not silence.
+            let picked: Vec<crate::shape::EntityShapes> = match args.positional.get(1) {
+                Some(key) => {
+                    let hit = all.into_iter().find(|e| &e.entity == key).ok_or_else(|| {
+                        format!("unknown entity '{key}' — `bsc data shapes` lists every entity in the model")
+                    })?;
+                    vec![hit]
+                }
+                None => all,
+            };
+            let value = serde_json::to_value(&picked).map_err(|e| e.to_string())?;
+            emit(args.pretty, args.json, &value, || {
+                let mut lines = vec!["entity\tshape\tconfidence\treason".to_string()];
+                for es in &picked {
+                    for c in &es.candidates {
+                        lines.push(format!(
+                            "{}\t{}\t{}\t{}",
+                            es.entity,
+                            c.shape.slug(),
+                            c.confidence.label(),
+                            c.reason
+                        ));
+                    }
+                }
+                lines.join("\n")
+            });
             Ok(())
         }
         ("scan", "get") => {
@@ -536,8 +604,14 @@ mod tests {
     #[test]
     fn help_overview_lists_commands_and_per_command_help_drills_in() {
         let ov = bsc_cli_util::help_overview("bsc data", TAGLINE, COMMANDS);
-        for c in ["model", "scan", "tables", "rows", "count", "nulls", "lineage", "connector"] {
+        for c in ["model", "shapes", "scan", "tables", "rows", "count", "nulls", "lineage", "connector"] {
             assert!(ov.contains(c), "overview lists {c}");
+        }
+        // `shapes` help teaches the hand-off to the #2475 picker and names the vocabulary.
+        let s = bsc_cli_util::help_for("bsc data", TAGLINE, COMMANDS, "shapes");
+        assert!(s.contains("bsc ui shapes"), "shapes help points at the component-side picker");
+        for shape in ["list", "linked-list", "tree", "graph", "table", "key-value"] {
+            assert!(s.contains(shape), "shapes help names the `{shape}` vocabulary token");
         }
         // `connector help` shows the connector subcommands, not the whole menu.
         let c = bsc_cli_util::help_for("bsc data", TAGLINE, COMMANDS, "connector");
@@ -550,6 +624,59 @@ mod tests {
         }
         // An unknown command falls back to the overview.
         assert!(bsc_cli_util::help_for("bsc data", TAGLINE, COMMANDS, "nope").contains("COMMANDS:"));
+    }
+
+    #[test]
+    fn shapes_verb_dispatches_over_a_stored_model_and_narrows_by_entity() {
+        // Drives the real dispatch: a model persisted in the MetaStore, then `shapes` / `shapes
+        // <entity>` / an unknown entity / an empty store.
+        let db = std::env::temp_dir()
+            .join(format!("bsc-data-shapes-test-{}.duckdb", std::process::id()));
+        let _ = std::fs::remove_file(&db);
+        let dbs = db.to_string_lossy().into_owned();
+
+        // No model yet → a crisp error, never a panic.
+        assert!(run(vec!["shapes".into(), "--db".into(), dbs.clone()], "bsc data").is_err());
+
+        let field = |k: &str, ty: crate::FieldType| crate::Field {
+            key: k.into(), label: String::new(), ty, required: false,
+            reference: None, enum_values: vec![], validate: None,
+        };
+        let model = DataModel {
+            name: "m".into(),
+            version: 1,
+            entities: vec![crate::Entity {
+                key: "category".into(),
+                label: String::new(),
+                fields: vec![
+                    field("id", crate::FieldType::String),
+                    crate::Field {
+                        reference: Some("category".into()),
+                        ..field("parent_id", crate::FieldType::Ref)
+                    },
+                ],
+                identity: vec!["id".into()],
+            }],
+        };
+        MetaStore::open(&db).unwrap().set_model(&model, true).unwrap();
+
+        for form in [vec!["shapes".to_string()], vec!["shapes".into(), "category".into()]] {
+            let mut a = form.clone();
+            a.extend(["--db".to_string(), dbs.clone()]);
+            assert!(run(a, "bsc data").is_ok(), "{form:?} runs");
+            let mut j = form;
+            j.extend(["--json".to_string(), "--db".to_string(), dbs.clone()]);
+            assert!(run(j, "bsc data").is_ok(), "…and in --json");
+        }
+        // An unknown entity is an error, not silent emptiness.
+        let err = run(
+            vec!["shapes".into(), "nope".into(), "--db".into(), dbs.clone()],
+            "bsc data",
+        )
+        .unwrap_err();
+        assert!(err.contains("unknown entity 'nope'"), "got: {err}");
+
+        let _ = std::fs::remove_file(&db);
     }
 
     #[test]
