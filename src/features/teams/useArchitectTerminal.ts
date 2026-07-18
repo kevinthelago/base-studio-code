@@ -28,6 +28,7 @@ import {
   roleDeniedTools,
   roleWriteRules,
   sessionScopes,
+  restrictedRoleCommands,
 } from "@/shared/lib/session/sessionRoles";
 import { useScreenSession } from "@/shared/lib/session/useScreenSession";
 import { BUILTIN_PERSONAS } from "@/features/personas";
@@ -44,7 +45,7 @@ export const ARCHITECT_PANE_ID = TEAMS_STUDIO_SESSION_ID;
 
 /** The architect's whole command surface: `bsc teams` (the persona-relationship graph) + `bsc persona`
  *  (agent identities), emitted as the session's ONLY `Bash(<cmd> *)` allows via `restrictedAllow`. */
-export const ARCHITECT_ALLOWED_COMMANDS = ["bsc teams", "bsc persona"];
+export const ARCHITECT_ALLOWED_COMMANDS = restrictedRoleCommands("architect");
 
 export interface ArchitectTerminalHandle {
   /** Host element for the xterm canvas — attach to the terminal container div. */
