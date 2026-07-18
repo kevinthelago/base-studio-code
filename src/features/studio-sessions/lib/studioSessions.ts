@@ -94,9 +94,30 @@ export const STUDIO_SESSIONS: Record<StudioId, StudioSessionDef> = {
   },
 };
 
-/** Resume the prior studio conversation across app restarts, else launch a fresh session. Verbatim from
- *  the pre-#3357 bespoke `pty_create` calls (all three used the identical init). */
-export const STUDIO_INIT_CMD = "claude --continue 2>/dev/null || claude";
+/** Where a failed `--continue` writes its reason. Under `$BSC_LOG_DIR` (set per-pane by `pty_create`,
+ *  alongside the audit/coord/perf streams), so it sits with the rest of a session's diagnostics. */
+export const STUDIO_RESUME_LOG = "studio-resume.log";
+
+/**
+ * Resume the prior studio conversation across app restarts, else launch a fresh session.
+ *
+ * The `|| claude` fallback is deliberate — a genuinely first launch has nothing to resume. What was
+ * NOT deliberate is that the old form (`claude --continue 2>/dev/null || claude`) **discarded the
+ * reason** and degraded silently: a session that failed to resume looked identical to one that had
+ * never run, with no log line and nothing in the pane. That made #3374 — studios starting a fresh
+ * conversation across restarts — impossible to diagnose, because the one signal that would explain it
+ * was being thrown away on every launch.
+ *
+ * So stderr now APPENDS to `$BSC_LOG_DIR/studio-resume.log` instead of `/dev/null`, and the fallback
+ * announces itself in the pane. Behaviour is otherwise unchanged: resume when there is something to
+ * resume, start fresh when there isn't.
+ *
+ * `${BSC_LOG_DIR:-/tmp}` guards the (unexpected) case of an unset log dir — a missing diagnostic must
+ * never stop the session launching.
+ */
+export const STUDIO_INIT_CMD =
+  `claude --continue 2>>"\${BSC_LOG_DIR:-/tmp}/${STUDIO_RESUME_LOG}"` +
+  ` || { echo "[studio] no prior session resumed — starting fresh (why: \${BSC_LOG_DIR:-/tmp}/${STUDIO_RESUME_LOG})"; claude; }`;
 
 /** Narrow an arbitrary string (a Glance node id, a persisted value) to a StudioId. */
 export function isStudioId(value: string | null | undefined): value is StudioId {
