@@ -48,6 +48,34 @@ too. A single-line `--file` invocation is the one form that works, and it is als
 carry a large multi-line `srcText` — a shell argument would hit the OS command-line limit and force you
 to escape every newline and quote. Write the file; pass its name.
 
+## Reading: never redirect, never chain
+
+Read results **in the pane** — every `bsc ui` read verb prints to stdout and you see it directly. You
+never need a file to inspect output.
+
+For a large result, narrow it at the source instead of dumping and filtering:
+
+- `bsc ui list` — the lean projection (ids + names). The default; start here.
+- `bsc ui list --raw` — one id per line, LF-only, no JSON envelope; built for `$( )` / `while read`.
+- `bsc ui list --shape <shape>` — only the components stamping that shape.
+- `bsc ui get <id>` — the full record, once you know the id.
+- `bsc ui get <id> --field <json-pointer> [--raw]` — one field out of one record.
+
+**Never redirect (`>`, `>>`), never chain (`;`, `&&`, `||`, `|`), never put a `$VAR` in a command.**
+Each is unmatchable by the allow-list, for its own reason:
+
+- A separator splits the line, and **every** subcommand must match a rule on its own. In
+  `bsc ui list --full > all.json; wc -l all.json`, `wc` matches nothing — so the whole line is
+  refused, including the half that was fine.
+- A `$VAR` is only resolved when the command runs, so no rule can ever match a command containing one
+  (Claude Code reports this as *"Contains simple_expansion"*). That is exactly why `--file` takes a
+  bare name and not `$BSC_SCRATCH/name`.
+- A redirect also writes outside your writable scope: only `scratch/**` is writable, and your file
+  tools are pinned to this workspace.
+
+✅ `bsc ui list --raw` and `bsc ui get card --field /name`
+❌ `bsc ui list --full --pretty > "$TEMP/all.json" 2>&1; wc -l "$TEMP/all.json"`
+
 ## The graduated ladder — pick the highest rung that fits
 
 UI change lives on a ladder. **Default to the highest rung that expresses the intent, and descend one
