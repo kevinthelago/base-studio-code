@@ -305,18 +305,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     setDrill(projectKey);
     setWorkspace("glance");
   };
-  // (Re)START one fleet node (#3337) — re-enable + un-end its cell so the console relaunches just that pane
-  // (mirrors the kill path in reverse). Gated by startableNode to a cell that EXISTS in a build tab.
+  // (Re)START one fleet node from its INSPECTOR (#3341, was on-node #3337) — re-enable + un-end its cell so
+  // the console relaunches just that pane (mirrors the kill path in reverse). Gated by startableNode.
   const startNode = (pid: string) => { setPaneDisabled(pid, false); reopenPane(pid); };
-  // The node's ▶ START button (#3337): L0 project node → start its fleet; L1 fleet node → restart its cell.
-  const onStartNode = (id: string) => {
-    if (drill) startNode(fleetPaneId(drill, id));
-    else void startFleet(id);
-  };
-  // Whether a node shows the ▶ START button (#3337). L0: a REAL project node (not a library/kit node, not
-  // the synthetic base-studio-code node — its studio sessions launch via their own toggles/workspaces). L1:
-  // a fleet node whose cell EXISTS in a build tab but is stopped — re-enabling relaunches it; a LIVE node
-  // opens its stream instead, and a never-launched fleet has no cell to restart (use L0 "start fleet").
+  // Whether the drilled node's inspector shows a ▶ START action (#3341). A fleet node whose cell EXISTS in
+  // a build tab but is STOPPED — re-enabling relaunches it; a LIVE node shows "Open stream" instead, and a
+  // never-launched fleet has no cell to restart (use the header "Start project"). Only meaningful drilled.
   const paneInTab = (pid: string) => consoleTabs.some((t) => (t.paneIds ?? []).includes(pid));
   const startableNode = (id: string): boolean => graphNodeStartable({
     drilled: !!drill,
@@ -422,6 +416,16 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
                 ? <Chip color="var(--warn, #f2b155)">sample fleet · no plan.db fleet</Chip>
                 : <Chip color="#4fd6a0">real fleet · {model.nodes.length} agents</Chip>)
             : (data.sample && <Chip color="var(--warn, #f2b155)">sample topology · preview</Chip>)}
+          {/* Start the COMPLETE project fleet from the drilled project's header (#3341) — materialize the
+              hub, load the plan.db fleet, launch it. Only on a real project's layer (a drilled project) —
+              not the synthetic base-studio-code node, whose studio sessions launch via their own toggles.
+              The symmetric counterpart to "End sessions" below. */}
+          {drill && drill !== BASE_STUDIO_PROJECT_ID && (
+            <Button variant="primary" onClick={() => void startFleet(drill)}
+              title="Launch this project's full fleet — director + all workers">
+              ▶ Start project
+            </Button>
+          )}
           {/* Project-level bulk kill (#3052): end EVERY live session for the drilled project at once —
               the fast recovery when a whole fleet is soft-locked. Shown only when it has live sessions. */}
           {drill && liveProjectPanes.length > 0 && (
@@ -495,7 +499,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         offOn={!drill && sel.type === "node" ? !!glanceOff[sel.id] : undefined}
         onToggleOff={!drill && sel.type === "node" ? (off) => setGlanceNodeOff(sel.id, off) : undefined}
         // Open the real PTY stream (#2369) — only for a drilled, LIVE agent node.
-        onOpenStream={sel.type === "node" && isLiveAgent(sel.id) ? (id) => setChatNode(id) : undefined} /> : undefined}
+        onOpenStream={sel.type === "node" && isLiveAgent(sel.id) ? (id) => setChatNode(id) : undefined}
+        // (Re)start THIS node (#3341) — only for a drilled fleet node that's stopped (a live node opens its
+        // stream instead). Individual-node start lives in the right pane; whole-fleet start is the header.
+        onStart={drill && sel.type === "node" && startableNode(sel.id) ? (id) => startNode(fleetPaneId(drill, id)) : undefined} /> : undefined}
     >
       {/* keyed so drilling in/out remounts + replays the shared transition (graphCanvas.css, #2418) */}
       <Box key={drill ?? "network"} className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>
@@ -503,8 +510,6 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           model={model} dragMoved={vp.dragMoved} zoom={vp.view.scale}
           focus={focus} selNodeId={selNodeId} selEdgeId={selEdgeId}
           onHoverNode={setHoverNode} onHoverEdge={setHoverEdge} onSelectNode={onNodeClick} onSelectEdge={pickEdge}
-          // Hover ▶ START on a node (#3337): L0 project → start its fleet; L1 fleet node → restart its cell.
-          startableNode={startableNode} onStartNode={onStartNode}
           // The live-agent terminal morphs open IN the graph, as an oversized node (#2534).
           chat={chatPaneId && chatNode ? { nodeId: chatNode, paneId: chatPaneId, name: chatMeta?.slug ?? "agent", role: chatMeta?.roleLabel } : null}
           onCloseChat={() => setChatNode(null)}
