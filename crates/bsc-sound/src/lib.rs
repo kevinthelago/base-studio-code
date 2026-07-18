@@ -12,7 +12,13 @@
 //! kits are seeded into this store on first hydrate + kept reconciled by the frontend, like the persona +
 //! blueprint libraries.
 
+//! Two stores live here, deliberately split (#3371): the FLAT working store above (mutable, SQLite,
+//! keyed by bare kit id — what a session authors into), and the VERSIONED [`release`] store (immutable
+//! `id@version` artifacts under `~/.base-studio-code/sound-kits/`, content-addressed by sha256 — what a
+//! blueprint PINS). The release store mirrors the UI-kit one (`bsc_ui::kit`, #2465) contract-for-contract.
+
 pub mod cli;
+pub mod release;
 
 #[cfg(test)]
 mod tests {

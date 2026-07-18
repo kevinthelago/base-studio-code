@@ -16,6 +16,10 @@
 pub mod cli;
 
 pub mod schema;
+// Schema → data-shape inference (#2478): derive each entity's ideal rendering shape from the
+// canonical model, so the planner's layout pick (#2475 `bsc ui shapes`) is mechanical. Pure —
+// no store, no Tauri.
+pub mod shape;
 pub mod ddl;
 pub mod connector;
 pub mod reconcile;
@@ -39,6 +43,7 @@ pub mod meta;
 pub use meta::MetaStore;
 pub use error::{DataError, Result};
 pub use schema::{DataModel, Entity, Field, FieldType};
+pub use shape::{infer_entity_shapes, infer_shapes, Confidence, DataShape, EntityShapes, ShapeCandidate};
 pub use connector::{Connector, CsvConnector, FetchFn, RowSet, SourceField, SourceObject};
 pub use reconcile::{reconcile, verify_reconciled, MergedRecord, Precedence, Reconciled, SourceLoad, VerifyResult};
 pub use behavior::{

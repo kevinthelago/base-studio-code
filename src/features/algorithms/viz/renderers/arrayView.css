@@ -90,6 +90,18 @@
   border-top-color: var(--success);
 }
 
+/* The DURABLE resting look of the cell a SEARCH landed on (#3220) — accent, so it never reads as the
+   `sorted` green (the `found` MOTION itself is a KitAnimation in arrayViewMotion.ts). A search's `found`
+   is its terminal frame, so this IS the trace's final state. */
+.array-cell[data-mark="found"] {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent), var(--bg-elev) 78%);
+}
+.array-cell[data-mark="found"] .array-bar {
+  background: color-mix(in oklch, var(--accent), transparent 52%);
+  border-top-color: var(--accent);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .array-bar {
     transition: none;
