@@ -14,6 +14,6 @@ export { useStudioReaper, STUDIO_IDLE_MS, STUDIO_BUSY_RECHECK_MS } from "./useSt
 export { createStudiosSlice, orderedWantedStudios, type StudiosSlice } from "./store";
 export {
   STUDIO_IDS, STUDIO_SESSIONS, STUDIO_INIT_CMD,
-  isStudioId, studioForPaneId, studioDetached,
+  isStudioId, studioForPaneId, studioRoleForPaneId, studioDetached,
   type StudioId, type StudioSessionDef,
 } from "./lib/studioSessions";
