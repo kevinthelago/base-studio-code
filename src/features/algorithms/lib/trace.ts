@@ -77,15 +77,30 @@ export type GraphOp =
   | { op: "relax"; edge: [string, string] }
   | { op: "path"; nodes: string[] };
 
-/** One frame of a graph's evolution. `nodes`/`edges` are the topology; `marks` are durable per-node
- *  search states (start/goal/visited/frontier/current) the renderer paints; `cursors` are named node
- *  pointers (`{ current: "b" }`). */
+/**
+ * One frame of a graph's evolution. `nodes`/`edges` are the topology; `cursors` are named node pointers
+ * (`{ current: "b" }`).
+ *
+ * Durable per-node state is split across TWO fields (#3378), because "where the algorithm began" and "has
+ * the walker been here" are DIFFERENT facts about a node — a node is routinely both:
+ *  - `roles` — the anchors the algorithm assigns up front (`start` / `goal`). They outlive the traversal:
+ *    every BFS/Dijkstra run eventually walks over its own start node, and the origin must still render as
+ *    the origin afterwards.
+ *  - `marks` — the WALKER's search state (`frontier` → `current` → `visited`), a lifecycle whose stages
+ *    legitimately supersede one another.
+ *
+ * Keeping them in one field made a traversal state clobber the anchor, so a rendered BFS/Dijkstra could not
+ * show its own origin or (once reached) its goal.
+ */
 export interface GraphFrame {
   structure: "graph";
   nodes: { id: string; label?: string; value?: number | string; x?: number; y?: number }[];
   edges: { from: string; to: string; weight?: number }[];
   ops?: GraphOp[];
-  marks?: Record<string, "start" | "goal" | "visited" | "frontier" | "current">;
+  /** The WALKER's per-node search state — transient-lifecycle, each stage superseding the last. */
+  marks?: Record<string, "visited" | "frontier" | "current">;
+  /** The algorithm's durable per-node anchors — never overwritten by a traversal state (#3378). */
+  roles?: Record<string, "start" | "goal">;
   cursors?: Record<string, string>;
 }
 

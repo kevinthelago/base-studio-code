@@ -148,6 +148,45 @@ describe("TracedGraph (#3224)", () => {
     expect(f[3].ops).toEqual([{ op: "relax", edge: ["a", "b"] }]);
   });
 
+  // #3378 — the regression that motivated splitting `roles` out of `marks`. `visit()` used to write the
+  // node's durable state unconditionally, so it erased the `start` mark `mark()` had set. EVERY BFS and
+  // Dijkstra run walks over its own start node, so the origin marking was always destroyed and a rendered
+  // traversal could not show where it began. Asserted here at the TracedGraph layer, not only via a scene.
+  it("a start node KEEPS its start role after the traversal visits it (#3378)", () => {
+    const g = new TracedGraph(input);
+    g.mark("a", "start");
+    g.frontier("a");
+    g.visit("a"); // the walker reaches the origin — this is what used to clobber the role
+    const last = g.trace()[g.trace().length - 1];
+    expect(last.roles).toEqual({ a: "start" }); // the anchor survived …
+    expect(last.marks).toEqual({ a: "visited" }); // … and the walker state is recorded alongside it
+  });
+
+  it("a goal node keeps its goal role once the search reaches it (#3378)", () => {
+    // `goal` is `start`'s sibling anchor: Dijkstra/A* mark the destination up front, then eventually
+    // visit it — precisely the moment the marking matters most, and precisely when it used to vanish.
+    const g = new TracedGraph(input);
+    g.mark("c", "goal");
+    g.current("c");
+    g.visit("c");
+    const last = g.trace()[g.trace().length - 1];
+    expect(last.roles).toEqual({ c: "goal" });
+    expect(last.marks).toEqual({ c: "visited" });
+  });
+
+  it("the walker's own states still supersede one another — only ROLES are durable (#3378)", () => {
+    // The split must not freeze the traversal lifecycle: frontier → current → visited is a progression,
+    // and each stage legitimately replaces the last.
+    const g = new TracedGraph(input);
+    g.frontier("b");
+    expect(g.trace().slice(-1)[0].marks).toEqual({ b: "frontier" });
+    g.current("b");
+    expect(g.trace().slice(-1)[0].marks).toEqual({ b: "current" });
+    g.visit("b");
+    expect(g.trace().slice(-1)[0].marks).toEqual({ b: "visited" });
+    expect(g.trace().slice(-1)[0].roles).toBeUndefined(); // no role was ever assigned
+  });
+
   it("current() sets a cursor + a current mark; every frame carries the full topology", () => {
     const g = new TracedGraph(input);
     g.current("b");

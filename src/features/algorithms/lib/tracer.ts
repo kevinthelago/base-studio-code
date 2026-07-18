@@ -229,8 +229,14 @@ export interface GraphInput {
   nodes: { id: string; label?: string; x?: number; y?: number }[];
   edges: { from: string; to: string; weight?: number }[];
 }
-/** A durable per-node search state (matches the GraphFrame `marks` vocabulary). */
-export type GraphMark = "start" | "goal" | "visited" | "frontier" | "current";
+/** The WALKER's per-node search state (matches the GraphFrame `marks` vocabulary) — a lifecycle whose
+ *  stages legitimately supersede one another: `frontier` → `current` → `visited`. */
+export type GraphMark = "visited" | "frontier" | "current";
+/** A durable per-node ROLE the algorithm assigns up front (matches the GraphFrame `roles` vocabulary) —
+ *  where the search began and where it is headed. Held in its OWN field (#3378) so the walker's state can
+ *  never clobber it: every BFS/Dijkstra run visits its own start node, and reaching the goal is exactly
+ *  when the goal marking matters most. */
+export type GraphRole = "start" | "goal";
 /** A neighbour of a node — the other endpoint + the edge weight + the directed edge for `relax`. */
 export interface Neighbour {
   to: string;
@@ -241,14 +247,19 @@ export interface Neighbour {
 /**
  * An instrumented graph — a traversal / shortest-path algorithm operates on it, and every observable op
  * appends a `GraphFrame`. `neighbours` is a silent read (the algorithm's traversal); `frontier` / `visit` /
- * `current` set DURABLE node marks the renderer paints and `relax` fires on an edge — each records a frame.
- * Marks persist across frames; ops are the transient verb. Edges are treated as UNDIRECTED for traversal.
+ * `current` advance the WALKER's durable node `marks` the renderer paints and `relax` fires on an edge —
+ * each records a frame. Marks persist across frames; ops are the transient verb. Edges are treated as
+ * UNDIRECTED for traversal.
+ *
+ * `mark()` is a different axis: it assigns a durable ROLE (`start`/`goal`) into the separate `roles` field,
+ * so a node can be BOTH the origin and visited (#3378) — which every BFS/Dijkstra start node becomes.
  */
 export class TracedGraph {
   private readonly nodes: { id: string; label?: string; x?: number; y?: number }[];
   private readonly edges: { from: string; to: string; weight?: number }[];
   private readonly adj = new Map<string, Neighbour[]>();
   private readonly marks: Record<string, GraphMark> = {};
+  private readonly roles: Record<string, GraphRole> = {};
   private readonly cur: Record<string, string> = {};
   private readonly log: GraphFrame[] = [];
 
@@ -290,9 +301,10 @@ export class TracedGraph {
     return deg;
   }
 
-  /** Set a durable start / goal mark (no transient op). */
-  mark(id: string, as: GraphMark): void {
-    this.marks[id] = as;
+  /** Assign a durable start / goal ROLE (no transient op). Lands in `roles`, a field the traversal verbs
+   *  never write — so `visit`/`frontier`/`current` cannot erase it (#3378). */
+  mark(id: string, as: GraphRole): void {
+    this.roles[id] = as;
     this.emit();
   }
   /** Enqueue/discover a node — a `frontier` op + durable `frontier` mark. */
@@ -336,6 +348,7 @@ export class TracedGraph {
     };
     if (ops && ops.length) frame.ops = ops;
     if (Object.keys(this.marks).length) frame.marks = { ...this.marks };
+    if (Object.keys(this.roles).length) frame.roles = { ...this.roles };
     if (Object.keys(this.cur).length) frame.cursors = { ...this.cur };
     this.log.push(frame);
     this.sink?.(frame);

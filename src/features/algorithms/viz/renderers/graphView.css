@@ -25,15 +25,7 @@
   /* the visit `scale` animates about the circle's own centre (its local origin) */
 }
 
-/* Durable per-node search states (the frame's `marks`) — resting colours the animations settle into. */
-.graph-node[data-mark="start"] {
-  stroke: var(--accent);
-  stroke-width: 2.5;
-}
-.graph-node[data-mark="goal"] {
-  stroke: var(--violet);
-  stroke-width: 2.5;
-}
+/* The WALKER's durable search state (the frame's `marks`) — resting colours the animations settle into. */
 .graph-node[data-mark="frontier"] {
   fill: color-mix(in oklch, var(--state-wait), var(--bg-elev) 62%);
   stroke: var(--state-wait);
@@ -45,6 +37,19 @@
 .graph-node[data-mark="visited"] {
   fill: color-mix(in oklch, var(--info), var(--bg-elev) 58%);
   stroke: var(--info);
+}
+
+/* The algorithm's durable ANCHORS (the frame's `roles`, #3378) — a SECOND axis, so a node can be both an
+   anchor and visited. These deliberately come LAST: at equal specificity source order wins, so the anchor
+   ring survives on top of a traversal state's stroke while that state's FILL still shows through. That is
+   what lets a rendered BFS/Dijkstra distinguish its origin from every other explored node. */
+.graph-node[data-role="start"] {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+.graph-node[data-role="goal"] {
+  stroke: var(--violet);
+  stroke-width: 2.5;
 }
 
 .graph-node-label {
