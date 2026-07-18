@@ -70,8 +70,15 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
       "README*", "**/README*", "CHANGELOG*", "**/CHANGELOG*",
     ]);
     expect(ROLE_DEFAULTS.marketer.writeGlobs.every((g) => /\.(md|mdx)$|README|CHANGELOG/.test(g))).toBe(true);
+    // The four RESTRICTED studio roles ship a `scratch/**` carve-out (#3373) — NOT project content: a
+    // sealed staging dir inside their own workspace, the only way they can author at all now that a
+    // heredoc cannot be allow-listed. Pinned exactly, so a widening past the staging dir fails here.
+    for (const role of ["designer", "architect", "librarian", "sound-designer"] as const) {
+      expect(ROLE_DEFAULTS[role].writeGlobs).toEqual(["scratch/**"]);
+    }
+    const CARVED = ["planner", "documentor", "marketer", "designer", "architect", "librarian", "sound-designer"];
     for (const c of Object.values(ROLE_DEFAULTS)) {
-      if (c.role !== "planner" && c.role !== "documentor" && c.role !== "marketer") expect(c.writeGlobs).toEqual([]);
+      if (!CARVED.includes(c.role)) expect(c.writeGlobs).toEqual([]);
     }
   });
 

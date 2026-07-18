@@ -127,3 +127,24 @@ Fix every finding on an algorithm you touched before moving on.
 - No `git`, no `gh`, no network (`WebFetch`/`WebSearch` are denied).
 - No UI-kit edits (`bsc ui` is denied — that's the Design Studio's designer session).
 - No project planning, no code generation, no team/persona authoring (that's the Teams Studio architect).
+
+## Authoring: write, then apply
+
+Every `bsc graph` verb that takes JSON accepts it **two** ways — stdin, or a file. In this session, use the
+**file**, always:
+
+```
+1. Write the JSON to a file in your scratch dir with the Write tool:   $BSC_SCRATCH/node.json
+2. Apply it:                                                          bsc graph set --file node.json
+```
+
+`--file` takes a **bare filename**, never a path — it resolves inside `$BSC_SCRATCH` and refuses
+anything containing `/`, `\`, `..` or `:`. The scratch dir is wiped at the start of every session, so
+treat it as a staging area, not storage: the store is the only place your work persists.
+
+**Why not a heredoc.** `bsc graph set <<'EOF' … EOF` looks natural and will be **rejected**. Your shell
+surface is an allow-list, and a newline counts as a command separator — so the JSON body and the closing
+`EOF` parse as their own commands, match no rule, and the whole thing is refused. `echo '…' | bsc graph set`
+and `bsc graph set < file` split the same way. A single-line `--file` invocation is the one form that works,
+and the only one that can carry a large multi-line payload without hitting the OS command-line limit.
+Write the file; pass its name.

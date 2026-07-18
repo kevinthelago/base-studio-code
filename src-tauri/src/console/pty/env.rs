@@ -23,6 +23,30 @@ fn project_key_from_cwd(cwd: &str) -> Option<std::ffi::OsString> {
     Some(rel.components().next()?.as_os_str().to_os_string())
 }
 
+/// The sealed scratch dir for an app-owned STUDIO session (#3373), or None for every other pane.
+///
+/// A restricted studio session is confined to one store CLI by Bash allow-list rules, and a heredoc
+/// cannot be allow-listed (newlines are command separators), so it authors by WRITING a payload here
+/// and passing `--file <bare-name>`. Only the studio workspaces get one: a plain console in some repo
+/// has no confinement to work around and would just accumulate stray dirs.
+///
+/// Derived from the cwd exactly like [`plan_db_for_cwd`], rather than plumbed down from the frontend,
+/// so the rule lives in one place: a studio workspace is a DIRECT child of the bsc base dir whose name
+/// ends in `-studio` (`~/.base-studio-code/design-studio/`, `…/sound-studio/`, …).
+fn scratch_dir_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
+    if cwd.is_empty() {
+        return None;
+    }
+    let native = crate::platform::shell::to_native_path(cwd);
+    let dir = std::path::Path::new(&native);
+    // A DIRECT child of the base dir — not a nested path that merely starts with it.
+    if dir.parent() != Some(bsc_base_dir().as_path()) {
+        return None;
+    }
+    let name = dir.file_name()?.to_string_lossy().into_owned();
+    name.ends_with("-studio").then(|| dir.join("scratch"))
+}
+
 /// The project hub's `plan.db` for a session whose cwd lives under a project hub
 /// (`~/.base-studio-code/projects/<key>/...`), or None for a non-project session (#plan-db).
 /// Workers run in `projects/<key>/.worktrees/...` and the director/planner in `projects/<key>/` —
@@ -400,6 +424,21 @@ pub(super) fn wire_bsc_env(
     if let Some(db) = plan_db_for_cwd(cwd) {
         cmd.env("BSC_PLAN_DB", to_bash_path(&db.to_string_lossy()));
     }
+    // The studio scratch dir (#3373): where a restricted studio session stages a payload it then applies
+    // with `bsc <store> set --file <name>` — the only authoring channel that is both allow-listable
+    // (single line) and unbounded, since a heredoc's newlines parse as separate, unmatchable commands.
+    //
+    // CLEARED ON EVERY LAUNCH, which is what makes it scratch: a stale payload can never be re-applied
+    // by a later session, and nothing accumulates on disk across restarts. A clear/create failure is NOT
+    // fatal — the session still launches and `bsc … --file` simply refuses (it fails closed on a missing
+    // dir), which is strictly better than blocking the session on a scratch dir it may never use.
+    if let Some(scratch) = scratch_dir_for_cwd(cwd) {
+        let _ = std::fs::remove_dir_all(&scratch);
+        match std::fs::create_dir_all(&scratch) {
+            Ok(()) => { cmd.env("BSC_SCRATCH", to_bash_path(&scratch.to_string_lossy())); }
+            Err(e) => log::warn!("scratch dir {} unavailable ({e}); --file will refuse", scratch.display()),
+        }
+    }
     // bsc errors (#2260): point this session at its project's runtime-fault store. $BSC_ERROR_DB is the
     // error.db the `bsc errors` subcommand reads/writes — cwd-derived exactly like BSC_PLAN_DB, so the
     // whole fleet shares one error.db per project; a non-project session gets none and never calls it.
@@ -491,6 +530,7 @@ pub(super) fn wire_bsc_env(
 mod tests {
     use super::{
         bsc_shim_files, bundled_gh_dir, compose_path, plan_db_for_cwd, portable_git_bin_candidates,
+        scratch_dir_for_cwd,
         session_env_with, session_skill_group_for_pane, sidecar_candidates, BSC_SHIM_CMD, BSC_SHIM_SH,
     };
     use crate::bsc_base_dir;
@@ -664,6 +704,32 @@ mod tests {
         assert!(env.iter().any(|(k, v)| k == "TERM" && v == "screen-256color"));
         // unrelated caller vars still flow through
         assert!(env.iter().any(|(k, v)| k == "GH_TOKEN" && v == "secret"));
+    }
+
+    /// #3373: ONLY an app-owned studio workspace gets a scratch dir. The rule is deliberately narrow —
+    /// a scratch dir is a write path, and the sessions that need one are exactly those confined to a
+    /// single store CLI. Anything else (a repo console, a fleet worktree, a project hub) must get None,
+    /// or `--file` would resolve somewhere the confinement never intended.
+    #[test]
+    fn scratch_dir_is_granted_to_studio_workspaces_and_nothing_else() {
+        for studio in ["design-studio", "algorithms-studio", "teams-studio", "sound-studio"] {
+            let cwd = bsc_base_dir().join(studio);
+            assert_eq!(
+                scratch_dir_for_cwd(&cwd.to_string_lossy()),
+                Some(cwd.join("scratch")),
+                "{studio} is an app-owned studio workspace",
+            );
+        }
+
+        // A NESTED path under a studio is not the workspace itself — only the workspace root qualifies,
+        // so a session that somehow ran deeper cannot mint a scratch dir of its own.
+        assert_eq!(scratch_dir_for_cwd(&bsc_base_dir().join("design-studio").join("sub").to_string_lossy()), None);
+        // A project hub / worktree / plain repo console: no confinement to work around, no scratch dir.
+        assert_eq!(scratch_dir_for_cwd(&bsc_base_dir().join("projects").join("app").to_string_lossy()), None);
+        assert_eq!(scratch_dir_for_cwd("C:/Users/dev/some-repo"), None);
+        // A same-named dir OUTSIDE the base dir must not qualify on its suffix alone.
+        assert_eq!(scratch_dir_for_cwd("C:/Users/dev/design-studio"), None);
+        assert_eq!(scratch_dir_for_cwd(""), None);
     }
 
     #[test]

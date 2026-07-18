@@ -6,7 +6,7 @@
 // `sessionRoles.ts`.
 
 import type { AccessTier, RoleCapability } from "./roleModel";
-import { DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, hasScopedWriteCarveOut } from "./roleModel";
+import { DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, hasScopedWriteCarveOut, isRestrictedRole } from "./roleModel";
 
 // ── Launch wiring: write-tool permission rules ──────────────────────────────────
 
@@ -152,7 +152,15 @@ export function roleDeniedCommands(cap: RoleCapability): string[] {
   // A write-less role (code:none, no carve-out) writes NOTHING — deny the file-mutating bash commands
   // too, the counterpart to its whole-tool Edit/Write deny (#2932). Shell redirection (`>`) can't be
   // prefix-denied; the always-on `bsc-confine` FS hook is the complete layer.
-  if (cap.code === "none" && !hasScopedWriteCarveOut(cap)) out.push(...FILE_WRITE_DENY);
+  //
+  // A RESTRICTED role keeps these denies even though it HAS a carve-out (#3373). Its carve-out is a
+  // tool-only staging dir: it writes `scratch/**` with the Write tool and applies it with its one store
+  // CLI. It has no business running `cp`/`mv`/`tee`/`sed -i` at all — its spec says in as many words
+  // not to reach for bash to sidestep the file rules — so the shell mutation set stays denied. Without
+  // this clause the carve-out would silently UN-deny them, widening the session well past the staging
+  // dir the design intended.
+  const carveOutWritesViaShell = hasScopedWriteCarveOut(cap) && !isRestrictedRole(cap.role);
+  if (cap.code === "none" && !carveOutWritesViaShell) out.push(...FILE_WRITE_DENY);
   return out;
 }
 

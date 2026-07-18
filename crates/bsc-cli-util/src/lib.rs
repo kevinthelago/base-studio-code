@@ -279,6 +279,88 @@ pub fn unknown_command(prog: &str, tagline: &str, cmds: &[CmdDoc], cmd: &str) ->
     format!("unknown command '{cmd}'\n\n{}", help_overview(prog, tagline, cmds))
 }
 
+// ── `--file <name>`: the sealed scratch payload channel (#3373) ─────────────────────────────────────
+//
+// WHY THIS EXISTS. A restricted studio session (designer / librarian / architect / sound-designer) is
+// confined to ONE store CLI by an allow-list of Bash rules. Claude Code treats NEWLINES as command
+// separators, so the natural authoring form — a heredoc piping JSON into `bsc ui set` — is split into
+// pseudo-subcommands (the JSON body, the terminating `EOF`) that match no rule and cannot be expressed
+// by any rule, because the body is unpredictable by definition. Passing the payload as an ARGUMENT
+// instead is allow-listable but caps out at the OS command-line limit (~32 KB on Windows) and forces
+// the model through shell-quoting on top of JSON escaping. A FILE is the only shell-shaped channel that
+// is both single-line (hence allow-listable) and unbounded, and it needs no escaping at all — the
+// session writes it with the Write tool, which handles multi-line content natively.
+//
+// WHY BARE NAMES ONLY. An unrestricted `--file <path>` would turn a write-confined session into an
+// ARBITRARY-FILE READER: `bsc ui set --file ~/.ssh/id_rsa` is an allowed command by the letter of
+// `Bash(bsc ui *)`, and it would pull those bytes into the store. Accepting only a bare filename makes
+// traversal UNREPRESENTABLE rather than defended-against — there is no path to canonicalize, no prefix
+// comparison to get subtly wrong, and no symlink to follow because there is nowhere to point one from.
+//
+// The file is DATA, never code: it is read and JSON-parsed by the caller. Nothing here execs, sources,
+// or shells out, and that is a contract of this module, not an accident of the current implementation.
+
+/// Env var naming the session's sealed scratch directory. Set per-pane by `pty_create`, exactly as
+/// `$BSC_PLAN_DB` and `$BSC_BIN` are. Absent ⇒ `--file` is refused outright (fail closed) — it must
+/// NEVER fall back to the process cwd, which the session does not control.
+pub const BSC_SCRATCH_ENV: &str = "BSC_SCRATCH";
+
+/// Whether `name` is a bare filename: no path separator, no parent-dir escape, no drive letter, not
+/// empty and not a dot-entry. The whole traversal defence, kept in one place so every store shares it.
+pub fn is_bare_filename(name: &str) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains('/')
+        && !name.contains('\\')
+        && !name.contains("..")
+        && !name.contains(':')       // rejects `C:` drive-relative and NTFS alternate data streams
+        && !name.contains('\0')
+}
+
+/// Resolve `--file <name>` to an absolute path inside the session's scratch dir.
+///
+/// Refuses, with a message that says which rule was broken:
+///  * a name that is not bare (see [`is_bare_filename`]) — the traversal defence;
+///  * an unset/empty `$BSC_SCRATCH` — fail closed rather than resolving against the cwd.
+pub fn resolve_scratch_file(name: &str) -> Result<std::path::PathBuf, String> {
+    if !is_bare_filename(name) {
+        return Err(format!(
+            "--file takes a BARE FILENAME inside the session scratch dir, not a path: '{name}' is not \
+             allowed (no '/', '\\', '..' or ':'). Write the payload to ${BSC_SCRATCH_ENV} and pass just \
+             its name, e.g. --file payload.json"
+        ));
+    }
+    let dir = std::env::var(BSC_SCRATCH_ENV).unwrap_or_default();
+    if dir.trim().is_empty() {
+        return Err(format!(
+            "--file needs ${BSC_SCRATCH_ENV} to be set (this session has no scratch dir); pipe the \
+             payload on stdin instead"
+        ));
+    }
+    Ok(std::path::Path::new(&dir).join(name))
+}
+
+/// The payload for a write verb: the contents of `--file <name>` when given, else stdin.
+///
+/// This is the ONE place the two channels converge, so every store's write verb accepts both with
+/// identical semantics — `--file` is exactly "stdin, from a sealed file" and nothing more.
+pub fn read_payload(file: Option<&str>) -> Result<String, String> {
+    match file {
+        Some(name) => {
+            let path = resolve_scratch_file(name)?;
+            std::fs::read_to_string(&path)
+                .map_err(|e| format!("cannot read --file {}: {e}", path.display()))
+        }
+        None => {
+            use std::io::Read;
+            let mut raw = String::new();
+            std::io::stdin().read_to_string(&mut raw).map_err(|e| format!("cannot read stdin: {e}"))?;
+            Ok(raw)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -473,6 +555,92 @@ mod tests {
         std::env::remove_var(BSC_SCOPES_ENV);
         assert!(scope_allows_write("ui"), "absent env is unrestricted (back-compat)");
         assert!(require_write_scope("ui").is_ok());
+    }
+
+    // ── `--file` scratch resolution (#3373) — the traversal defence ────────────────────────────────
+
+    #[test]
+    fn bare_filenames_are_accepted() {
+        for ok in ["payload.json", "studio-kit.json", "a", "kit.v2.json", "UPPER.JSON", "with space.json"] {
+            assert!(is_bare_filename(ok), "{ok} should be a bare filename");
+        }
+    }
+
+    /// Every shape that could escape the scratch dir. This is the security boundary of #3373: an
+    /// unrestricted `--file` would let a write-confined session READ any file on the machine through a
+    /// command its allow-list permits, so each of these must be unrepresentable, not merely unlikely.
+    #[test]
+    fn every_path_shaped_name_is_rejected() {
+        for bad in [
+            "", ".", "..",
+            "../secret.json", "../../etc/passwd", "a/../../b",
+            "sub/payload.json", "/etc/passwd", "/tmp/x",
+            r"..\secret.json", r"sub\payload.json", r"C:\Windows\x", r"\\server\share\x",
+            "C:payload.json",       // drive-relative
+            "payload.json:stream",  // NTFS alternate data stream
+            "pay\0load.json",       // embedded NUL
+        ] {
+            assert!(!is_bare_filename(bad), "{bad:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn resolve_scratch_file_joins_a_bare_name_onto_the_scratch_dir() {
+        std::env::set_var(BSC_SCRATCH_ENV, "/tmp/bsc-scratch-test");
+        let p = resolve_scratch_file("payload.json").unwrap();
+        assert_eq!(p, std::path::Path::new("/tmp/bsc-scratch-test").join("payload.json"));
+        std::env::remove_var(BSC_SCRATCH_ENV);
+    }
+
+    #[test]
+    fn resolve_scratch_file_refuses_a_path_and_says_why() {
+        std::env::set_var(BSC_SCRATCH_ENV, "/tmp/bsc-scratch-test");
+        let err = resolve_scratch_file("../../etc/passwd").unwrap_err();
+        assert!(err.contains("BARE FILENAME"), "refusal names the rule: {err}");
+        assert!(err.contains("--file payload.json"), "refusal shows the correct form: {err}");
+        std::env::remove_var(BSC_SCRATCH_ENV);
+    }
+
+    /// FAIL CLOSED: with no scratch dir the flag is refused outright. It must never resolve against the
+    /// process cwd — the session does not control that, and a relative read there would sidestep the
+    /// whole confinement.
+    #[test]
+    fn resolve_scratch_file_fails_closed_when_the_scratch_env_is_unset_or_blank() {
+        std::env::remove_var(BSC_SCRATCH_ENV);
+        let err = resolve_scratch_file("payload.json").unwrap_err();
+        assert!(err.contains(BSC_SCRATCH_ENV), "refusal names the env var: {err}");
+        assert!(err.contains("stdin"), "refusal points at the alternative: {err}");
+
+        std::env::set_var(BSC_SCRATCH_ENV, "   ");
+        assert!(resolve_scratch_file("payload.json").is_err(), "a blank scratch dir is still closed");
+        std::env::remove_var(BSC_SCRATCH_ENV);
+    }
+
+    /// `--file` is exactly "stdin, from a sealed file": a payload read through it must be byte-identical
+    /// to the bytes on disk — including the multi-line content that cannot survive a heredoc.
+    #[test]
+    fn read_payload_from_a_file_is_byte_identical() {
+        let dir = std::env::temp_dir().join(format!("bsc-scratch-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // The shape a heredoc would have carried: real source, newlines, quotes, backslashes.
+        let payload = "{\"id\":\"k/btn\",\"srcText\":\"export function B(){\\n  return <b c='x'/>;\\n}\"}";
+        std::fs::write(dir.join("payload.json"), payload).unwrap();
+
+        std::env::set_var(BSC_SCRATCH_ENV, &dir);
+        let got = read_payload(Some("payload.json")).unwrap();
+        assert_eq!(got, payload, "--file must not transform the bytes");
+        std::env::remove_var(BSC_SCRATCH_ENV);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_payload_reports_a_missing_scratch_file_with_its_resolved_path() {
+        let dir = std::env::temp_dir().join(format!("bsc-scratch-missing-{}", std::process::id()));
+        std::env::set_var(BSC_SCRATCH_ENV, &dir);
+        let err = read_payload(Some("nope.json")).unwrap_err();
+        assert!(err.contains("cannot read --file"), "names the failure: {err}");
+        assert!(err.contains("nope.json"), "names the file: {err}");
+        std::env::remove_var(BSC_SCRATCH_ENV);
     }
 
     #[test]

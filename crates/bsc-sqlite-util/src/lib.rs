@@ -87,7 +87,7 @@ fn trim_or_empty_err<'a>(buf: &'a str, noun: &str, shape: &str) -> Result<&'a st
 /// The object-or-array dispatch behind [`read_stdin_json`], split out so it's testable without
 /// driving real stdin. Trims `buf`; empty input is an error; a leading `[` parses as `Vec<T>`,
 /// otherwise as a single `T` wrapped in a one-element vec.
-fn parse_json_items<T: DeserializeOwned>(buf: &str, noun: &str) -> Result<Vec<T>, String> {
+pub fn parse_json_items<T: DeserializeOwned>(buf: &str, noun: &str) -> Result<Vec<T>, String> {
     let buf = trim_or_empty_err(buf, noun, &format!(" (or array of {noun}s)"))?;
     if buf.starts_with('[') {
         serde_json::from_str(buf).map_err(|e| format!("parsing {noun} array: {e}"))
