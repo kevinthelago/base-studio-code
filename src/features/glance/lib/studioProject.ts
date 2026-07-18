@@ -7,7 +7,7 @@ import { augmentStudioNetworkForDebug, STUDIO_NETWORK_ID, type Team } from "@/fe
 import type { Persona } from "@/features/personas";
 import {
   DEBUG_STUDIO_SESSION_ID, DESIGN_STUDIO_SESSION_ID,
-  ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID,
+  ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID, SOUND_STUDIO_SESSION_ID,
 } from "@/shared/lib/session/systemSessions";
 import { buildOrgFleetData } from "./glanceFleet";
 import type { GlanceData, ProjectLite } from "./glanceData";
@@ -51,6 +51,7 @@ const STUDIO_NODE_SESSION: Record<string, string> = {
   designer: DESIGN_STUDIO_SESSION_ID,
   librarian: ALGORITHMS_STUDIO_SESSION_ID,
   architect: TEAMS_STUDIO_SESSION_ID,
+  "sound-designer": SOUND_STUDIO_SESSION_ID,
   debugger: DEBUG_STUDIO_SESSION_ID,
 };
 export function studioPaneIdForNode(nodeId: string): string | null {
@@ -74,6 +75,7 @@ export function studioNodeHome(nodeId: string): StudioNodeHome | null {
     case "designer":
     case "librarian":
     case "architect":
+    case "sound-designer":
       return { kind: "morph" };
     default: return null;
   }

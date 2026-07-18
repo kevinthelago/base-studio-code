@@ -8,8 +8,8 @@ import { restrictedRoleCommands } from "@/shared/lib/session/sessionRoles";
 import { BUILTIN_PERSONAS } from "@/features/personas";
 
 describe("studio session registry (#3357)", () => {
-  it("covers exactly the three page-docked app-owned studios, each on a stable systemSessions id", () => {
-    expect(STUDIO_IDS).toEqual(["designer", "librarian", "architect"]);
+  it("covers exactly the four page-docked app-owned studios, each on a stable systemSessions id", () => {
+    expect(STUDIO_IDS).toEqual(["designer", "librarian", "architect", "soundDesigner"]);
     for (const id of STUDIO_IDS) {
       const def = STUDIO_SESSIONS[id];
       expect(def.id).toBe(id);
@@ -17,6 +17,32 @@ describe("studio session registry (#3357)", () => {
       expect(isStudioSessionPaneId(def.paneId)).toBe(true);
       expect(studioForPaneId(def.paneId)).toBe(id);
     }
+  });
+
+  // #3369 (epic #3071 phase 4) — the Sound Studio's wiring, pinned field by field. Every one of these
+  // is load-bearing at launch: the setup command resolves the cwd (an empty cwd would launch the session
+  // permission-less, #1819), `dirKey` must match the Rust struct field VERBATIM (Tauri does not rename
+  // return-value fields, so a typo silently yields undefined), and the role is the whole confinement.
+  it("wires the sound studio to its own workspace, persona and role", () => {
+    const def = STUDIO_SESSIONS.soundDesigner;
+    expect(def.paneId).toBe("sound-studio:sound-designer");
+    expect(def.role).toBe("sound-designer");
+    expect(def.setupCommand).toBe("setup_sound_designer_workspace");
+    expect(def.dirKey).toBe("sound_dir");
+    expect(def.personaId).toBe("persona-sound-designer");
+    expect(def.sectionId).toBe("sounds");
+  });
+
+  // The role name overlaps the designer's; the SESSIONS must stay wholly separate or opening one would
+  // reuse the other's terminal (they key off paneId) or its permission surface.
+  it("keeps the sound studio distinct from the Design Studio in every identifying field", () => {
+    const sound = STUDIO_SESSIONS.soundDesigner, design = STUDIO_SESSIONS.designer;
+    expect(sound.paneId).not.toBe(design.paneId);
+    expect(sound.role).not.toBe(design.role);
+    expect(sound.setupCommand).not.toBe(design.setupCommand);
+    expect(sound.dirKey).not.toBe(design.dirKey);
+    expect(sound.personaId).not.toBe(design.personaId);
+    expect(sound.sectionId).not.toBe(design.sectionId);
   });
 
   it("gives every studio a RESTRICTED role — the whole confinement derives from this one field", () => {

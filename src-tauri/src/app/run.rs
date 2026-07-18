@@ -250,6 +250,7 @@ pub fn run() {
             session::designer::setup_designer_workspace,
             session::architect::setup_architect_workspace,
             session::librarian::setup_librarian_workspace,
+            session::sound_designer::setup_sound_designer_workspace,
             session::debug::debug_repo_root,
             crate::shot::set_shot_target_rect,
             session::sandbox::wsl_sandbox_status,
