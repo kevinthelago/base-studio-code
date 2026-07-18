@@ -66,3 +66,43 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+.dlb-stop:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* Idle (#3304) — nothing is running, so the pill collapses to just the opt-in trigger and recedes. */
+.designer-loop-banner.dlb-idle {
+  padding: 4px;
+  background: color-mix(in oklch, var(--bg-elev) 82%, transparent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  opacity: 0.72;
+}
+.designer-loop-banner.dlb-idle:hover,
+.designer-loop-banner.dlb-idle:focus-within {
+  opacity: 1;
+}
+
+.dlb-start {
+  appearance: none;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 12px;
+  border-radius: 999px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+.dlb-start:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.dlb-start:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.dlb-start:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
