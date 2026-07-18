@@ -771,9 +771,9 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
   it("pins each standing studio session's whole surface, byte-identical to its old launch hook", () => {
     expect(restrictedRoleCommands("designer")).toEqual(
       ["bsc ui", "bsc component", "bsc shot preview", "bsc loop", "bsc request new", "bsc request list"]);
-    expect(restrictedRoleCommands("librarian")).toEqual(["bsc graph"]);
-    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona"]);
-    expect(restrictedRoleCommands("sound-designer")).toEqual(["bsc sound"]);
+    expect(restrictedRoleCommands("librarian")).toEqual(["bsc graph", "bsc request new", "bsc request list"]);
+    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", "bsc request new", "bsc request list"]);
+    expect(restrictedRoleCommands("sound-designer")).toEqual(["bsc sound", "bsc request new", "bsc request list"]);
   });
 
   // #3369: `sound-designer` shares a WORD with `designer` but is a DISTINCT role. Any lookup that
@@ -783,7 +783,9 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
   it("never conflates `designer` with `sound-designer` — the names overlap, the surfaces do not", () => {
     const designer = restrictedRoleCommands("designer");
     const sound = restrictedRoleCommands("sound-designer");
-    expect(sound).toEqual(["bsc sound"]);
+    // The exact surface is pinned in the verbatim test above; here the property is what matters —
+    // the two roles share a word, never a store.
+    expect(sound).toContain("bsc sound");
     expect(designer).not.toContain("bsc sound");
     expect(sound).not.toContain("bsc ui");
     expect(sound).not.toContain("bsc component");

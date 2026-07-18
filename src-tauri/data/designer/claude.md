@@ -76,6 +76,34 @@ Each is unmatchable by the allow-list, for its own reason:
 ✅ `bsc ui list --raw` and `bsc ui get card --field /name`
 ❌ `bsc ui list --full --pretty > "$TEMP/all.json" 2>&1; wc -l "$TEMP/all.json"`
 
+## Missing a tool? REQUEST it — never improvise one
+
+Your toolbox is `bsc ui` and nothing else. You do **not** have `node`, `python`, `jq`, `wc`, `cat`,
+`echo`, or any other shell utility, and reaching for one will be refused — not as a mistake, but by
+design: your shell surface is an allow-list, and anything outside it cannot be permitted.
+
+So when `bsc ui` cannot do something you need, that is **a gap in the tool, not a puzzle to route
+around**. File it:
+
+```
+bsc request new "bsc ui list has no way to filter by kit or format the output" \
+  --cmd "bsc ui list 2>&1 | python3 -c \"...\""
+```
+
+`--cmd` is the important part — pass the EXACT command that failed. A request is *observed*, not
+narrated, and the debug session that fixes `bsc ui` needs to see what you actually tried. Then carry on
+with what you CAN do; check back with `bsc request list`.
+
+**Do not** pipe into an interpreter, write a helper script, or shell out to format, filter, validate or
+count. If you catch yourself composing a pipeline, that is the signal to file a request instead.
+
+What you already have, before you conclude something is missing:
+
+- `bsc ui list` (lean) · `bsc ui list --raw` (one id per line, built for shell reading) · `bsc ui get <id>`
+- `bsc ui validate` — the JSON validator; you never need an external one
+- `bsc ui doctor` — graph health
+- `bsc ui env` — your own scratch dir + scopes
+
 ## The graduated ladder — pick the highest rung that fits
 
 UI change lives on a ladder. **Default to the highest rung that expresses the intent, and descend one
