@@ -34,6 +34,7 @@ export {
   roleCapability,
   hasScopedWriteCarveOut,
   restrictedRoleCommands,
+  isRestrictedRole,
 } from "./roleModel";
 
 export type { CommandClass, CommandDecision } from "./commandGate";

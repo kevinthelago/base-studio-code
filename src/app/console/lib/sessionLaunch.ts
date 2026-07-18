@@ -14,7 +14,7 @@ import { resolveMcpServers, toBscAgentMcp, resolveHooks, toSessionPayloads } fro
 import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/skills";
 import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
-import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands } from "@/shared/lib/session/sessionRoles";
+import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands, isRestrictedRole } from "@/shared/lib/session/sessionRoles";
 import { isFullCapabilitySession } from "@/shared/lib/session/systemSessions";
 import { resolveProfileSettings } from "@/features/security";
 import { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner";
@@ -275,10 +275,14 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
     restrictedAllow,
     // Permission posture (#1916): bypass=true ⇒ deny-list (auto-run; the PreToolUse hooks gate); false ⇒
     // allow-list (Claude's `default` mode — require approval). User-toggled in Settings; default true.
-    // A full-capability app-owned session (the DEBUG session, #3326) is ALWAYS bypass regardless of the
-    // global toggle — it's the unrestricted maintenance session by definition, and this carve-out
-    // preserves its old bespoke `useScreenSession` posture now that it launches on the shared TerminalHost.
-    bypass: isFullCapabilitySession(paneId) ? true : s.bypassPermissions,
+    // Two role/session-derived carve-outs override the global toggle in OPPOSITE directions:
+    //   • A full-capability app-owned session (the DEBUG session, #3326) is ALWAYS bypass — it's the
+    //     unrestricted maintenance session by definition (preserves its old bespoke posture).
+    //   • A RESTRICTED role (designer/librarian/architect/curator) is NEVER bypass: bypass auto-runs
+    //     everything and ignores `permissions.deny`, which would hand a session deliberately confined to
+    //     its store CLI (the designer is `bsc ui`-only) a general shell. The confinement travels with the
+    //     role, so it holds on every launch path.
+    bypass: isFullCapabilitySession(paneId) ? true : isRestrictedRole(role) ? false : s.bypassPermissions,
   };
 }
 

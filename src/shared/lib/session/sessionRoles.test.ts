@@ -19,6 +19,7 @@ import {
   scopeWriteGlobs,
   hasScopedWriteCarveOut,
   restrictedRoleCommands,
+  isRestrictedRole,
 } from "./sessionRoles";
 
 describe("scopeWriteGlobs (#1297)", () => {
@@ -709,13 +710,36 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
     expect(restrictedRoleCommands("curator")).toEqual(["bsc ui", "bsc graph"]);
   });
 
-  it("is empty for every non-curator role and for an absent role", () => {
+  // The standing studio sessions' confinement now lives on the ROLE — it used to be pinned inside each
+  // bespoke launch hook, so the SAME role produced a much wider gate on any other launch path. These
+  // literals are the EXACT surfaces those hooks passed: a change here widens (or narrows) a
+  // deliberately-confined session, so they are asserted verbatim rather than derived.
+  it("pins each standing studio session's whole surface, byte-identical to its old launch hook", () => {
+    expect(restrictedRoleCommands("designer")).toEqual(
+      ["bsc ui", "bsc component", "bsc shot preview", "bsc loop", "bsc request new", "bsc request list"]);
+    expect(restrictedRoleCommands("librarian")).toEqual(["bsc graph"]);
+    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona"]);
+  });
+
+  it("is empty for every unrestricted role and for an absent role", () => {
+    const restricted = new Set<SessionRole>(["curator", "designer", "librarian", "architect"]);
     for (const role of Object.keys(ROLE_DEFAULTS) as SessionRole[]) {
-      if (role === "curator") continue;
+      if (restricted.has(role)) continue;
       expect(restrictedRoleCommands(role)).toEqual([]);
     }
     expect(restrictedRoleCommands(null)).toEqual([]);
     expect(restrictedRoleCommands(undefined)).toEqual([]);
+  });
+
+  it("isRestrictedRole marks exactly the confined roles — they must never be flipped to bypass", () => {
+    for (const role of ["curator", "designer", "librarian", "architect"] as SessionRole[]) {
+      expect(isRestrictedRole(role)).toBe(true);
+    }
+    for (const role of ["worker", "director", "planner", "triage", "reviewer"] as SessionRole[]) {
+      expect(isRestrictedRole(role)).toBe(false);
+    }
+    expect(isRestrictedRole(null)).toBe(false);
+    expect(isRestrictedRole(undefined)).toBe(false);
   });
 
   it("returns a fresh array each call so callers can spread/mutate without corrupting the source", () => {

@@ -177,24 +177,48 @@ export function hasScopedWriteCarveOut(cap: RoleCapability): boolean {
   return CARVE_OUT_ROLES.has(cap.role) && cap.code === "none" && cap.writeGlobs.length > 0;
 }
 
-/** Roles whose fleet launch grants a FIXED store-CLI auto-run surface on top of the profile — the
- *  bundled `bsc` subcommands they drive, regardless of the project (#3095, epic #3087). Today only the
- *  **curator** (the post-landing harvest + graph-optimize actor): `bsc ui` (harvest components into the
- *  component store + `bsc ui doctor --fix` to prune/merge) and `bsc graph` (harvest + `bsc graph
- *  curate --apply` for the algorithms graph). This is the FLEET-launch path; the standing-tab sessions
- *  (designer/librarian/architect) instead pin their WHOLE surface via `restrictedAllow` in their own
- *  launch hooks. A non-empty entry ALSO drives `restrictedAllow` on the fleet launch (#3098): the
- *  wrapped commands become the session's ONLY auto-run Bash surface (the baseline tiers are
- *  suppressed), so the curator is as tightly scoped as the standing restricted sessions. */
+/** Roles whose launch grants a FIXED store-CLI auto-run surface on top of the profile — the bundled
+ *  `bsc` subcommands they drive, regardless of the project (#3095, epic #3087). A non-empty entry ALSO
+ *  drives `restrictedAllow` (#3098): the wrapped commands become the session's ONLY auto-run Bash
+ *  surface (the baseline git/build/read-only tiers are suppressed).
+ *
+ *  THE ROLE IS THE SOURCE OF TRUTH for a restricted session's confinement. The standing-tab studio
+ *  sessions (designer / librarian / architect) used to pin their surface inside their own launch hooks,
+ *  which meant the SAME role produced a different (much wider) gate on any other launch path — moving
+ *  them here makes the confinement travel with the role wherever the session is launched from (the
+ *  bespoke hook, a fleet launch, or the shared TerminalHost).
+ *   • designer   — the `bsc ui` component surface (+ the deprecated `bsc component` alias), the
+ *                  preview-only screenshot, the design loop, and the designer→debug request channel.
+ *   • librarian  — the algorithms graph store.
+ *   • architect  — the teams + persona (agent-identity) stores.
+ *   • curator    — the post-landing harvest + graph-optimize actor (fleet-launched). */
 const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> = {
   curator: ["bsc ui", "bsc graph"],
+  designer: ["bsc ui", "bsc component", "bsc shot preview", "bsc loop", "bsc request new", "bsc request list"],
+  librarian: ["bsc graph"],
+  architect: ["bsc teams", "bsc persona"],
 };
 
 /**
  * The fixed store-CLI command prefixes a role auto-runs at launch, in ADDITION to its profile's
- * `allowedCommands` (#3095). Empty for a role with no fixed store surface (every role but `curator`
- * today). Returns a fresh array so callers can spread/mutate freely.
+ * `allowedCommands` (#3095). Empty for a role with no fixed store surface. Returns a fresh array so
+ * callers can spread/mutate freely.
  */
 export function restrictedRoleCommands(role: SessionRole | null | undefined): string[] {
   return role ? [...(RESTRICTED_ROLE_COMMANDS[role] ?? [])] : [];
+}
+
+/**
+ * Whether a role is CONFINED to a fixed store-CLI surface — i.e. it has a {@link restrictedRoleCommands}
+ * entry, so `restrictedAllow` suppresses the Bash baselines and those commands are its whole auto-run
+ * surface.
+ *
+ * Such a role must NEVER be flipped to the bypass posture: bypass makes Claude auto-run everything and
+ * ignores `permissions.deny`, which would hand a deliberately-confined session (the designer is limited
+ * to `bsc ui`) a general shell. So the global `bypassPermissions` toggle is overridden to `false` for
+ * these roles — the inverse of the full-capability carve-out (`isFullCapabilitySession`, the debug
+ * session, which is always bypass). Derived from the role, so the guarantee travels with it.
+ */
+export function isRestrictedRole(role: SessionRole | null | undefined): boolean {
+  return restrictedRoleCommands(role).length > 0;
 }
