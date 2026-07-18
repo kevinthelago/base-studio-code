@@ -262,12 +262,24 @@ pub(crate) fn write_session_settings(spec: &SessionSettingsSpec) -> Result<(), S
 /// EXCEPT under `restricted_allow` (#2471): the rules are EXACTLY the wrapped `allowed_commands`
 /// — no bare `Bash`, no posture baselines, no mandatory tier, no `Bash(bsc-*)` — so a
 /// tightly-scoped session's entire auto-runnable surface is what its launcher enumerated.
+///
+/// A restricted command is granted in BOTH invocation forms (#3359): `Bash(<cmd>)` for the bare
+/// call and `Bash(<cmd> *)` for the call with arguments. The trailing ` *` enforces a WORD
+/// BOUNDARY, so `Bash(bsc ui *)` matches `bsc ui schema` but NOT a bare `bsc ui` — and the bare
+/// call is exactly what an agent reaches for first to discover a command's subcommands. Emitting
+/// only the arg form left the designer prompting on the one command it exists to run. This is
+/// scoped to the restricted branch on purpose: `bash_rule` is shared with `build_deny_rules`, so
+/// widening it there would change deny semantics. The surface itself does NOT grow — the same
+/// enumerated commands, now matchable however they are invoked.
 fn build_allow_rules(bash_posture: &str, allowed_commands: &[String], restricted_allow: bool) -> Vec<String> {
     let mut allow_rules: Vec<String> = Vec::new();
     if restricted_allow {
         for c in allowed_commands {
             let c = c.trim();
-            if !c.is_empty() { push_unique_trimmed(&mut allow_rules, &bash_rule(c)); }
+            if !c.is_empty() {
+                push_unique_trimmed(&mut allow_rules, &bare_bash_rule(c));
+                push_unique_trimmed(&mut allow_rules, &bash_rule(c));
+            }
         }
         return allow_rules;
     }
@@ -379,6 +391,14 @@ pub(crate) fn merge_permission_list(config: &mut serde_json::Value, key: &str, r
 /// command would otherwise yield the meaningless `Bash( *)`).
 fn bash_rule(cmd: &str) -> String {
     format!("Bash({} *)", cmd.trim())
+}
+
+/// Wrap a bare command in the EXACT-match rule `Bash(<cmd>)` — the no-argument invocation, which
+/// [`bash_rule`]'s trailing ` *` deliberately excludes (it enforces a word boundary requiring at
+/// least one argument). Paired with `bash_rule` under `restricted_allow` (#3359) so a granted
+/// command auto-runs however it is invoked. Same empty-command guard contract as `bash_rule`.
+fn bare_bash_rule(cmd: &str) -> String {
+    format!("Bash({})", cmd.trim())
 }
 
 /// Append `rule` (trimmed) to `vec` unless it is empty or already present — the trim + dedup
@@ -696,9 +716,16 @@ mod tests {
         let deny: Vec<String> = v["permissions"]["deny"].as_array().unwrap()
             .iter().map(|x| x.as_str().unwrap().to_string()).collect();
 
-        // The granted commands are the ONLY Bash allows.
+        // The granted commands are the ONLY Bash allows — in BOTH invocation forms (#3359).
         assert!(allow.contains(&"Bash(bsc ui *)".to_string()));
         assert!(allow.contains(&"Bash(bsc component *)".to_string()));
+        // #3359 regression: the BARE form. `Bash(bsc ui *)`'s trailing ` *` enforces a word
+        // boundary, so it does NOT match a no-argument `bsc ui` — the very call an agent makes to
+        // discover a command's subcommands. Without these the designer prompts on the one command
+        // its role exists to run (restricted roles are the only sessions forced off bypass, so they
+        // are the only ones where a missing allow rule actually surfaces).
+        assert!(allow.contains(&"Bash(bsc ui)".to_string()), "restricted: bare form must be granted, got {allow:?}");
+        assert!(allow.contains(&"Bash(bsc component)".to_string()), "restricted: bare form must be granted, got {allow:?}");
         // No bare Bash, no mandatory tier, no posture baselines, no bsc-* helper family.
         assert!(!allow.contains(&"Bash".to_string()), "restricted: no bare Bash, got {allow:?}");
         for absent in ["Bash(git *)", "Bash(gh *)", "Bash(bsc *)", "Bash(bsc-*)", "Bash(ls *)", "Bash(cargo *)"] {
@@ -727,6 +754,10 @@ mod tests {
         assert!(allow2.contains(&"Bash(git *)".to_string()));
         assert!(allow2.contains(&"Bash(bsc-*)".to_string()));
         assert!(allow2.contains(&"Bash(bsc ui *)".to_string()));
+        // ...and the bare-form pairing stays EXCLUSIVE to the restricted branch (#3359): the normal
+        // path already carries the allow-all `Bash` under this posture, so pairing there would add
+        // noise, and `bash_rule` is shared with the DENY assembly where a bare rule changes meaning.
+        assert!(!allow2.contains(&"Bash(bsc ui)".to_string()), "unrestricted: no bare pairing, got {allow2:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
