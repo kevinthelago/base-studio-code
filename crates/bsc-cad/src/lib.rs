@@ -2,8 +2,11 @@
 //! objects. The pipeline:
 //!
 //! ```text
-//! declarative op-tree (Node)  →  SDF evaluation  →  surface-nets polygonization  →  Mesh  →  binary STL
+//! declarative op-tree (Node)  →  SDF evaluation  →  surface-nets polygonization  →  Mesh  →  STL / glTF
 //! ```
+//!
+//! Two exports, two audiences: **STL** ([`stl`]) is the maker/slicer interchange, **glTF/GLB**
+//! ([`gltf`], #3389) is the viewer format that lets the Design Studio preview a part in-app.
 //!
 //! Everything is millimetres. The op-tree is the source of truth an AI authors (describe *what the
 //! part is*, not matrices); booleans + a smooth-min fillet (`smooth_union`) cover the common CSG moves.
@@ -11,11 +14,13 @@
 //! and a WASM/web build. Trade-offs vs OCCT/B-rep (no true STEP, no named topology, …) are
 //! tracked on #2621; the icebox split into a standalone package is #2620.
 pub mod cli;
+pub mod gltf;
 pub mod math;
 pub mod mesh;
 pub mod node;
 pub mod stl;
 
+pub use gltf::{to_glb, to_gltf_json};
 pub use math::{Aabb, Vec3};
 pub use mesh::{polygonize, Mesh};
 pub use node::Node;
