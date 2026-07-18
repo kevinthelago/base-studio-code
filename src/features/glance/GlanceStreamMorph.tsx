@@ -12,7 +12,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Box } from "@/shared/ui/layout/Box";
-import { clamp } from "@/shared/lib/core/math";
+import { clampCell } from "./lib/morphGrid";
 import { GlanceChatDock } from "./GlanceChatDock";
 import { NW, NH } from "./lib/glanceGraph";
 import type { MorphRect } from "./lib/glancePush";
@@ -20,10 +20,8 @@ import type { MorphRect } from "./lib/glancePush";
 /** Grow/shrink duration (ms) — the reduced-motion fallback for onClose. Keep in sync with the
  *  `.glance-card` transition in glance.css. */
 const EXIT_MS = 420;
-/** The expanded panel's DEFAULT size, in WORLD units (it renders at world-size × the current zoom). */
-const CARD_W = 760, CARD_H = 520;
-/** Resize bounds (world units) — small enough to tuck beside a node, large enough for a full session. */
-const MIN_W = 380, MIN_H = 280, MAX_W = 1600, MAX_H = 1100;
+// Card geometry lives in `lib/morphGrid` since #3361 — the SLOT the morph grows into is computed by the
+// grid, and resize drives the grid's shared cell size rather than this one card's box.
 
 /** The eight resize handles: which edges each grip drives, its box within the card, and its cursor. */
 const HANDLES: { dir: string; style: CSSProperties }[] = (() => {
@@ -41,17 +39,27 @@ const HANDLES: { dir: string; style: CSSProperties }[] = (() => {
   ];
 })();
 
-export function GlanceStreamMorph({ node, paneId, name, role, zoom = 1, onRect, onClose, onEnd }: {
+export function GlanceStreamMorph({ node, slot, paneId, name, role, zoom = 1, onRect, onResizeCell, onClose, onEnd }: {
   /** The graph node this session belongs to — the card's origin + return box, in WORLD coords. */
   node: { x: number; y: number };
+  /** The GRID SLOT this morph grows into (#3361), in world coords. For the FIRST opened node this is the
+   *  cell centred on its own node, so a single open morph lands exactly where it always has; later
+   *  morphs get the next slot of the grid anchored on that first one, which is what makes overlap
+   *  impossible by construction. */
+  slot: MorphRect;
   /** The agent's identity pane id (`<project>:<stream>`) — the live PTY the dock reconnects to. */
   paneId: string;
   name: string;
   role?: string;
   /** The graph's current zoom (`vp.view.scale`) — converts a screen-pixel resize drag into world units. */
   zoom?: number;
-  /** Report the expanded world box (or null when collapsed/closed) so the canvas can push neighbours (#2662). */
+  /** Report the expanded world box (or null when collapsed/closed) so the canvas can push neighbours
+   *  (#2662). With several morphs open the canvas unions every reported box (#3361). */
   onRect?: (rect: MorphRect | null) => void;
+  /** A resize drag, in WORLD units — drives the grid's SHARED cell size, so every open morph resizes
+   *  together (#3361). A per-morph size would let two cells grow into each other, breaking the
+   *  non-overlap guarantee the grid exists to provide. */
+  onResizeCell?: (w: number, h: number) => void;
   /** Collapse the morph back into its node (keeps the PTY alive). */
   onClose: () => void;
   /** END the session — kill the PTY + drop the cell from the live set (#3049) — for a soft-locked
@@ -60,11 +68,10 @@ export function GlanceStreamMorph({ node, paneId, name, role, zoom = 1, onRect, 
   onEnd?: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  // The expanded panel's world box — defaults to the panel centred on the node, then edge/corner drags
-  // mutate any side. Collapsed, the card renders at the node box instead (see `box` below).
-  const [rect, setRect] = useState<MorphRect>(() => ({
-    left: node.x + NW / 2 - CARD_W / 2, top: node.y + NH / 2 - CARD_H / 2, w: CARD_W, h: CARD_H,
-  }));
+  // The expanded panel's world box IS its grid slot (#3361) — no longer local state. The grid owns
+  // placement (so morphs can't overlap) and the shared cell size (so a resize moves them as one).
+  // Collapsed, the card renders at the node box instead (see `box` below).
+  const rect = slot;
   const [resizing, setResizing] = useState(false);
   const closingRef = useRef(false);
   // The pending grow→collapse→onClose timer. Held in a ref so we can CANCEL it if this morph unmounts
@@ -127,10 +134,13 @@ export function GlanceStreamMorph({ node, paneId, name, role, zoom = 1, onRect, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Edge/corner resize: track the pointer at the window (robust across the whole drag) and mutate the
-  // side(s) named by `dir` in WORLD units — a screen-pixel delta ÷ the current zoom — so the terminal
-  // scales with the graph. A west/north drag moves the edge (adjusts left/top) while keeping the opposite
-  // edge fixed. The geometry tween is suppressed WHILE dragging so it tracks the pointer 1:1.
+  // Edge/corner resize: track the pointer at the window (robust across the whole drag) and resize in
+  // WORLD units — a screen-pixel delta ÷ the current zoom — so the terminal scales with the graph. The
+  // geometry tween is suppressed WHILE dragging so it tracks the pointer 1:1.
+  //
+  // #3361: a drag now resizes the grid's SHARED CELL, not this one card, so every open morph grows
+  // together and the grid stays a grid. A west/north drag therefore only INVERTS the delta (grow as the
+  // pointer moves left/up) — it can no longer move the card's origin, which the slot owns.
   const startResize = (dir: string) => (e: React.PointerEvent) => {
     e.stopPropagation();
     e.preventDefault();
@@ -138,12 +148,13 @@ export function GlanceStreamMorph({ node, paneId, name, role, zoom = 1, onRect, 
     const sx = e.clientX, sy = e.clientY, s = rect, z = zoom || 1;
     const move = (ev: PointerEvent) => {
       const dx = (ev.clientX - sx) / z, dy = (ev.clientY - sy) / z;
-      let { left, top, w, h } = s;
-      if (dir.includes("e")) w = clamp(s.w + dx, MIN_W, MAX_W);
-      if (dir.includes("s")) h = clamp(s.h + dy, MIN_H, MAX_H);
-      if (dir.includes("w")) { w = clamp(s.w - dx, MIN_W, MAX_W); left = s.left + (s.w - w); }
-      if (dir.includes("n")) { h = clamp(s.h - dy, MIN_H, MAX_H); top = s.top + (s.h - h); }
-      setRect({ left, top, w, h });
+      let { w, h } = s;
+      if (dir.includes("e")) w = s.w + dx;
+      if (dir.includes("w")) w = s.w - dx;
+      if (dir.includes("s")) h = s.h + dy;
+      if (dir.includes("n")) h = s.h - dy;
+      const c = clampCell(w, h);
+      onResizeCell?.(c.w, c.h);
     };
     const up = () => {
       setResizing(false);

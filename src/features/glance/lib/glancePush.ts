@@ -27,14 +27,21 @@ type Dir = "left" | "right" | "up" | "down";
  * diagonals decide the dominant axis), then every curtain translates as one rigid block by the largest
  * clearance any of its members needs. Result: the panel is cleared by construction (no node clips into it)
  * and every curtain keeps its internal spacing (no node clips into a neighbour). Returns a
- * `nodeId → {dx,dy}` map of the NON-ZERO shifts only; `excludeId` (the grown node, under the panel) is
- * omitted. Pure + deterministic.
+ * `nodeId → {dx,dy}` map of the NON-ZERO shifts only. Pure + deterministic.
+ *
+ * `rect` is the region to clear. Since #3361 that is the whole OCCUPIED GRID REGION (the bounding box of
+ * every open morph's slot), not a single free-floating panel — the four-curtain model is indifferent to
+ * how large the region is, so parting around N morphs is the same computation as parting around one.
+ *
+ * `exclude` are the nodes sitting UNDER the region — the grown nodes themselves — which must not be
+ * pushed. Accepts one id or a set (the multi-morph case).
  */
 export function partAroundPanel(
   nodes: { id: string; x: number; y: number }[],
   rect: MorphRect,
-  excludeId?: string,
+  exclude?: string | ReadonlySet<string>,
 ): Map<string, { dx: number; dy: number }> {
+  const excluded = typeof exclude === "string" ? new Set([exclude]) : exclude;
   const out = new Map<string, { dx: number; dy: number }>();
   const cx0 = rect.left + rect.w / 2, cy0 = rect.top + rect.h / 2;
   const hx = rect.w / 2, hy = rect.h / 2;
@@ -47,7 +54,7 @@ export function partAroundPanel(
   const need: Record<Dir, number> = { left: 0, right: 0, up: 0, down: 0 };
   const dirOf = new Map<string, Dir>();
   for (const n of nodes) {
-    if (n.id === excludeId) continue;
+    if (excluded?.has(n.id)) continue;
     const cx = n.x + NW / 2, cy = n.y + NH / 2;
     // Wedge by the panel's diagonals, scaled to its aspect: whichever axis the node is more displaced
     // along (relative to the panel's half-size) wins, so the split lines run corner-to-corner.
