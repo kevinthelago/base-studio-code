@@ -105,9 +105,15 @@ the current row, so this is the current stamp — not a full history table.",
         usage: "\
 USAGE:
   bsc ui set [--by <tag>] [--if-version <n>] [--pretty]   # component JSON (one object or an array) on stdin
+  bsc ui set --file <name> [--by <tag>] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name>
 
 Upserts each component by its (required, non-empty) \"id\" field, written verbatim. Prints the id(s)
 written — how an agent (or the pane) authors/updates a component in the shared kit.
+
+--file <name> reads the SAME payload from a bare-named file in the session's $BSC_SCRATCH dir instead
+of stdin (#3373). It exists because a heredoc cannot be permitted in a restricted session: newlines are
+command separators, so the JSON body parses as its own (unmatchable) subcommands. The name must be
+BARE — no '/', '\\', '..' or ':' — and $BSC_SCRATCH must be set, or the flag is refused.
 
 Every write STAMPS provenance (#3164): it auto-bumps the record's `rev` integer, sets `updatedAt`
 (ISO-8601 UTC), and records `updatedBy` — the writer tag from `--by <tag>`, else $BSC_UI_WRITER, else
@@ -344,7 +350,7 @@ UTF-8, LF-only — byte-clean for `while read id` / `$( )`.",
     CmdDoc {
         name: "set",
         summary: "upsert from kit JSON on stdin (stamps rev/updatedAt/updatedBy); prints id(s)",
-        usage: "USAGE:\n  bsc ui kit set [--by <tag>] [--if-version <n>] [--pretty]   # kit JSON (object or array) on stdin\n\nUpserts each kit by its \"id\", written verbatim. Fields: { id, name, tech, style, stack?, dot } — tech + style place the kit in the rail (omit either ⇒ it shows as \"other/other\"); stack is a display label only. Every write stamps provenance (#3164): auto-bump `rev`, set `updatedAt` (ISO-8601 UTC) + `updatedBy` (--by / $BSC_UI_WRITER / \"unknown\"). --if-version <n> rejects the write unless the kit's current rev is <n> (`bsc ui log <id> --kit` reads it).",
+        usage: "USAGE:\n  bsc ui kit set [--by <tag>] [--if-version <n>] [--pretty]   # kit JSON (object or array) on stdin\n  bsc ui kit set --file <name> [--by <tag>] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name> (#3373)\n\nUpserts each kit by its \"id\", written verbatim. Fields: { id, name, tech, style, stack?, dot } — tech + style place the kit in the rail (omit either ⇒ it shows as \"other/other\"); stack is a display label only. Every write stamps provenance (#3164): auto-bump `rev`, set `updatedAt` (ISO-8601 UTC) + `updatedBy` (--by / $BSC_UI_WRITER / \"unknown\"). --if-version <n> rejects the write unless the kit's current rev is <n> (`bsc ui log <id> --kit` reads it).",
     },
     CmdDoc {
         name: "remove",
@@ -715,15 +721,17 @@ fn stamped_set(
     store.set(id, &serde_json::to_string(&value).map_err(|e| format!("set: {e}"))?)
 }
 
-/// Read the `set` payload from stdin — a single record object OR an array of them — into a `Vec`.
-/// Mirrors the shared store CLI's stdin contract so `bsc ui set` accepts the same input.
-fn read_stdin_items(noun: &str) -> Result<Vec<serde_json::Value>, String> {
-    let mut raw = String::new();
-    std::io::stdin()
-        .read_to_string(&mut raw)
-        .map_err(|e| format!("cannot read stdin: {e}"))?;
+/// Read the `set` payload — a single record object OR an array of them — into a `Vec`.
+///
+/// Two channels, identical semantics (#3373): stdin, or `--file <bare-name>` resolved inside the
+/// session's sealed `$BSC_SCRATCH` dir. The file form exists because a heredoc cannot be allow-listed
+/// (newlines are command separators), which left a restricted studio session unable to author at all.
+/// `bsc_cli_util::read_payload` owns the resolution + the traversal defence.
+fn read_set_items(noun: &str, file: Option<&str>) -> Result<Vec<serde_json::Value>, String> {
+    let raw = bsc_cli_util::read_payload(file)?;
+    let where_ = if file.is_some() { "in --file" } else { "on stdin" };
     let value: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|e| format!("{noun} JSON on stdin is invalid: {e}"))?;
+        serde_json::from_str(&raw).map_err(|e| format!("{noun} JSON {where_} is invalid: {e}"))?;
     Ok(match value {
         serde_json::Value::Array(items) => items,
         other => vec![other],
@@ -780,13 +788,17 @@ fn cmd_set(
     validate: fn(&[serde_json::Value]) -> Result<(), String>,
     noun: &'static str,
 ) -> Result<(), String> {
-    let (mut dir, mut pretty, mut by, mut if_version) =
-        (None::<String>, false, None::<String>, None::<i64>);
+    let (mut dir, mut pretty, mut by, mut if_version, mut file) =
+        (None::<String>, false, None::<String>, None::<i64>, None::<String>);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--dir" => dir = it.next().cloned(),
             "--pretty" => pretty = true,
+            // #3373: read the payload from a BARE-NAMED file in $BSC_SCRATCH instead of stdin, so a
+            // restricted session can author multi-line records at all (a heredoc cannot be allow-listed
+            // — newlines are command separators). Resolution + the traversal defence live in bsc-cli-util.
+            "--file" => file = it.next().cloned(),
             "--by" => by = it.next().cloned(),
             "--if-version" => {
                 let raw = it.next().ok_or("--if-version needs an integer revision (see `bsc ui log <id>`)")?;
@@ -797,11 +809,13 @@ fn cmd_set(
             }
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             other => {
-                return Err(format!("unexpected argument '{other}' — `set` reads the record(s) from stdin"))
+                return Err(format!(
+                    "unexpected argument '{other}' — `set` reads the record(s) from stdin, or from                      --file <name> in $BSC_SCRATCH"
+                ))
             }
         }
     }
-    let items = read_stdin_items(noun)?;
+    let items = read_set_items(noun, file.as_deref())?;
     validate(&items)?;
     let store = open(&dir)?;
     let writer = crate::record::resolve_writer(by.as_deref());
@@ -2199,6 +2213,43 @@ mod tests {
         ] {
             assert!(warn_kit_axes(std::slice::from_ref(&bare)).is_ok(), "advisory must not block: {bare}");
         }
+    }
+
+    /// #3373 end-to-end: the exact command that was being rejected, now expressed through `--file`.
+    ///
+    /// The reported failure was `bsc ui kit set --pretty <<'EOF' … EOF` — a heredoc, which the
+    /// permission layer splits on newlines into the JSON body and `EOF`, neither of which any rule can
+    /// match. `--file` carries the SAME bytes on one allow-listable line. This asserts the payload
+    /// survives the round trip verbatim, including the multi-line `srcText` a heredoc existed to carry.
+    #[test]
+    fn set_reads_the_payload_from_a_bare_named_file_in_the_scratch_dir() {
+        let base = std::env::temp_dir().join(format!("bsc-scratch-set-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let scratch = base.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+
+        // Real source: newlines, single quotes (which shell-quoting could not survive) and braces.
+        let payload = r#"{"id":"kevin/studio","name":"Studio UI","srcText":"export function B(){\n  return <b c='x'/>;\n}"}"#;
+        std::fs::write(scratch.join("kit.json"), payload).unwrap();
+        std::env::set_var(bsc_cli_util::BSC_SCRATCH_ENV, &scratch);
+
+        let items = read_set_items("kit", Some("kit.json")).unwrap();
+        assert_eq!(items.len(), 1, "one object yields one item, exactly as stdin does");
+        assert_eq!(items[0]["id"], "kevin/studio");
+        assert_eq!(
+            items[0]["srcText"], "export function B(){\n  return <b c='x'/>;\n}",
+            "the multi-line source a heredoc existed to carry survives verbatim",
+        );
+
+        // The traversal defence reaches this call path, not just the helper's own tests.
+        let err = read_set_items("kit", Some("../../../etc/passwd")).unwrap_err();
+        assert!(err.contains("BARE FILENAME"), "a path is refused here too: {err}");
+
+        // Fail closed: no scratch dir ⇒ the flag is refused rather than resolving against the cwd.
+        std::env::remove_var(bsc_cli_util::BSC_SCRATCH_ENV);
+        assert!(read_set_items("kit", Some("kit.json")).is_err(), "unset scratch refuses --file");
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

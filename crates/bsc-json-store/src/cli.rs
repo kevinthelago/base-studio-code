@@ -45,11 +45,16 @@ struct Args {
     /// envelope/quoting. On `list` it prints one id per line; on `get` it prints the stored record raw
     /// (CR-stripped). Neutralizes the CRLF + cp1252 traps that broke shell audits. Ignored elsewhere.
     raw: bool,
+    /// `set --file <name>` (#3373): read the payload from a BARE-NAMED file in `$BSC_SCRATCH` instead
+    /// of stdin. The channel a restricted studio session must use — a heredoc cannot be allow-listed,
+    /// since newlines are command separators, so its JSON body parses as its own unmatchable commands.
+    /// Resolution + the traversal defence live in `bsc_cli_util::read_payload`.
+    file: Option<String>,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { dir: None, pretty: false, full: false, raw: false, positional: Vec::new() };
+    let mut a = Args { dir: None, pretty: false, full: false, raw: false, file: None, positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -57,6 +62,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--pretty" => a.pretty = true,
             "--full" => a.full = true,
             "--raw" => a.raw = true,
+            "--file" => a.file = Some(it.next().ok_or("--file needs a bare filename in $BSC_SCRATCH")?),
             // `-h`/`--help` route to the help command (anywhere on the line).
             "-h" | "--help" => a.positional.insert(0, "help".into()),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
@@ -156,9 +162,13 @@ pub fn run_hooked_validated(
             }
             Ok(())
         }
-        // Upsert from an object — or an array of them — on stdin, written verbatim by id.
+        // Upsert from an object — or an array of them — written verbatim by id. Two channels with
+        // identical semantics (#3373): stdin, or `--file <bare-name>` from the session's `$BSC_SCRATCH`.
         "set" => {
-            let items: Vec<Value> = read_stdin_json(spec.noun)?;
+            let items: Vec<Value> = match args.file.as_deref() {
+                None => read_stdin_json(spec.noun)?,
+                Some(name) => bsc_sqlite_util::parse_json_items(&bsc_cli_util::read_payload(Some(name))?, spec.noun)?,
+            };
             // Domain write-time gate (#2928): reject the whole batch before any write if it fails.
             if let Some(v) = validate {
                 v(&items)?;
