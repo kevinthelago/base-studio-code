@@ -285,14 +285,16 @@ export function GlanceCanvas(p: CanvasProps) {
               transform: push ? `translate(${push.dx}px, ${push.dy}px)` : undefined,
               // Part in lockstep with the panel's grow (MORPH_EASE), so the two are one motion (#2671).
               zIndex: selected ? 6 : isError && !inherited ? 5 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? offOpacity : REST_N) : offOpacity, transition: `opacity .18s ease, transform ${MORPH_EASE}` }}>
-            {/* Hover ▶ START (#3337) — L0: start this project's fleet; L1: (re)start this agent node. Its
-                stopPropagation keeps a click off the card's drill/select. Revealed on card hover (glance.css). */}
+            {/* ▶ START (#3337) — L0: start this project's fleet; L1: (re)start this agent node. Its
+                stopPropagation keeps a click off the card's drill/select. Visible at rest, brighter on
+                hover (#3339, glance.css). */}
             {p.startableNode?.(n.id) && (
               <Box as="button" className="glance-node-start" title="Start"
                 onClick={(e: React.MouseEvent) => { e.stopPropagation(); p.onStartNode?.(n.id); }}
-                style={{ position: "absolute", top: 6, right: 6, width: 22, height: 22, borderRadius: 6, padding: 0,
-                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, lineHeight: 1,
-                  background: "var(--accent)", color: "var(--bg-canvas)", border: "none", cursor: "pointer", zIndex: 7 }}>▶</Box>
+                style={{ position: "absolute", top: 6, right: 6, width: 24, height: 24, borderRadius: 7, padding: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, lineHeight: 1,
+                  background: "var(--accent)", color: "var(--bg-canvas)", border: "none", cursor: "pointer", zIndex: 7,
+                  boxShadow: "0 1px 5px rgba(0,0,0,.45)" }}>▶</Box>
             )}
             <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${border}`,
               borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
