@@ -31,7 +31,7 @@ import { Fleet } from "@/features/planner/fleet/Fleet";
 import { teamRoleStreams } from "@/features/planner/fleet/teamFleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
-import { slotRect, placeInSlot, releaseSlot, occupants, clampCell, DEFAULT_CELL, type CellSize } from "./lib/morphGrid";
+import { cellRect, placeByDirection, releaseCell, occupants, clampCell, DEFAULT_CELL, type CellSize, type MorphPlacement } from "./lib/morphGrid";
 import { fleetPaneId, findPaneOwnerTab } from "@/app/console/lib/paneIdentity";
 import { resumeProjectFleet } from "./lib/resumeProject";
 import { buildGraph, focusSets, isLibraryNode, HEALTH_META, ROLE_COLOR } from "./lib/glanceGraph";
@@ -154,9 +154,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   const [sel, setSel] = useState<{ type: "node" | "edge"; id: string } | null>(null);
   // The drilled agents whose live PTY streams are morphed open in the graph (#2369 → MULTI, #3361).
-  // The ARRAY INDEX is the grid SLOT, so a hole (null) is a slot freed by a closed morph and reused by
-  // the next open — siblings never shift, because a terminal you are reading must not jump.
-  const [chatSlots, setChatSlots] = useState<(string | null)[]>([]);
+  // Each carries the LATTICE CELL it occupies — signed, so a node left of the anchor holds a cell left
+  // of it (#3367). Placements are stable: opening or closing one morph never moves another.
+  const [placements, setPlacements] = useState<MorphPlacement[]>([]);
   // The node the grid is anchored on: the FIRST one opened. Slot 0 sits centred on it, so opening a
   // single node looks exactly as it always has and the grid only becomes visible from the second morph.
   // Held as an ID (not coords) so the grid tracks the graph when the model re-lays-out, and RETAINED
@@ -187,8 +187,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // MULTI (#3361): every open studio node must be pinned, not just the newest — otherwise the idle
   // reaper could kill a session the user has on screen in another morph.
   const openStudioIds = useMemo(
-    () => (drill === BASE_STUDIO_PROJECT_ID ? occupants(chatSlots).filter(isStudioId) : []),
-    [drill, chatSlots],
+    () => (drill === BASE_STUDIO_PROJECT_ID ? occupants(placements).filter(isStudioId) : []),
+    [drill, placements],
   );
   useStudioViewers(openStudioIds);
   const closeStudio = useAppStore((s) => s.closeStudio);
@@ -329,24 +329,34 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     else if (glanceOff[id]) pickNode(id);
     else { setDrill(id); setSel(null); setShowCycle(false); }
   };
-  // OPEN a node's session into a grid slot (#3361). The FIRST open also anchors the grid on that node,
-  // so its morph grows exactly where a lone morph always has. Idempotent — clicking an open node is a
-  // no-op, not a second cell.
+  // OPEN a node's session into a grid cell (#3361). The FIRST open also anchors the grid on that node,
+  // so its morph grows exactly where a lone morph always has. Every later node is placed in the
+  // DIRECTION its node sits relative to the anchor NODE (#3367) — open one to the left of the anchor and
+  // its terminal opens to the left — so the grid reads as a spatial projection of the graph. Idempotent:
+  // clicking an already-open node is a no-op, not a second cell.
   const openChat = (id: string) => {
+    const node = model.nodes.find((n) => n.id === id);
+    if (!node) return;
     setGridAnchorId((prev) => prev ?? id);
-    setChatSlots((prev) => placeInSlot(prev, id));
+    setPlacements((prev) => {
+      // `gridAnchorId` still holds the PRE-click value during this handler, so `?? id` covers the very
+      // first open (where this node becomes the anchor and takes cell 0,0).
+      const anchor = model.nodes.find((n) => n.id === (gridAnchorId ?? id));
+      if (!anchor) return prev;
+      return placeByDirection(prev, id, { dx: node.x - anchor.x, dy: node.y - anchor.y });
+    });
   };
-  /** Collapse ONE morph. Its PTY stays alive — the agent is untouched. Frees its slot for the next open;
+  /** Collapse ONE morph. Its PTY stays alive — the agent is untouched. Frees its cell for a later open;
    *  the surviving morphs keep theirs, and the anchor is retained so the grid never shifts under them —
    *  until the LAST one closes, which releases the anchor so the next session re-anchors on its own node
    *  rather than inheriting a stale grid origin from a node that is no longer open (#3365). */
-  const closeChat = (id: string) => setChatSlots((prev) => {
-    const next = releaseSlot(prev, id);
+  const closeChat = (id: string) => setPlacements((prev) => {
+    const next = releaseCell(prev, id);
     if (next.length === 0) setGridAnchorId(null);
     return next;
   });
   /** Close everything — the only path that releases the grid anchor, so the next session re-anchors. */
-  const closeAllChats = () => { setChatSlots([]); setGridAnchorId(null); };
+  const closeAllChats = () => { setPlacements([]); setGridAnchorId(null); };
   const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); closeAllChats(); setPreviewOpen(false); };
   // Kill ONE live pane (#3049): terminate its PTY (mirrors the console's disable path) and disable the
   // cell so the node drops out of the live set + its stale "run" clears. fleetStartProject re-enables the
@@ -460,12 +470,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // Each entry carries its SLOT — the grid box it grows into, derived from the anchor node's live coords
   // and the shared cell size. Because slots are discrete, two morphs can never overlap.
   const anchorNode = gridAnchorId ? model.nodes.find((n) => n.id === gridAnchorId) ?? null : null;
-  const openChats = chatSlots.flatMap((nodeId, index) => {
-    if (!nodeId || !drill || !anchorNode || !isLiveAgent(nodeId)) return [];
+  const openChats = placements.flatMap(({ nodeId, col, row }) => {
+    if (!drill || !anchorNode || !isLiveAgent(nodeId)) return [];
     const paneId = studioPaneId(nodeId) ?? fleetPaneId(drill, nodeId);
     const node = model.nodes.find((n) => n.id === nodeId);
     if (!paneId || !node) return [];
-    return [{ nodeId, paneId, name: node.slug, role: node.roleLabel, slot: slotRect(anchorNode, index, cell) }];
+    return [{ nodeId, paneId, name: node.slug, role: node.roleLabel, slot: cellRect(anchorNode, { col, row }, cell) }];
   });
   // END one morph's session (#3049). Ending an APP-OWNED session drops its declaration rather than
   // killing a fleet cell:
