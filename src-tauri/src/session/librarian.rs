@@ -81,27 +81,91 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    /// The PACKAGED seed (ignoring any config-dir override) carries the content pillars: the `bsc graph`
-    /// read AND write (#2853) command surface, the knowledge-graph model vocabulary, and the scope guard.
+    /// Every `bsc graph <token>` the packaged seed names, in prose or in a code block: the token that
+    /// follows the literal `bsc graph `, stripped of the markdown punctuation that can trail it
+    /// (backtick, comma, backslash, period, closing paren). A bare `` `bsc graph` `` mention yields the
+    /// next prose word, so callers filter to the tokens they care about rather than trusting all of them.
+    fn documented_graph_tokens(seed: &str) -> Vec<String> {
+        seed.match_indices("bsc graph ")
+            .map(|(i, m)| seed[i + m.len()..].split_whitespace().next().unwrap_or_default())
+            .map(|t| t.trim_matches(|c: char| !c.is_alphanumeric() && c != '-').to_string())
+            .filter(|t| !t.is_empty())
+            .collect()
+    }
+
+    /// The PACKAGED seed (ignoring any config-dir override) teaches ONLY verbs the CLI actually has.
+    ///
+    /// #3391: this is the drift-catching direction, and the one that was missing. The old test asserted
+    /// a hand-written list of verb NAMES, so when #2961 deleted the concept ontology (`list`/`neighbors`/
+    /// `path`/`link`) the prose and the test stayed agreed with each other and both diverged from the
+    /// CLI — a green gate over a spec that sent the librarian at verbs its CLI rejects. Deriving the
+    /// legal set from `bsc_graph::cli::VERBS` means a removed or renamed verb fails HERE, in the spec
+    /// that teaches it, instead of silently at runtime.
     #[test]
-    fn packaged_librarian_spec_carries_surface_model_and_scope_guard() {
+    fn packaged_librarian_spec_names_only_verbs_the_cli_has() {
         let seed = crate::platform::config::embedded_str("librarian/claude.md");
         assert!(!seed.trim().is_empty(), "data/librarian/claude.md must be packaged");
-        for needle in [
-            "bsc graph",        // the knowledge-graph command surface
-            "bsc graph list",   // the discovery verbs
-            "bsc graph neighbors",
-            "bsc graph path",
-            "bsc graph extract", // the reality lens
-            "bsc graph set",    // the write verbs (#2853) — the librarian must be TOLD how to curate
-            "bsc graph link",
-            "bsc graph remove",
-            "concept",          // the knowledge-graph model vocabulary
-            "relationship",
-            "ONLY",             // the scope guard
-        ] {
-            assert!(seed.contains(needle), "librarian seed must mention `{needle}`");
+
+        // The verbs the prose actually invokes — a `bsc graph <verb>` token that is not a prose word.
+        // Anything the CLI would reject with "unknown graph command" must never appear in the spec.
+        let invoked: Vec<String> = documented_graph_tokens(&seed)
+            .into_iter()
+            .filter(|t| !t.starts_with('-'))
+            .collect();
+        assert!(!invoked.is_empty(), "the seed must actually invoke `bsc graph`");
+        for verb in &invoked {
+            assert!(
+                bsc_graph::cli::VERBS.contains(&verb.as_str()),
+                "librarian seed teaches `bsc graph {verb}`, which the CLI does not have \
+                 (legal verbs: {:?}) — the spec drifted from crates/bsc-graph/src/cli.rs",
+                bsc_graph::cli::VERBS,
+            );
         }
+
+        // Every `impl` subverb must be taught: they ARE the librarian's read+write surface, so an
+        // undocumented one is a capability the session never learns it has.
+        for sub in bsc_graph::cli::IMPL_SUBVERBS {
+            assert!(
+                seed.contains(&format!("bsc graph impl {sub}")),
+                "librarian seed must teach `bsc graph impl {sub}`",
+            );
+        }
+
+        // Flags are the whole payload surface of `impl set`, so the same rule applies in reverse:
+        // no flag may be documented that the CLI does not read.
+        for flag in seed.split_whitespace().filter(|w| w.starts_with("--") && w.len() > 2) {
+            let flag = flag.trim_matches(|c: char| !c.is_alphanumeric() && c != '-');
+            if flag.starts_with("--") {
+                assert!(
+                    bsc_graph::cli::FLAGS.contains(&flag),
+                    "librarian seed documents `{flag}`, which `bsc graph` does not read \
+                     (legal flags: {:?})",
+                    bsc_graph::cli::FLAGS,
+                );
+            }
+        }
+    }
+
+    /// The prose pillars that are genuinely prose, not a derivable surface: the impl-only model
+    /// vocabulary (#2961 — a node IS its implementation) and the scope guard.
+    #[test]
+    fn packaged_librarian_spec_carries_the_impl_only_model_and_scope_guard() {
+        let seed = crate::platform::config::embedded_str("librarian/claude.md");
+        for needle in [
+            "implementation-only", // the #2961 model — NOT a concept ontology
+            "primitive",           // the two roles an implementation carries
+            "algorithm",
+            "composes",  // the edge vocabulary that replaced `relationship`
+            "vizCode",   // #3213 — an algorithm is not done until it can be SEEN
+            "ONLY",      // the scope guard
+        ] {
+            assert!(seed.contains(needle), "librarian seed must carry `{needle}`");
+        }
+        // The concept ontology was DELETED in #2961 — the spec must never teach it back.
+        assert!(
+            !seed.contains("concept ontology") || seed.contains("no separate abstract concept"),
+            "the seed may only mention the concept ontology to say it does NOT exist",
+        );
     }
 
     /// #3376 — the read-side companion to "Authoring: write, then apply". The seed must name the lean
