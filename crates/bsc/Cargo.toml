@@ -45,6 +45,8 @@ bsc-loop = { path = "../bsc-loop" }
 bsc-request = { path = "../bsc-request" }
 # `bsc graph` — the Algorithms knowledge graph (#2761): concepts + relationships, queryable read-only.
 bsc-graph = { path = "../bsc-graph" }
+# `bsc cad` — the Rust-native mesh/SDF geometry kernel (#3387, kernel #2621): mesh an op-tree spec to STL.
+bsc-cad = { path = "../bsc-cad" }
 plandb = { path = "../plandb" }
 errordb = { path = "../errordb" }
 # DuckDB-backed `bsc data` — optional so `--no-default-features` yields a lean binary (#1877).
