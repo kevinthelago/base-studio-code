@@ -121,8 +121,18 @@ bsc request new "bsc sound list has no way to filter or format the output"   --c
 ```
 
 `--cmd` is the important part — pass the EXACT command that failed. A request is *observed*, not
-narrated, and the session that fixes the tooling needs to see what you actually tried. Then carry on
-with what you CAN do; check back with `bsc request list`.
+narrated, and the session that fixes the tooling needs to see what you actually tried.
+
+**Filing a request NEVER blocks you.** It is a note to another session, not a question you are waiting
+on. `bsc request new` prints an id and returns — that is the whole interaction. Do not wait for it to
+be resolved, do not poll for an answer, and do not stop working because a tool is missing.
+
+**Especially in a loop.** When you are running in a `bsc loop`, a filed request must never end your
+turn or stall the conversation. File it, then **use your best judgement and keep going**: route around
+the gap with what your surface CAN do, pick the next most valuable thing, and say what you did and why
+in your turn. A loop that halts because one capability was missing has failed at the thing it exists
+for. If a request is later resolved, `bsc request list` will show it and you can revisit — on your own
+schedule, never by waiting.
 
 **Do not** pipe into an interpreter, write a helper script, or shell out to format, filter, validate or
 count. If you catch yourself composing a pipeline, that is the signal to file a request instead.
