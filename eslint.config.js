@@ -43,7 +43,51 @@ const appBoundaryRule = {
 };
 
 export default tseslint.config(
-  { ignores: ["dist", "target", "design", "node_modules", "relay"] },
+  {
+    // #3392: coverage is DECLARATIVE — the CLI arg is `.` (see package.json `lint`), so what is and
+    // isn't linted lives here, not in an argument that silently under-covers a new top-level dir.
+    // That makes these ignores load-bearing:
+    //   - `**/wt*/**` + `**/.claude/worktrees/**` — nested git worktrees (the #3379 leak). Lint used
+    //     to avoid them only because the CLI arg was `src`; with `.` they MUST be ignored here or
+    //     every sibling worktree gets walked (8 on a typical dev box) and the run explodes.
+    //   - `crates/**/tests/fixtures/**` — Rust-owned test DATA, not app code. Its shape (e.g. the
+    //     deliberately-unreferenced fns in bsc-graph's sample.ts) is the fixture's whole point.
+    ignores: [
+      "dist",
+      "target",
+      "design",
+      "node_modules",
+      "relay",
+      "**/wt*/**",
+      "**/.claude/worktrees/**",
+      "crates/**/tests/fixtures/**",
+    ],
+  },
+  {
+    // Plain JS/ESM — the build + release tooling under `scripts/` (#3392). These ran completely
+    // unlinted before: the CLI arg was `src`, and even once walked they matched no config block
+    // (which is `**/*.{ts,tsx}`), so they were checked with ZERO rules — a vacuous pass. They are
+    // Node scripts, so declare the Node globals they use; `globals` isn't a dependency of this repo,
+    // so the handful in play are listed explicitly rather than pulling in a package for it.
+    extends: [js.configs.recommended],
+    files: ["**/*.{js,mjs,cjs}"],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        console: "readonly",
+        Buffer: "readonly",
+        URL: "readonly",
+        fetch: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        __dirname: "readonly",
+        __filename: "readonly",
+      },
+    },
+    rules: {
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+    },
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
