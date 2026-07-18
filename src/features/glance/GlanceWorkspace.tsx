@@ -29,7 +29,8 @@ import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { Fleet } from "@/features/planner/fleet/Fleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
-import { fleetPaneId } from "@/app/console/lib/paneIdentity";
+import { fleetPaneId, findPaneOwnerTab } from "@/app/console/lib/paneIdentity";
+import { resumeProjectFleet } from "./lib/resumeProject";
 import { buildGraph, focusSets, HEALTH_META, ROLE_COLOR, NW, NH } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
@@ -79,6 +80,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // is the detection follow-up.
   const projectsBase = useGlanceProjects();
   const setWorkspace = useAppStore((s) => s.setWorkspace);
+  // Resume wiring (#glance-resume): jump to a live agent's Console pane, resume a single dormant pane,
+  // and find a project's existing build tab so a project-resume can prefer jumping over rebuilding.
+  const setActiveTab = useAppStore((s) => s.setActiveTab);
+  const setFocusedPane = useAppStore((s) => s.setFocusedPane);
+  const resumePaneSession = useAppStore((s) => s.resumePaneSession);
+  const findFleetTabIdx = useAppStore((s) => s.findFleetTabIdx);
   const loadDemoState = useAppStore((s) => s.loadDemoState);
   const projectLinks = useAppStore((s) => s.projectLinks);
   const removeProjectLink = useAppStore((s) => s.removeProjectLink);
@@ -117,6 +124,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const [hoverEdge, setHoverEdge] = useState<string | null>(null);
   const [showCycle, setShowCycle] = useState(false);
   const [search, setSearch] = useState("");
+  // Resume (#glance-resume): in-flight flag + a transient status line (a failure reason, or a launch
+  // note such as "2 completed workers relaunching into maintenance").
+  const [resuming, setResuming] = useState(false);
+  const [resumeMsg, setResumeMsg] = useState<string | null>(null);
   // Drill (#…): clicking a project on the Network graph animates INTO that project's fleet-relationship
   // graph — the SAME canvas, a different graph (L0 project network → L1 agent fleet). `drill` is the
   // drilled project node id, held in the STORE so the app-wide nav history (mouse back/forward) can
@@ -211,6 +222,76 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   };
   const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); setChatNode(null); setPreviewOpen(false); };
 
+  // ── Resume (#glance-resume) ──────────────────────────────────────────────────────────────────
+  // The project the header's Resume acts on: the drilled project (L1), else a selected project node on
+  // the L0 network. Its display name comes from the project (L0) model — drill + L0 selections are both
+  // project ids there. The preview node is never a resume target.
+  const headerProjectKey = drill ?? (sel?.type === "node" && sel.id !== PREVIEW_NODE_ID ? sel.id : null);
+  // Prefer the project's real display title (for the recreated "· build" tab name); fall back to the
+  // graph slug, then the key. The build tab is matched/reused by the stable key, so this is cosmetic.
+  const projectDisplayName = (key: string) =>
+    projects.find((p) => p.id === key)?.name ?? projectModel.nodes.find((n) => n.id === key)?.slug ?? key;
+  const headerProjectName = headerProjectKey ? projectDisplayName(headerProjectKey) : null;
+
+  // Navigate to a pane's live Console cell by its identity id (mirrors WorkerDetail.openSession). Reads
+  // the tabs fresh (getState) so a just-launched build tab is found.
+  const jumpToConsolePane = useCallback((paneId: string) => {
+    const owner = findPaneOwnerTab(useAppStore.getState().tabs, paneId);
+    setWorkspace("console");
+    if (owner) {
+      setActiveTab(owner.tabIdx);
+      const pi = owner.tab.paneIds?.indexOf(paneId) ?? -1;
+      if (pi >= 0) setFocusedPane(pi);
+    }
+  }, [setWorkspace, setActiveTab, setFocusedPane]);
+
+  // Header Resume: bring the focused project's whole fleet back. If a build tab is already LIVE, jump to
+  // it instead of rebuilding (rebuilding would restart running agents); otherwise run the progress-gated
+  // relaunch, which reopens the build tab and switches to the Console.
+  const onResumeProject = useCallback(async () => {
+    if (!headerProjectKey || !headerProjectName || resuming) return;
+    setResumeMsg(null);
+    const idx = findFleetTabIdx(headerProjectKey);
+    if (idx >= 0) {
+      const tab = useAppStore.getState().tabs[idx];
+      if ((tab?.paneIds ?? []).some((pid) => livePaneIds.has(pid))) { setWorkspace("console"); setActiveTab(idx); return; }
+    }
+    setResuming(true);
+    try {
+      // Reuse the fleet the drill already loaded; an L0-selected project loads its own from plan.db.
+      const fleet = headerProjectKey === drill ? effectiveFleet : undefined;
+      const res = await resumeProjectFleet({ projectName: headerProjectName, projectKey: headerProjectKey, fleet });
+      setResumeMsg(res.ok ? (res.note ?? null) : (res.error ?? "Couldn't resume this project."));
+    } finally {
+      setResuming(false);
+    }
+  }, [headerProjectKey, headerProjectName, resuming, findFleetTabIdx, livePaneIds, setWorkspace, setActiveTab, drill, effectiveFleet]);
+
+  // Node Resume: jump to a live agent's Console pane; for a dormant agent, resume just that pane in place
+  // when its build tab is still open, else fall back to bringing the whole fleet back and landing on it.
+  const onResumeNode = useCallback((nodeId: string) => {
+    if (!drill) return;
+    const paneId = fleetPaneId(drill, nodeId);
+    if (livePaneIds.has(paneId)) { jumpToConsolePane(paneId); return; }
+    setResumeMsg(null);
+    if (resumePaneSession(paneId)) { jumpToConsolePane(paneId); return; }
+    setResuming(true);
+    const name = projects.find((p) => p.id === drill)?.name ?? drillNode?.slug ?? "project";
+    void resumeProjectFleet({ projectName: name, projectKey: drill, fleet: effectiveFleet })
+      .then((res) => {
+        if (!res.ok) setResumeMsg(res.error ?? "Couldn't resume this agent.");
+        else jumpToConsolePane(paneId);
+      })
+      .finally(() => setResuming(false));
+  }, [drill, livePaneIds, resumePaneSession, jumpToConsolePane, effectiveFleet, projects, drillNode]);
+
+  // Auto-clear the transient resume status line so a one-off note/error doesn't linger.
+  useEffect(() => {
+    if (!resumeMsg) return;
+    const id = setTimeout(() => setResumeMsg(null), 6000);
+    return () => clearTimeout(id);
+  }, [resumeMsg]);
+
   // The dock shows ONLY while the open node is still a live agent in the CURRENT fleet — so drilling
   // out (or a nav-history back/forward that swaps `drill`) closes it by derivation, no reset effect.
   const chatPaneId = drill && chatNode && isLiveAgent(chatNode) ? fleetPaneId(drill, chatNode) : null;
@@ -283,6 +364,16 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
               breadcrumb (which project's fleet you're in) stays; the '← projects' button exits it. */}
           {drill && <Text as="span" mono size={11} tone="dim">{`${drillNode?.slug ?? "project"} · fleet`}</Text>}
           {drill && <Button variant="ghost" onClick={exitDrill}>← projects</Button>}
+          {/* Project Resume (#glance-resume) — bring the focused project's fleet back to life (or jump to
+              it if already live). Shows whenever a project is the header's subject: the drilled project,
+              or a selected project node on the L0 network. */}
+          {headerProjectKey && (
+            <Button variant="primary" onClick={onResumeProject} disabled={resuming}
+              title={`Resume ${headerProjectName}'s fleet`}>
+              {resuming ? "Resuming…" : "▶ Resume"}
+            </Button>
+          )}
+          {resumeMsg && <Text as="span" mono size={10.5} tone="dim" style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={resumeMsg}>{resumeMsg}</Text>}
           {/* The project filter moved into the rail's search slot (#2797) — every graph nav menu now leads
               with a search box. Manual connect-mode was removed (#2737): links are LLM-authored, not drawn
               by hand. The graph is configured by the planner/agents, never wired manually here. */}
@@ -352,7 +443,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         autoTriageOn={!drill && sel.type === "node" ? !!autoTriage[sel.id] : undefined}
         onToggleAutoTriage={!drill && sel.type === "node" ? (on) => setAutoTriage(sel.id, on) : undefined}
         // Open the real PTY stream (#2369) — only for a drilled, LIVE agent node.
-        onOpenStream={sel.type === "node" && isLiveAgent(sel.id) ? (id) => setChatNode(id) : undefined} /> : undefined}
+        onOpenStream={sel.type === "node" && isLiveAgent(sel.id) ? (id) => setChatNode(id) : undefined}
+        // Resume this agent's session (#glance-resume) — any drilled fleet node (not the preview node).
+        onResumeNode={drill && sel.type === "node" && sel.id !== PREVIEW_NODE_ID ? onResumeNode : undefined}
+        nodeLive={sel.type === "node" ? isLiveAgent(sel.id) : undefined} /> : undefined}
     >
       {/* keyed so drilling in/out remounts + replays the shared transition (graphCanvas.css, #2418) */}
       <Box key={drill ?? "network"} className="graph-drill-anim" style={{ position: "absolute", inset: 0 }}>

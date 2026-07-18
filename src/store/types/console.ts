@@ -159,6 +159,12 @@ export interface ConsoleState {
   reapPane: (paneId: string) => void;
   /** Clear a pane's dormant state so the view relaunches it (resume on focus). */
   resumePane: (paneId: string) => void;
+  /** Resume a single dormant fleet/agent session in place (#glance-resume): clears the pane's
+   *  ended / disabled / dormant flags and stamps `restoreRequested` so its remounted terminal
+   *  relaunches with `claude --continue`. Non-disruptive — it touches ONLY this pane, so live
+   *  siblings in the same build tab keep running. Returns false (a no-op) when no open tab hosts
+   *  the pane id, so the caller can fall back to a full fleet relaunch. */
+  resumePaneSession: (paneId: string) => boolean;
   /** Update the idle-reaper config (Settings). */
   setIdleReaperConfig: (cfg: Partial<ReaperConfig>) => void;
   // Recompute one tab's rolled-up state from the current pane statuses + layout +

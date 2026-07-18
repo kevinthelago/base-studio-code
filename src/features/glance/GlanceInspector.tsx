@@ -44,6 +44,13 @@ interface InspectorProps {
   /** Open the selected agent's REAL PTY stream in the dock (#2369). Provided only for a drilled, LIVE
    *  agent node — its presence is what renders the "Open stream" action. */
   onOpenStream?: (nodeId: string) => void;
+  /** Resume the selected AGENT node's session (#glance-resume). Provided for any drilled fleet node:
+   *  the workspace jumps to its Console pane when live, else relaunches that one agent. Its presence
+   *  renders the node "Resume" action in this details pane. */
+  onResumeNode?: (nodeId: string) => void;
+  /** Whether the selected agent node has a live session (#glance-resume) — drives the resume action's
+   *  wording (jump into an already-running pane vs relaunch a dormant one). */
+  nodeLive?: boolean;
 }
 
 function DepRow({ node, kind, color, onClick }: { node: GNode; kind: string; color: string; onClick: () => void }) {
@@ -65,7 +72,7 @@ function Header({ title, onClose }: { title: string; onClose: () => void }) {
   );
 }
 
-export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, onRemoveEdge, autoTriageOn, onToggleAutoTriage, onOpenStream }: InspectorProps) {
+export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, onRemoveEdge, autoTriageOn, onToggleAutoTriage, onOpenStream, onResumeNode, nodeLive }: InspectorProps) {
   if (selType === "node" && selId) {
     const n = model.nodes.find((x) => x.id === selId);
     if (!n) return null;
@@ -210,9 +217,16 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
           {rdeps.length === 0 ? <Text as="div" mono size={11} tone="dim">— leaf, nothing depends on it</Text>
             : rdeps.map((e) => <DepRow key={e.id} node={model.nodes.find((x) => x.id === e.from)!} kind={kindOf(e)} color={colorOf(e)} onClick={() => onSelectNode(e.from)} />)}
 
-          {/* Open the agent's REAL live PTY stream in the dock (#2369) — only for a live drilled agent. */}
+          {/* Resume this AGENT's session (#glance-resume) — jumps to its Console pane when live, else
+              relaunches that one agent (claude --continue). Primary action for a drilled fleet node. */}
+          {onResumeNode && (
+            <Button variant="primary" onClick={() => onResumeNode(selId)} style={{ width: "100%", marginTop: 18 }}>
+              {nodeLive ? "Open in console ↗" : "▶ Resume agent"}
+            </Button>
+          )}
+          {/* Peek the agent's REAL live PTY stream inline in the graph (#2369) — only for a live drilled agent. */}
           {onOpenStream && (
-            <Button variant="primary" onClick={() => onOpenStream(selId)} style={{ width: "100%", marginTop: 18 }}>Open stream ↗</Button>
+            <Button variant="ghost" onClick={() => onOpenStream(selId)} style={{ width: "100%", marginTop: 8 }}>Open stream ↗</Button>
           )}
         </Box>
       </Box>
