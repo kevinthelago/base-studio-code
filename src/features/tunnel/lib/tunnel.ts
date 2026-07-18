@@ -29,7 +29,10 @@ export type PaneStatus = "running" | "idle" | "awaiting_input" | "error";
 /** What kind of session a mirrored pane is (#2497). The wire vocabulary is fixed —
  *  the fleet DIRECTOR rides as `worker` (a fleet session) and manual/positional console
  *  panes are `console`. Optional on the wire for backward compatibility (absent ⇒ console). */
-export type PaneKind = "console" | "worker" | "planner" | "designer" | "architect" | "librarian" | "triage";
+// `soundDesigner` added #3369 (epic #3071 phase 4). ADDITIVE — no existing value changes meaning, so an
+// older mobile build simply sees a kind it does not label rather than mis-labelling a session. Still a
+// tunnel-contract change: mobile-studio-code should add the matching label in a follow-up.
+export type PaneKind = "console" | "worker" | "planner" | "designer" | "architect" | "librarian" | "soundDesigner" | "triage";
 
 /** One mirrored pane in the list the mobile client renders (`pane_list`). */
 export interface PaneDescriptor {

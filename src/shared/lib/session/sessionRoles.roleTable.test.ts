@@ -36,6 +36,11 @@ describe("role capability table (loaded from @data/permissions/role-capabilities
       // included (like the architect, it is not a UI-kit session). Its whole command surface is
       // `bsc graph`, granted at launch via the restricted allow-list.
       librarian:  "none/none/none/none/none",
+      // Sound-designer (#3369, epic #3071 phase 4): the Sounds tab's sound-kit authoring session —
+      // `none` on EVERY axis, `ui` included: a sound is a synthesis descriptor in its own store, not a
+      // UI kit. Its whole command surface is `bsc sound`, granted at launch via the restricted
+      // allow-list. Identical posture to the architect/librarian.
+      "sound-designer": "none/none/none/none/none",
       // Marketer (#2431): read-only on git/GitHub, code:none — writes come solely from its
       // marketing-content carve-out (asserted below), never a code tier.
       marketer:   "read/read/none/read/read",
