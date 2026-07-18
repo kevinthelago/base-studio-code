@@ -32,6 +32,7 @@ import {
   runMatrixAlgorithm,
   runGraphAlgorithm,
   runScene,
+  withSourceLoc,
   type GraphInput,
   type TracedArray,
   type TracedMatrix,
@@ -39,6 +40,7 @@ import {
   type TracedScene,
 } from "../../lib/tracer";
 import type { Frame } from "../../lib/trace";
+import { instrumentVizCode, LOC_HOOK } from "./vizInstrument";
 
 /** The structure a stored trace-program drives — selects the runner, renderer(s), and input seam. `scene`
  *  is the multi-structure case (`run(scene, input)` over a TracedScene → synchronized panels). */
@@ -50,6 +52,10 @@ export type VizDatatype = "array" | "matrix" | "graph" | "scene";
 export interface VizProgramDescriptor {
   datatype: VizDatatype;
   input: number[] | number[][] | GraphInput;
+  /** The exact source the program's frame {@link Frame.loc} ranges index into (#3250) — the TRIMMED
+   *  `vizCode`, i.e. what was parsed and instrumented. Carried on the descriptor (rather than recomputed
+   *  by the caller) so the code column always renders the string the offsets were measured against. */
+  source: string;
   // The compiled algorithm. Loosely typed here (never-typed params are assignable to any Traced signature,
   // and a rest tuple lets a scene's TWO-arg `run(scene, input)` fit too); `runVizProgram` narrows it to the
   // datatype's real signature (`TracedArray|TracedMatrix|TracedGraph`, or `(TracedScene, GraphInput)`).
@@ -86,11 +92,20 @@ export function compileVizProgram(code: string): VizProgramDescriptor {
   const trimmed = code?.trim();
   if (!trimmed) throw new Error("vizCode is empty");
 
+  // Tag each traced call with its source range (#3250) so the frames it emits know where they came from.
+  // Pure insertion over `trimmed`, so the recorded ranges index `trimmed` — the string reported as
+  // `source` and rendered by the code column. An un-instrumentable program comes back unchanged with no
+  // ranges: it still compiles and animates, just without highlighting.
+  const { code: instrumented, locs } = instrumentVizCode(trimmed);
+
   let raw: unknown;
   try {
-    // Strict mode + no injected scope: the program's ONLY capability is the Traced structure the tracer
-    // hands to run(); it cannot see this module's bindings. See the TRUST note above (#3233).
-    raw = new Function(`"use strict"; return (${trimmed});`)();
+    // Strict mode; the ONLY injected binding is the location hook, a closure we own that pushes a range
+    // onto the tracer's ambient stack for the duration of one traced call. It grants the program no
+    // capability it did not already have (it can neither read nor reach anything through it), so the
+    // isolation note above (#3233) still holds: the program's only capability is the Traced structure.
+    const hook = <T,>(id: number, call: () => T): T => withSourceLoc(locs[id], call);
+    raw = new Function(LOC_HOOK, `"use strict"; return (${instrumented});`)(hook);
   } catch (e) {
     // Preserve the original SyntaxError as `cause` (assigned, not via the ES2022 constructor option —
     // the tsconfig lib target is ES2020).
@@ -121,7 +136,12 @@ export function compileVizProgram(code: string): VizProgramDescriptor {
     throw new Error(`vizCode.input does not match datatype "${datatype}" (expected ${INPUT_SHAPE[datatype]})`);
   }
 
-  return { datatype, input: input as VizProgramDescriptor["input"], run: d.run as VizProgramDescriptor["run"] };
+  return {
+    datatype,
+    input: input as VizProgramDescriptor["input"],
+    run: d.run as VizProgramDescriptor["run"],
+    source: trimmed,
+  };
 }
 
 /** Human-readable expected input shape per datatype, for the validation error message. */
@@ -139,6 +159,10 @@ export interface VizRun {
   datatype: VizDatatype;
   input: number[] | number[][] | GraphInput;
   frames: Frame[];
+  /** The trace-program source each frame's `loc` indexes into (#3250) — the trimmed `vizCode`. Travels
+   *  back from the Worker alongside the frames so the code column and the highlights are always the same
+   *  artifact; a caller must never substitute its own copy of the code. */
+  source: string;
 }
 
 /**
@@ -163,5 +187,5 @@ export function runVizProgram(code: string, inputOverride?: unknown): VizRun {
         : d.datatype === "graph"
           ? [...runGraphAlgorithm(d.run as (g: TracedGraph) => void, input as GraphInput)()]
           : [...runScene(d.run as (scene: TracedScene, input: GraphInput) => void, input as GraphInput)()];
-  return { datatype: d.datatype, input, frames };
+  return { datatype: d.datatype, input, frames, source: d.source };
 }

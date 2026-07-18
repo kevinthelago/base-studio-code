@@ -1,0 +1,65 @@
+/* The per-op source-highlight column (#3250) — the trace-program's code beside the animation, with the
+   executing op's span lit. Tokens only; no hardcoded colors. */
+
+.algo-code-column {
+  min-width: 0;
+  flex: 1 1 340px;
+  max-width: 560px;
+}
+
+.algo-code-pre {
+  margin: 0;
+  flex: 1 1 auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev, var(--bg-soft));
+  color: var(--fg);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  line-height: 1.65;
+  /* pre-wrap, not pre: a trace-program is authored as prose-width code and the column is narrow, so
+     wrapping keeps the whole program readable without a horizontal scrollbar under the highlight. */
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
+  max-height: 320px;
+  tab-size: 2;
+}
+
+/* The executing op. `mark` is the semantically right element (a run of text highlighted for reference),
+   but its UA yellow is wrong here — reset it onto the accent so it reads as "this is running now". */
+.algo-code-hit {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: var(--fg);
+  border-radius: 4px;
+  padding: 1px 2px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* The animation + code side by side on the stage; they stack on a narrow canvas so neither is squeezed
+   below readability. */
+.trace-split {
+  align-items: stretch;
+  min-width: 0;
+}
+.trace-split-viz {
+  flex: 1 1 55%;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .trace-split {
+    flex-wrap: wrap;
+  }
+  .algo-code-column {
+    max-width: none;
+    flex-basis: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .algo-code-hit {
+    transition: none;
+  }
+}
