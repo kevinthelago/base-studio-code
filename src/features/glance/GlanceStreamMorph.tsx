@@ -113,11 +113,22 @@ export function GlanceStreamMorph({ node, slot, paneId, name, role, zoom = 1, on
   // graph's own gestures — so we listen at the window (capture phase, before any stopPropagation) and
   // decide on mouseUP: only a press-release that STAYED put is a click. A press that DRAGGED past the
   // viewport's own 4px pan threshold is a pan (or a terminal text-selection), so the graph keeps
-  // panning/zooming/selecting and the card stays open. A press that starts inside the card is ignored.
+  // panning/zooming/selecting and the card stays open.
+  //
+  // TWO kinds of press are exempt (#3365):
+  //  • inside ANY `.glance-card` — every morph shares the class, so with several open a click in one
+  //    card dismisses none of them (including this one).
+  //  • on a graph NODE (`[data-glance-node]`) — clicking a node is a deliberate OPEN/SELECT gesture,
+  //    not a dismiss. Without this, opening a second node tore down the first: the press on node B is
+  //    outside A's card, so A closed the moment B opened, and only one morph was ever visible. That
+  //    silently defeated the whole multi-open grid (#3361).
+  // Empty canvas is neither, so a click on the backdrop still dismisses everything.
   useEffect(() => {
     let start: { x: number; y: number } | null = null;
     const onDown = (e: MouseEvent) => {
-      start = (e.target as HTMLElement)?.closest(".glance-card") ? null : { x: e.clientX, y: e.clientY };
+      const t = e.target as HTMLElement | null;
+      const exempt = !!t?.closest(".glance-card") || !!t?.closest("[data-glance-node]");
+      start = exempt ? null : { x: e.clientX, y: e.clientY };
     };
     const onUp = (e: MouseEvent) => {
       if (!start) return;

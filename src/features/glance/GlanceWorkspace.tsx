@@ -337,8 +337,14 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     setChatSlots((prev) => placeInSlot(prev, id));
   };
   /** Collapse ONE morph. Its PTY stays alive — the agent is untouched. Frees its slot for the next open;
-   *  the surviving morphs keep theirs, and the anchor is retained so the grid never shifts under them. */
-  const closeChat = (id: string) => setChatSlots((prev) => releaseSlot(prev, id));
+   *  the surviving morphs keep theirs, and the anchor is retained so the grid never shifts under them —
+   *  until the LAST one closes, which releases the anchor so the next session re-anchors on its own node
+   *  rather than inheriting a stale grid origin from a node that is no longer open (#3365). */
+  const closeChat = (id: string) => setChatSlots((prev) => {
+    const next = releaseSlot(prev, id);
+    if (next.length === 0) setGridAnchorId(null);
+    return next;
+  });
   /** Close everything — the only path that releases the grid anchor, so the next session re-anchors. */
   const closeAllChats = () => { setChatSlots([]); setGridAnchorId(null); };
   const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); closeAllChats(); setPreviewOpen(false); };
