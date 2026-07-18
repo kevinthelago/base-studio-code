@@ -13,9 +13,11 @@ import type { Team, Position, PositionKind } from "./team";
 export const CANVAS_W = 1120;
 export const CANVAS_H = 800;
 
-/** Node box size per kind (design-space px) — person cards are the largest; resource/external smaller. */
+/** Node box size per kind (design-space px) — person cards are the largest; resource/external smaller.
+ *  The agent card carries the persona blurb, so it's sized to fit ~4 clamped lines comfortably (#3335,
+ *  was 190×96) — longer blurbs ellipsis rather than overflow (see AgentFace). */
 export const NODE_SIZE: Record<PositionKind, { w: number; h: number }> = {
-  agent: { w: 190, h: 96 },
+  agent: { w: 206, h: 116 },
   resource: { w: 156, h: 82 },
   external: { w: 152, h: 80 },
 };

@@ -60,7 +60,10 @@ function AgentFace({ d, isSel }: { d: PositionDisplay; isSel: boolean }) {
             <Text as="span" weight={600} size={13.5} style={{ lineHeight: 1.15, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</Text>
             {d.role && <Chip color="var(--accent)" style={{ flex: "none" }}>{d.role}</Chip>}
           </Row>
-          <Text as="div" size={10.5} tone="muted" style={{ lineHeight: 1.3, marginTop: 2 }}>{d.blurb}</Text>
+          {/* Clamp the blurb to 4 lines (#3335) so a long persona description ellipsis-truncates inside the
+              card instead of overflowing the node box; the full text stays in the inspector. */}
+          <Text as="div" size={10.5} tone="muted" style={{ lineHeight: 1.3, marginTop: 2,
+            display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{d.blurb}</Text>
         </Box>
       </Row>
     </Box>
