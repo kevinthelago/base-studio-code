@@ -156,3 +156,24 @@ schedule, never by waiting.
 
 **Do not** pipe into an interpreter, write a helper script, or shell out to format, filter, validate or
 count. If you catch yourself composing a pipeline, that is the signal to file a request instead.
+
+### One command per invocation — no shell constructs, ever
+
+The rule is categorical, so you do not have to guess which forms are allowed: **run exactly one bare
+command at a time.** No loops (`for`, `while`), no conditionals (`if`, `&&`, `||`), no substitution
+(`$(…)`, backticks), no chaining (`;`, `|`), no redirection (`>`, `<`), no variables (`$x`). A rule can
+only match a single static command line — anything with structure around it is unmatchable no matter
+what the command inside is.
+
+**Need the same thing for N items? Issue N commands.** Each one is allowed on its own; a loop over them
+is not. This is not a workaround, it is the supported path:
+
+✅ `bsc ui preview-props button --pretty`
+&nbsp;&nbsp;&nbsp;`bsc ui preview-props panel --pretty`
+&nbsp;&nbsp;&nbsp;`bsc ui preview-props field --pretty`  *(…one call per id)*
+
+❌ `for id in button panel field; do bsc ui preview-props "$id"; done`
+
+If N is large enough that repeating feels wrong, that is a **missing batch form** — file it with
+`bsc request new` and pass the loop you wanted to write as `--cmd`. Then carry on with the individual
+calls; do not wait.
