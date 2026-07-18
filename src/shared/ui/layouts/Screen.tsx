@@ -22,6 +22,9 @@ export interface ScreenProps {
   children: ReactNode;
   /** An overlay rendered as a sibling of the page inside the root (e.g. a drawer + scrim). */
   overlay?: ReactNode;
+  /** Right-aligned page-level actions rendered in the page header (the PageTabs strip) — e.g. Glance's
+   *  "▶ Start project" / "End sessions". Hidden with the tab bar in a torn-off page. */
+  headerActions?: ReactNode;
 }
 
 /**
@@ -37,7 +40,7 @@ export interface ScreenProps {
  * shows one **Page** at a time; the page-tab strip is **PageTabs**. See `docs/frontend-structure.md`.
  */
 export function Screen({
-  tabs, active, onSelect, onReorder, onTearOff, pageOverride, className, bodyClassName, children, overlay,
+  tabs, active, onSelect, onReorder, onTearOff, pageOverride, className, bodyClassName, children, overlay, headerActions,
 }: ScreenProps) {
   return (
     <Box className={className ? `screen ${className}` : "screen"}>
@@ -49,6 +52,7 @@ export function Screen({
             onSelect={onSelect}
             onReorder={onReorder}
             onTearOff={onTearOff}
+            actions={headerActions}
           />
         )}
         <Box className={bodyClassName ? `screen-body ${bodyClassName}` : "screen-body"}>

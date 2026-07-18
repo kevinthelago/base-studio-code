@@ -44,10 +44,14 @@ export interface TabBarProps {
   /** Context-menu body for a tab (e.g. the layout picker). `ctx.startRename`
    *  enters TabBar's inline rename for that tab; `ctx.close` dismisses the menu. */
   renderMenu?: (id: string, ctx: { close: () => void; startRename: () => void }) => ReactNode;
+  /** Right-aligned page-level actions rendered inside the strip (the `.tabstrip-actions` slot).
+   *  This is the page HEADER's action area — a page hangs its page-level buttons here (e.g. Glance's
+   *  "▶ Start project" / "End sessions"), distinct from any graph/canvas toolbar below. */
+  actions?: ReactNode;
 }
 
 export function TabBar({
-  tabs, activeId, onSelect, onReorder, onTearOff, onClose, onAdd, onRename, renderMenu,
+  tabs, activeId, onSelect, onReorder, onTearOff, onClose, onAdd, onRename, renderMenu, actions,
 }: TabBarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -209,6 +213,9 @@ export function TabBar({
         {onAdd && (
           <button className="tab-add" onClick={onAdd}>+</button>
         )}
+        {/* Page-level actions, pushed to the right edge of the header strip (#3343). Not draggable and
+            outside the tab/drop model — a plain trailing slot for the active page's buttons. */}
+        {actions && <div className="tabstrip-actions">{actions}</div>}
       </div>
 
       {tearOff && dragIdx !== null && createPortal(
