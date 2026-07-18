@@ -8,6 +8,8 @@
 // pan/zoom shell is the shared GraphCanvas template + useGraphViewport (#2208, epic #2197 slice 2).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { bscJson } from "@/shared/lib/core/bsc";
+import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import { useAppStore } from "@/store";
 import { demoSnapshot } from "@/store/demoSnapshot";
 import { Row } from "@/shared/ui/layout/Row";
@@ -34,7 +36,7 @@ import { GlanceInspector } from "./GlanceInspector";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";
 import { buildGraph, focusSets, isLibraryNode, HEALTH_META, ROLE_COLOR, NW, NH } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
-import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
+import { buildFleetData, buildRealFleetData, nodeHasLiveSession, graphNodeStartable, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
 import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, studioPaneIdForNode } from "./lib/studioProject";
 import { DEBUG_PANE_ID } from "@/features/debug";
 import { useProjectComplete } from "./lib/useProjectComplete";
@@ -106,6 +108,11 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // cell on the next launch, so this is self-reversing — "Relaunch fleet" respawns it fresh.
   const setPaneDisabled = useAppStore((s) => s.setPaneDisabled);
   const setPaneStatus = useAppStore((s) => s.setPaneStatus);
+  // Starting work from the graph (#3337): re-enable a stopped node's pane (reopenPane), launch a whole
+  // fleet (fleetStartProject), and land the user on the live fleet (setWorkspace).
+  const reopenPane = useAppStore((s) => s.reopenPane);
+  const fleetStartProject = useAppStore((s) => s.fleetStartProject);
+  const setWorkspace = useAppStore((s) => s.setWorkspace);
   // The per-pane run status — drives the fleet-drill agent nodes' live activity (#3252, `applyFleetLiveStatus`).
   const paneStatus = useAppStore((s) => s.paneStatus);
   // Confirm before the BULK "End sessions" (#3052) — stopping a whole fleet at once warrants a guard.
@@ -288,6 +295,37 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   };
   // END a single agent's session from its morph (#3049): tear it down + collapse the morph.
   const endSession = (pid: string) => { killPane(pid); setChatNode(null); };
+  // START a whole fleet from an L0 project node (#3337) — the SAME path the crash-recovery banner uses:
+  // materialize the hub, load the FleetPlan from plan.db, launch it, then drill into the live fleet.
+  const startFleet = async (projectKey: string) => {
+    await safeInvoke("materialize_hub", { projectKey }, "");
+    const fleet = await bscJson<FleetPlan | null>(projectKey, ["plan", "fleet", "get", "--full", "--json"], null);
+    if (!fleet) return;
+    fleetStartProject(projectKey, fleet, projectKey);
+    setDrill(projectKey);
+    setWorkspace("glance");
+  };
+  // (Re)START one fleet node (#3337) — re-enable + un-end its cell so the console relaunches just that pane
+  // (mirrors the kill path in reverse). Gated by startableNode to a cell that EXISTS in a build tab.
+  const startNode = (pid: string) => { setPaneDisabled(pid, false); reopenPane(pid); };
+  // The node's ▶ START button (#3337): L0 project node → start its fleet; L1 fleet node → restart its cell.
+  const onStartNode = (id: string) => {
+    if (drill) startNode(fleetPaneId(drill, id));
+    else void startFleet(id);
+  };
+  // Whether a node shows the ▶ START button (#3337). L0: a REAL project node (not a library/kit node, not
+  // the synthetic base-studio-code node — its studio sessions launch via their own toggles/workspaces). L1:
+  // a fleet node whose cell EXISTS in a build tab but is stopped — re-enabling relaunches it; a LIVE node
+  // opens its stream instead, and a never-launched fleet has no cell to restart (use L0 "start fleet").
+  const paneInTab = (pid: string) => consoleTabs.some((t) => (t.paneIds ?? []).includes(pid));
+  const startableNode = (id: string): boolean => graphNodeStartable({
+    drilled: !!drill,
+    isRealProject: id !== BASE_STUDIO_PROJECT_ID && !isLibraryNode(projectModel.nodes.find((x) => x.id === id) ?? {}),
+    studioDrill: drill === BASE_STUDIO_PROJECT_ID,
+    isPreview: id === PREVIEW_NODE_ID,
+    cellExists: !!drill && paneInTab(fleetPaneId(drill, id)),
+    isLive: isLiveAgent(id),
+  });
   // The drilled project's live sessions — every launched pane under its `<key>:` prefix (director +
   // workers). The `:` delimiter makes the prefix exact (`cli:` never matches `cli-typer:`). Drives the
   // toolbar "End sessions" button + its count.
@@ -465,6 +503,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           model={model} dragMoved={vp.dragMoved} zoom={vp.view.scale}
           focus={focus} selNodeId={selNodeId} selEdgeId={selEdgeId}
           onHoverNode={setHoverNode} onHoverEdge={setHoverEdge} onSelectNode={onNodeClick} onSelectEdge={pickEdge}
+          // Hover ▶ START on a node (#3337): L0 project → start its fleet; L1 fleet node → restart its cell.
+          startableNode={startableNode} onStartNode={onStartNode}
           // The live-agent terminal morphs open IN the graph, as an oversized node (#2534).
           chat={chatPaneId && chatNode ? { nodeId: chatNode, paneId: chatPaneId, name: chatMeta?.slug ?? "agent", role: chatMeta?.roleLabel } : null}
           onCloseChat={() => setChatNode(null)}
