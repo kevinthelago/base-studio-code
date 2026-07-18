@@ -18,7 +18,10 @@
 // child `selector` must pass `SAFE_SELECTOR` (only selector-safe characters — it cannot break out of
 // the selector position). Anything failing is skipped, never emitted.
 
-/** When an authored animation plays. `exit` is DORMANT until the preview exit-runtime lands (#3057). */
+/** When an authored animation plays. `mount` (the default) plays once as the element is INSERTED — so a
+ *  child `selector` + `mount` voices a STATE-TRIGGERED conditional render (e.g. a tooltip pop-in): CSS
+ *  restarts a `1 both` animation each time the matched subtree (re)mounts, so no dedicated "state" trigger
+ *  is needed (#3058). `exit` is DORMANT until the preview exit-runtime lands (#3057). */
 export type AnimationTrigger = "mount" | "hover" | "always" | "exit";
 
 /** One authored animation in a kit's motion library (the shape carried on a `Kit`'s `animations`).

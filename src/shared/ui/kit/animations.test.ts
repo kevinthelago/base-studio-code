@@ -210,6 +210,30 @@ describe("compileAnimationsCss — per-element stagger ramp (#3055)", () => {
   });
 });
 
+describe("compileAnimationsCss — state-trigger via mount + child selector (#3058)", () => {
+  // #3058: a tooltip pop-in fires on a STATE-driven conditional render, not on component mount. It needs
+  // NO dedicated trigger — a default (`mount`) animation scoped to the `.tooltip` child plays once each
+  // time that subtree is (re)inserted, because CSS restarts a `1 both` animation on element insertion.
+  const tip: AnimationDef = {
+    kit: "react-ui", name: "tip-in", selector: ".tooltip",
+    keyframes: { from: { opacity: "0", transform: "translateY(4px)" }, to: { opacity: "1", transform: "none" } },
+  };
+
+  it("compiles a child-scoped pop-in that plays once (`1 both`) on each (re)mount", () => {
+    const css = compileAnimationsCss([tip]);
+    // scoped to the conditional child; `1 both` = play once + hold, which CSS replays on insertion
+    expect(css).toContain(".react-ui-anim-tip-in .tooltip { animation: bsc-react-ui-tip-in var(--dur-base) var(--ease-standard) 1 both; }");
+    // it is a MOUNT trigger — not an exit (no dormant marker), not hover, not a loop
+    expect(css).not.toContain("[data-bsc-exit]");
+    expect(css).not.toContain(":hover");
+    expect(css).not.toContain("infinite");
+  });
+
+  it("`mount` IS the default — an explicit trigger:mount is byte-identical to omitting it (no separate mechanism)", () => {
+    expect(compileAnimationsCss([{ ...tip, trigger: "mount" }])).toBe(compileAnimationsCss([tip]));
+  });
+});
+
 describe("kitAnimations (#2942)", () => {
   it("flattens kits' motion libraries into defs keyed by the kit id", () => {
     const defs = kitAnimations([
