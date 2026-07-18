@@ -16,7 +16,13 @@ import { SHORTCUT_GROUPS } from "./shortcuts";
 /** The shortcut ids that can be rebound (single modifier+key chords). Screen
  *  navigation (single F-keys) and terminal zoom (single Ctrl chords) are single
  *  chords too, so they use this same mechanism. The digit-RANGE bindings
- *  (Ctrl+1–9 etc.) are a separate "leader" model — see LEADER_IDS below. */
+ *  (Ctrl+1–9 etc.) are a separate "leader" model — see LEADER_IDS below.
+ *
+ *  A `screen-*` id MUST be `screen-${Workspace}` for a workspace in SCREEN_HOTKEYS:
+ *  `useHotkeys` looks its binding up by that derived key, so a Workspace rename that
+ *  misses this list silently kills the F-key (#2702 renamed `agents` → `security` and
+ *  left `screen-agents` here, so F7 matched nothing at all). The
+ *  `screen-nav ids track SCREEN_HOTKEYS` test pins the two together. */
 export const REBINDABLE_IDS = [
   "broadcast-toggle",
   "fullscreen-toggle",
@@ -29,7 +35,7 @@ export const REBINDABLE_IDS = [
   "screen-automation",
   "screen-mcp",
   "screen-github",
-  "screen-agents",
+  "screen-security",
   "screen-settings",
   "zoom-in",
   "zoom-out",
@@ -56,7 +62,7 @@ export const DEFAULT_BINDINGS: Record<RebindableId, string> = {
   "screen-automation":  "F4",
   "screen-mcp":         "F5",
   "screen-github":      "F6",
-  "screen-agents":      "F7",
+  "screen-security":    "F7",
   "screen-settings":    "F8",
   "zoom-in":            "Ctrl+Equal",
   "zoom-out":           "Ctrl+Minus",

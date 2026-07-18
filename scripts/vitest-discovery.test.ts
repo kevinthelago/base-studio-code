@@ -24,11 +24,12 @@ describe("vitest discovery excludes: content", () => {
     expect(testExclude).toContain("**/.claude/worktrees/**");
   });
 
-  it("excludes e2e/ — the Playwright suite vitest must never collect (#3409)", () => {
-    // #3264 added `e2e/`, a PLAYWRIGHT suite run by `npm run test:e2e`. It was kept out of
-    // `tsconfig.json` but never out of `test.exclude`, so a root `vitest run` collected
-    // `previewInteraction.spec.ts` and failed on `Failed to resolve import "@playwright/test"` —
-    // that package resolves only where playwright was installed. Intent is not exclusion; assert it.
+  it("excludes the e2e/ Playwright harness (#3264/#3409/#3411)", () => {
+    // e2e/ is deliberately outside the default gate, but its specs match vitest's default
+    // `*.spec.ts` include glob. The exclusion was documented in CLAUDE.md yet never listed here,
+    // so a root run collected `e2e/previewInteraction.spec.ts` and the suite died on
+    // `@playwright/test` — a browser dep the zero-install worktree workflow is specifically not
+    // meant to require. Intent is not exclusion; assert it.
     expect(testExclude).toContain("e2e/**");
   });
 

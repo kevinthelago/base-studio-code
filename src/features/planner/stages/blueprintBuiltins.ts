@@ -86,7 +86,13 @@ export function makeBlueprints(): Blueprint[] {
       // `kit` (#2277/#2810): `recordBlueprintKit` then files the `kit_usage` edge at every bind, so a kit
       // change fans out to the project. An explicit `kit` in the def wins; operate-on-existing-repo
       // categories (transform/harden/maintain/data/script) aren't tied to a shared kit → no key added.
-      const kit = meta.kit ?? (meta.category === "greenfield" ? PACKAGED_KIT_ID : undefined);
+      // The AUTHORING lifecycle (#923, `deliverable: "blueprint"` — cf. `isAuthoringBlueprint`) is the
+      // exception among greenfields: it designs a blueprint and publishes it to a gist, building no app
+      // and rendering no UI, so it must NOT be filed as a kit consumer (#3411 — the auto-stamp drew a
+      // spurious kit→project edge in the network and fanned kit changes out to it). Checked inline
+      // rather than via `isAuthoringBlueprint` because blueprintStages imports THIS module.
+      const authoring = meta.deliverable === "blueprint";
+      const kit = meta.kit ?? (meta.category === "greenfield" && !authoring ? PACKAGED_KIT_ID : undefined);
       return {
         ...meta,
         ...(kit ? { kit } : {}),

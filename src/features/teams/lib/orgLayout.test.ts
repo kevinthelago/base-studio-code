@@ -69,16 +69,21 @@ describe("contentBounds (#2673 — frame the nodes, not the fixed canvas)", () =
       .toEqual({ x: 10, y: 20, w: NODE_SIZE.agent.w, h: NODE_SIZE.agent.h });
   });
 
-  it("is far smaller than / offset within the fixed canvas for a real fleet (the bug's precondition)", () => {
+  it("differs from the fixed canvas box for a real fleet (the bug's precondition)", () => {
     const fleet = BUILTIN_ORGS.find((o) => o.id === "org-default-fleet")!;
     const laid = autoLayout(fleet);
     const positions: Position[] = fleet.positions.map((p) => ({ ...p, ...laid[p.nodeId] }));
     const b = contentBounds(positions)!;
-    // The content does NOT fill the 1120×800 canvas — so centering the canvas box parks it high (#2673).
-    expect(b.w).toBeLessThan(CANVAS_W);
-    expect(b.h).toBeLessThan(CANVAS_H);
-    expect(b.x).toBeGreaterThanOrEqual(0);
-    expect(b.y).toBeGreaterThanOrEqual(0);
+    // The precondition for #2673 is that the content box is NOT the canvas box — frame the canvas and
+    // the graph is misplaced (parked high / off-center). Originally spelled "content is SMALLER than
+    // the canvas", which was only the shape that era's 190×96 cards happened to make; the #3335 persona
+    // cards (206×116) push the default fleet's width past CANVAS_W. Either way the box differs, and
+    // either way framing must use contentBounds — the useGraphViewport contract explicitly covers a
+    // graph that "fills only part of (or overflows) the world box".
+    expect({ x: b.x, y: b.y, w: b.w, h: b.h }).not.toEqual({ x: 0, y: 0, w: CANVAS_W, h: CANVAS_H });
+    expect(b.h).toBeLessThan(CANVAS_H);           // vertically it still sits well inside…
+    expect(b.x).toBeGreaterThan(0);               // …and it is offset from the canvas origin on both axes,
+    expect(b.y).toBeGreaterThan(0);               //    so canvas-box centering parks it wrong.
   });
 });
 
@@ -215,8 +220,28 @@ describe("autoLayout (#2199)", () => {
         expect(overlap).toBe(false);
       }
     }
-    // The whole graph settles inside the 1120×800 design space (repulsion tuned to fit, not to overflow).
-    expect(Math.max(...boxes.map((b) => b.x + b.w))).toBeLessThanOrEqual(CANVAS_W);
+    // Repulsion is tuned to SPREAD for readability without exploding. This was originally spelled as
+    // "fits inside the 1120×800 design space", but that literal bound stopped being the right guard:
+    // #2673 made framing content-based (useGraphViewport frames `contentBounds`, and TeamsCanvas draws
+    // with overflow:visible — a graph that "overflows the world box" is an explicitly supported case,
+    // with no pan clamp to the world), and #3335 grew the agent card 190×96 → 206×116 for persona
+    // blurbs, which legitimately pushes this 9-node fleet to ~1131 wide. Squeezing it back under 1120
+    // is a knife-edge retune (it lands ~27px under) that the next card resize would break again.
+    //
+    // So the surviving invariant is BOUNDED SPREAD, stated relative to the cards themselves: the graph
+    // stays within 1.6× the tightest possible packing of its widest hierarchy row. Built-ins sit at
+    // 1.14–1.37×, so this still fails loudly if the force pass ever runs away — and it is immune to a
+    // card resize. Vertically the fixed AUTO_ROW pitch does keep every built-in inside the design space.
+    const { layer } = layerNodes(fleet);
+    const rowWidth = new Map<number, number>();
+    for (const p of fleet.positions) {
+      const l = layer.get(p.nodeId)!;
+      rowWidth.set(l, (rowWidth.get(l) ?? 0) + NODE_SIZE[p.kind].w);
+    }
+    const packed = Math.max(...rowWidth.values());          // widest row, cards touching
+    const span = Math.max(...boxes.map((b) => b.x + b.w)) - Math.min(...boxes.map((b) => b.x));
+    expect(span).toBeGreaterThanOrEqual(packed);            // it does not collapse into a pile…
+    expect(span).toBeLessThanOrEqual(packed * 1.6);         // …nor blow apart.
     expect(Math.max(...boxes.map((b) => b.y + b.h))).toBeLessThanOrEqual(CANVAS_H);
   });
 

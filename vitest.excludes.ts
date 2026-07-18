@@ -17,15 +17,17 @@ import { configDefaults } from "vitest/config";
  *
  * Lives in its own module so the config's excludes are importable by tests without evaluating
  * `vitest.config.ts`, whose `import.meta.url` is not a file URL once Vitest transforms it.
+ *
+ * `e2e/**` is the OTHER discovery exclusion (#3264/#3409/#3411): the Playwright browser harness is
+ * deliberately outside the default gate, and its specs match vitest's default `*.spec.ts` include
+ * glob. It was documented as excluded from vitest discovery but never actually listed here, so a
+ * root `npx vitest run` collected `e2e/previewInteraction.spec.ts` and the suite failed to resolve
+ * `@playwright/test` — a browser dep a zero-install worktree is not meant to need. Playwright runs
+ * it via `npm run test:e2e` (its own `playwright.config.ts`), never through vitest.
  */
 export const testExclude: string[] = [
   ...configDefaults.exclude, // node_modules, dist, .idea, .git, .cache
   "**/wt*/**",
   "**/.claude/worktrees/**",
-  // `e2e/` is the PLAYWRIGHT suite (#3264), run by `npm run test:e2e`, never by vitest. Without this
-  // a root run collects `previewInteraction.spec.ts` and dies on `Failed to resolve import
-  // "@playwright/test"`, since that package resolves only where playwright was installed (#3409).
-  // #3264 intended `e2e/` to be outside vitest discovery but only ever put it outside `tsconfig`;
-  // "outside the gate" has to be ASSERTED, not intended — see the test in scripts/.
   "e2e/**",
 ];

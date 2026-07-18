@@ -544,7 +544,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // An un-drilled project network with no projects yet. We ALWAYS render the (empty) graph now (#3033) —
   // never a blocking empty-state page — and instead surface a one-click "Load demo" in the toolbar so the
   // #2272 demo stays reachable. (Create a project in the Projects workspace via the Rail as usual.)
-  const networkEmpty = !drill && projectModel.nodes.length === 0;
+  // Emptiness is measured on the user's REAL projects (`projectsBase`), not on the graph's node count:
+  // since #3319 the always-on base-studio-code studio node is appended to `projects`, so the graph is
+  // never node-empty and the demo affordance had become unreachable dead UI (#3411).
+  const networkEmpty = !drill && projectsBase.length === 0;
 
   return (
     <Screen
