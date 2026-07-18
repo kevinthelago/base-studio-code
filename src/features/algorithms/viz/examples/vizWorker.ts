@@ -16,8 +16,8 @@ const ctx = self as unknown as {
 
 ctx.onmessage = ({ data }) => {
   try {
-    const { datatype, input, frames } = runVizProgram(data.code, data.input);
-    ctx.postMessage({ id: data.id, ok: true, datatype, input, frames });
+    const { datatype, input, frames, source } = runVizProgram(data.code, data.input);
+    ctx.postMessage({ id: data.id, ok: true, datatype, input, frames, source });
   } catch (err) {
     ctx.postMessage({ id: data.id, ok: false, error: err instanceof Error ? err.message : String(err) });
   }
