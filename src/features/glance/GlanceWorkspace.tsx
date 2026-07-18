@@ -310,7 +310,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const startNode = (pid: string) => { setPaneDisabled(pid, false); reopenPane(pid); };
   // Whether the drilled node's inspector shows a ▶ START action (#3341). A fleet node whose cell EXISTS in
   // a build tab but is STOPPED — re-enabling relaunches it; a LIVE node shows "Open stream" instead, and a
-  // never-launched fleet has no cell to restart (use the header "Start project"). Only meaningful drilled.
+  // never-launched fleet has no cell to restart (use the toolbar "Start all"). Only meaningful drilled.
   const paneInTab = (pid: string) => consoleTabs.some((t) => (t.paneIds ?? []).includes(pid));
   const startableNode = (id: string): boolean => graphNodeStartable({
     drilled: !!drill,
@@ -373,26 +373,6 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // #2272 demo stays reachable. (Create a project in the Projects workspace via the Rail as usual.)
   const networkEmpty = !drill && projectModel.nodes.length === 0;
 
-  // The PROJECT-LEVEL actions live in the PAGE HEADER (#3343, was the graph toolbar #3341): whole-fleet
-  // "▶ Start project" + its paired bulk "End N sessions". Shown only on the Network page drilled into a
-  // real project — not the synthetic base-studio-code node (its studio sessions launch via their own
-  // toggles). Node-level start stays in the node's right pane (the inspector). The graph toolbar below
-  // keeps only graph-VIEW controls (← projects, fleet chip, cycle pill, zoom, fit).
-  const headerActions = page === "network" && drill && drill !== BASE_STUDIO_PROJECT_ID ? (
-    <>
-      <Button variant="primary" onClick={() => void startFleet(drill)}
-        title="Launch this project's full fleet — director + all workers">
-        ▶ Start project
-      </Button>
-      {liveProjectPanes.length > 0 && (
-        <Button variant="ghost" danger onClick={endAllSessions}
-          title="End every live agent session for this project — Relaunch fleet restarts them">
-          End {liveProjectPanes.length} session{liveProjectPanes.length === 1 ? "" : "s"}
-        </Button>
-      )}
-    </>
-  ) : undefined;
-
   return (
     <Screen
       tabs={tabs}
@@ -402,7 +382,6 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       onTearOff={tearOff}
       pageOverride={pageOverride}
       className="glance-workspace"
-      headerActions={headerActions}
     >
       {page === "fleet" ? <Fleet /> : (
       // The graph must FILL the screen body (a pan/zoom canvas, not scrolling content); the shared
@@ -437,8 +416,6 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
                 ? <Chip color="var(--warn, #f2b155)">sample fleet · no plan.db fleet</Chip>
                 : <Chip color="#4fd6a0">real fleet · {model.nodes.length} agents</Chip>)
             : (data.sample && <Chip color="var(--warn, #f2b155)">sample topology · preview</Chip>)}
-          {/* The project-level actions (▶ Start project · End N sessions) moved to the PAGE HEADER (#3343,
-              `headerActions` on <Screen>) — the graph toolbar keeps only graph-VIEW controls. */}
           {model.cyclePairs.length > 0 && (
             <Box as="button" onClick={() => { setShowCycle((v) => !v); setSel(null); }}
               style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", borderRadius: 7, padding: "6px 11px",
@@ -446,6 +423,24 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
               <Text as="span" style={{ color: "var(--graph-health-error)" }}>▲</Text>
               <Text as="span" mono size={11} weight={600} style={{ color: "#f2848b" }}>{model.cyclePairs.length} cycle</Text>
             </Box>
+          )}
+          {/* Whole-fleet actions sit in the toolbar next to zoom/fit (#3348, was the page header #3343):
+              "▶ Start all" launches every node in the drilled fleet; its paired "End N sessions" stops them.
+              Shown only when drilled into a real project — not the synthetic base-studio-code node (its
+              studio sessions launch via their own toggles). Node-level start stays in the node's right pane. */}
+          {drill && drill !== BASE_STUDIO_PROJECT_ID && (
+            <>
+              <Button variant="primary" onClick={() => void startFleet(drill)}
+                title="Launch this project's full fleet — director + all workers">
+                ▶ Start all
+              </Button>
+              {liveProjectPanes.length > 0 && (
+                <Button variant="ghost" danger onClick={endAllSessions}
+                  title="End every live agent session for this project — Relaunch fleet restarts them">
+                  End {liveProjectPanes.length} session{liveProjectPanes.length === 1 ? "" : "s"}
+                </Button>
+              )}
+            </>
           )}
           <ZoomControls vp={vp} step={1.2} />
           <Button variant="ghost" onClick={vp.fit}>fit</Button>
