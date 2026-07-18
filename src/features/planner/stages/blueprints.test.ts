@@ -21,9 +21,18 @@ describe("greenfield blueprints declare their consumer kit (#2810)", () => {
   const bps = makeBlueprints();
 
   it("greenfield built-ins auto-record kit=react-ui so the kit_usage edge fills at bind", () => {
-    const greenfield = bps.filter((b) => b.category === "greenfield");
+    // …every greenfield that actually SHIPS an app UI. The authoring lifecycle (#923,
+    // `deliverable: "blueprint"`) is filed under greenfield in the library because it creates something
+    // new, but what it creates is a blueprint published to a gist — it has no execution side and renders
+    // no UI, so tying it to the packaged kit filed a kit_usage edge that drew a spurious kit→project
+    // edge in the network and fanned UI-kit changes out to a project with no UI (#3411).
+    const greenfield = bps.filter((b) => b.category === "greenfield" && b.deliverable !== "blueprint");
     expect(greenfield.length).toBeGreaterThan(0);
     expect(greenfield.every((b) => b.kit === "react-ui")).toBe(true);
+    // The authoring blueprint is the carve-out — it exists, and it is NOT a kit consumer.
+    const authoring = bps.filter((b) => b.deliverable === "blueprint");
+    expect(authoring.length).toBeGreaterThan(0);
+    expect(authoring.every((b) => b.kit === undefined)).toBe(true);
   });
 
   it("a non-greenfield (operate-on-existing / data / script) built-in isn't auto-tied to a shared kit", () => {
