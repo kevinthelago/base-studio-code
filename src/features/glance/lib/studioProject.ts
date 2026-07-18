@@ -5,7 +5,10 @@
 // Settings `debugSession` toggle via #3317's pure augmentation. Pure + React-free so it's unit-testable.
 import { augmentStudioNetworkForDebug, STUDIO_NETWORK_ID, type Team } from "@/features/teams";
 import type { Persona } from "@/features/personas";
-import { DEBUG_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
+import {
+  DEBUG_STUDIO_SESSION_ID, DESIGN_STUDIO_SESSION_ID,
+  ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID,
+} from "@/shared/lib/session/systemSessions";
 import { buildOrgFleetData } from "./glanceFleet";
 import type { GlanceData, ProjectLite } from "./glanceData";
 
@@ -36,15 +39,55 @@ export function buildStudioFleetData(teams: readonly Team[], personas: Persona[]
 }
 
 /**
- * The app-owned session pane id for a base-studio-code studio graph node — the bridge that lets the
- * in-graph morph host that node's LIVE terminal (#3326), the studio analogue of `fleetPaneId`. Only the
- * DEBUGGER node is migrated onto the shared TerminalHost so far (kept warm by `DebugSessionMount`); the
- * designer/librarian/architect still run on their own single-mount `useScreenSession` surfaces, which the
- * morph can't re-parent — so they return null and a click just selects them until they're migrated too.
- * The `"debugger"` id is the Studio Network team's debugger position `nodeId` (`DEBUGGER_NODE` in
- * `features/teams/lib/team.ts`) — stable (it's also the persona role + graph node id). Returns null for a
- * non-studio node. Pure.
+ * The stable, app-owned session pane id for each base-studio-code studio graph node (#3319) — the studio
+ * analogue of `fleetPaneId`. The node ids are the Studio Network team position ids
+ * (`data/teams/orgs/planning-studio.json`), and each maps to its ONE app-owned session's fixed id
+ * (`systemSessions.ts`). Because these ids are STABLE, opening a node re-uses the SAME session (its host
+ * re-mounts it, `claude --continue`) rather than spawning a duplicate — the "reuse if it exists, create
+ * if not" the studio sessions want. The `resource` nodes (libraries) and the dynamic `planner` session
+ * have no fixed session, so they return null. Pure.
  */
+const STUDIO_NODE_SESSION: Record<string, string> = {
+  designer: DESIGN_STUDIO_SESSION_ID,
+  librarian: ALGORITHMS_STUDIO_SESSION_ID,
+  architect: TEAMS_STUDIO_SESSION_ID,
+  debugger: DEBUG_STUDIO_SESSION_ID,
+};
 export function studioPaneIdForNode(nodeId: string): string | null {
-  return nodeId === "debugger" ? DEBUG_STUDIO_SESSION_ID : null;
+  return STUDIO_NODE_SESSION[nodeId] ?? null;
+}
+
+/** Where a studio node's session is HOSTED, so the graph can open/reveal it (#glance-resume). The
+ *  DEBUGGER lives on the shared TerminalHost (kept warm by `DebugSessionMount`) → openable inline via the
+ *  Glance `morph`. The designer/librarian/architect run on their own workspace `page` surfaces
+ *  (`useScreenSession`), so opening reveals the EXISTING stable-id session there (never a new one). Null
+ *  for a node without an openable session (the libraries, the dynamic planner). Pure. */
+export type StudioNodeHome =
+  | { kind: "morph" }
+  | { kind: "page"; pageMode: "designs" | "algorithms" | "teams" };
+export function studioNodeHome(nodeId: string): StudioNodeHome | null {
+  switch (nodeId) {
+    case "debugger": return { kind: "morph" };
+    case "designer": return { kind: "page", pageMode: "designs" };
+    case "librarian": return { kind: "page", pageMode: "algorithms" };
+    case "architect": return { kind: "page", pageMode: "teams" };
+    default: return null;
+  }
+}
+
+/**
+ * Whether a base-studio-code studio node's session is currently ACTIVE (#glance-resume) — so the node
+ * reflects a running session rather than a planned position. The DEBUGGER is live while the Settings
+ * `debugSession` flag is on (its node only exists then anyway); the designer/librarian/architect are live
+ * while their stable-id session is mounted + running (a live `paneClaudeActive` or a `run`/`on`
+ * paneStatus). Pure so the liveness rule is unit-testable; the workspace passes the store signals.
+ */
+export function studioSessionLive(
+  nodeId: string,
+  signals: { debugSession: boolean; paneClaudeActive: Record<string, boolean>; paneStatus: Record<string, string | undefined> },
+): boolean {
+  const sid = studioPaneIdForNode(nodeId);
+  if (!sid) return false;
+  if (nodeId === "debugger") return signals.debugSession;
+  return !!signals.paneClaudeActive[sid] || signals.paneStatus[sid] === "run" || signals.paneStatus[sid] === "on";
 }

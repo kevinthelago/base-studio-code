@@ -300,7 +300,7 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
               relaunches that one agent (claude --continue). Primary action for a drilled fleet node. */}
           {onResumeNode && (
             <Button variant="primary" onClick={() => onResumeNode(selId)} style={{ width: "100%", marginTop: 18 }}>
-              {nodeLive ? "Open in console ↗" : "▶ Resume agent"}
+              {nodeLive ? "Open session ↗" : "▶ Resume session"}
             </Button>
           )}
           {/* Peek the agent's REAL live PTY stream inline in the graph (#2369) — only for a live drilled agent. */}
