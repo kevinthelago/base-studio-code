@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, teamToOrg, nodeHasLiveSession, graphNodeStartable, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./glanceFleet";
+import { buildFleetData, buildOrgFleetData, buildRealFleetData, fleetToOrg, teamToOrg, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./glanceFleet";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import type { Persona } from "@/features/personas";
 import type { Team } from "@/features/teams";
@@ -336,23 +336,3 @@ describe("livePanesForProject (#3052 — bulk End sessions)", () => {
     expect(livePanesForProject("", live)).toEqual([]);
   });
 });
-
-describe("graphNodeStartable (#3337 — the ▶ START affordance decision)", () => {
-  const base = { drilled: false, isRealProject: true, studioDrill: false, isPreview: false, cellExists: false, isLive: false };
-
-  it("L0: a real project node is startable; a library/kit node and the synthetic base-studio-code node are not", () => {
-    expect(graphNodeStartable({ ...base, drilled: false, isRealProject: true })).toBe(true);
-    expect(graphNodeStartable({ ...base, drilled: false, isRealProject: false })).toBe(false); // library / synthetic
-  });
-
-  it("L1: a stopped fleet cell that EXISTS is startable; a live cell and a missing cell are not", () => {
-    expect(graphNodeStartable({ ...base, drilled: true, cellExists: true, isLive: false })).toBe(true);  // killed agent → restart
-    expect(graphNodeStartable({ ...base, drilled: true, cellExists: true, isLive: true })).toBe(false);  // live → opens stream
-    expect(graphNodeStartable({ ...base, drilled: true, cellExists: false, isLive: false })).toBe(false); // never launched → start fleet
-  });
-
-  it("L1: the base-studio-code studio drill and the preview node never offer START", () => {
-    expect(graphNodeStartable({ ...base, drilled: true, studioDrill: true, cellExists: true })).toBe(false);
-    expect(graphNodeStartable({ ...base, drilled: true, isPreview: true, cellExists: true })).toBe(false);
-  });
-})
