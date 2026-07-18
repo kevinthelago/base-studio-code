@@ -30,15 +30,17 @@ import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { Fleet } from "@/features/planner/fleet/Fleet";
 import { teamRoleStreams } from "@/features/planner/fleet/teamFleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
+import { GlanceTerminalGrid, type GlanceOpenSession } from "./GlanceTerminalGrid";
+import { orderByPosition } from "./lib/terminalGrid";
 import { GlanceInspector } from "./GlanceInspector";
 import { fleetPaneId, findPaneOwnerTab } from "@/app/console/lib/paneIdentity";
 import { resumeProjectFleet } from "./lib/resumeProject";
-import { buildGraph, focusSets, isLibraryNode, HEALTH_META, ROLE_COLOR, NW, NH } from "./lib/glanceGraph";
+import { buildGraph, focusSets, isLibraryNode, HEALTH_META, ROLE_COLOR } from "./lib/glanceGraph";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
 import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive } from "./lib/studioProject";
 import { DEBUG_PANE_ID } from "@/features/debug";
-import { isStudioId, useStudioViewer } from "@/features/studio-sessions";
+import { isStudioId, useStudioViewers } from "@/features/studio-sessions";
 import { useProjectComplete } from "./lib/useProjectComplete";
 import { usePreviewReview } from "./usePreviewReview";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
@@ -152,8 +154,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const page = pageOverride ?? activeId;
 
   const [sel, setSel] = useState<{ type: "node" | "edge"; id: string } | null>(null);
-  // The drilled agent whose live PTY stream is open in the bottom dock (#2369). Null = closed.
-  const [chatNode, setChatNode] = useState<string | null>(null);
+  // The drilled agents whose live PTY streams are open in the terminal grid dock (#2369 → MULTI, #3361).
+  // Insertion-ordered; the grid re-orders by graph position for display. Empty = the dock is closed.
+  const [chatNodes, setChatNodes] = useState<string[]>([]);
   // The PREVIEW node morphed open (#2623) — the finished app rendered in the graph. Closed by default.
   const [previewOpen, setPreviewOpen] = useState(false);
   const [hoverNode, setHoverNode] = useState<string | null>(null);
@@ -174,8 +177,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // its session (lazily) and holds the idle reaper off for as long as the morph is open, exactly like its
   // page dock. Null for every other node, so the hook no-ops. (The debugger is NOT a studio here — its
   // lifecycle is the Settings toggle, not the reaper.)
-  const openStudioNode = drill === BASE_STUDIO_PROJECT_ID && chatNode && isStudioId(chatNode) ? chatNode : null;
-  useStudioViewer(openStudioNode);
+  // MULTI (#3361): every open studio node must be pinned, not just the newest — otherwise the reaper
+  // could kill a session the user has on screen in another grid cell.
+  const openStudioIds = useMemo(
+    () => (drill === BASE_STUDIO_PROJECT_ID ? chatNodes.filter(isStudioId) : []),
+    [drill, chatNodes],
+  );
+  useStudioViewers(openStudioIds);
   const closeStudio = useAppStore((s) => s.closeStudio);
   // The drilled project's fleet, translated from plan.db. The store's `planFleet` only mirrors the ACTIVE
   // project, so for any OTHER project we load its fleet straight from its own plan.db (useProjectFleet).
@@ -303,7 +311,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     // no session to open, so it just selects → inspector.
     if (drill) {
       if (id === PREVIEW_NODE_ID) setPreviewOpen(true);       // the ▷ preview node → render the app (#2623)
-      else if (isLiveAgent(id)) setChatNode(id);
+      else if (isLiveAgent(id)) openChat(id);
       else pickNode(id);
     }
     // A cross-graph LIBRARY node (#2571 kit → generalized #3119: kit/algorithm/sound) has no fleet to
@@ -314,7 +322,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     else if (glanceOff[id]) pickNode(id);
     else { setDrill(id); setSel(null); setShowCycle(false); }
   };
-  const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); setChatNode(null); setPreviewOpen(false); };
+  // OPEN a node's session into the grid (#3361). Idempotent: clicking an already-open node is a no-op
+  // rather than a duplicate cell — its terminal is already on screen.
+  const openChat = (id: string) => setChatNodes((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  /** Collapse ONE cell. The PTY stays alive — the agent is untouched. */
+  const closeChat = (id: string) => setChatNodes((prev) => prev.filter((n) => n !== id));
+  const exitDrill = () => { setDrill(null); setSel(null); setShowCycle(false); setChatNodes([]); setPreviewOpen(false); };
   // Kill ONE live pane (#3049): terminate its PTY (mirrors the console's disable path) and disable the
   // cell so the node drops out of the live set + its stale "run" clears. fleetStartProject re-enables the
   // cell on relaunch, so the teardown is self-reversing — "Relaunch fleet" (#3044) respawns it.
@@ -323,8 +336,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     setPaneDisabled(pid, true);
     setPaneStatus(pid, "idle");
   };
-  // END a single agent's session from its morph (#3049): tear it down + collapse the morph.
-  const endSession = (pid: string) => { killPane(pid); setChatNode(null); };
+  // END a single agent's session from its grid cell (#3049): tear it down + close that cell only.
+  const endSession = (nodeId: string, pid: string) => { killPane(pid); closeChat(nodeId); };
   // The drilled project's live sessions — every launched pane under its `<key>:` prefix (director +
   // workers). The `:` delimiter makes the prefix exact (`cli:` never matches `cli-typer:`). Drives the
   // toolbar "End sessions" button + its count.
@@ -348,7 +361,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     });
     if (!ok) return;
     for (const pid of panes) killPane(pid);
-    setChatNode(null);
+    setChatNodes([]);   // every cell's agent is gone — close the whole dock (#3361)
   };
 
   // ── Resume (#glance-resume) ──────────────────────────────────────────────────────────────────
@@ -397,11 +410,11 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     // base-studio-code studio node (#3319/#glance-resume): open its app-owned session at its HOME. These
     // sessions have STABLE ids, so revealing them re-uses the running session (or mounts it if it isn't
     // up) — we never start a second one. Since #3357 every studio session is TerminalHost-hosted, so they
-    // all open inline in the graph morph; the `page` branch remains for a future non-morphable node.
+    // all open inline in the terminal grid dock; the `page` branch remains for a future non-openable node.
     if (drill === BASE_STUDIO_PROJECT_ID) {
       const home = studioNodeHome(nodeId);
       if (!home) return;                                   // a library/resource node — no session to open
-      if (home.kind === "morph") setChatNode(nodeId);
+      if (home.kind === "morph") openChat(nodeId);
       else { setWorkspace("projects"); setProjectsPageMode(home.pageMode); }
       return;
     }
@@ -419,25 +432,63 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       .finally(() => setResuming(false));
   };
 
-  // The dock shows ONLY while the open node is still a live agent in the CURRENT fleet — so drilling
-  // out (or a nav-history back/forward that swaps `drill`) closes it by derivation, no reset effect.
-  const chatPaneId = drill && chatNode && isLiveAgent(chatNode)
-    ? (studioPaneId(chatNode) ?? fleetPaneId(drill, chatNode))
-    : null;
-  const chatMeta = chatPaneId ? model.nodes.find((n) => n.id === chatNode) : null;
+  // The open sessions, DERIVED (never stored) — a cell shows only while its node is still a live agent
+  // in the CURRENT fleet, so drilling out (or a nav-history back/forward that swaps `drill`) closes the
+  // whole dock by derivation, with no reset effect. #3361 keeps that property per ENTRY: the filter that
+  // used to guard one `chatPaneId` now guards each cell independently, so a single agent going away
+  // drops just its cell. Storing resolved pane ids instead would reintroduce a stale-state class of bug.
+  // Ordered by graph position so the grid reads as a projection of the graph, not a click-order stack.
+  const openSessions: GlanceOpenSession[] = orderByPosition(
+    chatNodes.filter((id) => isLiveAgent(id)),
+    model.nodes,
+  ).flatMap((nodeId) => {
+    const paneId = drill ? (studioPaneId(nodeId) ?? fleetPaneId(drill, nodeId)) : null;
+    const node = model.nodes.find((n) => n.id === nodeId);
+    if (!paneId || !node) return [];
+    return [{ nodeId, paneId, name: node.slug, role: node.roleLabel }];
+  });
+  // Node ids with an open cell — the graph RINGS them, so which nodes are open stays legible now that
+  // the terminal no longer sits on top of its node (#3361).
+  const openNodeIds = useMemo(() => new Set(openSessions.map((s) => s.nodeId)), [openSessions]);
+
+  // END one cell's session (#3049). Ending an APP-OWNED session drops its declaration rather than
+  // killing a fleet cell:
+  //  • DEBUG (#3326) — turn the Settings toggle OFF, which unmounts DebugSessionMount → clean PTY
+  //    teardown → the node disappears.
+  //  • a STUDIO (#3357) — drop it from `wantedStudios`, which unmounts its persistent claim; the
+  //    `pty_kill` is still explicit, because a studio PAGE dock may hold another claim (End means end,
+  //    not "end unless the Design Studio page happens to be mounted").
+  // Fleet nodes end their one PTY as before. Scoped to the ONE cell — its siblings stay open (#3361).
+  const endChat = (nodeId: string) => {
+    const open = openSessions.find((o) => o.nodeId === nodeId);
+    if (!open) return;
+    if (open.paneId === DEBUG_PANE_ID) { setDebugSession(false); closeChat(nodeId); }
+    else if (isStudioId(nodeId)) {
+      // NOT killPane: that also sets the PERSISTED `disabledPanes` flag, which is a fleet-cell concept
+      // (fleetStartProject re-enables it). A studio has no cell to re-enable.
+      closeStudio(nodeId);
+      void safeInvoke("pty_kill", { paneId: open.paneId }, undefined);
+      setPaneStatus(open.paneId, "idle");
+      closeChat(nodeId);
+    }
+    else endSession(nodeId, open.paneId);
+  };
   // The preview morph shows only while the drill still HAS a preview node — drilling out / to an incomplete
   // project closes it by derivation. `source` is null until the verify-build produces one (#2623 slice 3).
   const previewOn = previewOpen && !!drill && model.nodes.some((n) => n.preview);
 
-  // On opening a live agent's terminal (#2534): bring its node into view and ensure a readable zoom, so
-  // the in-graph terminal lands legible (option A: it scales with the graph). centerOn is the
-  // least-disruptive focus (keeps the current zoom); we only bump zoom up when the graph is small.
+  // Re-fit when the dock OPENS or CLOSES (#3361) — that transition is the only one that changes the
+  // canvas's height, so a graph fitted to the full page would otherwise sit half-hidden behind the dock.
+  // Keyed on the boolean, NOT the session count: refitting on every open/close would fight the user's
+  // pan every time they add a cell. (The old behaviour here — centerOn + a forced `zoomTo(1)` — is gone
+  // with the in-graph morph: the dock's terminals are outside the world layer, so nothing needs the
+  // graph zoomed to a legible level any more.)
+  const dockOpen = openSessions.length > 0;
   useEffect(() => {
-    if (!chatPaneId || !chatMeta) return;
-    if (vp.view.scale < 0.85) vp.zoomTo(1);
-    vp.centerOn(chatMeta.x + NW / 2, chatMeta.y + NH / 2);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatPaneId]);
+    if (page !== "network") return;
+    const id = requestAnimationFrame(() => fit());
+    return () => cancelAnimationFrame(id);
+  }, [dockOpen, fit, page]);
 
   // Auto-clear the transient resume status line so a one-off note/error doesn't linger (#glance-resume).
   useEffect(() => {
@@ -469,6 +520,10 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       <Box style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
       <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
     <GraphCanvas
+      // The open sessions tile into the canvas DOCK (#3361) — below the graph, outside the transformed
+      // world layer, so every terminal keeps a constant size regardless of graph zoom and no two can
+      // overlap. Renders nothing while none are open.
+      dock={<GlanceTerminalGrid sessions={openSessions} onClose={closeChat} onEnd={endChat} />}
       vp={vp}
       world={{ w: model.worldW || 1600, h: model.worldH || 900 }}
       canvasBackground="radial-gradient(120% 120% at 30% 0%, var(--bg-elev) 0%, var(--bg) 100%)"
@@ -578,7 +633,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         offOn={!drill && sel.type === "node" ? !!glanceOff[sel.id] : undefined}
         onToggleOff={!drill && sel.type === "node" ? (off) => setGlanceNodeOff(sel.id, off) : undefined}
         // Open the real PTY stream (#2369) — only for a drilled, LIVE agent node.
-        onOpenStream={sel.type === "node" && isLiveAgent(sel.id) ? (id) => setChatNode(id) : undefined}
+        onOpenStream={sel.type === "node" && isLiveAgent(sel.id) ? openChat : undefined}
         // Resume this node's session (#glance-resume). A drilled REAL fleet node jumps to its Console pane
         // when live, else relaunches that one agent. A base-studio-code STUDIO node opens its app-owned
         // session at its home (re-using the running one) — offered for the nodes that HAVE a session.
@@ -593,28 +648,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           model={model} dragMoved={vp.dragMoved} zoom={vp.view.scale}
           focus={focus} selNodeId={selNodeId} selEdgeId={selEdgeId}
           onHoverNode={setHoverNode} onHoverEdge={setHoverEdge} onSelectNode={onNodeClick} onSelectEdge={pickEdge}
-          // The live-agent terminal morphs open IN the graph, as an oversized node (#2534).
-          chat={chatPaneId && chatNode ? { nodeId: chatNode, paneId: chatPaneId, name: chatMeta?.slug ?? "agent", role: chatMeta?.roleLabel } : null}
-          onCloseChat={() => setChatNode(null)}
-          // Ending an APP-OWNED session drops its declaration rather than killing a fleet cell:
-          //  • DEBUG (#3326) — turn the Settings toggle OFF, which unmounts DebugSessionMount → clean PTY
-          //    teardown → the node disappears.
-          //  • a STUDIO (#3357) — drop it from `wantedStudios`, which unmounts its persistent claim; the
-          //    `pty_kill` is still explicit, because a studio PAGE dock may hold another claim (End means
-          //    end, not "end unless the Design Studio page happens to be mounted").
-          // Fleet nodes end their one PTY as before.
-          onEndChat={chatPaneId ? () => {
-            if (chatPaneId === DEBUG_PANE_ID) { setDebugSession(false); setChatNode(null); }
-            else if (chatNode && isStudioId(chatNode)) {
-              // NOT killPane: that also sets the PERSISTED `disabledPanes` flag, which is a fleet-cell
-              // concept (fleetStartProject re-enables it). A studio has no cell to re-enable.
-              closeStudio(chatNode);
-              void safeInvoke("pty_kill", { paneId: chatPaneId }, undefined);
-              setPaneStatus(chatPaneId, "idle");
-              setChatNode(null);
-            }
-            else endSession(chatPaneId);
-          } : undefined}
+          // Nodes with an open cell in the terminal dock — ringed in the graph (#3361).
+          openNodeIds={openNodeIds}
           preview={previewOn && drill ? {
             nodeId: PREVIEW_NODE_ID, name: drillNode?.slug ?? "app",
             source: previewSources[drill] ?? null,
