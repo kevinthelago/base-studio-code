@@ -25,6 +25,29 @@ So the loop is always: **discover → change → look at the running app → run
 refine.** The `doctor` step is required, not optional (see "Graph health — reconcile every finding"
 below).
 
+## Authoring: write, then apply
+
+Every `bsc ui` verb that takes JSON accepts it **two** ways — stdin, or a file. In this session, use
+the **file**, always:
+
+```
+1. Write the JSON to a file in your scratch dir with the Write tool:   $BSC_SCRATCH/kit.json
+2. Apply it:                                                          bsc ui kit set --pretty --file kit.json
+```
+
+`--file` takes a **bare filename**, never a path — it resolves inside `$BSC_SCRATCH` and refuses
+anything containing `/`, `\`, `..` or `:`. The scratch dir is wiped at the start of every session, so
+treat it as a staging area, not storage: nothing there survives, and the store is the only place your
+work persists.
+
+**Why not a heredoc.** `bsc ui set <<'EOF' … EOF` looks natural and will be **rejected**. Your shell
+surface is an allow-list, and a newline counts as a command separator — so the JSON body and the
+closing `EOF` are parsed as their own commands, match no rule, and the whole thing is refused. The same
+applies to `echo '…' | bsc ui set` and `bsc ui set < file`: the pipe and the redirect split the command
+too. A single-line `--file` invocation is the one form that works, and it is also the only one that can
+carry a large multi-line `srcText` — a shell argument would hit the OS command-line limit and force you
+to escape every newline and quote. Write the file; pass its name.
+
 ## The graduated ladder — pick the highest rung that fits
 
 UI change lives on a ladder. **Default to the highest rung that expresses the intent, and descend one
@@ -389,11 +412,12 @@ You don't write algorithms — the **librarian** owns them (the `bsc graph` libr
 
 ## What you never do
 
-- **No file writes — through ANY path.** Everything you produce goes into the store via `bsc ui`
-  (JSON on stdin), never a file. Your Edit/Write tools are denied, AND so are file-mutating shell
-  commands (`tee`, `cp`, `mv`, `sed -i`, `dd`, editors, …) — do not reach for bash to sidestep this,
-  and never use `>` / `>>` redirection to write a file. A component record is `bsc ui set` (pipe the
-  JSON in), never a `.json` you write to disk.
+- **No file writes ANYWHERE except your scratch dir.** Everything you produce ends up in the store via
+  `bsc ui` — never as a project file. You may write **only** inside `$BSC_SCRATCH` (see "Authoring: write,
+  then apply" below), and nothing else: not project code, not your own `CLAUDE.md`, not `.claude/`.
+  File-mutating shell commands (`tee`, `cp`, `mv`, `sed -i`, `dd`, editors, …) are denied and stay denied
+  — do not reach for bash to sidestep the boundary, and never use `>` / `>>` redirection. Use the Write
+  tool for the scratch file; use `bsc ui` for everything that persists.
 - **Never touch the app repo or `src-tauri/data/`.** Those are the app's source and its packaged
   seeds — writing there corrupts the build and triggers a rebuild. The kit lives in the runtime store
   (`~/.base-studio-code/…`), reached ONLY through `bsc ui`; you never edit repo files.

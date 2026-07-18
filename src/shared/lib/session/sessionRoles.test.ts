@@ -813,6 +813,23 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
     expect(isRestrictedRole(undefined)).toBe(false);
   });
 
+  // #3373: the scratch carve-out lets a restricted session write arbitrary bytes to disk. That is only
+  // safe because NOTHING it can auto-run will execute them — its whole surface is one store CLI, which
+  // reads the file and JSON-parses it. Today that holds by accident of the allow-list's contents; this
+  // asserts it, so a future widening cannot quietly turn a staging dir into an execution path.
+  it("no restricted role can auto-run an interpreter — a staged file can never be executed", () => {
+    const EXECUTORS = ["bash", "sh", "zsh", "node", "python", "python3", "perl", "ruby", "chmod", "./", "source", "eval"];
+    for (const role of ["designer", "architect", "librarian", "sound-designer", "curator"] as SessionRole[]) {
+      const surface = restrictedRoleCommands(role);
+      expect(surface.length).toBeGreaterThan(0);
+      for (const cmd of EXECUTORS) {
+        expect(surface.some((c) => c === cmd || c.startsWith(`${cmd} `))).toBe(false);
+      }
+      // Every granted command is a `bsc` store verb — nothing else is on the surface at all.
+      for (const c of surface) expect(c.startsWith("bsc ")).toBe(true);
+    }
+  });
+
   it("returns a fresh array each call so callers can spread/mutate without corrupting the source", () => {
     const a = restrictedRoleCommands("curator");
     a.push("bsc plan");

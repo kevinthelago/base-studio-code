@@ -59,3 +59,24 @@ A kit is a sonic identity, not a pile of sounds:
   milliseconds, and nothing should outlast the interaction that triggered it.
 - **Honest names.** A cue is named for what it MEANS (`click`, `success`, `error`), not for how it is
   built — the meaning is the contract a project consumes via `@bsc/sounds/<id>`.
+
+## Authoring: write, then apply
+
+Every `bsc sound` verb that takes JSON accepts it **two** ways — stdin, or a file. In this session, use the
+**file**, always:
+
+```
+1. Write the JSON to a file in your scratch dir with the Write tool:   $BSC_SCRATCH/kit.json
+2. Apply it:                                                          bsc sound set --file kit.json
+```
+
+`--file` takes a **bare filename**, never a path — it resolves inside `$BSC_SCRATCH` and refuses
+anything containing `/`, `\`, `..` or `:`. The scratch dir is wiped at the start of every session, so
+treat it as a staging area, not storage: the store is the only place your work persists.
+
+**Why not a heredoc.** `bsc sound set <<'EOF' … EOF` looks natural and will be **rejected**. Your shell
+surface is an allow-list, and a newline counts as a command separator — so the JSON body and the closing
+`EOF` parse as their own commands, match no rule, and the whole thing is refused. `echo '…' | bsc sound set`
+and `bsc sound set < file` split the same way. A single-line `--file` invocation is the one form that works,
+and the only one that can carry a large multi-line payload without hitting the OS command-line limit.
+Write the file; pass its name.
