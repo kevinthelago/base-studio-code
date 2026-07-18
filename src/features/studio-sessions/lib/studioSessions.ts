@@ -130,6 +130,25 @@ export function studioForPaneId(paneId: string): StudioId | null {
 }
 
 /**
+ * The role gate a studio pane launches under, DERIVED from its pane id (#3423) — so confinement travels
+ * with the session's identity instead of depending on setup having run first.
+ *
+ * `paneRoles[paneId]` is what makes a pane a designer, and it used to be written ONLY by
+ * `seedStudioLaunchState` inside `StudioSessionMount`'s effect. That component renders only for studios in
+ * `wantedStudios`, which is deliberately transient (absent from `partialize`), so after any app restart the
+ * set is empty and nothing mounts. Opening a studio then created a terminal on a studio pane id with NO role
+ * in the store — and `buildSessionSettings` applies no role gate, no `restrictedAllow` and no denies when it
+ * finds none. The result was a fully UNCONFINED general shell on the app's most restricted surface.
+ *
+ * A studio's pane id is stable and app-owned, so it is sufficient on its own to establish the role. Null for
+ * any other pane, where the store remains the only authority.
+ */
+export function studioRoleForPaneId(paneId: string): SessionRole | null {
+  const id = studioForPaneId(paneId);
+  return id ? STUDIO_SESSIONS[id].role : null;
+}
+
+/**
  * Whether this studio's page is TORN OFF into its own window (#430/#463). The detached window runs its
  * OWN React root + store + TerminalHost, so it becomes the sole owner of the studio's single terminal —
  * the main window must release it (not mount a second xterm onto the same PTY, which would fight over
