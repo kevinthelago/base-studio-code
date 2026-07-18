@@ -29,13 +29,21 @@ export type StructureName =
 /* ─────────────────────────────── array (also sorts / scans) ─────────────────────────────── */
 
 /** An array VERB (#3171) — the transient per-frame operation the `swap`/`compare`/`set` animations bind
- *  to. `mark` is durable-ish (a cell reaching a terminal state: `sorted`/`pivot`/`min`). `at` is the
- *  cell index, or the index PAIR a compare/swap spans. */
+ *  to. `mark` is durable-ish (a cell reaching a terminal state: `sorted`/`pivot`/`min`/`found`). `at` is
+ *  the cell index, or the index PAIR a compare/swap spans.
+ *
+ *  `probe` (#3220) is the SEARCH verb: one cell examined against an EXTERNAL target. It is deliberately
+ *  distinct from `compare`, which spans an index PAIR — a search has no second cell to compare with, so a
+ *  self-pair `compare` would misrepresent it (and animate two cells for a one-cell read). Its terminal
+ *  twin is the `found` mark: the cell the search landed on, emitted LAST (like `sorted`), so it survives
+ *  as the trace's resting state rather than being superseded by a later verb. (Not to be confused with
+ *  the unrelated {@link TableOp} `probe`, which addresses a hash BUCKET.) */
 export type ArrayOp =
   | { op: "compare"; at: [number, number] }
+  | { op: "probe"; at: number }
   | { op: "swap"; at: [number, number] }
   | { op: "set"; at: number }
-  | { op: "mark"; at: number; as: "sorted" | "pivot" | "min" };
+  | { op: "mark"; at: number; as: "sorted" | "pivot" | "min" | "found" };
 
 /** One frame of an array's evolution. `data` is the current cell values; `cursors` are named pointers
  *  (`{ i: 3, j: 5 }`) a renderer draws as carets under cells. */
