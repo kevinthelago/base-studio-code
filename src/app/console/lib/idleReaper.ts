@@ -31,6 +31,24 @@ export interface ReaperConfig {
   /** Idle threshold (ms) for workers + the director — conservative. `null` ⇒ never reap
    *  them (the default), since they idle legitimately (parked on a dep / the director). */
   workerIdleMs: number | null;
+  /** Idle threshold (ms) for the app-owned STUDIO sessions (designer/librarian/architect, #3357).
+   *  A studio session deliberately outlives the page that opened it — it stays warm on TerminalHost
+   *  so its Glance node can morph into it — so this is how long it may sit with NO surface showing
+   *  it before being reclaimed. Separate from `idleMs` because the trigger is different: the studio
+   *  reaper counts *unwatched* time (viewer count 0), not time since last output.
+   *  OPTIONAL for back-compat: a config persisted before #3357 has no such key, and zustand's
+   *  persist replaces the whole object rather than merging, so readers MUST fall back to
+   *  {@link DEFAULT_STUDIO_IDLE_MS} rather than trusting it to be present. */
+  studioIdleMs?: number;
+}
+
+/** Default idle grace before an unwatched studio session is reclaimed (#3357). Also the fallback
+ *  for a `ReaperConfig` persisted before the key existed. */
+export const DEFAULT_STUDIO_IDLE_MS = 30 * 60 * 1000;
+
+/** The effective studio idle threshold for a config, tolerating a pre-#3357 persisted object. */
+export function studioIdleMs(cfg: ReaperConfig): number {
+  return cfg.studioIdleMs ?? DEFAULT_STUDIO_IDLE_MS;
 }
 
 /** Roles handled conservatively: they idle legitimately mid-fleet, so they're reaped only
@@ -69,4 +87,5 @@ export const DEFAULT_REAPER_CONFIG: ReaperConfig = {
   enabled: true,
   idleMs: 30 * 60 * 1000,
   workerIdleMs: null,
+  studioIdleMs: DEFAULT_STUDIO_IDLE_MS,
 };

@@ -1,142 +1,80 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, cleanup, waitFor, fireEvent } from "@testing-library/react";
-import { invoke } from "@tauri-apps/api/core";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { LibrarianTerminal } from "./LibrarianTerminal";
-import { LIBRARIAN_PANE_ID, LIBRARIAN_ALLOWED_COMMANDS } from "./useLibrarianTerminal";
 import { AlgorithmsWorkspace } from "./AlgorithmsWorkspace";
+import { TerminalHost } from "@/app/console/terminal/TerminalHost";
+import { useAppStore } from "@/store";
+import { STUDIO_SESSIONS } from "@/features/studio-sessions";
 
 /**
- * #2787 — the Algorithms tab's knowledge-store librarian session: launch wiring (workspace → restricted
- * settings → pty_create with the persona kickoff BAKED into the launch arg) + the dock placement (docked
- * below the Algorithms graph). A mirror of ArchitectTerminal.test.tsx.
+ * #2787 — the Algorithms tab's librarian dock, REWRITTEN for #3357.
+ *
+ * The dock no longer owns the session: the librarian was migrated off its bespoke `useLibrarianTerminal`
+ * (`useScreenSession`) xterm onto the shared TerminalHost, so the dock is a VIEWER that drops a
+ * <TerminalSlot> for the stable pane id — which is what lets the Glance `librarian` node MORPH into the
+ * live session. Launch wiring is asserted in `features/studio-sessions/StudioSessionMount.test.tsx`, and the
+ * restricted permission payload (the security guard the bespoke launch used to carry) in
+ * `app/console/lib/sessionLaunch.test.ts`.
  */
 
-// xterm can't initialize in jsdom (open() needs real DOM measurements) — stub it (same pattern as
-// ArchitectTerminal.test.tsx / DesignerTerminal.test.tsx).
-vi.mock("@xterm/xterm", () => {
-  class Terminal {
-    cols = 80;
-    rows = 24;
-    options: Record<string, unknown> = {};
-    loadAddon = vi.fn();
-    open = vi.fn();
-    write = vi.fn();
-    onData = vi.fn(() => ({ dispose: vi.fn() }));
-    focus = vi.fn();
-    dispose = vi.fn();
-    attachCustomKeyEventHandler = vi.fn();
-    getSelection = vi.fn(() => "");
-  }
-  return { Terminal };
-});
-vi.mock("@xterm/addon-fit", () => {
-  class FitAddon {
-    fit = vi.fn();
-  }
-  return { FitAddon };
-});
-vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+// Stub the real terminal — this file is about the dock's claim + lifecycle registration, not xterm/PTY.
+vi.mock("@/app/console/panes/views/TerminalView", () => ({
+  TerminalView: ({ paneId }: { paneId: string }) => <div data-testid="tv" data-pane={paneId} />,
+}));
 
-const ALGO_DIR = "C:/Users/x/.base-studio-code/algorithms-studio";
-const invokeMock = vi.mocked(invoke);
-
-/** All calls to a given command, as their args objects. */
-const callsTo = (cmd: string) =>
-  invokeMock.mock.calls.filter(([c]) => c === cmd).map(([, args]) => args as Record<string, unknown>);
-
-beforeAll(() => {
-  // jsdom reports 0 layout; run rAF synchronously so the mount-time launch chain fires in-test.
-  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => { cb(0); return 0; });
-  vi.stubGlobal("cancelAnimationFrame", () => {});
-  vi.stubGlobal("ResizeObserver", class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  });
-});
+/** The pane ids the rendered <TerminalSlot>s claimed, read off the host's stable container nodes. */
+const claimedPanes = (root: HTMLElement) =>
+  Array.from(root.querySelectorAll("[data-terminal-container]")).map((el) => (el as HTMLElement).dataset.terminalContainer);
 
 beforeEach(() => {
-  invokeMock.mockClear();
-  invokeMock.mockImplementation(async (cmd: string) =>
-    cmd === "setup_librarian_workspace" ? ({ algorithms_dir: ALGO_DIR } as never) : (null as never));
+  useAppStore.setState({
+    wantedStudios: [], studioViewers: {},
+    activeWorkspace: "projects", projectsPageMode: "algorithms",
+  });
 });
-
 afterEach(() => cleanup());
 
-describe("useLibrarianTerminal launch wiring (#2787)", () => {
-  it("sets up the workspace, writes the RESTRICTED role-gated settings, then launches at the workspace cwd", async () => {
-    render(<LibrarianTerminal />);
-
-    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
-
-    // 1 · the workspace command ran first (it mints the cwd + the librarian-spec CLAUDE.md).
-    expect(callsTo("setup_librarian_workspace")).toHaveLength(1);
-
-    // 2 · ensure_session_settings: the librarian role gate rendered with the restricted allow-list.
-    const [settings] = callsTo("ensure_session_settings");
-    expect(settings.cwd).toBe(ALGO_DIR);
-    expect(settings.restrictedAllow).toBe(true);
-    expect(settings.replacePermissions).toBe(true);
-    // The whole command surface: bsc graph.
-    expect(settings.allowedCommands).toEqual(LIBRARIAN_ALLOWED_COMMANDS);
-    expect(settings.allowedCommands).toEqual(["bsc graph"]);
-    // git + gh are denied OUTRIGHT (the role's `none` tiers → the bare tools); `bsc ui` denied too (ui:none).
-    expect(settings.deniedCommands).toContain("git");
-    expect(settings.deniedCommands).toContain("gh");
-    expect(settings.deniedCommands).toContain("bsc ui");
-    // Every file-write tool + the web tools are denied (code:none, net:none).
-    for (const t of ["Edit", "Write", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch"]) {
-      expect(settings.denyToolRules).toContain(t);
-    }
-    // No write-glob allows leak in (the librarian has no carve-out); Read stays granted.
-    expect(settings.allowToolRules).toEqual(["Read"]);
-
-    // 3 · pty_create: the stable pane id, the workspace cwd, resume behavior, and the persona kickoff
-    // BAKED into the launch arg (never typed after idle detection).
-    const [pty] = callsTo("pty_create");
-    expect(pty.paneId).toBe(LIBRARIAN_PANE_ID);
-    expect(pty.paneId).toBe("algorithms-studio:librarian");
-    expect(pty.cwd).toBe(ALGO_DIR);
-    expect(pty.continueSession).toBe(true);
-    expect(pty.startupPromptFreshOnly).toBe(true);
-    expect(pty.initCmd).toContain("claude --continue");
-    expect(String(pty.startupPrompt)).toContain("bsc graph");
-    // The runtime scope doc (#2470): the librarian renders ui:"none" (not a kit session).
-    expect(pty.env).toEqual({ BSC_SCOPES: JSON.stringify({ ui: "none" }) });
+describe("LibrarianTerminal dock (#3357)", () => {
+  it("claims the librarian's stable pane id on the shared TerminalHost", () => {
+    const { container } = render(<TerminalHost><LibrarianTerminal /></TerminalHost>);
+    expect(screen.getByTestId("librarian-terminal")).toBeInTheDocument();
+    expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.librarian.paneId);
   });
 
-  it("does NOT launch when the workspace setup fails (no ungated session on an empty cwd)", async () => {
-    invokeMock.mockImplementation(async (cmd: string) => {
-      if (cmd === "setup_librarian_workspace") throw new Error("boom");
-      return null as never;
-    });
-    render(<LibrarianTerminal />);
-    await waitFor(() => expect(callsTo("setup_librarian_workspace")).toHaveLength(1));
-    expect(callsTo("ensure_session_settings")).toHaveLength(0);
-    expect(callsTo("pty_create")).toHaveLength(0);
+  it("showing the Algorithms page STARTS the session (lazy) and holds a viewer", () => {
+    render(<TerminalHost><LibrarianTerminal /></TerminalHost>);
+    expect(useAppStore.getState().wantedStudios).toContain("librarian");
+    expect(useAppStore.getState().studioViewers.librarian).toBe(1);
   });
 
-  it("only unmounting (leaving the Algorithms tab) kills the PTY", async () => {
-    const { unmount } = render(<LibrarianTerminal />);
-    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
-    expect(callsTo("pty_kill")).toHaveLength(0);
+  it("keeps the session warm when the page is left — only the reaper reclaims it now", () => {
+    // The Algorithms page is kept mounted (#2827); leaving it moves the shell's page mode, which drops the
+    // VIEWER. Before #3357 an unmount here killed the PTY; the session must now survive both, so the
+    // Glance morph can keep showing it.
+    const { rerender, unmount } = render(<TerminalHost><LibrarianTerminal /></TerminalHost>);
+    useAppStore.setState({ projectsPageMode: "projects" });
+    rerender(<TerminalHost><LibrarianTerminal /></TerminalHost>);
+    expect(useAppStore.getState().studioViewers.librarian).toBe(0);
+    expect(useAppStore.getState().wantedStudios).toContain("librarian");
     unmount();
-    expect(callsTo("pty_kill")).toHaveLength(1);
-    expect(callsTo("pty_kill")[0].paneId).toBe(LIBRARIAN_PANE_ID);
+    expect(useAppStore.getState().wantedStudios).toContain("librarian");
+  });
+
+  it("is inert with no <TerminalHost> ancestor (renders in isolation without crashing)", () => {
+    expect(() => render(<LibrarianTerminal />)).not.toThrow();
+    expect(screen.getByTestId("librarian-terminal")).toBeInTheDocument();
   });
 });
 
 describe("AlgorithmsWorkspace librarian dock (#2787)", () => {
-  it("docks the librarian session below the graph, spawning exactly one PTY", async () => {
-    render(<AlgorithmsWorkspace />);
-    // The dock is present from the first render — no toggle gates it.
+  it("docks the librarian session below the graph", () => {
+    const { container } = render(<TerminalHost><AlgorithmsWorkspace /></TerminalHost>);
     expect(screen.getByTestId("librarian-terminal")).toBeInTheDocument();
-    await waitFor(() => expect(callsTo("pty_create")).toHaveLength(1));
-    expect(callsTo("pty_create")[0].paneId).toBe(LIBRARIAN_PANE_ID);
+    expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.librarian.paneId);
   });
 
   it("clicking a graph node still drives the inspector with the dock present", () => {
-    render(<AlgorithmsWorkspace />);
+    render(<TerminalHost><AlgorithmsWorkspace /></TerminalHost>);
     fireEvent.click(screen.getAllByText("Merge Sort")[0]);
     expect(screen.getByText(/Split, sort halves, merge/)).toBeTruthy(); // inspector-unique summary
   });

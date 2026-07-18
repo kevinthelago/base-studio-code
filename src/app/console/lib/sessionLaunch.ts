@@ -15,7 +15,7 @@ import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/sk
 import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
 import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands, isRestrictedRole } from "@/shared/lib/session/sessionRoles";
-import { isFullCapabilitySession } from "@/shared/lib/session/systemSessions";
+import { isFullCapabilitySession, isStudioSessionPaneId } from "@/shared/lib/session/systemSessions";
 import { resolveProfileSettings } from "@/features/security";
 import { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner";
 import type { ConsoleProvider, ProviderLaunchConfig } from "@/app/console/lib/providers";
@@ -45,14 +45,23 @@ export function buildAgentEnv(
   ghToken: string,
 ): Record<string, string> | undefined {
   const e: Record<string, string> = {};
-  if (ghToken) e.GH_TOKEN = ghToken;
+  // The pane's role capability, resolved up-front: it gates both the write-scope env below AND whether
+  // this session is handed a GitHub credential at all.
+  const scopeRole = s.paneRoles[paneId];
+  const roleGlobs = s.paneRoleGlobs[paneId] ?? [];
+  const scopeCap = scopeRole ? roleCapability(scopeRole, { writeGlobs: roleGlobs }) : null;
+  // GH_TOKEN carries gh / git-over-https auth. A role denied BOTH axes has no use for it: the app-owned
+  // studio sessions (designer/librarian/architect — `none` on every axis, #3357) cannot run git or gh at
+  // all, so placing a GitHub credential in the environment of the app's MOST restricted sessions would
+  // widen them for nothing. Before #3357 these launched via a bespoke hook that passed no token; keep it
+  // that way now that they run through the generic path. An ungated pane (no role) is unaffected, as is
+  // any role with real git/gh access (a triage pane is `git:none` but `github:write`, so it keeps it).
+  const noGitOrGithub = !!scopeCap && scopeCap.git === "none" && scopeCap.github === "none";
+  if (ghToken && !noGitOrGithub) e.GH_TOKEN = ghToken;
   // Write-scope gate (#1297): hand the session its allowed write globs so the `bsc-scope`
   // PreToolUse hook hard-blocks any write outside them — the hard deny the role gate's
   // allow-only rules lack. Applies to every gated pane.
-  const scopeRole = s.paneRoles[paneId];
-  if (scopeRole) {
-    const roleGlobs = s.paneRoleGlobs[paneId] ?? [];
-    const scopeCap = roleCapability(scopeRole, { writeGlobs: roleGlobs });
+  if (scopeRole && scopeCap) {
     const sg = scopeWriteGlobs(scopeRole, roleGlobs);
     if (sg.length > 0) {
       e.BSC_SCOPE_GLOBS = sg.join(" ");
@@ -344,9 +353,11 @@ export function resolveEffectiveInitCmd(
  */
 export function resolveStartupPromptFreshOnly(s: AppStore, paneId: string, isClaudeProvider: boolean): boolean {
   if (!isClaudeProvider || isManualPaneId(paneId)) return false;
-  // The DEBUG session (#3326) resumes with `claude --continue` across app restarts, so its inline charter
-  // must be fresh-only too — delivered on the first launch (no history) but suppressed when it resumes an
-  // existing conversation. The backend's `fresh_only && has_history` guard makes this exact: fresh launch
-  // still fires. Reproduces the old `useScreenSession` launch's hardcoded `startupPromptFreshOnly: true`.
-  return !!s.restoreRequested[paneId] || isFullCapabilitySession(paneId);
+  // EVERY app-owned studio session (the DEBUG session #3326, and the designer/librarian/architect since
+  // #3357) resumes with `claude --continue` across app restarts, so its baked charter/persona kickoff must
+  // be fresh-only — delivered on the first launch (no history) but suppressed when it resumes an existing
+  // conversation, so returning isn't re-greeted (or, worse, re-instructed). The backend's
+  // `fresh_only && has_history` guard makes this exact: a genuinely fresh launch still fires. Reproduces
+  // the old `useScreenSession` launches' hardcoded `startupPromptFreshOnly: true`.
+  return !!s.restoreRequested[paneId] || isFullCapabilitySession(paneId) || isStudioSessionPaneId(paneId);
 }

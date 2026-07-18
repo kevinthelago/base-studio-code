@@ -1,7 +1,9 @@
 // App-owned "studio" sessions (#3137) — the single source of truth for the fixed pane ids of the
 // dedicated, app-launched singleton terminal sessions: the DESIGNER (Design Studio), the LIBRARIAN
-// (Algorithms), and the ARCHITECT (Teams). Each is a `useScreenSession` surface the app owns and
-// re-creates when its workspace opens — NOT a fleet worker and NOT something the user restores.
+// (Algorithms), and the ARCHITECT (Teams). Each is a singleton session the app owns and re-creates on
+// demand — NOT a fleet worker and NOT something the user restores. Since #3357 all three (like the DEBUG
+// session, #3326) run on the shared TerminalHost via `@/features/studio-sessions`, not on their own page-owned
+// xterm; their ids stay fixed here so the lifecycle, the Glance morph, and recovery all agree.
 //
 // Their ids follow the `<key>:<tail>` grammar, so `parsePaneIdentity` would otherwise classify them as
 // fleet WORKERS and the crash-recovery banner would offer to restore them (#3137). This module names

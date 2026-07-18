@@ -1,6 +1,8 @@
 // useScreenSession (#2707) — the shared xterm.js + PTY lifecycle behind the app's dedicated,
-// app-owned terminal sessions (the planner, `usePlannerTerminal`; the designer,
-// `useDesignerTerminal`). Both hooks were near-verbatim copies of the same skeleton:
+// app-owned terminal sessions. Its remaining user is the PLANNER (`usePlannerTerminal`): the debug
+// session (#3326) and the designer/librarian/architect studios (#3357) were migrated onto the shared
+// TerminalHost, precisely because a single-mount xterm CANNOT be re-parented into the Glance morph.
+// The hooks it was extracted from were near-verbatim copies of the same skeleton:
 //   • mount — create the `Terminal` (the shared theme/font/scrollback literal) + `FitAddon`, wire
 //     `onData → pty_write`, then in a `requestAnimationFrame`: fit, subscribe `pty_data_<id>` /
 //     `pty_exit_<id>` BEFORE spawning the PTY (so no early output is missed), and run the caller's

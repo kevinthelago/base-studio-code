@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { buildAgentEnv, buildSessionSettings, resolveEffectiveInitCmd, resolveStartupPromptFreshOnly, providerLaunchConfig, SCOPE_DENY_ALL } from "./sessionLaunch";
-import { DEBUG_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
+import { DEBUG_STUDIO_SESSION_ID, DESIGN_STUDIO_SESSION_ID, ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID } from "@/shared/lib/session/systemSessions";
 import { aiderProvider } from "@/app/console/lib/providers/providers/aider";
-import { roleCapability, roleDeniedCommands, roleDeniedTools, scopeWriteGlobs, bscAgentPerms, sessionScopes } from "@/shared/lib/session/sessionRoles";
+import { roleCapability, roleDeniedCommands, roleDeniedTools, scopeWriteGlobs, bscAgentPerms, sessionScopes, restrictedRoleCommands } from "@/shared/lib/session/sessionRoles";
 import { flowGrantedPushCommands } from "@/features/planner/fleet/flowPermissions";
 import { resolveProfileSettings } from "@/features/security/lib/profileEnforcement";
 import { PROFILES } from "@/features/security/lib/agentProfiles";
@@ -46,6 +46,24 @@ describe("buildAgentEnv", () => {
 
   it("does not emit BSC_SCOPE_GLOBS for an ungated pane", () => {
     expect(buildAgentEnv(mkStore(), "p", "claude", "tok")).toEqual({ GH_TOKEN: "tok" });
+  });
+
+  it("withholds GH_TOKEN from a role denied BOTH git and github (#3357)", () => {
+    // The app-owned studio sessions (designer/librarian/architect) are `none` on every axis — they can
+    // run neither git nor gh, so a GitHub credential in the environment of the app's MOST restricted
+    // sessions would widen them for nothing. Before #3357 these launched via a bespoke hook that passed
+    // no token; running them through the generic path must not quietly hand them one.
+    for (const role of ["designer", "librarian", "architect"]) {
+      const e = buildAgentEnv(mkStore({ paneRoles: { p: role } }), "p", "claude", "ghp_x");
+      expect(e?.GH_TOKEN, `${role} must not receive a GitHub token`).toBeUndefined();
+      // The rest of the gated-pane env is unaffected — it still gets its write-scope + store scopes.
+      expect(e?.BSC_SCOPE_GLOBS).toBe(SCOPE_DENY_ALL);
+    }
+  });
+
+  it("still carries GH_TOKEN for a role with real gh access (#3357 must not over-reach)", () => {
+    // triage is `git:none` but `github:write` — it drives the gh CLI and MUST keep its token.
+    expect(buildAgentEnv(mkStore({ paneRoles: { p: "triage" } }), "p", "claude", "ghp_x")?.GH_TOKEN).toBe("ghp_x");
   });
 
   it("emits the deny-all sentinel for a code:none role with no write globs (#1916 Step 3.5)", () => {
@@ -269,6 +287,55 @@ describe("buildSessionSettings", () => {
     expect(buildSessionSettings(mkStore(), "p").restrictedAllow).toBe(false);
   });
 
+  // #3357 SECURITY REGRESSION GUARD. The designer/librarian/architect studio sessions were migrated off
+  // their bespoke `ensure_session_settings` call onto this generic builder. Their whole confinement now
+  // derives from ONE store field — `paneRoles[paneId]` — with deliberately NO `paneProfiles` entry, since
+  // a profile's `allowedCommands` are ADDED to the restricted surface (see the curator case above) and
+  // would silently hand a `bsc ui`-only session a general shell. This asserts the migrated payload is the
+  // one the bespoke launch produced: exactly `restrictedRoleCommands(role)` auto-runs, the baselines are
+  // suppressed, Read is granted, git/gh + every write/web tool are denied, and bypass can never be flipped
+  // on for them.
+  it.each(["designer", "librarian", "architect"] as const)(
+    "renders the RESTRICTED studio payload for a %s pane carrying only a role (#3357)",
+    (role) => {
+      const s = mkStore({ paneRoles: { p: role } });
+      const out = buildSessionSettings(s, "p");
+      const cap = roleCapability(role);
+
+      // The whole auto-run command surface is the role's fixed store CLI — nothing from a profile.
+      expect(out.allowedCommands).toEqual(restrictedRoleCommands(role));
+      expect(out.allowedCommands.length).toBeGreaterThan(0);
+      // Baselines suppressed + Read granted (verbatim the bespoke `[...write.allow, "Read"]`).
+      expect(out.restrictedAllow).toBe(true);
+      expect(out.allowToolRules).toEqual(["Read"]);
+      // The role gate's denies: git/gh outright, every file-write tool, the web tools.
+      expect(out.deniedCommands).toEqual(expect.arrayContaining(roleDeniedCommands(cap)));
+      expect(out.deniedCommands).toEqual(expect.arrayContaining(["git", "gh"]));
+      for (const t of ["Edit", "Write", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch"]) {
+        expect(out.denyToolRules).toContain(t);
+      }
+      // A restricted role is NEVER bypass — bypass ignores permissions.deny, which would undo all of it.
+      expect(out.bypass).toBe(false);
+      expect(buildSessionSettings(mkStore({ paneRoles: { p: role }, bypassPermissions: true }), "p").bypass).toBe(false);
+      // The runtime scope doc the studio launch also carried (`BSC_SCOPES`) still comes out of the env
+      // builder, and a code:none role with no globs hard-blocks every write via the bsc-scope sentinel.
+      const env = buildAgentEnv(s, "p", "claude", "")!;
+      expect(env.BSC_SCOPES).toBe(JSON.stringify(sessionScopes(cap)));
+      expect(env.BSC_SCOPE_GLOBS).toBe(SCOPE_DENY_ALL);
+    },
+  );
+
+  it("a PROFILE would widen a studio pane — so the studio mount must never assign one (#3357)", () => {
+    // Documents WHY `StudioSessionMount` sets `paneRoles` and nothing else. If a profile ever leaks onto a
+    // studio pane, its allowedCommands are prepended to the restricted surface and the confinement is gone.
+    const withProfile = buildSessionSettings(
+      mkStore({ paneRoles: { p: "designer" }, paneProfiles: { p: "pf_auto" }, agentProfiles: PROFILES }),
+      "p",
+    );
+    expect(withProfile.allowedCommands).not.toEqual(restrictedRoleCommands("designer"));
+    expect(withProfile.allowedCommands.length).toBeGreaterThan(restrictedRoleCommands("designer").length);
+  });
+
   it("installs the bsc-skill telemetry hooks when the session has skills, not otherwise", () => {
     expect(cmds(buildSessionSettings(mkStore(), "p"))).not.toContain("bsc-skill");
     const withSkill = mkStore({ paneSkills: { p: [{ name: "My Skill", desc: "d", prompt: "do x" }] } });
@@ -340,5 +407,14 @@ describe("resolveStartupPromptFreshOnly (#2052)", () => {
     // The debug session launches with `claude --continue`, so its inline charter must drop on a resume
     // (delivered only on the first, history-less launch). Matches the old useScreenSession's freshOnly:true.
     expect(resolveStartupPromptFreshOnly(mkStore(), DEBUG_STUDIO_SESSION_ID, true)).toBe(true);
+  });
+
+  it("is true for every app-owned STUDIO session — their persona kickoff must not re-fire on resume (#3357)", () => {
+    // Migrating the designer/librarian/architect onto the generic launch path had to preserve the bespoke
+    // `startupPromptFreshOnly: true`: they launch with `claude --continue`, so re-baking the persona
+    // kickoff would re-instruct an already-running conversation on every re-open.
+    for (const id of [DESIGN_STUDIO_SESSION_ID, ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID]) {
+      expect(resolveStartupPromptFreshOnly(mkStore(), id, true)).toBe(true);
+    }
   });
 });

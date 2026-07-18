@@ -38,6 +38,7 @@ import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
 import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive } from "./lib/studioProject";
 import { DEBUG_PANE_ID } from "@/features/debug";
+import { isStudioId, useStudioViewer } from "@/features/studio-sessions";
 import { useProjectComplete } from "./lib/useProjectComplete";
 import { usePreviewReview } from "./usePreviewReview";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
@@ -169,6 +170,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // drive it (see useNavHistory).
   const drill = useAppStore((s) => s.glanceDrill);
   const setDrill = useAppStore((s) => s.setGlanceDrill);
+  // The MORPH is a first-class viewer of an app-owned studio session (#3357): opening a studio node starts
+  // its session (lazily) and holds the idle reaper off for as long as the morph is open, exactly like its
+  // page dock. Null for every other node, so the hook no-ops. (The debugger is NOT a studio here — its
+  // lifecycle is the Settings toggle, not the reaper.)
+  const openStudioNode = drill === BASE_STUDIO_PROJECT_ID && chatNode && isStudioId(chatNode) ? chatNode : null;
+  useStudioViewer(openStudioNode);
+  const closeStudio = useAppStore((s) => s.closeStudio);
   // The drilled project's fleet, translated from plan.db. The store's `planFleet` only mirrors the ACTIVE
   // project, so for any OTHER project we load its fleet straight from its own plan.db (useProjectFleet).
   // Prefer the live store copy when it has streams so the active project never flashes sample → real.
@@ -258,21 +266,26 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
   const pickNode = (id: string) => { setSel({ type: "node", id }); setShowCycle(false); };
   const pickEdge = (id: string) => { setSel({ type: "edge", id }); setShowCycle(false); };
-  // The app-owned studio session pane id for a node in the base-studio-code drill (#3326) — the DEBUGGER
-  // node maps to the TerminalHost-hosted debug session (`DebugSessionMount`); other studio nodes / any
-  // non-studio drill return null. Non-null ⇒ this node opens an app-owned session, not a fleet cell.
+  // The app-owned studio session pane id for a node in the base-studio-code drill (#3326/#3357) — every
+  // studio node (debugger + designer/librarian/architect) maps to its TerminalHost-hosted session; a
+  // library/resource node or any non-studio drill returns null. Non-null ⇒ this node opens an app-owned
+  // session, not a fleet cell.
   const studioPaneId = (nodeId: string): string | null =>
     drill === BASE_STUDIO_PROJECT_ID ? studioPaneIdForNode(nodeId) : null;
   // A node is MORPHABLE — its terminal openable inline via the in-graph morph — iff its identity pane id
   // (`<project>:<stream>` or `<project>:director`) is a live cell of a launched fleet tab. EVERY fleet
   // node — workers AND the director — gets the morph (#2534/#2542). Drilled only. In the base-studio-code
-  // drill only the DEBUGGER morphs (#3326): it's the one studio session hosted on the shared TerminalHost
-  // (kept warm by DebugSessionMount, and its node only EXISTS while the toggle is on). The designer /
-  // librarian / architect run on their own workspace surfaces the morph can't re-parent — they open in
-  // their page instead (see `onResumeNode`), so they must NOT take the morph path.
+  // drill EVERY studio session node morphs (#3357): all four now live on the shared TerminalHost, so the
+  // host can re-parent their single terminal into the morph. The debugger additionally requires its
+  // Settings toggle (its node only EXISTS while the toggle is on); the designer/librarian/architect are
+  // always openable — clicking one lazily STARTS its session if it isn't up (stable pane id ⇒ it resumes
+  // the same conversation, never a second session).
   const isLiveAgent = (nodeId: string) => {
     if (!drill) return false;
-    if (drill === BASE_STUDIO_PROJECT_ID) return nodeId === "debugger" && debugSession;
+    if (drill === BASE_STUDIO_PROJECT_ID) {
+      if (studioNodeHome(nodeId)?.kind !== "morph") return false;
+      return nodeId === "debugger" ? debugSession : true;
+    }
     return nodeHasLiveSession(fleetPaneId(drill, nodeId), livePaneIds);
   };
   // Whether a node's SESSION is actually running (#glance-resume) — the studio analogue of morph-liveness.
@@ -383,8 +396,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     if (!drill) return;
     // base-studio-code studio node (#3319/#glance-resume): open its app-owned session at its HOME. These
     // sessions have STABLE ids, so revealing them re-uses the running session (or mounts it if it isn't
-    // up) — we never start a second one. The debugger opens inline (TerminalHost → the graph morph); the
-    // designer / librarian / architect open on their own workspace page.
+    // up) — we never start a second one. Since #3357 every studio session is TerminalHost-hosted, so they
+    // all open inline in the graph morph; the `page` branch remains for a future non-morphable node.
     if (drill === BASE_STUDIO_PROJECT_ID) {
       const home = studioNodeHome(nodeId);
       if (!home) return;                                   // a library/resource node — no session to open
@@ -583,11 +596,23 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           // The live-agent terminal morphs open IN the graph, as an oversized node (#2534).
           chat={chatPaneId && chatNode ? { nodeId: chatNode, paneId: chatPaneId, name: chatMeta?.slug ?? "agent", role: chatMeta?.roleLabel } : null}
           onCloseChat={() => setChatNode(null)}
-          // Ending the DEBUG session means turning the toggle OFF (which unmounts DebugSessionMount → clean
-          // PTY teardown → the node disappears) — NOT the fleet killPane path (#3326). Fleet nodes end their
-          // one PTY as before.
+          // Ending an APP-OWNED session drops its declaration rather than killing a fleet cell:
+          //  • DEBUG (#3326) — turn the Settings toggle OFF, which unmounts DebugSessionMount → clean PTY
+          //    teardown → the node disappears.
+          //  • a STUDIO (#3357) — drop it from `wantedStudios`, which unmounts its persistent claim; the
+          //    `pty_kill` is still explicit, because a studio PAGE dock may hold another claim (End means
+          //    end, not "end unless the Design Studio page happens to be mounted").
+          // Fleet nodes end their one PTY as before.
           onEndChat={chatPaneId ? () => {
             if (chatPaneId === DEBUG_PANE_ID) { setDebugSession(false); setChatNode(null); }
+            else if (chatNode && isStudioId(chatNode)) {
+              // NOT killPane: that also sets the PERSISTED `disabledPanes` flag, which is a fleet-cell
+              // concept (fleetStartProject re-enables it). A studio has no cell to re-enable.
+              closeStudio(chatNode);
+              void safeInvoke("pty_kill", { paneId: chatPaneId }, undefined);
+              setPaneStatus(chatPaneId, "idle");
+              setChatNode(null);
+            }
             else endSession(chatPaneId);
           } : undefined}
           preview={previewOn && drill ? {
