@@ -14,14 +14,15 @@ import {
   DESIGN_STUDIO_SESSION_ID,
   ALGORITHMS_STUDIO_SESSION_ID,
   TEAMS_STUDIO_SESSION_ID,
+  SOUND_STUDIO_SESSION_ID,
 } from "@/shared/lib/session/systemSessions";
 
-/** The three app-owned studio sessions. (The DEBUG session is app-owned too but is full-capability and
+/** The four app-owned studio sessions. (The DEBUG session is app-owned too but is full-capability and
  *  Settings-toggled, so it keeps its own `DebugSessionMount` — see `@/features/debug`.) */
-export type StudioId = "designer" | "librarian" | "architect";
+export type StudioId = "designer" | "librarian" | "architect" | "soundDesigner";
 
 /** Every studio id, in rail order. */
-export const STUDIO_IDS: readonly StudioId[] = ["designer", "librarian", "architect"];
+export const STUDIO_IDS: readonly StudioId[] = ["designer", "librarian", "architect", "soundDesigner"];
 
 export interface StudioSessionDef {
   id: StudioId;
@@ -68,6 +69,17 @@ export const STUDIO_SESSIONS: Record<StudioId, StudioSessionDef> = {
     rosterName: "Algorithms Studio",
     pageKey: "projects",
     sectionId: "algorithms",
+  },
+  soundDesigner: {
+    id: "soundDesigner",
+    paneId: SOUND_STUDIO_SESSION_ID,
+    role: "sound-designer",
+    setupCommand: "setup_sound_designer_workspace",
+    dirKey: "sound_dir",
+    personaId: "persona-sound-designer",
+    rosterName: "Sound Studio",
+    pageKey: "projects",
+    sectionId: "sounds",
   },
   architect: {
     id: "architect",

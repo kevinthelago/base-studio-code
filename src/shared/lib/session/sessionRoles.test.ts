@@ -217,6 +217,9 @@ describe("roleDeniedCommands (launch wiring)", () => {
         if (cap.role === "designer") continue;  // ui:"write" by design (#2471) — asserted in its own suite
         if (cap.role === "architect") continue; // ui:"none" by design (#2755) — asserted in its own suite
         if (cap.role === "librarian") continue; // ui:"none" by design (#2787) — restricted knowledge-store session, like the architect
+        if (cap.role === "sound-designer") continue; // ui:"none" by design (#3369) — a sound is a synthesis descriptor, not a UI kit
+        if (cap.role === "curator") continue;   // ui:"write" by design (#3092) — the harvest actor OWNS the kit store
+        if (cap.role === "debugger") continue;  // ui:"write" by design (#3322) — the app-maintenance session that FIXES `bsc ui`
         const denies = roleDeniedCommands(cap);
         for (const verb of UI_MUTATING) expect(denies).toContain(verb);
         expect(denies).not.toContain("bsc ui");        // reads stay (list/get/kit list…)
@@ -361,6 +364,8 @@ describe("network gate (#1107)", () => {
       if (role === "designer") continue;  // net:"none" by design (#2471) — asserted in its own suite
       if (role === "architect") continue; // net:"none" by design (#2755) — asserted in its own suite
       if (role === "librarian") continue; // net:"none" by design (#2787) — restricted knowledge-store session, like the architect
+      if (role === "sound-designer") continue; // net:"none" by design (#3369) — restricted sound-store session, like the librarian
+      if (role === "curator") continue;   // net:"none" by design (#3092) — the post-landing harvest actor works offline
       expect(ROLE_DEFAULTS[role].net).toBe("read");
       expect(roleDeniedTools(ROLE_DEFAULTS[role])).not.toContain("WebFetch");
     }
@@ -719,10 +724,27 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
       ["bsc ui", "bsc component", "bsc shot preview", "bsc loop", "bsc request new", "bsc request list"]);
     expect(restrictedRoleCommands("librarian")).toEqual(["bsc graph"]);
     expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona"]);
+    expect(restrictedRoleCommands("sound-designer")).toEqual(["bsc sound"]);
+  });
+
+  // #3369: `sound-designer` shares a WORD with `designer` but is a DISTINCT role. Any lookup that
+  // matched loosely (startsWith / includes / a stripped hyphen) would hand one session the other's
+  // surface — the sound-designer would gain `bsc ui` + the whole Design Studio toolbelt, or the
+  // designer would lose it. Pinned in both directions.
+  it("never conflates `designer` with `sound-designer` — the names overlap, the surfaces do not", () => {
+    const designer = restrictedRoleCommands("designer");
+    const sound = restrictedRoleCommands("sound-designer");
+    expect(sound).toEqual(["bsc sound"]);
+    expect(designer).not.toContain("bsc sound");
+    expect(sound).not.toContain("bsc ui");
+    expect(sound).not.toContain("bsc component");
+    // ...and their capabilities differ: the designer is the one `ui: write` role (#2470/#2471).
+    expect(ROLE_DEFAULTS.designer.ui).toBe("write");
+    expect(ROLE_DEFAULTS["sound-designer"].ui).toBe("none");
   });
 
   it("is empty for every unrestricted role and for an absent role", () => {
-    const restricted = new Set<SessionRole>(["curator", "designer", "librarian", "architect"]);
+    const restricted = new Set<SessionRole>(["curator", "designer", "librarian", "architect", "sound-designer"]);
     for (const role of Object.keys(ROLE_DEFAULTS) as SessionRole[]) {
       if (restricted.has(role)) continue;
       expect(restrictedRoleCommands(role)).toEqual([]);
@@ -732,7 +754,7 @@ describe("restrictedRoleCommands (curator store surface, #3095)", () => {
   });
 
   it("isRestrictedRole marks exactly the confined roles — they must never be flipped to bypass", () => {
-    for (const role of ["curator", "designer", "librarian", "architect"] as SessionRole[]) {
+    for (const role of ["curator", "designer", "librarian", "architect", "sound-designer"] as SessionRole[]) {
       expect(isRestrictedRole(role)).toBe(true);
     }
     for (const role of ["worker", "director", "planner", "triage", "reviewer"] as SessionRole[]) {

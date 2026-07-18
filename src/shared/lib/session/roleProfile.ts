@@ -39,6 +39,7 @@ const ROLE_PROFILE: Record<SessionRole, string> = {
   designer: "pf_review",
   architect: "pf_review",
   librarian: "pf_review",
+  "sound-designer": "pf_review",
   // Debugger (#3322): the app's full-cap maintenance session WRITES code, so like the worker it launches
   // under the write-permitting Autonomous profile; its real launch (`DebugSessionMount` on TerminalHost,
   // #3326) renders bypass directly via the `isFullCapabilitySession` carve-out, so this only backs the

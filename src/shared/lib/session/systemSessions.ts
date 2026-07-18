@@ -1,6 +1,6 @@
 // App-owned "studio" sessions (#3137) — the single source of truth for the fixed pane ids of the
 // dedicated, app-launched singleton terminal sessions: the DESIGNER (Design Studio), the LIBRARIAN
-// (Algorithms), and the ARCHITECT (Teams). Each is a singleton session the app owns and re-creates on
+// (Algorithms), the ARCHITECT (Teams), and the SOUND-DESIGNER (Sounds). Each is a singleton session the app owns and re-creates on
 // demand — NOT a fleet worker and NOT something the user restores. Since #3357 all three (like the DEBUG
 // session, #3326) run on the shared TerminalHost via `@/features/studio-sessions`, not on their own page-owned
 // xterm; their ids stay fixed here so the lifecycle, the Glance morph, and recovery all agree.
@@ -18,6 +18,8 @@ export const DESIGN_STUDIO_SESSION_ID = "design-studio:designer";
 export const ALGORITHMS_STUDIO_SESSION_ID = "algorithms-studio:librarian";
 /** The Teams studio's app-owned architect session. */
 export const TEAMS_STUDIO_SESSION_ID = "teams-studio:architect";
+/** The Sound studio's app-owned sound-designer session (#3369, epic #3071 phase 4). */
+export const SOUND_STUDIO_SESSION_ID = "sound-studio:sound-designer";
 /** The Debug studio's app-owned debugger session (#3298) — a full-capability session in the
  *  base-studio-code SOURCE tree that works the `bsc request` improvement queue (fixing `bsc ui`),
  *  hosted in its own OS window and toggled from Settings. */
@@ -28,10 +30,11 @@ export const STUDIO_SESSION_PANE_IDS: readonly string[] = [
   DESIGN_STUDIO_SESSION_ID,
   ALGORITHMS_STUDIO_SESSION_ID,
   TEAMS_STUDIO_SESSION_ID,
+  SOUND_STUDIO_SESSION_ID,
   DEBUG_STUDIO_SESSION_ID,
 ];
 
-/** Whether `id` is a fixed, app-owned studio session (designer / librarian / architect) — excluded from
+/** Whether `id` is a fixed, app-owned studio session (designer / librarian / architect / sound-designer) — excluded from
  *  crash recovery the way the planner (`isPlanningPaneId`) is: re-created when its workspace opens, never
  *  restored from the recovery banner. */
 export function isStudioSessionPaneId(id: string): boolean {
