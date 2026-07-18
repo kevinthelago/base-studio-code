@@ -19,6 +19,7 @@ import {
   leaderToCaps,
   type ChordEvent,
 } from "./keybindings";
+import { SCREEN_HOTKEYS } from "./shortcuts";
 
 const ev = (over: Partial<ChordEvent>): ChordEvent => ({
   ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, code: "", ...over,
@@ -113,6 +114,24 @@ describe("registry wiring", () => {
       expect(r.label.length).toBeGreaterThan(0);
       expect(r.label).not.toBe(r.id); // resolved from SHORTCUT_GROUPS desc, not the raw id
     }
+  });
+
+  it("screen-nav ids track SCREEN_HOTKEYS — a Workspace rename can't orphan an F-key (#3411)", () => {
+    // useHotkeys resolves each screen's chord as `screen-${h.screen}` (its Workspace id), so every
+    // SCREEN_HOTKEYS entry must have that exact rebindable id AND a default chord equal to its `key`.
+    // The regression: #2702 renamed the `agents` Workspace to `security` but left `screen-agents` in
+    // REBINDABLE_IDS, so `effectiveChord` resolved undefined for `screen-security` and F7 stopped
+    // navigating anywhere at all.
+    for (const h of SCREEN_HOTKEYS) {
+      const id = `screen-${h.screen}` as (typeof REBINDABLE_IDS)[number];
+      expect(REBINDABLE_IDS).toContain(id);
+      expect(DEFAULT_BINDINGS[id]).toBe(h.key);
+      // …and it really does match a press of that F-key end to end.
+      expect(matchesBinding(ev({ code: h.key }), {}, id)).toBe(true);
+    }
+    // No stale `screen-*` id survives that no Workspace claims.
+    const live = new Set(SCREEN_HOTKEYS.map((h) => `screen-${h.screen}`));
+    expect(REBINDABLE_IDS.filter((id) => id.startsWith("screen-") && !live.has(id))).toEqual([]);
   });
 
   it("screen-nav and zoom are rebindable single chords (#773)", () => {
