@@ -103,4 +103,22 @@ mod tests {
             assert!(seed.contains(needle), "librarian seed must mention `{needle}`");
         }
     }
+
+    /// #3376 — the read-side companion to "Authoring: write, then apply". The seed must name the lean
+    /// read verbs AND say WHY a redirect / chain / `$VAR` can never be allow-listed: a session that only
+    /// learns "that was rejected" retries another variant of the same unmatchable shape.
+    #[test]
+    fn packaged_librarian_spec_teaches_reading_without_redirect_or_chain() {
+        let seed = crate::platform::config::embedded_str("librarian/claude.md");
+        for needle in [
+            "Reading: never redirect, never chain",   // the section itself
+            "bsc graph impl list --tech",             // narrow at the source, not a dump-and-filter
+            "bsc graph dump",                         // the whole-store read, named as the last resort
+            "simple_expansion",                       // WHY a `$VAR` can never match a rule
+            "**every** subcommand must match a rule", // WHY a `;` / `|` chain can never match
+            "scratch/**",                             // WHY a redirect is out of scope anyway
+        ] {
+            assert!(seed.contains(needle), "librarian seed must teach the reading term `{needle}`");
+        }
+    }
 }
