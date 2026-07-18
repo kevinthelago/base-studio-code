@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { SAMPLE_GRAPH, buildGlanceData } from "./glanceData";
-import { kitNodeId, usesKitEdgeId } from "./glanceGraph";
+import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId } from "./glanceGraph";
+// Cross-feature via the barrel (#1309): the REAL kit→library roll-up + the component record it reads.
+import { resolveKitLibraryRefs, type ComponentRecord } from "@/features/designs";
 
 // Guard for the externalized sample network (@data/glance/sample-graph.json, #2419).
 describe("SAMPLE_GRAPH (loaded from @data/glance/sample-graph.json)", () => {
@@ -107,5 +109,80 @@ describe("buildGlanceData — UI-kit nodes (#2571)", () => {
     const g = buildGlanceData(projects, [], [], kits);
     expect(g.rawNodes.some((n) => n.kind === "kit")).toBe(false);
     expect(g.rawEdges).toEqual([]);
+  });
+});
+
+// The REAL cross-graph data path (#3133) — not synthetic band input: a genuine ComponentRecord whose source
+// imports `@bsc/algorithms/fibonacci` is resolved by the designs feature's roll-up against the PACKAGED
+// algorithm seed, then joined against kit usage here. This is the wiring #3133 exists to add; #3119 only
+// ever exercised hand-written `requires` fixtures.
+describe("buildGlanceData — cross-graph `requires` from REAL library refs (#3133)", () => {
+  const projects = [{ id: "route-planner", name: "Route Planner" }, { id: "app-b", name: "App B" }];
+  const kits = [{ id: "react-ui", name: "React UI" }];
+  const comp = (id: string, source: string, kitId = "react-ui"): ComponentRecord => ({
+    id, name: id, kitId, role: "composite", version: "1", used: 1, tags: [], variants: ["default"],
+    composes: [], props: [], whenUse: [], whenNot: [], src: "", srcText: "", source,
+  });
+  const FIB_SRC = 'import { fibonacci } from "@bsc/algorithms/fibonacci";\nexport const C = () => fibonacci(10);';
+  const FIB_NODE = libraryNodeId("algo", "fibonacci.ts");
+
+  it("draws a project→algorithm `requires` edge for a kit the project consumes", () => {
+    const refs = resolveKitLibraryRefs([comp("FibCard", FIB_SRC)]);
+    const g = buildGlanceData(projects, [], [{ projectKey: "route-planner", kitId: "react-ui" }], kits, refs);
+
+    const lib = g.rawNodes.filter((n) => n.kind === "library");
+    expect(lib).toEqual([
+      { id: FIB_NODE, slug: "fibonacci", kind: "library", library: "algo", role: "infra", health: "idle", activity: "idle" },
+    ]);
+    expect(g.rawEdges.filter((e) => e.kind === "requires")).toEqual([
+      { id: requiresEdgeId("route-planner", FIB_NODE), from: "route-planner", to: FIB_NODE, kind: "requires" },
+    ]);
+    // the kit dimension is untouched — the project still consumes its kit
+    expect(g.rawEdges.filter((e) => e.kind === "uses-kit")).toHaveLength(1);
+  });
+
+  it("fans one shared library node out to EVERY project consuming the kit", () => {
+    const refs = resolveKitLibraryRefs([comp("FibCard", FIB_SRC)]);
+    const g = buildGlanceData(projects, [], [
+      { projectKey: "route-planner", kitId: "react-ui" },
+      { projectKey: "app-b", kitId: "react-ui" },
+    ], kits, refs);
+    expect(g.rawNodes.filter((n) => n.kind === "library")).toHaveLength(1); // ONE band node, shared
+    expect(g.rawEdges.filter((e) => e.kind === "requires").map((e) => e.from)).toEqual(["route-planner", "app-b"]);
+  });
+
+  it("carries an ALGORITHM and a SOUND as separately-tagged band nodes", () => {
+    const refs = resolveKitLibraryRefs([
+      comp("Mixed", 'import { fibonacci } from "@bsc/algorithms/fibonacci";\nimport { play } from "@bsc/sounds/click";\nexport const M = () => fibonacci(play());'),
+    ]);
+    const g = buildGlanceData(projects, [], [{ projectKey: "route-planner", kitId: "react-ui" }], kits, refs);
+    expect(g.rawNodes.filter((n) => n.kind === "library").map((n) => n.library)).toEqual(["algo", "sound"]);
+    expect(g.rawEdges.filter((e) => e.kind === "requires")).toHaveLength(2);
+  });
+
+  it("dedupes to ONE edge when a project consumes two kits requiring the same node", () => {
+    const refs = resolveKitLibraryRefs([comp("A", FIB_SRC), comp("B", FIB_SRC, "other-kit")]);
+    expect(refs).toHaveLength(2); // one ref per kit
+    const g = buildGlanceData(projects, [], [
+      { projectKey: "route-planner", kitId: "react-ui" },
+      { projectKey: "route-planner", kitId: "other-kit" },
+    ], [...kits, { id: "other-kit", name: "Other" }], refs);
+    expect(g.rawNodes.filter((n) => n.kind === "library")).toHaveLength(1);
+    expect(g.rawEdges.filter((e) => e.kind === "requires")).toHaveLength(1);
+  });
+
+  it("emits NOTHING for a library ref whose kit no project consumes (no dangling band node)", () => {
+    const refs = resolveKitLibraryRefs([comp("FibCard", FIB_SRC)]);
+    const g = buildGlanceData(projects, [], [], kits, refs);                                  // no usage at all
+    expect(g.rawNodes.some((n) => n.kind === "library")).toBe(false);
+    const stale = buildGlanceData(projects, [], [{ projectKey: "ghost", kitId: "react-ui" }], kits, refs);
+    expect(stale.rawNodes.some((n) => n.kind === "library")).toBe(false); // consumer isn't in this graph
+  });
+
+  it("is byte-identical to the pre-#3133 graph when no component imports a library (no regression)", () => {
+    const refs = resolveKitLibraryRefs([comp("Plain", "export const C = () => null;")]);
+    expect(refs).toEqual([]);
+    const usage = [{ projectKey: "route-planner", kitId: "react-ui" }];
+    expect(buildGlanceData(projects, [], usage, kits, refs)).toEqual(buildGlanceData(projects, [], usage, kits));
   });
 });
