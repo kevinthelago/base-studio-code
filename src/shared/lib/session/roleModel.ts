@@ -66,6 +66,15 @@ export type SessionRole =
   // `bsc graph` auto-runs. The Algorithms graph stays the read-only viewer; the librarian stores +
   // curates the knowledge graph (nodes, relationships, the reality lens) via that one CLI.
   | "librarian"
+  // Sound-designer (#3369, epic #3071 phase 4): the Sounds tab's heavily-restricted sound-kit
+  // authoring session. Like the designer/architect/librarian it is `none` on every axis (no git, no
+  // GitHub, no file writes, no web) and `ui: none` — a sound is a synthesis DESCRIPTOR in the store,
+  // not a file, and not a UI kit. Launched with `restrictedAllow`, so the baseline command tiers are
+  // suppressed and only `bsc sound` auto-runs. The Sounds graph stays the read-only viewer; the
+  // sound-designer authors primitives, voices, cues and kits through that one CLI.
+  // NOTE the name shares a word with `designer` but is a DISTINCT role — nothing may treat the two
+  // as interchangeable (a `startsWith`/`includes` check on the role would silently conflate them).
+  | "sound-designer"
   // Debugger (#3322): the app's OWN full-capability maintenance session — fixes the `bsc ui` tooling the
   // designer reports via `bsc request` (#3298). Broad app-maintenance caps (git+github+code+ui write); the
   // session actually launches full-cap/bypass on TerminalHost via `DebugSessionMount` (the always-bypass
@@ -190,12 +199,14 @@ export function hasScopedWriteCarveOut(cap: RoleCapability): boolean {
  *   • designer   — the `bsc ui` component surface (+ the deprecated `bsc component` alias), the
  *                  preview-only screenshot, the design loop, and the designer→debug request channel.
  *   • librarian  — the algorithms graph store.
+ *   • sound-designer — the sound-kit store (synthesis descriptors: primitives, voices, cues, kits).
  *   • architect  — the teams + persona (agent-identity) stores.
  *   • curator    — the post-landing harvest + graph-optimize actor (fleet-launched). */
 const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> = {
   curator: ["bsc ui", "bsc graph"],
   designer: ["bsc ui", "bsc component", "bsc shot preview", "bsc loop", "bsc request new", "bsc request list"],
   librarian: ["bsc graph"],
+  "sound-designer": ["bsc sound"],
   architect: ["bsc teams", "bsc persona"],
 };
 
