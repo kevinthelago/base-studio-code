@@ -84,6 +84,7 @@ export const useAppStore = create<AppStore>()(
         terminalFontSize: s.terminalFontSize,
         accent:          s.accent,
         kitTheme:        s.kitTheme,
+        soundNotifications: s.soundNotifications, // #3082: opt-in coord-event notification sounds
         designContributions: s.designContributions, // #2656: downloaded-blueprint design overlays survive restart
         keybindings:     s.keybindings,
         paneViews:       s.paneViews,
