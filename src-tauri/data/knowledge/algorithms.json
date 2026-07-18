@@ -54,6 +54,7 @@
     },
     {
       "id": "bfs.rs",
+      "domain": "logistics",
       "tech": "rust",
       "name": "bfs",
       "summary": "Explore a graph level by level using a queue.",
@@ -116,6 +117,7 @@
     },
     {
       "id": "dfs.rs",
+      "domain": "logistics",
       "tech": "rust",
       "name": "dfs",
       "summary": "Explore as deep as possible from a start node, backtracking — recursive over the adjacency map.",
@@ -128,6 +130,7 @@
     },
     {
       "id": "dijkstra.rs",
+      "domain": "logistics",
       "tech": "rust",
       "name": "dijkstra",
       "summary": "Greedy non-negative-weight shortest distances from a start node, using a binary min-heap.",
@@ -140,6 +143,7 @@
     },
     {
       "id": "a-star.rs",
+      "domain": "logistics",
       "tech": "rust",
       "name": "a_star",
       "summary": "Dijkstra guided by an admissible heuristic; returns the shortest node path to the goal, or None.",
@@ -152,6 +156,7 @@
     },
     {
       "id": "topological-sort.rs",
+      "domain": "logistics",
       "tech": "rust",
       "name": "topological_sort",
       "summary": "Kahn's algorithm — repeatedly emit in-degree-zero nodes; None when a cycle is present.",
@@ -187,6 +192,7 @@
     },
     {
       "id": "fft.rs",
+      "domain": "signal-processing",
       "tech": "rust",
       "name": "fft",
       "summary": "Recursive radix-2 Cooley–Tukey FFT over complex samples (re, im); input length must be a power of two.",
@@ -318,6 +324,7 @@
     },
     {
       "id": "transpose.ts",
+      "domain": "graphics",
       "tech": "typescript",
       "role": "algorithm",
       "name": "transpose",
@@ -328,6 +335,7 @@
     },
     {
       "id": "rotate.ts",
+      "domain": "graphics",
       "tech": "typescript",
       "role": "algorithm",
       "name": "rotate",
@@ -338,6 +346,7 @@
     },
     {
       "id": "reflect.ts",
+      "domain": "graphics",
       "tech": "typescript",
       "role": "algorithm",
       "name": "reflect",
