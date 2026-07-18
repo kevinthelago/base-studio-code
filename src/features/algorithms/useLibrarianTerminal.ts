@@ -30,6 +30,7 @@ import {
   roleDeniedTools,
   roleWriteRules,
   sessionScopes,
+  restrictedRoleCommands,
 } from "@/shared/lib/session/sessionRoles";
 import { useScreenSession } from "@/shared/lib/session/useScreenSession";
 import { BUILTIN_PERSONAS } from "@/features/personas";
@@ -45,7 +46,7 @@ export const LIBRARIAN_PANE_ID = ALGORITHMS_STUDIO_SESSION_ID;
 /** The librarian's whole command surface: `bsc graph` (the algorithms knowledge graph — nodes,
  *  relationships, the per-tech impl tier, and the extraction lens), emitted as the session's ONLY
  *  `Bash(<cmd> *)` allow via `restrictedAllow`. */
-export const LIBRARIAN_ALLOWED_COMMANDS = ["bsc graph"];
+export const LIBRARIAN_ALLOWED_COMMANDS = restrictedRoleCommands("librarian");
 
 export interface LibrarianTerminalHandle {
   /** Host element for the xterm canvas — attach to the terminal container div. */
