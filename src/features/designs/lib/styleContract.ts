@@ -6,11 +6,15 @@
 //
 // Additive-first: a new token defaults to today's value, so growing the descriptor lands as a
 // zero-visual-change commit. Types are deliberately coarse — "color" | "dimension" | "duration" |
-// "easing" (motion, #2866) — a discovery/label axis (what `bsc ui tokens` reports), not a full CSS
-// type system: `bsc ui`'s closed value grammar is character-based and already accepts a time (`120ms`)
-// or a timing-function (`cubic-bezier(...)`), so motion values need no grammar change.
+// "easing" (motion, #2866) | "number" | "font" (#3394) — a discovery/label axis (what `bsc ui tokens`
+// reports), not a full CSS type system: `bsc ui`'s closed value grammar is character-based and already
+// accepts a time (`120ms`) or a timing-function (`cubic-bezier(...)`), so motion values need no
+// grammar change. `number` (a unitless weight/opacity/multiplier) and `font` (a family stack) were
+// added for the Button exhaust (#3394) for the same reason: they only widen what `bsc ui tokens`
+// LABELS, and `is_safe_value` — a denylist over `;{}<>\`, `url(`, `expression(`, `@import`, `/*` —
+// already admits `600`, `0.4` and a family stack unchanged.
 
-export type TokenType = "color" | "dimension" | "duration" | "easing";
+export type TokenType = "color" | "dimension" | "duration" | "easing" | "number" | "font";
 
 /** A base-palette token — an app-level default the semantic layer + themes compose from. */
 export interface BaseToken {
