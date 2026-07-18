@@ -2,7 +2,7 @@
 // node cards. Renders the WORLD-LAYER content (grid + edges + nodes); the pan/zoom viewport frame is
 // owned by the shared GraphCanvas template + useGraphViewport in the parent (#2208). Node = project;
 // edge = dependency contract. The fixed hint/legend overlays are GlanceOverlays (drawn over, untransformed).
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { GlanceStreamMorph } from "./GlanceStreamMorph";
@@ -11,6 +11,7 @@ import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
 import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, isLibraryNode, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
 import { partAroundPanel, type MorphRect } from "./lib/glancePush";
+import { unionRects } from "./lib/morphGrid";
 import { archetypeById, hueColor } from "@/features/teams";
 
 const ERR = "var(--graph-health-error)";
@@ -58,13 +59,17 @@ interface CanvasProps {
   /** The graph's current zoom (`vp.view.scale`) — threaded to the terminal morph so its corner-resize
    *  converts a screen-pixel drag into world units. */
   zoom?: number;
-  /** A live agent's terminal morphed open IN the graph (#2534) — rendered as an oversized node at its
-   *  node's world coords. Null = none open. */
-  chat?: { nodeId: string; paneId: string; name: string; role?: string } | null;
-  onCloseChat?: () => void;
-  /** END the open session (#3049) — kill its PTY + drop the cell from the live set, so a soft-locked
+  /** The live agents whose terminals are morphed open IN the graph (#2534 → MULTI, #3361) — each an
+   *  oversized node grown into its GRID SLOT. Empty = none open. `slot` is computed by the workspace
+   *  from the grid anchored on the FIRST opened node, so two morphs can never overlap. */
+  chats?: { nodeId: string; paneId: string; name: string; role?: string; slot: MorphRect }[];
+  /** Collapse ONE morph back into its node (keeps its PTY alive). */
+  onCloseChat?: (nodeId: string) => void;
+  /** END one open session (#3049) — kill its PTY + drop the cell from the live set, so a soft-locked
    *  agent is fully torn down and triage can be relaunched. */
-  onEndChat?: () => void;
+  onEndChat?: (nodeId: string) => void;
+  /** A resize drag on any morph — resizes the grid's SHARED cell, so every open morph moves as one. */
+  onResizeCell?: (w: number, h: number) => void;
   /** The PREVIEW node morphed open (#2623) — the finished app rendered IN the graph, at its node's
    *  world coords. `source` is null until the verify-build produces one. Null = none open. */
   preview?: { nodeId: string; name: string; source: PreviewSource | null; building?: boolean; onBuild?: () => void; review?: PreviewReview } | null;
@@ -76,7 +81,13 @@ export function GlanceCanvas(p: CanvasProps) {
   const { model, focus } = p;
   // The node whose terminal is morphed open (#2534) — resolved from the live model so its world coords
   // (and thus the card's position) always track the current graph.
-  const chatNode = p.chat ? model.nodes.find((n) => n.id === p.chat!.nodeId) ?? null : null;
+  // The open morphs, resolved against the live model so each card's return box tracks its node (#3361).
+  const chats = p.chats ?? [];
+  const openChats = chats.flatMap((c) => {
+    const node = model.nodes.find((n) => n.id === c.nodeId);
+    return node ? [{ ...c, node }] : [];
+  });
+  const openChatIds = useMemo(() => new Set(openChats.map((c) => c.nodeId)), [openChats]);
   // The PREVIEW node morphed open (#2623) — resolved from the live model so its card tracks the graph.
   const previewNode = p.preview ? model.nodes.find((n) => n.id === p.preview!.nodeId) ?? null : null;
   // A node/edge click: suppressed after a pan-drag, and stopPropagation so it doesn't bubble to the
@@ -86,12 +97,23 @@ export function GlanceCanvas(p: CanvasProps) {
   // The open terminal panel's world box (#2662, reported by the morph) — the graph PARTS around it in
   // four rigid curtains (#2671): every neighbour clears the panel by construction (no clipping) and each
   // curtain keeps its spacing (no node-into-node clipping). Edges of shifted nodes follow.
-  const [morphRect, setMorphRect] = useState<MorphRect | null>(null);
+  // #3361: each open morph reports its own world box; the graph parts around their UNION — one region,
+  // so the four-curtain model is unchanged whether one morph is open or six. Keyed by paneId so a
+  // morph's report replaces its own previous one; it reports null the instant it starts collapsing, so
+  // the neighbours part back in step with the shrink rather than a full exit animation later.
+  const [morphRects, setMorphRects] = useState<Record<string, MorphRect | null>>({});
+  const reportRect = useCallback((paneId: string) => (rect: MorphRect | null) => {
+    setMorphRects((prev) => (prev[paneId] === rect ? prev : { ...prev, [paneId]: rect }));
+  }, []);
+  const morphRect = useMemo(
+    () => unionRects(Object.values(morphRects).filter((r): r is MorphRect => !!r)),
+    [morphRects],
+  );
   const nodeById = useMemo(() => new Map(model.nodes.map((n) => [n.id, n])), [model.nodes]);
   const pushMap = useMemo(() => {
     if (!morphRect) return new Map<string, { dx: number; dy: number }>();
-    return partAroundPanel(model.nodes, morphRect, p.chat?.nodeId);
-  }, [morphRect, model.nodes, p.chat?.nodeId]);
+    return partAroundPanel(model.nodes, morphRect, openChatIds);
+  }, [morphRect, model.nodes, openChatIds]);
 
   // The library dimension(s) present in the fenced band (#3119) — drive its accent + header. A
   // single-dimension band reads in that graph's colour + name (kit-only stays cyan "UI KITS",
@@ -305,12 +327,19 @@ export function GlanceCanvas(p: CanvasProps) {
 
       {/* A live agent's terminal, morphed open IN the graph (#2534): an oversized node grown at the
           clicked node's world coords, so it pans/zooms/scales with the canvas. No portal, no scrim. */}
-      {chatNode && p.chat && p.onCloseChat && (
-        // Keyed by paneId (#3049): switching to another live node REMOUNTS the morph so it grows from
-        // the newly-clicked node's box (not the old one's), and the old morph's pending exit timer is
-        // cancelled on unmount — so clicking another node GROWS it instead of collapsing everything.
-        <GlanceStreamMorph key={p.chat.paneId} node={chatNode} paneId={p.chat.paneId} name={p.chat.name} role={p.chat.role} zoom={p.zoom} onRect={setMorphRect} onClose={p.onCloseChat} onEnd={p.onEndChat} />
-      )}
+      {p.onCloseChat && openChats.map((c) => (
+        // Keyed by paneId (#3049/#3361): a morph's identity is its session, so opening or closing a
+        // SIBLING never remounts it — its terminal keeps its TerminalHost claim and its pending exit
+        // timer is only ever cancelled by its own unmount.
+        <GlanceStreamMorph
+          key={c.paneId}
+          node={c.node} slot={c.slot} paneId={c.paneId} name={c.name} role={c.role} zoom={p.zoom}
+          onRect={reportRect(c.paneId)}
+          onResizeCell={p.onResizeCell}
+          onClose={() => p.onCloseChat!(c.nodeId)}
+          onEnd={p.onEndChat ? () => p.onEndChat!(c.nodeId) : undefined}
+        />
+      ))}
 
       {/* The PREVIEW node, morphed open into the finished application IN the graph (#2623). */}
       {previewNode && p.preview && p.onClosePreview && (
