@@ -2,24 +2,17 @@
 // node cards. Renders the WORLD-LAYER content (grid + edges + nodes); the pan/zoom viewport frame is
 // owned by the shared GraphCanvas template + useGraphViewport in the parent (#2208). Node = project;
 // edge = dependency contract. The fixed hint/legend overlays are GlanceOverlays (drawn over, untransformed).
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import { GlanceStreamMorph } from "./GlanceStreamMorph";
 import { GlancePreviewMorph } from "./GlancePreviewMorph";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import type { PreviewReview } from "./usePreviewReview";
-import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, isLibraryNode, libraryGraphOf, isLibraryEdge, NW, NH, edgeGeom, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
-import { partAroundPanel, type MorphRect } from "./lib/glancePush";
+import { ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, EDGE_META, LIBRARY_META, isLibraryNode, libraryGraphOf, isLibraryEdge, NW, NH, type GraphModel, type GHealth, type GCategory, type GLibraryGraph } from "./lib/glanceGraph";
 import { archetypeById, hueColor } from "@/features/teams";
 
 const ERR = "var(--graph-health-error)";
 const HEALTH_ROWS: GHealth[] = ["idle", "healthy", "warning", "error", "off"];
-
-// The neighbour-parting motion is driven off the SAME easing + duration as the panel's grow (the
-// `.glance-card` transition in glance.css) — keep these in sync — so the panel growing and the graph
-// parting read as one coordinated motion instead of two clocks racing (the old .2s vs .4s mismatch).
-const MORPH_EASE = ".4s cubic-bezier(.22, .61, .36, 1)";
 
 const REST_N = 0.14, REST_E = 0.06;
 // Project-network (L0) legend rows. The accent buckets are the LIFECYCLE categories (#2583 — what KIND
@@ -55,16 +48,13 @@ interface CanvasProps {
   onHoverEdge: (id: string | null) => void;
   onSelectNode: (id: string) => void;
   onSelectEdge: (id: string) => void;
-  /** The graph's current zoom (`vp.view.scale`) — threaded to the terminal morph so its corner-resize
-   *  converts a screen-pixel drag into world units. */
+  /** The graph's current zoom (`vp.view.scale`) — threaded to the world-layer preview morph so its
+   *  corner-resize converts a screen-pixel drag into world units. */
   zoom?: number;
-  /** A live agent's terminal morphed open IN the graph (#2534) — rendered as an oversized node at its
-   *  node's world coords. Null = none open. */
-  chat?: { nodeId: string; paneId: string; name: string; role?: string } | null;
-  onCloseChat?: () => void;
-  /** END the open session (#3049) — kill its PTY + drop the cell from the live set, so a soft-locked
-   *  agent is fully torn down and triage can be relaunched. */
-  onEndChat?: () => void;
+  /** Node ids whose session is OPEN in the terminal grid dock (#3361) — drawn with an accent ring, so
+   *  which nodes are open stays legible now that their terminals live below the canvas rather than
+   *  on top of the node. */
+  openNodeIds?: ReadonlySet<string>;
   /** The PREVIEW node morphed open (#2623) — the finished app rendered IN the graph, at its node's
    *  world coords. `source` is null until the verify-build produces one. Null = none open. */
   preview?: { nodeId: string; name: string; source: PreviewSource | null; building?: boolean; onBuild?: () => void; review?: PreviewReview } | null;
@@ -74,24 +64,17 @@ interface CanvasProps {
 /** The world-layer content — placed inside GraphCanvas's transformed world box. */
 export function GlanceCanvas(p: CanvasProps) {
   const { model, focus } = p;
-  // The node whose terminal is morphed open (#2534) — resolved from the live model so its world coords
-  // (and thus the card's position) always track the current graph.
-  const chatNode = p.chat ? model.nodes.find((n) => n.id === p.chat!.nodeId) ?? null : null;
   // The PREVIEW node morphed open (#2623) — resolved from the live model so its card tracks the graph.
   const previewNode = p.preview ? model.nodes.find((n) => n.id === p.preview!.nodeId) ?? null : null;
   // A node/edge click: suppressed after a pan-drag, and stopPropagation so it doesn't bubble to the
   // backdrop deselect (Glance nodes aren't [data-node]) (#2232).
   const click = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); if (!p.dragMoved.current) fn(); };
 
-  // The open terminal panel's world box (#2662, reported by the morph) — the graph PARTS around it in
-  // four rigid curtains (#2671): every neighbour clears the panel by construction (no clipping) and each
-  // curtain keeps its spacing (no node-into-node clipping). Edges of shifted nodes follow.
-  const [morphRect, setMorphRect] = useState<MorphRect | null>(null);
+  // #3361 removed the node-PARTING machinery (`morphRect` / `partAroundPanel` / the edge re-route): it
+  // existed only to make room for the in-graph terminal morph, which grew over its neighbours. Terminals
+  // now tile in the canvas DOCK, outside the world layer, so nothing overlaps the graph and there is
+  // nothing to part around. (The ▷ preview morph never reported a rect, so it never parted either.)
   const nodeById = useMemo(() => new Map(model.nodes.map((n) => [n.id, n])), [model.nodes]);
-  const pushMap = useMemo(() => {
-    if (!morphRect) return new Map<string, { dx: number; dy: number }>();
-    return partAroundPanel(model.nodes, morphRect, p.chat?.nodeId);
-  }, [morphRect, model.nodes, p.chat?.nodeId]);
 
   // The library dimension(s) present in the fenced band (#3119) — drive its accent + header. A
   // single-dimension band reads in that graph's colour + name (kit-only stays cyan "UI KITS",
@@ -141,30 +124,17 @@ export function GlanceCanvas(p: CanvasProps) {
           const width = (e.isCycle ? 2.3 : arch ? 1.8 : meta.w) + (inFocus && focus ? 0.7 : 0);
           const dash = e.isCycle ? "7 6" : arch ? (ARCH_DASH[arch.style] ?? "") : meta.dash;
           const opacity = e.isCycle ? (focus ? (inFocus ? 1 : 0.4) : 0.95) : (focus ? (inFocus ? 1 : REST_E) : 0.82);
-          // When either endpoint is pushed aside by the open panel (#2662), re-route the edge to the
-          // displaced node boxes so it stays attached; else use the model's precomputed path.
-          const dF = pushMap.get(e.from), dT = pushMap.get(e.to);
-          let d = e.d, arrow = e.arrow;
-          if (morphRect && (dF || dT)) {
-            const F = nodeById.get(e.from), T = nodeById.get(e.to);
-            if (F && T) {
-              const g = edgeGeom({ x: F.x + (dF?.dx ?? 0), y: F.y + (dF?.dy ?? 0), id: e.from },
-                                 { x: T.x + (dT?.dx ?? 0), y: T.y + (dT?.dy ?? 0), id: e.to }, e.isCycle, e.kind);
-              d = g.d; arrow = g.arrow;
-            }
-          }
-          // Ease the path only while a panel is open (WebView2/Chromium animates `d`); off otherwise so
-          // normal graph updates (drill/layout) don't animate. Matched to the panel's grow (MORPH_EASE)
-          // so a re-routed edge tracks its parting endpoints in lockstep with the panel (#2671).
-          const pathTween = morphRect ? `d ${MORPH_EASE}` : undefined;
+          // Nodes no longer shift (#3361 retired the parting), so an edge always uses the model's
+          // precomputed path.
+          const d = e.d, arrow = e.arrow;
           return (
             <g key={e.id} opacity={opacity} onMouseEnter={() => p.onHoverEdge(e.id)} onMouseLeave={() => p.onHoverEdge(null)} onClick={click(() => p.onSelectEdge(e.id))} style={{ cursor: "pointer", transition: "opacity .18s" }}>
               <path d={d} stroke="transparent" strokeWidth={16} fill="none" />
               {/* stroke/fill via `style` (not the SVG attribute) so the `var(--graph-*)` token RESOLVES —
                   CSS custom properties don't resolve in SVG presentation attributes (#2618). */}
               <path d={d} strokeWidth={width} strokeDasharray={dash} fill="none" strokeLinecap="round"
-                style={{ stroke: color, transition: pathTween, ...(e.isCycle ? { animation: "glance-dashmove .75s linear infinite" } : {}) }} />
-              <path d={arrow} style={{ fill: color, transition: pathTween }} />
+                style={{ stroke: color, ...(e.isCycle ? { animation: "glance-dashmove .75s linear infinite" } : {}) }} />
+              <path d={arrow} style={{ fill: color }} />
             </g>
           );
         })}
@@ -177,14 +147,12 @@ export function GlanceCanvas(p: CanvasProps) {
         if (n.resource) {
           const selected = p.selNodeId === n.id;
           const inFocus = focus ? focus.nodes.has(n.id) : true;
-          const push = pushMap.get(n.id);
           const accent = "var(--fg-muted)";
           const border = selected ? "var(--accent)" : focus && inFocus ? accent : "var(--border-soft)";
           return (
             <Box key={n.id} data-glance-node={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
               style={{ position: "absolute", left: n.x, top: n.y, width: NW, height: NH, cursor: "pointer",
-                transform: push ? `translate(${push.dx}px, ${push.dy}px)` : undefined,
-                zIndex: selected ? 6 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: `opacity .18s ease, transform ${MORPH_EASE}` }}>
+                zIndex: selected ? 6 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: "opacity .18s ease" }}>
               <Box style={{ width: "100%", height: "100%", background: "var(--bg-soft)", border: `1.5px dashed ${border}`,
                 borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
                 boxShadow: selected ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)" : "0 2px 8px rgba(0,0,0,.35)" }}>
@@ -206,13 +174,11 @@ export function GlanceCanvas(p: CanvasProps) {
           const consumers = model.edges.reduce((acc, e) => acc + (e.to === n.id ? 1 : 0), 0);
           const selected = p.selNodeId === n.id;
           const inFocus = focus ? focus.nodes.has(n.id) : true;
-          const push = pushMap.get(n.id);
           const border = selected ? "var(--accent)" : (focus && inFocus ? lib.color : `color-mix(in oklch, ${lib.color} 45%, transparent)`);
           return (
             <Box key={n.id} data-glance-node={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
               style={{ position: "absolute", left: n.x, top: n.y, width: NW, height: NH, cursor: "pointer",
-                transform: push ? `translate(${push.dx}px, ${push.dy}px)` : undefined,
-                zIndex: selected ? 6 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: `opacity .18s ease, transform ${MORPH_EASE}` }}>
+                zIndex: selected ? 6 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? 1 : REST_N) : 1, transition: "opacity .18s ease" }}>
               <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1.5px dashed ${border}`,
                 borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
                 boxShadow: selected ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)" : "0 2px 8px rgba(0,0,0,.45)", transition: "border-color .15s, box-shadow .15s" }}>
@@ -266,21 +232,22 @@ export function GlanceCanvas(p: CanvasProps) {
           : hazardCycle ? `color-mix(in oklch, ${ERR} 55%, transparent)`
           : loopHue ? `color-mix(in oklch, ${loopHue} 55%, transparent)`
           : (focus && inFocus ? "var(--border)" : "var(--border-soft)");
+        // This node's session is OPEN in the terminal grid dock (#3361) — ring it, so the graph still says
+        // which nodes you have open now that their terminals live below the canvas instead of on the node.
+        // Ranked above the error ring but below selection, matching the border precedence above.
+        const isOpen = !!p.openNodeIds?.has(n.id);
         const boxShadow = selected ? "0 0 0 4px color-mix(in oklch, var(--accent) 18%, transparent)"
+          : isOpen ? "0 0 0 3px color-mix(in oklch, var(--accent) 34%, transparent), 0 2px 8px rgba(0,0,0,.45)"
           : isError && !inherited ? `0 0 0 3px color-mix(in oklch, ${ERR} 22%, transparent), 0 2px 8px rgba(0,0,0,.45)`
           : "0 2px 8px rgba(0,0,0,.45)";
-        // Pushed clear of the open terminal panel, if it overlaps (#2662) — the panel makes room.
-        const push = pushMap.get(n.id);
         // A deactivated node (#3239) is dimmed in place — muted, but a touch more visible while selected so
         // its open details pane (where it's turned back on) still reads as the focus.
         const offOpacity = isOff ? (selected ? 0.72 : 0.42) : 1;
         return (
-          <Box key={n.id} data-glance-node={n.id} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
+          <Box key={n.id} data-glance-node={n.id} data-glance-open={isOpen || undefined} onMouseEnter={() => p.onHoverNode(n.id)} onMouseLeave={() => p.onHoverNode(null)} onClick={click(() => p.onSelectNode(n.id))}
             style={{ position: "absolute", left: n.x, top: n.y, width: NW, height: NH, cursor: "pointer",
-              transform: push ? `translate(${push.dx}px, ${push.dy}px)` : undefined,
-              // Part in lockstep with the panel's grow (MORPH_EASE), so the two are one motion (#2671).
-              zIndex: selected ? 6 : isError && !inherited ? 5 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? offOpacity : REST_N) : offOpacity, transition: `opacity .18s ease, transform ${MORPH_EASE}` }}>
-            <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${border}`,
+              zIndex: selected ? 6 : isOpen ? 5 : isError && !inherited ? 5 : inFocus ? 3 : 1, opacity: focus ? (inFocus ? offOpacity : REST_N) : offOpacity, transition: "opacity .18s ease" }}>
+            <Box style={{ width: "100%", height: "100%", background: "var(--bg-elev)", border: `1px solid ${isOpen && !selected ? "var(--accent)" : border}`,
               borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", justifyContent: "center",
               boxShadow, transition: "border-color .15s, box-shadow .15s" }}>
               <Box style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -303,14 +270,8 @@ export function GlanceCanvas(p: CanvasProps) {
         );
       })}
 
-      {/* A live agent's terminal, morphed open IN the graph (#2534): an oversized node grown at the
-          clicked node's world coords, so it pans/zooms/scales with the canvas. No portal, no scrim. */}
-      {chatNode && p.chat && p.onCloseChat && (
-        // Keyed by paneId (#3049): switching to another live node REMOUNTS the morph so it grows from
-        // the newly-clicked node's box (not the old one's), and the old morph's pending exit timer is
-        // cancelled on unmount — so clicking another node GROWS it instead of collapsing everything.
-        <GlanceStreamMorph key={p.chat.paneId} node={chatNode} paneId={p.chat.paneId} name={p.chat.name} role={p.chat.role} zoom={p.zoom} onRect={setMorphRect} onClose={p.onCloseChat} onEnd={p.onEndChat} />
-      )}
+      {/* Agent terminals are NOT rendered here since #3361 — they tile in the canvas dock
+          (`GlanceTerminalGrid`), outside the world layer, so several stay open and legible at once. */}
 
       {/* The PREVIEW node, morphed open into the finished application IN the graph (#2623). */}
       {previewNode && p.preview && p.onClosePreview && (
