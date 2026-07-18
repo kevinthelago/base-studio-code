@@ -27,6 +27,7 @@ import {
   roleDeniedTools,
   roleWriteRules,
   sessionScopes,
+  restrictedRoleCommands,
 } from "@/shared/lib/session/sessionRoles";
 import { useScreenSession } from "@/shared/lib/session/useScreenSession";
 import { BUILTIN_PERSONAS } from "@/features/personas";
@@ -49,7 +50,7 @@ export const DESIGNER_PANE_ID = DESIGN_STUDIO_SESSION_ID;
  *  (`bsc loop say` + `bsc shot preview` per turn). `bsc request new`/`bsc request list` (#3300) is the
  *  designer→debug channel — on a `bsc ui` wall it FILES a request for the debug session to fix (#3298)
  *  instead of asking for out-of-surface permissions; `resolve` is NOT here (that's the debug contract). */
-export const DESIGNER_ALLOWED_COMMANDS = ["bsc ui", "bsc component", "bsc shot preview", "bsc loop", "bsc request new", "bsc request list"];
+export const DESIGNER_ALLOWED_COMMANDS = restrictedRoleCommands("designer");
 
 export interface DesignerTerminalHandle {
   /** Host element for the xterm canvas — attach to the terminal container div. */
