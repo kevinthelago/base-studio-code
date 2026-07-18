@@ -742,6 +742,7 @@ name = "bsc"
 version = "0.1.0"
 dependencies = [
  "bsc-blueprint",
+ "bsc-cad",
  "bsc-cli-util",
  "bsc-component",
  "bsc-data",
@@ -806,6 +807,7 @@ dependencies = [
 name = "bsc-cad"
 version = "0.1.0"
 dependencies = [
+ "bsc-cli-util",
  "serde",
  "serde_json",
 ]
