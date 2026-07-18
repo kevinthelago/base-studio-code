@@ -43,8 +43,16 @@
         { "key": "bg", "name": "--btn-bg", "type": "color", "default": "var(--bg-elev)", "governs": "button background" },
         { "key": "bg-hover", "name": "--btn-bg-hover", "type": "color", "default": "var(--bg-elev2)", "governs": "button hover background" },
         { "key": "border", "name": "--btn-border", "type": "color", "default": "var(--border-soft)", "governs": "button border colour" },
+        { "key": "border-width", "name": "--btn-border-width", "type": "dimension", "default": "1px", "governs": "button border thickness" },
         { "key": "fg", "name": "--btn-fg", "type": "color", "default": "var(--fg)", "governs": "button text colour" },
-        { "key": "radius", "name": "--btn-radius", "type": "dimension", "default": "var(--r-md)", "governs": "button corner radius" }
+        { "key": "radius", "name": "--btn-radius", "type": "dimension", "default": "var(--r-md)", "governs": "button corner radius" },
+        { "key": "height", "name": "--btn-height", "type": "dimension", "default": "28px", "governs": "button height" },
+        { "key": "pad-x", "name": "--btn-pad-x", "type": "dimension", "default": "12px", "governs": "button horizontal padding" },
+        { "key": "gap", "name": "--btn-gap", "type": "dimension", "default": "6px", "governs": "gap between a button's icon and its label" },
+        { "key": "font-family", "name": "--btn-font-family", "type": "font", "default": "var(--mono)", "governs": "button typeface" },
+        { "key": "font-size", "name": "--btn-font-size", "type": "dimension", "default": "11px", "governs": "button text size" },
+        { "key": "font-weight", "name": "--btn-font-weight", "type": "number", "default": "400", "governs": "button text weight" },
+        { "key": "disabled-opacity", "name": "--btn-disabled-opacity", "type": "number", "default": "0.4", "governs": "opacity of a disabled button" }
       ],
       "variants": [
         {
@@ -52,7 +60,34 @@
           "governs": "the primary (accent) button",
           "tokens": [
             { "key": "bg", "name": "--btn-primary-bg", "type": "color", "default": "var(--accent)", "governs": "primary button background" },
-            { "key": "fg", "name": "--btn-primary-fg", "type": "color", "default": "#1a120a", "governs": "primary button text colour" }
+            { "key": "fg", "name": "--btn-primary-fg", "type": "color", "default": "#1a120a", "governs": "primary button text colour" },
+            { "key": "border", "name": "--btn-primary-border", "type": "color", "default": "transparent", "governs": "primary button border colour" },
+            { "key": "font-weight", "name": "--btn-primary-font-weight", "type": "number", "default": "600", "governs": "primary button text weight" },
+            { "key": "hover-brightness", "name": "--btn-primary-hover-brightness", "type": "number", "default": "1.05", "governs": "brightness multiplier applied to the primary button on hover" }
+          ]
+        },
+        {
+          "variant": "ghost",
+          "governs": "the ghost (chromeless) button",
+          "tokens": [
+            { "key": "bg", "name": "--btn-ghost-bg", "type": "color", "default": "transparent", "governs": "ghost button background" }
+          ]
+        },
+        {
+          "variant": "danger",
+          "governs": "the destructive button",
+          "tokens": [
+            { "key": "fg", "name": "--btn-danger-fg", "type": "color", "default": "var(--danger)", "governs": "danger button text colour" },
+            { "key": "border", "name": "--btn-danger-border", "type": "color", "default": "color-mix(in oklch, var(--danger), transparent 70%)", "governs": "danger button border colour" }
+          ]
+        },
+        {
+          "variant": "sm",
+          "governs": "the small size variant",
+          "tokens": [
+            { "key": "height", "name": "--btn-sm-height", "type": "dimension", "default": "24px", "governs": "small button height" },
+            { "key": "pad-x", "name": "--btn-sm-pad-x", "type": "dimension", "default": "9px", "governs": "small button horizontal padding" },
+            { "key": "font-size", "name": "--btn-sm-font-size", "type": "dimension", "default": "10.5px", "governs": "small button text size" }
           ]
         }
       ]
