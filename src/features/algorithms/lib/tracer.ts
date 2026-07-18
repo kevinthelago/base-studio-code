@@ -11,7 +11,53 @@
 //
 // This is the array tracer; TracedMatrix / TracedGraph / TracedTree follow the same shape as their
 // renderers land (#3179–#3185), so instrumented execution generalizes to every data type.
-import type { ArrayFrame, ArrayOp, Frame, GraphFrame, GraphOp, MatrixFrame, MatrixOp, PanelsFrame, ScalarFrame, ScalarOp, StackFrame, StackOp, StructureFrame, TreeFrame, TreeOp } from "./trace";
+import type { ArrayFrame, ArrayOp, FrameMeta, Frame, GraphFrame, GraphOp, MatrixFrame, MatrixOp, PanelsFrame, ScalarFrame, ScalarOp, SourceRange, StackFrame, StackOp, StructureFrame, TreeFrame, TreeOp } from "./trace";
+
+/* ─────────────────────────────── source provenance (#3250) ─────────────────────────────── */
+
+// WHERE the currently-executing tracer call came from in the trace-program's source. An AMBIENT STACK
+// rather than a parameter on every verb, because the provenance must reach `emit` without changing a
+// single tracer signature — the algorithm still calls `a.swap(i, j)`, and the instrumented program
+// (`viz/examples/vizInstrument.ts`) wraps that call in `withSourceLoc` so the frame it emits knows its
+// origin. It is a STACK, not a single slot, so a NESTED traced call (`a.set(i, a.get(j))`) restores the
+// outer range when the inner one returns — a single slot would leave the outer frame wearing the inner
+// call's location.
+//
+// Module-level state is safe here: the tracer is synchronous and single-threaded (each `run*` call runs
+// the algorithm to completion before returning), and stored programs run in their own Worker. Nothing
+// interleaves, and `withSourceLoc` pops in a `finally` so a throwing program cannot leak a stale entry.
+const LOC_STACK: SourceRange[] = [];
+
+/**
+ * Run `fn` with `loc` as the ambient source location, so every frame it emits is stamped with it (#3250).
+ *
+ * @param loc the source range of the call being executed; `undefined` runs `fn` unstamped (an
+ *   uninstrumented program), which keeps the instrumented and plain paths on one code path.
+ * @param fn the traced call to execute.
+ * @returns whatever `fn` returns (the tracer verbs' return values pass straight through).
+ */
+export function withSourceLoc<T>(loc: SourceRange | undefined, fn: () => T): T {
+  if (!loc) return fn();
+  LOC_STACK.push(loc);
+  try {
+    return fn();
+  } finally {
+    LOC_STACK.pop(); // popped even when the program throws — no stale provenance leaks into later runs
+  }
+}
+
+/** The innermost ambient source location, or `undefined` outside any instrumented call. */
+export function currentSourceLoc(): SourceRange | undefined {
+  return LOC_STACK[LOC_STACK.length - 1];
+}
+
+/** Stamp the ambient source location onto a freshly built frame and return it. No-op (no `loc` key at
+ *  all) when the program is uninstrumented, so plain traces stay byte-identical to before #3250. */
+function stampLoc<F extends FrameMeta>(frame: F): F {
+  const loc = currentSourceLoc();
+  if (loc) frame.loc = loc;
+  return frame;
+}
 
 /** A durable per-cell mark an algorithm can set (matches the ArrayOp `mark` vocabulary). */
 export type ArrayMark = "sorted" | "pivot" | "min" | "found";
@@ -111,7 +157,7 @@ export class TracedArray {
     const frame: ArrayFrame = { structure: "array", data: [...this.a] };
     if (ops && ops.length) frame.ops = ops;
     if (Object.keys(this.cur).length) frame.cursors = { ...this.cur };
-    this.log.push(frame);
+    this.log.push(stampLoc(frame));
     this.sink?.(frame);
   }
 }
@@ -221,7 +267,7 @@ export class TracedMatrix {
     const frame: MatrixFrame = { structure: "matrix", data: this.m.map((row) => [...row]) };
     if (ops && ops.length) frame.ops = ops;
     if (Object.keys(this.cur).length) frame.cursors = { ...this.cur };
-    this.log.push(frame);
+    this.log.push(stampLoc(frame));
     this.sink?.(frame);
   }
 }
@@ -369,7 +415,7 @@ export class TracedGraph {
     if (Object.keys(this.marks).length) frame.marks = { ...this.marks };
     if (Object.keys(this.roles).length) frame.roles = { ...this.roles };
     if (Object.keys(this.cur).length) frame.cursors = { ...this.cur };
-    this.log.push(frame);
+    this.log.push(stampLoc(frame));
     this.sink?.(frame);
   }
 }
@@ -454,7 +500,7 @@ export class TracedStack {
     if (this.mode !== "stack") frame.mode = this.mode;
     if (ops && ops.length) frame.ops = ops;
     if (Object.keys(this.cur).length) frame.cursors = { ...this.cur };
-    this.log.push(frame);
+    this.log.push(stampLoc(frame));
     this.sink?.(frame);
   }
 }
@@ -528,7 +574,7 @@ export class TracedScalar {
   private emit(ops?: Record<string, ScalarOp>): void {
     const frame: ScalarFrame = { structure: "scalar", values: { ...this.vals } };
     if (ops && Object.keys(ops).length) frame.ops = ops;
-    this.log.push(frame);
+    this.log.push(stampLoc(frame));
     this.sink?.(frame);
   }
 }
@@ -659,7 +705,7 @@ export class TracedTree {
     };
     if (ops && ops.length) frame.ops = ops;
     if (Object.keys(this.marks).length) frame.marks = { ...this.marks };
-    this.log.push(frame);
+    this.log.push(stampLoc(frame));
     this.sink?.(frame);
   }
 }
@@ -725,7 +771,10 @@ export class TracedScene {
       this.started = true;
       this.log.push({ panels: { ...this.initial } }); // beat 0 — every declared panel at rest
     }
-    this.log.push({ panels: { ...this.current } });
+    // Beat 0 above is the at-rest snapshot — it precedes every op, so it is deliberately NOT stamped.
+    // This beat IS an op, so it carries that op's source range (#3250); its inner panel frames were
+    // already stamped by their own structure's emit.
+    this.log.push(stampLoc<PanelsFrame>({ panels: { ...this.current } }));
   }
 
   /** Open a CROSS-PANEL beat (#3286): ops on several panels fold into ONE `PanelsFrame` until {@link
