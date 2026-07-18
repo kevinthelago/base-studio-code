@@ -49,6 +49,9 @@ interface InspectorProps {
   /** Open the selected agent's REAL PTY stream in the dock (#2369). Provided only for a drilled, LIVE
    *  agent node — its presence is what renders the "Open stream" action. */
   onOpenStream?: (nodeId: string) => void;
+  /** (Re)start the selected node's session (#3341). Provided only for a drilled fleet node that's STOPPED
+   *  — its presence is what renders the "▶ Start" action (whole-fleet start lives in the header). */
+  onStart?: (nodeId: string) => void;
 }
 
 // Render a library-node blurb, wrapping `backtick`-delimited spans in <code> — so the ui kit's `bsc ui`
@@ -77,7 +80,7 @@ function Header({ title, onClose }: { title: string; onClose: () => void }) {
   );
 }
 
-export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, onRemoveEdge, autoTriageOn, onToggleAutoTriage, offOn, onToggleOff, onOpenStream }: InspectorProps) {
+export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, onRemoveEdge, autoTriageOn, onToggleAutoTriage, offOn, onToggleOff, onOpenStream, onStart }: InspectorProps) {
   if (selType === "node" && selId) {
     const n = model.nodes.find((x) => x.id === selId);
     if (!n) return null;
@@ -291,6 +294,10 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
           {/* Open the agent's REAL live PTY stream in the dock (#2369) — only for a live drilled agent. */}
           {onOpenStream && (
             <Button variant="primary" onClick={() => onOpenStream(selId)} style={{ width: "100%", marginTop: 18 }}>Open stream ↗</Button>
+          )}
+          {/* (Re)start THIS stopped fleet node (#3341) — the individual-node start, in the right pane. */}
+          {onStart && (
+            <Button variant="primary" onClick={() => onStart(selId)} style={{ width: "100%", marginTop: 18 }}>▶ Start node</Button>
           )}
         </Box>
       </Box>
