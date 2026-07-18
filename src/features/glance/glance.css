@@ -38,9 +38,9 @@
   .glance-card, .glance-card-body { transition-duration: .001ms !important; }
 }
 
-/* Hover ▶ START button on a graph node (#3337) — hidden until the card is hovered, so the graph stays
-   calm at rest and the start affordance appears where the pointer is. */
-.glance-node-start { opacity: 0; transition: opacity .15s ease; }
+/* ▶ START button on a graph node (#3337) — VISIBLE at rest (dimmed) so it's discoverable (#3339, was
+   opacity:0 hover-only → undiscoverable), brightening to full on card hover. */
+.glance-node-start { opacity: 0.72; transition: opacity .15s ease; }
 [data-glance-node]:hover .glance-node-start { opacity: 1; }
 .glance-node-start:hover { filter: brightness(1.12); }
 @media (prefers-reduced-motion: reduce) { .glance-node-start { transition-duration: .001ms; } }
