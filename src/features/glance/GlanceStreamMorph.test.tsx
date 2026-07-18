@@ -177,7 +177,11 @@ describe("GlanceStreamMorph (#2401/#2534)", () => {
     const { rerender } = render(<GlanceStreamMorph node={NODE} slot={SLOT} paneId="proj:api-client" name="api-client" onClose={() => {}} />);
     expect(screen.getByPlaceholderText("Message the agent — Enter to send")).toBeInTheDocument();
     // A turn opens ("run") → the input is hidden and a working affordance takes its place.
-    act(() => useAppStore.setState({ paneStatus: { "proj:api-client": "run" } }));
+    // NOTE the braces: this store's `setState` is persist-wrapped and returns a PROMISE, so a concise
+    // arrow hands `act` a thenable, which silently switches it to ASYNC mode — the update is applied to
+    // the store but React never flushes it before the assertions, and the still-open act scope also
+    // swallows the following `rerender`. (Same class of landmine as #3390's returned-mock teardown.)
+    act(() => { useAppStore.setState({ paneStatus: { "proj:api-client": "run" } }); });
     rerender(<GlanceStreamMorph node={NODE} slot={SLOT} paneId="proj:api-client" name="api-client" onClose={() => {}} />);
     expect(screen.queryByPlaceholderText("Message the agent — Enter to send")).toBeNull();
     expect(screen.getByText(/working — input returns/)).toBeInTheDocument();
