@@ -148,3 +148,49 @@ describe("TracePlayer (#3176)", () => {
     }
   });
 });
+
+// The code column (#3250) — the animation paired with its source. The player already owns the frame
+// cursor, so the highlight is driven from the SAME state as the picture; these assert they move together.
+describe("TracePlayer source column (#3250)", () => {
+  const SRC = `({ run(a) { a.compare(0, 1); a.swap(0, 1); } })`;
+  const range = (text: string) => ({ start: SRC.indexOf(text), end: SRC.indexOf(text) + text.length, line: 1 });
+
+  /** Three beats: at-rest (no provenance), then a compare, then a swap. */
+  const locTrace = (): Generator<Frame> =>
+    (function* () {
+      yield { structure: "array", data: [1, 0] };
+      yield { structure: "array", data: [1, 0], loc: range("a.compare(0, 1)") };
+      yield { structure: "array", data: [0, 1], loc: range("a.swap(0, 1)") };
+    })();
+
+  /** The currently highlighted span, or null when nothing is lit. */
+  const litSpan = () => document.querySelector("[data-op-span]")?.textContent ?? null;
+
+  it("renders no code column when no source is given (the inline preview is unchanged)", () => {
+    render(<TracePlayer factory={locTrace} renderers={{ array: ArrayView }} />);
+    expect(screen.queryByLabelText("Trace-program source")).toBeNull();
+  });
+
+  it("renders the source column when given one", () => {
+    render(<TracePlayer factory={locTrace} renderers={{ array: ArrayView }} source={SRC} />);
+    expect(screen.getByLabelText("Trace-program source").textContent).toBe(SRC);
+  });
+
+  it("moves the highlight to the executing op on every beat", () => {
+    render(<TracePlayer factory={locTrace} renderers={{ array: ArrayView }} source={SRC} />);
+    // Beat 0 is the array at rest — it precedes any op, so nothing is lit.
+    expect(litSpan()).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Step forward"));
+    expect(litSpan()).toBe("a.compare(0, 1)");
+    expect(screen.getByTestId("array-view").textContent).toBe("1,0"); // picture + code in step
+
+    fireEvent.click(screen.getByLabelText("Step forward"));
+    expect(litSpan()).toBe("a.swap(0, 1)");
+    expect(screen.getByTestId("array-view").textContent).toBe("0,1");
+
+    // Stepping BACK rewinds the highlight too — it tracks the cursor, not a monotonic counter.
+    fireEvent.click(screen.getByLabelText("Step back"));
+    expect(litSpan()).toBe("a.compare(0, 1)");
+  });
+});

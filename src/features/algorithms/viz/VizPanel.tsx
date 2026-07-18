@@ -110,7 +110,10 @@ export function VizStage({ viz, implName, onBack }: { viz: VizExample; implName:
       </Row>
 
       <Box className="algo-viz-stage-body">
-        <TracePlayer factory={factory} renderers={viz.renderers} fps={4} autoPlay loop controls />
+        {/* The stage is the ONLY surface that pairs the animation with its code (#3250) — it has the room
+            for two columns, and the inline preview deliberately stays a bare moving picture. `viz.source`
+            is set only for a stored trace-program, so an in-app one simply shows no column. */}
+        <TracePlayer factory={factory} renderers={viz.renderers} fps={4} autoPlay loop controls source={viz.source} />
       </Box>
 
       <Stack gap={8} className="algo-viz-stage-state">
