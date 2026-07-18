@@ -18,7 +18,7 @@ import { configDefaults } from "vitest/config";
  * Lives in its own module so the config's excludes are importable by tests without evaluating
  * `vitest.config.ts`, whose `import.meta.url` is not a file URL once Vitest transforms it.
  *
- * `e2e/**` is the OTHER discovery exclusion (#3264/#3411): the Playwright browser harness is
+ * `e2e/**` is the OTHER discovery exclusion (#3264/#3409/#3411): the Playwright browser harness is
  * deliberately outside the default gate, and its specs match vitest's default `*.spec.ts` include
  * glob. It was documented as excluded from vitest discovery but never actually listed here, so a
  * root `npx vitest run` collected `e2e/previewInteraction.spec.ts` and the suite failed to resolve

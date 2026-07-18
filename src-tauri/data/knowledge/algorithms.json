@@ -316,7 +316,7 @@
       "tech": "typescript",
       "role": "algorithm",
       "kind": "sort",
-      "vizCode": "({ datatype: \"array\", input: [5, 2, 9, 1, 6, 3], run(a) { for (let i = 1; i < a.length; i++) { let j = i; a.cursor(\"i\", i); while (j > 0) { a.cursor(\"j\", j); if (a.compare(j - 1, j) <= 0) break; a.swap(j - 1, j); j--; } } a.markSorted(); } })",
+      "vizCode": "({\n  datatype: \"array\",\n  input: [5, 2, 9, 1, 6, 3],\n  run(a) {\n    // Insertion sort — walk each new value down into the sorted prefix.\n    for (let i = 1; i < a.length; i++) {\n      let j = i;\n      a.cursor(\"i\", i);\n      while (j > 0) {\n        a.cursor(\"j\", j);\n        if (a.compare(j - 1, j) <= 0) break;\n        a.swap(j - 1, j);\n        j--;\n      }\n    }\n    a.markSorted();\n  },\n})",
       "name": "sort",
       "summary": "In-place insertion sort authored as a step-yielding generator (#3171 generator-as-source): the plain `sort` drains it to order the array, and the Algorithms Visualization pane animates the SAME yields — compare/swap/set verbs bound to the <ArrayView> renderer's designed animations. The array proof-of-loop (#3178/#3177) for the algorithm-visualization epic.",
       "composes": ["typescript.number"],

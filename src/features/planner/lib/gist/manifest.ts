@@ -7,12 +7,16 @@
 export const MANIFEST_VERSION = 1;
 
 /** Distributable kinds. `blueprint` (shared today), `app-state` (#2272 — the app-wide demo/state
- *  snapshot), `component-kit` (#2305) and `studio` (#2891 — the app-library snapshot bundle) are live;
- *  `mcp`/`skill` are reserved. (The legacy code-bearing `pipeline` kind was removed in #2271 — a dead
- *  concept.) NOTE: the type union and the `KINDS` array MUST stay in sync (validateManifest checks
- *  membership against `KINDS`). */
-export type ExtensionKind = "blueprint" | "mcp" | "skill" | "app-state" | "component-kit" | "studio";
-const KINDS: ExtensionKind[] = ["blueprint", "mcp", "skill", "app-state", "component-kit", "studio"];
+ *  snapshot), `component-kit` (#2305), `sound-kit` (#3372 — a shareable sound kit, the sounds twin of
+ *  `component-kit`) and `studio` (#2891 — the app-library snapshot bundle) are live; `mcp`/`skill` are
+ *  reserved. (The legacy code-bearing `pipeline` kind was removed in #2271 — a dead concept.) NOTE: the
+ *  type union and the `KINDS` array MUST stay in sync (validateManifest checks membership against
+ *  `KINDS`). */
+export type ExtensionKind =
+  | "blueprint" | "mcp" | "skill" | "app-state" | "component-kit" | "sound-kit" | "studio";
+const KINDS: ExtensionKind[] = [
+  "blueprint", "mcp", "skill", "app-state", "component-kit", "sound-kit", "studio",
+];
 
 /** Capabilities a code-bearing extension may request (declared + user-approved at
  *  install, enforced by the sandbox). Reserved for future code-bearing kinds; the

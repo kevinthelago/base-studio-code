@@ -123,6 +123,19 @@ describe("buildBlueprintsPayload", () => {
     expect(JSON.stringify(out.library[0].uiKit)).not.toContain("abc");
   });
 
+  it("carries the soundKit pin's identity too, with the hash left desktop-side (#3372)", () => {
+    const out = buildBlueprintsPayload({
+      blueprints: [
+        bp("default", { soundKit: { id: "bsc/signal", version: "1.0.0", hash: "deadbeef", source: "https://gist.github.com/a/b" } }),
+        bp("plain"),
+      ],
+      activeBlueprintId: "default",
+    });
+    expect(out.library[0].soundKit).toEqual({ id: "bsc/signal", version: "1.0.0" });
+    expect(out.library[1].soundKit).toBeUndefined();
+    expect(JSON.stringify(out.library[0].soundKit)).not.toContain("deadbeef");
+  });
+
   it("carries the ACTIVE blueprint's team graph only", () => {
     const blueprints = [bp("a", { team }), bp("b", { team })];
     const out = buildBlueprintsPayload({ blueprints, activeBlueprintId: "b" });

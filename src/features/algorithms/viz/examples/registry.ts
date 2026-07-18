@@ -41,6 +41,14 @@ export interface VizExample {
   factory: () => Generator<Frame>;
   /** The renderers this example needs (array → {@link ArrayView}). */
   renderers: RendererRegistry;
+  /** The trace-program SOURCE to show beside the animation, with the executing op highlighted (#3250).
+   *
+   *  Present only for a STORED `vizCode` example — that string is the code that actually ran, so its
+   *  offsets are real provenance. An in-app program is a compiled TS module with no runtime source, and
+   *  an impl's reference `code` facet (often Rust) is a non-executed twin whose lines do not correspond
+   *  to these frames — pairing the animation with either would be a confident lie, so both leave this
+   *  `undefined` and the stage simply shows no code column. */
+  source?: string;
   /** The editable input driving the trace (#3199) — `parse` turns the field text into typed input (throwing
    *  a helpful Error on invalid input); `make` RE-RUNS the program on it, returning a fresh trace factory.
    *  It is ASYNC (#3233): a stored-`vizCode` re-run goes through the sandbox Worker; in-app programs resolve
@@ -242,6 +250,9 @@ function buildVizExampleFromCode(code: string, run: VizRun): VizExample {
   return {
     factory: replay(run.frames),
     renderers: seam.renderers,
+    // The run reports the exact source its frame `loc`s index into (#3250) — never `code`, which may
+    // differ from it by leading/trailing whitespace and would shift every highlight.
+    source: run.source,
     input: {
       default: seam.serialize(run.input),
       hint: seam.hint,
