@@ -40,7 +40,8 @@ describe("StructureFrame discriminant round-trips (#3176)", () => {
         structure: "graph",
         nodes: [{ id: "a", value: 0 }, { id: "b" }],
         edges: [{ from: "a", to: "b", weight: 5 }],
-        marks: { a: "start", b: "frontier" },
+        marks: { a: "visited", b: "frontier" },
+        roles: { a: "start" }, // the durable anchor rides its own field (#3378) — `a` is both
         ops: [{ op: "relax", edge: ["a", "b"] }],
       },
       { structure: "linked-list", data: [1, 2, 3], doubly: true, ops: [{ op: "relink", from: 0, to: 2 }] },
@@ -70,7 +71,8 @@ describe("StructureFrame discriminant round-trips (#3176)", () => {
         }
         case "graph": {
           const g: GraphFrame = f;
-          expect(g.marks?.a).toBe("start");
+          expect(g.roles?.a).toBe("start");
+          expect(g.marks?.a).toBe("visited");
           break;
         }
         case "scalar": {
