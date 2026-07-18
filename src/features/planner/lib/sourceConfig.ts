@@ -36,7 +36,7 @@ export type { RuntimeConnectorView } from "./sourceCatalog";
 
 export {
   isConnected, connectedCount, allSourcesConnected, sourceChecks,
-  migrationActive, datamodelSignals, downstreamImpact,
+  migrationActive, dataModelSignals, downstreamImpact,
 } from "./sourceGate";
 export { deriveDataModel } from "./dataModelDerivation";
 export type { ScanViewField, ScanViewEntity } from "./sourceScanViews";

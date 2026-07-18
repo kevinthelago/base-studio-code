@@ -21,7 +21,7 @@ import { findPlanInjections, injectionGate } from "../lib/planInjection";
 import { deploymentDefined } from "../lib/deployConfig";
 import { marketDefined } from "../lib/marketConfig";
 import { transformationsConfirmed, type TransformationRow } from "../lib/transformations";
-import { allSourcesConnected, migrationActive, datamodelSignals } from "../lib/sourceConfig";
+import { allSourcesConnected, migrationActive, dataModelSignals } from "../lib/sourceConfig";
 import { unlockedSharedRepos } from "../issues/dependencies";
 import { stagesFrom, activeIndex, currentGateReady } from "../stages/focusedPlan";
 
@@ -94,7 +94,7 @@ export function usePlanGates(deps: PlanGatesDeps) {
       // Source migration (#1205): the scan drives whether the source stage applies + its gate
       // signals, so the source-inferred schema can dictate features/structure.
       migrationSourceEnabled: migrationActive(sourceCfg),
-      datamodelArtifact: datamodelSignals(sourceCfg),
+      dataModelSignals: dataModelSignals(sourceCfg),
     });
   }, [sections, ctxRequired, publishRepos, planFleet, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet, planDependencies, sourceCfg]);
   // lint-as-gate (#897 Phase 4b — lint-plan folded into the declarative gate). A WRITTEN section

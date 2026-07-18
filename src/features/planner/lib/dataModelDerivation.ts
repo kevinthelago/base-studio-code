@@ -2,8 +2,9 @@
 // helper that turns a scan into the project's Data Model: one entity per discovered object (deduped
 // across sources), fields from the discovered columns (or a default `id` identity), with relationships
 // resolved from connector-declared lookups (#1219) or inferred by name (#1209). This is what
-// `features`/`structure` design over — persisted to datamodel.json by the Source pane. Split out of
-// sourceValidate.ts (#1712); the type model lives in sourceSpecs.ts.
+// `features`/`structure` design over — the Source pane persists it to the project's DuckDB store via
+// `bsc data model set --refined` (#1446), NOT to any file. Split out of sourceValidate.ts (#1712);
+// the type model lives in sourceSpecs.ts.
 
 import type { DataModel, Entity, Field, FieldType } from "@/features/planner/data/dataModel";
 import type { DiscoveredField, SourceConfig } from "./sourceSpecs";
