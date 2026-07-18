@@ -126,8 +126,15 @@ export function TracePlayer({ factory, renderers = {}, bufferSize, fps = 4, auto
   const stepForward = useCallback(() => {
     pauseThenResume();
     // Wrap at the end so you can keep stepping through the loop (the viz is infinite).
-    if (stream.atEnd()) stream.seek(0);
-    else stream.next();
+    //
+    // `next() === null` IS the end signal — `atEnd()` must NOT be tested first (#3390). The stream pulls
+    // LAZILY, so the generator only reports `done` on the pull AFTER the last frame: while the cursor sits
+    // on that last frame nothing has been pulled past it yet, `exhausted` is still false, and `atEnd()`
+    // reads FALSE (asserted in traceStream.test.ts). Testing it first therefore fell through to `next()`,
+    // which returned null and left the cursor parked — so the first click on the last frame did nothing
+    // and the wrap cost a dead click, breaking "infinite stepping". Advancing first and wrapping on the
+    // null return uses the same end-detection the play loop already uses.
+    if (stream.next() == null) stream.seek(0);
     sync();
   }, [stream, sync, pauseThenResume]);
 
