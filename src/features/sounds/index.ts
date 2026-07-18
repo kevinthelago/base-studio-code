@@ -11,3 +11,6 @@ export {
 // and the self-contained cue-player emit its preview vendors.
 export { soundNodeLookup } from "./lib/crossGraphAdapter";
 export { cuePlayerModule } from "./lib/cuePlayerModule";
+// Consumer runtime (#3082, P4a) — opt-in app notification sounds voicing fleet coord events.
+export { useNotificationSounds } from "./useNotificationSounds";
+export { coordEventCue, cuesForLines, type NotifyCue } from "./lib/notifyCues";

@@ -6,6 +6,7 @@ import { TerminalFontSizeCard } from "../cards/TerminalFontSizeCard";
 import { AccentColorCard } from "../cards/AccentColorCard";
 import { ThemeCard } from "../cards/ThemeCard";
 import { KitThemeCard } from "../cards/KitThemeCard";
+import { SoundNotificationsCard } from "../cards/SoundNotificationsCard";
 import { KeyboardCard } from "../cards/KeyboardCard";
 import { AchievementsCard } from "../cards/AchievementsCard";
 import { DiagnosticsCard } from "../cards/DiagnosticsCard";
@@ -49,6 +50,7 @@ export function GeneralPage() {
       <AccentColorCard />
       <ThemeCard />
       <KitThemeCard />
+      <SoundNotificationsCard />
 
       <Sub>Keyboard</Sub>
       <KeyboardCard />
