@@ -219,23 +219,6 @@ export function nodeHasLiveSession(paneId: string, livePaneIds: ReadonlySet<stri
 }
 
 /**
- * Whether a graph node offers the ▶ START affordance (#3337). Pure decision, factored out of
- * GlanceWorkspace so the L0/L1 rules are unit-tested independently of the launch side effects:
- * - **L0** (not drilled): a REAL project node is startable (▶ launches its fleet) — never a library/kit
- *   node, and never the synthetic base-studio-code node (its studio sessions launch via their own toggles).
- * - **L1** (drilled into a fleet): a fleet node is startable when its build-tab cell EXISTS but is stopped
- *   (▶ re-enables → relaunch). A LIVE node opens its stream instead; the base-studio-code studio drill and
- *   the preview node never offer it; a never-launched fleet has no cell to restart (use L0 "start fleet").
- */
-export function graphNodeStartable(o: {
-  drilled: boolean; isRealProject: boolean; studioDrill: boolean; isPreview: boolean; cellExists: boolean; isLive: boolean;
-}): boolean {
-  if (!o.drilled) return o.isRealProject;
-  if (o.studioDrill || o.isPreview) return false;
-  return o.cellExists && !o.isLive;
-}
-
-/**
  * Every live session pane that belongs to a project — its director + workers — so the whole fleet can be
  * ended at once (#3052). A fleet pane id is `<projectKey>:<streamId>` (fleetPaneId), so the project's
  * panes are exactly those with the `<projectKey>:` prefix. The trailing `:` makes the match EXACT: a

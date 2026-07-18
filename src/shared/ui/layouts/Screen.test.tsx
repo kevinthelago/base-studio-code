@@ -38,29 +38,4 @@ describe("Screen shell", () => {
     // …but the page body is still there.
     expect(screen.getByText("runs body")).toBeTruthy();
   });
-
-  it("renders headerActions in the page-header strip (#3343)", () => {
-    render(
-      <Screen tabs={PAGES} active="library" onSelect={noop} onReorder={noop} onTearOff={noop}
-        headerActions={<button>▶ Start project</button>}>
-        <div>library body</div>
-      </Screen>,
-    );
-    // The page-level action rides the header's `.tabstrip-actions` slot, alongside the tabs.
-    const action = screen.getByText("▶ Start project");
-    expect(action).toBeTruthy();
-    expect(action.closest(".tabstrip-actions")).toBeTruthy();
-  });
-
-  it("drops headerActions with the tab bar in torn-off pageOverride mode (#3343)", () => {
-    render(
-      <Screen tabs={PAGES} active="runs" onSelect={noop} onReorder={noop} onTearOff={noop} pageOverride="runs"
-        headerActions={<button>▶ Start project</button>}>
-        <div>runs body</div>
-      </Screen>,
-    );
-    // No header strip when torn off ⇒ no header actions either; the body still renders.
-    expect(screen.queryByText("▶ Start project")).toBeNull();
-    expect(screen.getByText("runs body")).toBeTruthy();
-  });
 });
