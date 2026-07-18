@@ -1,5 +1,6 @@
-// The array viz kit's motion (#3178/#2942) — the compare/swap/set/sorted animations are KitAnimation
-// DATA compiled by the engine (not hand-written CSS), keyed on the exact data-states ArrayView stamps,
+// The array viz kit's motion (#3178/#2942) — the compare/swap/set/sorted animations (+ the search pair
+// probe/found, #3220) are KitAnimation DATA compiled by the engine (not hand-written CSS), keyed on the
+// exact data-states ArrayView stamps,
 // and injected into a dedicated managed <style> that never touches the global animation sheet.
 import { describe, it, expect, beforeEach } from "vitest";
 import {
@@ -11,13 +12,17 @@ import {
 } from "./arrayViewMotion";
 
 describe("algo-viz kit animations (#3178, data-defined #2942)", () => {
-  it("defines the four verbs as data, each a STATE trigger on the data-state selector", () => {
+  it("defines each verb as data, a STATE trigger on the data-state selector", () => {
     const byName = Object.fromEntries(ALGO_VIZ_ANIMATIONS.map((a) => [a.name, a]));
-    expect(Object.keys(byName).sort()).toEqual(["compare", "set", "sorted", "swap"]);
+    expect(Object.keys(byName).sort()).toEqual(["compare", "found", "probe", "set", "sorted", "swap"]);
     expect(byName.compare.selector).toBe('[data-op="compare"]');
     expect(byName.swap.selector).toBe('[data-op="swap"]');
     expect(byName.set.selector).toBe('[data-op="set"]');
     expect(byName.sorted.selector).toBe('[data-mark="sorted"]');
+    // The SEARCH pair (#3220): `probe` is a transient single-cell op, `found` a durable terminal mark —
+    // so they key on the two DIFFERENT data-state attributes, and a probed cell can also be the found one.
+    expect(byName.probe.selector).toBe('[data-op="probe"]');
+    expect(byName.found.selector).toBe('[data-mark="found"]');
     // Every one carries real keyframe data (so the engine emits a @keyframes block).
     for (const a of ALGO_VIZ_ANIMATIONS) expect(Object.keys(a.keyframes).length).toBeGreaterThan(0);
   });
@@ -29,6 +34,8 @@ describe("algo-viz kit animations (#3178, data-defined #2942)", () => {
     expect(ALGO_VIZ_MOTION_CSS).toContain('.algo-viz-anim-compare [data-op="compare"]');
     expect(ALGO_VIZ_MOTION_CSS).toContain('.algo-viz-anim-set [data-op="set"]');
     expect(ALGO_VIZ_MOTION_CSS).toContain('.algo-viz-anim-sorted [data-mark="sorted"]');
+    expect(ALGO_VIZ_MOTION_CSS).toContain('.algo-viz-anim-probe [data-op="probe"]');
+    expect(ALGO_VIZ_MOTION_CSS).toContain('.algo-viz-anim-found [data-mark="found"]');
     // The engine guards motion behind reduced-motion for free.
     expect(ALGO_VIZ_MOTION_CSS).toContain("@media (prefers-reduced-motion: no-preference)");
     // No stray hand-authored keyframes leaked in — every block is kit-namespaced.
@@ -41,6 +48,8 @@ describe("algo-viz kit animations (#3178, data-defined #2942)", () => {
       "algo-viz-anim-compare",
       "algo-viz-anim-swap",
       "algo-viz-anim-set",
+      "algo-viz-anim-probe",
+      "algo-viz-anim-found",
       "algo-viz-anim-sorted",
     ]);
     expect(ALGO_VIZ_KIT_ID).toBe("algo-viz");
