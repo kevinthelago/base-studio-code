@@ -87,6 +87,44 @@ describe("GlanceStreamMorph (#2401/#2534)", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  // #3365 — the regression that silently defeated multi-open (#3361). Clicking ANOTHER NODE to open a
+  // second morph is a press outside THIS card, so the dismiss fired and the first morph closed the
+  // instant the second opened: only one was ever visible, exactly as before the grid landed. A node
+  // press is an OPEN/SELECT gesture and must never dismiss an already-open morph.
+  it("a press on a graph NODE does NOT dismiss an open morph — opening a second node keeps the first (#3365)", () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    render(<GlanceStreamMorph node={NODE} slot={SLOT} paneId="proj:api-client" name="api-client" onClose={onClose} />);
+    // The canvas marks every node card with `data-glance-node` (GlanceCanvas) — stand one up here and
+    // click it the way the user clicks a sibling node to open its session.
+    const otherNode = document.createElement("div");
+    otherNode.setAttribute("data-glance-node", "proj:web-ui");
+    document.body.appendChild(otherNode);
+    fireEvent.mouseDown(otherNode, { clientX: 40, clientY: 40 });
+    fireEvent.mouseUp(otherNode, { clientX: 40, clientY: 40 });
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(onClose).not.toHaveBeenCalled();
+    otherNode.remove();
+  });
+
+  it("a press on a CHILD of a graph node is exempt too — the label/dot inside the node card (#3365)", () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    render(<GlanceStreamMorph node={NODE} slot={SLOT} paneId="proj:api-client" name="api-client" onClose={onClose} />);
+    // The real press target is whatever is under the cursor — the node's slug text, its health dot —
+    // never the marked wrapper itself, so the guard has to walk UP the tree (`closest`).
+    const otherNode = document.createElement("div");
+    otherNode.setAttribute("data-glance-node", "proj:web-ui");
+    const label = document.createElement("span");
+    otherNode.appendChild(label);
+    document.body.appendChild(otherNode);
+    fireEvent.mouseDown(label, { clientX: 40, clientY: 40 });
+    fireEvent.mouseUp(label, { clientX: 40, clientY: 40 });
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(onClose).not.toHaveBeenCalled();
+    otherNode.remove();
+  });
+
   it("a DRAG (pan) outside the card leaves it open — the graph keeps its gesture (#2537)", () => {
     vi.useFakeTimers();
     const onClose = vi.fn();
