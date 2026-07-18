@@ -148,3 +148,30 @@ surface is an allow-list, and a newline counts as a command separator — so the
 and `bsc graph set < file` split the same way. A single-line `--file` invocation is the one form that works,
 and the only one that can carry a large multi-line payload without hitting the OS command-line limit.
 Write the file; pass its name.
+
+## Reading: never redirect, never chain
+
+Read results **in the pane** — every `bsc graph` read verb prints to stdout and you see it directly.
+You never need a file to inspect output.
+
+For a large result, narrow it at the source instead of dumping and filtering:
+
+- `bsc graph impl list --tech <t>` — one language kit's implementations. Start here, not at `dump`.
+- `bsc graph impl list --role primitive|algorithm` and `--domain <d>` — narrow further; the filters
+  compose.
+- `bsc graph dump [--pretty]` — the whole store, only when you genuinely need all of it.
+
+**Never redirect (`>`, `>>`), never chain (`;`, `&&`, `||`, `|`), never put a `$VAR` in a command.**
+Each is unmatchable by the allow-list, for its own reason:
+
+- A separator splits the line, and **every** subcommand must match a rule on its own. In
+  `bsc graph dump > all.json; wc -l all.json`, `wc` matches nothing — so the whole line is
+  refused, including the half that was fine.
+- A `$VAR` is only resolved when the command runs, so no rule can ever match a command containing one
+  (Claude Code reports this as *"Contains simple_expansion"*). That is exactly why `--file` takes a
+  bare name and not `$BSC_SCRATCH/name`.
+- A redirect also writes outside your writable scope: only `scratch/**` is writable, and your file
+  tools are pinned to this workspace.
+
+Correct: `bsc graph impl list --tech rust --role algorithm`
+Rejected: `bsc graph dump --pretty > "$TEMP/graph.json" 2>&1; wc -l "$TEMP/graph.json"`

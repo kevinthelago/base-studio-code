@@ -109,4 +109,22 @@ mod tests {
             );
         }
     }
+
+    /// #3376 — the read-side companion to "Authoring: write, then apply". The seed must name the lean
+    /// read verbs AND say WHY a redirect / chain / `$VAR` can never be allow-listed: a session that only
+    /// learns "that was rejected" retries another variant of the same unmatchable shape.
+    #[test]
+    fn packaged_sound_designer_spec_teaches_reading_without_redirect_or_chain() {
+        let seed = crate::platform::config::embedded_str("sound-designer/claude.md");
+        for needle in [
+            "Reading: never redirect, never chain",   // the section itself
+            "bsc sound list --raw",                   // the byte-clean id list, not a dump-and-filter
+            "bsc sound get <id>",                     // the one-record read
+            "simple_expansion",                       // WHY a `$VAR` can never match a rule
+            "**every** subcommand must match a rule", // WHY a `;` / `|` chain can never match
+            "scratch/**",                             // WHY a redirect is out of scope anyway
+        ] {
+            assert!(seed.contains(needle), "sound-designer seed must teach the reading term `{needle}`");
+        }
+    }
 }
