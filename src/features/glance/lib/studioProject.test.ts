@@ -73,15 +73,19 @@ describe("studioPaneIdForNode (#3326)", () => {
   });
 });
 
-describe("studioNodeHome (#glance-resume)", () => {
+describe("studioNodeHome (#glance-resume / #3357)", () => {
   it("sends the debugger to the in-graph morph (it's hosted on the shared TerminalHost)", () => {
     expect(studioNodeHome("debugger")).toEqual({ kind: "morph" });
   });
 
-  it("sends each workspace-hosted studio session to its own page", () => {
-    expect(studioNodeHome("designer")).toEqual({ kind: "page", pageMode: "designs" });
-    expect(studioNodeHome("librarian")).toEqual({ kind: "page", pageMode: "algorithms" });
-    expect(studioNodeHome("architect")).toEqual({ kind: "page", pageMode: "teams" });
+  it("sends EVERY studio session to the in-graph morph now that all four live on TerminalHost (#3357)", () => {
+    // Before #3357 the designer/librarian/architect ran their own single-mount xterm (`useScreenSession`),
+    // which the host could not re-parent — so opening one had to navigate to its workspace page. They are
+    // now TerminalHost-hosted like the debugger, so the graph morphs the node into the live terminal
+    // instead of throwing the user onto another page.
+    for (const id of ["designer", "librarian", "architect", "debugger"]) {
+      expect(studioNodeHome(id)).toEqual({ kind: "morph" });
+    }
   });
 
   it("has no home for a resource/library node or a non-studio node (nothing to open)", () => {

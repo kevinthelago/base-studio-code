@@ -91,7 +91,10 @@ export function DebugSessionMount() {
         overflow: "hidden", pointerEvents: "none", display: "flex", flexDirection: "column",
       }}
     >
-      <TerminalSlot paneId={DEBUG_PANE_ID} primary visible={false} initialCwd={repoRoot} initCmd={DEBUG_INIT_CMD} />
+      {/* `parked` (#3357): a holding claim never takes ownership from a real surface — it owns the terminal
+          only as the last claim standing. Behaviour-identical here (the morph is the only other claimant),
+          and it keeps every app-owned session mount on the same rule. */}
+      <TerminalSlot paneId={DEBUG_PANE_ID} primary parked visible={false} initialCwd={repoRoot} initCmd={DEBUG_INIT_CMD} />
     </Box>
   );
 }

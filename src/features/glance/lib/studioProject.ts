@@ -57,20 +57,24 @@ export function studioPaneIdForNode(nodeId: string): string | null {
   return STUDIO_NODE_SESSION[nodeId] ?? null;
 }
 
-/** Where a studio node's session is HOSTED, so the graph can open/reveal it (#glance-resume). The
- *  DEBUGGER lives on the shared TerminalHost (kept warm by `DebugSessionMount`) → openable inline via the
- *  Glance `morph`. The designer/librarian/architect run on their own workspace `page` surfaces
- *  (`useScreenSession`), so opening reveals the EXISTING stable-id session there (never a new one). Null
- *  for a node without an openable session (the libraries, the dynamic planner). Pure. */
+/** Where a studio node's session is HOSTED, so the graph can open/reveal it (#glance-resume). Since #3357
+ *  ALL FOUR app-owned studio sessions live on the shared TerminalHost — the debugger via
+ *  `DebugSessionMount`, the designer/librarian/architect via `StudioSessionHosts` — so every one of them is
+ *  openable INLINE via the Glance `morph`: the host re-parents the single live terminal into the morph and
+ *  hands it back to the studio's page dock on close, never spawning a second session. (Before #3357 the
+ *  three studios ran their own single-mount xterm, which could not be re-parented, so they had to open on
+ *  their workspace page instead — the `page` variant, kept for a future non-morphable node.) Null for a
+ *  node with no openable session (the libraries, the dynamic planner). Pure. */
 export type StudioNodeHome =
   | { kind: "morph" }
   | { kind: "page"; pageMode: "designs" | "algorithms" | "teams" };
 export function studioNodeHome(nodeId: string): StudioNodeHome | null {
   switch (nodeId) {
-    case "debugger": return { kind: "morph" };
-    case "designer": return { kind: "page", pageMode: "designs" };
-    case "librarian": return { kind: "page", pageMode: "algorithms" };
-    case "architect": return { kind: "page", pageMode: "teams" };
+    case "debugger":
+    case "designer":
+    case "librarian":
+    case "architect":
+      return { kind: "morph" };
     default: return null;
   }
 }

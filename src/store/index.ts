@@ -13,6 +13,7 @@ import { createPersonasSlice } from "@/features/personas/store";
 import { reconcilePersonas } from "@/features/personas/lib/persona";
 import { createOrgSlice } from "@/features/teams/store";
 import { createComponentsSlice } from "@/features/designs/store";
+import { createStudiosSlice } from "@/features/studio-sessions/store";
 import { reconcileOrgs } from "@/features/teams/lib/team";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
@@ -55,6 +56,9 @@ export const useAppStore = create<AppStore>()(
       ...createPersonasSlice(set, get, store),
       ...createOrgSlice(set, get, store),
       ...createComponentsSlice(set, get, store),
+      // #3357: the app-owned studio sessions' lifecycle (wanted set + viewer ref-counts). Transient —
+      // deliberately absent from `partialize`, so nothing launches at boot.
+      ...createStudiosSlice(set, get, store),
     }),
     {
       name: "app-state",
