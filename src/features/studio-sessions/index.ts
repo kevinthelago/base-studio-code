@@ -8,7 +8,7 @@
 // 30-minute idle reaper.
 export { StudioSessionHosts } from "./StudioSessionHosts";
 export { StudioSessionMount, seedStudioLaunchState, studioStartPrompt } from "./StudioSessionMount";
-export { useStudioViewer, useStudioViewers } from "./useStudioViewer";
+export { useStudioViewer } from "./useStudioViewer";
 export { useStudioPageShowing, studioPageShowing } from "./useStudioPageShowing";
 export { useStudioReaper, STUDIO_IDLE_MS, STUDIO_BUSY_RECHECK_MS } from "./useStudioReaper";
 export { createStudiosSlice, orderedWantedStudios, type StudiosSlice } from "./store";
