@@ -14,8 +14,9 @@ import { resolveMcpServers, toBscAgentMcp, resolveHooks, toSessionPayloads } fro
 import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/skills";
 import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
-import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands, isRestrictedRole } from "@/shared/lib/session/sessionRoles";
+import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands, isRestrictedRole, type SessionRole } from "@/shared/lib/session/sessionRoles";
 import { isFullCapabilitySession, isStudioSessionPaneId } from "@/shared/lib/session/systemSessions";
+import { studioRoleForPaneId } from "@/features/studio-sessions";
 import { resolveProfileSettings } from "@/features/security";
 import { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner";
 import type { ConsoleProvider, ProviderLaunchConfig } from "@/app/console/lib/providers";
@@ -38,6 +39,22 @@ import type { AppStore } from "@/store/types";
  *  survives `bypassPermissions`, #1916 Step 3.5). MUST match the literal in `bsc-scope` (shell_rc.rs). */
 export const SCOPE_DENY_ALL = "__bsc_deny_all__";
 
+/**
+ * The pane's role gate. Prefers the store, then DERIVES it from the pane id for an app-owned studio
+ * session (#3423).
+ *
+ * The store entry is written by `seedStudioLaunchState`, which only runs when `StudioSessionMount`
+ * renders — and that happens only for a studio in `wantedStudios`, a transient set (absent from
+ * `partialize`) that is empty after every app restart. A studio opened in that window reached this
+ * function with NO role, and a missing role means no role gate, no `restrictedAllow` and no denies: a
+ * fully unconfined shell on the most restricted surface in the app. A studio's pane id is stable and
+ * app-owned, so it is sufficient on its own — confinement now travels with the session's identity
+ * rather than with setup order. Any other pane keeps the store as its only authority.
+ */
+function paneRole(s: AppStore, paneId: string): SessionRole | undefined {
+  return s.paneRoles[paneId] ?? studioRoleForPaneId(paneId) ?? undefined;
+}
+
 export function buildAgentEnv(
   s: AppStore,
   paneId: string,
@@ -47,7 +64,7 @@ export function buildAgentEnv(
   const e: Record<string, string> = {};
   // The pane's role capability, resolved up-front: it gates both the write-scope env below AND whether
   // this session is handed a GitHub credential at all.
-  const scopeRole = s.paneRoles[paneId];
+  const scopeRole = paneRole(s, paneId);
   const roleGlobs = s.paneRoleGlobs[paneId] ?? [];
   const scopeCap = scopeRole ? roleCapability(scopeRole, { writeGlobs: roleGlobs }) : null;
   // GH_TOKEN carries gh / git-over-https auth. A role denied BOTH axes has no use for it: the app-owned
@@ -89,11 +106,11 @@ export function buildAgentEnv(
   // they need to integrate + judge. Gate on the worker role too, so a non-worker stream pane (a
   // reviewer/juror that judges another stream's landing) isn't accidentally boxed into its own.
   const streamId = s.fleetPaneStreams[paneId]?.id;
-  if (streamId && s.paneRoles[paneId] === "worker") e.BSC_STREAM = streamId;
+  if (streamId && paneRole(s, paneId) === "worker") e.BSC_STREAM = streamId;
   if (providerId === "bsc-agent") {
     Object.assign(e, bscAgentEnv(resolveLlmConfig(s)));
     // Gate the runtime by the pane's role (least-privilege parity with Claude); no role ⇒ permissive.
-    const bscRole = s.paneRoles[paneId];
+    const bscRole = paneRole(s, paneId);
     if (bscRole) {
       const cap = roleCapability(bscRole, { writeGlobs: s.paneRoleGlobs[paneId] ?? [] });
       // Reconcile role ↔ flow (#304): the flow owns git push / gh pr create, so lift them from
@@ -134,7 +151,7 @@ export function providerLaunchConfig(
     startupPrompt: startupPrompt && startupPrompt.trim() ? startupPrompt : undefined,
     // A worker's plan scope (CLAUDE.local.md, copied into the worktree by ensure_worktree) — handed to
     // Aider read-only since it does no ancestor-CLAUDE.md walk. Only workers have one.
-    readFiles: s.paneRoles[paneId] === "worker" ? ["CLAUDE.local.md"] : undefined,
+    readFiles: paneRole(s, paneId) === "worker" ? ["CLAUDE.local.md"] : undefined,
   };
 }
 
@@ -146,7 +163,7 @@ export function providerLaunchConfig(
  * is ignored but the hook still fires + blocks.
  */
 export function sessionDeniedCommands(s: AppStore, paneId: string): string[] {
-  const role = s.paneRoles[paneId];
+  const role = paneRole(s, paneId);
   const cap = role ? roleCapability(role, { writeGlobs: s.paneRoleGlobs[paneId] ?? [] }) : null;
   const profileId = s.paneProfiles[paneId];
   const profile = profileId ? s.agentProfiles.find((p) => p.id === profileId) : undefined;
@@ -168,7 +185,7 @@ export function sessionDeniedCommands(s: AppStore, paneId: string): string[] {
 export function buildSessionSettings(s: AppStore, paneId: string) {
   // Role gate (#219): a planner/worker/triage session has its mutating git/gh commands denied at
   // launch (deny > the broad gh/git allow), plus a write-tool guard (#238). Absent role ⇒ unrestricted.
-  const role = s.paneRoles[paneId];
+  const role = paneRole(s, paneId);
   // The worker's write boundary (its owned globs) makes roleWriteRules auto-approve Edit/Write within
   // its lane; without it a worker (code:write, empty writeGlobs) prompts on every edit.
   const roleGlobs = s.paneRoleGlobs[paneId] ?? [];

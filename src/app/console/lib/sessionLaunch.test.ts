@@ -423,3 +423,45 @@ describe("resolveStartupPromptFreshOnly (#2052)", () => {
     }
   });
 });
+
+// #3423: `paneRoles` is written only by `seedStudioLaunchState`, inside `StudioSessionMount`'s effect —
+// which renders only for a studio in `wantedStudios`, a transient set that is empty after every restart.
+// A studio opened in that window launched with NO role, and a missing role means no gate, no
+// restrictedAllow and no denies: an unconfined general shell on the app's most restricted surface.
+// The role is now derived from the (stable, app-owned) pane id, so confinement travels with identity.
+describe("studio confinement survives an unseeded store (#3423)", () => {
+  const STUDIOS = [DESIGN_STUDIO_SESSION_ID, ALGORITHMS_STUDIO_SESSION_ID, TEAMS_STUDIO_SESSION_ID];
+
+  it("a studio pane with an EMPTY paneRoles is still confined — the regression", () => {
+    for (const paneId of STUDIOS) {
+      const r = buildSessionSettings(mkStore({ paneRoles: {} }), paneId);
+      expect(r.restrictedAllow).toBe(true);
+      expect(r.allowedCommands.length).toBeGreaterThan(0);
+      // A confined studio must NEVER be flipped to bypass — that ignores permissions.deny outright.
+      expect(r.bypass).toBe(false);
+    }
+  });
+
+  it("derives the SAME settings whether the store seeded the role or not", () => {
+    const seeded = buildSessionSettings(mkStore({ paneRoles: { [DESIGN_STUDIO_SESSION_ID]: "designer" } }), DESIGN_STUDIO_SESSION_ID);
+    const bare = buildSessionSettings(mkStore({ paneRoles: {} }), DESIGN_STUDIO_SESSION_ID);
+    expect(bare.allowedCommands).toEqual(seeded.allowedCommands);
+    expect(bare.deniedCommands).toEqual(seeded.deniedCommands);
+    expect(bare.restrictedAllow).toEqual(seeded.restrictedAllow);
+  });
+
+  it("each studio pane derives its OWN role, never another's surface", () => {
+    const designer = buildSessionSettings(mkStore({ paneRoles: {} }), DESIGN_STUDIO_SESSION_ID);
+    const librarian = buildSessionSettings(mkStore({ paneRoles: {} }), ALGORITHMS_STUDIO_SESSION_ID);
+    expect(designer.allowedCommands).toContain("bsc ui");
+    expect(librarian.allowedCommands).not.toContain("bsc ui");
+    expect(librarian.allowedCommands).toContain("bsc graph");
+  });
+
+  // The fallback is studio-ONLY: a normal pane with no role keeps its existing (unrestricted) behaviour,
+  // so this cannot silently confine a manual console.
+  it("leaves a non-studio pane's roleless behaviour unchanged", () => {
+    const r = buildSessionSettings(mkStore({ paneRoles: {} }), "t0p0");
+    expect(r.restrictedAllow).toBeFalsy();
+  });
+});
