@@ -1,4 +1,5 @@
 import { useAppStore } from "@/store";
+import { studioIdleMs } from "@/app/console/lib/idleReaper";
 import { Toggle } from "@/shared/ui/controls/Toggle";
 import { SettingsRow as Row, SettingsSelect as Select } from "../pages/SettingsControls";
 import { Card } from "@/shared/ui/data/Card";
@@ -31,6 +32,22 @@ export function IdleReaperCard() {
               { label: "2 hours", value: 120 * MIN },
             ]}
             onChange={(v) => setIdleReaperConfig({ idleMs: v as number })}
+          />
+        </Row>
+        <Row
+          label="Studio session timeout"
+          hint="A studio session (designer, librarian, architect) outlives the page that opened it so its Glance node can still morph into its terminal. This is how long it may sit with nothing showing it before being reclaimed. A session that's still working is never cut off — the reclaim waits until it goes quiet."
+        >
+          <Select
+            value={studioIdleMs(idleReaper)}
+            options={[
+              { label: "5 min", value: 5 * MIN },
+              { label: "15 min", value: 15 * MIN },
+              { label: "30 min (default)", value: 30 * MIN },
+              { label: "1 hour", value: 60 * MIN },
+              { label: "2 hours", value: 120 * MIN },
+            ]}
+            onChange={(v) => setIdleReaperConfig({ studioIdleMs: v as number })}
           />
         </Row>
         <Row

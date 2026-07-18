@@ -3,6 +3,7 @@ import { renderHook, act } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { useStudioReaper, STUDIO_IDLE_MS, STUDIO_BUSY_RECHECK_MS } from "./useStudioReaper";
+import { DEFAULT_REAPER_CONFIG, type ReaperConfig } from "@/app/console/lib/idleReaper";
 import { STUDIO_SESSIONS } from "./lib/studioSessions";
 
 /**
@@ -19,7 +20,11 @@ const killedPanes = () =>
 beforeEach(() => {
   vi.useFakeTimers();
   invokeMock.mockClear();
-  useAppStore.setState({ wantedStudios: [], studioViewers: {}, paneClaudeActive: {} });
+  // idleReaper is reset too: the configurable-timeout suite below overrides it, and a leaked config
+  // would silently change the threshold every other test in this file counts on.
+  useAppStore.setState({
+    wantedStudios: [], studioViewers: {}, paneClaudeActive: {}, idleReaper: DEFAULT_REAPER_CONFIG,
+  });
 });
 afterEach(() => vi.useRealTimers());
 
@@ -101,6 +106,84 @@ describe("useStudioReaper (#3357)", () => {
     act(() => { useAppStore.getState().addStudioViewer("architect"); });
     rerender();
     act(() => { vi.advanceTimersByTime(1000); });
+    expect(useAppStore.getState().wantedStudios).toEqual(["architect"]);
+  });
+});
+
+/**
+ * The timeout is a user setting (Settings → Planner → "Reap idle background sessions" → Studio session
+ * timeout), stored on the shared `idleReaper` config so all idle reaping is one surface.
+ */
+describe("useStudioReaper — configurable timeout (#3357)", () => {
+  const cfg = (over: Partial<ReaperConfig>) =>
+    useAppStore.setState({ idleReaper: { ...DEFAULT_REAPER_CONFIG, ...over } });
+
+  it("honours a configured timeout shorter than the default", () => {
+    cfg({ studioIdleMs: 5 * 60_000 });
+    useAppStore.setState({ wantedStudios: ["designer"], studioViewers: { designer: 0 } });
+    renderHook(() => useStudioReaper());
+
+    act(() => { vi.advanceTimersByTime(5 * 60_000 - 1); });
+    expect(useAppStore.getState().wantedStudios).toEqual(["designer"]);
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(useAppStore.getState().wantedStudios).toEqual([]);
+    expect(killedPanes()).toContain(STUDIO_SESSIONS.designer.paneId);
+  });
+
+  it("never reaps while the master idle-reaper switch is off", () => {
+    cfg({ enabled: false, studioIdleMs: 5 * 60_000 });
+    useAppStore.setState({ wantedStudios: ["designer"], studioViewers: { designer: 0 } });
+    renderHook(() => useStudioReaper());
+    act(() => { vi.advanceTimersByTime(5 * 60_000 * 10); });
+    expect(useAppStore.getState().wantedStudios).toEqual(["designer"]);
+    expect(killedPanes()).toEqual([]);
+  });
+
+  it("re-arms at the new threshold when the setting changes mid-countdown", () => {
+    cfg({ studioIdleMs: 60 * 60_000 });
+    useAppStore.setState({ wantedStudios: ["designer"], studioViewers: { designer: 0 } });
+    const { rerender } = renderHook(() => useStudioReaper());
+    act(() => { vi.advanceTimersByTime(10 * 60_000 ); });
+
+    // Shorten it: the change must take effect now, not only on the next idle transition.
+    act(() => { useAppStore.getState().setIdleReaperConfig({ studioIdleMs: 5 * 60_000 }); });
+    rerender();
+    act(() => { vi.advanceTimersByTime(5 * 60_000); });
+    expect(useAppStore.getState().wantedStudios).toEqual([]);
+  });
+
+  it("falls back to the default for a config persisted before the key existed", () => {
+    // zustand's persist REPLACES the whole `idleReaper` object rather than merging, so a config saved
+    // before #3357 rehydrates with no `studioIdleMs` at all. It must not become `undefined` ms.
+    useAppStore.setState({
+      idleReaper: { enabled: true, idleMs: 30 * 60_000, workerIdleMs: null } as ReaperConfig,
+      wantedStudios: ["designer"],
+      studioViewers: { designer: 0 },
+    });
+    renderHook(() => useStudioReaper());
+    act(() => { vi.advanceTimersByTime(STUDIO_IDLE_MS - 1); });
+    expect(useAppStore.getState().wantedStudios).toEqual(["designer"]);
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(useAppStore.getState().wantedStudios).toEqual([]);
+  });
+
+  it("a busy deferral is not reset to a full idle wait by an unrelated reconcile", () => {
+    cfg({ studioIdleMs: 5 * 60_000 });
+    useAppStore.setState({
+      wantedStudios: ["designer", "architect"],
+      studioViewers: { designer: 0, architect: 1 },
+      paneClaudeActive: { [STUDIO_SESSIONS.designer.paneId]: true },
+    });
+    const { rerender } = renderHook(() => useStudioReaper());
+    act(() => { vi.advanceTimersByTime(5 * 60_000); });      // due, but busy ⇒ deferred
+    expect(useAppStore.getState().wantedStudios).toContain("designer");
+
+    // Churn on the other studio re-runs the reconcile. The deferral is on the short recheck loop and
+    // must survive it — resetting it here would restart a full idle wait on a session that's working.
+    act(() => { useAppStore.getState().addStudioViewer("architect"); });
+    rerender();
+    act(() => { useAppStore.setState({ paneClaudeActive: {} }); });
+    act(() => { vi.advanceTimersByTime(STUDIO_BUSY_RECHECK_MS); });
     expect(useAppStore.getState().wantedStudios).toEqual(["architect"]);
   });
 });
