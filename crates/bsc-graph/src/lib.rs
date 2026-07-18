@@ -521,6 +521,64 @@ mod tests {
         assert_eq!(serde_json::to_value(&im).unwrap(), json, "the facets round-trip");
     }
 
+    #[test]
+    fn the_packaged_seed_carries_domain_collections() {
+        // #3134: the seed itself is TAGGED, so the domain filter (rail + `impl list --domain`) is
+        // populated out of the box — no manual `bsc graph impl set --domain` curation needed. Asserts
+        // the collections the seed ships, so an accidental de-tagging of the seed fails here.
+        let impls = implementations_of(&seed());
+        let in_domain = |d: &str| -> Vec<String> {
+            impls
+                .iter()
+                .filter(|im| impl_in_domain(im, d))
+                .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_owned))
+                .collect()
+        };
+
+        // Routing / shortest-path / dependency sequencing — the issue's named example collection.
+        let mut logistics = in_domain("logistics");
+        logistics.sort();
+        assert_eq!(
+            logistics,
+            ["a-star.rs", "bfs.rs", "dfs.rs", "dijkstra.rs", "topological-sort.rs"],
+            "the logistics collection is the graph traversal + pathfinding + scheduling set"
+        );
+        // In-place square-matrix transforms — a SECOND domain, proving the filter discriminates.
+        let mut graphics = in_domain("graphics");
+        graphics.sort();
+        assert_eq!(graphics, ["reflect.ts", "rotate.ts", "transpose.ts"], "the graphics collection");
+        assert_eq!(in_domain("signal-processing"), ["fft.rs"]);
+
+        // The facet is ADDITIVE: the seed's general-purpose sorts/searches stay UNTAGGED rather than
+        // being forced into a domain, so a domain collection never surfaces an unrelated algorithm.
+        for id in ["merge-sort.rs", "quick-sort.rs", "binary-search.rs", "linear-search.rs"] {
+            let im = impls.iter().find(|im| im["id"] == id).expect("seed impl exists");
+            assert!(im.get("domain").is_none(), "general-purpose '{id}' carries no domain");
+        }
+        // Primitives are language built-ins, never domain members.
+        for im in &impls {
+            if im.get("role").and_then(Value::as_str) == Some("primitive") {
+                assert!(im.get("domain").is_none(), "a primitive carries no domain: {}", im["id"]);
+            }
+        }
+    }
+
+    #[test]
+    fn every_seed_impl_deserializes_as_a_typed_algo_impl_and_round_trips() {
+        // The domain tags (#3134) are only real if the PARSER accepts them: every packaged impl must
+        // deserialize into the typed `AlgoImpl` and re-serialize byte-identically, so a tag added to the
+        // JSON is readable through the model rather than dead weight the struct silently drops.
+        for im in implementations_of(&seed()) {
+            let typed: AlgoImpl = serde_json::from_value(im.clone())
+                .unwrap_or_else(|e| panic!("seed impl {} does not parse: {e}", im["id"]));
+            assert_eq!(serde_json::to_value(&typed).unwrap(), im, "{} round-trips", im["id"]);
+        }
+        // …and the tagged ones surface their domain through the typed field.
+        let dijkstra = implementations_of(&seed()).into_iter().find(|im| im["id"] == "dijkstra.rs").unwrap();
+        let typed: AlgoImpl = serde_json::from_value(dijkstra).unwrap();
+        assert_eq!(typed.domain.as_deref(), Some("logistics"));
+    }
+
     // ── #3210 kind facet ──
 
     #[test]
