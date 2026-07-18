@@ -15,7 +15,7 @@
 //! Reachable from a live session with no PATH changes: `bsc` is in the mandatory baseline command set
 //! (`data/permissions/base.json`) and is execed by absolute path from `$BSC_BIN`.
 
-use crate::{polygonize, to_binary_stl, to_glb, to_gltf_json, Node};
+use crate::{polygonize_with, to_binary_stl, to_glb, to_gltf_json, Method, Node};
 use bsc_cli_util::CmdDoc;
 use serde::Serialize;
 
@@ -34,7 +34,7 @@ USAGE:
   bsc cad mesh <spec.json> [-o <out>] [--res <N>] [--format stl|gltf|glb] [--json|--pretty]
 
 Evaluates the declarative op-tree in <spec.json> as a signed-distance field, polygonizes it
-(surface nets) into a watertight mesh, and writes it out. Everything is MILLIMETRES.
+(dual contouring) into a watertight mesh, and writes it out. Everything is MILLIMETRES.
 
   <spec.json>      the op-tree, e.g. {\"op\":\"box\",\"size\":[20,10,5]}
   -o, --out <f>    output path (default: <spec-stem>.<ext> for the format, in the CURRENT directory)
@@ -67,7 +67,8 @@ THE OP-TREE
 
 OUTPUT
   Lean text (default) prints the stats block. --json/--pretty emit them structured:
-  { spec, out, format, resolution, bounds_mm, vertices, triangles, watertight, volume_mm3, bytes,
+  { spec, out, format, resolution, method, bounds_mm, vertices, triangles, watertight, volume_mm3,
+    max_deviation_mm, mean_deviation_mm, bytes,
     empty }.
 
 EMPTY MESHES ARE NOT AN ERROR
@@ -92,6 +93,15 @@ struct MeshStats {
     triangles: usize,
     watertight: bool,
     volume_mm3: f64,
+    /// Which polygonizer produced the mesh (#3388).
+    method: &'static str,
+    /// Max distance from a mesh vertex to the TRUE surface (mm) — the number that discriminates
+    /// a feature-preserving polygonizer from a rounding one. Surface nets holds a fixed ~2/3 cell
+    /// at EVERY resolution, so refining never sharpens the feature; dual contouring is exact.
+    max_deviation_mm: f64,
+    /// Mean vertex-to-surface distance (mm). Small under either method — flat faces are easy —
+    /// which is why `max_deviation_mm` is the one that tells them apart.
+    mean_deviation_mm: f64,
     /// Size of the written STL in bytes.
     bytes: usize,
     /// Zero-triangle mesh — a valid outcome (see the `mesh` help), surfaced so a caller can branch.
@@ -134,6 +144,9 @@ struct Args {
     out: Option<String>,
     res: Option<usize>,
     format: Option<Format>,
+    /// Which polygonizer runs (#3388). `dual` preserves sharp features; `surface-nets` is the
+    /// original placement, kept only so the difference stays measurable.
+    method: Option<Method>,
     json: bool,
     pretty: bool,
 }
@@ -164,6 +177,12 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
             // letting them fall into the unknown-flag branch below.
             "-h" | "--help" => a.positional.insert(0, "help".into()),
             "-o" | "--out" => a.out = Some(it.next().ok_or("--out needs a path")?),
+            "--method" => {
+                let v = it.next().ok_or("--method needs a name: dual | surface-nets")?;
+                a.method = Some(Method::parse(&v).ok_or_else(|| {
+                    format!("--method: unknown polygonizer '{v}' (expected: dual | surface-nets)")
+                })?);
+            }
             "--format" => {
                 let v = it.next().ok_or("--format needs a value (stl, gltf, glb)")?;
                 a.format = Some(Format::parse(&v)?);
@@ -213,7 +232,9 @@ fn cmd_mesh(args: &Args) -> Result<(), String> {
         serde_json::from_str(&text).map_err(|e| format!("invalid spec '{spec_path}': {e}"))?;
 
     let res = args.res.unwrap_or(DEFAULT_RES);
-    let mesh = polygonize(&node, res);
+    let method = args.method.unwrap_or_default();
+    let mesh = polygonize_with(&node, res, method);
+    let (max_dev, mean_dev) = mesh.surface_deviation(&node);
     let format = args.format();
     let out_path = args.out.clone().unwrap_or_else(|| default_out(spec_path, format));
     // The part's name in the glTF scene graph — the spec's stem, so a viewer's outliner shows
@@ -237,6 +258,9 @@ fn cmd_mesh(args: &Args) -> Result<(), String> {
         triangles: mesh.triangle_count(),
         watertight: mesh.is_watertight(),
         volume_mm3: mesh.volume(),
+        method: method.as_str(),
+        max_deviation_mm: max_dev,
+        mean_deviation_mm: mean_dev,
         bytes: bytes.len(),
         empty: mesh.is_empty(),
     };
@@ -306,6 +330,11 @@ mod tests {
             triangles: 4,
             watertight: true,
             volume_mm3: 2500.0,
+            method: "dual-contouring",
+            // A sharp-feature-preserving polygonizer sits essentially ON the true surface; these are
+            // the shape of real dual-contouring numbers, not placeholders (#3388).
+            max_deviation_mm: 0.0012,
+            mean_deviation_mm: 0.0003,
             bytes: 284,
             empty: false,
         }
