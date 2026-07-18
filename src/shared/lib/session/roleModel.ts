@@ -217,9 +217,9 @@ export function hasScopedWriteCarveOut(cap: RoleCapability): boolean {
 const RESTRICTED_ROLE_COMMANDS: Partial<Record<SessionRole, readonly string[]>> = {
   curator: ["bsc ui", "bsc graph"],
   designer: ["bsc ui", "bsc component", "bsc shot preview", "bsc loop", "bsc request new", "bsc request list"],
-  librarian: ["bsc graph"],
-  "sound-designer": ["bsc sound"],
-  architect: ["bsc teams", "bsc persona"],
+  librarian: ["bsc graph", "bsc request new", "bsc request list"],
+  "sound-designer": ["bsc sound", "bsc request new", "bsc request list"],
+  architect: ["bsc teams", "bsc persona", "bsc request new", "bsc request list"],
 };
 
 /**

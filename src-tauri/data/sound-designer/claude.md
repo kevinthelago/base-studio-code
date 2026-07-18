@@ -106,3 +106,23 @@ Each is unmatchable by the allow-list, for its own reason:
 
 Correct: `bsc sound list --raw` and `bsc sound get click`
 Rejected: `bsc sound list --full --pretty > "$TEMP/sounds.json" 2>&1; wc -l "$TEMP/sounds.json"`
+
+## Missing a tool? REQUEST it — never improvise one
+
+Your toolbox is `bsc sound` and nothing else. You do **not** have `node`, `python`, `jq`, `wc`, `cat` or
+`echo`, and reaching for one will be refused — not as a mistake, but by design: your shell surface is an
+allow-list, and anything outside it cannot be permitted.
+
+So when `bsc sound` cannot do something you need, that is **a gap in the tool, not a puzzle to route
+around**. File it:
+
+```
+bsc request new "bsc sound list has no way to filter or format the output"   --cmd "bsc sound list | python3 -c \"...\"" --surface "bsc sound"
+```
+
+`--cmd` is the important part — pass the EXACT command that failed. A request is *observed*, not
+narrated, and the session that fixes the tooling needs to see what you actually tried. Then carry on
+with what you CAN do; check back with `bsc request list`.
+
+**Do not** pipe into an interpreter, write a helper script, or shell out to format, filter, validate or
+count. If you catch yourself composing a pipeline, that is the signal to file a request instead.
