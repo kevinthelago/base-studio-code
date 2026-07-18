@@ -37,6 +37,25 @@ describe("GraphView (#3224)", () => {
     expect(container.querySelectorAll('line[data-op="relax"]').length).toBe(1);
     expect(container.querySelectorAll('circle[data-op="relax"]').length).toBe(0);
   });
+
+  // #3378 — the visualization defect: an explored start node must still render as the origin. The two
+  // durable axes are stamped as SEPARATE attributes, so the CSS can paint the visited fill and the start
+  // ring on the same node instead of one erasing the other.
+  it("stamps the start/goal role alongside the walker's mark, so a visited origin stays distinguishable", () => {
+    const explored: GraphFrame = {
+      ...frame,
+      ops: undefined,
+      marks: { a: "visited", b: "visited", c: "visited" }, // the whole graph explored …
+      roles: { a: "start", c: "goal" }, // … and `a` is still the origin, `c` still the goal
+    };
+    const { container } = render(<GraphView frame={explored} />);
+    const start = container.querySelector('circle[data-role="start"]');
+    expect(start).not.toBeNull();
+    expect(start?.getAttribute("data-mark")).toBe("visited"); // both facts on ONE node
+    expect(container.querySelector('circle[data-role="goal"]')?.getAttribute("data-mark")).toBe("visited");
+    // The middle node carries no role — it is only distinguishable BECAUSE the others do.
+    expect(container.querySelectorAll("circle[data-role]").length).toBe(2);
+  });
 });
 
 describe("circularLayout (#3224)", () => {

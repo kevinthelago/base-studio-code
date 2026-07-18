@@ -20,6 +20,10 @@ export interface OpStateAttrs {
   "data-op"?: string;
   /** The durable state the element has reached (`sorted`/`pivot`/`visited`/`current`/…). */
   "data-mark"?: string;
+  /** The durable ROLE the algorithm assigned the element (`start`/`goal`) — a SECOND, independent axis
+   *  (#3378). An element carries at most one `data-mark` AND at most one `data-role`, so a start node can
+   *  render as both the origin and visited. */
+  "data-role"?: string;
 }
 
 /** A NUMERIC-index-addressed op — the shape `opStateAttrs` reads from array / linked-list / stack ops.
@@ -84,6 +88,17 @@ export function nodeOpStateAttrs(ops: readonly NodeOp[] | undefined, id: string)
 export function markStateAttrs(marks: Record<string, string> | undefined, key: string): OpStateAttrs {
   const mark = marks?.[key];
   return mark ? { "data-mark": mark } : {};
+}
+
+/**
+ * The `data-role` for a keyed element from a frame's durable `roles` record (a graph node's `start`/`goal`
+ * anchor, #3378). Empty when the key has no role. The independent twin of {@link markStateAttrs}: roles and
+ * marks are different facts, so both may be stamped on the same element and neither overwrites the other.
+ * Pure.
+ */
+export function roleStateAttrs(roles: Record<string, string> | undefined, key: string): OpStateAttrs {
+  const role = roles?.[key];
+  return role ? { "data-role": role } : {};
 }
 
 /** A 2-D-addressed op — the shape `cellOpStateAttrs` reads from matrix ops (#3221). A cell op names its

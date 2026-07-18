@@ -1,11 +1,12 @@
 // The `graph` structure renderer (#3224, epic #3220) — a `StructureRenderer<"graph">` that draws a
 // GraphFrame as an SVG node-link diagram on a circular layout. Node search state comes from the frame's
-// durable `marks` (static colours in graphView.css); the transient verbs (visit / frontier on a node,
+// durable `marks` and its start/goal anchors from the separate `roles` field (#3378 — both are static
+// colours in graphView.css, and a node may carry one of each); the transient verbs (visit / frontier on a node,
 // relax on an edge) are stamped as `data-op` and animate via the designer-authored KitAnimation data
 // (`graphViewMotion.ts`). Like the other renderers, it only stamps state — never writes animation CSS.
 import { useEffect } from "react";
 import { Box } from "@/shared/ui/layout/Box";
-import { markStateAttrs, nodeOpStateAttrs } from "../../lib/binding";
+import { markStateAttrs, nodeOpStateAttrs, roleStateAttrs } from "../../lib/binding";
 import type { GraphFrame } from "../../lib/trace";
 import type { StructureRenderer } from "../registry";
 import { GRAPH_VIZ_ANIM_CLASSES, ensureGraphViewMotion } from "./graphViewMotion";
@@ -22,7 +23,7 @@ export const GraphView: StructureRenderer<"graph"> = ({ frame }: { frame: GraphF
     ensureGraphViewMotion();
   }, []);
 
-  const { nodes, edges, ops, marks } = frame;
+  const { nodes, edges, ops, marks, roles } = frame;
   const pos = layoutFor(nodes);
   // The edges relaxed THIS frame (undirected) — stamped data-op="relax" so they flash.
   const relaxed = new Set(
@@ -63,7 +64,14 @@ export const GraphView: StructureRenderer<"graph"> = ({ frame }: { frame: GraphF
         {nodes.map((nd) => {
           const p = pos[nd.id];
           if (!p) return null;
-          const attrs = { ...nodeOpStateAttrs(nodeOps, nd.id), ...markStateAttrs(marks, nd.id) };
+          // Three independent axes: the transient verb, the walker's durable state, and the algorithm's
+          // durable role. `roles` is stamped separately (#3378) so an explored start node still reads as
+          // the origin — `data-mark="visited"` AND `data-role="start"`.
+          const attrs = {
+            ...nodeOpStateAttrs(nodeOps, nd.id),
+            ...markStateAttrs(marks, nd.id),
+            ...roleStateAttrs(roles, nd.id),
+          };
           return (
             <g key={nd.id} transform={`translate(${p.x} ${p.y})`}>
               <circle className="graph-node" r={NODE_R} {...attrs} />
