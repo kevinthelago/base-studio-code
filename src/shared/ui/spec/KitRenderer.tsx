@@ -111,7 +111,8 @@ function renderNode(node: KitNode, ctx: KitBindings, key: string): ReactNode {
     case "toggle": {
       const t = node as ToggleNode;
       const isOn = Boolean(ctx.values?.[t.bind]);
-      const sw = <Toggle key={key} on={isOn} onClick={() => ctx.onBind?.(t.bind, !isOn)} />;
+      // role="switch" + aria-checked make the spec-rendered toggle an accessible (and testable) switch.
+      const sw = <Toggle key={key} on={isOn} role="switch" ariaChecked={isOn} onClick={() => ctx.onBind?.(t.bind, !isOn)} />;
       if (t.label == null) return sw;
       return <Row key={key} gap="sm" justify="between"><Text>{t.label}</Text>{sw}</Row>;
     }
