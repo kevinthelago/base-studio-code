@@ -1,7 +1,7 @@
 // Migration SOURCE gate (#source-pane) — the pure readiness/gate helpers that drive the Source
 // stage: connection counts + readiness checks, the `sourcesConnected` gate signal, and the
-// datamodel.json gate signals derived from the live scan state (so the gate reflects scan progress
-// without a round-trip to disk). Split out of sourceValidate.ts (#1712); the Data Model derivation
+// Data Model gate signals derived from the live scan state (so the gate reflects scan progress
+// without a round-trip to the store). Split out of sourceValidate.ts (#1712); the Data Model derivation
 // lives in dataModelDerivation.ts and the type model in sourceSpecs.ts.
 
 import type { ReadinessCheck } from "./readiness";
@@ -42,9 +42,11 @@ export function migrationActive(cfg: SourceConfig | undefined): boolean {
   return !!cfg && cfg.sources.length > 0;
 }
 
-/** The datamodel.json gate signals derived from the live scan state (feeds derivePlanStageState),
- *  so the source stage's gate reflects scan progress without a round-trip to disk. */
-export function datamodelSignals(cfg: SourceConfig | undefined): { sourceReachable: boolean; modelInferred: boolean; schemaRefined: boolean } {
+/** The Data Model gate signals derived from the live scan state (feeds derivePlanStageState), so the
+ *  source stage's gate reflects scan progress without reading back the canonical model. The canonical
+ *  Data Model itself lives in the project's DuckDB store (`bsc data model get`, #1446) — these are
+ *  progress booleans about the scan, not a read of that store. */
+export function dataModelSignals(cfg: SourceConfig | undefined): { sourceReachable: boolean; modelInferred: boolean; schemaRefined: boolean } {
   if (!cfg) return { sourceReachable: false, modelInferred: false, schemaRefined: false };
   return {
     sourceReachable: cfg.sources.some((s) => s.status === "scanning" || s.status === "scanned"),

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   connector, defaultSourceConfig, newDeclaredSource, sampleScan, redactedHandle,
   isConnected, connectedCount, allSourcesConnected, sourceChecks,
-  deriveDataModel, migrationActive, datamodelSignals, downstreamImpact, proposeFromPitch,
+  deriveDataModel, migrationActive, dataModelSignals, downstreamImpact, proposeFromPitch,
   scanEntities, scanEdges, aggregatePlatform, isMultiSource, connectorColor,
   type DeclaredSource, type SourceConfig, type PlatformScanView,
 } from "./sourceConfig";
@@ -108,11 +108,11 @@ describe("sourceConfig — derive model + downstream (#1205)", () => {
     expect(checkDataModel(deriveDataModel(scannedCfg))).toEqual([]);
   });
 
-  it("datamodelSignals reflect scan progress", () => {
-    expect(datamodelSignals(undefined)).toEqual({ sourceReachable: false, modelInferred: false, schemaRefined: false });
+  it("dataModelSignals reflect scan progress", () => {
+    expect(dataModelSignals(undefined)).toEqual({ sourceReachable: false, modelInferred: false, schemaRefined: false });
     // one scanned + one declared ⇒ reachable + inferred, but not refined (not all scanned)
-    expect(datamodelSignals(scannedCfg)).toEqual({ sourceReachable: true, modelInferred: true, schemaRefined: false });
-    expect(datamodelSignals({ ...scannedCfg, sources: [scannedCfg.sources[0]] }).schemaRefined).toBe(true);
+    expect(dataModelSignals(scannedCfg)).toEqual({ sourceReachable: true, modelInferred: true, schemaRefined: false });
+    expect(dataModelSignals({ ...scannedCfg, sources: [scannedCfg.sources[0]] }).schemaRefined).toBe(true);
   });
 
   it("downstreamImpact counts entities, fields, and behaviors", () => {
