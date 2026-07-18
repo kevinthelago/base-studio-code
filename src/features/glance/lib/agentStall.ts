@@ -76,11 +76,11 @@ export interface FleetLiveSignals {
  * the agent twin of the L0 {@link applyStallHealth}. Each node is keyed by its pane id
  * `fleetPaneId(projectKey, node.id)`, and its OWN health/activity is set from what its session is doing NOW:
  *
- *   - not launched                              → left at planned rest (idle/idle)
+ *   - not launched (NO session exists)           → off · idle
  *   - launched + running (`paneStatus === "run"`) → healthy · building
  *   - launched + parked on a fresh `bsc-wait`    → healthy · waiting
  *   - that wait overstayed `warnMs`              → warning · waiting (reason "<note> · Nm")
- *   - launched but quiet (between prompts)       → healthy · idle  (subtly live — distinct from unlaunched)
+ *   - launched but quiet (between prompts)       → idle · idle  (it EXISTS but is not working)
  *
  * The `preview` node (not an agent) is left untouched. The director gets the same treatment via
  * `<project>:director`, so it finally moves off idle. Pure — apply to `rawNodes` BEFORE `buildGraph` so the
@@ -92,7 +92,11 @@ export function applyFleetLiveStatus(nodes: GRawNode[], projectKey: string, sig:
   return nodes.map((n) => {
     if (n.preview) return n; // not an agent — its own healthy/live state stands
     const paneId = fleetPaneId(projectKey, n.id);
-    if (!sig.livePaneIds.has(paneId)) return n; // unlaunched → the planned rest state (idle/idle)
+    // NOT LAUNCHED — there is no session behind this node. That is `off`, not `idle`: the two states
+    // were indistinguishable while both rendered idle, so a node with no session read as one that was
+    // merely quiet, and its empty log view looked like a broken log rather than an absent session.
+    // `off` = no session exists · `idle` = a session exists but is not working · `healthy` = working.
+    if (!sig.livePaneIds.has(paneId)) return { ...n, health: "off" as GHealth, activity: "idle" as GActivity };
     const wait = waitByPane.get(paneId);
     if (wait) {
       const elapsed = sig.now - wait.at;
@@ -104,6 +108,9 @@ export function applyFleetLiveStatus(nodes: GRawNode[], projectKey: string, sig:
       return { ...n, health: "healthy" as GHealth, activity: "waiting" as GActivity }; // fresh pause — calm
     }
     if (sig.paneStatus[paneId] === "run") return { ...n, health: "healthy" as GHealth, activity: "building" as GActivity };
-    return { ...n, health: "healthy" as GHealth, activity: "idle" as GActivity }; // launched but quiet — subtly live
+    // Launched, but not working: the session EXISTS and is quiet ⇒ `idle` on both axes. It used to read
+    // `healthy` here ("subtly live"), which collided with a genuinely working session — and left `idle`
+    // free to be misread as the no-session state. Health now tracks existence + work, not mere launch.
+    return { ...n, health: "idle" as GHealth, activity: "idle" as GActivity };
   });
 }

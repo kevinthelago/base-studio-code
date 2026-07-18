@@ -2,7 +2,7 @@
 // referenced library nodes a kit's components declare via `@bsc/algorithms/…` / `@bsc/sounds/…` imports.
 // Reads the packaged seeds (the flagship `fibonacci.ts` algorithm + the default `signal` sound kit).
 import { describe, it, expect } from "vitest";
-import { resolveComponentLibraryRefs } from "./libraryComposition";
+import { resolveComponentLibraryRefs, resolveKitLibraryRefs } from "./libraryComposition";
 import { crossGraphEdgeId } from "@/shared/lib/graph/crossGraph";
 import type { ComponentRecord, Role } from "./model";
 
@@ -87,5 +87,48 @@ describe("resolveComponentLibraryRefs — sounds (#3117)", () => {
     // the algorithm + the real cue resolve (2 nodes / 2 edges); the missing sound ref is dropped.
     expect(new Set(nodes.map((n) => n.urn))).toEqual(new Set(["algo:typescript/fibonacci.ts", "sound:signal/click"]));
     expect(edges).toHaveLength(2);
+  });
+});
+
+describe("resolveKitLibraryRefs — kit-level roll-up (#3133)", () => {
+  it("rolls a component's real @bsc import up to its KIT, carrying the resolved graph/id/label", () => {
+    const fib = comp("FibCard", "composite", {
+      source: 'import { fibonacci } from "@bsc/algorithms/fibonacci";\nexport const FibCard = () => fibonacci(10);',
+    });
+    expect(resolveKitLibraryRefs([fib])).toEqual([
+      { kitId: "react-ui", graph: "algo", id: "fibonacci.ts", label: "fibonacci" },
+    ]);
+  });
+
+  it("collapses N components of one kit requiring the SAME node into ONE ref", () => {
+    const src = 'import { fibonacci } from "@bsc/algorithms/fibonacci";\nexport const C = () => fibonacci(1);';
+    const refs = resolveKitLibraryRefs([comp("A", "composite", { source: src }), comp("B", "composite", { source: src })]);
+    expect(refs).toHaveLength(1);
+    expect(refs[0].kitId).toBe("react-ui");
+  });
+
+  it("keeps the SAME node once per kit — a shared library node reached from two kits", () => {
+    const src = 'import { fibonacci } from "@bsc/algorithms/fibonacci";\nexport const C = () => fibonacci(1);';
+    const refs = resolveKitLibraryRefs([
+      comp("A", "composite", { source: src }),
+      comp("B", "composite", { kitId: "other-kit", source: src }),
+    ]);
+    expect(refs.map((r) => r.kitId)).toEqual(["react-ui", "other-kit"]);
+    expect(new Set(refs.map((r) => r.id))).toEqual(new Set(["fibonacci.ts"]));
+  });
+
+  it("carries algorithms AND sounds, each tagged with its library graph", () => {
+    const mixed = comp("Mixed", "composite", {
+      source: 'import { fibonacci } from "@bsc/algorithms/fibonacci";\nimport { play } from "@bsc/sounds/click";\nexport const M = () => fibonacci(play());',
+    });
+    expect(resolveKitLibraryRefs([mixed])).toEqual([
+      { kitId: "react-ui", graph: "algo", id: "fibonacci.ts", label: "fibonacci" },
+      { kitId: "react-ui", graph: "sound", id: "click", label: "Click" },
+    ]);
+  });
+
+  it("is empty for components with no @bsc import (the band is omitted entirely)", () => {
+    expect(resolveKitLibraryRefs([comp("Plain", "primitive")])).toEqual([]);
+    expect(resolveKitLibraryRefs([])).toEqual([]);
   });
 });

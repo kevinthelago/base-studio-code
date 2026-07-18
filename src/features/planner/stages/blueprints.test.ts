@@ -21,9 +21,18 @@ describe("greenfield blueprints declare their consumer kit (#2810)", () => {
   const bps = makeBlueprints();
 
   it("greenfield built-ins auto-record kit=react-ui so the kit_usage edge fills at bind", () => {
-    const greenfield = bps.filter((b) => b.category === "greenfield");
+    // …every greenfield that actually SHIPS an app UI. The authoring lifecycle (#923,
+    // `deliverable: "blueprint"`) is filed under greenfield in the library because it creates something
+    // new, but what it creates is a blueprint published to a gist — it has no execution side and renders
+    // no UI, so tying it to the packaged kit filed a kit_usage edge that drew a spurious kit→project
+    // edge in the network and fanned UI-kit changes out to a project with no UI (#3411).
+    const greenfield = bps.filter((b) => b.category === "greenfield" && b.deliverable !== "blueprint");
     expect(greenfield.length).toBeGreaterThan(0);
     expect(greenfield.every((b) => b.kit === "react-ui")).toBe(true);
+    // The authoring blueprint is the carve-out — it exists, and it is NOT a kit consumer.
+    const authoring = bps.filter((b) => b.deliverable === "blueprint");
+    expect(authoring.length).toBeGreaterThan(0);
+    expect(authoring.every((b) => b.kit === undefined)).toBe(true);
   });
 
   it("a non-greenfield (operate-on-existing / data / script) built-in isn't auto-tied to a shared kit", () => {
@@ -90,6 +99,32 @@ describe("blueprints — seed library", () => {
     // The whole six-shape vocabulary is named for the planner to derive against.
     for (const shape of ["list", "linked-list", "tree", "graph", "table", "key-value"]) {
       expect(def.prompt ?? "", `prompt names the ${shape} shape`).toContain(shape);
+    }
+  });
+
+  it("the layout stages close the schema → shape → component loop (#2478)", () => {
+    // #2475 gave the planner "which component renders shape X" (`bsc ui shapes`). #2478 supplies the
+    // OTHER half — "what shape IS this entity's data" — inferred from the canonical Data Model by
+    // `bsc data shapes` (crates/data `shape.rs`). Both stages that pick a layout must teach it, or the
+    // session is back to judging the taxonomy by hand.
+    for (const key of ["ui", "test_ui"]) {
+      const def = STAGE_DEFS[key];
+      expect(def, `${key} stage def exists`).toBeTruthy();
+      for (const text of [def.prompt ?? "", def.directive ?? ""]) {
+        expect(text, `${key} teaches the schema→shape verb`).toContain("bsc data shapes");
+      }
+      // The inference returns RANKED candidates with reasons, never one guess — and a tie goes to
+      // the user (a lone self-reference is a tree only if an item has ONE parent).
+      const both = `${def.prompt ?? ""}\n${def.directive ?? ""}`.toLowerCase();
+      expect(both, `${key} says the candidates are ranked`).toContain("rank");
+      expect(
+        both.includes("ask the user") || both.includes("put the question to the user"),
+        `${key} tells the session to ask when the top candidates tie`,
+      ).toBe(true);
+      // The vocabulary the two CLIs share — pinned so the prose can't teach a rejected token.
+      for (const shape of ["list", "linked-list", "tree", "graph", "table", "key-value"]) {
+        expect(both, `${key} names the ${shape} shape`).toContain(shape);
+      }
     }
   });
 

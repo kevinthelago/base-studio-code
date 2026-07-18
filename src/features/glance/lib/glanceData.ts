@@ -4,11 +4,12 @@
 // wiring real edges later is a drop-in — the page + graph core never change.
 import sampleGraphEmbedded from "@data/glance/sample-graph.json";
 import type { GRawNode, GRawEdge, GRole, GCategory, GHealth, GActivity } from "./glanceGraph";
-import { kitNodeId, usesKitEdgeId } from "./glanceGraph";
+import { kitNodeId, usesKitEdgeId, libraryNodeId, requiresEdgeId } from "./glanceGraph";
 import type { ProjectLink } from "./projectLinks";
-// Cross-feature type only, via the barrel (#1309 boundary): the consumer index (`kitUsage`) whose
-// (projectKey, kitId) edges the kit nodes are built from.
-import type { KitConsumer } from "@/features/designs";
+// Cross-feature types only, via the barrel (#1309 boundary): the consumer index (`kitUsage`) whose
+// (projectKey, kitId) edges the kit nodes are built from, plus the kit→library `requires` roll-up
+// (`resolveKitLibraryRefs`, #3133) the caller resolves and hands in as plain data.
+import type { KitConsumer, KitLibraryRef } from "@/features/designs";
 
 export interface GlanceData { rawNodes: GRawNode[]; rawEdges: GRawEdge[]; sample: boolean }
 
@@ -40,13 +41,21 @@ export const SAMPLE_GRAPH: GlanceData = {
  *  network shows which projects SHARE a kit. Zero projects yields an EMPTY graph (`sample: false`) — the
  *  workspace renders a real empty state (#2272), no mock.
  *
- *  @param kitUsage the consumer index (`kitUsage`) — (projectKey, kitId) edges (from `@/features/designs`).
- *  @param kits     the kit library, so a kit node reads the kit's NAME (else its id). */
+ *  On top of that, the generalized CROSS-GRAPH library dimension (#3133): a project transitively `requires`
+ *  every algorithm / sound node the components of its kits import, so the fenced band carries real library
+ *  dependencies (the logistics example: a route-planner project → its `algo:` dijkstra node), not just kits.
+ *
+ *  @param kitUsage    the consumer index (`kitUsage`) — (projectKey, kitId) edges (from `@/features/designs`).
+ *  @param kits        the kit library, so a kit node reads the kit's NAME (else its id).
+ *  @param libraryRefs the kit→library `requires` roll-up (`resolveKitLibraryRefs`, #3133) — resolved by the
+ *                     CALLER and memoized on the component list, because deriving it scans component source;
+ *                     this function must stay cheap (it re-runs on every project-status tick). */
 export function buildGlanceData(
   projects: ProjectLite[],
   links: ProjectLink[] = [],
   kitUsage: KitConsumer[] = [],
   kits: KitLite[] = [],
+  libraryRefs: KitLibraryRef[] = [],
 ): GlanceData {
   const rawNodes: GRawNode[] = projects.map((p) => ({
     id: p.id,
@@ -93,6 +102,51 @@ export function buildGlanceData(
     });
     for (const projectKey of consumers) {
       rawEdges.push({ id: usesKitEdgeId(projectKey, kitId), from: projectKey, to: kitNodeId(kitId), kind: "uses-kit" });
+    }
+  }
+
+  // The generalized CROSS-GRAPH LIBRARY dimension (#3133, epic #3114) — the same fenced band, now carrying
+  // ALGORITHM + SOUND nodes with `requires` edges. The dependency is TRANSITIVE and derived, never authored:
+  // a project consumes a kit (`kitUsage`), that kit's components import `@bsc/algorithms/…` / `@bsc/sounds/…`
+  // (`resolveKitLibraryRefs`), therefore the project requires those library nodes. Edge direction matches the
+  // kit dimension (consumer→provider), so a library node lands foundational in the band alongside the kits
+  // and its `idle` health never rolls up into a project.
+  //
+  // Emitted AFTER the kit loop and gated on `consumersByKit`, so: a project with no library-importing kit is
+  // byte-identical to before, and a library node never appears without ≥1 visible edge.
+  const refsByKit = new Map<string, KitLibraryRef[]>();
+  for (const ref of libraryRefs) {
+    const arr = refsByKit.get(ref.kitId) ?? [];
+    arr.push(ref);
+    refsByKit.set(ref.kitId, arr);
+  }
+  const seenLibNode = new Set<string>();
+  const seenReqEdge = new Set<string>();
+  for (const [kitId, consumers] of consumersByKit) {
+    for (const ref of refsByKit.get(kitId) ?? []) {
+      const nodeId = libraryNodeId(ref.graph, ref.id);
+      if (!seenLibNode.has(nodeId)) {
+        // Deduped ACROSS kits: two kits requiring `fibonacci` share ONE band node (that sharing is the point
+        // — the band shows a library node's full consumer set).
+        seenLibNode.add(nodeId);
+        rawNodes.push({
+          id: nodeId,
+          slug: ref.label || ref.id,
+          kind: "library",
+          library: ref.graph,  // the band/legend/inspector colour + kind word (algorithm · sound)
+          role: "infra",       // a shared foundational dependency, like a kit
+          health: "idle",      // a library node has no runtime health of its own
+          activity: "idle",
+        });
+      }
+      for (const projectKey of consumers) {
+        // Deduped per (project, node): a project consuming two kits that both require `fibonacci` draws ONE
+        // edge, not a doubled one.
+        const id = requiresEdgeId(projectKey, nodeId);
+        if (seenReqEdge.has(id)) continue;
+        seenReqEdge.add(id);
+        rawEdges.push({ id, from: projectKey, to: nodeId, kind: "requires" });
+      }
     }
   }
 

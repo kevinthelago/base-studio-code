@@ -73,9 +73,20 @@ describe("AlgorithmsWorkspace librarian dock (#2787)", () => {
     expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.librarian.paneId);
   });
 
+  // Vocabulary updated for the impl-only model (#3390). This asserted the ABSTRACT CONCEPT layer — it
+  // clicked a "Merge Sort" concept node and read that concept's prose summary out of the inspector. #2961
+  // deleted that layer outright ("a node IS its implementation — there is no concept layer"), removing the
+  // concept nodes, the concept-node view in AlgorithmsInspector, and every prose summary; #2971 then dropped
+  // the language suffix from impl names. That commit rewrote the algorithms tests to the impl-only model but
+  // missed this one, which lives in the DOCK's file — so it has queried a node that cannot exist since.
+  //
+  // The GUARANTEE is still real and still worth a test, so this is rewritten rather than deleted: it is the
+  // only coverage of node-click→inspector with the librarian dock MOUNTED (the #2787 risk is the dock
+  // swallowing canvas interaction). AlgorithmsWorkspace.test.tsx covers the same path WITHOUT the dock, so
+  // this mirrors its impl-only assertions: click the `merge_sort` impl, read its inspector-unique code.
   it("clicking a graph node still drives the inspector with the dock present", () => {
     render(<TerminalHost><AlgorithmsWorkspace /></TerminalHost>);
-    fireEvent.click(screen.getAllByText("Merge Sort")[0]);
-    expect(screen.getByText(/Split, sort halves, merge/)).toBeTruthy(); // inspector-unique summary
+    fireEvent.click(screen.getAllByText("merge_sort")[0]);
+    expect(screen.getByText((c) => c.includes("merge(&left, &right)"))).toBeTruthy(); // inspector-unique code
   });
 });

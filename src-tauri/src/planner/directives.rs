@@ -274,6 +274,50 @@ mod tests {
         }
     }
 
+    /// #2478: the shape LOOP is closed end to end in the shipped stage prose. `bsc data shapes`
+    /// answers "what shape IS this entity's data" (inferred from the canonical Data Model's own
+    /// structure — see `bsc_data::shape`); `bsc ui shapes` answers "which kit components render that
+    /// shape" (#2475). The stages that pick a layout must teach BOTH halves, or the planner is back
+    /// to judging the taxonomy by hand — which is exactly what #2478 removed.
+    #[test]
+    fn layout_stages_teach_the_schema_to_shape_to_component_loop() {
+        for id in ["ui", "test_ui"] {
+            let raw = crate::platform::config::embedded_str(&format!("stages/{id}.json"));
+            let v: serde_json::Value = serde_json::from_str(&raw).expect("stage json valid");
+            let prompt = v["prompt"].as_str().unwrap_or_default();
+            let directive = v["directive"].as_str().unwrap_or_default();
+            for field in [prompt, directive] {
+                assert!(
+                    field.contains("bsc data shapes"),
+                    "stage '{id}' must teach `bsc data shapes` — the schema→shape half of the loop"
+                );
+            }
+            // The inference returns RANKED candidates, never one guess: the prose has to say so, so
+            // the session surfaces the tie instead of silently picking (a lone self-reference is a
+            // tree ONLY if an item has one parent).
+            let both = format!("{prompt}\n{directive}").to_lowercase();
+            assert!(
+                both.contains("rank"),
+                "stage '{id}' must say the shapes come back RANKED, not as a single answer"
+            );
+            assert!(
+                both.contains("ask the user") || both.contains("put the question to the user"),
+                "stage '{id}' must tell the session to ask when the top candidates tie"
+            );
+            // The shape slugs are the shared vocabulary both CLIs accept — pin them so the prose
+            // can't teach a token `bsc ui shapes` would reject.
+            for shape in ["list", "linked-list", "tree", "graph", "table", "key-value"] {
+                assert!(
+                    both.contains(shape),
+                    "stage '{id}' must name the `{shape}` vocabulary token"
+                );
+            }
+        }
+        // The component half stays where #2475 put it: the Test UI stage picks the layout.
+        let test_ui = crate::platform::config::embedded_str("stages/test_ui.json");
+        assert!(test_ui.contains("bsc ui shapes"), "test_ui teaches the component-side picker");
+    }
+
     /// Drift guard (the `find_fixture`-style contract): the stage JSONs carrying a `directive` are
     /// EXACTLY the expected set. Both Rust (the config loader / embedded seed) and the frontend
     /// (`import.meta.glob`) read the SAME `data/stages/` dir, so a directive can't drift between them;

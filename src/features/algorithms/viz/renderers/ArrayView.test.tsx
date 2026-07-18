@@ -6,6 +6,8 @@ import { render } from "@testing-library/react";
 import { ArrayView } from "./ArrayView";
 import { ALGO_VIZ_ANIM_CLASSES, ALGO_VIZ_MOTION_CSS } from "./arrayViewMotion";
 import type { ArrayFrame } from "../../lib/trace";
+import { TracedArray } from "../../lib/tracer";
+import { binarySearch } from "../examples/searches";
 
 /** Render an ArrayFrame and return its cell elements (in index order) + the container. */
 function renderFrame(frame: ArrayFrame) {
@@ -65,6 +67,26 @@ describe("ArrayView (#3178)", () => {
     expect(cells[0].hasAttribute("data-op")).toBe(false);
     expect(cells[2].getAttribute("data-mark")).toBe("pivot");
     expect(cells[1].hasAttribute("data-mark")).toBe(false);
+  });
+
+  it("renders a REAL search trace end to end: probes stamp data-op, the hit stamps data-mark='found'", () => {
+    // Instrumented execution all the way through (#3220) — the actual binary search drives the render.
+    const a = new TracedArray([1, 3, 4, 7, 9]);
+    binarySearch(a, 9);
+    const frames = a.trace();
+    const probed = frames.filter((f) => f.ops?.some((o) => o.op === "probe"));
+    expect(probed.length).toBeGreaterThan(0);
+    for (const f of probed) {
+      const at = (f.ops!.find((o) => o.op === "probe") as { at: number }).at;
+      const { cells } = renderFrame(f);
+      expect(cells[at].getAttribute("data-op")).toBe("probe");
+      // A probe examines exactly ONE cell — no pairwise highlight (that is `compare`'s job).
+      expect(cells.filter((c) => c.getAttribute("data-op") === "probe")).toHaveLength(1);
+    }
+    // The terminal frame paints the hit durably — the visible answer the whole search was for.
+    const { cells } = renderFrame(frames[frames.length - 1]);
+    expect(cells[4].getAttribute("data-mark")).toBe("found");
+    expect(cells.filter((c) => c.hasAttribute("data-mark"))).toHaveLength(1);
   });
 
   it("renders cursors as labeled pills above their index", () => {

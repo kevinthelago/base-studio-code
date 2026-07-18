@@ -13,6 +13,11 @@
 //     `signal`). A `@bsc/sounds/<id>` is kit-less, so it resolves against that one default kit (#3117). The
 //     Rust twin (`graph_health.rs`) embeds that SAME kit's seed; a test pins `signal` on BOTH sides so they
 //     stay in lockstep if the default ever changes.
+//     DELIBERATELY NOT the blueprint's `soundKit` pin yet (#3372 shipped the pin as CONFIG; making it the
+//     RESOLUTION target is #3412). The blocker is shape, not wiring: this resolver is a module-level const
+//     over packaged seeds, while a pin resolves ASYNCHRONOUSLY through the `bsc` bridge — so the kit must
+//     become injected state, the Rust twin must move in lockstep, and the unresolvable-pin/missing-cue
+//     fallback needs an explicit policy. Tracked, not implicit.
 //   • `ui` has no vendor path in this slice, so it doesn't resolve here (its imports stay honestly
 //     unresolvable until #3118/#3119).
 //

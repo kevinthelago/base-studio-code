@@ -12,6 +12,7 @@
 // `data-mark` states each renderer stamps (see lib/binding.ts) — not driven from here.
 
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
@@ -20,6 +21,7 @@ import { Button } from "@/shared/ui/controls/Button";
 import { normalizeFrame, type Frame, type StructureFrame } from "../lib/trace";
 import { makeTraceStream } from "../lib/traceStream";
 import { resolveRenderer, type RendererRegistry } from "./registry";
+import { CodeColumn } from "./CodeColumn";
 import "./tracePlayer.css";
 
 /** After the user stops stepping, resume the infinite loop this long later (#3207) — long enough to study
@@ -46,6 +48,10 @@ export interface TracePlayerProps {
   /** Render the play/step/scrub control bar. Default true; the compact inline preview passes false so it's
    *  just the moving picture (#3199). */
   controls?: boolean;
+  /** The trace-program source to show BESIDE the animation, with the current frame's op span highlighted
+   *  (#3250). Omit for no code column — the inline preview is far too small for one, and an example with
+   *  no runtime source (an in-app program) has nothing honest to show. */
+  source?: string;
 }
 
 /** One panel: dispatch its frame to the registered renderer for its structure, or the fallback. Uses
@@ -63,7 +69,7 @@ function PanelView({ name, frame, renderers }: { name: string; frame: StructureF
   );
 }
 
-export function TracePlayer({ factory, renderers = {}, bufferSize, fps = 4, autoPlay = false, loop = false, controls = true }: TracePlayerProps) {
+export function TracePlayer({ factory, renderers = {}, bufferSize, fps = 4, autoPlay = false, loop = false, controls = true, source }: TracePlayerProps) {
   const stream = useMemo(() => makeTraceStream(factory, { bufferSize }), [factory, bufferSize]);
   const [frame, setFrame] = useState<Frame | null>(null);
   const [index, setIndex] = useState(-1);
@@ -126,8 +132,15 @@ export function TracePlayer({ factory, renderers = {}, bufferSize, fps = 4, auto
   const stepForward = useCallback(() => {
     pauseThenResume();
     // Wrap at the end so you can keep stepping through the loop (the viz is infinite).
-    if (stream.atEnd()) stream.seek(0);
-    else stream.next();
+    //
+    // `next() === null` IS the end signal — `atEnd()` must NOT be tested first (#3390). The stream pulls
+    // LAZILY, so the generator only reports `done` on the pull AFTER the last frame: while the cursor sits
+    // on that last frame nothing has been pulled past it yet, `exhausted` is still false, and `atEnd()`
+    // reads FALSE (asserted in traceStream.test.ts). Testing it first therefore fell through to `next()`,
+    // which returned null and left the cursor parked — so the first click on the last frame did nothing
+    // and the wrap cost a dead click, breaking "infinite stepping". Advancing first and wrapping on the
+    // null return uses the same end-detection the play loop already uses.
+    if (stream.next() == null) stream.seek(0);
     sync();
   }, [stream, sync, pauseThenResume]);
 
@@ -141,19 +154,32 @@ export function TracePlayer({ factory, renderers = {}, bufferSize, fps = 4, auto
   const entries = Object.entries(panels);
   const knownSteps = Math.max(0, maxIndex);
 
+  const panelsRow = (
+    <Row gap={12} wrap className="trace-panels">
+      {entries.length === 0 ? (
+        <Text size={12} tone="muted">
+          No frames.
+        </Text>
+      ) : (
+        entries.map(([name, panel]) => (
+          <PanelView key={name} name={name} frame={panel} renderers={renderers} />
+        ))
+      )}
+    </Row>
+  );
+
   return (
     <Stack gap={12} className="trace-player">
-      <Row gap={12} wrap className="trace-panels">
-        {entries.length === 0 ? (
-          <Text size={12} tone="muted">
-            No frames.
-          </Text>
-        ) : (
-          entries.map(([name, panel]) => (
-            <PanelView key={name} name={name} frame={panel} renderers={renderers} />
-          ))
-        )}
-      </Row>
+      {/* With a source, the animation and the code sit side by side and step together (#3250); without
+          one the panels row stays exactly as it was, so the inline preview's layout is untouched. */}
+      {source ? (
+        <Row gap={12} className="trace-split">
+          <Box className="trace-split-viz">{panelsRow}</Box>
+          <CodeColumn source={source} loc={frame?.loc} />
+        </Row>
+      ) : (
+        panelsRow
+      )}
 
       {controls && (
         // Step-through only (#3207): no play/pause, no scrubber — the animation infinite-loops on its own

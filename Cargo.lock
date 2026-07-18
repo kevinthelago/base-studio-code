@@ -522,6 +522,7 @@ dependencies = [
  "base64 0.22.1",
  "bsc-appchan",
  "bsc-data",
+ "bsc-graph",
  "bsc-llm",
  "bsc-navigate",
  "bsc-project",
@@ -741,6 +742,7 @@ name = "bsc"
 version = "0.1.0"
 dependencies = [
  "bsc-blueprint",
+ "bsc-cad",
  "bsc-cli-util",
  "bsc-component",
  "bsc-data",
@@ -805,6 +807,7 @@ dependencies = [
 name = "bsc-cad"
 version = "0.1.0"
 dependencies = [
+ "bsc-cli-util",
  "serde",
  "serde_json",
 ]
@@ -958,6 +961,9 @@ version = "0.1.0"
 dependencies = [
  "bsc-cli-util",
  "bsc-json-store",
+ "bsc-util",
+ "serde_json",
+ "sha2 0.11.0",
 ]
 
 [[package]]

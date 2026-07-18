@@ -17,7 +17,7 @@ export interface VizWorkerRequest {
 
 /** Worker → main: the recorded frames, or a compile/runtime error message. */
 export type VizWorkerResponse =
-  | { id: number; ok: true; datatype: VizDatatype; input: VizRun["input"]; frames: Frame[] }
+  | { id: number; ok: true; datatype: VizDatatype; input: VizRun["input"]; frames: Frame[]; source: string }
   | { id: number; ok: false; error: string };
 
 /** How long a single program may run in the worker before we treat it as wedged (infinite loop) and
@@ -57,7 +57,7 @@ function getWorker(): Worker {
       if (!p) return;
       pending.delete(data.id);
       clearTimeout(p.timer);
-      if (data.ok) p.resolve({ datatype: data.datatype, input: data.input, frames: data.frames });
+      if (data.ok) p.resolve({ datatype: data.datatype, input: data.input, frames: data.frames, source: data.source });
       else p.reject(new Error(data.error));
     };
     worker.onerror = () => resetWorker(new Error("visualization worker crashed"));
