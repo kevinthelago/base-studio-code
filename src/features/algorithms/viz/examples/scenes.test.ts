@@ -64,9 +64,12 @@ describe("dijkstraScene — the canonical multi-structure algorithm (#3259)", ()
     const last = (frames[frames.length - 1] as PanelsFrame).panels;
     // Undirected Dijkstra over WEIGHTED_GRAPH: a=0 c=2 b=3 d=8 e=10 f=13 (node-verified).
     expect((last.distance as ArrayFrame).data).toEqual([0, 3, 2, 8, 10, 13]);
-    // The graph co-star shows the exploration (start + visited marks).
-    const graphMarks = (last.graph as GraphFrame).marks ?? {};
-    expect(graphMarks.a).toBe("start");
+    // The graph co-star shows the exploration. `a` is BOTH the origin and explored (#3378): the anchor
+    // lives in `roles`, the walker's state in `marks`, so visiting the start node no longer erases it.
+    const graphFrame = last.graph as GraphFrame;
+    const graphMarks = graphFrame.marks ?? {};
+    expect(graphFrame.roles?.a).toBe("start");
+    expect(graphMarks.a).toBe("visited"); // …and it was still explored
     expect(Object.values(graphMarks).filter((m) => m === "visited").length).toBeGreaterThan(0);
   });
 
@@ -134,9 +137,12 @@ describe("bfsScene — the canonical multi-structure BFS (#3266)", () => {
     const last = (frames[frames.length - 1] as PanelsFrame).panels;
     expect((last.queue as StackFrame).data).toEqual([]); // BFS drains the queue
     expect((last.queue as StackFrame).mode).toBe("queue");
-    // Every node ends visited, the first one is the start.
-    const graphMarks = (last.graph as GraphFrame).marks ?? {};
-    expect(graphMarks.a).toBe("start");
+    // EVERY node ends visited — including `a`, which is also the start. Those two facts are only both
+    // expressible because roles and marks are separate fields (#3378); with one field the start node had
+    // to give up one of them, and it was the origin that lost.
+    const graphFrame = last.graph as GraphFrame;
+    const graphMarks = graphFrame.marks ?? {};
+    expect(graphFrame.roles?.a).toBe("start");
     expect(Object.values(graphMarks).filter((m) => m === "visited").length).toBe(DEFAULT_GRAPH.nodes.length);
     // The queue actually moved — some frame shows a push and some a pop.
     const queueOps = frames.flatMap((f) => ((f as PanelsFrame).panels.queue as StackFrame | undefined)?.ops ?? []).map((o) => o.op);
