@@ -22,4 +22,10 @@ export const testExclude: string[] = [
   ...configDefaults.exclude, // node_modules, dist, .idea, .git, .cache
   "**/wt*/**",
   "**/.claude/worktrees/**",
+  // `e2e/` is the PLAYWRIGHT suite (#3264), run by `npm run test:e2e`, never by vitest. Without this
+  // a root run collects `previewInteraction.spec.ts` and dies on `Failed to resolve import
+  // "@playwright/test"`, since that package resolves only where playwright was installed (#3409).
+  // #3264 intended `e2e/` to be outside vitest discovery but only ever put it outside `tsconfig`;
+  // "outside the gate" has to be ASSERTED, not intended — see the test in scripts/.
+  "e2e/**",
 ];
