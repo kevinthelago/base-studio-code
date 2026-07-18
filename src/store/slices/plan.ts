@@ -6,6 +6,7 @@ import { hashString } from "@/shared/lib/core/hashString";
 import type { AppStore } from "../types";
 import { makeBlueprints, mkStage, cloneStages, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
 import { packagedUiKitPin, resolveBlueprintUiKit } from "@/features/planner/blueprints/uiKitPin";
+import { packagedSoundKitPin, resolveBlueprintSoundKit } from "@/features/planner/blueprints/soundKitPin";
 import { canonicalTopicKey } from "@/features/planner/stages/planTopics";
 import { emptyFleet } from "@/features/planner/fleet/planFleet";
 import { defaultStageConfig, discoveryOnlyStageConfig } from "@/features/planner/stages/planStages";
@@ -273,6 +274,9 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         // store hit ⇒ zero downloads; miss ⇒ fetch its typed gist, verified before storing.
         // Fire-and-forget; a blueprint without a pin is a no-op.
         resolveBlueprintUiKit(get().blueprints.find((b) => b.id === id), get().githubToken);
+        // …and its SOUND kit the same way (#3372) — same store-hit/fetch-verify discipline, one
+        // pillar over. Independent of the UI resolve: either pin can be absent or fail on its own.
+        resolveBlueprintSoundKit(get().blueprints.find((b) => b.id === id), get().githubToken);
       },
 
       projectBlueprintId: {},
@@ -310,6 +314,9 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           // The pin resolves against the store's embedded fallback, so it costs zero downloads;
           // existing blueprints without a pin are untouched (this only runs at creation).
           uiKit: packagedUiKitPin(),
+          // …and the packaged SOUND kit (#3372): a new blueprint is fully specified on BOTH library
+          // pillars. Resolves against the store's embedded fallback, so it also costs zero downloads.
+          soundKit: packagedSoundKitPin(),
         };
         set((s) => ({ blueprints: [...s.blueprints, bp] }));
         syncBlueprintFile(bp);
@@ -365,6 +372,8 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         // An imported blueprint's UI-kit pin resolves immediately (#2465): already-stored
         // id@version ⇒ no download; else fetch-verify-store from the pin's source gist.
         resolveBlueprintUiKit(created, get().githubToken);
+        // Same for its sound-kit pin (#3372).
+        resolveBlueprintSoundKit(created, get().githubToken);
         return id;
       },
 
