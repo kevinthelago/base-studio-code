@@ -26,6 +26,21 @@ export function projectKeyOfSession(session: string): string {
   return i < 0 ? session : session.slice(0, i);
 }
 
+/**
+ * Keep only the waits whose session still EXISTS (#3429) — the liveness guard the L0 watchdog was missing.
+ *
+ * `CoordState.waiting` is a replay of the coord log: an entry is cleared only by a LATER event from that
+ * same session, and killing a pane emits none. So a wait parked by a long-dead agent stayed outstanding
+ * forever while `now - w.at` only grew, pinning its project orange permanently — a `warning` that no longer
+ * described anything. A session that no longer exists cannot be waiting on the user.
+ *
+ * `livePaneIds` is the same pruned set the L1 overlay reads (tab membership minus ended/disabled panes), so
+ * both layers decide "does this session exist?" from one signal. Pure.
+ */
+export function liveWaits(waiting: WaitLite[], livePaneIds: ReadonlySet<string>): WaitLite[] {
+  return waiting.filter((w) => livePaneIds.has(w.session));
+}
+
 const worse = (a: GHealth, b: GHealth): boolean => a === "error" && b !== "error";
 
 /**
