@@ -10,6 +10,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { useHotkeys } from "./useHotkeys";
 import { useNavigateBridge } from "./useNavigateBridge";
+import { useDebugChannel } from "./useDebugChannel";
 import { useScheduler } from "@/features/automations";
 import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 import { ConsoleWorkspace } from "@/app/console";
@@ -40,6 +41,9 @@ export default function App() {
   // #3274: apply `bsc navigate` requests from the appchan watcher (Rust emits `bsc://navigate`), so an
   // external session can steer the app to a view before capturing it.
   useNavigateBridge();
+  // #3437: answer `bsc debug` — read-only inspection of the live DOM + preview state, so a session can
+  // ask what is actually on screen instead of inferring it from source.
+  useDebugChannel();
   useScheduler();
   useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
   useStoreProjector(); // generic store_state projector: scoped domains + the alert pipeline (#2498)
