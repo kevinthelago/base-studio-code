@@ -15,7 +15,8 @@ import { bundleComponent } from "@/shared/lib/preview/componentBundle";
 import { probeComponentRuntime } from "@/shared/lib/preview/componentRuntimeProbe";
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
 import { scannableComponents, pendingScans, scanComponents } from "./componentScan";
-import { type KitArtifact } from "./componentPreview";
+import { type KitArtifact, type LibraryModuleResolver } from "./componentPreview";
+import { libraryModuleResolver } from "./libraryModules";
 import type { ComponentRecord } from "./model";
 
 /** The packaged kit artifact (built-in `source` + `runtime` closure), same import the single-component
@@ -37,7 +38,14 @@ const SCAN_CONCURRENCY = 3;
  * @param comps  the active kit's components (the scan is kit-scoped, mirroring the graph).
  * @param artifact the packaged kit artifact; defaults to the bundled react-ui one (overridable for tests).
  */
-export function useComponentScan(active: boolean, comps: ComponentRecord[], artifact: KitArtifact = ARTIFACT): void {
+export function useComponentScan(
+  active: boolean,
+  comps: ComponentRecord[],
+  artifact: KitArtifact = ARTIFACT,
+  // The library resolver the sweep builds with — the active blueprint's pinned sound kit (#3412) when the
+  // caller has project context. It is part of the build, so a kit switch re-queues the affected components.
+  libResolver: LibraryModuleResolver = libraryModuleResolver,
+): void {
   const setStatus = useAppStore((s) => s.setComponentBuildStatus);
   const setStateHealth = useAppStore((s) => s.setComponentStateHealth);
   // The signature we last recorded a result for, per component id — survives kit switches + revisits, so
@@ -46,7 +54,7 @@ export function useComponentScan(active: boolean, comps: ComponentRecord[], arti
 
   useEffect(() => {
     if (!active) return;
-    const scannable = scannableComponents(comps, artifact);
+    const scannable = scannableComponents(comps, artifact, libResolver);
     const pending = pendingScans(scannable, scannedSigs.current);
     if (pending.length === 0) return;
     const sigById = new Map(pending.map((p) => [p.id, p.sig]));
@@ -74,5 +82,5 @@ export function useComponentScan(active: boolean, comps: ComponentRecord[], arti
       (js) => probeComponentRuntime(js, appCss),
     );
     return () => { cancelled = true; };
-  }, [active, comps, artifact, setStatus, setStateHealth]);
+  }, [active, comps, artifact, libResolver, setStatus, setStateHealth]);
 }

@@ -19,7 +19,8 @@ import { compileAnimationsCss, animClassName, type AnimationDef } from "@/shared
 import { componentPreviewFiles, type KitArtifact, type PreviewState } from "./lib/componentPreview";
 import { usePreviewData } from "./usePreviewData";
 import { recordPreviewError } from "./lib/componentBridge";
-import { libraryModuleResolver } from "./lib/libraryModules";
+import { makeLibraryResolvers } from "./lib/libraryModules";
+import { useActiveSoundKit } from "./lib/useActiveSoundKit";
 import { resolveComponentAnimations, resolveComposedAnimations, previewAnimDefs, type ComponentRecord } from "./lib/model";
 
 // The packaged kit artifact carries each built-in's verbatim `source` + the `runtime` (@/) closure
@@ -154,6 +155,13 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // (a shared EMPTY until it lands) so it rebuilds the preview exactly once when the data arrives.
   const previewData = usePreviewData(comp);
 
+  // The library resolver this preview vendors `@bsc/…` imports through. Its SOUND arm follows the active
+  // blueprint's `soundKit` pin (#3412), so a component importing `@bsc/sounds/click` plays the kit its
+  // project actually adopted — and an unresolvable pin makes that import fail loudly rather than silently
+  // sounding like the packaged starter kit.
+  const soundKit = useActiveSoundKit();
+  const libResolver = useMemo(() => makeLibraryResolvers(soundKit).libraryModuleResolver, [soundKit]);
+
   // Rebuild when the selection / theme / retry / resolved preview-data changes (keyed on stable fields).
   useEffect(() => {
     let cancelled = false;
@@ -161,7 +169,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     setStatus("building");
     setError("");
     /* eslint-enable react-hooks/set-state-in-effect */
-    const build = componentPreviewFiles(comp, ARTIFACT, siblings, libraryModuleResolver, previewState, previewData);
+    const build = componentPreviewFiles(comp, ARTIFACT, siblings, libResolver, previewState, previewData);
     if (!build) {
       setStatus("error");
       setError(
@@ -213,7 +221,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, themeId, previewState, scrollY, zoomEngine?.initial, retry, previewData]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, themeId, previewState, scrollY, zoomEngine?.initial, retry, previewData, libResolver]);
 
   // #3190 crisp pass: hand the host the engine's +/−/fit controls. The engine lives in the iframe, so each
   // call posts a `__cmd` message to it; re-registered whenever the iframe rebuilds (`retry`/comp switch).
