@@ -33,6 +33,7 @@ import previewImportmap from "@data/ui/preview-importmap.json";
 import { buildComposesEdges } from "./compositionLayout";
 import { componentPreviewFiles, looksBuildableModule, isPreviewBuildable, type KitArtifact } from "./componentPreview";
 import { libraryModuleResolver, libraryReimplTargets } from "./libraryModules";
+import type { LibraryModuleResolver } from "./componentPreview";
 import { isLibrarySpec } from "@/shared/lib/graph/nodeUrn";
 import { resolveInternalBase } from "@/shared/lib/preview/importPath";
 import type { ComponentRecord, PropSpec } from "./model";
@@ -318,7 +319,14 @@ function cycleNodes(ids: string[], out: Map<string, string[]>): Set<string> {
  * Analyze one kit's components for graph-health findings, ranked most-severe first. Pure — mirrors
  * `graph_health::analyze`. Same input always yields the same order (stable name tiebreak).
  */
-export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
+export function analyzeGraphHealth(
+  comps: ComponentRecord[],
+  // The library resolver `@bsc/…` references are judged against — the ACTIVE project's pinned sound kit
+  // when the caller has project context (#3412), else the packaged default. Kept a PARAM so this module
+  // stays pure; the Rust twin takes the same kit via `HealthOptions::sound_kit_json`, so a reference that
+  // resolves here resolves there.
+  libResolver: LibraryModuleResolver = libraryModuleResolver,
+): HealthFinding[] {
   const nameById = new Map(comps.map((c) => [c.id, c.name]));
   const edges = buildComposesEdges(comps);
 
@@ -383,7 +391,7 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
   for (const c of comps) {
     // Pass the kit as siblings so a composing user component (importing a sibling, #3112) builds and is
     // NOT falsely flagged — the exact set the live preview vendors.
-    if (componentPreviewFiles(c, ARTIFACT, comps, libraryModuleResolver) === null) {
+    if (componentPreviewFiles(c, ARTIFACT, comps, libResolver) === null) {
       findings.push({ category: "no-implementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
         why: `${c.name} has no buildable implementation — the preview can't render it (a spec, not code)` });
     }
@@ -420,7 +428,7 @@ export function analyzeGraphHealth(comps: ComponentRecord[]): HealthFinding[] {
     const specs = importSpecifiers(src);
     // A `@bsc/…` library spec is bare-shaped but resolves against the algorithms store, NOT the import-map
     // — so it's excluded from `bare` and judged by `libraryModuleResolver` (resolvable ⇒ vendored ⇒ clean).
-    const library = specs.filter((s) => isLibrarySpec(s) && libraryModuleResolver(s) === null).sort();
+    const library = specs.filter((s) => isLibrarySpec(s) && libResolver(s) === null).sort();
     const bare = specs.filter((s) => isBareSpecifier(s) && !isLibrarySpec(s) && !RESOLVABLE_SPECIFIERS.has(s)).sort();
     const internal = specs.filter((s) => isInternalSpecifier(s) && !resolvesInternal(s, c.src, internalTargets)).sort();
     if (bare.length === 0 && internal.length === 0 && library.length === 0) continue;

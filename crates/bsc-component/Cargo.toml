@@ -17,5 +17,8 @@ bsc-json-store = { path = "../bsc-json-store" }
 bsc-cli-util = { path = "../bsc-cli-util" }
 # The `eslint-preset` generator reads each stored component's JSON + emits the eslint config (#2279).
 serde_json = "1"
+# The versioned sound-kit release store (#3412) — `bsc ui doctor --sound-kit` reads a PINNED kit's
+# artifact so `@bsc/sounds/…` is judged against the kit the project adopted, matching the frontend.
+bsc-sound = { path = "../bsc-sound" }
 # The `usage` consumer-index store (#2277) resolves ~/.base-studio-code (bsc_base_dir).
 bsc-util = { path = "../bsc-util" }

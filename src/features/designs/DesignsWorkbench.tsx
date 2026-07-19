@@ -49,6 +49,8 @@ import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNa
 import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useUiActivity } from "./lib/uiActivity";
 import { useComponentScan } from "./lib/useComponentScan";
+import { makeLibraryResolvers } from "./lib/libraryModules";
+import { useActiveSoundKit } from "./lib/useActiveSoundKit";
 import { groupKits } from "./lib/kitGroups";
 import { ComponentPreviewFrame } from "./ComponentPreviewFrame";
 import type { PreviewState } from "./lib/componentPreview";
@@ -157,7 +159,11 @@ export function DesignsWorkbench() {
   // Preview-error scan (#2838): while the Studio is mounted (visit, not boot — it lazily first-mounts via
   // KeptMountedPage), esbuild-build each buildable component in the active kit — throttled — and record
   // ok/error in the store; the graph badges the failures. Re-runs only for components whose source changed.
-  useComponentScan(true, kitComps);
+  // The active blueprint's pinned sound kit (#3412) — the ONE resolution target the Studio's preview,
+  // scan, and health pass all share, so a badge, a build, and a played cue can never disagree.
+  const soundKit = useActiveSoundKit();
+  const libResolver = useMemo(() => makeLibraryResolvers(soundKit).libraryModuleResolver, [soundKit]);
+  useComponentScan(true, kitComps, undefined, libResolver);
   // The FOCUSED component — strictly the one the user picked, in the current kit; drives the graph's
   // `.on` selection ring. No fallback to "the first".
   const sel = compId ? components.find((c) => c.id === compId && c.kitId === kitId) ?? null : null;
@@ -289,7 +295,10 @@ export function DesignsWorkbench() {
   // Graph health (#2680) — the same taxonomy `bsc ui doctor` reports (lib/graphHealth), mirrored to
   // badge dead/duplicated nodes. `nodeHealth` maps each flagged node to its MOST-SEVERE category.
   // Topology findings + the #3163 MOTION findings (`bsc ui doctor --motion`) — badge both from the graph.
-  const healthFindings = useMemo(() => [...analyzeGraphHealth(kitComps), ...analyzeMotion(kitComps)], [kitComps]);
+  const healthFindings = useMemo(
+    () => [...analyzeGraphHealth(kitComps, libResolver), ...analyzeMotion(kitComps)],
+    [kitComps, libResolver],
+  );
   const nodeHealth = useMemo(() => {
     const m = new Map<string, HealthCategory>();
     const consider = (id: string, cat: HealthCategory) => {
