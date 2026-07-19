@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyStallHealth, applyFleetLiveStatus, projectKeyOfSession, STALL_WARN_MS, type WaitLite, type FleetLiveSignals } from "./agentStall";
+import { applyStallHealth, applyFleetLiveStatus, liveWaits, projectKeyOfSession, STALL_WARN_MS, type WaitLite, type FleetLiveSignals } from "./agentStall";
 import type { ProjectLite } from "./glanceData";
 import type { GRawNode } from "./glanceGraph";
 import { fleetPaneId } from "@/app/console/lib/paneIdentity";
@@ -57,6 +57,33 @@ describe("applyStallHealth (#2541 watchdog)", () => {
 
   it("no waiting sessions → the input is returned untouched", () => {
     expect(applyStallHealth(projects, [], T0)).toBe(projects);
+  });
+});
+
+// #3429 — the watchdog escalated on ANY outstanding wait, and nothing ever clears a wait whose session
+// died (CoordState.waiting is a coord-log replay; only a later event from the SAME session removes an
+// entry, and killing a pane emits none). So `now - w.at` grew forever and the project stayed orange.
+describe("liveWaits — a dead session's wait is not a stall (#3429)", () => {
+  const waiting: WaitLite[] = [
+    { session: "alpha:auth", reason: "needs a decision", at: T0 },
+    { session: "beta:store", reason: "parked", at: T0 },
+  ];
+
+  it("drops a wait whose pane is no longer live", () => {
+    expect(liveWaits(waiting, new Set(["alpha:auth"]))).toEqual([waiting[0]]);
+  });
+
+  it("drops every wait when nothing is launched", () => {
+    expect(liveWaits(waiting, new Set())).toEqual([]);
+  });
+
+  it("stops a long-dead wait from escalating its project to warning", () => {
+    const stale: WaitLite[] = [{ session: "beta:store", reason: "parked", at: T0 }];
+    const now = T0 + STALL_WARN_MS * 200; // ~38h, the cli-typer case
+    // Unguarded, this pins beta orange forever…
+    expect(applyStallHealth(projects, stale, now).find((p) => p.id === "beta")).toMatchObject({ health: "warning" });
+    // …guarded by liveness, the project keeps whatever its own state says.
+    expect(applyStallHealth(projects, liveWaits(stale, new Set()), now)).toBe(projects);
   });
 });
 
