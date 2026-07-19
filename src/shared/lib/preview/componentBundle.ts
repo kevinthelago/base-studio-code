@@ -390,7 +390,22 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
     else { view.tx -= e.deltaX; view.ty -= e.deltaY; apply(); }
   }, { capture: true, passive: false });
   window.addEventListener("message", function (e) {
-    var d = e.data; if (!d || typeof d.__cmd !== "string") return;
+    var d = e.data; if (!d) return;
+    // #3437 (bsc debug frames): the host cannot READ this document (opaque origin - sandbox with no
+    // allow-same-origin), so the engine describes ITSELF on request. Read-only, and the ONLY way to tell
+    // "the script is present but never ran" from "it ran and is listening" without weakening the sandbox.
+    if (d.__probe) {
+      var root0 = document.getElementById("root");
+      try {
+        (e.source || parent).postMessage({ __probeReply: {
+          listening: true,
+          transform: root0 ? getComputedStyle(root0).transform : "none",
+          scale: view.scale, pan: [view.tx, view.ty],
+        } }, "*");
+      } catch (_) { /* a probe must never break the preview */ }
+      return;
+    }
+    if (typeof d.__cmd !== "string") return;
     var c = centerXY();
     if (d.__cmd === "zoomIn") zoomAt(1.2, c[0], c[1]);
     else if (d.__cmd === "zoomOut") zoomAt(1 / 1.2, c[0], c[1]);

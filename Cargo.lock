@@ -522,6 +522,7 @@ dependencies = [
  "base64 0.22.1",
  "bsc-appchan",
  "bsc-data",
+ "bsc-debug",
  "bsc-graph",
  "bsc-llm",
  "bsc-navigate",
@@ -746,6 +747,7 @@ dependencies = [
  "bsc-cli-util",
  "bsc-component",
  "bsc-data",
+ "bsc-debug",
  "bsc-files",
  "bsc-graph",
  "bsc-loop",
@@ -843,6 +845,18 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "bsc-debug"
+version = "0.1.0"
+dependencies = [
+ "bsc-appchan",
+ "bsc-cli-util",
+ "bsc-util",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

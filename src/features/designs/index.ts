@@ -11,6 +11,11 @@ export {
   type ComponentRecord, type Kit, type PropSpec, type Role, type KitRule, type KitRuleKind,
 } from "./lib/model";
 export { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
+// Mounted-preview registry (#3437) — what `bsc debug frames` reports on.
+export {
+  registerPreviewFrame, unregisterPreviewFrame, mountedPreviewFrames, resetPreviewFrames,
+  type PreviewFrameEntry,
+} from "./lib/previewRegistry";
 // Cross-graph library composition (#3116/#3117) + its KIT-level roll-up (#3133) — the (kit → algorithm /
 // sound) `requires` pairs Glance joins against `kitUsage` to draw a project's real library dependencies.
 export {
