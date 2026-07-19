@@ -20,6 +20,7 @@ mod extensions;
 mod shot;
 mod appchan;
 mod navigate;
+mod debug;
 mod prelude;
 
 // The leaf-helper prelude is re-exported at the crate root so the common helpers stay reachable as

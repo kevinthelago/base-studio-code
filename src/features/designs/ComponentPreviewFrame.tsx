@@ -19,6 +19,7 @@ import { compileAnimationsCss, animClassName, type AnimationDef } from "@/shared
 import { componentPreviewFiles, type KitArtifact, type PreviewState } from "./lib/componentPreview";
 import { usePreviewData } from "./usePreviewData";
 import { recordPreviewError } from "./lib/componentBridge";
+import { registerPreviewFrame, unregisterPreviewFrame } from "./lib/previewRegistry";
 import { makeLibraryResolvers } from "./lib/libraryModules";
 import { useActiveSoundKit } from "./lib/useActiveSoundKit";
 import { resolveComponentAnimations, resolveComposedAnimations, previewAnimDefs, type ComponentRecord } from "./lib/model";
@@ -77,6 +78,10 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // here since the frame is inline-styled and self-contained (works wherever it's mounted).
   const [hint, setHint] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  // A stable id for THIS frame instance in the #3437 preview registry — so a rebuild replaces its
+  // entry rather than duplicating it, and unmount removes exactly its own.
+  const frameKey = useRef(`pv-${Math.random().toString(36).slice(2)}`).current;
+  useEffect(() => () => unregisterPreviewFrame(frameKey), [frameKey]);
   // #3190: the forwarded-gesture handlers + the last screen position of an in-flight forwarded drag, held
   // in refs so the message listener stays subscribed across renders (the callbacks' identity may churn).
   // Measure the frame so page-like components can render at a natural viewport canvas and scale-to-fit
@@ -212,6 +217,17 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
           zoomEngine: zoomEngine ? { initial: zoomEngine.initial } : undefined,
         });
         if (iframeRef.current) iframeRef.current.srcdoc = srcDoc;
+        // #3437: publish what this frame IS, for `bsc debug frames`. Recorded here because the pair that
+        // matters — the engine was REQUESTED vs it actually reached the srcdoc — is only knowable at the
+        // build, and their disagreement is invisible from the DOM afterwards.
+        if (iframeRef.current) {
+          registerPreviewFrame(frameKey, {
+            component: comp.id,
+            iframe: iframeRef.current,
+            engineRequested: !!zoomEngine,
+            engineInSrcdoc: srcDoc.includes("__cmd"),
+          });
+        }
         setStatus("ready");
       } catch (e) {
         if (cancelled) return;

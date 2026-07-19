@@ -73,6 +73,8 @@ pub fn run() {
         // In-flight `bsc navigate` requests (#3274): the appchan watcher parks on a receiver here and
         // `navigate_ack` (invoked by the frontend once it has applied the view) delivers into it.
         .manage(crate::navigate::NavPending::default())
+        // In-flight `bsc debug` inspections (#3437) — the same park-and-ack shape as navigate.
+        .manage(crate::debug::DebugPending::default())
         .manage(scope_registry.clone())
         // Runtime fault-ingest collector (#2261): the loopback receiver a generated app POSTs
         // faults/heartbeats to. Started (bound + accept loop spawned) in `setup` below.
@@ -267,6 +269,7 @@ pub fn run() {
             session::sandbox::ensure_sandbox_user,
             app::recovery::was_unclean_shutdown,
             crate::navigate::navigate_ack,
+            crate::debug::debug_ack,
             github::readiness::github_readiness,
             github::readiness::preflight,
             github::readiness::get_preferred_shell,
