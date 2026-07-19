@@ -194,8 +194,9 @@ const PREVIEW_IMPORTMAP_JSON: &str = include_str!("../../../src-tauri/data/ui/pr
 /// `@bsc/algorithms/<missing>` is. The Rust twin of `libraryModules.ts` / `graphHealth.ts`.
 const ALGORITHMS_JSON: &str = include_str!("../../../src-tauri/data/knowledge/algorithms.json");
 
-/// The DEFAULT sound kit seed (`src-tauri/data/sounds/signal.json`) — the SAME kit the frontend resolves a
-/// `@bsc/sounds/<id>` reference against (`libraryModules.ts` picks the first packaged built-in, `signal`).
+/// The DEFAULT sound kit seed (`src-tauri/data/sounds/signal.json`) — the kit an UNPINNED project resolves
+/// `@bsc/sounds/<id>` against, the twin of the frontend's `SoundKitSelection::default` arm. A project whose
+/// blueprint PINS a sound kit resolves against that kit instead ([`HealthOptions::sound_kit_json`], #3412).
 /// Embedded so the SOUNDS arm of the third import class (#3117) is recognized with no fs/network: a
 /// reference matching a real cue/voice resolves (the preview vendors a GENERATED player module — a sound has
 /// no JS source) and is NEVER flagged; a `@bsc/sounds/<missing>` is. The Rust twin of `soundNodeLookup` /
@@ -299,7 +300,7 @@ fn sound_library_names_from(json: &str) -> BTreeSet<String> {
 /// voice id — the preview vendors a generated player module). Any other segment (`ui`) has no vendor path
 /// here → false. A non-`@bsc/` spec returns false (gated by `is_library_specifier`). Mirrors
 /// `libraryModuleResolver(spec) !== null` (graphHealth.ts / libraryModules.ts).
-fn resolves_library(spec: &str) -> bool {
+fn resolves_library(spec: &str, sounds: &BTreeSet<String>) -> bool {
     let Some(rest) = spec.strip_prefix("@bsc/") else {
         return false;
     };
@@ -311,7 +312,7 @@ fn resolves_library(spec: &str) -> bool {
     }
     match segment {
         "algorithms" => algo_library_names().contains(name),
-        "sounds" => sound_library_names().contains(name),
+        "sounds" => sounds.contains(name),
         _ => false,
     }
 }
@@ -662,7 +663,34 @@ fn is_self_referential_stub(node: &Node, kit_targets: &BTreeSet<String>) -> bool
 /// Analyze the component records for graph-health findings, grouped and scoped PER KIT (edges only
 /// resolve within a kit). Returns a ranked list, most-severe first (stable tiebreak: kit, then the
 /// first node name), so the same input always yields the same ordering.
+/// How to run [`analyze_with`] — the injected state the packaged seeds can't supply (#3412).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct HealthOptions<'a> {
+    /// The PINNED sound kit's artifact JSON — the kit a `@bsc/sounds/<id>` reference resolves against for
+    /// this project, mirroring the frontend's `SoundKitSelection`. `None` = no pin ⇒ the packaged default
+    /// kit (the documented default, byte-identical to pre-#3412 behavior).
+    ///
+    /// FAIL LOUDLY, never a silent degrade: a caller holding a pin it could not resolve must NOT pass
+    /// `None` (that would quietly report against the starter kit, and the user cannot hear the
+    /// difference) — it should refuse to run. `bsc ui doctor --sound-kit` does exactly that.
+    /// A malformed artifact yields an empty name set, so every `@bsc/sounds/…` is flagged — fail safe.
+    pub sound_kit_json: Option<&'a str>,
+}
+
+/// [`analyze_with`] against the packaged seeds — the unpinned default (see [`HealthOptions`]).
 pub fn analyze(components: &[Value]) -> Vec<Finding> {
+    analyze_with(components, &HealthOptions::default())
+}
+
+/// The graph-health analyzer, run against a specific library context (#3412) — the Rust twin of
+/// `analyzeGraphHealth(comps, libResolver)`. Both sides take the SAME pinned sound kit, so a reference
+/// that resolves in the Design Studio resolves here too.
+pub fn analyze_with(components: &[Value], opts: &HealthOptions) -> Vec<Finding> {
+    // The pinned kit's importable names when a pin is supplied, else the packaged default kit's.
+    let sounds = match opts.sound_kit_json {
+        Some(json) => sound_library_names_from(json),
+        None => sound_library_names().clone(),
+    };
     let nodes: Vec<Node> = components.iter().filter_map(parse_node).collect();
     let mut by_kit: BTreeMap<&str, Vec<&Node>> = BTreeMap::new();
     for n in &nodes {
@@ -671,7 +699,7 @@ pub fn analyze(components: &[Value]) -> Vec<Finding> {
     let buildable = buildable_srcs();
     let mut out = Vec::new();
     for (kit, kit_nodes) in by_kit {
-        analyze_kit(kit, &kit_nodes, buildable, &mut out);
+        analyze_kit(kit, &kit_nodes, buildable, &sounds, &mut out);
     }
     out.sort_by(|a, b| {
         b.severity
@@ -817,7 +845,14 @@ pub fn merge_plan(components: &[Value]) -> MergePlan {
     MergePlan { groups, repoints }
 }
 
-fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &mut Vec<Finding>) {
+fn analyze_kit(
+    kit: &str,
+    nodes: &[&Node],
+    buildable: &BTreeSet<String>,
+    // The importable `@bsc/sounds/…` names for THIS run — the pinned kit's, else the packaged default's.
+    sounds: &BTreeSet<String>,
+    out: &mut Vec<Finding>,
+) {
     // Name → id (in-kit). A duplicate NAME would collide; the store keys by id, so we keep the first.
     let mut id_by_name: BTreeMap<&str, &str> = BTreeMap::new();
     for n in nodes {
@@ -1041,7 +1076,7 @@ fn analyze_kit(kit: &str, nodes: &[&Node], buildable: &BTreeSet<String>, out: &m
         // the import-map — so it's excluded from `bare` and judged by `resolves_library` (a match ⇒ the
         // preview vendors its code ⇒ clean; a `@bsc/algorithms/<missing>` ⇒ flagged here).
         let mut library: Vec<String> =
-            specs.iter().filter(|s| is_library_specifier(s) && !resolves_library(s)).cloned().collect();
+            specs.iter().filter(|s| is_library_specifier(s) && !resolves_library(s, sounds)).cloned().collect();
         let mut bare: Vec<String> = specs
             .iter()
             .filter(|s| is_bare_specifier(s) && !is_library_specifier(s) && !resolvable.contains(*s))
@@ -1848,11 +1883,12 @@ mod tests {
     fn resolves_library_recognizes_a_real_algorithm_but_not_a_missing_one() {
         // A `@bsc/algorithms/<name>` reference resolves against the TS algorithm kit (bare name OR exact id);
         // a missing name, a graph with no vendor path here, and a bare npm spec never resolve.
-        assert!(resolves_library("@bsc/algorithms/fibonacci"), "the seeded TS fibonacci resolves by bare name");
-        assert!(resolves_library("@bsc/algorithms/fibonacci.ts"), "…and by exact id");
-        assert!(!resolves_library("@bsc/algorithms/nope"), "a missing algorithm does not resolve");
-        assert!(!resolves_library("@bsc/ui/Sparkline"), "a graph with no vendor path here does not resolve");
-        assert!(!resolves_library("d3-scale"), "a bare npm spec is not a library reference");
+        let sounds = sound_library_names();
+        assert!(resolves_library("@bsc/algorithms/fibonacci", sounds), "the seeded TS fibonacci resolves by bare name");
+        assert!(resolves_library("@bsc/algorithms/fibonacci.ts", sounds), "…and by exact id");
+        assert!(!resolves_library("@bsc/algorithms/nope", sounds), "a missing algorithm does not resolve");
+        assert!(!resolves_library("@bsc/ui/Sparkline", sounds), "a graph with no vendor path here does not resolve");
+        assert!(!resolves_library("d3-scale", sounds), "a bare npm spec is not a library reference");
         assert!(is_library_specifier("@bsc/algorithms/fibonacci") && !is_library_specifier("@/x") && !is_library_specifier("d3"));
     }
 
@@ -1904,22 +1940,94 @@ mod tests {
 
     #[test]
     fn resolves_library_recognizes_a_real_sound_cue_but_not_a_missing_one() {
-        // A `@bsc/sounds/<id>` reference resolves against the default sound kit (a cue or voice id); a missing
-        // name and an empty name never resolve.
-        assert!(resolves_library("@bsc/sounds/click"), "the seeded default-kit `click` cue resolves by id");
-        assert!(resolves_library("@bsc/sounds/blip"), "a voice resolves too (a playable patch)");
-        assert!(!resolves_library("@bsc/sounds/nope"), "a missing cue does not resolve");
-        assert!(!resolves_library("@bsc/sounds/"), "an empty name does not resolve");
+        // An UNPINNED project resolves `@bsc/sounds/<id>` against the packaged default kit (a cue or voice
+        // id); a missing name and an empty name never resolve.
+        let sounds = sound_library_names();
+        assert!(resolves_library("@bsc/sounds/click", sounds), "the seeded default-kit `click` cue resolves by id");
+        assert!(resolves_library("@bsc/sounds/blip", sounds), "a voice resolves too (a playable patch)");
+        assert!(!resolves_library("@bsc/sounds/nope", sounds), "a missing cue does not resolve");
+        assert!(!resolves_library("@bsc/sounds/", sounds), "an empty name does not resolve");
     }
 
     #[test]
-    fn the_embedded_sound_seed_is_the_signal_kit_and_carries_click() {
-        // LOCKSTEP guard: the sounds arm embeds the DEFAULT kit `signal` — the first packaged built-in the
-        // frontend (`STARTER_KIT`) resolves against. If the default changes or the seed drifts, update BOTH
-        // this embed and the TS `KIT_FOR_GRAPH.sound` in lockstep.
+    fn the_embedded_sound_seed_is_the_packaged_default_kit() {
+        // LOCKSTEP guard (#3412): the DEFAULT arm embeds the SAME packaged kit the frontend's
+        // `SoundKitSelection` default arm uses (`STARTER_KIT`, the first packaged built-in). Deliberately
+        // NOT pinned to the literal `signal` any more — which kit resolves is now DATA on both sides (a pin
+        // can name any kit), so what must hold in lockstep is that the embed IS the packaged seed and is
+        // usable: a well-formed kit whose cues are importable. Changing which kit ships means changing the
+        // include path here and `STARTER_KIT` there — that pairing is what this guards.
         let v: Value = serde_json::from_str(SOUND_KIT_JSON).expect("the embedded sound seed parses");
-        assert_eq!(v.get("id").and_then(Value::as_str), Some("signal"), "the embedded sound kit is `signal`");
-        assert!(sound_library_names().contains("click"), "the packaged default kit must carry the `click` cue");
+        assert!(
+            v.get("id").and_then(Value::as_str).is_some_and(|id| !id.is_empty()),
+            "the embedded default kit names itself",
+        );
+        assert!(!sound_library_names().is_empty(), "the packaged default kit must expose importable cues");
+        assert!(
+            v.get("cues").and_then(Value::as_array).is_some_and(|c| !c.is_empty()),
+            "a kit with no cues maps to no UI sound",
+        );
+    }
+
+    /// A minimal kit artifact carrying exactly one cue — the shape a pinned release artifact has.
+    fn kit_with_cue(id: &str, cue: &str) -> String {
+        format!(
+            r#"{{"id":"{id}","name":"{id}","primitives":[],"voices":[],
+               "cues":[{{"id":"{cue}","name":"{cue}","category":"ui","layers":[]}}]}}"#
+        )
+    }
+
+    #[test]
+    fn a_pinned_kit_replaces_the_default_one_for_resolution() {
+        // #3412 core: the PINNED kit — not the packaged default — is the resolution target. A cue only the
+        // pin carries resolves; a cue only the DEFAULT carries does not (no cross-kit bleed and no silent
+        // per-cue fallback: a kit is adopted wholesale, epic #3071).
+        let sounds = sound_library_names_from(&kit_with_cue("acme/neon", "zap"));
+        assert!(resolves_library("@bsc/sounds/zap", &sounds), "the PINNED kit's cue resolves");
+        assert!(
+            !resolves_library("@bsc/sounds/click", &sounds),
+            "a cue only the packaged DEFAULT carries must NOT resolve under a pin — no starter bleed",
+        );
+        // …and the default arm is untouched for an unpinned project (the documented default).
+        assert!(resolves_library("@bsc/sounds/click", sound_library_names()), "unpinned still resolves `click`");
+    }
+
+    #[test]
+    fn analyze_with_flags_a_cue_the_pinned_kit_lacks() {
+        // #3412 end-to-end (Rust twin): the SAME component is clean under a kit carrying `zap` and flagged
+        // `unresolvable-import` under one that lacks it — proving the pin reaches the ANALYZER, not just
+        // `resolves_library`.
+        let comps = vec![serde_json::json!({
+            "id": "c1", "kitId": "k", "name": "ZapBtn", "role": "primitive", "used": 1,
+            "srcText": "import { play } from \"@bsc/sounds/zap\";\nexport function ZapBtn(){ return play(); }"
+        })];
+        let carries = kit_with_cue("acme/neon", "zap");
+        let lacks = kit_with_cue("acme/mute", "other");
+
+        let clean = analyze_with(&comps, &HealthOptions { sound_kit_json: Some(&carries) });
+        assert!(
+            !clean.iter().any(|f| f.category == "unresolvable-import"),
+            "a cue the PINNED kit carries is never flagged: {clean:?}",
+        );
+
+        let flagged = analyze_with(&comps, &HealthOptions { sound_kit_json: Some(&lacks) });
+        let hit: Vec<_> = flagged.iter().filter(|f| f.category == "unresolvable-import").collect();
+        assert_eq!(hit.len(), 1, "a cue the pinned kit LACKS is flagged: {flagged:?}");
+        assert!(hit[0].why.contains("@bsc/sounds/zap"), "names the unresolvable ref: {:?}", hit[0].why);
+    }
+
+    #[test]
+    fn analyze_is_analyze_with_no_pin() {
+        // The "no pin → unchanged" acceptance criterion: the legacy entry point and an explicitly-empty
+        // options run must agree exactly, so an unpinned project's report is byte-identical to pre-#3412.
+        let comps = vec![serde_json::json!({
+            "id": "c1", "kitId": "k", "name": "Btn", "role": "primitive", "used": 1,
+            "srcText": "import { play } from \"@bsc/sounds/click\";\nexport function Btn(){ return play(); }"
+        })];
+        assert_eq!(
+            analyze(&comps).iter().map(Finding::to_value).collect::<Vec<_>>(),
+            analyze_with(&comps, &HealthOptions::default()).iter().map(Finding::to_value).collect::<Vec<_>>(),
+        );
     }
 
     #[test]
