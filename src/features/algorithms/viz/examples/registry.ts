@@ -15,7 +15,7 @@
 import type { Frame } from "../../lib/trace";
 import type { AlgoImpl, AlgoKind } from "../../lib/knowledge";
 import { classifyKind, type Classifiable } from "../../lib/classifyKind";
-import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScalarAlgorithm, runScene, type GraphInput } from "../../lib/tracer";
+import { runAlgorithm, runMatrixAlgorithm, runGraphAlgorithm, runScalarAlgorithm, runStackAlgorithm, runTreeAlgorithm, runScene, type GraphInput } from "../../lib/tracer";
 import { runInSandbox } from "./vizSandbox";
 import type { VizRun } from "./vizProgram";
 import type { RendererRegistry } from "../registry";
@@ -31,6 +31,8 @@ import { MATRIX_PROGRAMS, parseMatrixInput, matrixToText, type MatrixProgram } f
 import { GRAPH_PROGRAMS, parseGraphInput, graphToText, type GraphProgram } from "./graphAlgos";
 import { SEARCH_PROGRAMS, parseSearchInput, searchToText, type SearchInput, type SearchProgram } from "./searches";
 import { SCALAR_PROGRAMS, parseScalarInput, scalarToText, type ScalarProgram } from "./scalarAlgos";
+import { STACK_PROGRAMS, stackToText, type StackProgram } from "./stackAlgos";
+import { TREE_PROGRAMS, parseTreeInput, treeToText, type TreeProgram } from "./treeAlgos";
 import { SCENE_PROGRAMS, type SceneProgram } from "./scenes";
 
 /** A ready-to-play visualization: a stable default factory (the inline preview) + the per-structure
@@ -132,6 +134,40 @@ function matrixExampleFromProgram(program: MatrixProgram): VizExample {
   };
 }
 
+/** Build a stable stack {@link VizExample} that RUNS a stack algorithm (#3220) via the TracedStack. The
+ *  parser + hint come from the PROGRAM, not this factory — the two stack algorithms read different input
+ *  languages (see {@link StackProgram}). */
+function stackExampleFromProgram(program: StackProgram): VizExample {
+  const factoryFor = (input: string) => runStackAlgorithm((s) => program.run(s, input), program.mode);
+  return {
+    factory: factoryFor(program.defaultInput),
+    renderers: { stack: StackView },
+    input: {
+      default: stackToText(program.defaultInput),
+      hint: program.hint,
+      parse: (text) => program.parse(text),
+      make: async (parsed) => factoryFor(parsed as string),
+    },
+  };
+}
+
+/** Build a stable tree {@link VizExample} that RUNS a BST algorithm (#3220) via the TracedTree. `seed`
+ *  decides whether the tree starts empty (insert builds it) or finished (in-order walks it). */
+function treeExampleFromProgram(program: TreeProgram): VizExample {
+  const factoryFor = (values: number[]) =>
+    runTreeAlgorithm((t) => program.run(t, values), program.seed(values));
+  return {
+    factory: factoryFor(program.defaultInput),
+    renderers: { tree: TreeView },
+    input: {
+      default: treeToText(program.defaultInput),
+      hint: "Whole numbers to insert, comma-separated (e.g. 50, 30, 70)",
+      parse: (text) => parseTreeInput(text),
+      make: async (parsed) => factoryFor(parsed as number[]),
+    },
+  };
+}
+
 /** Build a stable graph {@link VizExample} that RUNS a traversal / shortest-path algorithm (#3224) via the
  *  TracedGraph, with an adjacency-list "your input" seam. */
 function graphExampleFromProgram(program: GraphProgram): VizExample {
@@ -198,6 +234,12 @@ const EXAMPLE_BY_KEY: Record<string, VizExample> = {
   ),
   ...Object.fromEntries(
     Object.entries(GRAPH_PROGRAMS).map(([key, program]): [string, VizExample] => [key, graphExampleFromProgram(program)]),
+  ),
+  ...Object.fromEntries(
+    Object.entries(STACK_PROGRAMS).map(([key, program]): [string, VizExample] => [key, stackExampleFromProgram(program)]),
+  ),
+  ...Object.fromEntries(
+    Object.entries(TREE_PROGRAMS).map(([key, program]): [string, VizExample] => [key, treeExampleFromProgram(program)]),
   ),
   ...Object.fromEntries(
     Object.entries(SCENE_PROGRAMS).map(([key, program]): [string, VizExample] => [key, sceneExampleFromProgram(program)]),
