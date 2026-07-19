@@ -149,17 +149,43 @@ export function applyRunningActivity(projects: ProjectLite[], buildingKeys: Read
   return projects.map((p) => (buildingKeys.has(p.id) ? { ...p, activity: "building", health: p.health === "idle" ? "healthy" : p.health } : p));
 }
 
-/** The set of project keys with a LIVE agent session (#2551): any launched roster pane (`fleetPaneStreams`,
- *  keyed `<key>:<stream>`) or any pane with an authoritative `run`/`on` status (covers the director, a
- *  session not a stream). The project key is the pane id's prefix (before the first ':'). Pure. */
+/** The set of project keys with a LIVE agent session (#2551): any launched pane that is still a live CELL
+ *  of an open tab, or any pane with an authoritative `run`/`on` status (covers the director, a session not
+ *  a stream). The project key is the pane id's prefix (before the first ':'). Pure.
+ *
+ *  `livePaneIds` — NOT `fleetPaneStreams` (#3429). The roster map is only cleared by `closeTab`; `killPane`
+ *  leaves it populated, so a fleet ended via "End sessions" kept reading `building`/`healthy` here until the
+ *  tab itself was closed. `livePaneIds` is the same pruned set the L1 overlay reads (tab membership minus
+ *  `endedPanes`/`disabledPanes`), so both layers answer "does a session exist?" from one signal. */
 export function deriveBuildingKeys(
-  fleetPaneStreams: Record<string, unknown>,
+  livePaneIds: ReadonlySet<string>,
   paneStatus: Record<string, string | undefined>,
 ): Set<string> {
   const keys = new Set<string>();
-  for (const paneId of Object.keys(fleetPaneStreams)) keys.add(projectKeyOfSession(paneId));
+  for (const paneId of livePaneIds) keys.add(projectKeyOfSession(paneId));
   for (const [paneId, st] of Object.entries(paneStatus)) if (st === "run" || st === "on") keys.add(projectKeyOfSession(paneId));
   return keys;
+}
+
+/**
+ * Overlay DORMANCY onto the node set (#3429) — the L0 half of the #3415 existence rule, and the first
+ * question the stack asks rather than the last. A project with no live agent session AND no detected app
+ * liveness has nothing running at all: it reads `off · idle`.
+ *
+ * Until this existed, L0 could only ESCALATE. Every overlay lifted a project off the merge default
+ * (`health: "idle"`), and nothing ever established that there was nothing to lift — so "dormant" and
+ * "has a session, currently quiet" both rendered `idle`, exactly the ambiguity #3415 removed at L1:
+ *
+ *   no session exists → `off` · a session exists but is quiet → `idle` · working → `healthy`
+ *
+ * (`off` at L0 previously meant ONLY the user's manual toggle, #3239. That still wins outright — it is
+ * applied outermost — this just makes the derived resting state honest about the same word.)
+ *
+ * Applied BEFORE `applyFaultHealth`: a dormant project with an unresolved fault still reads warning/error,
+ * because an unfixed error does not stop being real just because nobody is currently working on it. Pure.
+ */
+export function applyDormantHealth(projects: ProjectLite[], activeKeys: ReadonlySet<string>): ProjectLite[] {
+  return projects.map((p) => (activeKeys.has(p.id) ? p : { ...p, health: "off", activity: "idle" }));
 }
 
 /**
@@ -247,7 +273,19 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   const triagedProjects = useAppStore((s) => s.triagedProjects);
   // Running-agent signals (#2551): the launched roster + authoritative pane statuses → the `building`
   // activity. A project with a live agent pane reads `building`; nothing running → it rests at `idle`.
-  const fleetPaneStreams = useAppStore((s) => s.fleetPaneStreams);
+  // Launched-tab membership (#3429) — the same pruned "this session exists" signal the L1 overlay reads
+  // (`GlanceWorkspace.livePaneIds`): a pane is live only while it is a CELL of an open tab and has not
+  // been ended or disabled. Replaces `fleetPaneStreams`, which `killPane` never clears.
+  const consoleTabs = useAppStore((s) => s.tabs);
+  const endedPanes = useAppStore((s) => s.endedPanes);
+  const disabledPanes = useAppStore((s) => s.disabledPanes);
+  const livePaneIds = useMemo(() => {
+    const live = new Set<string>();
+    for (const t of consoleTabs) for (const pid of t.paneIds ?? []) {
+      if (pid && !endedPanes[pid] && !disabledPanes[pid]) live.add(pid);
+    }
+    return live;
+  }, [consoleTabs, endedPanes, disabledPanes]);
   const paneStatus = useAppStore((s) => s.paneStatus);
   const githubState = useAppStore((s) => s.githubState);
   const setGithubState = useAppStore((s) => s.setGithubState);
@@ -312,25 +350,32 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
     return filterRecordsToLocal(githubState.records, locals).map(minimalToGhProject);
   }, [published.data, githubState, drafts, localPublished]);
 
-  const buildingKeys = useMemo(() => deriveBuildingKeys(fleetPaneStreams, paneStatus), [fleetPaneStreams, paneStatus]);
+  const buildingKeys = useMemo(() => deriveBuildingKeys(livePaneIds, paneStatus), [livePaneIds, paneStatus]);
+  // Everything that counts as "this project has something running" (#3429): a live agent session OR a
+  // detected running app. Anything outside this set is dormant and reads `off` rather than resting at
+  // `idle` — see `applyDormantHealth`.
+  const activeKeys = useMemo(() => new Set([...buildingKeys, ...liveKeys]), [buildingKeys, liveKeys]);
   return useMemo(
     // Merge (drafts + local published + GitHub published), FILTER to triaged/working projects (#2541 —
     // a draft/plan never shows), then overlay activity from real signals: liveness → `live` (#2263),
-    // running agents → `building` (#2551); a project with nothing running RESTS at `idle`. (Stall →
-    // `waiting`/warn and faults → error are overlaid later in the workspace.)
-    () => applyRunningActivity(
-      applyLiveness(
-        filterTriaged(
-          mergeGlanceProjects(drafts, effectivePublished, localPublished).map((p) => ({
-            ...p,
-            category: resolveProjectCategory(p.category, catByBlueprint.get(projectBlueprintId[p.id]), drafts[p.id] !== undefined),
-          })),
-          triagedProjects,
+    // running agents → `building` (#2551); a project with nothing running at all reads `off` (#3429).
+    // (Stall → `waiting`/warn and faults → error are overlaid later in the workspace.)
+    () => applyDormantHealth(
+      applyRunningActivity(
+        applyLiveness(
+          filterTriaged(
+            mergeGlanceProjects(drafts, effectivePublished, localPublished).map((p) => ({
+              ...p,
+              category: resolveProjectCategory(p.category, catByBlueprint.get(projectBlueprintId[p.id]), drafts[p.id] !== undefined),
+            })),
+            triagedProjects,
+          ),
+          liveKeys,
         ),
-        liveKeys,
+        buildingKeys,
       ),
-      buildingKeys,
+      activeKeys,
     ),
-    [drafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, catByBlueprint, projectBlueprintId],
+    [drafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, catByBlueprint, projectBlueprintId],
   );
 }
