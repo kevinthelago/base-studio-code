@@ -46,7 +46,7 @@ import { usePreviewReview } from "./usePreviewReview";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import { useGlanceProjects, applyFaultHealth, applyOffHealth } from "./lib/useGlanceProjects";
 import { useGlanceFaults } from "./lib/useGlanceFaults";
-import { applyStallHealth, applyFleetLiveStatus } from "./lib/agentStall";
+import { applyStallHealth, applyFleetLiveStatus, liveWaits } from "./lib/agentStall";
 import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
 import { useProjectFleet } from "./lib/useProjectFleet";
 import "./glance.css";
@@ -144,12 +144,15 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // Overlay order: base (merge+liveness) → STALL (waiting/warn) → FAULT (error) → OFF (#3239) last, so a
   // real error beats a stall and both beat the resting state — but the user's manual OFF beats them all
   // ("if it's not idle then it should be off").
+  // A stall is only a stall while the agent is still THERE (#3429) — a wait parked by a since-dead session
+  // pinned its project orange forever, since nothing ever clears it and `now - w.at` only grows.
+  const liveWaiting = useMemo(() => liveWaits(coord.state.waiting, livePaneIds), [coord.state.waiting, livePaneIds]);
   const projects = useMemo(
     // The base-studio-code default project (#3319) is always present alongside the user's real projects —
     // the app's own studio sessions live under it; drilling it renders the Studio Network team. It's
     // appended AFTER the health overlays (incl. the manual OFF, #3239) so it stays always-on.
-    () => [...applyOffHealth(applyFaultHealth(applyStallHealth(projectsBase, coord.state.waiting, now), faults), glanceOff), BASE_STUDIO_PROJECT],
-    [projectsBase, coord.state.waiting, faults, now, glanceOff],
+    () => [...applyOffHealth(applyFaultHealth(applyStallHealth(projectsBase, liveWaiting, now), faults), glanceOff), BASE_STUDIO_PROJECT],
+    [projectsBase, liveWaiting, faults, now, glanceOff],
   );
   // L0 — the project-network graph (nodes = real projects + UI-kit nodes #2571 + the algorithm/sound
   // library nodes their kits require #3133, edges = the user-drawn relationships #2253 + one kit→project
