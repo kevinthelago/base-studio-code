@@ -179,7 +179,79 @@ pub const BSC_SCOPES_ENV: &str = "BSC_SCOPES";
 /// bsc_cli_util::require_write_scope("skill")?; // Err → stderr + nonzero exit via cli_main
 /// ```
 pub fn scope_allows_write(scope: &str) -> bool {
-    scope_allows_write_in(std::env::var(BSC_SCOPES_ENV).ok().as_deref(), scope)
+    scope_allows_write_in(session_env(&SCOPES_OVERRIDE, BSC_SCOPES_ENV).as_deref(), scope)
+}
+
+/// A per-thread override of one session env var. Outer `None` = no override in force (read the real
+/// env); `Some(inner)` = use `inner`, where `None` means "the var is unset".
+type EnvOverride = std::cell::RefCell<Option<Option<String>>>;
+
+thread_local! {
+    /// The scope-doc override — see [`with_scopes`].
+    static SCOPES_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
+    /// The scratch-dir override — see [`with_scratch`].
+    static SCRATCH_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
+}
+
+/// The value of a session env var for THIS thread: the thread-local override when one is in force,
+/// else the real process environment. The single funnel [`with_scopes`] and [`with_scratch`] hang
+/// off, so a test seam can never disagree with the production read.
+fn session_env(cell: &'static std::thread::LocalKey<EnvOverride>, var: &str) -> Option<String> {
+    match cell.with(|c| c.borrow().clone()) {
+        Some(v) => v,
+        None => std::env::var(var).ok(),
+    }
+}
+
+/// Run `f` with `cell`'s override set to `doc`, restoring the previous value on drop — including
+/// while unwinding from a failed assertion. The shared body of [`with_scopes`] / [`with_scratch`].
+fn with_env_override<T>(
+    cell: &'static std::thread::LocalKey<EnvOverride>,
+    doc: Option<&str>,
+    f: impl FnOnce() -> T,
+) -> T {
+    struct Restore(&'static std::thread::LocalKey<EnvOverride>, Option<Option<String>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let prev = self.1.take();
+            self.0.with(|c| *c.borrow_mut() = prev);
+        }
+    }
+    let prev = cell.with(|c| c.borrow_mut().replace(doc.map(str::to_owned)));
+    let _restore = Restore(cell, prev);
+    f()
+}
+
+/// Run `f` with the session scope doc forced to `doc` **for the calling thread only** (#3382).
+///
+/// A TEST SEAM, and the reason it exists is worth stating plainly: `cargo test` runs a crate's tests
+/// as parallel THREADS OF ONE PROCESS, so `std::env::set_var(BSC_SCOPES_ENV, …)` is shared mutable
+/// state. A test that scoped `ui` read-only raced every concurrently-running test that called a write
+/// verb, and whichever lost saw a scope doc no one wrote for it — surfacing as an intermittent "this
+/// session's 'ui' scope is read-only" panic in an unrelated test (reproduced at ~5 runs in 12). A
+/// serializing mutex does NOT fix that: it orders the tests that TAKE it, while every test that merely
+/// reads the env stays exposed.
+///
+/// Thread-local removes the category rather than scheduling around it — each test thread sees exactly
+/// the doc it asked for, tests keep running in parallel, and no lock is needed. Production never sets
+/// an override, so [`scope_allows_write`] falls through to the real environment unchanged.
+///
+/// ```ignore
+/// bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+///     let err = run(vec!["remove".into(), "x".into()], "bsc ui").unwrap_err();
+///     assert!(err.contains("read-only"));
+/// });
+/// ```
+pub fn with_scopes<T>(doc: Option<&str>, f: impl FnOnce() -> T) -> T {
+    with_env_override(&SCOPES_OVERRIDE, doc, f)
+}
+
+/// Run `f` with `$BSC_SCRATCH` forced to `dir` **for the calling thread only** (#3382) — the scratch
+/// twin of [`with_scopes`], and the same disease: tests that `set_var`/`remove_var` this path raced
+/// each other, so `read_payload`'s "missing file" case intermittently saw "no scratch dir" because a
+/// sibling test had just cleared it. Pass `None` to assert the unset case hermetically.
+pub fn with_scratch<T>(dir: Option<&str>, f: impl FnOnce() -> T) -> T {
+    with_env_override(&SCRATCH_OVERRIDE, dir, f)
 }
 
 /// The pure core of [`scope_allows_write`]: `doc` is the raw `$BSC_SCOPES` value (or `None` when the
@@ -331,7 +403,7 @@ pub fn resolve_scratch_file(name: &str) -> Result<std::path::PathBuf, String> {
              its name, e.g. --file payload.json"
         ));
     }
-    let dir = std::env::var(BSC_SCRATCH_ENV).unwrap_or_default();
+    let dir = session_env(&SCRATCH_OVERRIDE, BSC_SCRATCH_ENV).unwrap_or_default();
     if dir.trim().is_empty() {
         return Err(format!(
             "--file needs ${BSC_SCRATCH_ENV} to be set (this session has no scratch dir); pipe the \
@@ -538,23 +610,67 @@ mod tests {
         assert!(scope_allows_write_in(Some(r#"{"ui":5}"#), "ui"));
     }
 
-    // ONE test owns the real $BSC_SCOPES env var (tests run in parallel threads; splitting these
-    // cases across tests would race on the shared process environment).
+    // #3382: these cases used to own the real $BSC_SCOPES env var, with a comment explaining that
+    // splitting them across tests would race the shared process environment. The override is
+    // thread-local, so that constraint is gone — each case is independent and they run in parallel.
     #[test]
-    fn scope_env_wrapper_and_require_write_scope_read_bsc_scopes() {
-        std::env::set_var(BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
-        assert!(!scope_allows_write("ui"));
-        assert!(scope_allows_write("plan")); // unlisted store stays unrestricted
-        let err = require_write_scope("ui").unwrap_err();
-        assert!(err.contains("'ui'"), "refusal names the scope: {err}");
-        assert!(err.contains("BSC_SCOPES"), "refusal names the env doc: {err}");
-        assert!(err.contains("read-only"), "refusal states the tier semantics: {err}");
-        std::env::set_var(BSC_SCOPES_ENV, r#"{"ui":"write"}"#);
-        assert!(scope_allows_write("ui"));
-        assert!(require_write_scope("ui").is_ok());
-        std::env::remove_var(BSC_SCOPES_ENV);
-        assert!(scope_allows_write("ui"), "absent env is unrestricted (back-compat)");
-        assert!(require_write_scope("ui").is_ok());
+    fn a_read_scope_refuses_the_write_and_names_why() {
+        with_scopes(Some(r#"{"ui":"read"}"#), || {
+            assert!(!scope_allows_write("ui"));
+            assert!(scope_allows_write("plan")); // unlisted store stays unrestricted
+            let err = require_write_scope("ui").unwrap_err();
+            assert!(err.contains("'ui'"), "refusal names the scope: {err}");
+            assert!(err.contains("BSC_SCOPES"), "refusal names the env doc: {err}");
+            assert!(err.contains("read-only"), "refusal states the tier semantics: {err}");
+        });
+    }
+
+    #[test]
+    fn a_write_scope_permits_the_write() {
+        with_scopes(Some(r#"{"ui":"write"}"#), || {
+            assert!(scope_allows_write("ui"));
+            assert!(require_write_scope("ui").is_ok());
+        });
+    }
+
+    #[test]
+    fn an_absent_scope_doc_is_unrestricted() {
+        with_scopes(None, || {
+            assert!(scope_allows_write("ui"), "absent doc is unrestricted (back-compat)");
+            assert!(require_write_scope("ui").is_ok());
+        });
+    }
+
+    #[test]
+    fn with_scopes_does_not_leak_into_a_sibling_thread() {
+        // THE #3382 REGRESSION GUARD. With process env this assertion was impossible to make: a
+        // read-only doc set by one test was visible to every other test in the process, which is
+        // exactly how an unrelated write verb started failing. A sibling thread must see its own
+        // unrestricted default while THIS thread is scoped read-only.
+        with_scopes(Some(r#"{"ui":"read"}"#), || {
+            assert!(!scope_allows_write("ui"), "this thread is scoped read-only");
+            let sibling = std::thread::spawn(|| scope_allows_write("ui"));
+            assert!(
+                sibling.join().unwrap(),
+                "a concurrently-running thread must be unaffected by this thread's scope override",
+            );
+        });
+    }
+
+    #[test]
+    fn with_scopes_restores_the_previous_state_including_on_panic() {
+        with_scopes(Some(r#"{"ui":"read"}"#), || {
+            // Nested: the inner override wins, then the outer one is restored on exit.
+            with_scopes(Some(r#"{"ui":"write"}"#), || assert!(scope_allows_write("ui")));
+            assert!(!scope_allows_write("ui"), "the outer read scope is restored");
+            // A panicking assertion is the NORMAL failure mode of a test — it must not leak the
+            // override into whatever runs next on this thread.
+            let boom = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                with_scopes(Some(r#"{"ui":"none"}"#), || panic!("a failing assertion"));
+            }));
+            assert!(boom.is_err(), "the panic propagated");
+            assert!(!scope_allows_write("ui"), "the outer read scope survived the unwind");
+        });
     }
 
     // ── `--file` scratch resolution (#3373) — the traversal defence ────────────────────────────────
@@ -586,19 +702,19 @@ mod tests {
 
     #[test]
     fn resolve_scratch_file_joins_a_bare_name_onto_the_scratch_dir() {
-        std::env::set_var(BSC_SCRATCH_ENV, "/tmp/bsc-scratch-test");
-        let p = resolve_scratch_file("payload.json").unwrap();
-        assert_eq!(p, std::path::Path::new("/tmp/bsc-scratch-test").join("payload.json"));
-        std::env::remove_var(BSC_SCRATCH_ENV);
+        with_scratch(Some("/tmp/bsc-scratch-test"), || {
+            let p = resolve_scratch_file("payload.json").unwrap();
+            assert_eq!(p, std::path::Path::new("/tmp/bsc-scratch-test").join("payload.json"));
+        });
     }
 
     #[test]
     fn resolve_scratch_file_refuses_a_path_and_says_why() {
-        std::env::set_var(BSC_SCRATCH_ENV, "/tmp/bsc-scratch-test");
-        let err = resolve_scratch_file("../../etc/passwd").unwrap_err();
-        assert!(err.contains("BARE FILENAME"), "refusal names the rule: {err}");
-        assert!(err.contains("--file payload.json"), "refusal shows the correct form: {err}");
-        std::env::remove_var(BSC_SCRATCH_ENV);
+        with_scratch(Some("/tmp/bsc-scratch-test"), || {
+            let err = resolve_scratch_file("../../etc/passwd").unwrap_err();
+            assert!(err.contains("BARE FILENAME"), "refusal names the rule: {err}");
+            assert!(err.contains("--file payload.json"), "refusal shows the correct form: {err}");
+        });
     }
 
     /// FAIL CLOSED: with no scratch dir the flag is refused outright. It must never resolve against the
@@ -606,14 +722,14 @@ mod tests {
     /// whole confinement.
     #[test]
     fn resolve_scratch_file_fails_closed_when_the_scratch_env_is_unset_or_blank() {
-        std::env::remove_var(BSC_SCRATCH_ENV);
-        let err = resolve_scratch_file("payload.json").unwrap_err();
-        assert!(err.contains(BSC_SCRATCH_ENV), "refusal names the env var: {err}");
-        assert!(err.contains("stdin"), "refusal points at the alternative: {err}");
-
-        std::env::set_var(BSC_SCRATCH_ENV, "   ");
-        assert!(resolve_scratch_file("payload.json").is_err(), "a blank scratch dir is still closed");
-        std::env::remove_var(BSC_SCRATCH_ENV);
+        with_scratch(None, || {
+            let err = resolve_scratch_file("payload.json").unwrap_err();
+            assert!(err.contains(BSC_SCRATCH_ENV), "refusal names the env var: {err}");
+            assert!(err.contains("stdin"), "refusal points at the alternative: {err}");
+        });
+        with_scratch(Some("   "), || {
+            assert!(resolve_scratch_file("payload.json").is_err(), "a blank scratch dir is still closed");
+        });
     }
 
     /// `--file` is exactly "stdin, from a sealed file": a payload read through it must be byte-identical
@@ -626,21 +742,21 @@ mod tests {
         let payload = "{\"id\":\"k/btn\",\"srcText\":\"export function B(){\\n  return <b c='x'/>;\\n}\"}";
         std::fs::write(dir.join("payload.json"), payload).unwrap();
 
-        std::env::set_var(BSC_SCRATCH_ENV, &dir);
-        let got = read_payload(Some("payload.json")).unwrap();
-        assert_eq!(got, payload, "--file must not transform the bytes");
-        std::env::remove_var(BSC_SCRATCH_ENV);
+        with_scratch(dir.to_str(), || {
+            let got = read_payload(Some("payload.json")).unwrap();
+            assert_eq!(got, payload, "--file must not transform the bytes");
+        });
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn read_payload_reports_a_missing_scratch_file_with_its_resolved_path() {
         let dir = std::env::temp_dir().join(format!("bsc-scratch-missing-{}", std::process::id()));
-        std::env::set_var(BSC_SCRATCH_ENV, &dir);
-        let err = read_payload(Some("nope.json")).unwrap_err();
-        assert!(err.contains("cannot read --file"), "names the failure: {err}");
-        assert!(err.contains("nope.json"), "names the file: {err}");
-        std::env::remove_var(BSC_SCRATCH_ENV);
+        with_scratch(dir.to_str(), || {
+            let err = read_payload(Some("nope.json")).unwrap_err();
+            assert!(err.contains("cannot read --file"), "names the failure: {err}");
+            assert!(err.contains("nope.json"), "names the file: {err}");
+        });
     }
 
     #[test]
