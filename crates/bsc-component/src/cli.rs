@@ -2239,6 +2239,18 @@ mod tests {
     /// real `~/.base-studio-code/components` store.
     fn tmp_store_dir(tag: &str) -> String {
         let d = std::env::temp_dir().join(format!("bsc-component-cli-test-{tag}-{}", std::process::id()));
+        // Start EMPTY (#3382). `process::id()` is unique among LIVE processes, not over time — the OS
+        // recycles pids — and this fixture never cleaned up, so a later run that drew a recycled pid
+        // inherited the previous run's store. That surfaced as `a fresh record's first write is rev 1`
+        // failing with rev 3: the record was already there at rev 2. Same shape as the env race this
+        // issue fixes (state outliving the test that wrote it), different channel — the filesystem.
+        // Every tag is used by exactly one test, so wiping here cannot disturb a sibling.
+        //
+        // BOTH paths must go. The SQLite backend keys off the SIBLING `<dir>.db`, not a file inside
+        // `<dir>` (`db_path_for` in bsc-json-store), so removing only the directory leaves the actual
+        // database — which is exactly why the first attempt at this fix changed nothing.
+        let _ = std::fs::remove_dir_all(&d);
+        let _ = std::fs::remove_file(format!("{}.db", d.to_string_lossy()));
         std::fs::create_dir_all(&d).unwrap();
         d.to_string_lossy().into_owned()
     }
@@ -2291,8 +2303,7 @@ mod tests {
         // Real source: newlines, single quotes (which shell-quoting could not survive) and braces.
         let payload = r#"{"id":"kevin/studio","name":"Studio UI","srcText":"export function B(){\n  return <b c='x'/>;\n}"}"#;
         std::fs::write(scratch.join("kit.json"), payload).unwrap();
-        std::env::set_var(bsc_cli_util::BSC_SCRATCH_ENV, &scratch);
-
+        bsc_cli_util::with_scratch(scratch.to_str(), || {
         let items = read_set_items("kit", Some("kit.json")).unwrap();
         assert_eq!(items.len(), 1, "one object yields one item, exactly as stdin does");
         assert_eq!(items[0]["id"], "kevin/studio");
@@ -2305,9 +2316,11 @@ mod tests {
         let err = read_set_items("kit", Some("../../../etc/passwd")).unwrap_err();
         assert!(err.contains("BARE FILENAME"), "a path is refused here too: {err}");
 
+        });
         // Fail closed: no scratch dir ⇒ the flag is refused rather than resolving against the cwd.
-        std::env::remove_var(bsc_cli_util::BSC_SCRATCH_ENV);
-        assert!(read_set_items("kit", Some("kit.json")).is_err(), "unset scratch refuses --file");
+        bsc_cli_util::with_scratch(None, || {
+            assert!(read_set_items("kit", Some("kit.json")).is_err(), "unset scratch refuses --file");
+        });
 
         let _ = std::fs::remove_dir_all(&base);
     }
@@ -2485,26 +2498,27 @@ mod tests {
     // ONE test owns the real $BSC_SCOPES env var (parallel test threads share the process env).
     #[test]
     fn mutating_verbs_refuse_under_a_read_ui_scope_before_touching_the_store() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
-        // `remove` errs at the scope gate — BEFORE any store dir is resolved or touched (no --dir
-        // is passed here on purpose: reaching the store would touch the real default location).
-        let err = run(vec!["remove".into(), "x".into()], "bsc component").unwrap_err();
-        assert!(err.contains("'ui'"), "refusal names the scope: {err}");
-        assert!(err.contains("BSC_SCOPES"), "refusal names the env doc: {err}");
-        let err = run(vec!["kit".into(), "set".into()], "bsc component").unwrap_err();
-        assert!(err.contains("read-only"), "kit set refuses too: {err}");
-        // Help stays reachable under the read scope (prints, returns Ok).
-        assert!(run(vec!["set".into(), "help".into()], "bsc component").is_ok());
-        // The #2475 shape picker is READ tier — both verbs work under the read-scoped session
-        // (the planner's `ui: read`), against a scratch --dir.
-        let dir = tmp_store_dir("read-scope");
-        assert!(run(vec!["shapes".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
-        assert!(run(vec!["shapes".into(), "graph".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
-        assert!(
-            run(vec!["list".into(), "--shape".into(), "table".into(), "--dir".into(), dir], "bsc ui").is_ok()
-        );
-        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        // #3382: the read-only scope is THREAD-LOCAL — no process env, so this refusal
+        // test cannot leak into any test running beside it.
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            // `remove` errs at the scope gate — BEFORE any store dir is resolved or touched (no --dir
+            // is passed here on purpose: reaching the store would touch the real default location).
+            let err = run(vec!["remove".into(), "x".into()], "bsc component").unwrap_err();
+            assert!(err.contains("'ui'"), "refusal names the scope: {err}");
+            assert!(err.contains("BSC_SCOPES"), "refusal names the env doc: {err}");
+            let err = run(vec!["kit".into(), "set".into()], "bsc component").unwrap_err();
+            assert!(err.contains("read-only"), "kit set refuses too: {err}");
+            // Help stays reachable under the read scope (prints, returns Ok).
+            assert!(run(vec!["set".into(), "help".into()], "bsc component").is_ok());
+            // The #2475 shape picker is READ tier — both verbs work under the read-scoped session
+            // (the planner's `ui: read`), against a scratch --dir.
+            let dir = tmp_store_dir("read-scope");
+            assert!(run(vec!["shapes".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+            assert!(run(vec!["shapes".into(), "graph".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+            assert!(
+                run(vec!["list".into(), "--shape".into(), "table".into(), "--dir".into(), dir], "bsc ui").is_ok()
+            );
+        });
     }
 
     #[test]
@@ -2617,8 +2631,11 @@ mod tests {
     fn component_and_kit_remove_emit_a_ui_touch_with_their_collection() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         // Unrestricted scope (a designer session or a hand shell): the mutation runs, and the emit
-        // fires because $BSC_UI_ACTIVITY_LOG is wired.
-        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        // fires because $BSC_UI_ACTIVITY_LOG is wired. This is the VICTIM side of the #3382 race — it
+        // used to `remove_var($BSC_SCOPES)` to protect its own mutations, which is precisely what broke
+        // the refusal tests running beside it. Declaring the unrestricted scope THREAD-LOCALLY says the
+        // same thing without touching state anyone else can see.
+        bsc_cli_util::with_scopes(None, || {
         let act = std::env::temp_dir().join(format!("bsc-component-uiact-{}.log", std::process::id()));
         let _ = std::fs::remove_file(&act);
         std::env::set_var("BSC_UI_ACTIVITY_LOG", &act);
@@ -2646,6 +2663,7 @@ mod tests {
         std::env::remove_var("BSC_UI_ACTIVITY_LOG");
         std::env::remove_var("BSC_AUDIT_PANE");
         let _ = std::fs::remove_file(&act);
+        });
     }
 
     // ── component animations (#2869) ─────────────────────────────────────────────────────────────
@@ -2933,19 +2951,20 @@ mod tests {
         assert!(d.contains("stdin") && d.contains("keyframes"), "define-animation detail teaches the shape");
 
         // The writers refuse under `ui: read`, BEFORE touching the store (mirrors set/remove).
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
-        let err = run(vec!["remove-animation".into(), "card".into(), "x".into()], "bsc ui").unwrap_err();
-        assert!(err.contains("'ui'") && err.contains("read-only"), "read-scope refusal: {err}");
-        // list-animations is a READ tier — reachable under the read scope, against a scratch --dir.
-        let dir = tmp_store_dir("anim-read-scope");
-        bsc_json_store::Store::new(dir.clone(), "component")
-            .set("card", r#"{"id":"card","name":"Card"}"#)
-            .unwrap();
-        assert!(run(vec!["list-animations".into(), "card".into(), "--dir".into(), dir], "bsc ui").is_ok());
-        // Help stays reachable read-scoped.
-        assert!(run(vec!["define-animation".into(), "help".into()], "bsc ui").is_ok());
-        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        // #3382: the read-only scope is THREAD-LOCAL — no process env, so this refusal
+        // test cannot leak into any test running beside it.
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            let err = run(vec!["remove-animation".into(), "card".into(), "x".into()], "bsc ui").unwrap_err();
+            assert!(err.contains("'ui'") && err.contains("read-only"), "read-scope refusal: {err}");
+            // list-animations is a READ tier — reachable under the read scope, against a scratch --dir.
+            let dir = tmp_store_dir("anim-read-scope");
+            bsc_json_store::Store::new(dir.clone(), "component")
+                .set("card", r#"{"id":"card","name":"Card"}"#)
+                .unwrap();
+            assert!(run(vec!["list-animations".into(), "card".into(), "--dir".into(), dir], "bsc ui").is_ok());
+            // Help stays reachable read-scoped.
+            assert!(run(vec!["define-animation".into(), "help".into()], "bsc ui").is_ok());
+        });
     }
 
     // ── granular writes (#3162) ──────────────────────────────────────────────────────────────────
@@ -3115,29 +3134,30 @@ mod tests {
 
     #[test]
     fn granular_writes_refuse_under_a_read_ui_scope_before_stdin_or_the_store() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
-        // set-src is a MUTATION: it refuses at the write-scope gate BEFORE reading stdin (so no --dir /
-        // stdin is passed — the gate fires first and the test can never block on stdin).
-        let err = run(vec!["set-src".into(), "x".into()], "bsc ui").unwrap_err();
-        assert!(err.contains("'ui'") && err.contains("read-only"), "set-src read-scope refusal: {err}");
-        // patch refuses the same way, before the store is touched.
-        let err = run(vec!["patch".into(), "x".into(), "/name".into(), "Button".into()], "bsc ui").unwrap_err();
-        assert!(err.contains("'ui'") && err.contains("read-only"), "patch read-scope refusal: {err}");
-        // `get --field` is a READ — reachable under the read scope (against a scratch --dir).
-        let dir = tmp_store_dir("granular-read-scope");
-        bsc_json_store::Store::new(dir.clone(), "component")
-            .set("card", r#"{"id":"card","name":"Card"}"#)
-            .unwrap();
-        assert!(run(
-            vec!["get".into(), "card".into(), "--field".into(), "/name".into(), "--raw".into(), "--dir".into(), dir],
-            "bsc ui"
-        )
-        .is_ok());
-        // Help stays reachable read-scoped for both writers.
-        assert!(run(vec!["set-src".into(), "help".into()], "bsc ui").is_ok());
-        assert!(run(vec!["patch".into(), "help".into()], "bsc ui").is_ok());
-        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        // #3382: the read-only scope is THREAD-LOCAL — no process env, so this refusal
+        // test cannot leak into any test running beside it.
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            // set-src is a MUTATION: it refuses at the write-scope gate BEFORE reading stdin (so no --dir /
+            // stdin is passed — the gate fires first and the test can never block on stdin).
+            let err = run(vec!["set-src".into(), "x".into()], "bsc ui").unwrap_err();
+            assert!(err.contains("'ui'") && err.contains("read-only"), "set-src read-scope refusal: {err}");
+            // patch refuses the same way, before the store is touched.
+            let err = run(vec!["patch".into(), "x".into(), "/name".into(), "Button".into()], "bsc ui").unwrap_err();
+            assert!(err.contains("'ui'") && err.contains("read-only"), "patch read-scope refusal: {err}");
+            // `get --field` is a READ — reachable under the read scope (against a scratch --dir).
+            let dir = tmp_store_dir("granular-read-scope");
+            bsc_json_store::Store::new(dir.clone(), "component")
+                .set("card", r#"{"id":"card","name":"Card"}"#)
+                .unwrap();
+            assert!(run(
+                vec!["get".into(), "card".into(), "--field".into(), "/name".into(), "--raw".into(), "--dir".into(), dir],
+                "bsc ui"
+            )
+            .is_ok());
+            // Help stays reachable read-scoped for both writers.
+            assert!(run(vec!["set-src".into(), "help".into()], "bsc ui").is_ok());
+            assert!(run(vec!["patch".into(), "help".into()], "bsc ui").is_ok());
+        });
     }
 
     #[test]
@@ -3297,14 +3317,15 @@ mod tests {
         assert!(!is_scoped_mutation(&a(&["log", "button"])), "log is a read");
 
         // `set`/`kit set` refuse under a read `ui` scope BEFORE touching stdin or the store; help still prints.
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
-        let err = run(vec!["set".into(), "--by".into(), "x".into()], "bsc ui").unwrap_err();
-        assert!(err.contains("'ui'") && err.contains("read-only"), "set refuses read-scoped: {err}");
-        let err = run(vec!["kit".into(), "set".into()], "bsc ui").unwrap_err();
-        assert!(err.contains("read-only"), "kit set refuses read-scoped: {err}");
-        assert!(run(vec!["set".into(), "help".into()], "bsc ui").is_ok(), "set help stays reachable read-scoped");
-        assert!(run(vec!["log".into(), "help".into()], "bsc ui").is_ok(), "log help stays reachable read-scoped");
-        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        // #3382: the read-only scope is THREAD-LOCAL — no process env, so this refusal
+        // test cannot leak into any test running beside it.
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            let err = run(vec!["set".into(), "--by".into(), "x".into()], "bsc ui").unwrap_err();
+            assert!(err.contains("'ui'") && err.contains("read-only"), "set refuses read-scoped: {err}");
+            let err = run(vec!["kit".into(), "set".into()], "bsc ui").unwrap_err();
+            assert!(err.contains("read-only"), "kit set refuses read-scoped: {err}");
+            assert!(run(vec!["set".into(), "help".into()], "bsc ui").is_ok(), "set help stays reachable read-scoped");
+            assert!(run(vec!["log".into(), "help".into()], "bsc ui").is_ok(), "log help stays reachable read-scoped");
+        });
     }
 }
