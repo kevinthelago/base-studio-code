@@ -183,8 +183,15 @@ planning (a project seeded from a kit-bearing blueprint uses that kit).",
         usage: "\
 USAGE:
   bsc ui doctor [--kit K] [--json] [--pretty]     # the health report (read-only)
+  bsc ui doctor --sound-kit id@version [--json]   # judge @bsc/sounds/… against a PINNED sound kit (#3412)
   bsc ui doctor --motion [--kit K] [--json]       # ALSO run the four mechanical MOTION checks (#3163)
   bsc ui doctor --fix [--kit K] [--yes]           # OPTIMIZE: merge byte-identical dups + prune dead roots (dry-run unless --yes)
+
+--sound-kit (#3412) names the project's PINNED sound kit (its blueprint's `soundKit`, as `id@version` in the
+`bsc sound release` store), so a `@bsc/sounds/<cue>` reference is judged against the kit the project actually
+adopted — the same target the Design Studio's preview resolves. Omit it for an unpinned project and the
+packaged default kit is used. A ref the store does not hold is a hard ERROR, never a quiet fall back to the
+default: a pinned project reported against the starter kit would call broken sound references clean.
 
 --motion (#3163) ADDS four mechanical animation checks to the report: MOTION-DEAD-SELECTOR (an animation
 `selector` whose class hook the component's source never renders — it matches nothing), MOTION-DASH-NO-
@@ -1039,18 +1046,42 @@ fn cmd_list_shape(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `doctor [--kit K] [--json] [--pretty]` (#2678) — the graph-health report. Reads the component
-/// store, runs the pure analyzer ([`crate::graph_health::analyze`]), and prints the ranked findings
-/// as JSON (`--json`, LLM-consumable) or a human summary. `--kit` scopes the OUTPUT to one kit (the
-/// analyzer always groups by kit, so edges never cross kits regardless).
+/// `doctor [--kit K] [--sound-kit id@version] [--json] [--pretty]` (#2678) — the graph-health report.
+/// Reads the component store, runs the pure analyzer ([`crate::graph_health::analyze_with`]), and prints
+/// the ranked findings as JSON (`--json`, LLM-consumable) or a human summary. `--kit` scopes the OUTPUT to
+/// one kit (the analyzer always groups by kit, so edges never cross kits regardless).
+///
+/// `--sound-kit` (#3412) names the project's PINNED sound kit, so `@bsc/sounds/<id>` references are judged
+/// against the kit the project actually adopted — the Rust twin of the Design Studio passing its resolved
+/// `SoundKitSelection`. Omitted ⇒ the packaged default kit (an unpinned project, unchanged). A ref the
+/// release store does not hold is a HARD ERROR, never a quiet fall back to the default: reporting a pinned
+/// project against the starter kit would call broken references clean.
+/// Read a PINNED sound kit's artifact out of the global versioned release store (#3412, `bsc sound
+/// release`) — the same artifact the Design Studio resolves through the `bsc` bridge, so both sides judge
+/// `@bsc/sounds/…` against identical bytes.
+///
+/// FAILS LOUDLY on a ref the store does not hold (or a malformed `id@version`) rather than degrading to
+/// the packaged default: the caller asked for a specific kit, and answering with a different one would
+/// report a component's broken sound references as clean. Mirrors the frontend's `unresolved` arm.
+fn read_pinned_sound_kit(kit_ref: &str) -> Result<String, String> {
+    let (id, version) = bsc_sound::release::split_ref(kit_ref)?;
+    let store = bsc_sound::release::ReleaseStore::open_default()?;
+    store
+        .artifact(id, version)?
+        .ok_or_else(|| format!("sound kit '{kit_ref}' is not in the sound-kit store (`bsc sound release list`)"))
+}
+
 fn cmd_doctor(args: &[String]) -> Result<(), String> {
     let (mut dir, mut kit, mut json, mut pretty) = (None::<String>, None::<String>, false, false);
     let (mut fix, mut yes, mut motion) = (false, false, false);
+    let mut sound_kit = None::<String>;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--dir" => dir = it.next().cloned(),
             "--kit" => kit = it.next().cloned(),
+            // #3412: resolve `@bsc/sounds/…` against the project's PINNED kit instead of the packaged default.
+            "--sound-kit" => sound_kit = it.next().cloned(),
             "--json" => json = true,
             "--pretty" => pretty = true,
             "--fix" => fix = true,
@@ -1083,7 +1114,14 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
         return doctor_fix(&store, &comps, yes);
     }
 
-    let mut findings = crate::graph_health::analyze(&comps);
+    // Resolve the pin BEFORE analyzing so a broken pin fails the whole report rather than silently
+    // producing one measured against the wrong kit (#3412).
+    let sound_kit_json = match &sound_kit {
+        Some(kit_ref) => Some(read_pinned_sound_kit(kit_ref)?),
+        None => None,
+    };
+    let opts = crate::graph_health::HealthOptions { sound_kit_json: sound_kit_json.as_deref() };
+    let mut findings = crate::graph_health::analyze_with(&comps, &opts);
     if motion {
         // #3163: append the motion findings and re-rank the combined report (most-severe first, stable
         // kit + node-name tiebreak — the SAME ordering `analyze` uses).

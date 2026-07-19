@@ -24,7 +24,10 @@
 // on the #3135 static no-empty/no-loading advisories: it catches a component that HAS an empty/loading
 // branch which itself renders nothing (e.g. `data.length ? list : null`), which the static heuristic misses.
 import type { RuntimeOutcome } from "@/shared/lib/preview/componentRuntimeProbe";
-import { componentPreviewFiles, isCollectionProp, isLoadingProp, type KitArtifact } from "./componentPreview";
+import {
+  componentPreviewFiles, isCollectionProp, isLoadingProp,
+  type KitArtifact, type LibraryModuleResolver,
+} from "./componentPreview";
 import type { HealthCategory } from "./graphHealth";
 import { libraryModuleResolver } from "./libraryModules";
 import type { ComponentRecord } from "./model";
@@ -74,12 +77,19 @@ export function buildSignature(c: ComponentRecord): string {
 /** The subset of `comps` that HAS buildable preview source (`componentPreviewFiles` non-null) — the scan
  *  targets. Components with no buildable source are deliberately excluded (they're the separate static
  *  `no-implementation` graph-health finding, not a build FAILURE), so this never double-reports them. */
-export function scannableComponents(comps: ComponentRecord[], artifact: KitArtifact): ScannableComponent[] {
+export function scannableComponents(
+  comps: ComponentRecord[],
+  artifact: KitArtifact,
+  // The library resolver the scan judges `@bsc/…` imports with — the ACTIVE project's pinned sound kit
+  // when a caller has project context (#3412), else the packaged default. It is part of the build, so a
+  // kit switch changes which components build and must reach the scan, not just the live preview.
+  libResolver: LibraryModuleResolver = libraryModuleResolver,
+): ScannableComponent[] {
   const out: ScannableComponent[] = [];
   for (const c of comps) {
     // Same-kit siblings so a composing user component's imported siblings vendor into its build (#3112).
     const siblings = comps.filter((s) => s.kitId === c.kitId && s.id !== c.id);
-    const build = componentPreviewFiles(c, artifact, siblings, libraryModuleResolver);
+    const build = componentPreviewFiles(c, artifact, siblings, libResolver);
     if (!build) continue;
     // Only VENDORED sibling files + any `@bsc/…` LIBRARY module (#3116) add info beyond `buildSignature(c)`:
     // a built-in's whole-artifact file set isn't record-derived and a non-composing component vendors
@@ -93,11 +103,11 @@ export function scannableComponents(comps: ComponentRecord[], artifact: KitArtif
     // collections / turns on the loading prop) — so each reuses `componentPreviewFiles(..., state)`.
     const states: StateProbe[] = [];
     if (c.props.some(isCollectionProp)) {
-      const s = componentPreviewFiles(c, artifact, siblings, libraryModuleResolver, "empty");
+      const s = componentPreviewFiles(c, artifact, siblings, libResolver, "empty");
       if (s) states.push({ category: "empty-empty-state", files: s.files, entry: s.entry });
     }
     if (c.props.some(isLoadingProp)) {
-      const s = componentPreviewFiles(c, artifact, siblings, libraryModuleResolver, "loading");
+      const s = componentPreviewFiles(c, artifact, siblings, libResolver, "loading");
       if (s) states.push({ category: "empty-loading-state", files: s.files, entry: s.entry });
     }
     // Fold the qualifying states into the sig so adding/removing a collection/loading prop re-queues the
