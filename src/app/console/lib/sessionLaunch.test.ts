@@ -309,14 +309,23 @@ describe("buildSessionSettings", () => {
       // The whole auto-run command surface is the role's fixed store CLI — nothing from a profile.
       expect(out.allowedCommands).toEqual(restrictedRoleCommands(role));
       expect(out.allowedCommands.length).toBeGreaterThan(0);
-      // Baselines suppressed + Read granted (verbatim the bespoke `[...write.allow, "Read"]`).
+      // Baselines suppressed + Read granted — `[...write.allow, "Read"]`, where write.allow is the
+      // `scratch/**` carve-out (#3373) rather than empty (see the write-tool assertions below).
       expect(out.restrictedAllow).toBe(true);
-      expect(out.allowToolRules).toEqual(["Read"]);
-      // The role gate's denies: git/gh outright, every file-write tool, the web tools.
+      expect(out.allowToolRules).toContain("Read");
+      // The role gate's denies: git/gh outright, the web tools.
       expect(out.deniedCommands).toEqual(expect.arrayContaining(roleDeniedCommands(cap)));
       expect(out.deniedCommands).toEqual(expect.arrayContaining(["git", "gh"]));
-      for (const t of ["Edit", "Write", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch"]) {
+      for (const t of ["WebFetch", "WebSearch"]) {
         expect(out.denyToolRules).toContain(t);
+      }
+      // The write tools are NOT denied wholesale (#3428/#3373): a studio carries the `scratch/**`
+      // carve-out, so they are auto-approved for exactly that sealed staging dir and nothing else.
+      // Claude Code's precedence is deny > allow, so a bare deny here would mask the carve-out and
+      // leave the session unable to stage the payload `bsc <store> set --file` reads.
+      for (const t of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) {
+        expect(out.denyToolRules).not.toContain(t);
+        expect(out.allowToolRules).toContain(`${t}(scratch/**)`);
       }
       // A restricted role is NEVER bypass — bypass ignores permissions.deny, which would undo all of it.
       expect(out.bypass).toBe(false);
@@ -329,6 +338,32 @@ describe("buildSessionSettings", () => {
       expect(env.BSC_SCOPE_GLOBS).toBe("scratch/**");
     },
   );
+
+  // #3428 — the regression this pins. `paneRoleGlobs` is written ONLY by `fleetStartProject`, so every
+  // non-fleet pane reaches buildSessionSettings with an empty entry. Passing that straight through as an
+  // override REPLACED the role table's own `writeGlobs` (roleCapability is a plain spread), which silently
+  // erased both scoped carve-outs. The builder must FLOOR the empty case, exactly as `scopeWriteGlobs`
+  // does — otherwise the launch settings and the bsc-scope hook disagree about the same boundary.
+  it.each([
+    ["designer", "scratch/**"],
+    ["documentor", undefined],
+  ] as const)("floors an EMPTY paneRoleGlobs to the %s role's own writeGlobs (#3428)", (role, glob) => {
+    const out = buildSessionSettings(mkStore({ paneRoles: { p: role } }), "p");
+    const expected = glob ? [glob] : roleCapability(role).writeGlobs;
+    expect(expected.length).toBeGreaterThan(0);
+    // The carve-out survives: per-glob allows, and NO bare write-tool deny to mask them.
+    for (const g of expected) expect(out.allowToolRules).toContain(`Write(${g})`);
+    expect(out.denyToolRules).not.toContain("Write");
+    // The launch payload and the runtime hook agree on one boundary.
+    expect(scopeWriteGlobs(role, [])).toEqual(expected);
+  });
+
+  it("assigned owned globs still OVERRIDE the role default (#3428 must not regress the worker lane)", () => {
+    const owned = ["src/features/glance/**"];
+    const out = buildSessionSettings(mkStore({ paneRoles: { p: "worker" }, paneRoleGlobs: { p: owned } }), "p");
+    expect(out.allowToolRules).toContain("Write(src/features/glance/**)");
+    expect(scopeWriteGlobs("worker", owned)).toEqual(owned);
+  });
 
   it("a PROFILE would widen a studio pane — so the studio mount must never assign one (#3357)", () => {
     // Documents WHY `StudioSessionMount` sets `paneRoles` and nothing else. If a profile ever leaks onto a

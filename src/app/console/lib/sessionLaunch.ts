@@ -188,8 +188,16 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
   const role = paneRole(s, paneId);
   // The worker's write boundary (its owned globs) makes roleWriteRules auto-approve Edit/Write within
   // its lane; without it a worker (code:write, empty writeGlobs) prompts on every edit.
+  //
+  // The empty case must FLOOR to the role table rather than override it (#3428) — `roleCapability` is a
+  // plain spread, so passing `{ writeGlobs: [] }` REPLACES the role's own default boundary. `paneRoleGlobs`
+  // is a fleet concept (only `fleetStartProject` writes it), so every non-fleet pane arrives here empty:
+  // that erased the restricted studios' `scratch/**` carve-out (#3373), collapsing `hasScopedWriteCarveOut`
+  // to false and denying the bare write tools — leaving a designer unable to stage the payload file that
+  // `bsc ui set --file` exists to read. Mirrors `scopeWriteGlobs` (writeScope.ts), which floors it the same
+  // way so the launch settings and the bsc-scope hook agree on one boundary.
   const roleGlobs = s.paneRoleGlobs[paneId] ?? [];
-  const cap = role ? roleCapability(role, { writeGlobs: roleGlobs }) : null;
+  const cap = role ? roleCapability(role, roleGlobs.length ? { writeGlobs: roleGlobs } : {}) : null;
   const write = cap ? roleWriteRules(cap) : { allow: [], deny: [] };
   // Agents gate (#255): the profile assigned to this pane is the SOLE source of auto-approved
   // commands (#1457), plus its per-tool/path rules, on top of the role gate (deny wins for both).
