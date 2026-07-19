@@ -142,6 +142,88 @@ const NOTCH = Math.exp(120 * 0.0016);
 const wheel = (el: HTMLElement, init: WheelEventInit = {}) =>
   el.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, cancelable: true, ...init }));
 
+// #3433 — the INITIAL framing. A page's own fit is a mount effect, so it frames whatever model exists at
+// mount, and every graph page loads its data async: that is the EMPTY model. `buildGraph` sizes the world
+// tightly around its content, so an empty graph is a small-but-valid box (Glance: 266x156) — `fitBox` caps
+// at `maxFitScale` and centers THAT, parking world origin near the middle of the viewport. The real data
+// then arrived, the world grew, and nothing re-framed it: the graph rendered from screen center off the
+// bottom-right. #2554 had removed `model` from Glance's fit deps (correctly — a fresh model reference every
+// status poll re-fit the graph constantly), which left nothing watching for the first real layout.
+describe("useGraphViewport initial fit (#3433)", () => {
+  const VW = 1600, VH = 900;
+  /** A viewport element with a real size — jsdom reports 0, which would make every fit degenerate. */
+  const sizedEl = (w = VW, h = VH) => {
+    const el = document.createElement("div");
+    Object.defineProperty(el, "clientWidth", { value: w, configurable: true });
+    Object.defineProperty(el, "clientHeight", { value: h, configurable: true });
+    return el;
+  };
+  /** Let the effect's requestAnimationFrame land. */
+  const flush = async () => { await act(async () => { await new Promise((r) => setTimeout(r, 20)); }); };
+
+  const mount = async (w: number, h: number) => {
+    const r = renderHook(({ world }) => useGraphViewport(world), { initialProps: { world: { w, h } } });
+    act(() => r.result.current.setVp(sizedEl()));
+    await flush();
+    return r;
+  };
+
+  it("re-frames when the data lands and the world grows (the regression)", async () => {
+    const { result, rerender } = await mount(266, 156);   // the empty Glance model
+    // Framed the empty box: capped at maxFitScale, world origin parked near the viewport middle — which is
+    // exactly why node #1 (world 70,70) rendered dead center.
+    expect(result.current.view.scale).toBeCloseTo(1.05, 6);
+    expect(result.current.view.tx).toBeGreaterThan(VW / 3);
+
+    rerender({ world: { w: 1000, h: 2600 } });            // …the real projects arrive
+    await flush();
+    expect(result.current.view).toEqual(fitView(1000, 2600, VW, VH, 0.28, 2.6, 70, 1.05));
+    // Height constrains, so the content now sits one fitPad from the top rather than mid-screen.
+    expect(result.current.view.ty).toBeCloseTo(70, 6);
+  });
+
+  it("does NOT re-fit when the model re-renders at the SAME world size (#2554 preserved)", async () => {
+    // A status poll hands back a fresh model object every few seconds but moves no node, so the world
+    // dimensions are identical. Depending on the model reference here is what wiped the user's pan/zoom.
+    const { result, rerender } = await mount(1000, 2600);
+    act(() => result.current.centerOn(500, 1300));        // programmatic move, not a user gesture
+    const parked = result.current.view;
+    rerender({ world: { w: 1000, h: 2600 } });            // new object, same numbers
+    await flush();
+    expect(result.current.view).toEqual(parked);
+  });
+
+  it("stops re-fitting once the USER has panned", async () => {
+    const { result, rerender } = await mount(266, 156);
+    act(() => result.current.panBy(120, -40));
+    const moved = result.current.view;
+    rerender({ world: { w: 1000, h: 2600 } });            // a layout change must not yank their viewport
+    await flush();
+    expect(result.current.view).toEqual(moved);
+  });
+
+  it("stops re-fitting once the USER has zoomed", async () => {
+    const { result, rerender } = await mount(266, 156);
+    const el = sizedEl();
+    act(() => result.current.setVp(el));
+    act(() => { wheel(el, { clientX: 400, clientY: 300 }); });
+    const zoomed = result.current.view;
+    rerender({ world: { w: 1000, h: 2600 } });
+    await flush();
+    expect(result.current.view).toEqual(zoomed);
+  });
+
+  it("an EXPLICIT fit still works after the user has taken over", async () => {
+    // The drill in/out re-fit and the toolbar button call `fit()` directly — never gated on `userMoved`.
+    const { result, rerender } = await mount(266, 156);
+    act(() => result.current.panBy(200, 200));
+    rerender({ world: { w: 1000, h: 2600 } });
+    await flush();
+    act(() => result.current.fit());
+    expect(result.current.view).toEqual(fitView(1000, 2600, VW, VH, 0.28, 2.6, 70, 1.05));
+  });
+});
+
 describe("useGraphViewport wheel listener lifecycle (#2454)", () => {
   it("zooms a viewport element attached AFTER the hook mounts", () => {
     // Regression: Design Studio mounts the hook while the center pane shows the Library view, so
@@ -295,5 +377,18 @@ describe("useGraphViewport wheel listener lifecycle (#2454)", () => {
     expect(result.current.view.scale).toBe(1); // zoom untouched
     expect(result.current.view.tx).toBe(-200);
     expect(result.current.view.ty).toBe(-100);
+  });
+});
+
+// #3433 — a page that mounts HIDDEN (a background tab) reports 0x0, and fitting against that would set a
+// degenerate transform the user then sees on switching to it.
+describe("useGraphViewport initial fit skips an unmeasurable viewport (#3433)", () => {
+  const flush = async () => { await act(async () => { await new Promise((r) => setTimeout(r, 20)); }); };
+
+  it("leaves the view untouched while the element has no size", async () => {
+    const { result } = renderHook(({ world }) => useGraphViewport(world), { initialProps: { world: { w: 1000, h: 2600 } } });
+    act(() => result.current.setVp(document.createElement("div"))); // jsdom: clientWidth/Height are 0
+    await flush();
+    expect(result.current.view).toEqual({ tx: 0, ty: 0, scale: 1 }); // the untouched initial state
   });
 });
