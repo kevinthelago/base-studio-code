@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 import type { Kit } from "./model";
 import { SEED_COMPONENTS, SEED_KITS, reconcileComponents, reconcileKits, DEFAULT_KIT_SEEDED } from "./seed";
 import { seedHashOf, stampSeedHash } from "./seedRefresh";
+import { BASE_KIT_ID, BASE_ANIMATIONS } from "@/shared/ui/kit/baseAnimations";
 
 describe("packaged seed stamping (#2483)", () => {
   it("every packaged built-in (kit + component) carries a self-consistent seedHash", () => {
@@ -86,5 +87,28 @@ describe.skipIf(!DEFAULT_KIT_SEEDED)("reconcile against the real seed (#2483 acc
     const again = reconcileKits(SEED_KITS);
     expect(again.pushes).toEqual([]);
     expect(again.records).toEqual(SEED_KITS);
+  });
+});
+
+describe("the shared `base` motion kit seeds UNCONDITIONALLY (#3451)", () => {
+  it("reaches a store that lacks it even while the react-ui default is disabled", () => {
+    // react-ui's primitives now REFERENCE base's animations by name. If `base` were gated behind
+    // DEFAULT_KIT_SEEDED (which is off, #3029) those refs would resolve to nothing and Button/Card/
+    // StatusDot would silently lose their motion — a visual regression with no error. So the seed must
+    // converge an EMPTY store onto the base kit regardless of the flag.
+    const r = reconcileKits([]);
+    const base = r.records.find((k: Kit) => k.id === BASE_KIT_ID);
+    expect(base, "base kit is seeded regardless of DEFAULT_KIT_SEEDED").toBeTruthy();
+    expect(r.pushes.some((k: Kit) => k.id === BASE_KIT_ID), "and is pushed to the store").toBe(true);
+  });
+
+  it("carries the base motion library, so a consumer's name reference can resolve", () => {
+    const base = reconcileKits([]).records.find((k: Kit) => k.id === BASE_KIT_ID)!;
+    expect(base.animations?.map((a) => a.name)).toEqual(BASE_ANIMATIONS.map((a) => a.name));
+  });
+
+  it("is recoverable — a store that deleted it gets it back (shadow-proof, #2483)", () => {
+    const withoutBase = reconcileKits([]).records.filter((k: Kit) => k.id !== BASE_KIT_ID);
+    expect(reconcileKits(withoutBase).records.some((k: Kit) => k.id === BASE_KIT_ID)).toBe(true);
   });
 });
