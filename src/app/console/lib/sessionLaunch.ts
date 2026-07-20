@@ -14,7 +14,7 @@ import { resolveMcpServers, toBscAgentMcp, resolveHooks, toSessionPayloads } fro
 import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/skills";
 import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
-import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands, isRestrictedRole, type SessionRole } from "@/shared/lib/session/sessionRoles";
+import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands, isRestrictedRole, HARVEST_ROOT_APP_REPO, type SessionRole } from "@/shared/lib/session/sessionRoles";
 import { isFullCapabilitySession, isStudioSessionPaneId } from "@/shared/lib/session/systemSessions";
 import { TURN_ACCOUNTING_HOOKS } from "@/shared/lib/session/turnHooks";
 import { studioRoleForPaneId } from "@/features/studio-sessions";
@@ -76,6 +76,17 @@ export function buildAgentEnv(
   // any role with real git/gh access (a triage pane is `git:none` but `github:write`, so it keeps it).
   const noGitOrGithub = !!scopeCap && scopeCap.git === "none" && scopeCap.github === "none";
   if (ghToken && !noGitOrGithub) e.GH_TOKEN = ghToken;
+  // Role-declared READ-only harvest roots (#3509). The ROLE names intent (`app-repo`) because a role is
+  // machine-independent; the launch resolves it to a real path. This widens only what `bsc ui harvest`
+  // / `bsc graph harvest` may SCAN — it grants no write anywhere, which is the point: the designer is
+  // `code: none` with `scratch/**` its only writable glob, yet must be able to mine the app's own UI
+  // (#3451/#3471). A token that resolves to nothing contributes nothing, mirroring the CLI's rule that
+  // an unresolvable allow-list entry is skipped rather than widening access.
+  const harvestRoots = (scopeCap?.harvestRoots ?? [])
+    .map((token) => (token === HARVEST_ROOT_APP_REPO ? s.appRepoRoot : null))
+    .filter((p): p is string => !!p);
+  // Newline-separated to match the CLI parser (a Windows path contains both `;` and a `:`).
+  if (harvestRoots.length) e.BSC_HARVEST_ROOTS = harvestRoots.join("\n");
   // Write-scope gate (#1297): hand the session its allowed write globs so the `bsc-scope`
   // PreToolUse hook hard-blocks any write outside them — the hard deny the role gate's
   // allow-only rules lack. Applies to every gated pane.

@@ -6,6 +6,7 @@ import { Tabstrip } from "@/app/chrome/Tabstrip";
 import { StatusBar } from "@/app/chrome/StatusBar";
 import { ErrorBoundary } from "@/app/safety/ErrorBoundary";
 import { useAppStore } from "@/store";
+import { useAppRepoRoot } from "@/shared/hooks/useAppRepoRoot";
 import { Box } from "@/shared/ui/layout/Box";
 import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { useHotkeys } from "./useHotkeys";
@@ -78,6 +79,10 @@ export default function App() {
   // check (rail highlight, chrome, the console mount's display:none) redirects with no reset effect.
   // The console STILL mounts hidden (its PTYs stay alive for the Glance stream dock to reconnect).
   const activeWorkspace = !showConsolePage && rawActiveWorkspace === "console" ? "glance" : rawActiveWorkspace;
+
+  // Resolve the app's own source tree once (#3509) so a launch can turn a role's symbolic
+  // `app-repo` harvest root into a real path without awaiting.
+  useAppRepoRoot();
 
   // The console owns its tabs: the layout picker, close (+ a confirm when a session is live),
   // layout change (PTY teardown), reorder, tear-off — all behind useConsoleTabs (#app-shell).

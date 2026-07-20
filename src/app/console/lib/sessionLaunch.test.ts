@@ -63,6 +63,28 @@ describe("buildAgentEnv", () => {
     }
   });
 
+  it("resolves a role's symbolic harvest root to the app repo path (#3509)", () => {
+    // The designer is `code: none` with `scratch/**` its only writable glob, yet it must be able to
+    // MINE the app's own UI (#3451/#3471). The role declares the intent; the launch resolves it.
+    const s = mkStore({ paneRoles: { p: "designer" }, appRepoRoot: "C:/src/base-studio-code" });
+    const e = buildAgentEnv(s, "p", "claude", "");
+    expect(e?.BSC_HARVEST_ROOTS).toBe("C:/src/base-studio-code");
+    // Read-only means read-only: the harvest root must NOT widen the write scope.
+    expect(e?.BSC_SCOPE_GLOBS).toBe("scratch/**");
+  });
+
+  it("omits BSC_HARVEST_ROOTS when the role declares none (#3509)", () => {
+    const s = mkStore({ paneRoles: { p: "worker" }, appRepoRoot: "C:/src/base-studio-code" });
+    expect(buildAgentEnv(s, "p", "claude", "")?.BSC_HARVEST_ROOTS).toBeUndefined();
+  });
+
+  it("fails CLOSED when the symbolic root cannot be resolved (#3509)", () => {
+    // A shipped binary has no source tree. An unresolvable token must contribute NOTHING rather
+    // than emitting an empty entry, which the CLI would otherwise have to interpret.
+    const s = mkStore({ paneRoles: { p: "designer" }, appRepoRoot: null });
+    expect(buildAgentEnv(s, "p", "claude", "")?.BSC_HARVEST_ROOTS).toBeUndefined();
+  });
+
   it("still carries GH_TOKEN for a role with real gh access (#3357 must not over-reach)", () => {
     // triage is `git:none` but `github:write` — it drives the gh CLI and MUST keep its token.
     expect(buildAgentEnv(mkStore({ paneRoles: { p: "triage" } }), "p", "claude", "ghp_x")?.GH_TOKEN).toBe("ghp_x");
