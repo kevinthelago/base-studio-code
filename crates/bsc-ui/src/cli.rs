@@ -238,6 +238,32 @@ The report names the theme's `group` — its design-group binding (#2749) — so
 which group's contract it resolved against. Compact JSON by default; --pretty indents.",
     },
     CmdDoc {
+        name: "harvest",
+        summary: "scan a repo and surface reusable COMPONENT candidates for the library (#3471)",
+        usage: "USAGE:
+  bsc ui harvest <repo-dir> [--kit K] [--worthy-only] [--pretty]
+
+Parses the repo's real .tsx/.ts source with tree-sitter and lifts each React component into a CANDIDATE
+component record — the component half of `bsc graph harvest`, so a project that gets BUILT fills the
+component graph instead of the library being hand-authored one `bsc ui set` at a time. Deterministic and
+zero-egress: parsing is local, and the walk is sorted so the output is order-stable. READ-ONLY — it
+emits candidates, never stores them; promoting one is the curation gate's job.
+
+A component is a PascalCase-named function that renders JSX (React cannot treat a lowercase name as a
+component, so the capital is a real signal). Vendored/build/VCS dirs and test/story files are skipped.
+
+Unlike the algorithms harvest, a candidate's `srcText` is a CLOSURE, not a node slice: the component plus
+the same-file declarations it transitively references plus exactly the imports those need — because a
+component's stored source must be a module the preview can COMPILE. Every candidate carries an honest
+`buildable` with `unbuildableReasons`; one that could not be closed is emitted FLAGGED rather than
+quietly degraded (a srcText with unresolved `@/…` imports otherwise stores with no complaint at all,
+#3470). `composes` lists component NAMES (the component graph composes by name, not by id).
+
+Prints { candidates: [...], count }. --kit sets the kit candidates would join (default `harvested` — NOT
+an existing kit, since unreviewed candidates must not contaminate a curated one). --worthy-only keeps
+those the classifier scores net-positive.",
+    },
+    CmdDoc {
         name: "emit",
         summary: "vendor a component (or the whole kit) as compilable source into a directory (#2800)",
         usage: "\
@@ -314,6 +340,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("generate") => cmd_generate(&args[1..], prog),
         Some("resolve") => cmd_resolve(&args[1..]),
         Some("emit") => cmd_emit(&args[1..], prog),
+        Some("harvest") => cmd_harvest(&args[1..]),
         Some("changes") => cmd_changes(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
@@ -499,6 +526,66 @@ fn cmd_resolve(args: &[String]) -> Result<(), String> {
 /// `bsc ui emit component <id> <dir>` / `bsc ui emit kit <dir>` (#2800) — vendor a component + its
 /// transitive closure (or the whole kit) as compilable source, from the EMBEDDED artifact (no store /
 /// network → sandbox-safe). See [`crate::emit`].
+/// `bsc ui harvest <repo-dir>` (#3471) — scan a repo for reusable component candidates. READ-ONLY, so
+/// no write-scope gate: it emits candidates and stores nothing (mirroring `bsc graph harvest`, where
+/// storing is the curation gate's job). Pure JSON out, `--pretty` to indent.
+fn cmd_harvest(args: &[String]) -> Result<(), String> {
+    if args.first().map(String::as_str) == Some("help") {
+        print!("{}", bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "harvest"));
+        return Ok(());
+    }
+    let mut dir: Option<&str> = None;
+    let (mut kit, mut worthy_only, mut pretty) = (crate::harvest::DEFAULT_KIT.to_string(), false, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--kit" => kit = it.next().cloned().ok_or("--kit needs a kit id")?,
+            "--worthy-only" => worthy_only = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => dir = Some(other),
+        }
+    }
+    let dir = dir.ok_or("usage: bsc ui harvest <repo-dir> [--kit K] [--worthy-only] [--pretty]")?;
+    let path = std::path::Path::new(dir);
+    if !path.is_dir() {
+        return Err(format!("not a directory: {dir}"));
+    }
+    let mut candidates = crate::harvest::harvest(path, &kit);
+    if worthy_only {
+        candidates.retain(|c| c.classification.worthy);
+    }
+    let items: Vec<serde_json::Value> = candidates.iter().map(harvest_json).collect();
+    let out = serde_json::json!({ "candidates": items, "count": items.len() });
+    let text = if pretty {
+        serde_json::to_string_pretty(&out)
+    } else {
+        serde_json::to_string(&out)
+    }
+    .map_err(|e| e.to_string())?;
+    println!("{text}");
+    Ok(())
+}
+
+/// One harvested candidate as the store's component-record shape (plus the harvest-only verdict
+/// fields), so a curator can pipe it straight into `bsc ui set` after review.
+fn harvest_json(c: &crate::harvest::Candidate) -> serde_json::Value {
+    serde_json::json!({
+        "id": c.id,
+        "name": c.name,
+        "kitId": c.kit_id,
+        "role": c.role,
+        "composes": c.composes,
+        "srcText": c.src_text,
+        "src": c.src,
+        "buildable": c.buildable,
+        "unbuildableReasons": c.unbuildable_reasons,
+        "worthy": c.classification.worthy,
+        "score": c.classification.score,
+        "reasons": c.classification.reasons,
+    })
+}
+
 fn cmd_emit(args: &[String], prog: &str) -> Result<(), String> {
     match args.first().map(String::as_str) {
         None | Some("help") => {
@@ -2593,6 +2680,33 @@ mod tests {
         let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "components");
         for needle in ["--coverage", "--dir", "var(--<token>", "zeroConsumers", "node_modules", "leakCandidates"] {
             assert!(d.contains(needle), "components help mentions {needle}");
+        }
+    }
+
+    #[test]
+    fn harvest_dispatches_parses_its_flags_and_rejects_bad_input() {
+        // Covers the CLI surface the library tests can't see: the dispatch arm, flag parsing, and the
+        // read-only contract (no write-scope gate — harvest emits candidates, it stores nothing).
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests").join("fixtures").join("harvest").to_string_lossy().into_owned();
+        assert!(run(vec!["harvest".into(), dir.clone(), "--pretty".into()], "bsc ui").is_ok());
+        assert!(run(
+            vec!["harvest".into(), dir, "--kit".into(), "demo".into(), "--worthy-only".into()],
+            "bsc ui",
+        )
+        .is_ok());
+        // A missing/!dir path and an unknown flag must FAIL rather than emit an empty harvest, which
+        // would read as "this repo has no components".
+        assert!(run(vec!["harvest".into(), "no-such-dir-here".into()], "bsc ui").is_err());
+        assert!(run(vec!["harvest".into(), ".".into(), "--nope".into()], "bsc ui").is_err());
+        assert!(run(vec!["harvest".into()], "bsc ui").is_err(), "the repo dir is required");
+    }
+
+    #[test]
+    fn harvest_is_in_the_help_catalog() {
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "harvest");
+        for needle in ["<repo-dir>", "--kit", "--worthy-only", "buildable", "composes", "CLOSURE"] {
+            assert!(d.contains(needle), "harvest help mentions {needle}");
         }
     }
 }
