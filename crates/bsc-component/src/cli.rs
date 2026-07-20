@@ -212,10 +212,17 @@ kit; --json emits the findings array (LLM-consumable).
 
 --fix is the mechanical, SAFE OPTIMIZE (#3089): (1) MERGE byte-identical-source duplicates — fold each
 group into the most-`used` canonical and repoint composers to it (lossless; only byte-identical, never a
-same-`wraps` dup), then (2) PRUNE the safe dead roots — the ROOT of each orphan/dangling-branch finding
+same-`wraps` dup), then (2) PRUNE the GUARDED dead roots — the ROOT of each orphan/dangling-branch finding
 (never a used > 0 node). DRY RUN by default (prints what WOULD change); pass --yes to apply. Cycles and
 same-`wraps` (differing-source) duplicates are NOT auto-resolved — they need a semantic call. Branch
-descendants are left for the next pass (one might be shared) — re-run to clean them. #2678/#2679/#3089.",
+descendants are left for the next pass (one might be shared) — re-run to clean them.
+
+The PRUNE GUARDS (#3087) — the dead-root heuristic is a good REPORT and a dangerous auto-DELETE, so three
+classes of candidate are named, then held back: a `page` (a page is a root BY DEFINITION — nothing composes
+a page, so the heuristic condemns the whole pages tier), a `builtin: true` packaged seed (shipped on
+purpose; the seed reconcile re-adds it), and EVERY candidate while the usage index is unpopulated (no
+component in scope carries used > 0, so `used = 0` means UNKNOWN, not unused). A held-back candidate is
+still REPORTED by `bsc ui doctor` — only the automatic removal is withheld. #2678/#2679/#3089/#3087.",
     },
     CmdDoc {
         name: "define-animation",
@@ -1164,7 +1171,9 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
 /// Two lossless steps, dry-run unless `apply`:
 ///   1. MERGE byte-identical duplicates (`graph_health::merge_plan`) — fold each group into the
 ///      most-`used` canonical, repointing composers; only byte-identical, never a same-`wraps` dup.
-///   2. PRUNE the safe dead roots (`graph_health::prunable`) — orphan/dead-root only, never a `used > 0`.
+///   2. PRUNE the GUARDED dead roots (`graph_health::prune_plan`) — orphan/dead-root only, never a
+///      `used > 0`, and never a `page` / packaged built-in / anything at all while the usage index is
+///      unpopulated (#3087). A guarded candidate is still reported, just never auto-removed.
 ///
 /// Cycles + same-`wraps` (differing-source) duplicates need the curator's SEMANTIC call, so they're only
 /// surfaced as a note — never auto-resolved here.
@@ -1173,19 +1182,38 @@ fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply:
     // Dead roots to prune, minus anything a merge already removes (never double-handle an id).
     let merged_ids: std::collections::BTreeSet<String> =
         plan.groups.iter().flat_map(|g| g.removed.iter().map(|(id, _)| id.clone())).collect();
-    let prunable: Vec<_> = crate::graph_health::prunable(comps)
-        .into_iter()
-        .filter(|p| !merged_ids.contains(&p.id))
-        .collect();
+    let prune_plan = crate::graph_health::prune_plan(comps);
+    let prunable: Vec<_> =
+        prune_plan.prune.into_iter().filter(|p| !merged_ids.contains(&p.id)).collect();
+    let skipped = prune_plan.skipped;
     let cycles = crate::graph_health::analyze(comps).iter().filter(|f| f.category == "cycle").count();
     let manual_note = || {
         if cycles > 0 {
             println!("  ({cycles} cycle(s) need a manual break; same-`wraps` duplicates need the curator's semantic call — see `bsc ui doctor`).");
         }
     };
+    // #3087: the guards are LOUD — a withheld candidate is named with the guard that saved it, so the
+    // report never silently shrinks and a genuine dead page/seed is still visible to the human.
+    let guard_note = || {
+        if skipped.is_empty() {
+            return;
+        }
+        println!(
+            "  {} dead-root finding(s) HELD BACK by the prune guards (#3087) — still reported by `bsc ui doctor`, never auto-removed:",
+            skipped.len()
+        );
+        for s in &skipped {
+            println!("    · {} ({}) — {}", s.name, s.id, s.guard);
+        }
+    };
 
     if plan.groups.is_empty() && prunable.is_empty() {
-        println!("✓ nothing to auto-optimize — no byte-identical duplicates and no dead roots.");
+        if skipped.is_empty() {
+            println!("✓ nothing to auto-optimize — no byte-identical duplicates and no dead roots.");
+        } else {
+            println!("✓ nothing SAFE to auto-optimize — no byte-identical duplicates, and every dead-root candidate is guarded.");
+        }
+        guard_note();
         manual_note();
         return Ok(());
     }
@@ -1207,6 +1235,7 @@ fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply:
                 println!("  - {} ({}) — {}", p.name, p.id, p.reason);
             }
         }
+        guard_note();
         manual_note();
         return Ok(());
     }
@@ -1233,6 +1262,7 @@ fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply:
         pruned += 1;
     }
     println!("optimized: merged {merged} duplicate(s), pruned {pruned} dead node(s). Re-run `bsc ui doctor` — an optimization can surface more.");
+    guard_note();
     Ok(())
 }
 
@@ -2863,6 +2893,49 @@ mod tests {
         assert!(store.get("btn").unwrap().is_some(), "the most-used canonical survives");
         let page: serde_json::Value = serde_json::from_str(&store.get("page").unwrap().unwrap()).unwrap();
         assert_eq!(page["composes"], serde_json::json!(["Button"]), "the composer repointed Btn2 → Button");
+    }
+
+    /// #3087 end-to-end: `--fix --yes` APPLIED against a store shaped like the live one must leave the
+    /// pages tier and the packaged viz seeds standing, while still pruning a genuine user orphan.
+    #[test]
+    fn doctor_fix_apply_never_removes_a_page_or_a_builtin_seed() {
+        let dir = tmp_store_dir("doctor-guards");
+        let store = bsc_json_store::Store::new(dir, "component");
+        let module = "export const C=()=>null;";
+        let set = |id: &str, rec: serde_json::Value| store.set(id, &rec.to_string()).unwrap();
+        // A used component so the usage index is POPULATED — guards 1+2 must stand on their own.
+        set("btn", serde_json::json!({ "id": "btn", "name": "Button", "kitId": "k", "role": "primitive", "used": 7, "composes": [], "srcText": "b", "source": module }));
+        // A page: a root by definition, composing its section component → "dangling-branch".
+        set("invoicespage", serde_json::json!({ "id": "invoicespage", "name": "InvoicesPage", "kitId": "k", "role": "page", "used": 0, "composes": ["DataTable"], "srcText": "p", "source": module }));
+        set("table", serde_json::json!({ "id": "table", "name": "DataTable", "kitId": "k", "role": "composite", "used": 0, "composes": [], "srcText": "t", "source": module }));
+        // A packaged viz seed: isolated ON PURPOSE (#3194/#3242) → "orphan".
+        set("algocells", serde_json::json!({ "id": "algocells", "name": "AlgoCells", "kitId": "k", "role": "primitive", "used": 0, "builtin": true, "composes": [], "srcText": "a", "source": module }));
+        // A genuine user orphan — the case `--fix` exists for.
+        set("ghost", serde_json::json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0, "composes": [], "srcText": "g", "source": module }));
+
+        let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+        doctor_fix(&store, &comps, true).unwrap();
+
+        assert!(store.get("invoicespage").unwrap().is_some(), "a page is a root by definition — never pruned");
+        assert!(store.get("algocells").unwrap().is_some(), "a packaged builtin seed is never pruned");
+        assert!(store.get("ghost").unwrap().is_none(), "a genuine user orphan still prunes");
+    }
+
+    /// #3087 guard 3: a store with NO usage signal at all (nothing carries `used > 0` — the shape of a
+    /// real install, since nothing increments the reuse count) prunes NOTHING.
+    #[test]
+    fn doctor_fix_apply_prunes_nothing_while_the_usage_index_is_unpopulated() {
+        let dir = tmp_store_dir("doctor-usage-unknown");
+        let store = bsc_json_store::Store::new(dir, "component");
+        let module = "export const C=()=>null;";
+        store.set("ghost", &serde_json::json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0, "composes": [], "srcText": "g", "source": module }).to_string()).unwrap();
+
+        let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+        // The orphan IS reported by the read-only analyzer …
+        assert!(crate::graph_health::analyze(&comps).iter().any(|f| f.category == "orphan"));
+        // … but `--fix --yes` leaves it alone: `used = 0` store-wide means UNKNOWN, not unused.
+        doctor_fix(&store, &comps, true).unwrap();
+        assert!(store.get("ghost").unwrap().is_some(), "no usage signal ⇒ no automatic removal");
     }
 
     #[test]

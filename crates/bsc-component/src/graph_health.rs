@@ -29,6 +29,13 @@
 //! a demo placeholder, #2921). "Unused" = orphan ∪ dangling-branch — a node with no composer AND
 //! `used == 0`; a `page`/`layout` with `used > 0` is a legit entry point, never flagged.
 //!
+//! **Reporting a dead root is not the same as auto-DELETING one.** The findings above are a diagnosis;
+//! [`prune_plan`] is what `bsc ui doctor --fix` may actually remove, and it filters the dead-root
+//! candidates through three guards (#3087) — never a `page` (a page is a root by definition), never a
+//! `builtin: true` packaged seed, and never anything at all while the `used` index is unpopulated
+//! (`used == 0` store-wide means the usage signal is UNKNOWN, not that everything is unused). A guarded
+//! candidate is still REPORTED; only its automatic removal is withheld.
+//!
 //! The **no-implementation** check is artifact-aware: a store record strips a built-in's `source`
 //! (#2794), so both built-ins and user specs look source-less in the store — but a built-in still
 //! builds because its real code lives in the packaged react-ui artifact. So a node is buildable iff
@@ -718,23 +725,94 @@ pub struct Prunable {
     pub reason: String,
 }
 
+/// A dead-root finding the auto-prune plan deliberately WITHHELD (#3087). It is still REPORTED by
+/// `bsc ui doctor` — the read-only diagnosis stays complete — but `--fix` will never remove it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PruneSkip {
+    pub id: String,
+    pub name: String,
+    /// Which guard held it back, in prose (printed by `--fix` so the withholding is never silent).
+    pub guard: String,
+}
+
+/// The auto-prune plan: what `--fix` MAY remove, and what a guard held back (#3087).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PrunePlan {
+    pub prune: Vec<Prunable>,
+    pub skipped: Vec<PruneSkip>,
+}
+
+/// Is the `used` reuse-count index POPULATED for this component set — does ANY node carry `used > 0`?
+///
+/// `used` is a cross-codebase reuse count that no writer currently maintains: the packaged kit artifact
+/// ships every component at `used: 0` and nothing increments it, so on a real install the whole store
+/// reads zero. A store where NOTHING is used is therefore not a store full of dead components — it is a
+/// store with **no usage signal at all**, and `used == 0` there means UNKNOWN, not unused (#3087).
+/// Judged over the components HANDED IN, so a `--kit`-scoped call can only ever prune LESS.
+pub fn usage_index_populated(components: &[Value]) -> bool {
+    components.iter().filter_map(parse_node).any(|n| n.used > 0)
+}
+
 /// The safe-to-remove set (#2679): the ROOT of every orphan / dangling-branch finding — a node with
 /// no composer and `used == 0`. Deliberately NOT the branch DESCENDANTS (one might be shared by a live
 /// component): removing the roots and re-running `doctor` surfaces any newly-orphaned children on the
 /// next pass. Cycles, duplicates, and no-implementation findings are never auto-pruned (they need a
 /// human's merge/break/author call). By construction a `used > 0` node can never appear here.
+///
+/// See [`prune_plan`] for the three safety guards this set is filtered through.
 pub fn prunable(components: &[Value]) -> Vec<Prunable> {
-    analyze(components)
-        .into_iter()
-        .filter_map(|f| match f.category {
-            "orphan" | "dangling-branch" => Some(Prunable {
-                id: f.node_ids.into_iter().next()?,
-                name: f.node_names.into_iter().next().unwrap_or_default(),
-                reason: f.why,
-            }),
-            _ => None,
-        })
-        .collect()
+    prune_plan(components).prune
+}
+
+/// The guarded auto-prune plan (#3087). Every orphan / dangling-branch ROOT is a *candidate*; three
+/// guards decide whether it may actually be removed, because the dead-root heuristic (`in-degree 0 AND
+/// used == 0`) has three known FALSE-POSITIVE classes — and epic #3087 wires a curator to run `--fix`
+/// automatically, which turns each of them into unattended data loss:
+///
+/// 1. **A `page` is a root BY DEFINITION** — nothing composes a page; that is what makes it a page. The
+///    heuristic condemns the whole pages tier (#2505) on principle. (The orphan arm already refuses to
+///    flag an isolated page/layout as "entry point by role"; the dangling-branch arm did not, so a page
+///    that composes anything at all — i.e. every real page — landed in the prune plan.)
+/// 2. **A packaged `builtin: true` seed is not garbage** — the viz kits' demo components (#3194/#3242)
+///    are isolated ON PURPOSE, to demo their kit's motion. Removing one only invites the seed reconcile
+///    to re-add it on the next launch, so the "optimization" is a no-op that churns the store.
+/// 3. **An unpopulated usage index is UNKNOWN, not unused** — see [`usage_index_populated`]. When no
+///    node in scope carries `used > 0` the usage half of the heuristic carries no information, and
+///    in-degree alone must not condemn a node.
+///
+/// A guarded candidate moves to `skipped` rather than vanishing: `doctor` still REPORTS the finding
+/// (the diagnosis is useful), only the automatic removal is withheld.
+pub fn prune_plan(components: &[Value]) -> PrunePlan {
+    let nodes: Vec<Node> = components.iter().filter_map(parse_node).collect();
+    let by_id: BTreeMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+    let usage_known = nodes.iter().any(|n| n.used > 0);
+
+    let mut plan = PrunePlan::default();
+    for f in analyze(components) {
+        if !matches!(f.category, "orphan" | "dangling-branch") {
+            continue;
+        }
+        let Some(id) = f.node_ids.into_iter().next() else { continue };
+        let name = f.node_names.into_iter().next().unwrap_or_default();
+        let node = by_id.get(id.as_str());
+        let guard = if !usage_known {
+            Some(
+                "the usage index is unpopulated — NOTHING in scope has `used` > 0, so `used = 0` means \
+                 UNKNOWN, not unused",
+            )
+        } else if node.is_some_and(|n| n.role == "page") {
+            Some("a `page` is a root BY DEFINITION — nothing composes a page; that is what makes it a page")
+        } else if node.is_some_and(|n| n.builtin) {
+            Some("a packaged built-in seed — it is shipped on purpose and the seed reconcile re-adds it")
+        } else {
+            None
+        };
+        match guard {
+            Some(guard) => plan.skipped.push(PruneSkip { id, name, guard: guard.to_string() }),
+            None => plan.prune.push(Prunable { id, name, reason: f.why }),
+        }
+    }
+    plan
 }
 
 /// A byte-identical MERGE group (#3089, epic #3087) — the OPTIMIZE analog of a [`Prunable`]: the safe,
@@ -2360,6 +2438,94 @@ mod tests {
         assert!(!ids.contains(&"widget".to_string())); // a descendant, not a root — next pass
         assert!(!ids.contains(&"Button".to_string())); // used > 0
         assert!(!ids.contains(&"b1".to_string()) && !ids.contains(&"b2".to_string())); // duplicates aren't pruned
+    }
+
+    // ── prune guards (#3087) ─────────────────────────────────────────────────────────────────────
+
+    /// A live-store `page`: a root by definition (nothing composes it) that pulls in its section
+    /// components. Before the guard it landed in the prune plan as a "dangling-branch", so `--fix`
+    /// proposed deleting the ENTIRE pages tier (#2505) — the regression this test pins.
+    #[test]
+    fn a_page_is_reported_as_a_dead_root_but_is_never_pruned() {
+        let comps = [
+            // The usage index IS populated here, so guard 3 can't be what saves the page.
+            comp("Button", "primitive", 9, &[]),
+            json!({ "id": "invoicespage", "name": "InvoicesPage", "kitId": "k", "role": "page", "used": 0,
+                    "composes": ["DataTable"], "srcText": "p", "source": "export const C = () => null;" }),
+            json!({ "id": "table", "name": "DataTable", "kitId": "k", "role": "composite", "used": 0,
+                    "composes": [], "srcText": "t", "source": "export const C = () => null;" }),
+        ];
+        // The FINDING survives — the read-only diagnosis is still complete.
+        let reported: Vec<String> = analyze(&comps)
+            .into_iter()
+            .filter(|f| f.category == "dangling-branch")
+            .map(|f| f.node_names[0].clone())
+            .collect();
+        assert_eq!(reported, ["InvoicesPage"], "the dead-root finding is still REPORTED");
+
+        let plan = prune_plan(&comps);
+        assert!(
+            !plan.prune.iter().any(|p| p.id == "invoicespage"),
+            "a page is a root BY DEFINITION — never auto-pruned: {:?}",
+            plan.prune,
+        );
+        let skip = plan.skipped.iter().find(|s| s.id == "invoicespage").expect("held back, not dropped");
+        assert!(skip.guard.contains("page"), "the guard names itself: {}", skip.guard);
+    }
+
+    /// A packaged built-in seed (the viz kits' demo components, #3194/#3242) is isolated ON PURPOSE.
+    /// Pruning one is data loss that the seed reconcile immediately undoes.
+    #[test]
+    fn a_packaged_builtin_seed_is_reported_but_never_pruned() {
+        let comps = [
+            comp("Button", "primitive", 9, &[]), // populates the usage index
+            json!({ "id": "algocells", "name": "AlgoCells", "kitId": "k", "role": "primitive", "used": 0,
+                    "builtin": true, "composes": [], "srcText": "a", "source": "export const C = () => null;" }),
+            json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0,
+                    "composes": [], "srcText": "g", "source": "export const C = () => null;" }),
+        ];
+        assert!(
+            analyze(&comps).iter().any(|f| f.category == "orphan" && f.node_names[0] == "AlgoCells"),
+            "the orphan finding is still REPORTED",
+        );
+
+        let plan = prune_plan(&comps);
+        let prune_ids: Vec<&str> = plan.prune.iter().map(|p| p.id.as_str()).collect();
+        assert!(!prune_ids.contains(&"algocells"), "a builtin seed is never auto-pruned: {prune_ids:?}");
+        assert!(prune_ids.contains(&"ghost"), "a plain user orphan still prunes: {prune_ids:?}");
+        assert!(plan.skipped.iter().any(|s| s.id == "algocells" && s.guard.contains("built-in")));
+    }
+
+    /// `used` is a reuse count nothing currently increments — the packaged kit ships every component at
+    /// `used: 0`. So a store where NOTHING is used has no usage SIGNAL, and `used == 0` there means
+    /// UNKNOWN. Half the heuristic being blank must not condemn a node on in-degree alone.
+    #[test]
+    fn an_unpopulated_usage_index_is_unknown_not_unused() {
+        let comps = [
+            comp("Ghost", "primitive", 0, &[]),
+            json!({ "id": "shell", "name": "DeadShell", "kitId": "k", "role": "layout", "used": 0,
+                    "composes": ["Widget"], "srcText": "a" }),
+            json!({ "id": "widget", "name": "Widget", "kitId": "k", "role": "composite", "used": 0,
+                    "composes": [], "srcText": "b" }),
+        ];
+        assert!(!usage_index_populated(&comps), "nothing carries used > 0");
+        // Both dead roots are still REPORTED …
+        assert_eq!(
+            analyze(&comps).iter().filter(|f| matches!(f.category, "orphan" | "dangling-branch")).count(),
+            2,
+        );
+        // … and NOTHING is proposed for removal.
+        let plan = prune_plan(&comps);
+        assert!(plan.prune.is_empty(), "no usage signal ⇒ nothing auto-pruned: {:?}", plan.prune);
+        assert_eq!(plan.skipped.len(), 2, "both are held back, each with its guard");
+        assert!(plan.skipped.iter().all(|s| s.guard.contains("usage index")));
+
+        // One real usage count anywhere restores the signal — and the same nodes prune again.
+        let mut with_signal = comps.to_vec();
+        with_signal.push(comp("Button", "primitive", 4, &[]));
+        assert!(usage_index_populated(&with_signal));
+        let ids: Vec<String> = prunable(&with_signal).into_iter().map(|p| p.id).collect();
+        assert!(ids.contains(&"Ghost".to_string()) && ids.contains(&"shell".to_string()), "{ids:?}");
     }
 
     #[test]
