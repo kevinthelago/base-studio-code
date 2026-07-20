@@ -173,6 +173,47 @@
       "node": { "type": "Button", "children": "Go", "actions": "onClick" },
       "count": 1,
       "contains": ["expected an object of prop"]
+    },
+
+    {
+      "name": "binds: a value prop may read from host state",
+      "node": { "type": "Toggle", "binds": { "on": "autoResumeClaude" } },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "binds: pairs with actions — value in, behaviour out",
+      "node": {
+        "type": "Toggle",
+        "binds": { "on": "autoResumeClaude" },
+        "actions": { "onClick": "toggleAutoResume" }
+      },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "binds: the value must be a non-empty state key",
+      "node": { "type": "Toggle", "binds": { "on": "" } },
+      "count": 1,
+      "contains": ["expected a non-empty state key"]
+    },
+    {
+      "name": "binds: binding a VALUE onto a handler points at the right map",
+      "node": { "type": "Toggle", "props": { "on": true }, "binds": { "onClick": "someKey" } },
+      "count": 1,
+      "contains": ["is a handler", "bind it with \"actions\""]
+    },
+    {
+      "name": "binds: an undeclared key on a NON-passthrough primitive is an unknown prop",
+      "node": { "type": "Spacer", "binds": { "on": "someKey" } },
+      "count": 1,
+      "contains": ["unknown prop", "Spacer"]
+    },
+    {
+      "name": "binds: a non-object map is rejected",
+      "node": { "type": "Toggle", "props": { "on": true }, "binds": "on" },
+      "count": 1,
+      "contains": ["expected an object of prop"]
     }
   ]
 }

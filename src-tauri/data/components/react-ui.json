@@ -987,6 +987,18 @@
           "type": "\"accent\" | \"success\"",
           "req": false,
           "desc": "On-state color."
+        },
+        {
+          "name": "role",
+          "type": "string",
+          "req": false,
+          "desc": "ARIA role — pass \"switch\" for an accessible on/off control."
+        },
+        {
+          "name": "ariaChecked",
+          "type": "boolean",
+          "req": false,
+          "desc": "aria-checked; mirror of `on` when role is \"switch\"."
         }
       ],
       "whenUse": [
@@ -1231,7 +1243,7 @@
           "name": "children",
           "type": "ReactNode",
           "req": true,
-          "desc": "The <option> elements."
+          "desc": "The Option children."
         },
         {
           "name": "label",
@@ -1259,6 +1271,55 @@
       "builtin": true,
       "wraps": "select",
       "source": "import type { ReactNode, CSSProperties, InputHTMLAttributes, TextareaHTMLAttributes, SelectHTMLAttributes } from \"react\";\nimport { Skeleton } from \"@/shared/ui/feedback/Skeleton\";\n\n/**\n * The shared form-field family (#1891) over the `.field` / `.input` CSS in `tokens.css` — the\n * `label · control · hint` vertical stack hand-rolled ~37× and (until now) only available as the\n * settings-scoped `SettingsTextField`/`SettingsSelectField`. Use these so non-settings code stops\n * re-writing `<div className=\"field\"><label>…<input className=\"input\"></div>`.\n */\n\nexport interface FieldProps {\n  label?: ReactNode;\n  hint?: ReactNode;\n  /** A control rendered beside the input (e.g. a \"Choose…\" file-picker button). */\n  trailing?: ReactNode;\n  /** Extra class for the `.field` wrapper. */\n  className?: string;\n  /** Layout style for the `.field` wrapper (margins in bespoke stacks). */\n  style?: CSSProperties;\n  children: ReactNode;\n}\n\n/** The bare `label · control · hint` stack. Wrap any control (input, select, custom) as `children`. */\nexport function Field({ label, hint, trailing, className, style, children }: FieldProps) {\n  return (\n    <div className={className ? `field ${className}` : \"field\"} style={style}>\n      {label != null && <label>{label}</label>}\n      {trailing ? <div style={{ display: \"flex\", gap: 8 }}>{children}{trailing}</div> : children}\n      {hint != null && <div className=\"hint\">{hint}</div>}\n    </div>\n  );\n}\n\nexport type TextFieldProps = {\n  label?: ReactNode;\n  hint?: ReactNode;\n  trailing?: ReactNode;\n  value: string;\n  onChange: (value: string) => void;\n  /** Render LOADING (#2302): keep the label, replace the input with a skeleton the input's shape. */\n  loading?: boolean;\n} & Omit<InputHTMLAttributes<HTMLInputElement>, \"value\" | \"onChange\">;\n\n/** A labelled `.input` text field (the `.field` stack). All native `<input>` attrs pass through. */\nexport function TextField({ label, hint, trailing, value, onChange, loading, className, ...rest }: TextFieldProps) {\n  return (\n    <Field label={label} hint={hint} trailing={trailing}>\n      {loading ? (\n        <Skeleton h={33} radius={7} />\n      ) : (\n        <input\n          className={className ? `input ${className}` : \"input\"}\n          value={value}\n          onChange={(e) => onChange(e.target.value)}\n          {...rest}\n        />\n      )}\n    </Field>\n  );\n}\n\nexport type TextAreaProps = {\n  label?: ReactNode;\n  hint?: ReactNode;\n  trailing?: ReactNode;\n  value: string;\n  onChange: (value: string) => void;\n  /** Render LOADING (#2302): keep the label, replace the textarea with a skeleton its shape. */\n  loading?: boolean;\n} & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, \"value\" | \"onChange\">;\n\n/** The multiline sibling of {@link TextField} — a labelled `.input` `<textarea>` (the `.field`\n *  stack; `textarea.input` in tokens.css relaxes the single-line height + adds resize). All native\n *  `<textarea>` attrs pass through. */\nexport function TextArea({ label, hint, trailing, value, onChange, loading, className, ...rest }: TextAreaProps) {\n  return (\n    <Field label={label} hint={hint} trailing={trailing}>\n      {loading ? (\n        <Skeleton h={84} radius={7} />\n      ) : (\n        <textarea\n          className={className ? `input ${className}` : \"input\"}\n          value={value}\n          onChange={(e) => onChange(e.target.value)}\n          {...rest}\n        />\n      )}\n    </Field>\n  );\n}\n\nexport type SelectFieldProps = {\n  label?: ReactNode;\n  hint?: ReactNode;\n  value: string;\n  onChange: (value: string) => void;\n  /** The `<option>`s — callers keep full control over the option labels. */\n  children: ReactNode;\n} & Omit<SelectHTMLAttributes<HTMLSelectElement>, \"value\" | \"onChange\" | \"children\">;\n\n/** A labelled full-width `.input` `<select>` (the `.field` stack). All native `<select>` attrs pass through. */\nexport function SelectField({ label, hint, value, onChange, className, children, ...rest }: SelectFieldProps) {\n  return (\n    <Field label={label} hint={hint}>\n      <select\n        className={className ? `input ${className}` : \"input\"}\n        value={value}\n        onChange={(e) => onChange(e.target.value)}\n        {...rest}\n      >{children}</select>\n    </Field>\n  );\n}\n"
+    },
+    {
+      "id": "option",
+      "name": "Option",
+      "kitId": "react-ui",
+      "role": "primitive",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "control",
+        "form"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [],
+      "props": [
+        {
+          "name": "children",
+          "type": "ReactNode",
+          "req": false,
+          "desc": "The visible label."
+        },
+        {
+          "name": "value",
+          "type": "string",
+          "req": false,
+          "desc": "Submitted value; defaults to the visible text."
+        },
+        {
+          "name": "disabled",
+          "type": "boolean",
+          "req": false,
+          "desc": "Unselectable (e.g. a placeholder)."
+        }
+      ],
+      "whenUse": [
+        "One choice inside a SelectField — the data-authorable <option>.",
+        "A placeholder row in a dropdown (disabled)."
+      ],
+      "whenNot": [
+        "Anywhere outside a SelectField — it is only meaningful as a select's child.",
+        "A standalone choice control — use SegmentedControl or Checkbox."
+      ],
+      "src": "shared/ui/controls/Option.tsx",
+      "srcText": "import { Option } from \"@/shared/ui/controls/Option\";\n\n<Option>…</Option>",
+      "builtin": true,
+      "wraps": "option",
+      "source": "// Option (#3500) — a `<select>` choice, as a primitive.\n//\n// `SelectField` deliberately takes its options as CHILDREN so callers keep full control over each\n// label. In hand-written JSX that is a plain `<option>`; in a spec-authored (data-driven) UI there was\n// no way to say it at all, because the node vocabulary can only name manifest primitives. The legacy\n// `field` kind hid the gap behind its own `options: string[]`, which meant a select's options were the\n// one part of the kit an agent could only author through a shape the renderer special-cased.\n//\n// This is the compositional answer: `SelectField` holds `Option` children, exactly as the component\n// already works, and nothing has to special-case a select.\n\nimport type { ReactNode } from \"react\";\n\ninterface OptionProps {\n  /** The submitted value. Defaults to the visible text when omitted — the common case where they match. */\n  value?: string;\n  /** Unselectable in the list (typically a \"Choose…\" placeholder). */\n  disabled?: boolean;\n  /** The visible label. */\n  children?: ReactNode;\n}\n\nexport function Option({ value, disabled, children }: OptionProps) {\n  return (\n    <option value={value} disabled={disabled}>\n      {children}\n    </option>\n  );\n}\n"
     },
     {
       "id": "backbutton",

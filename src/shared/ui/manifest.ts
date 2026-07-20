@@ -26,7 +26,7 @@ export type PrimitiveName =
   // typography
   | "Text"
   // controls
-  | "Button" | "IconButton" | "Checkbox" | "Toggle" | "SegmentedControl" | "TextField" | "TextArea" | "SelectField"
+  | "Button" | "IconButton" | "Checkbox" | "Toggle" | "SegmentedControl" | "TextField" | "TextArea" | "SelectField" | "Option"
   | "BackButton" | "ColorSwatch" | "ConfirmButton"
   // data
   | "Card" | "Chip" | "StatTile" | "FillBar" | "Code"
@@ -278,6 +278,11 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "onClick", type: "function", description: "Toggle handler." },
       { name: "size", type: "enum", values: ["xs", "sm", "md"], default: "md", description: "Switch size." },
       { name: "tone", type: "enum", values: ["accent", "success"], default: "accent", description: "On-state color." },
+      // Accessibility (#3500). The component has always accepted these; the manifest omitted them, which
+      // made an accessible switch UNAUTHORABLE as data — Toggle is not passthrough, so a spec setting
+      // them was rejected as an unknown prop. A spec-rendered toggle must be able to say it is a switch.
+      { name: "role", type: "string", description: "ARIA role — pass \"switch\" for an accessible on/off control." },
+      { name: "ariaChecked", type: "boolean", description: "aria-checked; mirror of `on` when role is \"switch\"." },
     ],
   },
   {
@@ -320,9 +325,18 @@ export const UI_KIT: PrimitiveSpec[] = [
     props: [
       { name: "value", type: "string", required: true, description: "Selected value." },
       { name: "onChange", type: "function", required: true, description: "(value) => void." },
-      { name: "children", type: "node", required: true, description: "The <option> elements." },
+      { name: "children", type: "node", required: true, description: "The Option children." },
       { name: "label", type: "node", description: "Field label." },
       { name: "hint", type: "node", description: "Sub-label hint." },
+    ],
+  },
+  {
+    name: "Option", group: "controls", importPath: "@/shared/ui/controls/Option",
+    description: "One choice inside a SelectField — the data-authorable <option>.",
+    props: [
+      { name: "children", type: "node", description: "The visible label." },
+      { name: "value", type: "string", description: "Submitted value; defaults to the visible text." },
+      { name: "disabled", type: "boolean", description: "Unselectable (e.g. a placeholder)." },
     ],
   },
   {

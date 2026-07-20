@@ -6,7 +6,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { KitRenderer } from "./KitRenderer";
-import type { GeneralNode } from "./generalNode";
+import { validateGeneralNode, type GeneralNode } from "./generalNode";
 import { UI_KIT } from "../manifest";
 
 describe("generic rendering through the registry (#3494)", () => {
@@ -131,20 +131,29 @@ describe("failure is visible, never blank (#3494)", () => {
   });
 });
 
-describe("the two vocabularies interoperate while they coexist (#3494)", () => {
-  it("a legacy `kind` child inside a general node still renders via the legacy path", () => {
-    // 3c deletes the kinds; until then a mixed tree must work, or migrating the two production
-    // surfaces would have to be atomic with the renderer change.
+// #3500 — the legacy `kind` vocabulary is GONE. A tree carrying one is no longer a second dialect the
+// renderer understands; it is simply an invalid node, and must fail the way any invalid node does:
+// visibly, without throwing. (The interop suite that used to live here tested a coexistence that no
+// longer exists, so keeping it would have asserted the opposite of the contract.)
+describe("the retired vocabulary is not silently accepted (#3500)", () => {
+  it("a node carrying the legacy `kind` discriminant does not validate", () => {
+    const legacy = { kind: "text", text: "legacy" } as unknown as GeneralNode;
+    expect(validateGeneralNode(legacy)).toEqual(['$: missing string "type"']);
+  });
+
+  it("a legacy node nested in a general tree does not validate either", () => {
     const tree = {
       type: "Stack",
       children: [{ kind: "text", text: "legacy child" }],
     } as unknown as GeneralNode;
-    render(<KitRenderer node={tree} />);
-    expect(screen.getByText("legacy child")).toBeTruthy();
+    // The `children` slot rejects it as a non-node, and the walk does not descend into it — one clear
+    // error at the container, not a confusing cascade from inside a node that was never valid.
+    expect(validateGeneralNode(tree)).toEqual(["$.props.children: expected nodes or text"]);
   });
 
-  it("a legacy root still renders exactly as before", () => {
-    render(<KitRenderer node={{ kind: "text", text: "legacy root" } as never} />);
-    expect(screen.getByText("legacy root")).toBeTruthy();
+  it("rendering one shows a visible error instead of silently dropping it", () => {
+    const legacy = { kind: "text", text: "legacy" } as unknown as GeneralNode;
+    render(<KitRenderer node={legacy} />);
+    expect(screen.getByText(/unknown primitive/)).toBeTruthy();
   });
 });
