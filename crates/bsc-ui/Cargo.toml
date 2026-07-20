@@ -21,6 +21,10 @@ bsc-component = { path = "../bsc-component" }
 # `bsc ui theme set/remove` persist to ~/.base-studio-code/themes/<id>.json.
 bsc-json-store = { path = "../bsc-json-store" }
 serde_json = "1"
+# Tree-sitter TSX parsing for `bsc ui harvest` (#3471) — the component half of `bsc graph harvest`.
+# Same pinned versions bsc-graph already locks, so this adds no new workspace dependency.
+tree-sitter = "0.26"
+tree-sitter-typescript = "0.23"
 # Content hashing for the kit store's id@version integrity (#2465). Same version the app crate
 # already locks, so this adds no new dependency to the workspace graph.
 sha2 = "0.11"
