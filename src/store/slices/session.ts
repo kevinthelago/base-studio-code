@@ -11,7 +11,7 @@ import { setMapEntry } from "../updateHelpers";
 // allowed-command tiers were retired (#1457) — profiles own command auto-approval. This slice
 // keeps the global denied-command block-list and the session-wide flags/models.
 type SessionSlice = Pick<AppStore,
-  "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "bypassPermissions" | "setBypassPermissions" | "sandboxConsoles" | "setSandboxConsoles" | "debugSession" | "setDebugSession" | "showConsolePage" | "setShowConsolePage" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel" | "activeStudioTargets" | "setActiveStudioTargets"
+  "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "bypassPermissions" | "setBypassPermissions" | "sandboxConsoles" | "setSandboxConsoles" | "debugSession" | "setDebugSession" | "autoSpawnDebugSessions" | "setAutoSpawnDebugSessions" | "showConsolePage" | "setShowConsolePage" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel" | "activeStudioTargets" | "setActiveStudioTargets"
 >;
 
 export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = (set) => ({
@@ -49,6 +49,10 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       setSandboxConsoles: (v) => set({ sandboxConsoles: v }),
       debugSession: false,
       setDebugSession: (v) => set({ debugSession: v }),
+      // #3498: auto-spawn is OFF by default. See `shared/lib/session/autoSpawn.ts` — this is only the
+      // outer gate; the inner one refuses every role but `debugger` even when this is on.
+      autoSpawnDebugSessions: false,
+      setAutoSpawnDebugSessions: (v) => set({ autoSpawnDebugSessions: v }),
       showConsolePage: false,
       setShowConsolePage: (v) => set({ showConsolePage: v }),
 
