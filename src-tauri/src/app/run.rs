@@ -128,6 +128,11 @@ pub fn run() {
             if let Err(e) = crate::platform::config::ensure_seeded() {
                 log::warn!("[startup] config seed skipped ({e}); using embedded defaults");
             }
+            // Dev sidecar staging (#3457): in a dev build, copy `bsc`/`bsc-agent` out of the cargo
+            // target dir into a stable dir so a live session's long-lived `bsc` (the MCP servers) locks
+            // the staged copy — leaving `target/<profile>/bsc.exe` free for the next `cargo build` to
+            // relink. No-op in a release bundle. Runs BEFORE the self-check so it reports staged paths.
+            crate::console::pty::stage_dev_sidecars();
             // Sidecar self-check (#1988): `bsc`/`bsc-agent` are built by a SEPARATE step
             // (`npm run build:plan` in dev / `stage:sidecar` for a release) and resolved beside the app
             // exe. If that step was skipped they'd be missing — silently unsetting $BSC_BIN so every
