@@ -22,7 +22,7 @@
 /** Every primitive the kit exposes to the builder. Also the key type of the render-map registry. */
 export type PrimitiveName =
   // layout
-  | "Box" | "Stack" | "Row" | "Spacer" | "Grid" | "SectionHeader" | "SectionLabel" | "Dialog" | "ModalScrim" | "ModalCard"
+  | "Box" | "Stack" | "Row" | "Spacer" | "Slot" | "Grid" | "SectionHeader" | "SectionLabel" | "Dialog" | "ModalScrim" | "ModalCard"
   // typography
   | "Text"
   // controls
@@ -143,6 +143,13 @@ export const UI_KIT: PrimitiveSpec[] = [
     name: "Spacer", group: "layout", importPath: "@/shared/ui/layout/Spacer",
     description: "Empty space inside a Row/Stack — flexible (flex:1) by default, or a fixed size.",
     props: [{ name: "size", type: "space", description: "A rigid spacer of this size; omit for a greedy flex:1 filler." }],
+  },
+  {
+    name: "Slot", group: "layout", importPath: "@/shared/ui/layout/Slot",
+    description: "A HOLE the host fills with its own React (#3504) — the seam between a data tree and the app code around it. Not a visual component: the spec says WHERE, the host's `slots` map says WHAT. Use it for a feature component (one owning hooks/queries/app state) that a spec cannot and should not express.",
+    props: [
+      { name: "name", type: "string", required: true, description: "The key the host's `slots` map must carry. An unfilled name renders a visible marker, never nothing." },
+    ],
   },
   {
     name: "Grid", group: "layout", importPath: "@/shared/ui/layout/Grid", passthrough: true,

@@ -117,6 +117,11 @@ const GUIDANCE: Record<string, Guidance> = {
     whenUse: ["Pushing trailing items to the far edge of a Row (greedy flex:1).", "A fixed rigid gap between two specific items."],
     whenNot: ["Even spacing between many children — use the parent's gap.", "Inner padding — use pad."],
   },
+  Slot: {
+    tags: ["layout", "structure"],
+    whenUse: ["Marking WHERE host-owned React goes inside a spec-authored layout.", "A feature component (hooks / queries / app state) a spec cannot express."],
+    whenNot: ["Anything the kit can express — use the real primitive.", "A node-typed prop slot (a Card's header) — nest the node directly."],
+  },
   Grid: {
     tags: ["layout"],
     whenUse: ["A 2-D layout with explicit column / row tracks.", "A responsive card or tile grid."],

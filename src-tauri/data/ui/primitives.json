@@ -163,6 +163,16 @@
       ]
     },
     {
+      "name": "Slot",
+      "props": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
       "name": "Grid",
       "passthrough": true,
       "props": [
