@@ -17,6 +17,7 @@ import { catalogLink, repoNameFromLink, mcpRepoName } from "@/features/mcp";
 import { applyMcpAssign } from "../lib/planExtensions";
 import { MCP_CATALOG } from "@/shared/data/mcpCatalog";
 import { roleCapability, roleWriteRules, roleDeniedCommands } from "@/shared/lib/session/sessionRoles";
+import { TURN_ACCOUNTING_HOOKS } from "@/shared/lib/session/turnHooks";
 import { resolveAllInstalledMcp, toSessionPayloads, mcpAllowRules } from "@/features/mcp";
 import { type McpInstallState } from "../lib/mcpPaneData";
 import { type Blueprint } from "../stages/blueprints";
@@ -117,7 +118,9 @@ export function usePlanMcpManagement(deps: McpManagementDeps): PlanMcpManagement
       allowedCommands: [],
       deniedCommands:  roleDeniedCommands(cap),
       mcpServers:      mcp,
-      hooks:           null,
+      // Turn accounting (#3455): re-assert on the MCP refresh too. replacePermissions:true would
+      // otherwise clear the launch-time turn hooks and re-blind the planner's cost.
+      hooks:           TURN_ACCOUNTING_HOOKS,
       // Auto-approve every MCP server the planner is given (Research included) so calling them
       // while planning never hits a per-tool prompt — replacePermissions:true here would otherwise
       // drop the launch-time rules, so this refresh must re-assert them too.
