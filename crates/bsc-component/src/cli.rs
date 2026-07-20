@@ -860,12 +860,20 @@ fn cmd_log(args: &[String]) -> Result<(), String> {
 }
 
 /// Write-time gate for a `bsc ui set` batch (#2928): for each record whose `srcText` claims to be a
-/// module (`looks_buildable_module`, the SAME test the preview uses), run the module-syntax check and
-/// reject the whole batch on the first defect — so a silently-corrupted source (an unterminated string
-/// from an escape-collapse) can't be stored. A usage-snippet `srcText` is not a module and is left
-/// alone; a record with no `srcText` is fine. ALSO (non-blocking, #3065): warns on stderr for a bad
-/// INLINE animation def on the record's `animations`, but never rejects over one. The srcText Err
-/// semantics are unchanged; the animation check is a pure side-effect. Driven directly by tests.
+/// module (`looks_buildable_module` — the preview's own buildability test, modulo the #3470 elision
+/// accuracy fix), run the module-syntax check and reject the whole batch on the first defect — so a silently-corrupted source (an unterminated string
+/// from an escape-collapse) can't be stored. A record with no `srcText` is fine.
+///
+/// A `srcText` that is NOT a module is still stored (a spec-only record is legitimate), but that is now
+/// a STATED outcome rather than a silent skip (#3470): it warns on stderr, naming every reason. The old
+/// shape inverted the gate at the edges — the source least like a module (one keeping its unresolved
+/// `@/…` imports) made the predicate false, which skipped the syntax check ENTIRELY, so it stored with
+/// zero complaint and only surfaced much later as a `no-implementation` finding in `bsc ui doctor`, far
+/// from the write that caused it.
+///
+/// ALSO (non-blocking, #3065): warns on stderr for a bad INLINE animation def on the record's
+/// `animations`, but never rejects over one. The srcText Err semantics are unchanged; both warnings are
+/// pure side-effects. Driven directly by tests.
 fn validate_component_batch(items: &[serde_json::Value]) -> Result<(), String> {
     for item in items {
         // #3065: non-blocking — runs for EVERY item, BEFORE the srcText early-continue below, so an
@@ -873,21 +881,44 @@ fn validate_component_batch(items: &[serde_json::Value]) -> Result<(), String> {
         warn_component_animations(item);
 
         let src_text = item.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if src_text.trim().is_empty() {
+            continue; // no source to judge — a record can legitimately carry none.
+        }
+        // #3470: not-a-module is REPORTED, never an unchecked skip. Still permissive — it stores.
         if !crate::graph_health::looks_buildable_module(src_text) {
+            eprintln!("{}", unbuildable_module_warning(item, src_text));
             continue;
         }
         if let Err(msg) = crate::syntax::check_module_syntax(src_text) {
-            let name = item
-                .get("name")
-                .and_then(serde_json::Value::as_str)
-                .or_else(|| item.get("id").and_then(serde_json::Value::as_str))
-                .unwrap_or("component");
             return Err(format!(
-                "{name}: {msg} — its srcText looks like a module but won't build. Fix it, or author it from a raw file to avoid shell-escaping corruption."
+                "{}: {msg} — its srcText looks like a module but won't build. Fix it, or author it from a raw file to avoid shell-escaping corruption.",
+                item_label(item)
             ));
         }
     }
     Ok(())
+}
+
+/// The stderr advisory (#3470) for a non-empty `srcText` that `looks_buildable_module` rejected. Names
+/// every reason `module_defects` found and says plainly what just got stored, so "this is a spec, not
+/// code" is something the writer sees AT WRITE TIME instead of discovering days later as a `doctor`
+/// finding. Returns the message rather than printing it so the wording is under test, like the batch
+/// result. (Only called on the not-a-module branch, where the defect list is non-empty by construction.)
+fn unbuildable_module_warning(item: &serde_json::Value, src_text: &str) -> String {
+    format!(
+        "warning: component '{}' has a srcText that is NOT a buildable module: {} — it is stored as a SPEC, not as compilable code, so the Design Studio preview will show no implementation and `bsc ui doctor` will report it. Author a self-contained module (inline or vendor what it imports) if you meant to ship code.",
+        item_label(item),
+        crate::graph_health::module_defects(src_text).join("; ")
+    )
+}
+
+/// The human handle for a record in a write-time message — its `name`, else its `id`, else the generic
+/// noun. One helper so the syntax REJECTION and the not-a-module WARNING point at the same string.
+fn item_label(item: &serde_json::Value) -> &str {
+    item.get("name")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| item.get("id").and_then(serde_json::Value::as_str))
+        .unwrap_or("component")
 }
 
 /// Non-blocking write-time advisory (#3065) for a component's INLINE animation defs. A component's
@@ -2173,14 +2204,61 @@ mod tests {
         assert!(err.contains("BarChart"), "names the component; got: {err}");
         assert!(err.contains("unterminated string literal"), "got: {err}");
 
-        // A valid module, a usage-snippet srcText (not a module → not gated), and a record with no
-        // srcText all pass — the whole batch is accepted.
+        // A valid module, a usage-snippet srcText (not a module → warned, then stored), and a record
+        // with no srcText all pass — the whole batch is accepted.
         let ok_batch = vec![
             serde_json::json!({ "id": "a", "name": "A", "srcText": "export function A(){ return null; }" }),
             serde_json::json!({ "id": "b", "name": "B", "srcText": "import { B } from \"@/x\";\n<B label={…} />" }),
             serde_json::json!({ "id": "c", "name": "C" }),
         ];
         assert!(validate_component_batch(&ok_batch).is_ok());
+    }
+
+    /// #3470 — the two edge rows of the issue's table. The gate used to be INVERTED at its edges: a
+    /// `srcText` that keeps its `@/` imports made `looks_buildable_module` false, which skipped the
+    /// syntax check ENTIRELY, so the source least like a module got the least validation and stored with
+    /// zero complaint. Both rows still STORE (a spec-only record is legitimate) — the fix is that the
+    /// outcome is now stated.
+    #[test]
+    fn a_srctext_that_is_not_a_buildable_module_is_reported_never_silently_skipped() {
+        use serde_json::json;
+
+        // ROW 3 — keeps its `@/` imports. Warned, with the reason NAMING the unresolved import and
+        // saying what was stored; still accepted.
+        let spec = json!({
+            "id": "card", "name": "Card",
+            "srcText": "import { Button } from \"@/shared/ui/controls/Button\";\nexport const Card = () => <Button />;",
+        });
+        let src = spec["srcText"].as_str().unwrap();
+        assert!(!crate::graph_health::looks_buildable_module(src), "row 3 is not a module…");
+        let warning = unbuildable_module_warning(&spec, src);
+        assert!(warning.contains("Card"), "names the component: {warning}");
+        assert!(warning.contains("@/shared/ui/controls/Button"), "names the unresolved import: {warning}");
+        assert!(warning.contains("SPEC"), "states what was stored: {warning}");
+        assert!(validate_component_batch(std::slice::from_ref(&spec)).is_ok(), "warn-only — it still stores");
+
+        // ROW 2 — a fragment with no imports IS treated as a module (it has an `export`), so it is NOT
+        // warned about and the syntax gate DOES run: a corrupt one is rejected outright.
+        let fragment = json!({ "id": "frag", "name": "Frag", "srcText": "export const F = () => <b>hi</b>;" });
+        let src = fragment["srcText"].as_str().unwrap();
+        assert!(crate::graph_health::looks_buildable_module(src), "a no-import fragment counts as a module");
+        assert!(validate_component_batch(std::slice::from_ref(&fragment)).is_ok());
+        let corrupt_fragment = json!({ "id": "frag", "name": "Frag", "srcText": "export const s = [1,2].join(\"\n\");" });
+        assert!(
+            validate_component_batch(std::slice::from_ref(&corrupt_fragment)).is_err(),
+            "the syntax gate still runs for a no-import fragment",
+        );
+
+        // A record with no srcText at all is neither warned about nor gated.
+        let bare = json!({ "id": "c", "name": "C" });
+        assert!(validate_component_batch(std::slice::from_ref(&bare)).is_ok());
+
+        // And the #3470 false positive: a component whose only `…` is UI copy is a real module — it must
+        // NOT be accused of being a sketch; it goes through the syntax gate like any other module.
+        let copy = json!({ "id": "sel", "name": "Select", "srcText": "export const S = () => <input placeholder=\"Select…\" />;" });
+        let src = copy["srcText"].as_str().unwrap();
+        assert!(crate::graph_health::looks_buildable_module(src), "an ellipsis in COPY is not an elision");
+        assert!(validate_component_batch(std::slice::from_ref(&copy)).is_ok());
     }
 
     #[test]

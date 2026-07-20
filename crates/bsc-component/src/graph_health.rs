@@ -541,6 +541,14 @@ fn is_buildable(node: &Node, buildable: &BTreeSet<String>, kit_targets: &BTreeSe
 /// (componentPreview.ts). Like `looks_buildable_module`, but an internal (`@/`, `./`) import is ALLOWED
 /// when it resolves to a sibling in `kit_targets` (the kit's component `src` paths); an internal import
 /// that resolves to NOTHING still fails, as do a `…` placeholder and a missing `export`.
+///
+/// The `…` test here stays the PLAIN substring one on purpose, even though `module_defects` moved to the
+/// context-aware [`has_code_elision`] (#3470): this predicate answers "will the preview build it?", and
+/// the preview is gated by the TS `isPreviewBuildable`, which still tests the plain substring. Loosening
+/// it here would make `doctor` call a component healthy that the preview then refuses — a MISSED
+/// no-implementation finding. The write-time gate can afford to be more accurate (its worst case is
+/// syntax-checking one component too many); `doctor` cannot afford to be more permissive than the thing
+/// it reports on.
 fn is_preview_buildable(src_text: &str, from_rel: &str, kit_targets: &BTreeSet<String>) -> bool {
     let s = src_text.trim();
     if s.is_empty() || !contains_word(s, "export") || s.contains('…') {
@@ -568,17 +576,105 @@ fn own_module_source<'a>(node: &'a Node, kit_targets: &BTreeSet<String>) -> Opti
 
 /// Rust port of `looksBuildableModule` (componentPreview.ts, #2828): does `src_text` look like a
 /// self-contained, buildable component MODULE rather than the usual usage snippet? Conservative — it
-/// must declare an `export`, contain no `…` usage-snippet placeholder, and use no `@/` first-party
-/// import (which has no dependency closure to resolve against here). MUST stay in lockstep with the TS
-/// twin — both gate the SAME preview build. Crate-visible so the write-time syntax gate (#2928) reuses
-/// the SAME "is this a module?" test to decide whether to syntax-check a `srcText`.
+/// must declare an `export`, contain no `…` code-elision marker, and use no `@/` first-party import
+/// (which has no dependency closure to resolve against here). Crate-visible so the write-time syntax
+/// gate (#2928) reuses the SAME "is this a module?" test to decide whether to syntax-check a `srcText`.
+///
+/// It is now the boolean face of [`module_defects`] — the reasons ARE the predicate, so the write-time
+/// gate can NAME why it treated a `srcText` as a spec instead of silently skipping it (#3470).
 pub(crate) fn looks_buildable_module(src_text: &str) -> bool {
+    !src_text.trim().is_empty() && module_defects(src_text).is_empty()
+}
+
+/// Every reason `src_text` is NOT a self-contained, buildable component module — empty when it IS one
+/// (so `defects.is_empty()` is exactly [`looks_buildable_module`] for a non-blank source). Reason-first
+/// rather than bool-first because of #3470: `bsc ui set` used to SKIP its syntax gate whenever this
+/// predicate was false, so the source least like a module — one that keeps its unresolved `@/…` imports —
+/// got the LEAST validation and stored with no complaint at all, surfacing only much later as a
+/// `no-implementation` finding in `bsc ui doctor`. Storing a spec-only record stays legitimate; it just
+/// has to be a STATED outcome, which needs the reasons this returns. Mirrors `bsc_ui::harvest`'s
+/// `buildability`, which reports the same three defects for a harvested candidate.
+///
+/// A blank source is NOT a defect here (it returns no reasons): "this record carries no `srcText`" is a
+/// different, legitimate state, and every caller checks it first.
+pub(crate) fn module_defects(src_text: &str) -> Vec<String> {
     let s = src_text.trim();
-    !s.is_empty()
-        && contains_word(s, "export") // an export for the bootstrap to import + mount
-        && !s.contains('…') // the `…` usage-snippet placeholder won't compile
-        && !s.contains("\"@/") // a `@/` first-party import — no closure to resolve it against here
-        && !s.contains("'@/")
+    let mut why = Vec::new();
+    if s.is_empty() {
+        return why;
+    }
+    if !contains_word(s, "export") {
+        why.push("no `export` — the preview has nothing to import and mount".to_string());
+    }
+    if has_code_elision(s) {
+        why.push("a `…` elision marker stands in for omitted code — a sketch, not compilable code".to_string());
+    }
+    if s.contains("\"@/") || s.contains("'@/") {
+        let named = internal_specifiers(s);
+        let list = if named.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", named.iter().map(|m| format!("`{m}`")).collect::<Vec<_>>().join(", "))
+        };
+        why.push(format!(
+            "unresolved first-party `@/…` import(s){list} — there is no dependency closure to resolve them against"
+        ));
+    }
+    why
+}
+
+/// The distinct `@/…` module specifiers `src_text` imports, in source order and de-duplicated — used
+/// only to NAME them in a [`module_defects`] reason (the defect itself is decided by the coarser
+/// substring test above, which is what the preview gate uses, so the message can never contradict it).
+fn internal_specifiers(src_text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for spec in import_specifiers(src_text) {
+        if spec.starts_with("@/") && !out.iter().any(|s| s == &spec) {
+            out.push(spec);
+        }
+    }
+    out
+}
+
+/// Does `…` appear in real CODE — not inside a string/template literal or a comment? Only then is it an
+/// elision marker standing in for omitted code. The plain substring test this replaced (#3470) is a
+/// MEASURED false-positive generator, not a hypothetical one: `…` is ordinary UI copy
+/// (`placeholder="Select…"`) and ordinary doc-comment prose, and over this repo's own `src/shared/ui` it
+/// condemned 13 perfectly good components as sketches. Condemning a real component over the ellipsis in
+/// its placeholder text is a false accusation someone then has to overrule, so both contexts are skipped.
+///
+/// Lives here, in the crate that owns the buildability predicates, so `bsc_ui::harvest` (which found the
+/// false positives) and the write-time gate share ONE scanner rather than drifting copies.
+pub fn has_code_elision(src: &str) -> bool {
+    let b: Vec<char> = src.chars().collect();
+    let (mut i, n) = (0usize, b.len());
+    while i < n {
+        match b[i] {
+            '/' if i + 1 < n && b[i + 1] == '/' => {
+                while i < n && b[i] != '\n' {
+                    i += 1;
+                }
+            }
+            '/' if i + 1 < n && b[i + 1] == '*' => {
+                i += 2;
+                while i + 1 < n && !(b[i] == '*' && b[i + 1] == '/') {
+                    i += 1;
+                }
+                i = (i + 2).min(n);
+            }
+            quote @ ('"' | '\'' | '`') => {
+                i += 1;
+                while i < n && b[i] != quote {
+                    // A backslash escapes the next char, so an escaped quote doesn't end the literal.
+                    i += if b[i] == '\\' { 2 } else { 1 };
+                }
+                i += 1;
+            }
+            '…' => return true,
+            _ => i += 1,
+        }
+    }
+    false
 }
 
 /// Whether `needle` appears in `haystack` as a whole word (the JS `\bword\b` the TS twin uses) —
@@ -2550,6 +2646,55 @@ mod tests {
         assert!(!looks_buildable_module("export function X() { return <Card>…</Card>; }"));
         // `export` must be a WHOLE word — a substring like `reexported` doesn't qualify.
         assert!(!looks_buildable_module("const reexportedThing = 1;"));
+    }
+
+    #[test]
+    fn module_defects_names_every_reason_and_is_the_predicates_reasons() {
+        // A real module has NO defects — and the bool is exactly `defects.is_empty()`.
+        let ok = "import * as d3 from \"d3\";\nexport function Foo() { return null; }";
+        assert!(module_defects(ok).is_empty(), "{:?}", module_defects(ok));
+        assert!(looks_buildable_module(ok));
+
+        // #3470 row 3 — the source LEAST like a module: it keeps its `@/` imports. It must be reported
+        // (and the reason must NAME the specifiers), not silently skipped.
+        let spec = "import { Card } from \"@/shared/ui/data/Card\";\nimport { Row } from '@/shared/ui/layout/Row';\nexport function X() { return null; }";
+        let why = module_defects(spec);
+        assert_eq!(why.len(), 1, "exactly the import defect: {why:?}");
+        assert!(why[0].contains("@/shared/ui/data/Card"), "names the first import: {why:?}");
+        assert!(why[0].contains("@/shared/ui/layout/Row"), "names the second import: {why:?}");
+        assert!(!looks_buildable_module(spec));
+
+        // Every defect is reported, not just the first — a usage snippet trips all three at once.
+        let snippet = "import { B } from \"@/x\";\n<B label={…} />";
+        let why = module_defects(snippet);
+        assert_eq!(why.len(), 3, "export + elision + import: {why:?}");
+        assert!(why.iter().any(|r| r.contains("export")), "{why:?}");
+        assert!(why.iter().any(|r| r.contains('…')), "{why:?}");
+        assert!(why.iter().any(|r| r.contains("@/x")), "{why:?}");
+
+        // A record with no source is NOT a defect — "carries no srcText" is a different, legit state
+        // every caller checks first.
+        assert!(module_defects("").is_empty());
+        assert!(module_defects("   \n  ").is_empty());
+        assert!(!looks_buildable_module("   \n  "), "…but it is still not a module");
+    }
+
+    #[test]
+    fn an_ellipsis_in_copy_or_a_comment_is_not_a_code_elision() {
+        // A MEASURED false positive, not a hypothetical (#3470): the plain `contains('…')` test this
+        // replaced condemned 13 real components in this repo's own `src/shared/ui`, because `…` is
+        // ordinary UI copy and ordinary doc-comment prose. Those are real modules and must gate as such.
+        assert!(has_code_elision("export function A() { … }"), "a genuine code elision");
+        assert!(!has_code_elision(r#"export const A = () => <input placeholder="Select…" />;"#), "UI copy");
+        assert!(!has_code_elision("// mentions …\nexport function A() { return null; }"), "line comment");
+        assert!(!has_code_elision("/* block … */\nexport function A() { return null; }"), "block comment");
+        assert!(!has_code_elision("export const A = () => <b>{`tpl …`}</b>;"), "template literal");
+        assert!(!has_code_elision("export const A = () => <b title='an …' />;"), "single-quoted");
+        assert!(!has_code_elision("export const A = \"\\\"…\";"), "an escaped quote doesn't end the literal");
+
+        // …so the predicate itself no longer mis-flags a component whose only `…` is in its copy.
+        assert!(looks_buildable_module(r#"export const A = () => <input placeholder="Select…" />;"#));
+        assert!(!looks_buildable_module("export function X() { return <Card>…</Card>; }"), "JSX text is code");
     }
 
     #[test]
