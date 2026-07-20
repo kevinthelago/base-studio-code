@@ -48,6 +48,23 @@ fn build_messages(msgs: &[Msg]) -> Vec<serde_json::Value> {
     out
 }
 
+/// The `system` field with a prompt-cache breakpoint (#3458). Anthropic renders the request
+/// prefix as `tools → system → messages`, so ONE `cache_control` on the (last) system block caches
+/// BOTH the tool definitions and the system prompt — the largest stable prefix, byte-identical every
+/// turn of a session. An EMPTY prompt gets the bare string (no block; nothing to cache); a prompt
+/// below the model's minimum cacheable prefix (2048 tokens on `claude-sonnet-4-6`, 4096 on Opus)
+/// silently won't cache, which is a no-op, not an error. Caching is GA — no beta header. The
+/// response's `usage.cache_creation_input_tokens` / `cache_read_input_tokens` report the split
+/// (`normalize_usage` already surfaces them).
+fn cached_system(system: &str) -> serde_json::Value {
+    if system.is_empty() {
+        return serde_json::Value::String(String::new());
+    }
+    serde_json::json!([
+        { "type": "text", "text": system, "cache_control": { "type": "ephemeral" } }
+    ])
+}
+
 /// Build the Anthropic `/v1/messages` request body for a tool-using turn.
 /// Pure — unit-testable without I/O.
 pub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {
@@ -59,7 +76,7 @@ pub(crate) fn turn_request_body(t: &Turn) -> serde_json::Value {
     serde_json::json!({
         "model": t.model,
         "max_tokens": t.max_tokens,
-        "system": t.system,
+        "system": cached_system(&t.system),
         "messages": build_messages(&t.messages),
         "tools": tools,
     })
@@ -109,7 +126,7 @@ pub(super) fn build_request_body(req: &LlmRequest) -> serde_json::Value {
     serde_json::json!({
         "model": req.model,
         "max_tokens": req.max_tokens,
-        "system": req.system,
+        "system": cached_system(&req.system),
         "messages": req.messages,
         "tools": req.tools,
     })
@@ -189,9 +206,65 @@ mod tests {
         let body = build_request_body(&req);
         assert_eq!(body["model"], "claude-sonnet-4-6");
         assert_eq!(body["max_tokens"], 4096);
-        assert_eq!(body["system"], "be terse");
+        // #3458: `system` is now a one-element text-block array carrying the prompt-cache breakpoint
+        // (which caches the tools+system prefix), not a bare string.
+        assert_eq!(body["system"][0]["type"], "text");
+        assert_eq!(body["system"][0]["text"], "be terse");
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
         assert_eq!(body["messages"][0]["role"], "user");
         assert_eq!(body["tools"][0]["name"], "t");
+    }
+
+    #[test]
+    fn non_empty_system_carries_one_ephemeral_cache_breakpoint() {
+        // Both builders must place exactly ONE cache_control on the system block. Anthropic renders
+        // tools -> system -> messages, so that single breakpoint caches the whole stable prefix.
+        let req = LlmRequest {
+            model: "claude-sonnet-4-6".into(),
+            system: "you are a careful engineer".into(),
+            messages: vec![serde_json::json!({"role":"user","content":"hi"})],
+            tools: vec![serde_json::json!({"name":"t"})],
+            max_tokens: 4096,
+        };
+        for (label, sys) in [
+            ("complete", build_request_body(&req)["system"].clone()),
+            ("turn", turn_request_body(&turn_with_tool_and_result())["system"].clone()),
+        ] {
+            let blocks = sys.as_array().unwrap_or_else(|| panic!("{label}: system should be an array"));
+            assert_eq!(blocks.len(), 1, "{label}: exactly one system block");
+            assert_eq!(blocks[0]["type"], "text", "{label}");
+            assert_eq!(blocks[0]["cache_control"]["type"], "ephemeral", "{label}");
+        }
+    }
+
+    #[test]
+    fn empty_system_stays_a_bare_string_with_no_cache_block() {
+        // Nothing to cache -> no wasted/odd breakpoint; keep the pre-#3458 bare-string shape.
+        let req = LlmRequest {
+            model: "claude-sonnet-4-6".into(),
+            system: String::new(),
+            messages: vec![],
+            tools: vec![],
+            max_tokens: 4096,
+        };
+        assert_eq!(build_request_body(&req)["system"], "");
+        let mut t = turn_with_tool_and_result();
+        t.system = String::new();
+        assert_eq!(turn_request_body(&t)["system"], "");
+    }
+
+    #[test]
+    fn normalize_usage_round_trips_a_nonzero_cache_split() {
+        // With cache_control now sent, the response carries the split; the usage path must surface it
+        // (not clamp to 0) so cost accounting + `bsc metrics` can see the cache-hit rate.
+        let u = normalize_usage(&serde_json::json!({
+            "input_tokens": 40,
+            "output_tokens": 12,
+            "cache_creation_input_tokens": 1024,
+            "cache_read_input_tokens": 8192,
+        }));
+        assert_eq!(u["cache_creation_input_tokens"], 1024);
+        assert_eq!(u["cache_read_input_tokens"], 8192);
     }
 
     use super::super::{Msg, ToolCall, ToolDef, Turn};
