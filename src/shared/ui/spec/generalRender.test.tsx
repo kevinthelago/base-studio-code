@@ -73,24 +73,46 @@ describe("bindings on the generic path (#3494)", () => {
     expect(() => (container.firstElementChild as HTMLElement).click()).not.toThrow();
   });
 
-  it("KNOWN GAP: a handler on a PASSTHROUGH primitive is not resolvable (#3494)", () => {
-    // `Button` is passthrough and does NOT declare `onClick` — it forwards DOM props verbatim. So the
-    // manifest gives the renderer no way to know that prop is a handler, and the action name reaches
-    // the DOM as a string. 14 function props ARE declared (Toggle/IconButton/Dialog/…) and those work;
-    // this affects only undeclared handlers on the 9 passthrough primitives.
-    //
-    // Recorded as a test rather than a comment so it cannot be forgotten, and so whoever closes the
-    // gap (by declaring the handler in the manifest, or by adding an explicit node-level action map)
-    // is told by a failing test that they have done it.
+  it("binds a handler on a PASSTHROUGH primitive via the actions map (#3496)", () => {
+    // This closes the gap #3494 recorded. `Button` is passthrough and does NOT declare `onClick`, so
+    // the manifest cannot tell the renderer that prop is a handler — the actions map states it
+    // outright instead of the renderer guessing from the prop's name.
     const onClick = vi.fn();
     render(
       <KitRenderer
-        node={{ type: "Button", children: "Go", props: { onClick: "doTheThing" } } as GeneralNode}
+        node={{ type: "Button", children: "Go", actions: { onClick: "doTheThing" } } as GeneralNode}
         on={{ doTheThing: onClick }}
       />,
     );
     screen.getByText("Go").click();
-    expect(onClick, "if this now FIRES, the gap is closed — delete this test").not.toHaveBeenCalled();
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("the actions map WINS over a declared function prop of the same name (#3496)", () => {
+    // Documented precedence: the explicit map beats the implicit declared-type path. Asserted rather
+    // than left to chance, because "which one wins" is exactly what an author needs to be able to rely
+    // on when they reach for the map to disambiguate.
+    const viaProp = vi.fn();
+    const viaMap = vi.fn();
+    const { container } = render(
+      <KitRenderer
+        node={{ type: "Toggle", props: { on: true, onClick: "fromProp" }, actions: { onClick: "fromMap" } } as GeneralNode}
+        on={{ fromProp: viaProp, fromMap: viaMap }}
+      />,
+    );
+    (container.firstElementChild as HTMLElement).click();
+    expect(viaMap).toHaveBeenCalledOnce();
+    expect(viaProp).not.toHaveBeenCalled();
+  });
+
+  it("an unknown action name in the map is a no-op, not a crash", () => {
+    const { container } = render(
+      <KitRenderer
+        node={{ type: "Button", children: "Go", actions: { onClick: "missing" } } as GeneralNode}
+        on={{}}
+      />,
+    );
+    expect(() => (container.querySelector("button") as HTMLElement).click()).not.toThrow();
   });
 });
 

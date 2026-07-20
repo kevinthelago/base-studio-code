@@ -86,6 +86,14 @@ function renderGeneral(node: GeneralNode, ctx: KitBindings, key: string): ReactN
     }
     props[name] = value;
   }
+  // The node-level actions map (#3496). Applied AFTER the declared-prop pass so it wins on a conflict:
+  // it is the more explicit statement, and letting the implicit path override an explicit one would be
+  // surprising precisely when an author is trying to be unambiguous. This is also the ONLY way to bind
+  // a handler on a `passthrough` primitive (e.g. `Button.onClick`), whose handlers are undeclared.
+  for (const [propName, actionName] of Object.entries(node.actions ?? {})) {
+    props[propName] = () => ctx.on?.[actionName]?.();
+  }
+
   // Node-level `children` is sugar for the `children` prop (the 3a normalisation) — resolve it here
   // too, so a tree that validates renders.
   const children =

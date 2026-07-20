@@ -130,6 +130,49 @@
       "node": { "type": "Legend", "props": { "items": [{ "nonsense": true }] } },
       "count": 0,
       "contains": []
+    },
+
+    {
+      "name": "actions: a handler on a PASSTHROUGH primitive is legitimate (the reason the map exists)",
+      "node": { "type": "Button", "children": "Go", "actions": { "onClick": "doTheThing" } },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "actions: a DECLARED function prop may also be bound through the map",
+      "node": { "type": "Toggle", "props": { "on": true }, "actions": { "onClick": "toggleIt" } },
+      "count": 0,
+      "contains": []
+    },
+    {
+      "name": "actions: the value must be a non-empty action name",
+      "node": { "type": "Button", "children": "Go", "actions": { "onClick": 42 } },
+      "count": 1,
+      "contains": ["expected a non-empty action name"]
+    },
+    {
+      "name": "actions: an empty action name is rejected",
+      "node": { "type": "Button", "children": "Go", "actions": { "onClick": "" } },
+      "count": 1,
+      "contains": ["expected a non-empty action name"]
+    },
+    {
+      "name": "actions: binding a handler onto a DATA prop is a stated mistake",
+      "node": { "type": "Toggle", "props": { "on": true }, "actions": { "tone": "nope" } },
+      "count": 1,
+      "contains": ["is declared as enum, not a handler", "Toggle"]
+    },
+    {
+      "name": "actions: an undeclared key on a NON-passthrough primitive is an unknown prop",
+      "node": { "type": "Spacer", "actions": { "onClick": "doTheThing" } },
+      "count": 1,
+      "contains": ["unknown prop", "Spacer"]
+    },
+    {
+      "name": "actions: a non-object map is rejected",
+      "node": { "type": "Button", "children": "Go", "actions": "onClick" },
+      "count": 1,
+      "contains": ["expected an object of prop"]
     }
   ]
 }
