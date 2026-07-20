@@ -193,6 +193,8 @@ thread_local! {
     static SCRATCH_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
     /// The confinement-root override — see [`with_repo_root`].
     static REPO_ROOT_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
+    /// The harvest-roots override — see [`with_harvest_roots`].
+    static HARVEST_ROOTS_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
 }
 
 /// The value of a session env var for THIS thread: the thread-local override when one is in force,
@@ -258,9 +260,14 @@ pub fn with_scratch<T>(dir: Option<&str>, f: impl FnOnce() -> T) -> T {
 
 /// The env var naming the session's FS-confinement root (#158) — the repo root the `bsc-confine`
 /// PreToolUse hook checks Claude's file-tool paths against. `pty_create` sets it on EVERY pane, in
-/// BASH form on Windows (`/c/Users/…`), which is why [`require_within_repo_root`] normalizes before
+/// BASH form on Windows (`/c/Users/…`), which is why [`require_harvestable_root`] normalizes before
 /// resolving.
 pub const BSC_REPO_ROOT_ENV: &str = "BSC_REPO_ROOT";
+
+/// Extra roots this session may HARVEST (read) from, beyond its confinement root (#3509) —
+/// newline-separated. READ-ONLY: it widens what `bsc ui harvest` / `bsc graph harvest` may scan and
+/// touches no write path, so a session can mine a repo it may not write to.
+pub const BSC_HARVEST_ROOTS_ENV: &str = "BSC_HARVEST_ROOTS";
 
 /// Run `f` with the confinement root forced to `root` **for the calling thread only** (#3475) — the
 /// repo-root twin of [`with_scopes`], and thread-local for exactly the same reason (#3382): `cargo
@@ -268,6 +275,13 @@ pub const BSC_REPO_ROOT_ENV: &str = "BSC_REPO_ROOT";
 /// every sibling test. Pass `None` to assert the unconfined case hermetically.
 pub fn with_repo_root<T>(root: Option<&str>, f: impl FnOnce() -> T) -> T {
     with_env_override(&REPO_ROOT_OVERRIDE, root, f)
+}
+
+/// Run `f` with `$BSC_HARVEST_ROOTS` forced to `roots` (newline-separated) **for the calling thread
+/// only** (#3509) — the harvest-allow-list twin of [`with_repo_root`], thread-local for the same #3382
+/// reason: `cargo test` runs a crate's tests as parallel threads of one process.
+pub fn with_harvest_roots<T>(roots: Option<&str>, f: impl FnOnce() -> T) -> T {
+    with_env_override(&HARVEST_ROOTS_OVERRIDE, roots, f)
 }
 
 /// A git-bash drive path (`/c/Users/…`) back to a native one (`C:/Users/…`) so Windows fs APIs can
@@ -305,30 +319,65 @@ fn to_native_path(p: &str) -> String {
 /// with `canonicalize` before comparing, so `..` segments and symlinks cannot walk out of it. A root
 /// that cannot itself be resolved FAILS CLOSED: a misconfigured confinement must not silently degrade
 /// into no confinement at all.
-pub fn require_within_repo_root(target: &std::path::Path) -> Result<(), String> {
-    let Some(root) = session_env(&REPO_ROOT_OVERRIDE, BSC_REPO_ROOT_ENV) else { return Ok(()) };
-    let root = root.trim();
-    if root.is_empty() {
+pub fn require_harvestable_root(target: &std::path::Path) -> Result<(), String> {
+    let Some(root_raw) = session_env(&REPO_ROOT_OVERRIDE, BSC_REPO_ROOT_ENV) else { return Ok(()) };
+    if root_raw.trim().is_empty() {
         return Ok(());
     }
-    let root_native = PathBuf::from(to_native_path(root));
-    let root_real = root_native.canonicalize().map_err(|e| {
+    // The CONFINEMENT root fails closed when unresolvable: a misconfigured confinement must never
+    // silently degrade into no confinement.
+    let root_real = resolved_root(&root_raw).ok_or_else(|| {
         format!(
-            "the session's confinement root ({}) cannot be resolved: {e} — refusing to read outside              it ($BSC_REPO_ROOT, #158)",
-            root_native.display()
+            "the session's confinement root ({}) cannot be resolved — refusing to read outside it              ($BSC_REPO_ROOT, #158)",
+            to_native_path(root_raw.trim())
         )
     })?;
     let target_real = target
         .canonicalize()
         .map_err(|e| format!("cannot resolve '{}': {e}", target.display()))?;
-    if target_real == root_real || target_real.starts_with(&root_real) {
+    if within(&target_real, &root_real) {
         return Ok(());
     }
+    let extra = harvest_roots();
+    if extra.iter().any(|r| within(&target_real, r)) {
+        return Ok(());
+    }
+    let mut allowed = vec![root_real.display().to_string()];
+    allowed.extend(extra.iter().map(|r| r.display().to_string()));
     Err(format!(
-        "blocked: '{}' is outside this session's root ({}) — #158 FS confinement. A confined session          may only read within its own root; run this from a session whose root covers that path.",
+        "blocked: '{}' is outside every root this session may harvest ({}) — #158 FS confinement.          Add it to $BSC_HARVEST_ROOTS to grant READ-only harvest access, or run this from a session          whose root covers that path.",
         target_real.display(),
-        root_real.display()
+        allowed.join(", "),
     ))
+}
+
+/// Is `target` the root itself or inside it? Both sides are already canonical.
+fn within(target: &std::path::Path, root: &std::path::Path) -> bool {
+    target == root || target.starts_with(root)
+}
+
+/// Canonicalize one root string, or `None` when it is blank or cannot be resolved. Callers decide what
+/// `None` means: for the confinement root it is a hard error, for an ALLOW-LIST entry it simply grants
+/// nothing — which is the fail-closed direction for a list that only ever widens access.
+fn resolved_root(raw: &str) -> Option<PathBuf> {
+    let r = raw.trim();
+    if r.is_empty() {
+        return None;
+    }
+    PathBuf::from(to_native_path(r)).canonicalize().ok()
+}
+
+/// The EXTRA roots this session may HARVEST from (#3509) — `$BSC_HARVEST_ROOTS`, newline-separated.
+///
+/// Newline, not the OS path separator, for the same reason `$BSC_DENY_BASH` uses it: a Windows path
+/// contains `;` and a `:`-bearing drive letter, so any single-character separator that also occurs in
+/// paths would split them wrongly.
+fn harvest_roots() -> Vec<PathBuf> {
+    session_env(&HARVEST_ROOTS_OVERRIDE, BSC_HARVEST_ROOTS_ENV)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(resolved_root)
+        .collect()
 }
 
 /// The pure core of [`scope_allows_write`]: `doc` is the raw `$BSC_SCOPES` value (or `None` when the
@@ -863,9 +912,9 @@ mod tests {
     #[test]
     fn an_absent_or_empty_root_leaves_the_session_unconfined() {
         // Back-compat: a plain console and a direct CLI run set no root and must be unchanged.
-        with_repo_root(None, || assert!(require_within_repo_root(&tmp_root("unset")).is_ok()));
-        with_repo_root(Some(""), || assert!(require_within_repo_root(&tmp_root("empty")).is_ok()));
-        with_repo_root(Some("   "), || assert!(require_within_repo_root(&tmp_root("blank")).is_ok()));
+        with_repo_root(None, || assert!(require_harvestable_root(&tmp_root("unset")).is_ok()));
+        with_repo_root(Some(""), || assert!(require_harvestable_root(&tmp_root("empty")).is_ok()));
+        with_repo_root(Some("   "), || assert!(require_harvestable_root(&tmp_root("blank")).is_ok()));
     }
 
     #[test]
@@ -874,8 +923,8 @@ mod tests {
         let child = root.join("a").join("b");
         std::fs::create_dir_all(&child).unwrap();
         with_repo_root(Some(&root.to_string_lossy()), || {
-            assert!(require_within_repo_root(&root).is_ok(), "the root itself");
-            assert!(require_within_repo_root(&child).is_ok(), "a nested dir");
+            assert!(require_harvestable_root(&root).is_ok(), "the root itself");
+            assert!(require_harvestable_root(&child).is_ok(), "a nested dir");
         });
     }
 
@@ -884,8 +933,8 @@ mod tests {
         let root = tmp_root("root");
         let outside = tmp_root("outside");
         with_repo_root(Some(&root.to_string_lossy()), || {
-            let err = require_within_repo_root(&outside).unwrap_err();
-            assert!(err.contains("outside this session's root"), "{err}");
+            let err = require_harvestable_root(&outside).unwrap_err();
+            assert!(err.contains("outside every root this session may harvest"), "{err}");
             assert!(err.contains("#158"), "cites the confinement: {err}");
         });
     }
@@ -898,8 +947,8 @@ mod tests {
         let sub = root.join("sub");
         std::fs::create_dir_all(&sub).unwrap();
         with_repo_root(Some(&root.to_string_lossy()), || {
-            assert!(require_within_repo_root(&sub.join("..").join("..")).is_err(), "escaped via ..");
-            assert!(require_within_repo_root(&sub.join("..")).is_ok(), "..-back-to-root is still inside");
+            assert!(require_harvestable_root(&sub.join("..").join("..")).is_err(), "escaped via ..");
+            assert!(require_harvestable_root(&sub.join("..")).is_ok(), "..-back-to-root is still inside");
         });
     }
 
@@ -908,7 +957,7 @@ mod tests {
         // A misconfigured confinement must NOT silently degrade into no confinement at all.
         let target = tmp_root("failclosed");
         with_repo_root(Some("/no/such/confinement/root/anywhere"), || {
-            let err = require_within_repo_root(&target).unwrap_err();
+            let err = require_harvestable_root(&target).unwrap_err();
             assert!(err.contains("cannot be resolved"), "{err}");
         });
     }
@@ -921,9 +970,116 @@ mod tests {
         let outside = tmp_root("thread-outside");
         let probe = outside.clone();
         with_repo_root(Some(&root.to_string_lossy()), || {
-            assert!(require_within_repo_root(&outside).is_err(), "this thread is confined");
-            let sibling = std::thread::spawn(move || require_within_repo_root(&probe).is_ok());
+            assert!(require_harvestable_root(&outside).is_err(), "this thread is confined");
+            let sibling = std::thread::spawn(move || require_harvestable_root(&probe).is_ok());
             assert!(sibling.join().unwrap(), "a sibling thread must be unconfined");
+        });
+    }
+
+    // ── READ-only harvest roots, separate from the write confinement (#3509) ───────────────────────
+    #[test]
+    fn a_listed_harvest_root_is_allowed_even_though_it_is_outside_the_confinement_root() {
+        // THE point of #3509. The designer's root is its studio dir, which holds no source, so tying
+        // harvest to the WRITE root left it unable to mine anything. Harvest is a READ; this grants it
+        // without touching where the session may write.
+        let root = tmp_root("hr-root");
+        let elsewhere = tmp_root("hr-elsewhere");
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            assert!(require_harvestable_root(&elsewhere).is_err(), "refused before it is listed");
+            with_harvest_roots(Some(&elsewhere.to_string_lossy()), || {
+                assert!(require_harvestable_root(&elsewhere).is_ok(), "allowed once listed");
+            });
+        });
+    }
+
+    #[test]
+    fn a_target_outside_both_is_still_refused_and_the_error_names_every_allowed_root() {
+        let root = tmp_root("hr2-root");
+        let listed = tmp_root("hr2-listed");
+        let other = tmp_root("hr2-other");
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            with_harvest_roots(Some(&listed.to_string_lossy()), || {
+                let err = require_harvestable_root(&other).unwrap_err();
+                assert!(err.contains("outside every root this session may harvest"), "{err}");
+                assert!(err.contains("$BSC_HARVEST_ROOTS"), "points at the remedy: {err}");
+            });
+        });
+    }
+
+    #[test]
+    fn several_roots_are_newline_separated_and_each_grants_its_own_subtree() {
+        let root = tmp_root("hr3-root");
+        let a = tmp_root("hr3-a");
+        let b = tmp_root("hr3-b");
+        let nested = b.join("deep").join("er");
+        std::fs::create_dir_all(&nested).unwrap();
+        let list = format!("{}
+{}", a.display(), b.display());
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            with_harvest_roots(Some(&list), || {
+                assert!(require_harvestable_root(&a).is_ok());
+                assert!(require_harvestable_root(&nested).is_ok(), "a subtree of a listed root");
+            });
+        });
+    }
+
+    #[test]
+    fn an_unresolvable_harvest_entry_grants_nothing_rather_than_widening_access() {
+        // An ALLOW-list only ever widens, so a junk entry must be SKIPPED — that is its fail-closed
+        // direction. (The CONFINEMENT root is the opposite: unresolvable there is a hard error.)
+        let root = tmp_root("hr4-root");
+        let outside = tmp_root("hr4-outside");
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            with_harvest_roots(Some("/no/such/root
+
+   "), || {
+                assert!(require_harvestable_root(&outside).is_err(), "junk grants nothing");
+                assert!(require_harvestable_root(&root).is_ok(), "the real root still works");
+            });
+        });
+    }
+
+    #[test]
+    fn dotdot_cannot_escape_a_listed_harvest_root_either() {
+        let root = tmp_root("hr5-root");
+        let listed = tmp_root("hr5-listed");
+        let sub = listed.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            with_harvest_roots(Some(&listed.to_string_lossy()), || {
+                assert!(require_harvestable_root(&sub).is_ok());
+                assert!(require_harvestable_root(&sub.join("..").join("..")).is_err(), "escaped via ..");
+            });
+        });
+    }
+
+    #[test]
+    fn harvest_roots_do_not_touch_the_write_gate() {
+        // The whole proposal is read-only. Listing a root must not make a read-only scope writable.
+        let listed = tmp_root("hr6-listed");
+        with_harvest_roots(Some(&listed.to_string_lossy()), || {
+            with_scopes(Some(r#"{"ui":"read"}"#), || {
+                assert!(!scope_allows_write("ui"), "still read-only");
+                assert!(require_write_scope("ui").is_err());
+            });
+        });
+    }
+
+    #[test]
+    fn the_harvest_override_does_not_leak_into_a_sibling_thread() {
+        let root = tmp_root("hr7-root");
+        let listed = tmp_root("hr7-listed");
+        let probe = listed.clone();
+        let root_s = root.to_string_lossy().into_owned();
+        let root_for_sibling = root_s.clone();
+        with_repo_root(Some(&root_s), || {
+            with_harvest_roots(Some(&listed.to_string_lossy()), || {
+                assert!(require_harvestable_root(&listed).is_ok(), "this thread may harvest it");
+                let sibling = std::thread::spawn(move || {
+                    with_repo_root(Some(&root_for_sibling), || require_harvestable_root(&probe).is_err())
+                });
+                assert!(sibling.join().unwrap(), "a sibling thread must NOT inherit the allow-list");
+            });
         });
     }
 }

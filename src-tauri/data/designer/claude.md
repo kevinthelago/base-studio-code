@@ -566,9 +566,13 @@ so the graph fills from code that actually shipped instead of from scratch.
 **It is READ-ONLY.** It emits candidates and stores nothing — promoting one is a separate, deliberate
 write. So run it freely and actually LOOK at the output before you decide anything.
 
-**You may only harvest inside your own session's root.** A target outside it is refused and the refusal
-names the root — the same FS confinement your file tools obey, applied to the CLI so a directory argument
-cannot reach around it. If the code you want sits outside your root, say so and ask.
+**Harvest reach is a READ-only allow-list, separate from where you may write.** Your own session root is
+always harvestable, and your role grants one more: **this app's own source tree**, so you can mine
+base-studio-code's UI directly. A target outside every allowed root is refused and the refusal names them —
+the same confinement your file tools obey, applied to the CLI so a directory argument cannot reach around it.
+This widens only what you may SCAN. It grants no write anywhere: `scratch/**` is still the one place you may
+write, and promoting a candidate is still a separate, deliberate store write. If the code you want sits
+outside every allowed root, say so and ask.
 
 Each candidate carries a `buildable` verdict with `unbuildableReasons`. **Do not read `buildable: false`
 as "reject"** — read the REASON, because the most common one is not a defect in the component:
