@@ -69,6 +69,43 @@ fn resolve_target(app: &tauri::AppHandle, target: &str) -> Result<Rect, String> 
 /// caller gets our real error rather than a bare timeout.
 const CAPTURE_TIMEOUT: Duration = Duration::from_millis(5_000);
 
+/// The capture's device-pixels-per-CSS-pixel ratio (#3467).
+///
+/// Every crop rect arrives in CSS pixels (`getBoundingClientRect()`), while `CapturePreview` emits
+/// device pixels — so on a HiDPI display the two disagree by this factor. It is derived from the
+/// capture and the live window rather than trusted from a caller: `img_w / css_viewport_w`, where the
+/// CSS width is the window's physical inner width over the OS scale factor. That self-corrects if the
+/// captured surface is not exactly the window, and reduces to the plain scale factor when it is.
+///
+/// Falls back to 1.0 on anything implausible (no window, a failed query, a ratio outside a sane
+/// range). A wrong-but-sane crop beats failing a capture mid-loop, and 1.0 is exactly today's
+/// behaviour — so the fallback can never be worse than the bug this fixes.
+fn capture_scale(app: &tauri::AppHandle, img_w: u32) -> f64 {
+    use tauri::Manager;
+    let Some(win) = app.get_webview_window("main") else { return 1.0 };
+    let size = match win.inner_size() {
+        Ok(s) => s,
+        Err(_) => return 1.0,
+    };
+    let sf = match win.scale_factor() {
+        Ok(s) => s,
+        Err(_) => return 1.0,
+    };
+    if size.width == 0 || !sf.is_finite() || sf <= 0.0 {
+        return 1.0;
+    }
+    let css_w = size.width as f64 / sf;
+    if css_w <= 0.0 {
+        return 1.0;
+    }
+    let scale = img_w as f64 / css_w;
+    // A real display is 1.0–4.0; anything outside a generous band means a query we misread.
+    if !scale.is_finite() || !(0.25..=8.0).contains(&scale) {
+        return 1.0;
+    }
+    scale
+}
+
 /// Take one capture and write the PNG. `id` names the default output file when the request has no `out`.
 pub fn capture(app: &tauri::AppHandle, id: &str, req: &ShotRequest) -> Result<ShotResult, String> {
     let shots = shots_dir()?;
@@ -88,7 +125,12 @@ pub fn capture(app: &tauri::AppHandle, id: &str, req: &ShotRequest) -> Result<Sh
         return Err(format!("the webview returned {} bytes that are not a PNG", png.len()));
     }
     let (bytes, w, h) = match rect {
-        Some(rect) => crop::crop_png(&png, rect)?,
+        Some(rect) => {
+            // The rect is CSS px; the capture is DEVICE px. Derive the ratio from the capture itself
+            // (never from the caller) so every crop path is corrected in one place (#3467).
+            let (img_w, _) = crop::png_dimensions(&png)?;
+            crop::crop_png(&png, rect, capture_scale(app, img_w))?
+        }
         None => {
             let (w, h) = crop::png_dimensions(&png)?;
             (png, w, h)
