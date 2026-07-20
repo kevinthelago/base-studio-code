@@ -28,6 +28,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("files", "file-ops toolkit: read/write/edit/list/info"),
     ("shot", "capture the RUNNING app's real pixels — a webview snapshot (needs the app running)"),
     ("navigate", "steer the RUNNING app to a view — so a capture can target something"),
+    ("metrics", "fleet-wide generation scoreboard — $ / tokens / cache-hit / wall-clock per project"),
     ("debug", "inspect the RUNNING app's live DOM + preview state (read-only)"),
     ("loop", "conversation loop store: two participants exchange turns until a signal ends it, or never (#3262)"),
     ("request", "improvement-request store: the designer→debug channel for bsc ui surface gaps (#3295)"),
@@ -82,6 +83,7 @@ fn dispatch(cmd: &str, rest: Vec<String>) -> Result<(), String> {
         }
         "ui" => bsc_ui::cli::run(rest, "bsc ui"),
         "logs" => logs::cli::run(rest, "bsc logs"),
+        "metrics" => logs::metrics::run(rest, "bsc metrics"),
         "files" => bsc_files::cli::run(rest, "bsc files"),
         "shot" => bsc_shot::cli::run(rest, "bsc shot"),
         "navigate" => bsc_navigate::cli::run(rest, "bsc navigate"),

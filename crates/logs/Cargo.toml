@@ -19,3 +19,5 @@ bsc-cli-util = { path = "../bsc-cli-util" }
 # Read-only access to the metrics DB (perf.db) for `bsc-logs perf` (#1716). `bundled` matches the
 # rest of the workspace (plandb/skilldb/research) so the CLI carries its own SQLite, no system dep.
 rusqlite = { version = "0.40", features = ["bundled"] }
+# Project completion (issues done/total) for `bsc metrics` (#3449) — Tauri-free, bundled SQLite.
+plandb = { path = "../plandb" }

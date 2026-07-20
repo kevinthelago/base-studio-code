@@ -21,6 +21,7 @@ pub mod scope;
 use std::path::{Path, PathBuf};
 
 pub mod cost;
+pub mod metrics;
 pub use cost::Cost;
 
 pub mod perf;
