@@ -162,7 +162,7 @@ windows-sys = { version = "0.61", features = [
 # pixel-identical to what the user sees, including the sandboxed preview iframe, and immune to
 # occlusion/minimize/screen-lock (an OS window grab is not). Both crates are already in the tree via
 # Tauri; pinned to the versions it resolves so we never link two `windows` majors.
-webview2-com = "0.38"
+webview2-com = "0.39"
 # `Com_StructuredStorage` for CreateStreamOnHGlobal (the capture sink); `Foundation` for the HGLOBAL
 # it takes. Pinned to the version Tauri already resolves so we never link two `windows` majors.
 # (Dependabot's 0.61 → 0.62 bump, #3446, broke this — Tauri/webview2-com still resolve 0.61, so 0.62
