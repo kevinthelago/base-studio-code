@@ -12,9 +12,9 @@
 //! extractor computes a CLOSURE — the component, plus the same-file declarations it transitively
 //! references, plus exactly the imports those need — rather than a node slice.
 //!
-//! And it says so when it fails. A `srcText` that keeps unresolved `@/…` imports is stored today with no
-//! complaint at all (#3470: `looks_buildable_module` returns false, which makes the syntax gate SKIP),
-//! surfacing much later as an unbuildable component. So every candidate carries an honest `buildable`
+//! And it says so when it fails. A `srcText` that keeps unresolved `@/…` imports USED to be stored with
+//! no complaint at all (#3470: `looks_buildable_module` returned false, which made the syntax gate SKIP),
+//! surfacing much later as an unbuildable component; `bsc ui set` now warns with these same reasons. So every candidate carries an honest `buildable`
 //! flag with reasons; a candidate that could not be closed is emitted flagged, never quietly degraded.
 //!
 //! ── SIBLING IMPORTS ARE COMPOSITION, NOT DAMAGE ──────────────────────────────────────────────────────
@@ -252,7 +252,9 @@ fn buildability(
     if !src_text.contains("export ") {
         why.push("no `export` — nothing for the preview to mount".to_string());
     }
-    if has_code_elision(src_text) {
+    // The context-aware scanner now lives in the crate that owns the buildability predicates, so the
+    // write-time gate and this harvest share ONE implementation rather than drifting copies (#3470).
+    if bsc_component::graph_health::has_code_elision(src_text) {
         why.push("contains an elision marker (`…`) — a sketch, not code".to_string());
     }
     let unresolved: BTreeSet<&str> =
@@ -388,48 +390,6 @@ fn collect_imported_names(node: Node, src: &[u8], out: &mut Vec<String>, opaque:
     for child in node.children(&mut cursor) {
         collect_imported_names(child, src, out, opaque);
     }
-}
-
-/// Does `…` appear in real CODE (not in a string literal or a comment)? Only then is it an elision
-/// marker standing in for omitted code. A plain substring test — which is what
-/// `looks_buildable_module` does — is WRONG here and was measurably so: harvesting this repo's own
-/// `src/shared/ui` flagged 13 perfectly good components as "a sketch", because `…` is ordinary UI copy
-/// (`placeholder = "Select…"`) and ordinary prose in a doc comment (`<button style={{…}}>`). Condemning
-/// a real component over an ellipsis in its placeholder text would be a false accusation the curator
-/// then has to overrule, so the scanner skips both contexts.
-fn has_code_elision(src: &str) -> bool {
-    let b: Vec<char> = src.chars().collect();
-    let (mut i, mut n) = (0usize, b.len());
-    n = n.min(b.len());
-    while i < n {
-        let c = b[i];
-        match c {
-            '/' if i + 1 < n && b[i + 1] == '/' => {
-                while i < n && b[i] != '\n' {
-                    i += 1;
-                }
-            }
-            '/' if i + 1 < n && b[i + 1] == '*' => {
-                i += 2;
-                while i + 1 < n && !(b[i] == '*' && b[i + 1] == '/') {
-                    i += 1;
-                }
-                i = (i + 2).min(n);
-            }
-            '"' | '\'' | '`' => {
-                let quote = c;
-                i += 1;
-                while i < n && b[i] != quote {
-                    // A backslash escapes the next char, so an escaped quote doesn't end the literal.
-                    i += if b[i] == '\\' { 2 } else { 1 };
-                }
-                i += 1;
-            }
-            '…' => return true,
-            _ => i += 1,
-        }
-    }
-    false
 }
 
 /// One component located in one file, before cross-file `composes` resolution.
@@ -774,8 +734,8 @@ mod tests {
 
     #[test]
     fn an_unresolved_internal_import_is_flagged_never_silently_accepted() {
-        // #3470: such a srcText is stored today with NO complaint (looks_buildable_module is false, so
-        // the syntax gate is skipped entirely). Harvest must state it instead. `Panel` imports a
+        // #3470: such a srcText USED to store with NO complaint (looks_buildable_module was false, so
+        // the syntax gate skipped entirely). Both the harvest and `bsc ui set` state it now. `Panel` imports a
         // harvested sibling AND the app store — the store binding is a real dangling import.
         let c = by_name("Panel");
         assert!(!c.buildable, "a component with an unresolved @/ import is not buildable");
@@ -905,7 +865,8 @@ mod tests {
     fn an_ellipsis_in_copy_or_a_comment_is_not_an_elision_marker() {
         // A MEASURED false positive, not a hypothetical: harvesting this repo's own src/shared/ui
         // condemned 13 real components as "a sketch" because `…` is ordinary UI copy and ordinary prose
-        // in a doc comment. A plain substring test (what `looks_buildable_module` does) is wrong here.
+        // in a doc comment. A plain substring test is wrong here — `looks_buildable_module` shared the
+        // same flaw until #3470 moved this scanner down into bsc-component for both to use.
         assert!(buildability_of(r#"export const A = () => <input placeholder="Select…" />;"#).0, "UI copy");
         assert!(buildability_of("// mentions …
 export function A() { return null; }").0, "line comment");
