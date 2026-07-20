@@ -556,6 +556,14 @@
             "accent",
             "success"
           ]
+        },
+        {
+          "name": "role",
+          "type": "string"
+        },
+        {
+          "name": "ariaChecked",
+          "type": "boolean"
         }
       ]
     },
@@ -679,6 +687,23 @@
         {
           "name": "hint",
           "type": "node"
+        }
+      ]
+    },
+    {
+      "name": "Option",
+      "props": [
+        {
+          "name": "children",
+          "type": "node"
+        },
+        {
+          "name": "value",
+          "type": "string"
+        },
+        {
+          "name": "disabled",
+          "type": "boolean"
         }
       ]
     },

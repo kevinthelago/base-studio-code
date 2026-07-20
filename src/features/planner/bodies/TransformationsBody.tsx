@@ -5,7 +5,7 @@
 // generated against confirmed primitives and nothing is built on unreviewed foundations. An item
 // is pending or confirmed, NOTHING ELSE: the one action is Confirm (no reject/exclude — changes
 // are described conversationally to the planner and the item re-presents). When a row carries a
-// KitNode `spec` it renders live through the #1852 KitRenderer (defensively — a bad spec falls
+// render `spec` it renders live through the #1852 KitRenderer (defensively — a bad spec falls
 // back to a "spec present" chip, never a pane crash); a kitContribution (gap-fill) row frames that
 // preview as a "Proposed component" (#2509 slice d) — the NEW component the user is deciding to
 // build — vs a plain migration preview, which renders the existing kit target. Once every row is confirmed the final
@@ -22,7 +22,7 @@ import { Text } from "@/shared/ui/typography/Text";
 import { Chip } from "@/shared/ui/data/Chip";
 import { Button } from "@/shared/ui/controls/Button";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
-import { KitRenderer, validateKitNode, type KitNode } from "@/shared/ui/spec";
+import { KitRenderer, validateGeneralNode, type GeneralNode } from "@/shared/ui/spec";
 import { Card } from "./bodyPrimitives";
 import {
   tierGroups, nextPendingTier, tierLabel, specNodeCount, verbMeta, type TransformationRow,
@@ -51,11 +51,11 @@ function SpecPreview({ id, spec }: { id: string; spec: object }) {
       <Chip tone="neutral" size="xs">spec present ({specNodeCount(spec)} nodes)</Chip>
     </Box>
   );
-  if (validateKitNode(spec).length > 0) return fallback;
+  if (validateGeneralNode(spec).length > 0) return fallback;
   return (
     <SpecBoundary fallback={fallback}>
       <Box data-testid={`transformation-spec-${id}`} pad={[8, 8]} bg="var(--bg-canvas)" border="soft" radius={6}>
-        <KitRenderer node={spec as KitNode} />
+        <KitRenderer node={spec as GeneralNode} />
       </Box>
     </SpecBoundary>
   );
