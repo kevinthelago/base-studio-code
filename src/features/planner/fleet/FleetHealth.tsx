@@ -15,26 +15,17 @@ import { Card } from "@/shared/ui/data/Card";
 import { Chip } from "@/shared/ui/data/Chip";
 import { CardEmpty, SkeletonRows } from "@/shared/ui/feedback/CardStates";
 import { buildFleetHealth, HEALTH_LABEL, type PermEvent } from "./lib/fleetHealth";
+// Aliased: the lib's result type and the host component below share the name `FleetHealth`.
+import type { FleetHealth as FleetHealthData } from "./lib/fleetHealth";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
 
-export function FleetHealth({ workers }: { workers: LiveWorker[] }) {
-  const quarantined = useAppStore((s) => s.quarantinedPanes);
-  const ended = useAppStore((s) => s.endedPanes);
-  const { state } = useCoordLog({ limit: 1000, ms: 4000 });
-
-  const [perm, setPerm] = useState<PermEvent[]>([]);
-  const [permLoaded, setPermLoaded] = useState(false);
-  usePoll(async (isCancelled) => {
-    const rows = await bscJson<PermEvent[]>(null, ["logs", "perm", "--json"], []);
-    if (isCancelled()) return;
-    setPerm(rows ?? []);
-    setPermLoaded(true);
-  }, 5000);
-
-  const nameByPane = new Map(workers.map((w) => [w.id, w.name]));
-  const blocked = coordinationSummary(state).map((b) => ({ session: b.session, stalled: b.stalled, deadlocked: b.deadlocked, deps: b.deps }));
-  const health = buildFleetHealth({ perm, quarantined, ended, blocked, nameByPane });
-
+/** The health & errors card as PURE presentation — the built feed in, markup out (#3481).
+ *
+ *  Split from the host below so the card renders from any `FleetHealth`, is testable without mocking
+ *  three separate signal sources (a store read, the coord poll, and `bsc logs perm`), and has a real
+ *  prop contract to catalogue. `dangerCount` is derived here rather than passed: it is a pure function
+ *  of `health.counts`, so making it a prop would let a caller contradict the data it is rendering. */
+export function FleetHealthView({ health, permLoaded }: { health: FleetHealthData; permLoaded: boolean }) {
   const dangerCount = health.counts.deadlock + health.counts.stalled + health.counts.quarantine + health.counts.blocked;
 
   return (
@@ -62,4 +53,27 @@ export function FleetHealth({ workers }: { workers: LiveWorker[] }) {
         )}
     </Card>
   );
+}
+
+/** The HOST: gathers the three signal sources — two store reads, the coordination log, and the
+ *  `bsc logs perm` poll — merges them via `buildFleetHealth`, and renders the pure view above. */
+export function FleetHealth({ workers }: { workers: LiveWorker[] }) {
+  const quarantined = useAppStore((s) => s.quarantinedPanes);
+  const ended = useAppStore((s) => s.endedPanes);
+  const { state } = useCoordLog({ limit: 1000, ms: 4000 });
+
+  const [perm, setPerm] = useState<PermEvent[]>([]);
+  const [permLoaded, setPermLoaded] = useState(false);
+  usePoll(async (isCancelled) => {
+    const rows = await bscJson<PermEvent[]>(null, ["logs", "perm", "--json"], []);
+    if (isCancelled()) return;
+    setPerm(rows ?? []);
+    setPermLoaded(true);
+  }, 5000);
+
+  const nameByPane = new Map(workers.map((w) => [w.id, w.name]));
+  const blocked = coordinationSummary(state).map((b) => ({ session: b.session, stalled: b.stalled, deadlocked: b.deadlocked, deps: b.deps }));
+  const health = buildFleetHealth({ perm, quarantined, ended, blocked, nameByPane });
+
+  return <FleetHealthView health={health} permLoaded={permLoaded} />;
 }

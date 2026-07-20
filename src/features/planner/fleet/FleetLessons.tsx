@@ -16,18 +16,13 @@ import { Chip } from "@/shared/ui/data/Chip";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { Skeleton } from "@/shared/ui/feedback/Skeleton";
 
-export function FleetLessons() {
-  const activeProjectName = useAppStore((s) => s.activeProjectName);
-  const projectKey = activeProjectName ? sanitizeProjectKey(activeProjectName) : "";
-
-  const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  usePoll(async (isCancelled) => {
-    if (!projectKey) { if (!isCancelled()) { setLessons([]); setLoaded(true); } return; }
-    const ls = await loadPendingLessons(projectKey);
-    if (!isCancelled()) { setLessons(ls); setLoaded(true); }
-  }, 8000, [projectKey]);
-
+/** The lessons card as PURE presentation — props in, markup out (#3481).
+ *
+ *  Split from the host below so the card has a real contract: no store read, no poll, no `bsc` call, so
+ *  it renders anywhere the data comes from, is testable without mocking a poll, and can be catalogued in
+ *  the components graph as something that can actually be reused (a store-reading component takes no
+ *  props, so its record would describe nothing). The host keeps the hooks; this owns the markup. */
+export function FleetLessonsView({ lessons, loaded }: { lessons: Lesson[]; loaded: boolean }) {
   return (
     <Card>
       <CardHead title="Lessons learned" hint="captured mid-session · review in Skills"
@@ -54,4 +49,21 @@ export function FleetLessons() {
         )}
     </Card>
   );
+}
+
+/** The HOST: owns the store read + the `bsc plan lesson list` poll, and renders the pure view above.
+ *  Everything behavioural about this card lives in these few lines — that is the whole host/tree split. */
+export function FleetLessons() {
+  const activeProjectName = useAppStore((s) => s.activeProjectName);
+  const projectKey = activeProjectName ? sanitizeProjectKey(activeProjectName) : "";
+
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  usePoll(async (isCancelled) => {
+    if (!projectKey) { if (!isCancelled()) { setLessons([]); setLoaded(true); } return; }
+    const ls = await loadPendingLessons(projectKey);
+    if (!isCancelled()) { setLessons(ls); setLoaded(true); }
+  }, 8000, [projectKey]);
+
+  return <FleetLessonsView lessons={lessons} loaded={loaded} />;
 }
