@@ -32,7 +32,11 @@ describe("useGlanceProjects — declared role/health/activity (#2284/#2541)", ()
     expect(result.current.find((p) => p.id === "billing-svc")).toMatchObject({ role: "service", health: "warning", activity: "waiting" });
   });
 
-  it("rests both axes at idle when NOT declared — building comes from running agents, not a fallback (#2551)", () => {
+  // #2551 established that `building` comes from RUNNING AGENTS, never from merely having a planned
+  // fleet. #3429 then split the undeclared resting state in two: nothing running at all reads `off`,
+  // a session that exists but is quiet reads `idle`. Neither project here has a session, so both read
+  // `off · idle` — the assertion below was left at the pre-#3429 `idle · idle` and went red on develop.
+  it("rests at off · idle when NOT declared — building comes from running agents, not a fallback (#2551/#3429)", () => {
     useAppStore.setState({
       localDraftProjects: {
         plain: { title: "Plain", pitch: "", createdAt: 1 },
@@ -50,9 +54,10 @@ describe("useGlanceProjects — declared role/health/activity (#2284/#2541)", ()
     const { result } = renderHook(() => useGlanceProjects());
     const plain = result.current.find((p) => p.id === "plain");
     const fleeted = result.current.find((p) => p.id === "fleeted");
-    expect(plain).toMatchObject({ health: "idle", activity: "idle" });
+    expect(plain).toMatchObject({ health: "off", activity: "idle" });
     expect(plain?.role).toBeUndefined(); // derived downstream in buildGlanceData (hash), not here
-    expect(fleeted).toMatchObject({ health: "idle", activity: "idle" }); // a PLANNED (not launched) fleet is still idle
+    // A PLANNED (not launched) fleet is still idle — planning one does not make a project active.
+    expect(fleeted).toMatchObject({ health: "off", activity: "idle" });
   });
 });
 

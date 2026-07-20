@@ -182,10 +182,23 @@ export function deriveBuildingKeys(
  * applied outermost — this just makes the derived resting state honest about the same word.)
  *
  * Applied BEFORE `applyFaultHealth`: a dormant project with an unresolved fault still reads warning/error,
- * because an unfixed error does not stop being real just because nobody is currently working on it. Pure.
+ * because an unfixed error does not stop being real just because nobody is currently working on it.
+ *
+ * `curated` nodes survive dormancy for exactly the same reason (#2284/#2541 — "curated colouring wins";
+ * fixed in #3513): a draft that DECLARES its own health/activity is making a statement, and greying it
+ * out the moment nothing happens to be running discards that in favour of a resting state nobody asked
+ * about. Curated-ness is passed IN rather than inferred from the value, because by this point in the
+ * pipeline a non-default `health` is equally likely to be a declaration or something an earlier overlay
+ * derived — the two are indistinguishable here, and only the merge knows which. Pure.
  */
-export function applyDormantHealth(projects: ProjectLite[], activeKeys: ReadonlySet<string>): ProjectLite[] {
-  return projects.map((p) => (activeKeys.has(p.id) ? p : { ...p, health: "off", activity: "idle" }));
+export function applyDormantHealth(
+  projects: ProjectLite[],
+  activeKeys: ReadonlySet<string>,
+  curatedKeys: ReadonlySet<string> = new Set(),
+): ProjectLite[] {
+  return projects.map((p) =>
+    activeKeys.has(p.id) || curatedKeys.has(p.id) ? p : { ...p, health: "off", activity: "idle" },
+  );
 }
 
 /**
@@ -355,6 +368,12 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
   // detected running app. Anything outside this set is dormant and reads `off` rather than resting at
   // `idle` — see `applyDormantHealth`.
   const activeKeys = useMemo(() => new Set([...buildingKeys, ...liveKeys]), [buildingKeys, liveKeys]);
+  // The CURATED nodes (#2284/#2541) — drafts that declare their own Glance axes. Dormancy leaves these
+  // alone (#3513): a declared health/activity is a statement, not a resting state to be overwritten.
+  const curatedKeys = useMemo(
+    () => new Set(Object.entries(drafts).filter(([, d]) => d.health || d.activity).map(([k]) => k)),
+    [drafts],
+  );
   return useMemo(
     // Merge (drafts + local published + GitHub published), FILTER to triaged/working projects (#2541 —
     // a draft/plan never shows), then overlay activity from real signals: liveness → `live` (#2263),
@@ -375,7 +394,8 @@ export function useGlanceProjects(enabled = true): ProjectLite[] {
         buildingKeys,
       ),
       activeKeys,
+      curatedKeys,
     ),
-    [drafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, catByBlueprint, projectBlueprintId],
+    [drafts, effectivePublished, localPublished, triagedProjects, liveKeys, buildingKeys, activeKeys, curatedKeys, catByBlueprint, projectBlueprintId],
   );
 }
