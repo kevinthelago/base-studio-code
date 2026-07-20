@@ -11,7 +11,7 @@ import { setMapEntry } from "../updateHelpers";
 // allowed-command tiers were retired (#1457) — profiles own command auto-approval. This slice
 // keeps the global denied-command block-list and the session-wide flags/models.
 type SessionSlice = Pick<AppStore,
-  "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "bypassPermissions" | "setBypassPermissions" | "sandboxConsoles" | "setSandboxConsoles" | "debugSession" | "setDebugSession" | "autoSpawnDebugSessions" | "setAutoSpawnDebugSessions" | "showConsolePage" | "setShowConsolePage" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel" | "activeStudioTargets" | "setActiveStudioTargets"
+  "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "bypassPermissions" | "setBypassPermissions" | "sandboxConsoles" | "setSandboxConsoles" | "debugSession" | "setDebugSession" | "autoSpawnDebugSessions" | "setAutoSpawnDebugSessions" | "activeRequestSessions" | "setActiveRequestSessions" | "showConsolePage" | "setShowConsolePage" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel" | "activeStudioTargets" | "setActiveStudioTargets"
 >;
 
 export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = (set) => ({
@@ -53,6 +53,10 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       // outer gate; the inner one refuses every role but `debugger` even when this is on.
       autoSpawnDebugSessions: false,
       setAutoSpawnDebugSessions: (v) => set({ autoSpawnDebugSessions: v }),
+      // #3498: which requests have a live session — read by the Glance graph so each one is a visible,
+      // openable node rather than a hidden background actor.
+      activeRequestSessions: [],
+      setActiveRequestSessions: (ids) => set({ activeRequestSessions: ids }),
       showConsolePage: false,
       setShowConsolePage: (v) => set({ showConsolePage: v }),
 
