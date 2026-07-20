@@ -182,6 +182,44 @@ fn walk_general(node: &Value, path: &str, by_name: &Map<String, Value>, errors: 
         }
     }
 
+    // The node-level actions map (#3496): prop name → host action name. Exists because `passthrough`
+    // primitives forward arbitrary DOM props, so their handlers are UNDECLARED and the manifest gives
+    // no way to infer them — and inferring from the prop's NAME is exactly what this design avoids.
+    if let Some(actions) = node.get("actions") {
+        match actions.as_object() {
+            None => errors.push(format!("{path}.actions: expected an object of prop → action name")),
+            Some(map) => {
+                for (prop_name, action_name) in map {
+                    let ok = action_name.as_str().map(|s| !s.is_empty()).unwrap_or(false);
+                    if !ok {
+                        errors.push(format!(
+                            "{path}.actions.{prop_name}: expected a non-empty action name (a string)"
+                        ));
+                    }
+                    let declared = declared
+                        .iter()
+                        .find(|d| d.get("name").and_then(Value::as_str) == Some(prop_name.as_str()));
+                    match declared {
+                        Some(d) => {
+                            let d_ty = d.get("type").and_then(Value::as_str).unwrap_or("");
+                            if d_ty != "function" {
+                                errors.push(format!(
+                                    "{path}.actions.{prop_name}: \"{prop_name}\" is declared as {d_ty}, not a handler, on \"{ty}\""
+                                ));
+                            }
+                        }
+                        // Undeclared is legitimate only where undeclared props are (a passthrough
+                        // primitive) — that is the whole reason this map exists.
+                        None if !passthrough => {
+                            errors.push(format!("{path}.actions.{prop_name}: unknown prop for \"{ty}\""));
+                        }
+                        None => {}
+                    }
+                }
+            }
+        }
+    }
+
     // Recurse into every node-valued prop (a slot) — `children` included, since it was normalised.
     // The path reports where the value was WRITTEN, so a message points at the author's own source.
     for (name, value) in &given {
