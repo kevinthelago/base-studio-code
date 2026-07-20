@@ -23,7 +23,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("studio", "Studio store: shareable snapshots of the app's library state (save · apply · list · get · remove)"),
     ("org", "DEPRECATED (#2700) → use `bsc teams` (the store, renamed org → teams)"),
     ("component", "DEPRECATED (#2469) → use `bsc ui` (the component verbs now live there)"),
-    ("ui", "UI design surface: KitNode contract + themes (#1852) + the component library (#2469) + the released-kit store (release, #2465)"),
+    ("ui", "UI design surface: the primitive contract + themes (#1852) + the component library (#2469) + the released-kit store (release, #2465)"),
     ("logs", "unified logs + perf + cost (read-only) + `logs scope` runtime console-scope control"),
     ("files", "file-ops toolkit: read/write/edit/list/info"),
     ("shot", "capture the RUNNING app's real pixels — a webview snapshot (needs the app running)"),

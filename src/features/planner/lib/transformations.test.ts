@@ -4,7 +4,8 @@ import {
   coerceTransformationRows, specNodeCount, TRANSFORMATION_TAXONOMY, verbMeta,
   type TransformationRow,
 } from "./transformations";
-import { validateKitNode, demoSpec, type KitNode } from "@/shared/ui/spec";
+import { validateGeneralNode, demoSpec } from "@/shared/ui/spec";
+import TRANSFORMATIONS_STAGE from "@data/stages/transformations.json";
 
 /** A minimal valid row; override per test. */
 const row = (over: Partial<TransformationRow> = {}): TransformationRow => ({
@@ -168,57 +169,63 @@ describe("coerceTransformationRows", () => {
 });
 
 describe("specNodeCount", () => {
-  it("counts nodes carrying a `kind`, recursing children + nested nodes", () => {
+  it("counts nodes carrying a `type`, recursing children + nested prop nodes", () => {
     expect(specNodeCount(undefined)).toBe(0);
-    expect(specNodeCount({ kind: "tag", label: "x" })).toBe(1);
+    expect(specNodeCount({ type: "Chip", children: "x" })).toBe(1);
     expect(specNodeCount({
-      kind: "card",
-      header: { kind: "header", title: "h" },
-      children: [{ kind: "text", text: "t" }, { kind: "row", children: [{ kind: "tag", label: "y" }] }],
+      type: "Card",
+      props: { header: { type: "Text", children: "h" } },
+      children: [
+        { type: "Text", children: "t" },
+        { type: "Row", children: [{ type: "Chip", children: "y" }] },
+      ],
     })).toBe(5);
   });
 
   it("ignores non-node objects (a target/provenance blob is not a node)", () => {
     expect(specNodeCount({ description: "not a node" })).toBe(0);
   });
+
+  // #3500 retired the `kind` vocabulary. A stale spec counts 0, which is exactly the signal the
+  // caller wants — 0 nodes and a failed validation both route to the same "spec present" fallback.
+  it("counts a retired `kind` tree as 0 — it is no longer a spec", () => {
+    expect(specNodeCount({ kind: "card", children: [{ kind: "text", text: "t" }] })).toBe(0);
+  });
 });
 
 // The gap-fill preview contract (#2509 slice d): the Transformations stage prompt (Rust-owned,
-// src-tauri/data/stages/transformations.json) teaches the planner to author a KitNode `spec` on
-// every gap-fill row so the pane can render a LIVE preview of the proposed component. The Rust
-// prompt can't be imported into a frontend test, so we pin the SHAPE the playbook teaches against
-// the same `validateKitNode` the pane (and `bsc ui validate`) enforce — if this contract ever
-// changes, the taught example must change with it.
-describe("gap-fill preview spec — the KitNode contract the planner authors to (#2509 slice d)", () => {
-  it("the canonical demoSpec-shaped card (header + representative children) validates", () => {
-    // demoSpec is the reference card an agent copies when learning the contract.
-    expect(validateKitNode(demoSpec)).toEqual([]);
+// src-tauri/data/stages/transformations.json) teaches the planner to author a render `spec` on every
+// gap-fill row so the pane can render a LIVE preview of the proposed component.
+//
+// #3500 — this used to hand-COPY the worked example and validate the copy, which is precisely the
+// drift it claimed to prevent: the prompt could change and this would keep passing against a stale
+// duplicate. It now extracts the spec from the REAL prompt text the planner reads. (The Rust side runs
+// the same assertion against its own validator, so the taught example is checked in both languages.)
+describe("gap-fill preview spec — the contract the planner authors to (#2509 slice d)", () => {
+  it("the canonical demoSpec (the reference an agent copies) validates", () => {
+    expect(validateGeneralNode(demoSpec)).toEqual([]);
   });
 
-  it("a DataGrid-style gap-fill sketch (the migrate-to-kit worked example's shape) validates", () => {
-    // The same shape the stage prompt's gap-fill worked example models: a `card` with a `header`
-    // and representative children composed purely from the 8 kinds — a proposal sketch, not code.
-    const spec: KitNode = {
-      kind: "card",
-      tone: "var(--accent)",
-      header: { kind: "header", title: "DataGrid", hint: "sortable + selectable" },
-      children: [
-        {
-          kind: "row",
-          label: "Columns",
-          children: [
-            { kind: "tag", label: "Name", tone: "accent" },
-            { kind: "tag", label: "Status", tone: "accent" },
-            { kind: "tag", label: "Amount", tone: "accent" },
-          ],
-        },
-        { kind: "row", label: "Select all", children: [{ kind: "toggle", bind: "selectAll" }] },
-        { kind: "text", text: "3 rows selected", tone: "muted" },
-        { kind: "field", control: "text", label: "Filter rows", bind: "filter", placeholder: "Search rows" },
-        { kind: "button", variant: "primary", label: "Export", action: "export" },
-      ],
-    };
-    expect(validateKitNode(spec)).toEqual([]);
+  it("the spec taught by the REAL stage prompt validates", () => {
+    const prompt = (TRANSFORMATIONS_STAGE as { prompt: string }).prompt;
+    const start = prompt.indexOf('"spec": {');
+    expect(start).toBeGreaterThan(-1); // the prompt still teaches a preview spec
+
+    // Delimit the JSON object by brace balance — the example is embedded in prose.
+    const open = start + '"spec": '.length;
+    let depth = 0;
+    let end = open;
+    for (let i = open; i < prompt.length; i++) {
+      if (prompt[i] === "{") depth++;
+      else if (prompt[i] === "}") {
+        depth--;
+        if (depth === 0) { end = i + 1; break; }
+      }
+    }
+    expect(end).toBeGreaterThan(open);
+
+    const spec = JSON.parse(prompt.slice(open, end));
+    expect(validateGeneralNode(spec)).toEqual([]);
     // It is a real tree the pane's "n nodes" fallback can also count.
     expect(specNodeCount(spec)).toBeGreaterThan(1);
   });
