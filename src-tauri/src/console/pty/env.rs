@@ -23,17 +23,17 @@ fn project_key_from_cwd(cwd: &str) -> Option<std::ffi::OsString> {
     Some(rel.components().next()?.as_os_str().to_os_string())
 }
 
-/// The sealed scratch dir for an app-owned STUDIO session (#3373), or None for every other pane.
-///
-/// A restricted studio session is confined to one store CLI by Bash allow-list rules, and a heredoc
-/// cannot be allow-listed (newlines are command separators), so it authors by WRITING a payload here
-/// and passing `--file <bare-name>`. Only the studio workspaces get one: a plain console in some repo
-/// has no confinement to work around and would just accumulate stray dirs.
+/// The workspace dir of an app-owned STUDIO session, or None for every other pane.
 ///
 /// Derived from the cwd exactly like [`plan_db_for_cwd`], rather than plumbed down from the frontend,
-/// so the rule lives in one place: a studio workspace is a DIRECT child of the bsc base dir whose name
+/// so the rule lives in ONE place: a studio workspace is a DIRECT child of the bsc base dir whose name
 /// ends in `-studio` (`~/.base-studio-code/design-studio/`, `…/sound-studio/`, …).
-fn scratch_dir_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
+///
+/// Everything a restricted studio needs on disk hangs off this — the scratch dir (#3373) and the shots
+/// dir (#3468) — so a studio's working files all sit under the one root `bsc-confine` confines it to
+/// (`$BSC_REPO_ROOT` is the session cwd). Adding a sibling dir OUTSIDE this root is how the shots
+/// became unreadable in the first place.
+fn studio_dir_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
     if cwd.is_empty() {
         return None;
     }
@@ -44,7 +44,30 @@ fn scratch_dir_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
         return None;
     }
     let name = dir.file_name()?.to_string_lossy().into_owned();
-    name.ends_with("-studio").then(|| dir.join("scratch"))
+    name.ends_with("-studio").then(|| dir.to_path_buf())
+}
+
+/// The sealed scratch dir for an app-owned STUDIO session (#3373), or None for every other pane.
+///
+/// A restricted studio session is confined to one store CLI by Bash allow-list rules, and a heredoc
+/// cannot be allow-listed (newlines are command separators), so it authors by WRITING a payload here
+/// and passing `--file <bare-name>`. Only the studio workspaces get one: a plain console in some repo
+/// has no confinement to work around and would just accumulate stray dirs.
+fn scratch_dir_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
+    studio_dir_for_cwd(cwd).map(|d| d.join("scratch"))
+}
+
+/// The shots dir for an app-owned STUDIO session (#3468), or None for every other pane.
+///
+/// `bsc shot` defaults to `~/.base-studio-code/shots` — a SIBLING of a studio's workspace, and
+/// therefore outside `$BSC_REPO_ROOT`. `bsc-confine` matches `Read` as well as the write tools, so a
+/// studio session could TAKE a shot and then be blocked from reading it back: write-only with respect
+/// to its own ground truth, which is exactly backwards for a loop whose premise is that the shot — not
+/// the description of it — is the check.
+///
+/// Pointing the shots INSIDE the workspace fixes that without widening the cage for anything else.
+fn shot_dir_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
+    studio_dir_for_cwd(cwd).map(|d| d.join("shots"))
 }
 
 /// The project hub's `plan.db` for a session whose cwd lives under a project hub
@@ -510,6 +533,21 @@ pub(super) fn wire_bsc_env(
             Err(e) => log::warn!("scratch dir {} unavailable ({e}); --file will refuse", scratch.display()),
         }
     }
+    // The studio shot dir (#3468): `bsc shot` otherwise writes to ~/.base-studio-code/shots, a SIBLING
+    // of this session's confinement root ($BSC_REPO_ROOT = cwd) — and `bsc-confine` matches `Read`, so
+    // the session could take a shot and then be blocked from opening it. Point the shots inside the
+    // workspace rather than widening the cage. Studio panes only; every other caller (and the app
+    // itself) keeps the global default, since nothing else sets this var.
+    //
+    // NOT cleared on launch, unlike scratch: a shot is evidence the loop refers back to across turns,
+    // so wiping it would destroy the very record the designer is meant to compare against. A create
+    // failure is non-fatal — `bsc shot` falls back to its global dir, which is today's behaviour.
+    if let Some(shots) = shot_dir_for_cwd(cwd) {
+        match std::fs::create_dir_all(&shots) {
+            Ok(()) => { cmd.env("BSC_SHOT_DIR", to_bash_path(&shots.to_string_lossy())); }
+            Err(e) => log::warn!("shot dir {} unavailable ({e}); shots fall back to the global dir", shots.display()),
+        }
+    }
     // bsc errors (#2260): point this session at its project's runtime-fault store. $BSC_ERROR_DB is the
     // error.db the `bsc errors` subcommand reads/writes — cwd-derived exactly like BSC_PLAN_DB, so the
     // whole fleet shares one error.db per project; a non-project session gets none and never calls it.
@@ -601,7 +639,7 @@ pub(super) fn wire_bsc_env(
 mod tests {
     use super::{
         bsc_shim_files, bundled_gh_dir, compose_path, is_build_output, plan_db_for_cwd,
-        portable_git_bin_candidates, scratch_dir_for_cwd, session_env_with,
+        portable_git_bin_candidates, scratch_dir_for_cwd, session_env_with, shot_dir_for_cwd,
         session_skill_group_for_pane, sidecar_candidates, staged_sidecar_dir, BSC_SHIM_CMD,
         BSC_SHIM_SH,
     };
@@ -829,6 +867,37 @@ mod tests {
         // A same-named dir OUTSIDE the base dir must not qualify on its suffix alone.
         assert_eq!(scratch_dir_for_cwd("C:/Users/dev/design-studio"), None);
         assert_eq!(scratch_dir_for_cwd(""), None);
+    }
+
+    #[test]
+    fn shot_dir_is_inside_the_studio_workspace_so_confinement_can_read_it() {
+        // #3468: the whole point. `bsc shot`'s global default (~/.base-studio-code/shots) is a SIBLING
+        // of the workspace, so it sits outside $BSC_REPO_ROOT and `bsc-confine` (which matches Read)
+        // blocks the session from opening its own shot. The per-studio dir must be UNDER the cwd.
+        for studio in ["design-studio", "algorithms-studio", "teams-studio", "sound-studio"] {
+            let cwd = bsc_base_dir().join(studio);
+            let shots = shot_dir_for_cwd(&cwd.to_string_lossy()).expect("a studio gets a shot dir");
+            assert_eq!(shots, cwd.join("shots"));
+            assert!(shots.starts_with(&cwd), "{studio}: shots must be INSIDE the confinement root");
+        }
+
+        // Same gating as the scratch dir — only a studio workspace root qualifies.
+        assert_eq!(shot_dir_for_cwd(&bsc_base_dir().join("design-studio").join("sub").to_string_lossy()), None);
+        assert_eq!(shot_dir_for_cwd(&bsc_base_dir().join("projects").join("app").to_string_lossy()), None);
+        assert_eq!(shot_dir_for_cwd("C:/Users/dev/some-repo"), None);
+        assert_eq!(shot_dir_for_cwd("C:/Users/dev/design-studio"), None);
+        assert_eq!(shot_dir_for_cwd(""), None);
+    }
+
+    #[test]
+    fn a_studios_scratch_and_shots_share_one_confinable_root() {
+        // Both hang off `studio_dir_for_cwd`, so they can never drift apart — the regression that
+        // created #3468 was exactly a studio-adjacent dir living somewhere confinement did not reach.
+        let cwd = bsc_base_dir().join("design-studio");
+        let s = cwd.to_string_lossy();
+        let (scratch, shots) = (scratch_dir_for_cwd(&s).unwrap(), shot_dir_for_cwd(&s).unwrap());
+        assert_eq!(scratch.parent(), shots.parent(), "same root");
+        assert_eq!(scratch.parent(), Some(cwd.as_path()));
     }
 
     #[test]
