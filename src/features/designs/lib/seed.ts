@@ -41,13 +41,34 @@ export const SEED_COMPONENTS: ComponentRecord[] = [...components, ...vizComponen
  *  at the new packaged kit) — a one-line revert. */
 export const DEFAULT_KIT_SEEDED = false;
 
-/** The seed the reconcile converges the store toward. The three viz kits (algo-viz #3194, matrix-viz +
- *  graph-viz #3242) seed UNCONDITIONALLY — they're new, self-contained builtins (not the react-ui default
- *  #3029 is redefining by hand), so they're recoverable + shadow-proof (re-added if the store lacks them)
- *  even while {@link DEFAULT_KIT_SEEDED} is off. react-ui stays gated on the flag: when it's off the
- *  reconcile retires react-ui's pristine copies (add nothing) and seeds only the viz kits; when it's on both seed. */
-const seededKits = DEFAULT_KIT_SEEDED ? SEED_KITS : vizKits;
-const seededComponents = DEFAULT_KIT_SEEDED ? SEED_COMPONENTS : vizComponents;
+/** The packaged kit id that {@link DEFAULT_KIT_SEEDED} gates — the ONE kit #3029 is redefining by hand.
+ *  Every other `@data/components/*.json` kit is a new, self-contained builtin and must NOT inherit that
+ *  gate: before #3462 the flag was applied to the whole glob, so any kit added alongside react-ui was
+ *  silently inert (present in {@link SEED_COMPONENTS} and under test, but never reconciled into the
+ *  store — records that exist on paper and nowhere in the library). */
+const DEFAULT_KIT_ID = "react-ui";
+
+const defaultKits = kits.filter((k) => k.id === DEFAULT_KIT_ID);
+const defaultComponents = components.filter((c) => c.kitId === DEFAULT_KIT_ID);
+
+/** The packaged kits that are NOT the gated default (the `fleet` kit, #3462 — base-studio-code's own UI
+ *  migrating into the components graph). Same standing as the viz kits below: self-contained builtins
+ *  that seed regardless of the flag, so they're recoverable + shadow-proof. */
+const packagedKits = kits.filter((k) => k.id !== DEFAULT_KIT_ID);
+const packagedComponents = components.filter((c) => c.kitId !== DEFAULT_KIT_ID);
+
+/** The seed the reconcile converges the store toward. The viz kits (algo-viz #3194, matrix-viz +
+ *  graph-viz #3242) and every non-default packaged kit (#3462) seed UNCONDITIONALLY — they're new,
+ *  self-contained builtins (not the react-ui default #3029 is redefining by hand), so they're
+ *  recoverable + shadow-proof (re-added if the store lacks them) even while {@link DEFAULT_KIT_SEEDED}
+ *  is off. react-ui alone stays gated on the flag: when it's off the reconcile retires react-ui's
+ *  pristine copies (add nothing) and seeds the rest; when it's on, everything seeds. */
+const seededKits = [...(DEFAULT_KIT_SEEDED ? defaultKits : []), ...packagedKits, ...vizKits];
+const seededComponents = [
+  ...(DEFAULT_KIT_SEEDED ? defaultComponents : []),
+  ...packagedComponents,
+  ...vizComponents,
+];
 
 /** Reconcile the store's loaded components with the packaged built-ins (#2483, hash-based refresh —
  *  the full verdict table lives on {@link reconcileSeed}): a PRISTINE built-in copy (its content

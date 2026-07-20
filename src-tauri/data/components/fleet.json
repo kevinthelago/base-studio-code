@@ -1,0 +1,224 @@
+{
+  "order": 10,
+  "kit": {
+    "id": "fleet",
+    "name": "Fleet",
+    "tech": "react",
+    "style": "studio",
+    "stack": "React · TypeScript",
+    "dot": "var(--accent)",
+    "builtin": true
+  },
+  "components": [
+    {
+      "id": "workerboard",
+      "name": "WorkerBoard",
+      "kitId": "fleet",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": ["fleet", "roster", "agents", "list"],
+      "variants": ["default", "empty"],
+      "composes": ["Card", "CardHead", "Grid", "Row", "Box", "Text", "Avatar", "ColorSwatch", "CardEmpty"],
+      "shapes": ["list"],
+      "props": [
+        {
+          "name": "workers",
+          "type": "LiveWorker[]",
+          "req": true,
+          "desc": "The live roster — one row per running agent (name, status, current issue, owned-issue count)."
+        },
+        {
+          "name": "onOpen",
+          "type": "(w: LiveWorker) => void",
+          "req": true,
+          "desc": "Called with the clicked worker. The host decides what opening means (Fleet swaps in WorkerDetail)."
+        }
+      ],
+      "whenUse": [
+        "A roster of running agents — one row each, with live status and what it is working on.",
+        "Any per-agent board where clicking a row hands the agent to a detail surface."
+      ],
+      "whenNot": [
+        "A static list with no live status — use CardListRow.",
+        "One agent's full detail — that is WorkerDetail, a behavioral host."
+      ],
+      "src": "features/planner/fleet/Fleet.tsx",
+      "srcText": "// file-local to features/planner/fleet/Fleet.tsx — not exported yet (extraction is #3462 slice 2)\n<WorkerBoard workers={workers} onOpen={openWorker} />"
+    },
+    {
+      "id": "fleetstatus",
+      "name": "FleetStatus",
+      "kitId": "fleet",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": ["fleet", "status", "donut", "metric"],
+      "variants": ["default", "empty"],
+      "composes": ["Card", "CardHead", "Donut", "Row", "Stack", "Grid", "ColorSwatch", "Box", "Text", "CardEmpty"],
+      "shapes": ["key-value"],
+      "props": [
+        {
+          "name": "counts",
+          "type": "Partial<Record<LiveWorker[\"status\"], number>>",
+          "req": true,
+          "desc": "Worker count per status — becomes the donut slices, labelled and coloured from the shared STATUS map."
+        },
+        {
+          "name": "total",
+          "type": "number",
+          "req": true,
+          "desc": "Total live workers, shown in the donut centre. 0 renders the empty state instead of an empty ring."
+        }
+      ],
+      "whenUse": [
+        "A one-glance breakdown of a population by status, with the total in the centre.",
+        "Pairing a donut with a colour-keyed legend of the same slices."
+      ],
+      "whenNot": [
+        "A time series — use LineArea or Bars.",
+        "A single metric with no breakdown — use StatCard."
+      ],
+      "src": "features/planner/fleet/Fleet.tsx",
+      "srcText": "// file-local to features/planner/fleet/Fleet.tsx — not exported yet (extraction is #3462 slice 2)\n<FleetStatus counts={counts} total={kpis.total} />"
+    },
+    {
+      "id": "throughput",
+      "name": "Throughput",
+      "kitId": "fleet",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": ["fleet", "chart", "github", "throughput"],
+      "variants": ["default", "loading", "empty"],
+      "composes": ["Card", "CardHead", "RangeToggle", "LineArea", "Legend", "SkeletonChart", "CardEmpty"],
+      "props": [
+        {
+          "name": "gh",
+          "type": "FleetGithub",
+          "req": true,
+          "desc": "The GitHub-derived fleet slice. Reads `throughput` (per-day landed vs merged) and `loading` to pick between skeleton, empty and chart."
+        }
+      ],
+      "whenUse": [
+        "Two comparable per-day series over a selectable window (7d/14d).",
+        "A chart that must distinguish 'still loading' from 'genuinely nothing yet'."
+      ],
+      "whenNot": [
+        "A single series — use LineArea directly.",
+        "Categorical buckets rather than a date axis — use Bars."
+      ],
+      "src": "features/planner/fleet/Fleet.tsx",
+      "srcText": "// file-local to features/planner/fleet/Fleet.tsx — not exported yet (extraction is #3462 slice 2)\n// Owns a local `range` view-state (7d/14d) via RangeToggle.\n<Throughput gh={gh} />"
+    },
+    {
+      "id": "timetoland",
+      "name": "TimeToLand",
+      "kitId": "fleet",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": ["fleet", "chart", "github", "latency"],
+      "variants": ["default", "loading", "empty"],
+      "composes": ["Card", "CardHead", "Bars", "Text", "SkeletonChart", "CardEmpty"],
+      "props": [
+        {
+          "name": "gh",
+          "type": "FleetGithub",
+          "req": true,
+          "desc": "The GitHub-derived fleet slice. Reads `timeToLand` (bucketed open→merge durations), `medianLandH` and `loading`."
+        }
+      ],
+      "whenUse": [
+        "A bucketed duration histogram with a median call-out underneath.",
+        "Showing how long a pipeline stage takes across many items."
+      ],
+      "whenNot": [
+        "A per-day trend — use Throughput.",
+        "A single duration — use StatCard."
+      ],
+      "src": "features/planner/fleet/Fleet.tsx",
+      "srcText": "// file-local to features/planner/fleet/Fleet.tsx — not exported yet (extraction is #3462 slice 2)\n<TimeToLand gh={gh} />"
+    },
+    {
+      "id": "mergequeue",
+      "name": "MergeQueue",
+      "kitId": "fleet",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": ["fleet", "github", "pull-requests", "list"],
+      "variants": ["default", "loading", "empty"],
+      "composes": ["Card", "CardHead", "Text", "Stack", "Grid", "Box", "SkeletonRows", "CardEmpty"],
+      "shapes": ["list"],
+      "props": [
+        {
+          "name": "gh",
+          "type": "FleetGithub",
+          "req": true,
+          "desc": "The GitHub-derived fleet slice. Reads `mergeQueue` (rows of pr/title/repo/state) and `loading`."
+        }
+      ],
+      "whenUse": [
+        "A queue of items carrying a colour-coded state (green/running/blocked/draft).",
+        "Cross-repo rows where each needs a secondary identifier line."
+      ],
+      "whenNot": [
+        "A sortable/filterable grid — use DataTableRow.",
+        "Items with no state axis — use CardListRow."
+      ],
+      "src": "features/planner/fleet/Fleet.tsx",
+      "srcText": "// file-local to features/planner/fleet/Fleet.tsx — not exported yet (extraction is #3462 slice 2)\n<MergeQueue gh={gh} />"
+    },
+    {
+      "id": "workermodals",
+      "name": "WorkerModals",
+      "kitId": "fleet",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": ["fleet", "modal", "worker", "controls"],
+      "variants": ["default"],
+      "composes": ["ModalCard", "ModalScrim", "TextArea", "Button", "ColorSwatch", "Stack", "Box", "Text", "IconButton"],
+      "props": [
+        {
+          "name": "modal",
+          "type": "WorkerModal | null",
+          "req": true,
+          "desc": "Which modal is open; null renders nothing. The host owns this state."
+        },
+        { "name": "setModal", "type": "(m: WorkerModal | null) => void", "req": true, "desc": "Open or dismiss a modal." },
+        { "name": "worker", "type": "LiveWorker", "req": true, "desc": "The worker every modal acts on." },
+        { "name": "st", "type": "StatusMeta", "req": true, "desc": "Resolved label + colour for the worker's status." },
+        { "name": "draft", "type": "string", "req": true, "desc": "The steer/answer text being composed." },
+        { "name": "setDraft", "type": "(v: string) => void", "req": true, "desc": "Update the draft text." },
+        {
+          "name": "send",
+          "type": "(kind: \"steer\" | \"answer\") => void",
+          "req": true,
+          "desc": "Submit the draft. The host writes it to the agent's PTY — this component never touches the session."
+        },
+        { "name": "stop", "type": "() => void", "req": true, "desc": "Stop the worker. Host-owned action." },
+        { "name": "agentProfiles", "type": "AgentProfile[]", "req": true, "desc": "Selectable least-privilege profiles." },
+        { "name": "profileId", "type": "string | undefined", "req": false, "desc": "The worker's current profile id, if any." },
+        {
+          "name": "setPaneProfile",
+          "type": "(paneId: string, profileId: string | null) => void",
+          "req": true,
+          "desc": "Assign a profile. A store action passed IN as a prop — which is what keeps this component pure."
+        },
+        { "name": "flash", "type": "(m: string) => void", "req": true, "desc": "Surface a transient confirmation to the user." }
+      ],
+      "whenUse": [
+        "A set of modals over one subject, where the host owns every action and piece of state.",
+        "A worked example of the host/tree split: store actions arrive as props, so the view stays pure."
+      ],
+      "whenNot": [
+        "A single confirm — use Dialog.",
+        "A modal that fetches or mutates on its own — that belongs in a host."
+      ],
+      "src": "features/planner/fleet/WorkerModals.tsx",
+      "srcText": "import { WorkerModals } from \"@/features/planner/fleet/WorkerModals\";\n\n<WorkerModals modal={modal} setModal={setModal} worker={worker} st={st}\n  draft={draft} setDraft={setDraft} send={send} stop={stop}\n  agentProfiles={agentProfiles} profileId={profileId}\n  setPaneProfile={setPaneProfile} flash={flash} />"
+    }
+  ]
+}
