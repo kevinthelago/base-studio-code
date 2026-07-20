@@ -100,6 +100,30 @@ NO COMPONENT SHOWN
   rather than capturing the whole screen — navigate to a component and retry.",
     },
     CmdDoc {
+        name: "frame",
+        summary: "capture the mounted preview of ONE named component — you choose what to look at",
+        usage: "\
+USAGE:
+  bsc shot frame <component> [--frames <N>] [--interval <ms>] [--out <path>] [--timeout <ms>] [--json|--pretty]
+
+Captures the preview frame rendering <component>, wherever it sits on screen. Where `preview` shoots
+whatever the Studio happens to be showing, `frame` names the SUBJECT — so a session chooses what to
+photograph instead of depending on what the user last clicked.
+
+The app resolves the rect itself from the mounted previews (the same geometry `bsc debug frames`
+reports), so you never pass coordinates — and you do not need `bsc debug` in your own command surface.
+
+  --frames <N>     a BURST of N frames (for animations) — see `bsc shot take help`.
+  --interval <ms>  gap between burst frames (default 120).
+  --out <path>     where to write the PNG (base for a burst). Default <shots>/<id>.png.
+  --timeout <ms>   how long to wait for the app, per frame (default 8000).
+
+NOT MOUNTED
+  If no preview for <component> is mounted, this errors and NAMES what is currently showing, rather
+  than silently capturing the whole screen. Land it first:
+    bsc navigate component <kit> <component>",
+    },
+    CmdDoc {
         name: "pending",
         summary: "unanswered channel requests (JSON) — what the app's watcher would serve",
         usage: "\
@@ -205,6 +229,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
     match cmd.as_str() {
         "take" => cmd_take(&args),
         "preview" => cmd_preview(&args),
+        "frame" => cmd_frame(&args),
         "pending" => cmd_pending(&args),
         "sweep" => cmd_sweep(&args),
         "dir" => cmd_dir(&args),
@@ -226,6 +251,27 @@ fn cmd_preview(args: &Args) -> Result<(), String> {
         return Err("`bsc shot preview` crops to the component preview itself — drop --rect (use `bsc shot take --rect` for a manual region)".into());
     }
     run_capture(args, Some("preview"))
+}
+
+/// The `frame:` target prefix the app routes to a mounted preview by component id (#3469). Kept here
+/// beside the verb that mints it so the CLI and the app agree on one spelling.
+const FRAME_PREFIX: &str = "frame:";
+
+/// `bsc shot frame <component>` — capture the mounted preview of ONE named component (#3469).
+///
+/// Where `preview` shoots whatever the Studio is showing, this names the SUBJECT: the app resolves the
+/// rect from its mounted previews, so a session chooses what to photograph rather than depending on
+/// what the user last clicked. Like `preview`, `--rect` is meaningless (the frame IS the region) and is
+/// rejected rather than silently ignored.
+fn cmd_frame(args: &Args) -> Result<(), String> {
+    if args.rect.is_some() {
+        return Err("`bsc shot frame` crops to the named component's preview — drop --rect (use `bsc shot take --rect` for a manual region)".into());
+    }
+    let component = args.positional.get(1).map(String::as_str).unwrap_or_default();
+    if component.is_empty() {
+        return Err("`bsc shot frame` needs a component: `bsc shot frame <component>` (see `bsc shot frame help`)".into());
+    }
+    run_capture(args, Some(&format!("{FRAME_PREFIX}{component}")))
 }
 
 /// The shared capture path for `take`/`preview`: one frame, or a `--frames` burst. `target` is `None` for
