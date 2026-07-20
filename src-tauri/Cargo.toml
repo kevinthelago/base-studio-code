@@ -81,7 +81,7 @@ bsc-navigate = { path = "../crates/bsc-navigate" }
 bsc-debug = { path = "../crates/bsc-debug" }
 # PNG decode/encode for the --rect crop (CapturePreview hands back the WHOLE webview). `png` not
 # `image`: it is the only format CapturePreview emits, and it keeps the binary off a codec matrix.
-png = "0.17"
+png = "0.18"
 
 # Unified log engine (#1607/#1389): the pure scope-graph policy (`logs::scope`) shared by the desktop
 # `GraphLogger` and the `bsc log` CLI, so one config type + one matching rule govern both surfaces.
