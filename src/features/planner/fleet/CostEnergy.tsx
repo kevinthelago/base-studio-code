@@ -11,6 +11,7 @@ import { Card } from "@/shared/ui/data/Card";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { usePaneTokenUsage } from "@/app/console/lib/usePaneTokenUsage";
 import { aggregateFleetCost, CO2_KG_PER_KWH } from "./lib/fleetCost";
+import type { FleetCost } from "./lib/fleetCost";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
 
 /** Format Wh compactly: 940 → "0.94 kWh", 12 → "12 Wh". */
@@ -28,11 +29,11 @@ function Total({ k, v, sub, tone }: { k: string; v: string; sub?: string; tone?:
   );
 }
 
-export function CostEnergy({ workers }: { workers: LiveWorker[] }) {
-  const usage = usePaneTokenUsage(128);
-  const cost = aggregateFleetCost(workers, usage);
-  const co2 = (cost.totalEnergyWh / 1000) * CO2_KG_PER_KWH; // kg
-
+/** The cost & energy card as PURE presentation — the aggregate in, markup out (#3481).
+ *
+ *  Split from the host below so the card renders from any `FleetCost`, is testable without mocking the
+ *  `bsc logs cost` poll, and has a real prop contract to catalogue in the components graph. */
+export function CostEnergyView({ cost, co2 }: { cost: FleetCost; co2: number }) {
   return (
     <Card>
       <CardHead title="Cost & energy" hint="session tokens · priced · est. energy"
@@ -69,4 +70,14 @@ export function CostEnergy({ workers }: { workers: LiveWorker[] }) {
       )}
     </Card>
   );
+}
+
+/** The HOST: owns the `bsc logs cost` poll and the aggregation, then renders the pure view above.
+ *  Three lines of behaviour — the rest of this card is presentation. */
+export function CostEnergy({ workers }: { workers: LiveWorker[] }) {
+  const usage = usePaneTokenUsage(128);
+  const cost = aggregateFleetCost(workers, usage);
+  const co2 = (cost.totalEnergyWh / 1000) * CO2_KG_PER_KWH; // kg
+
+  return <CostEnergyView cost={cost} co2={co2} />;
 }

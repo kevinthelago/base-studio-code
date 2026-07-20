@@ -219,6 +219,113 @@
       ],
       "src": "features/planner/fleet/WorkerModals.tsx",
       "srcText": "import { WorkerModals } from \"@/features/planner/fleet/WorkerModals\";\n\n<WorkerModals modal={modal} setModal={setModal} worker={worker} st={st}\n  draft={draft} setDraft={setDraft} send={send} stop={stop}\n  agentProfiles={agentProfiles} profileId={profileId}\n  setPaneProfile={setPaneProfile} flash={flash} />"
+    },
+    {
+      "id": "fleethealthview",
+      "name": "FleetHealthView",
+      "kitId": "fleet",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": ["fleet", "health", "errors", "feed"],
+      "variants": ["default", "loading", "empty"],
+      "composes": ["Card", "CardHead", "Stack", "Row", "Text", "Chip", "CardEmpty", "SkeletonRows"],
+      "shapes": ["list"],
+      "props": [
+        {
+          "name": "health",
+          "type": "FleetHealth",
+          "req": true,
+          "desc": "The merged signal feed from `buildFleetHealth` — items (recent-first, live issues pinned), per-kind counts, total, and whether there are issues at all."
+        },
+        {
+          "name": "permLoaded",
+          "type": "boolean",
+          "req": true,
+          "desc": "Has the permission-denial poll answered yet? Distinguishes 'still loading' from 'all clear' — an empty feed before the first answer is not the same as no issues."
+        }
+      ],
+      "whenUse": [
+        "A recent-issues feed merged from several differently-shaped sources, most-urgent pinned.",
+        "Any card that must tell 'still loading' apart from 'genuinely nothing wrong'."
+      ],
+      "whenNot": [
+        "A single error — use InlineError or Banner.",
+        "Fetching the signals yourself — that belongs in the host; this renders what it is given."
+      ],
+      "src": "features/planner/fleet/FleetHealth.tsx",
+      "srcText": "import { FleetHealthView } from \"@/features/planner/fleet/FleetHealth\";\n\n<FleetHealthView health={health} permLoaded={permLoaded} />"
+    },
+    {
+      "id": "costenergyview",
+      "name": "CostEnergyView",
+      "kitId": "fleet",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": ["fleet", "cost", "energy", "metric"],
+      "variants": ["default", "empty"],
+      "composes": ["Card", "CardHead", "Stack", "Row", "Grid", "Box", "Text", "EmptyState"],
+      "props": [
+        {
+          "name": "cost",
+          "type": "FleetCost",
+          "req": true,
+          "desc": "The `aggregateFleetCost` rollup — totals, per-model split, and `hasData` (false renders the empty state rather than a row of zeroes)."
+        },
+        {
+          "name": "co2",
+          "type": "number",
+          "req": true,
+          "desc": "Estimated kg CO₂ for the fleet's energy. Directional, not metered — the card labels it as an estimate throughout."
+        }
+      ],
+      "whenUse": [
+        "Headline totals over a per-category breakdown, where some figures are measured and others estimated.",
+        "A metric card that must visibly distinguish a priced/actual number from a directional one."
+      ],
+      "whenNot": [
+        "A single metric — use StatCard.",
+        "A time series of spend — use LineArea."
+      ],
+      "src": "features/planner/fleet/CostEnergy.tsx",
+      "srcText": "import { CostEnergyView } from \"@/features/planner/fleet/CostEnergy\";\n\n<CostEnergyView cost={cost} co2={co2} />"
+    },
+    {
+      "id": "fleetlessonsview",
+      "name": "FleetLessonsView",
+      "kitId": "fleet",
+      "role": "composite",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": ["fleet", "lessons", "review", "list"],
+      "variants": ["default", "loading", "empty"],
+      "composes": ["Card", "CardHead", "Stack", "Row", "Box", "Text", "Chip", "EmptyState", "Skeleton"],
+      "shapes": ["list"],
+      "props": [
+        {
+          "name": "lessons",
+          "type": "Lesson[]",
+          "req": true,
+          "desc": "The pending review queue. Shows the first six and states how many more were withheld."
+        },
+        {
+          "name": "loaded",
+          "type": "boolean",
+          "req": true,
+          "desc": "Has the queue been fetched? An empty list before the first answer renders skeletons, not 'no lessons' — claiming empty too early is a lie the user cannot see through."
+        }
+      ],
+      "whenUse": [
+        "A capped review queue where the withheld remainder is stated, not silently dropped.",
+        "A list whose items carry an optional recurrence count."
+      ],
+      "whenNot": [
+        "The full reviewable queue with actions — that is the Skills → Lessons surface.",
+        "Loading the queue yourself — the host owns the poll."
+      ],
+      "src": "features/planner/fleet/FleetLessons.tsx",
+      "srcText": "import { FleetLessonsView } from \"@/features/planner/fleet/FleetLessons\";\n\n<FleetLessonsView lessons={lessons} loaded={loaded} />"
     }
   ]
 }
