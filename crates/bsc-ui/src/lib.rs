@@ -16,6 +16,7 @@
 
 pub mod cli;
 pub mod emit;
+pub mod harvest;
 pub mod kit;
 
 use serde_json::Value;
