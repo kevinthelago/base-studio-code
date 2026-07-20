@@ -16,6 +16,7 @@ import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
 import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands, isRestrictedRole, type SessionRole } from "@/shared/lib/session/sessionRoles";
 import { isFullCapabilitySession, isStudioSessionPaneId } from "@/shared/lib/session/systemSessions";
+import { TURN_ACCOUNTING_HOOKS } from "@/shared/lib/session/turnHooks";
 import { studioRoleForPaneId } from "@/features/studio-sessions";
 import { resolveProfileSettings } from "@/features/security";
 import { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner";
@@ -289,17 +290,11 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
     // hooks still fire+block). The foundation the deny-list switch builds on; reads `$BSC_DENY_BASH`
     // for the per-session role/user denies wired in at the bypass flip.
     { event: "PreToolUse", matcher: "Bash", command: "bsc-deny" },
-    { event: "UserPromptSubmit", matcher: "", command: "bsc-activity run" },
-    { event: "Stop", matcher: "", command: "bsc-activity idle" },
-    { event: "SubagentStop", matcher: "", command: "bsc-activity idle" },
-    // Token/cost accounting (bsc-tokens, #416/#3452): record `pane → session → transcript_path` to
-    // `tokens.log` at every turn end — the ONLY per-session token source (Claude Code hooks don't
-    // expose usage), read by `bsc logs cost`, the desktop cost UI, and `bsc metrics` (#3449). This sat
-    // UNWIRED and tokens.log went dead for weeks, blinding the whole cost subsystem — hence the explicit
-    // test below. Un-gated + last, beside its bsc-activity sibling: cost matters for every pane, and
-    // it must fire on Stop even for a worker whose `bsc-defer` blocks the stop (hooks all still run).
-    { event: "Stop", matcher: "", command: "bsc-tokens" },
-    { event: "SubagentStop", matcher: "", command: "bsc-tokens" },
+    // Turn accounting (bsc-activity + bsc-tokens, #1184/#416) — the un-gated observability floor, from
+    // the ONE shared constant every launch path spreads (#3452 fleet / #3455 planner both silently lost
+    // this set when it was inlined per-path). bsc-tokens is the ONLY per-session token source, so it
+    // must fire on Stop even for a worker whose `bsc-defer` blocks the stop (all hooks still run).
+    ...TURN_ACCOUNTING_HOOKS,
   ];
   return {
     allowedCommands,

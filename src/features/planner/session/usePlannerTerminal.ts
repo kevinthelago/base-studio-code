@@ -15,6 +15,7 @@ import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "@/shared/lib/session/sessionRoles";
 import { useScreenSession } from "@/shared/lib/session/useScreenSession";
+import { TURN_ACCOUNTING_HOOKS } from "@/shared/lib/session/turnHooks";
 import { resolveAllInstalledMcp, toSessionPayloads, mcpAllowRules } from "@/features/mcp";
 import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
 import { plannerLaunchConfig } from "./plannerLaunch";
@@ -144,7 +145,10 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
         allowedCommands: [],
         deniedCommands:  roleDeniedCommands(plannerCap),
         mcpServers:      plannerMcp,
-        hooks:           null,
+        // Turn accounting (#3455): the planner's bespoke launch must ALSO register the observability
+        // floor. bsc-tokens is the only per-session token source, so without it the planner's (often
+        // large) planning cost is invisible to `bsc metrics`. Shared with the generic path.
+        hooks:           TURN_ACCOUNTING_HOOKS,
         // Auto-approve every MCP server the planner sees (Research/Compliance + any downloaded one)
         // so it can call them while planning — e.g. the Research MCP when grounding a skill — without
         // a per-tool permission prompt. `enabledMcpjsonServers` only trusts the server to LOAD.
