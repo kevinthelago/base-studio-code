@@ -44,6 +44,11 @@ Real project code is the reality the library should track. Mine it into candidat
 - `bsc graph curate <dir> [--tech T] [--apply]` — curate the WORTHY candidates into the library
   (add / optimize). `--apply` writes the runtime store; without it you get the plan to review first.
 
+**You may only harvest inside your own session's root.** A `<dir>` outside it is refused and the refusal
+names the root — that is the same FS confinement your file tools obey, applied to the CLI so a directory
+argument cannot reach around it. It is a boundary, not a bug to work around: if the code you want to mine
+sits outside your root, say so and ask, rather than hunting for a path that slips through.
+
 ## Curate the store — the write commands
 
 Every write persists to the store (`~/.base-studio-code/knowledge/algorithms.json`), and a re-read
@@ -189,7 +194,7 @@ So when `bsc graph` cannot do something you need, that is **a gap in the tool, n
 around**. File it:
 
 ```
-bsc request new "bsc graph list has no way to filter or format the output"   --cmd "bsc graph impl list | python3 -c \"...\"" --surface "bsc graph"
+bsc request new "bsc graph impl list has no way to filter or format the output"   --cmd "bsc graph impl list | python3 -c \"...\"" --surface "bsc graph"
 ```
 
 `--cmd` is the important part — pass the EXACT command that failed. A request is *observed*, not
