@@ -5,6 +5,7 @@
 // module owns only the shapes + pure derivations (search, compose/used-by resolution, role colors).
 
 import type { KitAnimation, AnimationDef } from "@/shared/ui/kit/animations";
+import { BASE_KIT_ID } from "@/shared/ui/kit/baseAnimations";
 
 /** A component's architectural role — drives its accent color + grouping. */
 export type Role = "primitive" | "composite" | "layout" | "page" | "service";
@@ -212,16 +213,33 @@ function isInlineAnim(e: unknown): e is KitAnimation {
  *  resolve); every resolved def is stamped with the component's `kitId`, preserving first-appearance
  *  order. Empty when the component binds nothing. Pure (React-free). This is what the right-pane
  *  AnimationsMenu lists so the user can see + switch each slot's variations; the RENDER path
- *  ({@link resolveComponentAnimations}) narrows it to the one-per-group set that actually plays. */
+ *  ({@link resolveComponentAnimations}) narrows it to the one-per-group set that actually plays.
+ *
+ *  CROSS-KIT (#3451): a NAME the component's own kit doesn't define falls back to the shared `base`
+ *  kit's library — the app's foundational motion (`lift`/`fade-in`/`pulse`) is owned there once and
+ *  REFERENCED by every kit, so editing it propagates to all of them. A base-resolved def keeps
+ *  `kit: BASE_KIT_ID` (it is NOT restamped to the consumer): that field names both the compiled
+ *  `@keyframes bsc-base-<name>` and the `.base-anim-<name>` hook the preview stamps, so every consumer
+ *  shares ONE keyframes block instead of duplicating it per kit. A kit's OWN def always wins, so a kit
+ *  can still override a base motion by declaring the same name. */
 export function resolveComponentAnimationDefs(comp: ComponentRecord, kits: Kit[]): AnimationDef[] {
   const entries = comp.animations ?? [];
   if (!entries.length) return [];
-  const kit = kits.find((k) => k.id === comp.kitId);
-  const byName = new Map((kit?.animations ?? []).map((a) => [a.name, a]));
+  const own = new Map((kits.find((k) => k.id === comp.kitId)?.animations ?? []).map((a) => [a.name, a] as const));
+  const base =
+    comp.kitId === BASE_KIT_ID
+      ? null
+      : new Map((kits.find((k) => k.id === BASE_KIT_ID)?.animations ?? []).map((a) => [a.name, a] as const));
   const out: AnimationDef[] = [];
   for (const e of entries) {
-    const def = typeof e === "string" ? byName.get(e) : isInlineAnim(e) ? e : undefined;
-    if (def) out.push({ ...def, kit: comp.kitId });
+    if (typeof e === "string") {
+      const mine = own.get(e);
+      if (mine) { out.push({ ...mine, kit: comp.kitId }); continue; }
+      const shared = base?.get(e);
+      if (shared) out.push({ ...shared, kit: BASE_KIT_ID });
+      continue;
+    }
+    if (isInlineAnim(e)) out.push({ ...e, kit: comp.kitId });
   }
   return out;
 }
@@ -240,7 +258,13 @@ export function resolveNamedAnimation(
   if (!name) return null;
   const own = comp ? resolveComponentAnimationDefs(comp, kits) : [];
   const shelf = kit ? (kit.animations ?? []).map((a) => ({ ...a, kit: kit.id })) : [];
-  return [...own, ...shelf].find((x) => x.name === name) ?? null;
+  // #3451: the shared `base` shelf is reachable from EVERY kit. react-ui's own library is empty now
+  // (its base motions moved to `base`), so without this a base motion could not be tried on at all.
+  const baseShelf =
+    kit?.id === BASE_KIT_ID
+      ? []
+      : (kits.find((k) => k.id === BASE_KIT_ID)?.animations ?? []).map((a) => ({ ...a, kit: BASE_KIT_ID }));
+  return [...own, ...shelf, ...baseShelf].find((x) => x.name === name) ?? null;
 }
 
 /** The animations the render-preview should COMPILE. A try-on ISOLATES the clicked animation — the

@@ -12,13 +12,15 @@ import * as themeBridge from "./lib/themeBridge";
 import * as usageBridge from "./lib/kitUsageBridge";
 import { setActiveKitThemes, activeKitThemes, themeById } from "@/shared/ui/kit";
 import { ALGO_VIZ_KIT_ID } from "@/shared/ui/kit/algoVizAnimations";
+import { BASE_KIT_ID } from "@/shared/ui/kit/baseAnimations";
 
-// The always-on VIZ builtins (algo-viz #3194 + matrix-viz/graph-viz #3242) seed regardless of
-// DEFAULT_KIT_SEEDED, so the #3029 "default kit disabled" hydrate tests below expect them to
-// survive/recover while react-ui retires. They're exactly the `data-viz`-style kits.
-const VIZ_KITS = SEED_KITS.filter((k) => k.style === "data-viz");
-const VIZ_KIT_IDS = new Set(VIZ_KITS.map((k) => k.id));
-const VIZ_COMPS = SEED_COMPONENTS.filter((c) => c.kitId && VIZ_KIT_IDS.has(c.kitId));
+// The always-on builtins — the shared `base` motion kit (#3451) + the VIZ kits (algo-viz #3194 +
+// matrix-viz/graph-viz #3242) — seed regardless of DEFAULT_KIT_SEEDED, so the #3029 "default kit
+// disabled" hydrate tests below expect them to survive/recover while react-ui retires. `base` is
+// always-on because react-ui's primitives REFERENCE its animations by name (#3451).
+const ALWAYS_ON_KITS = SEED_KITS.filter((k) => k.style === "data-viz" || k.id === BASE_KIT_ID);
+const ALWAYS_ON_KIT_IDS = new Set(ALWAYS_ON_KITS.map((k) => k.id));
+const ALWAYS_ON_COMPS = SEED_COMPONENTS.filter((c) => c.kitId && ALWAYS_ON_KIT_IDS.has(c.kitId));
 
 describe("components store slice (#2281)", () => {
   beforeEach(() => {
@@ -37,31 +39,31 @@ describe("components store slice (#2281)", () => {
   // TEMPORARY (#3029/#3194): the packaged react-ui DEFAULT kit is disabled while it's redefined via the
   // designer, so it seeds NOTHING — but the always-on `algo-viz` builtin (#3194) IS recovered into an
   // empty store. Restore the react-ui half to "empty store re-seeds every built-in" when the default returns.
-  it.skipIf(DEFAULT_KIT_SEEDED)("hydrateComponents seeds ONLY the always-on viz builtins into an empty store while the default kit is disabled (#3194/#3242)", async () => {
+  it.skipIf(DEFAULT_KIT_SEEDED)("hydrateComponents seeds ONLY the always-on builtins (base + viz) into an empty store while the default kit is disabled (#3194/#3242/#3451)", async () => {
     vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([]);
     vi.spyOn(bridge, "loadKits").mockResolvedValueOnce([]);
     const pushC = vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
     const pushK = vi.spyOn(bridge, "pushKit").mockResolvedValue(undefined);
     await useAppStore.getState().hydrateComponents();
     // react-ui stays disabled (nothing of it seeds); the viz kits are appended + pushed (recover/shadow-proof).
-    expect(useAppStore.getState().kits).toEqual(VIZ_KITS);
-    expect(useAppStore.getState().components).toEqual(VIZ_COMPS);
-    expect(pushK).toHaveBeenCalledTimes(VIZ_KITS.length);
-    expect(pushC).toHaveBeenCalledTimes(VIZ_COMPS.length);
+    expect(useAppStore.getState().kits).toEqual(ALWAYS_ON_KITS);
+    expect(useAppStore.getState().components).toEqual(ALWAYS_ON_COMPS);
+    expect(pushK).toHaveBeenCalledTimes(ALWAYS_ON_KITS.length);
+    expect(pushC).toHaveBeenCalledTimes(ALWAYS_ON_COMPS.length);
     expect(pushK).toHaveBeenCalledWith(expect.objectContaining({ id: ALGO_VIZ_KIT_ID }));
   });
 
   // TEMPORARY (#3029/#3194): the current default (react-ui) retires from an EXISTING store on the next
   // boot — its pristine built-ins left the seed, so the #2483 reconcile drops them — while the always-on
   // algo-viz builtin (#3194) survives. Remove the react-ui half when the default returns.
-  it.skipIf(DEFAULT_KIT_SEEDED)("hydrateComponents retires the now-unseeded default built-ins but keeps the viz kits (#3194/#3242)", async () => {
+  it.skipIf(DEFAULT_KIT_SEEDED)("hydrateComponents retires the now-unseeded default built-ins but keeps the always-on kits (#3194/#3242/#3451)", async () => {
     vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce(SEED_COMPONENTS);
     vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
     const dropC = vi.spyOn(bridge, "dropComponent").mockResolvedValue(undefined);
     const dropK = vi.spyOn(bridge, "dropKit").mockResolvedValue(undefined);
     await useAppStore.getState().hydrateComponents();
-    expect(useAppStore.getState().kits).toEqual(VIZ_KITS);
-    expect(useAppStore.getState().components).toEqual(VIZ_COMPS);
+    expect(useAppStore.getState().kits).toEqual(ALWAYS_ON_KITS);
+    expect(useAppStore.getState().components).toEqual(ALWAYS_ON_COMPS);
     expect(dropK).toHaveBeenCalledWith("react-ui");
     expect(dropC).toHaveBeenCalled();
   });
