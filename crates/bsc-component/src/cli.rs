@@ -212,10 +212,17 @@ kit; --json emits the findings array (LLM-consumable).
 
 --fix is the mechanical, SAFE OPTIMIZE (#3089): (1) MERGE byte-identical-source duplicates — fold each
 group into the most-`used` canonical and repoint composers to it (lossless; only byte-identical, never a
-same-`wraps` dup), then (2) PRUNE the safe dead roots — the ROOT of each orphan/dangling-branch finding
+same-`wraps` dup), then (2) PRUNE the GUARDED dead roots — the ROOT of each orphan/dangling-branch finding
 (never a used > 0 node). DRY RUN by default (prints what WOULD change); pass --yes to apply. Cycles and
 same-`wraps` (differing-source) duplicates are NOT auto-resolved — they need a semantic call. Branch
-descendants are left for the next pass (one might be shared) — re-run to clean them. #2678/#2679/#3089.",
+descendants are left for the next pass (one might be shared) — re-run to clean them.
+
+The PRUNE GUARDS (#3087) — the dead-root heuristic is a good REPORT and a dangerous auto-DELETE, so three
+classes of candidate are named, then held back: a `page` (a page is a root BY DEFINITION — nothing composes
+a page, so the heuristic condemns the whole pages tier), a `builtin: true` packaged seed (shipped on
+purpose; the seed reconcile re-adds it), and EVERY candidate while the usage index is unpopulated (no
+component in scope carries used > 0, so `used = 0` means UNKNOWN, not unused). A held-back candidate is
+still REPORTED by `bsc ui doctor` — only the automatic removal is withheld. #2678/#2679/#3089/#3087.",
     },
     CmdDoc {
         name: "define-animation",
@@ -860,12 +867,20 @@ fn cmd_log(args: &[String]) -> Result<(), String> {
 }
 
 /// Write-time gate for a `bsc ui set` batch (#2928): for each record whose `srcText` claims to be a
-/// module (`looks_buildable_module`, the SAME test the preview uses), run the module-syntax check and
-/// reject the whole batch on the first defect — so a silently-corrupted source (an unterminated string
-/// from an escape-collapse) can't be stored. A usage-snippet `srcText` is not a module and is left
-/// alone; a record with no `srcText` is fine. ALSO (non-blocking, #3065): warns on stderr for a bad
-/// INLINE animation def on the record's `animations`, but never rejects over one. The srcText Err
-/// semantics are unchanged; the animation check is a pure side-effect. Driven directly by tests.
+/// module (`looks_buildable_module` — the preview's own buildability test, modulo the #3470 elision
+/// accuracy fix), run the module-syntax check and reject the whole batch on the first defect — so a silently-corrupted source (an unterminated string
+/// from an escape-collapse) can't be stored. A record with no `srcText` is fine.
+///
+/// A `srcText` that is NOT a module is still stored (a spec-only record is legitimate), but that is now
+/// a STATED outcome rather than a silent skip (#3470): it warns on stderr, naming every reason. The old
+/// shape inverted the gate at the edges — the source least like a module (one keeping its unresolved
+/// `@/…` imports) made the predicate false, which skipped the syntax check ENTIRELY, so it stored with
+/// zero complaint and only surfaced much later as a `no-implementation` finding in `bsc ui doctor`, far
+/// from the write that caused it.
+///
+/// ALSO (non-blocking, #3065): warns on stderr for a bad INLINE animation def on the record's
+/// `animations`, but never rejects over one. The srcText Err semantics are unchanged; both warnings are
+/// pure side-effects. Driven directly by tests.
 fn validate_component_batch(items: &[serde_json::Value]) -> Result<(), String> {
     for item in items {
         // #3065: non-blocking — runs for EVERY item, BEFORE the srcText early-continue below, so an
@@ -873,21 +888,44 @@ fn validate_component_batch(items: &[serde_json::Value]) -> Result<(), String> {
         warn_component_animations(item);
 
         let src_text = item.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if src_text.trim().is_empty() {
+            continue; // no source to judge — a record can legitimately carry none.
+        }
+        // #3470: not-a-module is REPORTED, never an unchecked skip. Still permissive — it stores.
         if !crate::graph_health::looks_buildable_module(src_text) {
+            eprintln!("{}", unbuildable_module_warning(item, src_text));
             continue;
         }
         if let Err(msg) = crate::syntax::check_module_syntax(src_text) {
-            let name = item
-                .get("name")
-                .and_then(serde_json::Value::as_str)
-                .or_else(|| item.get("id").and_then(serde_json::Value::as_str))
-                .unwrap_or("component");
             return Err(format!(
-                "{name}: {msg} — its srcText looks like a module but won't build. Fix it, or author it from a raw file to avoid shell-escaping corruption."
+                "{}: {msg} — its srcText looks like a module but won't build. Fix it, or author it from a raw file to avoid shell-escaping corruption.",
+                item_label(item)
             ));
         }
     }
     Ok(())
+}
+
+/// The stderr advisory (#3470) for a non-empty `srcText` that `looks_buildable_module` rejected. Names
+/// every reason `module_defects` found and says plainly what just got stored, so "this is a spec, not
+/// code" is something the writer sees AT WRITE TIME instead of discovering days later as a `doctor`
+/// finding. Returns the message rather than printing it so the wording is under test, like the batch
+/// result. (Only called on the not-a-module branch, where the defect list is non-empty by construction.)
+fn unbuildable_module_warning(item: &serde_json::Value, src_text: &str) -> String {
+    format!(
+        "warning: component '{}' has a srcText that is NOT a buildable module: {} — it is stored as a SPEC, not as compilable code, so the Design Studio preview will show no implementation and `bsc ui doctor` will report it. Author a self-contained module (inline or vendor what it imports) if you meant to ship code.",
+        item_label(item),
+        crate::graph_health::module_defects(src_text).join("; ")
+    )
+}
+
+/// The human handle for a record in a write-time message — its `name`, else its `id`, else the generic
+/// noun. One helper so the syntax REJECTION and the not-a-module WARNING point at the same string.
+fn item_label(item: &serde_json::Value) -> &str {
+    item.get("name")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| item.get("id").and_then(serde_json::Value::as_str))
+        .unwrap_or("component")
 }
 
 /// Non-blocking write-time advisory (#3065) for a component's INLINE animation defs. A component's
@@ -1164,7 +1202,9 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
 /// Two lossless steps, dry-run unless `apply`:
 ///   1. MERGE byte-identical duplicates (`graph_health::merge_plan`) — fold each group into the
 ///      most-`used` canonical, repointing composers; only byte-identical, never a same-`wraps` dup.
-///   2. PRUNE the safe dead roots (`graph_health::prunable`) — orphan/dead-root only, never a `used > 0`.
+///   2. PRUNE the GUARDED dead roots (`graph_health::prune_plan`) — orphan/dead-root only, never a
+///      `used > 0`, and never a `page` / packaged built-in / anything at all while the usage index is
+///      unpopulated (#3087). A guarded candidate is still reported, just never auto-removed.
 ///
 /// Cycles + same-`wraps` (differing-source) duplicates need the curator's SEMANTIC call, so they're only
 /// surfaced as a note — never auto-resolved here.
@@ -1173,19 +1213,38 @@ fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply:
     // Dead roots to prune, minus anything a merge already removes (never double-handle an id).
     let merged_ids: std::collections::BTreeSet<String> =
         plan.groups.iter().flat_map(|g| g.removed.iter().map(|(id, _)| id.clone())).collect();
-    let prunable: Vec<_> = crate::graph_health::prunable(comps)
-        .into_iter()
-        .filter(|p| !merged_ids.contains(&p.id))
-        .collect();
+    let prune_plan = crate::graph_health::prune_plan(comps);
+    let prunable: Vec<_> =
+        prune_plan.prune.into_iter().filter(|p| !merged_ids.contains(&p.id)).collect();
+    let skipped = prune_plan.skipped;
     let cycles = crate::graph_health::analyze(comps).iter().filter(|f| f.category == "cycle").count();
     let manual_note = || {
         if cycles > 0 {
             println!("  ({cycles} cycle(s) need a manual break; same-`wraps` duplicates need the curator's semantic call — see `bsc ui doctor`).");
         }
     };
+    // #3087: the guards are LOUD — a withheld candidate is named with the guard that saved it, so the
+    // report never silently shrinks and a genuine dead page/seed is still visible to the human.
+    let guard_note = || {
+        if skipped.is_empty() {
+            return;
+        }
+        println!(
+            "  {} dead-root finding(s) HELD BACK by the prune guards (#3087) — still reported by `bsc ui doctor`, never auto-removed:",
+            skipped.len()
+        );
+        for s in &skipped {
+            println!("    · {} ({}) — {}", s.name, s.id, s.guard);
+        }
+    };
 
     if plan.groups.is_empty() && prunable.is_empty() {
-        println!("✓ nothing to auto-optimize — no byte-identical duplicates and no dead roots.");
+        if skipped.is_empty() {
+            println!("✓ nothing to auto-optimize — no byte-identical duplicates and no dead roots.");
+        } else {
+            println!("✓ nothing SAFE to auto-optimize — no byte-identical duplicates, and every dead-root candidate is guarded.");
+        }
+        guard_note();
         manual_note();
         return Ok(());
     }
@@ -1207,6 +1266,7 @@ fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply:
                 println!("  - {} ({}) — {}", p.name, p.id, p.reason);
             }
         }
+        guard_note();
         manual_note();
         return Ok(());
     }
@@ -1233,6 +1293,7 @@ fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply:
         pruned += 1;
     }
     println!("optimized: merged {merged} duplicate(s), pruned {pruned} dead node(s). Re-run `bsc ui doctor` — an optimization can surface more.");
+    guard_note();
     Ok(())
 }
 
@@ -2173,14 +2234,61 @@ mod tests {
         assert!(err.contains("BarChart"), "names the component; got: {err}");
         assert!(err.contains("unterminated string literal"), "got: {err}");
 
-        // A valid module, a usage-snippet srcText (not a module → not gated), and a record with no
-        // srcText all pass — the whole batch is accepted.
+        // A valid module, a usage-snippet srcText (not a module → warned, then stored), and a record
+        // with no srcText all pass — the whole batch is accepted.
         let ok_batch = vec![
             serde_json::json!({ "id": "a", "name": "A", "srcText": "export function A(){ return null; }" }),
             serde_json::json!({ "id": "b", "name": "B", "srcText": "import { B } from \"@/x\";\n<B label={…} />" }),
             serde_json::json!({ "id": "c", "name": "C" }),
         ];
         assert!(validate_component_batch(&ok_batch).is_ok());
+    }
+
+    /// #3470 — the two edge rows of the issue's table. The gate used to be INVERTED at its edges: a
+    /// `srcText` that keeps its `@/` imports made `looks_buildable_module` false, which skipped the
+    /// syntax check ENTIRELY, so the source least like a module got the least validation and stored with
+    /// zero complaint. Both rows still STORE (a spec-only record is legitimate) — the fix is that the
+    /// outcome is now stated.
+    #[test]
+    fn a_srctext_that_is_not_a_buildable_module_is_reported_never_silently_skipped() {
+        use serde_json::json;
+
+        // ROW 3 — keeps its `@/` imports. Warned, with the reason NAMING the unresolved import and
+        // saying what was stored; still accepted.
+        let spec = json!({
+            "id": "card", "name": "Card",
+            "srcText": "import { Button } from \"@/shared/ui/controls/Button\";\nexport const Card = () => <Button />;",
+        });
+        let src = spec["srcText"].as_str().unwrap();
+        assert!(!crate::graph_health::looks_buildable_module(src), "row 3 is not a module…");
+        let warning = unbuildable_module_warning(&spec, src);
+        assert!(warning.contains("Card"), "names the component: {warning}");
+        assert!(warning.contains("@/shared/ui/controls/Button"), "names the unresolved import: {warning}");
+        assert!(warning.contains("SPEC"), "states what was stored: {warning}");
+        assert!(validate_component_batch(std::slice::from_ref(&spec)).is_ok(), "warn-only — it still stores");
+
+        // ROW 2 — a fragment with no imports IS treated as a module (it has an `export`), so it is NOT
+        // warned about and the syntax gate DOES run: a corrupt one is rejected outright.
+        let fragment = json!({ "id": "frag", "name": "Frag", "srcText": "export const F = () => <b>hi</b>;" });
+        let src = fragment["srcText"].as_str().unwrap();
+        assert!(crate::graph_health::looks_buildable_module(src), "a no-import fragment counts as a module");
+        assert!(validate_component_batch(std::slice::from_ref(&fragment)).is_ok());
+        let corrupt_fragment = json!({ "id": "frag", "name": "Frag", "srcText": "export const s = [1,2].join(\"\n\");" });
+        assert!(
+            validate_component_batch(std::slice::from_ref(&corrupt_fragment)).is_err(),
+            "the syntax gate still runs for a no-import fragment",
+        );
+
+        // A record with no srcText at all is neither warned about nor gated.
+        let bare = json!({ "id": "c", "name": "C" });
+        assert!(validate_component_batch(std::slice::from_ref(&bare)).is_ok());
+
+        // And the #3470 false positive: a component whose only `…` is UI copy is a real module — it must
+        // NOT be accused of being a sketch; it goes through the syntax gate like any other module.
+        let copy = json!({ "id": "sel", "name": "Select", "srcText": "export const S = () => <input placeholder=\"Select…\" />;" });
+        let src = copy["srcText"].as_str().unwrap();
+        assert!(crate::graph_health::looks_buildable_module(src), "an ellipsis in COPY is not an elision");
+        assert!(validate_component_batch(std::slice::from_ref(&copy)).is_ok());
     }
 
     #[test]
@@ -2863,6 +2971,49 @@ mod tests {
         assert!(store.get("btn").unwrap().is_some(), "the most-used canonical survives");
         let page: serde_json::Value = serde_json::from_str(&store.get("page").unwrap().unwrap()).unwrap();
         assert_eq!(page["composes"], serde_json::json!(["Button"]), "the composer repointed Btn2 → Button");
+    }
+
+    /// #3087 end-to-end: `--fix --yes` APPLIED against a store shaped like the live one must leave the
+    /// pages tier and the packaged viz seeds standing, while still pruning a genuine user orphan.
+    #[test]
+    fn doctor_fix_apply_never_removes_a_page_or_a_builtin_seed() {
+        let dir = tmp_store_dir("doctor-guards");
+        let store = bsc_json_store::Store::new(dir, "component");
+        let module = "export const C=()=>null;";
+        let set = |id: &str, rec: serde_json::Value| store.set(id, &rec.to_string()).unwrap();
+        // A used component so the usage index is POPULATED — guards 1+2 must stand on their own.
+        set("btn", serde_json::json!({ "id": "btn", "name": "Button", "kitId": "k", "role": "primitive", "used": 7, "composes": [], "srcText": "b", "source": module }));
+        // A page: a root by definition, composing its section component → "dangling-branch".
+        set("invoicespage", serde_json::json!({ "id": "invoicespage", "name": "InvoicesPage", "kitId": "k", "role": "page", "used": 0, "composes": ["DataTable"], "srcText": "p", "source": module }));
+        set("table", serde_json::json!({ "id": "table", "name": "DataTable", "kitId": "k", "role": "composite", "used": 0, "composes": [], "srcText": "t", "source": module }));
+        // A packaged viz seed: isolated ON PURPOSE (#3194/#3242) → "orphan".
+        set("algocells", serde_json::json!({ "id": "algocells", "name": "AlgoCells", "kitId": "k", "role": "primitive", "used": 0, "builtin": true, "composes": [], "srcText": "a", "source": module }));
+        // A genuine user orphan — the case `--fix` exists for.
+        set("ghost", serde_json::json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0, "composes": [], "srcText": "g", "source": module }));
+
+        let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+        doctor_fix(&store, &comps, true).unwrap();
+
+        assert!(store.get("invoicespage").unwrap().is_some(), "a page is a root by definition — never pruned");
+        assert!(store.get("algocells").unwrap().is_some(), "a packaged builtin seed is never pruned");
+        assert!(store.get("ghost").unwrap().is_none(), "a genuine user orphan still prunes");
+    }
+
+    /// #3087 guard 3: a store with NO usage signal at all (nothing carries `used > 0` — the shape of a
+    /// real install, since nothing increments the reuse count) prunes NOTHING.
+    #[test]
+    fn doctor_fix_apply_prunes_nothing_while_the_usage_index_is_unpopulated() {
+        let dir = tmp_store_dir("doctor-usage-unknown");
+        let store = bsc_json_store::Store::new(dir, "component");
+        let module = "export const C=()=>null;";
+        store.set("ghost", &serde_json::json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0, "composes": [], "srcText": "g", "source": module }).to_string()).unwrap();
+
+        let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+        // The orphan IS reported by the read-only analyzer …
+        assert!(crate::graph_health::analyze(&comps).iter().any(|f| f.category == "orphan"));
+        // … but `--fix --yes` leaves it alone: `used = 0` store-wide means UNKNOWN, not unused.
+        doctor_fix(&store, &comps, true).unwrap();
+        assert!(store.get("ghost").unwrap().is_some(), "no usage signal ⇒ no automatic removal");
     }
 
     #[test]
