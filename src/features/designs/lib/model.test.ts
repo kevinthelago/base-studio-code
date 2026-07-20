@@ -18,6 +18,7 @@ import {
   type DataShape,
 } from "./model";
 import type { KitAnimation } from "@/shared/ui/kit/animations";
+import { BASE_KIT_ID } from "@/shared/ui/kit/baseAnimations";
 import { SEED_COMPONENTS, SEED_KITS } from "./seed";
 
 const byName = (n: string) => SEED_COMPONENTS.find((c) => c.name === n)!;
@@ -290,5 +291,62 @@ describe("selectAnimationPreset (#3083)", () => {
     // Two ungrouped animations both play today; selecting one makes it the sole motion.
     const comp = mkComp({ animations: selectAnimationPreset([draw, fade], "fade-in") });
     expect(resolveComponentAnimations(comp, [mkKit({})]).map((d) => d.name)).toEqual(["fade-in"]);
+  });
+});
+
+describe("cross-kit base-motion resolution (#3451)", () => {
+  // The app's foundational motion is owned ONCE by the `base` kit; react-ui (and any other kit)
+  // REFERENCES it by name. Resolution therefore has to leave its own kit — the behaviour this covers.
+  const lift: KitAnimation = { name: "lift", trigger: "hover", keyframes: { from: { transform: "translateY(0)" }, to: { transform: "translateY(-1px)" } } };
+  const baseKit = mkKit({ id: BASE_KIT_ID, name: "Base", animations: [lift] });
+  const reactUi = mkKit({ id: "react-ui", animations: [] });
+
+  it("resolves a name the component's OWN kit does not define from the base kit", () => {
+    const btn = mkComp({ id: "btn", name: "Button", kitId: "react-ui", animations: ["lift"] });
+    const defs = resolveComponentAnimationDefs(btn, [reactUi, baseKit]);
+    expect(defs.map((d) => d.name)).toEqual(["lift"]);
+    expect(defs[0].keyframes).toEqual(lift.keyframes);
+  });
+
+  it("keeps the OWNING kit on a base-resolved def, so every consumer shares one keyframes block", () => {
+    // THE load-bearing assertion. `kit` names both `@keyframes bsc-<kit>-<name>` and the
+    // `.<kit>-anim-<name>` class the preview stamps. Restamping to the CONSUMER would duplicate the
+    // keyframes per kit and defeat propagation — and, if only one side were restamped, the class would
+    // not match the compiled rule and the animation would silently play nothing.
+    const btn = mkComp({ id: "btn", name: "Button", kitId: "react-ui", animations: ["lift"] });
+    expect(resolveComponentAnimationDefs(btn, [reactUi, baseKit])[0].kit).toBe(BASE_KIT_ID);
+  });
+
+  it("prefers a kit's OWN definition over the base one of the same name (override wins)", () => {
+    const ownLift: KitAnimation = { name: "lift", keyframes: { from: { opacity: "0" }, to: { opacity: "1" } } };
+    const overriding = mkKit({ id: "react-ui", animations: [ownLift] });
+    const btn = mkComp({ id: "btn", name: "Button", kitId: "react-ui", animations: ["lift"] });
+    const [def] = resolveComponentAnimationDefs(btn, [overriding, baseKit]);
+    expect(def.keyframes).toEqual(ownLift.keyframes);
+    expect(def.kit, "an own def stays namespaced to its own kit").toBe("react-ui");
+  });
+
+  it("drops a name defined by NEITHER the own kit nor base (no dangling ref)", () => {
+    const btn = mkComp({ id: "btn", name: "Button", kitId: "react-ui", animations: ["nope"] });
+    expect(resolveComponentAnimationDefs(btn, [reactUi, baseKit])).toEqual([]);
+  });
+
+  it("still stamps an INLINE def with the component's own kit (unchanged by the fallback)", () => {
+    const btn = mkComp({ id: "btn", name: "Button", kitId: "react-ui", animations: [fade] });
+    expect(resolveComponentAnimationDefs(btn, [reactUi, baseKit])[0].kit).toBe("react-ui");
+  });
+
+  it("resolves a base component's own animations without changing their kit", () => {
+    const dot = mkComp({ id: "dot", name: "Dot", kitId: BASE_KIT_ID, animations: ["lift"] });
+    expect(resolveComponentAnimationDefs(dot, [reactUi, baseKit])[0].kit).toBe(BASE_KIT_ID);
+  });
+
+  it("exposes the base shelf to a try-on from another kit (react-ui's own library is empty now)", () => {
+    // Without the base shelf, `resolveNamedAnimation` could not find a base motion the component does
+    // not already bind — so clicking it in the AnimationsMenu would preview nothing.
+    const btn = mkComp({ id: "btn", name: "Button", kitId: "react-ui", animations: [] });
+    const found = resolveNamedAnimation(btn, reactUi, [reactUi, baseKit], "lift");
+    expect(found?.name).toBe("lift");
+    expect(found?.kit).toBe(BASE_KIT_ID);
   });
 });

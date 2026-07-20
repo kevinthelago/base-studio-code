@@ -135,11 +135,12 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     expect(all("key-value")).toEqual(["KeyValueList", "RecordPage"]);
   });
 
-  it("the packaged seed is the generated react-ui kit + the three viz kits (#2506/#3194/#3242)", () => {
+  it("the packaged seed is the generated react-ui kit + the base motion kit + the three viz kits (#2506/#3194/#3242/#3451)", () => {
     // The #2456 examples kit demonstrated the page→primitive model; react-ui's own pages tier
     // (#2505) supersedes it, so the seed carries the one generated kit. #3194 adds the always-on
-    // `algo-viz` viz kit; #3242 adds `matrix-viz` + `graph-viz` (their demo components) as builtins.
-    expect(SEED_KITS.map((k) => k.id)).toEqual(["react-ui", "algo-viz", "matrix-viz", "graph-viz"]);
+    // `algo-viz` viz kit; #3242 adds `matrix-viz` + `graph-viz` (their demo components) as builtins;
+    // #3451 adds the shared `base` motion kit (motion-only — it contributes no components).
+    expect(SEED_KITS.map((k) => k.id)).toEqual(["react-ui", "base", "algo-viz", "matrix-viz", "graph-viz"]);
     expect(SEED_COMPONENTS.map((c) => c.name).sort()).toEqual(
       [...REACT_UI_COMPONENTS.map((c) => c.name), "AlgoCells", "MatrixCells", "GraphNodes"].sort(),
     );
