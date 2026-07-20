@@ -59,12 +59,18 @@ mod tests {
     #[test]
     fn creates_the_workspace_and_writes_the_architect_claude_md() {
         let base = scratch();
-        let dir = setup_architect_workspace_inner(&base).unwrap();
-        assert_eq!(dir, base.join("teams-studio"));
-        let md = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
-        // The written spec is exactly the loaded seed (config-dir copy or the embedded default).
-        assert_eq!(md, crate::platform::config::load_str("architect/claude.md"));
-        assert!(!md.trim().is_empty());
+        // #3479 — pin the config root for this thread; unpinned, `load_str` resolves through the
+        // process-global home that `testutil::temp_home` repoints mid-run. See
+        // `platform::config::with_config_root`.
+        let cfg = base.join("config");
+        crate::platform::config::with_config_root(&cfg, || {
+            let dir = setup_architect_workspace_inner(&base).unwrap();
+            assert_eq!(dir, base.join("teams-studio"));
+            let md = std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap();
+            // The written spec is exactly the loaded seed (here the embedded default).
+            assert_eq!(md, crate::platform::config::load_str("architect/claude.md"));
+            assert!(!md.trim().is_empty());
+        });
         let _ = std::fs::remove_dir_all(&base);
     }
 
