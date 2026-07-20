@@ -118,7 +118,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             // file tools do. `bsc-confine` only inspects Claude's file-tool payloads and is blind to
             // what this binary reads — without this, a confined studio session (the librarian is
             // limited to its own workspace) reads any path on disk through an allow-listed CLI.
-            bsc_cli_util::require_within_repo_root(std::path::Path::new(dir))?;
+            bsc_cli_util::require_harvestable_root(std::path::Path::new(dir))?;
             let tech = flag_value(&args, "--tech");
             let worthy_only = args.iter().any(|a| a == "--worthy-only");
             let candidates: Vec<Value> = crate::extract::harvest(std::path::Path::new(dir))
@@ -153,7 +153,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             // file tools do. `bsc-confine` only inspects Claude's file-tool payloads and is blind to
             // what this binary reads — without this, a confined studio session (the librarian is
             // limited to its own workspace) reads any path on disk through an allow-listed CLI.
-            bsc_cli_util::require_within_repo_root(std::path::Path::new(dir))?;
+            bsc_cli_util::require_harvestable_root(std::path::Path::new(dir))?;
             let tech = flag_value(&args, "--tech");
             let apply = args.iter().any(|a| a == "--apply");
             let worthy: Vec<crate::extract::Candidate> =
@@ -318,7 +318,7 @@ mod tests {
             let err = bsc_cli_util::with_repo_root(Some(&elsewhere), || {
                 run(vec![verb.into(), fixtures.clone()], "bsc graph").unwrap_err()
             });
-            assert!(err.contains("outside this session's root"), "{verb}: {err}");
+            assert!(err.contains("outside every root this session may harvest"), "{verb}: {err}");
         }
         // Unconfined (no root) stays unchanged — a direct CLI run is unaffected.
         assert!(bsc_cli_util::with_repo_root(None, || run(

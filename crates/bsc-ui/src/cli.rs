@@ -562,7 +562,7 @@ fn cmd_harvest(args: &[String]) -> Result<(), String> {
     // `bsc-confine` only inspects Claude's file-tool payloads and is blind to what this binary reads —
     // without this, a confined studio session (designer/librarian) reads any path on disk through an
     // allow-listed CLI. Checked after the is_dir test so the target is known to exist.
-    bsc_cli_util::require_within_repo_root(path)?;
+    bsc_cli_util::require_harvestable_root(path)?;
     let mut candidates = crate::harvest::harvest(path, &kit);
     if worthy_only {
         candidates.retain(|c| c.classification.worthy);
@@ -2744,6 +2744,30 @@ mod tests {
     }
 
     #[test]
+    fn harvest_is_allowed_from_a_read_only_listed_root_outside_the_confinement_root() {
+        // #3509, proposed by the designer itself: harvest is a READ, so tying it to the WRITE
+        // confinement root left a kit-only session unable to mine any source at all (its studio dir
+        // holds none). A listed harvest root grants the read without widening where it may write.
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests").join("fixtures").join("harvest").to_string_lossy().into_owned();
+        let elsewhere = std::env::temp_dir().to_string_lossy().into_owned();
+        // Confined elsewhere → refused, as before.
+        assert!(bsc_cli_util::with_repo_root(Some(&elsewhere), || {
+            run(vec!["harvest".into(), fixtures.clone()], "bsc ui")
+        })
+        .is_err());
+        // …and allowed once that tree is on the session's harvest allow-list.
+        assert!(
+            bsc_cli_util::with_repo_root(Some(&elsewhere), || bsc_cli_util::with_harvest_roots(
+                Some(&fixtures),
+                || run(vec!["harvest".into(), fixtures.clone()], "bsc ui"),
+            ))
+            .is_ok(),
+            "a listed harvest root must permit the scan",
+        );
+    }
+
+    #[test]
     fn harvest_is_in_the_help_catalog() {
         let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "harvest");
         for needle in ["<repo-dir>", "--kit", "--worthy-only", "buildable", "composes", "CLOSURE"] {
@@ -2762,7 +2786,7 @@ mod tests {
         let err = bsc_cli_util::with_repo_root(Some(&elsewhere), || {
             run(vec!["harvest".into(), fixtures.clone()], "bsc ui").unwrap_err()
         });
-        assert!(err.contains("outside this session's root"), "{err}");
+        assert!(err.contains("outside every root this session may harvest"), "{err}");
         // …and the SAME call inside the session's root still works — this bounds, it does not revoke.
         let own_root = env!("CARGO_MANIFEST_DIR").to_string();
         assert!(
