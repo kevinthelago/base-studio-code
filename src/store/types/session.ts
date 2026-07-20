@@ -62,6 +62,11 @@ export interface SessionState {
    *  session that appears nowhere is one the user cannot open, supervise or stop. Session-only. */
   activeRequestSessions: number[];
   setActiveRequestSessions: (ids: number[]) => void;
+  /** #3509: the base-studio-code source tree this app was built from, or null on a shipped binary.
+   *  Resolved ONCE at boot so a launch can turn a role's symbolic `app-repo` harvest root into a real
+   *  path synchronously. Session-only — it is a property of the machine, not of the user's state. */
+  appRepoRoot: string | null;
+  setAppRepoRoot: (p: string | null) => void;
   /** #2372: show the legacy Console page as a rail destination. OFF by default — the graph (Glance)
    *  is the execution surface; the console page is being retired. When off, its rail entry is hidden
    *  and a console-active workspace falls back to Glance (derived in App). */

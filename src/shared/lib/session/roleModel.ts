@@ -120,7 +120,18 @@ export interface RoleCapability {
   ui: AccessTier;
   /** Path globs this role/assignment may write. Empty ⇒ no code writes. */
   writeGlobs: string[];
+  /** SYMBOLIC roots this role may HARVEST from (#3509) — read-only, and deliberately NOT paths: a role
+   *  is machine-independent, so it declares INTENT (`app-repo`) and the launch resolves it. Widens only
+   *  what `bsc ui harvest` / `bsc graph harvest` may SCAN; it grants no write anywhere, which is the
+   *  whole point — a kit-only session can mine a repo it may not write to. Empty ⇒ harvest stays bound
+   *  to the session's own confinement root, exactly as before. */
+  harvestRoots?: string[];
 }
+
+/** The symbolic harvest root meaning "the base-studio-code source tree this app was built from". The
+ *  only token today; resolution is the launch's job ({@link buildAgentEnv}), since a role cannot know
+ *  a machine's paths. */
+export const HARVEST_ROOT_APP_REPO = "app-repo";
 
 // The role→capability table + the write-glob / db-owned / dep-manifest lists load from
 // `@data/permissions/role-capabilities.json` (#2027 P1) — see the file's `_comment` for the policy.
