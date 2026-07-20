@@ -2260,3 +2260,18 @@ describe("canonicalizePlanStages collapses stale title-named sections (#803)", (
     expect(useAppStore.getState().planStages.proj).toBe(before); // same ref → no churn
   });
 });
+
+describe("auto-spawn setting (#3498)", () => {
+  it("is OFF by default — auto-spawn is opt-in, never inherited", () => {
+    // The outer gate of the auto-spawn boundary. A default of ON would mean an upgrade silently
+    // grants the app permission to start sessions by itself.
+    expect(useAppStore.getState().autoSpawnDebugSessions).toBe(false);
+  });
+
+  it("toggles", () => {
+    useAppStore.getState().setAutoSpawnDebugSessions(true);
+    expect(useAppStore.getState().autoSpawnDebugSessions).toBe(true);
+    useAppStore.getState().setAutoSpawnDebugSessions(false);
+    expect(useAppStore.getState().autoSpawnDebugSessions).toBe(false);
+  });
+});
