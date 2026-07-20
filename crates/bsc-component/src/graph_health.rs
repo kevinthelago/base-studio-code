@@ -549,16 +549,17 @@ fn is_buildable(node: &Node, buildable: &BTreeSet<String>, kit_targets: &BTreeSe
 /// when it resolves to a sibling in `kit_targets` (the kit's component `src` paths); an internal import
 /// that resolves to NOTHING still fails, as do a `…` placeholder and a missing `export`.
 ///
-/// The `…` test here stays the PLAIN substring one on purpose, even though `module_defects` moved to the
-/// context-aware [`has_code_elision`] (#3470): this predicate answers "will the preview build it?", and
-/// the preview is gated by the TS `isPreviewBuildable`, which still tests the plain substring. Loosening
-/// it here would make `doctor` call a component healthy that the preview then refuses — a MISSED
-/// no-implementation finding. The write-time gate can afford to be more accurate (its worst case is
-/// syntax-checking one component too many); `doctor` cannot afford to be more permissive than the thing
-/// it reports on.
+/// This predicate answers "will the preview build it?", so its `…` test must be whatever the TS
+/// `isPreviewBuildable` does — `doctor` must never be more permissive than the thing it reports on, or it
+/// calls a component healthy that the preview then refuses (a MISSED no-implementation finding). Until
+/// #3486 that pinned it to the PLAIN substring test, because the TS side still used one. #3486 ported the
+/// context-aware scanner to TS, so both moved to [`has_code_elision`] together — and they must keep
+/// moving together. The two are also wrong in opposite directions if they drift: plain-here/aware-there
+/// makes `doctor` report a no-implementation the preview happily renders, which is the false accusation
+/// #3486 was filed for.
 fn is_preview_buildable(src_text: &str, from_rel: &str, kit_targets: &BTreeSet<String>) -> bool {
     let s = src_text.trim();
-    if s.is_empty() || !contains_word(s, "export") || s.contains('…') {
+    if s.is_empty() || !contains_word(s, "export") || has_code_elision(s) {
         return false;
     }
     import_specifiers(s)
@@ -2857,10 +2858,40 @@ mod tests {
         assert!(!has_code_elision("export const A = () => <b>{`tpl …`}</b>;"), "template literal");
         assert!(!has_code_elision("export const A = () => <b title='an …' />;"), "single-quoted");
         assert!(!has_code_elision("export const A = \"\\\"…\";"), "an escaped quote doesn't end the literal");
+        // The scanner must RESUME scanning as code once a literal closes, or a real elision could hide
+        // behind any earlier piece of copy. (Mirrors the TS case of the same name, #3486.)
+        assert!(
+            has_code_elision("const s = \"Select…\"; export function A() { … }"),
+            "a marker after a string that contains one is still found"
+        );
 
         // …so the predicate itself no longer mis-flags a component whose only `…` is in its copy.
         assert!(looks_buildable_module(r#"export const A = () => <input placeholder="Select…" />;"#));
         assert!(!looks_buildable_module("export function X() { return <Card>…</Card>; }"), "JSX text is code");
+    }
+
+    #[test]
+    fn the_preview_predicate_uses_the_context_aware_scanner_too() {
+        // #3486: `is_preview_buildable` deliberately kept the PLAIN `contains('…')` test while the TS
+        // `isPreviewBuildable` still had one, so that `doctor` could never be more permissive than the
+        // preview it reports on. Once the TS side ported the context-aware scanner, keeping the plain
+        // test here inverted the bug: `doctor` would report a `no-implementation` finding for a
+        // component the preview renders perfectly well. The two must move together, so this pins that
+        // a copy-only ellipsis is preview-buildable on BOTH sides.
+        let targets = BTreeSet::new();
+        let copy_only = r#"export const A = () => <input placeholder="Select…" />;"#;
+        assert!(
+            is_preview_buildable(copy_only, "shared/ui/A.tsx", &targets),
+            "an ellipsis in placeholder COPY must not read as omitted code"
+        );
+        assert!(
+            !is_preview_buildable("export function A() { … }", "shared/ui/A.tsx", &targets),
+            "a genuine code elision must still fail"
+        );
+
+        // And the consequence that motivated the issue: such a component reports NO defect, so it is
+        // not surfaced as a no-implementation finding.
+        assert!(module_defects(copy_only).is_empty(), "{:?}", module_defects(copy_only));
     }
 
     #[test]
