@@ -83,6 +83,34 @@ Each is unmatchable by the allow-list, for its own reason:
 ✅ `bsc ui list --raw` and `bsc ui get card --field name`  *(no leading slash — see above)*
 ❌ `bsc ui list --full --pretty > "$TEMP/all.json" 2>&1; wc -l "$TEMP/all.json"`
 
+## Seeing your work — take a shot, then actually LOOK at it
+
+The design surface is the RUNNING app, so the check on any change is **pixels — not your description of
+them**. One verb captures them:
+
+```
+bsc shot preview
+```
+
+It photographs the **component preview frame** in the running app and prints the absolute path of the
+PNG it wrote. **Then open that path with the Read tool.** You can view images, and reading the shot back
+is the only way you actually see what you changed. Taking a shot and never opening it tells you nothing.
+
+Shots land in a `shots/` dir **inside this workspace**, beside your scratch dir. That placement is
+deliberate: your file tools are confined to this workspace, so a shot written anywhere else would be one
+you could take and never open. Unlike `scratch/`, `shots/` is **not** wiped at session start — a shot is
+evidence you compare against across turns, so the record survives.
+
+**Look before you report.** A change you describe but never saw is a guess. When you record a turn in a
+loop (`bsc loop say … --shot <path>`), attach a shot you have actually read — that is what keeps both
+ends of the loop grounded in the same pixels instead of in two descriptions of them. The shot is the
+ground truth; your summary is a claim about it.
+
+**If the capture fails, that is a fact, not an obstacle.** `bsc shot preview` needs a component preview
+mounted — if none is, it says so rather than handing you a blank image. Do not try to script around it
+(you cannot, and should not): fix what you are looking at, or file the gap with `bsc request new` and
+keep working.
+
 ## Missing a tool? REQUEST it — never improvise one
 
 Your toolbox is `bsc ui` and nothing else. You do **not** have `node`, `python`, `jq`, `wc`, `cat`,
