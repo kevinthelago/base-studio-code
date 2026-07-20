@@ -594,8 +594,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         <>
           {/* The 'glance' wordmark + 'project network' subtitle were redundant chrome — the Rail already
               names the workspace and the graph IS the project network — so dropped (#2692). The L1 drill
-              breadcrumb (which project's fleet you're in) stays; the '← projects' button exits it. */}
-          {drill && <Text as="span" mono size={11} tone="dim">{`${drillNode?.slug ?? "project"} · fleet`}</Text>}
+              breadcrumb went the same way: the titlebar crumb already names the drilled project, so the
+              toolbar keeps only the '← projects' button that exits the drill. */}
           {drill && <Button variant="ghost" onClick={exitDrill}>← projects</Button>}
           {/* The project filter moved into the rail's search slot (#2797) — every graph nav menu now leads
               with a search box. Manual connect-mode was removed (#2737): links are LLM-authored, not drawn
