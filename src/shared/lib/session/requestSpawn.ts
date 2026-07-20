@@ -25,6 +25,25 @@
 import { autoSpawnDecision, AUTO_SPAWNABLE_ROLE } from "./autoSpawn";
 import type { SessionRole } from "./roleModel";
 
+/** The PANE id for a request's session — per-request, so two requests never share a conversation. */
+export function requestPaneId(id: number): string {
+  return `debug-studio:req-${id}`;
+}
+
+/** The GRAPH node id for a request's session. Distinct from the pane id because the Studio Network's
+ *  node ids are team-position ids; {@link requestIdFromNodeId} is the inverse the graph uses to resolve
+ *  a node back to its pane. Lives here (shared) because both `features/teams` and `features/glance`
+ *  need it and neither may reach into the other. */
+export function requestNodeId(id: number): string {
+  return `debugger-req-${id}`;
+}
+
+/** The request id behind a graph node, or null when the node is not a request session. */
+export function requestIdFromNodeId(nodeId: string): number | null {
+  const m = /^debugger-req-(\d+)$/.exec(nodeId);
+  return m ? Number(m[1]) : null;
+}
+
 /** One open improvement request, as `bsc request list --open --json` returns it. */
 export interface OpenRequest {
   id: number;

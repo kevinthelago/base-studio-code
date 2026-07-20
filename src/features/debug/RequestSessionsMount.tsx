@@ -94,6 +94,13 @@ export function RequestSessionsMount() {
     setActive((prev) => [...prev, ...plan.spawn]);
   }, [plan, repoRoot]);
 
+  // Publish the live set so the Glance graph can render a node per session (#3498). Without this the
+  // sessions run with no node — unopenable, unsupervisable, unstoppable.
+  const setActiveRequestSessions = useAppStore((s) => s.setActiveRequestSessions);
+  useEffect(() => {
+    setActiveRequestSessions(active.map((r) => r.id));
+  }, [active, setActiveRequestSessions]);
+
   if (!enabled || !repoRoot || !active.length) return null;
   return (
     <Box

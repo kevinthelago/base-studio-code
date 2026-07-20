@@ -1,13 +1,8 @@
 // Pure helpers for the per-request debug sessions (#3498) — kept out of the component file so they are
 // directly testable and so the mount stays a component-only module.
 import type { OpenRequest } from "@/shared/lib/session/requestSpawn";
+export { requestPaneId } from "@/shared/lib/session/requestSpawn";
 import { DEBUG_START_PROMPT } from "./DebugSessionMount";
-
-/** One request session's stable pane id. Per-REQUEST, so two requests never share a conversation —
- *  the per-pane form of the #3497 rule that a debug pane must never inherit another's session. */
-export function requestPaneId(id: number): string {
-  return `debug-studio:req-${id}`;
-}
 
 /**
  * The charter a request session launches with: the standing debug charter, narrowed to THIS request.
