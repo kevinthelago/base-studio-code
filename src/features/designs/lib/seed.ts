@@ -59,7 +59,7 @@ export const DEFAULT_KIT_SEEDED = false;
  *  gate: before #3462 the flag was applied to the whole glob, so any kit added alongside react-ui was
  *  silently inert (present in {@link SEED_COMPONENTS} and under test, but never reconciled into the
  *  store — records that exist on paper and nowhere in the library). */
-const DEFAULT_KIT_ID = "react-ui";
+export const DEFAULT_KIT_ID = "react-ui";
 
 const defaultKits = kits.filter((k) => k.id === DEFAULT_KIT_ID);
 const defaultComponents = components.filter((c) => c.kitId === DEFAULT_KIT_ID);

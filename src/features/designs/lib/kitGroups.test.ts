@@ -50,9 +50,12 @@ describe("groupKits — always technology → style (#2506)", () => {
     const styles = asGroup(t[0]).children.map(asGroup);
     expect(styles.map((s) => s.label)).toEqual(["studio", "motion", "data-viz"]);
     const [studio, motion, dataViz] = styles;
-    // studio holds react-ui alone → the merged single-kit header.
-    expect(studio.kit?.id).toBe("react-ui");
-    expect(studio.children).toHaveLength(0);
+    // studio holds react-ui + `fleet` (#3462 — the app's own UI catalogued into the graph) → a real
+    // group with a kit row each. This style made the SAME single-kit → multi-kit transition the
+    // comment above anticipated for data-viz, which is exactly what this assertion exists to notice.
+    expect(studio.kit).toBeUndefined();
+    expect(studio.count).toBe(2);
+    expect(flatIds(studio.children)).toEqual(["react-ui", "fleet"]);
     // motion holds the shared `base` kit alone → likewise a merged single-kit header (#3451). It is a
     // MOTION library, deliberately not filed under react-ui's "studio" visual language.
     expect(motion.kit?.id).toBe("base");
