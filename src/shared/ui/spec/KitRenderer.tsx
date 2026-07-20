@@ -10,7 +10,7 @@
 // REAL component and everything is resolved from the manifest: adding a primitive makes it authorable
 // with no edit here at all.
 
-import type { ComponentType, ReactNode } from "react";
+import { Fragment, type ComponentType, type ReactNode } from "react";
 import { Text } from "@/shared/ui/typography/Text";
 import { componentFor } from "@/shared/ui/registry";
 import { UI_KIT } from "@/shared/ui/manifest";
@@ -54,6 +54,16 @@ function renderSlot(value: unknown, ctx: KitBindings, key: string): ReactNode {
  * one bad node.
  */
 function renderNode(node: GeneralNode, ctx: KitBindings, key: string): ReactNode {
+  // `Slot` (#3504) is the ONE structural node the renderer resolves itself, because it is not a
+  // component: it is a hole the host fills. Everything else resolves through the registry, and this
+  // is deliberately not the start of a per-type switch — a slot has no rendering of its own to pick.
+  // An unfilled name falls through to the `Slot` component, which states the problem visibly rather
+  // than rendering nothing (a blank panel is indistinguishable from an intentionally empty layout).
+  if (node.type === "Slot") {
+    const name = String(node.props?.name ?? "");
+    const filled = ctx.slots?.[name];
+    if (filled !== undefined) return <Fragment key={key}>{filled}</Fragment>;
+  }
   const Comp = componentFor(node.type);
   if (!Comp) {
     return (
@@ -114,6 +124,10 @@ function renderNode(node: GeneralNode, ctx: KitBindings, key: string): ReactNode
 export interface KitBindings {
   /** Current host state, keyed by a node's `binds` values. */
   values?: Record<string, unknown>;
+  /** Host-supplied React, keyed by a `Slot` node's `name` (#3504) — the seam for the parts of a page a
+   *  spec cannot express (a feature component owning hooks, queries or app state). The spec says
+   *  where; this says what. */
+  slots?: Record<string, ReactNode>;
   /** Host callbacks, keyed by an action name (a node's `actions` map, or a `function`-typed prop whose
    *  value is the name). Called with whatever the underlying handler was called with — a click event
    *  for `onClick`, the new value for `onChange` — so a host can write a field back. */
@@ -126,6 +140,6 @@ export interface KitRendererProps extends KitBindings {
 }
 
 /** Render a node tree. `values`/`on` wire the spec's `binds`/`actions` to host state and behaviour. */
-export function KitRenderer({ node, values, on }: KitRendererProps) {
-  return <>{renderNode(node, { values, on }, "$")}</>;
+export function KitRenderer({ node, values, on, slots }: KitRendererProps) {
+  return <>{renderNode(node, { values, on, slots }, "$")}</>;
 }
