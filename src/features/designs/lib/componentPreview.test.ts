@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { componentPreviewFiles, bootstrapSource, samplePropValue, looksBuildableModule, isPreviewBuildable, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
+import { componentPreviewFiles, bootstrapSource, samplePropValue, looksBuildableModule, isPreviewBuildable, hasCodeElision, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
 import type { ComponentRecord, PropSpec } from "./model";
 
 const prop = (name: string, type: string, req = false): PropSpec => ({ name, type, req, desc: "" });
@@ -323,5 +323,72 @@ describe("bootstrapSource — role-aware mount wrapper (#3139)", () => {
     expect(layoutSrc).not.toContain("justifyContent");
     const compSrc = bootstrapSource({ ...base, name: "Chip", role: "primitive" }, "@/x/Chip");
     expect(compSrc).toContain('justifyContent: "center"'); // a component reads best centered
+  });
+});
+
+describe("hasCodeElision — an ellipsis in COPY is not an elision marker (#3486)", () => {
+  // The scanner is the TS twin of Rust `has_code_elision`. Before #3486 both `looksBuildableModule`
+  // and `isPreviewBuildable` used a plain substring test, so a component whose only ellipsis was UI
+  // copy was ACCEPTED by the Rust write gate and then REFUSED by the preview — and reported as
+  // `no-implementation` by doctor. Measured at 13 of 93 over this repo's own `src/shared/ui`.
+  const E = String.fromCodePoint(0x2026);
+
+  it("elisionMarkerIsU2026 — the marker survived this file's encoding", () => {
+    // Guards the one thing a cp1252 round-trip would silently break: if the literal in
+    // componentPreview.ts is ever re-encoded, the scanner stops matching and reports EVERY source as
+    // clean — a no-op that no other test would notice, because "clean" is the passing direction.
+    expect(hasCodeElision(`const x = ${E}`)).toBe(true);
+  });
+
+  it("finds a marker standing in for omitted code", () => {
+    expect(hasCodeElision(`export function F() { ${E} }`)).toBe(true);
+  });
+
+  it("ignores one inside a string literal — the measured false positive", () => {
+    expect(hasCodeElision(`<input placeholder="Select${E}" />`)).toBe(false);
+    expect(hasCodeElision(`const s = 'Loading${E}'`)).toBe(false);
+  });
+
+  it("ignores one inside a template literal", () => {
+    expect(hasCodeElision("const s = `Saving" + E + "`")).toBe(false);
+  });
+
+  it("ignores one in a line or block comment", () => {
+    expect(hasCodeElision(`// prose with an ellipsis ${E}\nconst a = 1;`)).toBe(false);
+    expect(hasCodeElision(`/* doc prose ${E} */ const a = 1;`)).toBe(false);
+  });
+
+  it("does not let an ESCAPED quote end a literal and expose the copy inside", () => {
+    // If the backslash branch were missing, the `\"` would close the string early and the ellipsis
+    // after it would read as code — a false positive that only shows up on escaped copy.
+    expect(hasCodeElision(`const s = "a \\" quote then ${E}";`)).toBe(false);
+  });
+
+  it("still finds a marker AFTER a string that contains one", () => {
+    // The scanner must resume scanning as code once the literal closes, or a component could hide a
+    // real elision behind any earlier piece of copy.
+    expect(hasCodeElision(`const s = "Select${E}"; export function F() { ${E} }`)).toBe(true);
+  });
+});
+
+describe("the buildability predicates use the context-aware scanner (#3486)", () => {
+  const E = String.fromCodePoint(0x2026);
+  const withCopy = `export function F() { return <input placeholder="Select${E}" />; }`;
+  const withElision = `export function F() { ${E} }`;
+
+  it("looksBuildableModule accepts a module whose only ellipsis is placeholder copy", () => {
+    expect(looksBuildableModule(withCopy)).toBe(true);
+  });
+
+  it("looksBuildableModule still rejects a real code elision", () => {
+    expect(looksBuildableModule(withElision)).toBe(false);
+  });
+
+  it("isPreviewBuildable accepts the same copy-only module", () => {
+    expect(isPreviewBuildable(withCopy, "shared/ui/data/Card.tsx", () => true)).toBe(true);
+  });
+
+  it("isPreviewBuildable still rejects a real code elision", () => {
+    expect(isPreviewBuildable(withElision, "shared/ui/data/Card.tsx", () => true)).toBe(false);
   });
 });
