@@ -198,7 +198,10 @@ describe("buildSessionSettings", () => {
     // FS confinement (bsc-confine, #158) + the dangerous-command floor (bsc-deny, #1916) are the
     // DEFAULT denies — present even with no role/profile — alongside the always-on turn-activity
     // hooks. The audit/scope/taint hooks stay gated.
-    expect(cmds(out)).toEqual(["bsc-confine", "bsc-deny", "bsc-activity run", "bsc-activity idle", "bsc-activity idle"]);
+    expect(cmds(out)).toEqual([
+      "bsc-confine", "bsc-deny", "bsc-activity run", "bsc-activity idle", "bsc-activity idle",
+      "bsc-tokens", "bsc-tokens",
+    ]);
     // ...and the confinement config is write-protected on every pane, so the agent can't edit
     // `.claude/**` to remove the hook or widen its own permissions (#1916).
     expect(out.denyToolRules).toEqual(expect.arrayContaining(
@@ -208,6 +211,18 @@ describe("buildSessionSettings", () => {
   it("honours the global bypass posture for an ordinary pane", () => {
     expect(buildSessionSettings(mkStore({ bypassPermissions: false }), "p").bypass).toBe(false);
     expect(buildSessionSettings(mkStore({ bypassPermissions: true }), "p").bypass).toBe(true);
+  });
+
+  it("wires bsc-tokens on BOTH Stop and SubagentStop, on every pane (#3452 regression)", () => {
+    // The cost regression: bsc-tokens was defined in the rc but registered as a hook NOWHERE, so
+    // tokens.log went dead and `bsc logs cost` / the desktop cost UI / `bsc metrics` all read $0.
+    // tokens.log is the ONLY per-session token source, so this MUST be present or the whole cost
+    // subsystem is blind. Assert the exact event coverage, on an ungated pane AND a gated worker.
+    for (const store of [mkStore(), mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } })]) {
+      const hooks = buildSessionSettings(store, "p").hooks;
+      const tokenEvents = hooks.filter((h) => h.command === "bsc-tokens").map((h) => h.event).sort();
+      expect(tokenEvents).toEqual(["Stop", "SubagentStop"]);
+    }
   });
 
   it("forces bypass=true for the DEBUG session regardless of the global posture (#3326)", () => {
@@ -224,8 +239,11 @@ describe("buildSessionSettings", () => {
     const out = buildSessionSettings(s, "p");
     const c = cmds(out);
     expect(c).toEqual(expect.arrayContaining(["bsc-audit", "bsc-mcp", "bsc-confine", "bsc-deny", "bsc-scope", "bsc-taint", "bsc-defer"]));
-    // turn-activity hooks remain last (after bsc-defer) so a worker's Stop still records idle.
-    expect(c.slice(-3)).toEqual(["bsc-activity run", "bsc-activity idle", "bsc-activity idle"]);
+    // turn-activity hooks stay together (after bsc-defer) so a worker's Stop still records idle, and
+    // the cost hooks (#3452) trail them — both must fire on Stop even though bsc-defer blocks the stop.
+    expect(c.slice(-5)).toEqual([
+      "bsc-activity run", "bsc-activity idle", "bsc-activity idle", "bsc-tokens", "bsc-tokens",
+    ]);
     // role denies flow through; Task is denied for a worker (sub-agent block #1036).
     const cap = roleCapability("worker", { writeGlobs: [] });
     expect(out.deniedCommands).toEqual(expect.arrayContaining(roleDeniedCommands(cap)));
