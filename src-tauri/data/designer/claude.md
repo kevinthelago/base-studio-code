@@ -517,6 +517,12 @@ on. Treat a clean `doctor` the same way you treat a passing `bsc ui validate` �
   (removing a root can newly orphan its children). There is **no** `bsc ui prune` — pruning is
   `doctor --fix`; for a single node, `bsc ui remove <id>`.
 
+> ⚠️ **`--fix` currently OVER-REACHES — read its dry run, never blind-`--yes` it.** Its "unused root"
+> rule condemns every **page** (a page is a root BY DEFINITION — nothing composes it) and the packaged
+> demo components (isolated on purpose, to demo their kit). Against the live store it proposes pruning
+> ten such nodes, all false positives. Until that rule is fixed (#3087), read the dry run and prune by
+> hand with `bsc ui remove <id>`. Deleting the pages tier is not recoverable from inside your session.
+
 **Reconcile EVERY finding — whatever its severity: errors, warnings, and suggestions alike.** Each is a
 real defect to fix, not a note to skim:
 
@@ -538,6 +544,47 @@ real defect to fix, not a note to skim:
 `doctor` reconciles the composition graph; **motion is part of the same coherent kit** — any animation
 you author (rung 5) should reference the motion tokens (`@dur-base` / `@ease-standard`), not magic
 times, and honor reduced-motion (it does automatically), so the kit's motion reads as one system.
+
+## Fill the library from real code — harvest (`bsc ui harvest`)
+
+The library does not have to be authored one component at a time. **`bsc ui harvest <repo-dir>` scans a
+real repository** and lifts every React component it finds into a CANDIDATE record — the component twin
+of the librarian's `bsc graph harvest`. Reach for it when a project has already built UI worth keeping,
+so the graph fills from code that actually shipped instead of from scratch.
+
+- `bsc ui harvest <repo-dir> [--kit <k>] [--worthy-only] [--pretty]` — prints `{ candidates, count }`.
+
+**It is READ-ONLY.** It emits candidates and stores nothing — promoting one is a separate, deliberate
+write. So run it freely and actually LOOK at the output before you decide anything.
+
+**You may only harvest inside your own session's root.** A target outside it is refused and the refusal
+names the root — the same FS confinement your file tools obey, applied to the CLI so a directory argument
+cannot reach around it. If the code you want sits outside your root, say so and ask.
+
+Each candidate carries a `buildable` verdict with `unbuildableReasons`. **Do not read `buildable: false`
+as "reject"** — read the REASON, because the most common one is not a defect in the component:
+
+- `unresolved internal import(s): @/…` naming ANOTHER harvested component — the component is fine. The
+  harvest does not yet fold sibling imports into `composes`, so it under-reports these. They are often
+  the BEST candidates, because they are the composed ones.
+- `@/…` pointing at app state, a store, or a feature's own logic — genuinely not reusable. Reject it.
+- `no export`, or an elision marker — reject.
+
+Judge before you promote. A candidate is worth storing only if it is **presentational and reusable**: it
+renders from its props and never reaches into app state, a store, or a feature's domain logic. Prefer
+primitives and small composites; skip pages, providers, and anything named for a feature. `--worthy-only`
+gives you a quick first pass, but it is a heuristic — your judgement is the real filter.
+
+Promote deliberately, one at a time, and **check before you write** so you never clobber an existing
+record: `bsc ui get <id>` first, then author it exactly as in *Authoring: write, then apply*. Strip the
+harvest-only fields — `buildable`, `unbuildableReasons`, `worthy`, `score`, `reasons` are verdicts ABOUT
+the candidate, not component data. Keep `id`, `name`, `kitId`, `role`, `composes`, `srcText`, `src`.
+
+**The store will not catch a bad promotion for you** — a `srcText` that is not a self-contained module is
+accepted without complaint, and only surfaces later as an unbuildable component in `bsc ui doctor`. You
+are the gate. Candidates land in the `harvested` kit by default: never promote straight into a curated
+kit, because a curated kit's coherence is exactly what the Standards above protect. Moving something from
+`harvested` into a real kit is a decision to RAISE, not one to take on your own.
 
 ## Richer previews — commission the librarian for data
 
