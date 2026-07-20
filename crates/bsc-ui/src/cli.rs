@@ -551,6 +551,11 @@ fn cmd_harvest(args: &[String]) -> Result<(), String> {
     if !path.is_dir() {
         return Err(format!("not a directory: {dir}"));
     }
+    // #3475: a harvest hands back file CONTENTS, so it must honor the SAME boundary the file tools do.
+    // `bsc-confine` only inspects Claude's file-tool payloads and is blind to what this binary reads —
+    // without this, a confined studio session (designer/librarian) reads any path on disk through an
+    // allow-listed CLI. Checked after the is_dir test so the target is known to exist.
+    bsc_cli_util::require_within_repo_root(path)?;
     let mut candidates = crate::harvest::harvest(path, &kit);
     if worthy_only {
         candidates.retain(|c| c.classification.worthy);
@@ -2708,5 +2713,31 @@ mod tests {
         for needle in ["<repo-dir>", "--kit", "--worthy-only", "buildable", "composes", "CLOSURE"] {
             assert!(d.contains(needle), "harvest help mentions {needle}");
         }
+    }
+
+    #[test]
+    fn harvest_refuses_a_target_outside_the_sessions_confinement_root() {
+        // #3475: the designer holds `bsc ui` (so `Bash(bsc ui *)` already matches harvest) but is
+        // confined to its studio workspace and cannot `Read` a repo file. Without this gate the verb
+        // would hand it every component's source from any path on disk, laundered through the CLI.
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests").join("fixtures").join("harvest").to_string_lossy().into_owned();
+        let elsewhere = std::env::temp_dir().to_string_lossy().into_owned();
+        let err = bsc_cli_util::with_repo_root(Some(&elsewhere), || {
+            run(vec!["harvest".into(), fixtures.clone()], "bsc ui").unwrap_err()
+        });
+        assert!(err.contains("outside this session's root"), "{err}");
+        // …and the SAME call inside the session's root still works — this bounds, it does not revoke.
+        let own_root = env!("CARGO_MANIFEST_DIR").to_string();
+        assert!(
+            bsc_cli_util::with_repo_root(Some(&own_root), || run(
+                vec!["harvest".into(), fixtures.clone()],
+                "bsc ui"
+            ))
+            .is_ok(),
+            "a target inside the root is still harvestable",
+        );
+        // An unconfined session (no root set) is unchanged.
+        assert!(bsc_cli_util::with_repo_root(None, || run(vec!["harvest".into(), fixtures], "bsc ui")).is_ok());
     }
 }
