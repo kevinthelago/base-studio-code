@@ -329,20 +329,21 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     // viz kits now: algo-viz + matrix-viz + graph-viz, #3242), both `.ds-grouphead`.
     const heads = [...container.querySelectorAll(".ds-grouphead")];
     expect(heads.map((h) => h.textContent)).toEqual([
-      expect.stringContaining("react"), expect.stringContaining("data-viz"),
+      expect.stringContaining("react"), expect.stringContaining("studio"), expect.stringContaining("data-viz"),
     ]);
     expect(heads[0].getAttribute("aria-expanded")).toBe("true"); // default OPEN
-    // Level 2 — the single-kit `studio` style merges into a kithead (labelled by STYLE); the data-viz
-    // group's three kits are kitheads labelled by KIT NAME.
+    // Level 2 — `studio` now holds react-ui + `fleet` (#3462), so it is a GROUP with a kit row each
+    // rather than a merged single-kit head; `motion` is still single-kit (merged, labelled by STYLE);
+    // the data-viz group's three kits are kitheads labelled by KIT NAME.
     const kitHeads = [...container.querySelectorAll(".ds-kithead")];
     expect(kitHeads.map((h) => h.textContent)).toEqual([
-      expect.stringContaining("studio"),
+      expect.stringContaining("react-ui"),
+      expect.stringContaining("Fleet"),
       expect.stringContaining("motion"), // the shared `base` motion kit, single-kit style (#3451)
       expect.stringContaining("Algorithm Viz"),
       expect.stringContaining("Matrix Viz"),
       expect.stringContaining("Graph Viz"),
     ]);
-    expect(kitHeads[0].textContent).not.toContain("react-ui"); // the merged studio head is labelled by style
     // The components list directly under the studio style header (the kit defaults open).
     expect(railRow("Chip")).toBeTruthy();
   });
@@ -353,13 +354,15 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     const heads = [...container.querySelectorAll(".ds-grouphead")];
     // react tech + its multi-kit data-viz style group (#3242), then the vue tech.
     expect(heads.map((h) => h.textContent)).toEqual([
-      expect.stringContaining("react"), expect.stringContaining("data-viz"), expect.stringContaining("vue"),
+      expect.stringContaining("react"), expect.stringContaining("studio"),
+      expect.stringContaining("data-viz"), expect.stringContaining("vue"),
     ]);
-    // Groups default OPEN — the studio kithead + the three data-viz kits (by name) under react, then vue's
-    // merged material kithead.
+    // Groups default OPEN — studio's two kits (react-ui + fleet, #3462) + motion + the three data-viz
+    // kits (by name) under react, then vue's merged material kithead.
     const kitHeads = [...container.querySelectorAll(".ds-kithead")];
     expect(kitHeads.map((h) => h.textContent)).toEqual([
-      expect.stringContaining("studio"), expect.stringContaining("motion"),
+      expect.stringContaining("react-ui"), expect.stringContaining("Fleet"),
+      expect.stringContaining("motion"),
       expect.stringContaining("Algorithm Viz"), expect.stringContaining("Matrix Viz"), expect.stringContaining("Graph Viz"),
       expect.stringContaining("material"),
     ]);
@@ -398,7 +401,8 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     // kit merges into its "other" style head.
     const heads = [...container.querySelectorAll(".ds-grouphead")];
     expect(heads.map((h) => h.textContent)).toEqual([
-      expect.stringContaining("react"), expect.stringContaining("data-viz"), expect.stringContaining("other"),
+      expect.stringContaining("react"), expect.stringContaining("studio"),
+      expect.stringContaining("data-viz"), expect.stringContaining("other"),
     ]);
     expect(container.querySelectorAll(".ds-kithead").length).toBe(SEED_KITS.length + 1);
   });
@@ -416,7 +420,7 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     // then data-viz's three kit rows.
     const kitHeads = [...container.querySelectorAll(".ds-kithead")];
     expect(kitHeads.map((h) => h.textContent)).toEqual([
-      expect.stringContaining("react-ui"), expect.stringContaining("react-ui-2"),
+      expect.stringContaining("react-ui"), expect.stringContaining("Fleet"), expect.stringContaining("react-ui-2"),
       expect.stringContaining("motion"),
       expect.stringContaining("Algorithm Viz"), expect.stringContaining("Matrix Viz"), expect.stringContaining("Graph Viz"),
     ]);
