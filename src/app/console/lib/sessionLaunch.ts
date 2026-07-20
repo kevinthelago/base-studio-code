@@ -292,6 +292,14 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
     { event: "UserPromptSubmit", matcher: "", command: "bsc-activity run" },
     { event: "Stop", matcher: "", command: "bsc-activity idle" },
     { event: "SubagentStop", matcher: "", command: "bsc-activity idle" },
+    // Token/cost accounting (bsc-tokens, #416/#3452): record `pane → session → transcript_path` to
+    // `tokens.log` at every turn end — the ONLY per-session token source (Claude Code hooks don't
+    // expose usage), read by `bsc logs cost`, the desktop cost UI, and `bsc metrics` (#3449). This sat
+    // UNWIRED and tokens.log went dead for weeks, blinding the whole cost subsystem — hence the explicit
+    // test below. Un-gated + last, beside its bsc-activity sibling: cost matters for every pane, and
+    // it must fire on Stop even for a worker whose `bsc-defer` blocks the stop (hooks all still run).
+    { event: "Stop", matcher: "", command: "bsc-tokens" },
+    { event: "SubagentStop", matcher: "", command: "bsc-tokens" },
   ];
   return {
     allowedCommands,
