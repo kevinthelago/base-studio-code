@@ -25,9 +25,19 @@ describe("formatNodeUrn / parseNodeUrn (#3115)", () => {
     }
   });
 
-  it("keeps an id containing a slash intact (kit is only the first segment)", () => {
-    const urn = "ui:react-ui/forms/Field";
-    expect(parseNodeUrn(urn)).toEqual({ graph: "ui", kit: "react-ui", id: "forms/Field" });
+  // #3514 — `<kit>/<id>` is ambiguous when either half holds a `/`, so the grammar has to pick a side.
+  // It picks the KIT: a sound kit is SCOPED (`acme/neon`), which is the exact form #3412 taught
+  // blueprints to pin, whereas no id has ever contained a slash. The previous split (on the FIRST `/`)
+  // guarded the hypothetical case at the cost of the shipping one — `sound:acme/neon/zap` parsed as kit
+  // `acme` + id `neon/zap`, so a pinned sound kit resolved NOTHING, silently.
+  it("round-trips a SCOPED kit id — the kit may contain a slash", () => {
+    const urn = formatNodeUrn("sound", "acme/neon", "zap");
+    expect(urn).toBe("sound:acme/neon/zap");
+    expect(parseNodeUrn(urn!)).toEqual({ graph: "sound", kit: "acme/neon", id: "zap" });
+  });
+
+  it("splits on the LAST slash — the id is the final segment", () => {
+    expect(parseNodeUrn("ui:react-ui/forms/Field")).toEqual({ graph: "ui", kit: "react-ui/forms", id: "Field" });
   });
 
   it("format rejects an empty component instead of minting a malformed URN", () => {

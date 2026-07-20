@@ -577,7 +577,21 @@ mod tests {
 
     #[test]
     fn variant_authoring_validates_name_keys_and_values() {
-        assert_eq!(component_token_keys("btn"), vec!["bg", "bg-hover", "border", "fg", "radius"]);
+        // The token surface a component exposes GROWS as the design system does — `btn` went from 5
+        // keys to 13 — so pinning the exact list only records a snapshot and goes red on every
+        // addition (it had, on develop). This test is about variant NAME + VALUE validation; the key
+        // set matters here only insofar as `validate_variant_tokens` agrees with it, so assert THAT
+        // relationship instead of the membership.
+        let btn_keys = component_token_keys("btn");
+        assert!(btn_keys.len() >= 5, "btn exposes a real token surface: {btn_keys:?}");
+        for expected in ["bg", "fg"] {
+            assert!(btn_keys.contains(&expected.to_string()), "{expected} is a btn token: {btn_keys:?}");
+        }
+        assert!(!btn_keys.contains(&"nope".to_string()), "the bad key below is genuinely unknown");
+        // Every declared key must be authorable — otherwise the surface and the validator disagree.
+        let all: serde_json::Map<String, Value> =
+            btn_keys.iter().map(|k| (k.clone(), Value::String("var(--fg)".into()))).collect();
+        assert!(validate_variant_tokens("btn", &all).is_empty(), "every declared key validates");
         assert!(sanitize_variant_name("danger-outline").is_ok());
         for bad in ["Danger", "1x", "a--b", "a-", "a b", "a}b", ""] {
             assert!(sanitize_variant_name(bad).is_err(), "'{bad}' rejected");
