@@ -266,6 +266,42 @@
       "source": "// Spacer — flexible or fixed empty space inside a Row/Stack (#2056). Replaces the ~40 hand-rolled\n// `<div style={{ flex: 1 }} />` fillers that push trailing items to the far end of a row.\n//\n//   <Row>  <h3>Title</h3>  <Spacer/>  <Button/>  </Row>   → button pinned right\n//   <Row>  a  <Spacer size=\"md\"/>  b  </Row>              → a fixed 12px gap between a and b\n//\n// A fixed spacer (`size`) reserves a rigid box along the parent's main axis; the default\n// (sizeless) spacer greedily absorbs the remaining space.\n\nimport type { CSSProperties } from \"react\";\nimport { space, type Space } from \"./space\";\n\nexport interface SpacerProps {\n  /** A rigid spacer of this size (scale rung or raw px). Omit for a flexible (`flex:1`) spacer. */\n  size?: Space;\n  style?: CSSProperties;\n}\n\nexport function Spacer({ size, style }: SpacerProps) {\n  if (size != null) {\n    const n = space(size);\n    // `flex: 0 0 <n>` sizes it along the parent's main axis regardless of row/column direction.\n    return <div aria-hidden style={{ flex: `0 0 ${n}px`, ...style }} />;\n  }\n  return <div aria-hidden style={{ flex: 1, ...style }} />;\n}\n"
     },
     {
+      "id": "slot",
+      "name": "Slot",
+      "kitId": "react-ui",
+      "role": "layout",
+      "version": "1.0.0",
+      "used": 0,
+      "tags": [
+        "layout",
+        "structure"
+      ],
+      "variants": [
+        "default"
+      ],
+      "composes": [],
+      "props": [
+        {
+          "name": "name",
+          "type": "string",
+          "req": true,
+          "desc": "The key the host's `slots` map must carry. An unfilled name renders a visible marker, never nothing."
+        }
+      ],
+      "whenUse": [
+        "Marking WHERE host-owned React goes inside a spec-authored layout.",
+        "A feature component (hooks / queries / app state) a spec cannot express."
+      ],
+      "whenNot": [
+        "Anything the kit can express — use the real primitive.",
+        "A node-typed prop slot (a Card's header) — nest the node directly."
+      ],
+      "src": "shared/ui/layout/Slot.tsx",
+      "srcText": "import { Slot } from \"@/shared/ui/layout/Slot\";\n\n<Slot name={…} />",
+      "builtin": true,
+      "source": "// Slot (#3504) — a HOLE in a spec tree that the host fills with its own React.\n//\n// A node names a manifest primitive, which is exactly right for structure and exactly wrong for the\n// leaves of a real app page: the Fleet page's layout is `Grid`/`Stack`/`Row`, but the things inside it\n// are feature components (`WorkerBoard`, `MergeQueue`, …) that own hooks, queries and app state. They\n// are app code, not kit — re-expressing them as primitives would be a lie, and giving up on the layout\n// being data would defeat the point.\n//\n// So the spec says WHERE, and the host says WHAT: `{ type: \"Slot\", props: { name: \"workerBoard\" } }`\n// resolves against the `slots` map passed to `KitRenderer`. This is the seam between the data tree and\n// the code around it — the mechanism `SessionsBehaviorCard` anticipated (\"a stateful bit the spec\n// vocabulary can't express would be passed as a host slot\") and did not need; a real page does.\n//\n// An UNFILLED slot renders a visible marker, never nothing. A blank where a panel should be is\n// indistinguishable from \"the layout meant to leave that empty\" — the silent failure a data-driven UI\n// must not have. The renderer substitutes a filled slot before this component is ever reached, so\n// seeing this text means the name in the spec has no entry in the host's map (usually a typo, or a\n// slot the host forgot to pass).\n\nimport { Text } from \"@/shared/ui/typography/Text\";\n\ninterface SlotProps {\n  /** The key the host's `slots` map is expected to carry. */\n  name?: string;\n}\n\nexport function Slot({ name }: SlotProps) {\n  return (\n    <Text tone=\"danger\" size=\"sm\">\n      {`[unfilled slot \"${name ?? \"\"}\" — the host supplied no content for this name]`}\n    </Text>\n  );\n}\n"
+    },
+    {
       "id": "grid",
       "name": "Grid",
       "kitId": "react-ui",
