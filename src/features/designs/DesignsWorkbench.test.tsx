@@ -337,6 +337,7 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     const kitHeads = [...container.querySelectorAll(".ds-kithead")];
     expect(kitHeads.map((h) => h.textContent)).toEqual([
       expect.stringContaining("studio"),
+      expect.stringContaining("motion"), // the shared `base` motion kit, single-kit style (#3451)
       expect.stringContaining("Algorithm Viz"),
       expect.stringContaining("Matrix Viz"),
       expect.stringContaining("Graph Viz"),
@@ -358,7 +359,7 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     // merged material kithead.
     const kitHeads = [...container.querySelectorAll(".ds-kithead")];
     expect(kitHeads.map((h) => h.textContent)).toEqual([
-      expect.stringContaining("studio"),
+      expect.stringContaining("studio"), expect.stringContaining("motion"),
       expect.stringContaining("Algorithm Viz"), expect.stringContaining("Matrix Viz"), expect.stringContaining("Graph Viz"),
       expect.stringContaining("material"),
     ]);
@@ -411,10 +412,12 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     expect([...container.querySelectorAll(".ds-grouphead")].map((h) => h.textContent)).toEqual([
       expect.stringContaining("react"), expect.stringContaining("studio"), expect.stringContaining("data-viz"),
     ]);
-    // studio's two kit rows, then data-viz's three kit rows — all named by KIT.
+    // studio's two kit rows, then the single-kit `motion` style (merged, labelled by STYLE — #3451),
+    // then data-viz's three kit rows.
     const kitHeads = [...container.querySelectorAll(".ds-kithead")];
     expect(kitHeads.map((h) => h.textContent)).toEqual([
       expect.stringContaining("react-ui"), expect.stringContaining("react-ui-2"),
+      expect.stringContaining("motion"),
       expect.stringContaining("Algorithm Viz"), expect.stringContaining("Matrix Viz"), expect.stringContaining("Graph Viz"),
     ]);
   });

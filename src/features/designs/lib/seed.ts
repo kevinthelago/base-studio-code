@@ -7,6 +7,7 @@
 // global `bsc ui` store lands (then `hydrateComponents` replaces it).
 import type { ComponentRecord, Kit } from "./model";
 import { makeBuiltinKits } from "./builtinKits";
+import { makeBaseKit } from "./baseKit";
 import { makeAlgoVizKit } from "./algoVizKit";
 import { makeMatrixVizKit } from "./matrixVizKit";
 import { makeGraphVizKit } from "./graphVizKit";
@@ -20,16 +21,28 @@ const { kits: algoKits, components: algoComponents } = makeAlgoVizKit();
 const { kits: matrixKits, components: matrixComponents } = makeMatrixVizKit();
 const { kits: graphKits, components: graphComponents } = makeGraphVizKit();
 
+// The app's own BASE motion library as a recoverable builtin kit (#3451) — `lift`/`fade-in`/`pulse`,
+// owned here instead of inside the react-ui demo kit. It MUST be always-on: react-ui's primitives now
+// REFERENCE these by name, so gating it behind the react-ui flag would leave them unresolvable.
+const { kits: baseKits, components: baseComponents } = makeBaseKit();
+
 /** The always-on viz kits (#3194/#3242) — array + matrix + graph — seeded regardless of the react-ui flag. */
 const vizKits: Kit[] = [...algoKits, ...matrixKits, ...graphKits];
 const vizComponents: ComponentRecord[] = [...algoComponents, ...matrixComponents, ...graphComponents];
 
-/** The packaged built-in kits — the generated react-ui kit (`@data/components/*.json`) + the three viz
- *  kits (algo-viz #3194, matrix-viz + graph-viz #3242). Enumerated by the stamping + round-trip drift guards. */
-export const SEED_KITS: Kit[] = [...kits, ...vizKits];
+/** Every kit seeded regardless of the react-ui flag (#3451) — the shared `base` motion library plus the
+ *  three viz kits. These are self-contained builtins, not the react-ui default #3029 disabled. */
+const alwaysOnKits: Kit[] = [...baseKits, ...vizKits];
+const alwaysOnComponents: ComponentRecord[] = [...baseComponents, ...vizComponents];
 
-/** The packaged built-in components — react-ui's records + the three viz-kit demo components (#3194/#3242). */
-export const SEED_COMPONENTS: ComponentRecord[] = [...components, ...vizComponents];
+/** The packaged built-in kits — the generated react-ui kit (`@data/components/*.json`) + the shared
+ *  `base` motion kit (#3451) + the three viz kits (algo-viz #3194, matrix-viz + graph-viz #3242).
+ *  Enumerated by the stamping + round-trip drift guards. */
+export const SEED_KITS: Kit[] = [...kits, ...alwaysOnKits];
+
+/** The packaged built-in components — react-ui's records + the three viz-kit demo components (#3194/#3242).
+ *  The `base` kit is motion-only and contributes none (react-ui's primitives demo its animations). */
+export const SEED_COMPONENTS: ComponentRecord[] = [...components, ...alwaysOnComponents];
 
 /** TEMPORARY (#3029) — the packaged default `react-ui` kit is being REDEFINED by hand via the designer
  *  session (the generated-from-manifest default was lacking). While that's in progress the reconcile
@@ -41,13 +54,15 @@ export const SEED_COMPONENTS: ComponentRecord[] = [...components, ...vizComponen
  *  at the new packaged kit) — a one-line revert. */
 export const DEFAULT_KIT_SEEDED = false;
 
-/** The seed the reconcile converges the store toward. The three viz kits (algo-viz #3194, matrix-viz +
- *  graph-viz #3242) seed UNCONDITIONALLY — they're new, self-contained builtins (not the react-ui default
- *  #3029 is redefining by hand), so they're recoverable + shadow-proof (re-added if the store lacks them)
- *  even while {@link DEFAULT_KIT_SEEDED} is off. react-ui stays gated on the flag: when it's off the
- *  reconcile retires react-ui's pristine copies (add nothing) and seeds only the viz kits; when it's on both seed. */
-const seededKits = DEFAULT_KIT_SEEDED ? SEED_KITS : vizKits;
-const seededComponents = DEFAULT_KIT_SEEDED ? SEED_COMPONENTS : vizComponents;
+/** The seed the reconcile converges the store toward. The shared `base` motion kit (#3451) and the three
+ *  viz kits (algo-viz #3194, matrix-viz + graph-viz #3242) seed UNCONDITIONALLY — they're self-contained
+ *  builtins (not the react-ui default #3029 is redefining by hand), so they're recoverable + shadow-proof
+ *  (re-added if the store lacks them) even while {@link DEFAULT_KIT_SEEDED} is off. `base` in particular
+ *  MUST be unconditional: react-ui's primitives reference its animations by name, so a gated `base` would
+ *  leave them unresolvable. react-ui stays gated on the flag: when it's off the reconcile retires
+ *  react-ui's pristine copies (add nothing) and seeds only the always-on kits; when it's on both seed. */
+const seededKits = DEFAULT_KIT_SEEDED ? SEED_KITS : alwaysOnKits;
+const seededComponents = DEFAULT_KIT_SEEDED ? SEED_COMPONENTS : alwaysOnComponents;
 
 /** Reconcile the store's loaded components with the packaged built-ins (#2483, hash-based refresh —
  *  the full verdict table lives on {@link reconcileSeed}): a PRISTINE built-in copy (its content
