@@ -4,7 +4,7 @@ import type { ComponentRecord, Kit } from "./lib/model";
 import type { Dispatch } from "./lib/propagation";
 import { makeChange } from "./lib/propagation";
 import { contractChanged, mergeDispatches } from "./store";
-import { SEED_COMPONENTS, SEED_KITS, DEFAULT_KIT_SEEDED } from "./lib/seed";
+import { SEED_COMPONENTS, SEED_KITS, DEFAULT_KIT_SEEDED, DEFAULT_KIT_ID } from "./lib/seed";
 import { SEED_THEMES, type KitThemeRecord } from "./lib/themes";
 import { stampSeedHash } from "./lib/seedRefresh";
 import * as bridge from "./lib/componentBridge";
@@ -12,13 +12,17 @@ import * as themeBridge from "./lib/themeBridge";
 import * as usageBridge from "./lib/kitUsageBridge";
 import { setActiveKitThemes, activeKitThemes, themeById } from "@/shared/ui/kit";
 import { ALGO_VIZ_KIT_ID } from "@/shared/ui/kit/algoVizAnimations";
-import { BASE_KIT_ID } from "@/shared/ui/kit/baseAnimations";
 
-// The always-on builtins — the shared `base` motion kit (#3451) + the VIZ kits (algo-viz #3194 +
-// matrix-viz/graph-viz #3242) — seed regardless of DEFAULT_KIT_SEEDED, so the #3029 "default kit
-// disabled" hydrate tests below expect them to survive/recover while react-ui retires. `base` is
-// always-on because react-ui's primitives REFERENCE its animations by name (#3451).
-const ALWAYS_ON_KITS = SEED_KITS.filter((k) => k.style === "data-viz" || k.id === BASE_KIT_ID);
+// Everything that seeds REGARDLESS of DEFAULT_KIT_SEEDED, so the #3029 "default kit disabled" hydrate
+// tests below expect it to survive/recover while react-ui retires: the shared `base` motion kit
+// (#3451, always-on because react-ui's primitives REFERENCE its animations by name), the VIZ kits
+// (algo-viz #3194 + matrix-viz/graph-viz #3242), and every non-default PACKAGED kit (`fleet`, #3462).
+//
+// Defined as "not the gated default" against seed.ts's own DEFAULT_KIT_ID rather than by listing the
+// styles that happen to qualify. The previous form (`style === "data-viz" || id === BASE_KIT_ID`) was
+// a restatement of the seed rule that drifted the moment a kit arrived which was neither — which is
+// exactly what #3462 did, leaving these tests red on develop for four slices.
+const ALWAYS_ON_KITS = SEED_KITS.filter((k) => k.id !== DEFAULT_KIT_ID);
 const ALWAYS_ON_KIT_IDS = new Set(ALWAYS_ON_KITS.map((k) => k.id));
 const ALWAYS_ON_COMPS = SEED_COMPONENTS.filter((c) => c.kitId && ALWAYS_ON_KIT_IDS.has(c.kitId));
 

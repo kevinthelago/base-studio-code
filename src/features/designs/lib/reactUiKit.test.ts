@@ -139,10 +139,23 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     // The #2456 examples kit demonstrated the page→primitive model; react-ui's own pages tier
     // (#2505) supersedes it, so the seed carries the one generated kit. #3194 adds the always-on
     // `algo-viz` viz kit; #3242 adds `matrix-viz` + `graph-viz` (their demo components) as builtins;
-    // #3451 adds the shared `base` motion kit (motion-only — it contributes no components).
-    expect(SEED_KITS.map((k) => k.id)).toEqual(["react-ui", "base", "algo-viz", "matrix-viz", "graph-viz"]);
+    // #3451 adds the shared `base` motion kit (motion-only — it contributes no components); #3462
+    // adds `fleet`, the Fleet page's components catalogued into the graph.
+    //
+    // This list is HAND-MAINTAINED on purpose. Deriving it from the same glob the loader uses would
+    // make it tautological — it would agree with any seed, including a kit someone shipped by
+    // accident. Adding a packaged kit should be a decision that someone signs off on, and a failure
+    // here is that sign-off being asked for, not a chore.
+    expect(SEED_KITS.map((k) => k.id)).toEqual(["react-ui", "fleet", "base", "algo-viz", "matrix-viz", "graph-viz"]);
     expect(SEED_COMPONENTS.map((c) => c.name).sort()).toEqual(
-      [...REACT_UI_COMPONENTS.map((c) => c.name), "AlgoCells", "MatrixCells", "GraphNodes"].sort(),
+      [
+        ...REACT_UI_COMPONENTS.map((c) => c.name),
+        "AlgoCells", "MatrixCells", "GraphNodes",
+        // The `fleet` kit (#3462) — the Fleet page catalogued into the components graph. These are
+        // APP components, not kit primitives, which is exactly why they live in their own kit.
+        "WorkerBoard", "FleetStatus", "Throughput", "TimeToLand", "MergeQueue", "WorkerModals",
+        "FleetHealthView", "CostEnergyView", "FleetLessonsView",
+      ].sort(),
     );
   });
 });
