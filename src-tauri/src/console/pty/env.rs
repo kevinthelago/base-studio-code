@@ -82,7 +82,41 @@ fn data_db_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
 fn sidecar_bin_path(stem: &str) -> Option<std::path::PathBuf> {
     let exe = if cfg!(windows) { format!("{stem}.exe") } else { stem.to_string() };
     let cur = std::env::current_exe().ok()?;
+    // Dev (running from `target/<profile>/`): prefer the stable staged copy (`stage_dev_sidecars`, run
+    // at boot) so a live session's long-lived `bsc` — chiefly the MCP servers — locks THAT copy, leaving
+    // the build output cargo relinks free. Without this a running sidecar holds `target/<profile>/bsc.exe`
+    // open and every relink fails (`LNK1104: cannot open … bsc.exe` on Windows) (#3457). A release bundle
+    // is NOT a build output, so the staged dir is skipped — a stale dev copy must never shadow the bundled
+    // sidecar; resolution there stays beside-the-exe, unchanged.
+    if is_build_output(&cur) {
+        let staged = staged_sidecar_dir().join(&exe);
+        if staged.exists() {
+            return Some(staged);
+        }
+    }
     sidecar_candidates(&cur, &exe).into_iter().find(|p| p.exists())
+}
+
+/// The stable dir the dev sidecars are copied to so a live session never locks the build output
+/// (`target/<profile>/<exe>`), which would break cargo's relink (#3457). `~/.base-studio-code/bin/`,
+/// beside the rest of the app state.
+fn staged_sidecar_dir() -> std::path::PathBuf {
+    bsc_base_dir().join("bin")
+}
+
+/// True when `exe_path` is a cargo build output — its parent is a `debug`/`release` profile dir sitting
+/// directly under a `target` dir (`…/target/{debug,release}/<exe>`). That is the dev condition where the
+/// app (hence its sidecars) runs from a dir cargo relinks; a real install runs from a bundle dir, never
+/// `target/<profile>`. Pure (no fs/env) so the classification is unit-testable.
+fn is_build_output(exe_path: &std::path::Path) -> bool {
+    let Some(profile_dir) = exe_path.parent() else { return false };
+    let is_profile = matches!(
+        profile_dir.file_name().and_then(|s| s.to_str()),
+        Some("debug" | "release")
+    );
+    let under_target =
+        profile_dir.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()) == Some("target");
+    is_profile && under_target
 }
 
 /// The ordered candidate paths for a sidecar named `exe_name`, given the running app exe `cur_exe`.
@@ -124,6 +158,43 @@ pub(crate) fn sidecar_status() -> [(&'static str, Option<std::path::PathBuf>); 2
         ("bsc", sidecar_bin_path("bsc")),
         ("bsc-agent", sidecar_bin_path("bsc-agent")),
     ]
+}
+
+/// Copy the dev build-output sidecars (`bsc`, `bsc-agent`) to the stable [`staged_sidecar_dir`] so a
+/// live session's long-lived `bsc` processes (the Research/Compliance MCP servers) lock the STAGED copy,
+/// not the build output cargo relinks — the fix for #3457 (`LNK1104: cannot open …\target\debug\deps\bsc.exe`).
+/// Call once at boot (`app::run`), BEFORE [`sidecar_status`], so the status log reports the staged paths
+/// [`sidecar_bin_path`] will hand out.
+///
+/// - **Dev only.** Gated on the app exe being a build output ([`is_build_output`]); a release bundle runs
+///   from an install dir where beside-the-exe resolution is already stable, so nothing is staged.
+/// - **Fail-soft.** A copy that fails because the staged file is locked (a leftover session from a prior
+///   run) is logged and skipped — the existing staged copy stays valid, so resolution still finds a `bsc`.
+///   Never panics, never blocks boot. A sidecar not yet built is left for `sidecar_status` to report.
+pub(crate) fn stage_dev_sidecars() {
+    let Ok(cur) = std::env::current_exe() else { return };
+    if !is_build_output(&cur) {
+        return; // release bundle: beside-the-exe is already stable — do not stage
+    }
+    let dir = staged_sidecar_dir();
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        log::warn!("[startup] could not create sidecar staging dir {}: {e}", dir.display());
+        return;
+    }
+    for stem in ["bsc", "bsc-agent"] {
+        let exe = if cfg!(windows) { format!("{stem}.exe") } else { stem.to_string() };
+        let Some(src) = sidecar_candidates(&cur, &exe).into_iter().find(|p| p.exists()) else {
+            continue; // not built yet — sidecar_status reports it missing
+        };
+        let dst = dir.join(&exe);
+        match std::fs::copy(&src, &dst) {
+            Ok(_) => log::info!("[startup] staged dev sidecar `{stem}` → {}", dst.display()),
+            Err(e) => log::warn!(
+                "[startup] could not stage `{stem}` to {} (a live session may hold it): {e}",
+                dst.display()
+            ),
+        }
+    }
 }
 
 // ── Bundled host toolchain on the session PATH (#1277) ──────────────────────
@@ -529,9 +600,10 @@ pub(super) fn wire_bsc_env(
 #[cfg(test)]
 mod tests {
     use super::{
-        bsc_shim_files, bundled_gh_dir, compose_path, plan_db_for_cwd, portable_git_bin_candidates,
-        scratch_dir_for_cwd,
-        session_env_with, session_skill_group_for_pane, sidecar_candidates, BSC_SHIM_CMD, BSC_SHIM_SH,
+        bsc_shim_files, bundled_gh_dir, compose_path, is_build_output, plan_db_for_cwd,
+        portable_git_bin_candidates, scratch_dir_for_cwd, session_env_with,
+        session_skill_group_for_pane, sidecar_candidates, staged_sidecar_dir, BSC_SHIM_CMD,
+        BSC_SHIM_SH,
     };
     use crate::bsc_base_dir;
     use std::collections::HashMap;
@@ -668,6 +740,33 @@ mod tests {
         // An installed/bundled app: the staged sidecar beside the exe is the first candidate.
         let installed = PathBuf::from("/opt/app/base-studio-code");
         assert_eq!(sidecar_candidates(&installed, "bsc")[0], PathBuf::from("/opt/app/bsc"));
+    }
+
+    #[test]
+    fn is_build_output_detects_a_cargo_target_dir_only() {
+        // Dev: the app exe under target/<profile>/ IS a build output cargo relinks — the case where a
+        // live session must run the staged copy so `deps/bsc.exe` stays unlocked (#3457).
+        assert!(is_build_output(&PathBuf::from("/repo/target/debug/base-studio-code.exe")));
+        assert!(is_build_output(&PathBuf::from("/repo/target/release/base-studio-code")));
+        // A nested worktree's own target is still `.../target/<profile>/`.
+        assert!(is_build_output(&PathBuf::from("/repo/wt3457/target/debug/base-studio-code.exe")));
+        // A release install dir is NOT — staging is skipped there so a stale dev copy can't shadow the
+        // bundled sidecar; beside-the-exe resolution stays unchanged.
+        assert!(!is_build_output(&PathBuf::from("/opt/app/base-studio-code")));
+        assert!(!is_build_output(&PathBuf::from(
+            "C:/Program Files/base-studio-code/base-studio-code.exe"
+        )));
+        // A `debug`/`release` dir NOT directly under `target` must not false-positive.
+        assert!(!is_build_output(&PathBuf::from("/home/user/debug/app.exe")));
+        assert!(!is_build_output(&PathBuf::from("/srv/release/app")));
+        // A bare filename (no parent chain) must not panic.
+        assert!(!is_build_output(&PathBuf::from("app.exe")));
+    }
+
+    #[test]
+    fn staged_sidecar_dir_is_bin_under_the_base_dir() {
+        // The stable home the dev sidecars are copied to lives beside the rest of the app state.
+        assert_eq!(staged_sidecar_dir(), bsc_base_dir().join("bin"));
     }
 
     #[test]
