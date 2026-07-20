@@ -114,6 +114,11 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             let dir = positional
                 .get(1)
                 .ok_or("usage: bsc graph harvest <dir> [--tech typescript|rust] [--worthy-only]")?;
+            // #3475: a harvest hands back file CONTENTS, so it must honor the SAME boundary the
+            // file tools do. `bsc-confine` only inspects Claude's file-tool payloads and is blind to
+            // what this binary reads — without this, a confined studio session (the librarian is
+            // limited to its own workspace) reads any path on disk through an allow-listed CLI.
+            bsc_cli_util::require_within_repo_root(std::path::Path::new(dir))?;
             let tech = flag_value(&args, "--tech");
             let worthy_only = args.iter().any(|a| a == "--worthy-only");
             let candidates: Vec<Value> = crate::extract::harvest(std::path::Path::new(dir))
@@ -144,6 +149,11 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             let dir = positional
                 .get(1)
                 .ok_or("usage: bsc graph curate <dir> [--tech typescript|rust] [--apply]")?;
+            // #3475: a harvest hands back file CONTENTS, so it must honor the SAME boundary the
+            // file tools do. `bsc-confine` only inspects Claude's file-tool payloads and is blind to
+            // what this binary reads — without this, a confined studio session (the librarian is
+            // limited to its own workspace) reads any path on disk through an allow-listed CLI.
+            bsc_cli_util::require_within_repo_root(std::path::Path::new(dir))?;
             let tech = flag_value(&args, "--tech");
             let apply = args.iter().any(|a| a == "--apply");
             let worthy: Vec<crate::extract::Candidate> =
@@ -294,5 +304,27 @@ mod tests {
         for flag in FLAGS {
             assert!(help.contains(flag), "help omits `{flag}`");
         }
+    }
+
+    #[test]
+    fn harvest_and_curate_refuse_a_target_outside_the_sessions_confinement_root() {
+        // #3475, the algorithms twin: the librarian holds `bsc graph` (so `Bash(bsc graph *)` already
+        // matches harvest) and is confined to its own workspace. The two harvests stay SEPARATE
+        // implementations by design — only this boundary primitive is shared.
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests").join("fixtures").to_string_lossy().into_owned();
+        let elsewhere = std::env::temp_dir().to_string_lossy().into_owned();
+        for verb in ["harvest", "curate"] {
+            let err = bsc_cli_util::with_repo_root(Some(&elsewhere), || {
+                run(vec![verb.into(), fixtures.clone()], "bsc graph").unwrap_err()
+            });
+            assert!(err.contains("outside this session's root"), "{verb}: {err}");
+        }
+        // Unconfined (no root) stays unchanged — a direct CLI run is unaffected.
+        assert!(bsc_cli_util::with_repo_root(None, || run(
+            vec!["harvest".into(), fixtures],
+            "bsc graph"
+        ))
+        .is_ok());
     }
 }

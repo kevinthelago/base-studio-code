@@ -191,6 +191,8 @@ thread_local! {
     static SCOPES_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
     /// The scratch-dir override — see [`with_scratch`].
     static SCRATCH_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
+    /// The confinement-root override — see [`with_repo_root`].
+    static REPO_ROOT_OVERRIDE: EnvOverride = const { std::cell::RefCell::new(None) };
 }
 
 /// The value of a session env var for THIS thread: the thread-local override when one is in force,
@@ -252,6 +254,81 @@ pub fn with_scopes<T>(doc: Option<&str>, f: impl FnOnce() -> T) -> T {
 /// sibling test had just cleared it. Pass `None` to assert the unset case hermetically.
 pub fn with_scratch<T>(dir: Option<&str>, f: impl FnOnce() -> T) -> T {
     with_env_override(&SCRATCH_OVERRIDE, dir, f)
+}
+
+/// The env var naming the session's FS-confinement root (#158) — the repo root the `bsc-confine`
+/// PreToolUse hook checks Claude's file-tool paths against. `pty_create` sets it on EVERY pane, in
+/// BASH form on Windows (`/c/Users/…`), which is why [`require_within_repo_root`] normalizes before
+/// resolving.
+pub const BSC_REPO_ROOT_ENV: &str = "BSC_REPO_ROOT";
+
+/// Run `f` with the confinement root forced to `root` **for the calling thread only** (#3475) — the
+/// repo-root twin of [`with_scopes`], and thread-local for exactly the same reason (#3382): `cargo
+/// test` runs a crate's tests as parallel threads of one process, so a `set_var` seam would race
+/// every sibling test. Pass `None` to assert the unconfined case hermetically.
+pub fn with_repo_root<T>(root: Option<&str>, f: impl FnOnce() -> T) -> T {
+    with_env_override(&REPO_ROOT_OVERRIDE, root, f)
+}
+
+/// A git-bash drive path (`/c/Users/…`) back to a native one (`C:/Users/…`) so Windows fs APIs can
+/// resolve it. The session writes `$BSC_REPO_ROOT` in BASH form, so comparing it against a native
+/// target would never match — the gate would refuse everything. Deliberately a local copy of
+/// src-tauri's `to_native_path`: that one is `pub(crate)` and the dependency direction runs
+/// src-tauri → crates, so it cannot be imported here.
+fn to_native_path(p: &str) -> String {
+    #[cfg(windows)]
+    {
+        let b = p.as_bytes();
+        if b.len() >= 3 && b[0] == b'/' && b[2] == b'/' && (b[1] as char).is_ascii_alphabetic() {
+            let drive = (b[1] as char).to_ascii_uppercase();
+            return format!("{drive}:/{}", &p[3..]);
+        }
+        p.to_string()
+    }
+    #[cfg(not(windows))]
+    p.to_string()
+}
+
+/// Refuse a path outside the session's FS-confinement root (#3475/#158) — the CLI twin of the
+/// `bsc-confine` PreToolUse hook.
+///
+/// WHY THIS EXISTS: `bsc-confine` reads `file_path` out of the hook payload, so it gates Claude's FILE
+/// TOOLS and is structurally blind to what a spawned binary reads. A verb that takes a directory and
+/// returns file CONTENTS — `bsc ui harvest`, `bsc graph harvest` — therefore hands a deliberately
+/// confined session (the designer and librarian are limited to their studio workspace, and CANNOT
+/// `Read` a repo file) a read of any path on disk, laundered through an allow-listed CLI. The grant was
+/// never the gap; the missing boundary was. Every verb that reads a caller-named directory should call
+/// this.
+///
+/// An UNSET or empty root means an unconfined session — a plain console, or a direct CLI run — and is
+/// allowed unchanged, so this is fully back-compatible. When the root IS set, both sides are resolved
+/// with `canonicalize` before comparing, so `..` segments and symlinks cannot walk out of it. A root
+/// that cannot itself be resolved FAILS CLOSED: a misconfigured confinement must not silently degrade
+/// into no confinement at all.
+pub fn require_within_repo_root(target: &std::path::Path) -> Result<(), String> {
+    let Some(root) = session_env(&REPO_ROOT_OVERRIDE, BSC_REPO_ROOT_ENV) else { return Ok(()) };
+    let root = root.trim();
+    if root.is_empty() {
+        return Ok(());
+    }
+    let root_native = PathBuf::from(to_native_path(root));
+    let root_real = root_native.canonicalize().map_err(|e| {
+        format!(
+            "the session's confinement root ({}) cannot be resolved: {e} — refusing to read outside              it ($BSC_REPO_ROOT, #158)",
+            root_native.display()
+        )
+    })?;
+    let target_real = target
+        .canonicalize()
+        .map_err(|e| format!("cannot resolve '{}': {e}", target.display()))?;
+    if target_real == root_real || target_real.starts_with(&root_real) {
+        return Ok(());
+    }
+    Err(format!(
+        "blocked: '{}' is outside this session's root ({}) — #158 FS confinement. A confined session          may only read within its own root; run this from a session whose root covers that path.",
+        target_real.display(),
+        root_real.display()
+    ))
 }
 
 /// The pure core of [`scope_allows_write`]: `doc` is the raw `$BSC_SCOPES` value (or `None` when the
@@ -767,5 +844,86 @@ mod tests {
         assert_eq!(msg, format!("unknown command 'bogus'\n\n{}", help_overview("bsc-x", "a test tool", DOCS)));
         assert!(msg.contains("COMMANDS:"));
         assert!(msg.contains("tree"));
+    }
+
+    // ── FS confinement for caller-named directories (#3475/#158) ────────────────────────────────────
+    /// A unique, EMPTY scratch root. Named with the pid AND a counter, and removed first: pids are
+    /// recycled, and a fixture that inherits a previous run's directory is exactly the #3382 flake.
+    fn tmp_root(tag: &str) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static N: AtomicU32 = AtomicU32::new(0);
+        let d = std::env::temp_dir().join(format!(
+            "bsc-confine-{}-{}-{tag}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn an_absent_or_empty_root_leaves_the_session_unconfined() {
+        // Back-compat: a plain console and a direct CLI run set no root and must be unchanged.
+        with_repo_root(None, || assert!(require_within_repo_root(&tmp_root("unset")).is_ok()));
+        with_repo_root(Some(""), || assert!(require_within_repo_root(&tmp_root("empty")).is_ok()));
+        with_repo_root(Some("   "), || assert!(require_within_repo_root(&tmp_root("blank")).is_ok()));
+    }
+
+    #[test]
+    fn a_target_inside_the_root_is_allowed_including_the_root_itself() {
+        let root = tmp_root("inside");
+        let child = root.join("a").join("b");
+        std::fs::create_dir_all(&child).unwrap();
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            assert!(require_within_repo_root(&root).is_ok(), "the root itself");
+            assert!(require_within_repo_root(&child).is_ok(), "a nested dir");
+        });
+    }
+
+    #[test]
+    fn a_target_outside_the_root_is_refused_and_the_error_names_both_paths() {
+        let root = tmp_root("root");
+        let outside = tmp_root("outside");
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            let err = require_within_repo_root(&outside).unwrap_err();
+            assert!(err.contains("outside this session's root"), "{err}");
+            assert!(err.contains("#158"), "cites the confinement: {err}");
+        });
+    }
+
+    #[test]
+    fn dotdot_cannot_walk_out_of_the_root() {
+        // THE bypass that matters: without canonicalizing, `<root>/sub/../..` compares as a prefix of
+        // the root string and would sail straight through.
+        let root = tmp_root("dotdot");
+        let sub = root.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            assert!(require_within_repo_root(&sub.join("..").join("..")).is_err(), "escaped via ..");
+            assert!(require_within_repo_root(&sub.join("..")).is_ok(), "..-back-to-root is still inside");
+        });
+    }
+
+    #[test]
+    fn a_root_that_cannot_be_resolved_fails_closed() {
+        // A misconfigured confinement must NOT silently degrade into no confinement at all.
+        let target = tmp_root("failclosed");
+        with_repo_root(Some("/no/such/confinement/root/anywhere"), || {
+            let err = require_within_repo_root(&target).unwrap_err();
+            assert!(err.contains("cannot be resolved"), "{err}");
+        });
+    }
+
+    #[test]
+    fn the_repo_root_override_does_not_leak_into_a_sibling_thread() {
+        // The #3382 guarantee, restated for this seam: parallel test threads must not see each other's
+        // override. Impossible to assert against process env, which is why the seam is thread-local.
+        let root = tmp_root("thread");
+        let outside = tmp_root("thread-outside");
+        let probe = outside.clone();
+        with_repo_root(Some(&root.to_string_lossy()), || {
+            assert!(require_within_repo_root(&outside).is_err(), "this thread is confined");
+            let sibling = std::thread::spawn(move || require_within_repo_root(&probe).is_ok());
+            assert!(sibling.join().unwrap(), "a sibling thread must be unconfined");
+        });
     }
 }
