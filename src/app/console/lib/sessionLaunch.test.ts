@@ -78,6 +78,18 @@ describe("buildAgentEnv", () => {
     expect(buildAgentEnv(s, "p", "claude", "")?.BSC_HARVEST_ROOTS).toBeUndefined();
   });
 
+  it("resolves the librarian's app-repo harvest root too, read-only (#3516)", () => {
+    // The librarian's cwd is `algorithms-studio/`, which holds no source — the same wall #3509 removed
+    // for the designer. It declares the SAME symbolic root so `bsc graph harvest` can mine the app's
+    // own logic into the algorithms graph. This is the companion capability; the launch resolution is
+    // generic, so the only thing to pin here is that the role-capabilities entry actually carries it.
+    const s = mkStore({ paneRoles: { p: "librarian" }, appRepoRoot: "C:/src/base-studio-code" });
+    const e = buildAgentEnv(s, "p", "claude", "");
+    expect(e?.BSC_HARVEST_ROOTS).toBe("C:/src/base-studio-code");
+    // Same read/write asymmetry as the designer: a harvest root grants reads, not writes.
+    expect(e?.BSC_SCOPE_GLOBS).toBe("scratch/**");
+  });
+
   it("fails CLOSED when the symbolic root cannot be resolved (#3509)", () => {
     // A shipped binary has no source tree. An unresolvable token must contribute NOTHING rather
     // than emitting an empty entry, which the CLI would otherwise have to interpret.

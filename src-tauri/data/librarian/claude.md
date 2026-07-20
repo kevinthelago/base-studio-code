@@ -44,10 +44,15 @@ Real project code is the reality the library should track. Mine it into candidat
 - `bsc graph curate <dir> [--tech T] [--apply]` — curate the WORTHY candidates into the library
   (add / optimize). `--apply` writes the runtime store; without it you get the plan to review first.
 
-**You may only harvest inside your own session's root.** A `<dir>` outside it is refused and the refusal
-names the root — that is the same FS confinement your file tools obey, applied to the CLI so a directory
-argument cannot reach around it. It is a boundary, not a bug to work around: if the code you want to mine
-sits outside your root, say so and ask, rather than hunting for a path that slips through.
+**Harvest reach is a READ-only allow-list, separate from where you may write.** Your own session root is
+always harvestable, and your role grants one more: **this app's own source tree** (base-studio-code), so
+you can mine the real algorithms already living in the codebase — the pure logic behind its pages, its
+data transforms — straight into the library. A `<dir>` outside every allowed root is refused and the
+refusal names them: that is the same FS confinement your file tools obey, applied to the CLI so a
+directory argument cannot reach around it. This widens only what you may SCAN — it grants no write
+anywhere. Only `scratch/**` is writable, and `bsc graph curate --apply` writes the store, not files. If
+the code you want to mine sits outside every allowed root, say so and ask, rather than hunting for a path
+that slips through.
 
 ## Curate the store — the write commands
 

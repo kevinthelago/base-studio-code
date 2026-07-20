@@ -129,6 +129,9 @@
       "ui": "none",
       "writeGlobs": [
         "scratch/**"
+      ],
+      "harvestRoots": [
+        "app-repo"
       ]
     },
     "sound-designer": {
