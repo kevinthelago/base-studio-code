@@ -12,11 +12,23 @@
 //! extractor computes a CLOSURE — the component, plus the same-file declarations it transitively
 //! references, plus exactly the imports those need — rather than a node slice.
 //!
-//! And it says so when it fails. A `srcText` that keeps unresolved `@/…` imports used to be stored with
+//! And it says so when it fails. A `srcText` that keeps unresolved `@/…` imports USED to be stored with
 //! no complaint at all (#3470: `looks_buildable_module` returned false, which made the syntax gate SKIP),
-//! surfacing much later as an unbuildable component; `bsc ui set` now WARNS with the same reasons this
-//! harvest reports. So every candidate carries an honest `buildable` flag with reasons; a candidate that
-//! could not be closed is emitted flagged, never quietly degraded.
+//! surfacing much later as an unbuildable component; `bsc ui set` now warns with these same reasons. So every candidate carries an honest `buildable`
+//! flag with reasons; a candidate that could not be closed is emitted flagged, never quietly degraded.
+//!
+//! ── SIBLING IMPORTS ARE COMPOSITION, NOT DAMAGE ──────────────────────────────────────────────────────
+//! A harvest is a SET, and the preview knows it: `componentPreviewFiles` (componentPreview.ts, #3112 —
+//! mirrored by `graph_health::is_preview_buildable`) vendors the transitive closure of the SIBLINGS a
+//! component imports into its build, so an internal import that lands on a sibling of the same kit is
+//! resolvable. Judging each candidate alone therefore under-reports, measurably: harvesting this repo's
+//! own `src/shared/ui` produced 93 candidates of which 51 were `buildable: false` purely for `@/…`
+//! imports — and 129 of the 150 `@/…` specifiers in that harvest pointed at OTHER components in it. So
+//! buildability is decided against the in-set candidates: an `@/…` import that lands on a harvested
+//! sibling MODULE is a `composes` edge, not a defect. Anything else — app state, a store, a feature's
+//! logic, a shared hook — still makes the candidate unbuildable, with its reason naming the specifier.
+//! Same harvest after: 76 of 93 buildable, and every one of the 17 remaining is held back by a genuine
+//! non-component module (`@/shared/hooks/useDragResize`, `@/shared/lib/core/format`, …).
 
 use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
@@ -159,16 +171,30 @@ fn parse(path: &Path) -> Option<(Vec<u8>, tree_sitter::Tree)> {
 pub fn harvest(dir: &Path, kit_id: &str) -> Vec<Candidate> {
     let mut found: Vec<Found> = Vec::new();
     walk(dir, dir, &mut found);
-    // Which component NAMES were harvested — so `composes` only links in-set candidates.
-    let in_set: HashSet<String> = found.iter().map(|f| f.name.clone()).collect();
+    // Which component NAMES were harvested, and from which MODULE — `composes` only links in-set
+    // candidates, and a sibling import must agree on BOTH (see `SiblingIndex`).
+    let mut in_set = SiblingIndex::default();
+    for f in &found {
+        in_set.0.entry(f.name.clone()).or_default().push(module_base(&f.src));
+    }
     found
         .into_iter()
         .map(|f| {
+            let imports = internal_imports(&f.src_text);
             // Rendered tags that are themselves harvested components, minus self-recursion.
             let mut composes: Vec<String> = Vec::new();
             for tag in &f.tags {
-                if tag != &f.name && in_set.contains(tag) && !composes.contains(tag) {
+                if tag != &f.name && in_set.has(tag) && !composes.contains(tag) {
                     composes.push(tag.clone());
+                }
+            }
+            // …plus the harvested siblings it IMPORTS. Usually the same set (you import what you render),
+            // but a sibling handed on as a prop (`icon={Icon}`) or rendered through an alias is a real
+            // composition edge that no JSX tag records — and the whole point of resolving sibling imports
+            // is that they become edges rather than dangling.
+            for name in imports.iter().flat_map(|i| &i.names) {
+                if name != &f.name && in_set.has(name) && !composes.contains(name) {
+                    composes.push(name.clone());
                 }
             }
             let role = if f.name.ends_with("Page") {
@@ -178,7 +204,7 @@ pub fn harvest(dir: &Path, kit_id: &str) -> Vec<Candidate> {
             } else {
                 "composite"
             };
-            let (buildable, unbuildable_reasons) = buildability(&f.src_text);
+            let (buildable, unbuildable_reasons) = buildability(&f.src_text, &imports, &in_set);
             let mut c = Candidate {
                 id: component_id(&f.name),
                 name: f.name,
@@ -198,10 +224,30 @@ pub fn harvest(dir: &Path, kit_id: &str) -> Vec<Candidate> {
 }
 
 /// Is the closure a module the preview could compile, and if not, exactly why? The predicate mirrors
-/// `bsc_component::graph_health::looks_buildable_module` (export present · no elision marker · no
-/// unresolved internal import) but REPORTS its reasons instead of collapsing to a bool — the whole
+/// `bsc_component::graph_health::is_preview_buildable` (export present · no elision marker · no internal
+/// import that resolves to nothing) but REPORTS its reasons instead of collapsing to a bool — the whole
 /// point of #3470 is that "not buildable" must be a stated outcome, never a silent one.
-fn buildability(src_text: &str) -> (bool, Vec<String>) {
+///
+/// `siblings` is what this harvest produced. An `@/…` import that lands on a sibling MODULE is NOT
+/// counted against buildability — the preview vendors the closure of the siblings a component imports,
+/// so that import resolves once the set is curated into one kit.
+///
+/// ── THE IMPORT IS KEPT IN `src_text`, NOT DROPPED ────────────────────────────────────────────────────
+/// The other option was to elide a resolved sibling import from the emitted closure and lean on kit
+/// resolution to supply the binding. It would be wrong, because that is not how the preview resolves a
+/// sibling: `componentPreviewFiles` walks the source's OWN import specifiers (`importSpecs` → BFS),
+/// resolves each against the sibling `src` paths (`resolveInternalBase`: `@/x` → `x`), and vendors the
+/// modules it lands on. The import statement is therefore load-bearing TWICE — it is the only record of
+/// which sibling to vendor, and it is what binds the identifier the JSX then renders. Drop it and esbuild
+/// still bundles the module happily (a free identifier is just a global reference), so the candidate
+/// would report `buildable: true` and then throw `ReferenceError: Button is not defined` at render —
+/// trading an honest flag for a silent runtime failure, which is exactly the degradation this harvester
+/// exists to prevent. Keeping the import also keeps the closure a faithful copy of the real source.
+fn buildability(
+    src_text: &str,
+    imports: &[InternalImport],
+    siblings: &SiblingIndex,
+) -> (bool, Vec<String>) {
     let mut why = Vec::new();
     if !src_text.contains("export ") {
         why.push("no `export` — nothing for the preview to mount".to_string());
@@ -211,17 +257,139 @@ fn buildability(src_text: &str) -> (bool, Vec<String>) {
     if bsc_component::graph_health::has_code_elision(src_text) {
         why.push("contains an elision marker (`…`) — a sketch, not code".to_string());
     }
-    let unresolved: BTreeSet<&str> = src_text
-        .lines()
-        .filter(|l| l.trim_start().starts_with("import "))
-        .filter_map(|l| l.split("\"@/").nth(1).or_else(|| l.split("'@/").nth(1)))
-        .filter_map(|rest| rest.split(['"', '\'']).next())
-        .collect();
+    let unresolved: BTreeSet<&str> =
+        imports.iter().filter(|i| !i.is_sibling(siblings)).map(|i| i.spec.as_str()).collect();
     if !unresolved.is_empty() {
-        let list = unresolved.iter().map(|m| format!("`@/{m}`")).collect::<Vec<_>>().join(", ");
+        let list = unresolved.iter().map(|m| format!("`{m}`")).collect::<Vec<_>>().join(", ");
         why.push(format!("unresolved internal import(s): {list} — resolve or vendor them"));
     }
     (why.is_empty(), why)
+}
+
+/// One `@/…` import in a closure: the specifier and the names it imports. `names` holds the IMPORTED
+/// names (`import { Button as Btn }` imports `Button`) — the identity that matches a harvested component
+/// — and is EMPTY for a form whose bindings can't be attributed to named exports (`import * as X`, a
+/// bare side-effect import), which therefore never counts as a sibling import.
+struct InternalImport {
+    spec: String,
+    names: Vec<String>,
+}
+
+/// The harvested set indexed for import resolution: component NAME → the module BASE(s) it was
+/// harvested from (its `src` minus the extension). Both halves are needed. A name alone would forgive
+/// `import { Button, useAppStore } from "@/store"` merely because some `Button` exists elsewhere; a path
+/// alone can't be compared across roots. Together they answer the only question that matters — does this
+/// specifier name a module this harvest produced?
+#[derive(Default)]
+struct SiblingIndex(std::collections::HashMap<String, Vec<String>>);
+
+impl SiblingIndex {
+    /// Was a component of this name harvested? (The `composes` membership test — by NAME, the component
+    /// graph's key.)
+    fn has(&self, name: &str) -> bool {
+        self.0.contains_key(name)
+    }
+
+    /// Does an import of `names` from module base `spec_base` land on a harvested sibling module?
+    fn resolves(&self, spec_base: &str, names: &[String]) -> bool {
+        names.iter().any(|n| {
+            self.0.get(n).is_some_and(|bases| bases.iter().any(|b| same_module(spec_base, b)))
+        })
+    }
+}
+
+/// A module's import base — its harvested `src` minus the TS/TSX extension, which is what an import
+/// specifier resolves to (`resolve_internal_base`: `@/x` → `x`).
+fn module_base(src: &str) -> String {
+    src.trim_end_matches(".tsx").trim_end_matches(".ts").to_string()
+}
+
+/// Do two module bases name the same module? Equal, or one a SEGMENT-ALIGNED suffix of the other — the
+/// harvest root is rarely the alias root, so a candidate harvested from `src/shared/ui` carries
+/// `controls/Button` while the specifier says `@/shared/ui/controls/Button`. Comparing the shared tail
+/// is what makes the two roots commensurable; requiring a `/` boundary keeps `…/IconButton` from
+/// matching `…/Button`.
+fn same_module(a: &str, b: &str) -> bool {
+    a == b || a.ends_with(&format!("/{b}")) || b.ends_with(&format!("/{a}"))
+}
+
+impl InternalImport {
+    /// Does this import land on a harvested sibling module? True when ANY imported binding is a
+    /// harvested component AND the specifier names that component's module — at which point the WHOLE
+    /// import resolves, because the preview vendors the module wholesale: the other bindings on the same
+    /// specifier (`import { KeyValueList, type KeyValueItem } from "@/shared/ui/data/KeyValueList"`, a
+    /// real and common shape here) come from that same vendored file. An `import * as X` is opaque
+    /// (`names` empty) and never resolves, and nor does a specifier no harvested module answers to.
+    fn is_sibling(&self, siblings: &SiblingIndex) -> bool {
+        siblings.resolves(self.spec.trim_start_matches("@/"), &self.names)
+    }
+}
+
+/// The `@/…` imports of a module, with the names each binds. Parsed rather than line-scanned: a
+/// multi-line `import {\n  Button,\n} from "@/…";` has no line that both starts with `import ` and
+/// carries the specifier, so the line scan this replaced missed it entirely and silently called such a
+/// closure buildable. Relative (`./`) imports are out of scope here — the closure is built from ONE file,
+/// so it never emits one.
+fn internal_imports(src_text: &str) -> Vec<InternalImport> {
+    let mut out = Vec::new();
+    let mut parser = Parser::new();
+    let language: Language = tree_sitter_typescript::LANGUAGE_TSX.into();
+    if parser.set_language(&language).is_err() {
+        return out;
+    }
+    let Some(tree) = parser.parse(src_text, None) else { return out };
+    let src = src_text.as_bytes();
+    let root = tree.root_node();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() != "import_statement" {
+            continue;
+        }
+        let Some(raw) = field_text(child, "source", src) else { continue };
+        let spec = raw.trim_matches(|c| c == '"' || c == '\'').to_string();
+        if !spec.starts_with("@/") {
+            continue;
+        }
+        let (mut names, mut opaque) = (Vec::new(), false);
+        collect_imported_names(child, src, &mut names, &mut opaque);
+        out.push(InternalImport { spec, names: if opaque { Vec::new() } else { names } });
+    }
+    out
+}
+
+/// The names an import statement pulls from its module. `opaque` is set by a namespace import
+/// (`* as X`), whose bindings can't be attributed to individual exports — the caller then treats the
+/// whole import as unattributable rather than guessing.
+fn collect_imported_names(node: Node, src: &[u8], out: &mut Vec<String>, opaque: &mut bool) {
+    match node.kind() {
+        "namespace_import" => {
+            *opaque = true;
+            return;
+        }
+        // `{ Button }` / `{ Button as Btn }` — the `name` field is the EXPORTED name either way.
+        "import_specifier" => {
+            if let Some(n) = field_text(node, "name", src) {
+                out.push(n);
+            }
+            return;
+        }
+        // A default import is a bare identifier directly under the clause (`import Button from "…"`).
+        "import_clause" => {
+            let mut c = node.walk();
+            for ch in node.children(&mut c) {
+                if ch.kind() == "identifier" {
+                    if let Ok(t) = ch.utf8_text(src) {
+                        out.push(t.to_string());
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_imported_names(child, src, out, opaque);
+    }
 }
 
 /// One component located in one file, before cross-file `composes` resolution.
@@ -508,6 +676,21 @@ mod tests {
         run().into_iter().find(|c| c.name == name).unwrap_or_else(|| panic!("{name} not harvested"))
     }
 
+    /// Buildability of a standalone module — no harvest around it, so it has no siblings to resolve
+    /// against (the pre-#3471 single-module judgement).
+    fn buildability_of(src: &str) -> (bool, Vec<String>) {
+        buildability(src, &internal_imports(src), &SiblingIndex::default())
+    }
+
+    /// Buildability of a module harvested alongside `siblings`, each given as `(name, src)`.
+    fn buildability_with(src: &str, siblings: &[(&str, &str)]) -> (bool, Vec<String>) {
+        let mut idx = SiblingIndex::default();
+        for (name, at) in siblings {
+            idx.0.entry((*name).to_string()).or_default().push(module_base(at));
+        }
+        buildability(src, &internal_imports(src), &idx)
+    }
+
     #[test]
     fn lifts_react_components_and_nothing_else() {
         let names: Vec<String> = run().into_iter().map(|c| c.name).collect();
@@ -551,12 +734,78 @@ mod tests {
 
     #[test]
     fn an_unresolved_internal_import_is_flagged_never_silently_accepted() {
-        // #3470: such a srcText used to store with NO complaint (looks_buildable_module was false, so
-        // the syntax gate skipped entirely). Both the harvest and `bsc ui set` must state it instead.
-        let c = by_name("Card");
+        // #3470: such a srcText USED to store with NO complaint (looks_buildable_module was false, so
+        // the syntax gate skipped entirely). Both the harvest and `bsc ui set` state it now. `Panel` imports a
+        // harvested sibling AND the app store — the store binding is a real dangling import.
+        let c = by_name("Panel");
         assert!(!c.buildable, "a component with an unresolved @/ import is not buildable");
         let why = c.unbuildable_reasons.join(" ");
-        assert!(why.contains("@/shared/ui/controls/Button"), "the reason NAMES the import: {why}");
+        assert!(why.contains("`@/store`"), "the reason NAMES the import: {why}");
+        // …and it does NOT condemn the sibling import alongside it.
+        assert!(!why.contains("controls/Button"), "a sibling import is not a defect: {why}");
+    }
+
+    #[test]
+    fn a_sibling_import_is_a_composes_edge_not_a_dangling_import() {
+        // #3471 AC. `Card` imports `@/shared/ui/controls/Button`, and `Button` IS in this harvest — the
+        // preview vendors the siblings a component imports (#3112), so judging `Card` alone was
+        // pessimistic. MEASURED: 51 of 93 candidates harvested from this repo's own src/shared/ui were
+        // unbuildable purely for `@/` imports, most of them pointing at other components in the set.
+        let c = by_name("Card");
+        assert!(c.buildable, "a harvested sibling import resolves: {:?}", c.unbuildable_reasons);
+        assert!(c.unbuildable_reasons.is_empty());
+        assert_eq!(c.composes, vec!["Button".to_string()], "it is an edge instead");
+        // The import STAYS in the closure: it is what the preview's vendoring walk resolves and what
+        // binds the identifier the JSX renders. Dropping it would build and then throw at render.
+        assert!(
+            c.src_text.contains(r#"import { Button } from "@/shared/ui/controls/Button";"#),
+            "the sibling import is kept, not elided:\n{}",
+            c.src_text
+        );
+    }
+
+    #[test]
+    fn an_imported_sibling_is_a_composes_edge_even_when_no_jsx_tag_renders_it() {
+        // `Toolbar` hands `Button` to a render prop rather than rendering `<Button/>`, so the tag scan
+        // sees nothing. The import is still a composition edge.
+        let c = by_name("Toolbar");
+        assert_eq!(c.composes, vec!["Button".to_string()]);
+        assert_eq!(c.role, "composite");
+    }
+
+    #[test]
+    fn only_imports_that_land_on_a_harvested_module_are_forgiven() {
+        let harvest = [("Button", "controls/Button.tsx")];
+        let render = "\nexport const A = () => <Button />;";
+        // The specifier names the harvested module (across roots — `controls/Button` is the tail of
+        // `@/shared/ui/controls/Button`).
+        assert!(buildability_with(&format!("import {{ Button }} from \"@/shared/ui/controls/Button\";{render}"), &harvest).0);
+        // Nothing of that name was harvested.
+        assert!(!buildability_with(&format!("import {{ Button }} from \"@/shared/ui/controls/Button\";{render}"), &[("Card", "data/Card.tsx")]).0);
+        // The name matches but the MODULE doesn't — the app store is not the harvested `Button` module,
+        // so this is the app-state import that must stay a defect (a name-only rule would forgive it).
+        let (ok, why) = buildability_with(&format!("import {{ Button, useAppStore }} from \"@/store\";{render}"), &harvest);
+        assert!(!ok, "a name match on the wrong module is not a sibling import");
+        assert!(why.iter().any(|r| r.contains("`@/store`")), "{why:?}");
+        // A near-miss path must not match on a bare substring.
+        assert!(!buildability_with(&format!("import {{ Button }} from \"@/ui/IconButton\";{render}"), &harvest).0);
+        // A namespace import can't be attributed to named exports, so it is never assumed to be a sibling.
+        assert!(!buildability_with(&format!("import * as Button from \"@/shared/ui/controls/Button\";{render}"), &harvest).0);
+        // A type imported ALONGSIDE a harvested component resolves with it: the preview vendors the
+        // module whole, so every binding on that specifier comes from the same file. (Real and common —
+        // `import { KeyValueList, type KeyValueItem } from "@/shared/ui/data/KeyValueList"` accounts for
+        // several of this repo's own pages.)
+        assert!(buildability_with(&format!("import {{ Button, type ButtonProps }} from \"@/shared/ui/controls/Button\";{render}"), &harvest).0);
+    }
+
+    #[test]
+    fn a_multiline_import_is_seen() {
+        // The line scanner this replaced only looked at lines STARTING with `import `, so a wrapped
+        // import statement carried its specifier on an invisible line and the closure was silently
+        // called buildable.
+        let (ok, why) = buildability_of("import {\n  useAppStore,\n} from \"@/store\";\nexport const A = () => <b />;");
+        assert!(!ok, "a wrapped import is still an import");
+        assert!(why.iter().any(|r| r.contains("`@/store`")), "{why:?}");
     }
 
     #[test]
@@ -618,25 +867,26 @@ mod tests {
         // condemned 13 real components as "a sketch" because `…` is ordinary UI copy and ordinary prose
         // in a doc comment. A plain substring test is wrong here — `looks_buildable_module` shared the
         // same flaw until #3470 moved this scanner down into bsc-component for both to use.
-        assert!(buildability(r#"export const A = () => <input placeholder="Select…" />;"#).0, "UI copy");
-        assert!(buildability("// mentions …
+        assert!(buildability_of(r#"export const A = () => <input placeholder="Select…" />;"#).0, "UI copy");
+        assert!(buildability_of("// mentions …
 export function A() { return null; }").0, "line comment");
-        assert!(buildability("/* block … */
+        assert!(buildability_of("/* block … */
 export function A() { return null; }").0, "block comment");
-        assert!(buildability("export const A = () => <b>{`tpl …`}</b>;").0, "template literal");
+        assert!(buildability_of("export const A = () => <b>{`tpl …`}</b>;").0, "template literal");
         // …but a real elision standing in for omitted CODE still fails.
-        assert!(!buildability("export function A() { … }").0, "a genuine code elision");
+        assert!(!buildability_of("export function A() { … }").0, "a genuine code elision");
     }
 
     #[test]
     fn buildability_names_each_distinct_failure() {
-        let (ok, why) = buildability("export function A() { return null; }");
+        let (ok, why) = buildability_of("export function A() { return null; }");
         assert!(ok, "{why:?}");
-        let (no_export, why) = buildability("function A() { return null; }");
+        let (no_export, why) = buildability_of("function A() { return null; }");
         assert!(!no_export);
         assert!(why.iter().any(|r| r.contains("export")), "{why:?}");
-        let (elided, why) = buildability("export function A() { … }");
+        let (elided, why) = buildability_of("export function A() { … }");
         assert!(!elided);
         assert!(why.iter().any(|r| r.contains('…')), "{why:?}");
     }
 }
+
