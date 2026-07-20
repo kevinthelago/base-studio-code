@@ -92,6 +92,51 @@ function ownImplSource(c: ComponentRecord): string | null {
   return null;
 }
 
+/** The code-elision marker: U+2026 HORIZONTAL ELLIPSIS. Named rather than inlined so there is ONE place
+ *  an encoding round-trip can damage it, and `elisionMarkerIsU2026` asserts its code point — if a tool or
+ *  an editor ever rewrites this file as cp1252, the test fails loudly instead of the scanner silently
+ *  degrading into a no-op that reports every source as clean. */
+const ELISION = "…";
+
+/**
+ * Does the code-elision marker appear in real CODE — not inside a string/template literal or a comment?
+ * Only then does it stand in for omitted code. The TS twin of Rust `has_code_elision`
+ * (bsc-component::graph_health), ported in #3486; the two must move together, because Rust's
+ * `is_preview_buildable` deliberately matched whatever THIS file does so `doctor` can never be more
+ * permissive than the preview it reports on.
+ *
+ * The plain substring test this replaced is a MEASURED false-positive generator, not a hypothetical one:
+ * the marker is ordinary UI copy (a `placeholder` ending in one) and ordinary doc-comment prose, and
+ * over this repo's own `src/shared/ui` it condemned 13 perfectly good components as sketches. Condemning
+ * a real component over the ellipsis in its placeholder text is a false accusation someone then has to
+ * overrule — so both contexts are skipped.
+ */
+export function hasCodeElision(src: string): boolean {
+  const b = Array.from(src);
+  const n = b.length;
+  let i = 0;
+  while (i < n) {
+    const c = b[i];
+    if (c === "/" && b[i + 1] === "/") {
+      while (i < n && b[i] !== "\n") i += 1;
+    } else if (c === "/" && b[i + 1] === "*") {
+      i += 2;
+      while (i + 1 < n && !(b[i] === "*" && b[i + 1] === "/")) i += 1;
+      i = Math.min(i + 2, n);
+    } else if (c === '"' || c === "'" || c === "`") {
+      i += 1;
+      // A backslash escapes the next char, so an escaped quote doesn't end the literal.
+      while (i < n && b[i] !== c) i += b[i] === "\\" ? 2 : 1;
+      i += 1;
+    } else if (c === ELISION) {
+      return true;
+    } else {
+      i += 1;
+    }
+  }
+  return false;
+}
+
 /**
  * Does `srcText` look like a self-contained, buildable component MODULE rather than a usage snippet?
  *
@@ -110,7 +155,7 @@ export function looksBuildableModule(srcText: string | undefined): boolean {
   const s = (srcText ?? "").trim();
   if (!s) return false;
   if (!/\bexport\b/.test(s)) return false; // no export ⇒ nothing for the bootstrap to import + mount
-  if (s.includes("…")) return false; // the `…` usage-snippet placeholder ⇒ won't compile
+  if (hasCodeElision(s)) return false; // a `…` standing in for omitted CODE ⇒ won't compile (#3486)
   if (/["']@\//.test(s)) return false; // `@/` first-party import ⇒ no closure to resolve it against
   return true;
 }
@@ -130,7 +175,7 @@ export function isPreviewBuildable(
   const s = source.trim();
   if (!s) return false;
   if (!/\bexport\b/.test(s)) return false;
-  if (s.includes("…")) return false;
+  if (hasCodeElision(s)) return false; // #3486: an ellipsis in COPY is not an elision marker
   for (const spec of importSpecs(s)) {
     if (isInternalSpec(spec) && !resolvesToSibling(spec, fromRel)) return false;
   }
