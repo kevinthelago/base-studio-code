@@ -90,7 +90,9 @@ impl Permissions {
                 if bsc_util::dangerous::agent_dangerous_substrings().any(|p| cmd.contains(p)) {
                     return Err("permission denied: command matches the built-in dangerous-command denylist".into());
                 }
-                if self.deny_bash.iter().any(|p| cmd.contains(p.as_str())) {
+                // #3483: program-name patterns match the PROGRAM token, not any substring of the
+                // command — see `bsc_util::deny`. The floor above keeps `contains` on purpose.
+                if self.deny_bash.iter().any(|p| bsc_util::deny::deny_matches(cmd, p.as_str())) {
                     return Err("permission denied: bash command matches a denied pattern".into());
                 }
             }
@@ -190,6 +192,22 @@ mod tests {
         assert!(p.check("bash", &json!({ "command": "sudo rm -rf /tmp" })).is_err());
         assert!(p.check("bash", &json!({ "command": "git push origin main" })).is_err());
         assert!(p.check("bash", &json!({ "command": "ls -la" })).is_ok());
+    }
+
+    #[test]
+    fn deny_bash_program_names_match_the_program_not_a_path_substring() {
+        // #3483: a bare deny entry is a PROGRAM name. Substring-matching it denied `ed` inside
+        // `shared/ui` and `vi` inside `Kevin` — every absolute path on some machines — which left a
+        // confined session unable to run its own tooling.
+        let p = Permissions {
+            deny_bash: vec!["ed".into(), "vi".into(), "tee".into()],
+            ..Default::default()
+        };
+        assert!(p.check("bash", &json!({ "command": "bsc ui harvest src/shared/ui" })).is_ok());
+        assert!(p.check("bash", &json!({ "command": "ls C:/Users/Kevin/p" })).is_ok());
+        assert!(p.check("bash", &json!({ "command": "vi notes.txt" })).is_err());
+        assert!(p.check("bash", &json!({ "command": "cat a | tee b" })).is_err());
+        assert!(p.check("bash", &json!({ "command": "sh -c \"tee out\"" })).is_err(), "no -c bypass");
     }
 
     #[test]
