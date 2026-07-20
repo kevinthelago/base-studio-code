@@ -181,6 +181,11 @@ const GUIDANCE: Record<string, Guidance> = {
     whenUse: ["Choosing one option from a longer fixed list (>4).", "A labelled dropdown inside a form."],
     whenNot: ["2–4 options — use SegmentedControl.", "Free text — use TextField."],
   },
+  Option: {
+    tags: ["control", "form"], wraps: "option",
+    whenUse: ["One choice inside a SelectField — the data-authorable <option>.", "A placeholder row in a dropdown (disabled)."],
+    whenNot: ["Anywhere outside a SelectField — it is only meaningful as a select's child.", "A standalone choice control — use SegmentedControl or Checkbox."],
+  },
   BackButton: {
     tags: ["control", "nav"],
     whenUse: ["Returning to the previous view within a screen.", "A detail → list back affordance."],

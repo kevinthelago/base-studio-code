@@ -46,9 +46,9 @@ fn is_object(v: &Value) -> bool {
     v.is_object()
 }
 
-/// A node-ish value: a general node (`type`) or a legacy kind node (`kind`).
+/// A node-ish value — an object naming a primitive with `type`.
 fn is_node_like(v: &Value) -> bool {
-    v.get("type").and_then(Value::as_str).is_some() || v.get("kind").and_then(Value::as_str).is_some()
+    v.get("type").and_then(Value::as_str).is_some()
 }
 
 /// Check one prop VALUE against its declared type. `None` = acceptable.
@@ -165,12 +165,22 @@ fn walk_general(node: &Value, path: &str, by_name: &Map<String, Value>, errors: 
         }
     }
 
+    // A prop can be supplied THREE ways — `props`, `binds` (value from host state) or `actions` (a host
+    // handler) — so "required" must consider all of them. Checking only `props` would demand a literal
+    // for `Toggle.on` even when bound, and for a REQUIRED handler like `Dialog.onDismiss` even when it
+    // is wired through the actions map.
+    let supplied_by_map = |name: &str| {
+        ["binds", "actions"].iter().any(|m| {
+            node.get(*m).and_then(Value::as_object).map(|o| o.contains_key(name)).unwrap_or(false)
+        })
+    };
+
     for d in declared {
         let Some(name) = d.get("name").and_then(Value::as_str) else { continue };
         let required = d.get("required").and_then(Value::as_bool).unwrap_or(false);
         let value = given.get(name).filter(|v| !v.is_null());
         let Some(value) = value else {
-            if required {
+            if required && !supplied_by_map(name) {
                 errors.push(format!("{path}.props.{name}: missing required prop for \"{ty}\""));
             }
             continue; // an absent optional prop takes the component's default
@@ -220,6 +230,39 @@ fn walk_general(node: &Value, path: &str, by_name: &Map<String, Value>, errors: 
         }
     }
 
+    // The node-level binds map (#3500): prop name → host state key. Mirror of `actions`, inverted in
+    // one respect — binding a VALUE onto a declared handler is the mistake here.
+    if let Some(binds) = node.get("binds") {
+        match binds.as_object() {
+            None => errors.push(format!("{path}.binds: expected an object of prop → state key")),
+            Some(map) => {
+                for (prop_name, state_key) in map {
+                    let ok = state_key.as_str().map(|s| !s.is_empty()).unwrap_or(false);
+                    if !ok {
+                        errors.push(format!(
+                            "{path}.binds.{prop_name}: expected a non-empty state key (a string)"
+                        ));
+                    }
+                    let declared = declared
+                        .iter()
+                        .find(|d| d.get("name").and_then(Value::as_str) == Some(prop_name.as_str()));
+                    match declared {
+                        Some(d) if d.get("type").and_then(Value::as_str) == Some("function") => {
+                            errors.push(format!(
+                                "{path}.binds.{prop_name}: \"{prop_name}\" is a handler on \"{ty}\" — bind it with \"actions\", not \"binds\""
+                            ));
+                        }
+                        Some(_) => {}
+                        None if !passthrough => {
+                            errors.push(format!("{path}.binds.{prop_name}: unknown prop for \"{ty}\""));
+                        }
+                        None => {}
+                    }
+                }
+            }
+        }
+    }
+
     // Recurse into every node-valued prop (a slot) — `children` included, since it was normalised.
     // The path reports where the value was WRITTEN, so a message points at the author's own source.
     for (name, value) in &given {
@@ -238,21 +281,13 @@ fn walk_general(node: &Value, path: &str, by_name: &Map<String, Value>, errors: 
         if let Some(arr) = value.as_array() {
             for (i, child) in arr.iter().enumerate() {
                 if is_node_like(child) {
-                    walk_any(child, &format!("{where_}[{i}]"), by_name, errors);
+                    walk_general(child, &format!("{where_}[{i}]"), by_name, errors);
                 }
             }
         } else if is_node_like(value) {
-            walk_any(value, &where_, by_name, errors);
+            walk_general(value, &where_, by_name, errors);
         }
     }
-}
-
-/// Dispatch while the general form and the legacy kinds coexist (removed in 3c, #3484).
-fn walk_any(node: &Value, path: &str, by_name: &Map<String, Value>, errors: &mut Vec<String>) {
-    if node.get("kind").and_then(Value::as_str).is_some() {
-        return; // a legacy node — `validate_spec` owns it
-    }
-    walk_general(node, path, by_name, errors);
 }
 
 #[cfg(test)]
@@ -261,6 +296,52 @@ mod tests {
 
     const FIXTURES_JSON: &str =
         include_str!("../../../src-tauri/data/ui/node-validation.fixtures.json");
+
+    /// The planner's Transformations stage prompt — it teaches the agent to author a preview `spec`
+    /// and carries a worked example. Embedded here so the crate that OWNS the validator can prove the
+    /// example is valid.
+    const TRANSFORMATIONS_STAGE_JSON: &str =
+        include_str!("../../../src-tauri/data/stages/transformations.json");
+
+    /// The taught example must PASS the validator it tells the agent to run (#3500).
+    ///
+    /// This is the drift that would hurt most and show up latest: the prompt is the agent's only
+    /// model of the vocabulary, so an example using a retired shape teaches every planner to emit
+    /// specs that `bsc ui validate` rejects — and nothing would catch it until a user watched a
+    /// preview fall back to a chip. Extracting the JSON from the prose is deliberate: the assertion
+    /// is about the text the agent actually reads, not a copy kept beside it.
+    #[test]
+    fn the_taught_preview_spec_validates() {
+        let stage: Value =
+            serde_json::from_str(TRANSFORMATIONS_STAGE_JSON).expect("stage JSON parses");
+        let prompt = stage.get("prompt").and_then(Value::as_str).expect("stage carries a prompt");
+
+        // The worked example is a `bsc plan transformation add` batch inside single quotes.
+        let start = prompt.find("\"spec\": {").expect("the prompt teaches a preview spec");
+        let bytes = prompt.as_bytes();
+        let open = start + "\"spec\": ".len();
+        let mut depth = 0usize;
+        let mut end = open;
+        for (i, b) in bytes.iter().enumerate().skip(open) {
+            match b {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = i + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert!(end > open, "could not delimit the taught spec object");
+        let spec: Value =
+            serde_json::from_str(&prompt[open..end]).expect("the taught spec is valid JSON");
+
+        let errors = crate::validate_spec(&spec);
+        assert!(errors.is_empty(), "the taught preview spec does not validate: {errors:?}");
+    }
 
     #[test]
     fn the_embedded_contract_parses_and_covers_the_registry() {
@@ -314,13 +395,18 @@ mod tests {
         assert!(validate_general_node(&node).is_empty());
     }
 
+    /// #3500 — the legacy `kind` vocabulary is retired, so a node carrying it is simply not a node.
+    /// This test inverted: it used to assert such a child was PASSED OVER (the other validator owned
+    /// it). There is no other validator now, and passing it over would mean a stale spec validates
+    /// clean and then renders nothing — the silent failure this migration exists to remove.
     #[test]
-    fn a_legacy_kind_child_is_left_to_the_legacy_validator() {
-        // While both vocabularies coexist, a `kind` node nested under a general one must not be
-        // reported as an unknown primitive — it belongs to `validate_spec`.
+    fn a_legacy_kind_child_is_rejected_not_passed_over() {
         let node = serde_json::json!({
             "type": "Stack", "children": [{ "kind": "text", "text": "hi" }]
         });
-        assert!(validate_general_node(&node).is_empty(), "{:?}", validate_general_node(&node));
+        assert_eq!(
+            validate_general_node(&node),
+            vec!["$.props.children: expected nodes or text".to_string()]
+        );
     }
 }

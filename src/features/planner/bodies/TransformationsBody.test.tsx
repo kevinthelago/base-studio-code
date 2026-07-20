@@ -134,9 +134,9 @@ describe("TransformationsBody — item presentation", () => {
 });
 
 describe("TransformationsBody — live spec render (#1852 KitRenderer)", () => {
-  it("renders a valid KitNode spec live through the renderer", () => {
+  it("renders a valid spec live through the renderer", () => {
     useAppStore.getState().setPlanTransformations(PID, [
-      row({ id: "prim", tier: 0, spec: { kind: "tag", label: "live-preview-chip" } }),
+      row({ id: "prim", tier: 0, spec: { type: "Chip", children: "live-preview-chip" } }),
     ]);
     render(<TransformationsBody projectId={PID} />);
     expect(screen.getByTestId("transformation-spec-prim")).toBeTruthy();
@@ -145,8 +145,9 @@ describe("TransformationsBody — live spec render (#1852 KitRenderer)", () => {
   });
 
   it("falls back to the 'spec present (n nodes)' chip on an invalid spec — never a crash", () => {
+    // A real tree (so the node count is meaningful) naming a primitive that does not exist.
     useAppStore.getState().setPlanTransformations(PID, [
-      row({ id: "prim", tier: 0, spec: { kind: "not-a-kind", children: [{ kind: "tag", label: "x" }] } }),
+      row({ id: "prim", tier: 0, spec: { type: "NotAPrimitive", children: [{ type: "Chip", children: "x" }] } }),
     ]);
     render(<TransformationsBody projectId={PID} />);
     expect(screen.getByTestId("transformation-spec-fallback-prim")).toBeTruthy();
@@ -156,7 +157,7 @@ describe("TransformationsBody — live spec render (#1852 KitRenderer)", () => {
 
   it("frames a kitContribution row's preview as a Proposed component (#2509 slice d)", () => {
     useAppStore.getState().setPlanTransformations(PID, [
-      row({ id: "gap", tier: 0, kitContribution: true, spec: { kind: "tag", label: "sketch-chip" } }),
+      row({ id: "gap", tier: 0, kitContribution: true, spec: { type: "Chip", children: "sketch-chip" } }),
     ]);
     render(<TransformationsBody projectId={PID} />);
     // The proposed-component caption sits above the live preview.
@@ -167,7 +168,7 @@ describe("TransformationsBody — live spec render (#1852 KitRenderer)", () => {
 
   it("a plain migration row (not a kit contribution) shows no Proposed-component framing", () => {
     useAppStore.getState().setPlanTransformations(PID, [
-      row({ id: "mig", tier: 0, kitContribution: false, spec: { kind: "tag", label: "target-chip" } }),
+      row({ id: "mig", tier: 0, kitContribution: false, spec: { type: "Chip", children: "target-chip" } }),
     ]);
     render(<TransformationsBody projectId={PID} />);
     expect(screen.queryByTestId("transformation-proposed-mig")).toBeNull();

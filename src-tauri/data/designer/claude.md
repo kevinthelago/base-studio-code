@@ -208,7 +208,7 @@ lower rungs are more surgical. Never author a new spec when a token move would d
 | **1 · Theme** | retint the whole app at once (global semantic tokens) | `bsc ui theme set-token` |
 | **2 · Component tokens** | one component family's look (`--card-*`, `--btn-*`, …) | `bsc ui component <c> set-token` |
 | **3 · Variants** | a NEW named look on a component, authored as data | `bsc ui component <c> define-variant` |
-| **4 · Composition** | a new screen/spec built from kit nodes | `bsc ui set` (spec) |
+| **4 · Composition** | a new screen/spec built from kit primitives | `bsc ui set` (spec) |
 | **5 · Animation** | MOTION as data — a KIT's motion library; components bind by name | `bsc ui kit define-animation` |
 
 **Discover before you change — never guess a token name.** The discovery surface IS the routing
@@ -219,8 +219,17 @@ surface: if you type a token that doesn't exist, the edit is a silent no-op. Rea
 - `bsc ui components` — the per-component token map: for each component the exact
   `--<comp>[-<variant>]-<key>` keys you can set. Read this before any `component set-token` /
   `define-variant` so you use real keys instead of typing the naming convention by hand.
-- `bsc ui schema [--pretty]` — the KitNode contract for rung 4: every node `kind`, its fields,
-  required-ness, children shape, and the closed enum value sets. The vocabulary you author specs in.
+- `bsc ui schema [--name <Primitive>] [--pretty]` — the PRIMITIVE contract for rung 4: every
+  component of the shared kit, the props it accepts, which are required, their types, and the closed
+  enum value sets. The vocabulary you author specs in. The kit is large — use `--name` for one entry.
+  A spec node is `{ type, props, children, binds, actions }`:
+  - `type` — a primitive NAME from this contract (`Card`, `Row`, `Toggle`, …). Nothing else renders.
+  - `props` — plain data for a declared prop. A prop typed `node` is a SLOT: nest nodes there.
+  - `children` — sugar for the `children` prop: a node, a list of nodes, or plain text.
+  - `binds` — a prop READ from host state: `{"on": "someStateKey"}`.
+  - `actions` — a prop that is a host CALLBACK, named: `{"onClick": "doTheThing"}`. A data tree never
+    carries a function, so naming the host's action is the ONLY way to wire behaviour. Do not try to
+    put a handler in `props`.
 - `bsc ui validate <file>` (or spec JSON on stdin) — structurally validate a spec against the
   contract. **Always validate a spec before writing it into the store**; only an `ok` spec renders.
 

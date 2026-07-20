@@ -1,9 +1,9 @@
 //! The `bsc ui` subcommand — the ONE UI-design-surface command (#2469). Three verb families under a
 //! single mount, so a restricted design session is expressible as one allow rule (`Bash(bsc ui *)`):
 //!
-//! - the **contract** verbs (#1852, owned here, over the embedded KitNode contract
+//! - the **contract** verbs (#1852, owned here, over the embedded primitive contract
 //!   `crate::CONTRACT_JSON`): `schema` (print the contract — every kind, its fields + enums),
-//!   `validate [file]` (check a KitNode spec, a file else stdin, against it), and
+//!   `validate [file]` (check a spec, a file else stdin, against it), and
 //!   `theme list|get|set|remove` (the kit THEME collection — a designer-writable verbatim-JSON store
 //!   at `~/.base-studio-code/themes/` seeded by the desktop from the embedded registry, #2488; the
 //!   reads MERGE the embedded built-ins in so a pre-seed session still sees every theme, and the
@@ -27,29 +27,36 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 const TAGLINE: &str =
-    "the UI design surface — the KitNode contract + themes (#1852) and the component library (#2469)";
+    "the UI design surface — the primitive contract + themes (#1852) and the component library (#2469)";
 
 /// The contract verbs bsc-ui owns. The component-library verbs are appended from
 /// [`bsc_component::cli::command_docs`] by [`merged_commands`].
 const COMMANDS: &[CmdDoc] = &[
     CmdDoc {
         name: "schema",
-        summary: "print the KitNode contract (every kind, its fields + enums)",
+        summary: "print the primitive contract (every component, its props + enums)",
         usage: "\
 USAGE:
-  bsc ui schema [--pretty]
+  bsc ui schema [--name <Primitive>] [--pretty]
 
-Prints the KitNode contract — every node `kind`, the fields it accepts, which are required, whether it
-bears children, and the closed value sets for its enum fields. This is the contract an AI authors UI
-against: emit a tree of these nodes and the desktop `KitRenderer` renders it through the shared kit.
-Compact JSON by default; --pretty for indented.",
+Prints the PRIMITIVE contract — every component of the shared kit, the props it accepts, which are
+required, their types, and the closed value sets for enum props. This is the contract an AI authors UI
+against: emit a tree of `{ type, props, children, binds, actions }` nodes and the desktop KitRenderer
+renders it through the shared kit. It is the same contract `bsc ui validate` enforces.
+
+  props     plain data — a literal for a declared prop.
+  binds     a prop READ from host state: { \"on\": \"someStateKey\" }.
+  actions   a prop that is a host CALLBACK, named: { \"onClick\": \"doTheThing\" }. A data tree never
+            carries a function, so naming the host's action is the only way to wire behaviour.
+
+--name narrows to one primitive (the whole kit is large). Compact JSON by default; --pretty indents.",
     },
     CmdDoc {
         name: "validate",
-        summary: "validate a KitNode spec (file or stdin) against the contract",
+        summary: "validate a UI spec (file or stdin) against the primitive contract",
         usage: "\
 USAGE:
-  bsc ui validate <file>     # a KitNode spec JSON file
+  bsc ui validate <file>     # a UI spec JSON file
   bsc ui validate            # ... or read the spec JSON from stdin
 
 Structurally validates the spec against the contract (kind known · required present · no unknown fields
@@ -670,7 +677,36 @@ fn write_plan(plan: &crate::emit::EmitPlan, dir: &str) -> Result<(), String> {
 
 fn cmd_schema(args: &[String]) -> Result<(), String> {
     let pretty = args.iter().any(|a| a == "--pretty");
-    let contract = crate::contract();
+    // #3500 — this now prints the PRIMITIVE contract (the general vocabulary: every real component of
+    // the shared kit and the props it declares), not the 8 hardcoded node kinds it used to. It is the
+    // same generated contract `bsc ui validate` enforces, so what an agent reads here is exactly what
+    // it will be checked against. `--name` narrows it, because the full kit is large and an agent
+    // authoring one node wants one entry.
+    let contract: serde_json::Value = serde_json::from_str(crate::general_node::PRIMITIVES_JSON)
+        .map_err(|e| format!("embedded primitives.json is not valid JSON: {e}"))?;
+    let mut wanted: Option<String> = None;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == "--name" {
+            wanted = Some(it.next().cloned().ok_or("--name needs a primitive name")?);
+        }
+    }
+    let contract = match wanted {
+        Some(name) => {
+            let found = contract
+                .get("primitives")
+                .and_then(serde_json::Value::as_array)
+                .and_then(|list| {
+                    list.iter()
+                        .find(|p| p.get("name").and_then(serde_json::Value::as_str) == Some(&name))
+                        .cloned()
+                });
+            found.ok_or_else(|| {
+                format!("unknown primitive \"{name}\" — run `bsc ui schema` for the full contract")
+            })?
+        }
+        None => contract,
+    };
     let out = if pretty {
         serde_json::to_string_pretty(&contract)
     } else {

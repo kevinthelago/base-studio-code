@@ -1,29 +1,30 @@
-// The GENERAL node — `{ type, props, children }` over the full primitive registry (#3485, slice 3a of
-// the keystone #3484).
+// The node — `{ type, props, children, binds, actions }` over the full primitive registry (#3485,
+// #3496, #3500; the keystone is #3484).
 //
-// The existing `KitNode` union covers 8 hardcoded kinds against ~60 primitives in the manifest. This is
-// the open form that replaces it (the 8 are deleted in 3c, once the renderer can render this in 3b).
+// This REPLACED a closed `KitNode` union of 8 hardcoded kinds (card/header/field/button/row/toggle/
+// tag/text) that could address only 8 of the ~67 primitives in the manifest, each with its own
+// hand-written branch in the renderer. #3500 deleted that vocabulary outright: a node now names a real
+// component, so the authorable surface IS the kit.
 //
 // THE VOCABULARY IS DERIVED, NOT DECLARED. Both the set of valid `type`s and the per-type prop rules
 // come from `UI_KIT` (`shared/ui/manifest.ts`), so adding a primitive there makes it authorable here
 // with no edit to this file. A hand-maintained mirror would drift, and a contract that drifts from the
 // code is worse than no contract — agents author against it.
 import { UI_KIT, type PrimitiveName, type PropSpec } from "../manifest";
-import type { KitNode } from "./schema";
 
 /** A node addressing any primitive in the manifest. `props` is open; the validator constrains it. */
 export interface GeneralNode {
   type: PrimitiveName;
   props?: Record<string, unknown>;
   /**
-   * Children — general nodes, the legacy kinds (while both vocabularies coexist, 3c), or plain TEXT.
+   * Children — nodes, or plain TEXT.
    *
    * Text is included because the manifest types `children` as `node`, and a `node` slot legitimately
    * holds text — `<Text>hello</Text>` is the commonest node in the tree. An array-only type here would
    * be NARROWER than what the validator accepts, and a type that disagrees with the contract it
    * describes is worse than no type: the compiler would reject trees the runtime happily validates.
    */
-  children?: Array<GeneralNode | KitNode> | string | number;
+  children?: GeneralNode[] | GeneralNode | string | number;
   /**
    * Handlers, as prop name → host ACTION NAME (#3496).
    *
@@ -41,6 +42,21 @@ export interface GeneralNode {
    * surprising in exactly the case where an author is trying to be unambiguous.
    */
   actions?: Record<string, string>;
+  /**
+   * Value bindings, as prop name → host STATE KEY (#3500).
+   *
+   * The mirror of {@link actions}: that map carries behaviour *out* of the tree, this brings state
+   * *in*. The renderer reads `values[key]` and passes it as the prop, so a control can show host state
+   * without the tree containing that state.
+   *
+   * WRITES GO THROUGH `actions`, deliberately. The legacy `toggle`/`field` kinds derived the writer
+   * automatically (`onBind(bind, !isOn)`), which required the renderer to know that `on` pairs with
+   * `onClick` and `value` with `onChange` — pairing the manifest does not declare, so deriving it means
+   * inferring from prop NAMES. This design has refused that three times; it refuses it here too. The
+   * host exposes an action instead, which also makes the state write visible in the host rather than
+   * invisible magic inside the renderer.
+   */
+  binds?: Record<string, string>;
 }
 
 /** Every primitive name the manifest defines — the closed `type` vocabulary. */
@@ -80,9 +96,9 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-/** A node-ish value: a general node (`type`) or a legacy kind node (`kind`). */
+/** A node-ish value — an object naming a primitive with `type`. */
 function isNodeLike(v: unknown): boolean {
-  return isPlainObject(v) && (typeof v.type === "string" || typeof v.kind === "string");
+  return isPlainObject(v) && typeof v.type === "string";
 }
 
 /**
@@ -141,9 +157,9 @@ function checkValue(spec: PropSpec, value: unknown): string | null {
 }
 
 /**
- * Structurally validate a general node tree against the manifest. Returns a flat list of human-readable
- * errors (empty = valid), in the same shape as {@link validateKitNode} so both vocabularies report
- * identically while they coexist.
+ * Structurally validate a node tree against the manifest. Returns a flat list of human-readable errors
+ * (empty = valid), identical to what `bsc ui validate` prints for the same tree — the two validators
+ * are held to that by a shared fixture set (`node-validation.fixtures.json`).
  *
  * At every node: `type` present and a real primitive · every required prop present · no prop outside
  * the primitive's declared set (UNLESS it declares `passthrough`, which legitimately accepts arbitrary
@@ -196,9 +212,18 @@ function walkGeneral(node: unknown, path: string, errors: string[]): void {
     }
   }
 
+  // A prop can be supplied THREE ways — `props`, `binds` (value from host state) or `actions` (a host
+  // handler) — so "required" must consider all of them. Checking only `props` would demand a literal
+  // for `Toggle.on` even when it is bound, and for a REQUIRED handler like `Dialog.onDismiss` even when
+  // it is wired through the actions map.
+  const suppliedByMap = new Set([
+    ...(isPlainObject(node.binds) ? Object.keys(node.binds) : []),
+    ...(isPlainObject(node.actions) ? Object.keys(node.actions) : []),
+  ]);
+
   for (const p of spec.props) {
     const v = given[p.name];
-    if (p.required && v == null) {
+    if (p.required && v == null && !suppliedByMap.has(p.name)) {
       errors.push(`${path}.props.${p.name}: missing required prop for "${type}"`);
       continue;
     }
@@ -234,6 +259,31 @@ function walkGeneral(node: unknown, path: string, errors: string[]): void {
     }
   }
 
+  // The node-level binds map (#3500): prop name → host state key. Same shape rules as `actions`,
+  // inverted in one respect — binding a VALUE onto a prop the manifest declares as a handler is the
+  // mistake here, where for `actions` it was binding a handler onto a data prop.
+  const binds = node.binds;
+  if (binds !== undefined) {
+    if (!isPlainObject(binds)) {
+      errors.push(`${path}.binds: expected an object of prop → state key`);
+    } else {
+      for (const [propName, stateKey] of Object.entries(binds)) {
+        if (typeof stateKey !== "string" || stateKey === "") {
+          errors.push(`${path}.binds.${propName}: expected a non-empty state key (a string)`);
+        }
+        const declared = byProp.get(propName);
+        if (declared && declared.type === "function") {
+          errors.push(
+            `${path}.binds.${propName}: "${propName}" is a handler on "${type}" — bind it with "actions", not "binds"`,
+          );
+        }
+        if (!declared && !spec.passthrough) {
+          errors.push(`${path}.binds.${propName}: unknown prop for "${type}"`);
+        }
+      }
+    }
+  }
+
   // Recurse into every node-valued prop (a slot) — `children` included, since it was normalised above.
   // The error path reports where the value was WRITTEN (`$.children[0]` vs `$.props.children[0]`) so a
   // message points at the author's own source rather than at the normalised form.
@@ -243,16 +293,10 @@ function walkGeneral(node: unknown, path: string, errors: string[]): void {
     const where = name === "children" && wroteChildrenAtNodeLevel ? `${path}.children` : `${path}.props.${name}`;
     if (Array.isArray(value)) {
       value.forEach((child, i) => {
-        if (isNodeLike(child)) walkAny(child, `${where}[${i}]`, errors);
+        if (isNodeLike(child)) walkGeneral(child, `${where}[${i}]`, errors);
       });
     } else if (isNodeLike(value)) {
-      walkAny(value, where, errors);
+      walkGeneral(value, where, errors);
     }
   }
-}
-
-/** Dispatch to the right validator while the general form and the legacy kinds coexist (3c removes this). */
-function walkAny(node: unknown, path: string, errors: string[]): void {
-  if (isPlainObject(node) && typeof node.kind === "string") return; // a legacy node — validateKitNode owns it
-  walkGeneral(node, path, errors);
 }

@@ -94,7 +94,7 @@ pub const SIDECARS: &[Sidecar] = &[
     },
     Sidecar {
         name: "ui", context_env: None,
-        blurb: "the UI spec SDK: the KitNode contract (`ui schema`) an AI emits UI as data against, `ui validate` to check a spec, and the global versioned UI-kit store (`ui kit`)",
+        blurb: "the UI spec SDK: the primitive contract (`ui schema`) an AI emits UI as data against, `ui validate` to check a spec, and the global versioned UI-kit store (`ui kit`)",
         advertise: true,
     },
     Sidecar {
