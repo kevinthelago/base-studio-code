@@ -20,7 +20,7 @@ mod pump;
 
 // Session env wiring + the sidecar resolvers used at the same `crate::console::pty::*` paths as
 // before the split (`extensions/mcp.rs`, `app/run.rs`, `github/readiness.rs`).
-pub(crate) use env::{bsc_bin_path, session_env, sidecar_status};
+pub(crate) use env::{bsc_bin_path, session_env, sidecar_status, stage_dev_sidecars};
 use env::wire_bsc_env;
 use launch::{build_bash_init_line, plan_launch, LaunchPlan};
 use pump::{spawn_emitter, spawn_reader};
