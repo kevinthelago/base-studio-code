@@ -8,6 +8,7 @@
 // Framework-free + unit-tested; the store/coord wiring lives in hooks/useFleetLive.
 
 import { hashString } from "@/shared/lib/core/format";
+import { resolveByPrecedence, type PrecedenceRule } from "@/shared/lib/algorithms/precedenceResolve";
 import type { CoordState } from "./coordination";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
 import type { WorkerStatus } from "@/shared/data/fleet";
@@ -43,17 +44,27 @@ function hashColor(s: string): string {
  * The live status for a worker pane: coordination wins (a parked worker is
  * asking / waiting / blocked), otherwise the raw run/idle from `paneStatus`
  * ("run" → running, anything else → idle).
+ *
+ * The precedence is DATA (#3465) — the `PRECEDENCE` table below, resolved by the generic
+ * `resolveByPrecedence`. As a chain of `if` returns the ordering existed only in statement order:
+ * unreadable as a whole, untestable on its own, and reorderable by accident. The order itself is the
+ * decision worth being explicit about — a worker that needs a human must never be hidden behind a
+ * mechanical "running", which is why the coordination states sit above the run sample.
  */
+const PRECEDENCE: PrecedenceRule<{ paneId: string; coord: CoordState; paneStatus: Record<string, "run" | "on" | "idle"> }, WorkerStatus>[] = [
+  { state: "asking", when: ({ paneId, coord }) => coord.asking.some(a => a.session === paneId) },
+  { state: "waiting", when: ({ paneId, coord }) => coord.waiting.some(w => w.session === paneId) },
+  { state: "blocked", when: ({ paneId, coord }) => coord.waiters.some(w => w.session === paneId) },
+  // Active work wins over a parked state (a dispatched maintenance worker is running, not parked).
+  { state: "running", when: ({ paneId, paneStatus }) => paneStatus[paneId] === "run" },
+  // A finished worker parked in maintenance (#1957) reads `maintenance`, not plain idle.
+  { state: "maintenance", when: ({ paneId, coord }) => coord.maintaining.some(m => m.session === paneId) },
+];
+
 export function statusForPane(
   paneId: string, coord: CoordState, paneStatus: Record<string, "run" | "on" | "idle">,
 ): WorkerStatus {
-  if (coord.asking.some(a => a.session === paneId)) return "asking";
-  if (coord.waiting.some(w => w.session === paneId)) return "waiting";
-  if (coord.waiters.some(w => w.session === paneId)) return "blocked";
-  if (paneStatus[paneId] === "run") return "running"; // active work wins (a dispatched maintenance worker)
-  // Otherwise, a finished worker parked in maintenance (#1957) shows as `maintenance`, not plain idle.
-  if (coord.maintaining.some(m => m.session === paneId)) return "maintenance";
-  return "idle";
+  return resolveByPrecedence({ paneId, coord, paneStatus }, PRECEDENCE, "idle");
 }
 
 /** The parked-state note for a pane (question / wait reason / block deps), or "". */
