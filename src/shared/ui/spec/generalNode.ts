@@ -24,6 +24,23 @@ export interface GeneralNode {
    * describes is worse than no type: the compiler would reject trees the runtime happily validates.
    */
   children?: Array<GeneralNode | KitNode> | string | number;
+  /**
+   * Handlers, as prop name → host ACTION NAME (#3496).
+   *
+   * The renderer otherwise learns which props are handlers from the manifest's declared
+   * `type: "function"` — deliberately, so it never infers meaning from a prop's NAME. But 9 primitives
+   * are `passthrough`: they forward arbitrary DOM props by design, so their handlers are *undeclared*
+   * and that inference has nothing to work from. `Button` does not declare `onClick`, which is the
+   * commonest handler in any UI.
+   *
+   * This map closes that without guessing: it states outright which props are handlers. It also
+   * generalises the legacy vocabulary, where a `button` node already carried a node-level `action`.
+   *
+   * PRECEDENCE: an entry here WINS over a declared `function` prop of the same name. The map is the
+   * more explicit statement, and letting the implicit path override an explicit one would be
+   * surprising in exactly the case where an author is trying to be unambiguous.
+   */
+  actions?: Record<string, string>;
 }
 
 /** Every primitive name the manifest defines — the closed `type` vocabulary. */
@@ -188,6 +205,33 @@ function walkGeneral(node: unknown, path: string, errors: string[]): void {
     if (v == null) continue; // an absent optional prop takes the component's default
     const err = checkValue(p, v);
     if (err) errors.push(`${path}.props.${p.name}: ${err}`);
+  }
+
+  // The node-level actions map (#3496): prop name → host action name.
+  const actions = node.actions;
+  if (actions !== undefined) {
+    if (!isPlainObject(actions)) {
+      errors.push(`${path}.actions: expected an object of prop → action name`);
+    } else {
+      for (const [propName, actionName] of Object.entries(actions)) {
+        if (typeof actionName !== "string" || actionName === "") {
+          errors.push(`${path}.actions.${propName}: expected a non-empty action name (a string)`);
+        }
+        const declared = byProp.get(propName);
+        if (declared && declared.type !== "function") {
+          // Binding a handler onto a prop the component treats as data would produce a function where
+          // a value belongs — a mistake worth naming rather than rendering.
+          errors.push(
+            `${path}.actions.${propName}: "${propName}" is declared as ${declared.type}, not a handler, on "${type}"`,
+          );
+        }
+        // An UNDECLARED key is legitimate only where undeclared props are (a passthrough primitive):
+        // that is the whole reason this map exists. Elsewhere it is the same mistake as an unknown prop.
+        if (!declared && !spec.passthrough) {
+          errors.push(`${path}.actions.${propName}: unknown prop for "${type}"`);
+        }
+      }
+    }
   }
 
   // Recurse into every node-valued prop (a slot) — `children` included, since it was normalised above.
