@@ -1,6 +1,10 @@
 // Fleet cost & energy (#2237) — pure aggregation of per-pane token/cost telemetry over the live worker
 // roster. COST is real (priced from each transcript's actual model by `bsc logs cost`); ENERGY is a
 // clearly-labeled DIRECTIONAL ESTIMATE (tokens × a per-model-tier coefficient), never metered.
+//
+// The groupBy-and-total is the generic `groupTotals` (#3465) — the reusable "roll rows up per key +
+// overall in one pass" algorithm this panel was a source for.
+import { groupTotals } from "@/shared/lib/algorithms/groupTotals";
 
 /** The per-pane rollup shape from `bsc logs cost --full` (subset used here; keys = the Rust struct). */
 export interface TokenUsage {
@@ -78,23 +82,25 @@ export function aggregateFleetCost(workers: CostWorkerLike[], usage: Map<string,
   }
   list.sort((a, b) => b.costUsd - a.costUsd);
 
-  const byModelMap = new Map<string, { model: string; tokens: number; costUsd: number; energyWh: number }>();
-  for (const c of list) {
-    const e = byModelMap.get(c.model) ?? { model: c.model, tokens: 0, costUsd: 0, energyWh: 0 };
-    e.tokens += c.totalTokens; e.costUsd += c.costUsd; e.energyWh += c.energyWh;
-    byModelMap.set(c.model, e);
-  }
+  // The groupBy-by-model + every fleet total is the generic `groupTotals` (#3465), one pass over the
+  // rolled-up rows — so a fleet total can never disagree with the sum of its per-model breakdown. The
+  // JOIN + per-row rollup above (usage → worker cost) stays here: it is the app-specific projection,
+  // and a graph algorithm cannot know a TokenUsage.
+  const { totals, groups } = groupTotals(list, (c) => c.model, {
+    totalTokens: (c) => c.totalTokens,
+    totalInput: (c) => c.input,
+    totalOutput: (c) => c.output,
+    totalCache: (c) => c.cache,
+    totalCostUsd: (c) => c.costUsd,
+    totalEnergyWh: (c) => c.energyWh,
+  });
 
-  const sum = (f: (c: WorkerCost) => number) => list.reduce((a, c) => a + f(c), 0);
   return {
     workers: list,
-    totalTokens: sum((c) => c.totalTokens),
-    totalInput: sum((c) => c.input),
-    totalOutput: sum((c) => c.output),
-    totalCache: sum((c) => c.cache),
-    totalCostUsd: sum((c) => c.costUsd),
-    totalEnergyWh: sum((c) => c.energyWh),
-    byModel: [...byModelMap.values()].sort((a, b) => b.costUsd - a.costUsd),
+    ...totals,
+    byModel: groups
+      .map((g) => ({ model: g.key, tokens: g.totals.totalTokens, costUsd: g.totals.totalCostUsd, energyWh: g.totals.totalEnergyWh }))
+      .sort((a, b) => b.costUsd - a.costUsd),
     hasData: list.length > 0,
   };
 }
