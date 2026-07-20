@@ -539,7 +539,7 @@ dependencies = [
  "log",
  "logs",
  "plandb",
- "png 0.18.1",
+ "png 0.17.16",
  "portable-pty",
  "rand 0.10.2",
  "reqwest 0.12.28",
