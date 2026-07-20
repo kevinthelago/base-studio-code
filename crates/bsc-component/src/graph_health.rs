@@ -29,6 +29,13 @@
 //! a demo placeholder, #2921). "Unused" = orphan ∪ dangling-branch — a node with no composer AND
 //! `used == 0`; a `page`/`layout` with `used > 0` is a legit entry point, never flagged.
 //!
+//! **Reporting a dead root is not the same as auto-DELETING one.** The findings above are a diagnosis;
+//! [`prune_plan`] is what `bsc ui doctor --fix` may actually remove, and it filters the dead-root
+//! candidates through three guards (#3087) — never a `page` (a page is a root by definition), never a
+//! `builtin: true` packaged seed, and never anything at all while the `used` index is unpopulated
+//! (`used == 0` store-wide means the usage signal is UNKNOWN, not that everything is unused). A guarded
+//! candidate is still REPORTED; only its automatic removal is withheld.
+//!
 //! The **no-implementation** check is artifact-aware: a store record strips a built-in's `source`
 //! (#2794), so both built-ins and user specs look source-less in the store — but a built-in still
 //! builds because its real code lives in the packaged react-ui artifact. So a node is buildable iff
@@ -541,6 +548,14 @@ fn is_buildable(node: &Node, buildable: &BTreeSet<String>, kit_targets: &BTreeSe
 /// (componentPreview.ts). Like `looks_buildable_module`, but an internal (`@/`, `./`) import is ALLOWED
 /// when it resolves to a sibling in `kit_targets` (the kit's component `src` paths); an internal import
 /// that resolves to NOTHING still fails, as do a `…` placeholder and a missing `export`.
+///
+/// The `…` test here stays the PLAIN substring one on purpose, even though `module_defects` moved to the
+/// context-aware [`has_code_elision`] (#3470): this predicate answers "will the preview build it?", and
+/// the preview is gated by the TS `isPreviewBuildable`, which still tests the plain substring. Loosening
+/// it here would make `doctor` call a component healthy that the preview then refuses — a MISSED
+/// no-implementation finding. The write-time gate can afford to be more accurate (its worst case is
+/// syntax-checking one component too many); `doctor` cannot afford to be more permissive than the thing
+/// it reports on.
 fn is_preview_buildable(src_text: &str, from_rel: &str, kit_targets: &BTreeSet<String>) -> bool {
     let s = src_text.trim();
     if s.is_empty() || !contains_word(s, "export") || s.contains('…') {
@@ -568,17 +583,105 @@ fn own_module_source<'a>(node: &'a Node, kit_targets: &BTreeSet<String>) -> Opti
 
 /// Rust port of `looksBuildableModule` (componentPreview.ts, #2828): does `src_text` look like a
 /// self-contained, buildable component MODULE rather than the usual usage snippet? Conservative — it
-/// must declare an `export`, contain no `…` usage-snippet placeholder, and use no `@/` first-party
-/// import (which has no dependency closure to resolve against here). MUST stay in lockstep with the TS
-/// twin — both gate the SAME preview build. Crate-visible so the write-time syntax gate (#2928) reuses
-/// the SAME "is this a module?" test to decide whether to syntax-check a `srcText`.
+/// must declare an `export`, contain no `…` code-elision marker, and use no `@/` first-party import
+/// (which has no dependency closure to resolve against here). Crate-visible so the write-time syntax
+/// gate (#2928) reuses the SAME "is this a module?" test to decide whether to syntax-check a `srcText`.
+///
+/// It is now the boolean face of [`module_defects`] — the reasons ARE the predicate, so the write-time
+/// gate can NAME why it treated a `srcText` as a spec instead of silently skipping it (#3470).
 pub(crate) fn looks_buildable_module(src_text: &str) -> bool {
+    !src_text.trim().is_empty() && module_defects(src_text).is_empty()
+}
+
+/// Every reason `src_text` is NOT a self-contained, buildable component module — empty when it IS one
+/// (so `defects.is_empty()` is exactly [`looks_buildable_module`] for a non-blank source). Reason-first
+/// rather than bool-first because of #3470: `bsc ui set` used to SKIP its syntax gate whenever this
+/// predicate was false, so the source least like a module — one that keeps its unresolved `@/…` imports —
+/// got the LEAST validation and stored with no complaint at all, surfacing only much later as a
+/// `no-implementation` finding in `bsc ui doctor`. Storing a spec-only record stays legitimate; it just
+/// has to be a STATED outcome, which needs the reasons this returns. Mirrors `bsc_ui::harvest`'s
+/// `buildability`, which reports the same three defects for a harvested candidate.
+///
+/// A blank source is NOT a defect here (it returns no reasons): "this record carries no `srcText`" is a
+/// different, legitimate state, and every caller checks it first.
+pub(crate) fn module_defects(src_text: &str) -> Vec<String> {
     let s = src_text.trim();
-    !s.is_empty()
-        && contains_word(s, "export") // an export for the bootstrap to import + mount
-        && !s.contains('…') // the `…` usage-snippet placeholder won't compile
-        && !s.contains("\"@/") // a `@/` first-party import — no closure to resolve it against here
-        && !s.contains("'@/")
+    let mut why = Vec::new();
+    if s.is_empty() {
+        return why;
+    }
+    if !contains_word(s, "export") {
+        why.push("no `export` — the preview has nothing to import and mount".to_string());
+    }
+    if has_code_elision(s) {
+        why.push("a `…` elision marker stands in for omitted code — a sketch, not compilable code".to_string());
+    }
+    if s.contains("\"@/") || s.contains("'@/") {
+        let named = internal_specifiers(s);
+        let list = if named.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", named.iter().map(|m| format!("`{m}`")).collect::<Vec<_>>().join(", "))
+        };
+        why.push(format!(
+            "unresolved first-party `@/…` import(s){list} — there is no dependency closure to resolve them against"
+        ));
+    }
+    why
+}
+
+/// The distinct `@/…` module specifiers `src_text` imports, in source order and de-duplicated — used
+/// only to NAME them in a [`module_defects`] reason (the defect itself is decided by the coarser
+/// substring test above, which is what the preview gate uses, so the message can never contradict it).
+fn internal_specifiers(src_text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for spec in import_specifiers(src_text) {
+        if spec.starts_with("@/") && !out.iter().any(|s| s == &spec) {
+            out.push(spec);
+        }
+    }
+    out
+}
+
+/// Does `…` appear in real CODE — not inside a string/template literal or a comment? Only then is it an
+/// elision marker standing in for omitted code. The plain substring test this replaced (#3470) is a
+/// MEASURED false-positive generator, not a hypothetical one: `…` is ordinary UI copy
+/// (`placeholder="Select…"`) and ordinary doc-comment prose, and over this repo's own `src/shared/ui` it
+/// condemned 13 perfectly good components as sketches. Condemning a real component over the ellipsis in
+/// its placeholder text is a false accusation someone then has to overrule, so both contexts are skipped.
+///
+/// Lives here, in the crate that owns the buildability predicates, so `bsc_ui::harvest` (which found the
+/// false positives) and the write-time gate share ONE scanner rather than drifting copies.
+pub fn has_code_elision(src: &str) -> bool {
+    let b: Vec<char> = src.chars().collect();
+    let (mut i, n) = (0usize, b.len());
+    while i < n {
+        match b[i] {
+            '/' if i + 1 < n && b[i + 1] == '/' => {
+                while i < n && b[i] != '\n' {
+                    i += 1;
+                }
+            }
+            '/' if i + 1 < n && b[i + 1] == '*' => {
+                i += 2;
+                while i + 1 < n && !(b[i] == '*' && b[i + 1] == '/') {
+                    i += 1;
+                }
+                i = (i + 2).min(n);
+            }
+            quote @ ('"' | '\'' | '`') => {
+                i += 1;
+                while i < n && b[i] != quote {
+                    // A backslash escapes the next char, so an escaped quote doesn't end the literal.
+                    i += if b[i] == '\\' { 2 } else { 1 };
+                }
+                i += 1;
+            }
+            '…' => return true,
+            _ => i += 1,
+        }
+    }
+    false
 }
 
 /// Whether `needle` appears in `haystack` as a whole word (the JS `\bword\b` the TS twin uses) —
@@ -718,23 +821,94 @@ pub struct Prunable {
     pub reason: String,
 }
 
+/// A dead-root finding the auto-prune plan deliberately WITHHELD (#3087). It is still REPORTED by
+/// `bsc ui doctor` — the read-only diagnosis stays complete — but `--fix` will never remove it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PruneSkip {
+    pub id: String,
+    pub name: String,
+    /// Which guard held it back, in prose (printed by `--fix` so the withholding is never silent).
+    pub guard: String,
+}
+
+/// The auto-prune plan: what `--fix` MAY remove, and what a guard held back (#3087).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PrunePlan {
+    pub prune: Vec<Prunable>,
+    pub skipped: Vec<PruneSkip>,
+}
+
+/// Is the `used` reuse-count index POPULATED for this component set — does ANY node carry `used > 0`?
+///
+/// `used` is a cross-codebase reuse count that no writer currently maintains: the packaged kit artifact
+/// ships every component at `used: 0` and nothing increments it, so on a real install the whole store
+/// reads zero. A store where NOTHING is used is therefore not a store full of dead components — it is a
+/// store with **no usage signal at all**, and `used == 0` there means UNKNOWN, not unused (#3087).
+/// Judged over the components HANDED IN, so a `--kit`-scoped call can only ever prune LESS.
+pub fn usage_index_populated(components: &[Value]) -> bool {
+    components.iter().filter_map(parse_node).any(|n| n.used > 0)
+}
+
 /// The safe-to-remove set (#2679): the ROOT of every orphan / dangling-branch finding — a node with
 /// no composer and `used == 0`. Deliberately NOT the branch DESCENDANTS (one might be shared by a live
 /// component): removing the roots and re-running `doctor` surfaces any newly-orphaned children on the
 /// next pass. Cycles, duplicates, and no-implementation findings are never auto-pruned (they need a
 /// human's merge/break/author call). By construction a `used > 0` node can never appear here.
+///
+/// See [`prune_plan`] for the three safety guards this set is filtered through.
 pub fn prunable(components: &[Value]) -> Vec<Prunable> {
-    analyze(components)
-        .into_iter()
-        .filter_map(|f| match f.category {
-            "orphan" | "dangling-branch" => Some(Prunable {
-                id: f.node_ids.into_iter().next()?,
-                name: f.node_names.into_iter().next().unwrap_or_default(),
-                reason: f.why,
-            }),
-            _ => None,
-        })
-        .collect()
+    prune_plan(components).prune
+}
+
+/// The guarded auto-prune plan (#3087). Every orphan / dangling-branch ROOT is a *candidate*; three
+/// guards decide whether it may actually be removed, because the dead-root heuristic (`in-degree 0 AND
+/// used == 0`) has three known FALSE-POSITIVE classes — and epic #3087 wires a curator to run `--fix`
+/// automatically, which turns each of them into unattended data loss:
+///
+/// 1. **A `page` is a root BY DEFINITION** — nothing composes a page; that is what makes it a page. The
+///    heuristic condemns the whole pages tier (#2505) on principle. (The orphan arm already refuses to
+///    flag an isolated page/layout as "entry point by role"; the dangling-branch arm did not, so a page
+///    that composes anything at all — i.e. every real page — landed in the prune plan.)
+/// 2. **A packaged `builtin: true` seed is not garbage** — the viz kits' demo components (#3194/#3242)
+///    are isolated ON PURPOSE, to demo their kit's motion. Removing one only invites the seed reconcile
+///    to re-add it on the next launch, so the "optimization" is a no-op that churns the store.
+/// 3. **An unpopulated usage index is UNKNOWN, not unused** — see [`usage_index_populated`]. When no
+///    node in scope carries `used > 0` the usage half of the heuristic carries no information, and
+///    in-degree alone must not condemn a node.
+///
+/// A guarded candidate moves to `skipped` rather than vanishing: `doctor` still REPORTS the finding
+/// (the diagnosis is useful), only the automatic removal is withheld.
+pub fn prune_plan(components: &[Value]) -> PrunePlan {
+    let nodes: Vec<Node> = components.iter().filter_map(parse_node).collect();
+    let by_id: BTreeMap<&str, &Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+    let usage_known = nodes.iter().any(|n| n.used > 0);
+
+    let mut plan = PrunePlan::default();
+    for f in analyze(components) {
+        if !matches!(f.category, "orphan" | "dangling-branch") {
+            continue;
+        }
+        let Some(id) = f.node_ids.into_iter().next() else { continue };
+        let name = f.node_names.into_iter().next().unwrap_or_default();
+        let node = by_id.get(id.as_str());
+        let guard = if !usage_known {
+            Some(
+                "the usage index is unpopulated — NOTHING in scope has `used` > 0, so `used = 0` means \
+                 UNKNOWN, not unused",
+            )
+        } else if node.is_some_and(|n| n.role == "page") {
+            Some("a `page` is a root BY DEFINITION — nothing composes a page; that is what makes it a page")
+        } else if node.is_some_and(|n| n.builtin) {
+            Some("a packaged built-in seed — it is shipped on purpose and the seed reconcile re-adds it")
+        } else {
+            None
+        };
+        match guard {
+            Some(guard) => plan.skipped.push(PruneSkip { id, name, guard: guard.to_string() }),
+            None => plan.prune.push(Prunable { id, name, reason: f.why }),
+        }
+    }
+    plan
 }
 
 /// A byte-identical MERGE group (#3089, epic #3087) — the OPTIMIZE analog of a [`Prunable`]: the safe,
@@ -2362,6 +2536,94 @@ mod tests {
         assert!(!ids.contains(&"b1".to_string()) && !ids.contains(&"b2".to_string())); // duplicates aren't pruned
     }
 
+    // ── prune guards (#3087) ─────────────────────────────────────────────────────────────────────
+
+    /// A live-store `page`: a root by definition (nothing composes it) that pulls in its section
+    /// components. Before the guard it landed in the prune plan as a "dangling-branch", so `--fix`
+    /// proposed deleting the ENTIRE pages tier (#2505) — the regression this test pins.
+    #[test]
+    fn a_page_is_reported_as_a_dead_root_but_is_never_pruned() {
+        let comps = [
+            // The usage index IS populated here, so guard 3 can't be what saves the page.
+            comp("Button", "primitive", 9, &[]),
+            json!({ "id": "invoicespage", "name": "InvoicesPage", "kitId": "k", "role": "page", "used": 0,
+                    "composes": ["DataTable"], "srcText": "p", "source": "export const C = () => null;" }),
+            json!({ "id": "table", "name": "DataTable", "kitId": "k", "role": "composite", "used": 0,
+                    "composes": [], "srcText": "t", "source": "export const C = () => null;" }),
+        ];
+        // The FINDING survives — the read-only diagnosis is still complete.
+        let reported: Vec<String> = analyze(&comps)
+            .into_iter()
+            .filter(|f| f.category == "dangling-branch")
+            .map(|f| f.node_names[0].clone())
+            .collect();
+        assert_eq!(reported, ["InvoicesPage"], "the dead-root finding is still REPORTED");
+
+        let plan = prune_plan(&comps);
+        assert!(
+            !plan.prune.iter().any(|p| p.id == "invoicespage"),
+            "a page is a root BY DEFINITION — never auto-pruned: {:?}",
+            plan.prune,
+        );
+        let skip = plan.skipped.iter().find(|s| s.id == "invoicespage").expect("held back, not dropped");
+        assert!(skip.guard.contains("page"), "the guard names itself: {}", skip.guard);
+    }
+
+    /// A packaged built-in seed (the viz kits' demo components, #3194/#3242) is isolated ON PURPOSE.
+    /// Pruning one is data loss that the seed reconcile immediately undoes.
+    #[test]
+    fn a_packaged_builtin_seed_is_reported_but_never_pruned() {
+        let comps = [
+            comp("Button", "primitive", 9, &[]), // populates the usage index
+            json!({ "id": "algocells", "name": "AlgoCells", "kitId": "k", "role": "primitive", "used": 0,
+                    "builtin": true, "composes": [], "srcText": "a", "source": "export const C = () => null;" }),
+            json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0,
+                    "composes": [], "srcText": "g", "source": "export const C = () => null;" }),
+        ];
+        assert!(
+            analyze(&comps).iter().any(|f| f.category == "orphan" && f.node_names[0] == "AlgoCells"),
+            "the orphan finding is still REPORTED",
+        );
+
+        let plan = prune_plan(&comps);
+        let prune_ids: Vec<&str> = plan.prune.iter().map(|p| p.id.as_str()).collect();
+        assert!(!prune_ids.contains(&"algocells"), "a builtin seed is never auto-pruned: {prune_ids:?}");
+        assert!(prune_ids.contains(&"ghost"), "a plain user orphan still prunes: {prune_ids:?}");
+        assert!(plan.skipped.iter().any(|s| s.id == "algocells" && s.guard.contains("built-in")));
+    }
+
+    /// `used` is a reuse count nothing currently increments — the packaged kit ships every component at
+    /// `used: 0`. So a store where NOTHING is used has no usage SIGNAL, and `used == 0` there means
+    /// UNKNOWN. Half the heuristic being blank must not condemn a node on in-degree alone.
+    #[test]
+    fn an_unpopulated_usage_index_is_unknown_not_unused() {
+        let comps = [
+            comp("Ghost", "primitive", 0, &[]),
+            json!({ "id": "shell", "name": "DeadShell", "kitId": "k", "role": "layout", "used": 0,
+                    "composes": ["Widget"], "srcText": "a" }),
+            json!({ "id": "widget", "name": "Widget", "kitId": "k", "role": "composite", "used": 0,
+                    "composes": [], "srcText": "b" }),
+        ];
+        assert!(!usage_index_populated(&comps), "nothing carries used > 0");
+        // Both dead roots are still REPORTED …
+        assert_eq!(
+            analyze(&comps).iter().filter(|f| matches!(f.category, "orphan" | "dangling-branch")).count(),
+            2,
+        );
+        // … and NOTHING is proposed for removal.
+        let plan = prune_plan(&comps);
+        assert!(plan.prune.is_empty(), "no usage signal ⇒ nothing auto-pruned: {:?}", plan.prune);
+        assert_eq!(plan.skipped.len(), 2, "both are held back, each with its guard");
+        assert!(plan.skipped.iter().all(|s| s.guard.contains("usage index")));
+
+        // One real usage count anywhere restores the signal — and the same nodes prune again.
+        let mut with_signal = comps.to_vec();
+        with_signal.push(comp("Button", "primitive", 4, &[]));
+        assert!(usage_index_populated(&with_signal));
+        let ids: Vec<String> = prunable(&with_signal).into_iter().map(|p| p.id).collect();
+        assert!(ids.contains(&"Ghost".to_string()) && ids.contains(&"shell".to_string()), "{ids:?}");
+    }
+
     #[test]
     fn ranks_most_severe_first() {
         let comps = [
@@ -2550,6 +2812,55 @@ mod tests {
         assert!(!looks_buildable_module("export function X() { return <Card>…</Card>; }"));
         // `export` must be a WHOLE word — a substring like `reexported` doesn't qualify.
         assert!(!looks_buildable_module("const reexportedThing = 1;"));
+    }
+
+    #[test]
+    fn module_defects_names_every_reason_and_is_the_predicates_reasons() {
+        // A real module has NO defects — and the bool is exactly `defects.is_empty()`.
+        let ok = "import * as d3 from \"d3\";\nexport function Foo() { return null; }";
+        assert!(module_defects(ok).is_empty(), "{:?}", module_defects(ok));
+        assert!(looks_buildable_module(ok));
+
+        // #3470 row 3 — the source LEAST like a module: it keeps its `@/` imports. It must be reported
+        // (and the reason must NAME the specifiers), not silently skipped.
+        let spec = "import { Card } from \"@/shared/ui/data/Card\";\nimport { Row } from '@/shared/ui/layout/Row';\nexport function X() { return null; }";
+        let why = module_defects(spec);
+        assert_eq!(why.len(), 1, "exactly the import defect: {why:?}");
+        assert!(why[0].contains("@/shared/ui/data/Card"), "names the first import: {why:?}");
+        assert!(why[0].contains("@/shared/ui/layout/Row"), "names the second import: {why:?}");
+        assert!(!looks_buildable_module(spec));
+
+        // Every defect is reported, not just the first — a usage snippet trips all three at once.
+        let snippet = "import { B } from \"@/x\";\n<B label={…} />";
+        let why = module_defects(snippet);
+        assert_eq!(why.len(), 3, "export + elision + import: {why:?}");
+        assert!(why.iter().any(|r| r.contains("export")), "{why:?}");
+        assert!(why.iter().any(|r| r.contains('…')), "{why:?}");
+        assert!(why.iter().any(|r| r.contains("@/x")), "{why:?}");
+
+        // A record with no source is NOT a defect — "carries no srcText" is a different, legit state
+        // every caller checks first.
+        assert!(module_defects("").is_empty());
+        assert!(module_defects("   \n  ").is_empty());
+        assert!(!looks_buildable_module("   \n  "), "…but it is still not a module");
+    }
+
+    #[test]
+    fn an_ellipsis_in_copy_or_a_comment_is_not_a_code_elision() {
+        // A MEASURED false positive, not a hypothetical (#3470): the plain `contains('…')` test this
+        // replaced condemned 13 real components in this repo's own `src/shared/ui`, because `…` is
+        // ordinary UI copy and ordinary doc-comment prose. Those are real modules and must gate as such.
+        assert!(has_code_elision("export function A() { … }"), "a genuine code elision");
+        assert!(!has_code_elision(r#"export const A = () => <input placeholder="Select…" />;"#), "UI copy");
+        assert!(!has_code_elision("// mentions …\nexport function A() { return null; }"), "line comment");
+        assert!(!has_code_elision("/* block … */\nexport function A() { return null; }"), "block comment");
+        assert!(!has_code_elision("export const A = () => <b>{`tpl …`}</b>;"), "template literal");
+        assert!(!has_code_elision("export const A = () => <b title='an …' />;"), "single-quoted");
+        assert!(!has_code_elision("export const A = \"\\\"…\";"), "an escaped quote doesn't end the literal");
+
+        // …so the predicate itself no longer mis-flags a component whose only `…` is in its copy.
+        assert!(looks_buildable_module(r#"export const A = () => <input placeholder="Select…" />;"#));
+        assert!(!looks_buildable_module("export function X() { return <Card>…</Card>; }"), "JSX text is code");
     }
 
     #[test]
