@@ -16,6 +16,9 @@
 
 pub mod cli;
 pub mod emit;
+/// The GENERAL node validator (#3485) — `{ type, props, children }` over the full primitive registry,
+/// the Rust face of `src/shared/ui/spec/generalNode.ts`. Both read the same generated contract.
+pub mod general_node;
 pub mod harvest;
 pub mod kit;
 
@@ -313,6 +316,14 @@ pub fn validate_theme(theme: &Value) -> Vec<String> {
 /// `validateKitNode` enforces, so a spec valid here is valid there. Returns the flat list of
 /// human-readable errors (empty = valid).
 pub fn validate_spec(node: &Value) -> Vec<String> {
+    // Route by vocabulary (#3485). A GENERAL node addresses a primitive by `type`; a legacy node names
+    // one of the 8 hardcoded `kind`s. Both are valid input while the two coexist (3c collapses them),
+    // and dispatching on the discriminant is what lets the general form be enforced by the SAME
+    // `bsc ui validate` an agent already runs — rather than shipping it unenforced on the one surface
+    // that matters most.
+    if node.get("type").and_then(Value::as_str).is_some() && node.get("kind").is_none() {
+        return crate::general_node::validate_general_node(node);
+    }
     let contract = contract();
     let nodes = contract.get("nodes").cloned().unwrap_or(Value::Null);
     let mut errors = Vec::new();

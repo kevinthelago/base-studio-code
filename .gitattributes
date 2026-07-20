@@ -32,6 +32,11 @@ src-tauri/data/runtime-fault/shims/*.tmpl   text eol=lf
 # every platform. The artifact is (re)generated LF by reactUiKit.gen.test.ts.
 src-tauri/data/components/react-ui.json  text eol=lf
 src-tauri/data/ui/react-ui-kit.meta.json text eol=lf
+# GENERATED from the shared-UI manifest (#3485) — pinned so the drift guard compares the same bytes on
+# every platform, and so the Rust `include_str!` and the TS import see identical content.
+src-tauri/data/ui/primitives.json        text eol=lf
+# Hand-authored, but read by BOTH validators — pinned for the same reason.
+src-tauri/data/ui/node-validation.fixtures.json text eol=lf
 
 # The sounds twin (#3371): the packaged `signal` sound-kit seed + its hash sidecar. Same contract —
 # the Rust `bsc sound release` store embeds BOTH via include_str! as the packaged fallback entry, so
