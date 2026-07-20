@@ -57,6 +57,11 @@ export interface SessionState {
    *  anything that is not literally `true` reads as off. */
   autoSpawnDebugSessions: boolean;
   setAutoSpawnDebugSessions: (v: boolean) => void;
+  /** #3498: the request ids that currently have a spawned debug session. Lives in the STORE, not in the
+   *  mount's local state, because the Glance graph must render a node per live session — an auto-spawned
+   *  session that appears nowhere is one the user cannot open, supervise or stop. Session-only. */
+  activeRequestSessions: number[];
+  setActiveRequestSessions: (ids: number[]) => void;
   /** #2372: show the legacy Console page as a rail destination. OFF by default — the graph (Glance)
    *  is the execution surface; the console page is being retired. When off, its rail entry is hidden
    *  and a console-active workspace falls back to Glance (derived in App). */
