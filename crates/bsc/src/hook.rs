@@ -94,11 +94,15 @@ fn deny_reason(cmd: &str, env_denies: &str) -> Option<String> {
     if let Some(p) = bsc_util::dangerous::agent_dangerous_substrings().find(|&p| cmd.contains(p)) {
         return Some(format!("the built-in dangerous-command floor ('{p}')"));
     }
+    // #3483: the session's role/user patterns are PROGRAM NAMES (`vi`, `ed`, `tee`), so they match the
+    // program TOKEN — never a substring of an argument or a path. Substring-matching them denied `ed`
+    // inside `shared/ui` and `vi` inside `Kevin`, i.e. every absolute path on this machine. The floor
+    // above deliberately keeps `contains`: its entries are phrases and prefixes (`mkfs.`, `:(){`).
     env_denies
         .split('\n')
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .find(|&p| cmd.contains(p))
+        .find(|&p| bsc_util::deny::deny_matches(cmd, p))
         .map(|p| format!("the denied pattern '{p}'"))
 }
 
@@ -150,6 +154,26 @@ mod tests {
         assert!(deny_reason("git commit -m wip", denies).is_none());
         // blank/whitespace env lines are ignored (never block everything).
         assert!(deny_reason("ls -la", "\n  \n").is_none());
+    }
+
+    #[test]
+    fn a_program_name_deny_matches_the_program_not_a_path_substring() {
+        // #3483 REGRESSION. These are the exact commands a designer session could not run: its role
+        // denies the file writers by bare program name, and substring-matching them hit `ed` inside
+        // `shared/ui` and `vi` inside `Kevin` — i.e. every absolute path on this machine.
+        let denies = "ed
+vi
+tee
+cp";
+        assert!(deny_reason("bsc ui harvest src/shared/ui", denies).is_none(), "`ed` inside `shared`");
+        assert!(deny_reason("ls C:/Users/Kevin/Projects", denies).is_none(), "`vi` inside `Kevin`");
+        assert!(deny_reason("cat src/index.ts", denies).is_none(), "`ed`/`ex` inside `index`");
+        // …while the programs themselves are still denied, including through a pipeline or `sh -c`.
+        assert!(deny_reason("vi notes.txt", denies).is_some());
+        assert!(deny_reason("cat a | tee b", denies).is_some());
+        assert!(deny_reason("sh -c \"tee out\"", denies).is_some(), "no -c bypass");
+        // …and the compiled-in floor keeps its substring semantics regardless of the env list.
+        assert!(deny_reason("sudo rm -rf /tmp/x", denies).is_some());
     }
 
     #[test]
