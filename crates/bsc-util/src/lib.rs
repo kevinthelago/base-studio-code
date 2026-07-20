@@ -30,6 +30,11 @@ pub use log_streams::{LogStream, LOG_STREAMS};
 /// (`Bash(<glob>)` deny rules) and the bsc-agent runtime (substring match) render from.
 pub mod dangerous;
 
+/// Matching for the SESSION's bash deny patterns (#3483) — program-name entries match the PROGRAM,
+/// not any substring of the command. Kept apart from [`dangerous`], whose substring semantics are
+/// load-bearing and deliberately unchanged.
+pub mod deny;
+
 /// The user's home directory, resolved WITHOUT a `dirs`/`home` crate.
 ///
 /// # Precedence (the fix for #1646)
