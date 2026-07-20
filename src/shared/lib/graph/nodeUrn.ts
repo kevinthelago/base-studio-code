@@ -27,9 +27,11 @@ const SEGMENT_GRAPH: Record<string, NodeGraph> = { algorithms: "algo", ui: "ui",
 /** The decomposed parts of a node URN `<graph>:<kit>/<id>`. */
 export interface NodeUrnParts {
   graph: NodeGraph;
-  /** The kit the node lives in — a language for algorithms (`typescript`), a kit id for designs/sounds. */
+  /** The kit the node lives in — a language for algorithms (`typescript`), a kit id for designs/sounds.
+   *  MAY contain `/`: sound kits are scoped (`acme/neon`). */
   kit: string;
-  /** The node's in-kit id (`fibonacci.ts`, `Sparkline`, `click`). May itself contain `/`. */
+  /** The node's in-kit id (`fibonacci.ts`, `Sparkline`, `click`). Must NOT contain `/` — see
+   *  {@link parseNodeUrn} for which side of the `<kit>/<id>` ambiguity the grammar takes. */
   id: string;
 }
 
@@ -49,8 +51,17 @@ export function formatNodeUrn(graph: NodeGraph, kit: string, id: string): string
 
 /**
  * Parse a node URN back into its parts, or null when it doesn't match `<graph>:<kit>/<id>` with a known
- * graph and non-empty kit + id. Tolerant: never throws (malformed input → null). `kit` is the segment up
- * to the FIRST `/`; `id` is everything after it (so an id may contain `/`, though today none do).
+ * graph and non-empty kit + id. Tolerant: never throws (malformed input → null).
+ *
+ * `<kit>/<id>` is ambiguous when either half contains a `/`, so the split has to pick a side. It splits
+ * on the LAST `/`: the KIT may contain slashes, the id may not.
+ *
+ * This reversed the original choice (#3514). Splitting on the FIRST `/` was chosen so an id could
+ * contain slashes — with the caveat, written right here, "though today none do". Meanwhile kit ids
+ * demonstrably DO: a sound kit is scoped (`acme/neon`), which is the exact form #3412 taught blueprints
+ * to pin. So `sound:acme/neon/zap` parsed as kit `acme` + id `neon/zap`, missed every lookup, and a
+ * pinned sound kit resolved NOTHING — silently, because a miss is indistinguishable from "no such cue".
+ * The grammar was guarding a case that has never existed at the cost of one that ships.
  */
 export function parseNodeUrn(urn: string): NodeUrnParts | null {
   if (typeof urn !== "string") return null;
@@ -59,8 +70,8 @@ export function parseNodeUrn(urn: string): NodeUrnParts | null {
   const graph = urn.slice(0, colon);
   if (!isNodeGraph(graph)) return null;
   const rest = urn.slice(colon + 1);
-  const slash = rest.indexOf("/");
-  if (slash <= 0) return null; // need a non-empty kit before the first '/'
+  const slash = rest.lastIndexOf("/");
+  if (slash <= 0) return null; // need a non-empty kit before the last '/'
   const kit = rest.slice(0, slash);
   const id = rest.slice(slash + 1);
   if (!kit || !id) return null;
