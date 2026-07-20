@@ -3,6 +3,7 @@ import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { LibrarianTerminal } from "./LibrarianTerminal";
 import { AlgorithmsWorkspace } from "./AlgorithmsWorkspace";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
+import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 import { useAppStore } from "@/store";
 import { STUDIO_SESSIONS } from "@/features/studio-sessions";
 
@@ -35,8 +36,26 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("LibrarianTerminal dock (#3357)", () => {
-  it("claims the librarian's stable pane id on the shared TerminalHost", () => {
+  // #3427 — an app-owned studio session must NOT create its terminal until the mount that supplies its
+  // launch props has claimed the pane. Without that gate the viewer registered first, `TerminalView`
+  // mounted with `initialCwd`/`initCmd` undefined, and the one-shot `pty_create` ran in the app's own
+  // directory: no spec CLAUDE.md, no `--continue`, no persona kickoff, and — because
+  // `ensure_session_settings` skips an empty cwd — NO ROLE GATE. So the dock alone claiming the pane is
+  // the bug, not the contract; these two tests pin both halves of it.
+  it("does NOT create the terminal from the dock alone — it waits for the session mount (#3427)", () => {
     const { container } = render(<TerminalHost><LibrarianTerminal /></TerminalHost>);
+    expect(screen.getByTestId("librarian-terminal")).toBeInTheDocument();
+    expect(claimedPanes(container)).toEqual([]);
+  });
+
+  it("claims the librarian's stable pane id once the session mount supplies the launch props (#3427)", () => {
+    const { container } = render(
+      <TerminalHost>
+        {/* Stands in for StudioSessionMount: the PRIMARY claim carrying cwd/initCmd. */}
+        <TerminalSlot paneId={STUDIO_SESSIONS.librarian.paneId} primary parked visible={false} initialCwd="/tmp/librarian" />
+        <LibrarianTerminal />
+      </TerminalHost>,
+    );
     expect(screen.getByTestId("librarian-terminal")).toBeInTheDocument();
     expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.librarian.paneId);
   });
@@ -68,7 +87,14 @@ describe("LibrarianTerminal dock (#3357)", () => {
 
 describe("AlgorithmsWorkspace librarian dock (#2787)", () => {
   it("docks the librarian session below the graph", () => {
-    const { container } = render(<TerminalHost><AlgorithmsWorkspace /></TerminalHost>);
+    // The primary claim stands in for StudioSessionMount — without it the #3427 gate correctly withholds
+    // the terminal, and this test is about WHERE the dock sits, not about that gate.
+    const { container } = render(
+      <TerminalHost>
+        <TerminalSlot paneId={STUDIO_SESSIONS.librarian.paneId} primary parked visible={false} initialCwd="/tmp/librarian" />
+        <AlgorithmsWorkspace />
+      </TerminalHost>,
+    );
     expect(screen.getByTestId("librarian-terminal")).toBeInTheDocument();
     expect(claimedPanes(container)).toContain(STUDIO_SESSIONS.librarian.paneId);
   });
