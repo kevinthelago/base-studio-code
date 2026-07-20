@@ -23,6 +23,7 @@
 // check still cannot get a plan that spawns anything.
 
 import { autoSpawnDecision, AUTO_SPAWNABLE_ROLE } from "./autoSpawn";
+import type { SessionRole } from "./roleModel";
 
 /** One open improvement request, as `bsc request list --open --json` returns it. */
 export interface OpenRequest {
@@ -55,7 +56,7 @@ export interface SpawnPlan {
    *  (`debugger`) — carried on the plan so the launcher READS the role rather than choosing one. A
    *  launcher that ignores this and starts some other role is then an obvious defect at the call site,
    *  not an invisible assumption. */
-  role: typeof AUTO_SPAWNABLE_ROLE;
+  role: SessionRole;
   /** Requests to start a session for, oldest first. */
   spawn: OpenRequest[];
   /** Everything not spawned, each with why — never a silent drop. */
