@@ -45,6 +45,26 @@ export function isPathConfined(repoRoot: string, target: string): boolean {
 }
 
 /**
+ * Whether a **read** may reach `target` even though it sits OUTSIDE the repo root: it is an absolute
+ * path under one of the session's declared read-only HARVEST roots (#3509 / #3530).
+ *
+ * #3509 widened what `bsc ui harvest` / `bsc graph harvest` may SCAN via `$BSC_HARVEST_ROOTS`, but the
+ * session's Read tool is gated by the separate `bsc-confine` hook, which knew nothing of those roots — so
+ * the designer could harvest components from the app repo yet not Read the sibling files they import
+ * (the utility/hook/type modules harvest doesn't surface). This closes that: a Read of a harvest root is
+ * allowed. It is deliberately **read-only** — only the caller's `Read` tool composes this; Write/Edit stay
+ * confined — so a harvest root grants no write anywhere, matching the #3509 contract.
+ *
+ * Same conservatism as {@link isPathConfined}: a `..` segment is rejected, and only ABSOLUTE paths are
+ * considered (a plain relative path resolves against the repo-root cwd, so it is in-repo by construction
+ * and can only escape via `..`, which is already blocked). Empty roots contribute nothing.
+ */
+export function isUnderHarvestRoot(harvestRoots: readonly string[], target: string): boolean {
+  if (!target || hasParentSegment(target) || !isAbsolute(target)) return false;
+  return harvestRoots.some((r) => r && underRoot(r, target));
+}
+
+/**
  * Whether `target` is the session's OWN `.claude/` config (the hook list + permissions) — which the
  * file tools must never touch, even though it sits INSIDE the repo root (so {@link isPathConfined}
  * passes it). The `bsc-confine` hook blocks it too (#1916 config self-protection): an agent must not
