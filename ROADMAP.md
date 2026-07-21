@@ -7,15 +7,21 @@ We work one version at a time, **release-and-continue**: a version ships builds 
 | Version | Status | Theme |
 |---|---|---|
 | `1.0.3` | ✅ Complete | User experience, resiliency, the core **Default** blueprint + triage — and the parallel **run-on-any-model** `bsc-agent` pillar |
-| `1.0.4` | 🚧 Current | **Enterprise integration & migration** — connect read-only to ERP/CRM/BPM, scan data + configs + behaviors into canonical data models, generate bespoke software with compliance baked in |
-| `1.0.4n` | 🚧 Current · fix & polish | The rolling `1.0.4n` fix-and-polish line (`1.0.41`, `1.0.42`, …): the **codebase refactor & consolidation** sweep, **integrations as agent-authored connectors**, a data-driven planner, a wave of planner/fleet hardening, and ongoing polish |
-| `1.0.5` | 🔜 Next | **The UI release** — in-app page/component/animation authoring with iterative generate→preview→refine loops — **and finishing the maintenance bots** (#1957) |
+| `1.0.4` | ✅ Complete | **Enterprise integration & migration** — connect read-only to ERP/CRM/BPM, scan data + configs + behaviors into canonical data models, generate bespoke software with compliance baked in |
+| `1.0.4n` | ✅ Complete · fix & polish | The rolling `1.0.4n` fix-and-polish line (`1.0.41`, `1.0.42`, …): the **codebase refactor & consolidation** sweep, **integrations as agent-authored connectors**, a data-driven planner, a wave of planner/fleet hardening, and ongoing polish |
+| `1.0.5` | ✅ Complete | **The UI release** — in-app page/component/animation authoring with iterative generate→preview→refine loops — **and the maintenance bots** (#1957). Shipped through the **v1.0.51** build; UI/design-studio work still in flight rolled forward to the `1.0.52` milestone |
+| `1.0.51` | ✅ Complete | **Market research, marketing & usage analytics** — the **Marketer** (market on your behalf via channel MCP servers) + generated-apps **usage analytics** |
+| `1.0.52` | 🚧 Current | **Accessibility & text-to-speech** — plus the continued UI / design-studio work rolled forward from `1.0.5` |
 | `2.0.0` | 🎯 Unification | Once every feature is added and the app is a defined product: cut `2.0.0` and switch to **rigorous semver**, followed strictly from there |
 
 > **Versioning is loose until v2, on purpose.** The app is still coalescing, so numbering trades
-> tidiness for velocity: **`1.0.4n`** (bump the trailing digit for each fix/polish release) → **`1.0.5`**
-> (the UI release + maintenance bots) → **`2.0.0`** (unification, then rigorous semver from there). The
-> phase boundaries are tracked as GitHub milestones (`1.0.5`, `2.0.0`).
+> tidiness for velocity: **`1.0.4n`** (bump the trailing digit for each fix/polish release) → the themed
+> **`1.0.5x`** steps (**`1.0.5`** UI release → **`1.0.51`** market research/analytics → **`1.0.52`**
+> accessibility & TTS, current) → **`2.0.0`** (unification, then rigorous semver from there). The phase
+> boundaries are tracked as GitHub milestones.
+>
+> _(The dated per-version sections below still describe the `1.0.4`/`1.0.5` era and lag this table — a
+> fuller catch-up of that prose is pending.)_
 
 ---
 
