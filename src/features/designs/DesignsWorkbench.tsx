@@ -209,6 +209,22 @@ export function DesignsWorkbench() {
   // small by its render ratio) opens zoomed IN so it reads; the user zooms further via the engine.
   const previewInitialZoom = vp === "auto" ? 1 : sel && (sel.role === "page" || sel.role === "layout") ? 1.4 : 1.15;
   const [previewZoomApi, setPreviewZoomApi] = useState<{ zoomIn: () => void; zoomOut: () => void; fit: () => void } | null>(null);
+  // The expanded try-on's live frame — defined once so it mounts EITHER directly (fluid: it fills the
+  // canvas at scale 1) OR inside the centering placer (a fixed breakpoint), without duplicating props.
+  const expandedPreviewFrame = sel && (
+    <ComponentPreviewFrame
+      comp={sel}
+      theme={theme}
+      themeId={kitTheme}
+      themeVars={activeTheme?.vars ?? {}}
+      width={previewW}
+      height={previewH}
+      extraAnimation={tryAnimDef}
+      previewState={previewState}
+      zoomEngine={{ initial: previewInitialZoom }}
+      registerZoomApi={setPreviewZoomApi}
+    />
+  );
 
   const allVariants = focusComp ? focusComp.variants : [];
   const activeVariant = allVariants.includes(variant) ? variant : allVariants[0] ?? "default";
@@ -501,28 +517,21 @@ export function DesignsWorkbench() {
                 DOM transform on `#root` (the browser re-rasterizes crisply at any scale, unlike a
                 CSS-scaled iframe). Drag pans anywhere (a click still interacts); the wheel scrolls/pans the
                 content, ⌘/ctrl+wheel zooms; the +/−/fit buttons post commands to the engine. */}
-            {/* eslint-disable-next-line no-restricted-syntax -- callback ref: a ResizeObserver reads this canvas's px size to size the fixed fit (#3190) */}
+            {/* eslint-disable-next-line no-restricted-syntax -- callback ref: a ResizeObserver reads this canvas's px size to size the fluid fit (#3190/#3551) */}
             <div
               ref={mountPreviewCanvas}
               style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", background: "var(--bg-canvas, var(--bg))" }}
             >
-              {/* #3251: no `user-select:none` here — it read as the drag's selection guard but is a no-op
-                  (this wrapper's only child is the iframe, and CSS does not cross a document boundary).
-                  The guard lives in the engine's own srcdoc CSS, where the drag actually happens. */}
-              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: previewH, pointerEvents: "auto", transform: `translate(${previewFit.tx}px,${previewFit.ty}px) scale(${previewFit.scale})`, transformOrigin: "0 0" }}>
-                <ComponentPreviewFrame
-                  comp={sel}
-                  theme={theme}
-                  themeId={kitTheme}
-                  themeVars={activeTheme?.vars ?? {}}
-                  width={previewW}
-                  height={previewH}
-                  extraAnimation={tryAnimDef}
-                  previewState={previewState}
-                  zoomEngine={{ initial: previewInitialZoom }}
-                  registerZoomApi={setPreviewZoomApi}
-                />
-              </Box>
+              {/* #3551: in fluid mode the frame IS the canvas (scale 1), so it mounts DIRECTLY — no placer
+                  wrapper, one fewer same-size box in the stack. A fixed breakpoint keeps the placer, which
+                  centers + downscale-fits its frame into the canvas via the transform. #3251: no
+                  `user-select:none` here — the drag's selection guard lives in the engine's own srcdoc CSS
+                  (CSS does not cross the iframe document boundary). */}
+              {vp === "auto" ? expandedPreviewFrame : (
+                <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: previewH, pointerEvents: "auto", transform: `translate(${previewFit.tx}px,${previewFit.ty}px) scale(${previewFit.scale})`, transformOrigin: "0 0" }}>
+                  {expandedPreviewFrame}
+                </Box>
+              )}
             </div>
           </Box>
         ) : legend}
