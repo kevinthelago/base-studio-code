@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import {
-  buildSignature, scannableComponents, pendingScans, runPooled, toBuildStatus, buildAndProbe, scanComponents,
+  buildSignature, scannableComponents, pendingScans, runPooled, toBuildStatus, buildAndProbe, scanComponents, durableLogSync,
   probeStateBlanks,
   type ScannableComponent, type ComponentBuildStatus, type RunFn, type StateProbe, type RuntimeStateCategory,
 } from "./componentScan";
@@ -336,5 +336,28 @@ describe("scanComponents — data-state blank reporting (#3191)", () => {
     const results = new Map<string, RuntimeStateCategory[]>();
     await scanComponents(items, bundle, 2, (id, _s, b) => results.set(id, b), () => false, run);
     expect(results.get("button")).toEqual([]);
+  });
+});
+
+describe("durableLogSync — mirror render results to the durable log (#3540)", () => {
+  it("records a runtime throw's message", () => {
+    expect(durableLogSync({ state: "ok" }, { state: "error", kind: "runtime", message: "reading map of undefined" }))
+      .toBe("reading map of undefined");
+    // ...even with no prior status (first-visit error).
+    expect(durableLogSync(undefined, { state: "error", kind: "runtime", message: "boom" })).toBe("boom");
+  });
+
+  it("clears (empty) when a prior error is now ok or empty", () => {
+    expect(durableLogSync({ state: "error", kind: "runtime", message: "x" }, { state: "ok" })).toBe("");
+    expect(durableLogSync({ state: "error", kind: "build", message: "x" }, { state: "empty", message: "" })).toBe("");
+  });
+
+  it("does NOTHING for a healthy component or a build error — no first-visit log spam", () => {
+    expect(durableLogSync(undefined, { state: "ok" })).toBeNull(); // first-visit ok
+    expect(durableLogSync({ state: "ok" }, { state: "ok" })).toBeNull();
+    // a build error is a different, statically-detectable class — not the render-error signal.
+    expect(durableLogSync(undefined, { state: "error", kind: "build", message: "esbuild" })).toBeNull();
+    // empty (rendered nothing but did not throw) with no prior error is a no-op too.
+    expect(durableLogSync(undefined, { state: "empty", message: "" })).toBeNull();
   });
 });
