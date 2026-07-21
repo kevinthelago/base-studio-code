@@ -14,7 +14,8 @@ import { useAppStore } from "@/store";
 import { bundleComponent } from "@/shared/lib/preview/componentBundle";
 import { probeComponentRuntime } from "@/shared/lib/preview/componentRuntimeProbe";
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
-import { scannableComponents, pendingScans, scanComponents } from "./componentScan";
+import { scannableComponents, pendingScans, scanComponents, durableLogSync } from "./componentScan";
+import { recordPreviewError } from "./componentBridge";
 import { type KitArtifact, type LibraryModuleResolver } from "./componentPreview";
 import { libraryModuleResolver } from "./libraryModules";
 import type { ComponentRecord } from "./model";
@@ -71,7 +72,13 @@ export function useComponentScan(
         // Mark the signature only once its result lands, so a cancelled build is re-queued next run
         // (never marked-but-unscanned).
         scannedSigs.current.set(id, sigById.get(id) ?? "");
+        // #3540: mirror the render result to the DURABLE log BEFORE overwriting the store status, so the
+        // prior status is still readable — `durableLogSync` records a runtime throw and clears a
+        // now-resolved error (fire-and-forget; a missing `bsc` no-ops it). This is what makes
+        // `bsc ui doctor` see the COMPLETE errored set, not only components a human opened.
+        const sync = durableLogSync(useAppStore.getState().componentBuildStatus[id], status);
         setStatus(id, status);
+        if (sync !== null) void recordPreviewError(id, sync);
         // Render-confirmed data-state blanks (#3191) — folded into the graph's health badges. Always write
         // (even `[]`) so a fixed component clears its prior blank badge on re-scan.
         setStateHealth(id, stateBlanks);
