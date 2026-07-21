@@ -172,18 +172,11 @@ describe("GlanceStreamMorph (#2401/#2534)", () => {
     expect(onRect).toHaveBeenCalledWith(null);
   });
 
-  it("hides the chat input while the CLI is running, showing it at rest (#2534)", () => {
-    // At rest (no "run" status) the message input is present.
-    const { rerender } = render(<GlanceStreamMorph node={NODE} slot={SLOT} paneId="proj:api-client" name="api-client" onClose={() => {}} />);
-    expect(screen.getByPlaceholderText("Message the agent — Enter to send")).toBeInTheDocument();
-    // A turn opens ("run") → the input is hidden and a working affordance takes its place.
-    // NOTE the braces: this store's `setState` is persist-wrapped and returns a PROMISE, so a concise
-    // arrow hands `act` a thenable, which silently switches it to ASYNC mode — the update is applied to
-    // the store but React never flushes it before the assertions, and the still-open act scope also
-    // swallows the following `rerender`. (Same class of landmine as #3390's returned-mock teardown.)
-    act(() => { useAppStore.setState({ paneStatus: { "proj:api-client": "run" } }); });
-    rerender(<GlanceStreamMorph node={NODE} slot={SLOT} paneId="proj:api-client" name="api-client" onClose={() => {}} />);
+  it("renders no chat text-input — the terminal is the input surface (#3523)", () => {
+    // The separate "message the agent" box (and its run-time hide/show, #2534) is gone: a Claude CLI
+    // session has its own TUI input inside the terminal, so the dock adds no redundant second one.
+    render(<GlanceStreamMorph node={NODE} slot={SLOT} paneId="proj:api-client" name="api-client" onClose={() => {}} />);
     expect(screen.queryByPlaceholderText("Message the agent — Enter to send")).toBeNull();
-    expect(screen.getByText(/working — input returns/)).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).toBeNull();
   });
 });
