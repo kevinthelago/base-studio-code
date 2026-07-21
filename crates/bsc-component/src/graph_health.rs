@@ -84,11 +84,13 @@ impl Finding {
     }
 }
 
-/// Findings for components that threw when the PREVIEW rendered them (#3540) — the runtime half doctor is
-/// blind to. Doctor is a STATIC analyzer and cannot mount a component, so a render throw can only reach
-/// the report via the durable preview-error log (`preview_errors::latest_error_by_id`), which the app's
-/// on-visit scan + live previews record. Fed those `(id, message)` pairs, this emits one finding per
-/// errored component STILL in `components` (a stale id for a removed component is dropped).
+/// Findings for components whose PREVIEW failed — a `build:` esbuild failure OR a `render:` runtime throw
+/// (#3540/#3549) — the half doctor's static analyzer is blind to. Doctor cannot run esbuild or mount a
+/// component, so a preview failure can only reach the report via the durable preview-error log
+/// (`preview_errors::latest_error_by_id`), which the app's on-visit scan + live previews record with a
+/// `build:`/`render:` kind prefix. Fed those `(id, message)` pairs, this emits one finding per errored
+/// component STILL in `components` (a stale id for a removed component is dropped), with prose matched to
+/// the kind (a build failure and a render throw need different fixes).
 ///
 /// Deliberately NOT part of [`analyze_with`]: that function has a byte-parity TS twin (`graphHealth.ts`)
 /// which is static-only, and the render error is a Rust/CLI-only signal fed from a log the frontend
@@ -102,22 +104,43 @@ pub fn render_error_findings(components: &[Value], errors: &[(String, String)]) 
             let comp = by_id.get(id.as_str())?; // drop a stale error for a component no longer in the store
             let name = comp.get("name").and_then(Value::as_str).unwrap_or(id.as_str()).to_string();
             let kit = comp.get("kitId").and_then(Value::as_str).unwrap_or_default().to_string();
+            // The scan records the failure with a `build:`/`render:` kind prefix (#3549). Strip it for
+            // display and branch the prose — a BUILD failure (esbuild) and a RENDER throw (an exception
+            // during mount) need different fixes. A raw message with no prefix is treated as a render throw.
+            let is_build = message.starts_with("build:");
+            let detail = message
+                .strip_prefix("build:")
+                .or_else(|| message.strip_prefix("render:"))
+                .unwrap_or(message)
+                .trim();
             // Collapse a multi-line stack trace to one line and cap it — the finding is a summary; the
             // full trace stays in `bsc ui preview-errors`.
-            let one_line: String = message.replace(['\n', '\t'], " ").chars().take(240).collect();
+            let one_line: String = detail.replace(['\n', '\t'], " ").chars().take(240).collect();
             Some(Finding {
-                // Severity 5 — above every static finding (cycle is 4): a confirmed render throw is the
+                // Severity 5 — above every static finding (cycle is 4): a confirmed preview failure is the
                 // most actionable, so it sorts to the top of the report.
                 category: "render-error",
                 severity: 5,
                 kit,
                 node_ids: vec![id.clone()],
                 node_names: vec![name.clone()],
-                why: format!("`{name}` threw when the preview rendered it: {}", one_line.trim()),
-                suggested_action: format!(
-                    "the preview likely passes `undefined` for a prop it reads — check `bsc ui preview-props {id}` \
-                     and guard the access (or fix the sample-data shape)"
-                ),
+                why: if is_build {
+                    format!("`{name}` failed to BUILD in the preview: {}", one_line.trim())
+                } else {
+                    format!("`{name}` threw when the preview rendered it: {}", one_line.trim())
+                },
+                suggested_action: if is_build {
+                    format!(
+                        "the preview's esbuild build failed — check the source + imports with \
+                         `bsc ui get {id} --field srcText --raw` (a missing/mistyped import, an unresolved \
+                         sibling, or TypeScript in a file loaded as plain JS shows up here)"
+                    )
+                } else {
+                    format!(
+                        "the preview likely passes `undefined` for a prop it reads — check `bsc ui preview-props {id}` \
+                         and guard the access (or fix the sample-data shape)"
+                    )
+                },
             })
         })
         .collect()
@@ -3088,5 +3111,32 @@ mod tests {
     fn render_error_findings_is_empty_with_no_errors() {
         let comps = vec![json!({ "id": "a", "name": "A", "kitId": "k" })];
         assert!(render_error_findings(&comps, &[]).is_empty());
+    }
+
+    #[test]
+    fn render_error_findings_distinguishes_a_build_failure_from_a_render_throw() {
+        let comps = vec![
+            json!({ "id": "workspaceshellpage", "name": "WorkspaceShellPage", "kitId": "harvested" }),
+            json!({ "id": "bsc-dropdown", "name": "BscDropdown", "kitId": "harvested" }),
+        ];
+        let errors = vec![
+            // A `build:`-prefixed message (#3549) — the scan records esbuild failures too now.
+            (
+                "workspaceshellpage".to_string(),
+                "build: Build failed with 1 error: mem:src/shared/ui/layouts:2:12: ERROR: Expected \"from\" but found \"{\"".to_string(),
+            ),
+            ("bsc-dropdown".to_string(), "render: Cannot read properties of undefined".to_string()),
+        ];
+        let f = render_error_findings(&comps, &errors);
+        let ws = f.iter().find(|x| x.node_ids == ["workspaceshellpage"]).unwrap();
+        assert!(ws.why.contains("failed to BUILD"), "build failures read as a build error, not a render throw");
+        assert!(!ws.why.contains("build:"), "the kind prefix is stripped from the display message");
+        assert!(ws.why.contains("Expected"), "carries the real esbuild message");
+        assert!(ws.suggested_action.contains("--field srcText"), "build suggestion points at the source, not props");
+        // The `render:`-prefixed one keeps the runtime prose + prop suggestion, prefix stripped.
+        let dd = f.iter().find(|x| x.node_ids == ["bsc-dropdown"]).unwrap();
+        assert!(dd.why.contains("threw when the preview rendered it"));
+        assert!(!dd.why.contains("render:"), "the kind prefix is stripped");
+        assert!(dd.suggested_action.contains("bsc ui preview-props"));
     }
 }
