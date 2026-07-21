@@ -10,14 +10,14 @@ We work one version at a time, **release-and-continue**: a version ships builds 
 | `1.0.4` | ✅ Complete | **Enterprise integration & migration** — connect read-only to ERP/CRM/BPM, scan data + configs + behaviors into canonical data models, generate bespoke software with compliance baked in |
 | `1.0.4n` | ✅ Complete · fix & polish | The rolling `1.0.4n` fix-and-polish line (`1.0.41`, `1.0.42`, …): the **codebase refactor & consolidation** sweep, **integrations as agent-authored connectors**, a data-driven planner, a wave of planner/fleet hardening, and ongoing polish |
 | `1.0.5` | ✅ Complete | **The UI release** — in-app page/component/animation authoring with iterative generate→preview→refine loops — **and the maintenance bots** (#1957). Shipped through the **v1.0.51** build; UI/design-studio work still in flight rolled forward to the `1.0.52` milestone |
-| `1.0.51` | ✅ Complete | **Market research, marketing & usage analytics** — the **Marketer** (market on your behalf via channel MCP servers) + generated-apps **usage analytics** |
-| `1.0.52` | 🚧 Current | **Accessibility & text-to-speech** — plus work rolled forward from earlier steps: the UI / design-studio work (`1.0.5`) and the Marketer / usage-analytics work (`1.0.51`) |
+| `1.0.51` | ✅ Complete · delivery build | **The UI-release delivery** — the build that carried the bulk of the `1.0.5` theme to `develop`: the **Design Studio** (in-app page/component/animation authoring · live build-and-iframe preview · component motion-as-data · the graph-health `doctor`), the **Algorithms knowledge graph** (`bsc graph`), **Studio snapshots** (save/share/re-seed the whole app library), the **maintenance-bot suite** (`bsc debug` · `bsc metrics` · warm-pool debugger · component + algorithm **harvest**), the **CAD geometry kernel** (`bsc cad`), the **Sounds** pillar, and **Glance-as-cockpit**. _(Its namesake market-research/marketing/analytics theme moved to `1.0.52`.)_ |
+| `1.0.52` | 🚧 Current | **Accessibility & text-to-speech · market research, marketing & usage analytics** — the current step: accessibility + TTS, plus the **Marketer** (market on your behalf via channel MCP servers, keychain-backed secrets) and generated-apps **usage analytics** (rolled forward from `1.0.51`), and the UI / design-studio work still in flight from `1.0.5` |
 | `2.0.0` | 🎯 Unification | Once every feature is added and the app is a defined product: cut `2.0.0` and switch to **rigorous semver**, followed strictly from there |
 
 > **Versioning is loose until v2, on purpose.** The app is still coalescing, so numbering trades
 > tidiness for velocity: **`1.0.4n`** (bump the trailing digit for each fix/polish release) → the themed
-> **`1.0.5x`** steps (**`1.0.5`** UI release → **`1.0.51`** market research/analytics → **`1.0.52`**
-> accessibility & TTS, current) → **`2.0.0`** (unification, then rigorous semver from there). The phase
+> **`1.0.5x`** steps (**`1.0.5`** UI release → **`1.0.51`** the UI-release delivery build → **`1.0.52`**
+> accessibility & TTS + market research/marketing/analytics, current) → **`2.0.0`** (unification, then rigorous semver from there). The phase
 > boundaries are tracked as GitHub milestones.
 >
 > _(The dated per-version sections below still describe the `1.0.4`/`1.0.5` era and lag this table — a
