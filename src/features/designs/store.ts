@@ -139,7 +139,10 @@ export interface ComponentsSlice {
    *  touched collection so the AI's edit appears live (hydrate is otherwise one-shot at boot) —
    *  `hydrateComponents` always, plus `hydrateThemes` for a `theme` touch. A `null` id clears the
    *  focus (session end) without re-hydrating. */
-  setAiFocused: (id: string | null, collection?: string) => void;
+  /** Live-focus the node Claude is on (#2525). `opts.hydrate` (default true) re-pulls the collection so a
+   *  WRITE's edit shows; a READ-focus (#3545 `ui-focus`) passes `false` — the preview follows Claude's
+   *  inspection without a library refetch on every `get`. */
+  setAiFocused: (id: string | null, collection?: string, opts?: { hydrate?: boolean }) => void;
 
   /** Per-component preview-BUILD status (#2838) — component id → ok | error(message), populated lazily
    *  by the on-visit `useComponentScan` sweep (esbuild-builds each buildable component in the active
@@ -310,9 +313,12 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
 
   aiFocusedId: null,
 
-  setAiFocused: (id, collection) => {
+  setAiFocused: (id, collection, opts) => {
     set({ aiFocusedId: id });
     if (!id) return; // a clear (session end) — no re-pull
+    // #3545: a READ-focus (`ui-focus`) drives the preview only — nothing changed, and this fires on every
+    // `get`, so a re-hydrate here would refetch the whole library every ~1.5s poll. Writes still hydrate.
+    if (opts?.hydrate === false) return;
     // Re-hydrate the touched collection so the AI's edit shows without a relaunch (#2483/#2514/#2525).
     // A designer session edits via the CLI (`bsc ui set` / `set-token` / `define-variant`), which lands
     // here as a `ui-touch` — the desktop `setComponent` fan-out never runs for it. So DIFF the reloaded
