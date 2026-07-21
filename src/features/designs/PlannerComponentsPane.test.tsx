@@ -2,11 +2,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { act } from "react";
 import { PlannerComponentsPane } from "./PlannerComponentsPane";
-import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
+import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "./lib/reactUiKit";
 import { useAppStore } from "@/store";
 
+// #3543: the packaged seed is now a single EMPTY kit; this pane test drives the react-ui LIBRARY (the
+// manifest-generated assembler — the exact populated kit the seed used to carry) so there are components to list.
 beforeEach(() => {
-  useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, activeWorkspace: "projects" });
+  useAppStore.setState({ components: REACT_UI_COMPONENTS, kits: [REACT_UI_KIT], activeWorkspace: "projects" });
 });
 afterEach(() => { vi.useRealTimers(); });
 

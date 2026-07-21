@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "@/store";
-import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
+import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "./lib/reactUiKit";
 import type { ComponentRecord, Kit } from "./lib/model";
 
-beforeEach(() => useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS }));
+// #3543: the packaged seed is now a single EMPTY kit. This collision test needs a built-in kit + component
+// already in the store to collide against, so it seeds the react-ui LIBRARY (assembler) — a built-in
+// `react-ui` kit with a `button` component — exactly the pre-#3543 built-in the import must not clobber.
+beforeEach(() => useAppStore.setState({ components: REACT_UI_COMPONENTS, kits: [REACT_UI_KIT] }));
 
 // A kit whose id + a component id collide with a packaged built-in — the import must not clobber them.
 const kit: Kit = { id: "react-ui", name: "Imported Kit", stack: "x", dot: "var(--accent)" };

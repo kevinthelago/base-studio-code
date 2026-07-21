@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import type { Kit, ComponentRecord } from "./model";
 import { groupKits, groupComponentsByGroup, OTHER_BUCKET, UNGROUPED_LABEL, type KitGroup, type KitTreeNode } from "./kitGroups";
-import { SEED_KITS } from "./seed";
+import { SEED_KITS, BASE_STUDIO_CODE_KIT_ID } from "./seed";
 
 const kit = (id: string, tech?: string, style?: string): Kit =>
   ({ id, name: id, tech, style, stack: "", dot: "var(--accent)" });
@@ -39,33 +39,18 @@ describe("groupKits — always technology → style (#2506)", () => {
     expect(styles.every((s) => s.children.length === 0)).toBe(true);
   });
 
-  it("the real packaged seed renders React → Studio + Motion + Data viz → components (#2506/#3194/#3451 — no flatten)", () => {
-    // Every packaged kit sits under the react tech: react-ui (studio) + the shared `base` motion
-    // library (motion, #3451) + the viz kits (data-viz).
-    // #3242 added matrix-viz + graph-viz alongside algo-viz, so data-viz went from a SINGLE-kit style
-    // (header IS the kit) to a MULTI-kit one (header is a group over real kit rows) — this asserts
-    // whichever shape the seed's own cardinality implies, so the next viz kit can't silently break it.
+  it("the real packaged seed (one empty kit) groups under React → Studio → base-studio-code (#3543)", () => {
+    // #3543 wiped the library to a single empty `base-studio-code` kit (tech react / style studio). The
+    // rich multi-kit grouping shapes (a multi-kit style group, a motion style, a data-viz group) are
+    // exercised by the synthetic-fixture tests in this file; this one asserts the REAL seed still groups
+    // sanely — one kit under (react, studio), so the style header IS the kit (single-kit merge).
     const t = groupKits(SEED_KITS);
     expect(t.map((n) => asGroup(n).label)).toEqual(["react"]);
     const styles = asGroup(t[0]).children.map(asGroup);
-    expect(styles.map((s) => s.label)).toEqual(["studio", "motion", "data-viz"]);
-    const [studio, motion, dataViz] = styles;
-    // studio holds react-ui + `fleet` (#3462 — the app's own UI catalogued into the graph) → a real
-    // group with a kit row each. This style made the SAME single-kit → multi-kit transition the
-    // comment above anticipated for data-viz, which is exactly what this assertion exists to notice.
-    expect(studio.kit).toBeUndefined();
-    expect(studio.count).toBe(2);
-    expect(flatIds(studio.children)).toEqual(["react-ui", "fleet"]);
-    // motion holds the shared `base` kit alone → likewise a merged single-kit header (#3451). It is a
-    // MOTION library, deliberately not filed under react-ui's "studio" visual language.
-    expect(motion.kit?.id).toBe("base");
-    expect(motion.children).toHaveLength(0);
-    // data-viz holds the three viz kits → a real group with a kit row each, no header merge.
-    expect(dataViz.kit).toBeUndefined();
-    expect(dataViz.count).toBe(3);
-    expect(dataViz.children.map((n) => n.kind)).toEqual(["kit", "kit", "kit"]);
-    expect(flatIds(dataViz.children)).toEqual(["algo-viz", "matrix-viz", "graph-viz"]);
-    // Nothing is dropped or reordered by the grouping, whatever the cardinality.
+    expect(styles.map((s) => s.label)).toEqual(["studio"]);
+    expect(styles[0].kit?.id).toBe(BASE_STUDIO_CODE_KIT_ID);
+    expect(styles[0].children).toHaveLength(0);
+    // Nothing is dropped or reordered by the grouping.
     expect(flatIds(t)).toEqual(SEED_KITS.map((k) => k.id));
   });
 
