@@ -4,27 +4,28 @@ import type { ComponentRecord, Kit } from "./lib/model";
 import type { Dispatch } from "./lib/propagation";
 import { makeChange } from "./lib/propagation";
 import { contractChanged, mergeDispatches } from "./store";
-import { SEED_COMPONENTS, SEED_KITS, DEFAULT_KIT_SEEDED, DEFAULT_KIT_ID } from "./lib/seed";
+import { SEED_COMPONENTS, SEED_KITS, BASE_STUDIO_CODE_KIT_ID } from "./lib/seed";
 import { SEED_THEMES, type KitThemeRecord } from "./lib/themes";
 import { stampSeedHash } from "./lib/seedRefresh";
 import * as bridge from "./lib/componentBridge";
 import * as themeBridge from "./lib/themeBridge";
 import * as usageBridge from "./lib/kitUsageBridge";
 import { setActiveKitThemes, activeKitThemes, themeById } from "@/shared/ui/kit";
-import { ALGO_VIZ_KIT_ID } from "@/shared/ui/kit/algoVizAnimations";
 
-// Everything that seeds REGARDLESS of DEFAULT_KIT_SEEDED, so the #3029 "default kit disabled" hydrate
-// tests below expect it to survive/recover while react-ui retires: the shared `base` motion kit
-// (#3451, always-on because react-ui's primitives REFERENCE its animations by name), the VIZ kits
-// (algo-viz #3194 + matrix-viz/graph-viz #3242), and every non-default PACKAGED kit (`fleet`, #3462).
-//
-// Defined as "not the gated default" against seed.ts's own DEFAULT_KIT_ID rather than by listing the
-// styles that happen to qualify. The previous form (`style === "data-viz" || id === BASE_KIT_ID`) was
-// a restatement of the seed rule that drifted the moment a kit arrived which was neither — which is
-// exactly what #3462 did, leaving these tests red on develop for four slices.
-const ALWAYS_ON_KITS = SEED_KITS.filter((k) => k.id !== DEFAULT_KIT_ID);
-const ALWAYS_ON_KIT_IDS = new Set(ALWAYS_ON_KITS.map((k) => k.id));
-const ALWAYS_ON_COMPS = SEED_COMPONENTS.filter((c) => c.kitId && ALWAYS_ON_KIT_IDS.has(c.kitId));
+// The packaged seed is now a single EMPTY kit (#3543): SEED_KITS = [base-studio-code], SEED_COMPONENTS = [].
+// The store-BEHAVIOR tests below (contract-diff propagation, live-focus fan-out, setComponent) need a real
+// component to diff, so they carry their OWN fixture — one Button in the base-studio-code kit — instead of
+// reaching into SEED_COMPONENTS for a seed component that no longer exists. Independent of the packaged seed.
+const FIXTURE_BUTTON: ComponentRecord = {
+  id: "button", name: "Button", kitId: BASE_STUDIO_CODE_KIT_ID, role: "primitive",
+  version: "1.0.0", used: 3, tags: ["form"], variants: ["default", "primary"], composes: [],
+  props: [
+    { name: "size", type: "string", req: false, desc: "" },
+    { name: "onClick", type: "() => void", req: false, desc: "" },
+  ],
+  whenUse: ["actions"], whenNot: ["links"], src: "Button.tsx", srcText: "<Button/>",
+};
+const FIXTURE_COMPONENTS: ComponentRecord[] = [FIXTURE_BUTTON];
 
 describe("components store slice (#2281)", () => {
   beforeEach(() => {
@@ -40,40 +41,44 @@ describe("components store slice (#2281)", () => {
     expect(useAppStore.getState().kits).toEqual(SEED_KITS);
   });
 
-  // TEMPORARY (#3029/#3194): the packaged react-ui DEFAULT kit is disabled while it's redefined via the
-  // designer, so it seeds NOTHING — but the always-on `algo-viz` builtin (#3194) IS recovered into an
-  // empty store. Restore the react-ui half to "empty store re-seeds every built-in" when the default returns.
-  it.skipIf(DEFAULT_KIT_SEEDED)("hydrateComponents seeds ONLY the always-on builtins (base + viz) into an empty store while the default kit is disabled (#3194/#3242/#3451)", async () => {
+  // #3543: the clean-slate seed is one EMPTY kit. An empty store recovers exactly it — the kit is appended
+  // + pushed (recover/shadow-proof), and NO component is seeded (there are none).
+  it("hydrateComponents seeds the single empty base-studio-code kit into an empty store (#3543)", async () => {
     vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([]);
     vi.spyOn(bridge, "loadKits").mockResolvedValueOnce([]);
     const pushC = vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
     const pushK = vi.spyOn(bridge, "pushKit").mockResolvedValue(undefined);
     await useAppStore.getState().hydrateComponents();
-    // react-ui stays disabled (nothing of it seeds); the viz kits are appended + pushed (recover/shadow-proof).
-    expect(useAppStore.getState().kits).toEqual(ALWAYS_ON_KITS);
-    expect(useAppStore.getState().components).toEqual(ALWAYS_ON_COMPS);
-    expect(pushK).toHaveBeenCalledTimes(ALWAYS_ON_KITS.length);
-    expect(pushC).toHaveBeenCalledTimes(ALWAYS_ON_COMPS.length);
-    expect(pushK).toHaveBeenCalledWith(expect.objectContaining({ id: ALGO_VIZ_KIT_ID }));
+    expect(useAppStore.getState().kits).toEqual(SEED_KITS);
+    expect(useAppStore.getState().kits.map((k) => k.id)).toEqual([BASE_STUDIO_CODE_KIT_ID]);
+    expect(useAppStore.getState().components).toEqual([]);
+    expect(pushK).toHaveBeenCalledTimes(1);
+    expect(pushK).toHaveBeenCalledWith(expect.objectContaining({ id: BASE_STUDIO_CODE_KIT_ID }));
+    expect(pushC).not.toHaveBeenCalled();
   });
 
-  // TEMPORARY (#3029/#3194): the current default (react-ui) retires from an EXISTING store on the next
-  // boot — its pristine built-ins left the seed, so the #2483 reconcile drops them — while the always-on
-  // algo-viz builtin (#3194) survives. Remove the react-ui half when the default returns.
-  it.skipIf(DEFAULT_KIT_SEEDED)("hydrateComponents retires the now-unseeded default built-ins but keeps the always-on kits (#3194/#3242/#3451)", async () => {
-    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce(SEED_COMPONENTS);
-    vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
+  // #3543: the wipe at the STORE/bridge layer — a pre-#3543 store still holding the retired packaged kits
+  // (+ a pristine component) reconciles to just base-studio-code, and each retiree is dropped through the bridge.
+  it("hydrateComponents retires every prior packaged kit + component, converging to base-studio-code (#3543)", async () => {
+    const priorKit = (id: string): Kit =>
+      stampSeedHash({ id, name: id, tech: "react", style: "studio", stack: id, dot: "green", builtin: true } as Kit);
+    const oldKits = ["react-ui", "fleet", "base", "algo-viz", "matrix-viz", "graph-viz"].map(priorKit);
+    const oldComp = stampSeedHash({ ...FIXTURE_BUTTON, kitId: "react-ui", builtin: true });
+    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([oldComp]);
+    vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(oldKits);
     const dropC = vi.spyOn(bridge, "dropComponent").mockResolvedValue(undefined);
     const dropK = vi.spyOn(bridge, "dropKit").mockResolvedValue(undefined);
+    vi.spyOn(bridge, "pushKit").mockResolvedValue(undefined);
     await useAppStore.getState().hydrateComponents();
-    expect(useAppStore.getState().kits).toEqual(ALWAYS_ON_KITS);
-    expect(useAppStore.getState().components).toEqual(ALWAYS_ON_COMPS);
+    expect(useAppStore.getState().kits.map((k) => k.id)).toEqual([BASE_STUDIO_CODE_KIT_ID]);
+    expect(useAppStore.getState().components).toEqual([]);
     expect(dropK).toHaveBeenCalledWith("react-ui");
-    expect(dropC).toHaveBeenCalled();
+    expect(dropK).toHaveBeenCalledWith("fleet");
+    expect(dropC).toHaveBeenCalledWith(oldComp.id);
   });
 
   it("hydrateComponents keeps a user record from the store and does NOT re-push it", async () => {
-    const userComp = { ...SEED_COMPONENTS[0], id: "my-widget", name: "MyWidget", builtin: undefined };
+    const userComp = { ...FIXTURE_BUTTON, id: "my-widget", name: "MyWidget", builtin: undefined };
     vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([userComp]);
     vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS); // all built-in kits already in the store
     const pushC = vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
@@ -136,10 +141,10 @@ describe("designer AI live-focus (#2525)", () => {
 });
 
 describe("kit-change origin (#2810 — a CLI edit fires propagation)", () => {
-  const button = SEED_COMPONENTS.find((c) => c.name === "Button")!;
+  const button = FIXTURE_BUTTON;
   beforeEach(() => {
     vi.restoreAllMocks();
-    useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, kitUsage: [], kitDispatches: [], aiFocusedId: null });
+    useAppStore.setState({ components: FIXTURE_COMPONENTS, kits: SEED_KITS, kitUsage: [], kitDispatches: [], aiFocusedId: null });
   });
 
   it("contractChanged: true on a props/variants/version change, false on a non-contract field", () => {
@@ -161,7 +166,7 @@ describe("kit-change origin (#2810 — a CLI edit fires propagation)", () => {
   it("a ui-touch whose component contract changed fans out to a kit consumer", async () => {
     const edited = { ...button, variants: [...button.variants, "loading"] };
     useAppStore.setState({ kitUsage: [{ projectKey: "p", kitId: button.kitId }] });
-    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([...SEED_COMPONENTS.filter((c) => c.id !== button.id), edited]);
+    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([...FIXTURE_COMPONENTS.filter((c) => c.id !== button.id), edited]);
     vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
     useAppStore.getState().setAiFocused(button.id, "component");
     await new Promise((r) => setTimeout(r, 25)); // let the async hydrate + diff settle
@@ -172,7 +177,7 @@ describe("kit-change origin (#2810 — a CLI edit fires propagation)", () => {
 
   it("a ui-touch with NO contract change queues nothing (no noise on every touch)", async () => {
     useAppStore.setState({ kitUsage: [{ projectKey: "p", kitId: button.kitId }] });
-    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce(SEED_COMPONENTS);
+    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce(FIXTURE_COMPONENTS);
     vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
     useAppStore.getState().setAiFocused("chip", "component");
     await new Promise((r) => setTimeout(r, 25));
@@ -180,43 +185,14 @@ describe("kit-change origin (#2810 — a CLI edit fires propagation)", () => {
   });
 });
 
-// TEMPORARY (#3029): the default kit is disabled, so hydrate reconciles against an EMPTY seed — this
-// whole seed-refresh block is dormant until DEFAULT_KIT_SEEDED flips back on (it auto-restores).
-describe.skipIf(!DEFAULT_KIT_SEEDED)("hash-based built-in seed refresh (#2483)", () => {
+// The hash-based reconcile at the STORE/bridge layer (#2483). With the clean-slate seed (#3543) the
+// refresh/upstream-notice branches (which need a seed record to refresh TOWARD) are covered by
+// seed.test.ts against the current seed; what remains here is the DROP path — the mechanism that wipes
+// every retired built-in from an existing install — plus the legacy-refresh and notice-dismiss surface.
+describe("hash-based built-in seed refresh (#2483)", () => {
   beforeEach(() => {
     useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, seedNotices: [] });
     vi.restoreAllMocks();
-  });
-
-  it("replaces a stale unmodified built-in with the new seed copy and re-pushes it", async () => {
-    const current = SEED_COMPONENTS.find((c) => c.id === "button")!;
-    // Yesterday's pristine copy: different content, self-consistently stamped.
-    const stale = stampSeedHash({ ...current, version: "0.0.1", seedHash: undefined });
-    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([...SEED_COMPONENTS.filter((c) => c.id !== "button"), stale]);
-    vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
-    const pushC = vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
-    const dropC = vi.spyOn(bridge, "dropComponent").mockResolvedValue(undefined);
-    await useAppStore.getState().hydrateComponents();
-    expect(useAppStore.getState().components.find((c) => c.id === "button")).toEqual(current);
-    expect(pushC).toHaveBeenCalledTimes(1);
-    expect(pushC).toHaveBeenCalledWith(current);
-    expect(dropC).not.toHaveBeenCalled();
-    expect(useAppStore.getState().seedNotices).toEqual([]);
-  });
-
-  it("keeps a user-edited built-in (never clobbers) and surfaces the upstream update as a notice", async () => {
-    const current = SEED_COMPONENTS.find((c) => c.id === "button")!;
-    // The user edited an OLD copy: recorded baseline ≠ current content ≠ the new seed's hash.
-    const edited = { ...current, srcText: "// customized", seedHash: "00000000" };
-    vi.spyOn(bridge, "loadComponents").mockResolvedValueOnce([...SEED_COMPONENTS.filter((c) => c.id !== "button"), edited]);
-    vi.spyOn(bridge, "loadKits").mockResolvedValueOnce(SEED_KITS);
-    const pushC = vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
-    await useAppStore.getState().hydrateComponents();
-    expect(useAppStore.getState().components.find((c) => c.id === "button")).toEqual(edited);
-    expect(pushC).not.toHaveBeenCalled();
-    expect(useAppStore.getState().seedNotices).toEqual([
-      { kind: "updated-upstream", type: "component", id: "button", name: current.name },
-    ]);
   });
 
   it("drops a pristine built-in kit that left the seed (spring-kotlin regression) via the bridge", async () => {
@@ -419,9 +395,9 @@ describe("kit-usage consumer index slice (#2277)", () => {
 });
 
 describe("component change origin → propagation (#2277)", () => {
-  const button = SEED_COMPONENTS.find((c) => c.name === "Button")!;
+  const button = FIXTURE_BUTTON;
   beforeEach(() => {
-    useAppStore.setState({ components: SEED_COMPONENTS, kits: SEED_KITS, kitUsage: [], kitDispatches: [] });
+    useAppStore.setState({ components: FIXTURE_COMPONENTS, kits: SEED_KITS, kitUsage: [], kitDispatches: [] });
     vi.restoreAllMocks();
   });
 
@@ -437,7 +413,7 @@ describe("component change origin → propagation (#2277)", () => {
     // The GH-issue rail was dropped for `bsc-assign` (kit-vendoring epic #2793): a breaking edit to an
     // opted-in consumer now dispatches `kind: "assign"` — the only dispatch kinds are notify | assign.
     vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
-    useAppStore.setState({ kitUsage: [{ projectKey: "app-a", kitId: "react-ui", auto: true, live: false }] });
+    useAppStore.setState({ kitUsage: [{ projectKey: "app-a", kitId: button.kitId, auto: true, live: false }] });
     useAppStore.getState().setComponent({ ...button, version: "3.0.0", props: button.props.filter((p) => p.name !== "size") });
     const d = useAppStore.getState().kitDispatches;
     expect(d).toHaveLength(1);
@@ -447,24 +423,24 @@ describe("component change origin → propagation (#2277)", () => {
 
   it("an additive edit is notify-only, even for an opted-in live consumer", () => {
     vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
-    useAppStore.setState({ kitUsage: [{ projectKey: "app-a", kitId: "react-ui", auto: true, live: true }] });
+    useAppStore.setState({ kitUsage: [{ projectKey: "app-a", kitId: button.kitId, auto: true, live: true }] });
     useAppStore.getState().setComponent({ ...button, version: "2.4.0", variants: [...button.variants, "loading"] });
     expect(useAppStore.getState().kitDispatches.every((x) => x.kind === "notify")).toBe(true);
   });
 
   it("a brand-new component is not a change (no dispatch)", () => {
     vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
-    useAppStore.setState({ kitUsage: [{ projectKey: "app-a", kitId: "react-ui", auto: true, live: false }] });
+    useAppStore.setState({ kitUsage: [{ projectKey: "app-a", kitId: button.kitId, auto: true, live: false }] });
     useAppStore.getState().setComponent({ ...button, id: "brand-new", name: "BrandNew" });
     expect(useAppStore.getState().kitDispatches).toHaveLength(0);
   });
 
   it("the same change re-emitted dedups; dismiss drops the queued dispatch", () => {
     vi.spyOn(bridge, "pushComponent").mockResolvedValue(undefined);
-    useAppStore.setState({ kitUsage: [{ projectKey: "app-a", kitId: "react-ui", auto: true, live: false }] });
+    useAppStore.setState({ kitUsage: [{ projectKey: "app-a", kitId: button.kitId, auto: true, live: false }] });
     const breaking = { ...button, version: "3.0.0", props: button.props.filter((p) => p.name !== "size") };
     useAppStore.getState().setComponent(breaking);
-    useAppStore.setState({ components: SEED_COMPONENTS }); // reset the component so the SAME transition repeats
+    useAppStore.setState({ components: FIXTURE_COMPONENTS }); // reset the component so the SAME transition repeats
     useAppStore.getState().setComponent(breaking);
     expect(useAppStore.getState().kitDispatches).toHaveLength(1); // deduped by (projectKey, change.id)
     const { change } = useAppStore.getState().kitDispatches[0];

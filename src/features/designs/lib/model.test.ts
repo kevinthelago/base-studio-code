@@ -19,9 +19,13 @@ import {
 } from "./model";
 import type { KitAnimation } from "@/shared/ui/kit/animations";
 import { BASE_KIT_ID } from "@/shared/ui/kit/baseAnimations";
-import { SEED_COMPONENTS, SEED_KITS } from "./seed";
+import { REACT_UI_COMPONENTS, REACT_UI_KIT } from "./reactUiKit";
 
-const byName = (n: string) => SEED_COMPONENTS.find((c) => c.name === n)!;
+// #3543: the packaged seed is now a single EMPTY kit, so these generic model-helper tests exercise the
+// react-ui LIBRARY (the manifest-generated assembler — the exact set the seed used to carry) as their fixture.
+const LIB = REACT_UI_COMPONENTS;
+const LIB_KITS = [REACT_UI_KIT];
+const byName = (n: string) => LIB.find((c) => c.name === n)!;
 
 describe("component model helpers (#2269)", () => {
   it("matchesQuery is case-insensitive across name/role/tags, and empty → all", () => {
@@ -35,21 +39,21 @@ describe("component model helpers (#2269)", () => {
 
   it("resolveComposes pairs each dependency with its record (undefined when absent)", () => {
     const seg = byName("SegmentedControl"); // composes ["Button"]
-    const resolved = resolveComposes(seg, SEED_COMPONENTS);
+    const resolved = resolveComposes(seg, LIB);
     expect(resolved.map((r) => r.name)).toEqual(["Button"]);
     expect(resolved[0].comp?.name).toBe("Button");
     // A dependency name not in the kit resolves to undefined (renders non-clickable).
     const orphan = { ...seg, composes: ["Nonexistent"] };
-    expect(resolveComposes(orphan, SEED_COMPONENTS)[0].comp).toBeUndefined();
+    expect(resolveComposes(orphan, LIB)[0].comp).toBeUndefined();
   });
 
   it("resolveUsedBy finds the components that compose the target", () => {
     const button = byName("Button"); // composed by SegmentedControl + ConfirmButton + EmptyState
-    const users = resolveUsedBy(button, SEED_COMPONENTS).map((c) => c.name);
+    const users = resolveUsedBy(button, LIB).map((c) => c.name);
     expect(users).toContain("SegmentedControl");
     expect(users).toContain("EmptyState");
     // A page root that nothing composes.
-    expect(resolveUsedBy(byName("DashboardPage"), SEED_COMPONENTS)).toEqual([]);
+    expect(resolveUsedBy(byName("DashboardPage"), LIB)).toEqual([]);
   });
 
   it("every role has a color token", () => {
@@ -57,7 +61,7 @@ describe("component model helpers (#2269)", () => {
   });
 
   it("seed ids are unique + lowercased from the name", () => {
-    const ids = SEED_COMPONENTS.map((c: ComponentRecord) => c.id);
+    const ids = LIB.map((c: ComponentRecord) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(byName("Button").id).toBe("button");
   });
@@ -65,7 +69,7 @@ describe("component model helpers (#2269)", () => {
   it("the data-shape vocabulary is exactly the six canonical shapes (#2475)", () => {
     expect(DATA_SHAPES).toEqual(["list", "linked-list", "tree", "graph", "table", "key-value"]);
     // `shapes` is an optional, typed axis on ComponentRecord — every stamped value is in-vocabulary.
-    for (const c of SEED_COMPONENTS) {
+    for (const c of LIB) {
       for (const s of c.shapes ?? []) {
         expect(DATA_SHAPES, `${c.name} stamps an in-vocabulary shape`).toContain(s as DataShape);
       }
@@ -73,9 +77,9 @@ describe("component model helpers (#2269)", () => {
   });
 
   it("every packaged kit carries the rail-hierarchy axes: tech (a lowercase slug) + style (#2487)", () => {
-    const byId = new Map(SEED_KITS.map((k) => [k.id, k]));
+    const byId = new Map(LIB_KITS.map((k) => [k.id, k]));
     expect(byId.get("react-ui")).toMatchObject({ tech: "react", style: "studio" });
-    for (const k of SEED_KITS) {
+    for (const k of LIB_KITS) {
       expect(k.tech, `${k.id} tech is a lowercase slug`).toMatch(/^[a-z][a-z0-9-]*$/);
       expect(k.style, `${k.id} carries a visual-language label`).toBeTruthy();
     }

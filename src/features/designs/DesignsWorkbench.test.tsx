@@ -10,10 +10,17 @@ vi.mock("@/shared/lib/preview/componentBundle", () => ({
   COMPONENT_IMPORTMAP: { react: "https://esm.sh/react" },
   COMPONENT_EXTERNALS: ["react"],
 }));
-import { SEED_COMPONENTS, SEED_KITS } from "./lib/seed";
+import { REACT_UI_KIT, REACT_UI_COMPONENTS } from "./lib/reactUiKit";
 import { SEED_THEMES } from "./lib/themes";
 import type { Kit } from "./lib/model";
 import { useAppStore } from "@/store";
+
+// #3543: the packaged seed is now a single EMPTY kit (`base-studio-code`, filled by the designer). These
+// workbench tests drive the react-ui LIBRARY (the manifest-generated assembler — the exact populated kit
+// the seed used to carry) as their fixture, so the rail/graph/inspector have real components to render.
+// (The multi-kit "rail hierarchy" describe below builds its OWN synthetic multi-kit fixture.)
+const SEED_COMPONENTS = REACT_UI_COMPONENTS;
+const SEED_KITS = [REACT_UI_KIT];
 
 /** Reset the library slice to the seed before each test (the store is a singleton). #3274 lifted the
  *  kit + component SELECTION out of DesignsWorkbench's local state into the store, so it is now part of
@@ -323,6 +330,25 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
     id: "vue-kit", name: "vue-kit", tech: "vue", style: "material", stack: "Vue · TypeScript", dot: "var(--accent)",
   };
 
+  // #3543: the packaged seed is now a single empty kit, so this describe builds its OWN multi-kit fixture to
+  // exercise the tech→style grouping shapes the rail must render: a multi-kit `studio` group (react-ui +
+  // Fleet), a single-kit `motion` style (base), and a multi-kit `data-viz` group (three viz kits). This
+  // reproduces the pre-#3543 packaged structure AS TEST DATA (a grouping fixture, not a claim about what
+  // ships); the react-ui LIBRARY supplies the components rendered under the studio kit.
+  const mkKit = (id: string, name: string, style: string): Kit =>
+    ({ id, name, tech: "react", style, stack: name, dot: "var(--accent)" });
+  const PACKAGED_KITS: Kit[] = [
+    REACT_UI_KIT,
+    mkKit("fleet", "Fleet", "studio"),
+    mkKit("base", "base", "motion"),
+    mkKit("algo-viz", "Algorithm Viz", "data-viz"),
+    mkKit("matrix-viz", "Matrix Viz", "data-viz"),
+    mkKit("graph-viz", "Graph Viz", "data-viz"),
+  ];
+  beforeEach(() => {
+    useAppStore.setState({ kits: PACKAGED_KITS, components: REACT_UI_COMPONENTS });
+  });
+
   it("the packaged library renders grouped at BOTH levels: react (tech) → studio kit + data-viz group → components (#3194/#3242)", () => {
     const { container } = render(<DesignsWorkbench />);
     // Level 1 — the react tech header (all kits share react) + the multi-kit `data-viz` STYLE group (three
@@ -349,7 +375,7 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
   });
 
   it("a multi-tech library nests one collapsible tech group per technology, each style header a kit", () => {
-    useAppStore.setState({ kits: [...SEED_KITS, vueKit] });
+    useAppStore.setState({ kits: [...PACKAGED_KITS, vueKit] });
     const { container } = render(<DesignsWorkbench />);
     const heads = [...container.querySelectorAll(".ds-grouphead")];
     // react tech + its multi-kit data-viz style group (#3242), then the vue tech.
@@ -369,18 +395,18 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
   });
 
   it("collapsing a tech group hides its kits (and their components); re-expanding restores them", () => {
-    useAppStore.setState({ kits: [...SEED_KITS, vueKit] });
+    useAppStore.setState({ kits: [...PACKAGED_KITS, vueKit] });
     const { container } = render(<DesignsWorkbench />);
     const reactHead = container.querySelector(".ds-grouphead") as HTMLElement;
     fireEvent.click(reactHead); // collapse the react group — only the vue style/kit head remains
     expect(reactHead.getAttribute("aria-expanded")).toBe("false");
     expect(container.querySelectorAll(".ds-kithead").length).toBe(1);
     fireEvent.click(reactHead); // …and back
-    expect(container.querySelectorAll(".ds-kithead").length).toBe(SEED_KITS.length + 1);
+    expect(container.querySelectorAll(".ds-kithead").length).toBe(PACKAGED_KITS.length + 1);
   });
 
   it("a component under the grouped rail is still fully driveable — selecting it follows in the inspector", () => {
-    useAppStore.setState({ kits: [...SEED_KITS, vueKit] });
+    useAppStore.setState({ kits: [...PACKAGED_KITS, vueKit] });
     render(<DesignsWorkbench />);
     fireEvent.click(railRow("Chip"));
     expect(screen.getByText("Chip.tsx")).toBeTruthy();
@@ -395,7 +421,7 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
 
   it("kits missing tech/style group gracefully (a trailing 'other' bucket) — the rail never crashes", () => {
     const bare: Kit = { id: "bare", name: "bare-kit", stack: "?", dot: "var(--accent)" };
-    useAppStore.setState({ kits: [...SEED_KITS, bare] });
+    useAppStore.setState({ kits: [...PACKAGED_KITS, bare] });
     const { container } = render(<DesignsWorkbench />);
     // react (+ its multi-kit data-viz style group #3242) + the trailing missing-field tech bucket; the bare
     // kit merges into its "other" style head.
@@ -404,12 +430,12 @@ describe("rail hierarchy (#2506) — ALWAYS technology → style; a single-kit s
       expect.stringContaining("react"), expect.stringContaining("studio"),
       expect.stringContaining("data-viz"), expect.stringContaining("other"),
     ]);
-    expect(container.querySelectorAll(".ds-kithead").length).toBe(SEED_KITS.length + 1);
+    expect(container.querySelectorAll(".ds-kithead").length).toBe(PACKAGED_KITS.length + 1);
   });
 
   it("SEVERAL kits sharing one (tech, style) still nest kit rows beneath the style group", () => {
     const twin: Kit = { id: "react-ui-2", name: "react-ui-2", tech: "react", style: "studio", stack: "React", dot: "var(--accent)" };
-    useAppStore.setState({ kits: [...SEED_KITS, twin] });
+    useAppStore.setState({ kits: [...PACKAGED_KITS, twin] });
     const { container } = render(<DesignsWorkbench />);
     // react tech header + TWO multi-kit style groups: studio (react-ui + twin) and data-viz (the three viz
     // kits, #3242). Both styles now hold several kits, so both are groupheads.
