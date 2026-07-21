@@ -21,14 +21,11 @@ import { GlanceSessionLog } from "./GlanceSessionLog";
 type DockTab = "stream" | "logs";
 
 export function GlanceChatDock({
-  paneId, name, role, scale = 1, onClose, onEnd,
+  paneId, name, role, onClose, onEnd,
 }: {
   paneId: string;
   name: string;
   role?: string;
-  /** The CSS scale the dock renders under (the graph zoom, #3524) — forwarded to the terminal slot so
-   *  the host counter-scales the terminal and keeps xterm's mouse math correct under a zoomed morph. */
-  scale?: number;
   /** Collapse the dock back into its node — the PTY stays ALIVE (the agent is untouched). */
   onClose: () => void;
   /** END the session — kill the PTY so a stuck / soft-locked agent is fully torn down and triage can
@@ -80,7 +77,7 @@ export function GlanceChatDock({
           <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             {/* Viewer slot (not primary): the host re-parents the agent's single terminal here while the
                 dock is open. `visible` gates its render/fit exactly like a background console pane. */}
-            <TerminalSlot paneId={paneId} visible={tab === "stream"} focused={false} scale={scale} />
+            <TerminalSlot paneId={paneId} visible={tab === "stream"} focused={false} />
           </Box>
         </Box>
         {tab === "logs" && (
