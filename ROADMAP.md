@@ -11,7 +11,7 @@ We work one version at a time, **release-and-continue**: a version ships builds 
 | `1.0.4n` | ✅ Complete · fix & polish | The rolling `1.0.4n` fix-and-polish line (`1.0.41`, `1.0.42`, …): the **codebase refactor & consolidation** sweep, **integrations as agent-authored connectors**, a data-driven planner, a wave of planner/fleet hardening, and ongoing polish |
 | `1.0.5` | ✅ Complete | **The UI release** — in-app page/component/animation authoring with iterative generate→preview→refine loops — **and the maintenance bots** (#1957). Shipped through the **v1.0.51** build; UI/design-studio work still in flight rolled forward to the `1.0.52` milestone |
 | `1.0.51` | ✅ Complete | **Market research, marketing & usage analytics** — the **Marketer** (market on your behalf via channel MCP servers) + generated-apps **usage analytics** |
-| `1.0.52` | 🚧 Current | **Accessibility & text-to-speech** — plus the continued UI / design-studio work rolled forward from `1.0.5` |
+| `1.0.52` | 🚧 Current | **Accessibility & text-to-speech** — plus work rolled forward from earlier steps: the UI / design-studio work (`1.0.5`) and the Marketer / usage-analytics work (`1.0.51`) |
 | `2.0.0` | 🎯 Unification | Once every feature is added and the app is a defined product: cut `2.0.0` and switch to **rigorous semver**, followed strictly from there |
 
 > **Versioning is loose until v2, on purpose.** The app is still coalescing, so numbering trades
