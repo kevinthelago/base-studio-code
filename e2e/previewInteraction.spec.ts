@@ -272,4 +272,24 @@ test.describe("preview srcdoc — real interaction", () => {
     await dragBy(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, 120, 0);
     expect((await pan(frame)).x).not.toBe(0);
   });
+
+  test("a live theme change preserves the pan/zoom view — no rebuild/reset (#3556)", async ({ page }) => {
+    const frame = await mount(page, { zoomEngine: true });
+    // Pan somewhere non-trivial so a reset would be obvious.
+    const box = (await page.locator("#preview").boundingBox())!;
+    await dragBy(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, 140, 60);
+    const panned = await pan(frame);
+    expect(panned.x).not.toBe(0);
+
+    // Apply a theme change the way ComponentPreviewFrame does — a `__bsc_theme` message to the iframe.
+    await page.evaluate(() => {
+      const f = document.getElementById("preview") as HTMLIFrameElement;
+      f.contentWindow!.postMessage({ __bsc_theme: { base: "light", css: ":root{--x:1}" } }, "*");
+    });
+
+    // The theme applied (data-theme flipped) …
+    await expect.poll(() => frame.evaluate(() => document.documentElement.getAttribute("data-theme"))).toBe("light");
+    // … and the pan is EXACTLY as it was — the iframe was not rebuilt, the engine not re-fit.
+    expect(await pan(frame)).toEqual(panned);
+  });
 });

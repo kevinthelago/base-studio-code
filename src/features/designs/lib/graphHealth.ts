@@ -66,6 +66,14 @@ function isLoadingProp(p: PropSpec): boolean {
   return (t === "boolean" || t.includes("boolean")) && /^(loading|busy|pending|isloading)$/i.test(p.name);
 }
 
+/** Is `p` an ERROR-family prop (`error`/`err`/`isError`/`hasError`, non-function)? A data component with one
+ *  can preview its error render (#3555). Mirrors `isErrorProp` (componentPreview.ts). */
+function isErrorProp(p: PropSpec): boolean {
+  const t = (p.type || "").toLowerCase();
+  const isFn = t.includes("=>") || t.includes("function") || t.includes("void");
+  return !isFn && /^(error|err|isError|hasError)$/i.test(p.name);
+}
+
 /** The component's OWN module source (a user-authored module) — its record `source`, else a `srcText`
  *  that {@link looksBuildableModule} — or `null` when the source isn't in the record: a built-in (its
  *  artifact `source` is stripped from the store, #2794) or a spec (no buildable module). Only these have
@@ -203,7 +211,7 @@ export type HealthCategory =
   // hand-diagnose: a dead animation-selector hook, a stroke-dash draw with no pathLength, a CSS-transform
   // keyframe fighting an SVG transform ATTRIBUTE, and a cross-component keyframe-name collision.
   | "motion-dead-selector" | "motion-dash-no-pathlength" | "motion-transform-attr" | "motion-name-collision"
-  | "no-empty-state" | "no-loading-state"
+  | "no-empty-state" | "no-loading-state" | "no-error-state"
   // RUNTIME data-state blanks (#3191) — a component that BUILDS clean and renders fine LOADED but produces
   // a BLANK #root in a real app state: `empty-empty-state` (no output when its data is empty — no
   // empty-state message) / `empty-loading-state` (no output while loading — no skeleton/spinner). Unlike
@@ -239,6 +247,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "motion-transform-attr": 1,
   "no-empty-state": 1,
   "no-loading-state": 1,
+  "no-error-state": 1,
   // Runtime data-state blanks (#3191) — a real but mild defect (renders fine loaded, blanks in a real app
   // state), the unwired-prop/orphan tier (2). Render-confirmed by the scan, so ABOVE the static #3135
   // no-empty/no-loading advisories (1): when a node hits both, the confirmed blank wins the badge.
@@ -269,6 +278,7 @@ export const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string
   "motion-name-collision": { glyph: "⧗", label: "cross-component keyframe-name collision — two components' same-named animations clobber" },
   "no-empty-state": { glyph: "◍", label: "no empty state — takes data but renders no distinct empty view; add an EmptyState" },
   "no-loading-state": { glyph: "◌", label: "no loading state — takes data but has no `loading` prop; add one for a loading preview" },
+  "no-error-state": { glyph: "◒", label: "no error state — takes data but has no `error` prop; add one for an error preview" },
   "empty-empty-state": { glyph: "⬚", label: "blank empty state — renders NOTHING when its data is empty; add an empty-state message" },
   "empty-loading-state": { glyph: "◐", label: "blank loading state — renders NOTHING while loading; add a skeleton/spinner" },
   "slot-shell": { glyph: "▤", label: "slot shell — previews a demo placeholder; fill its content slots to see its real function" },
@@ -500,12 +510,13 @@ export function analyzeGraphHealth(
       why: `${c.name} declares it composes ${phantom.join(", ")} but its source never renders ${phantom.length === 1 ? "it" : "them"} — a phantom composition edge (the graph draws a composition that doesn't happen, and the false edge hides the child from orphan detection)` });
   }
 
-  // no-empty-state / no-loading-state (informational, #3135) — the preview's data-state switcher (loaded/
-  // empty/loading) can only SHOW a state a component SUPPORTS. A DATA component (has a collection/array
+  // no-empty-state / no-loading-state / no-error-state (informational, #3135/#3555) — the preview's
+  // data-state switcher can only SHOW a state a component SUPPORTS. A DATA component (has a collection/array
   // prop), scanned from its own module source, is flagged when it lacks: (a) an EMPTY render — no
-  // `EmptyState` and no `Array.isArray`/`.length` empty-guard, so its empty preview matches loaded; or (b)
-  // a `loading`-family prop, so its loading preview can't skeleton. Guides the designer session to add the
-  // missing state. Rust twin: the no-empty-state/no-loading-state loop in graph_health.rs.
+  // `EmptyState` and no `Array.isArray`/`.length` empty-guard, so its empty preview matches loaded; (b) a
+  // `loading`-family prop, so its loading preview can't skeleton; or (c) an `error`-family prop, so its
+  // error preview can't render. Guides the designer session to add the missing state. Rust twin:
+  // the same loop in graph_health.rs.
   for (const c of comps) {
     const src = ownModuleSource(c, comps);
     if (!src) continue;
@@ -518,6 +529,10 @@ export function analyzeGraphHealth(
     if (!c.props.some(isLoadingProp)) {
       findings.push({ category: "no-loading-state", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
         why: `${c.name} takes data (${collections.join(", ")}) but exposes no \`loading\` prop — the preview can't show its LOADING state; add a boolean \`loading\` prop that renders a skeleton` });
+    }
+    if (!c.props.some(isErrorProp)) {
+      findings.push({ category: "no-error-state", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
+        why: `${c.name} takes data (${collections.join(", ")}) but exposes no \`error\` prop — the preview can't show its ERROR state; add an \`error\` prop (message string or boolean) that renders an error state` });
     }
   }
 

@@ -128,6 +128,10 @@ export interface ComponentSrcDocOptions {
    *  themed (their `.css` imports were no-op'd during bundling). Also the previewed component's
    *  authored-animation CSS (#2870), so its `@keyframes` are present. */
   injectedCss?: string;
+  /** The selected theme's `:root` token overrides (#3556), in a DEDICATED `<style id="__bsc_theme">`
+   *  separate from `injectedCss` — so a theme change can be applied LIVE via a `{ __bsc_theme }` message
+   *  (data-theme + this style's text) without rebuilding the iframe and resetting the pan/zoom engine. */
+  themeCss?: string;
   /** The theme attribute set on the iframe root (`data-theme`), so token overrides apply. */
   theme?: "dark" | "light";
   importmap?: Record<string, string>;
@@ -451,7 +455,7 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
  * as a module, posting `ready`/`error` to the parent. Pure.
  */
 export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOptions = {}): string {
-  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, scrollY = false, zoomEngine } = opts;
+  const { injectedCss = "", themeCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, scrollY = false, zoomEngine } = opts;
   // #3057: the exit-runtime shim, injected right after `#root` and BEFORE the module script so the
   // observer is watching before React mounts (and later unmounts) subtrees. "" when no exit selectors —
   // the non-exit srcdoc is then byte-for-byte unchanged.
@@ -489,11 +493,19 @@ export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOpti
    Fluid (width:100%) components are unaffected — the caps only bite oversized fixed-dimension media. */
 #root svg,#root canvas,#root img,#root video{max-width:100%;max-height:100%}</style>${scrollCss}${engineCss}
 <style>${injectedCss}</style>
+<style id="__bsc_theme">${themeCss}</style>
 <script type="importmap">${JSON.stringify({ imports: importmap })}</script>
 </head><body><div id="root"${rootClass ? ` class="${rootClass}"` : ""}></div>${exitShim}
 <script>
   window.addEventListener("error", (e) => parent.postMessage({ __preview: "error", message: String(e.message) }, "*"));
   window.addEventListener("unhandledrejection", (e) => parent.postMessage({ __preview: "error", message: String(e.reason) }, "*"));
+  // #3556: apply a THEME change live — set the data-theme base + swap the token overrides — WITHOUT a
+  // rebuild, so the in-iframe pan/zoom engine (and any other runtime state) survives a theme switch.
+  window.addEventListener("message", (e) => {
+    const t = e.data && e.data.__bsc_theme; if (!t) return;
+    if (typeof t.base === "string") document.documentElement.setAttribute("data-theme", t.base);
+    const s = document.getElementById("__bsc_theme"); if (s && typeof t.css === "string") s.textContent = t.css;
+  });
 </script>
 <script type="module">
 ${bundleJs}
