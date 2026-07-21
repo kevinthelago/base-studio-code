@@ -168,24 +168,24 @@ describe("applyStudioLiveStatus (#3421)", () => {
   });
 });
 
-describe("auto-spawned request sessions appear as openable nodes (#3498)", () => {
-  it("resolves a request node to ITS pane — without this the node cannot be opened at all", () => {
-    // The static studio map covers only the five fixed studios. A request session is dynamic, so a
-    // missing branch here means a live session with a node that opens nothing — or no node at all.
-    expect(studioPaneIdForNode("debugger-req-7")).toBe("debug-studio:req-7");
-    expect(studioPaneIdForNode("debugger-req-12")).toBe("debug-studio:req-12");
+describe("overflow pool sessions appear as openable nodes (#3535)", () => {
+  it("resolves a pool node to ITS pane — without this the node cannot be opened at all", () => {
+    // The static studio map covers only the five fixed studios. A pool session is dynamic, so a missing
+    // branch here means a live session with a node that opens nothing — or no node at all.
+    expect(studioPaneIdForNode("debugger-pool-7")).toBe("debug-studio:pool-7");
+    expect(studioPaneIdForNode("debugger-pool-12")).toBe("debug-studio:pool-12");
   });
 
   it("still resolves the fixed studios, and still refuses a non-session node", () => {
     expect(studioPaneIdForNode("designer")).toBe("design-studio:designer");
     expect(studioPaneIdForNode("debugger")).toBe("debug-studio:debugger");
     expect(studioPaneIdForNode("some-library")).toBeNull();
-    expect(studioPaneIdForNode("debugger-req-")).toBeNull();
-    expect(studioPaneIdForNode("debugger-req-x")).toBeNull();
+    expect(studioPaneIdForNode("debugger-pool-")).toBeNull();
+    expect(studioPaneIdForNode("debugger-pool-x")).toBeNull();
   });
 
   it("opens a request session as a morph, like every other session node", () => {
-    expect(studioNodeHome("debugger-req-3")).toEqual({ kind: "morph" });
+    expect(studioNodeHome("debugger-pool-3")).toEqual({ kind: "morph" });
     expect(studioNodeHome("designer")).toEqual({ kind: "morph" });
     expect(studioNodeHome("not-a-session")).toBeNull();
   });

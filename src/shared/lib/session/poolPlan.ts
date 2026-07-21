@@ -60,6 +60,13 @@ export interface PoolPlan {
   sessions: PoolSession[];
   /** When not spawning, why — so a stalled pool is diagnosable, never a silent non-decision. */
   reason?: string;
+  /** True when the ONLY thing blocking a spawn is the cap: there is claimable work and no session is
+   *  warming, but the overflow is already at `cap - 1`. This is the "we need more but can't" signal the
+   *  mount logs (#3535) — capacity pressure the user asked to be told about. */
+  atCapacity: boolean;
+  /** How many claimable (`open`) requests are waiting with no session free to take them — the size of
+   *  the pressure when {@link atCapacity}. Zero otherwise. */
+  waiting: number;
 }
 
 /** A warming session is reaped after this many consecutive claim-less polls (~1 min at a 20s poll). */
@@ -81,7 +88,14 @@ export const MAX_WARM_POLLS = 3;
 export function planPool(input: PoolPlanInput): PoolPlan {
   const gate = autoSpawnDecision({ role: AUTO_SPAWNABLE_ROLE, enabled: input.enabled });
   if (!gate.allowed) {
-    return { spawn: false, close: input.sessions.map((s) => s.paneId), sessions: [], reason: gate.reason };
+    return {
+      spawn: false,
+      close: input.sessions.map((s) => s.paneId),
+      sessions: [],
+      reason: gate.reason,
+      atCapacity: false,
+      waiting: 0,
+    };
   }
 
   // paneId → the request id it currently holds (claimed).
@@ -114,5 +128,9 @@ export function planPool(input: PoolPlanInput): PoolPlan {
   else if (warming > 0) reason = "a session is still warming — pace one at a time";
   else if (kept.length >= overflowCap) reason = `at the overflow cap (${overflowCap})`;
 
-  return { spawn: reason === undefined, close, sessions: kept, reason };
+  // Capacity pressure: claimable work AND nothing warming AND we are wedged against the cap. That is the
+  // one non-spawn where the ANSWER is "we need more but may not have them" — everything under the cap
+  // spawns next cycle instead. `waiting` sizes it (the claimable requests no session can take right now).
+  const atCapacity = claimable > 0 && warming === 0 && kept.length >= overflowCap;
+  return { spawn: reason === undefined, close, sessions: kept, reason, atCapacity, waiting: atCapacity ? claimable : 0 };
 }
