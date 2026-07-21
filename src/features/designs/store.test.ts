@@ -123,6 +123,16 @@ describe("designer AI live-focus (#2525)", () => {
     expect(useAppStore.getState().aiFocusedId).toBeNull();
     expect(hydrateComponents).not.toHaveBeenCalled();
   });
+
+  it("setAiFocused with hydrate:false focuses WITHOUT re-hydrating — a read-focus (#3545)", () => {
+    const hydrateComponents = vi.fn();
+    useAppStore.setState({ hydrateComponents });
+    // A `ui-focus` (bsc ui get / preview-props): drive the preview, but do NOT refetch the library —
+    // nothing changed, and this fires on every read.
+    useAppStore.getState().setAiFocused("chip", "component", { hydrate: false });
+    expect(useAppStore.getState().aiFocusedId).toBe("chip");
+    expect(hydrateComponents).not.toHaveBeenCalled();
+  });
 });
 
 describe("kit-change origin (#2810 — a CLI edit fires propagation)", () => {
