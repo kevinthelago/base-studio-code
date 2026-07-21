@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { deriveRules, mergeRules, kitRules, toEslintRules, toEslintPreset, ruleMessage, ESCAPE_HATCH } from "./rules";
-import { SEED_COMPONENTS } from "./seed";
+import { REACT_UI_COMPONENTS } from "./reactUiKit";
 import type { ComponentRecord, KitRule } from "./model";
 
-const reactUi = SEED_COMPONENTS.filter((c) => c.kitId === "react-ui");
+// #3543: the packaged seed is now a single EMPTY kit; the lint-rule derivation is exercised against the
+// react-ui LIBRARY (the manifest-generated assembler — Button `wraps:"button"`, TextField `wraps:"input"`, …).
+const reactUi = REACT_UI_COMPONENTS;
 
 describe("kit lint rules → eslint preset (#2279)", () => {
   it("derives a forbid-element rule from each component's `wraps` hint", () => {

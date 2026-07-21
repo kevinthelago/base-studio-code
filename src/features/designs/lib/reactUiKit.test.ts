@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { REACT_UI_COMPONENTS, REACT_UI_KIT } from "./reactUiKit";
-import { SEED_COMPONENTS, SEED_KITS } from "./seed";
+import { SEED_COMPONENTS, SEED_KITS, BASE_STUDIO_CODE_KIT_ID } from "./seed";
 import { componentRules } from "./rules";
 import { UI_KIT } from "@/shared/ui/manifest";
 
@@ -135,28 +135,17 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     expect(all("key-value")).toEqual(["KeyValueList", "RecordPage"]);
   });
 
-  it("the packaged seed is the generated react-ui kit + the base motion kit + the three viz kits (#2506/#3194/#3242/#3451)", () => {
-    // The #2456 examples kit demonstrated the page→primitive model; react-ui's own pages tier
-    // (#2505) supersedes it, so the seed carries the one generated kit. #3194 adds the always-on
-    // `algo-viz` viz kit; #3242 adds `matrix-viz` + `graph-viz` (their demo components) as builtins;
-    // #3451 adds the shared `base` motion kit (motion-only — it contributes no components); #3462
-    // adds `fleet`, the Fleet page's components catalogued into the graph.
+  it("the packaged seed is a single EMPTY kit — base-studio-code — the designer fills it (#3543)", () => {
+    // #3543 wiped the packaged component library to a clean slate: ONE empty kit, `base-studio-code`,
+    // which the designer session fills (components + all algorithm animations) and the studio command
+    // exports. The react-ui LIBRARY still exists as the manifest-generated assembler (REACT_UI_KIT /
+    // REACT_UI_COMPONENTS — asserted throughout this file); it is just no longer SEEDED into the store.
     //
-    // This list is HAND-MAINTAINED on purpose. Deriving it from the same glob the loader uses would
-    // make it tautological — it would agree with any seed, including a kit someone shipped by
-    // accident. Adding a packaged kit should be a decision that someone signs off on, and a failure
-    // here is that sign-off being asked for, not a chore.
-    expect(SEED_KITS.map((k) => k.id)).toEqual(["react-ui", "fleet", "base", "algo-viz", "matrix-viz", "graph-viz"]);
-    expect(SEED_COMPONENTS.map((c) => c.name).sort()).toEqual(
-      [
-        ...REACT_UI_COMPONENTS.map((c) => c.name),
-        "AlgoCells", "MatrixCells", "GraphNodes",
-        // The `fleet` kit (#3462) — the Fleet page catalogued into the components graph. These are
-        // APP components, not kit primitives, which is exactly why they live in their own kit.
-        "WorkerBoard", "FleetStatus", "Throughput", "TimeToLand", "MergeQueue", "WorkerModals",
-        "FleetHealthView", "CostEnergyView", "FleetLessonsView",
-      ].sort(),
-    );
+    // This assertion is HAND-MAINTAINED on purpose. Adding a packaged kit back to the seed should be a
+    // decision someone signs off on, not a glob — a failure here is that sign-off being asked for.
+    expect(SEED_KITS.map((k) => k.id)).toEqual([BASE_STUDIO_CODE_KIT_ID]);
+    expect(SEED_KITS[0].animations ?? []).toEqual([]);
+    expect(SEED_COMPONENTS).toEqual([]);
   });
 });
 
