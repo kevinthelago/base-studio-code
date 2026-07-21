@@ -55,6 +55,28 @@ USAGE:
 Marks the request resolved (drops it from `list --open`), stamping --note with what was fixed. A no-op
 (reported) for an unknown or already-resolved id.",
     },
+    CmdDoc {
+        name: "prune",
+        summary: "remove all RESOLVED requests; prints the count",
+        usage: "\
+USAGE:
+  bsc request prune
+
+Deletes every resolved request and prints how many were removed. The store only grew before this —
+`resolve` flips the status but the row stayed. Only completed (resolved) rows go; an open request,
+even a corrupted one, is left for `remove`.",
+    },
+    CmdDoc {
+        name: "remove",
+        summary: "delete ONE request by id, any status",
+        usage: "\
+USAGE:
+  bsc request remove <id>
+
+Deletes exactly one request regardless of status — the escape hatch `prune` can't reach: a request
+that will never be legitimately resolved (e.g. one whose text was corrupted at filing). A no-op
+(reported) for an unknown id.",
+    },
 ];
 
 /// Parsed global flags + leftover positional args.
@@ -119,6 +141,8 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "list" => cmd_list(&args),
         "get" => cmd_get(&args),
         "resolve" => cmd_resolve(&args),
+        "prune" => cmd_prune(&args),
+        "remove" => cmd_remove(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
@@ -169,6 +193,21 @@ fn cmd_resolve(args: &Args) -> Result<(), String> {
     let matched =
         open_store(&args.db)?.resolve(id, args.note.as_deref(), now_ms()).map_err(|e| format!("resolving request: {e}"))?;
     println!("{}", if matched { format!("resolved request {id}") } else { format!("no open request {id}") });
+    Ok(())
+}
+
+/// `prune` — remove all resolved requests; prints the count.
+fn cmd_prune(args: &Args) -> Result<(), String> {
+    let n = open_store(&args.db)?.prune_resolved().map_err(|e| format!("pruning requests: {e}"))?;
+    println!("pruned {n} resolved request{}", if n == 1 { "" } else { "s" });
+    Ok(())
+}
+
+/// `remove <id>` — delete one request of any status.
+fn cmd_remove(args: &Args) -> Result<(), String> {
+    let id = positional_id(args)?;
+    let matched = open_store(&args.db)?.remove(id).map_err(|e| format!("removing request: {e}"))?;
+    println!("{}", if matched { format!("removed request {id}") } else { format!("no request {id}") });
     Ok(())
 }
 
@@ -255,7 +294,7 @@ mod tests {
     #[test]
     fn help_overview_and_per_command_help() {
         let ov = bsc_cli_util::help_overview("bsc request", TAGLINE, COMMANDS);
-        for name in ["new", "list", "get", "resolve"] {
+        for name in ["new", "list", "get", "resolve", "prune", "remove"] {
             assert!(ov.contains(name), "overview lists {name}");
         }
         let new = bsc_cli_util::help_for("bsc request", TAGLINE, COMMANDS, "new");
@@ -278,6 +317,35 @@ mod tests {
         assert!(open_store(&None).unwrap().list(&Filter { open_only: true, ..Default::default() }).unwrap().is_empty());
 
         std::env::remove_var("BSC_REQUEST_DB");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn prune_and_remove_over_a_temp_db() {
+        // Select the db via `--db`, NEVER `std::env::set_var` — cargo runs tests as parallel threads of one
+        // process, so a global env var races with any sibling test that also sets it (#3382). Threading the
+        // path through `args.db` keeps it thread-local.
+        let dir = std::env::temp_dir().join(format!("bsc-request-prune-cli-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("requests.db");
+        let _ = std::fs::remove_file(&path);
+        let dbp = path.to_string_lossy().into_owned();
+        let with_db = |positional: Vec<&str>| args_for(positional, |a| a.db = Some(dbp.clone()));
+        let db = Some(dbp.clone());
+
+        cmd_new(&with_db(vec!["new", "keep open"])).unwrap(); // id 1
+        cmd_new(&with_db(vec!["new", "will resolve"])).unwrap(); // id 2
+        cmd_new(&with_db(vec!["new", "corrupted"])).unwrap(); // id 3
+        cmd_resolve(&with_db(vec!["resolve", "2"])).unwrap();
+
+        cmd_prune(&with_db(vec!["prune"])).unwrap();
+        let after_prune = open_store(&db).unwrap().list(&Filter::default()).unwrap();
+        assert_eq!(after_prune.len(), 2, "resolved #2 gone; the two open ones remain");
+
+        cmd_remove(&with_db(vec!["remove", "3"])).unwrap(); // the corrupted, still-open row
+        let after_remove = open_store(&db).unwrap().list(&Filter::default()).unwrap();
+        assert_eq!(after_remove.iter().map(|r| r.id).collect::<Vec<_>>(), vec![1], "only #1 left");
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

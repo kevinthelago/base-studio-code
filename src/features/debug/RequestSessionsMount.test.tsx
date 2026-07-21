@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { RequestSessionsMount } from "./RequestSessionsMount";
 import { requestPaneId, requestCharter } from "./requestSession";
+import { bscRun } from "@/shared/lib/core/bsc";
 import { useAppStore } from "@/store";
 
 // `vi.hoisted` because vi.mock is hoisted ABOVE plain consts: referencing a normal `const` from a mock
@@ -31,6 +32,12 @@ vi.mock("@/app/console/terminal/TerminalSlot", () => ({ TerminalSlot: () => null
 vi.mock("@/shared/hooks/usePoll", () => ({
   usePoll: (fn: () => void | Promise<void>) => { void fn(); },
 }));
+
+// Unmount every rendered component between tests. Without it, a prior test's RequestSessionsMount stays
+// mounted and subscribed to the store, so a later test that toggles `autoSpawnDebugSessions` also drives
+// the stale instances — which was masking a mutation of the prune-on-transition guard in the full run
+// (the isolated test caught it; the full run did not). The gate runs the full file, so this matters.
+afterEach(cleanup);
 
 describe("RequestSessionsMount — a debug session per open request (#3498)", () => {
   beforeEach(() =>
@@ -76,6 +83,45 @@ describe("RequestSessionsMount — a debug session per open request (#3498)", ()
       expect(p).toContain("the deny list blocks every path");
       expect(p).not.toContain("doctor wants to delete the pages tier");
     });
+  });
+});
+
+describe("pruning completed requests when auto-spawn turns on (#3522)", () => {
+  const pruneCalls = () =>
+    vi.mocked(bscRun).mock.calls.filter(([, args]) => args[0] === "request" && args[1] === "prune");
+
+  beforeEach(() => {
+    vi.mocked(bscRun).mockClear();
+    useAppStore.setState({ autoSpawnDebugSessions: false });
+  });
+
+  // FIRST, from a clean slate: mounting with the setting ALREADY on must not prune. This is the only
+  // case that distinguishes "prune on the transition" from "prune whenever enabled" — the transition
+  // cases below behave identically under both — so it must render a fresh component with no prior
+  // toggling in the same describe to have observed. (Ordering matters: a preceding off→on test leaves
+  // the store on, and re-rendering into an already-on store no longer exercises a first mount.)
+  it("does NOT prune on a persisted-on startup — that is not 'turning it on'", async () => {
+    useAppStore.setState({ autoSpawnDebugSessions: true }); // already on before the first mount
+    render(<RequestSessionsMount />);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(pruneCalls()).toHaveLength(0);
+  });
+
+  it("prunes ONCE on the off→on transition — the user turning the setting on", async () => {
+    render(<RequestSessionsMount />); // mounts with the setting off
+    expect(pruneCalls()).toHaveLength(0);
+    act(() => useAppStore.setState({ autoSpawnDebugSessions: true }));
+    await waitFor(() => expect(pruneCalls()).toHaveLength(1));
+    expect(pruneCalls()[0]).toEqual([null, ["request", "prune"]]);
+  });
+
+  it("does NOT prune when the setting is turned OFF, and never re-prunes without a new transition", async () => {
+    useAppStore.setState({ autoSpawnDebugSessions: true });
+    render(<RequestSessionsMount />);
+    await new Promise((r) => setTimeout(r, 0));
+    act(() => useAppStore.setState({ autoSpawnDebugSessions: false }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(pruneCalls()).toHaveLength(0);
   });
 });
 

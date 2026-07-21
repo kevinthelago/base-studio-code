@@ -12,9 +12,9 @@
 //  * Sessions launch FRESH (`claude`, never `--continue`) with `paneContinue: false` — the #3497 rule,
 //    which matters doubly here: each pane is per-request and must never inherit another conversation.
 //  * A capped, deduped plan means a flood of requests cannot become a flood of sessions.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/store";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { bscJson, bscRun } from "@/shared/lib/core/bsc";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { Box } from "@/shared/ui/layout/Box";
@@ -52,6 +52,17 @@ export function RequestSessionsMount() {
       if (alive) setRepoRoot(root);
     });
     return () => { alive = false; };
+  }, [enabled]);
+
+  // #3522: when the user TURNS auto-spawn on (off→on), review the queue once and drop completed
+  // (resolved) requests, so the launcher works a live list rather than a store that only ever grew.
+  // Keyed to the TRANSITION, not to being enabled: a persisted-on startup is not "turning it on", and a
+  // poll must never re-prune. `bscRun` is fire-and-forget — a missing binary/verb is a silent no-op.
+  const prevEnabled = useRef(enabled);
+  useEffect(() => {
+    const was = prevEnabled.current;
+    prevEnabled.current = enabled;
+    if (!was && enabled) void bscRun(null, ["request", "prune"]);
   }, [enabled]);
 
   // Poll the queue. `bscJson` swallows a missing binary/verb and returns the fallback, so a machine
