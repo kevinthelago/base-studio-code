@@ -4,10 +4,12 @@ import {
   planKitDrain, deliveryKey, kitDispatchPrompt,
   type KitConsumer, type Dispatch, type KitChange, type ChangeClass,
 } from "./propagation";
-import { SEED_COMPONENTS } from "./seed";
+import { REACT_UI_COMPONENTS } from "./reactUiKit";
 import type { ComponentRecord } from "./model";
 
-const button = SEED_COMPONENTS.find((c) => c.name === "Button")!;
+// #3543: the packaged seed is now a single EMPTY kit, so these propagation tests take their Button fixture
+// from the react-ui LIBRARY (the manifest-generated assembler — the exact set the seed used to carry).
+const button = REACT_UI_COMPONENTS.find((c) => c.name === "Button")!;
 const clone = (over: Partial<ComponentRecord>): ComponentRecord => ({ ...button, ...over });
 
 describe("kit-change propagation (#2277)", () => {
