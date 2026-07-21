@@ -225,6 +225,41 @@ component in scope carries used > 0, so `used = 0` means UNKNOWN, not unused). A
 still REPORTED by `bsc ui doctor` — only the automatic removal is withheld. #2678/#2679/#3089/#3087.",
     },
     CmdDoc {
+        name: "dupes",
+        summary: "the whole-library duplicate report — exact + fuzzy NEAR-duplicates (name + contract distance), propose-only (#3544)",
+        usage: "\
+USAGE:
+  bsc ui dupes [--kit K] [--threshold 0..1] [--json] [--pretty]
+
+The DEDUP surface. Reports the EXACT `duplicate` findings the per-kit analyzer emits (two components sharing
+a `wraps` intrinsic, or byte-identical source) PLUS the FUZZY near-duplicates it structurally misses —
+`Donut`≈`DonutChart`, `Bars`≈`BarChart`, `Legend`≈`ChartLegend`, and cross-kit `Card`/`Grid`/`KeyValueList`
+repeats a growing multi-kit library accumulates. Each near-duplicate is scored by NAME distance (normalized
+token-set + edit distance; `Chart`/`View`/`Bsc` affixes stripped, names singularized) and CONTRACT/body
+distance (prop-signature / variant / `composes` Jaccard + a source k-gram shingle overlap), combined
+0.5·name + 0.5·contract. Cross-kit by design — the whole point is consolidating overlapping kits into one.
+
+--threshold tunes the fuzzy bar (default 0.55); --kit scopes to ONE kit (which drops cross-kit near-dups);
+--json emits the findings array (LLM-consumable), each `{ category, severity, kit, nodeIds, nodeNames, why,
+suggestedAction }`. PROPOSE-ONLY: there is no `--fix` here — a near-duplicate is a WEAKER signal than a
+byte-identical dup and the merge is a semantic call, so use these proposals to guide a manual/designer merge.
+Inspect one component's neighborhood with `bsc ui similar <id>`. #3544.",
+    },
+    CmdDoc {
+        name: "similar",
+        summary: "components most similar to <id> across the whole library (name + contract distance) — discover-before-authoring (#3544)",
+        usage: "\
+USAGE:
+  bsc ui similar <id> [--top N] [--threshold 0..1] [--json] [--pretty]
+
+Ranks every OTHER component by its similarity to <id> (the same name + contract distance `bsc ui dupes`
+uses), most-similar first. The discover-before-authoring read: BEFORE a session authors a new component it
+asks whether one like it already exists, so the library converges instead of sprouting a fourth `Card`.
+Cross-kit. --top caps the rows (default 10); --threshold sets a minimum overall score (default 0 — the
+internal name gate already drops unrelated names). --json emits `[{ id, name, kit, score, name_similarity,
+contract_similarity }]`. PROPOSE-ONLY — reads only. #3544.",
+    },
+    CmdDoc {
         name: "define-animation",
         summary: "author a component's motion as data — animation JSON on stdin, upsert by name (#2869)",
         usage: "\
@@ -585,6 +620,24 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 Ok(())
             } else {
                 cmd_doctor(&args[1..])
+            }
+        }
+        // `dupes` / `similar` (#3544) — the fuzzy DEDUP surface over the whole library (name + contract
+        // distance), the LLM-native "what should I merge?" / "does this already exist?" reads. Propose-only.
+        Some("dupes") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "dupes"));
+                Ok(())
+            } else {
+                cmd_dupes(&args[1..])
+            }
+        }
+        Some("similar") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "similar"));
+                Ok(())
+            } else {
+                cmd_similar(&args[1..])
             }
         }
         // The component-animation authoring verbs (#2869): motion as DATA on a component record. Custom
@@ -1170,6 +1223,11 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     // actionable finding, so it should never need a flag to surface.
     let render_errors = crate::preview_errors::latest_error_by_id();
     findings.extend(crate::graph_health::render_error_findings(&comps, &render_errors));
+    // #3544: append the library-wide NEAR-duplicate findings — the fuzzy layer (name + contract distance)
+    // the exact per-kit `duplicate` detector misses (`Donut`≈`DonutChart`, cross-kit `Card` repeats).
+    // PROPOSE-ONLY: emitted here, never fed to `--fix` (only byte-identical merges auto-apply). Cross-kit
+    // by nature, so it fires on the full report; a `--kit` scope filters `comps`, leaving within-kit dups.
+    findings.extend(crate::similarity::near_duplicate_findings(&comps, crate::similarity::DEFAULT_THRESHOLD));
     // Re-rank the combined report (most-severe first, stable kit + node-name tiebreak — the SAME ordering
     // `analyze` uses). Render errors (severity 5) sort to the top.
     findings.sort_by(|a, b| {
@@ -1200,6 +1258,119 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     for f in &findings {
         println!("  [{}] {} — {}", f.category, f.kit, f.why);
         println!("        → {}", f.suggested_action);
+    }
+    Ok(())
+}
+
+/// `bsc ui dupes` (#3544) — the whole-library duplicate report: the exact `duplicate` findings the per-kit
+/// analyzer emits (shared `wraps` / byte-identical source) PLUS the fuzzy NEAR-duplicates it misses (name +
+/// contract distance — `Donut`≈`DonutChart`, cross-kit `Card` repeats), ranked together. The LLM-native
+/// "what should I merge?" surface; PROPOSE-ONLY — the proposals guide a manual/designer merge, there is no
+/// `--fix` here. `--kit` scopes to one kit (dropping cross-kit near-dups); `--threshold <0..1>` tunes the
+/// fuzzy bar (default [`crate::similarity::DEFAULT_THRESHOLD`]).
+fn cmd_dupes(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut kit, mut json, mut pretty) = (None::<String>, None::<String>, false, false);
+    let mut threshold = crate::similarity::DEFAULT_THRESHOLD;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--kit" => kit = it.next().cloned(),
+            "--threshold" => {
+                threshold = it
+                    .next()
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .ok_or("--threshold needs a number in [0,1]")?;
+            }
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let comps: Vec<serde_json::Value> = store
+        .list()
+        .iter()
+        .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+        .filter(|v| match &kit {
+            Some(k) => v.get("kitId").and_then(serde_json::Value::as_str) == Some(k.as_str()),
+            None => true,
+        })
+        .collect();
+    // Exact duplicates first (certain — shared wraps / byte-identical), then the ranked near-duplicates.
+    let mut findings: Vec<crate::graph_health::Finding> =
+        crate::graph_health::analyze(&comps).into_iter().filter(|f| f.category == "duplicate").collect();
+    findings.extend(crate::similarity::near_duplicate_findings(&comps, threshold));
+    if json {
+        let arr: Vec<serde_json::Value> = findings.iter().map(crate::graph_health::Finding::to_value).collect();
+        let out = if pretty { serde_json::to_string_pretty(&arr) } else { serde_json::to_string(&arr) };
+        println!("{}", out.map_err(|e| e.to_string())?);
+        return Ok(());
+    }
+    if findings.is_empty() {
+        println!("✓ no duplicates or near-duplicates found.");
+        return Ok(());
+    }
+    println!("{} duplicate / near-duplicate finding(s), most-similar first:", findings.len());
+    for f in &findings {
+        println!("  [{}] {} — {}", f.category, f.kit, f.why);
+        println!("        → {}", f.suggested_action);
+    }
+    Ok(())
+}
+
+/// `bsc ui similar <id> [--top N] [--threshold F]` (#3544) — the components most similar to <id> across the
+/// WHOLE library (name + contract distance), ranked most-similar first. The discover-before-authoring read:
+/// a session checks whether a component like the one it is about to build already exists. Cross-kit;
+/// PROPOSE-ONLY. `--top` caps the rows (default 10); `--threshold` sets a minimum overall score.
+fn cmd_similar(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut json, mut pretty) = (None::<String>, false, false);
+    let (mut id, mut top, mut floor) = (None::<String>, 10usize, 0.0f64);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--top" => {
+                top = it.next().and_then(|s| s.parse::<usize>().ok()).ok_or("--top needs a positive integer")?;
+            }
+            "--threshold" => {
+                floor = it.next().and_then(|s| s.parse::<f64>().ok()).ok_or("--threshold needs a number in [0,1]")?;
+            }
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other if id.is_none() => id = Some(other.to_string()),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let id = id.ok_or("usage: bsc ui similar <id> [--top N] [--threshold F]")?;
+    let store = open_component_store(&dir)?;
+    let comps: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    if !comps.iter().any(|c| c.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str())) {
+        return Err(format!("no component with id '{id}' (see `bsc ui list --raw`)"));
+    }
+    let rows = crate::similarity::rank_similar(&id, &comps, top, floor);
+    if json {
+        let out = if pretty { serde_json::to_string_pretty(&rows) } else { serde_json::to_string(&rows) };
+        println!("{}", out.map_err(|e| e.to_string())?);
+        return Ok(());
+    }
+    if rows.is_empty() {
+        println!("no components similar to '{id}'.");
+        return Ok(());
+    }
+    println!("components similar to '{id}', most-similar first:");
+    for r in &rows {
+        println!(
+            "  {:>3.0}%  {} ({})  [name {:.2} · contract {:.2}]",
+            r["score"].as_f64().unwrap_or(0.0) * 100.0,
+            r["name"].as_str().unwrap_or(""),
+            r["kit"].as_str().unwrap_or(""),
+            r["name_similarity"].as_f64().unwrap_or(0.0),
+            r["contract_similarity"].as_f64().unwrap_or(0.0),
+        );
     }
     Ok(())
 }
@@ -2532,8 +2703,8 @@ mod tests {
             names,
             vec![
                 "list", "shapes", "get", "log", "set", "remove", "kit", "eslint-preset", "usage",
-                "doctor", "define-animation", "list-animations", "remove-animation", "set-src", "patch",
-                "preview-props", "preview-errors", "preview-error"
+                "doctor", "dupes", "similar", "define-animation", "list-animations", "remove-animation",
+                "set-src", "patch", "preview-props", "preview-errors", "preview-error"
             ]
         );
         for c in command_docs() {
