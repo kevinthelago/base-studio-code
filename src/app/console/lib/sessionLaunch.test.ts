@@ -268,6 +268,17 @@ describe("buildSessionSettings", () => {
     expect(out.denyToolRules).not.toContain("Task"); // no worker sub-agent block
   });
 
+  it("forces bypass=true for an AUTO-SPAWNED per-request debug session too (#3520)", () => {
+    // The spawned per-request session (`debug-studio:req-<id>`) is the same full-capability actor as the
+    // standing one: role-less and in the source tree, with the human's PR review as its control gate.
+    // Keying the carve-out on the singleton id alone left it falling through to the (off) global toggle,
+    // so it stopped to ask for every edit. It must launch bypass even with the global posture off.
+    const out = buildSessionSettings(mkStore({ bypassPermissions: false }), "debug-studio:req-7");
+    expect(out.bypass).toBe(true);
+    expect(out.allowedCommands).toEqual([]); // role-less: no restricted role surface, no write-scope
+    expect(out.denyToolRules).not.toContain("Task");
+  });
+
   it("installs the audit/confine/scope/taint hooks + worker Stop-bounce for a worker role", () => {
     const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } });
     const out = buildSessionSettings(s, "p");
