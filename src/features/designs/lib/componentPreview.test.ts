@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { componentPreviewFiles, bootstrapSource, samplePropValue, looksBuildableModule, isPreviewBuildable, hasCodeElision, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
+import { componentPreviewFiles, bootstrapSource, samplePropValue, isErrorProp, supportedStates, previewCycleStates, looksBuildableModule, isPreviewBuildable, hasCodeElision, PREVIEW_ENTRY, type KitArtifact } from "./componentPreview";
 import type { ComponentRecord, PropSpec } from "./model";
 
 const prop = (name: string, type: string, req = false): PropSpec => ({ name, type, req, desc: "" });
@@ -299,6 +299,47 @@ describe("samplePropValue (#2824)", () => {
     expect(samplePropValue(prop("stacked", "boolean"), "loading")).toBe("true");
     // a REQUIRED collection always renders ([]), even in loaded — so a required-data component isn't blank.
     expect(samplePropValue(prop("rows", "Row[]", true), "loaded")).toBe("[]");
+  });
+
+  it("drives an ERROR-family prop only in the error state (#3555)", () => {
+    const errStr = prop("error", "string"), errBool = prop("hasError", "boolean");
+    // error state: a string error → a message; a boolean error → true.
+    expect(samplePropValue(errStr, "error")).toBe('"Something went wrong"');
+    expect(samplePropValue(errBool, "error")).toBe("true");
+    // every other state omits it, so the component renders normally.
+    for (const s of ["loaded", "empty", "loading"] as const) {
+      expect(samplePropValue(errStr, s)).toBeNull();
+      expect(samplePropValue(errBool, s)).toBeNull();
+    }
+    // `onError` is a callback, NOT an error state prop.
+    expect(isErrorProp(prop("onError", "() => void"))).toBe(false);
+    expect(samplePropValue(prop("onError", "() => void"), "error")).toBe("() => {}");
+  });
+});
+
+describe("supportedStates / previewCycleStates (#3555)", () => {
+  const mk = (props: PropSpec[]): ComponentRecord => ({ ...base, props });
+
+  it("a plain component supports only `loaded` — no state tabs, nothing to cycle", () => {
+    const btn = mk([prop("label", "string"), prop("onClick", "() => void")]);
+    expect(supportedStates(btn)).toEqual(["loaded"]);
+    expect(previewCycleStates(btn)).toEqual(["loaded"]);
+  });
+
+  it("detects each state from its prop, in natural order (loading → loaded → empty → error)", () => {
+    const full = mk([prop("loading", "boolean"), prop("rows", "Row[]"), prop("error", "string")]);
+    expect(supportedStates(full)).toEqual(["loading", "loaded", "empty", "error"]);
+    // a data component with no loading/error prop → just loaded + empty.
+    expect(supportedStates(mk([prop("rows", "Row[]")]))).toEqual(["loaded", "empty"]);
+    // loading-only → loading + loaded.
+    expect(supportedStates(mk([prop("busy", "boolean")]))).toEqual(["loading", "loaded"]);
+  });
+
+  it("the auto-cycle drops empty but keeps loading/loaded/error", () => {
+    const full = mk([prop("loading", "boolean"), prop("rows", "Row[]"), prop("error", "string")]);
+    expect(previewCycleStates(full)).toEqual(["loading", "loaded", "error"]);
+    // a data-only component's cycle is just loaded (empty dropped → nothing else to show).
+    expect(previewCycleStates(mk([prop("rows", "Row[]")]))).toEqual(["loaded"]);
   });
 });
 
