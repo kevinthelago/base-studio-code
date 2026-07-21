@@ -55,6 +55,13 @@ pub(crate) fn clear_project_plan_files(project_key: String) -> Result<u32, Strin
     if sanitize_project_key(&project_key).is_empty() {
         return Err("clear_project_plan_files: empty project_key".to_string());
     }
+    // Empty the plan store FIRST, before the hub-exists check below. Since plan.db moved to the central
+    // `plans/<key>.db` store (#2993), a DB-backed project can have a POPULATED plan.db with NO
+    // materialized hub dir — so gating the store clear on the hub existing would leave the plan in the
+    // DB and the next poll would re-read it. Best-effort. (Issues + features live in plan.db, not files.)
+    if let Err(e) = plan_db::clear(&project_key) {
+        log::warn!("clear_project_plan_files({project_key}): clearing plan.db failed: {e}");
+    }
     let proj = plan_dir_for(&project_key);
     if !proj.exists() {
         return Ok(0);
@@ -83,11 +90,6 @@ pub(crate) fn clear_project_plan_files(project_key: String) -> Result<u32, Strin
     let skeleton = proj.join(".ui-skeleton");
     if skeleton.is_dir() && std::fs::remove_dir_all(&skeleton).is_ok() {
         removed += 1;
-    }
-    // Empty the plan store too (#plan-db): issues + features live in plan.db, not files, so a
-    // file-only clear would be undone when the next poll re-reads the DB. Best-effort.
-    if let Err(e) = plan_db::clear(&project_key) {
-        log::warn!("clear_project_plan_files({project_key}): clearing plan.db failed: {e}");
     }
     log::info!("clear_project_plan_files({project_key}): removed {removed} files");
     Ok(removed)
@@ -229,7 +231,9 @@ mod relocated_tests {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let home = temp_home("cpfdb");
         let key = "test-clear-plan-db".to_string();
-        let db = project_dir(&key).join("plan.db");
+        // plan.db lives in the central `plans/<key>.db` store (#2993), not the hub — the same path
+        // `clear_project_plan_files` → `plan_db::clear` operates on. (Matches the sibling test above.)
+        let db = crate::plan_db_path(&key);
         {
             let store = plandb::Store::open(&db).unwrap();
             store.upsert(&plandb::PlanIssue { r#ref: "F1".into(), title: "issue".into(), ..Default::default() }).unwrap();
