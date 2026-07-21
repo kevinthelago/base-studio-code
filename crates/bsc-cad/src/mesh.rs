@@ -488,13 +488,19 @@ mod tests {
         // The refinement earns its keep on CURVED fields, where the linear interpolation the raw
         // surface-nets step used is systematically off. Segment straddling a sphere of radius 5.
         let s = Node::Sphere { r: 5.0 };
-        let pa = Vec3::new(0.0, 0.0, 0.0); // sdf = -5
-        let pc = Vec3::new(12.0, 0.0, 0.0); // sdf = +7
+        // OFF-AXIS segment so the field is genuinely CURVED along it: a radial segment through the centre
+        // makes the sphere SDF linear (`|x|-r`), so the linear guess is already exact and the refinement
+        // can't beat it — the degenerate case that compared two ~0 values (#3388).
+        let pa = Vec3::new(0.0, 4.0, 0.0); // |pa| = 4, sdf = -1 (inside)
+        let pc = Vec3::new(12.0, 4.0, 0.0); // |pc| = √160 ≈ 12.65, sdf ≈ +7.65 (outside)
         let (va, vc) = (s.sdf(pa), s.sdf(pc));
 
         let linear = pa + (pc - pa) * (va / (va - vc));
         let refined = crossing(&s, pa, pc, va, vc);
-        assert!(s.sdf(refined).abs() < 1e-9, "refined crossing is on the surface");
+        // The bounded 8-step refinement lands within a tight tolerance of the real surface (1e-9 is only
+        // reachable on a LINEAR field — a curved one converges to ~1e-3 in 8 regula-falsi steps)…
+        assert!(s.sdf(refined).abs() < 0.02, "refined crossing is on the surface: off by {}", s.sdf(refined).abs());
+        // …and far closer than the linear guess, which is systematically off (~0.77 mm) on the curved field.
         assert!(s.sdf(refined).abs() < s.sdf(linear).abs(), "refinement must beat the linear guess");
         // And it stays inside the segment it was given.
         assert!(refined.x > 0.0 && refined.x < 12.0);
