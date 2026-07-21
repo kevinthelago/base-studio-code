@@ -36,8 +36,17 @@ describe("isStudioSessionPaneId (#3137)", () => {
 });
 
 describe("isFullCapabilitySession (#3326)", () => {
-  it("is true ONLY for the debug session — the always-bypass carve-out", () => {
+  it("is true for the standing debug session — the always-bypass carve-out", () => {
     expect(isFullCapabilitySession(DEBUG_STUDIO_SESSION_ID)).toBe(true);
+  });
+
+  it("is true for EVERY auto-spawned per-request debug session (#3520)", () => {
+    // A `debug-studio:req-<id>` session is the same full-capability actor as the standing one — app-owned,
+    // in the source tree, working the request queue. It must launch bypass too, or it stops to ask for
+    // every edit; the control gate is the human reviewing its PR, not a per-tool prompt.
+    for (const id of ["debug-studio:req-1", "debug-studio:req-7", "debug-studio:req-142"]) {
+      expect(isFullCapabilitySession(id)).toBe(true);
+    }
   });
 
   it("is false for the other studios (they keep their bespoke launch postures)", () => {
@@ -47,7 +56,9 @@ describe("isFullCapabilitySession (#3326)", () => {
   });
 
   it("is false for fleet / manual / planner ids (they follow the global posture)", () => {
-    for (const id of ["proj:auth", "proj:director", "own/web:triage", "man:scratch:p0", "planning_proj"]) {
+    // Including a `debug-studio`-ish decoy that is NOT the prefix — the match is on `debug-studio:`, so a
+    // pane merely CONTAINING the word must not slip through.
+    for (const id of ["proj:auth", "proj:director", "own/web:triage", "man:scratch:p0", "planning_proj", "my-debug-studio:x"]) {
       expect(isFullCapabilitySession(id)).toBe(false);
     }
   });
