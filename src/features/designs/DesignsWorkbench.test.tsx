@@ -539,12 +539,14 @@ describe("theme try-on preview (#2834)", () => {
     expect(screen.queryByText("🖐 pan")).toBeNull();
     expect(screen.queryByText("select")).toBeNull();
     // #3190 crisp pass: pan/zoom moved INSIDE the iframe (a DOM transform → sharp), so the host no longer
-    // owns a viewport — no `onCanvasDown`, no `data-node`. The frame stays pointer-events:auto so the
-    // engine inside receives drag/wheel, and the +/−/fit buttons RELAY to it via `__cmd` postMessages.
+    // owns a viewport — no `onCanvasDown`, no `data-node`. #3551: in fluid mode (the default) the frame
+    // mounts DIRECTLY in the canvas — the placer wrapper is dropped — and nothing in the chain sets
+    // pointer-events:none, so the engine inside still receives drag/wheel; the +/−/fit buttons RELAY via
+    // `__cmd` postMessages.
     const iframe = screen.getByTitle("Chip preview") as HTMLIFrameElement;
     const worldWrap = iframe.parentElement!.parentElement as HTMLElement;
-    expect(worldWrap.style.pointerEvents).toBe("auto");
-    expect(worldWrap.getAttribute("data-node")).toBeNull();
+    expect(worldWrap.style.pointerEvents).not.toBe("none"); // nothing blocks the engine's drag/wheel
+    expect(worldWrap.getAttribute("data-node")).toBeNull(); // not wired as a graph node
     const posts: unknown[] = [];
     const win = iframe.contentWindow!;
     const spy = vi.spyOn(win, "postMessage").mockImplementation(((m: unknown) => { posts.push(m); }) as typeof win.postMessage);

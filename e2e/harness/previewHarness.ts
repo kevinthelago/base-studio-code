@@ -71,14 +71,32 @@ pic.src = "data:image/gif;base64,R0lGODlhAgACAIAAAP///wAAACH5BAEAAAAALAAAAAACAAI
 pic.style.cssText = "width:240px;height:120px;background:#456";
 
 wrap.append(text, btn, field, pic);
+__TALL__
 document.getElementById("root").appendChild(wrap);
 export {};
+`;
+
+// A block far taller than the 800×600 harness frame, with a marker pinned to its very bottom — so a test
+// can assert the OFF-SCREEN bottom actually renders (is painted, not clipped) once the engine fits (#3551).
+const TALL_BLOCK = `
+const tall = document.createElement("div");
+tall.id = "tall";
+tall.style.cssText = "position:relative;width:100%;height:1400px;margin-top:16px;background:linear-gradient(#223,#557)";
+const bottom = document.createElement("div");
+bottom.id = "bottom";
+bottom.style.cssText = "position:absolute;left:0;right:0;bottom:0;height:56px;display:flex;align-items:center;justify-content:center;background:#0c8;color:#012;font-weight:700";
+bottom.textContent = "BOTTOM EDGE";
+tall.appendChild(bottom);
+wrap.appendChild(tall);
 `;
 
 /** Options the harness forwards straight into `buildComponentSrcDoc` — the same knobs the live frame sets. */
 export interface MountOptions {
   /** Mount with the in-iframe pan/zoom ENGINE (#3190), as the expanded try-on does. */
   zoomEngine?: boolean;
+  /** Append a block far taller than the frame, so the "renders the whole height, unclipped" test (#3551)
+   *  has real off-screen overflow to check. */
+  tall?: boolean;
 }
 
 declare global {
@@ -96,12 +114,14 @@ declare global {
  */
 async function mount(opts: MountOptions = {}): Promise<void> {
   const iframe = document.getElementById("preview") as HTMLIFrameElement;
-  const js = await bundleComponent({ "fixture.ts": FIXTURE_SOURCE }, "fixture.ts");
+  const source = FIXTURE_SOURCE.replace("__TALL__", opts.tall ? TALL_BLOCK : "");
+  const js = await bundleComponent({ "fixture.ts": source }, "fixture.ts");
   const srcDoc = buildComponentSrcDoc(js, {
     injectedCss: collectAppCss(),
     theme: "dark",
-    // The live frame passes `{ initial }` only; min/max fall back to the engine's own defaults.
-    zoomEngine: opts.zoomEngine ? { initial: 1 } : undefined,
+    // The engine has no options that vary per-mount (it opens FIT and reads its own defaults); an empty
+    // object enables it, exactly as the live frame passes `zoomEngine={{}}`.
+    zoomEngine: opts.zoomEngine ? {} : undefined,
   });
 
   await new Promise<void>((resolve, reject) => {

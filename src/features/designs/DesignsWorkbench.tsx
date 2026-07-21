@@ -52,6 +52,7 @@ import { useComponentScan } from "./lib/useComponentScan";
 import { makeLibraryResolvers } from "./lib/libraryModules";
 import { useActiveSoundKit } from "./lib/useActiveSoundKit";
 import { groupKits } from "./lib/kitGroups";
+import { expandedPreviewFit } from "./lib/expandedPreviewFit";
 import { ComponentPreviewFrame } from "./ComponentPreviewFrame";
 import type { PreviewState } from "./lib/componentPreview";
 import { ThemesMenu } from "./ThemesMenu";
@@ -182,13 +183,13 @@ export function DesignsWorkbench() {
     : null;
   const focusComp = sel ?? aiComp;
 
-  // The expanded try-on's pan/zoom (#3190 CRISP pass). The host no longer CSS-scales the iframe — that
-  // blurs a composited texture. Instead the iframe runs its own DOM-transform pan/zoom ENGINE (crisp),
-  // and the host just FRAMES the fixed design viewport (previewW×previewH) into the canvas at a
-  // DOWNSCALE-ONLY fit (never upscales → the iframe stays 1:1-or-smaller → sharp). The measured canvas
-  // drives the fit; the engine hands back its +/−/fit API for the buttons.
-  const previewW = vp === "sm" ? 380 : vp === "md" ? 640 : 1200;
-  const previewH = 440;
+  // The expanded try-on's pan/zoom (#3190 CRISP pass + #3551 fluid fit). The iframe runs its OWN
+  // DOM-transform pan/zoom ENGINE (crisp), so the host must NOT CSS-scale the iframe — a host downscale
+  // both shrinks the preview AND desyncs the engine's pointer math (its drag reads iframe-internal
+  // clientX), which read as "no click and drag". So the host just FRAMES the design viewport into the
+  // measured canvas, and in fluid (default) mode the frame FILLS the canvas at scale 1 — width-first,
+  // grows on resize, pan stays 1:1. `expandedPreviewFit` owns that pure math; the engine hands back its
+  // +/−/fit API for the buttons.
   const [previewCanvas, setPreviewCanvas] = useState({ w: 0, h: 0 });
   const previewRo = useRef<ResizeObserver | null>(null);
   const mountPreviewCanvas = useCallback((el: HTMLDivElement | null) => {
@@ -200,18 +201,28 @@ export function DesignsWorkbench() {
     }
   }, []);
   useEffect(() => () => previewRo.current?.disconnect(), []);
-  // Centered, downscale-only fit of the design frame into the canvas (scale ≤ 1). A FIXED framing — the
-  // user's zoom happens inside the iframe, not here — so it never re-fits away an in-progress zoom.
-  const previewFit = useMemo(() => {
-    const pad = 24, cw = previewCanvas.w, ch = previewCanvas.h;
-    if (!cw || !ch) return { scale: 1, tx: 0, ty: 0 };
-    const scale = Math.min(1, (cw - pad * 2) / previewW, (ch - pad * 2) / previewH);
-    return { scale, tx: (cw - previewW * scale) / 2, ty: (ch - previewH * scale) / 2 };
-  }, [previewCanvas.w, previewCanvas.h, previewW]);
-  // The engine opens ZOOMED IN (a page is letterboxed small by its render ratio, so 1:1 reads tiny);
-  // pages get a stronger factor than 1:1 components.
-  const previewInitialZoom = sel && (sel.role === "page" || sel.role === "layout") ? 1.4 : 1.15;
+  const { previewW, previewH, ...previewFit } = useMemo(
+    () => expandedPreviewFit(vp, previewCanvas.w, previewCanvas.h),
+    [vp, previewCanvas.w, previewCanvas.h],
+  );
   const [previewZoomApi, setPreviewZoomApi] = useState<{ zoomIn: () => void; zoomOut: () => void; fit: () => void } | null>(null);
+  // The expanded try-on's live frame — defined once so it mounts EITHER directly (fluid: it fills the
+  // canvas at scale 1) OR inside the centering placer (a fixed breakpoint), without duplicating props.
+  // The zoom engine opens FIT (whole component visible); scroll zooms, drag pans.
+  const expandedPreviewFrame = sel && (
+    <ComponentPreviewFrame
+      comp={sel}
+      theme={theme}
+      themeId={kitTheme}
+      themeVars={activeTheme?.vars ?? {}}
+      width={previewW}
+      height={previewH}
+      extraAnimation={tryAnimDef}
+      previewState={previewState}
+      zoomEngine={{}}
+      registerZoomApi={setPreviewZoomApi}
+    />
+  );
 
   const allVariants = focusComp ? focusComp.variants : [];
   const activeVariant = allVariants.includes(variant) ? variant : allVariants[0] ?? "default";
@@ -504,28 +515,21 @@ export function DesignsWorkbench() {
                 DOM transform on `#root` (the browser re-rasterizes crisply at any scale, unlike a
                 CSS-scaled iframe). Drag pans anywhere (a click still interacts); the wheel scrolls/pans the
                 content, ⌘/ctrl+wheel zooms; the +/−/fit buttons post commands to the engine. */}
-            {/* eslint-disable-next-line no-restricted-syntax -- callback ref: a ResizeObserver reads this canvas's px size to size the fixed fit (#3190) */}
+            {/* eslint-disable-next-line no-restricted-syntax -- callback ref: a ResizeObserver reads this canvas's px size to size the fluid fit (#3190/#3551) */}
             <div
               ref={mountPreviewCanvas}
               style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", background: "var(--bg-canvas, var(--bg))" }}
             >
-              {/* #3251: no `user-select:none` here — it read as the drag's selection guard but is a no-op
-                  (this wrapper's only child is the iframe, and CSS does not cross a document boundary).
-                  The guard lives in the engine's own srcdoc CSS, where the drag actually happens. */}
-              <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: previewH, pointerEvents: "auto", transform: `translate(${previewFit.tx}px,${previewFit.ty}px) scale(${previewFit.scale})`, transformOrigin: "0 0" }}>
-                <ComponentPreviewFrame
-                  comp={sel}
-                  theme={theme}
-                  themeId={kitTheme}
-                  themeVars={activeTheme?.vars ?? {}}
-                  width={previewW}
-                  height={previewH}
-                  extraAnimation={tryAnimDef}
-                  previewState={previewState}
-                  zoomEngine={{ initial: previewInitialZoom }}
-                  registerZoomApi={setPreviewZoomApi}
-                />
-              </Box>
+              {/* #3551: in fluid mode the frame IS the canvas (scale 1), so it mounts DIRECTLY — no placer
+                  wrapper, one fewer same-size box in the stack. A fixed breakpoint keeps the placer, which
+                  centers + downscale-fits its frame into the canvas via the transform. #3251: no
+                  `user-select:none` here — the drag's selection guard lives in the engine's own srcdoc CSS
+                  (CSS does not cross the iframe document boundary). */}
+              {vp === "auto" ? expandedPreviewFrame : (
+                <Box style={{ position: "absolute", left: 0, top: 0, width: previewW, height: previewH, pointerEvents: "auto", transform: `translate(${previewFit.tx}px,${previewFit.ty}px) scale(${previewFit.scale})`, transformOrigin: "0 0" }}>
+                  {expandedPreviewFrame}
+                </Box>
+              )}
             </div>
           </Box>
         ) : legend}
