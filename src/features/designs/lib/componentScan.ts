@@ -45,6 +45,26 @@ export type ComponentBuildStatus =
   | { state: "error"; kind: "build" | "runtime"; message: string }
   | { state: "empty"; message: string };
 
+/**
+ * What the scan should mirror to the DURABLE preview-error log (`bsc ui preview-error`) for a component
+ * whose status went `prior` → `next` (#3540) — so `bsc ui doctor` sees the COMPLETE errored set, not
+ * just components a human opened. Returns:
+ *  - the message to RECORD, for a RUNTIME throw (the render-error class doctor reports);
+ *  - `""` to CLEAR, when a component that WAS an error is now ok/empty (so a fixed one drops out);
+ *  - `null` to do nothing — including a first-visit `ok` (no prior error), so a sweep of ~50 healthy
+ *    components logs nothing, and a `build` error (a different, statically-detectable class).
+ *
+ * Pure — the hook calls `recordPreviewError` only when this is non-null.
+ */
+export function durableLogSync(
+  prior: ComponentBuildStatus | undefined,
+  next: ComponentBuildStatus,
+): string | null {
+  if (next.state === "error" && next.kind === "runtime") return next.message;
+  if (next.state !== "error" && prior?.state === "error") return ""; // a prior error is now resolved
+  return null;
+}
+
 /** A per-STATE preview build to render-confirm for a BLANK #root (#3191) — the empty/loading data-state a
  *  component supports. `category` is the finding it yields when that state renders nothing; `files`/`entry`
  *  build that state's preview (the same file set as loaded — only the sampled props differ). */
