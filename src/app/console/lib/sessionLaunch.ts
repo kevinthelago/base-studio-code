@@ -14,7 +14,7 @@ import { resolveMcpServers, toBscAgentMcp, resolveHooks, toSessionPayloads } fro
 import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/skills";
 import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
-import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands, isRestrictedRole, HARVEST_ROOT_APP_REPO, type SessionRole } from "@/shared/lib/session/sessionRoles";
+import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands, isRestrictedRole, editPathRule, HARVEST_ROOT_APP_REPO, type SessionRole } from "@/shared/lib/session/sessionRoles";
 import { isFullCapabilitySession, isStudioSessionPaneId } from "@/shared/lib/session/systemSessions";
 import { TURN_ACCOUNTING_HOOKS } from "@/shared/lib/session/turnHooks";
 import { studioRoleForPaneId } from "@/features/studio-sessions";
@@ -243,10 +243,13 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
   // designer hook's `[...write.allow, "Read"]`. The backend dedupes, so a redundant Read is harmless.
   const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? []), ...(restrictedAllow ? ["Read"] : [])];
   // Confinement self-protection (#1916): the agent must not disable the FS-confinement hook or its own
-  // permission set by editing them. Deny the file-write tools on `.claude/**` — the in-repo config the
+  // permission set by editing them. Deny file writes on `.claude/**` — the in-repo config the
   // bsc-confine hook itself can't catch (it only blocks paths OUTSIDE the repo root). The app stays
   // authoritative regardless (it re-writes `.claude/settings.json` at every launch). On EVERY pane.
-  const confinementConfigDeny = ["Edit", "Write", "MultiEdit", "NotebookEdit"].map((t) => `${t}(.claude/**)`);
+  // ONE `Edit(.claude/**)` rule (#3534): Claude Code matches file-permission rules on the Edit tool
+  // alone and it covers every file-editing tool — the former `Write/MultiEdit/NotebookEdit(.claude/**)`
+  // rules were NEVER enforced (MultiEdit is not even a tool), so this deny was silently a no-op.
+  const confinementConfigDeny = [editPathRule(".claude/**")];
   // Worker sub-agent block (#1036): deny the Task tool for workers. Deny wins over any profile allow.
   const denyToolRules = [...confinementConfigDeny, ...write.deny, ...(cap ? roleDeniedTools(cap) : []), ...(prof?.denyToolRules ?? []), ...flowRules.denyToolRules];
   const askToolRules = flowRules.askToolRules;

@@ -238,8 +238,11 @@ describe("buildSessionSettings", () => {
     ]);
     // ...and the confinement config is write-protected on every pane, so the agent can't edit
     // `.claude/**` to remove the hook or widen its own permissions (#1916).
-    expect(out.denyToolRules).toEqual(expect.arrayContaining(
-      ["Edit(.claude/**)", "Write(.claude/**)", "MultiEdit(.claude/**)", "NotebookEdit(.claude/**)"]));
+    // ONE Edit(.claude/**) rule (#3534): Claude Code matches file rules on Edit alone, which covers
+    // every file-editing tool — the former Write/MultiEdit/NotebookEdit forms were never enforced.
+    expect(out.denyToolRules).toContain("Edit(.claude/**)");
+    expect(out.denyToolRules).not.toContain("Write(.claude/**)");
+    expect(out.denyToolRules).not.toContain("MultiEdit(.claude/**)");
   });
 
   it("honours the global bypass posture for an ordinary pane", () => {
@@ -386,10 +389,11 @@ describe("buildSessionSettings", () => {
       // carve-out, so they are auto-approved for exactly that sealed staging dir and nothing else.
       // Claude Code's precedence is deny > allow, so a bare deny here would mask the carve-out and
       // leave the session unable to stage the payload `bsc <store> set --file` reads.
-      for (const t of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) {
-        expect(out.denyToolRules).not.toContain(t);
-        expect(out.allowToolRules).toContain(`${t}(scratch/**)`);
+      for (const t of ["Edit", "Write", "NotebookEdit"]) {
+        expect(out.denyToolRules).not.toContain(t); // no wholesale write deny — the carve-out must survive
       }
+      // The carve-out is one Edit(scratch/**) allow (#3534): Edit(path) covers Write/NotebookEdit too.
+      expect(out.allowToolRules).toContain("Edit(scratch/**)");
       // A restricted role is NEVER bypass — bypass ignores permissions.deny, which would undo all of it.
       expect(out.bypass).toBe(false);
       expect(buildSessionSettings(mkStore({ paneRoles: { p: role }, bypassPermissions: true }), "p").bypass).toBe(false);
@@ -415,7 +419,7 @@ describe("buildSessionSettings", () => {
     const expected = glob ? [glob] : roleCapability(role).writeGlobs;
     expect(expected.length).toBeGreaterThan(0);
     // The carve-out survives: per-glob allows, and NO bare write-tool deny to mask them.
-    for (const g of expected) expect(out.allowToolRules).toContain(`Write(${g})`);
+    for (const g of expected) expect(out.allowToolRules).toContain(`Edit(${g})`); // path rules are Edit-only (#3534)
     expect(out.denyToolRules).not.toContain("Write");
     // The launch payload and the runtime hook agree on one boundary.
     expect(scopeWriteGlobs(role, [])).toEqual(expected);
@@ -424,7 +428,7 @@ describe("buildSessionSettings", () => {
   it("assigned owned globs still OVERRIDE the role default (#3428 must not regress the worker lane)", () => {
     const owned = ["src/features/glance/**"];
     const out = buildSessionSettings(mkStore({ paneRoles: { p: "worker" }, paneRoleGlobs: { p: owned } }), "p");
-    expect(out.allowToolRules).toContain("Write(src/features/glance/**)");
+    expect(out.allowToolRules).toContain("Edit(src/features/glance/**)"); // path rules are Edit-only (#3534)
     expect(scopeWriteGlobs("worker", owned)).toEqual(owned);
   });
 

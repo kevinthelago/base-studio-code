@@ -10,8 +10,16 @@ import { DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, hasScopedWriteCarveOut, isRest
 
 // ── Launch wiring: write-tool permission rules ──────────────────────────────────
 
-/** The file-mutating tools gated by the write-path guard. */
-const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+/** The file-mutating tools gated by a WHOLE-TOOL deny (bare tool name, no path). Claude Code has no
+ *  `MultiEdit` tool (removed) and a bare `Edit` deny does NOT cover `Write`/`NotebookEdit` — they are
+ *  separate tools — so all three must be listed to block every file write (#3534). */
+const WRITE_TOOLS = ["Edit", "Write", "NotebookEdit"];
+
+/** A PATH-SCOPED file rule uses ONLY `Edit(<glob>)`: Claude Code matches file-permission rules on the
+ *  `Edit` tool alone, and that ONE rule covers every file-editing tool (Write/NotebookEdit). Emitting
+ *  `Write(<glob>)`/`NotebookEdit(<glob>)`/`MultiEdit(<glob>)` produces rules Claude Code never matches —
+ *  a silent no-op for an allow, and (worse) an unenforced deny (#3534). */
+export const editPathRule = (glob: string): string => `Edit(${glob})`;
 
 export interface ToolPermissionRules {
   /** Rules to auto-approve (Claude Code `permissions.allow`). */
@@ -46,11 +54,11 @@ export function roleWriteRules(cap: RoleCapability): ToolPermissionRules {
     // the default prompt and is hard-blocked by the bsc-scope hook ({@link scopeWriteGlobs}), so
     // the director can write the commons and is denied all other code writes.
     if (hasScopedWriteCarveOut(cap)) {
-      return { allow: cap.writeGlobs.flatMap((g) => WRITE_TOOLS.map((t) => `${t}(${g})`)), deny: [] };
+      return { allow: cap.writeGlobs.map(editPathRule), deny: [] };
     }
     return { allow: [], deny: [...WRITE_TOOLS] };
   }
-  const allow = cap.writeGlobs.flatMap((g) => WRITE_TOOLS.map((t) => `${t}(${g})`));
+  const allow = cap.writeGlobs.map(editPathRule);
   // Role-specific deny set, layered over the write-glob allows (deny wins over allow):
   // - planner: the DB-owned plan-state artifacts (#1070) — its *.md/*.json globs would otherwise
   //   auto-approve a stray `deploy.md`/`phases.json`; force it to the `bsc-plan` CLI.
@@ -60,7 +68,7 @@ export function roleWriteRules(cap: RoleCapability): ToolPermissionRules {
   const denyFiles = cap.role === "planner" ? DB_OWNED_PLAN_FILES
     : cap.role === "worker" ? DEP_MANIFEST_FILES
     : [];
-  const deny = denyFiles.flatMap((f) => WRITE_TOOLS.map((t) => `${t}(${f})`));
+  const deny = denyFiles.map(editPathRule);
   return { allow, deny };
 }
 

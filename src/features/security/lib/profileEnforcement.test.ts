@@ -36,24 +36,29 @@ describe("resolveProfileSettings", () => {
 
   it("scopes file-write tools by path globs (deny wins)", () => {
     const s = resolveProfileSettings(profile("pf_sandbox")); // paths.deny: ["**/*"]
-    for (const t of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) {
-      expect(s.denyToolRules).toContain(`${t}(**/*)`);
-    }
+    // Path-scoped file rule is Edit(glob) ONLY (#3534) — Edit covers every file-editing tool.
+    expect(s.denyToolRules).toContain("Edit(**/*)");
+    expect(s.denyToolRules).not.toContain("Write(**/*)");
+    expect(s.denyToolRules).not.toContain("MultiEdit(**/*)");
   });
 
   it("carries the command allowlist + per-glob allows for a trusted profile", () => {
     const s = resolveProfileSettings(profile("pf_auto"));
     expect(s.allowedCommands).toEqual(["cargo", "npm", "pnpm", "pytest", "make", "node", "docker", "gh", "aws"]);
+    // whole-tool edit/write tiers (Edit/NotebookEdit/Write — no MultiEdit) + the path rule Edit(**/*).
     expect(s.allowToolRules).toEqual(
-      expect.arrayContaining(["Edit", "Write", "MultiEdit", "NotebookEdit", "Edit(**/*)", "Write(**/*)"]),
+      expect.arrayContaining(["Edit", "NotebookEdit", "Write", "Edit(**/*)"]),
     );
-    // paths.deny → denied write globs
-    expect(s.denyToolRules).toEqual(expect.arrayContaining(["Edit(**/.env)", "Write(**/secrets/**)"]));
+    expect(s.allowToolRules).not.toContain("MultiEdit");
+    expect(s.allowToolRules).not.toContain("Write(**/*)");
+    // paths.deny → denied write globs, Edit(glob) only.
+    expect(s.denyToolRules).toEqual(expect.arrayContaining(["Edit(**/.env)", "Edit(**/secrets/**)"]));
   });
 
   it("denies the edit tools when a profile sets edit/write to deny", () => {
     const s = resolveProfileSettings(profile("pf_review")); // edit:deny, write:deny, task:allow
-    expect(s.denyToolRules).toEqual(expect.arrayContaining(["Edit", "MultiEdit", "NotebookEdit", "Write"]));
+    expect(s.denyToolRules).toEqual(expect.arrayContaining(["Edit", "NotebookEdit", "Write"]));
+    expect(s.denyToolRules).not.toContain("MultiEdit");
     expect(s.allowToolRules).toContain("Task");
   });
 
