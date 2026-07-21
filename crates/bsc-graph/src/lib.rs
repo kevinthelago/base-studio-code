@@ -639,12 +639,14 @@ mod tests {
     fn set_impl_persists_the_domain_facet_through_the_store() {
         // `bsc graph impl set --domain` writes `domain`/`tags` onto the impl; save→load preserves them.
         let mut g = seed();
+        // A test-only id NOT in the packaged seed — the seed now carries its own `logistics` domain
+        // collection incl. `dijkstra.rs` (#3120), so a unique id keeps this a genuine INSERT.
         let inserted = set_impl(&mut g, serde_json::json!({
-            "id": "dijkstra.rs", "tech": "rust", "role": "algorithm", "name": "dijkstra",
-            "composes": [], "code": "// dijkstra", "domain": "logistics", "tags": ["graph"]
+            "id": "logistics-test.rs", "tech": "rust", "role": "algorithm", "name": "logistics-test",
+            "composes": [], "code": "// test", "domain": "logistics", "tags": ["graph"]
         })).unwrap();
         assert!(!inserted, "a new impl inserts");
-        let stored = implementations_of(&g).into_iter().find(|im| im["id"] == "dijkstra.rs").unwrap();
+        let stored = implementations_of(&g).into_iter().find(|im| im["id"] == "logistics-test.rs").unwrap();
         assert_eq!(stored["domain"], "logistics");
         assert_eq!(stored["tags"], serde_json::json!(["graph"]));
 
@@ -654,7 +656,7 @@ mod tests {
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0),
         ));
         save_at(&tmp, &g).unwrap();
-        let reloaded = implementations_of(&load_at(&tmp)).into_iter().find(|im| im["id"] == "dijkstra.rs").unwrap();
+        let reloaded = implementations_of(&load_at(&tmp)).into_iter().find(|im| im["id"] == "logistics-test.rs").unwrap();
         assert_eq!(reloaded["domain"], "logistics", "the domain survives a save/load round-trip");
         let _ = std::fs::remove_file(&tmp);
     }
@@ -664,14 +666,21 @@ mod tests {
         // The predicate behind `impl list --domain` — matches only impls tagged with that domain, ACROSS
         // languages, and never the untagged seed impls (so the filter is purely additive).
         let mut g = seed();
-        set_impl(&mut g, serde_json::json!({ "id": "dijkstra.rs", "tech": "rust", "role": "algorithm", "name": "dijkstra", "composes": [], "code": "//", "domain": "logistics" })).unwrap();
-        set_impl(&mut g, serde_json::json!({ "id": "route.ts", "tech": "typescript", "role": "algorithm", "name": "route", "composes": [], "code": "//", "domain": "logistics" })).unwrap();
-        set_impl(&mut g, serde_json::json!({ "id": "blur.ts", "tech": "typescript", "role": "algorithm", "name": "blur", "composes": [], "code": "//", "domain": "graphics" })).unwrap();
+        // Unique test ids across two languages (the packaged seed now carries its OWN `logistics`/
+        // `graphics` domain collections, #3120, so assertions are membership-based, not exact counts).
+        set_impl(&mut g, serde_json::json!({ "id": "test-dijkstra.rs", "tech": "rust", "role": "algorithm", "name": "test-dijkstra", "composes": [], "code": "//", "domain": "logistics" })).unwrap();
+        set_impl(&mut g, serde_json::json!({ "id": "test-route.ts", "tech": "typescript", "role": "algorithm", "name": "test-route", "composes": [], "code": "//", "domain": "logistics" })).unwrap();
+        set_impl(&mut g, serde_json::json!({ "id": "test-blur.ts", "tech": "typescript", "role": "algorithm", "name": "test-blur", "composes": [], "code": "//", "domain": "graphics" })).unwrap();
 
         let logistics: Vec<Value> = implementations_of(&g).into_iter().filter(|im| impl_in_domain(im, "logistics")).collect();
-        assert_eq!(logistics.len(), 2, "the logistics collection cross-cuts language (rust + typescript)");
+        // The collection cross-cuts language: both the rust and typescript impls we tagged are in it…
+        assert!(logistics.iter().any(|im| im["id"] == "test-dijkstra.rs"), "rust logistics impl is in the collection");
+        assert!(logistics.iter().any(|im| im["id"] == "test-route.ts"), "typescript logistics impl is in the collection");
+        // …every member really carries the domain (the predicate never over-matches)…
         assert!(logistics.iter().all(|im| im["domain"] == "logistics"));
-        assert_eq!(implementations_of(&g).into_iter().filter(|im| impl_in_domain(im, "graphics")).count(), 1);
+        // …and the graphics impl is in graphics, never logistics.
+        assert!(!logistics.iter().any(|im| im["id"] == "test-blur.ts"), "a graphics impl is not in the logistics collection");
+        assert!(implementations_of(&g).into_iter().filter(|im| impl_in_domain(im, "graphics")).any(|im| im["id"] == "test-blur.ts"));
         // A seed impl (no domain) is never in a domain collection; an unknown domain matches nothing.
         assert!(!impl_in_domain(&serde_json::json!({ "id": "merge.rs" }), "logistics"), "an untagged impl never matches");
         assert_eq!(implementations_of(&g).into_iter().filter(|im| impl_in_domain(im, "nope")).count(), 0);
