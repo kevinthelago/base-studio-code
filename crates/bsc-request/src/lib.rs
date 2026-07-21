@@ -30,7 +30,7 @@ pub struct Request {
     pub cmd: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shot_path: Option<String>,
-    /// `open` (awaiting the debug session) or `resolved`.
+    /// `open` (claimable), `claimed` (a session is working it, #3535), or `resolved`.
     pub status: String,
     /// What the debug session changed, stamped on `resolve`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -38,11 +38,23 @@ pub struct Request {
     pub created_at: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved_at: Option<i64>,
+    /// WHICH session holds a claimed request — its pane id (#3535). Null unless `status = claimed`. Lets
+    /// the pool tell a busy session (has a claim) from an idle one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claimed_by: Option<String>,
+    /// When the request was claimed (epoch ms). Null unless claimed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claimed_at: Option<i64>,
 }
 
 impl Request {
+    /// Claimable — not yet taken by a session, not resolved.
     pub fn is_open(&self) -> bool {
         self.status == "open"
+    }
+    /// Held by a session that is working it (#3535).
+    pub fn is_claimed(&self) -> bool {
+        self.status == "claimed"
     }
 }
 
@@ -136,12 +148,46 @@ impl Store {
         rows.collect()
     }
 
-    /// Mark a request resolved — stamps `note` + `resolved_at`. Returns whether an OPEN request matched, so
-    /// resolving an unknown / already-resolved id is a reported no-op.
+    /// Mark a request resolved — stamps `note` + `resolved_at`. Accepts an `open` OR a `claimed` request
+    /// (#3535: a session resolves the one it claimed), so it is not a no-op for the normal path. Returns
+    /// whether an unresolved request matched, so resolving an unknown / already-resolved id is reported.
     pub fn resolve(&self, id: i64, note: Option<&str>, ts: i64) -> rusqlite::Result<bool> {
         let n = self.conn.execute(
-            "UPDATE requests SET status = 'resolved', note = ?2, resolved_at = ?3 WHERE id = ?1 AND status = 'open'",
+            "UPDATE requests SET status = 'resolved', note = ?2, resolved_at = ?3 \
+             WHERE id = ?1 AND status IN ('open', 'claimed')",
             params![id, note, ts],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Atomically CLAIM the oldest open request (#3535): `open` → `claimed`, stamping `by` (the holder's
+    /// pane id) + `ts`. Returns the claimed request, or `None` when nothing is claimable. Race-free across
+    /// processes: the whole thing is ONE statement whose `WHERE` re-selects the oldest `open` row under
+    /// SQLite's write lock, so two concurrent claimers (the standing session + an overflow one) can never
+    /// take the same request — the second re-evaluates the subquery after the first commits and gets the
+    /// next row (or none).
+    pub fn claim(&self, by: Option<&str>, ts: i64) -> rusqlite::Result<Option<Request>> {
+        self.conn
+            .query_row(
+                &format!(
+                    "UPDATE requests SET status = 'claimed', claimed_by = ?1, claimed_at = ?2 \
+                     WHERE id = (SELECT id FROM requests WHERE status = 'open' ORDER BY id ASC LIMIT 1) \
+                     RETURNING {COLS}"
+                ),
+                params![by, ts],
+                row_to_request,
+            )
+            .optional()
+    }
+
+    /// Return a CLAIMED request to the open queue (`claimed` → `open`, clearing who/when) — so a session
+    /// that abandoned or crashed doesn't strand its request as permanently in-flight. Returns whether a
+    /// claimed request matched.
+    pub fn unclaim(&self, id: i64) -> rusqlite::Result<bool> {
+        let n = self.conn.execute(
+            "UPDATE requests SET status = 'open', claimed_by = NULL, claimed_at = NULL \
+             WHERE id = ?1 AND status = 'claimed'",
+            params![id],
         )?;
         Ok(n > 0)
     }
@@ -164,7 +210,8 @@ impl Store {
 }
 
 /// The column list `row_to_request` decodes, in one place so the SELECTs can't drift from the mapper.
-const COLS: &str = "id, text, surface, cmd, shot_path, status, note, created_at, resolved_at";
+const COLS: &str =
+    "id, text, surface, cmd, shot_path, status, note, created_at, resolved_at, claimed_by, claimed_at";
 
 fn row_to_request(r: &rusqlite::Row) -> rusqlite::Result<Request> {
     Ok(Request {
@@ -177,6 +224,8 @@ fn row_to_request(r: &rusqlite::Row) -> rusqlite::Result<Request> {
         note: r.get(6)?,
         created_at: r.get(7)?,
         resolved_at: r.get(8)?,
+        claimed_by: r.get(9)?,
+        claimed_at: r.get(10)?,
     })
 }
 
@@ -264,6 +313,56 @@ mod tests {
         let left = s.list(&Filter::default()).unwrap();
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].id, b.id);
+    }
+
+    #[test]
+    fn claim_takes_the_oldest_open_request_stamps_the_holder_and_removes_it_from_the_open_queue() {
+        let s = Store::open_in_memory().unwrap();
+        s.create(&req("first", None, 1)).unwrap(); // id 1
+        s.create(&req("second", None, 2)).unwrap(); // id 2
+
+        let c = s.claim(Some("debug-studio:req-a"), 100).unwrap().expect("something to claim");
+        assert_eq!(c.id, 1, "oldest first");
+        assert!(c.is_claimed());
+        assert_eq!(c.claimed_by.as_deref(), Some("debug-studio:req-a"));
+        assert_eq!(c.claimed_at, Some(100));
+        // A claimed request is no longer offered to `--open`.
+        let open = s.list(&Filter { open_only: true, ..Default::default() }).unwrap();
+        assert_eq!(open.iter().map(|r| r.id).collect::<Vec<_>>(), vec![2], "only the unclaimed one");
+
+        // A second claim takes the NEXT open one — never the same row.
+        let c2 = s.claim(Some("debug-studio:req-b"), 101).unwrap().expect("second claim");
+        assert_eq!(c2.id, 2);
+        // Nothing left to claim.
+        assert!(s.claim(None, 102).unwrap().is_none(), "empty queue → None");
+    }
+
+    #[test]
+    fn unclaim_returns_a_claimed_request_to_the_open_queue() {
+        let s = Store::open_in_memory().unwrap();
+        let r = s.create(&req("gap", None, 1)).unwrap();
+        s.claim(Some("sess"), 10).unwrap().unwrap();
+        assert!(s.unclaim(r.id).unwrap(), "a claimed request is unclaimable");
+        let got = s.get(r.id).unwrap().unwrap();
+        assert!(got.is_open(), "back to open");
+        assert_eq!(got.claimed_by, None, "holder cleared");
+        assert_eq!(got.claimed_at, None);
+        assert!(!s.unclaim(r.id).unwrap(), "already open → no-op");
+        assert!(!s.unclaim(999).unwrap(), "unknown → no-op");
+    }
+
+    #[test]
+    fn resolve_accepts_a_claimed_request_the_normal_path() {
+        let s = Store::open_in_memory().unwrap();
+        let r = s.create(&req("gap", None, 1)).unwrap();
+        s.claim(Some("sess"), 10).unwrap().unwrap();
+        assert!(s.resolve(r.id, Some("fixed it"), 50).unwrap(), "a claimed request resolves");
+        let got = s.get(r.id).unwrap().unwrap();
+        assert_eq!(got.status, "resolved");
+        assert_eq!(got.note.as_deref(), Some("fixed it"));
+        // The holder attribution is kept on the resolved row (who fixed it), not scrubbed.
+        assert_eq!(got.claimed_by.as_deref(), Some("sess"));
+        assert!(!s.resolve(r.id, None, 60).unwrap(), "already resolved → no-op");
     }
 
     #[test]
