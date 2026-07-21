@@ -182,9 +182,10 @@ export function isPreviewBuildable(
   return true;
 }
 
-/** The data-state a preview renders in (#3135): `loaded` (demo/populated), `empty` (no data), or
- *  `loading` (the component's loading/skeleton render). Drives how {@link samplePropValue} fills props. */
-export type PreviewState = "loaded" | "empty" | "loading";
+/** The data-state a preview renders in (#3135/#3555): `loaded` (demo/populated), `empty` (no data),
+ *  `loading` (the component's loading/skeleton render), or `error` (its error render). Drives how
+ *  {@link samplePropValue} fills props; {@link supportedStates} decides which a component actually has. */
+export type PreviewState = "loaded" | "empty" | "loading" | "error";
 
 /** Is `p` a LOADING-family boolean — the toggle that puts a component into its loading/skeleton render
  *  (`loading` / `busy` / `pending` / `isLoading`)? It's ON only in the `loading` state, off otherwise —
@@ -205,6 +206,16 @@ export function isCollectionProp(p: PropSpec): boolean {
   return t.includes("[]") || t.includes("array");
 }
 
+/** Is `p` an ERROR-family prop — the thing that puts a component into its error render (`error` / `err` /
+ *  `isError` / `hasError`)? Set only in the `error` state, omitted otherwise (#3555). A callback like
+ *  `onError` is NOT one (it's a function, excluded by name shape). Exported so the scan/doctor gate the
+ *  error-state on the SAME predicate that drives the sampled prop. */
+export function isErrorProp(p: PropSpec): boolean {
+  const t = (p.type || "").toLowerCase();
+  const isFn = t.includes("=>") || t.includes("function") || t.includes("void") || /^on[A-Z]/.test(p.name);
+  return !isFn && /^(error|err|isError|hasError)$/i.test(p.name);
+}
+
 /**
  * A best-effort sample value (as a JS source literal) for a prop, from its (loosely-typed) schema, or
  * `null` to omit it. Enough to render a component whose required props would otherwise be missing —
@@ -217,6 +228,12 @@ export function samplePropValue(p: PropSpec, state: PreviewState = "loaded"): st
   if (isLoadingProp(p)) return state === "loading" ? "true" : null;
   const t = (p.type || "").toLowerCase();
   const isFn = t.includes("=>") || t.includes("function") || t.includes("void") || /^on[A-Z]/.test(p.name);
+  // #3555: an error-family prop is set ONLY in the error state — a boolean gets `true`, else a sample
+  // message — and omitted otherwise so the component renders normally in loaded/loading/empty.
+  if (isErrorProp(p)) {
+    if (state !== "error") return null;
+    return t === "boolean" || t.includes("boolean") ? "true" : JSON.stringify("Something went wrong");
+  }
   if (isFn) return "() => {}";
   if (isCollectionProp(p)) return state === "empty" ? "[]" : p.req ? "[]" : null;
   if (t.includes("reactnode") || t.includes("node")) return JSON.stringify(prettyName(p.name));
@@ -293,16 +310,43 @@ export function previewChild(comp: ComponentRecord): string | null {
   return comp.props.some((p) => p.name === "children") ? JSON.stringify(prettyName(comp.name)) : null;
 }
 
-/** The inspectable props the preview harness passes `comp` in EVERY data-state (#3165) — exactly what
+/** The inspectable props the preview harness passes `comp` in each data-state (#3165) — exactly what
  *  {@link bootstrapSource} mounts, per state. The `bsc ui preview-props` verb replicates this in Rust; a
- *  shared JSON fixture (`previewProps.fixtures.json`) is asserted on BOTH sides to keep them in lockstep. */
-export function previewProps(comp: ComponentRecord): Record<PreviewState, PreviewProps> {
+ *  shared JSON fixture (`previewProps.fixtures.json`) is asserted on BOTH sides to keep them in lockstep.
+ *  Covers the original three states only — `error` (#3555) renders via {@link bootstrapSource}'s per-state
+ *  path but is NOT part of this cross-language wire contract. */
+export function previewProps(comp: ComponentRecord): Record<Exclude<PreviewState, "error">, PreviewProps> {
   const child = previewChild(comp);
   return {
     loaded: { props: previewPropList(comp, "loaded"), child },
     empty: { props: previewPropList(comp, "empty"), child },
     loading: { props: previewPropList(comp, "loading"), child },
   };
+}
+
+/**
+ * The data-states `comp` MEANINGFULLY supports (#3555), in natural display order — `loading` (has a
+ * loading-family prop) → `loaded` (always) → `empty` (has a collection prop) → `error` (has an
+ * error-family prop). The single source of truth for "which states does this component have": the state
+ * switcher offers exactly these, and {@link previewCycleStates} derives the auto-cycle from them. A plain
+ * component with none of those props returns just `["loaded"]` (no state tabs, no cycling — "not all
+ * components need them").
+ */
+export function supportedStates(comp: ComponentRecord): PreviewState[] {
+  const has = (pred: (p: PropSpec) => boolean) => comp.props.some(pred);
+  const states: PreviewState[] = [];
+  if (has(isLoadingProp)) states.push("loading");
+  states.push("loaded");
+  if (has(isCollectionProp)) states.push("empty");
+  if (has(isErrorProp)) states.push("error");
+  return states;
+}
+
+/** The states the SMALL preview auto-cycles through (#3555): {@link supportedStates} minus `empty` (it
+ *  often reads bare — it stays reachable in the expanded try-on + doctor). So a fully-stated component
+ *  cycles loading → loaded → error. A component with only `loaded` yields `["loaded"]` → nothing to cycle. */
+export function previewCycleStates(comp: ComponentRecord): PreviewState[] {
+  return supportedStates(comp).filter((s) => s !== "empty");
 }
 
 /**
