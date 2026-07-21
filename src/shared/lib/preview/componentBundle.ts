@@ -350,14 +350,24 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
   }
   function centerXY() { return [ (window.innerWidth || document.documentElement.clientWidth || 1) / 2, (window.innerHeight || document.documentElement.clientHeight || 1) / 2 ]; }
   function viewport() { return [ window.innerWidth || document.documentElement.clientWidth || 1, window.innerHeight || document.documentElement.clientHeight || 1 ]; }
-  // FIT: show the WHOLE component. Measure #root's natural content box (transform removed so the read is
-  // un-scaled; scrollWidth/Height report full content even under overflow:hidden), then scale so it fits the
-  // viewport — never UPSCALING past 1:1 (crisp) — centered horizontally, TOP-anchored so a tall page's
-  // header stays visible and you pan/zoom DOWN. Falls back to identity when unmeasured (jsdom / pre-layout).
+  var userTouched = false;   // the moment the user zooms/pans, stop auto-fitting (the open-fit block below)
+  // FIT: show the WHOLE component. Measure #root's natural content box, then scale so it fits the viewport —
+  // never UPSCALING past 1:1 (crisp) — centered horizontally, TOP-anchored so a tall page's header stays
+  // visible and you pan/zoom DOWN. The measurement removes the transform (un-scaled read) AND forces #root to
+  // a scroll container: #root normally runs overflow:visible so its overflow renders unclipped, but a
+  // visible-overflow element reports scrollHeight === clientHeight (it is not a scroll container), hiding the
+  // very overflow we need to fit — so we flip it to overflow:hidden for the read only, then restore. Falls
+  // back to identity when unmeasured (jsdom / pre-layout).
+  // (NOTE: this text lives INSIDE the engine's template literal — keep it backtick-free, #3551.)
   function fit() {
     var t = tgt();
     var vp = viewport(), cw = vp[0], ch = vp[1], bw = 0, bh = 0;
-    if (t) { var prev = t.style.transform; t.style.transform = "none"; bw = t.scrollWidth; bh = t.scrollHeight; t.style.transform = prev; }
+    if (t) {
+      var pt = t.style.transform, po = t.style.overflow;
+      t.style.transform = "none"; t.style.overflow = "hidden";
+      bw = t.scrollWidth; bh = t.scrollHeight;
+      t.style.transform = pt; t.style.overflow = po;
+    }
     if (!bw || !bh) { view = { tx: 0, ty: 0, scale: 1 }; apply(); return; }
     var s = Math.min(1, cw / bw, ch / bh);
     view = { scale: s, tx: (cw - bw * s) / 2, ty: 0 };
@@ -375,7 +385,7 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
     if (!pending) return;
     if (!panning) {
       if (Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) < 5) return;   // below the drag threshold → not a pan yet
-      panning = true; document.body.style.cursor = "grabbing";
+      panning = true; userTouched = true; document.body.style.cursor = "grabbing";
     }
     moved = true; e.preventDefault();
     view.tx += e.clientX - lx; view.ty += e.clientY - ly; lx = e.clientX; ly = e.clientY; apply();
@@ -390,7 +400,7 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
   // WHEEL = ZOOM about the cursor. The try-on is a zoomable design canvas, not a document: scrolling zooms
   // in/out (any wheel/trackpad delta), and CLICK-DRAG is what moves across the screen (the pan above).
   document.addEventListener("wheel", function (e) {
-    e.preventDefault();
+    e.preventDefault(); userTouched = true;
     zoomAt(Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY);
   }, { capture: true, passive: false });
   window.addEventListener("message", function (e) {
@@ -411,14 +421,27 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
     }
     if (typeof d.__cmd !== "string") return;
     var c = centerXY();
-    if (d.__cmd === "zoomIn") zoomAt(1.2, c[0], c[1]);
-    else if (d.__cmd === "zoomOut") zoomAt(1 / 1.2, c[0], c[1]);
+    if (d.__cmd === "zoomIn") { userTouched = true; zoomAt(1.2, c[0], c[1]); }
+    else if (d.__cmd === "zoomOut") { userTouched = true; zoomAt(1 / 1.2, c[0], c[1]); }
     else if (d.__cmd === "fit") fit();
   });
-  // Open showing the WHOLE component. Fit now (reading scrollHeight forces a sync layout), then again on the
-  // next frame so late layout — fonts, images, a chart that measures itself — is fitted too.
-  fit();
-  if (typeof requestAnimationFrame === "function") requestAnimationFrame(fit);
+  // Open showing the WHOLE component — ROBUSTLY. The component mounts via a DEFERRED module script that runs
+  // AFTER this classic script, so an immediate fit measures an EMPTY #root; and late layout (fonts, images, a
+  // data-driven chart) resizes it again. So re-fit until the user first zooms/pans: now, next frame, once the
+  // DOM has parsed (the module has mounted), on window load (images), and on any later content resize.
+  function refit() { if (!userTouched) fit(); }
+  refit();
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(refit);
+  window.addEventListener("load", refit);
+  function watchContent() {
+    refit();
+    var child = tgt() && tgt().firstElementChild;   // observe the MOUNTED content (not #root, whose box is fixed)
+    if (child && typeof ResizeObserver === "function") {
+      try { new ResizeObserver(function () { if (!userTouched) fit(); }).observe(child); } catch (_) { /* best-effort */ }
+    }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", watchContent);
+  else watchContent();
 })();
 </script>`;
 }
@@ -448,8 +471,14 @@ export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOpti
   // wrapper's `user-select:none` cannot cross a document boundary. Without this, a press-and-move
   // starts a native text selection instead of panning. Form fields keep caret + selection (mirrors the
   // engine's own DRAG_NATIVE list, which already leaves their native drag alone).
+  // #3551: the engine FITS the WHOLE component, so nothing may clamp the content to the frame height and
+  // clip its overflow — the clip cannot be un-scaled away, so the off-screen part never renders. `html,body`
+  // keep `overflow:hidden` (the frame is the viewport — no scrollbars), but `#root` AND the mount wrapper
+  // grow to the content (`height:auto`, at least full-frame) and DON'T self-clip (`overflow:visible`), so
+  // the component lays out to its full natural height, the engine measures it, and fit scales it all in.
   const engineCss = zoomEngine
-    ? `\n<style>html,body{overflow:hidden}#root{overflow:hidden}`
+    ? `\n<style>html,body{overflow:hidden}#root{overflow:visible}`
+      + `#root>*{display:block!important;height:auto!important;min-height:100%;overflow:visible!important}`
       + `body{user-select:none;-webkit-user-select:none}`
       + `input,textarea,select,[contenteditable]{user-select:text;-webkit-user-select:text}</style>`
     : "";

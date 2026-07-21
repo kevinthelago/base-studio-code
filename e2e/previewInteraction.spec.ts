@@ -33,7 +33,7 @@ async function previewFrame(page: Page): Promise<Frame> {
 }
 
 /** Mount the fixture through the shipped bundle → srcdoc chain and hand back its frame. */
-async function mount(page: Page, opts: { zoomEngine?: boolean } = {}): Promise<Frame> {
+async function mount(page: Page, opts: { zoomEngine?: boolean; tall?: boolean } = {}): Promise<Frame> {
   await page.goto(HARNESS);
   await page.waitForFunction(() => !!window.__previewHarness);
   await page.evaluate((o) => window.__previewHarness!.mount(o), opts);
@@ -215,18 +215,43 @@ test.describe("preview srcdoc — real interaction", () => {
 
   test("opens FIT — the whole component is visible (#3551)", async ({ page }) => {
     const frame = await mount(page, { zoomEngine: true });
-    // Fit never upscales past 1:1 (crisp) …
-    const scale = await scaleOf(frame);
-    expect(scale).toBeGreaterThan(0);
-    expect(scale).toBeLessThanOrEqual(1);
+    // Fit runs after the deferred module mounts, so poll. It never upscales past 1:1 (crisp) …
+    await expect.poll(() => scaleOf(frame)).toBeLessThanOrEqual(1);
+    expect(await scaleOf(frame)).toBeGreaterThan(0);
     // …and the LAST element (the image at the bottom of the fixture) sits within the viewport, so the
     // whole component is shown rather than the top being cropped — the "full component rendered in" goal.
-    const wholeThingVisible = await frame.evaluate(() => {
-      const last = document.getElementById("pic");
-      if (!last) return false;
-      return last.getBoundingClientRect().bottom <= (window.innerHeight || 1) + 1;
+    await expect
+      .poll(() =>
+        frame.evaluate(() => {
+          const last = document.getElementById("pic");
+          if (!last) return false;
+          return last.getBoundingClientRect().bottom <= (window.innerHeight || 1) + 1;
+        }),
+      )
+      .toBe(true);
+  });
+
+  test("renders the ENTIRE height — off-screen overflow is not clipped away (#3551)", async ({ page }) => {
+    // A component ~1900px tall in the 600px frame: it MUST scale down and show the whole thing, including
+    // the bottom edge that starts off-screen. The earlier bug clipped `#root`/the wrapper to the frame
+    // height, so scaling only shrank the clip window and the bottom never rendered.
+    const frame = await mount(page, { zoomEngine: true, tall: true });
+    // Fit fires after the deferred mount; poll until the tall component is scaled down to fit.
+    await expect.poll(() => scaleOf(frame)).toBeLessThan(1);
+
+    const bottom = await frame.evaluate(() => {
+      const el = document.getElementById("bottom");
+      if (!el) return { inView: false, painted: false };
+      const r = el.getBoundingClientRect();
+      const inView = r.top >= -1 && r.bottom <= (window.innerHeight || 1) + 1;
+      // elementFromPoint RESPECTS clipping: if #root/the wrapper clipped the bottom away, the point hits the
+      // clipper (or nothing), not the marker. So this is the discriminating check the layout-only test missed.
+      const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+      const painted = !!hit && (hit === el || el.contains(hit));
+      return { inView, painted };
     });
-    expect(wholeThingVisible).toBe(true);
+    expect(bottom.inView).toBe(true);  // fit brought the off-screen bottom into the frame
+    expect(bottom.painted).toBe(true); // …and it is actually rendered, not clipped
   });
 
   test("scroll wheel ZOOMS (up = in, down = out); drag is what pans (#3551)", async ({ page }) => {
