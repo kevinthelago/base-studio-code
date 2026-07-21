@@ -194,7 +194,7 @@ export function GlanceStreamMorph({ node, slot, paneId, name, role, zoom = 1, on
         ...(resizing ? { transition: "none" } : null) }}
     >
       <Box className="glance-card-body">
-        <GlanceChatDock paneId={paneId} name={name} role={role} onClose={close} onEnd={onEnd} />
+        <GlanceChatDock paneId={paneId} name={name} role={role} scale={zoom} onClose={close} onEnd={onEnd} />
       </Box>
       {open ? HANDLES.map((hnd) => (
         <Box
