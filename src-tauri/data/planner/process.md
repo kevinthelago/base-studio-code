@@ -31,8 +31,8 @@ or an **algorithm** you don't already have, go **reuse-first**:
   echo "a heatmap that shows weekly activity as a coloured matrix" | bsc-commission designer --ref file:repo__web__feat__dashboard.md
   ```
 
-- **Algorithms / logic** → the **librarian** (the algorithms library). First check: `bsc graph impl
-  list`. If nothing fits, commission one:
+- **Algorithms / logic** → the **librarian** (the algorithms library). First check:
+  `bsc graph impl list`. If nothing fits, commission one:
 
   ```
   echo "lay out a force-directed graph from nodes + edges" | bsc-commission librarian
