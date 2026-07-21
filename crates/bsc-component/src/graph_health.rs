@@ -51,7 +51,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct Finding {
     /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
     /// `unresolvable-import` | `reimplementation` | `orphan` | `unwired-prop` | `phantom-compose` |
-    /// `no-empty-state` | `no-loading-state` | `slot-shell`.
+    /// `no-empty-state` | `no-loading-state` | `slot-shell` | `render-error` (#3540, CLI-only — see
+    /// [`render_error_findings`]).
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -81,6 +82,45 @@ impl Finding {
             "suggestedAction": self.suggested_action,
         })
     }
+}
+
+/// Findings for components that threw when the PREVIEW rendered them (#3540) — the runtime half doctor is
+/// blind to. Doctor is a STATIC analyzer and cannot mount a component, so a render throw can only reach
+/// the report via the durable preview-error log (`preview_errors::latest_error_by_id`), which the app's
+/// on-visit scan + live previews record. Fed those `(id, message)` pairs, this emits one finding per
+/// errored component STILL in `components` (a stale id for a removed component is dropped).
+///
+/// Deliberately NOT part of [`analyze_with`]: that function has a byte-parity TS twin (`graphHealth.ts`)
+/// which is static-only, and the render error is a Rust/CLI-only signal fed from a log the frontend
+/// doesn't read. `cmd_doctor` appends these like `analyze_motion`, so the twin stays untouched.
+pub fn render_error_findings(components: &[Value], errors: &[(String, String)]) -> Vec<Finding> {
+    let by_id: BTreeMap<&str, &Value> =
+        components.iter().filter_map(|c| c.get("id").and_then(Value::as_str).map(|id| (id, c))).collect();
+    errors
+        .iter()
+        .filter_map(|(id, message)| {
+            let comp = by_id.get(id.as_str())?; // drop a stale error for a component no longer in the store
+            let name = comp.get("name").and_then(Value::as_str).unwrap_or(id.as_str()).to_string();
+            let kit = comp.get("kitId").and_then(Value::as_str).unwrap_or_default().to_string();
+            // Collapse a multi-line stack trace to one line and cap it — the finding is a summary; the
+            // full trace stays in `bsc ui preview-errors`.
+            let one_line: String = message.replace(['\n', '\t'], " ").chars().take(240).collect();
+            Some(Finding {
+                // Severity 5 — above every static finding (cycle is 4): a confirmed render throw is the
+                // most actionable, so it sorts to the top of the report.
+                category: "render-error",
+                severity: 5,
+                kit,
+                node_ids: vec![id.clone()],
+                node_names: vec![name.clone()],
+                why: format!("`{name}` threw when the preview rendered it: {}", one_line.trim()),
+                suggested_action: format!(
+                    "the preview likely passes `undefined` for a prop it reads — check `bsc ui preview-props {id}` \
+                     and guard the access (or fix the sample-data shape)"
+                ),
+            })
+        })
+        .collect()
 }
 
 /// A component record reduced to the fields the analyzer needs (parsed from the store JSON). Records
@@ -3016,5 +3056,37 @@ mod tests {
         assert!(analyze_motion(std::slice::from_ref(&none)).is_empty());
         let refs = json!({ "id": "y", "name": "Y", "kitId": "k", "animations": ["fade-in", "pulse"] });
         assert!(analyze_motion(std::slice::from_ref(&refs)).is_empty(), "name-refs alone raise no motion finding");
+    }
+
+    #[test]
+    fn render_error_findings_reports_each_errored_component_and_skips_the_unknown() {
+        let comps = vec![
+            json!({ "id": "bsc-keyvaluelist", "name": "BscKeyValueList", "kitId": "harvested" }),
+            json!({ "id": "bsc-dropdown", "name": "BscDropdown", "kitId": "harvested" }),
+        ];
+        let errors = vec![
+            ("bsc-keyvaluelist".to_string(), "Cannot read properties of undefined (reading 'map')".to_string()),
+            ("bsc-dropdown".to_string(), "trace line 1\n  at foo\n  at bar".to_string()),
+            ("ghost".to_string(), "not in the store — must be dropped".to_string()),
+        ];
+        let f = render_error_findings(&comps, &errors);
+        assert_eq!(f.len(), 2, "the stale `ghost` error is dropped");
+        for x in &f {
+            assert_eq!(x.category, "render-error");
+            assert_eq!(x.severity, 5, "sorts above every static finding");
+            assert_eq!(x.kit, "harvested");
+        }
+        let kvl = f.iter().find(|x| x.node_ids == ["bsc-keyvaluelist"]).unwrap();
+        assert!(kvl.why.contains("reading 'map'"), "carries the real throw message");
+        assert!(kvl.suggested_action.contains("bsc ui preview-props bsc-keyvaluelist"));
+        // A multi-line stack trace is collapsed to one line in the summary.
+        let dd = f.iter().find(|x| x.node_ids == ["bsc-dropdown"]).unwrap();
+        assert!(!dd.why.contains('\n'), "the trace is flattened for the one-line finding");
+    }
+
+    #[test]
+    fn render_error_findings_is_empty_with_no_errors() {
+        let comps = vec![json!({ "id": "a", "name": "A", "kitId": "k" })];
+        assert!(render_error_findings(&comps, &[]).is_empty());
     }
 }
