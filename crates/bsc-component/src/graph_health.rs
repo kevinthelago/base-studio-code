@@ -51,8 +51,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct Finding {
     /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
     /// `unresolvable-import` | `reimplementation` | `orphan` | `unwired-prop` | `phantom-compose` |
-    /// `no-empty-state` | `no-loading-state` | `slot-shell` | `render-error` (#3540, CLI-only — see
-    /// [`render_error_findings`]).
+    /// `no-empty-state` | `no-loading-state` | `no-error-state` (#3555) | `slot-shell` |
+    /// `render-error` (#3540, CLI-only — see [`render_error_findings`]).
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -242,6 +242,14 @@ fn is_loading_prop(name: &str, ty: &str) -> bool {
     let t = ty.to_lowercase();
     (t == "boolean" || t.contains("boolean"))
         && matches!(name.to_lowercase().as_str(), "loading" | "busy" | "pending" | "isloading")
+}
+
+/// Is `(name, ty)` an ERROR-family prop (`error`/`err`/`isError`/`hasError`, and NOT a callback)? A data
+/// component with one can preview its error render (#3555). Mirrors `isErrorProp` (componentPreview.ts).
+fn is_error_prop(name: &str, ty: &str) -> bool {
+    let t = ty.to_lowercase();
+    let is_fn = t.contains("=>") || t.contains("function") || t.contains("void");
+    !is_fn && matches!(name.to_lowercase().as_str(), "error" | "err" | "iserror" | "haserror")
 }
 
 /// The packaged `bsc/react-ui` kit artifact — the SAME embedded `react-ui.json` the kit store + the
@@ -1506,11 +1514,12 @@ fn analyze_kit(
         });
     }
 
-    // ── no-empty-state / no-loading-state (severity 1, INFORMATIONAL, #3135): the preview's data-state
-    // switcher (loaded/empty/loading) can only SHOW a state a component SUPPORTS. A DATA component (has a
+    // ── no-empty-state / no-loading-state / no-error-state (severity 1, INFORMATIONAL, #3135/#3555): the
+    // preview's data-state switcher can only SHOW a state a component SUPPORTS. A DATA component (has a
     // collection/array prop), scanned from its own module source, is flagged when it lacks: (a) an EMPTY
-    // render — no `EmptyState` and no `Array.isArray`/`.length` empty-guard; or (b) a `loading`-family prop.
-    // Guides the designer session to add the missing state. Mirrors `analyzeGraphHealth` (graphHealth.ts).
+    // render — no `EmptyState` and no `Array.isArray`/`.length` empty-guard; (b) a `loading`-family prop;
+    // or (c) an `error`-family prop. Guides the designer session to add the missing state. Mirrors
+    // `analyzeGraphHealth` (graphHealth.ts).
     for n in nodes {
         let Some(src) = own_module_source(n, &kit_targets) else {
             continue;
@@ -1551,6 +1560,24 @@ fn analyze_kit(
                     collections.join(", ")
                 ),
                 suggested_action: format!("add a boolean `loading` prop to `{}` that renders a skeleton", n.name),
+            });
+        }
+        if !n.props.iter().any(|p| is_error_prop(&p.0, &p.1)) {
+            out.push(Finding {
+                category: "no-error-state",
+                severity: 1,
+                kit: kit.to_string(),
+                node_ids: vec![n.id.clone()],
+                node_names: vec![n.name.clone()],
+                why: format!(
+                    "`{}` takes data ({}) but exposes no `error` prop — the preview can't show its ERROR state",
+                    n.name,
+                    collections.join(", ")
+                ),
+                suggested_action: format!(
+                    "add an `error` prop to `{}` (a message string or boolean) that renders an error state",
+                    n.name
+                ),
             });
         }
     }
@@ -2831,8 +2858,9 @@ mod tests {
     }
 
     #[test]
-    fn flags_a_data_component_lacking_empty_or_loading_state() {
-        // #3135: a chart with a data array rendered raw — no EmptyState/empty-guard, no `loading` prop.
+    fn flags_a_data_component_lacking_empty_loading_or_error_state() {
+        // #3135/#3555: a chart with a data array rendered raw — no EmptyState/empty-guard, no `loading`
+        // prop, no `error` prop.
         let chart = json!({ "id": "bar", "name": "BarChart", "kitId": "d3", "role": "composite", "used": 2,
             "composes": [], "src": "d3/BarChart.tsx",
             "source": "export function BarChart({ data }){ return <svg>{data.map((d) => <rect key={d} />)}</svg>; }",
@@ -2840,16 +2868,17 @@ mod tests {
         let fs = analyze(&[chart]);
         assert!(fs.iter().any(|f| f.category == "no-empty-state"), "flags no-empty-state: {fs:?}");
         assert!(fs.iter().any(|f| f.category == "no-loading-state"), "flags no-loading-state: {fs:?}");
+        assert!(fs.iter().any(|f| f.category == "no-error-state"), "flags no-error-state: {fs:?}");
     }
 
     #[test]
-    fn does_not_flag_data_states_when_empty_handled_and_loading_present_or_no_data_prop() {
+    fn does_not_flag_data_states_when_empty_handled_and_loading_error_present_or_no_data_prop() {
         let comps = [
-            // handles empty (Array.isArray) + a `loading` prop → supports both states.
+            // handles empty (Array.isArray) + a `loading` prop + an `error` prop → supports every state.
             json!({ "id": "good", "name": "Good", "kitId": "d3", "role": "composite", "used": 2, "composes": [],
                 "src": "d3/Good.tsx",
-                "source": "export function Good({ data, loading }){ if (loading) return <span/>; return <svg>{Array.isArray(data) ? data.map((d) => <rect key={d} />) : null}</svg>; }",
-                "props": [{ "name": "data", "type": "Datum[]" }, { "name": "loading", "type": "boolean" }] }),
+                "source": "export function Good({ data, loading, error }){ if (error) return <span/>; if (loading) return <span/>; return <svg>{Array.isArray(data) ? data.map((d) => <rect key={d} />) : null}</svg>; }",
+                "props": [{ "name": "data", "type": "Datum[]" }, { "name": "loading", "type": "boolean" }, { "name": "error", "type": "string" }] }),
             // no collection prop at all → not a data component.
             json!({ "id": "btn", "name": "Button", "kitId": "d3", "role": "primitive", "used": 5, "composes": [],
                 "src": "d3/Button.tsx", "source": "export function Button({ label }){ return <button>{label}</button>; }",
@@ -2857,8 +2886,8 @@ mod tests {
         ];
         let fs = analyze(&comps);
         assert!(
-            fs.iter().all(|f| f.category != "no-empty-state" && f.category != "no-loading-state"),
-            "empty-handled + loading-prop / no-data-prop are not flagged: {fs:?}"
+            fs.iter().all(|f| f.category != "no-empty-state" && f.category != "no-loading-state" && f.category != "no-error-state"),
+            "empty-handled + loading-prop + error-prop / no-data-prop are not flagged: {fs:?}"
         );
     }
 

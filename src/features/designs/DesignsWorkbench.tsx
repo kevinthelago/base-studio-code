@@ -52,6 +52,8 @@ import { useComponentScan } from "./lib/useComponentScan";
 import { makeLibraryResolvers } from "./lib/libraryModules";
 import { useActiveSoundKit } from "./lib/useActiveSoundKit";
 import { groupKits } from "./lib/kitGroups";
+import { supportedStates, previewCycleStates } from "./lib/componentPreview";
+import { usePreviewStateCycle } from "./lib/usePreviewStateCycle";
 import { expandedPreviewFit } from "./lib/expandedPreviewFit";
 import { ComponentPreviewFrame } from "./ComponentPreviewFrame";
 import type { PreviewState } from "./lib/componentPreview";
@@ -70,7 +72,6 @@ type Viewport = "sm" | "md" | "auto";
 
 // Cross-graph library band (#3116) — the fenced top band of algorithm nodes a kit's components `require`.
 /** The preview data-state axis (#3135) — the switcher's options, in order. */
-const PREVIEW_STATES: PreviewState[] = ["loaded", "empty", "loading"];
 const BAND_PAD = 60;         // left/right inset the band centers over (matches the composition layout pad)
 const BAND_TOP = 40;         // y of the band cards' top edge
 const BAND_GAP = 34;         // clearance from the band cards down to the fence divider
@@ -496,7 +497,8 @@ export function DesignsWorkbench() {
               {allVariants.length > 1 && (
                 <SegmentedControl label="" options={allVariants.map((v) => ({ label: v, on: v === activeVariant, onClick: () => setVariant(v) }))} />
               )}
-              <SegmentedControl label="" options={PREVIEW_STATES.map((s) => ({ label: s, on: s === previewState, onClick: () => setPreviewState(s) }))} />
+              {/* #3555: offer only the states THIS component supports (a static component gets no tabs). */}
+              <SegmentedControl label="" options={supportedStates(sel).map((s) => ({ label: s, on: s === previewState, onClick: () => setPreviewState(s) }))} />
               <SegmentedControl label="" options={(["sm", "md", "auto"] as Viewport[]).map((k) => ({ label: k === "auto" ? "⤢ fluid" : k, on: k === vp, onClick: () => setVpKind(k) }))} />
               {/* Zoom controls (#3190) — post to the iframe's crisp pan/zoom engine (not a host viewport). */}
               <Box style={{ display: "flex", gap: 4 }}>
@@ -679,6 +681,11 @@ interface InspProps {
 }
 function Inspector(p: InspProps) {
   const sel = p.sel;
+  // The small preview auto-cycles through the states this component supports (#3555), pausing on hover so
+  // it can be inspected. Independent of the expanded try-on's manual `previewState`.
+  const [hoverPreview, setHoverPreview] = useState(false);
+  const cycleState = usePreviewStateCycle(sel, hoverPreview);
+  const cyclesStates = previewCycleStates(sel).length > 1;
   // GraphCanvas owns the inspector column width now (#2766) — fill the wrapper it gives us; bring only
   // the left border + elevated surface (the old `.ds-col ds-insp` shell classes are gone). The Inspector
   // mounts ONLY with a focused component now (#3090), so there is no in-pane empty state.
@@ -721,7 +728,7 @@ function Inspector(p: InspProps) {
               Live preview (#2824): the component is BUILT (esbuild-wasm) from its real source and rendered in
               a sandboxed iframe — its own build/error state inside — filling the surface (fluid width, full
               height) so it reads at real size. */}
-          <Box className="ds-preview">
+          <Box className="ds-preview" onMouseEnter={() => setHoverPreview(true)} onMouseLeave={() => setHoverPreview(false)}>
             <Box className="ds-surface">
               <Box className="ds-frame">
                 <ComponentPreviewFrame
@@ -733,9 +740,16 @@ function Inspector(p: InspProps) {
                   width="100%"
                   height="100%"
                   onExpand={p.onExpand}
-                  previewState={p.previewState}
+                  previewState={cycleState}
                 />
               </Box>
+              {/* A subtle marker of the auto-cycling state (#3555) — only when the component actually cycles.
+                  Dims while hovered (cycling is paused, so it's less of a distraction). */}
+              {cyclesStates && (
+                <Box style={{ position: "absolute", left: 8, bottom: 8, zIndex: 2, pointerEvents: "none", padding: "1px 7px", borderRadius: 999, background: "color-mix(in srgb, var(--bg) 72%, transparent)", border: "1px solid var(--border-soft)", opacity: hoverPreview ? 0.5 : 0.9, transition: "opacity .2s" }}>
+                  <Text mono size="xxs" tone="muted">{cycleState}</Text>
+                </Box>
+              )}
             </Box>
           </Box>
 
