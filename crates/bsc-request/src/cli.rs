@@ -52,8 +52,31 @@ One request's full record — the failing command + the resolve note the lean li
 USAGE:
   bsc request resolve <id> [--note \"<what changed>\"]
 
-Marks the request resolved (drops it from `list --open`), stamping --note with what was fixed. A no-op
-(reported) for an unknown or already-resolved id.",
+Marks the request resolved (drops it from `list --open`), stamping --note with what was fixed — the
+built-in change log. Accepts an open OR a claimed request. A no-op (reported) for an unknown or
+already-resolved id.",
+    },
+    CmdDoc {
+        name: "claim",
+        summary: "atomically take the oldest open request to work",
+        usage: "\
+USAGE:
+  bsc request claim [--by <session>] [--json|--pretty]
+
+Atomically claims the OLDEST open request (open → claimed) and prints it, or prints nothing (`null` in
+--json) when the queue is empty. Race-free: two sessions claiming at once never take the same request,
+so the standing debug session and the overflow pool can both self-serve the queue. --by records the
+holder (its pane id). Work the printed request, then `bsc request resolve <id> --note`.",
+    },
+    CmdDoc {
+        name: "unclaim",
+        summary: "return a claimed request to the open queue",
+        usage: "\
+USAGE:
+  bsc request unclaim <id>
+
+Puts a claimed request back to open (clearing the holder) so it can be reclaimed — for a session that
+abandoned it or crashed. A no-op (reported) for an unknown or not-claimed id.",
     },
     CmdDoc {
         name: "prune",
@@ -88,6 +111,7 @@ struct Args {
     cmd: Option<String>,
     shot: Option<String>,
     note: Option<String>,
+    by: Option<String>,
     open: bool,
     limit: Option<i64>,
     positional: Vec<String>,
@@ -102,6 +126,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         cmd: None,
         shot: None,
         note: None,
+        by: None,
         open: false,
         limit: None,
         positional: Vec::new(),
@@ -118,6 +143,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--cmd" => a.cmd = Some(val("--cmd")?),
             "--shot" => a.shot = Some(val("--shot")?),
             "--note" => a.note = Some(val("--note")?),
+            "--by" => a.by = Some(val("--by")?),
             "--limit" => a.limit = Some(val("--limit")?.parse().map_err(|_| "--limit needs an integer")?),
             "-h" | "--help" => a.positional.insert(0, "help".into()),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
@@ -141,6 +167,8 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "list" => cmd_list(&args),
         "get" => cmd_get(&args),
         "resolve" => cmd_resolve(&args),
+        "claim" => cmd_claim(&args),
+        "unclaim" => cmd_unclaim(&args),
         "prune" => cmd_prune(&args),
         "remove" => cmd_remove(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
@@ -193,6 +221,27 @@ fn cmd_resolve(args: &Args) -> Result<(), String> {
     let matched =
         open_store(&args.db)?.resolve(id, args.note.as_deref(), now_ms()).map_err(|e| format!("resolving request: {e}"))?;
     println!("{}", if matched { format!("resolved request {id}") } else { format!("no open request {id}") });
+    Ok(())
+}
+
+/// `claim` — atomically take the oldest open request; print it, or `null` / a message when none.
+fn cmd_claim(args: &Args) -> Result<(), String> {
+    let claimed =
+        open_store(&args.db)?.claim(args.by.as_deref(), now_ms()).map_err(|e| format!("claiming request: {e}"))?;
+    match claimed {
+        Some(r) => bsc_cli_util::emit(args.pretty, args.json, &r, || format!("claimed request {}: {}", r.id, r.text)),
+        // Empty queue is not an error: print a machine-checkable sentinel so a session can branch on it.
+        None if args.json => println!("null"),
+        None => println!("(no open requests to claim)"),
+    }
+    Ok(())
+}
+
+/// `unclaim <id>` — put a claimed request back to open.
+fn cmd_unclaim(args: &Args) -> Result<(), String> {
+    let id = positional_id(args)?;
+    let matched = open_store(&args.db)?.unclaim(id).map_err(|e| format!("unclaiming request: {e}"))?;
+    println!("{}", if matched { format!("unclaimed request {id}") } else { format!("no claimed request {id}") });
     Ok(())
 }
 
@@ -294,7 +343,7 @@ mod tests {
     #[test]
     fn help_overview_and_per_command_help() {
         let ov = bsc_cli_util::help_overview("bsc request", TAGLINE, COMMANDS);
-        for name in ["new", "list", "get", "resolve", "prune", "remove"] {
+        for name in ["new", "list", "get", "resolve", "claim", "unclaim", "prune", "remove"] {
             assert!(ov.contains(name), "overview lists {name}");
         }
         let new = bsc_cli_util::help_for("bsc request", TAGLINE, COMMANDS, "new");
@@ -345,6 +394,38 @@ mod tests {
         cmd_remove(&with_db(vec!["remove", "3"])).unwrap(); // the corrupted, still-open row
         let after_remove = open_store(&db).unwrap().list(&Filter::default()).unwrap();
         assert_eq!(after_remove.iter().map(|r| r.id).collect::<Vec<_>>(), vec![1], "only #1 left");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn claim_and_unclaim_over_a_temp_db() {
+        // --db, never set_var (#3382 — parallel test threads share the global env).
+        let dir = std::env::temp_dir().join(format!("bsc-request-claim-cli-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("requests.db");
+        let _ = std::fs::remove_file(&path);
+        let dbp = path.to_string_lossy().into_owned();
+        let with_db = |positional: Vec<&str>| args_for(positional, |a| a.db = Some(dbp.clone()));
+        let db = Some(dbp.clone());
+
+        cmd_new(&with_db(vec!["new", "gap one"])).unwrap(); // id 1
+        cmd_new(&with_db(vec!["new", "gap two"])).unwrap(); // id 2
+
+        // Claim takes the oldest and removes it from `--open`.
+        cmd_claim(&args_for(vec!["claim"], |a| { a.db = Some(dbp.clone()); a.by = Some("sess-x".into()); })).unwrap();
+        let store = open_store(&db).unwrap();
+        let claimed = store.get(1).unwrap().unwrap();
+        assert!(claimed.is_claimed() && claimed.claimed_by.as_deref() == Some("sess-x"));
+        assert_eq!(
+            store.list(&Filter { open_only: true, ..Default::default() }).unwrap().iter().map(|r| r.id).collect::<Vec<_>>(),
+            vec![2],
+            "only the unclaimed one is offered to --open",
+        );
+
+        // Unclaim returns it to the queue.
+        cmd_unclaim(&with_db(vec!["unclaim", "1"])).unwrap();
+        assert!(open_store(&db).unwrap().get(1).unwrap().unwrap().is_open(), "back to open after unclaim");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
