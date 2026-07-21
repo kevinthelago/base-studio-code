@@ -29,7 +29,10 @@ const die = (m) => { console.error(`release: ${m}`); process.exit(1); };
 const sh = (cmd) => execSync(cmd, { cwd: ROOT, stdio: "pipe" }).toString().trim();
 
 // ── guards ──────────────────────────────────────────────────────────────────
-if (sh("git status --porcelain")) die("working tree is dirty — commit or stash first.");
+// Only TRACKED changes block a release — the release commits the version bump + changelog stamp, and
+// untracked files (nested worktrees at the repo root, local design/scratch assets) are not part of it.
+// `-uno` (`--untracked-files=no`) so those don't wedge the cut when the tracked tree is clean.
+if (sh("git status --porcelain -uno")) die("working tree has uncommitted changes — commit or stash first.");
 const branch = sh("git rev-parse --abbrev-ref HEAD");
 if (branch !== "develop") console.warn(`release: on '${branch}', not 'develop' — continuing anyway.`);
 
