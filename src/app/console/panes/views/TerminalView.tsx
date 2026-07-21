@@ -38,10 +38,6 @@ interface TerminalViewProps {
   paneId: string;
   visible?: boolean;
   focused?: boolean;
-  /** The CSS scale the terminal is rendered under (a Glance morph's graph zoom, #3524). Default 1. The
-   *  host counter-scales the container so xterm's MOUSE math is correct; this bumps the FONT by the same
-   *  factor so the text still grows with zoom — net: a scaled-looking terminal whose clicks land right. */
-  scale?: number;
   initialCwd?: string;
   initCmd?: string;
   onCwdChange?: (path: string) => void;
@@ -49,7 +45,7 @@ interface TerminalViewProps {
   onFocus?: () => void;
 }
 
-export function TerminalView({ paneId, visible = true, focused, scale = 1, initialCwd, initCmd, onCwdChange, onStatusChange, onFocus }: TerminalViewProps) {
+export function TerminalView({ paneId, visible = true, focused, initialCwd, initCmd, onCwdChange, onStatusChange, onFocus }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Session readiness (#564): verdict-derived critical/warning lists + the manual retry. The mount
   // effect's preflight probe sets the verdict via setReadinessVerdict (after the GH token resolves).
@@ -84,9 +80,6 @@ export function TerminalView({ paneId, visible = true, focused, scale = 1, initi
   // Global terminal font size (Ctrl++ / Ctrl+-). Subscribed so a zoom change
   // re-renders this view; the effect below resizes the already-mounted terminal.
   const terminalFontSize = useAppStore((s) => s.terminalFontSize);
-  // Latest render scale (#3524), read by the once-only mount effect for the initial font.
-  const scaleRef = useRef(scale);
-  scaleRef.current = scale;
 
   // Stable refs so handlers registered once always call the latest callback
   const onStatusChangeRef = useRef(onStatusChange);
@@ -145,9 +138,7 @@ export function TerminalView({ paneId, visible = true, focused, scale = 1, initi
     const term = new Terminal({
       theme: TERM_THEME,
       fontFamily: '"JetBrains Mono", monospace',
-      // Font scales with the render scale (#3524) so a zoomed morph reads bigger; the effect below
-      // re-applies it whenever the scale (or the global zoom) changes after mount.
-      fontSize: useAppStore.getState().terminalFontSize * scaleRef.current,
+      fontSize: useAppStore.getState().terminalFontSize,
       lineHeight: 1.4,
       cursorBlink: true,
       cursorStyle: "bar",
@@ -702,10 +693,7 @@ export function TerminalView({ paneId, visible = true, focused, scale = 1, initi
     if (!fontReadyRef.current) { fontReadyRef.current = true; return; }
     const term = termRef.current;
     if (!term) return;
-    // The rendered font is the global size TIMES the render scale (#3524): the host counter-scales the
-    // container so xterm's mouse math is correct at any zoom, so to still look bigger when zoomed the
-    // font must actually grow. `scale` is 1 for every console pane, so their fit is unchanged.
-    term.options.fontSize = terminalFontSize * scale;
+    term.options.fontSize = terminalFontSize;
     // Defer a frame so xterm remeasures the new glyph size before we fit, then
     // resize the PTY to the recomputed rows/cols. fit() throws on an unopened
     // terminal, so skip the geometry work until it's been opened (#190).
@@ -714,7 +702,7 @@ export function TerminalView({ paneId, visible = true, focused, scale = 1, initi
       fitRef.current?.fit();
       invoke("pty_resize", { paneId, cols: term.cols, rows: term.rows }).catch(console.error);
     });
-  }, [terminalFontSize, scale, paneId]);
+  }, [terminalFontSize, paneId]);
 
   // Resize-nudge redraw (#1221): force the Claude CLI's TUI to repaint by transiently shrinking the
   // PTY by one COLUMN — a guaranteed SIGWINCH — then settling back to the true fitted size on the

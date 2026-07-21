@@ -33,11 +33,7 @@ export function TerminalSlot({ paneId, ...props }: TerminalSlotProps) {
   }, [host, props.visible, props.focused]);
 
   return (
-    // The imperative re-parent target: the host appendChilds the terminal container here.
-    // `position: relative` + `overflow: hidden` bound that container — needed when it is counter-scaled
-    // and `position: absolute` under a zoomed morph (#3524); inert for a scale-1 console slot, whose
-    // container stays a static flex child.
-    // eslint-disable-next-line no-restricted-syntax -- imperative re-parent target (see above)
-    <div ref={elRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }} />
+    // eslint-disable-next-line no-restricted-syntax -- imperative re-parent target: the host appendChilds the terminal container here
+    <div ref={elRef} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }} />
   );
 }
