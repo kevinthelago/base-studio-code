@@ -1161,16 +1161,23 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     let opts = crate::graph_health::HealthOptions { sound_kit_json: sound_kit_json.as_deref() };
     let mut findings = crate::graph_health::analyze_with(&comps, &opts);
     if motion {
-        // #3163: append the motion findings and re-rank the combined report (most-severe first, stable
-        // kit + node-name tiebreak — the SAME ordering `analyze` uses).
+        // #3163: append the motion findings (re-ranked with the render errors below).
         findings.extend(crate::graph_health::analyze_motion(&comps));
-        findings.sort_by(|a, b| {
-            b.severity
-                .cmp(&a.severity)
-                .then_with(|| a.kit.cmp(&b.kit))
-                .then_with(|| a.node_names.first().cmp(&b.node_names.first()))
-        });
     }
+    // #3540: append the RENDER errors — the runtime throws doctor's static analysis can't see, read from
+    // the durable preview-error log the app's scan + previews record. Scoped to `comps` (already
+    // kit-filtered), so `--kit` narrows these too. Always on: a preview that throws is the most
+    // actionable finding, so it should never need a flag to surface.
+    let render_errors = crate::preview_errors::latest_error_by_id();
+    findings.extend(crate::graph_health::render_error_findings(&comps, &render_errors));
+    // Re-rank the combined report (most-severe first, stable kit + node-name tiebreak — the SAME ordering
+    // `analyze` uses). Render errors (severity 5) sort to the top.
+    findings.sort_by(|a, b| {
+        b.severity
+            .cmp(&a.severity)
+            .then_with(|| a.kit.cmp(&b.kit))
+            .then_with(|| a.node_names.first().cmp(&b.node_names.first()))
+    });
 
     if json {
         let arr: Vec<serde_json::Value> = findings.iter().map(crate::graph_health::Finding::to_value).collect();

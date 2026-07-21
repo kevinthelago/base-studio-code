@@ -12,6 +12,7 @@
 //! records so the diagnostic log never grows unbounded.
 
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// Keep at most this many records — a rolling window of the most recent preview errors.
@@ -41,6 +42,17 @@ pub fn tail(n: usize) -> Vec<Value> {
     log_path().map(|p| tail_from(&p, n)).unwrap_or_default()
 }
 
+/// The CURRENT preview error per component id (#3540) — the LATEST record for each id, EXCLUDING ids
+/// whose latest record CLEARED them (an empty `message` = the scan reported the preview now renders ok).
+/// So a component fixed after it errored drops out, and the same id erroring repeatedly collapses to one.
+/// Returned `(id, message)` sorted by id for a stable report. Best-effort like [`tail`].
+///
+/// This is what `bsc ui doctor` reads to surface a runtime throw — doctor is a static analyzer and can
+/// never mount a component, so the render error must come from the log the app's scan + previews record.
+pub fn latest_error_by_id() -> Vec<(String, String)> {
+    log_path().map(|p| latest_error_by_id_from(&p)).unwrap_or_default()
+}
+
 /// Core of [`record`] over an explicit path (unit-testable without touching the process env).
 fn record_to(path: &Path, id: &str, message: &str) -> Result<(), String> {
     let rec = json!({ "at": bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms()), "id": id, "message": message });
@@ -49,6 +61,21 @@ fn record_to(path: &Path, id: &str, message: &str) -> Result<(), String> {
     lines.push(line);
     let start = lines.len().saturating_sub(CAP);
     write_file(path, &(lines[start..].join("\n") + "\n"))
+}
+
+/// Core of [`latest_error_by_id`] over an explicit path. Later records overwrite earlier ones for the
+/// same id (append-only log ⇒ last line wins), then ids cleared to an empty message are dropped.
+fn latest_error_by_id_from(path: &Path) -> Vec<(String, String)> {
+    let mut latest: BTreeMap<String, String> = BTreeMap::new();
+    for line in read_lines(path) {
+        if let Ok(v) = serde_json::from_str::<Value>(&line) {
+            if let Some(id) = v.get("id").and_then(Value::as_str) {
+                let msg = v.get("message").and_then(Value::as_str).unwrap_or("").to_string();
+                latest.insert(id.to_string(), msg); // last write wins
+            }
+        }
+    }
+    latest.into_iter().filter(|(_, m)| !m.trim().is_empty()).collect()
 }
 
 /// Core of [`tail`] over an explicit path. Parses every line, then returns the last `n`.
@@ -136,5 +163,23 @@ mod tests {
     #[test]
     fn tail_of_absent_log_is_empty() {
         assert!(tail_from(Path::new("/no/such/bsc-preview-errors-xyz.log"), 5).is_empty());
+    }
+
+    #[test]
+    fn latest_error_by_id_keeps_the_newest_and_an_empty_message_clears() {
+        let path = temp_log();
+        record_to(&path, "chart", "old error").unwrap();
+        record_to(&path, "graph", "reading 'find' of undefined").unwrap();
+        record_to(&path, "chart", "newer error").unwrap(); // supersedes the old chart error
+        record_to(&path, "graph", "").unwrap(); // #3540: an empty message = the scan says graph is OK now
+        let got = latest_error_by_id_from(&path);
+        // graph was cleared; chart keeps its NEWEST message; sorted by id.
+        assert_eq!(got, vec![("chart".to_string(), "newer error".to_string())]);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn latest_error_by_id_of_absent_log_is_empty() {
+        assert!(latest_error_by_id_from(Path::new("/no/such/bsc-preview-errors-abc.log")).is_empty());
     }
 }
