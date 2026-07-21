@@ -744,6 +744,20 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         // `list --shape <shape>` (#2475) filters to one shape's ideal components — intercepted here
         // (the shared store CLI rejects unknown flags); a plain `list` still delegates unchanged.
         Some("list") if args.iter().any(|a| a == "--shape") => cmd_list_shape(&args[1..]),
+        // A plain `get <id>` (read) FOCUSES that component in the Design Studio preview (#3545) — a
+        // `ui-focus`, so the preview follows Claude's working focus as it INSPECTS each node, not only
+        // when it writes one. Distinct from the write `ui-touch`: a read triggers NO library re-hydrate.
+        // `get --field`/`get help` fall through unchanged (the id guard excludes a flag or `help`).
+        Some("get") if args.get(1).is_some_and(|a| !a.starts_with('-') && a != "help") => {
+            bsc_util::emit_ui_focus("component", &args[1]);
+            bsc_json_store::cli::run_hooked_validated(
+                args,
+                prog,
+                &COMPONENT_SPEC,
+                Some(&|id: &str| bsc_util::emit_ui_activity("component", id)),
+                Some(&validate_component_batch),
+            )
+        }
         // The COMPONENT collection's list/get/remove (set is intercepted above, #3164). Fire the
         // live-focus `ui-touch` (#2525) after a component remove write lands, with the "component"
         // collection context.
@@ -1677,6 +1691,9 @@ fn cmd_preview_props(args: &[String]) -> Result<(), String> {
     }
     let store = open_component_store(&dir)?;
     let raw = store.get(&id)?.ok_or_else(|| format!("no component '{id}'"))?;
+    // #3545: inspecting a component's preview props FOCUSES it in the Design Studio (a `ui-focus`, so the
+    // preview follows Claude's working focus). A read → no re-hydrate. No-op off a designer session.
+    bsc_util::emit_ui_focus("component", &id);
     let rec: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
     let name = rec.get("name").and_then(serde_json::Value::as_str).unwrap_or(&id);
     let role = rec.get("role").and_then(serde_json::Value::as_str).unwrap_or("");
@@ -2949,6 +2966,39 @@ mod tests {
         std::env::remove_var("BSC_UI_ACTIVITY_LOG");
         std::env::remove_var("BSC_AUDIT_PANE");
         let _ = std::fs::remove_file(&act);
+        });
+    }
+
+    #[test]
+    fn get_and_preview_props_emit_a_ui_focus_not_a_touch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        bsc_cli_util::with_scopes(None, || {
+            let act = std::env::temp_dir().join(format!("bsc-component-uifocus-{}.log", std::process::id()));
+            let _ = std::fs::remove_file(&act);
+            std::env::set_var("BSC_UI_ACTIVITY_LOG", &act);
+            std::env::set_var("BSC_AUDIT_PANE", "design-studio:designer");
+
+            let dir = tmp_store_dir("focus-comp");
+            bsc_json_store::Store::new(dir.clone(), "component")
+                .set("button", r#"{"id":"button","name":"Button"}"#)
+                .unwrap();
+
+            // #3545: a READ (get / preview-props) focuses the component with `ui-focus`, never `ui-touch`.
+            run(vec!["get".into(), "button".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+            run(vec!["preview-props".into(), "button".into(), "--dir".into(), dir], "bsc ui").unwrap();
+
+            // Presence, not absence: `$BSC_UI_ACTIVITY_LOG` is a process-global, so a CONCURRENT test's
+            // own `set` emit can land in this file too (#3382). `>= 2` proves BOTH reads emitted a
+            // ui-focus for `button`; that a ui-focus is NOT a ui-touch is pinned by the bsc-util test.
+            let text = std::fs::read_to_string(&act).unwrap();
+            assert!(
+                text.matches("\tui-focus\tcomponent\tbutton").count() >= 2,
+                "get + preview-props each emit a ui-focus for the component they read: {text:?}",
+            );
+
+            std::env::remove_var("BSC_UI_ACTIVITY_LOG");
+            std::env::remove_var("BSC_AUDIT_PANE");
+            let _ = std::fs::remove_file(&act);
         });
     }
 
