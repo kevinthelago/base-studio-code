@@ -116,57 +116,82 @@ describe("gatePill (#652)", () => {
   });
 });
 
-describe("footerAction (#652)", () => {
+describe("footerAction (#652/#2533)", () => {
   it("navigates by selection vs active, publishes when complete", () => {
     expect(footerAction(2, 1, false, false).kind).toBe("back-to-current");
     expect(footerAction(0, 1, false, false).kind).toBe("jump-to-current");
     expect(footerAction(1, 1, true, false)).toEqual({ kind: "publish", enabled: true });
-    expect(footerAction(1, 1, false, true)).toEqual({ kind: "approve-continue", enabled: true, canSkip: false });
-    expect(footerAction(1, 1, false, false)).toEqual({ kind: "approve-continue", enabled: false, canSkip: false });
   });
 
-  it("offers a skip control on the active OPTIONAL stage (#921)", () => {
-    // The active stage is an enabled optional stage the user hasn't decided — `canSkip` lights up
-    // alongside "approve & continue" so the USER, not the app, decides whether to skip it.
-    expect(footerAction(1, 1, false, false, true)).toEqual({ kind: "approve-continue", enabled: false, canSkip: true });
-    expect(footerAction(1, 1, false, true, true)).toEqual({ kind: "approve-continue", enabled: true, canSkip: true });
-    // Browsing away from the active stage never offers skip.
-    expect(footerAction(2, 1, false, false, true).kind).toBe("back-to-current");
+  it("marks every active stage skip-ELIGIBLE (#2533/#2854) — resolveFooter decides the actual render", () => {
+    // On the active stage, `canSkip` is a marker (skip-eligible KIND); whether Skip actually RENDERS
+    // is decided later by resolveFooter (`skipEnabled`) from the live signals.
+    expect(footerAction(1, 1, false, true)).toEqual({ kind: "approve-continue", enabled: true, canSkip: true });
+    expect(footerAction(1, 1, false, false)).toEqual({ kind: "approve-continue", enabled: false, canSkip: true });
+    // Browsing away from the active stage is never skip-eligible.
+    expect(footerAction(2, 1, false, false).kind).toBe("back-to-current");
+    expect(footerAction(0, 1, false, false).canSkip).toBeUndefined();
   });
 
-  it("routes the design on the active UI stage when it's missing/stale (#2121)", () => {
-    // routeDesign=true on the active stage → an always-enabled "route-design" action instead of
-    // "approve & continue". SKIP is hidden while route-design is the primary action — even when the
-    // stage is optional — so the user can't both "route the design" and "skip the stage" at once.
-    expect(footerAction(1, 1, false, false, false, true)).toEqual({ kind: "route-design", enabled: true, canSkip: false });
-    expect(footerAction(1, 1, false, true, true, true)).toEqual({ kind: "route-design", enabled: true, canSkip: false });
-    // Skip DOES return on the normal approve-continue once the design is routed (routeDesign=false).
-    expect(footerAction(1, 1, false, true, true, false)).toEqual({ kind: "approve-continue", enabled: true, canSkip: true });
+  it("routes the design on the active UI stage when it's missing/stale, still offering skip (#2121/#2533)", () => {
+    // routeDesign=true on the active stage → an always-enabled "route-design" primary instead of
+    // "approve & continue". Skip is now ALSO shown (#2533) — routing and skipping are both valid.
+    expect(footerAction(1, 1, false, false, true)).toEqual({ kind: "route-design", enabled: true, canSkip: true });
+    expect(footerAction(1, 1, false, true, true)).toEqual({ kind: "route-design", enabled: true, canSkip: true });
     // route-design never overrides navigation or publish.
-    expect(footerAction(2, 1, false, false, false, true).kind).toBe("back-to-current");
-    expect(footerAction(1, 1, true, false, false, true)).toEqual({ kind: "publish", enabled: true });
+    expect(footerAction(2, 1, false, false, true).kind).toBe("back-to-current");
+    expect(footerAction(1, 1, true, false, true)).toEqual({ kind: "publish", enabled: true });
     // Once the design is current (routeDesign=false) it reverts to the normal advance action.
-    expect(footerAction(1, 1, false, true, false, false).kind).toBe("approve-continue");
+    expect(footerAction(1, 1, false, true, false).kind).toBe("approve-continue");
   });
 });
 
-describe("resolveFooter — gate override (#1285)", () => {
-  const blocked = footerAction(1, 1, false, false); // approve-continue, gate blocking
-  it("passes an already-enabled or non-approve action through untouched", () => {
-    const ready = footerAction(1, 1, false, true);
-    expect(resolveFooter(ready, 0, true)).toBe(ready);
+describe("resolveFooter — skip gating + one-click confirm (#1285/#2854)", () => {
+  const blocked = footerAction(1, 1, false, false); // approve-continue, gate blocking, canSkip
+  it("passes a non-skippable action (publish/nav) through untouched", () => {
     const publish = footerAction(1, 1, true, false);
-    expect(resolveFooter(publish, 0, true)).toBe(publish);
+    expect(resolveFooter(publish, 0, true, false)).toBe(publish);
+    const nav = footerAction(2, 1, false, false);
+    expect(resolveFooter(nav, 0, false, false)).toBe(nav);
   });
-  it("pending-confirm enables WITHOUT marking override (normal one-click approval)", () => {
-    const r = resolveFooter(blocked, 2, true);
-    expect(r.enabled).toBe(true);
-    expect(r.override).toBeUndefined();
+  it("renders Skip only when the stage is skippable now, or with gate override (#2854)", () => {
+    expect(resolveFooter(blocked, 0, false, true).skipEnabled).toBe(true);   // skippable → render
+    // A required stage (not skippable, override off) renders NO Skip — the #2854 ghost fix.
+    expect(resolveFooter(blocked, 0, false, false).skipEnabled).toBe(false);
+    expect(resolveFooter(blocked, 0, true, false).skipEnabled).toBe(true);   // required + override on
+    // Skip gating never touches the primary, and there is no `override` flag anymore.
+    expect(resolveFooter(blocked, 0, true, false).enabled).toBe(false);
+    expect("override" in resolveFooter(blocked, 0, true, false)).toBe(false);
   });
-  it("override enables + flags a blocking gate ONLY when allowed and nothing to confirm", () => {
-    expect(resolveFooter(blocked, 0, false)).toEqual(blocked);          // off → still blocked
-    const r = resolveFooter(blocked, 0, true);
-    expect(r).toMatchObject({ kind: "approve-continue", enabled: true, override: true });
+  it("pending-confirm lights the primary; nothing else force-enables a blocking gate", () => {
+    expect(resolveFooter(blocked, 2, false, false).enabled).toBe(true);  // drafted sections → confirm
+    expect(resolveFooter(blocked, 0, false, false).enabled).toBe(false); // nothing pending → blocked
+    expect(resolveFooter(blocked, 0, true, true).enabled).toBe(false);   // override enables SKIP, not primary
+  });
+});
+
+describe("stagesFrom → Stage.skippable (#2854)", () => {
+  it("is true for an intrinsically optional stage, false for a plain required one", () => {
+    const secs: BlueprintStage[] = [
+      sec("discovery", { gateRule: { require: [{ signal: "d", target: true }] } }),
+      sec("extras", { optional: true }),
+    ];
+    const p = stagesFrom(secs, {} as PlanSignals);
+    expect(p.find((x) => x.key === "discovery")!.skippable).toBe(false); // no rule → required
+    expect(p.find((x) => x.key === "extras")!.skippable).toBe(true);     // optional → always skippable
+  });
+
+  it("follows a declarative skipWhen against live signals — empty ⇒ skippable, populated ⇒ required", () => {
+    const secs: BlueprintStage[] = [
+      sec("features", {
+        gateRule: { require: [{ signal: "featuresDefined", target: 1 }] },
+        skipWhen: { signal: "featuresDefined", target: 0, op: "==" },
+      }),
+    ];
+    // Empty (0 features) → skippable; the footer offers Skip.
+    expect(stagesFrom(secs, { featuresDefined: 0 }).find((x) => x.key === "features")!.skippable).toBe(true);
+    // Populated → required; Skip disappears and the gate must pass.
+    expect(stagesFrom(secs, { featuresDefined: 2 }).find((x) => x.key === "features")!.skippable).toBe(false);
   });
 });
 

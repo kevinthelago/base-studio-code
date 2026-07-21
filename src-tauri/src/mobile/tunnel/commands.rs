@@ -129,6 +129,55 @@ pub fn tunnel_ack_plan_push(
     let _ = state.event_tx.send(ServerMsg::PlanSyncAck { project_id, applied });
 }
 
+/// One pushed plan file — the `{ relpath, content }` shape the `tunnel://plan-sync-push` event carries
+/// (mirrors the wire `PlanFile`). Deserialized straight from the frontend listener's payload.
+#[derive(serde::Deserialize)]
+pub struct PushedPlanFile {
+    pub relpath: String,
+    pub content: String,
+}
+
+/// Apply plan files pushed from mobile (`tunnel://plan-sync-push`, #3248) to the project's hub dir
+/// (`projects/<key>/`). SECURITY: each `relpath` must be a plain relative path (no `..`, no absolute,
+/// no drive/root — [`is_safe_relpath`]) so a mobile push can never write outside the hub; the FIRST
+/// unsafe path aborts the whole apply (no partial write is acked as success). The frontend calls
+/// [`tunnel_ack_plan_push`] with the returned outcome so mobile learns whether it landed.
+#[tauri::command]
+pub fn apply_pushed_plan_files(project_id: String, files: Vec<PushedPlanFile>) -> Result<u32, String> {
+    if project_id.trim().is_empty() {
+        return Err("apply_pushed_plan_files: empty project_id".to_string());
+    }
+    let written = apply_pushed_plan_files_to(&crate::platform::paths::project_dir(&project_id), &files)?;
+    log::info!("tunnel: applied {written} pushed plan file(s) for {project_id}");
+    Ok(written)
+}
+
+/// Testable core of [`apply_pushed_plan_files`]: write each file under `dir`, refusing any unsafe
+/// relpath (the FIRST one aborts, so a bad path in a batch never leaves a partial write acked as
+/// success). Split out so the path-traversal guard is unit-tested against a temp dir (never the real
+/// hub).
+pub(crate) fn apply_pushed_plan_files_to(
+    dir: &std::path::Path,
+    files: &[PushedPlanFile],
+) -> Result<u32, String> {
+    let mut written = 0u32;
+    for f in files {
+        let rel = std::path::Path::new(&f.relpath);
+        if !crate::platform::fsx::is_safe_relpath(rel) {
+            return Err(format!("apply_pushed_plan_files: unsafe relpath {:?} — refused", f.relpath));
+        }
+        let target = dir.join(rel);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("apply_pushed_plan_files: mkdir {parent:?}: {e}"))?;
+        }
+        std::fs::write(&target, &f.content)
+            .map_err(|e| format!("apply_pushed_plan_files: write {:?}: {e}", f.relpath))?;
+        written += 1;
+    }
+    Ok(written)
+}
+
 // ── Live planning session (PT1 / #934 / #986) — Tauri commands ──────────────
 //
 // Distinct from `tunnel_set_plan_state` (the async file-sync path, untouched): these project
@@ -296,6 +345,46 @@ pub fn tunnel_set_hook_telemetry(telemetry: HookTelemetryFrame, state: State<'_,
     state.set_and_broadcast(ServerMsg::HookTelemetry { telemetry: telemetry.clone() }, |inner| {
         inner.hook_telemetry = Some(telemetry);
     });
+}
+
+// ── Generic store projections (#2497) — Tauri commands ──────────────────────
+
+/// Push one store domain's projection from the frontend — the SINGLE entry point for the
+/// generic `store_state` frame (#2497). `domain` names the store (see
+/// `protocol::store_domains` for the registered vocabulary — the frame itself is
+/// domain-agnostic), `rev` is the caller's monotonically increasing revision for that
+/// domain, and `json` is the opaque serialized projection. Stored per domain for replay to
+/// freshly-paired clients and broadcast to connected ones.
+///
+/// The bespoke `tunnel_set_fleet_state` / `tunnel_set_automations` / `tunnel_set_mcp_state`
+/// / `tunnel_set_hook_telemetry` pushes remain wire-compatible alongside this; retiring
+/// them onto store_state domains is a follow-up once mobile consumes the new frames.
+#[tauri::command]
+pub fn tunnel_set_store_state(domain: String, rev: u64, json: String, state: State<'_, TunnelState>) {
+    log::debug!("tunnel: store_state[{domain}] rev {rev} pushed ({} bytes)", json.len());
+    let frame = ServerMsg::StoreState { domain: domain.clone(), rev, json };
+    state.set_and_broadcast(frame.clone(), |inner| {
+        inner.store_states.insert(domain, frame);
+    });
+}
+
+/// Queue an FCM push for one alert from the #2498 taxonomy (agent-paused / prompt-waiting /
+/// worker-question / fleet-failed / fleet-landed / gate-ready / planner-waiting). Deliberately
+/// THIN and wire-free: the alert INBOX rides the `alerts` store_state domain (replayed on
+/// connect, so a foregrounded phone reads it there); this command only reaches a
+/// backgrounded/quit phone out-of-band via FCM. No-op without a paired FCM token. `at` is
+/// accepted for parity with the frontend event (logged, not forwarded — FCM stamps delivery).
+#[tauri::command]
+pub fn tunnel_emit_alert(
+    kind: String,
+    title: String,
+    body: String,
+    pane_id: Option<String>,
+    at: u64,
+    state: State<'_, TunnelState>,
+) {
+    log::debug!("tunnel: alert kind={kind} pane={pane_id:?} at={at}");
+    state.enqueue_alert_push(&kind, &title, &body, pane_id.as_deref().unwrap_or(""));
 }
 
 // ── Relay diagnostics (T3b) ──────────────────────────────────────────────────
@@ -560,4 +649,35 @@ pub fn tunnel_unpair(app: AppHandle, state: State<'_, TunnelState>) -> Result<Tu
         status.room.as_deref().unwrap_or_default()
     );
     Ok(status)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn f(relpath: &str, content: &str) -> PushedPlanFile {
+        PushedPlanFile { relpath: relpath.to_string(), content: content.to_string() }
+    }
+
+    #[test]
+    fn apply_pushed_plan_files_writes_safe_paths_and_refuses_traversal() {
+        // A temp hub — never the real projects dir (the command wrapper resolves that; the core takes
+        // an explicit dir so this is hermetic).
+        let dir = std::env::temp_dir().join(format!("bsc-3248-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // Safe relpaths (incl. a nested one) are written under the hub.
+        let ok = apply_pushed_plan_files_to(&dir, &[f("goal.md", "g"), f("discovery/stack.md", "s")]);
+        assert_eq!(ok.unwrap(), 2);
+        assert_eq!(std::fs::read_to_string(dir.join("goal.md")).unwrap(), "g");
+        assert_eq!(std::fs::read_to_string(dir.join("discovery/stack.md")).unwrap(), "s");
+
+        // A `..` traversal is refused, and nothing escapes the hub.
+        assert!(apply_pushed_plan_files_to(&dir, &[f("../escape.md", "x")]).is_err());
+        assert!(!dir.parent().unwrap().join("escape.md").exists());
+        // An absolute path is refused too.
+        assert!(apply_pushed_plan_files_to(&dir, &[f("/tmp/evil.md", "x")]).is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -25,15 +25,15 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
       style={{
         flex: 1,
         padding: "32px 24px",
-        background: "#181a1f",
-        color: "#eeeae4",
+        background: "var(--bg-canvas)",
+        color: "var(--fg)",
         fontFamily: '"JetBrains Mono", monospace',
         fontSize: 13,
         textAlign: "center",
       }}
     >
       <Text as="div" size={28} style={{ lineHeight: 1 }}>⚠</Text>
-      <Text as="div" size={14} weight={600} style={{ color: "#d4554f" }}>
+      <Text as="div" size={14} weight={600} style={{ color: "var(--danger)" }}>
         Session prerequisites missing
       </Text>
       <Stack
@@ -48,21 +48,21 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
             key={c.id}
             gap={6}
             style={{
-              background: "#1e1f24",
-              border: "1px solid #3a1a1a",
+              background: "var(--bg-panel)",
+              border: "1px solid color-mix(in oklch, var(--danger), transparent 75%)",
               borderRadius: 6,
               padding: "10px 14px",
               textAlign: "left",
             }}
           >
-            <Text size={12} style={{ color: "#e06c75" }}>{c.message}</Text>
+            <Text size={12} style={{ color: "var(--danger)" }}>{c.message}</Text>
             {c.installUrl && (
               <a
                 href={c.installUrl}
                 target="_blank"
                 rel="noreferrer"
                 style={{
-                  color: "#61afef",
+                  color: "var(--info)",
                   fontSize: 11,
                   textDecoration: "none",
                   display: "inline-flex",
@@ -76,16 +76,16 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
           </Stack>
         ))}
       </Stack>
-      {/* eslint-disable-next-line no-restricted-syntax -- bespoke failure-panel button with its own dark-theme inline styling (not the .btn kit) */}
+      {/* eslint-disable-next-line no-restricted-syntax -- bespoke failure-panel button with its own inline styling (not the .btn kit) */}
       <button
         onClick={onRetry}
         style={{
           marginTop: 4,
           padding: "7px 20px",
           borderRadius: 5,
-          border: "1px solid #44474f",
-          background: "#1e1f24",
-          color: "#eeeae4",
+          border: "1px solid var(--border)",
+          background: "var(--bg-panel)",
+          color: "var(--fg)",
           fontFamily: '"JetBrains Mono", monospace',
           fontSize: 12,
           cursor: "pointer",
@@ -93,7 +93,7 @@ export function SessionFailure({ critical, onRetry }: SessionFailureProps) {
       >
         Retry
       </button>
-      <Text as="div" size={11} style={{ color: "#44474f", maxWidth: 380 }}>
+      <Text as="div" size={11} style={{ color: "var(--fg-dim)", maxWidth: 380 }}>
         Install the missing tools, then click Retry. The session will probe again
         without a full relaunch.
       </Text>

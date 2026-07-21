@@ -14,11 +14,14 @@ import { type GhStatusMap } from "./GitHubStructureCard";
 import { deriveProjectTitle } from "./projectTitle";
 import { parseFeaturesFile } from "../issues/featureList";
 import { parseDependencyManifest, depsForRepo } from "../issues/dependencies";
-import { buildWorkerScope } from "../fleet/workerScope";
+import { buildWorkerScope, toWorkerUiPairing } from "../fleet/workerScope";
 import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 import { type PlanIssue } from "../issues/planIssues";
 import { pruneCompletedStreams, doneIssueRefs } from "@/shared/lib/fleet/streamCompletion";
+import { withDerivedStreamIssues } from "../fleet/planFleet";
+import { teamRoleStreams } from "../fleet/teamFleet";
 import { recoverIssues, type GitHubIssueLike } from "../issues/recoverIssues";
+import { removeDbProject } from "../list/projectsDbBridge";
 import { publishFleetRoster } from "@/shared/lib/fleet/fleetRoster";
 import { canLaunchTriage, publishBlockReason } from "@/shared/lib/github/projectSync";
 import { coerceBlueprint, blueprintToManifest } from "../blueprints/blueprintShare";
@@ -27,6 +30,7 @@ import { publishGist } from "@/features/planner/lib/gist/gist";
 import {
   type GhApi, type Upd, seedPublishStatus,
   publishRepositories, scaffoldRepositories, ensureProjectBoard, createIssues, applyStreamLabels,
+  materializeIssues,
 } from "./publishSteps";
 
 export type PublishPhase = "idle" | "running" | "done" | "error";
@@ -83,6 +87,28 @@ export function usePlanPublish(deps: PlanPublishDeps) {
   // self-rendering modal node the JSX mounts.
   const { confirm, dialog: quarantineDialog } = useConfirmDialog();
 
+  // #3044 re-triage: when a "Relaunch fleet" action (projects list / Glance) targeted THIS project, auto-
+  // fire the launch once its planning session has finished loading (planFleet/planReady hydrate async).
+  // launchTriage self-gates via canLaunchTriage, so an early call is a harmless no-op — we re-check each
+  // render and fire EXACTLY once (clear the signal before launching). Reuses the whole tested launch path.
+  const relaunchOnOpen = useAppStore((s) => s.relaunchOnOpen);
+  const setRelaunchOnOpen = useAppStore((s) => s.setRelaunchOnOpen);
+  useEffect(() => {
+    if (relaunchOnOpen !== effectiveProjectId) return;
+    const fleet = planFleet[effectiveProjectId];
+    const ready = canLaunchTriage({
+      published: !!activeProjectId,
+      hasRepos: publishRepos.length > 0,
+      hasFleet: !!fleet && fleet.streams.length > 0,
+      busy: triaging,
+      planReady,
+    });
+    if (!ready) return; // still loading — leave the signal set and re-check on the next render
+    setRelaunchOnOpen(null); // fire once
+    void launchTriage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- launchTriage is re-created each render; the relaunchOnOpen guard makes re-runs safe, and it only fires when the target is loaded + launchable.
+  }, [relaunchOnOpen, effectiveProjectId, planFleet, activeProjectId, publishRepos, planReady, triaging, setRelaunchOnOpen]);
+
   async function launchTriage() {
     const fleet = planFleet[effectiveProjectId];
     // Pre-flight gate (#444/#551) — mirror the button's gate so a programmatic / Enter-key
@@ -122,6 +148,18 @@ export function usePlanPublish(deps: PlanPublishDeps) {
     setTriageNote(null);
     setTriaging(true);
     try {
+      // Materialize the project hub on disk (#2997 C, epic #2993): planning ran in an ephemeral
+      // per-project workspace, so this creates projects/<key>/ and moves the planner's authored files
+      // in — BEFORE any director/worker cwd (the hub dir or a worktree beneath it) resolves to it.
+      // Idempotent: an already-materialized hub or a re-launch is a no-op. Fail-CLOSED — without the
+      // hub the director + worktree cwds don't exist, so surface the failure and abort the launch
+      // rather than dropping the fleet into a missing directory.
+      try {
+        await invoke("materialize_hub", { projectKey: effectiveProjectId });
+      } catch (e) {
+        setTriageError(`launch failed — could not materialize the project hub: ${String(e)}`);
+        return;
+      }
       // #1988: when the sandbox is on AND the fleet runs on the model-agnostic bsc-agent harness (the
       // only runtime baked into the sealed distro), the whole fleet launches INSIDE the WSL2 cage —
       // the hub is relocated to the distro's ext4, repos are cloned + worktrees created in-distro, and
@@ -150,25 +188,61 @@ export function usePlanPublish(deps: PlanPublishDeps) {
       // maintenance set drives a maintenance scope banner (buildWorkerScope) so they stand by, not rebuild.
       const { active, maintenance } = pruneCompletedStreams(fullPlan.streams, doneIssueRefs(dbIssues));
       const maintenanceIds = new Set(maintenance.map(s => s.id));
-      const launchPlan = { ...fullPlan, streams: [...active, ...maintenance] };
+      // #2611: a stream with no resolvable repo stays VISIBLE in the plan but can't spawn a worktree —
+      // skip it here (rather than aborting the fail-closed launch on a broken ensure_worktree) and
+      // surface which streams still need a repo assigned, so the gap is seen, not swallowed.
+      // #2615: a stream can reach launch with an empty `issues[]` even though issues name it as their
+      // owning `stream` — enrich each stream's issue list from the plan.db issues so a worker launches
+      // with its concrete task list (feeding BOTH the scope below and the kickoff via fleetStartProject),
+      // not the "(none yet — ask the director)" placeholder. A stream that already lists issues is kept.
+      const launchable = withDerivedStreamIssues([...active, ...maintenance].filter(st => st.repo), dbIssues);
+      const noRepo = [...active, ...maintenance].filter(st => !st.repo);
+      // Team-driven fleet (#3101/#3103): a project's TEAM contributes its ROLE-ACTOR sessions (curator,
+      // documentor, reviewer, tester, juror, issuer) — one per team position bound to such a persona,
+      // deduped vs the planner's own streams. They run at the project HUB (no repo → no worktree; the
+      // `fleetStartProject` repo-less branch routes them there), so they compose in AFTER `launchable`
+      // and are deliberately NOT part of the worktree-creation loop below.
+      const teamStore = useAppStore.getState();
+      const projectTeam = teamStore.blueprints.find(b => b.id === teamStore.projectBlueprintId[effectiveProjectId])?.team;
+      const roleStreams = teamRoleStreams(projectTeam, teamStore.personas, fullPlan.streams);
+      const launchPlan = { ...fullPlan, streams: [...launchable, ...roleStreams] };
       if (launchPlan.streams.length === 0 && !launchPlan.director.enabled) {
-        setTriageError("No workers to launch.");
+        setTriageError(noRepo.length > 0
+          ? `No workers to launch — ${noRepo.length} stream${noRepo.length === 1 ? "" : "s"} (${noRepo.map(s => s.id).join(", ")}) need a repo assigned.`
+          : "No workers to launch.");
         return;
       }
-      if (maintenance.length > 0) {
-        setTriageNote(`${maintenance.length} completed worker${maintenance.length === 1 ? "" : "s"} `
-          + `(${maintenance.map(s => s.id).join(", ")}) relaunching into maintenance`
-          + (active.length > 0 ? `; ${active.length} active.` : "."));
+      const launchNotes: string[] = [];
+      if (noRepo.length > 0) {
+        launchNotes.push(`${noRepo.length} stream${noRepo.length === 1 ? "" : "s"} `
+          + `(${noRepo.map(s => s.id).join(", ")}) skipped — no repo assigned`);
       }
+      if (maintenance.length > 0) {
+        launchNotes.push(`${maintenance.length} completed worker${maintenance.length === 1 ? "" : "s"} `
+          + `(${maintenance.map(s => s.id).join(", ")}) relaunching into maintenance`
+          + (active.length > 0 ? `; ${active.length} active` : ""));
+      }
+      if (launchNotes.length > 0) setTriageNote(launchNotes.join(". ") + ".");
+      // The project's {kit, theme} pairing (#2489): plan.db's `ui` blob (the planner's per-project
+      // record, `bsc plan ui set` in the Test UI stage) with the project blueprint's pin filling
+      // whatever it doesn't set — inlined into every worker's scope as the UI-palette lock block
+      // (token layer read-only; palette = the swappable theme.css).
+      const uiBlob = await bscJson<{ kit?: { id?: string; version?: string } | null; themeId?: string } | null>(
+        effectiveProjectId, ["plan", "ui", "get", "--json"], null);
+      const storeUi = useAppStore.getState();
+      const uiPairing = toWorkerUiPairing(
+        uiBlob, storeUi.blueprints.find(b => b.id === storeUi.projectBlueprintId[effectiveProjectId])?.uiKit);
       // Create each worker's git worktree FAIL-CLOSED (#551/#359): if any can't be created,
       // abort the launch so no agent starts in a fallback dir. (Restored: the refactor had
       // weakened this to a non-fatal .catch that let the launch continue.)
-      const worktreeResults = await Promise.all(launchPlan.streams.map(st => {
+      // Only the repo'd WORKER streams get a worktree — the team's hub role-actors (repo-less) are
+      // excluded (they run at the hub, no isolated tree). `launchable` is exactly those worker streams.
+      const worktreeResults = await Promise.all(launchable.map(st => {
         // Seed each worktree's CLAUDE.local.md with the worker's SCOPE (owns/issues/deps) plus its
         // repo's LOCKED dependency manifest (#1111), not the full plan — the worktree lives outside
         // the hub so the planner spec is no longer an ancestor (#844). In-distro when sandboxed
         // (ensure_sandbox_worktree clones the repo + adds the worktree on the distro's ext4, #1988).
-        const scopeMd = buildWorkerScope(st, depsForRepo(planDependencies, st.repo), maintenanceIds.has(st.id));
+        const scopeMd = buildWorkerScope(st, depsForRepo(planDependencies, st.repo), maintenanceIds.has(st.id), uiPairing);
         const call = sandbox
           ? invoke<string>("ensure_sandbox_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd, token: githubToken })
           : invoke<string>("ensure_worktree", { projectKey: effectiveProjectId, repo: st.repo, agentId: st.id, scopeMd });
@@ -243,8 +317,36 @@ export function usePlanPublish(deps: PlanPublishDeps) {
     }
   }
 
+  /** The LOCAL commit (#3280) — materialize the plan's issues into plan.db and mark the project active,
+   *  with NO GitHub round-trip. This is what lets the fleet launch offline: `activeProjectId` set to the
+   *  local project key flips `published` true (`canLaunchTriage`) and works as a key everywhere; a later
+   *  publish upgrades it to the GitHub node id over the SAME plan.db rows (upsert-by-ref, no dupes).
+   *  Shares publish's injection gate — never promote unreviewed markers to the fleet. */
+  async function commitLocal() {
+    if (!injectionGateState.cleared) {
+      const n = injectionGateState.findings.length;
+      setTriageError(injectionGateState.mode === "blocked"
+        ? `Commit blocked: ${n} possible prompt-injection marker${n !== 1 ? "s" : ""} in the plan must be removed (hard-block is on in Settings).`
+        : `Review the ${n} possible prompt-injection marker${n !== 1 ? "s" : ""} flagged in the plan, then acknowledge them before committing.`);
+      return;
+    }
+    setTriageError(null);
+    const featuresContent = sections.find(s => s.k === "features")?.content ?? "";
+    await materializeIssues(featuresContent, { upsertIssue: (iss) => bscWrite(effectiveProjectId, ["plan", "add"], iss) });
+    const goalContent  = sections.find(s => s.k === "goal")?.content ?? "";
+    const projectTitle = deriveProjectTitle(planningTitle, goalContent, activeProjectName);
+    // The local key IS activeProjectId here (no GitHub number) — publish later overwrites it with the
+    // ProjectV2 node id. Reopening from the board derives the hub key from the name, so nothing bridges.
+    useAppStore.getState().setActiveProjectMeta(effectiveProjectId, projectTitle, publishRepos[0] ?? "", 0, publishRepos);
+  }
+
   async function handlePublish() {
     if (isAuthoring) { await publishAuthoredBlueprint(); return; }
+    // #3280 local-first: with no GitHub token, "publish" commits the plan LOCALLY (plan.db) instead of
+    // erroring — the fleet can then launch offline. Publishing to GitHub stays the optional path when
+    // connected. (publishBlockReason's no-token case is now unreachable from here; the no-repo case
+    // below still fires when connected.)
+    if (!githubToken) { await commitLocal(); return; }
     // Don't fail silently (#969): surface WHY publish can't proceed, so the user isn't left thinking
     // they published when nothing happened (which then leaves the fleet-launch button locked with no
     // explanation). The common case is a blueprint with no Repos stage ⇒ no repo ever linked.
@@ -315,13 +417,15 @@ export function usePlanPublish(deps: PlanPublishDeps) {
         const store = useAppStore.getState();
         // Reflect in the store so the projects list + future syncs treat it as existing.
         store.setActiveProjectMeta(pv.id, projectTitle, repos[0] ?? "", pv.number, repos);
-        // Stable-key bridge: map the new board's node id → this project's folder key, so opening it
-        // from the board later resolves to the SAME on-disk hub instead of keying fresh state.
-        store.setProjectKeyAlias(pv.id, effectiveProjectId);
+        // No node-id → key alias write anymore (#2409): reopening from the board DERIVES the hub
+        // key from the project's name (`projectSlug(title)`), so publish records nothing to bridge.
         // Mark the hub published in place (#922) — the hub never moves, so --continue history survives.
         fireInvoke("mark_published", { projectKey: effectiveProjectId }, (e) => console.warn("mark_published failed (Projects page reconciles it):", e));
-        // Drop the store's draft entry so the project can't linger as a ghost draft card.
+        // Drop the store's draft entry so the project can't linger as a ghost draft card, and mirror
+        // that removal into the durable projects DB (#2995) so the published project doesn't re-surface
+        // as a draft from the DB union. Fire-and-forget; degrades silently.
         store.removeDraftProject(effectiveProjectId);
+        void removeDbProject(effectiveProjectId);
       }
 
       // 3. Issues — features → issues, on the board, assigned, sub-issues nested (no milestones, #1912).

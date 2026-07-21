@@ -1,42 +1,31 @@
 // Kit-change propagation actuator (#2277). Drains the store's queued kit-change dispatches
 // (`kitDispatches`, produced by setComponent's fan-out over the consumer index) and, for each CONSUMER
 // project whose per-project auto-dispatch toggle is ON, delivers a bounded, deduped set of BREAKING
-// changes to a rail: a LIVE fleet → the project's director pane (bsc-issue → bsc-assign); NO live fleet →
-// a plain kit-update GitHub issue in the consumer repo. Notify-only by default (toggle OFF ⇒ surface-only,
-// rendered by KitChangesCard). The gate/dedup/rate-limit is the pure `planKitDrain`; this is the thin
-// poll+deliver layer, mounted once in ConsoleWorkspace beside useFaultTriage. It lives in app/console (not
-// shared/) because it reads the app's pane-identity + director-drive + GitHub-token state.
+// changes to the ONE rail (#2806): a LIVE fleet → the project's director pane (bsc-issue → bsc-assign →
+// the UI worker re-runs `bsc ui emit sync`). A consumer with NO live fleet HOLDS in the queue (carried
+// forward, adopted on its next launch) — the GitHub-issue rail was dropped. Notify-only by default
+// (toggle OFF ⇒ surface-only, rendered by KitChangesCard). The gate/dedup/rate-limit is the pure
+// `planKitDrain`; this is the thin poll+deliver layer, mounted once in ConsoleWorkspace beside
+// useFaultTriage. It lives in app/console (not shared/) because it reads the app's pane-identity +
+// director-drive state.
 import { useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { injectPrompt } from "@/shared/lib/fleet/paneInject";
 import { directorPaneId } from "@/app/console/lib/paneIdentity";
-import type { AppStore } from "@/store/types";
 import {
-  planKitDrain, deliveryKey, kitDispatchPrompt, kitUpdateIssue, DEFAULT_KIT_DRAIN,
+  planKitDrain, deliveryKey, kitDispatchPrompt, DEFAULT_KIT_DRAIN,
   type Dispatch, type KitDelivery,
-} from "@/features/components";
+} from "@/features/designs";
 
 // Slow cadence — kit changes aren't a real-time signal, and each tick is pure store reads (no bsc exec).
 const POLL_MS = 30_000;
 
-/** Fire one delivery to its rail. Returns true only when it actually landed, so a skipped delivery
- *  (issue rail with no repo/token) is NOT marked delivered and stays surface-only until it can land. */
-async function fireDelivery(del: KitDelivery, st: AppStore): Promise<boolean> {
-  if (del.rail === "assign") {
-    // Live fleet: route into the director, which captures + assigns adoption via bsc-issue → bsc-assign.
-    await injectPrompt(directorPaneId(del.projectKey), kitDispatchPrompt(del.change));
-    return true;
-  }
-  // Issue rail: open a kit-update issue in the consumer's primary repo. No repo/token ⇒ nowhere to open
-  // one — leave it queued (surface-only) rather than dropping it.
-  const repo = st.projectLocalRepos[del.projectKey]?.[0];
-  const token = st.githubToken;
-  if (!repo || !token) return false;
-  const { title, body } = kitUpdateIssue(del.change);
-  // Raw invoke (not safeInvoke) so a failed POST throws → the delivery isn't marked done and retries.
-  await invoke("github_post", { token, path: `repos/${repo}/issues`, body: { title, body, labels: ["kit-update"] } });
+/** Fire one delivery on the only rail (#2806): route into the consumer's LIVE fleet director, which
+ *  captures + assigns adoption (bsc-issue → bsc-assign) to the UI worker, who re-runs `bsc ui emit sync`.
+ *  `planKitDrain` only emits deliveries for a LIVE consumer, so the director pane is always present. */
+async function fireDelivery(del: KitDelivery): Promise<boolean> {
+  await injectPrompt(directorPaneId(del.projectKey), kitDispatchPrompt(del.change));
   return true;
 }
 
@@ -64,10 +53,13 @@ export function useKitDispatch(): void {
 
     for (const [projectKey, projDispatches] of byProject) {
       if (isCancelled()) return;
-      if (!st.autoKitDispatch?.[projectKey]) continue; // toggle OFF ⇒ surface-only (no dispatch)
+      // Deliver when auto-apply is on or the legacy per-project toggle is set (#2951: per-change
+      // approval no longer routes through the drain — the KitChangesBanner delivers + removes on
+      // Approve). Notify-only (surfaced in the banner) otherwise.
+      if (!st.autoApplyKitChanges && !st.autoKitDispatch?.[projectKey]) continue;
       const live = !!st.paneDirectorDrive?.[directorPaneId(projectKey)];
       const plan = planKitDrain(projDispatches, delivered.current, {
-        enabled: true, // gated above per project; the pure fn re-checks but we've filtered already
+        enabled: true, // gated above per dispatch; the pure fn re-checks but we've filtered already
         live,
         maxPerCycle: DEFAULT_KIT_DRAIN.maxPerCycle,
       });
@@ -75,9 +67,9 @@ export function useKitDispatch(): void {
         const key = deliveryKey(del.projectKey, del.change.id);
         if (inFlight.current.has(key)) continue;
         inFlight.current.add(key);
-        void fireDelivery(del, st)
+        void fireDelivery(del)
           .then((landed) => {
-            if (!landed) return; // couldn't deliver (no repo/token) — leave queued, don't mark delivered
+            if (!landed) return; // reserved for a future non-landing rail; today assign always lands
             delivered.current.add(key);
             useAppStore.getState().dismissKitDispatch(del.projectKey, del.change.id);
           })

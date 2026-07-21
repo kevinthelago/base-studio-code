@@ -1,6 +1,7 @@
-// Blueprint Author — 3 · CAPABILITIES (disposition · skills · MCP). Per-stage
-// expandable rows wiring each stage's output disposition, attached skills, and
-// attached MCP servers.
+// Blueprint Author — 3 · CAPABILITIES (UI kit · sound kit · disposition · skills · MCP). The
+// blueprint-wide library pins up top — the UI-kit pin (#2465, UiKitPickerCard) and beside it the
+// sound-kit pin (#3372, SoundKitPickerCard) — then per-stage expandable rows wiring each stage's
+// output disposition, attached skills, and attached MCP servers.
 
 import { useExpandable } from "@/shared/hooks/useExpandable";
 import { Sparkles } from "lucide-react";
@@ -17,6 +18,8 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import type { BlueprintStage } from "@/features/planner/stages/blueprints";
 import { StageGlyph, Lbl, type AuthorViewProps } from "./shared";
+import { UiKitPickerCard } from "./UiKitPickerCard";
+import { SoundKitPickerCard } from "./SoundKitPickerCard";
 
 export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary = [] }: AuthorViewProps) {
   const stages = bp.sections ?? [];
@@ -33,6 +36,9 @@ export function CapabilitiesView({ bp, onChange, skillLibrary = [], mcpLibrary =
         <StatTile k="skills wired" v={totalSkills} />
         <StatTile k="MCP wired" v={totalMcp} />
       </Box>
+
+      <UiKitPickerCard bp={bp} onChange={onChange} />
+      <SoundKitPickerCard bp={bp} onChange={onChange} />
 
       {stages.map((s) => {
         const isOpen = open.has(s.uid);

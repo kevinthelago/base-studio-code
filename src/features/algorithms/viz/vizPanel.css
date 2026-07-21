@@ -1,0 +1,85 @@
+/* VizPanel (#3199/#3205) — the always-on inline visualization preview + its in-canvas take-over stage. */
+
+/* The inline preview: a compact, clickable thumbnail that auto-plays + loops, like a component
+   thumbnail on the Components page. Hover/focus reveals an expand cue; clicking takes over the graph. */
+.algo-viz-preview {
+  position: relative;
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-elev);
+  padding: 10px 12px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.algo-viz-preview:hover,
+.algo-viz-preview:focus-visible {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--bg-elev), var(--accent) 6%);
+  outline: none;
+}
+/* The inline preview never shows player controls (controls={false}); keep it tidy if any slip in. */
+.algo-viz-preview .trace-controls {
+  display: none;
+}
+
+/* The expand affordance — hidden until hover/focus, top-right. */
+.algo-viz-expand-cue {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fg);
+  background: color-mix(in oklch, var(--bg-panel), transparent 8%);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  pointer-events: none;
+}
+.algo-viz-preview:hover .algo-viz-expand-cue,
+.algo-viz-preview:focus-visible .algo-viz-expand-cue {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* The in-canvas take-over (#3205): rides GraphCanvas's overlays slot (absolute inset:0, set inline),
+   covering the graph — rail + inspector stay. Laid out head / body / state, like the Designs try-on. */
+.algo-viz-stage-head {
+  flex: none;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-soft, var(--border));
+  background: var(--bg-elev);
+}
+
+/* The player body grows to fill; the trace centers, and a tall trace scrolls rather than clipping. */
+.algo-viz-stage-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.algo-viz-stage-body .trace-player {
+  width: 100%;
+  max-width: 900px;
+}
+
+/* The "provide your own state" input row, pinned under the stage. */
+.algo-viz-stage-state {
+  flex: none;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+}

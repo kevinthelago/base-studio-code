@@ -1,6 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { parseFleetFile } from "./planFleet";
+import { parseFleetFile, withDerivedStreamIssues } from "./planFleet";
 import { DEFAULT_FLOW } from "./agentFlow";
+
+describe("withDerivedStreamIssues (#2615 — a worker launches with its real issues, not a placeholder)", () => {
+  const streams = [{ id: "api", issues: [] }, { id: "ui", issues: ["#9"] }, { id: "docs", issues: [] }];
+  const issues = [
+    { ref: "#1", stream: "api" }, { ref: "#2", stream: "api" },
+    { ref: "#3", stream: "ui" },  // ui already lists its own — must NOT be overridden
+    { ref: "#4" },                // no owning stream — ignored
+    { stream: "api" },            // no ref — ignored
+  ];
+  it("derives an empty stream's issues from the issues that name it; keeps a populated stream's own", () => {
+    const out = withDerivedStreamIssues(streams, issues);
+    expect(out.find(s => s.id === "api")!.issues).toEqual(["#1", "#2"]); // derived from issue.stream
+    expect(out.find(s => s.id === "ui")!.issues).toEqual(["#9"]);        // authored list wins, untouched
+    expect(out.find(s => s.id === "docs")!.issues).toEqual([]);          // no matching issues → stays empty
+  });
+});
 
 describe("parseFleetFile", () => {
   it("parses a full fleet, defaulting list fields", () => {
@@ -27,9 +43,25 @@ describe("parseFleetFile", () => {
     });
   });
 
-  it("drops streams missing id or repo", () => {
+  it("drops a stream with no id, but KEEPS a repo-less stream visible (#2611 — no silent hiding)", () => {
     const raw = JSON.stringify({ streams: [{ name: "no id", repo: "own/web" }, { id: "no-repo" }, { id: "ok", repo: "own/api" }] });
-    expect(parseFleetFile(raw)?.streams.map(s => s.id)).toEqual(["ok"]);
+    // the id-less stream is dropped (unkeyable); the repo-less one STAYS (repo "") so it shows in the plan
+    const streams = parseFleetFile(raw)!.streams;
+    expect(streams.map(s => s.id)).toEqual(["no-repo", "ok"]);
+    expect(streams.find(s => s.id === "no-repo")!.repo).toBe("");
+  });
+
+  it("defaults a repo-less stream to the project's SOLE repo (#2611)", () => {
+    const raw = JSON.stringify({ streams: [{ id: "a" }, { id: "b", repo: "own/api" }] });
+    const streams = parseFleetFile(raw, ["own/web"])!.streams;
+    expect(streams.find(s => s.id === "a")!.repo).toBe("own/web"); // defaulted to the one linked repo
+    expect(streams.find(s => s.id === "b")!.repo).toBe("own/api"); // an explicit repo is untouched
+  });
+
+  it("keeps a repo-less stream empty (visible) when the repo can't be defaulted (0 or >1 repos)", () => {
+    const raw = JSON.stringify({ streams: [{ id: "a" }] });
+    expect(parseFleetFile(raw, [])!.streams[0].repo).toBe("");                     // no repos → can't default
+    expect(parseFleetFile(raw, ["own/web", "own/api"])!.streams[0].repo).toBe(""); // ambiguous → don't guess
   });
 
   it("carries a stream's assigned MCP servers, undefined when none (#1054)", () => {

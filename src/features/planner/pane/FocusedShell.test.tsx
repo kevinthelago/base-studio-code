@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Stepper, StageHeader, StageFooter, LockBanner, DoneBanner } from "./FocusedShell";
-import type { Stage } from "../stages/focusedPlan";
+import { Stepper, StageHeader, StageGuidanceCard, StageFooter, LockBanner, DoneBanner } from "./FocusedShell";
+import { hasStageGuidance, type Stage } from "../stages/focusedPlan";
 
 const stage = (over: Partial<Stage> = {}): Stage => ({
   key: "discovery", name: "Discovery", glyph: "◆", blurb: "Discovery", gate: "all topics resolved",
@@ -83,24 +83,96 @@ describe("StageHeader (#652)", () => {
     expect(container.querySelector(".ph-gate.wait")).toBeTruthy();
   });
 
-  it("surfaces unmet gate reasons on click when blocked (#805)", () => {
+  it("no longer renders the click-to-reveal 'why?' popover — that moved to the guidance card (#2862)", () => {
+    render(<StageHeader stage={stage({ unmet: [{ label: "resolve the discovery topics", detail: "3 of 5" }] })} pill="wait" />);
+    expect(screen.queryByText("why?")).not.toBeInTheDocument();
+    // but the pill keeps an at-a-glance hover tooltip of what's left
+    expect(screen.getByText("gate").closest(".ph-gate")).toHaveAttribute("title", expect.stringContaining("resolve the discovery topics"));
+  });
+
+  // #3257 — the gate pill doubles as the guidance-card disclosure toggle when `onToggleGate` is wired.
+  it("without onToggleGate the pill is a STATIC chip (not a button)", () => {
+    const { container } = render(<StageHeader stage={stage()} pill="wait" />);
+    expect(container.querySelector("button.ph-gate")).toBeNull();
+    expect(container.querySelector("span.ph-gate")).toBeTruthy();
+  });
+
+  it("with onToggleGate the pill is a button that toggles + reflects open state (caret + aria-expanded + .open)", () => {
+    const onToggleGate = vi.fn();
+    const { container, rerender } = render(<StageHeader stage={stage()} pill="wait" open={false} onToggleGate={onToggleGate} />);
+    const pill = container.querySelector("button.ph-gate")!;
+    expect(pill).toBeTruthy();
+    expect(pill).toHaveAttribute("aria-expanded", "false");
+    expect(pill.textContent).toContain("▸"); // collapsed caret
+    fireEvent.click(pill);
+    expect(onToggleGate).toHaveBeenCalledTimes(1);
+    rerender(<StageHeader stage={stage()} pill="wait" open onToggleGate={onToggleGate} />);
+    expect(container.querySelector("button.ph-gate")).toHaveAttribute("aria-expanded", "true");
+    expect(container.querySelector(".ph-gate.open")).toBeTruthy();
+    expect(container.querySelector("button.ph-gate")!.textContent).toContain("▾"); // open caret
+  });
+});
+
+describe("StageGuidanceCard (#2862)", () => {
+  it("lists the unmet gate requirements inline when the gate is blocking", () => {
     const p = stage({ unmet: [
       { label: "resolve the discovery topics", detail: "3 of 5" },
       { label: "confirm goal, scope, stack & architecture" },
     ] });
-    render(<StageHeader stage={p} pill="wait" />);
-    // a "why?" affordance shows; the reason list is hidden until clicked
-    expect(screen.getByText("why?")).toBeInTheDocument();
-    expect(screen.queryByText(/Still needed to pass/)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText("why?"));
-    expect(screen.getByText(/Still needed to pass/)).toBeInTheDocument();
-    expect(screen.getByText(/confirm goal, scope/)).toBeInTheDocument();
+    render(<StageGuidanceCard stage={p} pill="wait" />);
+    expect(screen.getByText(/What.s still needed/)).toBeInTheDocument();
+    expect(screen.getByText(/resolve the discovery topics/)).toBeInTheDocument();
     expect(screen.getByText(/3 of 5/)).toBeInTheDocument();
+    expect(screen.getByText(/confirm goal, scope/)).toBeInTheDocument();
   });
 
-  it("offers no 'why?' when the gate passes", () => {
-    render(<StageHeader stage={stage({ unmet: [{ label: "x" }] })} pill="pass" />);
-    expect(screen.queryByText("why?")).not.toBeInTheDocument();
+  it("collapses to 'Gate ready' with no requirements list once the gate passes", () => {
+    // With the gate passed the card shows only when there's still a prompt to suggest; then it reads
+    // "Gate ready" and drops the requirements entirely (unmet is stale once passed).
+    render(<StageGuidanceCard stage={stage({ unmet: [{ label: "x" }] })} pill="pass"
+      prompt={{ label: "Overview", text: "Recap." }} onInject={vi.fn()} />);
+    expect(screen.getByText("Gate ready")).toBeInTheDocument();
+    expect(screen.queryByText(/What.s still needed/)).not.toBeInTheDocument();
+    expect(screen.queryByText("x")).not.toBeInTheDocument();
+  });
+
+  it("shows the suggested next-step prompt and injects it on click", () => {
+    const onInject = vi.fn();
+    render(<StageGuidanceCard stage={stage()} pill="wait"
+      prompt={{ label: "Define each feature", text: "Now take ONE feature at a time." }} onInject={onInject} />);
+    expect(screen.getByText("Suggested next step")).toBeInTheDocument();
+    expect(screen.getByText("Define each feature")).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/Inject/));
+    expect(onInject).toHaveBeenCalledWith("Now take ONE feature at a time.");
+  });
+
+  it("renders nothing when there's no requirement and no prompt", () => {
+    const { container } = render(<StageGuidanceCard stage={stage({ unmet: [] })} pill="pass" />);
+    expect(container.querySelector(".stage-guide")).toBeNull();
+  });
+
+  // #3257 — the disclosure toggle: `open={false}` collapses the card even when there IS content.
+  it("is hidden when open={false} despite having content, and shown when open (or undefined)", () => {
+    const p = stage({ unmet: [{ label: "resolve the discovery topics" }] });
+    const { container, rerender } = render(<StageGuidanceCard stage={p} pill="wait" open={false} />);
+    expect(container.querySelector(".stage-guide")).toBeNull(); // collapsed
+    rerender(<StageGuidanceCard stage={p} pill="wait" open />);
+    expect(container.querySelector(".stage-guide")).toBeTruthy(); // revealed
+    rerender(<StageGuidanceCard stage={p} pill="wait" />); // no `open` prop → pre-#3257 always-shown
+    expect(container.querySelector(".stage-guide")).toBeTruthy();
+  });
+});
+
+describe("hasStageGuidance (#3257)", () => {
+  it("true when the gate is blocking with unmet requirements", () => {
+    expect(hasStageGuidance(stage({ unmet: [{ label: "x" }] }), "wait")).toBe(true);
+  });
+  it("true when there's a suggested prompt + inject handler", () => {
+    expect(hasStageGuidance(stage({ unmet: [] }), "pass", { label: "L", text: "T" }, vi.fn())).toBe(true);
+  });
+  it("false when the gate passes with no prompt (nothing to reveal)", () => {
+    expect(hasStageGuidance(stage({ unmet: [{ label: "x" }] }), "pass")).toBe(false); // unmet is stale once passed
+    expect(hasStageGuidance(stage({ unmet: [] }), "wait")).toBe(false);
   });
 });
 
@@ -124,9 +196,53 @@ describe("StageFooter (#652)", () => {
     expect(screen.getByText(/Update GitHub/)).toBeInTheDocument();
     expect(screen.queryByText(/Publish to GitHub/)).not.toBeInTheDocument();
   });
+  it("an explicit publishLabel wins over the published 'Update GitHub' default (#3280 local-first)", () => {
+    // Offline there is no board to update — the caller's "Recommit plan" must show even when published.
+    render(
+      <StageFooter
+        stage={stage({ index: 1 })}
+        action={{ kind: "publish", enabled: true }}
+        published
+        publishLabel="✓ Recommit plan"
+        onBack={vi.fn()}
+        onPrimary={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Recommit plan/)).toBeInTheDocument();
+    expect(screen.queryByText(/Update GitHub/)).not.toBeInTheDocument();
+  });
   it("disables back on the first stage", () => {
     render(<StageFooter stage={stage({ index: 0 })} action={{ kind: "approve-continue", enabled: true }} onBack={vi.fn()} onPrimary={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
+  });
+
+  it("renders NO Skip on a required stage — the #2854 ghost fix (no greyed skip beside 'gate blocking…')", () => {
+    // A blocked required stage: canSkip is a marker but skipEnabled is false → the Skip control must
+    // not render at all (the bug rendered a disabled ghost next to the blocked primary).
+    render(
+      <StageFooter
+        stage={stage({ index: 1, skippable: false })}
+        action={{ kind: "approve-continue", enabled: false, canSkip: true, skipEnabled: false }}
+        onBack={vi.fn()} onPrimary={vi.fn()} onSkip={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("gate blocking…")).toBeInTheDocument();
+    expect(screen.queryByText(/skip stage/)).not.toBeInTheDocument();
+  });
+
+  it("renders an actionable Skip when the active stage is skippable (#2854)", () => {
+    const onSkip = vi.fn();
+    render(
+      <StageFooter
+        stage={stage({ index: 1, skippable: true })}
+        action={{ kind: "approve-continue", enabled: false, canSkip: true, skipEnabled: true }}
+        onBack={vi.fn()} onPrimary={vi.fn()} onSkip={onSkip}
+      />,
+    );
+    const skip = screen.getByText(/skip stage/);
+    expect(skip).toBeEnabled();
+    fireEvent.click(skip);
+    expect(onSkip).toHaveBeenCalled();
   });
 });
 

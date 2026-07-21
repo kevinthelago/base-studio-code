@@ -16,6 +16,27 @@
   --violet:     oklch(0.72 0.12 300);
   --danger:     oklch(0.68 0.18 25);
 
+  /* domain / categorical — the graph data-viz palette (#2607); consumed by the glance kit,
+     bindable by a theme. Kept in lockstep with style-descriptor.json (styleDescriptor.appTokens test). */
+  --graph-health-idle: #5b9dff;
+  --graph-health-healthy: #4fd6a0;
+  --graph-health-warning: #f2b155;
+  --graph-health-error: #f2555f;
+  --graph-health-off: #6b7280; /* #3239 — a user-deactivated node: a neutral, desaturated grey */
+  --graph-kind-infra: #5b9dff;
+  --graph-kind-service: #4fd6a0;
+  --graph-kind-data: #b98bff;
+  --graph-kind-client: #f2b155;
+  --graph-category-greenfield: #16b3a7;
+  --graph-category-transform: #7b74f2;
+  --graph-category-harden: #b8862f;
+  --graph-category-maintain: #8b93a7;
+  --graph-category-data: #d05fa8;
+  --graph-category-script: #d0a92e;
+  --graph-edge-api: #5b9dff;
+  --graph-edge-data: #b98bff;
+  --graph-edge-events: #4fd6a0;
+
   /* session-state + provider hues + accent helpers (used by the console pane chrome and the
      planner focused pane) — oklch, aligned to the app palette. Formerly scoped to the dropped
      .console-theme reskin; live in :root so they're defined app-wide. */
@@ -39,6 +60,12 @@
   --sans: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
 
   --r-sm: 4px; --r-md: 6px; --r-lg: 10px;
+  /* motion tokens (#2866) — the durations + easings the design-studio animation system references
+     (var(--dur-base) / var(--ease-standard), animations.ts defaults). Values MIRROR the `base` block of
+     src-tauri/data/ui/style-descriptor.json so the descriptor ↔ tokens.css guard (styleDescriptor.appTokens)
+     stays truthful and `bsc ui tokens` describes what the app actually uses (#2567). */
+  --dur-fast: 120ms; --dur-base: 220ms; --dur-slow: 400ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1); --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
   /* spacing scale (#2056) — the one gap/padding vocabulary the layout kit references.
      JS side: the Space named sizes in shared/ui/layout/space.ts map 1:1 (xs=4 … xl=24).
      Raw pixel values (e.g. the very common gap:10) stay legal as numbers; these are the
@@ -144,13 +171,6 @@ html, body {
   border-right:1px solid var(--border-soft);
   display:flex; flex-direction:column; align-items:center; padding:10px 0; gap:4px;
 }
-.rail .logo{
-  width:30px; height:30px; border-radius:7px;
-  background:linear-gradient(135deg, var(--accent) 0%, oklch(0.62 0.14 50) 100%);
-  display:flex; align-items:center; justify-content:center;
-  font-family:var(--mono); font-weight:700; font-size:13px; color:#1a120a;
-  margin-bottom:10px;
-}
 .rail button{
   width:36px; height:36px; border-radius:7px; border:0; background:transparent;
   color:var(--fg-muted); display:flex; align-items:center; justify-content:center;
@@ -246,10 +266,27 @@ html, body {
   --btn-bg: var(--bg-elev);
   --btn-bg-hover: var(--bg-elev2);
   --btn-border: var(--border-soft);
+  --btn-border-width: 1px;
   --btn-fg: var(--fg);
   --btn-radius: var(--r-md);
+  --btn-height: 28px;
+  --btn-pad-x: 12px;
+  --btn-gap: 6px;
+  --btn-font-family: var(--mono);
+  --btn-font-size: 11px;
+  --btn-font-weight: 400;
+  --btn-disabled-opacity: 0.4;
   --btn-primary-bg: var(--accent);
   --btn-primary-fg: #1a120a;
+  --btn-primary-border: transparent;
+  --btn-primary-font-weight: 600;
+  --btn-primary-hover-brightness: 1.05;
+  --btn-ghost-bg: transparent;
+  --btn-danger-fg: var(--danger);
+  --btn-danger-border: color-mix(in oklch, var(--danger), transparent 70%);
+  --btn-sm-height: 24px;
+  --btn-sm-pad-x: 9px;
+  --btn-sm-font-size: 10.5px;
   --field-bg: var(--bg-canvas);
   --field-border: var(--border-soft);
   --field-fg: var(--fg);
@@ -261,19 +298,25 @@ html, body {
 }
 
 /* generic UI primitives */
+/* Button is the EXHAUSTED component (#3394, first slice of #2553): every VISUAL property resolves from
+   a `--btn-*` token the design store owns, so the designer LLM restyles it — new variant included —
+   entirely through `bsc ui`, live, with zero React edits. Only STRUCTURE/BEHAVIOUR stays hardcoded
+   (`display`, `align-items`, `cursor`): #2553's reach table puts those outside the designer's line.
+   Every default is today's literal value, so introducing the tokens is a zero-visual-change commit. */
 .btn{
-  height:28px; padding:0 12px; border-radius:var(--btn-radius);
-  background:var(--btn-bg); border:1px solid var(--btn-border);
-  color:var(--btn-fg); font-family:var(--mono); font-size:11px; cursor:pointer;
-  display:inline-flex; align-items:center; gap:6px;
+  height:var(--btn-height); padding:0 var(--btn-pad-x); border-radius:var(--btn-radius);
+  background:var(--btn-bg); border:var(--btn-border-width) solid var(--btn-border);
+  color:var(--btn-fg); font-family:var(--btn-font-family); font-size:var(--btn-font-size);
+  font-weight:var(--btn-font-weight); cursor:pointer;
+  display:inline-flex; align-items:center; gap:var(--btn-gap);
 }
 .btn:hover{ background:var(--btn-bg-hover); }
-.btn.primary{ background:var(--btn-primary-bg); color:var(--btn-primary-fg); border-color:transparent; font-weight:600; }
-.btn.primary:hover{ filter:brightness(1.05); }
-.btn.ghost{ background:transparent; }
-.btn.danger{ color:var(--danger); border-color:color-mix(in oklch, var(--danger), transparent 70%); }
-.btn.sm{ height:24px; font-size:10.5px; padding:0 9px; }
-.btn:disabled{ opacity:.4; cursor:default; }
+.btn.primary{ background:var(--btn-primary-bg); color:var(--btn-primary-fg); border-color:var(--btn-primary-border); font-weight:var(--btn-primary-font-weight); }
+.btn.primary:hover{ filter:brightness(var(--btn-primary-hover-brightness)); }
+.btn.ghost{ background:var(--btn-ghost-bg); }
+.btn.danger{ color:var(--btn-danger-fg); border-color:var(--btn-danger-border); }
+.btn.sm{ height:var(--btn-sm-height); font-size:var(--btn-sm-font-size); padding:0 var(--btn-sm-pad-x); }
+.btn:disabled{ opacity:var(--btn-disabled-opacity); cursor:default; }
 
 /* ===== blueprints page (#513/#514) ===== */
 /* toggle switch */

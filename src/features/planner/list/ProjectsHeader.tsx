@@ -9,8 +9,10 @@ import { Text } from "@/shared/ui/typography/Text";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import { projectRepoCwd } from "@/shared/lib/core/projectPaths";
-import { TabBar, type TabItem } from "@/app/chrome/TabBar";
+import { TabBar, type TabItem } from "@/shared/ui/layouts/TabBar";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
+import { useReopenProject } from "./ReopenProjectModal";
+import type { LocalProjectLite } from "./drafts";
 
 export interface ActiveProjectInfo {
   id: string;
@@ -203,26 +205,32 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
 
 export function ProjectsHeader({ project }: ProjectsHeaderProps) {
   const {
-    setProjectsView, setPlanningContext, setPlanningSession, projectKeyAlias,
+    setProjectsView, setPlanningContext, setPlanningSession,
     setWorkspace, githubBoardTab, setGithubBoardTab, closeGithubBoard,
   } = useAppStore();
   const { tabs: boardTabs, activeId: boardActive, select: boardSelect, reorder: boardReorder, tearOff: boardTearOff } =
     usePageTabs("github-board", GITHUB_BOARD_TABS,
       { activeId: githubBoardTab, setActive: (id) => setGithubBoardTab(id as GithubTab) });
 
-  function handlePlan() {
+  // Enter the planning session under a settled key (#2409): the key DERIVES from the project's
+  // name (`projectSlug`), never from a node-id alias — recovery is derivation, not lookup. The
+  // node id stays in activeProjectId for API calls only.
+  const reopen = useReopenProject<ActiveProjectInfo>((proj, key) => {
     setPlanningContext(
-      `I want to flesh out an existing GitHub Project #${project.number} called "${project.name}"${project.repo ? ` in ${project.repo}` : ""}. Help me define a clear goal, scope, tech stack, phases with milestones, and key risks. Then we'll publish milestones and tracking issues.`,
-      project.repo,
+      `I want to flesh out an existing GitHub Project #${proj.number} called "${proj.name}"${proj.repo ? ` in ${proj.repo}` : ""}. Help me define a clear goal, scope, tech stack, phases with milestones, and key risks. Then we'll publish milestones and tracking issues.`,
+      proj.repo,
     );
-    // Resolve the session key through the node-id alias set at publish (#1741): a project minted
-    // with a stable id lives under that id on disk, so reopening it from the board keys to
-    // `projectKeyAlias[project.id]`. Grandfathered/title-keyed projects have no alias, so the
-    // fallback keeps their existing title-keyed behavior. The node id stays in activeProjectId.
-    setPlanningSession(projectKeyAlias[project.id] ?? project.name);
+    setPlanningSession(key);
     // Planning lives on the Projects page; from the GitHub board, jump there.
     setWorkspace("projects");
     setProjectsView("planning");
+  });
+
+  async function handlePlan() {
+    // Scan the on-disk hubs so the reopen flow can derive (or, on a mismatch, link) the project's
+    // local hub (#2409). A failed scan degrades to "no candidates" → open under the derived key.
+    const locals = await invoke<LocalProjectLite[]>("list_local_projects").catch(() => [] as LocalProjectLite[]);
+    reopen.begin(project, project.name, Array.isArray(locals) ? locals : []);
   }
 
   return (
@@ -266,6 +274,9 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
           onTearOff={boardTearOff}
         />
       </Box>
+
+      {/* Reopen-mismatch modal (#2409): link an existing local hub onto the name key, or start fresh. */}
+      {reopen.modal}
     </>
   );
 }

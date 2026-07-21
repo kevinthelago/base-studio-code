@@ -5,12 +5,12 @@ import type { AppStore } from "../types";
 import type { Tab } from "@/app/chrome/Tabstrip";
 import type { Workspace } from "@/app/chrome/Rail";
 import type { AgentStream } from "@/features/planner/fleet/planFleet";
-import { newTabId, buildAssignments, buildStreamPrompt, activateAutomations } from "../helpers";
+import { newTabId, buildAssignments, buildStreamPrompt, activateAutomations, gridLayout } from "../helpers";
 import { buildTriagePrompt, renderTriageDelta } from "../constants";
 import { invoke } from "@tauri-apps/api/core";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { checkpointDocRelpath, agentCheckpointDocRelpath } from "@/shared/lib/session/checkpoint";
-import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, canonicalProjectKey, findProjectTabIdx, worktreeSlug } from "@/shared/lib/core/projectPaths";
+import { projectRepoCwd, projectHubCwd, agentWorktreeCwd, sanitizeProjectKey, findProjectTabIdx, worktreeSlug } from "@/shared/lib/core/projectPaths";
 import { fleetPaneId, directorPaneId, triagePaneId, positionalPaneId } from "@/app/console/lib/paneIdentity";
 import { clearTabStatuses as clearTabStatusesPure } from "@/app/console/lib/paneStatus";
 import { repoPromptKey } from "@/shared/lib/session/startupPrompt";
@@ -30,32 +30,26 @@ import { resolveStartupPrompt } from "@/shared/lib/session/assignments";
 import { effectiveSessionSkills, expandGroups } from "@/features/skills/lib/skills";
 import { resolveStrategy, strategySettings } from "@/features/planner/lib/integrationStrategy";
 import { scriptDocRelpath } from "@/features/planner/session/planningSession";
-import { setMapEntry, deleteMapEntry, deleteMapEntries } from "../updateHelpers";
+import { setMapEntry, deleteMapEntry } from "../updateHelpers";
+import { deleteProjectScoped, rekeyProjectScoped } from "./projectScopedMaps";
 import { effectiveHarness } from "@/shared/lib/core/llmConfig";
 import { bscJson } from "@/shared/lib/core/bsc";
 
 type ProjectsSlice = Pick<AppStore,
-  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "projectKeyAlias" | "setProjectKeyAlias" | "autoTriage" | "setAutoTriage" | "autoKitDispatch" | "setAutoKitDispatch" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
+  "deleteLocalProject" | "resetProjectData" | "setActiveProjectRepos" | "defaultStartupPromptDoc" | "setDefaultStartupPromptDoc" | "projectStartupPromptDoc" | "setProjectStartupPromptDoc" | "repoStartupPromptDoc" | "setRepoStartupPromptDoc" | "repoTriagePromptDoc" | "setRepoTriagePromptDoc" | "githubTab" | "setGithubTab" | "githubBoardOpen" | "githubBoardTab" | "openGithubBoard" | "setGithubBoardTab" | "closeGithubBoard" | "wakePane" | "fleetPaneStreams" | "projectsDrawerIssue" | "setProjectsDrawerIssue" | "planningPitch" | "planningRepo" | "planningTitle" | "setPlanningContext" | "setPlanningTitle" | "planningSessionKey" | "setPlanningSession" | "pendingPlannerPrompt" | "requestPlannerPrompt" | "clearPlannerPrompt" | "rekeyProjectData" | "autoTriage" | "setAutoTriage" | "glanceOff" | "setGlanceNodeOff" | "autoKitDispatch" | "setAutoKitDispatch" | "issueLinks" | "setIssueLinks" | "bscBaseDir" | "setBscBaseDir" | "projectLocalRepos" | "localDraftProjects" | "addProjectRepo" | "findTriageTabIdx" | "triageStartProject" | "prepareTriageRun" | "findFleetTabIdx" | "fleetStartProject"
 >;
 
 export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> = (set, get) => ({
       deleteLocalProject: (keys) =>
         set((s) => {
-          // Resolve each passed key (project title OR GitHub node id) to its data key via the alias,
-          // so the per-project maps — keyed by the sanitized slug (`effectiveProjectId`) — are
-          // actually dropped, not just the raw title/id. Deleting a PUBLISHED project passes its node
-          // id; without this the slug-keyed planStages/planFleet/… leak (#997).
-          const keySet = new Set(
-            keys.flatMap((k) => (k ? [k, s.projectKeyAlias[k]] : [])).filter(Boolean) as string[],
-          );
-          // Drop entries whose key is the project key. `m ?? {}` guards a slice that's
-          // missing/null in a long-lived persisted store — `Object.entries(undefined)`
-          // would throw and (without a boundary) crash the whole app on delete (#874).
-          const byKey = <T,>(m: Record<string, T>): Record<string, T> =>
-            deleteMapEntries(m ?? {}, keySet);
-          // Drop repo-scoped entries (`<projectKey>::<repo>`) for this project.
-          const byRepoKey = <T,>(m: Record<string, T>): Record<string, T> =>
-            Object.fromEntries(Object.entries(m ?? {}).filter(([k]) => !keySet.has(k.split("::")[0])));
+          // The caller passes every identity form the project's entries may sit under: the
+          // name-derived slug (#2409), plus — for grandfathered projects — the raw title and the
+          // GitHub node id. Each is dropped as-is (the node-id → key alias is retired; the key is
+          // derivable from the name, so there is nothing to resolve through).
+          const keySet = new Set(keys.filter(Boolean) as string[]);
+          // Every per-project + repo-scoped map to drop is registered in projectScopedMaps.ts
+          // (#2712) — `deleteProjectScoped` drops `keySet` from exactly the maps in the `"delete"`
+          // op set (guarding each `?? {}` for a missing/null persisted slice, #874).
           // Clear the active project AND the planning session when the deleted project is either.
           // The Planning pane is mounted once (only CSS-hidden); if `planningSessionKey` still points
           // at the deleted project, its `effectiveProjectId` keeps resolving there and it renders
@@ -65,20 +59,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             (s.activeProjectId != null && keySet.has(s.activeProjectId)) ||
             (!!s.planningSessionKey && keySet.has(s.planningSessionKey));
           return {
-            planStages:           byKey(s.planStages),
-            planConfirmedStages:  byKey(s.planConfirmedStages),
-            planAuthoredBlueprint:  byKey(s.planAuthoredBlueprint),
-            planDeployConfig:       byKey(s.planDeployConfig),
-            planSkippedStages:    byKey(s.planSkippedStages),
-            planAutomations:        byKey(s.planAutomations),
-            planStageConfig:        byKey(s.planStageConfig),
-            projectBlueprintId:     byKey(s.projectBlueprintId),
-            uiScreens:              byKey(s.uiScreens),
-            uiApproved:             byKey(s.uiApproved),
-            planFleet:              byKey(s.planFleet),
-            pinnedContext:          byKey(s.pinnedContext),
-            projectKeyAlias:        byKey(s.projectKeyAlias),
-            issueLinks:             byKey(s.issueLinks),
+            ...deleteProjectScoped(s, keySet),
             // Drop the deleted project id from every extension's scope list. `projects` may be
             // undefined (a def added without it, or persisted data predating the field) — guard,
             // or `.filter` throws and crashes the app on delete (#791).
@@ -86,13 +67,6 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             hooks:                  (s.hooks ?? []).map((e) => ({ ...e, projects: (e.projects ?? []).filter((p) => !keySet.has(p)) })),
             // …and from every skill's scope list.
             skills:                 (s.skills ?? []).map((sk) => ({ ...sk, projects: (sk.projects ?? []).filter((p) => !keySet.has(p)) })),
-            projectStartupPromptDoc: byKey(s.projectStartupPromptDoc),
-            autoTriage:             byKey(s.autoTriage),
-            autoKitDispatch:        byKey(s.autoKitDispatch),
-            projectLocalRepos:      byKey(s.projectLocalRepos),
-        localDraftProjects:     byKey(s.localDraftProjects),
-            repoStartupPromptDoc:   byRepoKey(s.repoStartupPromptDoc),
-            repoTriagePromptDoc:    byRepoKey(s.repoTriagePromptDoc),
             ...(clearActive
               ? { activeProjectId: null, activeProjectName: "", activeProjectRepo: "", activeProjectNumber: 0, activeProjectRepos: [], planningSessionKey: "", projectsView: "list" as const }
               : {}),
@@ -100,10 +74,10 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
         }),
       resetProjectData: () =>
         set({
-          planStages: {}, planConfirmedStages: {}, planAuthoredBlueprint: {}, planSkippedStages: {}, planDeployConfig: {},
+          planStages: {}, planConfirmedStages: {}, planAuthoredBlueprint: {}, planSkippedStages: {}, planDeployConfig: {}, planMarketConfig: {}, planTransformations: {},
           planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiScreens: {}, uiApproved: {}, stageRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {},
-          projectKeyAlias: {}, issueLinks: {}, autoTriage: {}, autoKitDispatch: {}, projectStartupPromptDoc: {},
+          issueLinks: {}, autoTriage: {}, glanceOff: {}, autoKitDispatch: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],
           activeProjectId: null, activeProjectName: "", activeProjectRepo: "",
           activeProjectNumber: 0, activeProjectRepos: [],
@@ -122,6 +96,11 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
       autoTriage: {},
       setAutoTriage: (projectKey, on) =>
         set((s) => ({ autoTriage: on ? { ...s.autoTriage, [projectKey]: true } : deleteMapEntry(s.autoTriage, projectKey) })),
+      // Per-node Glance OFF toggle (#3239) — default ON (absent). Turning ON drops the entry so the map
+      // stays sparse (absent ⇒ on), like autoTriage; turning OFF records the deactivated node id.
+      glanceOff: {},
+      setGlanceNodeOff: (nodeId, off) =>
+        set((s) => ({ glanceOff: off ? { ...s.glanceOff, [nodeId]: true } : deleteMapEntry(s.glanceOff, nodeId) })),
       // Per-project kit auto-dispatch toggle (#2277) — default OFF (notify-only). `false` drops the entry
       // so the map stays sparse (absent ⇒ off), like autoTriage.
       autoKitDispatch: {},
@@ -174,11 +153,30 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           if (!(projectKey in s.pendingPlannerPrompt)) return {};
           return { pendingPlannerPrompt: deleteMapEntry(s.pendingPlannerPrompt, projectKey) };
         }),
-      projectKeyAlias: {},
-      setProjectKeyAlias: (nodeId, key) =>
-        set((s) => (nodeId && key && !s.projectKeyAlias[nodeId]
-          ? { projectKeyAlias: setMapEntry(s.projectKeyAlias, nodeId, key) }
-          : {})),
+      // The store half of the one-time hub relink (#2409, pairs with `relink_project_hub`): move
+      // every per-project entry from the legacy key onto the name-derived slug. Target-wins — an
+      // entry already under `newKey` is kept and the old one dropped (never clobbered). Console
+      // tab/pane state is deliberately NOT rewritten (pane ids embed the key; a relinked project
+      // relaunches its fleet, which rebuilds tabs under the new key).
+      rekeyProjectData: (oldKey, newKey) =>
+        set((s) => {
+          if (!oldKey || !newKey || oldKey === newKey) return {};
+          // Every per-project + repo-scoped map to move is registered in projectScopedMaps.ts
+          // (#2712) — `rekeyProjectScoped` moves `oldKey` → `newKey` (target-wins) across exactly
+          // the maps in the `"rekey"` op set, guarding `?? {}` per persisted slice (#874).
+          // Extension/skill scope lists: swap the key in place (dedup if both forms were present).
+          const scoped = <E extends { projects?: string[] }>(list: E[]): E[] =>
+            (list ?? []).map((e) => ({
+              ...e,
+              projects: [...new Set((e.projects ?? []).map((p) => (p === oldKey ? newKey : p)))],
+            }));
+          return {
+            ...rekeyProjectScoped(s, oldKey, newKey),
+            mcpServers:             scoped(s.mcpServers),
+            hooks:                  scoped(s.hooks),
+            skills:                 scoped(s.skills),
+          };
+        }),
       issueLinks: {},
       setIssueLinks: (projectKey, links) =>
         set((s) => ({ issueLinks: setMapEntry(s.issueLinks, projectKey, { ...(s.issueLinks[projectKey] ?? {}), ...links }) })),
@@ -192,8 +190,10 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           if (existing.includes(fullName)) return {};
           return { projectLocalRepos: setMapEntry(s.projectLocalRepos, projectId, [...existing, fullName]) };
         }),
-      findTriageTabIdx: (projectName, projectId = "") =>
-        findProjectTabIdx(get().tabs, canonicalProjectKey(projectName, projectId), "triage"),
+      // Tab identity keys off the ONE name-derived project key (#2409) — the node-id branch of the
+      // old canonicalProjectKey is gone (recovery/reuse is derivation, not lookup).
+      findTriageTabIdx: (projectName) =>
+        findProjectTabIdx(get().tabs, sanitizeProjectKey(projectName), "triage"),
       // #1004: prepare a triage re-run from plan.db — for each repo read the last-run marker and the
       // issues changed since it, render a one-line resume lead (renderTriageDelta), then STAMP a fresh
       // marker so the next run's "since" is now (read-before-write order). Returns fullName → lead for
@@ -242,18 +242,18 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
           // place at the same index. The caller kills the old panes' sessions first
           // and the bumped runId remounts them, so pty_create launches fresh
           // (resuming via --continue + the checkpoint) instead of reconnecting.
-          // Match on the STABLE projectKey, not the derived name, so a project rename
-          // relabels the tab in place instead of forking a duplicate (#457).
+          // Match on the STABLE projectKey (the name-derived key, #2409 — never the node
+          // id), so a project rename relabels the tab in place instead of forking a
+          // duplicate (#457).
           const tabName = `${projectName} · triage`;
-          const tabKey = canonicalProjectKey(projectName, projectId);
+          const tabKey = sanitizeProjectKey(projectName);
           const existingIdx = findProjectTabIdx(s.tabs, tabKey, "triage");
           if (repos.length === 0) return {};
           const newTabIdx = existingIdx >= 0 ? existingIdx : s.tabs.length;
           const runId = existingIdx >= 0 ? (s.tabs[existingIdx].runId ?? 0) + 1 : 0;
           const addedAutos = activateAutomations(s, projectId, tabName);
           const count = Math.min(repos.length, 16);
-          const cols = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 2 : count <= 9 ? 3 : 4;
-          const rows = Math.ceil(count / cols);
+          const { cols, rows } = gridLayout(count);
           const layout = `${cols}×${rows}`;
           const newPaneCwds     = { ...s.paneCwds };
           const newPaneInitCmds = { ...s.paneInitCmds };
@@ -304,7 +304,9 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                 // Secure default (#738): triage only bsc-authored issues unless the user opts out.
                 // #1004: lead with this repo's since-last-run delta (if prepareTriageRun supplied one)
                 // so a re-run resumes from what changed rather than re-ingesting the whole project.
-                newPaneStartupPromptText[key] = buildTriagePrompt(s.restrictToBscIssues, deltas?.[fullName ?? ""]);
+                // #3281 local-first: no GitHub token ⇒ triage the plan.db issues via `bsc plan`, not
+                // `gh issue list`. (When connected, the GitHub-issue triage is unchanged.)
+                newPaneStartupPromptText[key] = buildTriagePrompt(s.restrictToBscIssues, deltas?.[fullName ?? ""], !s.githubToken);
                 // Resolution moved to the assignments module (#324/#326): startup
                 // prompt is the override cascade; reference context accumulates.
                 const doc = resolveStartupPrompt(assignments, { projectId, repo: fullName ?? "" });
@@ -366,6 +368,8 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneNames: setMapEntry(s.paneNames, newTabIdx, tabPaneNames),
             automations: [...s.automations, ...addedAutos],
             activeWorkspace: "console" as Workspace,
+            // TRIAGED (#2541): launching triage marks the project WORKING → it now appears on Glance.
+            ...(projectId || tabKey ? { triagedProjects: { ...s.triagedProjects, [projectId || tabKey]: s.triagedProjects[projectId || tabKey] ?? Date.now() } } : {}),
           };
         }),
 
@@ -480,8 +484,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             // one repo — the old shared-cwd hazard is gone.
             const resume = existingIdx >= 0;
             const count = chunk.length;
-            const cols = count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 2 : count <= 9 ? 3 : 4;
-            const rows = Math.ceil(count / cols);
+            const { cols, rows } = gridLayout(count);
             const layout = `${cols}×${rows}`;
             const paneCount = cols * rows;
             const tabPaneNames: Record<number, string> = {};
@@ -538,10 +541,14 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
                   // hard-blocks anything outside them. Empty ⇒ no carve-out, full code:none deny.
                   if (commonsGlobs.length) newPaneRoleGlobs[key] = commonsGlobs;
                 } else {
-                  // Worker runs in its own git worktree on its own branch. Prefer the
-                  // absolute path ensure_worktree returned (#905) over the bscBaseDir-derived
-                  // mirror, so an empty/malformed base dir can't drop the worker at user root.
-                  newPaneCwds[key]     = paths?.worktreePaths?.[sess.id] || agentWorktreeCwd(s.bscBaseDir, projectKey, sess.repo, sess.id);
+                  // A REPO-LESS stream is a team-derived hub role-actor (#3103: curator/documentor/…) —
+                  // it runs PROJECT-WIDE at the hub (like the director), not in a per-repo worktree. A
+                  // repo'd worker runs in its own git worktree on its own branch: prefer the absolute
+                  // path ensure_worktree returned (#905) over the bscBaseDir-derived mirror, so an
+                  // empty/malformed base dir can't drop the worker at user root.
+                  newPaneCwds[key]     = sess.repo
+                    ? (paths?.worktreePaths?.[sess.id] || agentWorktreeCwd(s.bscBaseDir, projectKey, sess.repo, sess.id))
+                    : (paths?.hubPath || projectHubCwd(s.bscBaseDir, projectKey, !!s.activeProjectId));
                   newPaneInitCmds[key] = "claude";
                   if (sess.prompt) {
                     newPaneStartupPromptDocs[key] = scriptDocRelpath(safeKey, sess.prompt);
@@ -674,6 +681,8 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
             paneStatus: newPaneStatus,
             paneNames: newPaneNames,
             activeWorkspace: "console" as Workspace,
+            // TRIAGED (#2541): launching the fleet marks the project WORKING → it now appears on Glance.
+            ...(projectKey ? { triagedProjects: { ...s.triagedProjects, [projectKey]: s.triagedProjects[projectKey] ?? Date.now() } } : {}),
           };
         });
         // The caller persists these to the hub (publishFleetRoster) — the store stays

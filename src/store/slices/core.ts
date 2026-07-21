@@ -1,41 +1,32 @@
 // CoreSlice — the residual of the former `automations` grab-bag after the automations CRUD moved
-// to the Automations feature slice (@/features/automations/store, #1309). Still a mix: the API-tier
-// LLM provider config and active-project / draft state. A candidate for a further split (settings vs
-// projects) in a later pass. Typed Pick<AppStore, …>.
+// to the Automations feature slice (@/features/automations/store, #1309) and the API-tier LLM
+// provider config moved to the LlmSettings slice (#2715). Now: active-project / draft state + the
+// projects-page view state. Typed Pick<AppStore, …>.
 import type { StateCreator } from "zustand";
 import type { AppStore } from "../types";
 import { setMapEntry, deleteMapEntry } from "../updateHelpers";
-import { modelOnProviderSwitch, DEFAULT_ANTHROPIC_MODEL, DEFAULT_LOCAL_BASE_URL } from "@/shared/lib/core/llmConfig";
 import { projectLinkId } from "@/features/glance/lib/projectLinks";
 import { loadProjectLinks, pushProjectLink, dropProjectLink } from "@/features/glance/lib/projectLinksBridge";
 
 type CoreSlice = Pick<AppStore,
-  "claudeApiKey" | "setClaudeApiKey" | "llmProvider" | "setLlmProvider" | "llmModel" | "setLlmModel" | "openaiKey" | "setOpenaiKey" | "geminiKey" | "setGeminiKey" | "localBaseUrl" | "setLocalBaseUrl" | "projectsPageMode" | "setProjectsPageMode" | "glanceDrill" | "setGlanceDrill" | "projectLinks" | "addProjectLink" | "removeProjectLink" | "hydrateProjectLinks" | "projectsView" | "setProjectsView" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject"
+  "projectsPageMode" | "setProjectsPageMode" | "glanceDrill" | "setGlanceDrill" | "previewSources" | "setPreviewSource" | "previewBuilding" | "setPreviewBuilding" | "reviewFindings" | "setReviewFindings" | "teamsDrill" | "setTeamsDrill" | "projectLinks" | "addProjectLink" | "removeProjectLink" | "hydrateProjectLinks" | "projectsView" | "setProjectsView" | "relaunchOnOpen" | "setRelaunchOnOpen" | "activeProjectId" | "activeProjectName" | "activeProjectRepo" | "activeProjectRepos" | "activeProjectNumber" | "setActiveProject" | "setActiveProjectMeta" | "hiddenProjectIds" | "dismissProject" | "addDraftProject" | "updateDraftProject" | "removeDraftProject" | "triagedProjects" | "markProjectTriaged"
 >;
 
 export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) => ({
-      claudeApiKey: "",
-      setClaudeApiKey: (key) => set({ claudeApiKey: key }),
-
-      // API-tier LLM provider config (#1085). claudeApiKey is the anthropic key.
-      llmProvider: "anthropic",
-      // Switch the model field to the new provider's default when it still holds another provider's
-      // default (a hosted `claude-*` model can't run on Ollama, and vice-versa) — a model the user
-      // typed is preserved. So picking Ollama lands on `qwen3-coder` instead of a 404 on the Claude id.
-      setLlmProvider: (p) => set((s) => ({ llmProvider: p, llmModel: modelOnProviderSwitch(p, s.llmModel) })),
-      llmModel: DEFAULT_ANTHROPIC_MODEL,
-      setLlmModel: (m) => set({ llmModel: m }),
-      openaiKey: "",
-      setOpenaiKey: (k) => set({ openaiKey: k }),
-      geminiKey: "",
-      setGeminiKey: (k) => set({ geminiKey: k }),
-      localBaseUrl: DEFAULT_LOCAL_BASE_URL,
-      setLocalBaseUrl: (u) => set({ localBaseUrl: u }),
-
       projectsPageMode: "projects",
       setProjectsPageMode: (v) => set({ projectsPageMode: v }),
       glanceDrill: null,
       setGlanceDrill: (id) => set({ glanceDrill: id }),
+      // Verify-preview (#2623): the built PreviewSource + in-flight flag per project (transient).
+      previewSources: {},
+      setPreviewSource: (key, source) => set((s) => ({ previewSources: { ...s.previewSources, [key]: source } })),
+      previewBuilding: {},
+      setPreviewBuilding: (key, building) => set((s) => ({ previewBuilding: { ...s.previewBuilding, [key]: building } })),
+      // Preview-review findings per project (#2623 slice 5b, transient) — the confirm-gated inbox.
+      reviewFindings: {},
+      setReviewFindings: (key, findings) => set((s) => ({ reviewFindings: { ...s.reviewFindings, [key]: findings } })),
+      teamsDrill: null,
+      setTeamsDrill: (id) => set({ teamsDrill: id }),
 
       // #2253 write-through cache over `bsc project link` — hydrate authoritative on boot, each mutation
       // pushes through the bridge so agents (and a restart) see the same relationships.
@@ -61,23 +52,23 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
       },
       projectsView: "list",
       setProjectsView: (v) => set({ projectsView: v }),
+      // #3044: a re-triage signal — the project key to auto-launch the fleet for once its planning session
+      // has opened + loaded. Set by the "Relaunch fleet" action (projects list / Glance), consumed + cleared
+      // once by the fire-once effect in usePlanPublish. Transient (not persisted).
+      relaunchOnOpen: null,
+      setRelaunchOnOpen: (key) => set({ relaunchOnOpen: key }),
       activeProjectId: null,
       activeProjectName: "",
       activeProjectRepo: "",
       activeProjectRepos: [],
       activeProjectNumber: 0,
       setActiveProject: (id) => set({ activeProjectId: id }),
+      // The node id is API-only meta (#2409): the project's data/folder key derives from its NAME
+      // (`projectSlug`), so there is no node-id → key alias to record here anymore.
       setActiveProjectMeta: (id, name, repo, number, repos = []) =>
-        set((s) => ({
+        set({
           activeProjectId: id, activeProjectName: name, activeProjectRepo: repo, activeProjectNumber: number, activeProjectRepos: repos,
-          // First-write-wins: bind the GitHub node id to the folder/data key (the
-          // title slug the plan files live under) so a board-path open resolves to
-          // real data, not the empty node-id key. Frozen on first sighting so a
-          // later GitHub rename can't clobber a working alias.
-          projectKeyAlias: id && name && !s.projectKeyAlias[id]
-            ? setMapEntry(s.projectKeyAlias, id, name)
-            : s.projectKeyAlias,
-        })),
+        }),
       hiddenProjectIds: [],
       dismissProject: (id) =>
         set((s) => (!id || s.hiddenProjectIds.includes(id) ? {} : { hiddenProjectIds: [...s.hiddenProjectIds, id] })),
@@ -94,4 +85,9 @@ export const createCoreSlice: StateCreator<AppStore, [], [], CoreSlice> = (set) 
         }),
       removeDraftProject: (key) =>
         set((s) => ({ localDraftProjects: deleteMapEntry(s.localDraftProjects, key) })),
+      // TRIAGED marker (#2541) — the durable drafted→triaged transition that gates the Glance network.
+      // Idempotent: keeps the first timestamp so re-triaging doesn't reset it.
+      triagedProjects: {},
+      markProjectTriaged: (key) =>
+        set((s) => (!key || s.triagedProjects[key] ? {} : { triagedProjects: { ...s.triagedProjects, [key]: Date.now() } })),
 });

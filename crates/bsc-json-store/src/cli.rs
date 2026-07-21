@@ -29,7 +29,8 @@ pub struct CliSpec {
     /// The command catalog (drives dispatch validation + the shared help system).
     pub commands: &'static [CmdDoc],
     /// The keys the lean `list` projects from each stored object (`["id","name"]` / `["id","name","role"]`),
-    /// each rendered as the stored string or `""` when absent.
+    /// each rendered as the stored string — or verbatim for a non-string value (e.g. the component
+    /// store's `shapes` array, #2475) — and `""` when absent.
     pub meta_fields: &'static [&'static str],
 }
 
@@ -40,17 +41,28 @@ struct Args {
     /// `list --full`: emit the COMPLETE stored objects as a plain array — the full-fidelity read the
     /// desktop library hydration needs (#2143). Ignored by other subcommands.
     full: bool,
+    /// `--raw` (#3166): byte-clean output for `while read` / `$( )` — raw UTF-8, LF-only, NO JSON
+    /// envelope/quoting. On `list` it prints one id per line; on `get` it prints the stored record raw
+    /// (CR-stripped). Neutralizes the CRLF + cp1252 traps that broke shell audits. Ignored elsewhere.
+    raw: bool,
+    /// `set --file <name>` (#3373): read the payload from a BARE-NAMED file in `$BSC_SCRATCH` instead
+    /// of stdin. The channel a restricted studio session must use — a heredoc cannot be allow-listed,
+    /// since newlines are command separators, so its JSON body parses as its own unmatchable commands.
+    /// Resolution + the traversal defence live in `bsc_cli_util::read_payload`.
+    file: Option<String>,
     positional: Vec<String>,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
-    let mut a = Args { dir: None, pretty: false, full: false, positional: Vec::new() };
+    let mut a = Args { dir: None, pretty: false, full: false, raw: false, file: None, positional: Vec::new() };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--dir" => a.dir = Some(it.next().ok_or("--dir needs a path")?),
             "--pretty" => a.pretty = true,
             "--full" => a.full = true,
+            "--raw" => a.raw = true,
+            "--file" => a.file = Some(it.next().ok_or("--file needs a bare filename in $BSC_SCRATCH")?),
             // `-h`/`--help` route to the help command (anywhere on the line).
             "-h" | "--help" => a.positional.insert(0, "help".into()),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
@@ -60,10 +72,43 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
     Ok(a)
 }
 
+/// A per-mutation observer: fired with the affected id AFTER a `set` write (once per upserted id) or
+/// a `remove` lands (#2525). The seam the component/theme stores use to emit their `ui-touch` activity
+/// line WITH their own collection context — bsc-json-store never emits itself (it has no collection
+/// context, the reason the emit doesn't live here), it just invokes the caller's hook.
+pub type WriteHook<'a> = &'a dyn Fn(&str);
+
+/// A per-`set` batch validator: given the parsed records about to be upserted, return `Err` to REJECT
+/// the whole batch before anything is written (#2928). The seam a domain store uses to enforce a
+/// write-time invariant the generic verbatim store can't know — e.g. the component store rejects a
+/// `srcText` that looks like a module but won't build (an unterminated string). Runs BEFORE `set_items`.
+pub type SetValidator<'a> = &'a dyn Fn(&[Value]) -> Result<(), String>;
+
 /// The store subcommand entrypoint: `args` is everything after `bsc <noun>`; `prog` is the display
 /// name for help/errors (`"bsc blueprint"` from the umbrella). `spec` supplies the per-store nouns +
 /// help catalog. Handles help (no command / `help` / `help <cmd>` / `<cmd> help`) before any store read.
 pub fn run(args: Vec<String>, prog: &str, spec: &CliSpec) -> Result<(), String> {
+    run_hooked(args, prog, spec, None)
+}
+
+/// [`run`] with an optional [`WriteHook`] fired after each `set`/`remove` write lands (#2525). Stores
+/// that don't observe writes call [`run`] (`on_write = None`); the component/kit/theme surfaces pass a
+/// hook that emits a `ui-touch` line for the Design Studio's live-focus.
+pub fn run_hooked(args: Vec<String>, prog: &str, spec: &CliSpec, on_write: Option<WriteHook>) -> Result<(), String> {
+    run_hooked_validated(args, prog, spec, on_write, None)
+}
+
+/// [`run_hooked`] with an optional per-`set` batch [`SetValidator`] (#2928) run on the parsed records
+/// BEFORE any write — if it errors, the batch is REJECTED and nothing is stored. The component surface
+/// passes a validator that rejects a `srcText` that looks like a module but won't build (an unterminated
+/// string — the escape-collapse corruption class). Stores with no domain validation call [`run_hooked`].
+pub fn run_hooked_validated(
+    args: Vec<String>,
+    prog: &str,
+    spec: &CliSpec,
+    on_write: Option<WriteHook>,
+    validate: Option<SetValidator>,
+) -> Result<(), String> {
     let args = parse_args(args)?;
     let cmd = args.positional.first().cloned().unwrap_or_default();
 
@@ -79,7 +124,15 @@ pub fn run(args: Vec<String>, prog: &str, spec: &CliSpec) -> Result<(), String> 
         // full JSON is one `get` away, or `list --full`). Each stored file is parsed leniently so an
         // odd-shaped file never aborts the list.
         "list" => {
-            if args.full {
+            if args.raw {
+                // Byte-clean id list (#3166): one id per line, LF-only, no JSON envelope — safe for
+                // `for id in $(bsc <noun> list --raw)` / `while read id`. Records with no usable id are
+                // skipped so the list never carries a blank or garbage line (the class of bug that let a
+                // `while read` audit silently run on zero rows and report success). `--raw` wins over
+                // `--full`/`--pretty` (they're JSON shapes; raw is the non-JSON one).
+                let ids: Vec<String> = store.list().iter().filter_map(|j| id_field(j)).collect();
+                bsc_cli_util::print_raw_lines(&ids);
+            } else if args.full {
                 // Full-fidelity read (#2143): every record's COMPLETE JSON object as a plain array.
                 // An unparseable file is skipped (matching the lenient lean path).
                 let full: Vec<Value> = store
@@ -98,33 +151,60 @@ pub fn run(args: Vec<String>, prog: &str, spec: &CliSpec) -> Result<(), String> 
         "get" => {
             let id = args.positional.get(1).ok_or_else(|| format!("usage: {prog} get <id>"))?;
             match store.get(id)? {
-                // Print the stored JSON verbatim (it's already JSON), or `null` when absent.
+                // `--raw` (#3166): the stored JSON straight to stdout as bytes, CR-stripped, LF-only,
+                // no `println!`/locale layer — safe for `$( )` capture (composes with the `--field`
+                // read #3162 adds: field present ⇒ that value raw, else the whole record raw). A miss
+                // prints NOTHING (empty capture), not the literal `null`. Else print verbatim / `null`.
+                Some(json) if args.raw => bsc_cli_util::print_raw(json.trim_end()),
+                None if args.raw => {}
                 Some(json) => println!("{}", json.trim_end()),
                 None => println!("null"),
             }
             Ok(())
         }
-        // Upsert from an object — or an array of them — on stdin, written verbatim by id.
+        // Upsert from an object — or an array of them — written verbatim by id. Two channels with
+        // identical semantics (#3373): stdin, or `--file <bare-name>` from the session's `$BSC_SCRATCH`.
         "set" => {
-            let items: Vec<Value> = read_stdin_json(spec.noun)?;
-            let mut ids = Vec::new();
-            for item in &items {
-                let id = id_of(item, spec.noun)?;
-                let json = serde_json::to_string(item).map_err(|e| format!("set: {e}"))?;
-                store.set(&id, &json)?;
-                ids.push(id);
+            let items: Vec<Value> = match args.file.as_deref() {
+                None => read_stdin_json(spec.noun)?,
+                Some(name) => bsc_sqlite_util::parse_json_items(&bsc_cli_util::read_payload(Some(name))?, spec.noun)?,
+            };
+            // Domain write-time gate (#2928): reject the whole batch before any write if it fails.
+            if let Some(v) = validate {
+                v(&items)?;
             }
+            let ids = set_items(&store, &items, spec.noun, on_write)?;
             print_json(&ids, args.pretty);
             Ok(())
         }
         "remove" => {
             let id = args.positional.get(1).ok_or_else(|| format!("usage: {prog} remove <id>"))?;
             store.remove(id)?;
+            if let Some(hook) = on_write {
+                hook(id);
+            }
             print_json(&id, args.pretty);
             Ok(())
         }
         other => Err(bsc_cli_util::unknown_command(prog, spec.tagline, spec.commands, other)),
     }
+}
+
+/// Upsert every `item` into `store` by its (required, non-empty) `id`, written verbatim, firing
+/// `on_write(id)` after each write lands (#2525). Returns the written ids in input order. Split out of
+/// the `set` arm so the per-id write + hook is unit-testable without a drivable stdin.
+fn set_items(store: &Store, items: &[Value], noun: &str, on_write: Option<WriteHook>) -> Result<Vec<String>, String> {
+    let mut ids = Vec::new();
+    for item in items {
+        let id = id_of(item, noun)?;
+        let json = serde_json::to_string(item).map_err(|e| format!("set: {e}"))?;
+        store.set(&id, &json)?;
+        if let Some(hook) = on_write {
+            hook(&id);
+        }
+        ids.push(id);
+    }
+    Ok(ids)
 }
 
 /// Resolve the store: explicit `--dir` wins, then the store's env var, else the default user store at
@@ -140,6 +220,20 @@ fn resolve_store(flag: &Option<String>, spec: &CliSpec) -> Result<Store, String>
     Ok(Store::new(dir, spec.noun))
 }
 
+/// The `id` of a stored record's raw JSON, if present as a non-empty string — the lenient projection
+/// `list --raw` prints one-per-line (#3166). An unparseable file, a missing `id`, or a non-string /
+/// blank `id` all yield `None` (that record is skipped), so the raw id list is never polluted by a
+/// blank or garbage line. Trimmed to match [`id_of`]'s key normalization.
+pub fn id_field(json: &str) -> Option<String> {
+    serde_json::from_str::<Value>(json)
+        .ok()?
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
 /// The `id` of a stored Value — required, non-empty (it keys the on-disk file). `noun` names the
 /// record in the error (`each <noun> needs a non-empty "id"`).
 pub fn id_of(v: &Value, noun: &str) -> Result<String, String> {
@@ -152,15 +246,21 @@ pub fn id_of(v: &Value, noun: &str) -> Result<String, String> {
 }
 
 /// The lean `list` projection one record contributes: an object with just `fields`, each the stored
-/// string or `""` when missing — robust to odd-shaped files (an unparseable blob yields all-empty,
-/// never a panic). `fields` are alphabetically ordered by the two shipped specs (`id`,`name`,`role`),
+/// string — a NON-string value (an array like the component store's `shapes`, #2475) rides verbatim —
+/// or `""` when missing / null; robust to odd-shaped files (an unparseable blob yields all-empty,
+/// never a panic). `fields` are alphabetically ordered by the shipped specs (`id`,`name`,`role`,…),
 /// so the `serde_json::Map` (BTreeMap) render is byte-identical to the old derived structs.
-fn lean_meta(json: &str, fields: &[&str]) -> Value {
+/// Public so a wrapper's custom read verbs (e.g. `bsc ui list --shape`) project the SAME lean shape.
+pub fn lean_meta(json: &str, fields: &[&str]) -> Value {
     let v: Value = serde_json::from_str(json).unwrap_or(Value::Null);
     let mut m = serde_json::Map::new();
     for f in fields {
-        let val = v.get(*f).and_then(Value::as_str).unwrap_or_default().to_string();
-        m.insert((*f).to_string(), Value::String(val));
+        let val = match v.get(*f) {
+            Some(Value::String(s)) => Value::String(s.clone()),
+            Some(Value::Null) | None => Value::String(String::new()),
+            Some(other) => other.clone(),
+        };
+        m.insert((*f).to_string(), val);
     }
     Value::Object(m)
 }
@@ -205,6 +305,18 @@ mod tests {
     }
 
     #[test]
+    fn lean_meta_rides_non_string_fields_verbatim() {
+        // The component store's `shapes` array (#2475) projects verbatim; absent stays "".
+        let m = lean_meta(r#"{"id":"masterdetail","shapes":["list"]}"#, &["id", "shapes"]);
+        assert_eq!(m, serde_json::json!({"id":"masterdetail","shapes":["list"]}));
+        let m = lean_meta(r#"{"id":"button"}"#, &["id", "shapes"]);
+        assert_eq!(m, serde_json::json!({"id":"button","shapes":""}));
+        // An explicit null renders as "" too (matching the absent case).
+        let m = lean_meta(r#"{"id":"x","shapes":null}"#, &["id", "shapes"]);
+        assert_eq!(m, serde_json::json!({"id":"x","shapes":""}));
+    }
+
+    #[test]
     fn parse_args_reads_flags_and_positionals() {
         let a = parse_args(vec![
             "set".into(),
@@ -226,9 +338,128 @@ mod tests {
     }
 
     #[test]
+    fn raw_flag_parses_and_defaults_off() {
+        // #3166: `--raw` selects byte-clean output; it's a known flag (no longer "unknown flag").
+        assert!(!parse_args(vec!["list".into()]).unwrap().raw, "default is JSON output");
+        assert!(parse_args(vec!["list".into(), "--raw".into()]).unwrap().raw, "--raw opts into raw output");
+        assert!(parse_args(vec!["get".into(), "x".into(), "--raw".into()]).unwrap().raw);
+        // It composes with the other flags without being swallowed.
+        let a = parse_args(vec!["list".into(), "--raw".into(), "--dir".into(), "/tmp/w".into()]).unwrap();
+        assert!(a.raw && a.dir.as_deref() == Some("/tmp/w"));
+    }
+
+    #[test]
+    fn id_field_extracts_a_non_empty_string_id_or_none() {
+        // The lenient projection `list --raw` maps each stored record through — the whole point is a
+        // clean, gap-free id list.
+        assert_eq!(id_field(r#"{"id":"button","name":"Button"}"#).as_deref(), Some("button"));
+        assert_eq!(id_field(r#"{"id":"  chip  "}"#).as_deref(), Some("chip"), "trimmed like id_of");
+        // No id / blank id / non-string id / unparseable ⇒ None (that record is skipped, no blank line).
+        assert_eq!(id_field(r#"{"name":"no id"}"#), None);
+        assert_eq!(id_field(r#"{"id":""}"#), None);
+        assert_eq!(id_field(r#"{"id":"   "}"#), None);
+        assert_eq!(id_field(r#"{"id":42}"#), None);
+        assert_eq!(id_field("not json"), None);
+    }
+
+    #[test]
+    fn raw_list_yields_one_clean_id_per_line_no_envelope_no_cr() {
+        // The acceptance shape: `list --raw` = each stored record's id on its own LF-terminated line,
+        // no JSON array/quotes, no `\r` — exactly what `while read id` / `$( )` needs. We assemble the
+        // same string the dispatch prints (`print_raw_lines` over the extracted ids) so the contract is
+        // asserted without capturing real stdout.
+        let stored = [
+            r#"{"id":"button","name":"Button"}"#,
+            r#"{"name":"skipped — no id"}"#, // dropped, not a blank line
+            r#"{"id":"chip"}"#,
+        ];
+        let ids: Vec<String> = stored.iter().filter_map(|j| id_field(j)).collect();
+        let out = bsc_cli_util::raw_lines(&ids);
+        assert_eq!(out, "button\nchip\n");
+        assert!(!out.contains('\r'), "LF-only, no carriage return");
+        assert!(!out.contains('"') && !out.contains('[') && !out.contains(']'), "no JSON envelope/quoting");
+        assert_eq!(out.lines().count(), 2, "one id per line, id-less record skipped");
+    }
+
+    #[test]
+    fn raw_get_output_is_the_record_bytes_lf_only() {
+        // `get --raw` prints the stored JSON straight through, CR-stripped to LF — so a CRLF-poisoned
+        // record can't leak a `\r` into a captured value. (Same builder the dispatch writes via.)
+        let stored = "{\r\n  \"id\": \"button\"\r\n}";
+        let out = bsc_cli_util::raw_line(stored.trim_end());
+        assert!(!out.contains('\r'));
+        assert!(out.ends_with('\n') && !out.ends_with("\n\n"), "exactly one trailing LF");
+    }
+
+    #[test]
     fn parse_args_routes_help_flag_to_the_help_command() {
         let a = parse_args(vec!["--help".into()]).unwrap();
         assert_eq!(a.positional.first().map(String::as_str), Some("help"));
+    }
+
+    fn tmp_store(tag: &str) -> Store {
+        let d = std::env::temp_dir().join(format!("bsc-json-store-cli-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        Store::new(d, "record")
+    }
+
+    #[test]
+    fn set_items_writes_each_by_id_and_fires_the_write_hook_per_id() {
+        // #2525: the extracted set core writes each item and invokes on_write(id) after each write —
+        // the seam the component/kit surfaces use to emit a `ui-touch` line (no stdin needed here).
+        let store = tmp_store("set-hook");
+        let seen = std::cell::RefCell::new(Vec::<String>::new());
+        let items = vec![
+            serde_json::json!({ "id": "button", "name": "Button" }),
+            serde_json::json!({ "id": "chip", "name": "Chip" }),
+        ];
+        let hook = |id: &str| seen.borrow_mut().push(id.to_string());
+        let ids = set_items(&store, &items, "record", Some(&hook)).unwrap();
+        assert_eq!(ids, vec!["button".to_string(), "chip".to_string()]);
+        assert_eq!(*seen.borrow(), vec!["button".to_string(), "chip".to_string()], "hook fires once per written id");
+        // The writes actually landed (hook fires AFTER the store write).
+        assert!(store.get("button").unwrap().is_some() && store.get("chip").unwrap().is_some());
+        // No hook ⇒ writes still happen, no fire.
+        let ids = set_items(&store, &[serde_json::json!({ "id": "box" })], "record", None).unwrap();
+        assert_eq!(ids, vec!["box".to_string()]);
+    }
+
+    #[test]
+    fn run_hooked_fires_the_write_hook_on_remove() {
+        // `remove` is drivable via run_hooked (positional id, no stdin): the hook fires after the
+        // delete lands, carrying the removed id.
+        let store = tmp_store("rm-hook");
+        store.set("button", r#"{"id":"button"}"#).unwrap();
+        let dir = store_dir(&store);
+        let seen = std::cell::RefCell::new(Vec::<String>::new());
+        let hook = |id: &str| seen.borrow_mut().push(id.to_string());
+        run_hooked(
+            vec!["remove".into(), "button".into(), "--dir".into(), dir],
+            "bsc widget",
+            &widget_spec(),
+            Some(&hook),
+        )
+        .unwrap();
+        assert_eq!(*seen.borrow(), vec!["button".to_string()]);
+        assert!(store.get("button").unwrap().is_none(), "the remove landed");
+    }
+
+    /// The scratch store's dir as a string, for the `--dir` flag.
+    fn store_dir(store: &Store) -> String {
+        store.dir().to_string_lossy().into_owned()
+    }
+
+    /// A concrete CliSpec over the TEST_COMMANDS, for the dispatch tests.
+    fn widget_spec() -> CliSpec {
+        CliSpec {
+            noun: "record",
+            dir_env: "BSC_WIDGET_DIR_TEST",
+            dir_segment: "widgets",
+            tagline: "the widget store",
+            commands: TEST_COMMANDS,
+            meta_fields: &["id", "name"],
+        }
     }
 
     #[test]

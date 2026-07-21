@@ -125,7 +125,7 @@ mod tests {
         // structure+permissions → `streams`; the legacy `repos`/`structure`/`permissions` defs are gone.
         let migrated = ["discovery","deployment","ui","features",
             "automations","skills","purpose","bp_stages","bp_capabilities","bp_review",
-            "streams","source"];
+            "streams","source","market","transformations"];
         for id in migrated {
             let d = stage_directive(id);
             assert!(!d.trim().is_empty(), "stage '{id}' has an empty directive");
@@ -138,6 +138,189 @@ mod tests {
             let shipped = v.get("directive").and_then(|x| x.as_str()).unwrap_or_default();
             assert!(!shipped.trim().is_empty(), "stage '{id}' embedded JSON has a `directive`");
         }
+    }
+
+    /// The Transformations stage prompt carries a CONCRETE worked example (#2392 lesson — an example
+    /// beats prose) of `echo '…' | bsc plan transformation add`. Machine-verify it: the echoed block
+    /// must be single-quote-safe (a stray `'` would end the shell quoting mid-JSON), parse as JSON,
+    /// and each row must pass the SAME `validate_transformation` the CLI enforces at set-time — so
+    /// the taught example can never drift from the #2509 contract.
+    #[test]
+    fn transformations_worked_example_is_single_quote_safe_and_passes_the_cli_validator() {
+        let raw = crate::platform::config::embedded_str("stages/transformations.json");
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("valid stage JSON");
+        let prompt = v["prompt"].as_str().expect("prompt string");
+        let start = prompt.find("echo '").expect("prompt carries the echo example") + "echo '".len();
+        let rest = &prompt[start..];
+        let end = rest.find("' | bsc plan transformation add").expect("example pipes into the CLI");
+        let block = &rest[..end];
+        assert!(!block.contains('\''), "the example JSON must be single-quote-safe");
+        let rows: serde_json::Value = serde_json::from_str(block).expect("example is valid JSON");
+        let rows = rows.as_array().expect("example is an array of rows");
+        assert_eq!(rows.len(), 2, "two worked rows: a migrate-to-kit replace + an extract");
+        for (i, row) in rows.iter().enumerate() {
+            plandb::validate::validate_transformation(row)
+                .unwrap_or_else(|e| panic!("worked-example row {i} fails the contract: {e}"));
+        }
+        // Row 1: the migrate-to-kit replace, with its optional preview `spec` deliberately omitted.
+        assert_eq!(rows[0]["verb"], serde_json::json!("replace"));
+        assert_eq!(rows[0]["provenance"]["recipe"], serde_json::json!("migrate-to-kit"));
+        assert!(rows[0].get("spec").is_none(), "the replace row teaches that `spec` is optional");
+        assert_eq!(rows[0]["tier"], serde_json::json!(0));
+        // Row 2: the extract, one tier up, sequenced on the foundation row.
+        assert_eq!(rows[1]["verb"], serde_json::json!("extract"));
+        assert_eq!(rows[1]["provenance"]["recipe"], serde_json::json!("extract-and-abstract"));
+        assert_eq!(rows[1]["dependsOn"], serde_json::json!(["replace-bespoke-buttons"]));
+    }
+
+    /// The migrate-to-kit playbook carries a SECOND worked example (#2509 slice c): a gap-fill row
+    /// (a no-equivalent cluster becoming a kit contribution) + the migration row that depends on
+    /// it. Machine-verify it like the first: single-quote-safe, valid JSON, and every row passes
+    /// the SAME `validate_transformation` the CLI enforces — so the taught gap-fill shape can
+    /// never drift from the contract.
+    #[test]
+    fn migrate_to_kit_gap_fill_example_is_single_quote_safe_and_passes_the_validator() {
+        let raw = crate::platform::config::embedded_str("stages/transformations.json");
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("valid stage JSON");
+        let prompt = v["prompt"].as_str().expect("prompt string");
+        let playbook = prompt.find("MIGRATE-TO-KIT").expect("prompt carries the migrate-to-kit playbook");
+        let rest = &prompt[playbook..];
+        let start = rest.find("echo '").expect("playbook carries the gap-fill example") + "echo '".len();
+        let rest = &rest[start..];
+        let end = rest.find("' | bsc plan transformation add").expect("example pipes into the CLI");
+        let block = &rest[..end];
+        assert!(!block.contains('\''), "the example JSON must be single-quote-safe");
+        let rows: serde_json::Value = serde_json::from_str(block).expect("example is valid JSON");
+        let rows = rows.as_array().expect("example is an array of rows");
+        assert_eq!(rows.len(), 2, "a gap-fill row + its dependent migration row");
+        for (i, row) in rows.iter().enumerate() {
+            plandb::validate::validate_transformation(row)
+                .unwrap_or_else(|e| panic!("gap-fill example row {i} fails the contract: {e}"));
+        }
+        // Row 1: the gap-fill — a kit contribution, built via "extract", generated by the recipe,
+        // its evidence naming the bespoke instances WITH their usage counts.
+        assert_eq!(rows[0]["kitContribution"], serde_json::json!(true));
+        assert_eq!(rows[0]["verb"], serde_json::json!("extract"));
+        assert_eq!(rows[0]["provenance"]["recipe"], serde_json::json!("migrate-to-kit"));
+        let evidence = rows[0]["provenance"]["evidence"].as_array().expect("gap-fill evidence");
+        assert!(evidence.len() >= 2, "a cluster is >=2 bespoke instances");
+        assert!(
+            evidence.iter().all(|e| e.as_str().is_some_and(|s| s.contains("usages"))),
+            "every evidence entry carries its usage count"
+        );
+        // #2509 slice d: the gap-fill row carries a live-preview `spec` — the user decides to build
+        // the NEW component by SEEING it in the pane, so a gap-fill spec is REQUIRED at set-time and
+        // the taught example must model one. #3500 moved it to the general node vocabulary, so the
+        // discriminant is `type` naming a REAL kit primitive (the example sketches a Card).
+        assert!(rows[0]["spec"].is_object(), "the gap-fill row carries a preview spec object");
+        assert_eq!(rows[0]["spec"]["type"], serde_json::json!("Card"), "the spec is a Card sketch");
+        assert!(
+            rows[0]["spec"].get("kind").is_none(),
+            "the taught spec uses the general vocabulary, not the retired `kind` nodes"
+        );
+        // Row 2: the migration — replace, sequenced ON the gap-fill (foundation before fan-out).
+        assert_eq!(rows[1]["verb"], serde_json::json!("replace"));
+        assert_eq!(rows[1]["kitContribution"], serde_json::json!(false));
+        assert_eq!(rows[1]["dependsOn"], serde_json::json!([rows[0]["id"].as_str().unwrap()]));
+    }
+
+    /// #2509 slice c: `@data/transformations/taxonomy.json` `recipes[].steps` is the CANONICAL
+    /// recipe source; the stage prompt expands each recipe into a numbered playbook. Pin them in
+    /// lockstep: every taxonomy recipe appears as an UPPERCASE playbook heading, the playbook
+    /// references only real `bsc ui` enumeration verbs, and each playbook carries EXACTLY as many
+    /// numbered steps as its taxonomy recipe.
+    #[test]
+    fn recipe_playbooks_mirror_the_taxonomy_steps() {
+        let tax: serde_json::Value =
+            serde_json::from_str(&crate::platform::config::embedded_str("transformations/taxonomy.json"))
+                .expect("valid taxonomy JSON");
+        let stage: serde_json::Value =
+            serde_json::from_str(&crate::platform::config::embedded_str("stages/transformations.json"))
+                .expect("valid stage JSON");
+        let prompt = stage["prompt"].as_str().expect("prompt string");
+        let recipes = tax["recipes"].as_array().expect("taxonomy recipes");
+        assert_eq!(recipes.len(), 2, "migrate-to-kit + extract-and-abstract");
+        let headings: Vec<String> =
+            recipes.iter().map(|r| r["id"].as_str().expect("recipe id").to_uppercase()).collect();
+        for (i, recipe) in recipes.iter().enumerate() {
+            let heading = headings[i].as_str();
+            let start = prompt
+                .find(heading)
+                .unwrap_or_else(|| panic!("prompt carries the {heading} playbook heading"));
+            // The section runs to the next recipe heading (or HARD RULES) — count its numbered steps.
+            let tail = &prompt[start + heading.len()..];
+            let mut end = tail.len();
+            for stop in headings.iter().map(String::as_str).chain(["HARD RULES"]) {
+                if stop == heading {
+                    continue;
+                }
+                if let Some(p) = tail.find(stop) {
+                    end = end.min(p);
+                }
+            }
+            let section = &tail[..end];
+            let numbered = section
+                .lines()
+                .filter(|l| {
+                    let t = l.trim_start();
+                    t.chars().next().is_some_and(|c| c.is_ascii_digit()) && t.get(1..3) == Some(". ")
+                })
+                .count();
+            let steps = recipe["steps"].as_array().expect("recipe steps").len();
+            assert!(steps > 0, "{heading} taxonomy recipe carries steps");
+            assert_eq!(
+                numbered, steps,
+                "the {heading} playbook's numbered steps drifted from taxonomy recipes[].steps"
+            );
+        }
+        // The kit-enumeration step teaches REAL commands only (the bsc-ui / bsc-component CLIs).
+        for cmd in ["bsc ui kit list", "bsc ui list --full", "bsc ui get <id>", "bsc ui shapes"] {
+            assert!(prompt.contains(cmd), "the migrate-to-kit playbook teaches `{cmd}`");
+        }
+    }
+
+    /// #2478: the shape LOOP is closed end to end in the shipped stage prose. `bsc data shapes`
+    /// answers "what shape IS this entity's data" (inferred from the canonical Data Model's own
+    /// structure — see `bsc_data::shape`); `bsc ui shapes` answers "which kit components render that
+    /// shape" (#2475). The stages that pick a layout must teach BOTH halves, or the planner is back
+    /// to judging the taxonomy by hand — which is exactly what #2478 removed.
+    #[test]
+    fn layout_stages_teach_the_schema_to_shape_to_component_loop() {
+        for id in ["ui", "test_ui"] {
+            let raw = crate::platform::config::embedded_str(&format!("stages/{id}.json"));
+            let v: serde_json::Value = serde_json::from_str(&raw).expect("stage json valid");
+            let prompt = v["prompt"].as_str().unwrap_or_default();
+            let directive = v["directive"].as_str().unwrap_or_default();
+            for field in [prompt, directive] {
+                assert!(
+                    field.contains("bsc data shapes"),
+                    "stage '{id}' must teach `bsc data shapes` — the schema→shape half of the loop"
+                );
+            }
+            // The inference returns RANKED candidates, never one guess: the prose has to say so, so
+            // the session surfaces the tie instead of silently picking (a lone self-reference is a
+            // tree ONLY if an item has one parent).
+            let both = format!("{prompt}\n{directive}").to_lowercase();
+            assert!(
+                both.contains("rank"),
+                "stage '{id}' must say the shapes come back RANKED, not as a single answer"
+            );
+            assert!(
+                both.contains("ask the user") || both.contains("put the question to the user"),
+                "stage '{id}' must tell the session to ask when the top candidates tie"
+            );
+            // The shape slugs are the shared vocabulary both CLIs accept — pin them so the prose
+            // can't teach a token `bsc ui shapes` would reject.
+            for shape in ["list", "linked-list", "tree", "graph", "table", "key-value"] {
+                assert!(
+                    both.contains(shape),
+                    "stage '{id}' must name the `{shape}` vocabulary token"
+                );
+            }
+        }
+        // The component half stays where #2475 put it: the Test UI stage picks the layout.
+        let test_ui = crate::platform::config::embedded_str("stages/test_ui.json");
+        assert!(test_ui.contains("bsc ui shapes"), "test_ui teaches the component-side picker");
     }
 
     /// Drift guard (the `find_fixture`-style contract): the stage JSONs carrying a `directive` are
@@ -158,9 +341,9 @@ mod tests {
                 Some(stem)
             })
             .collect();
-        let expected: BTreeSet<String> = ["discovery","deployment","ui","features",
+        let expected: BTreeSet<String> = ["discovery","deployment","ui","features","function_spec",
             "automations","skills","purpose","bp_stages","bp_capabilities",
-            "bp_review","streams","source","test_ui"].iter().map(|s| s.to_string()).collect();
+            "bp_review","streams","source","test_ui","market","transformations"].iter().map(|s| s.to_string()).collect();
         assert_eq!(with_directive, expected, "stage `directive` set drifted from the expected set");
     }
 }

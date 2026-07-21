@@ -13,11 +13,50 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
 import { Chip } from "@/shared/ui/data/Chip";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
-import { Skeleton } from "@/shared/ui/feedback/Skeleton";
+import { CardEmpty, SkeletonRows } from "@/shared/ui/feedback/CardStates";
 import { buildFleetHealth, HEALTH_LABEL, type PermEvent } from "./lib/fleetHealth";
+// Aliased: the lib's result type and the host component below share the name `FleetHealth`.
+import type { FleetHealth as FleetHealthData } from "./lib/fleetHealth";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
 
+/** The health & errors card as PURE presentation — the built feed in, markup out (#3481).
+ *
+ *  Split from the host below so the card renders from any `FleetHealth`, is testable without mocking
+ *  three separate signal sources (a store read, the coord poll, and `bsc logs perm`), and has a real
+ *  prop contract to catalogue. `dangerCount` is derived here rather than passed: it is a pure function
+ *  of `health.counts`, so making it a prop would let a caller contradict the data it is rendering. */
+export function FleetHealthView({ health, permLoaded }: { health: FleetHealthData; permLoaded: boolean }) {
+  const dangerCount = health.counts.deadlock + health.counts.stalled + health.counts.quarantine + health.counts.blocked;
+
+  return (
+    <Card>
+      <CardHead title="Health & errors" hint="denials · stalls · quarantine · ended"
+        right={health.total > 0
+          ? <Text as="span" mono size={10.5} style={{ color: dangerCount > 0 ? "var(--danger)" : "var(--warn, #f2b155)" }}>{health.total}</Text>
+          : undefined} />
+      {!permLoaded && !health.hasIssues
+        ? <SkeletonRows rows={3} h={30} />
+        : !health.hasIssues
+        ? <CardEmpty icon="✓" title="All clear"
+            hint="Permission denials, stalls, quarantines, and blocked workers show up here." />
+        : (
+          <Stack gap={5}>
+            {health.items.slice(0, 12).map((it, i) => (
+              <Row key={`${it.kind}${it.label}${i}`} gap={9} align="center" style={{ padding: "6px 8px", borderRadius: 6, background: i % 2 ? "var(--bg-panel)" : "transparent" }}>
+                <Chip tone={it.danger ? "danger" : undefined} style={it.danger ? undefined : { color: "var(--warn, #f2b155)", borderColor: "color-mix(in oklch, #f2b155, transparent 65%)" }}>{HEALTH_LABEL[it.kind]}</Chip>
+                <Text as="span" mono size={11} weight={500} style={{ flex: "0 0 auto", maxWidth: 130, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.label}</Text>
+                <Text as="span" mono size={10} tone="dim" style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.detail}</Text>
+              </Row>
+            ))}
+            {health.total > 12 && <Text as="div" mono size={9.5} tone="dim" style={{ padding: "2px 8px" }}>+{health.total - 12} more</Text>}
+          </Stack>
+        )}
+    </Card>
+  );
+}
+
+/** The HOST: gathers the three signal sources — two store reads, the coordination log, and the
+ *  `bsc logs perm` poll — merges them via `buildFleetHealth`, and renders the pure view above. */
 export function FleetHealth({ workers }: { workers: LiveWorker[] }) {
   const quarantined = useAppStore((s) => s.quarantinedPanes);
   const ended = useAppStore((s) => s.endedPanes);
@@ -36,31 +75,5 @@ export function FleetHealth({ workers }: { workers: LiveWorker[] }) {
   const blocked = coordinationSummary(state).map((b) => ({ session: b.session, stalled: b.stalled, deadlocked: b.deadlocked, deps: b.deps }));
   const health = buildFleetHealth({ perm, quarantined, ended, blocked, nameByPane });
 
-  const dangerCount = health.counts.deadlock + health.counts.stalled + health.counts.quarantine + health.counts.blocked;
-
-  return (
-    <Card>
-      <CardHead title="Health & errors" hint="denials · stalls · quarantine · ended"
-        right={health.total > 0
-          ? <Text as="span" mono size={10.5} style={{ color: dangerCount > 0 ? "var(--danger)" : "var(--warn, #f2b155)" }}>{health.total}</Text>
-          : undefined} />
-      {!permLoaded && !health.hasIssues
-        ? <Stack gap={6}>{[0, 1, 2].map((i) => <Skeleton key={i} h={30} radius={6} />)}</Stack>
-        : !health.hasIssues
-        ? <EmptyState size="sm" iconVariant="dashed" icon="✓" title="All clear"
-            description="Permission denials, stalls, quarantines, and blocked workers show up here." style={{ padding: "20px 12px" }} />
-        : (
-          <Stack gap={5}>
-            {health.items.slice(0, 12).map((it, i) => (
-              <Row key={`${it.kind}${it.label}${i}`} gap={9} align="center" style={{ padding: "6px 8px", borderRadius: 6, background: i % 2 ? "var(--bg-panel)" : "transparent" }}>
-                <Chip tone={it.danger ? "danger" : undefined} style={it.danger ? undefined : { color: "var(--warn, #f2b155)", borderColor: "color-mix(in oklch, #f2b155, transparent 65%)" }}>{HEALTH_LABEL[it.kind]}</Chip>
-                <Text as="span" mono size={11} weight={500} style={{ flex: "0 0 auto", maxWidth: 130, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.label}</Text>
-                <Text as="span" mono size={10} tone="dim" style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.detail}</Text>
-              </Row>
-            ))}
-            {health.total > 12 && <Text as="div" mono size={9.5} tone="dim" style={{ padding: "2px 8px" }}>+{health.total - 12} more</Text>}
-          </Stack>
-        )}
-    </Card>
-  );
+  return <FleetHealthView health={health} permLoaded={permLoaded} />;
 }

@@ -1,8 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
-import { LifeBuoy, RotateCcw, Trash2, ShieldAlert } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { LifeBuoy, RotateCcw, Trash2, ShieldAlert, PartyPopper, GitBranch } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { bscJson } from "@/shared/lib/core/bsc";
+import { usePoll } from "@/shared/hooks/usePoll";
+import { projectComplete } from "@/shared/lib/fleet/streamCompletion";
+import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { useAppStore } from "@/store";
 import {
   discoverSessions, reconcileSessions, type RecoverableSession,
@@ -10,6 +13,10 @@ import {
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
 import { Banner } from "@/shared/ui/feedback/Banner";
 import { Button } from "@/shared/ui/controls/Button";
+import { Chip } from "@/shared/ui/data/Chip";
+import { kitDispatchPrompt, type KitChange } from "@/features/designs";
+import { injectPrompt } from "@/shared/lib/fleet/paneInject";
+import { directorPaneId } from "@/app/console/lib/paneIdentity";
 import { useSandboxReadiness } from "@/shared/hooks/useSandboxReadiness";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
@@ -77,6 +84,8 @@ function CrashRecoveryBanner() {
 export function SessionRecoveryBanner() {
   const fleetStartProject = useAppStore((s) => s.fleetStartProject);
   const triageStartProject = useAppStore((s) => s.triageStartProject);
+  const setGlanceDrill = useAppStore((s) => s.setGlanceDrill);
+  const setWorkspace = useAppStore((s) => s.setWorkspace);
 
   const [recoverable, setRecoverable] = useState<RecoverableSession[]>([]);
   const [open, setOpen] = useState(false);
@@ -98,11 +107,24 @@ export function SessionRecoveryBanner() {
   }, []);
 
   const restoreProject = useCallback(async (projectKey: string, sessions: RecoverableSession[]) => {
+    // Ensure the hub is materialized on disk before relaunching (#2997 C): recovered fleet/triage cwds
+    // are the hub dir or worktrees beneath it. A prior fleet run almost always materialized it already
+    // (so this is a no-op), but a draft recovered before its first launch needs the ephemeral planning
+    // workspace promoted first. Best-effort — the recovery has no error surface, and the launch paths
+    // below already fall back to nearest-existing-ancestor cwds.
+    await safeInvoke("materialize_hub", { projectKey }, "");
     const build = sessions.filter((s) => s.kind === "director" || s.kind === "worker");
     const triage = sessions.filter((s) => s.kind === "triage");
     if (build.length) {
       const fleet = await bscJson<FleetPlan | null>(projectKey, ["plan", "fleet", "get", "--full", "--json"], null);
-      if (fleet) fleetStartProject(projectKey, fleet, projectKey);
+      if (fleet) {
+        fleetStartProject(projectKey, fleet, projectKey);
+        // Land the user on their restored agents (#2445): drill Glance into the project. Overrides
+        // fleetStartProject's console navigation — after a recovery the fleet-level Glance view is
+        // the surface that shows what just came back (and works even with GitHub disconnected).
+        setGlanceDrill(projectKey);
+        setWorkspace("glance");
+      }
     }
     if (triage.length) {
       const repos = [...new Set(triage.map((s) => s.repo).filter((r): r is string => !!r))];
@@ -121,7 +143,7 @@ export function SessionRecoveryBanner() {
       }
     }
     drop(new Set(sessions.map((s) => s.paneId)));
-  }, [fleetStartProject, triageStartProject, drop]);
+  }, [fleetStartProject, triageStartProject, setGlanceDrill, setWorkspace, drop]);
 
   const discard = useCallback(async (s: RecoverableSession) => {
     await invoke("reap_session", { paneId: s.paneId }).catch(() => {});
@@ -314,18 +336,256 @@ export function SandboxSetupBanner() {
 }
 
 /**
+ * Application-complete banner (#2619). When the active project's FLEET has finished — it has planned
+ * issues and EVERY one is done (`complete`/`verified`, {@link projectComplete}) — announce it, so the
+ * user knows the build landed and can do a verify/preview run. Polls the active project's plan.db
+ * issues only while it HAS a fleet and hasn't been acknowledged this session (so it never nags a
+ * still-building or already-seen project). The CTA opens the finished project — the entry point the
+ * verify preview + reviewer loop (#…) will grow into. Acknowledging (✕ or the CTA) hides it for the
+ * session, keyed per project so a different project can still announce its own completion.
+ */
+const COMPLETE_POLL_MS = 20000;
+
+function ProjectCompleteBanner() {
+  const activeProjectId = useAppStore((s) => s.activeProjectId);
+  const activeProjectName = useAppStore((s) => s.activeProjectName);
+  const planFleet = useAppStore((s) => s.planFleet);
+  const setGlanceDrill = useAppStore((s) => s.setGlanceDrill);
+  const setWorkspace = useAppStore((s) => s.setWorkspace);
+  const [acked, setAcked] = useState<Set<string>>(() => new Set());
+  const [completeKey, setCompleteKey] = useState<string | null>(null);
+
+  const key = activeProjectId ?? "";
+  // Only a project that was actually BUILT (has a fleet) and hasn't been acknowledged this session.
+  const enabled = !!key && (planFleet[key]?.streams.length ?? 0) > 0 && !acked.has(key);
+
+  usePoll(async (isCancelled) => {
+    if (!enabled) return;
+    const issues = await bscJson<PlanIssue[]>(key, ["plan", "list", "--full", "--json"], []);
+    if (isCancelled()) return;
+    setCompleteKey(projectComplete(issues) ? key : null);
+  }, COMPLETE_POLL_MS, [enabled, key]);
+
+  const ack = useCallback((k: string) => setAcked((s) => new Set(s).add(k)), []);
+
+  if (!enabled || completeKey !== key) return null;
+  const name = activeProjectName || key;
+
+  return (
+    <Banner
+      variant="bar"
+      tone="accent"
+      role="status"
+      lead={<PartyPopper size={15} style={{ color: "var(--accent)", flexShrink: 0 }} />}
+      onDismiss={() => ack(key)}
+      right={
+        <Button
+          variant="primary"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          onClick={() => { setGlanceDrill(key); setWorkspace("glance"); ack(key); }}
+        >
+          Preview &amp; review
+        </Button>
+      }
+    >
+      <Box as="span" style={{ flex: 1, minWidth: 0 }}>
+        <b>{name} is complete</b> — every planned issue landed. Preview and review your app.
+      </Box>
+    </Banner>
+  );
+}
+
+/**
  * The app-shell alerts, floated in a FIXED top-right overlay (`.app-banner-stack`) so they never push
  * the shell down or cram the UI. Each adapter gates its own visibility (an empty stack is inert —
  * `pointer-events: none`). Multi-item alerts (quarantine, session recovery) collapse to ONE summary
  * banner with a "Review" drawer rather than one bar per item. Mounted once by App.
  */
+/** Where the bsc-on-PATH dismissal persists (a nudge, not a nag). */
+const PATH_DISMISS_KEY = "bsc.pathExpose.dismissed";
+
+/**
+ * bsc-on-PATH banner (#2734). Inside the app, sessions exec the bundled `bsc` by an absolute `$BSC_BIN`
+ * path (#2001) — no PATH. So a bare `bsc` in the user's OWN terminal won't resolve. When detection
+ * (`path_expose_status`) reports it isn't on PATH, this offers a one-click, CONSENTED add: the banner
+ * names the exact dir first, the click IS the consent, and `path_expose_configure` reports back exactly
+ * what changed + how to undo it. Dismissal persists; once configured, detection hides it next launch.
+ */
+export function PathExposeBanner() {
+  const [status, setStatus] = useState<{ configured: boolean; binDir: string | null } | null>(null);
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem(PATH_DISMISS_KEY) === "1"; } catch { return false; }
+  });
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<{ target: string; undo: string } | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    // Fall back to "configured" on any detection failure — never nag when we can't actually tell.
+    void safeInvoke<{ configured: boolean; binDir: string | null }>(
+      "path_expose_status", undefined, { configured: true, binDir: null },
+    ).then((s) => { if (!cancelled) setStatus(s); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const dismiss = () => {
+    try { localStorage.setItem(PATH_DISMISS_KEY, "1"); } catch { /* private mode — dismiss for this run */ }
+    setDismissed(true);
+  };
+
+  const configure = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await invoke<{ changed: boolean; target: string; undo: string }>("path_expose_configure");
+      setDone({ target: r.target, undo: r.undo });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Nothing to offer: still probing, already on PATH, no bundled bsc, or dismissed.
+  if (dismissed || !status || status.configured || !status.binDir) return null;
+
+  if (done) {
+    return (
+      <Banner
+        variant="bar"
+        tone="success"
+        onDismiss={dismiss}
+        lead={<Text weight={600} style={{ whiteSpace: "nowrap" }}>✓ bsc on PATH</Text>}
+      >
+        <Text>
+          Added to {done.target}. Reopen your terminal to run <Text as="span" mono>bsc</Text>. To undo: {done.undo}
+        </Text>
+      </Banner>
+    );
+  }
+
+  return (
+    <Banner
+      variant="bar"
+      tone="info"
+      onDismiss={dismiss}
+      lead={<Text weight={600} style={{ whiteSpace: "nowrap" }}>bsc CLI</Text>}
+      right={
+        <Button variant="primary" onClick={configure} disabled={busy}>
+          {busy ? "Configuring…" : "Add to PATH"}
+        </Button>
+      }
+    >
+      <Stack gap={2} style={{ flex: 1 }}>
+        <Text>
+          Run <Text as="span" mono>bsc</Text> from your own terminal — add{" "}
+          <Text as="span" mono>{status.binDir}</Text> to your PATH.
+        </Text>
+        {error && <Text size="xxs" style={{ color: "var(--danger)" }}>{error}</Text>}
+      </Stack>
+    </Banner>
+  );
+}
+
+const KIT_CLASS_TONE: Record<KitChange["class"], string> = {
+  breaking: "var(--danger)",
+  additive: "var(--accent)",
+  fix: "var(--success)",
+};
+
+/**
+ * Kit-change approval banner (#2944). After the designer session makes kit modifications, the store
+ * fans them out to consumer projects (`kitDispatches`). By default (auto-apply OFF — a Planner setting)
+ * they're GATED here: one summary banner + a Review drawer listing each change, its propagated
+ * consumers, and an **Approve** button that releases it to the drain (routing it into each live
+ * consumer's director). Approving marks the change approved so it leaves this gate immediately;
+ * dismissing drops it. Hidden entirely when auto-apply is ON (changes flow without a gate).
+ */
+function KitChangesBanner() {
+  const dispatches = useAppStore((s) => s.kitDispatches);
+  const autoApply = useAppStore((s) => s.autoApplyKitChanges);
+  const paneDirectorDrive = useAppStore((s) => s.paneDirectorDrive);
+  const dismissKitChange = useAppStore((s) => s.dismissKitChange);
+  const [open, setOpen] = useState(false);
+
+  // Group the pending dispatches by change → its consumer projects.
+  const groups = useMemo(() => {
+    const m = new Map<string, { change: KitChange; projects: string[] }>();
+    for (const d of dispatches) {
+      const g = m.get(d.change.id);
+      if (g) g.projects.push(d.projectKey);
+      else m.set(d.change.id, { change: d.change, projects: [d.projectKey] });
+    }
+    return [...m.values()];
+  }, [dispatches]);
+
+  if (autoApply || groups.length === 0) return null;
+  const n = groups.length;
+  // Approve = deliver the change to any LIVE consumer (into its director, like the drain), then REMOVE
+  // all of the change's dispatches (#2951) — gone immediately and for good. Dismiss just drops it.
+  const approve = (g: { change: KitChange; projects: string[] }) => {
+    for (const pk of g.projects) {
+      if (paneDirectorDrive?.[directorPaneId(pk)]) void injectPrompt(directorPaneId(pk), kitDispatchPrompt(g.change));
+    }
+    dismissKitChange(g.change.id);
+  };
+  const dismissChange = (g: { change: KitChange; projects: string[] }) => dismissKitChange(g.change.id);
+
+  return (
+    <>
+      <Banner
+        variant="bar"
+        tone="accent"
+        role="status"
+        lead={<GitBranch size={14} style={{ color: "var(--accent)", flexShrink: 0 }} />}
+        right={<Button onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Review"}</Button>}
+      >
+        <Box as="span" style={{ flex: 1, minWidth: 0 }}>
+          <b>{n} kit change{n === 1 ? "" : "s"}</b> from the designer {n === 1 ? "is" : "are"} ready to apply — review &amp; approve.
+        </Box>
+      </Banner>
+
+      {open && (
+        <Box className="banner-drawer">
+          {groups.map((g) => (
+            <Box key={g.change.id} border="soft" radius={6} style={{ overflow: "hidden" }}>
+              <Row gap={8} style={{ padding: "7px 10px", flexWrap: "wrap", alignItems: "center" }}>
+                <Chip color={KIT_CLASS_TONE[g.change.class]}>{g.change.class}</Chip>
+                <Text weight={600} size={12.5}>{g.change.component}</Text>
+                <Text size={12} tone="muted" style={{ flex: 1, minWidth: 100 }}>— {g.change.summary}</Text>
+                <Button variant="primary" style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => approve(g)}>Approve</Button>
+                <Button variant="ghost" style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => dismissChange(g)}>Dismiss</Button>
+              </Row>
+              {g.change.migration && (
+                <Text size={11} tone="muted" as="div" style={{ padding: "0 10px 6px" }}>Migration: {g.change.migration}</Text>
+              )}
+              <Box style={{ padding: "6px 10px", borderTop: "1px solid var(--border-soft)", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                <Text size={10.5} tone="dim">propagates to</Text>
+                {g.projects.length === 0 ? (
+                  <Text size={10.5} tone="dim">— no consumer projects yet</Text>
+                ) : g.projects.map((pk) => (
+                  <Text key={pk} mono size={10.5} tone="muted" style={{ background: "var(--bg-panel)", borderRadius: 4, padding: "1px 6px" }}>{pk}</Text>
+                ))}
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      )}
+    </>
+  );
+}
+
 export function AppBanners() {
   return (
     <Box className="app-banner-stack">
+      <KitChangesBanner />
       <CrashRecoveryBanner />
       <SessionRecoveryBanner />
       <QuarantineBanner />
       <SandboxSetupBanner />
+      <ProjectCompleteBanner />
+      <PathExposeBanner />
     </Box>
   );
 }

@@ -1,0 +1,34 @@
+/* Sounds composition-graph page (#3077). Layout-specific rules only; colors + primitives come from
+   tokens.css. Mirrors the Algorithms/Glance canvas idiom (absolute world-positioned node cards + an SVG
+   edge layer under them). Cards are neutral like the Algorithms cards; only primitives read distinctly
+   (dashed violet). Tier color lives in the rail dots (SoundsRail), not a per-card left rail (#3123). */
+
+.snd-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev, var(--bg-soft));
+  cursor: pointer;
+  overflow: hidden;
+  transition: opacity 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+.snd-node:hover { border-color: var(--fg-dim); }
+.snd-node.on { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
+.snd-node.dim { opacity: 0.22; }
+.snd-node .snd-name { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.snd-node .snd-meta { font-size: 10.5px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* A primitive is a source descriptor (like the Algorithms primitives) — dashed violet. */
+.snd-node.snd-primitive {
+  border-style: dashed;
+  border-color: var(--violet, #a78bfa);
+  background: color-mix(in srgb, var(--violet, #a78bfa) 8%, var(--bg-elev, var(--bg-soft)));
+}
+.snd-node.snd-primitive:hover { border-color: var(--violet, #a78bfa); }
+.snd-node.snd-primitive.on { box-shadow: 0 0 0 2px var(--violet, #a78bfa); border-color: var(--violet, #a78bfa); }
+.snd-node.snd-primitive .snd-meta { color: color-mix(in srgb, var(--violet, #a78bfa) 65%, var(--fg-dim)); }

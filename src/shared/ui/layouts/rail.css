@@ -1,0 +1,56 @@
+/* Shared left-rail navigation primitives (#2789) — RailRow (the nav row) + RailGroupHeader (the
+   section sub-label). ONE canonical look for every left-pane menu (Skills · Teams · Designs ·
+   Algorithms), replacing the drifted per-feature rows (.algo-railrow / .teams-railrow / .ds-kithead
+   / .ds-comprow / skills inline rows) and their four different active tints + header sizes. */
+
+/* The canonical look is the Design Studio rail (the reference #2789): ~29px rows, 7px radius, 12.5px
+   text, a bg-soft hover, and the --accent-soft wash on the selected row (no border, like ds-comprow). */
+.rail-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 29px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fg-muted);         /* Designs' resting leaf tone — brightens to --fg on hover/select */
+  font-size: 12.5px;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+}
+.rail-row:hover { background: var(--bg-soft); color: var(--fg); }
+.rail-row.on { background: var(--accent-soft); color: var(--fg); }
+
+.rail-row-lead { flex: none; display: inline-flex; align-items: center; justify-content: center; }
+.rail-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-row-trail { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--fg-dim); }
+
+/* Disclosure caret (expandable rows + collapsible group headers) — rotates 90° when open. */
+.rail-caret {
+  flex: none;
+  width: 12px;
+  font-size: 10px;
+  color: var(--fg-dim);
+  text-align: center;
+  transition: transform .12s ease;
+}
+.rail-caret.open { transform: rotate(90deg); }
+
+/* The section sub-label above a group of rows. A plain header by default; a hoverable toggle button
+   when collapsible (Designs' tech/style groups). Its label styling comes from SectionLabel. */
+.rail-grouphead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 26px;
+  padding: 0 8px;
+  background: transparent;
+  border: none;
+  text-align: left;
+}
+button.rail-grouphead { cursor: pointer; border-radius: 7px; }
+button.rail-grouphead:hover { background: var(--bg-soft); }

@@ -15,7 +15,7 @@
 // Pure + React-free so both planner launch sites (initial mount + restart) share one definition.
 
 import { resolveLlmConfig, bscAgentEnv, effectiveHarness } from "@/shared/lib/core/llmConfig";
-import { roleCapability, bscAgentPerms } from "@/shared/lib/session/sessionRoles";
+import { roleCapability, bscAgentPerms, sessionScopes } from "@/shared/lib/session/sessionRoles";
 import { resolveAllInstalledMcp, toBscAgentMcp, toSessionPayloads } from "@/features/mcp";
 import type { AppStore } from "@/store/types";
 
@@ -26,7 +26,8 @@ export interface PlannerLaunch {
   providerId?: string;
   /** The fallback init command (used only if no startup prompt is baked). */
   initCmd: string;
-  /** GH token env plus, for bsc-agent, the BSC_AGENT_* provider/model/base-url/perms/MCP vars. */
+  /** GH token env + the planner role's `BSC_SCOPES` store-scope doc (#2470) plus, for bsc-agent,
+   *  the BSC_AGENT_* provider/model/base-url/perms/MCP vars. */
   env: Record<string, string>;
   /** Whether the intro is suppressed on a resumed session (#1240). Claude keeps the fresh-only
    *  greeting; bsc-agent (a one-shot agent loop, not a REPL) always bakes the intro as its task. */
@@ -45,11 +46,15 @@ export interface PlannerLaunch {
  */
 export function plannerLaunchConfig(s: AppStore, ghEnv: Record<string, string>): PlannerLaunch {
   const harness = effectiveHarness(s.llmProvider, s.fleetHarness ?? "claude");
+  // Store scopes (#2470, defense-in-depth): the planner role's per-store access tiers (ui: read) for
+  // the store CLIs' runtime write check — on BOTH harnesses (the launch-time deny rules are the
+  // boundary; this guards accidents + the bsc-agent runtime).
+  const scopes = JSON.stringify(sessionScopes(roleCapability("planner")));
   if (harness !== "bsc-agent") {
     return {
       providerId: undefined,
       initCmd: "claude --continue 2>/dev/null || claude",
-      env: ghEnv,
+      env: { ...ghEnv, BSC_SCOPES: scopes },
       startupPromptFreshOnly: true,
       // Defensive (#2396): request resume explicitly. With the fresh-only intro guard a baked prompt
       // only ever fires when there's no history (where resume is a no-op), but if a caller ever bakes
@@ -66,6 +71,7 @@ export function plannerLaunchConfig(s: AppStore, ghEnv: Record<string, string>):
     // Plan-only role gate (#219) for the bsc-agent runtime: deny code writes + the mutating git/gh
     // commands the planner role forbids — the runtime's analogue of the claude settings.json denies.
     BSC_AGENT_PERMS: JSON.stringify(bscAgentPerms(roleCapability("planner"))),
+    BSC_SCOPES: scopes,
   };
   if (bscMcp.length > 0) env.BSC_AGENT_MCP = JSON.stringify(bscMcp);
   return {

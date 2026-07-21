@@ -2,7 +2,7 @@
 name = "bsc-ui"
 version = "0.1.0"
 edition = "2021"
-description = "The spec-first UI SDK's agent-facing face (#1852) — the KitNode contract (embedded from src-tauri/data/ui/kit-nodes.json, the ONE source of truth shared with the frontend SDK) plus a structural validator, exposed as the `bsc ui` CLI (schema · validate) so a live session can author + check UI-as-data from its own shell."
+description = "The `bsc ui` CLI — the ONE UI-design-surface command (#2469): the spec-first SDK's KitNode contract (embedded from src-tauri/data/ui/kit-nodes.json, the ONE source of truth shared with the frontend SDK) + structural validator + theme registry (#1852), with the component-library store verbs (list/get/set/remove · kit · eslint-preset · usage, #2281) mounted from bsc-component."
 
 # Tauri-free, SQLite-free: a tiny CLI over an embedded JSON contract. The hyphenated package name maps
 # to the `bsc_ui` crate name.
@@ -12,4 +12,19 @@ name = "bsc_ui"
 [dependencies]
 # Shared CLI scaffold (#1762): CmdDoc help catalog + help dispatch.
 bsc-cli-util = { path = "../bsc-cli-util" }
+# Base-dir resolution for the default released-kit store root (~/.base-studio-code/kits, #2465).
+bsc-util = { path = "../bsc-util" }
+# The component-library store CLI (#2281), mounted under `bsc ui` (#2469): list/get/set/remove +
+# kit/eslint-preset/usage delegate to bsc_component::cli; its CmdDocs compose into the merged help.
+bsc-component = { path = "../bsc-component" }
+# The verbatim-JSON-per-id store (#2158) backing the designer-writable THEME collection (#2488):
+# `bsc ui theme set/remove` persist to ~/.base-studio-code/themes/<id>.json.
+bsc-json-store = { path = "../bsc-json-store" }
 serde_json = "1"
+# Tree-sitter TSX parsing for `bsc ui harvest` (#3471) — the component half of `bsc graph harvest`.
+# Same pinned versions bsc-graph already locks, so this adds no new workspace dependency.
+tree-sitter = "0.26"
+tree-sitter-typescript = "0.23"
+# Content hashing for the kit store's id@version integrity (#2465). Same version the app crate
+# already locks, so this adds no new dependency to the workspace graph.
+sha2 = "0.11"

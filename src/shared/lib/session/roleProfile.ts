@@ -25,7 +25,31 @@ const ROLE_PROFILE: Record<SessionRole, string> = {
   issuer: "pf_review",
   juror: "pf_review",
   documentor: "pf_auto",
+  // Marketer (#2431): like the documentor it must actually WRITE (its marketing-content carve-out), so
+  // it launches under the write-permitting Autonomous profile; the role gate + bsc-scope hook confine
+  // its writes to the marketing globs.
+  marketer: "pf_auto",
   planner: "sys_planner",
+  // Designer (#2471) / Architect (#2755) / Librarian (#2787): the three app-owned studio sessions.
+  // Read-only review is the closest packaged floor, but this mapping ONLY backs the generic role→profile
+  // UI surfaces — it is NOT applied at launch. Their real launch (`StudioSessionMount` on TerminalHost,
+  // #3357) sets `paneRoles` and deliberately NO `paneProfiles` entry, because `buildSessionSettings` ADDS
+  // a profile's allowedCommands to the role's `restrictedAllow` surface — i.e. assigning a profile here
+  // would WIDEN a session confined to one store CLI. Don't wire this into a launch path.
+  designer: "pf_review",
+  architect: "pf_review",
+  librarian: "pf_review",
+  "sound-designer": "pf_review",
+  // Debugger (#3322): the app's full-cap maintenance session WRITES code, so like the worker it launches
+  // under the write-permitting Autonomous profile; its real launch (`DebugSessionMount` on TerminalHost,
+  // #3326) renders bypass directly via the `isFullCapabilitySession` carve-out, so this only backs the
+  // generic role→profile surfaces.
+  debugger: "pf_auto",
+  // Curator (#3092, epic #3087): the reusable-library post-landing actor. Read-only review is the
+  // closest packaged floor; its real launch (P2b) renders the role gate + `restrictedAllow` (`bsc ui` +
+  // `bsc graph`) directly. Its store writes go through `bsc ui`/`bsc graph` (Bash + the `ui` write-scope),
+  // not the file-write tools, so the review profile's whole-tool write deny doesn't mask them.
+  curator: "pf_review",
 };
 
 /** The default profile id for a role (or the Sandboxed default when there's no role). */

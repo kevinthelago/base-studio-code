@@ -1,0 +1,112 @@
+/* Design Studio (#2308) — the full-page component workbench. The shell is the shared GraphCanvas
+ * (#2766): resizable kits→components rail · [graph header · composition-graph canvas · designer-terminal
+ * dock] · resizable inspector (preview/tabs/design-bar). Distinct from the condensed planner
+ * `ComponentLibraryPane` (the Kickoff design). Tokens come from tokens.css; only Design-Studio-specific
+ * rules live here now — the shell layout moved to GraphCanvas. */
+
+/* Base typography for the studio, applied to the GraphCanvas root via `className="ds-graph"`. */
+.ds-graph { font-size: 13px; color: var(--fg); }
+
+/* The graph-header fit/Share buttons now use the shared `<Button variant="ghost">` (#2808), matching
+   the Teams/Algorithms/Glance toolbars; the former bespoke `.ds-act` rules were removed. */
+
+/* ── the details-inspector column header (the DesignerTerminal dock moved to the shared SessionDock,
+   #2808; the rail uses GraphRail's own header, #2767). Shell COLUMNS are GraphCanvas's / GraphRail's. ── */
+.ds-colhead { height: 38px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px 0 14px; border-bottom: 1px solid var(--border-soft, var(--border)); }
+
+/* ── rail tree ── The kit heads, component rows, and tech/style group headers now render through the
+   shared RailRow / RailGroupHeader nav primitives (#2789), so their former bespoke style rules
+   (.ds-kithead / .ds-comprow / .ds-grouphead / .ds-caret) were removed — the `ds-*` classes survive
+   only as selector/test hooks on the shared elements. `.ds-groupkids` (the tree's left-border indent
+   guide) is structural and stays. */
+.ds-groupkids { margin: 2px 0 6px; padding-left: 8px; border-left: 1px solid var(--border-soft, var(--border)); }
+
+/* ── preview (lives in the inspector, #2453) ── #3190: the inspector's LEAD surface — no card chrome (no
+   section borders, no checkered specimen backdrop, no frame padding, no control bar) so the component
+   reads edge-to-edge, sitting right under the identity header. Sized a touch above the detail tabs
+   (`flex: 1.5` vs the tabs' `flex: 1` ≈ 60/40), not dominating the pane. */
+.ds-preview { flex: 1.5 1 0; min-height: 180px; display: flex; flex-direction: column; }
+.ds-surface { flex: 1; min-height: 0; position: relative; overflow: hidden; background: var(--bg-canvas, var(--bg)); }
+.ds-frame { position: absolute; inset: 0; overflow: auto; }
+
+/* ── tabs + panels (inspector detail, #2453) ── */
+.ds-tabs { height: 36px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--border-soft, var(--border)); }
+.ds-tab { height: 26px; padding: 0 12px; border: none; background: none; cursor: pointer; font-size: 12.5px; color: var(--fg-muted); border-bottom: 2px solid transparent; border-radius: 0; }
+.ds-tab.on { color: var(--fg); font-weight: 600; border-bottom-color: var(--accent); }
+.ds-panel { flex: 1; min-height: 0; overflow: auto; }
+
+/* ── graph ── */
+/* The viewport/world shell + dotted grid are the shared GraphCanvas (#2418); only the node card is ours. */
+.ds-node { position: absolute; cursor: pointer; border-radius: 11px; padding: 11px 13px; background: var(--bg-elev, var(--bg-soft)); border: 1px solid var(--border); box-shadow: 0 6px 20px rgba(0,0,0,.3); transition: border-color .12s; }
+/* Selection must NOT touch the background (#2491) — the node keeps its elevated surface; the solid
+   accent ring + border alone carry the selected state. */
+.ds-node.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 10px 30px rgba(0,0,0,.4); }
+/* Related nodes (#2523) — a softer, thinner ring than .on; still no background change (the #2491 rule).
+   .on wins over .related (the selection is never also "related" to itself). */
+.ds-node.related { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 6px 20px rgba(0,0,0,.3); }
+/* AI live-focus (#2525) — the designer session is working THIS node: a pulsing accent ring, NO
+   background change (#2491). Placed AFTER .on/.related so a node that is also related takes the
+   animated ring; the component only applies .working to a node that is NOT the current selection, so
+   the user's .on always wins visually when they're the same node. */
+.ds-node.working { border-color: var(--accent); animation: ds-working-pulse 1.5s ease-in-out infinite; }
+@keyframes ds-working-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent), 0 6px 20px rgba(0,0,0,.3); }
+  50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent), 0 6px 20px rgba(0,0,0,.3); }
+}
+.ds-edge path { transition: stroke .12s, fill .12s; }
+
+/* Composition swimlanes (#2964) — faint tier bands behind the graph: Pages (top) · Composables
+   (middle) · Fundamentals (base). The two ends are tinted a touch stronger so the middle reads as the
+   clear lane between them; a dashed divider separates adjacent lanes; the label sits in the top gutter. */
+.ds-lane-bg { fill: var(--fg); opacity: .022; }
+/* Alternating tint across the four tiers (Pages · Layouts · Composables · Fundamentals) for rhythm. */
+.ds-lane-page .ds-lane-bg, .ds-lane-composable .ds-lane-bg { opacity: .05; }
+.ds-lane-divider { stroke: var(--border-soft, var(--border)); stroke-width: 1; stroke-dasharray: 5 7; opacity: .6; }
+.ds-lane-label { fill: var(--fg-dim); font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+
+/* Cross-graph library band (#3116) — the ALGORITHM nodes a component `requires` (@bsc/algorithms/…), lifted
+   into a fenced row across the top. The fence separates the library dimension from the composition below;
+   an algorithm card reads as a foreign (info-toned) node, not a kit component. */
+.ds-band-fence { stroke: color-mix(in srgb, var(--info) 45%, var(--border)); stroke-width: 1.25; stroke-dasharray: 2 6; opacity: .8; }
+.ds-algonode { position: absolute; border-radius: 11px; padding: 11px 13px; background: var(--bg-elev, var(--bg-soft)); border: 1px dashed color-mix(in srgb, var(--info) 55%, var(--border)); box-shadow: 0 6px 20px rgba(0,0,0,.3); }
+.ds-req-edge { opacity: .9; }
+
+/* Graph-health badges (#2680) — a corner glyph on a node the analyzer flagged (mirrors `bsc ui
+   doctor`). Colored by severity: cycle/duplicate/no-implementation = danger, dangling = warn,
+   orphan = dim. */
+.ds-node.unhealthy { border-style: dashed; }
+.ds-health { position: absolute; top: -8px; right: -8px; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; border-radius: 50%; background: var(--bg-elev, var(--bg-soft)); border: 1px solid var(--border); z-index: 2; }
+.ds-health-cycle, .ds-health-duplicate, .ds-health-no-implementation, .ds-health-unresolvable-import { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); }
+.ds-health-dangling-branch { color: var(--state-wait, var(--warning)); border-color: color-mix(in srgb, var(--state-wait, var(--warning)) 55%, var(--border)); }
+.ds-health-orphan { color: var(--fg-dim); }
+.ds-health-unwired-prop { color: var(--warning, var(--state-wait)); border-color: color-mix(in srgb, var(--warning, var(--state-wait)) 45%, var(--border)); }
+.ds-health-slot-shell { color: var(--info, var(--accent)); border-color: color-mix(in srgb, var(--info, var(--accent)) 45%, var(--border)); }
+/* #3163 motion findings — dead selector + name collision are faults (warning tone); the two SVG traps are advisory (info tone). */
+.ds-health-motion-dead-selector, .ds-health-motion-name-collision { color: var(--warning, var(--state-wait)); border-color: color-mix(in srgb, var(--warning, var(--state-wait)) 45%, var(--border)); }
+.ds-health-motion-dash-no-pathlength, .ds-health-motion-transform-attr { color: var(--info, var(--accent)); border-color: color-mix(in srgb, var(--info, var(--accent)) 45%, var(--border)); }
+.ds-healthcount { font-family: var(--mono); font-size: 10px; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius: 5px; padding: 1px 7px; margin-left: 8px; white-space: nowrap; }
+
+/* Preview build-error badge (#2838) — the on-visit component scan (`useComponentScan`) esbuild-builds
+   each buildable component; a node whose build FAILS gets this red glyph. Sits at the TOP-LEFT corner so
+   it never overlaps the graph-health badge (top-right, #2680) — the two signals read independently. */
+.ds-buildfail { position: absolute; top: -8px; left: -8px; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; border-radius: 50%; color: var(--danger); background: var(--bg-elev, var(--bg-soft)); border: 1px solid color-mix(in srgb, var(--danger) 60%, var(--border)); z-index: 2; }
+.ds-emptyrender { position: absolute; top: -8px; left: -8px; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; border-radius: 50%; color: var(--warning, var(--state-wait)); background: var(--bg-elev, var(--bg-soft)); border: 1px solid color-mix(in srgb, var(--warning, var(--state-wait)) 55%, var(--border)); z-index: 2; }
+
+/* ── inspector bits ── */
+.ds-inspbox { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.ds-insprow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 11px; border-bottom: 1px solid var(--border-soft, var(--border)); }
+.ds-insprow:last-child { border-bottom: none; }
+.ds-rel { display: flex; align-items: center; gap: 8px; background: none; border: none; padding: 2px 0; cursor: pointer; text-align: left; color: var(--accent); font-size: 11.5px; font-family: var(--mono); }
+.ds-rel:hover { opacity: .8; }
+
+/* The decorative motion pass (#2344 — preview/view/row/edge enters) was REMOVED: the Design Studio
+   was the only animated page; a motion vocabulary is deferred until the design system is in place.
+   The loading indicators this note used to point at (ds-spin/ds-pulse/ds-skel) are gone too — the
+   Studio's loading states ride the shared Skeleton primitive (#3244). */
+
+/* ── designer session panel (#2471/#2597) — the ALWAYS-ON terminal docked at the bottom of the
+   center column, below the composition graph. Fixed height so the graph (pane) keeps priority; the
+   hook's ResizeObserver re-fits xterm when the center width changes. */
+/* The designer-session dock now renders through the shared SessionDock (#2808); its former
+   `.ds-terminal`/`.ds-termhost` rules were removed with that extraction. */
+

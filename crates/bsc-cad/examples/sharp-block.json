@@ -1,0 +1,25 @@
+{
+  "op": "difference",
+  "base": {
+    "op": "intersect",
+    "nodes": [
+      { "op": "box", "size": [40, 40, 16] },
+      {
+        "op": "rotate",
+        "deg": 45,
+        "axis": [0, 0, 1],
+        "node": { "op": "box", "size": [46, 46, 20] }
+      }
+    ]
+  },
+  "tools": [
+    {
+      "op": "rotate",
+      "deg": 45,
+      "axis": [0, 1, 0],
+      "node": { "op": "box", "size": [12, 60, 12] }
+    },
+    { "op": "translate", "by": [13, 13, 0], "node": { "op": "cylinder", "r": 2.5, "h": 24 } },
+    { "op": "translate", "by": [-13, -13, 0], "node": { "op": "cylinder", "r": 2.5, "h": 24 } }
+  ]
+}

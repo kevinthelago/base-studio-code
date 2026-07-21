@@ -137,11 +137,12 @@ fn shared_fixture_matches_serde() {
     let c = &fx["clientToServer"];
     assert!(matches!(
         serde_json::from_value::<ClientMsg>(c["auth"].clone()).unwrap(),
-        ClientMsg::Auth { fcm_token: Some(_), .. }
+        ClientMsg::Auth { fcm_token: Some(_), protocol_version: Some(PROTOCOL_VERSION), .. }
     ));
+    // auth_no_fcm pins BOTH optional fields absent — a pre-v2 client's auth still parses.
     assert!(matches!(
         serde_json::from_value::<ClientMsg>(c["auth_no_fcm"].clone()).unwrap(),
-        ClientMsg::Auth { fcm_token: None, .. }
+        ClientMsg::Auth { fcm_token: None, protocol_version: None, .. }
     ));
     assert!(matches!(
         serde_json::from_value::<ClientMsg>(c["set_fcm_token"].clone()).unwrap(),
@@ -164,9 +165,73 @@ fn shared_fixture_matches_serde() {
         ClientMsg::PaneResize { cols: 80, rows: 24, .. }
     ));
 
+    // client → server: the plan_sync frames deserialize into the Rust shapes (#2497 —
+    // these fixtures pin the shapes mobile must send; Rust is authoritative).
+    assert!(matches!(
+        serde_json::from_value::<ClientMsg>(c["plan_sync_manifest_request"].clone()).unwrap(),
+        ClientMsg::PlanSyncManifestRequest { project_id } if project_id == "proj-bf9cf968"
+    ));
+    assert!(matches!(
+        serde_json::from_value::<ClientMsg>(c["plan_sync_pull"].clone()).unwrap(),
+        ClientMsg::PlanSyncPull { paths, .. } if paths == ["goal.md"]
+    ));
+    assert!(matches!(
+        serde_json::from_value::<ClientMsg>(c["plan_sync_push"].clone()).unwrap(),
+        ClientMsg::PlanSyncPush { files, .. } if files.len() == 1 && files[0].relpath == "goal.md"
+    ));
+
     // server → client: our serialization equals the fixture byte-shape.
     let s = &fx["serverToClient"];
-    assert_eq!(serde_json::to_value(ServerMsg::AuthOk).unwrap(), s["auth_ok"]);
+    assert_eq!(
+        serde_json::to_value(ServerMsg::AuthOk {
+            protocol_version: PROTOCOL_VERSION,
+            input_granted: false,
+        })
+        .unwrap(),
+        s["auth_ok"]
+    );
+    // auth_ok_pre_grant pins the pre-#2511 frame WITHOUT inputGranted — a decode-side pin
+    // for mobile (an old desktop omits the field); the current desktop always serializes
+    // it, so only the shape (not our serialization) is asserted here.
+    assert_eq!(s["auth_ok_pre_grant"]["type"], "auth_ok");
+    assert!(
+        s["auth_ok_pre_grant"].get("inputGranted").is_none(),
+        "auth_ok_pre_grant must stay grant-less (pins the optional field for old desktops)"
+    );
+    assert_eq!(
+        serde_json::to_value(ServerMsg::InputGrantChanged { granted: true }).unwrap(),
+        s["input_grant_changed"]
+    );
+    assert_eq!(
+        serde_json::to_value(ServerMsg::StoreState {
+            domain: store_domains::PLAN.into(),
+            rev: 3,
+            json: "{\"projects\":[]}".into(),
+        })
+        .unwrap(),
+        s["store_state"]
+    );
+    assert_eq!(
+        serde_json::to_value(ServerMsg::PlanSyncManifest {
+            project_id: "proj-bf9cf968".into(),
+            files: [("goal.md".to_string(), "bf9cf968".to_string())].into_iter().collect(),
+        })
+        .unwrap(),
+        s["plan_sync_manifest"]
+    );
+    assert_eq!(
+        serde_json::to_value(ServerMsg::PlanSyncFiles {
+            project_id: "proj-bf9cf968".into(),
+            files: vec![PlanFile { relpath: "goal.md".into(), content: "foobar".into() }],
+        })
+        .unwrap(),
+        s["plan_sync_files"]
+    );
+    assert_eq!(
+        serde_json::to_value(ServerMsg::PlanSyncAck { project_id: "proj-bf9cf968".into(), applied: true })
+            .unwrap(),
+        s["plan_sync_ack"]
+    );
     assert_eq!(
         serde_json::to_value(ServerMsg::PaneOutput {
             pane_id: "t0p0".into(),
@@ -514,6 +579,17 @@ fn input_grant_toggles_state_and_resets_request_latch() {
     assert!(st.take_input_request());
 }
 
+/// The #2498 alert push (`tunnel_emit_alert` → `enqueue_alert_push`) is non-blocking and safe
+/// both without a paired FCM token (guarded no-op) and with one (enqueued to the worker).
+/// Delivery itself is the push worker's job; this pins that the enqueue path never panics.
+#[test]
+fn enqueue_alert_push_is_safe_with_and_without_tokens() {
+    let st = TunnelState::new();
+    st.enqueue_alert_push("gate-ready", "Plan stage ready", "Stage gate passed", "planning_demo");
+    st.add_fcm_token("tok-1".into());
+    st.enqueue_alert_push("fleet-landed", "Fleet: landed", "#42 merged", "");
+}
+
 #[test]
 fn host_pub_key_is_base64_of_static_public() {
     let st = TunnelState::new();
@@ -681,11 +757,18 @@ fn app_messages_roundtrip_through_the_noise_session() {
     let (mut host, mut mobile) = handshake_pair();
 
     // desktop → mobile: encode a ServerMsg, decrypt + parse on the mobile side.
-    let frame = transport::encode(&mut host, &ServerMsg::AuthOk).unwrap();
+    let frame = transport::encode(
+        &mut host,
+        &ServerMsg::AuthOk { protocol_version: PROTOCOL_VERSION, input_granted: false },
+    )
+    .unwrap();
     let mut out = vec![0u8; frame.len()];
     let n = mobile.read_message(&frame, &mut out).unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out[..n]).unwrap();
-    assert_eq!(v, serde_json::json!({ "type": "auth_ok" }));
+    assert_eq!(
+        v,
+        serde_json::json!({ "type": "auth_ok", "protocolVersion": PROTOCOL_VERSION, "inputGranted": false })
+    );
 
     // mobile → desktop: a client `auth` frame decodes via decode_room_msg.
     let cj = serde_json::to_vec(&serde_json::json!({ "type": "auth", "token": "secret" })).unwrap();
@@ -924,6 +1007,189 @@ fn mcp_list_msg_type_tag() {
     let msg = ServerMsg::McpList { extensions: vec![] };
     let v = serde_json::to_value(&msg).unwrap();
     assert_eq!(v["type"], "mcp_list");
+}
+
+// ── Contract v2 (#2497): protocol version + store_state + pane kind ──────────
+
+/// `auth.protocolVersion` is optional (a pre-v2 client omits it) and parses when present;
+/// `auth_ok` echoes the desktop's version in camelCase. Round-trips both directions of the
+/// versioned handshake.
+#[test]
+fn auth_protocol_version_round_trips_and_defaults_to_none() {
+    // Pre-v2 client: no protocolVersion → None (treated as v1; never rejected).
+    let legacy = serde_json::from_value::<ClientMsg>(
+        serde_json::json!({ "type": "auth", "token": "secret" }),
+    )
+    .unwrap();
+    assert!(matches!(legacy, ClientMsg::Auth { protocol_version: None, .. }));
+
+    // v2 client: protocolVersion parses.
+    let v2 = serde_json::from_value::<ClientMsg>(
+        serde_json::json!({ "type": "auth", "token": "secret", "protocolVersion": 2 }),
+    )
+    .unwrap();
+    assert!(matches!(v2, ClientMsg::Auth { protocol_version: Some(2), .. }));
+
+    // auth_ok carries the desktop's version, camelCase on the wire — and, since #2511,
+    // ALWAYS the current input grant (mobile treats it as optional for old desktops).
+    let ok = serde_json::to_value(ServerMsg::AuthOk {
+        protocol_version: PROTOCOL_VERSION,
+        input_granted: true,
+    })
+    .unwrap();
+    assert_eq!(ok["type"], "auth_ok");
+    assert_eq!(ok["protocolVersion"], PROTOCOL_VERSION);
+    assert!(ok.get("protocol_version").is_none());
+    assert_eq!(ok["inputGranted"], true);
+    assert!(ok.get("input_granted").is_none());
+}
+
+// ── Input grant on the wire (#2511) ──────────────────────────────────────────
+
+/// `input_grant_changed` serializes with the snake_case tag + bare `granted` bool —
+/// the mid-session companion to `auth_ok.inputGranted` (which covers connect time).
+#[test]
+fn input_grant_changed_msg_shape() {
+    let v = serde_json::to_value(ServerMsg::InputGrantChanged { granted: false }).unwrap();
+    assert_eq!(v, serde_json::json!({ "type": "input_grant_changed", "granted": false }));
+}
+
+/// Toggling the grant broadcasts `input_grant_changed` to connected clients; an
+/// idempotent re-set is silent (no duplicate frame), and connect-time state is
+/// auth_ok's job — this bus event is only the live-change leg (#2511).
+#[test]
+fn input_grant_toggle_broadcasts_change_frames_only() {
+    let st = TunnelState::new();
+    let mut rx = st.subscribe_events();
+
+    // false → false: idempotent, nothing on the bus (fresh state is view-only).
+    st.set_input_granted(false);
+    assert!(rx.try_recv().is_err(), "idempotent re-set must not broadcast");
+
+    // false → true: broadcast granted=true.
+    st.set_input_granted(true);
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        ServerMsg::InputGrantChanged { granted: true }
+    ));
+
+    // true → true: idempotent again.
+    st.set_input_granted(true);
+    assert!(rx.try_recv().is_err(), "idempotent re-grant must not broadcast");
+
+    // true → false: broadcast the revoke.
+    st.set_input_granted(false);
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        ServerMsg::InputGrantChanged { granted: false }
+    ));
+}
+
+/// store_state serializes with the snake_case tag and its three domain-agnostic fields.
+#[test]
+fn store_state_msg_shape() {
+    let msg = ServerMsg::StoreState {
+        domain: store_domains::GLANCE.into(),
+        rev: 7,
+        json: "{\"nodes\":[]}".into(),
+    };
+    let v = serde_json::to_value(&msg).unwrap();
+    assert_eq!(v["type"], "store_state");
+    assert_eq!(v["domain"], "glance");
+    assert_eq!(v["rev"], 7);
+    assert_eq!(v["json"], "{\"nodes\":[]}");
+}
+
+/// The registered domain vocabulary is unique and spelled as expected (both repos share it).
+#[test]
+fn store_domain_vocabulary_is_unique() {
+    let all = store_domains::ALL;
+    let set: std::collections::HashSet<_> = all.iter().collect();
+    assert_eq!(set.len(), all.len(), "duplicate store_state domain");
+    assert!(all.contains(&"glance") && all.contains(&"plan") && all.contains(&"alerts"));
+}
+
+/// The store bus keeps the LAST store_state per domain (replay-on-connect semantics, #2497):
+/// a second push for the same domain replaces the first, other domains are untouched, and
+/// the snapshot comes back in stable (sorted-domain) order.
+#[test]
+fn store_state_replay_keeps_last_per_domain() {
+    let st = TunnelState::new();
+    assert!(st.store_states_snapshot().is_empty());
+
+    // Same store-then-broadcast path as the tunnel_set_store_state command.
+    let push = |domain: &str, rev: u64, json: &str| {
+        let frame = ServerMsg::StoreState { domain: domain.into(), rev, json: json.into() };
+        let d = domain.to_string();
+        st.set_and_broadcast(frame.clone(), |inner| {
+            inner.store_states.insert(d, frame);
+        });
+    };
+    push(store_domains::PLAN, 1, "{\"v\":1}");
+    push(store_domains::GLANCE, 1, "{\"g\":1}");
+    push(store_domains::PLAN, 2, "{\"v\":2}"); // supersedes plan rev 1
+
+    let frames = st.store_states_snapshot();
+    assert_eq!(frames.len(), 2, "one frame per domain");
+    // Sorted by domain: glance before plan.
+    match &frames[0] {
+        ServerMsg::StoreState { domain, rev, .. } => {
+            assert_eq!((domain.as_str(), *rev), ("glance", 1));
+        }
+        other => panic!("expected store_state, got {other:?}"),
+    }
+    match &frames[1] {
+        ServerMsg::StoreState { domain, rev, json } => {
+            assert_eq!((domain.as_str(), *rev), ("plan", 2), "last write per domain wins");
+            assert_eq!(json, "{\"v\":2}");
+        }
+        other => panic!("expected store_state, got {other:?}"),
+    }
+}
+
+/// A store_state push is broadcast to connected clients (the live-change leg; replay covers
+/// the connect leg).
+#[test]
+fn store_state_push_broadcasts_to_subscribers() {
+    let st = TunnelState::new();
+    let mut rx = st.subscribe_events();
+    let frame = ServerMsg::StoreState { domain: "org".into(), rev: 1, json: "{}".into() };
+    st.set_and_broadcast(frame.clone(), |inner| {
+        inner.store_states.insert("org".into(), frame);
+    });
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        ServerMsg::StoreState { domain, rev: 1, .. } if domain == "org"
+    ));
+}
+
+/// PaneDescriptor.kind (#2497) is optional both ways: absent on the wire ⇒ `None` (a v1
+/// pane list still parses), `None` serializes WITHOUT the key (a v1 client sees the old
+/// byte shape), `Some` round-trips.
+#[test]
+fn pane_descriptor_kind_is_optional_and_round_trips() {
+    // v1 descriptor (no kind) still parses.
+    let legacy: PaneDescriptor = serde_json::from_value(
+        serde_json::json!({ "id": "t0p0", "cwd": "/repo", "name": "api", "status": "running" }),
+    )
+    .unwrap();
+    assert_eq!(legacy.kind, None);
+    // None is omitted from the wire.
+    let v = serde_json::to_value(&legacy).unwrap();
+    assert!(v.get("kind").is_none(), "kind: None must not serialize");
+
+    // Some(kind) round-trips.
+    let worker = PaneDescriptor {
+        id: "proj:api-core".into(),
+        cwd: "/worktrees/proj/api--api-core".into(),
+        name: "api-core".into(),
+        status: "running".into(),
+        kind: Some("worker".into()),
+    };
+    let v = serde_json::to_value(&worker).unwrap();
+    assert_eq!(v["kind"], "worker");
+    let back: PaneDescriptor = serde_json::from_value(v).unwrap();
+    assert_eq!(back, worker);
 }
 
 // ── TunnelState snapshot methods ────────────────────────────────────────────

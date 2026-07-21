@@ -15,11 +15,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/store";
 import { hubToCanonical } from "@/features/planner/lib/plannerSync";
-import { tunnelSetPlanState, tunnelEmitPlanState, tunnelEmitPlanStatus, tunnelEmitPlanEvent } from "@/features/tunnel";
+import {
+  tunnelSetPlanState, tunnelEmitPlanState, tunnelEmitPlanStatus, tunnelEmitPlanEvent,
+  publishTunnelDomain, recordTunnelAlerts, gateReadyAlert, plannerWaitingAlert,
+} from "@/features/tunnel";
 import { usePlannerMessages } from "./usePlannerMessages";
 import { SKIPPED_KEY, FEATURES_KEY } from "../stages/planTopics";
 import { FLEET_KEY } from "../fleet/planFleet";
 import { DEPENDENCIES_KEY } from "../issues/dependencies";
+import { buildPlanBoardPayload } from "./planBoardProjection";
+import type { Stage } from "../stages/focusedPlan";
 
 export interface PlannerTunnelSyncOpts {
   effectiveProjectId: string;
@@ -34,12 +39,19 @@ export interface PlannerTunnelSyncOpts {
   paneId: string;
   projectTitle: string;
   confirmPlanStage: (projectId: string, key: string) => void;
+  /** The focused-pane stage board (from usePlanGates, #2498) — published as the `plan`
+   *  store_state domain the mobile Planner page renders. */
+  stages: Stage[];
+  /** The active stage's gate passed (awaiting the user-only confirm). */
+  focusGateReady: boolean;
+  planComplete: boolean;
 }
 
 export function usePlannerTunnelSync(opts: PlannerTunnelSyncOpts) {
   const {
     effectiveProjectId, savedSections, confirmedSet, currentStage, planStatusLabel,
     planningDir, paneId, projectTitle, confirmPlanStage,
+    stages, focusGateReady, planComplete,
   } = opts;
   const tunnelRunning = useAppStore((s) => s.tunnelRunning);
 
@@ -82,13 +94,17 @@ export function usePlannerTunnelSync(opts: PlannerTunnelSyncOpts) {
     tunnelSetPlanState(canonicalPlan.meta.projectId, canonicalPlan.files).catch(() => {});
   }, [tunnelRunning, canonicalPlan]);
 
-  // (2) PTY mirror — expose the planner pane so a paired phone can view (and, if granted,
-  // drive) the live planner terminal. Cleared when the planner unmounts or the relay stops.
+  // (2) PTY mirror — register the planner pane in the session roster (keyed source, #2497)
+  // so a paired phone can view (and, if granted, drive) the live planner terminal.
+  // Unregistered when the planner unmounts or the relay stops.
   useEffect(() => {
-    const setExtra = useAppStore.getState().setTunnelExtraPanes;
-    if (!tunnelRunning || !planningDir) { setExtra([]); return; }
-    setExtra([{ id: paneId, cwd: planningDir, name: `Planner — ${projectTitle}`, status: "running" as const }]);
-    return () => useAppStore.getState().setTunnelExtraPanes([]);
+    const register = useAppStore.getState().registerTunnelPanes;
+    if (!tunnelRunning || !planningDir) { register("planner", []); return; }
+    register("planner", [{
+      id: paneId, cwd: planningDir, name: `Planner — ${projectTitle}`,
+      status: "running" as const, kind: "planner" as const,
+    }]);
+    return () => useAppStore.getState().registerTunnelPanes("planner", []);
   }, [tunnelRunning, planningDir, paneId, projectTitle]);
 
   // (1b) plan_state — debounced snapshot (replayed to newly-paired clients Rust-side).
@@ -135,6 +151,65 @@ export function usePlannerTunnelSync(opts: PlannerTunnelSyncOpts) {
     }
     prevMsgCountRef.current = plannerMessages.length;
   }, [plannerMessages, tunnelRunning, canonicalPlan]);
+
+  // (1c) The `plan` store_state domain (#2498): the stage/gate board the mobile Planner page
+  // renders — the same `stagesFrom` output the desktop stepper shows, plus fleet streams and
+  // the deploy/market gate summaries. COMPLEMENTS plan_state (files + transcript, above); the
+  // shared domain publisher debounces, dedups unchanged payloads, and stamps the rev.
+  const planFleet = useAppStore((s) => s.planFleet);
+  const planSkippedStages = useAppStore((s) => s.planSkippedStages);
+  const planDeployConfig = useAppStore((s) => s.planDeployConfig);
+  const planMarketConfig = useAppStore((s) => s.planMarketConfig);
+  useEffect(() => {
+    if (!tunnelRunning || !effectiveProjectId) return;
+    publishTunnelDomain("plan", buildPlanBoardPayload({
+      projectId: effectiveProjectId,
+      title: projectTitle,
+      currentStage,
+      statusLabel: planStatusLabel,
+      gateReady: focusGateReady,
+      planComplete,
+      stages,
+      confirmed: confirmedSet,
+      skipped: planSkippedStages[effectiveProjectId] ?? [],
+      fleet: planFleet[effectiveProjectId],
+      deploy: planDeployConfig[effectiveProjectId],
+      market: planMarketConfig[effectiveProjectId],
+    }));
+  }, [
+    tunnelRunning, effectiveProjectId, projectTitle, currentStage, planStatusLabel,
+    focusGateReady, planComplete, stages, confirmedSet,
+    planSkippedStages, planFleet, planDeployConfig, planMarketConfig,
+  ]);
+
+  // gate-ready alert (#2498): the active stage's gate JUST passed — only the USER can confirm,
+  // so this is exactly the "come back and advance the plan" moment. Fires only on an OBSERVED
+  // not-ready→ready transition per stage: the first run just primes the ref, so remounting the
+  // planner over an already-passed gate never re-alerts (each alert mints a fresh id).
+  const prevGateRef = useRef<{ stage: string; ready: boolean } | null>(null);
+  useEffect(() => {
+    const prev = prevGateRef.current;
+    if (prev && tunnelRunning && focusGateReady && currentStage &&
+        !(prev.ready && prev.stage === currentStage)) {
+      recordTunnelAlerts([gateReadyAlert(effectiveProjectId, currentStage, Date.now())]);
+    }
+    prevGateRef.current = { stage: currentStage, ready: focusGateReady };
+  }, [tunnelRunning, focusGateReady, currentStage, effectiveProjectId]);
+
+  // planner-waiting alert (#2498): the planner's newest transcript turn is an ASSISTANT turn —
+  // it finished and is waiting on the user. The poll re-delivers the same transcript every few
+  // seconds, so the turn key ref (its `at`, falling back to the text) guards re-derivation and
+  // the alert hub's id dedup backstops it — one alert per turn.
+  const lastPlannerTurnRef = useRef("");
+  useEffect(() => {
+    if (!tunnelRunning || plannerMessages.length === 0) return;
+    const last = plannerMessages[plannerMessages.length - 1];
+    if (last.role !== "assistant") return;
+    const turnKey = last.at ? String(last.at) : last.text;
+    if (turnKey === lastPlannerTurnRef.current) return;
+    lastPlannerTurnRef.current = turnKey;
+    recordTunnelAlerts([plannerWaitingAlert(effectiveProjectId, paneId, last.text, last.at || Date.now())]);
+  }, [tunnelRunning, plannerMessages, effectiveProjectId, paneId]);
 
   // Inbound DRIVE from the phone (#934): confirm a section, advance a stage, or chat into the
   // planner PTY. Gated Rust-side behind the input grant (a view-only phone can't steer).

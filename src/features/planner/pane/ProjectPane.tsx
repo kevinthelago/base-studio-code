@@ -12,10 +12,11 @@ import { Text } from "@/shared/ui/typography/Text";
 import "./projectPane.css";
 import type { Flow, ContextFile, ProjectPaneData, McpServer } from "./projectPaneData";
 import { type ModelId } from "@/app/console/lib/models";
-import type { Stage, GatePill, FooterKind } from "../stages/focusedPlan";
+import { hasStageGuidance, type Stage, type GatePill, type FooterKind } from "../stages/focusedPlan";
 import {
   Stepper as FocusedStepper,
   StageHeader as FocusedStageHeader,
+  StageGuidanceCard as FocusedStageGuidance,
   LockBanner as FocusedLockBanner,
   StageFooter as FocusedStageFooter,
 } from "./FocusedShell";
@@ -57,10 +58,11 @@ export function ProjectPane({
     activeIdx: number;
     onSelect: (i: number) => void;
     pill: GatePill;
-    footer: { kind: FooterKind; enabled: boolean; canSkip?: boolean };
+    footer: { kind: FooterKind; enabled: boolean; canSkip?: boolean; skipEnabled?: boolean };
     onBack: () => void;
     onPrimary: () => void;
-    /** Skip the active OPTIONAL stage (#921) — rendered when `footer.canSkip`. */
+    /** Skip the active stage (#921/#2854) — rendered only when `footer.skipEnabled` (the stage is
+     *  skippable now, or gate-override is on); a required stage shows no Skip. */
     onSkip?: () => void;
     /** The project already has a GitHub board — the publish action reads as "Update GitHub" (#823). */
     published?: boolean;
@@ -71,7 +73,7 @@ export function ProjectPane({
     authoring?: AuthoringWiring;
     /** The selected stage's injectable prompts + inject handler — drives the header "?" helper (#…),
      *  replacing the removed auto-injecting conductor. */
-    promptHelp?: { prompts: StagePrompt[]; onInject: (text: string) => void };
+    promptHelp?: { prompt: StagePrompt; onInject: (text: string) => void };
     /** The project's live required-context topics (#1061) — the Context body lists each by name
      *  with written/missing state so the user sees exactly which files the gate still needs. */
     requiredContext?: string[];
@@ -97,6 +99,10 @@ export function ProjectPane({
 }) {
   // Context file viewer modal — its scrim (ModalScrim) owns Escape + backdrop dismiss.
   const [viewing, setViewing] = useState<ContextFile | null>(null);
+  // The stage-guidance disclosure (#3257) — the gate detail + Inject button are HIDDEN by default and
+  // revealed by clicking the gate pill. Stored as WHICH stage's gate is open, so navigating to another
+  // stage auto-collapses (derived, no reset effect); `null` ⇒ none open.
+  const [openGateIdx, setOpenGateIdx] = useState<number | null>(null);
 
   // The context-file viewer modal — shared by BOTH the focused and full-pane renders so
   // clicking an md file opens it in either (the focused pane previously had no viewer, #…).
@@ -130,11 +136,16 @@ export function ProjectPane({
     const selected = focus.stages[focus.selectedIdx];
     const active   = focus.stages[focus.activeIdx];
     const isLocked = focus.selectedIdx > focus.activeIdx;
+    // The gate pill toggles the guidance card ONLY when there's guidance to reveal (#3257); otherwise it
+    // stays a plain status chip. Open iff THIS stage is the open one (auto-collapses on stage change).
+    const canToggleGate = hasStageGuidance(selected, focus.pill, focus.promptHelp?.prompt, focus.promptHelp?.onInject);
+    const gateOpen = openGateIdx === focus.selectedIdx;
     return (
       <Pane mode="inline" bare className="pp fp">
         <FocusedStepper stages={focus.stages} selectedIdx={focus.selectedIdx} onSelect={focus.onSelect} />
-        <FocusedStageHeader stage={selected} pill={focus.pill} promptHelp={focus.promptHelp} />
+        <FocusedStageHeader stage={selected} pill={focus.pill} open={gateOpen} onToggleGate={canToggleGate ? () => setOpenGateIdx(gateOpen ? null : focus.selectedIdx) : undefined} />
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
+        <FocusedStageGuidance stage={selected} pill={focus.pill} prompt={focus.promptHelp?.prompt} onInject={focus.promptHelp?.onInject} open={gateOpen} />
         <Box className="pp-scroll">
           <FocusedStageBody stage={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
             onFlow={onFlow} onModel={onModel} onPersona={onPersona} onTopology={onTopology} onDirectorDrive={onDirectorDrive}

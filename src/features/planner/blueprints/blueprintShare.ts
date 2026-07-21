@@ -3,9 +3,12 @@
 // manifest (fresh uids, defensive field coercion — never trusts the payload shape).
 // Pure; pairs with lib/gist/manifest.ts.
 
-import { type Blueprint, type BlueprintStage, uid, dedupeSections } from "../stages/blueprints";
+import { type Blueprint, type BlueprintStage, type BlueprintTeam, type BlueprintUiKit, type BlueprintSoundKit, type BlueprintDesign, type FleetPolicy, uid, dedupeSections } from "../stages/blueprints";
+import { flowOrUndefined } from "../fleet/agentFlow";
 import { wrapExtension, type ExtensionManifest } from "@/features/planner/lib/gist/manifest";
 import { type SkillPayload } from "./blueprintSkills";
+// Type-only cross-feature imports (allowed by the #1545 boundary) — the team's node/edge shapes.
+import type { Position, Relationship } from "@/features/teams";
 
 const str = (v: unknown, d = ""): string => (typeof v === "string" ? v : d);
 const strArr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
@@ -40,6 +43,105 @@ function coerceSection(v: unknown): BlueprintStage | null {
   };
 }
 
+// ── Embedded team (#2450) ────────────────────────────────────────────────────
+const POSITION_KINDS = ["agent", "external", "resource"] as const;
+
+function coercePosition(v: unknown): Position | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const nodeId = str(o.nodeId);
+  if (!nodeId) return null;
+  const kind = (POSITION_KINDS as readonly string[]).includes(str(o.kind))
+    ? (str(o.kind) as Position["kind"]) : "agent";
+  return {
+    nodeId, kind,
+    ...(str(o.personaId) ? { personaId: str(o.personaId) } : {}),
+    ...(str(o.label) ? { label: str(o.label) } : {}),
+    ...(typeof o.x === "number" ? { x: o.x } : {}),
+    ...(typeof o.y === "number" ? { y: o.y } : {}),
+  };
+}
+
+function coerceRelationship(v: unknown): Relationship | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const id = str(o.id);
+  const archetype = str(o.archetype);
+  const from = str(o.from);
+  const to = str(o.to);
+  if (!id || !archetype || !from || !to) return null;
+  return { id, archetype, from, to, ...(typeof o.bow === "number" ? { bow: o.bow } : {}) };
+}
+
+/** Coerce a blueprint's embedded team (#2450) out of an untrusted payload: positions need a nodeId,
+ *  relationships need id/archetype/from/to; malformed entries are dropped. `undefined` when the
+ *  field is absent or not an object — a blueprint without a team stays without one. */
+export function coerceTeam(v: unknown): BlueprintTeam | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const positions = (Array.isArray(o.positions) ? o.positions : [])
+    .map(coercePosition).filter((p): p is Position => !!p);
+  const relationships = (Array.isArray(o.relationships) ? o.relationships : [])
+    .map(coerceRelationship).filter((r): r is Relationship => !!r);
+  return { positions, relationships };
+}
+
+/** Coerce a blueprint's UI-kit pin (#2465) out of an untrusted payload — the lockfile entry
+ *  referencing an immutable `id@version` artifact in the global kit store. A pin is only as good
+ *  as its integrity data, so ALL of id/version/hash are required (a hash-less pin can't be
+ *  verified on fetch); anything malformed ⇒ `undefined` — the blueprint just stays unpinned,
+ *  exactly like a blueprint that never had one. `source` (the typed-gist URL) stays optional, as
+ *  is the paired `themeId` (#2489 — the theme id rides the pin wherever the pin travels; absent ⇒
+ *  `"default"`). */
+export function coerceUiKit(v: unknown): BlueprintUiKit | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const id = str(o.id);
+  const version = str(o.version);
+  const hash = str(o.hash);
+  if (!id || !version || !hash) return undefined;
+  return {
+    id, version, hash,
+    ...(str(o.source) ? { source: str(o.source) } : {}),
+    ...(str(o.themeId) ? { themeId: str(o.themeId) } : {}),
+  };
+}
+
+/** Coerce a blueprint's SOUND-kit pin (#3372) out of an untrusted payload — the sounds twin of
+ *  {@link coerceUiKit}, same discipline: a pin is only as good as its integrity data, so ALL of
+ *  id/version/hash are required (a hash-less pin can't be verified on fetch) and anything malformed
+ *  ⇒ `undefined` (the blueprint just stays unpinned). `source` (the typed-gist URL) stays optional.
+ *  No `themeId` twin — a sound kit has no theme (see {@link BlueprintSoundKit}). */
+export function coerceSoundKit(v: unknown): BlueprintSoundKit | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const id = str(o.id);
+  const version = str(o.version);
+  const hash = str(o.hash);
+  if (!id || !version || !hash) return undefined;
+  return { id, version, hash, ...(str(o.source) ? { source: str(o.source) } : {}) };
+}
+
+/** Coerce a blueprint's fleet POLICY (#1854 Phase b / #2460) out of an untrusted payload — the
+ *  default per-stream profile + flow the planner instantiates for this project type's fleet.
+ *  `profile` is a reference-by-id (any non-empty string; an unknown id already falls through to
+ *  the role default at launch). `flow` reuses the canonical flow coercion ({@link flowOrUndefined}
+ *  — the same rule the tag/fleet.json parsers apply): a flow naming at least one field normalizes
+ *  to a complete launch-safe AgentFlow, so a fully-specified valid flow round-trips byte-faithfully;
+ *  a non-object flow, or one naming no flow field, is dropped. A policy carrying NEITHER field —
+ *  malformed, non-object, or informationless `{}` — ⇒ `undefined`: the blueprint just stays on
+ *  today's launch-time defaults, exactly like one that never declared a policy. */
+export function coerceFleetPolicy(v: unknown): FleetPolicy | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const profile = str(o.profile);
+  const rawFlow = o.flow && typeof o.flow === "object" && !Array.isArray(o.flow)
+    ? (o.flow as Record<string, unknown>) : undefined;
+  const flow = flowOrUndefined(rawFlow);
+  if (!profile && !flow) return undefined;
+  return { ...(profile ? { profile } : {}), ...(flow ? { flow } : {}) };
+}
+
 /** Reconstruct a Blueprint from an untrusted payload, or null if it's not one. Requires an id, a
  *  name, and (by default) at least one valid section; assigns fresh uids.
  *
@@ -70,6 +172,25 @@ export function coerceBlueprint(
   const VIS = ["local", "private-gist", "catalog"] as const;
   const visibility = (VIS as readonly string[]).includes(str(o.visibility))
     ? (str(o.visibility) as Blueprint["visibility"]) : undefined;
+  // Embedded team (#2450) — preserved through import/share so the blueprint keeps its own org
+  // configuration instead of silently dropping it (same discipline as skills/mcp above).
+  const team = coerceTeam(o.team);
+  // UI-kit pin (#2465) — the whitelist below silently strips unknown fields (the #2450 lesson),
+  // so the pin MUST be coerced explicitly or it would vanish on every import/poll round-trip.
+  const uiKit = coerceUiKit(o.uiKit);
+  // Sound-kit pin (#3372) — SAME whitelist discipline as uiKit: without explicit coercion the pin
+  // would vanish on every import/share/poll round-trip and a shared blueprint would silently lose
+  // the sound kit it prescribes.
+  const soundKit = coerceSoundKit(o.soundKit);
+  // Fleet policy (#1854 Phase b / #2460) — same whitelist discipline: without explicit coercion
+  // every import/share/poll round-trip would silently strip the default per-stream profile+flow,
+  // reverting the blueprint's fleet to launch defaults.
+  const fleetPolicy = coerceFleetPolicy(o.fleetPolicy);
+  // Design contribution (#2606) — the categories the blueprint introduces + a preferred theme ref.
+  // SAME whitelist discipline (#2450): without explicit coercion `design` would be silently stripped
+  // on every import/share/poll round-trip and the download-reconciliation confirm-list (#2658) would
+  // never fire — a silent hole, exactly what the "fall loudly" principle forbids.
+  const design = coerceDesign(o.design);
   return {
     id, name, desc: str(o.desc), sections,
     // Blueprint-wide attached capabilities (#897) + lifecycle metadata, preserved on import.
@@ -84,7 +205,24 @@ export function coerceBlueprint(
     ...(str(o.icon) ? { icon: str(o.icon) } : {}),
     ...(category ? { category } : {}),
     ...(mode ? { mode } : {}),
+    ...(fleetPolicy ? { fleetPolicy } : {}),
+    ...(team ? { team } : {}),
+    ...(uiKit ? { uiKit } : {}),
+    ...(soundKit ? { soundKit } : {}),
+    ...(design ? { design } : {}),
   };
+}
+
+/** Coerce a blueprint's design contribution (#2606) from an untrusted payload — the categories it
+ *  introduces + a preferred theme ref. Returns undefined when neither is present, so an all-default
+ *  blueprint stays `design`-less (and reconcile is a no-op). Mirrors coerceUiKit/coerceTeam. */
+function coerceDesign(raw: unknown): BlueprintDesign | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  const categories = strArr(o.categories);
+  const theme = str(o.theme);
+  if (!categories.length && !theme) return undefined;
+  return { ...(categories.length ? { categories } : {}), ...(theme ? { theme } : {}) };
 }
 
 /** Wrap a blueprint in the extension envelope for export / share / publish. When `bundledSkills`

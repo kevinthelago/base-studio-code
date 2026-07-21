@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useGlanceProjects, mergeGlanceProjects, applyLiveness } from "./useGlanceProjects";
+import { useGlanceProjects, mergeGlanceProjects, applyLiveness, applyDormantHealth, applyFaultHealth, applyOffHealth, applyRunningActivity, deriveBuildingKeys, filterTriaged, resolveProjectCategory } from "./useGlanceProjects";
 import type { GhProject } from "@/features/planner/list/published/publishedModel";
+import type { MinimalGhProject } from "@/shared/lib/github/githubState";
 import type { ProjectLite } from "./glanceData";
+import type { GlanceFault } from "./useGlanceFaults";
 import { useAppStore } from "@/store";
 
 /** A GhProject with the fields the merge reads; the rest filled so the cast is honest. */
@@ -12,18 +14,29 @@ const gh = (id: string, title: string, closed = false): GhProject => ({
   items: { totalCount: 0, nodes: [] }, repositories: { nodes: [] },
 });
 
-describe("useGlanceProjects — declared role/status (#2284)", () => {
-  beforeEach(() => useAppStore.setState({ localDraftProjects: {}, planFleet: {}, projectKeyAlias: {}, githubToken: "" }));
+/** A persisted minimal record (#2446) with the fields the fallback reads. */
+const rec = (title: string, closed = false): MinimalGhProject => ({
+  id: `PVT_${title}`, number: 1, title, shortDescription: null, url: "", closed, updatedAt: "",
+  itemsTotalCount: 0, openCount: 0, closedCount: 0, repos: [],
+});
 
-  it("passes through a draft's DECLARED role + status (curated coloring wins)", () => {
+describe("useGlanceProjects — declared role/health/activity (#2284/#2541)", () => {
+  beforeEach(() => useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null }));
+
+  it("passes through a draft's DECLARED role + health + activity (curated colouring wins)", () => {
     useAppStore.setState({
-      localDraftProjects: { "billing-svc": { title: "billing-svc", pitch: "", createdAt: 1, role: "service", status: "building" } },
+      localDraftProjects: { "billing-svc": { title: "billing-svc", pitch: "", createdAt: 1, role: "service", health: "warning", activity: "waiting" } },
+      triagedProjects: { "billing-svc": 1 },
     });
     const { result } = renderHook(() => useGlanceProjects());
-    expect(result.current.find((p) => p.id === "billing-svc")).toMatchObject({ role: "service", status: "building" });
+    expect(result.current.find((p) => p.id === "billing-svc")).toMatchObject({ role: "service", health: "warning", activity: "waiting" });
   });
 
-  it("derives status when NOT declared (idle, or planning when the project has a fleet) and leaves role undeclared", () => {
+  // #2551 established that `building` comes from RUNNING AGENTS, never from merely having a planned
+  // fleet. #3429 then split the undeclared resting state in two: nothing running at all reads `off`,
+  // a session that exists but is quiet reads `idle`. Neither project here has a session, so both read
+  // `off · idle` — the assertion below was left at the pre-#3429 `idle · idle` and went red on develop.
+  it("rests at off · idle when NOT declared — building comes from running agents, not a fallback (#2551/#3429)", () => {
     useAppStore.setState({
       localDraftProjects: {
         plain: { title: "Plain", pitch: "", createdAt: 1 },
@@ -36,86 +49,278 @@ describe("useGlanceProjects — declared role/status (#2284)", () => {
           director: { enabled: false },
         } as never,
       },
+      triagedProjects: { plain: 1, fleeted: 1 },
     });
     const { result } = renderHook(() => useGlanceProjects());
     const plain = result.current.find((p) => p.id === "plain");
     const fleeted = result.current.find((p) => p.id === "fleeted");
-    expect(plain).toMatchObject({ status: "idle" });
+    expect(plain).toMatchObject({ health: "off", activity: "idle" });
     expect(plain?.role).toBeUndefined(); // derived downstream in buildGlanceData (hash), not here
-    expect(fleeted).toMatchObject({ status: "planning" });
+    // A PLANNED (not launched) fleet is still idle — planning one does not make a project active.
+    expect(fleeted).toMatchObject({ health: "off", activity: "idle" });
   });
 });
 
-describe("mergeGlanceProjects — draft/published dedup (#2339)", () => {
-  it("dedupes a draft + an UN-ALIASED published project with the SAME title to ONE node", () => {
-    // The regression: no alias, so the published key would title-derive to a DIFFERENT key than the
-    // draft's stable id → two nodes. The sanitize(title)→stableId lookup must collapse them to one.
+describe("filterTriaged — only triaged/working projects render (#2541)", () => {
+  const projects: ProjectLite[] = [
+    { id: "worked", name: "Worked", health: "idle", activity: "building" },
+    { id: "just-a-draft", name: "Draft", health: "idle", activity: "planning" },
+  ];
+
+  it("keeps a project whose key is marked triaged and drops one that is not", () => {
+    const out = filterTriaged(projects, { worked: 1720000000000 });
+    expect(out.map((p) => p.id)).toEqual(["worked"]);
+  });
+
+  it("empty triaged set ⇒ empty graph (a plan/draft never shows until worked)", () => {
+    expect(filterTriaged(projects, {})).toEqual([]);
+  });
+});
+
+describe("useGlanceProjects — hides a non-triaged draft (#2541)", () => {
+  beforeEach(() => useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null, triagedProjects: {} }));
+
+  it("a drafted-but-never-triaged project does NOT appear on the network", () => {
+    useAppStore.setState({ localDraftProjects: { "fresh-draft": { title: "Fresh Draft", pitch: "", createdAt: 1 } } });
+    const { result } = renderHook(() => useGlanceProjects());
+    expect(result.current.some((p) => p.id === "fresh-draft")).toBe(false);
+  });
+
+  it("the SAME project appears once it is marked triaged", () => {
+    useAppStore.setState({
+      localDraftProjects: { "fresh-draft": { title: "Fresh Draft", pitch: "", createdAt: 1 } },
+      triagedProjects: { "fresh-draft": 1 },
+    });
+    const { result } = renderHook(() => useGlanceProjects());
+    expect(result.current.some((p) => p.id === "fresh-draft")).toBe(true);
+  });
+});
+
+describe("mergeGlanceProjects — draft/published dedup (#2339/#2409); GitHub no longer sets status (#2541)", () => {
+  it("dedupes a legacy-keyed draft + a published project with the SAME title to ONE node", () => {
+    // Grandfathering: a draft still keyed by a legacy minted id must collapse with its published
+    // board via the slug(title)→draftKey lookup — the node-id alias table is gone (#2409).
     const drafts = { "p-abc123": { title: "Billing Service", pitch: "", createdAt: 1, role: "service" as const } };
     const published = [gh("PVT_node1", "Billing Service", false)];
 
-    const merged = mergeGlanceProjects(drafts, {}, {}, published);
+    const merged = mergeGlanceProjects(drafts, published);
 
     const billing = merged.filter((p) => p.name === "Billing Service");
     expect(billing).toHaveLength(1);
-    expect(billing[0].id).toBe("p-abc123");        // collapsed onto the draft's stable id
-    expect(billing[0].status).toBe("planning");     // published (open) status wins
-    expect(billing[0].role).toBe("service");        // draft-declared role survives the collapse
+    expect(billing[0].id).toBe("p-abc123");   // collapsed onto the draft's key
+    expect(billing[0].role).toBe("service");  // draft-declared role survives the collapse
+    // GitHub board status is NOT read (#2541) — the node keeps its derived activity, never "done".
+    expect(billing[0].activity).toBe("idle"); // rests at idle (#2551) — building is derived, not defaulted
   });
 
-  it("lets an ALIASED published project override its draft (single node on the aliased key)", () => {
-    const drafts = { "p-abc123": { title: "Billing Service", pitch: "", createdAt: 1 } };
-    const aliases = { PVT_node1: "p-abc123" };
-    const published = [gh("PVT_node1", "Billing Service", true)]; // closed ⇒ shipped ⇒ done
+  it("keys a draft-less published project by its name-derived slug, with derived axes (#2409/#2541)", () => {
+    const published = [gh("PVT_node1", "Billing Service", true)]; // closed board — but status is NOT read
 
-    const merged = mergeGlanceProjects(drafts, {}, aliases, published);
+    const merged = mergeGlanceProjects({}, published);
 
     expect(merged).toHaveLength(1);
-    expect(merged[0].id).toBe("p-abc123");
-    expect(merged[0].status).toBe("done");
+    expect(merged[0].id).toBe("billing-service"); // projectSlug(title) — never the node id
+    expect(merged[0].health).toBe("idle");
+    expect(merged[0].activity).toBe("idle");  // rests at idle (#2551) until a runtime signal lights it up
+  });
+
+  it("collapses a slug-keyed draft with its published board on the SAME key (#2409)", () => {
+    const drafts = { "billing-service": { title: "Billing Service", pitch: "", createdAt: 1 } };
+    const published = [gh("PVT_node1", "Billing Service", true)];
+
+    const merged = mergeGlanceProjects(drafts, published);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe("billing-service");
+  });
+
+  it("collapses a legacy + name-slug local hub folder of the SAME project to ONE node, keyed canonically", () => {
+    // #2409 grandfathering leaves BOTH hub folders on disk with the same title; the local-inventory seed
+    // must not render the project twice. The canonical name-slug folder wins the node id.
+    const localPublished = [
+      { key: "Beautiful_Emails", title: "Beautiful Emails" },
+      { key: "beautiful-emails", title: "Beautiful Emails" },
+    ];
+    const merged = mergeGlanceProjects({}, [], localPublished);
+    const emails = merged.filter((p) => p.name === "Beautiful Emails");
+    expect(emails).toHaveLength(1);
+    expect(emails[0].id).toBe("beautiful-emails"); // the canonical projectSlug folder, not the legacy one
+  });
+
+  it("keeps a legacy-only local hub (no name-slug folder) under its own key", () => {
+    const merged = mergeGlanceProjects({}, [], [{ key: "Beautiful_Emails", title: "Beautiful Emails" }]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe("Beautiful_Emails"); // no canonical folder exists → keep the legacy key
+  });
+
+  it("carries a draft's declared lifecycle category onto the node (#2583)", () => {
+    const merged = mergeGlanceProjects({ x: { title: "X", pitch: "", createdAt: 1, category: "harden" } }, []);
+    expect(merged[0].category).toBe("harden");
   });
 });
 
-describe("applyLiveness — heartbeat → 'live' status (#2263)", () => {
+describe("resolveProjectCategory — lifecycle category, replacing the hash tier (#2583)", () => {
+  it("prefers a declared category, then the blueprint category, then the status heuristic", () => {
+    expect(resolveProjectCategory("harden", "greenfield", false)).toBe("harden");   // declared wins
+    expect(resolveProjectCategory(undefined, "transform", true)).toBe("transform");  // blueprint next
+    expect(resolveProjectCategory(undefined, undefined, true)).toBe("greenfield");   // a draft is being created
+    expect(resolveProjectCategory(undefined, undefined, false)).toBe("maintain");    // a published/worked project is in upkeep
+  });
+});
+
+describe("applyLiveness — heartbeat → 'live' activity + healthy (#2263/#2541)", () => {
   const projects: ProjectLite[] = [
-    { id: "a", name: "A", status: "planning" },
-    { id: "b", name: "B", status: "done" },
-    { id: "c", name: "C", status: "idle" },
+    { id: "a", name: "A", health: "idle", activity: "planning" },
+    { id: "b", name: "B", health: "idle", activity: "building" },
+    { id: "c", name: "C", health: "idle", activity: "building" },
   ];
 
-  it("maps a live-keyed project to the 'live' status and leaves the rest untouched", () => {
+  it("maps a live-keyed project to activity 'live' + health 'healthy' and leaves the rest untouched", () => {
     const out = applyLiveness(projects, new Set(["a", "b"]));
-    expect(out.find((p) => p.id === "a")?.status).toBe("live"); // was planning → live
-    expect(out.find((p) => p.id === "b")?.status).toBe("live"); // even a shipped app can be running
-    expect(out.find((p) => p.id === "c")?.status).toBe("idle"); // not live → keeps merged status
+    expect(out.find((p) => p.id === "a")).toMatchObject({ activity: "live", health: "healthy" });
+    expect(out.find((p) => p.id === "b")).toMatchObject({ activity: "live", health: "healthy" });
+    expect(out.find((p) => p.id === "c")).toMatchObject({ activity: "building", health: "idle" }); // not live → untouched
   });
 
-  it("returns the input untouched when nothing is live (liveness lapsed ⇒ prior status intact)", () => {
+  it("returns the input untouched when nothing is live (liveness lapsed ⇒ prior axes intact)", () => {
     const out = applyLiveness(projects, new Set());
     expect(out).toEqual(projects);
-    expect(out.find((p) => p.id === "a")?.status).toBe("planning");
   });
 });
 
-describe("useGlanceProjects — status producer wires 'live' from project_liveness (#2263)", () => {
+describe("deriveBuildingKeys / applyRunningActivity — running agents → building (#2551)", () => {
+  const projects: ProjectLite[] = [
+    { id: "alpha", name: "Alpha", health: "idle", activity: "idle" },
+    { id: "beta", name: "Beta", health: "idle", activity: "idle" },
+  ];
+
+  it("deriveBuildingKeys reads the LIVE panes + run/on pane statuses, keyed by the project prefix", () => {
+    const keys = deriveBuildingKeys(
+      new Set(["alpha:auth"]),                               // a live worker cell → alpha
+      { "beta:director": "run", "gamma:web": "idle" },       // director running → beta; idle → ignored
+    );
+    expect([...keys].sort()).toEqual(["alpha", "beta"]);
+  });
+
+  // #3429 — the roster map (`fleetPaneStreams`) this used to read is only cleared by `closeTab`, so an
+  // ended fleet kept its project reading `building`/`healthy` until the tab itself was closed. Reading the
+  // pruned live set instead means "End sessions" is enough.
+  it("deriveBuildingKeys drops a pane that is no longer a live cell (#3429)", () => {
+    expect([...deriveBuildingKeys(new Set(), { "alpha:auth": "idle" })]).toEqual([]);
+  });
+
+  it("applyRunningActivity marks a project with a live agent as building + healthy, leaves the rest idle", () => {
+    const out = applyRunningActivity(projects, new Set(["alpha"]));
+    expect(out.find((p) => p.id === "alpha")).toMatchObject({ activity: "building", health: "healthy" });
+    expect(out.find((p) => p.id === "beta")).toEqual(projects[1]); // nothing running → stays idle
+  });
+
+  it("no running agents → the input is returned untouched", () => {
+    expect(applyRunningActivity(projects, new Set())).toBe(projects);
+  });
+});
+
+// #3429 — the L0 half of the #3415 existence rule. Until this overlay existed the L0 stack could only
+// ESCALATE off the merge default, so "nothing is running" and "a session exists but is quiet" both
+// rendered `idle` — the exact ambiguity #3415 removed one layer down.
+describe("applyDormantHealth — no session and no live app reads `off`, not `idle` (#3429)", () => {
+  const projects: ProjectLite[] = [
+    { id: "alpha", name: "Alpha", health: "healthy", activity: "building" },
+    { id: "beta", name: "Beta", health: "idle", activity: "idle" },
+  ];
+
+  it("marks a project with nothing running as off · idle", () => {
+    const out = applyDormantHealth(projects, new Set(["alpha"]));
+    expect(out.find((p) => p.id === "beta")).toMatchObject({ health: "off", activity: "idle" });
+  });
+
+  it("leaves a project with a live session or a live app untouched", () => {
+    const out = applyDormantHealth(projects, new Set(["alpha"]));
+    expect(out.find((p) => p.id === "alpha")).toEqual(projects[0]);
+  });
+
+  it("reads every project off when nothing at all is running — the no-launched-tabs case", () => {
+    for (const p of applyDormantHealth(projects, new Set())) {
+      expect(p).toMatchObject({ health: "off", activity: "idle" });
+    }
+  });
+
+  // Order matters: dormancy is applied BEFORE the fault overlay, so an unfixed error still surfaces on a
+  // project nobody is working on rather than being hidden behind `off`.
+  it("does not mask an unresolved fault — the fault overlay still wins over dormancy", () => {
+    const dormant = applyDormantHealth(projects, new Set());
+    const out = applyFaultHealth(dormant, { beta: { level: "error", title: "boom", count: 1 } as GlanceFault });
+    expect(out.find((p) => p.id === "beta")).toMatchObject({ health: "error", reason: "boom" });
+  });
+});
+
+describe("applyFaultHealth — worst fault → warning/error + reason (#2541)", () => {
+  const projects: ProjectLite[] = [
+    { id: "a", name: "A", health: "healthy", activity: "live" },
+    { id: "b", name: "B", health: "idle", activity: "building" },
+  ];
+  const fault = (level: GlanceFault["level"], title: string, count = 1): GlanceFault => ({ level, title, count });
+
+  it("escalates a warn to 'warning' and an error/fatal to 'error', carrying the title as the reason", () => {
+    const out = applyFaultHealth(projects, { a: fault("error", "boom", 3), b: fault("warn", "no instructions", 1) });
+    expect(out.find((p) => p.id === "a")).toMatchObject({ health: "error", reason: "boom", faults: 3 });
+    expect(out.find((p) => p.id === "b")).toMatchObject({ health: "warning", reason: "no instructions", faults: 1 });
+  });
+
+  it("a fatal fault reads as error, and a project with no fault is untouched", () => {
+    const out = applyFaultHealth(projects, { a: fault("fatal", "panic") });
+    expect(out.find((p) => p.id === "a")?.health).toBe("error");
+    expect(out.find((p) => p.id === "b")).toEqual(projects[1]); // no fault → left as-is (stays healthy/live path)
+  });
+});
+
+describe("applyOffHealth — the manual OFF toggle wins over every derived status (#3239)", () => {
+  const projects: ProjectLite[] = [
+    { id: "a", name: "A", health: "error", activity: "building", reason: "boom", faults: 2 },
+    { id: "b", name: "B", health: "healthy", activity: "live" },
+  ];
+
+  it("forces health 'off' and drops the fault reason for a deactivated node (mute beats an error)", () => {
+    const out = applyOffHealth(projects, { a: true });
+    expect(out.find((p) => p.id === "a")).toMatchObject({ health: "off", reason: undefined });
+    // The activity axis is untouched (the canvas renders "off" over it) — off is a HEALTH value.
+    expect(out.find((p) => p.id === "a")?.activity).toBe("building");
+  });
+
+  it("leaves an ON (absent) node untouched", () => {
+    const out = applyOffHealth(projects, { a: true });
+    expect(out.find((p) => p.id === "b")).toEqual(projects[1]);
+  });
+
+  it("treats a falsy entry as ON (sparse map: absent/false ⇒ on)", () => {
+    const out = applyOffHealth(projects, { a: false });
+    expect(out.find((p) => p.id === "a")?.health).toBe("error"); // not deactivated
+  });
+
+  it("an empty off-map returns the nodes unchanged", () => {
+    expect(applyOffHealth(projects, {})).toEqual(projects);
+  });
+});
+
+describe("useGlanceProjects — wires 'live' from project_liveness (#2263)", () => {
   beforeEach(() => {
-    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, projectKeyAlias: {}, githubToken: "" });
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null, triagedProjects: { "billing-svc": 1 } });
     vi.mocked(invoke).mockReset();
   });
 
-  it("resolves a heartbeating draft to the 'live' status", async () => {
+  it("resolves a heartbeating draft to activity 'live'", async () => {
     useAppStore.setState({
       localDraftProjects: { "billing-svc": { title: "billing-svc", pitch: "", createdAt: 1 } },
     });
-    // The liveness command reports the draft live; every other command is inert.
     vi.mocked(invoke).mockImplementation(async (cmd: string) =>
       cmd === "project_liveness" ? [{ projectKey: "billing-svc", live: true }] : null,
     );
 
     const { result } = renderHook(() => useGlanceProjects());
-    await waitFor(() => expect(result.current.find((p) => p.id === "billing-svc")?.status).toBe("live"));
+    await waitFor(() => expect(result.current.find((p) => p.id === "billing-svc")?.activity).toBe("live"));
   });
 
-  it("leaves the derived status when the command reports the project NOT live", async () => {
+  it("leaves the derived activity when the command reports the project NOT live", async () => {
     useAppStore.setState({
       localDraftProjects: { "billing-svc": { title: "billing-svc", pitch: "", createdAt: 1 } },
     });
@@ -124,31 +329,155 @@ describe("useGlanceProjects — status producer wires 'live' from project_livene
     );
 
     const { result } = renderHook(() => useGlanceProjects());
-    // Give the poll a tick; the status must stay the derived "idle" (no fleet), never flip to live.
     await waitFor(() => expect(result.current.length).toBe(1));
-    expect(result.current[0].status).toBe("idle");
+    expect(result.current[0].activity).toBe("idle"); // no running agents → idle, never flips to live
   });
 });
 
-describe("useGlanceProjects — published cache survives remount (#2339)", () => {
+describe("useGlanceProjects — published read hits the TTL cache (#2447)", () => {
   beforeEach(() => {
-    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, projectKeyAlias: {}, githubToken: "" });
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "gho_test", githubState: null });
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockImplementation(async (cmd: string) =>
+      cmd === "github_graphql" ? { viewer: { projectsV2: { nodes: [] } } } : null,
+    );
+  });
+
+  it("sends the projects query with the default maxAgeSecs", async () => {
+    renderHook(() => useGlanceProjects());
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      "github_graphql",
+      expect.objectContaining({ token: "gho_test", maxAgeSecs: 300 }),
+    ));
+  });
+});
+
+describe("useGlanceProjects — persisted github-state (#2446, supersedes the #2339 module cache)", () => {
+  beforeEach(() => {
+    // Triaged so the machinery-under-test projects render (the drafted→triaged gate, #2541).
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null, triagedProjects: { "cached-project": 1, "acme-crm": 1 } });
     vi.mocked(invoke).mockReset();
   });
 
-  it("a revisit (published fetch not yet landed) still includes the last-known published set", async () => {
-    // First visit: a token + a resolving fetch → the published node lands and is cached module-side.
-    vi.mocked(invoke).mockResolvedValue({ viewer: { projectsV2: { nodes: [gh("PVT_cached", "Cached Project", false)] } } });
+  it("a landed fetch OVERWRITES the persisted records (+fetchedAt) in the store", async () => {
+    vi.mocked(invoke).mockResolvedValue({ viewer: { projectsV2: { nodes: [gh("PVT_cached", "Cached Project")] } } });
     useAppStore.setState({ githubToken: "tok" });
+    const { unmount } = renderHook(() => useGlanceProjects());
+    await waitFor(() => expect(useAppStore.getState().githubState?.records.map((r) => r.title)).toEqual(["Cached Project"]));
+    expect(useAppStore.getState().githubState!.fetchedAt).toBeGreaterThan(0);
+    unmount();
+  });
+
+  it("a revisit (fetch not yet landed) still includes the last-known published set for a LOCAL project", async () => {
+    vi.mocked(invoke).mockResolvedValue({ viewer: { projectsV2: { nodes: [gh("PVT_cached", "Cached Project", true)] } } });
+    useAppStore.setState({
+      githubToken: "tok",
+      localDraftProjects: { "cached-project": { title: "Cached Project", pitch: "", createdAt: 1 } },
+    });
     const first = renderHook(() => useGlanceProjects());
-    await waitFor(() => expect(first.result.current.some((p) => p.name === "Cached Project")).toBe(true));
+    await waitFor(() => expect(first.result.current.some((p) => p.id === "cached-project")).toBe(true));
     first.unmount();
 
-    // Revisit: no token, so useGithubQuery stays { data: null } (no fetch) — but the module cache must
-    // seed the merge, so the cached project is present IMMEDIATELY (no drafts-only flash).
+    // Revisit: no token, so useGithubQuery stays { data: null } (no fetch) — but the persisted state
+    // seeds the merge, so the project still renders IMMEDIATELY (no drafts-only flash).
     useAppStore.setState({ githubToken: "" });
     const second = renderHook(() => useGlanceProjects());
-    expect(second.result.current.some((p) => p.name === "Cached Project")).toBe(true);
+    expect(second.result.current.some((p) => p.id === "cached-project")).toBe(true);
     second.unmount();
+  });
+
+  it("falls back to persisted records BEFORE local-only: the record overlays a published hub's node", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) =>
+      cmd === "list_local_projects"
+        ? [{ key: "acme-crm", title: "Acme CRM", hasPlan: true, updatedAt: 1, published: true }]
+        : null,
+    );
+    useAppStore.setState({ githubState: { records: [rec("Acme CRM", true)], fetchedAt: 1 } });
+    const { result } = renderHook(() => useGlanceProjects());
+    await waitFor(() => expect(result.current.some((p) => p.id === "acme-crm")).toBe(true));
+  });
+
+  it("does NOT resurrect a record whose project no longer exists locally (deleted hub)", async () => {
+    useAppStore.setState({ githubState: { records: [rec("Ghost App")], fetchedAt: 1 } });
+    const { result } = renderHook(() => useGlanceProjects());
+    await waitFor(() => expect(vi.mocked(invoke)).toHaveBeenCalled());
+    expect(result.current.some((p) => p.name === "Ghost App")).toBe(false);
+  });
+});
+
+describe("useGlanceProjects — updatedAt probe gates the heavy fetch (#2448)", () => {
+  const HEAVY_MARKER = "items(first: 100)"; // only PROJECTS_QUERY carries the heavy items scan
+
+  beforeEach(() => {
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "tok", githubState: null, triagedProjects: { "cached-project": 1 } });
+    vi.mocked(invoke).mockReset();
+  });
+
+  it("probe unchanged ⇒ no heavy POST; the records render and fetchedAt refreshes", async () => {
+    useAppStore.setState({
+      localDraftProjects: { "cached-project": { title: "Cached Project", pitch: "", createdAt: 1 } },
+      githubState: { records: [{ ...rec("Cached Project", true), updatedAt: "T1" }], fetchedAt: 5 },
+    });
+    vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+      if (cmd !== "github_graphql") return null;
+      const q = String((args as { query: string }).query);
+      if (q.includes(HEAVY_MARKER)) throw new Error("heavy query must not fire when nothing moved");
+      return { viewer: { projectsV2: { nodes: [{ id: "PVT_Cached Project", updatedAt: "T1" }] } } };
+    });
+
+    const { result } = renderHook(() => useGlanceProjects());
+    await waitFor(() => expect(result.current.some((p) => p.id === "cached-project")).toBe(true));
+    await waitFor(() => expect(useAppStore.getState().githubState!.fetchedAt).toBeGreaterThan(5));
+  });
+
+  it("probe moved ⇒ the heavy fetch fires and overwrites the records", async () => {
+    useAppStore.setState({
+      localDraftProjects: { "cached-project": { title: "Cached Project", pitch: "", createdAt: 1 } },
+      githubState: { records: [{ ...rec("Cached Project"), updatedAt: "T1" }], fetchedAt: 5 },
+    });
+    vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+      if (cmd !== "github_graphql") return null;
+      const q = String((args as { query: string }).query);
+      if (q.includes(HEAVY_MARKER)) {
+        return { viewer: { projectsV2: { nodes: [{ ...gh("PVT_Cached Project", "Cached Project", true), updatedAt: "T2" }] } } };
+      }
+      return { viewer: { projectsV2: { nodes: [{ id: "PVT_Cached Project", updatedAt: "T2" }] } } };
+    });
+
+    const { result } = renderHook(() => useGlanceProjects());
+    await waitFor(() => expect(result.current.some((p) => p.id === "cached-project")).toBe(true));
+    await waitFor(() => expect(useAppStore.getState().githubState!.records[0].updatedAt).toBe("T2"));
+  });
+});
+
+describe("local published inventory seeds Glance (#2445)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ localDraftProjects: {}, planFleet: {}, githubToken: "", githubState: null, triagedProjects: { "restored-app": 1 } });
+    vi.mocked(invoke).mockReset();
+  });
+
+  it("merge seeds a node for a local published hub — keyed by the HUB folder key — when GitHub is absent", () => {
+    const merged = mergeGlanceProjects({}, [], [{ key: "acme-crm", title: "Acme CRM" }]);
+    expect(merged).toHaveLength(1);
+    // The hub key IS the drill / fleetPaneStreams key — never a fabricated one. Rests at idle (#2551).
+    expect(merged[0]).toMatchObject({ id: "acme-crm", name: "Acme CRM", activity: "idle", health: "idle" });
+  });
+
+  it("a GitHub record OVERLAYS the local node — collapsing onto a LEGACY hub key via slug(title)", () => {
+    const merged = mergeGlanceProjects({}, [gh("PVT_1", "Acme CRM", true)], [{ key: "p-legacy1", title: "Acme CRM" }]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe("p-legacy1"); // stayed on the hub key (what the drill resolves)
+  });
+
+  it("hook: LOGGED OUT, a local published hub still produces its Glance node", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) =>
+      cmd === "list_local_projects"
+        ? [{ key: "restored-app", title: "Restored App", hasPlan: true, updatedAt: 1, published: true },
+           { key: "just-a-draft", title: "Just A Draft", hasPlan: true, updatedAt: 1, published: false }]
+        : null,
+    );
+    const { result } = renderHook(() => useGlanceProjects());
+    await waitFor(() => expect(result.current.some((p) => p.id === "restored-app")).toBe(true));
+    expect(result.current.some((p) => p.id === "just-a-draft")).toBe(false);
   });
 });

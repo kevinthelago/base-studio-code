@@ -22,7 +22,7 @@ import { STATUS } from "@/shared/data/fleet";
 import { Button } from "@/shared/ui/controls/Button";
 import { resolveFlow } from "./agentFlow";
 import { permissionRows, flowRows, paneCoords } from "./fleetWorker";
-import { parseAuditLog, type AuditRecord } from "@/features/agents";
+import { parseAuditLog, type AuditRecord } from "@/features/security";
 import { loadDoneAudit, type DoneAudit } from "@/shared/lib/fleet/workerAudit";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";

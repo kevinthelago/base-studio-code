@@ -1,7 +1,7 @@
 /// Bump when the planning template (CLAUDE.md) changes in a way that affects
 /// the session context. The signature written by `setup_workspaces` includes
 /// this version so Planning.tsx can detect template upgrades (#175).
-pub(crate) const PLANNING_TEMPLATE_VERSION: u8 = 14;
+pub(crate) const PLANNING_TEMPLATE_VERSION: u8 = 15; // 15: studio commissioning directive (#2940)
 
 // The planner prose blocks below are runtime-loaded (#2027 P2) via `config::load_str` — the user's
 // copy under ~/.base-studio-code/config/planner/ if present, else the embedded seed — so a prompt

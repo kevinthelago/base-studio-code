@@ -69,9 +69,19 @@ fn copy_dir_to_sandbox(host_dir: &std::path::Path, distro_dir: &str) -> Result<(
 #[tauri::command]
 pub(crate) fn setup_sandbox_hub(key: String) -> Result<String, String> {
     require_windows()?;
-    let host_hub = crate::platform::paths::project_dir(&key);
+    // Source the hub from the planner's ACTUAL cwd (#2997): a never-materialized greenfield draft
+    // plans in the ephemeral `planning/<key>` workspace, a materialized / repo-linked project in
+    // `projects/<key>`. `planning_cwd` resolves whichever exists, so the replication mirrors the real
+    // files instead of an empty `project_dir`.
+    let host_hub = crate::platform::paths::planning_cwd(&key);
     let distro_hub = sandbox_project_path(&key);
     copy_dir_to_sandbox(&host_hub, &distro_hub)?;
+    // plan.db now lives OUTSIDE the hub (central `plans/<key>.db`, #2996) — replicate it INTO the cage
+    // hub as `plan.db` so a sandboxed planner resumes its existing plan and `sync_sandbox_plan_db`
+    // mirrors it back to the central store. Absent (a brand-new project) → nothing to seed.
+    if let Ok(bytes) = std::fs::read(crate::platform::paths::plan_db_path(&key)) {
+        sandbox_write(&format!("{distro_hub}/plan.db"), &bytes)?;
+    }
     Ok(distro_hub)
 }
 
@@ -119,7 +129,16 @@ pub(crate) fn read_sandbox_plan_stages(key: String) -> Result<std::collections::
         "for f in {hub}/*.md {hub}/*.json {hub}/discovery/*.md {hub}/discovery/*.json; do [ -f \"$f\" ] || continue; printf '%s\\n' \"$f\"; cat \"$f\"; printf '\\0'; done"
     );
     let out = wsl_exec(&["-d", AGENT_SANDBOX_DISTRO, "--", "sh", "-c", script.as_str()])?;
-    Ok(parse_section_dump(&out))
+    let mut sections = parse_section_dump(&out);
+    // plan.db `section` artifacts (#2997 A2) — a sandboxed planner's plan.db is mirrored to the HOST
+    // (`sync_sandbox_plan_db`), so the DB-backed sections read from the host store; they win over files.
+    for (name, content) in crate::project::plan_db::artifacts_of_kind(&key, "section") {
+        let c = content.trim();
+        if !c.is_empty() {
+            sections.insert(name, c.to_string());
+        }
+    }
+    Ok(sections)
 }
 
 /// Read a file's raw bytes from the sandbox distro (#1988) — binary-safe, for the SQLite `plan.db`.

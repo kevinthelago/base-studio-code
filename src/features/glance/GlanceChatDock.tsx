@@ -15,33 +15,24 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
 import { IconButton } from "@/shared/ui/controls/IconButton";
-import { TextField } from "@/shared/ui/controls/Field";
-import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { TerminalSlot } from "@/app/console/terminal/TerminalSlot";
 import { GlanceSessionLog } from "./GlanceSessionLog";
 
 type DockTab = "stream" | "logs";
 
 export function GlanceChatDock({
-  paneId, name, role, onClose,
+  paneId, name, role, onClose, onEnd,
 }: {
   paneId: string;
   name: string;
   role?: string;
+  /** Collapse the dock back into its node — the PTY stays ALIVE (the agent is untouched). */
   onClose: () => void;
+  /** END the session — kill the PTY so a stuck / soft-locked agent is fully torn down and triage can
+   *  be relaunched cleanly (#3049). Undefined ⇒ the End-session button is omitted. */
+  onEnd?: () => void;
 }) {
   const [tab, setTab] = useState<DockTab>("stream");
-  const [draft, setDraft] = useState("");
-
-  // Send a chat message to the agent: write it to its PTY + Enter, exactly as the fleet's steer/answer
-  // does (fireInvoke pty_write). The PTY echoes it back into the stream above, so the terminal IS the
-  // chat history — this input is just an explicit "type here" affordance over it.
-  const send = () => {
-    const text = draft.trim();
-    if (!text) return;
-    fireInvoke("pty_write", { paneId, data: text + "\r" }, console.error);
-    setDraft("");
-  };
 
   return (
     // Fills its container (#2401): the morph panel owns the frame (border/radius/shadow) + sizing, so
@@ -63,7 +54,15 @@ export function GlanceChatDock({
               {t === "stream" ? "Stream" : "Logs"}
             </Button>
           ))}
-          <IconButton aria-label="Close stream" onClick={onClose}>×</IconButton>
+          {/* END the session (#3049) — kills the PTY (distinct from the ✕, which only collapses the
+              morph and keeps the agent alive). For a soft-locked fleet this fully tears a stuck agent
+              down so "Relaunch fleet" can restart triage cleanly. */}
+          {onEnd && (
+            <Button size="sm" variant="ghost" danger onClick={onEnd} title="Kill this agent's session so triage can be relaunched">
+              End session
+            </Button>
+          )}
+          <IconButton aria-label="Collapse stream (agent stays alive)" onClick={onClose}>×</IconButton>
         </Row>
       </Row>
 
@@ -71,24 +70,15 @@ export function GlanceChatDock({
         {/* The terminal stays MOUNTED across tab switches (only hidden) so its PTY is never torn down;
             `visible` gates its render/fit exactly like a background console pane. */}
         <Box style={{ position: "absolute", inset: 0, display: tab === "stream" ? "flex" : "none", flexDirection: "column" }}>
-          {/* The live PTY stream = the chat history. Not auto-focused, so the chat input below is the
-              default target; click into the terminal to interact with its TUI directly. */}
+          {/* The live PTY stream IS the interaction surface (#3523): a Claude CLI session has its own TUI
+              input (and its own "working" state) inside the terminal, so the dock adds no second input —
+              click into the terminal and type at Claude's prompt directly. The separate "message the
+              agent" box was a redundant affordance over the same PTY. */}
           <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             {/* Viewer slot (not primary): the host re-parents the agent's single terminal here while the
                 dock is open. `visible` gates its render/fit exactly like a background console pane. */}
             <TerminalSlot paneId={paneId} visible={tab === "stream"} focused={false} />
           </Box>
-          <Row gap="sm" align="center" style={{ padding: "8px 10px", borderTop: "1px solid var(--border)", flex: "none" }}>
-            <Box style={{ flex: 1, minWidth: 0 }}>
-              <TextField
-                value={draft}
-                onChange={setDraft}
-                placeholder="Message the agent — Enter to send"
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-              />
-            </Box>
-            <Button size="sm" variant="primary" onClick={send} disabled={!draft.trim()}>Send</Button>
-          </Row>
         </Box>
         {tab === "logs" && (
           <Box style={{ position: "absolute", inset: 0 }}>

@@ -2,16 +2,19 @@ import { create } from "zustand";
 import { bscJson, bscWrite } from "@/shared/lib/core/bsc";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { persistStorage } from "@/shared/lib/core/storage";
+import { grandfatherTriaged, grandfatherLocalPublished } from "./triagedMigration";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import {       deriveTabIdentity } from "@/shared/lib/core/projectPaths";
 import {  refreshBuiltIns, type Blueprint } from "@/features/planner/stages/blueprints";
-import { reconcileBuiltInProfiles } from "@/features/agents/lib/agentProfiles";
+import { reconcileBuiltInProfiles } from "@/features/security/lib/agentProfiles";
 import { migrateLegacyExtensions } from "@/features/mcp/lib/migrateExtensions";
 import { createMcpSlice } from "@/features/mcp/store";
 import { createPersonasSlice } from "@/features/personas/store";
 import { reconcilePersonas } from "@/features/personas/lib/persona";
-import { createOrgSlice } from "@/features/org/store";
-import { createComponentsSlice } from "@/features/components/store";
-import { reconcileOrgs } from "@/features/org/lib/org";
+import { createOrgSlice } from "@/features/teams/store";
+import { createComponentsSlice } from "@/features/designs/store";
+import { createStudiosSlice } from "@/features/studio-sessions/store";
+import { reconcileOrgs } from "@/features/teams/lib/team";
 import { refreshPackagedSkills } from "@/features/skills/lib/skills";
 import { createSkillsSlice } from "@/features/skills/store";
 
@@ -21,6 +24,7 @@ import { createPlanSlice } from "./slices/plan";
 import { createProjectsSlice } from "./slices/projects";
 import { createAutomationsSlice } from "@/features/automations/store";
 import { createCoreSlice } from "./slices/core";
+import { createLlmSettingsSlice } from "./slices/llmSettings";
 import { createGithubSlice } from "@/features/github/store";
 import { createShellSlice } from "./slices/shell";
 import { createTunnelSlice } from "@/features/tunnel/store";
@@ -41,6 +45,7 @@ export const useAppStore = create<AppStore>()(
       ...createTunnelSlice(set, get, store),
 
       ...createCoreSlice(set, get, store),
+      ...createLlmSettingsSlice(set, get, store),
       ...createAutomationsSlice(set, get, store),
       ...createProjectsSlice(set, get, store),
 
@@ -51,10 +56,30 @@ export const useAppStore = create<AppStore>()(
       ...createPersonasSlice(set, get, store),
       ...createOrgSlice(set, get, store),
       ...createComponentsSlice(set, get, store),
+      // #3357: the app-owned studio sessions' lifecycle (wanted set + viewer ref-counts). Transient —
+      // deliberately absent from `partialize`, so nothing launches at boot.
+      ...createStudiosSlice(set, get, store),
     }),
     {
       name: "app-state",
       storage: createJSONStorage(() => persistStorage),
+      version: 1,
+      // #2548: one-time grandfather. The Glance triaged filter (#2541) is forward-looking, so on an
+      // upgrade from persist v0 an existing user's already-worked projects (published + fleeted) carry
+      // no `triagedProjects` marker and vanish from Glance. Backfill it once from the persisted board +
+      // fleets. A fresh install starts at v1 with no persisted state, so this never runs for it and the
+      // strict rule holds (a new draft/published project stays hidden until it's actually triaged).
+      migrate: (persisted, version) => {
+        const s = (persisted ?? {}) as Partial<AppStore> & {
+          githubState?: { records?: { title?: string }[] };
+          planFleet?: Record<string, { streams?: unknown[] } | undefined>;
+          triagedProjects?: Record<string, number>;
+        };
+        if (version < 1 && Object.keys(s.triagedProjects ?? {}).length === 0) {
+          s.triagedProjects = grandfatherTriaged(s.githubState?.records, s.planFleet, Date.now());
+        }
+        return s as AppStore;
+      },
       // Exclude transient UI-only state from the persisted snapshot.
       partialize: (s) => ({
         activeWorkspace:    s.activeWorkspace,
@@ -63,6 +88,8 @@ export const useAppStore = create<AppStore>()(
         terminalFontSize: s.terminalFontSize,
         accent:          s.accent,
         kitTheme:        s.kitTheme,
+        soundNotifications: s.soundNotifications, // #3082: opt-in coord-event notification sounds
+        designContributions: s.designContributions, // #2656: downloaded-blueprint design overlays survive restart
         keybindings:     s.keybindings,
         paneViews:       s.paneViews,
         paneNames:       s.paneNames,
@@ -76,6 +103,7 @@ export const useAppStore = create<AppStore>()(
         endedPanes:      s.endedPanes,   // #920: a finished worker's resting state survives restart
         githubConnected: s.githubConnected,
         githubToken:     s.githubToken,
+        githubState:     s.githubState,   // #2446: last-known GitHub board state (stale overlay after restart)
         repoGithubTokens: s.repoGithubTokens,
         githubUser:      s.githubUser,
         githubRepos:     s.githubRepos,
@@ -123,10 +151,12 @@ export const useAppStore = create<AppStore>()(
         fleetPaneStreams:     s.fleetPaneStreams,
         projectLocalRepos:    s.projectLocalRepos,
         localDraftProjects:   s.localDraftProjects,
+        triagedProjects:      s.triagedProjects,  // #2541: drafted→triaged marker; gates the Glance network
         projectLinks:         s.projectLinks,   // #2253: user-drawn Glance project relationships
-        projectKeyAlias:      s.projectKeyAlias,
         autoTriage:           s.autoTriage,   // #2265: per-project fault auto-triage toggle
+        glanceOff:            s.glanceOff,   // #3239: per-node Glance off/deactivated toggle
         autoKitDispatch:      s.autoKitDispatch, // #2277: per-project kit auto-dispatch toggle
+        autoApplyKitChanges:  s.autoApplyKitChanges, // #2944: global kit-change auto-apply toggle (Planner settings)
         issueLinks:           s.issueLinks,
         achievements:         s.achievements,
         hiddenProjectIds:     s.hiddenProjectIds,
@@ -139,6 +169,8 @@ export const useAppStore = create<AppStore>()(
         planConfirmedStages: s.planConfirmedStages,
         planAuthoredBlueprint: s.planAuthoredBlueprint,
         planDeployConfig:      s.planDeployConfig,
+        planMarketConfig:      s.planMarketConfig, // #2430: the market-stage assessment
+        planTransformations:   s.planTransformations, // #2509: the transformations confirm queue
         reposPublic:           s.reposPublic,   // #1227: repo visibility (default + …)
         repoPublic:            s.repoPublic,    //        per-repo overrides) survives restart
         planSkippedStages:   s.planSkippedStages,
@@ -149,9 +181,6 @@ export const useAppStore = create<AppStore>()(
         uiApproved:            s.uiApproved,
         blueprints:            s.blueprints,
         activeBlueprintId:     s.activeBlueprintId,
-        dataModels:            s.dataModels,
-        activeDataModelId:     s.activeDataModelId,
-        loadVerified:          s.loadVerified,
         planFleet:             s.planFleet,
         planFleetTopology:     s.planFleetTopology,
         planFleetDirectorDrive: s.planFleetDirectorDrive,
@@ -166,10 +195,10 @@ export const useAppStore = create<AppStore>()(
         skillGroups:           s.skillGroups,
         sessionSkillGroups:    s.sessionSkillGroups,
         personas:              s.personas,   // #2094: the agent-identity library (built-ins reconciled on load)
-        orgs:                  s.orgs,       // #2193: the persona-relationship graph library (reconciled on load)
+        teams:                 s.teams,      // #2193/#2700: the persona-relationship graph (team) library (reconciled on load)
         demoActive:            s.demoActive, // #2272: a loaded demo state + its pre-demo backup survive restart
         demoBackup:            s.demoBackup,
-        orgZoom:               s.orgZoom,    // #2199: per-org canvas zoom (view state)
+        teamsZoom:             s.teamsZoom,  // #2199/#2700: per-team canvas zoom (view state)
         components:            s.components, // #2269: the proven-component library (seed until the bsc store lands)
         kits:                  s.kits,       // #2269: the component kits (technology-scoped namespaces)
         kitUsage:              s.kitUsage,   // #2277: the consumer index (project→kit) — a fast-first-paint cache
@@ -201,10 +230,36 @@ export const useAppStore = create<AppStore>()(
         // The Blueprints page-mode was folded into the Planner tab's blueprint rail (#blueprints);
         // a user whose last mode was it would otherwise land on a blank canvas.
         if (state && (state.projectsPageMode as string) === "blueprints") state.projectsPageMode = "projects";
-        // Personas was folded into Org (#2199) — a last-mode of "personas" now opens Org.
-        if (state && (state.projectsPageMode as string) === "personas") state.projectsPageMode = "org";
+        // Personas was folded into the Teams page (#2199) — a last-mode of "personas" now opens Teams.
+        if (state && (state.projectsPageMode as string) === "personas") state.projectsPageMode = "teams";
+        // The Teams page-mode id was renamed "org" → "teams" (#2700) — map a last-mode of "org" forward.
+        if (state && (state.projectsPageMode as string) === "org") state.projectsPageMode = "teams";
         // The Fleet page-mode was folded into Glance (#2223/#2228) — a last-mode of "fleet" opens Projects.
         if (state && (state.projectsPageMode as string) === "fleet") state.projectsPageMode = "projects";
+        // Design Studio moved from its own rail Workspace to a Planner tab (#move-to-planner). A user whose
+        // last workspace was "design" would otherwise land on a removed screen — redirect to Planner on its
+        // Designs page.
+        if (state && (state.activeWorkspace as string) === "design") {
+          state.activeWorkspace = "projects";
+          state.projectsPageMode = "designs";
+        }
+        // The Designs page-mode key was renamed "design" → "designs" (#2701, feature-folder rename to
+        // match the on-screen "Designs" tab). A user whose last page-mode was "design" now opens "designs".
+        if (state && (state.projectsPageMode as string) === "design") state.projectsPageMode = "designs";
+        // The standalone Themes page-mode was retired (#2850) — theme viewing folded into the Components
+        // tab's theme try-on preview (right-pane themes menu + palette + big preview). A last-mode of
+        // "themes" now opens Components (Designs).
+        if (state && (state.projectsPageMode as string) === "themes") state.projectsPageMode = "designs";
+        // Algorithms moved from its own rail Workspace to a Planner tab (#2785). A user whose last
+        // workspace was "algorithms" would otherwise land on a removed screen — redirect to Planner on
+        // its Algorithms page.
+        if (state && (state.activeWorkspace as string) === "algorithms") {
+          state.activeWorkspace = "projects";
+          state.projectsPageMode = "algorithms";
+        }
+        // The Security workspace's key was renamed "agents" → "security" (#2702, naming realignment).
+        // A user whose last workspace was "agents" would otherwise land on a removed key.
+        if (state && (state.activeWorkspace as string) === "agents") state.activeWorkspace = "security";
         // Refresh BUILT-IN blueprints from code on every load (#677). They're code-owned
         // templates, but `blueprints` is persisted — so improvements to a built-in (the
         // `optional` UI stage, enabled repos, updated prompts, …) would never reach a user
@@ -215,9 +270,19 @@ export const useAppStore = create<AppStore>()(
         // built-in, restore built-in identity, and keep user edits + user-authored personas. Same
         // code-owned-template discipline as the blueprints refresh below.
         if (state?.personas) state.personas = reconcilePersonas(state.personas);
-        // Same discipline for the org library (#2193): re-seed dropped built-ins, restore built-in
-        // identity, keep user edits + user-authored orgs.
-        if (state?.orgs) state.orgs = reconcileOrgs(state.orgs);
+        // #2700: the org feature was renamed "teams" — its persisted store fields `orgs`/`orgZoom` are now
+        // `teams`/`teamsZoom`. Map an existing on-disk snapshot's old keys onto the new ones so a user's
+        // saved teams + per-team zoom survive the rename (the JSON shape is unchanged; only key names moved).
+        if (state) {
+          const legacy = state as unknown as Record<string, unknown>;
+          if (legacy.orgs !== undefined && legacy.teams === undefined) legacy.teams = legacy.orgs;
+          if (legacy.orgZoom !== undefined && legacy.teamsZoom === undefined) legacy.teamsZoom = legacy.orgZoom;
+          delete legacy.orgs;
+          delete legacy.orgZoom;
+        }
+        // Same discipline for the team library (#2193): re-seed dropped built-ins, restore built-in
+        // identity, keep user edits + user-authored teams.
+        if (state?.teams) state.teams = reconcileOrgs(state.teams);
         if (state?.blueprints) {
           state.blueprints = refreshBuiltIns(state.blueprints);
         }
@@ -225,6 +290,25 @@ export const useAppStore = create<AppStore>()(
         // demos + stale generated profiles, keep the user's customs (the unified role→profile model).
         if (state?.agentProfiles) {
           state.agentProfiles = reconcileBuiltInProfiles(state.agentProfiles);
+        }
+        // #2548 follow-up: the one-time triaged grandfather backfilled from the PERSISTED github board +
+        // fleets, but both are empty when the user is logged out / after a state reset — so an existing
+        // user's on-disk published projects still vanished from the Glance network (only the demo loaded).
+        // REPAIR once: when `triagedProjects` is still empty, grandfather from the RELIABLE local published
+        // inventory (`list_local_projects`), plus a re-derive from any github board / fleets now present.
+        // The empty-guard makes it self-limiting — a backfill makes triagedProjects non-empty, so it never
+        // re-runs, preserving the forward-looking rule (a genuinely new draft stays hidden until triaged).
+        if (state && Object.keys(state.triagedProjects ?? {}).length === 0) {
+          void safeInvoke<{ key: string; title: string; published: boolean }[]>("list_local_projects", undefined, []).then((list) => {
+            const keys = (Array.isArray(list) ? list : []).filter((p) => p?.published).map((p) => p.key);
+            useAppStore.setState((s) => {
+              if (Object.keys(s.triagedProjects).length > 0) return {}; // something already stamped meanwhile — leave it
+              const now = Date.now();
+              const seeded = grandfatherTriaged(s.githubState?.records, s.planFleet, now);
+              const merged = grandfatherLocalPublished(keys, seeded, now);
+              return Object.keys(merged).length ? { triagedProjects: merged } : {};
+            });
+          });
         }
         // Hydrate user blueprints from their on-disk dir (#blueprints) over the `bsc` bridge
         // (`bsc blueprint list --full`, #2143): union them in (so one that survived a store reset or a

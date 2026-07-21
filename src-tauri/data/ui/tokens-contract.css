@@ -1,0 +1,84 @@
+/* GENERATED from src-tauri/data/ui/style-descriptor.json — DO NOT EDIT BY HAND.
+   Regenerate: `UPDATE_KITS=1 npx vitest run styleContract.gen`.
+   The design-system STYLE DESCRIPTOR (#2567) — the authoritative source of truth for the semantic token contract. `tokens-contract.css` is GENERATED from this file (styleContract.ts + the styleContract.gen drift test), and `bsc ui tokens` reads it to enumerate the addressable surface for an LLM. Each token carries a stable custom-property name, a type, a default, and a `governs` blurb. Component tokens are grouped by component (+ per-variant), so `bsc ui component <name> set-token <key>` resolves `--<component>[-<variant>]-<key>`. Additive-first: a new token defaults to today's value so landing it is a zero-visual-change commit. STYLESHEET ORDER stays the contract: tokens.css (this, generated) -> theme.css (a theme's overrides) -> app styles (components reference ONLY these semantic tokens, never raw colors). */
+:root {
+  /* base palette — the app-level defaults the semantic layer (and the themes) compose from */
+  --bg-canvas: oklch(0.13 0.005 250);
+  --bg-panel: oklch(0.17 0.005 250);
+  --bg-elev: oklch(0.21 0.006 250);
+  --bg-elev2: oklch(0.26 0.006 250);
+  --border: oklch(0.30 0.006 250);
+  --border-soft: oklch(0.24 0.006 250);
+  --fg: oklch(0.94 0.004 250);
+  --fg-muted: oklch(0.66 0.008 250);
+  --fg-dim: oklch(0.46 0.008 250);
+  --accent: oklch(0.80 0.14 70);
+  --accent-dim: oklch(0.55 0.10 70);
+  --success: oklch(0.74 0.13 145);
+  --info: oklch(0.72 0.10 230);
+  --danger: oklch(0.68 0.18 25);
+  --r-md: 6px;
+  --r-lg: 10px;
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+  --dur-slow: 400ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* semantic component tokens — what kit components consume; what a theme overrides */
+  --card-bg: var(--bg-panel);
+  --card-border: var(--border-soft);
+  --card-radius: var(--r-lg);
+  --card-pad: 16px;
+  --btn-bg: var(--bg-elev);
+  --btn-bg-hover: var(--bg-elev2);
+  --btn-border: var(--border-soft);
+  --btn-border-width: 1px;
+  --btn-fg: var(--fg);
+  --btn-radius: var(--r-md);
+  --btn-height: 28px;
+  --btn-pad-x: 12px;
+  --btn-gap: 6px;
+  --btn-font-family: var(--mono);
+  --btn-font-size: 11px;
+  --btn-font-weight: 400;
+  --btn-disabled-opacity: 0.4;
+  --btn-primary-bg: var(--accent);
+  --btn-primary-fg: #1a120a;
+  --btn-primary-border: transparent;
+  --btn-primary-font-weight: 600;
+  --btn-primary-hover-brightness: 1.05;
+  --btn-ghost-bg: transparent;
+  --btn-danger-fg: var(--danger);
+  --btn-danger-border: color-mix(in oklch, var(--danger), transparent 70%);
+  --btn-sm-height: 24px;
+  --btn-sm-pad-x: 9px;
+  --btn-sm-font-size: 10.5px;
+  --field-bg: var(--bg-canvas);
+  --field-border: var(--border-soft);
+  --field-fg: var(--fg);
+  --field-radius: var(--r-md);
+  --field-focus-border: var(--accent-dim);
+  --chip-bg: var(--bg-elev2);
+  --chip-fg: var(--fg-muted);
+  --chip-border: var(--border-soft);
+
+  /* domain / categorical tokens — data-viz palettes (graph status/kind/category/edge); the contract vocabulary a kit consumes and a theme binds (#2607) */
+  --graph-health-idle: #5b9dff;
+  --graph-health-healthy: #4fd6a0;
+  --graph-health-warning: #f2b155;
+  --graph-health-error: #f2555f;
+  --graph-kind-infra: #5b9dff;
+  --graph-kind-service: #4fd6a0;
+  --graph-kind-data: #b98bff;
+  --graph-kind-client: #f2b155;
+  --graph-category-greenfield: #16b3a7;
+  --graph-category-transform: #7b74f2;
+  --graph-category-harden: #b8862f;
+  --graph-category-maintain: #8b93a7;
+  --graph-category-data: #d05fa8;
+  --graph-category-script: #d0a92e;
+  --graph-edge-api: #5b9dff;
+  --graph-edge-data: #b98bff;
+  --graph-edge-events: #4fd6a0;
+}

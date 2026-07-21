@@ -17,6 +17,30 @@ const sig = (over: Parameters<typeof buildPlanStageState>[0] = {}) =>
 const setEnabled = (secs: BlueprintStage[], key: string, enabled: boolean): BlueprintStage[] =>
   secs.map((s) => (s.key === key ? { ...s, enabled } : s));
 
+describe("greenfield blueprints declare their consumer kit (#2810)", () => {
+  const bps = makeBlueprints();
+
+  it("greenfield built-ins auto-record kit=react-ui so the kit_usage edge fills at bind", () => {
+    // …every greenfield that actually SHIPS an app UI. The authoring lifecycle (#923,
+    // `deliverable: "blueprint"`) is filed under greenfield in the library because it creates something
+    // new, but what it creates is a blueprint published to a gist — it has no execution side and renders
+    // no UI, so tying it to the packaged kit filed a kit_usage edge that drew a spurious kit→project
+    // edge in the network and fanned UI-kit changes out to a project with no UI (#3411).
+    const greenfield = bps.filter((b) => b.category === "greenfield" && b.deliverable !== "blueprint");
+    expect(greenfield.length).toBeGreaterThan(0);
+    expect(greenfield.every((b) => b.kit === "react-ui")).toBe(true);
+    // The authoring blueprint is the carve-out — it exists, and it is NOT a kit consumer.
+    const authoring = bps.filter((b) => b.deliverable === "blueprint");
+    expect(authoring.length).toBeGreaterThan(0);
+    expect(authoring.every((b) => b.kit === undefined)).toBe(true);
+  });
+
+  it("a non-greenfield (operate-on-existing / data / script) built-in isn't auto-tied to a shared kit", () => {
+    const other = bps.find((b) => b.category !== "greenfield");
+    if (other) expect(other.kit).toBeUndefined();
+  });
+});
+
 describe("blueprints — seed library", () => {
   it("seeds the starter blueprints with a 'default'", () => {
     const bps = makeBlueprints();
@@ -45,6 +69,83 @@ describe("blueprints — seed library", () => {
     expect(STAGE_DEFS.ui.deps).toContain("features");
   });
 
+  it("adds the Serverless Function blueprint — a lean 'script' category, GitHub deploy, no UI (#2596)", () => {
+    const bp = makeBlueprints().find((b) => b.id === "serverless-function")!;
+    expect(bp).toBeTruthy();
+    expect(bp.category).toBe("script");
+    const keys = bp.sections.map((s) => s.key);
+    // the lean spec replaces discovery; deployment (GitHub) + streams stay; UI + market are dropped
+    expect(keys).toEqual(["function_spec", "features", "deployment", "streams"]);
+    for (const dropped of ["ui", "test_ui", "market", "discovery"]) expect(keys).not.toContain(dropped);
+  });
+
+  it("the function_spec stage is a lean, user-confirmed (gateless) spec stage (#2596)", () => {
+    const def = STAGE_DEFS.function_spec;
+    expect(def).toBeTruthy();
+    expect(def.gateRule).toBeUndefined();                       // gateless → completes on the USER's confirm
+    expect(def.prompt.toLowerCase()).toContain("trigger");      // the invocation trigger is the heart of the spec
+    expect(def.directive?.toLowerCase()).toContain("function.md");
+  });
+
+  it("test_ui teaches the data-shape layout picker (#2475)", () => {
+    const def = STAGE_DEFS.test_ui;
+    expect(def).toBeTruthy();
+    // The seed teaches the flow: derive the data's shape, then query the kit's ideals via the two
+    // read verbs — and treat an uncovered shape as a gap, never a forced fit.
+    for (const text of [def.prompt ?? "", def.directive ?? ""]) {
+      expect(text).toContain("bsc ui shapes");
+      expect(text).toContain("bsc ui list --shape");
+    }
+    // The whole six-shape vocabulary is named for the planner to derive against.
+    for (const shape of ["list", "linked-list", "tree", "graph", "table", "key-value"]) {
+      expect(def.prompt ?? "", `prompt names the ${shape} shape`).toContain(shape);
+    }
+  });
+
+  it("the layout stages close the schema → shape → component loop (#2478)", () => {
+    // #2475 gave the planner "which component renders shape X" (`bsc ui shapes`). #2478 supplies the
+    // OTHER half — "what shape IS this entity's data" — inferred from the canonical Data Model by
+    // `bsc data shapes` (crates/data `shape.rs`). Both stages that pick a layout must teach it, or the
+    // session is back to judging the taxonomy by hand.
+    for (const key of ["ui", "test_ui"]) {
+      const def = STAGE_DEFS[key];
+      expect(def, `${key} stage def exists`).toBeTruthy();
+      for (const text of [def.prompt ?? "", def.directive ?? ""]) {
+        expect(text, `${key} teaches the schema→shape verb`).toContain("bsc data shapes");
+      }
+      // The inference returns RANKED candidates with reasons, never one guess — and a tie goes to
+      // the user (a lone self-reference is a tree only if an item has ONE parent).
+      const both = `${def.prompt ?? ""}\n${def.directive ?? ""}`.toLowerCase();
+      expect(both, `${key} says the candidates are ranked`).toContain("rank");
+      expect(
+        both.includes("ask the user") || both.includes("put the question to the user"),
+        `${key} tells the session to ask when the top candidates tie`,
+      ).toBe(true);
+      // The vocabulary the two CLIs share — pinned so the prose can't teach a rejected token.
+      for (const shape of ["list", "linked-list", "tree", "graph", "table", "key-value"]) {
+        expect(both, `${key} names the ${shape} shape`).toContain(shape);
+      }
+    }
+  });
+
+  it("test_ui teaches the theme pairing + the swappable-CSS emission (#2489)", () => {
+    const def = STAGE_DEFS.test_ui;
+    // Both faces of the seed teach the whole loop: enumerate themes, choose WITH the user, record
+    // the {kit, theme} pair in plan.db, and emit the two-layer palette for the generated app.
+    for (const text of [def.prompt ?? "", def.directive ?? ""]) {
+      expect(text).toContain("bsc ui theme list");
+      expect(text).toContain("bsc plan ui set");
+      expect(text).toContain("bsc ui emit-css");
+      expect(text).toContain("tokens.css");
+      expect(text).toContain("theme.css");
+      // Re-theming is the one-file swap — the payoff the stage must state.
+      expect(text).toMatch(/swapping (that one file|theme\.css)/);
+    }
+    // The token contract layer is read-only for the build agents.
+    expect(def.prompt).toMatch(/read-only for build agents/);
+    expect(def.directive).toMatch(/read-only for workers/);
+  });
+
   it("adds an optional MCPs stage after Streams in the Complete blueprint (#878/#1003/#1914)", () => {
     expect(STAGE_DEFS.mcps).toBeTruthy();
     expect(STAGE_DEFS.mcps.optional).toBe(true);
@@ -58,33 +159,44 @@ describe("blueprints — seed library", () => {
     }
   });
 
+  it("adds an optional market stage right after discovery in the greenfield blueprints (#2430)", () => {
+    for (const id of ["default", "complete"]) {
+      const bp = makeBlueprints().find((b) => b.id === id)!;
+      const keys = bp.sections.map((s) => s.key);
+      expect(keys.indexOf("market"), `${id}: market right after discovery`).toBe(keys.indexOf("discovery") + 1);
+      // Optional — a project that doesn't need the desk-research assessment skips it (#2267).
+      expect(bp.sections.find((s) => s.key === "market")!.optional).toBe(true);
+    }
+  });
+
   it("keeps the Default blueprint minimal; the advanced stages live on Complete (#1003/#1914)", () => {
     const bp = (id: string) => makeBlueprints().find((b) => b.id === id)!;
     const keysOf = (id: string) => bp(id).sections.map((s) => s.key);
     // Default is the simplest greenfield path — no source/mcps/automations/skills. The unified
     // vocabulary (#1914) collapsed repos+deploy → `deployment` and structure+permissions → `streams`.
-    expect(keysOf("default")).toEqual(["discovery", "deployment", "features", "ui", "streams"]);
+    expect(keysOf("default")).toEqual(["discovery", "market", "deployment", "features", "ui", "streams"]);
     for (const k of ["source", "mcps", "automations", "skills", "repos", "structure", "permissions"]) {
       expect(keysOf("default"), `default omits ${k}`).not.toContain(k);
     }
     // Complete is the thorough greenfield path — the trimmed Default flow plus source + the advanced stages.
     expect(keysOf("complete")).toEqual(
-      ["discovery", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
+      ["discovery", "market", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
     );
     // Complete sorts right after Default in the greenfield group.
     const greenfield = makeBlueprints().filter((b) => b.category === "greenfield").map((b) => b.id);
     expect(greenfield.indexOf("complete")).toBe(greenfield.indexOf("default") + 1);
   });
 
-  it("includes a 'blueprint-author' authoring blueprint: deliverable=blueprint, 4 stages, no fleet/triage (#923)", () => {
+  it("includes a 'blueprint-author' authoring blueprint: deliverable=blueprint, 5 stages, no fleet/triage (#923/#2450)", () => {
     const bp = makeBlueprints().find((b) => b.id === "blueprint-author");
     expect(bp).toBeTruthy();
     expect(isAuthoringBlueprint(bp)).toBe(true);
     expect(bp!.deliverable).toBe("blueprint");
     const keys = bp!.sections.map((s) => s.key);
-    expect(keys).toEqual(["purpose", "bp_stages", "bp_capabilities", "bp_review"]);
-    // capabilities is the only optional stage; it has no repos/structure/permissions (no execution).
+    expect(keys).toEqual(["purpose", "bp_stages", "bp_capabilities", "bp_team", "bp_review"]);
+    // capabilities + team (#2450) are the optional stages; no repos/structure/permissions (no execution).
     expect(bp!.sections.find((s) => s.key === "bp_capabilities")!.optional).toBe(true);
+    expect(bp!.sections.find((s) => s.key === "bp_team")!.optional).toBe(true);
     expect(keys).not.toContain("structure");
     expect(keys).not.toContain("permissions");
     // a normal blueprint is NOT an authoring one
@@ -99,11 +211,15 @@ describe("blueprints — seed library", () => {
     expect(bp!.origin).toBe("built-in");
     const keys = bp!.sections.map((s) => s.key);
     // Converted from the old imported vocabulary (context/repos/architecture/structure/permissions/
-    // testing) into the current model: discovery → deployment → features → ui? → streams.
-    expect(keys).toEqual(["discovery", "deployment", "features", "ui", "streams"]);
+    // testing) into the current model: discovery → transformations? → deployment → features → ui?
+    // → streams. Transformations (#2509) is the modification list, right after discovery.
+    expect(keys).toEqual(["discovery", "transformations", "deployment", "features", "ui", "streams"]);
     // every stage key resolves to a real def (no orphan/legacy keys survive the conversion)
     for (const k of keys) expect(STAGE_DEFS[k], `stage '${k}' resolves`).toBeTruthy();
-    // Features before UI (#825), and UI is the only optional stage
+    // Transformations right after discovery (#2509), and optional (a pure feature-add plan skips it).
+    expect(keys.indexOf("transformations")).toBe(keys.indexOf("discovery") + 1);
+    expect(bp!.sections.find((s) => s.key === "transformations")!.optional).toBe(true);
+    // Features before UI (#825); UI + transformations are the optional stages
     expect(keys.indexOf("features")).toBeLessThan(keys.indexOf("ui"));
     expect(bp!.sections.find((s) => s.key === "ui")!.optional).toBe(true);
   });
@@ -487,7 +603,7 @@ describe("dedupeSections", () => {
     const complete = makeBlueprints().find((b) => b.id === "complete")!;
     const overview = complete.sections.filter((s) => s.enabled).map((s) => s.key);
     expect(overview).toEqual(
-      ["discovery", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
+      ["discovery", "market", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
     );
   });
 

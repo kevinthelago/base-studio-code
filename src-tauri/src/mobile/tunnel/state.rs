@@ -68,6 +68,11 @@ pub(super) struct Inner {
     /// Latest aggregated hook-fire telemetry — replayed to freshly-paired mobile clients.
     /// `None` until the frontend pushes the first summary (read-only projection).
     pub(super) hook_telemetry: Option<HookTelemetryFrame>,
+    // ── Generic store projections (#2497) ────────────────────────────────────
+    /// Last `store_state` frame per domain (see `protocol::store_domains`) — replayed to a
+    /// freshly-paired client so every published projection arrives on connect. Only the
+    /// LAST frame per domain is kept (the frame is a full snapshot, `rev` orders them).
+    pub(super) store_states: HashMap<String, ServerMsg>,
 }
 
 /// Single source of truth for the tunnel, managed by Tauri. Holds the desktop's static
@@ -105,6 +110,9 @@ enum PushJob {
     AutomFailed { name: String, error: String },
     /// The warden quarantined a worker — possible prompt injection / hijack (#1102).
     Warden { session: String, detail: String },
+    /// One alert from the #2498 taxonomy (the `alerts` store_state domain's push companion).
+    /// The frontend composes title/body; `kind` routes the tap on mobile.
+    Alert { kind: String, title: String, body: String, pane_id: String },
 }
 
 /// Drain `rx` and send an FCM push per paired token for each job. Runs on its own OS thread
@@ -162,6 +170,8 @@ fn spawn_push_worker(mut rx: mpsc::UnboundedReceiver<PushJob>, tokens: Arc<Mutex
                                 fcm::build_autom_failed_message(token, name, error),
                             PushJob::Warden { session, detail } =>
                                 fcm::build_warden_message(token, session, detail),
+                            PushJob::Alert { kind, title, body, pane_id } =>
+                                fcm::build_alert_message(token, kind, title, body, pane_id),
                         };
                         match sender.send_built(msg).await {
                             SendOutcome::Sent => {
@@ -170,6 +180,7 @@ fn spawn_push_worker(mut rx: mpsc::UnboundedReceiver<PushJob>, tokens: Arc<Mutex
                                     PushJob::CoordWait { session, .. } => format!("coord_wait session={session}"),
                                     PushJob::AutomFailed { name, .. } => format!("autom_failed name={name}"),
                                     PushJob::Warden { session, .. } => format!("warden_quarantine session={session}"),
+                                    PushJob::Alert { kind, pane_id, .. } => format!("alert kind={kind} pane={pane_id}"),
                                 });
                             }
                             SendOutcome::DropToken => {
@@ -223,6 +234,7 @@ impl TunnelState {
                 automations: Vec::new(),
                 mcp_extensions: Vec::new(),
                 hook_telemetry: None,
+                store_states: HashMap::new(),
             }),
             output_tx,
             event_tx,
@@ -288,6 +300,16 @@ impl TunnelState {
         self.enqueue(PushJob::Warden {
             session: session.to_string(),
             detail: detail.to_string(),
+        });
+    }
+
+    /// Queue an FCM push for one #2498 alert. Non-blocking. No-op without stored tokens.
+    pub(super) fn enqueue_alert_push(&self, kind: &str, title: &str, body: &str, pane_id: &str) {
+        self.enqueue(PushJob::Alert {
+            kind: kind.to_string(),
+            title: title.to_string(),
+            body: body.to_string(),
+            pane_id: pane_id.to_string(),
         });
     }
 
@@ -370,11 +392,24 @@ impl TunnelState {
     }
 
     /// Grant or revoke the paired phone's input control. Resets the "input requested"
-    /// notification latch so a later view-only attempt re-prompts the desktop.
+    /// notification latch so a later view-only attempt re-prompts the desktop, and
+    /// broadcasts `input_grant_changed` to the paired phone when the grant actually
+    /// flips (#2511) — so mobile's view-only rendering tracks the live gate. Connect-time
+    /// state rides in `auth_ok.inputGranted`, so this frame needs no replay entry; the
+    /// session resets in `rotate_and_dial`/`tunnel_stop` write the field directly and
+    /// deliberately do NOT broadcast (no client is paired / the next pairing gets a fresh
+    /// `auth_ok`). An idempotent re-set still clears the latch but sends nothing.
     pub(super) fn set_input_granted(&self, granted: bool) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.input_granted = granted;
-        inner.input_requested = false;
+        let changed = {
+            let mut inner = self.inner.lock().unwrap();
+            let changed = inner.input_granted != granted;
+            inner.input_granted = granted;
+            inner.input_requested = false;
+            changed
+        };
+        if changed {
+            let _ = self.event_tx.send(ServerMsg::InputGrantChanged { granted });
+        }
     }
 
     /// Latch the first view-only input attempt: returns `true` exactly once per session
@@ -422,6 +457,15 @@ impl TunnelState {
     /// (M3 / #937). `None` until the frontend has pushed one.
     pub(super) fn hook_telemetry_snapshot(&self) -> Option<HookTelemetryFrame> {
         self.inner.lock().unwrap().hook_telemetry.clone()
+    }
+
+    /// The last `store_state` frame per domain (#2497), sorted by domain for a
+    /// deterministic replay order. Empty until the frontend publishes a projection.
+    pub(super) fn store_states_snapshot(&self) -> Vec<ServerMsg> {
+        let inner = self.inner.lock().unwrap();
+        let mut domains: Vec<&String> = inner.store_states.keys().collect();
+        domains.sort();
+        domains.into_iter().map(|d| inner.store_states[d].clone()).collect()
     }
 
     /// Record how many mobile clients are connected (for the settings card).

@@ -4,9 +4,10 @@
 // and what isolates a live preview (the Design Studio renders the same spec under a chosen theme
 // without disturbing the surrounding chrome). The global equivalent is `applyThemeToRoot`.
 
-import type { ReactNode, CSSProperties } from "react";
+import { useEffect, type ReactNode, type CSSProperties } from "react";
 import { Box } from "@/shared/ui/layout/Box";
-import { themeVars } from "./theme";
+import { log } from "@/shared/lib/core/log";
+import { resolveTheme } from "./resolve";
 
 export interface ThemeScopeProps {
   /** The kit theme id (falls back to `default`). */
@@ -17,10 +18,19 @@ export interface ThemeScopeProps {
   style?: CSSProperties;
 }
 
-/** Wrap `children` in a subtree scoped to `theme`. */
+/** Wrap `children` in a subtree scoped to `theme`. Resolver-aware (#2637): the applied vars are
+ *  identical to `themeVars` (zero visual change), but a theme referencing an UNCONTRACTED token —
+ *  a silent no-op in the cascade — yelps in the log (the fall-loudly principle), once per theme×holes. */
 export function ThemeScope({ theme, children, className, style }: ThemeScopeProps) {
+  const { vars, holes } = resolveTheme(theme);
+  const holesKey = holes.join(", ");
+  useEffect(() => {
+    if (holesKey) {
+      log.warn(`theme '${theme || "default"}' references uncontracted token(s): ${holesKey}`, "design");
+    }
+  }, [theme, holesKey]);
   return (
-    <Box className={className} style={{ ...themeVars(theme), ...style }} data-kit-theme={theme}>
+    <Box className={className} style={{ ...vars, ...style }} data-kit-theme={theme}>
       {children}
     </Box>
   );

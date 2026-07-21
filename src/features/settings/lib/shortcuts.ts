@@ -24,7 +24,7 @@ export const SCREEN_HOTKEYS: ScreenHotkey[] = [
   { key: "F4", screen: "automation", label: "Automations" },
   { key: "F5", screen: "mcp",        label: "MCP" },
   { key: "F6", screen: "github",     label: "GitHub" },
-  { key: "F7", screen: "agents",     label: "Security" },
+  { key: "F7", screen: "security",     label: "Security" },
   { key: "F8", screen: "settings",   label: "Settings" },
 ];
 

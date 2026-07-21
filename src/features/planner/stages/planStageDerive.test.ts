@@ -15,10 +15,10 @@ const BASE_INPUT: DerivePlanStageInput = {
   features: { count: 0, allConfirmed: false },
 };
 
-describe("derivePlanStageState — datamodel signals", () => {
-  it("defaults all datamodel signals to false when artifact is absent", () => {
+describe("derivePlanStageState — Data Model signals", () => {
+  it("defaults all Data Model signals to false when they are absent", () => {
     const s = derivePlanStageState(BASE_INPUT);
-    expect(s.datamodel).toEqual({
+    expect(s.dataModel).toEqual({
       sourceReachable: false,
       modelInferred: false,
       schemaRefined: false,
@@ -27,10 +27,10 @@ describe("derivePlanStageState — datamodel signals", () => {
     });
   });
 
-  it("maps a fully-present datamodel artifact", () => {
+  it("maps a fully-present Data Model signal set", () => {
     const s = derivePlanStageState({
       ...BASE_INPUT,
-      datamodelArtifact: {
+      dataModelSignals: {
         sourceReachable: true,
         modelInferred: true,
         schemaRefined: true,
@@ -38,7 +38,7 @@ describe("derivePlanStageState — datamodel signals", () => {
         loadVerified: true,
       },
     });
-    expect(s.datamodel).toEqual({
+    expect(s.dataModel).toEqual({
       sourceReachable: true,
       modelInferred: true,
       schemaRefined: true,
@@ -47,18 +47,18 @@ describe("derivePlanStageState — datamodel signals", () => {
     });
   });
 
-  it("treats absent individual fields as false (partial artifact)", () => {
-    // The source-experience stream may write datamodel.json incrementally;
+  it("treats absent individual fields as false (partial signal set)", () => {
+    // The scan fills the signals in incrementally, so a partial set is normal;
     // only modelInferred is set in this fixture.
     const s = derivePlanStageState({
       ...BASE_INPUT,
-      datamodelArtifact: { modelInferred: true },
+      dataModelSignals: { modelInferred: true },
     });
-    expect(s.datamodel.modelInferred).toBe(true);
-    expect(s.datamodel.sourceReachable).toBe(false);
-    expect(s.datamodel.schemaRefined).toBe(false);
-    expect(s.datamodel.mappingComplete).toBe(false);
-    expect(s.datamodel.loadVerified).toBe(false);
+    expect(s.dataModel.modelInferred).toBe(true);
+    expect(s.dataModel.sourceReachable).toBe(false);
+    expect(s.dataModel.schemaRefined).toBe(false);
+    expect(s.dataModel.mappingComplete).toBe(false);
+    expect(s.dataModel.loadVerified).toBe(false);
   });
 });
 
@@ -111,8 +111,8 @@ describe("derivePlanStageState — migrationSourceEnabled", () => {
   });
 });
 
-describe("planStateToSignals — datamodel signals emitted", () => {
-  it("emits all five datamodel signals as false when datamodel is empty", () => {
+describe("planStateToSignals — Data Model signals emitted", () => {
+  it("emits all five Data Model signals as false when they are empty", () => {
     const s = derivePlanStageState(BASE_INPUT);
     const sig = planStateToSignals(s);
     expect(sig.sourceReachable).toBe(false);
@@ -125,7 +125,7 @@ describe("planStateToSignals — datamodel signals emitted", () => {
   it("emits modelInferred + schemaRefined true when artifact has them", () => {
     const s = derivePlanStageState({
       ...BASE_INPUT,
-      datamodelArtifact: { modelInferred: true, schemaRefined: true },
+      dataModelSignals: { modelInferred: true, schemaRefined: true },
     });
     const sig = planStateToSignals(s);
     expect(sig.modelInferred).toBe(true);
@@ -136,7 +136,7 @@ describe("planStateToSignals — datamodel signals emitted", () => {
   it("emits the full set when all artifact fields are true", () => {
     const s = derivePlanStageState({
       ...BASE_INPUT,
-      datamodelArtifact: {
+      dataModelSignals: {
         sourceReachable: true,
         modelInferred: true,
         schemaRefined: true,
@@ -152,11 +152,11 @@ describe("planStateToSignals — datamodel signals emitted", () => {
     expect(sig.loadVerified).toBe(true);
   });
 
-  it("preserves existing signals alongside new datamodel signals", () => {
+  it("preserves existing signals alongside new Data Model signals", () => {
     const s = derivePlanStageState({
       ...BASE_INPUT,
       repoCount: 2,
-      datamodelArtifact: { modelInferred: true },
+      dataModelSignals: { modelInferred: true },
     });
     const sig = planStateToSignals(s);
     expect(sig.repoCount).toBe(2);

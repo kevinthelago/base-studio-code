@@ -6,7 +6,7 @@ import { useAppStore } from "@/store";
 // The rail's top→bottom order is product-defined (#872); lock it so a stray reorder is caught.
 // Buttons carry the screen label as their `title`. Console is opt-in (#2372) — hidden by default.
 const FULL = [
-  "Console", "Glance", "Planner", "Skills", "Design Studio", "Automations", "MCP",
+  "Console", "Glance", "Planner", "Skills", "Automations", "MCP",
   "GitHub", "Security", "Settings",
 ];
 const NO_CONSOLE = FULL.filter((l) => l !== "Console");
@@ -34,16 +34,12 @@ describe("Rail", () => {
     const security = container.querySelector('.rail button[title="Security"]') as HTMLElement;
     expect(security).toBeTruthy();
     fireEvent.click(security);
-    expect(onNavigate).toHaveBeenCalledWith("agents");
+    expect(onNavigate).toHaveBeenCalledWith("security");
   });
 
-  it("exposes Design Studio and navigates by its 'design' key (#2303)", () => {
-    const onNavigate = vi.fn();
-    const { container } = render(<Rail active="glance" onNavigate={onNavigate} />);
-    const design = container.querySelector('.rail button[title="Design Studio"]') as HTMLElement;
-    expect(design).toBeTruthy();
-    fireEvent.click(design);
-    expect(onNavigate).toHaveBeenCalledWith("design");
+  it("no longer exposes Design Studio as a rail destination (#move-to-planner — it's a Planner tab now)", () => {
+    const { container } = render(<Rail active="glance" onNavigate={() => {}} />);
+    expect(container.querySelector('.rail button[title="Design Studio"]')).toBeNull();
   });
 
   it("marks the active screen", () => {

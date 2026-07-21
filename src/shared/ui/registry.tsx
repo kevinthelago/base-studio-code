@@ -13,6 +13,7 @@ import { Box } from "./layout/Box";
 import { Stack } from "./layout/Stack";
 import { Row } from "./layout/Row";
 import { Spacer } from "./layout/Spacer";
+import { Slot } from "./layout/Slot";
 import { Grid } from "./layout/Grid";
 import { SectionHeader } from "./layout/SectionHeader";
 import { SectionLabel } from "./layout/SectionLabel";
@@ -26,6 +27,7 @@ import { Checkbox } from "./controls/Checkbox";
 import { Toggle } from "./controls/Toggle";
 import { SegmentedControl } from "./controls/SegmentedControl";
 import { TextField, TextArea, SelectField } from "./controls/Field";
+import { Option } from "./controls/Option";
 import { BackButton } from "./controls/BackButton";
 import { ColorSwatch } from "./controls/ColorSwatch";
 import { ConfirmButton } from "./controls/ConfirmButton";
@@ -50,11 +52,24 @@ import { MasterDetail } from "./layouts/MasterDetail";
 import { SplitView } from "./layouts/SplitView";
 import { GraphCanvas } from "./layouts/GraphCanvas";
 import { PaneGrid } from "./layouts/PaneGrid";
+import { Sequence } from "./layouts/Sequence";
+import { Tree } from "./layouts/Tree";
 // #2421 gap-fill
 import { LabelChip } from "./data/LabelChip";
 import { ActivityFeed } from "./data/ActivityFeed";
 import { Pane } from "./overlay/Pane";
 import { TelemetryPanel, ItemBars, SplitBar } from "./charts/telemetry";
+// #2475 — the key-value record rendering
+import { KeyValueList } from "./data/KeyValueList";
+// #2505 — the Pages tier (complete data-driven page compositions)
+import { TablePage } from "./pages/TablePage";
+import { TreeExplorerPage } from "./pages/TreeExplorerPage";
+import { PipelinePage } from "./pages/PipelinePage";
+import { NetworkPage } from "./pages/NetworkPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { CollectionPage } from "./pages/CollectionPage";
+// #2508 — the key-value shape's page, completing the page-per-shape set
+import { RecordPage } from "./pages/RecordPage";
 
 // Heterogeneous prop shapes — a render-map is intentionally prop-agnostic.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -63,16 +78,18 @@ type AnyComponent = ComponentType<any>;
 /** name → component for every primitive in the manifest. The `Record<PrimitiveName>` type enforces
  *  exhaustive, in-sync coverage at compile time. */
 export const UI_COMPONENTS: Record<PrimitiveName, AnyComponent> = {
-  Box, Stack, Row, Spacer, Grid, SectionHeader, SectionLabel, Dialog, ModalScrim, ModalCard,
+  Box, Stack, Row, Spacer, Slot, Grid, SectionHeader, SectionLabel, Dialog, ModalScrim, ModalCard,
   Text,
-  Button, IconButton, Checkbox, Toggle, SegmentedControl, TextField, TextArea, SelectField,
+  Button, IconButton, Checkbox, Toggle, SegmentedControl, TextField, TextArea, SelectField, Option,
   BackButton, ColorSwatch, ConfirmButton,
   Card, Chip, StatTile, FillBar, Code,
   Avatar, IconBox, CardListRow, DataTableRow, RoleTierChips,
   StatCard, LineArea, Bars, Donut, HBars, Swimlane, Spark, Legend, StackedDayBars,
   Banner, InlineError, EmptyState, StatusDot, Skeleton,
-  MasterDetail, SplitView, GraphCanvas, PaneGrid,
+  MasterDetail, SplitView, GraphCanvas, PaneGrid, Sequence, Tree,
   LabelChip, ActivityFeed, Pane, TelemetryPanel, ItemBars, SplitBar,
+  KeyValueList,
+  TablePage, TreeExplorerPage, PipelinePage, NetworkPage, DashboardPage, CollectionPage, RecordPage,
 };
 
 /** Resolve a primitive name to its component (undefined for an unknown name). */

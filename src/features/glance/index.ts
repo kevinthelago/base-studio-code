@@ -2,8 +2,20 @@
 // dependencies as edges, cross-project cycle hazards). Public API barrel.
 export { GlanceWorkspace } from "./GlanceWorkspace";
 export {
-  buildGraph, focusSets, edgeGeom,
-  ROLE_COLOR, STATUS_META, EDGE_META,
-  type GraphModel, type GNode, type GEdge, type GRawNode, type GRawEdge, type GRole, type GStatus, type GEdgeKind,
+  buildGraph, focusSets, edgeGeom, rollUpHealth,
+  ROLE_COLOR, CATEGORY_META, HEALTH_META, ACTIVITY_META, HEALTH_RANK, EDGE_META,
+  KIT_COLOR, KIT_NODE_PREFIX, kitNodeId, kitIdOfNode, usesKitEdgeId,
+  // Cross-graph library dimension (#3119, epic #3114) — the generalized band-node API B/C wires real
+  // `requires` deps into (algorithms/sounds), alongside the kept `uses-kit`/`kit` names.
+  ALGO_COLOR, SOUND_COLOR, LIBRARY_META, LIBRARY_NODE_PREFIX, libraryNodeId, libIdOfNode, requiresEdgeId,
+  isLibraryNode, libraryGraphOf, isLibraryEdge,
+  type GraphModel, type GNode, type GEdge, type GRawNode, type GRawEdge, type GRole, type GCategory, type GHealth, type GActivity, type GEdgeKind, type GNodeKind, type GLibraryGraph,
 } from "./lib/glanceGraph";
-export { buildGlanceData, SAMPLE_GRAPH, type GlanceData, type ProjectLite } from "./lib/glanceData";
+export { buildGlanceData, SAMPLE_GRAPH, type GlanceData, type ProjectLite, type KitLite } from "./lib/glanceData";
+// #2498: the mobile store projector mirrors the SAME project/fault/fleet sources the Glance
+// workspace reads, so the data hooks are public API alongside the graph model.
+export { useGlanceProjects, applyFaultHealth, applyLiveness, applyRunningActivity, deriveBuildingKeys, mergeGlanceProjects } from "./lib/useGlanceProjects";
+export { useGlanceFaults, type GlanceFault } from "./lib/useGlanceFaults";
+export { applyStallHealth, projectKeyOfSession, STALL_WARN_MS, type WaitLite } from "./lib/agentStall";
+export { useProjectFleet } from "./lib/useProjectFleet";
+export { type ProjectLink } from "./lib/projectLinks";

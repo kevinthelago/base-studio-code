@@ -10,3 +10,8 @@ pub mod launch;
 pub mod settings;
 pub mod sandbox;
 pub mod llm;
+pub mod designer;
+pub mod architect;
+pub mod librarian;
+pub mod sound_designer;
+pub mod debug;

@@ -38,10 +38,21 @@ pub async fn send_json(
     on_send: impl FnOnce(reqwest::Error) -> String,
     on_parse: impl FnOnce(reqwest::Error) -> String,
 ) -> Result<(reqwest::StatusCode, serde_json::Value), String> {
+    send_json_full(req, on_send, on_parse).await.map(|(status, _, json)| (status, json))
+}
+
+/// [`send_json`] plus the response headers — for callers that must inspect rate-limit headers
+/// (`X-RateLimit-*` / `Retry-After`, #2448) before the body consumes the response.
+pub async fn send_json_full(
+    req: reqwest::RequestBuilder,
+    on_send: impl FnOnce(reqwest::Error) -> String,
+    on_parse: impl FnOnce(reqwest::Error) -> String,
+) -> Result<(reqwest::StatusCode, reqwest::header::HeaderMap, serde_json::Value), String> {
     let resp = req.send().await.map_err(on_send)?;
     let status = resp.status();
+    let headers = resp.headers().clone();
     let json = resp.json::<serde_json::Value>().await.map_err(on_parse)?;
-    Ok((status, json))
+    Ok((status, headers, json))
 }
 
 /// Send a blocking `req`, require a 2xx (`error_for_status`), and decode the JSON body. `on_err`

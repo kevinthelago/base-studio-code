@@ -2,14 +2,14 @@
 // ProjectPane `Agent` cards (posture, kickoff preview, lane scope). Extracted from
 // projectPaneData (#2151); pure, no logic changes.
 
-import type { Tier, ToolKey } from "@/features/agents";
+import type { Tier, ToolKey } from "@/features/security";
 import { resolveFlow } from "../fleet/agentFlow";
 import { resolveStrategy } from "../lib/integrationStrategy";
 import { depsForRepo } from "../issues/dependencies";
 import { buildWorkerScope } from "../fleet/workerScope";
 import { buildStreamPrompt } from "@/store/helpers";
 import { resolveStreamPersona, personaStreamPrompt } from "../fleet/streamPersona";
-import type { AgentProfile } from "@/features/agents";
+import type { AgentProfile } from "@/features/security";
 import type { Posture, Perm, Agent } from "./projectPane.types";
 import type { BuildProjectPaneInput } from "./projectPaneInput";
 
@@ -65,7 +65,7 @@ export function buildAgents(input: BuildProjectPaneInput): Agent[] {
     // #2053: compute the exact kickoff + lane context this stream will launch with, so the card can
     // preview them (pure — the same builders fleetStartProject / write_worker_context use).
     const strategy = resolveStrategy(s.strategy, input.fleet?.strategy);
-    const scope = buildWorkerScope(s, depsForRepo(input.dependencies ?? [], s.repo));
+    const scope = buildWorkerScope(s, depsForRepo(input.dependencies ?? [], s.repo), false, input.uiPairing);
     // #2094: a stream may launch AS a persona — its role + persona-identity kickoff drive the row +
     // preview (matching fleetStartProject). No persona ⇒ the plain worker role + kickoff.
     const persona = resolveStreamPersona(input.personas ?? [], s);

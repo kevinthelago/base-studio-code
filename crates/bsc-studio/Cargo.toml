@@ -1,0 +1,24 @@
+[package]
+name = "bsc-studio"
+version = "0.1.0"
+edition = "2021"
+description = "Studio store (SQLite store at ~/.base-studio-code/studios.db) for base-studio-code (#2890) — a Studio is a self-contained, shareable snapshot of the app's library state (teams · personas · components · variants · themes · blueprints), assembled by reading each sibling bsc-json-store collection uniformly, reachable from the session-facing `bsc studio` CLI."
+
+# The core lib (no Tauri, no SQLite) so the tiny CLI reuses it without dragging the whole desktop app
+# in. The hyphenated package name maps to the `bsc_studio` crate name.
+[lib]
+name = "bsc_studio"
+
+[dependencies]
+# Read each sibling library collection (blueprints/personas/teams/components/variants/themes) DIRECTLY
+# via the shared verbatim-JSON-per-id store (#2158) — no per-sibling crate dep, keeping the graph clean.
+bsc-json-store = { path = "../bsc-json-store" }
+# Shared leaf utilities (#1646): the one `~/.base-studio-code` base-dir resolver every store agrees on.
+bsc-util = { path = "../bsc-util" }
+# Shared CLI scaffold (#1762): `CmdDoc` + the help dispatch / unknown-command renderer.
+bsc-cli-util = { path = "../bsc-cli-util" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Embed the packaged built-in studios (src-tauri/data/studios/*.json, #2894) into the binary — the same
+# `include_dir!` pattern skilldb uses for its packaged skills, so `bsc studio list/get/apply` see built-ins.
+include_dir = "0.7"

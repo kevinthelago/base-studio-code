@@ -1,0 +1,86 @@
+/* Algorithms knowledge-graph page (#2761). Only layout-specific rules live here; colors + primitives
+   come from tokens.css. Mirrors the Glance/Teams canvas idiom (absolute world-positioned node cards +
+   an SVG edge layer under them). */
+
+.algo-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev, var(--bg-soft));
+  cursor: pointer;
+  overflow: hidden;
+  transition: opacity 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+.algo-node:hover { border-color: var(--fg-dim); }
+.algo-node.on { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
+.algo-node.dim { opacity: 0.22; }
+.algo-node .algo-name { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.algo-node .algo-meta { font-size: 10.5px; color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Language primitives (#2980) — a primitive is a DESCRIPTOR of a language built-in (#2972), not our
+   code, so it reads distinctly from the solid algorithm cards: a dashed violet border + a violet tint +
+   a leading violet role dot, carrying the same "primitive = violet" cue the rail + inspector use. */
+.algo-node.algo-prim {
+  border-style: dashed;
+  border-color: var(--violet);
+  background: color-mix(in srgb, var(--violet) 8%, var(--bg-elev, var(--bg-soft)));
+}
+.algo-node.algo-prim:hover { border-color: var(--violet); }
+.algo-node.algo-prim.on { box-shadow: 0 0 0 2px var(--violet); border-color: var(--violet); }
+.algo-node.algo-prim .algo-name::before {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--violet);
+  vertical-align: middle;
+}
+.algo-node.algo-prim .algo-meta { color: color-mix(in srgb, var(--violet) 65%, var(--fg-dim)); }
+
+/* The edge label pill — only shown for lit (selected-neighbor) edges to keep the graph readable. */
+.algo-edgelabel {
+  font-size: 9.5px;
+  fill: var(--fg-muted);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+/* Inspector relationship rows. `color: var(--fg)` because these are <button> elements — without it the
+   row text falls back to the UA button color instead of the theme foreground (#2787). */
+.algo-relrow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border: 1px solid var(--border-soft, var(--border)); border-radius: 8px; background: var(--bg-soft); color: var(--fg); cursor: pointer; text-align: left; }
+.algo-relrow:hover { border-color: var(--fg-dim); }
+
+/* Implementation-tier (#2770): the per-tech code block in the inspector. */
+.algo-code {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg, var(--bg-soft));
+  color: var(--fg);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+  tab-size: 2;
+}
+
+
+/* Left-rail node rows now render through the shared RailRow / RailGroupHeader primitives (#2789);
+   the former bespoke `.algo-railrow` rules were removed with that migration. */
+
+/* The docked knowledge-librarian session (#2787) now renders through the shared SessionDock (#2808);
+   its former `.algo-terminal`/`.algo-colhead`/`.algo-termhost` rules were removed with that extraction. */
+
+/* The optional domain filter (#3120) in the rail tools strip — stretch the dropdown to the rail width so
+   it lines up with the full-width search field above it. */
+.algo-domain-filter,
+.algo-domain-filter .dd-trigger { width: 100%; }

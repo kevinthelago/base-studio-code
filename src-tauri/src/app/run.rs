@@ -70,10 +70,17 @@ pub fn run() {
         .manage(tunnel::TunnelState::new())
         .manage(perf::PerfState::new(perf_db()))
         .manage(logs::LogState::new(logs::LogConfig::default()))
+        // In-flight `bsc navigate` requests (#3274): the appchan watcher parks on a receiver here and
+        // `navigate_ack` (invoked by the frontend once it has applied the view) delivers into it.
+        .manage(crate::navigate::NavPending::default())
+        // In-flight `bsc debug` inspections (#3437) — the same park-and-ack shape as navigate.
+        .manage(crate::debug::DebugPending::default())
         .manage(scope_registry.clone())
         // Runtime fault-ingest collector (#2261): the loopback receiver a generated app POSTs
         // faults/heartbeats to. Started (bound + accept loop spawned) in `setup` below.
         .manage(collector::CollectorState::new())
+        .manage(project::preview::PreviewServers::default())
+        .manage(crate::shot::ShotTargets::default())
         .manage(UncleanShutdown(unclean_shutdown))
         .setup(move |app| {
             // Install the dual-sink GraphLogger (#1389) in place of tauri-plugin-log — FIRST, so the
@@ -83,6 +90,16 @@ pub fn run() {
             let app_log = logs::app_log_file(app.handle())
                 .unwrap_or_else(|| bsc_base_dir().join("base-studio-code.log"));
             graph_log::install(scope_registry.clone(), app_log.clone());
+            // Force the main window's taskbar/title icon from the icon Tauri embedded from
+            // `bundle.icon` (#2683). A bundled/installed build shows the app icon via the exe's Windows
+            // resource, but under `tauri dev` the debug exe doesn't reliably apply it, so the taskbar
+            // shows a blank square while developing. Re-applying the already-embedded icon at startup
+            // makes dev match the shipped build — no new asset, and it's a no-op elsewhere.
+            if let (Some(win), Some(icon)) = (app.get_webview_window("main"), app.default_window_icon().cloned()) {
+                if let Err(e) = win.set_icon(icon) {
+                    log::warn!("[startup] could not apply window icon: {e}");
+                }
+            }
             // External-write watch: a `bsc log set` from a console session rewrites `log-scopes.json`;
             // poll its mtime and reload the in-memory graph live (cheap stat; read only on a change).
             let reg_poll = scope_registry.clone();
@@ -96,6 +113,14 @@ pub fn run() {
             // One-time layout migration (#922): consolidate legacy draft/ hubs back under
             // projects/ while nothing holds them as a cwd. Idempotent + cheap once draft/ is gone.
             migrate_draft_hubs_into_projects();
+            // One-time plan.db relocation (#2996): move each hub's plan.db to the central plans/ store
+            // so the plan is folder-independent (the DB is the source of truth; the hub is materialized
+            // at triage, epic #2993). After the draft consolidation, before any session opens a plan.db.
+            crate::project::plan_db::migrate_plan_dbs_to_central();
+            // One-time backfill (#2998): fold every existing on-disk hub into the durable projects.db
+            // registry (title + lifecycle state), so the DB is the source of truth for what projects
+            // exist — recovering hubs that only lived on disk. Additive + idempotent; never deletes.
+            crate::project::hub::backfill_projects_db_from_hubs();
             // Seed the runtime config dir (#2027 P2): copy the embedded `data/` tree into
             // ~/.base-studio-code/config/ on first run (only absent files — never clobbers a user
             // edit), so prompts/taxonomies can be edited without a rebuild. Best-effort: on failure
@@ -103,6 +128,11 @@ pub fn run() {
             if let Err(e) = crate::platform::config::ensure_seeded() {
                 log::warn!("[startup] config seed skipped ({e}); using embedded defaults");
             }
+            // Dev sidecar staging (#3457): in a dev build, copy `bsc`/`bsc-agent` out of the cargo
+            // target dir into a stable dir so a live session's long-lived `bsc` (the MCP servers) locks
+            // the staged copy — leaving `target/<profile>/bsc.exe` free for the next `cargo build` to
+            // relink. No-op in a release bundle. Runs BEFORE the self-check so it reports staged paths.
+            crate::console::pty::stage_dev_sidecars();
             // Sidecar self-check (#1988): `bsc`/`bsc-agent` are built by a SEPARATE step
             // (`npm run build:plan` in dev / `stage:sidecar` for a release) and resolved beside the app
             // exe. If that step was skipped they'd be missing — silently unsetting $BSC_BIN so every
@@ -146,6 +176,11 @@ pub fn run() {
             // Spawn the background performance sampler.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(perf::run_sampler(handle));
+            // Answer `bsc shot` capture requests (#3261, epic #3260). `bsc` cannot call us — the bridge
+            // only runs app→bsc — so the CLI drops a request in ~/.base-studio-code/shots/ and this
+            // watcher snapshots the webview and answers. Cheap poll on a worker thread; a missing dir
+            // just disables captures rather than aborting startup.
+            crate::appchan::spawn_watcher(app.handle().clone());
             // Start the localhost fault-ingest receiver (#2261): binds 127.0.0.1:0 and runs its accept
             // loop on a background thread. A bind failure is logged and leaves the port at 0 (ingest
             // unavailable) rather than aborting startup.
@@ -203,6 +238,8 @@ pub fn run() {
             crate::platform::config::export_config_bundle,
             crate::platform::config::import_config_bundle,
             crate::platform::config::get_config_files,
+            crate::platform::path_expose::path_expose_status,
+            crate::platform::path_expose::path_expose_configure,
             github::repos::clone_repo,
             extensions::mcp::mcp_clone,
             extensions::mcp::mcp_build,
@@ -217,6 +254,12 @@ pub fn run() {
             session::claude_config::read_claude_config,
             session::claude_config::write_claude_config,
             session::settings::ensure_session_settings,
+            session::designer::setup_designer_workspace,
+            session::architect::setup_architect_workspace,
+            session::librarian::setup_librarian_workspace,
+            session::sound_designer::setup_sound_designer_workspace,
+            session::debug::debug_repo_root,
+            crate::shot::set_shot_target_rect,
             session::sandbox::wsl_sandbox_status,
             session::sandbox::provision_sandbox,
             session::sandbox::sandbox_run,
@@ -230,6 +273,8 @@ pub fn run() {
             session::sandbox::ensure_sandbox_worktree,
             session::sandbox::ensure_sandbox_user,
             app::recovery::was_unclean_shutdown,
+            crate::navigate::navigate_ack,
+            crate::debug::debug_ack,
             github::readiness::github_readiness,
             github::readiness::preflight,
             github::readiness::get_preferred_shell,
@@ -238,6 +283,7 @@ pub fn run() {
             project::hub::delete_project_dir,
             project::hub::mark_published,
             project::hub::set_project_title,
+            project::hub::relink_project_hub,
             project::plan_files::clear_all_plan_files,
             project::plan_files::clear_project_plan_files,
             project::hub::list_local_projects,
@@ -260,6 +306,7 @@ pub fn run() {
             tunnel::tunnel_emit_plan_event,
             tunnel::tunnel_emit_plan_status,
             tunnel::tunnel_ack_plan_push,
+            tunnel::apply_pushed_plan_files,
             tunnel::tunnel_check_relay,
             tunnel::tunnel_set_fleet_state,
             tunnel::tunnel_emit_coord_event,
@@ -268,6 +315,8 @@ pub fn run() {
             tunnel::tunnel_automation_failed,
             tunnel::tunnel_set_mcp_state,
             tunnel::tunnel_set_hook_telemetry,
+            tunnel::tunnel_set_store_state,
+            tunnel::tunnel_emit_alert,
             fleet::inspect::read_worktree_changes,
             fleet::inspect::read_worktree_branch,
             fleet::inspect::read_worktree_commits,
@@ -279,7 +328,9 @@ pub fn run() {
             project::ui_skeleton::read_ui_skeleton,
             project::ui_skeleton::sync_design_to_skeleton,
             project::hub::project_dir_path,
+            project::hub::materialize_hub,
             project::hub::repo_dir_path,
+            project::preview::verify_build,
             observability::logs::append_coord_woke,
             observability::collector::collector_info,
             observability::collector::project_liveness,

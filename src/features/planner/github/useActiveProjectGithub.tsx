@@ -4,10 +4,12 @@
 // project's node id, plus the same error banner. Extracted here so the four screens share one
 // source.
 import type { CSSProperties } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
+import { rateLimitNote } from "@/shared/lib/github/github";
+import { fetchBoardWithProbe } from "@/shared/lib/github/githubProbe";
 import { useGithubQuery, type GithubQuery } from "@/shared/lib/github/useGithubQuery";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
+import { Text } from "@/shared/ui/typography/Text";
 import type { ActiveProjectInfo } from "../list/ProjectsHeader";
 
 /** The active project's identity, assembled from the store — the `project` prop every board
@@ -32,18 +34,31 @@ export function useActiveProjectGithub<T = { node: Record<string, unknown> }>(
 ): { project: ActiveProjectInfo } & GithubQuery<T> {
   const project = useActiveProject();
   const activeProjectId = useAppStore((s) => s.activeProjectId);
+  // fetchBoardWithProbe keeps the board reads on the backend TTL cache (#2447 — switching between
+  // Board / Issues / Insights within the window re-serves the cached result) and gates the heavy
+  // `items(first:100)` re-POST past the window behind the board's light updatedAt probe (#2448):
+  // an unchanged board keeps serving the cached copy, a moved one fetches fresh.
   const state = useGithubQuery<T>(
-    (token) => invoke("github_graphql", { token, query, variables: { id: activeProjectId } }),
+    () => fetchBoardWithProbe<T>(query, activeProjectId!),
     [activeProjectId],
     !!activeProjectId,
   );
   return { project, ...state };
 }
 
-/** The shared danger banner the board screens render for a failed query. Renders nothing when there
- *  is no error. `style` lets a screen keep its existing margin. */
+/** The shared banner the board screens render for a failed query. Renders nothing when there is no
+ *  error; a rate-limited query (#2448) renders as a quiet dim note (the screens keep showing their
+ *  cached data) instead of the red danger callout. `style` lets a screen keep its existing margin. */
 export function QueryBanner({ error, style }: { error: string | null; style?: CSSProperties }) {
   if (!error) return null;
+  const note = rateLimitNote(error);
+  if (note) {
+    return (
+      <Text as="div" mono size={11} tone="dim" style={{ padding: "12px 16px", ...style }}>
+        {note}
+      </Text>
+    );
+  }
   return (
     <InlineError pad={[12, 16]} radius={6} style={style}>{error}</InlineError>
   );

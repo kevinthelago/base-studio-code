@@ -1,5 +1,5 @@
 //! The remaining plan.db + connector nouns of `bsc plan` (#1864): `feature`/`repo`/`deploy`/`deps`/
-//! `mcp`/`blueprint`/`discovery`/`integration`/`lesson`. Split out of `cli.rs` as a pure move —
+//! `mcp`/`blueprint`/`ui`/`discovery`/`integration`/`lesson`. Split out of `cli.rs` as a pure move —
 //! [`super::run`] dispatches each here; the shared plumbing (`Args`/`open_store`/`emit_*`/
 //! `cmd_blob_noun`/`blob_count`/`unknown_sub`) stays in the parent module. Output is byte-for-byte
 //! what `cli.rs` emitted before the split.
@@ -28,6 +28,12 @@ pub(crate) fn cmd_feature(args: &Args) -> Result<(), String> {
                     .map_err(|e| e.to_string())?
             };
             emit_set_result(args.json, &slugs, "");
+            // Readiness echo (#2395): the Features gate needs EVERY feature fully defined (name +
+            // behavior + ≥1 acceptance) — mirror that count so the author sees the gap now.
+            if !args.json {
+                let all = s.feature_list().map_err(|e| e.to_string())?;
+                println!("{}", crate::validate::feature_readiness(&all));
+            }
             Ok(())
         }
         "list" => {
@@ -125,24 +131,149 @@ pub(crate) fn cmd_repo(args: &Args) -> Result<(), String> {
     }
 }
 
-/// `deploy` — the Deploy stage's structured config (one blob).
+/// `deploy` — the Deploy stage's structured config (one blob). Validated at set-time (#2395,
+/// motivated by #2392's silently-stored `mode:"local"` service with no `localKind`); the echo
+/// carries the pane's "N of M deploy-ready" readiness so a partial-but-valid config is visible.
 pub(crate) fn cmd_deploy(args: &Args) -> Result<(), String> {
     cmd_blob_noun(
         args, "deploy", "deploy JSON", "(no deploy config)",
+        crate::validate::validate_deploy_config,
         |s, v| s.deploy_set(v).map_err(|e| e.to_string()),
         |s| s.deploy_get().map_err(|e| e.to_string()),
-        |v| format!("deploy set ({} services)", blob_count(v, "services")),
+        |v| format!("deploy set ({} services){}", blob_count(v, "services"), crate::validate::deploy_readiness(v)),
     )
 }
 
-/// `deps` — the Deploy stage's locked dependency manifest (one blob).
+/// `deps` — the Deploy stage's locked dependency manifest (one blob). Validated at set-time (#2395)
+/// against what the manifest readers keep (name + npm/cargo ecosystem; registries need a url).
 pub(crate) fn cmd_deps(args: &Args) -> Result<(), String> {
     cmd_blob_noun(
         args, "deps", "dependency manifest JSON", "(no dependency manifest)",
+        crate::validate::validate_deps_manifest,
         |s, v| s.deps_set(v).map_err(|e| e.to_string()),
         |s| s.deps_get().map_err(|e| e.to_string()),
-        |v| format!("deps set ({} dependencies)", blob_count(v, "dependencies")),
+        |v| {
+            let (deps, regs) = crate::validate::deps_counts(v);
+            let gate = if deps == 0 { " — gate blocked: 0 dependencies (the Dependencies gate needs ≥1)" } else { "" };
+            format!("deps set ({deps} dependencies, {regs} registries){gate}")
+        },
     )
+}
+
+/// `market` — the Market stage's scored assessment (one blob, #2430): the structured artifact
+/// behind the `marketDefined` gate. Validated at set-time (#2395): all six rubric dimensions scored
+/// 1-5 with a rationale + ≥1 fetched source each (citation discipline), plus a go|caution|no-go
+/// verdict; the echo mirrors the pane's "N of 6 dimensions scored, cited" readiness.
+pub(crate) fn cmd_market(args: &Args) -> Result<(), String> {
+    cmd_blob_noun(
+        args, "market", "market assessment JSON", "(no market assessment)",
+        crate::validate::validate_market_config,
+        |s, v| s.market_set(v).map_err(|e| e.to_string()),
+        |s| s.market_get().map_err(|e| e.to_string()),
+        |v| format!("market set{}", crate::validate::market_readiness(v)),
+    )
+}
+
+/// `transformation` — the Transformations stage's list (#2509): the modification counterpart to
+/// features, one JSON-per-row (the `fleet_streams` shape) backing the bottom-up confirm queue.
+/// Writes validate at set-time (#2395: verb taxonomy, discovered target, delta, invariants, owns,
+/// tier — field-level rejects, batch rejected whole); every write echoes the queue's readiness
+/// (`N transformations · M confirmed · tiers 0-K`) so the gate distance is always visible. The
+/// `confirm` verb is the PANE's (the user's one action per queue item) — the planner never runs it.
+pub(crate) fn cmd_transformation(args: &Args) -> Result<(), String> {
+    let sub = args.positional.get(1).map(String::as_str).unwrap_or("");
+    let s = open_store(&args.db)?;
+    match sub {
+        // `transformation add` — upsert row(s) from stdin JSON (one object or an array). The whole
+        // batch validates before ANY row persists, so a bad item can't leave a half-written queue.
+        "add" => {
+            let v: serde_json::Value = bsc_sqlite_util::read_stdin_json_one("transformation JSON")?;
+            let rows: Vec<serde_json::Value> = match &v {
+                serde_json::Value::Array(a) => a.clone(),
+                other => vec![other.clone()],
+            };
+            if !args.force {
+                crate::validate::validate_transformations(&rows)?;
+            }
+            let ids = s.transformation_add(&v).map_err(|e| e.to_string())?;
+            emit_set_result(args.json, &ids, "");
+            transformation_echo(args, &s)
+        }
+        "list" => {
+            let rows = s.transformation_list().map_err(|e| e.to_string())?;
+            emit_json_or_lines(args.json, &rows, "(no transformations)", |_, t| render_transformation_line(t));
+            Ok(())
+        }
+        "get" => {
+            let id = args.positional.get(2).ok_or("usage: bsc plan transformation get <id>")?;
+            match s.transformation_get(id).map_err(|e| e.to_string())? {
+                Some(t) => {
+                    print_json(&t, args.pretty);
+                    Ok(())
+                }
+                None => Err(format!("no transformation with id '{id}'")),
+            }
+        }
+        // `transformation update <id>` — replace one row (position kept, so the item re-presents in
+        // place in the queue). Never an implicit add: an unknown id is an error.
+        "update" => {
+            let id = args.positional.get(2).ok_or("usage: bsc plan transformation update <id>  (JSON on stdin)")?;
+            let v: serde_json::Value = bsc_sqlite_util::read_stdin_json_one("transformation JSON")?;
+            if !args.force {
+                crate::validate::validate_transformation_update(id, &v)?;
+            }
+            if !s.transformation_update(id, &v).map_err(|e| e.to_string())? {
+                return Err(format!(
+                    "no transformation with id '{id}' — use `bsc plan transformation add` for a new row"
+                ));
+            }
+            if !args.json {
+                println!("updated {id} — the item re-presents in the confirm queue");
+            }
+            transformation_echo(args, &s)
+        }
+        // `transformation confirm <id>` — the USER's one action per queue item (the pane drives it).
+        "confirm" => {
+            let id = args.positional.get(2).ok_or("usage: bsc plan transformation confirm <id>")?;
+            if !s.transformation_confirm(id).map_err(|e| e.to_string())? {
+                return Err(format!("no transformation with id '{id}'"));
+            }
+            if !args.json {
+                println!("confirmed {id}");
+            }
+            transformation_echo(args, &s)
+        }
+        "remove" => {
+            let id = args.positional.get(2).ok_or("usage: bsc plan transformation remove <id>")?;
+            s.transformation_remove(id).map_err(|e| e.to_string())?;
+            if !args.json {
+                println!("removed {id}");
+            }
+            Ok(())
+        }
+        other => Err(unknown_sub(args, "transformation", other)),
+    }
+}
+
+/// The human-mode readiness echo after any transformation write — the #2395 echo pattern, over the
+/// whole stored queue (`N transformations · M confirmed · tiers 0-K`).
+fn transformation_echo(args: &Args, s: &crate::Store) -> Result<(), String> {
+    if !args.json {
+        let all = s.transformation_list().map_err(|e| e.to_string())?;
+        println!("{}", crate::validate::transformations_readiness(&all));
+    }
+    Ok(())
+}
+
+/// One queue line: `replace-bespoke-buttons      · replace  tier 0  Replace the bespoke buttons`
+/// (· = pending, ✓ = confirmed), emitted in queue (position) order.
+fn render_transformation_line(t: &serde_json::Value) -> String {
+    let id = t.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+    let mark = if t.get("confirmed").and_then(|v| v.as_bool()).unwrap_or(false) { "✓" } else { "·" };
+    let verb = t.get("verb").and_then(|v| v.as_str()).unwrap_or("?");
+    let tier = t.get("tier").and_then(|v| v.as_i64()).unwrap_or(0);
+    let title = t.get("title").and_then(|v| v.as_str()).unwrap_or("");
+    format!("{id:<28} {mark} {verb:<8} tier {tier}  {title}")
 }
 
 /// `mcp` — catalog MCP servers scoped to the project (durable in plan.db).
@@ -179,15 +310,35 @@ pub(crate) fn cmd_mcp(args: &Args) -> Result<(), String> {
     }
 }
 
-/// `blueprint` — the blueprint an authoring project is designing (one blob).
+/// `blueprint` — the blueprint an authoring project is designing (one blob). Validated at set-time
+/// (#2395): without an id + name the reader silently ignores the WHOLE blob, and a stage entry
+/// missing key/name is silently dropped. The echo counts `stages` OR `sections` (both accepted).
 pub(crate) fn cmd_blueprint(args: &Args) -> Result<(), String> {
     cmd_blob_noun(
         args, "blueprint", "blueprint JSON", "(no blueprint)",
+        crate::validate::validate_blueprint,
         |s, v| s.blueprint_set(v).map_err(|e| e.to_string()),
         |s| s.blueprint_get().map_err(|e| e.to_string()),
         |v| {
             let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("blueprint");
-            format!("blueprint set: {name} ({} sections)", blob_count(v, "sections"))
+            format!("blueprint set: {name} ({} stages)", crate::validate::blueprint_stage_count(v))
+        },
+    )
+}
+
+/// `ui` — the app's UI pairing: the {kit, theme} the planned application ships on (#2489, one
+/// blob). Recorded in the Test UI stage after the theme is chosen with the user; the generated
+/// app's palette is EMITTED from it (`bsc ui emit-css --theme <themeId>` → tokens.css + theme.css),
+/// resolved by id at emission time — never snapshotted. Validated at set-time (#2395).
+pub(crate) fn cmd_ui(args: &Args) -> Result<(), String> {
+    cmd_blob_noun(
+        args, "ui", "ui pairing JSON", "(no ui pairing)",
+        crate::validate::validate_ui_pairing,
+        |s, v| s.ui_set(v).map_err(|e| e.to_string()),
+        |s| s.ui_get().map_err(|e| e.to_string()),
+        |v| {
+            let (kit, theme) = crate::validate::ui_pairing_echo(v);
+            format!("ui pairing set: kit {kit}, theme {theme}")
         },
     )
 }
@@ -402,13 +553,19 @@ pub(crate) fn cmd_lesson(args: &Args) -> Result<(), String> {
 
 /// Read JSON from stdin (one feature object or an array) and merge-upsert each; return the slugs.
 /// Used for the detail-fill phase (`{"slug":"…","behavior":…}`) — title rows are added by name.
+/// Validates the WHOLE batch before writing anything (#2395), so a bad item can't leave a
+/// half-written roster behind.
 fn cmd_feature_add(s: &crate::Store) -> Result<Vec<String>, String> {
     let feats: Vec<PlanFeature> = bsc_sqlite_util::read_stdin_json("feature")?;
+    for (i, f) in feats.iter().enumerate() {
+        if f.slug.trim().is_empty() && f.name.trim().is_empty() {
+            return Err(format!(
+                "feature add: features[{i}] needs a \"slug\" or a \"name\" — rejected; nothing was written"
+            ));
+        }
+    }
     let mut slugs = Vec::new();
     for f in &feats {
-        if f.slug.trim().is_empty() && f.name.trim().is_empty() {
-            return Err("feature add: each feature needs a \"slug\" or a \"name\"".into());
-        }
         slugs.push(s.feature_upsert(f).map_err(|e| e.to_string())?);
     }
     Ok(slugs)

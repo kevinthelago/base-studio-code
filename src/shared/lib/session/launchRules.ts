@@ -5,13 +5,21 @@
 // ({@link bscAgentPerms}). Pure enforcement core, free of React / xterm / Tauri. Re-exported from
 // `sessionRoles.ts`.
 
-import type { RoleCapability } from "./roleModel";
-import { DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, hasScopedWriteCarveOut } from "./roleModel";
+import type { AccessTier, RoleCapability } from "./roleModel";
+import { DB_OWNED_PLAN_FILES, DEP_MANIFEST_FILES, hasScopedWriteCarveOut, isRestrictedRole } from "./roleModel";
 
 // ── Launch wiring: write-tool permission rules ──────────────────────────────────
 
-/** The file-mutating tools gated by the write-path guard. */
-const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+/** The file-mutating tools gated by a WHOLE-TOOL deny (bare tool name, no path). Claude Code has no
+ *  `MultiEdit` tool (removed) and a bare `Edit` deny does NOT cover `Write`/`NotebookEdit` — they are
+ *  separate tools — so all three must be listed to block every file write (#3534). */
+const WRITE_TOOLS = ["Edit", "Write", "NotebookEdit"];
+
+/** A PATH-SCOPED file rule uses ONLY `Edit(<glob>)`: Claude Code matches file-permission rules on the
+ *  `Edit` tool alone, and that ONE rule covers every file-editing tool (Write/NotebookEdit). Emitting
+ *  `Write(<glob>)`/`NotebookEdit(<glob>)`/`MultiEdit(<glob>)` produces rules Claude Code never matches —
+ *  a silent no-op for an allow, and (worse) an unenforced deny (#3534). */
+export const editPathRule = (glob: string): string => `Edit(${glob})`;
 
 export interface ToolPermissionRules {
   /** Rules to auto-approve (Claude Code `permissions.allow`). */
@@ -46,11 +54,11 @@ export function roleWriteRules(cap: RoleCapability): ToolPermissionRules {
     // the default prompt and is hard-blocked by the bsc-scope hook ({@link scopeWriteGlobs}), so
     // the director can write the commons and is denied all other code writes.
     if (hasScopedWriteCarveOut(cap)) {
-      return { allow: cap.writeGlobs.flatMap((g) => WRITE_TOOLS.map((t) => `${t}(${g})`)), deny: [] };
+      return { allow: cap.writeGlobs.map(editPathRule), deny: [] };
     }
     return { allow: [], deny: [...WRITE_TOOLS] };
   }
-  const allow = cap.writeGlobs.flatMap((g) => WRITE_TOOLS.map((t) => `${t}(${g})`));
+  const allow = cap.writeGlobs.map(editPathRule);
   // Role-specific deny set, layered over the write-glob allows (deny wins over allow):
   // - planner: the DB-owned plan-state artifacts (#1070) — its *.md/*.json globs would otherwise
   //   auto-approve a stray `deploy.md`/`phases.json`; force it to the `bsc-plan` CLI.
@@ -60,7 +68,7 @@ export function roleWriteRules(cap: RoleCapability): ToolPermissionRules {
   const denyFiles = cap.role === "planner" ? DB_OWNED_PLAN_FILES
     : cap.role === "worker" ? DEP_MANIFEST_FILES
     : [];
-  const deny = denyFiles.flatMap((f) => WRITE_TOOLS.map((t) => `${t}(${f})`));
+  const deny = denyFiles.map(editPathRule);
   return { allow, deny };
 }
 
@@ -103,6 +111,29 @@ const GH_WRITE_DENY = [
   "gh api -X POST", "gh api -X PATCH", "gh api -X PUT", "gh api -X DELETE",
 ];
 
+/** `bsc ui` (component/kit store) mutating verb prefixes (#2470) — denied at `ui: "read"` so a
+ *  session can READ the kit it implements against but never redefine it. Includes the deprecated
+ *  `bsc component` alias's verbs while that alias lives (#2469); deny-wins keeps these solid over
+ *  the baseline's broad `bsc` allow. */
+const UI_WRITE_DENY = [
+  "bsc ui set", "bsc ui remove", "bsc ui kit set", "bsc ui kit remove",
+  "bsc component set", "bsc component remove", "bsc component kit set", "bsc component kit remove",
+];
+
+/** File-mutating shell commands denied for a WRITE-LESS role (#2932) — the bash counterpart to the
+ *  whole-tool Edit/Write deny in {@link roleWriteRules}. A `code: "none"` role with no scoped write
+ *  carve-out writes NOTHING: not via the Edit/Write tools (already denied), and not via bash either —
+ *  otherwise (as happened) a session bypasses the tool-deny with `tee`/`cp`/`echo > file` and mutates
+ *  the repo (e.g. `src-tauri/data/`, triggering a rebuild). Denies the common file writers; shell
+ *  redirection (`>`) can't be prefix-denied and is caught by the always-on `bsc-confine` FS hook.
+ *  Carve-out roles (documentor/marketer/a commons director) and writers (planner/worker) are EXCLUDED —
+ *  they write their scoped globs via the Write tool, not bash. */
+const FILE_WRITE_DENY = [
+  "tee", "dd", "truncate", "install", "cp", "mv", "ln", "patch", "sponge",
+  "sed -i", "sed --in-place", "perl -i",
+  "vi", "vim", "nano", "emacs", "ed", "ex",
+];
+
 /**
  * Command-prefix denies to apply at session launch for a role, merged into the
  * session's `deniedCommands` (the backend wraps each as `Bash(<prefix> *)`, and a
@@ -120,6 +151,24 @@ export function roleDeniedCommands(cap: RoleCapability): string[] {
   else if (cap.git === "read") out.push(...GIT_WRITE_DENY);
   if (cap.github === "none") out.push("gh");
   else if (cap.github === "read") out.push(...GH_WRITE_DENY);
+  // UI store tier (#2470), rendered like git/gh. FAIL-CLOSED on the tier: only an explicit
+  // `"write"` skips the mutating-verb denies, so a capability read from a STALE config-dir
+  // override that predates the `ui` field (#2325 floor-merge hazard — the merged role OBJECT can
+  // lack it) behaves as `"read"`, never as an accidental grant.
+  if (cap.ui === "none") out.push("bsc ui", "bsc component");
+  else if (cap.ui !== "write") out.push(...UI_WRITE_DENY);
+  // A write-less role (code:none, no carve-out) writes NOTHING — deny the file-mutating bash commands
+  // too, the counterpart to its whole-tool Edit/Write deny (#2932). Shell redirection (`>`) can't be
+  // prefix-denied; the always-on `bsc-confine` FS hook is the complete layer.
+  //
+  // A RESTRICTED role keeps these denies even though it HAS a carve-out (#3373). Its carve-out is a
+  // tool-only staging dir: it writes `scratch/**` with the Write tool and applies it with its one store
+  // CLI. It has no business running `cp`/`mv`/`tee`/`sed -i` at all — its spec says in as many words
+  // not to reach for bash to sidestep the file rules — so the shell mutation set stays denied. Without
+  // this clause the carve-out would silently UN-deny them, widening the session well past the staging
+  // dir the design intended.
+  const carveOutWritesViaShell = hasScopedWriteCarveOut(cap) && !isRestrictedRole(cap.role);
+  if (cap.code === "none" && !carveOutWritesViaShell) out.push(...FILE_WRITE_DENY);
   return out;
 }
 
@@ -162,4 +211,15 @@ export function bscAgentPerms(
     deny_bash: [...new Set([...roleDenies, ...extraDenyBash.map((c) => c.trim()).filter(Boolean)])],
     write_globs: cap && (cap.code === "write" || carveOut) ? cap.writeGlobs : [],
   };
+}
+
+/** The per-store access-scope doc rendered into a gated session's `$BSC_SCOPES` env (#2470) — the
+ *  runtime, defense-in-depth twin of the launch-time verb denies above. A store CLI reads it via
+ *  `bsc_cli_util::scope_allows_write` and refuses its mutating verbs when the store is scoped
+ *  read-only. Explicitly NOT a security boundary (a session owns its own env) — it guards accidents
+ *  and non-Claude runtimes (`bsc-agent`, raw shells); {@link roleDeniedCommands} is the boundary.
+ *  Currently just `ui`; other stores (`plan`, `skill`, `data`, …) adopt incrementally by adding
+ *  their tier here. Missing tier ⇒ `"read"` (the same fail-closed floor as the deny rendering). */
+export function sessionScopes(cap: RoleCapability): Record<string, AccessTier> {
+  return { ui: cap.ui ?? "read" };
 }

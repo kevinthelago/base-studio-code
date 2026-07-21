@@ -3,15 +3,23 @@
 //! non-interactive bash, exactly as the agent's `bash -c` tool subprocesses do.
 //!
 //! The fragment TEXT is externalized to `data/shell/*.sh` (#2092); a test names its fragment by
-//! filename via `frag(...)` (which loads the embedded seed through the module's `load_shell`), so the
-//! subshell tests drive the exact bytes pty_create writes. `with_rc_subshell` (#2077) centralizes the
-//! "no usable bash → skip" preamble + the temp-dir/`BASH_ENV` scaffolding every helper-run test needs.
+//! filename via `frag(...)`, which reads the EMBEDDED seed (`embedded_str`), NOT the module's
+//! `load_shell` — that one prefers the developer's `~/.base-studio-code/config/shell/` override, so
+//! going through it made these tests non-hermetic: a stale local copy (e.g. a pre-#2377 coord-emit.sh
+//! without `bsc-brief`) failed tests that validate the SHIPPED fragments (#2515). `frag` applies the
+//! same CRLF-strip + trailing-newline fixups as `load_shell`, so it asserts the exact bytes a fresh
+//! install's pty_create writes. `with_rc_subshell` (#2077) centralizes the "no usable bash → skip"
+//! preamble + the temp-dir/`BASH_ENV` scaffolding every helper-run test needs.
 
-/// Load an externalized `bsc-*` shell fragment by filename (the seed embedded via `include_dir!`).
-/// Thin alias over the module's `load_shell` (config-dir override else embedded seed) — replaced the
-/// `BSC_*_RC` string-literal constants the fragments were extracted from (#2092).
+/// Load an externalized `bsc-*` shell fragment by filename — the seed embedded via `include_dir!`,
+/// ignoring any config-dir override (tests validate the packaged content; see the module doc above).
+/// Replaced the `BSC_*_RC` string-literal constants the fragments were extracted from (#2092).
 fn frag(name: &str) -> String {
-    super::load_shell(name)
+    let mut s = crate::platform::config::embedded_str(&format!("shell/{name}")).replace('\r', "");
+    if !s.ends_with('\n') {
+        s.push('\n');
+    }
+    s
 }
 
 /// The (shell, temp dir, bash-form rc path) handed to a shell-rc subshell test (#2077).
@@ -114,6 +122,8 @@ fn bsc_coord_emit_rc_defines_issuer_helpers() {
     assert!(rc.contains("bsc-issue()"), "rc must define bsc-issue");
     assert!(rc.contains("bsc-assign()"), "rc must define bsc-assign");
     assert!(rc.contains("bsc-brief()"), "rc must define bsc-brief (#2377 planner→director/issuer)");
+    assert!(rc.contains("bsc-commission()"), "rc must define bsc-commission (#2940 studio network)");
+    assert!(rc.contains("bsc-deliver()"), "rc must define bsc-deliver (#2940 studio network)");
     assert!(rc.contains("__bsc_coord_log()"), "rc must define the multi-column log helper");
 }
 
@@ -163,6 +173,56 @@ fn bsc_brief_emits_tab_aligned_coord_line() {
 
     let dangling: Vec<&str> = lines[2].split('\t').collect();
     assert_eq!(&dangling[2..], &["brief", "director", "ref eaten as a comment", ""]);
+
+    let _ = std::fs::remove_dir_all(&dir);
+    });
+}
+
+#[test]
+fn bsc_commission_deliver_emit_tab_aligned_coord_lines() {
+    // The studio network (#2940): bsc-commission (planner/designer → designer/librarian) mirrors
+    // bsc-brief; bsc-deliver reports the authored artifact id back. Columns must match what
+    // coordination.ts parseCoordLine expects:
+    //   commission: ts \t pane \t commission \t target \t body \t ref?
+    //   deliver:    ts \t pane \t deliver \t commissionId \t artifactId
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    with_rc_subshell("commission", frag("coord-emit.sh"), |RcSub { shell, dir, rc_bash }| {
+    let log = dir.join("coord.log");
+    let log_bash = crate::to_bash_path(&log.to_string_lossy());
+
+    let run = |cmd: &str, body: &str| {
+        let mut child = Command::new(&shell)
+            .arg("-c").arg(cmd)
+            .env("BASH_ENV", &rc_bash)
+            .env("BSC_COORD_LOG", &log_bash)
+            .env("BSC_AUDIT_PANE", "planner:p0")
+            .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+            .spawn().unwrap();
+        let _ = child.stdin.take().unwrap().write_all(body.as_bytes());
+        assert!(child.wait().unwrap().success(), "{cmd} should run in the subshell");
+    };
+    // A commission carries a ref; one without; and a spec containing a literal `%` (the printf-join
+    // must treat the body as data, not a format string).
+    run("bsc-commission designer --ref '#42'", "need a weekly-activity heatmap");
+    run("bsc-commission librarian", "algorithm for 100% mock coverage");
+    // deliver takes two positional ids, reads no stdin — closing stdin immediately is fine.
+    run("bsc-deliver 'planner:p0@1' 'react-d3:heatmap'", "");
+
+    let text = std::fs::read_to_string(&log).unwrap();
+    let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(lines.len(), 3, "expected one line per emitter, got: {text:?}");
+
+    let withref: Vec<&str> = lines[0].split('\t').collect();
+    assert_eq!(withref[1], "planner:p0", "pane column");
+    assert_eq!(&withref[2..], &["commission", "designer", "need a weekly-activity heatmap", "#42"]);
+
+    let noref: Vec<&str> = lines[1].split('\t').collect();
+    assert_eq!(&noref[2..], &["commission", "librarian", "algorithm for 100% mock coverage", ""]);
+
+    let deliver: Vec<&str> = lines[2].split('\t').collect();
+    assert_eq!(&deliver[2..], &["deliver", "planner:p0@1", "react-d3:heatmap"]);
 
     let _ = std::fs::remove_dir_all(&dir);
     });
@@ -291,6 +351,23 @@ fn bsc_defer_rc_embeds_the_externalized_directive() {
     assert!(frag.contains("enter MAINTENANCE"), "defer fragment lost the maintenance clause");
     assert!(frag.contains(r#"{"decision":"block","reason":""#), "defer fragment lost the block-reason JSON shape");
     assert!(frag.ends_with('\n'), "defer fragment must end with a trailing newline (#296)");
+}
+
+#[test]
+fn bsc_continue_rc_embeds_the_studio_directive_with_the_defer_shape() {
+    // #3547: the STUDIO keep-going Stop hook — same block-reason wrapper as bsc-defer, but its prose is
+    // the config-loaded data/studio/continue-directive.md (not the fleet issue→PR→director one). Assert
+    // it carries the studio directive, keeps the JSON block shape + the once-per-stop guard, and ends
+    // with the trailing newline (#296). The directive must contain no raw `'` (it rides inside a
+    // single-quoted shell string) — pinned by the full-rc bash-validity guard.
+    let frag = super::bsc_continue_rc();
+    assert!(frag.contains("bsc-continue()"), "the continue fragment defines bsc-continue");
+    assert!(frag.contains("Do not stop."), "continue fragment lost the studio directive prose");
+    assert!(frag.contains("bsc request"), "continue fragment lost the file-a-request-and-keep-going clause");
+    assert!(!frag.contains("enter MAINTENANCE"), "the studio directive is NOT the fleet worker one");
+    assert!(frag.contains(r#""stop_hook_active":true"#), "keeps the once-per-stop guard");
+    assert!(frag.contains(r#"{"decision":"block","reason":""#), "continue fragment lost the block-reason JSON shape");
+    assert!(frag.ends_with('\n'), "continue fragment must end with a trailing newline (#296)");
 }
 
 #[test]

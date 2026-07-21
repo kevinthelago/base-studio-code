@@ -1,11 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { addDbProject } from "@/features/planner";
 import { markBoot, logStartupTrace } from "@/shared/lib/core/startupTrace";
 import { startPerfMonitor, recordStoreWrite } from "@/shared/lib/core/perf";
 import { log } from "@/shared/lib/core/log";
 import { useAppStore } from "@/store";
 import { accentVars } from "@/features/settings";
 import { applyThemeToRoot } from "@/shared/ui/kit/theme";
+import { applyContributionsToRoot } from "@/shared/ui/kit";
 
 /** Delay (ms after hydration) before the perf monitor + store-write diagnostics start, so they don't
  *  load the cold-start window (#1033). Metrics during boot have no diagnostic value. */
@@ -19,8 +21,12 @@ const METRICS_GRACE_MS = 5000;
 export function useAppBoot() {
   const accent = useAppStore((s) => s.accent);
   const kitTheme = useAppStore((s) => s.kitTheme);
+  const kitThemes = useAppStore((s) => s.kitThemes);
+  const designContributions = useAppStore((s) => s.designContributions);
   const hasHydrated = useAppStore((s) => s.hasHydrated);
   const setBscBaseDir = useAppStore((s) => s.setBscBaseDir);
+  // Guards the one-time draft→DB migration (#2995) so it fires exactly once per app session.
+  const draftsMigratedToDb = useRef(false);
 
   // Apply the chosen accent to the design-token CSS vars at the document root,
   // live on change and after persisted state rehydrates. Inline vars on :root
@@ -35,7 +41,15 @@ export function useAppBoot() {
   // Apply the chosen kit theme (#1852 Phase 3) to the semantic component tokens at the document root,
   // live on change and after rehydrate. A theme sets --card-*/--btn-*/--field-*/--chip-* overrides;
   // switching clears the prior theme's set first, so `default` restores the stylesheet look.
-  useEffect(() => { applyThemeToRoot(kitTheme); }, [kitTheme]);
+  // `kitThemes` is read as a dep (#2488) so the vars re-apply after the theme STORE hydrates — the
+  // chosen theme may be designer-edited (or designer-authored) and differ from the packaged fallback.
+  useEffect(() => { void kitThemes; applyThemeToRoot(kitTheme); }, [kitTheme, kitThemes]);
+
+  // Apply the persisted downloaded-blueprint design overlays (#2656/#2663), live on add/remove AND after
+  // the store rehydrates. Keyed on `designContributions` (NOT the one-shot mount effect) because persist
+  // hydration is async: a mount-time read sees the default [] and would never re-apply the restored
+  // overlays. Mirrors applyThemeToRoot above (compose-don't-mutate — a managed :root <style>).
+  useEffect(() => { applyContributionsToRoot(designContributions); }, [designContributions]);
 
   // Startup timing trace (#perf): mark the gate commit, then the first paint of the
   // real UI once the store rehydrates — logStartupTrace emits the breakdown once.
@@ -44,6 +58,21 @@ export function useAppBoot() {
     if (!hasHydrated) return;
     markBoot("hydrated");
     requestAnimationFrame(() => { markBoot("painted"); logStartupTrace(); });
+  }, [hasHydrated]);
+
+  // One-time draft → projects-DB migration (#2995): after the store rehydrates, upsert every entry in
+  // the fragile `localDraftProjects` cache into the durable projects DB (`bsc project db add` is an
+  // idempotent upsert), so drafts that only ever lived in the cache become restart-durable. Gated on
+  // `hasHydrated` because persist is async — a mount-time read would see the pre-hydration empty map —
+  // and ref-guarded so it runs exactly once. Each write is fire-and-forget and degrades silently when
+  // the bridge/binary is absent.
+  useEffect(() => {
+    if (!hasHydrated || draftsMigratedToDb.current) return;
+    draftsMigratedToDb.current = true;
+    const drafts = useAppStore.getState().localDraftProjects;
+    for (const [key, d] of Object.entries(drafts)) {
+      void addDbProject({ key, title: d.title, pitch: d.pitch, state: "drafted" });
+    }
   }, [hasHydrated]);
 
   // Fetch the app-managed base directory once so the rest of the UI can
@@ -69,14 +98,23 @@ export function useAppBoot() {
     // so the desktop Org tab, live sessions, and the planner share ONE library. Reconciles the packaged
     // built-ins + seeds the store on first run; a no-op when the bridge is absent (keeps the seed).
     void useAppStore.getState().hydrateOrgs();
-    // Component library (#2269): hydrate the proven-component library from the global `bsc component`
+    // Component library (#2269): hydrate the proven-component library from the global `bsc ui`
     // store so the planner's test_ui pane + (later) the Design Studio share ONE library. A no-op that
     // keeps the typed seed when the bridge is unreachable (which is every build until the store lands).
     void useAppStore.getState().hydrateComponents();
     // Kit-usage consumer index (#2277): hydrate which projects use which kit from the global
-    // `bsc component usage` store — the edges a kit change fans out over. No-op keeping the cache when
+    // `bsc ui usage` store — the edges a kit change fans out over. No-op keeping the cache when
     // the bridge is absent.
     void useAppStore.getState().hydrateKitUsage();
+    // Kit themes (#2488): hydrate the designer-writable theme collection from the global `bsc ui
+    // theme` store — the Settings picker, the Design Studio preview switcher, and every ThemeScope
+    // resolve against it. No-op keeping the packaged registry when the bridge is absent.
+    void useAppStore.getState().hydrateThemes();
+    // Data-defined component variants (#2569): compile the designer-authored `bsc ui variants` store
+    // into the managed `<style>` so an LLM-authored variant renders on boot (re-applied on ui-touch).
+    void useAppStore.getState().hydrateVariants();
+    // (Design contributions are applied by the `designContributions`-keyed effect above, #2663 — a
+    // one-shot mount read here saw the pre-hydration default [] and never re-applied the restored set.)
     // Project relationships (#2253): hydrate the Glance L1 network edges from the global `bsc project
     // link` store so the desktop, live sessions, and a restart share ONE set. A no-op when the bridge
     // is absent (keeps the persisted cache).

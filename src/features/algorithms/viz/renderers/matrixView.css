@@ -1,0 +1,26 @@
+/* MatrixView (#3221) — a CSS grid of value cells; the read/write/region animations are injected by
+   matrixViewMotion.ts and fire off each cell's data-op state. */
+.matrix-view {
+  display: grid;
+  gap: 5px;
+  padding: 6px;
+  width: max-content;
+  margin: 0 auto;
+  --matrix-cell: 42px;
+}
+
+.matrix-cell {
+  width: var(--matrix-cell);
+  height: var(--matrix-cell);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-elev);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  will-change: transform;
+}

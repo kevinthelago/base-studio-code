@@ -13,6 +13,7 @@
 //! (#1877) and by the legacy `bsc-project` shim.
 
 pub mod cli;
+pub mod store;
 
 use std::path::PathBuf;
 
@@ -182,17 +183,63 @@ pub fn remove_link(id: &str) -> Result<(), String> {
     Ok(())
 }
 
+// ── Persisted GitHub board state (#2446, epic #2444) ────────────────────────────────────────────────
+//
+// The desktop app mirrors its last successful GitHub projects fetch here so the last-known board
+// state survives a restart AND is reachable from a live session via `bsc project github-state`
+// (golden rule: every persistent app store is `bsc`-reachable). One global file next to
+// project-links.json: `~/.base-studio-code/github-state.json`, holding
+// `{ records: [<minimal per-project record>, …], fetchedAt: <epoch ms> }`. The frontend owns the
+// record schema (id/number/title/shortDescription/url/closed/updatedAt/itemsTotalCount/openCount/
+// closedCount/repos); this side treats the payload as opaque-but-valid JSON with that envelope,
+// replaced wholesale on each successful fetch.
+
+/// The global github-state file: `~/.base-studio-code/github-state.json`. `None` when no home dir
+/// resolves.
+pub fn github_state_path() -> Option<PathBuf> {
+    bsc_util::bsc_base_dir().map(|b| b.join("github-state.json"))
+}
+
+/// Load the persisted GitHub board state as its raw JSON text. `None` when the file is missing,
+/// unreadable, or not valid JSON (never errors — a fresh install simply has no state).
+pub fn load_github_state() -> Option<String> {
+    let path = github_state_path()?;
+    let text = std::fs::read_to_string(&path).ok()?;
+    serde_json::from_str::<serde_json::Value>(&text).ok()?;
+    Some(text)
+}
+
+/// Replace the persisted GitHub board state wholesale. `json` must parse to an object carrying a
+/// `records` array and a numeric `fetchedAt` (the envelope the desktop app writes) — anything else is
+/// rejected so a malformed write can never clobber the last good state.
+pub fn save_github_state(json: &str) -> Result<(), String> {
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| format!("save_github_state: invalid JSON: {e}"))?;
+    let shape_ok = v.get("records").map(serde_json::Value::is_array).unwrap_or(false)
+        && v.get("fetchedAt").map(serde_json::Value::is_number).unwrap_or(false);
+    if !shape_ok {
+        return Err("save_github_state: expected { records: [...], fetchedAt: <epoch ms> }".into());
+    }
+    let path = github_state_path().ok_or("save_github_state: no home dir ($HOME / $USERPROFILE unset)")?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("save_github_state: {e}"))?;
+    }
+    let compact = serde_json::to_string(&v).map_err(|e| format!("save_github_state: {e}"))?;
+    std::fs::write(&path, compact).map_err(|e| format!("save_github_state: {e}"))
+}
+
+/// Shared test-home plumbing (used by BOTH this module's tests and [`cli`]'s): every store here
+/// resolves through $HOME / $USERPROFILE (via bsc_util), so all tests overriding them must
+/// serialize on ONE lock — two test modules with separate locks would race the process-global env.
 #[cfg(test)]
-mod tests {
-    use super::*;
+pub(crate) mod testhome {
     use std::sync::Mutex;
 
-    // The listing reads $HOME / $USERPROFILE (via bsc_util); serialize the tests that override them.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     /// Run `f` with the home dir pointed at a fresh temp dir, restoring the prior value after. The
     /// key matches `bsc_util::home_dir` precedence (USERPROFILE on Windows, HOME on Unix).
-    fn with_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
+    pub(crate) fn with_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
         let prev = std::env::var_os(key);
@@ -207,6 +254,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         out
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::testhome::with_home;
+    use super::*;
 
     #[test]
     fn lists_projects_skipping_dotdirs_and_files_sorted_by_key() {
@@ -287,6 +340,45 @@ mod tests {
             assert_eq!(links[0].kind, "data");
             remove_link("missing").unwrap(); // no-op, not an error
             assert_eq!(load_links().len(), 1);
+        });
+    }
+
+    #[test]
+    fn github_state_round_trips_next_to_project_links() {
+        with_home(|home| {
+            assert!(load_github_state().is_none(), "fresh install has no github state");
+
+            let body = r#"{"records":[{"id":"PVT_1","number":3,"title":"Acme CRM","shortDescription":null,"url":"https://github.com/users/u/projects/3","closed":false,"updatedAt":"2026-07-01T00:00:00Z","itemsTotalCount":4,"openCount":3,"closedCount":1,"repos":["o/r"]}],"fetchedAt":1234}"#;
+            save_github_state(body).unwrap();
+
+            // The durable copy lands next to project-links.json under the bsc base dir.
+            assert!(home.join(".base-studio-code").join("github-state.json").is_file());
+            let v: serde_json::Value = serde_json::from_str(&load_github_state().unwrap()).unwrap();
+            assert_eq!(v["fetchedAt"], 1234);
+            assert_eq!(v["records"][0]["title"], "Acme CRM");
+            assert_eq!(v["records"][0]["openCount"], 3);
+
+            // A later fetch REPLACES the state wholesale (no merging).
+            save_github_state(r#"{"records":[],"fetchedAt":99}"#).unwrap();
+            let v: serde_json::Value = serde_json::from_str(&load_github_state().unwrap()).unwrap();
+            assert_eq!(v["fetchedAt"], 99);
+            assert_eq!(v["records"].as_array().unwrap().len(), 0);
+        });
+    }
+
+    #[test]
+    fn github_state_rejects_garbage_and_keeps_the_last_good_state() {
+        with_home(|_home| {
+            save_github_state(r#"{"records":[],"fetchedAt":7}"#).unwrap();
+
+            assert!(save_github_state("not json").is_err(), "non-JSON rejected");
+            assert!(save_github_state(r#"{"records":{}}"#).is_err(), "records must be an array");
+            assert!(save_github_state(r#"{"records":[]}"#).is_err(), "fetchedAt required");
+            assert!(save_github_state(r#"{"records":[],"fetchedAt":"soon"}"#).is_err(), "fetchedAt must be numeric");
+
+            // Every rejected write left the last good state untouched.
+            let v: serde_json::Value = serde_json::from_str(&load_github_state().unwrap()).unwrap();
+            assert_eq!(v["fetchedAt"], 7);
         });
     }
 }

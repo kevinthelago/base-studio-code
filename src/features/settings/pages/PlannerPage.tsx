@@ -2,12 +2,14 @@ import { useState } from "react";
 import { LlmProviderCard } from "../cards/LlmProviderCard";
 import { PlanningAutomationCard } from "../cards/PlanningAutomationCard";
 import { ShellSelectorCard } from "../cards/ShellSelectorCard";
+import { KitChangeApprovalCard } from "../cards/KitChangeApprovalCard";
 import { TunnelSettings } from "@/features/tunnel";
 import { MetricsCollectionCard } from "../cards/MetricsCollectionCard";
 import { IdleReaperCard } from "../cards/IdleReaperCard";
 import { PerfRetentionCard } from "../cards/PerfRetentionCard";
 import { StorageCard } from "../cards/StorageCard";
 import { SandboxedConsolesCard } from "../cards/SandboxedConsolesCard";
+import { DebugSessionCard } from "../cards/DebugSessionCard";
 import { LogsInventoryCard } from "../cards/LogsInventoryCard";
 import { LogsViewerCard } from "../cards/LogsViewerCard";
 import { LogsRetentionCard } from "../cards/LogsRetentionCard";
@@ -43,6 +45,9 @@ export function PlannerPage() {
       <LlmProviderCard />
       <PlanningAutomationCard />
 
+      <Sub>Design</Sub>
+      <KitChangeApprovalCard />
+
       <Sub>Shell</Sub>
       <ShellSelectorCard />
 
@@ -56,6 +61,7 @@ export function PlannerPage() {
 
       <Sub>Storage &amp; logs</Sub>
       <SandboxedConsolesCard />
+      <DebugSessionCard />
       <StorageCard />
       <LogsInventoryCard
         selectedStream={selectedStream}

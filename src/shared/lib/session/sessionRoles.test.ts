@@ -15,8 +15,11 @@ import {
   roleWriteRules,
   roleDeniedTools,
   bscAgentPerms,
+  sessionScopes,
   scopeWriteGlobs,
   hasScopedWriteCarveOut,
+  restrictedRoleCommands,
+  isRestrictedRole,
 } from "./sessionRoles";
 
 describe("scopeWriteGlobs (#1297)", () => {
@@ -170,14 +173,91 @@ describe("roleDeniedCommands (launch wiring)", () => {
     expect(denies).not.toContain("git push");
   });
 
-  it("director denies nothing", () => {
-    expect(roleDeniedCommands(ROLE_DEFAULTS.director)).toEqual([]);
+  it("director denies no git/gh commands (write tiers) — only the ui-store writes (#2470)", () => {
+    const denies = roleDeniedCommands(ROLE_DEFAULTS.director);
+    expect(denies.some((d) => d.startsWith("git") || d.startsWith("gh"))).toBe(false);
+    expect(denies).toContain("bsc ui set"); // ui: read — even the director doesn't redefine kits
   });
 
   it("triage denies git outright (no access) but allows gh writes", () => {
     const denies = roleDeniedCommands(ROLE_DEFAULTS.triage);
     expect(denies).toContain("git");
     expect(denies).not.toContain("gh issue create");
+  });
+
+  describe("file-write bash deny (#2932) — the bash counterpart to the Write-tool deny", () => {
+    it("a write-less role (designer) denies the file-mutating bash commands", () => {
+      const denies = roleDeniedCommands(ROLE_DEFAULTS.designer);
+      for (const c of ["tee", "cp", "mv", "dd", "sed -i", "vim"]) expect(denies).toContain(c);
+      // ...but it still runs `bsc ui` (its one write channel) — never file-denied.
+      expect(denies).not.toContain("bsc ui set");
+    });
+
+    it("a write-less director (no commons) denies file-writes; a commons director does NOT", () => {
+      expect(roleDeniedCommands(ROLE_DEFAULTS.director)).toContain("cp"); // no carve-out → writes nothing
+      const commonsDir = roleCapability("director", { writeGlobs: ["*.md"] });
+      expect(roleDeniedCommands(commonsDir)).not.toContain("cp"); // carve-out writes its globs via the Write tool
+    });
+
+    it("a writer (planner) and a carve-out documentor keep file-mutating bash commands", () => {
+      expect(roleDeniedCommands(ROLE_DEFAULTS.planner)).not.toContain("cp"); // code: write
+      expect(roleDeniedCommands(ROLE_DEFAULTS.documentor)).not.toContain("cp"); // code: none but *.md carve-out
+    });
+  });
+
+  describe("ui tier (#2470) — the bsc ui component/kit store", () => {
+    const UI_MUTATING = [
+      "bsc ui set", "bsc ui remove", "bsc ui kit set", "bsc ui kit remove",
+      // The deprecated `bsc component` alias's verbs stay denied while the alias lives (#2469).
+      "bsc component set", "bsc component remove", "bsc component kit set", "bsc component kit remove",
+    ];
+
+    it("ui: read (every shipped role but the designer + architect) denies exactly the mutating verbs, leaving reads alone", () => {
+      for (const cap of Object.values(ROLE_DEFAULTS)) {
+        if (cap.role === "designer") continue;  // ui:"write" by design (#2471) — asserted in its own suite
+        if (cap.role === "architect") continue; // ui:"none" by design (#2755) — asserted in its own suite
+        if (cap.role === "librarian") continue; // ui:"none" by design (#2787) — restricted knowledge-store session, like the architect
+        if (cap.role === "sound-designer") continue; // ui:"none" by design (#3369) — a sound is a synthesis descriptor, not a UI kit
+        if (cap.role === "curator") continue;   // ui:"write" by design (#3092) — the harvest actor OWNS the kit store
+        if (cap.role === "debugger") continue;  // ui:"write" by design (#3322) — the app-maintenance session that FIXES `bsc ui`
+        const denies = roleDeniedCommands(cap);
+        for (const verb of UI_MUTATING) expect(denies).toContain(verb);
+        expect(denies).not.toContain("bsc ui");        // reads stay (list/get/kit list…)
+        expect(denies).not.toContain("bsc component");
+      }
+    });
+
+    it("ui: none denies the tool outright (both the canonical name and the alias)", () => {
+      const denies = roleDeniedCommands(roleCapability("worker", { ui: "none" }));
+      expect(denies).toContain("bsc ui");
+      expect(denies).toContain("bsc component");
+      // The verb-level denies are subsumed by the whole-tool deny — not emitted redundantly.
+      expect(denies).not.toContain("bsc ui set");
+    });
+
+    it("ui: write (the designer tier) denies nothing on the store", () => {
+      const denies = roleDeniedCommands(roleCapability("worker", { ui: "write" }));
+      expect(denies.some((d) => d.startsWith("bsc"))).toBe(false);
+    });
+
+    it("flows through to bscAgentPerms deny_bash so the tier binds a bsc-agent session too", () => {
+      const p = bscAgentPerms(roleCapability("worker", { writeGlobs: ["src/**"] }));
+      expect(p.deny_bash).toContain("bsc ui set");
+      expect(p.deny_bash).toContain("bsc component kit remove");
+      const none = bscAgentPerms(roleCapability("worker", { ui: "none" }));
+      expect(none.deny_bash).toContain("bsc ui");
+    });
+  });
+});
+
+describe("sessionScopes (#2470) — the $BSC_SCOPES runtime doc", () => {
+  it("renders the role's ui tier per role default (read across the shipped roles)", () => {
+    expect(sessionScopes(roleCapability("worker"))).toEqual({ ui: "read" });
+    expect(sessionScopes(roleCapability("director"))).toEqual({ ui: "read" });
+  });
+  it("honors a per-assignment override (the designer path stamps write)", () => {
+    expect(sessionScopes(roleCapability("worker", { ui: "write" }))).toEqual({ ui: "write" });
+    expect(sessionScopes(roleCapability("worker", { ui: "none" }))).toEqual({ ui: "none" });
   });
 });
 
@@ -193,7 +273,7 @@ describe("roleDeniedTools (sub-agent block, #1036)", () => {
 });
 
 describe("roleWriteRules (write-tool guard)", () => {
-  const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+  const WRITE_TOOLS = ["Edit", "Write", "NotebookEdit"]; // whole-tool deny set (no MultiEdit — removed tool, #3534)
 
   it("denies every write tool for no-code roles (director/triage)", () => {
     for (const role of ["director", "triage"] as const) {
@@ -208,15 +288,15 @@ describe("roleWriteRules (write-tool guard)", () => {
     // Every PLANNER_WRITE_GLOB is represented in the allow list (section files stay writable).
     for (const glob of PLANNER_WRITE_GLOBS) {
       expect(rules.allow).toContain(`Edit(${glob})`);
-      expect(rules.allow).toContain(`Write(${glob})`);
+      expect(rules.allow).toContain(`Edit(${glob})`);
     }
     // DB-owned artifacts (deploy/phases/issues/fleet/repos/features) are denied as files so the
     // planner uses `bsc-plan` instead — deny wins over the *.md/*.json glob allow.
     for (const f of DB_OWNED_PLAN_FILES) {
-      expect(rules.deny).toContain(`Write(${f})`);
+      expect(rules.deny).toContain(`Edit(${f})`);
       expect(rules.deny).toContain(`Edit(${f})`);
     }
-    expect(rules.deny).toContain("Write(deploy.md)");
+    expect(rules.deny).toContain("Edit(deploy.md)");
   });
 
   it("does NOT deny the DB-owned plan-state file forms for non-planner roles (#1070)", () => {
@@ -224,7 +304,7 @@ describe("roleWriteRules (write-tool guard)", () => {
     const workerDeny = roleWriteRules(roleCapability("worker", { writeGlobs: ["src/**"] })).deny;
     for (const f of DB_OWNED_PLAN_FILES) {
       if (DEP_MANIFEST_FILES.includes(f)) continue; // (no overlap today, but be precise)
-      expect(workerDeny).not.toContain(`Write(${f})`);
+      expect(workerDeny).not.toContain(`Edit(${f})`);
     }
   });
 
@@ -235,26 +315,26 @@ describe("roleWriteRules (write-tool guard)", () => {
     const deny = roleWriteRules(worker).deny;
     for (const f of DEP_MANIFEST_FILES) {
       expect(deny).toContain(`Edit(${f})`);
-      expect(deny).toContain(`Write(${f})`);
+      expect(deny).toContain(`Edit(${f})`);
     }
-    expect(deny).toContain("Write(package.json)");
-    expect(deny).toContain("Write(Cargo.toml)");
+    expect(deny).toContain("Edit(package.json)");
+    expect(deny).toContain("Edit(Cargo.toml)");
   });
 
   it("scopes a worker to its boundary globs (one allow per tool per glob)", () => {
     const worker = roleCapability("worker", { writeGlobs: ["src/api/**", "tests/**"] });
     const rules = roleWriteRules(worker);
     // deny is the dependency-manifest lock (#1111), not boundary rules.
-    expect(rules.deny).toEqual(DEP_MANIFEST_FILES.flatMap((f) => WRITE_TOOLS.map((t) => `${t}(${f})`)));
+    expect(rules.deny).toEqual(DEP_MANIFEST_FILES.map((f) => `Edit(${f})`)); // Edit(path) covers all file-editing tools (#3534)
     expect(rules.allow).toContain("Edit(src/api/**)");
-    expect(rules.allow).toContain("Write(tests/**)");
-    expect(rules.allow).toHaveLength(WRITE_TOOLS.length * 2);
+    expect(rules.allow).toContain("Edit(tests/**)"); // path rules are Edit-only (#3534)
+    expect(rules.allow).toHaveLength(2); // one Edit(glob) per glob (#3534)
   });
 
   it("imposes only the manifest lock for a boundary-less worker (writes otherwise follow the default)", () => {
     const rules = roleWriteRules(ROLE_DEFAULTS.worker);
     expect(rules.allow).toEqual([]);
-    expect(rules.deny).toEqual(DEP_MANIFEST_FILES.flatMap((f) => WRITE_TOOLS.map((t) => `${t}(${f})`)));
+    expect(rules.deny).toEqual(DEP_MANIFEST_FILES.map((f) => `Edit(${f})`)); // Edit(path) covers all file-editing tools (#3534)
   });
 
   it("agrees with canWritePath: planner writes plan files; worker writes its globs", () => {
@@ -268,7 +348,7 @@ describe("roleWriteRules (write-tool guard)", () => {
     expect(canWritePath(planner, "src/x.ts")).toBe(false);
     // Section-file globs auto-approve; the DB-owned plan-state file forms are denied (#1070).
     expect(roleWriteRules(planner).allow).toContain("Edit(*.md)");
-    expect(roleWriteRules(planner).deny).toContain("Write(deploy.md)");
+    expect(roleWriteRules(planner).deny).toContain("Edit(deploy.md)");
 
     // worker with a boundary: every allow-rule glob is exactly a canWritePath-true path.
     const worker = roleCapability("worker", { writeGlobs: ["src/api/**"] });
@@ -279,8 +359,13 @@ describe("roleWriteRules (write-tool guard)", () => {
 });
 
 describe("network gate (#1107)", () => {
-  it("net defaults to read for every role — web tools stay allowed (no behavior change)", () => {
+  it("net defaults to read for every role but the designer + architect — web tools stay allowed (no behavior change)", () => {
     for (const role of Object.keys(ROLE_DEFAULTS) as SessionRole[]) {
+      if (role === "designer") continue;  // net:"none" by design (#2471) — asserted in its own suite
+      if (role === "architect") continue; // net:"none" by design (#2755) — asserted in its own suite
+      if (role === "librarian") continue; // net:"none" by design (#2787) — restricted knowledge-store session, like the architect
+      if (role === "sound-designer") continue; // net:"none" by design (#3369) — restricted sound-store session, like the librarian
+      if (role === "curator") continue;   // net:"none" by design (#3092) — the post-landing harvest actor works offline
       expect(ROLE_DEFAULTS[role].net).toBe("read");
       expect(roleDeniedTools(ROLE_DEFAULTS[role])).not.toContain("WebFetch");
     }
@@ -344,14 +429,14 @@ describe("issuer + juror roles (#376 / #394)", () => {
     expect(juror.code).toBe("none");
     expect(checkCommand(juror, "git merge develop").allowed).toBe(false);
     expect(checkCommand(juror, "git log").allowed).toBe(true);
-    expect(roleWriteRules(juror).deny).toEqual(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+    expect(roleWriteRules(juror).deny).toEqual(["Edit", "Write", "NotebookEdit"]);
   });
 });
 
 // #851 — the director's scoped commons write carve-out: it keeps code:"none" (no feature-code
 // writes) yet may write EXACTLY the commons globs assigned to it, and nothing else.
 describe("director commons carve-out (#851)", () => {
-  const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+  const WRITE_TOOLS = ["Edit", "Write", "NotebookEdit"]; // whole-tool deny set (no MultiEdit — removed tool, #3534)
   // A representative commons set (what fleetStartProject assigns to the director from the stack).
   const COMMONS = [".gitignore", "package.json", "tsconfig.json", ".github/workflows/**", ".env.example"];
 
@@ -389,9 +474,9 @@ describe("director commons carve-out (#851)", () => {
     expect(rules.deny).toEqual([]);
     for (const g of COMMONS) {
       expect(rules.allow).toContain(`Edit(${g})`);
-      expect(rules.allow).toContain(`Write(${g})`);
+      expect(rules.allow).toContain(`Edit(${g})`);
     }
-    expect(rules.allow).toHaveLength(COMMONS.length * WRITE_TOOLS.length);
+    expect(rules.allow).toHaveLength(COMMONS.length); // one Edit(glob) per commons glob (#3534)
   });
 
   it("scopeWriteGlobs hard-limits the director's writes to the commons (bsc-scope hook)", () => {
@@ -419,7 +504,6 @@ describe("director commons carve-out (#851)", () => {
 // nothing else. It reads git/GitHub, mutates neither (push/PR are flow-governed), and is hard-blocked
 // on every code path — mirroring the #851 director carve-out but active as-launched.
 describe("documentor prose-doc carve-out (#1555)", () => {
-  const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
   const documentor = ROLE_DEFAULTS.documentor;
 
   it("is a code:none role that reads git/GitHub and mutates neither", () => {
@@ -465,9 +549,9 @@ describe("documentor prose-doc carve-out (#1555)", () => {
     expect(rules.deny).toEqual([]);
     for (const g of DOC_GLOBS) {
       expect(rules.allow).toContain(`Edit(${g})`);
-      expect(rules.allow).toContain(`Write(${g})`);
+      expect(rules.allow).toContain(`Edit(${g})`);
     }
-    expect(rules.allow).toHaveLength(DOC_GLOBS.length * WRITE_TOOLS.length);
+    expect(rules.allow).toHaveLength(DOC_GLOBS.length); // one Edit(glob) per doc glob (#3534)
   });
 
   it("scopeWriteGlobs hard-limits the documentor's writes to DOC_GLOBS (bsc-scope hook), no assignment needed", () => {
@@ -486,5 +570,290 @@ describe("documentor prose-doc carve-out (#1555)", () => {
 
   it("does not spawn its own sub-agents restriction — only workers deny Task; documentor keeps it", () => {
     expect(roleDeniedTools(documentor)).toEqual([]);
+  });
+});
+
+// #2471 — the designer role: the Design Studio's UI-kit session. `none` on every axis: kits live in
+// the bsc store (not files), so there is nothing it should write, commit, publish, or fetch. Its one
+// command surface (`bsc ui` + the deprecated `bsc component` alias) is granted at launch via the
+// restricted allow-list (`restrictedAllow`, settings.rs), not by the role gate.
+describe("designer role (#2471)", () => {
+  const designer = ROLE_DEFAULTS.designer;
+
+  it("is none on every axis except the kit store — no git, no GitHub, no code, no net; ui: write", () => {
+    expect(designer.git).toBe("none");
+    expect(designer.github).toBe("none");
+    expect(designer.code).toBe("none");
+    expect(designer.net).toBe("none");
+    // The ONE write grant (#2470 integration): the designer is the sole ui:"write" role, so the
+    // runtime scope doc lets it drive `bsc ui set/remove` where every other role is read-scoped.
+    expect(designer.ui).toBe("write");
+    expect(sessionScopes(designer)).toEqual({ ui: "write" });
+    expect(designer.writeGlobs).toEqual(["scratch/**"]);   // #3373: the sealed staging dir, nothing else
+  });
+
+  it("roleDeniedCommands denies git AND gh outright (the whole tools) and nothing on the kit store", () => {
+    const denies = roleDeniedCommands(designer);
+    expect(denies).toContain("git");
+    expect(denies).toContain("gh");
+    // The `none` tiers deny the bare tool — the granular write-prefix lists are the read-tier form.
+    expect(denies).not.toContain("git push");
+    expect(denies).not.toContain("gh pr create");
+    // ui:"write" — no bsc denies; the restricted allow-list (not the role gate) narrows the surface.
+    expect(denies.some((d) => d.startsWith("bsc"))).toBe(false);
+  });
+
+  it("roleDeniedTools denies the web tools (net:none) — no live injection surface", () => {
+    expect(roleDeniedTools(designer)).toEqual(["WebFetch", "WebSearch"]);
+  });
+
+  // #3373 CHANGED THIS PROPERTY DELIBERATELY. The designer used to be write-denied through every path,
+  // because kits live in the store, not in files. But a heredoc cannot be allow-listed (newlines are
+  // command separators), so JSON-on-stdin — its ONLY authoring channel — was unusable, and the spec
+  // forbade every alternative. It now stages a payload in a sealed `scratch/**` dir and applies it with
+  // `bsc ui set --file <name>`.
+  //
+  // The carve-out is EXACTLY that dir. These assertions are the boundary: project code stays denied.
+  it("writes ONLY its sealed scratch dir — project code is still denied through every path", () => {
+    expect(hasScopedWriteCarveOut(designer)).toBe(true);
+    expect(designer.writeGlobs).toEqual(["scratch/**"]);
+
+    const rules = roleWriteRules(designer);
+    // A carve-out emits per-glob ALLOWS and no whole-tool deny (deny > allow would mask the allows).
+    expect(rules.deny).toEqual([]);
+    expect(rules.allow).toEqual(["Edit(scratch/**)"]); // Edit(path) covers Write/NotebookEdit too (#3534)
+
+    // The boundary itself: inside the scratch dir yes, anywhere else no.
+    expect(canWritePath(designer, "scratch/kit.json")).toBe(true);
+    expect(canWritePath(designer, "scratch/nested/kit.json")).toBe(true);
+    expect(canWritePath(designer, "src/App.tsx")).toBe(false);
+    expect(canWritePath(designer, "CLAUDE.md")).toBe(false);          // its own spec
+    expect(canWritePath(designer, ".claude/settings.json")).toBe(false); // its own permissions
+    expect(canWritePath(designer, "kit.json")).toBe(false);           // workspace root, not scratch
+  });
+
+  it("the carve-out cannot be widened by handing it broader globs", () => {
+    // A stale/edited config-dir override must not be able to turn the scratch carve-out into a general
+    // write grant without also changing `code`, which the role table pins to "none".
+    const wide = roleCapability("designer", { writeGlobs: ["**"] });
+    expect(canWritePath(wide, "src/App.tsx")).toBe(true);  // globs ARE authoritative once carved out…
+    // …so the real guard is that the SHIPPED role's globs are exactly the scratch dir, asserted above,
+    // and that `code` stays "none" so no implicit write tier exists.
+    expect(designer.code).toBe("none");
+    expect(ROLE_DEFAULTS.designer.writeGlobs).toEqual(["scratch/**"]);
+  });
+
+  it("checkCommand blocks every git/gh invocation, reads included", () => {
+    expect(checkCommand(designer, "git status").allowed).toBe(false);
+    expect(checkCommand(designer, "git push").allowed).toBe(false);
+    expect(checkCommand(designer, "gh issue list").allowed).toBe(false);
+    expect(checkCommand(designer, "gh pr create -t x").allowed).toBe(false);
+    // Non-git/gh commands pass this gate — the restricted allow-list is what narrows them to bsc ui.
+    expect(checkCommand(designer, "bsc ui schema").allowed).toBe(true);
+  });
+
+  it("bscAgentPerms renders the same wall for the bsc-agent runtime", () => {
+    const p = bscAgentPerms(designer);
+    // #3373: the scratch carve-out mirrors here too — the write tools are available, scoped to the
+    // one staging dir. A divergence between the runtimes would mean the same role is confined
+    // differently depending on which shell drives it.
+    expect(p.deny_tools).toEqual([]);
+    expect(p.write_globs).toEqual(["scratch/**"]);
+    expect(p.deny_bash).toContain("git");
+    expect(p.deny_bash).toContain("gh");
+    expect(p.deny_bash).toContain("cp");   // shell mutation stays denied despite the carve-out
+  });
+});
+
+// #2755 — the architect role: the Teams Studio's team-authoring session. `none` on EVERY axis, `ui`
+// included (unlike the designer's ui:"write" — it never touches the UI-kit store). Its one command
+// surface (`bsc teams` + `bsc persona`) is granted at launch via the restricted allow-list
+// (`restrictedAllow`, settings.rs), not by the role gate. The Teams graph stays the read-only viewer.
+describe("architect role (#2755)", () => {
+  const architect = ROLE_DEFAULTS.architect;
+
+  it("is none on EVERY axis — no git, no GitHub, no code, no net, and ui:none (not a UI-kit session)", () => {
+    expect(architect.git).toBe("none");
+    expect(architect.github).toBe("none");
+    expect(architect.code).toBe("none");
+    expect(architect.net).toBe("none");
+    expect(architect.ui).toBe("none");
+    expect(sessionScopes(architect)).toEqual({ ui: "none" });
+    expect(architect.writeGlobs).toEqual(["scratch/**"]);   // #3373: the sealed staging dir, nothing else
+  });
+
+  it("roleDeniedCommands denies git, gh, AND the ui-kit store (bsc ui + the alias) outright", () => {
+    const denies = roleDeniedCommands(architect);
+    expect(denies).toContain("git");
+    expect(denies).toContain("gh");
+    // ui:"none" denies the whole `bsc ui` tool (and its deprecated `bsc component` alias) — the
+    // architect never edits UI kits; that's the designer's job.
+    expect(denies).toContain("bsc ui");
+    expect(denies).toContain("bsc component");
+    // The `none` tiers deny the bare tool — the granular write-prefix lists are the read-tier form.
+    expect(denies).not.toContain("git push");
+    expect(denies).not.toContain("gh pr create");
+    expect(denies).not.toContain("bsc ui set"); // subsumed by the whole-tool deny, not emitted redundantly
+    // Its OWN surface (bsc teams / bsc persona) is not role-gate-denied — it's granted via restrictedAllow.
+    expect(denies).not.toContain("bsc teams");
+    expect(denies).not.toContain("bsc persona");
+  });
+
+  it("roleDeniedTools denies the web tools (net:none) — no live injection surface", () => {
+    expect(roleDeniedTools(architect)).toEqual(["WebFetch", "WebSearch"]);
+  });
+
+  // #3373, same change as the designer: teams/personas still live in the stores, but the architect
+  // needs a place to STAGE the JSON it applies with `bsc teams set --file <name>`, because a heredoc
+  // cannot be allow-listed. The carve-out is exactly that sealed dir.
+  it("writes ONLY its sealed scratch dir — project code is still denied through every path", () => {
+    expect(hasScopedWriteCarveOut(architect)).toBe(true);
+    expect(architect.writeGlobs).toEqual(["scratch/**"]);
+
+    const rules = roleWriteRules(architect);
+    expect(rules.deny).toEqual([]);
+    expect(rules.allow).toEqual(["Edit(scratch/**)"]); // Edit(path) covers Write/NotebookEdit too (#3534)
+
+    expect(canWritePath(architect, "scratch/team.json")).toBe(true);
+    expect(canWritePath(architect, "src/App.tsx")).toBe(false);
+    expect(canWritePath(architect, "CLAUDE.md")).toBe(false);
+  });
+
+  // The carve-out grants the write TOOLS on one dir; it must NOT un-deny file-mutating SHELL commands.
+  // `roleDeniedCommands` lifts those for a carve-out role (the director writes its commons with bash),
+  // so a restricted role is explicitly excluded — its spec says in as many words not to reach for bash
+  // to sidestep the file rules, and its whole shell surface is one store CLI.
+  it("still denies the file-mutating shell commands despite having a carve-out", () => {
+    for (const cap of [ROLE_DEFAULTS.designer, ROLE_DEFAULTS.architect]) {
+      const denies = roleDeniedCommands(cap);
+      for (const cmd of ["tee", "cp", "mv", "sed -i", "dd", "vim"]) {
+        expect(denies).toContain(cmd);
+      }
+    }
+    // Contrast: the director's carve-out IS shell-written, so it keeps them.
+    const commonsDirector = roleCapability("director", { writeGlobs: ["*.md"] });
+    expect(roleDeniedCommands(commonsDirector)).not.toContain("cp");
+  });
+
+  it("checkCommand blocks every git/gh invocation, reads included", () => {
+    expect(checkCommand(architect, "git status").allowed).toBe(false);
+    expect(checkCommand(architect, "git push").allowed).toBe(false);
+    expect(checkCommand(architect, "gh issue list").allowed).toBe(false);
+    expect(checkCommand(architect, "gh pr create -t x").allowed).toBe(false);
+    // Non-git/gh commands pass this gate — the restricted allow-list narrows them to bsc teams/persona.
+    expect(checkCommand(architect, "bsc teams list").allowed).toBe(true);
+    expect(checkCommand(architect, "bsc persona list").allowed).toBe(true);
+  });
+
+  it("bscAgentPerms renders the same wall for the bsc-agent runtime", () => {
+    const p = bscAgentPerms(architect);
+    expect(p.deny_tools).toEqual([]);            // #3373 scratch carve-out, mirrored from the Claude side
+    expect(p.write_globs).toEqual(["scratch/**"]);
+    expect(p.deny_bash).toContain("git");
+    expect(p.deny_bash).toContain("gh");
+    expect(p.deny_bash).toContain("bsc ui"); // ui:none flows through to the agent runtime too
+    expect(p.deny_bash).toContain("cp");     // shell mutation stays denied despite the carve-out
+  });
+});
+
+describe("restrictedRoleCommands (curator store surface, #3095)", () => {
+  const LOOP = ["bsc loop new", "bsc loop say", "bsc loop watch", "bsc loop show", "bsc loop list"];
+
+  it("hands the curator its two store CLIs — bsc ui (components) + bsc graph (algorithms)", () => {
+    expect(restrictedRoleCommands("curator")).toEqual(["bsc ui", "bsc graph", ...LOOP]);
+  });
+
+  // The standing studio sessions' confinement now lives on the ROLE — it used to be pinned inside each
+  // bespoke launch hook, so the SAME role produced a much wider gate on any other launch path. These
+  // literals are the EXACT surfaces those hooks passed: a change here widens (or narrows) a
+  // deliberately-confined session, so they are asserted verbatim rather than derived.
+  it("pins each standing studio session's whole surface, byte-identical to its old launch hook", () => {
+    expect(restrictedRoleCommands("designer")).toEqual(
+      ["bsc ui", "bsc component", "bsc shot preview", ...LOOP, "bsc request new", "bsc request list"]);
+    expect(restrictedRoleCommands("librarian")).toEqual(["bsc graph", ...LOOP, "bsc request new", "bsc request list"]);
+    expect(restrictedRoleCommands("architect")).toEqual(["bsc teams", "bsc persona", ...LOOP, "bsc request new", "bsc request list"]);
+    expect(restrictedRoleCommands("sound-designer")).toEqual(["bsc sound", ...LOOP, "bsc request new", "bsc request list"]);
+  });
+
+  // Every studio surface is a loop PARTICIPANT (#3262): it can open a loop and converse in it.
+  it("gives every restricted studio surface the loop participant verbs", () => {
+    for (const role of ["curator", "designer", "librarian", "architect", "sound-designer"] as const) {
+      expect(restrictedRoleCommands(role)).toEqual(expect.arrayContaining(LOOP));
+    }
+  });
+
+  // `bsc loop stop` is the ONLY way to halt an `--until false` loop, and the CLI withholds it from
+  // participants by design ("a separate verb from `say`, so a participant cannot reach it"). The bare
+  // `"bsc loop"` prefix used to grant it: it expands to `Bash(bsc loop *)`, which matches `bsc loop stop`
+  // — so a session could end the infinite loop it exists to run. Halting stays outside the conversation.
+  it("never grants `bsc loop stop` — a participant cannot halt its own loop", () => {
+    for (const role of ["curator", "designer", "librarian", "architect", "sound-designer"] as const) {
+      const cmds = restrictedRoleCommands(role);
+      expect(cmds).not.toContain("bsc loop stop");
+      // The bare prefix is what silently re-grants `stop` via the `Bash(<cmd> *)` rule — it must not return.
+      expect(cmds).not.toContain("bsc loop");
+    }
+  });
+
+  // #3369: `sound-designer` shares a WORD with `designer` but is a DISTINCT role. Any lookup that
+  // matched loosely (startsWith / includes / a stripped hyphen) would hand one session the other's
+  // surface — the sound-designer would gain `bsc ui` + the whole Design Studio toolbelt, or the
+  // designer would lose it. Pinned in both directions.
+  it("never conflates `designer` with `sound-designer` — the names overlap, the surfaces do not", () => {
+    const designer = restrictedRoleCommands("designer");
+    const sound = restrictedRoleCommands("sound-designer");
+    // The exact surface is pinned in the verbatim test above; here the property is what matters —
+    // the two roles share a word, never a store.
+    expect(sound).toContain("bsc sound");
+    expect(designer).not.toContain("bsc sound");
+    expect(sound).not.toContain("bsc ui");
+    expect(sound).not.toContain("bsc component");
+    // ...and their capabilities differ: the designer is the one `ui: write` role (#2470/#2471).
+    expect(ROLE_DEFAULTS.designer.ui).toBe("write");
+    expect(ROLE_DEFAULTS["sound-designer"].ui).toBe("none");
+  });
+
+  it("is empty for every unrestricted role and for an absent role", () => {
+    const restricted = new Set<SessionRole>(["curator", "designer", "librarian", "architect", "sound-designer"]);
+    for (const role of Object.keys(ROLE_DEFAULTS) as SessionRole[]) {
+      if (restricted.has(role)) continue;
+      expect(restrictedRoleCommands(role)).toEqual([]);
+    }
+    expect(restrictedRoleCommands(null)).toEqual([]);
+    expect(restrictedRoleCommands(undefined)).toEqual([]);
+  });
+
+  it("isRestrictedRole marks exactly the confined roles — they must never be flipped to bypass", () => {
+    for (const role of ["curator", "designer", "librarian", "architect", "sound-designer"] as SessionRole[]) {
+      expect(isRestrictedRole(role)).toBe(true);
+    }
+    for (const role of ["worker", "director", "planner", "triage", "reviewer"] as SessionRole[]) {
+      expect(isRestrictedRole(role)).toBe(false);
+    }
+    expect(isRestrictedRole(null)).toBe(false);
+    expect(isRestrictedRole(undefined)).toBe(false);
+  });
+
+  // #3373: the scratch carve-out lets a restricted session write arbitrary bytes to disk. That is only
+  // safe because NOTHING it can auto-run will execute them — its whole surface is one store CLI, which
+  // reads the file and JSON-parses it. Today that holds by accident of the allow-list's contents; this
+  // asserts it, so a future widening cannot quietly turn a staging dir into an execution path.
+  it("no restricted role can auto-run an interpreter — a staged file can never be executed", () => {
+    const EXECUTORS = ["bash", "sh", "zsh", "node", "python", "python3", "perl", "ruby", "chmod", "./", "source", "eval"];
+    for (const role of ["designer", "architect", "librarian", "sound-designer", "curator"] as SessionRole[]) {
+      const surface = restrictedRoleCommands(role);
+      expect(surface.length).toBeGreaterThan(0);
+      for (const cmd of EXECUTORS) {
+        expect(surface.some((c) => c === cmd || c.startsWith(`${cmd} `))).toBe(false);
+      }
+      // Every granted command is a `bsc` store verb — nothing else is on the surface at all.
+      for (const c of surface) expect(c.startsWith("bsc ")).toBe(true);
+    }
+  });
+
+  it("returns a fresh array each call so callers can spread/mutate without corrupting the source", () => {
+    const a = restrictedRoleCommands("curator");
+    a.push("bsc plan");
+    expect(restrictedRoleCommands("curator")).toEqual(["bsc ui", "bsc graph", ...LOOP]);
   });
 });

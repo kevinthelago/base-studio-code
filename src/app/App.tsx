@@ -1,17 +1,23 @@
-import { useRef, Suspense } from "react";
+import { Suspense } from "react";
 import { Titlebar } from "@/app/chrome/Titlebar";
 import { Rail } from "@/app/chrome/Rail";
-import { workspaceLabel } from "@/app/registry";
+import { locationCrumb } from "@/app/chrome/locationCrumb";
 import { Tabstrip } from "@/app/chrome/Tabstrip";
 import { StatusBar } from "@/app/chrome/StatusBar";
 import { ErrorBoundary } from "@/app/safety/ErrorBoundary";
 import { useAppStore } from "@/store";
+import { useAppRepoRoot } from "@/shared/hooks/useAppRepoRoot";
 import { Box } from "@/shared/ui/layout/Box";
+import { KeptMountedPage } from "@/app/KeptMountedPage";
 import { useHotkeys } from "./useHotkeys";
+import { useNavigateBridge } from "./useNavigateBridge";
+import { useDebugChannel } from "./useDebugChannel";
 import { useScheduler } from "@/features/automations";
-import { useTunnelSync, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
+import { useTunnelSync, useStoreProjector, useTunnelAutomations, useTunnelHookTelemetry, useTunnelCoordControl } from "@/features/tunnel";
 import { ConsoleWorkspace } from "@/app/console";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
+import { DebugSessionMount, RequestSessionsMount } from "@/features/debug";
+import { StudioSessionHosts } from "@/features/studio-sessions";
 import { useConsoleTabs } from "@/app/console/useConsoleTabs";
 import { ConsoleEmptyState } from "@/app/console/ConsoleEmptyState";
 import { AutomationsStatus } from "@/features/automations";
@@ -20,22 +26,31 @@ import { Achievements } from "@/app/Achievement";
 import { AppBanners } from "@/app/AppBanners";
 import { useWarden } from "@/shared/lib/fleet/useWarden";
 import { useWorkerAutoEnd } from "@/shared/lib/fleet/useWorkerAutoEnd";
+import { useNotificationSounds } from "@/features/sounds";
 import { useAppBoot } from "@/app/useAppBoot";
 import { useNavHistory } from "@/shared/hooks/useNavHistory";
 import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, SettingsWorkspace,
-  ProjectsWorkspace, SkillsWorkspace, AgentsWorkspace, GlanceWorkspace, DesignWorkspace, WorkspaceFallback,
+  ProjectsWorkspace, SkillsWorkspace, SecurityWorkspace, GlanceWorkspace, WorkspaceFallback,
 } from "@/app/lazyWorkspaces";
 
 // ── App shell ─────────────────────────────────────────────────────────────────
 
 export default function App() {
   useHotkeys();
+  // #3274: apply `bsc navigate` requests from the appchan watcher (Rust emits `bsc://navigate`), so an
+  // external session can steer the app to a view before capturing it.
+  useNavigateBridge();
+  // #3437: answer `bsc debug` — read-only inspection of the live DOM + preview state, so a session can
+  // ask what is actually on screen instead of inferring it from source.
+  useDebugChannel();
   useScheduler();
   useTunnelSync(); // always-on relay pane mirror (incl. the planner pane) (#801)
+  useStoreProjector(); // generic store_state projector: scoped domains + the alert pipeline (#2498)
   useWarden();     // always-on fleet conformance warden — hard-pauses a drifted worker (#1102)
   useWorkerAutoEnd(); // auto-end a finished worker on PTY exit, from plan.db issue status (#920)
+  useNotificationSounds(); // opt-in Signal-kit cues on fleet coord events (default off) (#3082)
   useTunnelAutomations(); // project automations + accept arm/run-now from a paired phone (#937)
   useTunnelHookTelemetry(); // project read-only hook-fire telemetry to a paired phone (#937)
   useTunnelCoordControl(); // route a paired phone's wake/approve into the coordinator (#935)
@@ -47,9 +62,14 @@ export default function App() {
     tabs, activeTabIdx,
     focusedAgentName,
     activeRepoName,
-    automationsTab,
-    settingsSection,
+    activePageTab,
+    crumbEntity,
+    projectsPageMode,
     projectsView,
+    githubTab,
+    githubBoardOpen,
+    githubBoardTab,
+    settingsSection,
     hasHydrated,
     showConsolePage,
   } = useAppStore();
@@ -60,40 +80,38 @@ export default function App() {
   // The console STILL mounts hidden (its PTYs stay alive for the Glance stream dock to reconnect).
   const activeWorkspace = !showConsolePage && rawActiveWorkspace === "console" ? "glance" : rawActiveWorkspace;
 
+  // Resolve the app's own source tree once (#3509) so a launch can turn a role's symbolic
+  // `app-repo` harvest root into a real path without awaiting.
+  useAppRepoRoot();
+
   // The console owns its tabs: the layout picker, close (+ a confirm when a session is live),
   // layout change (PTY teardown), reorder, tear-off — all behind useConsoleTabs (#app-shell).
   const consoleTabs = useConsoleTabs();
 
-  // Lazy-mount Projects on first visit, then keep it mounted so its local state + PTY survive
-  // (the heavy planner chunk thus loads on first navigation, not at boot — #perf).
-  const projectsEverShown = useRef(false);
-  if (activeWorkspace === "projects") projectsEverShown.current = true;
+  // Projects lazy-mounts on first visit, then stays mounted so its local state + PTY survive a
+  // screen switch (the heavy planner chunk thus loads on first navigation, not at boot — #perf).
+  // Kept-mounted via <KeptMountedPage> below.
+  // Design Studio is no longer a rail Workspace — it's a Planner tab (projectsPageMode "designs"), mounted
+  // by ProjectsWorkspace, so it rides Projects' keep-mounted treatment and its designer PTY (#2585) still
+  // survives screen switches.
 
-  // The "you are here" position crumb: the screen's canonical name (from the registry — the same
-  // source the rail nav uses, so they can't drift) followed by any in-screen detail (the active
-  // tab/agent, repo, sub-section). Only the DETAIL lives here; the page NAME is never hardcoded.
-  const titleWorkspace = (() => {
-    const parts: string[] = [workspaceLabel(activeWorkspace)];
-    switch (activeWorkspace) {
-      case "console":
-        if (tabs[activeTabIdx]?.name) parts.push(tabs[activeTabIdx].name);
-        if (focusedAgentName) parts.push(focusedAgentName);
-        break;
-      case "github":
-        if (activeRepoName) parts.push(activeRepoName);
-        break;
-      case "automation":
-        parts.push(automationsTab);
-        break;
-      case "projects":
-        if (projectsView === "planning") parts.push("planning");
-        break;
-      case "settings":
-        parts.push(settingsSection);
-        break;
-    }
-    return parts.filter(Boolean).join(" — ");
-  })();
+  // The "you are here" position crumb: the Workspace's canonical name (registry.ts — the same source
+  // the rail nav uses, so they can't drift) followed by its active PAGE (and any further in-page detail).
+  // The full mapping — every workspace's page — lives in the pure, unit-tested `locationCrumb` (#3036).
+  const titleWorkspace = locationCrumb({
+    activeWorkspace,
+    activePageTab,
+    crumbEntity,
+    projectsPageMode,
+    projectsView,
+    githubTab,
+    githubBoardOpen,
+    githubBoardTab,
+    activeRepoName,
+    settingsSection,
+    consoleTab: tabs[activeTabIdx]?.name,
+    focusedAgentName,
+  });
 
   // Hold the first paint until the async-persisted state has hydrated, so screens
   // don't flash from store defaults (e.g. GitHub "not connected" → connected) on
@@ -133,11 +151,9 @@ export default function App() {
           )}
           {/* Projects lazy-mounts on first visit, then stays mounted so its local state + PTY
               sessions survive screen switches (CSS hides it when inactive). */}
-          {projectsEverShown.current && (
-            <Box style={{ display: activeWorkspace === "projects" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}>
-              <Suspense fallback={<WorkspaceFallback />}><ProjectsWorkspace /></Suspense>
-            </Box>
-          )}
+          <KeptMountedPage active={activeWorkspace === "projects"} fallback={<WorkspaceFallback />}>
+            <ProjectsWorkspace />
+          </KeptMountedPage>
           {/* The remaining screens mount only while active — their chunks load on first nav. */}
           <Suspense fallback={<WorkspaceFallback />}>
             {activeWorkspace === "glance"     && <GlanceWorkspace />}
@@ -145,12 +161,7 @@ export default function App() {
             {activeWorkspace === "automation" && <AutomationsWorkspace />}
             {activeWorkspace === "mcp" && <McpWorkspace />}
             {activeWorkspace === "skills"     && <SkillsWorkspace />}
-            {/* Design Studio — the Component Library pane fills its container (height:100%),
-                so give it a flex-fill wrapper like the other self-measuring surfaces (#2303). */}
-            {activeWorkspace === "design"     && (
-              <Box style={{ flex: 1, minHeight: 0, display: "flex" }}><DesignWorkspace /></Box>
-            )}
-            {activeWorkspace === "agents"     && <AgentsWorkspace />}
+            {activeWorkspace === "security"     && <SecurityWorkspace />}
             {activeWorkspace === "settings"   && <SettingsWorkspace />}
           </Suspense>
           </ErrorBoundary>
@@ -168,6 +179,15 @@ export default function App() {
       {/* Console tab dialogs (new-tab layout picker + close-confirm) — owned by useConsoleTabs. */}
       {consoleTabs.dialogs}
     </Box>
+    {/* Keeps the app-owned DEBUG session's PTY warm on TerminalHost while the Settings flag is on (#3326),
+        so the Glance `debugger` node's morph can re-parent it in. Renders off-screen / null. */}
+    <DebugSessionMount />
+    {/* #3498: a debug session per open request. Inert while auto-spawn is off (the default). */}
+    <RequestSessionsMount />
+    {/* Keeps each WANTED app-owned studio session (designer/librarian/architect) warm on TerminalHost
+        (#3357), so its page dock and its Glance node morph can both re-parent the one live terminal in.
+        Lazily started by whichever surface first shows it; reclaimed by the 30-minute idle reaper. */}
+    <StudioSessionHosts />
     </TerminalHost>
   );
 }

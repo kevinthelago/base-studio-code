@@ -1,0 +1,109 @@
+/* The <ArrayView> renderer (#3178, epic #3171) — ELEMENT / LAYOUT styles ONLY.
+ *
+ * The MOTION is NOT here: the compare / swap / set / sorted animations are designer-authored
+ * KitAnimation DATA compiled by the kit-motion engine (arrayViewMotion.ts → compileAnimationsCss),
+ * injected as a managed <style> and bound to the `[data-op=…]` / `[data-mark=…]` data-states this
+ * renderer stamps. This file keeps only the structural styles + the DURABLE resting look of a `sorted`
+ * mark (a persistent state style, not an animation). Tokens from tokens.css. */
+
+.array-view {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 10px 6px 6px;
+  min-height: 172px;
+  overflow-x: auto;
+}
+
+.array-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+/* Cursor pills sit above the cell; the min-height reserves the row so cells don't jump as pills appear. */
+.array-cursors {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 15px;
+  justify-content: flex-end;
+}
+.array-cursor-pill {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-dim);
+  white-space: nowrap;
+}
+
+.array-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  width: 30px;
+  height: 120px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  overflow: hidden;
+}
+
+.array-bar {
+  display: block;
+  width: 100%;
+  background: color-mix(in oklch, var(--info), transparent 58%);
+  border-top: 2px solid var(--info);
+  /* The value change eases so a set/swap slides the bar rather than snapping. */
+  transition: height 0.2s ease;
+}
+
+.array-val {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--fg);
+  text-shadow: 0 1px 2px var(--bg-elev);
+  pointer-events: none;
+}
+
+/* The DURABLE resting look of a cell that has reached its sorted place — a persistent state style (the
+   `sorted` MOTION itself is a KitAnimation in arrayViewMotion.ts). */
+.array-cell[data-mark="sorted"] {
+  border-color: color-mix(in oklch, var(--success), transparent 40%);
+  background: color-mix(in oklch, var(--success), var(--bg-elev) 82%);
+}
+.array-cell[data-mark="sorted"] .array-bar {
+  background: color-mix(in oklch, var(--success), transparent 58%);
+  border-top-color: var(--success);
+}
+
+/* The DURABLE resting look of the cell a SEARCH landed on (#3220) — accent, so it never reads as the
+   `sorted` green (the `found` MOTION itself is a KitAnimation in arrayViewMotion.ts). A search's `found`
+   is its terminal frame, so this IS the trace's final state. */
+.array-cell[data-mark="found"] {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent), var(--bg-elev) 78%);
+}
+.array-cell[data-mark="found"] .array-bar {
+  background: color-mix(in oklch, var(--accent), transparent 52%);
+  border-top-color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .array-bar {
+    transition: none;
+  }
+}

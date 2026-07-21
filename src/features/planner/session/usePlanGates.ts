@@ -19,8 +19,9 @@ import { featuresGateComplete, featuresSummary } from "../issues/featureList";
 import { findPlanGaps } from "../lib/lintPlan";
 import { findPlanInjections, injectionGate } from "../lib/planInjection";
 import { deploymentDefined } from "../lib/deployConfig";
-import { allSourcesConnected, migrationActive, datamodelSignals } from "../lib/sourceConfig";
-import { destinationDefined, syncDefined } from "../lib/integrationConfig";
+import { marketDefined } from "../lib/marketConfig";
+import { transformationsConfirmed, type TransformationRow } from "../lib/transformations";
+import { allSourcesConnected, migrationActive, dataModelSignals } from "../lib/sourceConfig";
 import { unlockedSharedRepos } from "../issues/dependencies";
 import { stagesFrom, activeIndex, currentGateReady } from "../stages/focusedPlan";
 
@@ -45,7 +46,10 @@ interface PlanGatesDeps {
   injectionHardGate: boolean;
   planInjectionAck: Record<string, string>;
   deployCfg: Parameters<typeof deploymentDefined>[0];
-  intgCfg: Parameters<typeof destinationDefined>[0];
+  /** The market-stage assessment (#2430) — drives the `marketDefined` gate signal. */
+  marketCfg: Parameters<typeof marketDefined>[0];
+  /** The transformations rows (#2509) — drive the `transformationsConfirmed` gate signal. */
+  transformationRows: TransformationRow[];
   /** From usePlannerBlueprint. */
   isAuthoring: boolean;
   authoringSig: ReturnType<typeof authoringSignals>;
@@ -56,7 +60,7 @@ export function usePlanGates(deps: PlanGatesDeps) {
     sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
     confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
-    deployCfg, intgCfg, isAuthoring, authoringSig,
+    deployCfg, marketCfg, transformationRows, isAuthoring, authoringSig,
   } = deps;
 
   // The live snapshot the declarative section gates read.
@@ -90,7 +94,7 @@ export function usePlanGates(deps: PlanGatesDeps) {
       // Source migration (#1205): the scan drives whether the source stage applies + its gate
       // signals, so the source-inferred schema can dictate features/structure.
       migrationSourceEnabled: migrationActive(sourceCfg),
-      datamodelArtifact: datamodelSignals(sourceCfg),
+      dataModelSignals: dataModelSignals(sourceCfg),
     });
   }, [sections, ctxRequired, publishRepos, planFleet, planAutomations, featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle, confirmedSet, planDependencies, sourceCfg]);
   // lint-as-gate (#897 Phase 4b — lint-plan folded into the declarative gate). A WRITTEN section
@@ -139,8 +143,8 @@ export function usePlanGates(deps: PlanGatesDeps) {
     // replaced the old `featuresPhased` (every feature assigned a roadmap phase) — sequencing is now
     // expressed purely via feature `dependsOn`, with no milestone phases.
     const featuresDefined = featureState.count > 0 && featureCycle.length === 0;
-    return { ...planStateToSignals(stageState), hasPlanGaps, featuresDefined, deploymentDefined: deploymentDefined(deployCfg), sharedDepsLocked, sourcesConnected: allSourcesConnected(sourceCfg), destinationDefined: destinationDefined(intgCfg), syncDefined: syncDefined(intgCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals, ...confirmSignals };
-  }, [stageState, hasPlanGaps, featureState, featureCycle, deployCfg, sourceCfg, intgCfg, isAuthoring, authoringSig, skipSignals, confirmSignals, planFleet, effectiveProjectId, planDependencies]);
+    return { ...planStateToSignals(stageState), hasPlanGaps, featuresDefined, deploymentDefined: deploymentDefined(deployCfg), marketDefined: marketDefined(marketCfg), transformationsConfirmed: transformationsConfirmed(transformationRows), sharedDepsLocked, sourcesConnected: allSourcesConnected(sourceCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals, ...confirmSignals };
+  }, [stageState, hasPlanGaps, featureState, featureCycle, deployCfg, marketCfg, transformationRows, sourceCfg, isAuthoring, authoringSig, skipSignals, confirmSignals, planFleet, effectiveProjectId, planDependencies]);
 
   // Focused pane (#652): one stage at a time. `stages` derive from the blueprint sections +
   // signals; the active stage auto-follows the frontier (the user-pick SELECTION stays in Planning).

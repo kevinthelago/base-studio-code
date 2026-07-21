@@ -15,14 +15,18 @@
 // composable primitive; a builder cannot instantiate a hook from a manifest node. Compose the
 // registered `Dialog` instead.
 
+// The authored-motion shape (#2867, epic #2865) — carried through to each emitted `ComponentRecord`'s
+// `animations` and compiled to live `@keyframes` by the render engine (`@/shared/ui/kit`). Imported
+// type-only (erased at compile time) so this module stays pure, JSON-serialisable data.
+
 /** Every primitive the kit exposes to the builder. Also the key type of the render-map registry. */
 export type PrimitiveName =
   // layout
-  | "Box" | "Stack" | "Row" | "Spacer" | "Grid" | "SectionHeader" | "SectionLabel" | "Dialog" | "ModalScrim" | "ModalCard"
+  | "Box" | "Stack" | "Row" | "Spacer" | "Slot" | "Grid" | "SectionHeader" | "SectionLabel" | "Dialog" | "ModalScrim" | "ModalCard"
   // typography
   | "Text"
   // controls
-  | "Button" | "IconButton" | "Checkbox" | "Toggle" | "SegmentedControl" | "TextField" | "TextArea" | "SelectField"
+  | "Button" | "IconButton" | "Checkbox" | "Toggle" | "SegmentedControl" | "TextField" | "TextArea" | "SelectField" | "Option"
   | "BackButton" | "ColorSwatch" | "ConfirmButton"
   // data
   | "Card" | "Chip" | "StatTile" | "FillBar" | "Code"
@@ -33,10 +37,14 @@ export type PrimitiveName =
   | "Banner" | "InlineError" | "EmptyState" | "StatusDot" | "Skeleton"
   // #2421 gap-fill — data chips/feeds, the overlay pane, and the telemetry chart trio
   | "LabelChip" | "ActivityFeed" | "Pane" | "TelemetryPanel" | "ItemBars" | "SplitBar"
+  // #2475 — the key-value record rendering (the property-list archetype of the row vocabulary)
+  | "KeyValueList"
   // layouts — the page-skeleton templates tier (#2197)
-  | "MasterDetail" | "SplitView" | "GraphCanvas" | "PaneGrid";
+  | "MasterDetail" | "SplitView" | "GraphCanvas" | "PaneGrid" | "Tree" | "Sequence"
+  // pages — the complete data-driven page compositions tier (#2505)
+  | "TablePage" | "TreeExplorerPage" | "PipelinePage" | "NetworkPage" | "DashboardPage" | "CollectionPage" | "RecordPage";
 
-export type PrimitiveGroup = "layout" | "typography" | "controls" | "data" | "feedback" | "layouts";
+export type PrimitiveGroup = "layout" | "typography" | "controls" | "data" | "feedback" | "layouts" | "pages";
 
 /** The kind of a prop's value — drives how a builder renders an editor control for it. */
 export type PropType =
@@ -80,6 +88,12 @@ export interface PrimitiveSpec {
   props: PropSpec[];
   /** True when arbitrary extra DOM props (className, style, data-attrs, handlers) pass through to the root. */
   passthrough?: boolean;
+  /** MOTION references (#2942, #3451) — the NAMES of the animations this primitive plays. The full
+   *  defs live in the `base` kit's motion library (`shared/ui/kit/baseAnimations.ts`), NOT here: a base
+   *  motion is owned in ONE place and every consumer references it by name, so an edit propagates to all
+   *  (the resolver falls back to the `base` kit — `resolveComponentAnimationDefs`). Emitted verbatim onto
+   *  the generated `ComponentRecord.animations`. Absent ⇒ no motion. */
+  animations?: string[];
 }
 
 // Shared prop fragments reused across the layout primitives.
@@ -90,6 +104,15 @@ const WRAP: PropSpec = { name: "wrap", type: "boolean", description: "Allow chil
 const PAD: PropSpec = { name: "pad", type: "space", description: "Inner padding — a rung/px, or a [block, inline] pair." };
 const INLINE = (kind: string): PropSpec => ({ name: "inline", type: "boolean", description: `Render as inline-${kind} instead of ${kind}.` });
 const CHILDREN: PropSpec = { name: "children", type: "node", required: true, description: "Content." };
+
+// Shared prop fragments for the Pages tier (#2505) — the titled header bar + the house selection idiom.
+const PAGE_TITLE: PropSpec = { name: "title", type: "node", required: true, description: "Page title (the header bar)." };
+const PAGE_HINT: PropSpec = { name: "hint", type: "node", description: "Dimmed inline hint after the title." };
+const PAGE_TOOLBAR: PropSpec = { name: "toolbar", type: "node", description: "Right-aligned header controls (search, filters, actions)." };
+const SELECTED_ID = (what: string): PropSpec => ({ name: "selectedId", type: "string", description: `Controlled selection — the selected ${what} id (pair with onSelect). Omit for uncontrolled.` });
+const DEFAULT_SELECTED = (what: string): PropSpec => ({ name: "defaultSelectedId", type: "string", description: `Uncontrolled: the initially selected ${what} id.` });
+const ON_SELECT = (what: string): PropSpec => ({ name: "onSelect", type: "function", description: `Fires with the clicked ${what}'s id (both selection modes).` });
+const PAGE_DETAIL = (of: string, dflt: string): PropSpec => ({ name: "detail", type: "function", description: `Detail panel override — a render fn of the selected ${of}. Default: ${dflt}.` });
 
 export const UI_KIT: PrimitiveSpec[] = [
   // ---- layout ---------------------------------------------------------------
@@ -120,6 +143,13 @@ export const UI_KIT: PrimitiveSpec[] = [
     name: "Spacer", group: "layout", importPath: "@/shared/ui/layout/Spacer",
     description: "Empty space inside a Row/Stack — flexible (flex:1) by default, or a fixed size.",
     props: [{ name: "size", type: "space", description: "A rigid spacer of this size; omit for a greedy flex:1 filler." }],
+  },
+  {
+    name: "Slot", group: "layout", importPath: "@/shared/ui/layout/Slot",
+    description: "A HOLE the host fills with its own React (#3504) — the seam between a data tree and the app code around it. Not a visual component: the spec says WHERE, the host's `slots` map says WHAT. Use it for a feature component (one owning hooks/queries/app state) that a spec cannot and should not express.",
+    props: [
+      { name: "name", type: "string", required: true, description: "The key the host's `slots` map must carry. An unfilled name renders a visible marker, never nothing." },
+    ],
   },
   {
     name: "Grid", group: "layout", importPath: "@/shared/ui/layout/Grid", passthrough: true,
@@ -222,6 +252,8 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "size", type: "enum", values: ["md", "sm"], default: "md", description: "Control height." },
       { name: "danger", type: "boolean", description: "Destructive (red) styling." },
     ],
+    // Base motion (#3451): the primary action plays the `base` kit's hover `lift` (owned in baseAnimations.ts).
+    animations: ["lift"],
   },
   {
     name: "IconButton", group: "controls", importPath: "@/shared/ui/controls/IconButton",
@@ -253,6 +285,11 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "onClick", type: "function", description: "Toggle handler." },
       { name: "size", type: "enum", values: ["xs", "sm", "md"], default: "md", description: "Switch size." },
       { name: "tone", type: "enum", values: ["accent", "success"], default: "accent", description: "On-state color." },
+      // Accessibility (#3500). The component has always accepted these; the manifest omitted them, which
+      // made an accessible switch UNAUTHORABLE as data — Toggle is not passthrough, so a spec setting
+      // them was rejected as an unknown prop. A spec-rendered toggle must be able to say it is a switch.
+      { name: "role", type: "string", description: "ARIA role — pass \"switch\" for an accessible on/off control." },
+      { name: "ariaChecked", type: "boolean", description: "aria-checked; mirror of `on` when role is \"switch\"." },
     ],
   },
   {
@@ -295,9 +332,18 @@ export const UI_KIT: PrimitiveSpec[] = [
     props: [
       { name: "value", type: "string", required: true, description: "Selected value." },
       { name: "onChange", type: "function", required: true, description: "(value) => void." },
-      { name: "children", type: "node", required: true, description: "The <option> elements." },
+      { name: "children", type: "node", required: true, description: "The Option children." },
       { name: "label", type: "node", description: "Field label." },
       { name: "hint", type: "node", description: "Sub-label hint." },
+    ],
+  },
+  {
+    name: "Option", group: "controls", importPath: "@/shared/ui/controls/Option",
+    description: "One choice inside a SelectField — the data-authorable <option>.",
+    props: [
+      { name: "children", type: "node", description: "The visible label." },
+      { name: "value", type: "string", description: "Submitted value; defaults to the visible text." },
+      { name: "disabled", type: "boolean", description: "Unselectable (e.g. a placeholder)." },
     ],
   },
   {
@@ -350,6 +396,8 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "onClick", type: "function", description: "Click handler (implies interactive)." },
       { name: "loading", type: "boolean", description: "Render the card loading — a skeleton body the shape of its content (#2302)." },
     ],
+    // Base motion (#3451): the card plays the `base` kit's one-shot `fade-in` on mount (owned in baseAnimations.ts).
+    animations: ["fade-in"],
   },
   {
     name: "Chip", group: "data", importPath: "@/shared/ui/data/Chip",
@@ -603,6 +651,8 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "pulse", type: "boolean", default: false, description: "Pulse animation." },
       { name: "title", type: "string", description: "Native tooltip." },
     ],
+    // Base motion (#3451): the live status dot plays the `base` kit's breathing `pulse` (owned in baseAnimations.ts).
+    animations: ["pulse"],
   },
   {
     name: "Skeleton", group: "feedback", importPath: "@/shared/ui/feedback/Skeleton",
@@ -643,7 +693,7 @@ export const UI_KIT: PrimitiveSpec[] = [
   },
   {
     name: "GraphCanvas", group: "layouts", importPath: "@/shared/ui/layouts/GraphCanvas",
-    description: "The pan/zoom graph page skeleton — a full-width TOOLBAR, an optional left RAIL, the pan/zoom CANVAS (viewport-clip + transformed world layer), and an optional INSPECTOR. Owns the viewport ref/wheel/pan wiring + world transform.",
+    description: "The pan/zoom graph page skeleton — a full-height left RAIL and right INSPECTOR flanking a content column whose TOOLBAR sits only over the pan/zoom CANVAS (viewport-clip + transformed world layer), with an optional bottom DOCK strip. Owns the viewport ref/wheel/pan wiring + world transform.",
     props: [
       { name: "vp", type: "object", required: true, description: "The viewport created by the page's useGraphViewport()." },
       { name: "world", type: "object", required: true, description: "World (design-space) size { w, h } — drives the world layer's box." },
@@ -651,6 +701,7 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "children", type: "node", required: true, description: "World-layer content: grid, SVG edges, node cards — positioned in world coords." },
       { name: "rail", type: "node", description: "Optional left rail/sidebar (feature-styled full node)." },
       { name: "inspector", type: "node", description: "Optional inspector column on the right (feature-styled full node)." },
+      { name: "dock", type: "node", description: "Optional strip docked below the canvas (inside the content column, flex:none) — e.g. a docked session terminal. Caller owns its height/handle." },
       { name: "overlays", type: "node", description: "Fixed overlays drawn over the canvas but NOT transformed (hints, legends)." },
       { name: "grid", type: "boolean", default: false, description: "Dotted graph-paper backdrop — an infinite grid on the viewport that tracks zoom + pan." },
       { name: "gridSize", type: "number", default: 24, description: "Grid tile size in world px (scaled by zoom on screen)." },
@@ -671,6 +722,38 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "hidden", type: "boolean", default: false, description: "Render the grid display:none but keep it MOUNTED (children stay alive — the console cross-tab mount)." },
     ],
   },
+  {
+    name: "Sequence", group: "layouts", importPath: "@/shared/ui/layouts/Sequence",
+    description: "The ordered-steps page skeleton for linked-list-shaped data (workflows, pipelines, wizards, timelines) — a status-colored step STRIP (nodes joined by directional prev→next connectors; horizontal stepper or vertical timeline rail) driving an active-step DETAIL panel, under an optional TOOLBAR. Owns the ordering, connectors, click-to-focus, and the strip's own overflow scroll.",
+    props: [
+      { name: "steps", type: "array", required: true, description: "SequenceStep[] — ordered { id, label, status?, hint? }; array order IS the sequence. status: complete | active | upcoming | blocked (default upcoming)." },
+      { name: "detail", type: "function", description: "The focus panel — a render prop receiving the focused step. Omit for a strip-only sequence." },
+      { name: "orientation", type: "enum", values: ["horizontal", "vertical"], default: "horizontal", description: "horizontal → stepper strip above the detail; vertical → timeline rail beside it." },
+      { name: "toolbar", type: "node", description: "Optional full-width toolbar/header above the sequence." },
+      { name: "selectedId", type: "string", description: "Controlled focused step id (pair with onSelect); omit for uncontrolled selection." },
+      { name: "defaultSelectedId", type: "string", description: "Uncontrolled initial focus — defaults to auto-following the active step, else the first." },
+      { name: "onSelect", type: "function", description: "Fires with the clicked step's id (both modes)." },
+      { name: "railWidth", type: "number", default: 260, description: "Timeline rail width in px (vertical only)." },
+      { name: "detailPad", type: "space", default: 20, description: "Detail inner padding — a rung/px or [block, inline] pair." },
+    ],
+  },
+  {
+    name: "Tree", group: "layouts", importPath: "@/shared/ui/layouts/Tree",
+    description: "The tree page skeleton for hierarchy-shaped data (#2476) — one recursive `nodes` prop, two variants: INDENTED (file-explorer rail of collapsible, depth-indented rows + a detail panel, for deep/navigational trees) or LAYERED (a top-down org-chart canvas on the shared graph stack — layerDag + the edge grammar + GraphCanvas pan/zoom, for presentational hierarchies).",
+    props: [
+      { name: "nodes", type: "array", required: true, description: "The tree roots — a recursive forest of TreeNodeData ({ id, label, meta?, children? }). Ids must be unique." },
+      { name: "variant", type: "enum", values: ["indented", "layered"], default: "indented", description: "indented → collapsible rows + detail; layered → top-down pan/zoom chart." },
+      { name: "detail", type: "node", description: "Detail panel for the selected node — a node, or a render fn of the selected TreeNodeData. Indented: the detail column; layered: the canvas inspector." },
+      { name: "toolbar", type: "node", description: "Optional toolbar — full-width above (indented) / in the canvas toolbar row before the zoom cluster (layered)." },
+      { name: "selectedId", type: "string", description: "Controlled selection — the selected node id (pair with onSelect). Omit for uncontrolled (defaultSelectedId)." },
+      { name: "onSelect", type: "function", description: "Fires with the clicked node's id (both selection modes)." },
+      { name: "defaultCollapsedIds", type: "array", description: "Indented: branch ids that start collapsed (expansion is uncontrolled). Default: all expanded." },
+      { name: "onToggle", type: "function", description: "Fires (id, expanded) when a branch expands/collapses." },
+      { name: "indent", type: "number", default: 16, description: "Indented: px of indentation per depth level." },
+      { name: "railWidth", type: "number", default: 260, description: "Indented: rail width in px (the starting width when resizable)." },
+      { name: "resizable", type: "boolean", default: false, description: "Indented: opt into a drag-resizable rail (MasterDetail's .resize-x splitter)." },
+    ],
+  },
   // ---- #2421 gap-fill (contiguous block: data · layout/overlay · data · charts) ---------------
   {
     name: "LabelChip", group: "data", importPath: "@/shared/ui/data/LabelChip",
@@ -689,6 +772,16 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "tone", type: "object", required: true, description: "action → color map — each caller keeps its own EVENT_TONE." },
       { name: "right", type: "node", description: "Optional header control on the right (e.g. a filter select)." },
       { name: "actionWidth", type: "number", default: 80, description: "Action column width in px (github uses 70, planner 80)." },
+    ],
+  },
+  {
+    name: "KeyValueList", group: "data", importPath: "@/shared/ui/data/KeyValueList",
+    description: "The read-only label : value property list (#2475) — one aligned labelWidth·1fr grid of { k, v } rows. The key-value archetype of the row vocabulary (siblings: CardListRow, DataTableRow): a detail summary, config/property panel, or inspector facts block.",
+    props: [
+      { name: "items", type: "array", required: true, description: "KeyValueItem[] — the { k, v } rows, in display order." },
+      { name: "labelWidth", type: "number", default: 120, description: "Fixed label column width in px." },
+      { name: "mono", type: "boolean", default: false, description: "Render values (not labels) in the mono font — ids, paths, config values." },
+      { name: "loading", type: "boolean", description: "Shimmer value placeholders (labels stay) while the record's source loads (#2302)." },
     ],
   },
   {
@@ -742,6 +835,95 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "bColor", type: "color", default: "var(--danger)", description: "Second-segment color." },
     ],
   },
+
+  // ---- pages (complete data-driven page compositions — the Pages tier, #2505) -----------------
+  {
+    name: "TablePage", group: "pages", importPath: "@/shared/ui/pages/TablePage",
+    description: "The complete records-browser page for TABLE-shaped data — a titled header bar, a columnar data table (DataTableHeader + DataTableRow) rendered from typed columns × rows, and a selected-record detail (KeyValueList) in a SplitView inspector.",
+    props: [
+      PAGE_TITLE, PAGE_HINT, PAGE_TOOLBAR,
+      { name: "columns", type: "array", required: true, description: "TablePageColumn[] — { key, label, width? }; order is display order, `key` addresses the row cells." },
+      { name: "rows", type: "array", required: true, description: "TablePageRow[] — { id, cells: Record<key, ReactNode> }, in display order." },
+      SELECTED_ID("row"), DEFAULT_SELECTED("row"), ON_SELECT("row"),
+      PAGE_DETAIL("row", "a KeyValueList of the row's cells"),
+      { name: "detailWidth", type: "number", default: 320, description: "Detail (SplitView secondary) width in px." },
+    ],
+  },
+  {
+    name: "TreeExplorerPage", group: "pages", importPath: "@/shared/ui/pages/TreeExplorerPage",
+    description: "The complete hierarchy-explorer page for TREE-shaped data — the Tree template's indented variant (collapsible depth-indented rows) under a titled header bar, with the selected node's facts (id · meta · children) as a KeyValueList detail.",
+    props: [
+      PAGE_TITLE, PAGE_HINT, PAGE_TOOLBAR,
+      { name: "nodes", type: "array", required: true, description: "The tree roots — a recursive forest of TreeNodeData ({ id, label, meta?, children? }). Ids must be unique." },
+      SELECTED_ID("node"), DEFAULT_SELECTED("node"), ON_SELECT("node"),
+      { name: "defaultCollapsedIds", type: "array", description: "Branch ids that start collapsed (expansion is uncontrolled). Default: all expanded." },
+      PAGE_DETAIL("node", "the node's facts as a KeyValueList"),
+      { name: "nodeFacts", type: "function", description: "Extra KeyValueItem[] appended to the default detail, derived from the selected node." },
+      { name: "railWidth", type: "number", default: 260, description: "Rail width in px." },
+    ],
+  },
+  {
+    name: "PipelinePage", group: "pages", importPath: "@/shared/ui/pages/PipelinePage",
+    description: "The complete pipeline/workflow page for LINKED-LIST-shaped data — the Sequence template (status-colored prev→next step strip) under a titled header bar, driving a focused-step detail: label + status Chip, description, and the step's facts as a KeyValueList.",
+    props: [
+      PAGE_TITLE, PAGE_HINT, PAGE_TOOLBAR,
+      { name: "steps", type: "array", required: true, description: "PipelineStep[] — ordered SequenceStep ({ id, label, status?, hint? }) plus { description?, facts? }; array order IS the pipeline." },
+      { name: "orientation", type: "enum", values: ["horizontal", "vertical"], default: "horizontal", description: "horizontal → stepper strip above the detail; vertical → timeline rail beside it." },
+      SELECTED_ID("step"), DEFAULT_SELECTED("step"), ON_SELECT("step"),
+      PAGE_DETAIL("step", "heading + status Chip + description + facts KeyValueList"),
+    ],
+  },
+  {
+    name: "NetworkPage", group: "pages", importPath: "@/shared/ui/pages/NetworkPage",
+    description: "The complete node/edge workspace page for GRAPH-shaped data — GraphCanvas pan/zoom over typed { nodes, edges } laid out by the shared graph stack (findBackEdges + layerDag + orderLayers + the #2222 edge grammar), with a selected-node inspector (facts as a KeyValueList).",
+    props: [
+      { name: "title", type: "node", required: true, description: "Page title (the toolbar row)." },
+      PAGE_HINT,
+      { name: "toolbar", type: "node", description: "Extra toolbar controls, before the zoom cluster." },
+      { name: "nodes", type: "array", required: true, description: "NetworkNodeData[] — { id, label, meta? }. Ids must be unique." },
+      { name: "edges", type: "array", required: true, description: "NetworkEdgeData[] — directed { from, to, id? }; cycles are fine (layering breaks them, drawing keeps them)." },
+      SELECTED_ID("node"), DEFAULT_SELECTED("node"), ON_SELECT("node"),
+      PAGE_DETAIL("node", "label + facts (id · meta · in/out degree) as a KeyValueList"),
+      { name: "inspectorWidth", type: "number", default: 300, description: "Inspector width in px when a node is selected." },
+    ],
+  },
+  {
+    name: "DashboardPage", group: "pages", importPath: "@/shared/ui/pages/DashboardPage",
+    description: "The complete analytics dashboard page — a Grid of StatCard KPI tiles (optional inline Spark trends), a LineArea trend Card + a Donut/Legend breakdown Card, and an ActivityFeed column, all under a titled header bar. Renders entirely from typed stats/trend/breakdown/activity inputs.",
+    props: [
+      PAGE_TITLE, PAGE_HINT,
+      { name: "toolbar", type: "node", description: "Right-aligned header controls (range toggle, filters)." },
+      { name: "stats", type: "array", required: true, description: "DashboardStat[] — { k, v, sub?, tone?, trend?, trendColor? }, in display order." },
+      { name: "trend", type: "object", description: "The trend chart card — { title, hint?, labels, series: LineSeries[] }. Omit to drop the card." },
+      { name: "breakdown", type: "object", description: "The breakdown donut card — { title, hint?, slices: DonutSlice[] }. Omit to drop the card." },
+      { name: "activity", type: "object", description: "The activity column — { hint, items: ActivityItem[], tone }. Omit to drop the column." },
+    ],
+  },
+  {
+    name: "CollectionPage", group: "pages", importPath: "@/shared/ui/pages/CollectionPage",
+    description: "The complete master→detail collection page for LIST-shaped data — MasterDetail with the rail rendered as CardListRow items (badge Chip, subtitle, trailing meta) under a titled header bar, and a selected-item detail (title + subtitle + facts KeyValueList).",
+    props: [
+      PAGE_TITLE, PAGE_HINT, PAGE_TOOLBAR,
+      { name: "items", type: "array", required: true, description: "CollectionItem[] — { id, title, subtitle?, badge?, badgeTone?, meta?, facts? }, in display order." },
+      SELECTED_ID("item"), DEFAULT_SELECTED("item"), ON_SELECT("item"),
+      PAGE_DETAIL("item", "title + subtitle + facts KeyValueList"),
+      { name: "railWidth", type: "number", default: 280, description: "Rail width in px." },
+    ],
+  },
+  {
+    name: "RecordPage", group: "pages", importPath: "@/shared/ui/pages/RecordPage",
+    description: "The complete record-detail page for KEY-VALUE-shaped data — a titled identity header (status Chip beside the title, subtitle, an actions slot) over grouped KeyValueList sections (a SectionLabel per group), with an optional side column for facts/related items.",
+    props: [
+      { name: "title", type: "node", required: true, description: "The record's identity — the page title (the header bar)." },
+      { name: "subtitle", type: "node", description: "Dimmed identity sub-text after the title (the header hint slot)." },
+      { name: "status", type: "string", description: "A status Chip label rendered beside the title (e.g. \"running\", \"archived\")." },
+      { name: "statusTone", type: "enum", values: ["neutral", "accent", "success", "info", "danger"], default: "neutral", description: "Status Chip tone." },
+      { name: "actions", type: "node", description: "Right-aligned header actions (edit, open, delete)." },
+      { name: "sections", type: "array", required: true, description: "RecordSection[] — { label, entries: { k, v }[] }, in display order; each renders as a SectionLabel over a KeyValueList." },
+      { name: "aside", type: "node", description: "Optional side column (facts, related items) beside the sections." },
+      { name: "asideWidth", type: "number", default: 300, description: "Side column width in px." },
+    ],
+  },
 ];
 
 /** Look up a primitive spec by name. */
@@ -751,7 +933,7 @@ export function findPrimitive(name: PrimitiveName): PrimitiveSpec | undefined {
 
 /** Group the kit by `PrimitiveGroup` (for a grouped palette in the builder). */
 export function primitivesByGroup(): Record<PrimitiveGroup, PrimitiveSpec[]> {
-  const out = { layout: [], typography: [], controls: [], data: [], feedback: [], layouts: [] } as Record<PrimitiveGroup, PrimitiveSpec[]>;
+  const out = { layout: [], typography: [], controls: [], data: [], feedback: [], layouts: [], pages: [] } as Record<PrimitiveGroup, PrimitiveSpec[]>;
   for (const p of UI_KIT) out[p.group].push(p);
   return out;
 }

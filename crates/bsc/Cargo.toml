@@ -27,15 +27,30 @@ skilldb = { path = "../skilldb" }
 compliance = { path = "../compliance" }
 bsc-blueprint = { path = "../bsc-blueprint" }
 bsc-persona = { path = "../bsc-persona" }
-bsc-org = { path = "../bsc-org" }
+bsc-sound = { path = "../bsc-sound" }
+bsc-teams = { path = "../bsc-teams" }
+# `bsc studio` — the Studio store (#2890): shareable snapshots of the app's library state.
+bsc-studio = { path = "../bsc-studio" }
 bsc-component = { path = "../bsc-component" }
 bsc-ui = { path = "../bsc-ui" }
 logs = { path = "../logs" }
 bsc-files = { path = "../bsc-files" }
+# `bsc shot` — capture the running app's real pixels via a webview snapshot (#3261, epic #3260).
+bsc-shot = { path = "../bsc-shot" }
+# `bsc navigate` — steer the running app to a view so a capture can target it (#3274, epic #3260).
+bsc-navigate = { path = "../bsc-navigate" }
+# Read-only inspection of the RUNNING app (#3437) — the third leg beside shot + navigate.
+bsc-debug = { path = "../bsc-debug" }
+# `bsc loop` — the conversation loop store: two participants exchange turns until a signal, or never (#3262, epic #3260).
+bsc-loop = { path = "../bsc-loop" }
+# `bsc request` — the improvement-request store: the designer→debug channel for bsc ui gaps (#3295, epic #3260).
+bsc-request = { path = "../bsc-request" }
+# `bsc graph` — the Algorithms knowledge graph (#2761): concepts + relationships, queryable read-only.
+bsc-graph = { path = "../bsc-graph" }
+# `bsc cad` — the Rust-native mesh/SDF geometry kernel (#3387, kernel #2621): mesh an op-tree spec to STL.
+bsc-cad = { path = "../bsc-cad" }
 plandb = { path = "../plandb" }
 errordb = { path = "../errordb" }
-# `bsc todo` — the two-scope agent todo store (#1872): global runbook here, feature scope in plandb.
-bsc-todo = { path = "../bsc-todo" }
 # DuckDB-backed `bsc data` — optional so `--no-default-features` yields a lean binary (#1877).
 bsc-data = { path = "../data", optional = true }
 # `bsc mcp <server>` — the bundled native MCP servers, now subcommands of the umbrella (#1877). Each

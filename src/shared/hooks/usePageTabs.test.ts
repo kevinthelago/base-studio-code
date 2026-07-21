@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { orderTabs, usePageTabs } from "./usePageTabs";
 import { useAppStore } from "@/store";
-import type { TabItem } from "@/app/chrome/TabBar";
+import type { TabItem } from "@/shared/ui/layouts/TabBar";
 
 const DEFS: TabItem[] = [
   { id: "a", label: "A" },

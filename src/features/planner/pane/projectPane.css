@@ -48,27 +48,6 @@
 }
 .role i { width: 5px; height: 5px; border-radius: 50%; display: block; }
 
-/* (.tri moved to the shared <SegmentedControl variant="joined">, #1874) */
-
-.posture { display: inline-flex; gap: 2px; }
-.posture i {
-  width: 10px; height: 10px; border-radius: 2px; display: block;
-  font-family: var(--mono); font-size: 7px; line-height: 10px; text-align: center;
-  color: var(--bg-canvas);
-}
-.posture i.allow { background: var(--success); }
-.posture i.ask   { background: var(--accent); }
-.posture i.deny  { background: color-mix(in oklch, var(--danger), transparent 25%); }
-.posture i.off   { background: var(--bg-elev2); }
-
-.fbadge {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 1px 6px; border-radius: 4px;
-  font-family: var(--mono); font-size: 9px; line-height: 1.6;
-  background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--fg-muted);
-}
-.fbadge.hard { color: var(--accent); border-color: color-mix(in oklch, var(--accent), transparent 65%); }
-
 .preset {
   padding: 2px 9px; border-radius: 99px;
   font-family: var(--mono); font-size: 9.5px; cursor: pointer;
@@ -76,13 +55,6 @@
 }
 .preset.on { background: color-mix(in oklch, var(--accent), transparent 84%);
   border-color: var(--accent-dim); color: var(--accent); }
-
-.av {
-  width: 17px; height: 17px; border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-weight: 700; font-size: 9px; color: var(--on-accent);
-  border: 1.5px solid var(--bg-panel);
-}
 
 .track { height: 5px; border-radius: 3px; background: var(--bg-elev2); overflow: hidden; }
 .track > i { display: block; height: 100%; background: var(--accent); }
@@ -203,19 +175,6 @@
 
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
-/* ----------------------------------------------------------------
-   Footer advance bar (#652)
-   ---------------------------------------------------------------- */
-.advance-bar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--border-soft);
-  background: var(--bg-panel);
-}
-
 /* The empty-state helper was retired (#2420) — use the shared <EmptyState>. */
 
 /* =====================================================================
@@ -248,6 +207,11 @@
 .fp .ph-gate.wait .gd { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
 .fp .ph-gate.fail { color: var(--danger); border-color: color-mix(in oklch, var(--danger), transparent 60%); }
 .fp .ph-gate.fail .gd { background: var(--danger); }
+/* The gate pill doubles as the stage-guidance disclosure toggle (#3257): a clickable chip with a caret. */
+.fp button.ph-gate { cursor: pointer; appearance: none; line-height: 1; }
+.fp button.ph-gate:hover { border-color: color-mix(in oklch, currentColor, transparent 45%); }
+.fp .ph-gate.open { background: var(--bg-elev2); }
+.fp .ph-gate .ph-caret { font-size: 8px; opacity: .65; margin-left: 1px; }
 
 /* lock / done banner */
 .fp .lock-banner { display: flex; align-items: center; gap: 9px; margin: 12px 16px 0;
@@ -255,6 +219,28 @@
   color: var(--fg-muted); background: color-mix(in oklch, var(--info), transparent 90%);
   border: 1px solid color-mix(in oklch, var(--info), transparent 70%); }
 .fp .lock-banner b { color: var(--info); }
+
+/* Stage guidance card (#2862): gate REQUIREMENTS + the suggested next-step PROMPT in one always-
+   visible card — replacing the easy-to-miss "?" helper and the click-to-reveal gate "why?" popover. */
+.fp .stage-guide { margin: 12px 16px 0; padding: 11px 13px; border-radius: 9px;
+  background: var(--bg-elev); border: 1px solid var(--border-soft); }
+.fp .stage-guide.wait { border-color: color-mix(in oklch, var(--accent), transparent 74%); }
+.fp .stage-guide.pass { border-color: color-mix(in oklch, var(--success), transparent 74%); }
+.fp .stage-guide .sg-head { display: flex; align-items: center; gap: 7px; }
+.fp .stage-guide .sg-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.fp .stage-guide.wait .sg-dot { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+.fp .stage-guide.pass .sg-dot { background: var(--success); }
+.fp .stage-guide .sg-title { font-family: var(--mono); font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--fg-muted); }
+.fp .stage-guide.pass .sg-title { color: var(--success); }
+.fp .stage-guide .sg-reqs { margin: 8px 0 0; padding-left: 18px; font-size: 11px; line-height: 1.65; color: var(--fg-muted); }
+.fp .stage-guide .sg-prompt { margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--border-soft); }
+.fp .stage-guide .sg-eyebrow { font-family: var(--mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--fg-dim); margin-bottom: 5px; }
+.fp .stage-guide .sg-plabel { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--fg); margin-bottom: 4px; }
+.fp .stage-guide .sg-ptext { font-size: 11px; line-height: 1.55; color: var(--fg-muted);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.fp .stage-guide .sg-inject { margin-top: 9px; }
 
 /* scrolling body + footer — the focused render wraps the body in .pp-scroll (not .ph-body),
    so the design's body padding goes here; scoped to .fp to leave the staged pane untouched. */

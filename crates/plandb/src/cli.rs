@@ -48,9 +48,12 @@ const COMMANDS: &[CmdDoc] = &[
         summary: "upsert issue(s) from JSON on stdin; prints ref(s)",
         usage: "\
 USAGE:
-  bsc plan add   # one issue object, or an array, as JSON on stdin
+  bsc plan add [--force]   # one issue object, or an array, as JSON on stdin
 
-Upserts each issue by its (required, non-empty) \"ref\" (and \"title\"). Prints the ref(s) written.",
+Upserts each issue by its (required, non-empty) \"ref\" (and \"title\"). Prints the ref(s) written.
+Validated at set-time (#2395): a non-empty ref + title per issue, and a known \"status\" when set
+(open | in_progress | blocked | complete | verified | failed). A bad batch is rejected whole —
+nothing is written. --force skips validation.",
     },
     CmdDoc {
         name: "get",
@@ -146,29 +149,85 @@ USAGE:
         summary: "streams + per-stream permissions/flows + director/topology",
         usage: "\
 USAGE:
-  bsc plan fleet set                  # replace the fleet from a FleetPlan JSON on stdin
+  bsc plan fleet set [--force]        # replace the fleet from a FleetPlan JSON on stdin
   bsc plan fleet get [<stream-id>]    # print the fleet (lean; --full for detail), or one stream
   bsc plan fleet stream set <id>      # upsert ONE stream's JSON on stdin (granular; keeps order)
   bsc plan fleet meta set             # upsert just the meta (director/topology/…) JSON on stdin
   bsc plan fleet remove <stream-id>   # drop one stream
 
-`fleet get` is lean by default (id/name/dependsOn per stream); add --full for permissions/flows.",
+`fleet get` is lean by default (id/name/dependsOn per stream); add --full for permissions/flows.
+Writes are validated at set-time (#2395): `set` needs a \"streams\" array (an absent one would
+silently wipe the fleet) and every stream a non-empty, unique \"id\" + a \"repo\"; `stream set`'s
+blob id must match <id>; `meta set` must not carry \"streams\". --force skips validation.",
     },
     CmdDoc {
         name: "deploy",
         summary: "the Deploy stage's structured config (one blob)",
         usage: "\
 USAGE:
-  bsc plan deploy set   # replace the deploy config from a DeployConfig JSON on stdin
-  bsc plan deploy get   # print the deploy config (DeployConfig JSON)",
+  bsc plan deploy set [--force]   # replace the deploy config from a DeployConfig JSON on stdin
+  bsc plan deploy get             # print the deploy config (DeployConfig JSON)
+
+`set` validates the shape before storing (#2395) — a malformed config is rejected with a
+field-level error and the stored config is untouched. Mode-aware target rules: mode:\"cloud\"
+(or no mode) needs a known \"platform\"; mode:\"local\" needs \"localKind\" — \"application\"
+(buildTargets + artifact) or \"library\" (publishRegistry + packageName). A successful set echoes
+the pane's \"N of M deploy-ready\" readiness. --force stores a work-in-progress blob unvalidated.",
     },
     CmdDoc {
         name: "deps",
         summary: "the locked dependency manifest (one blob)",
         usage: "\
 USAGE:
-  bsc plan deps set   # replace the manifest from a DependencyManifest JSON on stdin
-  bsc plan deps get   # print the manifest (a `dependencies` array + a `registries` map)",
+  bsc plan deps set [--force]   # replace the manifest from a DependencyManifest JSON on stdin
+  bsc plan deps get             # print the manifest (a `dependencies` array + a `registries` map)
+
+`set` validates before storing (#2395): every dependency needs a non-empty \"name\" and an
+\"ecosystem\" of \"npm\"/\"cargo\" (anything else is silently dropped by the readers); every
+registry needs a \"url\". A rejected write leaves the stored manifest untouched. --force skips.",
+    },
+    CmdDoc {
+        name: "market",
+        summary: "the Market stage's scored assessment (one blob)",
+        usage: "\
+USAGE:
+  bsc plan market set [--force]   # replace the assessment from a market-assessment JSON on stdin
+  bsc plan market get             # print the stored assessment
+
+The Market stage's structured artifact (#2430) — the `marketDefined` gate reads it. Shape:
+{ \"summary\", \"scores\": { problemSeverity | problemFrequency | reachableMarket | competitiveGap |
+timing | moat: { \"score\": 1-5, \"rationale\", \"sources\": [\"...\"] } }, \"sizing\"?, \"competitors\"?,
+\"verdict\": { \"recommendation\": go|caution|no-go, \"rationale\" } }.
+`set` validates before storing (#2395): EXACTLY the six rubric dimensions, each an integer score
+1-5 with a non-empty rationale and ≥1 fetched source (citation discipline — an uncited score is
+rejected). A rejected write leaves the stored assessment untouched; a successful set echoes the
+\"N of 6 dimensions scored, cited\" readiness. --force stores a work-in-progress blob unvalidated.",
+    },
+    CmdDoc {
+        name: "transformation",
+        summary: "the Transformations stage's list — the modification counterpart to features (#2509)",
+        usage: "\
+USAGE:
+  bsc plan transformation add [--force]         # upsert row(s) from JSON on stdin (one object or an
+                                                # array); prints the id(s) written
+  bsc plan transformation list [--json]         # the list, position-ordered (the bottom-up confirm queue)
+  bsc plan transformation get <id> [--pretty]   # print one transformation (JSON)
+  bsc plan transformation update <id> [--force] # replace one row from JSON on stdin; the item re-presents
+  bsc plan transformation confirm <id>          # the USER's confirm (sets confirmed: true in the row)
+  bsc plan transformation remove <id>           # drop one row
+
+Each row is one transformation — verb + target + delta + invariants + blast radius:
+{ \"verb\": rename|extract|split|merge|move|replace|upgrade|restyle|remove|optimize|harden,
+  \"title\", \"target\": { \"description\", \"files\"? }, \"delta\", \"invariants\": [...],
+  \"owns\": [...], \"dependsOn\"?, \"tier\": 0.., \"provenance\"?: { \"recipe\", \"evidence\" },
+  \"kitContribution\"?, \"spec\"?, \"confirmed\"? }
+Rows are keyed by \"id\" (derived from the title when omitted); `tier` is the composition tier the
+bottom-up confirm queue orders by (0 = primitives … N = pages); `owns` is the blast radius. Targets
+are DISCOVERED by scanning the linked repos, never invented. `spec` is the render spec the
+pane previews live — REQUIRED on a gap-fill row (kitContribution: true) so the user SEES the proposed
+component. Writes are validated at set-time (#2395) with field-level errors — a bad batch is rejected
+whole; --force skips. HARD RULE: the USER confirms each item in the pane — the planner NEVER runs
+`confirm`.",
     },
     CmdDoc {
         name: "mcp",
@@ -184,8 +243,30 @@ USAGE:
         summary: "the blueprint an authoring project is designing (one blob)",
         usage: "\
 USAGE:
-  bsc plan blueprint set   # replace the blueprint from a Blueprint JSON on stdin
-  bsc plan blueprint get   # print the blueprint (Blueprint JSON)",
+  bsc plan blueprint set [--force]   # replace the blueprint from a Blueprint JSON on stdin
+  bsc plan blueprint get             # print the blueprint (Blueprint JSON)
+
+`set` validates before storing (#2395): a non-empty \"id\" + \"name\" (without them the reader
+silently ignores the whole blob), and every stage/section entry needs a \"key\" + \"name\". A
+rejected write leaves the stored blueprint untouched. --force skips validation.",
+    },
+    CmdDoc {
+        name: "ui",
+        summary: "the app's UI pairing — the {kit, theme} the planned app ships on (one blob)",
+        usage: "\
+USAGE:
+  bsc plan ui set [--force]   # replace the pairing from JSON on stdin
+  bsc plan ui get             # print the pairing (or null)
+
+The planned application's {kit, theme} pair (#2489), e.g.
+  {\"kit\": {\"id\": \"bsc/react-ui\", \"version\": \"1.0.0\"}, \"themeId\": \"soft\"}
+`kit` is the blueprint's pinned id@version into the released-kit store; `themeId` is a
+`bsc ui theme list` id (absent = \"default\"). Recorded in the Test UI stage after choosing the
+theme WITH the user; the generated app's palette is emitted FROM it — `bsc ui emit-css --theme
+<themeId>` produces tokens.css (the semantic contract layer, read-only) + theme.css (the one
+swappable palette file), resolved by id at emission time (never snapshotted). `set` validates
+before storing (#2395): a present \"kit\" needs a non-empty \"id\" + \"version\", a present
+\"themeId\" must be a non-empty string, and an empty pairing is rejected. --force skips.",
     },
     CmdDoc {
         name: "discovery",
@@ -300,6 +381,20 @@ USAGE:
 USAGE:
   bsc plan github-context get   # read github_context.md (app-generated; read-only)",
     },
+    CmdDoc {
+        name: "artifact",
+        summary: "planner OUTPUT artifacts — durable content in plan.db, keyed by (kind, name) (#2997)",
+        usage: "\
+USAGE:
+  bsc plan artifact set <kind> <name>      # write an artifact's content from stdin (upsert by kind+name)
+  bsc plan artifact get <kind> <name>      # print the content (--json → the Artifact JSON, or null on a miss)
+  bsc plan artifact list [<kind>]          # list artifacts (all, or one kind); --json for the full objects
+  bsc plan artifact remove <kind> <name>   # delete one artifact
+
+Durable store (#2997) for planner-produced CONTENT keyed by (kind, name) — the substrate for moving
+that content off flat hub files and into plan.db. `set` reads the content on stdin; a non-JSON `get`
+of an absent artifact is an error, while `--json` emits `null`.",
+    },
 ];
 
 /// One command's detailed help — shown at the foot of an unknown-subcommand error (via
@@ -347,6 +442,9 @@ struct Args {
     since: Option<i64>,
     /// Re-expand a JSON read to indented form (the default is compact, to save agent tokens).
     pretty: bool,
+    /// Skip set-time validation on a structured write (#2395) — the deliberate
+    /// store-a-work-in-progress-blob escape hatch. Validation is otherwise strict-reject.
+    force: bool,
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args, String> {
@@ -355,7 +453,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
         rule: None, cause: None, from: None, command: None, schedule: None, description: None,
         mode: None, path: None,
         full: false, fields: None, limit: None,
-        since: None, pretty: false,
+        since: None, pretty: false, force: false,
     };
     let mut it = raw.into_iter();
     while let Some(arg) = it.next() {
@@ -374,6 +472,7 @@ fn parse_args(raw: Vec<String>) -> Result<Args, String> {
             "--description" => a.description = Some(it.next().ok_or("--description needs a value")?),
             "--full" => a.full = true,
             "--pretty" => a.pretty = true,
+            "--force" | "--no-validate" => a.force = true,
             "--fields" => a.fields = Some(it.next().ok_or("--fields needs a comma-separated list")?),
             "--limit" => {
                 let v = it.next().ok_or("--limit needs a number")?;
@@ -422,8 +521,11 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "fleet" => fleet::cmd_fleet(&args),
         "deploy" => nouns::cmd_deploy(&args),
         "deps" => nouns::cmd_deps(&args),
+        "market" => nouns::cmd_market(&args),
+        "transformation" => nouns::cmd_transformation(&args),
         "mcp" => nouns::cmd_mcp(&args),
         "blueprint" => nouns::cmd_blueprint(&args),
+        "ui" => nouns::cmd_ui(&args),
         "discovery" => nouns::cmd_discovery(&args),
         "confirm" => nouns::cmd_confirm(&args),
         "skip" => nouns::cmd_skip(&args),
@@ -434,6 +536,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         "automations" => hub::cmd_automations(&args),
         "startup" => hub::cmd_startup(&args),
         "github-context" => hub::cmd_github_context(&args),
+        "artifact" => hub::cmd_artifact(&args),
         other => Err(bsc_cli_util::unknown_command(prog, TAGLINE, COMMANDS, other)),
     }
 }
@@ -490,16 +593,36 @@ fn blob_count(v: &serde_json::Value, key: &str) -> usize {
     v.get(key).and_then(|x| x.as_array()).map(|a| a.len()).unwrap_or(0)
 }
 
-/// The shared `set`/`get` handler for the singleton-blob nouns (`deploy`/`deps`/`blueprint`). `set`
-/// reads one JSON object on stdin, replaces the blob via `set_fn`, and echoes `msg_fn(&value)` in
-/// human mode; `get` emits the stored blob via `get_fn` or `null`/`none_text`. `verb` names the noun
-/// in the unknown-subcommand error; `parse_noun` names the value in the stdin parse error. (`fleet`
-/// keeps its own match for `get <stream-id>`/`--full`/lean — only its `set` shares this read shape.)
+/// The validate-then-persist seam every structured write goes through (#2395): run `validate` on
+/// the parsed blob (skipped by `--force`), and only call `set_fn` when it passes — so a rejected
+/// write returns `Err` WITHOUT touching the store and the previously-stored good blob survives.
+fn validated_set(
+    v: &serde_json::Value,
+    force: bool,
+    validate: impl Fn(&serde_json::Value) -> Result<(), String>,
+    set_fn: impl FnOnce(&serde_json::Value) -> Result<(), String>,
+) -> Result<(), String> {
+    if !force {
+        validate(v)?;
+    }
+    set_fn(v)
+}
+
+/// The shared `set`/`get` handler for the singleton-blob nouns (`deploy`/`deps`/`blueprint`/`ui`). `set`
+/// reads one JSON object on stdin, validates it via `validate` (#2395 — strict-reject unless
+/// `--force`), replaces the blob via `set_fn`, and echoes `msg_fn(&value)` in human mode; `get`
+/// emits the stored blob via `get_fn` or `null`/`none_text`. `verb` names the noun in the
+/// unknown-subcommand error; `parse_noun` names the value in the stdin parse error. (`fleet` keeps
+/// its own match for `get <stream-id>`/`--full`/lean — only its `set` shares this read shape.)
+// One flat parameter per per-noun behavior (validate/set/get/msg) — four call sites, and a
+// builder/struct would just re-spell the same four closures with more ceremony.
+#[allow(clippy::too_many_arguments)]
 fn cmd_blob_noun(
     args: &Args,
     verb: &str,
     parse_noun: &str,
     none_text: &str,
+    validate: impl Fn(&serde_json::Value) -> Result<(), String>,
     set_fn: impl Fn(&Store, &serde_json::Value) -> Result<(), String>,
     get_fn: impl Fn(&Store) -> Result<Option<serde_json::Value>, String>,
     msg_fn: impl Fn(&serde_json::Value) -> String,
@@ -508,7 +631,7 @@ fn cmd_blob_noun(
     match args.positional.get(1).map(String::as_str).unwrap_or("") {
         "set" => {
             let v: serde_json::Value = read_stdin_json_one(parse_noun)?;
-            set_fn(&s, &v)?;
+            validated_set(&v, args.force, validate, |v| set_fn(&s, v))?;
             if !args.json {
                 println!("{}", msg_fn(&v));
             }
@@ -541,8 +664,9 @@ mod tests {
         // Every top-level command appears in the compact menu.
         for c in [
             "add", "get", "summary", "list", "mine", "status", "remove", "render", "feature", "repo",
-            "fleet", "deploy", "deps", "mcp", "blueprint", "discovery", "confirm", "skip", "integration",
-            "lesson", "triage", "stage", "automations", "startup", "github-context",
+            "fleet", "deploy", "deps", "market", "transformation", "mcp", "blueprint", "ui", "discovery",
+            "confirm", "skip", "integration", "lesson", "triage", "stage", "automations", "startup",
+            "github-context", "artifact",
         ] {
             assert!(ov.contains(c), "overview lists {c}");
         }
@@ -553,6 +677,85 @@ mod tests {
         assert!(!f.contains("lesson"));
         // An unknown command falls back to the overview.
         assert!(cmd_help("bsc plan", "nope").contains("COMMANDS:"));
+    }
+
+    #[test]
+    fn validated_set_rejects_before_persisting_and_force_bypasses() {
+        // The keep-previous-value contract (#2395): a rejected write must not clobber a good blob.
+        let s = Store::open_in_memory().unwrap();
+        let good = serde_json::json!({ "services": [{
+            "id": "web", "repo": "o/web", "platform": "vercel",
+            "release": { "strategy": "rolling" }
+        }]});
+        validated_set(&good, false, crate::validate::validate_deploy_config, |v| {
+            s.deploy_set(v).map_err(|e| e.to_string())
+        })
+        .unwrap();
+        // The #2392 regression shape: mode:"local" + a stray workload + no localKind → rejected,
+        // and the previously-stored good config survives untouched.
+        let bad = serde_json::json!({ "services": [{
+            "id": "eno", "repo": "o/eno", "mode": "local", "workload": "application"
+        }]});
+        let err = validated_set(&bad, false, crate::validate::validate_deploy_config, |v| {
+            s.deploy_set(v).map_err(|e| e.to_string())
+        })
+        .unwrap_err();
+        assert!(err.contains("localKind"), "field-level message: {err}");
+        let stored = s.deploy_get().unwrap().unwrap();
+        assert_eq!(stored["services"][0]["id"], serde_json::json!("web"), "good blob kept");
+        // --force is the documented escape hatch: the same bad blob stores unvalidated.
+        validated_set(&bad, true, crate::validate::validate_deploy_config, |v| {
+            s.deploy_set(v).map_err(|e| e.to_string())
+        })
+        .unwrap();
+        assert_eq!(s.deploy_get().unwrap().unwrap()["services"][0]["id"], serde_json::json!("eno"));
+    }
+
+    #[test]
+    fn market_validated_set_rejects_before_persisting_and_force_bypasses() {
+        // The same keep-previous-value contract (#2395) through the market seam (#2430).
+        let s = Store::open_in_memory().unwrap();
+        let cell = || serde_json::json!({ "score": 3, "rationale": "cited", "sources": ["https://x.example"] });
+        let good = serde_json::json!({
+            "summary": "good",
+            "scores": {
+                "problemSeverity": cell(), "problemFrequency": cell(), "reachableMarket": cell(),
+                "competitiveGap": cell(), "timing": cell(), "moat": cell()
+            },
+            "verdict": { "recommendation": "go", "rationale": "gap is real" }
+        });
+        validated_set(&good, false, crate::validate::validate_market_config, |v| {
+            s.market_set(v).map_err(|e| e.to_string())
+        })
+        .unwrap();
+        // An uncited partial rubric is rejected with a field-level message; the good blob survives.
+        let bad = serde_json::json!({
+            "summary": "bad",
+            "scores": { "timing": { "score": 9, "rationale": "", "sources": [] } },
+            "verdict": { "recommendation": "maybe" }
+        });
+        let err = validated_set(&bad, false, crate::validate::validate_market_config, |v| {
+            s.market_set(v).map_err(|e| e.to_string())
+        })
+        .unwrap_err();
+        assert!(err.contains("scores.timing.score") && err.contains("verdict.recommendation"), "field-level: {err}");
+        assert_eq!(s.market_get().unwrap().unwrap()["summary"], serde_json::json!("good"), "good blob kept");
+        // --force stores the work-in-progress blob unvalidated.
+        validated_set(&bad, true, crate::validate::validate_market_config, |v| {
+            s.market_set(v).map_err(|e| e.to_string())
+        })
+        .unwrap();
+        assert_eq!(s.market_get().unwrap().unwrap()["summary"], serde_json::json!("bad"));
+    }
+
+    #[test]
+    fn parse_args_reads_force_and_no_validate() {
+        let a = parse_args(vec!["deploy".into(), "set".into(), "--force".into()]).unwrap();
+        assert!(a.force);
+        let b = parse_args(vec!["deps".into(), "set".into(), "--no-validate".into()]).unwrap();
+        assert!(b.force);
+        let c = parse_args(vec!["deploy".into(), "set".into()]).unwrap();
+        assert!(!c.force);
     }
 
     #[test]

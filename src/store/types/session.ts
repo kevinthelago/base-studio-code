@@ -2,6 +2,7 @@
 // auto-resume, gate overrides, default/per-pane model, fleet harness). Split from store/types (#1634).
 import type { ConsoleAutoFocusMode } from "@/app/console/lib/focusQueue";
 import type { ModelId } from "@/app/console/panes/PaneMenu";
+import type { StudioTarget } from "@/shared/lib/fleet/studioNetworkDrive";
 
 /** Session-behavior slice of {@link AppStore}. */
 export interface SessionState {
@@ -42,11 +43,44 @@ export interface SessionState {
    *  so it's a scratch/verification shell until project files are relocated into the distro. */
   sandboxConsoles: boolean;
   setSandboxConsoles: (v: boolean) => void;
+  /** #3298: whether the DEBUG session's window is open — a full-capability Claude session in the
+   *  base-studio-code SOURCE tree that works the `bsc request` improvement queue (fixing `bsc ui`).
+   *  SESSION-ONLY (not persisted): the OS window is session-only, so this defaults off each start and
+   *  the toggle opens/closes the window. */
+  debugSession: boolean;
+  setDebugSession: (v: boolean) => void;
+  /** #3498: may a session be started AUTOMATICALLY (by the `bsc request` intake), without a human
+   *  asking? OFF by default and the outer gate of the auto-spawn boundary — the inner one being that
+   *  ONLY the `debugger` role is ever auto-spawnable (`shared/lib/session/autoSpawn.ts`, the single
+   *  authoriser). Auto-spawn is the highest-consequence capability in the app — a session that starts
+   *  itself runs a real model against a real repo — so it is opt-in, per-machine, and fails closed:
+   *  anything that is not literally `true` reads as off. */
+  autoSpawnDebugSessions: boolean;
+  setAutoSpawnDebugSessions: (v: boolean) => void;
+  /** #3498: the request ids that currently have a spawned debug session. Lives in the STORE, not in the
+   *  mount's local state, because the Glance graph must render a node per live session — an auto-spawned
+   *  session that appears nowhere is one the user cannot open, supervise or stop. Session-only. */
+  /** Live debugger OVERFLOW pool SLOT indices (#3535) — one per running overflow session, published by
+   *  RequestSessionsMount so the Glance graph can render a node per slot. Not request ids: a slot claims
+   *  a request only after it launches. Session-only. */
+  activeDebugSlots: number[];
+  setActiveDebugSlots: (slots: number[]) => void;
+  /** #3509: the base-studio-code source tree this app was built from, or null on a shipped binary.
+   *  Resolved ONCE at boot so a launch can turn a role's symbolic `app-repo` harvest root into a real
+   *  path synchronously. Session-only — it is a property of the machine, not of the user's state. */
+  appRepoRoot: string | null;
+  setAppRepoRoot: (p: string | null) => void;
   /** #2372: show the legacy Console page as a rail destination. OFF by default — the graph (Glance)
    *  is the execution surface; the console page is being retired. When off, its rail entry is hidden
    *  and a console-active workspace falls back to Glance (derived in App). */
   showConsolePage: boolean;
   setShowConsolePage: (v: boolean) => void;
+  /** #2940 (studio network): the app-owned studio sessions the pump currently wants reachable —
+   *  targets ("designer"/"librarian") with at least one open commission. Written by
+   *  `useStudioNetworkPump` each tick; read by ConsoleWorkspace's lazy-mount hosts, which launch the
+   *  target session on demand and tear it down when the list empties. SESSION-ONLY (not persisted). */
+  activeStudioTargets: StudioTarget[];
+  setActiveStudioTargets: (t: StudioTarget[]) => void;
   /** #199: auto-relaunch a parked pane when its deps land (opt-in; off by default). */
   coordAutoWake: boolean;
   setCoordAutoWake: (v: boolean) => void;

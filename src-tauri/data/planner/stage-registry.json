@@ -9,6 +9,24 @@
     "defaultEnabled": true
   },
   {
+    "id": "market",
+    "label": "Market",
+    "description": "Desk-research market assessment — scored rubric, competitor landscape, go/no-go verdict",
+    "optional": true,
+    "hasOutputFile": true,
+    "dependsOn": ["discovery"],
+    "defaultEnabled": false
+  },
+  {
+    "id": "transformations",
+    "label": "Transformations",
+    "description": "The modification list — verb-shaped transformations confirmed bottom-up, tier by tier",
+    "optional": true,
+    "hasOutputFile": true,
+    "dependsOn": ["discovery"],
+    "defaultEnabled": false
+  },
+  {
     "id": "deployment",
     "label": "Deployment",
     "description": "Link repositories + define how each service ships",

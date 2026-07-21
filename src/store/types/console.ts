@@ -7,7 +7,7 @@ import type { ReaperConfig } from "@/app/console/lib/idleReaper";
 import type { QueuedPane, FocusTarget } from "@/app/console/lib/focusQueue";
 import type { SessionRole } from "@/shared/lib/session/sessionRoles";
 import type { AgentFlow } from "@/features/planner/fleet/agentFlow";
-import type { AgentProfile } from "@/features/agents/lib/agentProfiles";
+import type { AgentProfile } from "@/features/security/lib/agentProfiles";
 import type { DirectorMode } from "@/features/planner/lib/integrationStrategy";
 import type { DirectorDrive } from "@/features/planner/fleet/directorDrive";
 
@@ -101,6 +101,11 @@ export interface ConsoleState {
   // boot (like the accent). "default" = the base look. Registry: src/shared/ui/kit/theme.ts.
   kitTheme: string;
   setKitTheme: (id: string) => void;
+  // Opt-in notification sounds (#3082; persisted, default OFF; toggled in Settings → Appearance).
+  // When on, useNotificationSounds() plays a Signal-kit cue on fleet coord events (landing/merge →
+  // success, failure → error, a worker pausing → notify).
+  soundNotifications: boolean;
+  setSoundNotifications: (on: boolean) => void;
   // Custom keyboard shortcut overrides (#771): rebindable-shortcut id → chord
   // string (e.g. "Ctrl+Shift+KeyC"). Only overrides are stored; useHotkeys falls
   // back to DEFAULT_BINDINGS for any id absent here. Persisted; edited in
@@ -159,6 +164,12 @@ export interface ConsoleState {
   reapPane: (paneId: string) => void;
   /** Clear a pane's dormant state so the view relaunches it (resume on focus). */
   resumePane: (paneId: string) => void;
+  /** Resume a single dormant fleet/agent session in place (#glance-resume): clears the pane's
+   *  ended / disabled / dormant flags and stamps `restoreRequested` so its remounted terminal
+   *  relaunches with `claude --continue`. Non-disruptive — it touches ONLY this pane, so live
+   *  siblings in the same build tab keep running. Returns false (a no-op) when no open tab hosts
+   *  the pane id, so the caller can fall back to a full fleet relaunch. */
+  resumePaneSession: (paneId: string) => boolean;
   /** Update the idle-reaper config (Settings). */
   setIdleReaperConfig: (cfg: Partial<ReaperConfig>) => void;
   // Recompute one tab's rolled-up state from the current pane statuses + layout +

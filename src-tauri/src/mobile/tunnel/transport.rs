@@ -4,7 +4,8 @@
 
 use crate::StrErr;
 use super::{
-    decode_room_msg, noise, ClientMsg, PaneOutputChunk, ServerMsg, SessionMeta, TunnelState,
+    decode_room_msg, noise, protocol, ClientMsg, PaneOutputChunk, ServerMsg, SessionMeta,
+    TunnelState,
 };
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
@@ -145,6 +146,29 @@ pub async fn run(
     log::info!("tunnel: relay client stopped");
 }
 
+/// Normalize a relay URL to its `ws`/`wss` origin (no path), mirroring the frontend's
+/// `relayWsBase` (`src/features/tunnel/lib/relayProbe.ts`): `https://`→`wss://`,
+/// `http://`→`ws://`, an existing `ws(s)://` is kept, and a **scheme-less** URL (a bare
+/// hostname) gets `wss://` prepended. Trailing slashes are trimmed.
+///
+/// Without the scheme-less case, a bare hostname configured in Settings → Security dialed
+/// as a URL with no scheme, which tungstenite rejects (`HTTP format error: invalid
+/// format`) — so the host never joined the room while the frontend's Test-relay probe
+/// (which DID normalize) reported the relay reachable (#2531).
+fn relay_ws_base(relay_url: &str) -> String {
+    let trimmed = relay_url.trim().trim_end_matches('/');
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("https://") {
+        format!("wss://{}", &trimmed["https://".len()..])
+    } else if lower.starts_with("http://") {
+        format!("ws://{}", &trimmed["http://".len()..])
+    } else if lower.starts_with("wss://") || lower.starts_with("ws://") {
+        trimmed.to_string()
+    } else {
+        format!("wss://{trimmed}")
+    }
+}
+
 /// One relay session: dial, Noise handshake (responder), authenticate, replay, pump.
 async fn session(
     app: &AppHandle,
@@ -153,12 +177,7 @@ async fn session(
     static_priv: &[u8],
     shutdown_rx: &mut watch::Receiver<bool>,
 ) -> Result<(), String> {
-    let scheme = if relay_url.starts_with("http") {
-        relay_url.replacen("http", "ws", 1)
-    } else {
-        relay_url.to_string()
-    };
-    let url = format!("{scheme}/connect?room={room}&role=host");
+    let url = format!("{}/connect?room={room}&role=host", relay_ws_base(relay_url));
     log::debug!("tunnel: dialing host websocket {url}");
     // `connect_async` has no built-in timeout: a stalled TLS/WS upgrade would hang
     // forever — never entering the room, never erroring, never logging. Bound it so a
@@ -273,7 +292,7 @@ async fn noise_handshake_and_auth(
     // First app frame must be `auth`; validate the pairing secret.
     let frame = next_binary(read).await?;
     match decode_room_msg(&mut noise_tx, &frame)? {
-        ClientMsg::Auth { token, fcm_token } => {
+        ClientMsg::Auth { token, fcm_token, protocol_version } => {
             let psk = app
                 .try_state::<TunnelState>()
                 .map(|s| s.psk())
@@ -287,18 +306,38 @@ async fn noise_handshake_and_auth(
             if let (Some(state), Some(t)) = (app.try_state::<TunnelState>(), fcm_token) {
                 state.add_fcm_token(t);
             }
-            log::info!("tunnel: auth accepted");
+            // Protocol version (#2497): accept ANY version — a mismatch is logged (both
+            // versions) and the desktop's own version rides back in `auth_ok`, so the
+            // client can warn. `None` = a pre-v2 client (treated as v1).
+            let client_version = protocol_version.unwrap_or(1);
+            if client_version == protocol::PROTOCOL_VERSION {
+                log::info!("tunnel: auth accepted (protocol v{client_version})");
+            } else {
+                log::warn!(
+                    "tunnel: auth accepted with a protocol version mismatch — desktop v{}, mobile v{client_version}; \
+                     newer frames may be ignored by the older peer",
+                    protocol::PROTOCOL_VERSION,
+                );
+            }
         }
         _ => return Err("expected auth as the first frame".into()),
     }
-    send_msg(sink, &mut noise_tx, &ServerMsg::AuthOk).await?;
+    // auth_ok carries the connect-time input grant (#2511) so a freshly-paired phone
+    // renders view-only accurately; live toggles then ride `input_grant_changed`.
+    let input_granted = app
+        .try_state::<TunnelState>()
+        .map(|s| s.input_granted())
+        .unwrap_or(false);
+    let auth_ok = ServerMsg::AuthOk { protocol_version: protocol::PROTOCOL_VERSION, input_granted };
+    send_msg(sink, &mut noise_tx, &auth_ok).await?;
     Ok(noise_tx)
 }
 
 /// Replay the current `TunnelState` snapshot to a freshly-paired client, in the exact
 /// wire order the mobile app expects: pane list + per-session state, per-pane PTY sizes,
 /// plan manifests (#588), the last live planner frames (#934), then the fleet roster (F2),
-/// automation list (A2), MCP extension list (M2), and hook telemetry (M3). Each `*_snapshot()` reads through
+/// automation list (A2), MCP extension list (M2), hook telemetry (M3), and the generic
+/// store projections (last per domain, #2497). Each `*_snapshot()` reads through
 /// `try_state`, so a missing `TunnelState` replays nothing rather than erroring. Called
 /// once after `auth_ok`, before subscribing to the live bus, so nothing is double-sent.
 async fn replay_state(
@@ -360,6 +399,13 @@ async fn replay_state(
     // frontend has pushed one.
     if let Some(telemetry) = snap(app, |s| s.hook_telemetry_snapshot()) {
         send_msg(sink, tx, &ServerMsg::HookTelemetry { telemetry }).await?;
+    }
+
+    // Replay the generic store projections (#2497) — the LAST store_state frame per
+    // domain, in stable (sorted-domain) order, so every published projection reaches a
+    // freshly-paired client without waiting for the next change.
+    for frame in snap(app, |s| s.store_states_snapshot()) {
+        send_msg(sink, tx, &frame).await?;
     }
     Ok(())
 }
@@ -494,5 +540,36 @@ fn handle_client_msg(app: &AppHandle, msg: ClientMsg, focused: &mut Option<Strin
             log::info!("tunnel: mobile chat into planner {project_id} ({} chars)", text.len());
             let _ = app.emit("tunnel://plan-chat", serde_json::json!({ "projectId": project_id, "text": text }));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::relay_ws_base;
+
+    #[test]
+    fn relay_ws_base_normalizes_every_scheme_form() {
+        // Bare hostname (the #2531 bug): must get a wss:// scheme, not pass through raw.
+        assert_eq!(relay_ws_base("relay.example.workers.dev"), "wss://relay.example.workers.dev");
+        // http(s) → ws(s).
+        assert_eq!(relay_ws_base("https://relay.example.workers.dev"), "wss://relay.example.workers.dev");
+        assert_eq!(relay_ws_base("http://localhost:8787"), "ws://localhost:8787");
+        // Already ws(s):// is kept as-is.
+        assert_eq!(relay_ws_base("wss://relay.example.workers.dev"), "wss://relay.example.workers.dev");
+        assert_eq!(relay_ws_base("ws://localhost:8787"), "ws://localhost:8787");
+        // Trailing slashes and surrounding whitespace are trimmed.
+        assert_eq!(relay_ws_base("  https://relay.example.workers.dev/  "), "wss://relay.example.workers.dev");
+        assert_eq!(relay_ws_base("relay.example.workers.dev/"), "wss://relay.example.workers.dev");
+        // Scheme match is case-insensitive; the host remainder is preserved verbatim.
+        assert_eq!(relay_ws_base("HTTPS://Relay.Example.Workers.Dev"), "wss://Relay.Example.Workers.Dev");
+    }
+
+    #[test]
+    fn relay_ws_base_output_is_a_valid_connect_url() {
+        // The scheme-less case must build a schemed URL a WS client can parse — the
+        // tungstenite "HTTP format error: invalid format" reproducer was a missing scheme.
+        let url = format!("{}/connect?room=abc&role=host", relay_ws_base("relay.example.workers.dev"));
+        assert_eq!(url, "wss://relay.example.workers.dev/connect?room=abc&role=host");
+        assert!(url.parse::<tokio_tungstenite::tungstenite::http::Uri>().is_ok());
     }
 }

@@ -45,6 +45,26 @@ standing rules you MUST act on, not merely acknowledge:
   t0p1 --title "Retry uploads" --issue 412. That resumes the chosen worker and injects the
   issue so it picks it up immediately (into the existing PR -> CI -> merge loop). Open a
   GitHub issue first if the work should be tracked. You route; the issuer never assigns.
+- ROUTE CONFIRMED TRANSFORMATIONS (#2509). A modification request is decomposed by the issuer into
+  TRANSFORMATION rows (verb + target + delta + invariants + owns + tier + dependsOn) that land in the
+  same confirm queue the planner uses. The USER confirms each row in the pane; you dispatch ONLY
+  confirmed rows -- you NEVER confirm one (that is the user's gate). On each tick read the list with
+  `bsc plan transformation list --json`, then for every row with `confirmed: true`:
+  - GATE ON ORDER. Respect tier + dependsOn -- foundation-first waves. Do NOT dispatch a row until
+    every id in its `dependsOn` has LANDED/merged, and do not open a higher tier until the lower
+    tier's rows have landed. Wave 0 (tier-0 primitives / no-dep foundations) goes first.
+  - SKIP WHAT'S ALREADY ROUTED. If a tracked issue or PR already exists for the row, leave it --
+    reconcile against the board you already keep current so a row is dispatched exactly once.
+  - PICK THE OWNING WORKER by matching the row's `owns` globs to a stream's `owns` / area in
+    CLAUDE.local.md -- the same discipline as ROUTE NEW ISSUES (reach a maintenance worker that
+    already holds that lane).
+  - OPEN a tracked GitHub issue via bsc-issue (body = the delta + invariants + owns), then
+    `bsc-assign <session>` it into that worker's loop -- e.g.
+    echo "Replace the bespoke dashboard buttons with the kit Button. Invariants: existing tests
+    pass; handlers + focus order unchanged. Owns: src/components/*Button*.tsx" | bsc-assign t0p1
+    --title "Replace bespoke buttons" --issue 512. That resumes the worker into the existing
+    PR -> CI -> merge loop.
+  You dispatch confirmed rows in dependency order; the user confirms, you never do.
 - ACT ON PLANNER BRIEFS (#2377). The PLANNER can push a mid-build plan update to you while the
   fleet runs -- it surfaces as a "[coordinator] The planner pushed ... plan update(s): ..."
   message. This is an authoritative change to the plan (added scope, a refined feature, a

@@ -1,12 +1,16 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 import { useAppStore } from "@/store";
 import { timeAgoMs } from "@/shared/lib/core/format";
+import { rateLimitNote } from "@/shared/lib/github/github";
 import { Row } from "@/shared/ui/layout/Row";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { InlineError } from "@/shared/ui/feedback/InlineError";
-import type { DraftRow } from "./drafts";
+import type { DraftRow, LocalProjectLite } from "./drafts";
+import type { LocalPublishedRow } from "./localPublished";
+import { useReopenProject } from "./ReopenProjectModal";
+import { projectSlug } from "@/shared/lib/core/projectPaths";
 import { STATUS_META, type GhProject, type ProjStatus } from "./published/publishedModel";
 import { ProjectRow } from "./published/ProjectRow";
 import { GroupHeader } from "./published/GroupHeader";
@@ -37,12 +41,34 @@ interface PublishedProjectsProps {
   grandTotal: number;
   /** Published count (active + shipped), for the header badge. */
   publishedCount: number;
-  fetchProjects: () => void;
+  /** Re-fetch the published boards; `force: true` (the manual ↻ sync) bypasses the TTL cache (#2447). */
+  fetchProjects: (opts?: { force?: boolean }) => void;
   setProjects: Dispatch<SetStateAction<GhProject[]>>;
   menuOpenId: string | null;
   setMenuOpenId: (id: string | null) => void;
   reopenDraft: (d: { key: string; title: string; pitch: string }) => void;
   setDraftDeleteTarget: (d: DraftRow | null) => void;
+  /** key → durable lifecycle state (`drafted`/`planning`/`created`/`published`) from projects.db
+   *  (#2998), to distinguish a bare draft from a created/in-progress project on its chip. */
+  dbStateByKey?: Record<string, string>;
+  /** On-disk local hubs (`list_local_projects`) — the reopen flow derives each board project's hub
+   *  from its name (#2409) and offers these as link candidates on a mismatch. */
+  localProjects: LocalProjectLite[];
+  /** Re-scan the on-disk hubs (after a link moved one). */
+  refreshLocalProjects: () => void;
+  /** Published hubs rendered from the LOCAL inventory (#2445) — the offline published set; a fetched
+   *  GitHub board matching a hub overlays it (the hub drops out of this list, the board row renders). */
+  localPublished: LocalPublishedRow[];
+  /** When the PERSISTED last-known board state (#2446) is what's rendering (no live fetch yet this
+   *  mount), the time that state was fetched (epoch ms) — drives the "last synced 2h ago" hint.
+   *  `null` when the live fetch landed or there is no persisted overlay. */
+  staleFetchedAt: number | null;
+  /** Bare on-disk scaffolds (no plan/title/publish) surfaced for a confirm-gated cleanup (#2998) —
+   *  rendered as a de-emphasized line at the bottom of the projects column. The confirm modal is
+   *  owned by the composer (ProjectsList); this component only shows the affordance. Empty → nothing. */
+  orphans?: LocalProjectLite[];
+  /** Open the orphan-cleanup confirm modal (owned by ProjectsList). */
+  onCleanupOrphans?: () => void;
 }
 
 /** The published-projects column — the page header (title · summary · sync/new · new-project form ·
@@ -50,13 +76,16 @@ interface PublishedProjectsProps {
  *  Keep-vs-Delete modal. The composer owns the project scan + shared search/sort + the shared
  *  draft-delete flow; this component owns the new-project form and the published-delete flow. */
 export function PublishedProjects({
-  visibleProjects, grouped, fDrafts, fleetByProject, loading, error, lastSync, draftError,
+  visibleProjects, grouped, fDrafts, fleetByProject, loading, error, lastSync, draftError, dbStateByKey = {},
   query, setQuery, sort, setSort, totalSummary, grandTotal, publishedCount,
   fetchProjects, setProjects, menuOpenId, setMenuOpenId, reopenDraft, setDraftDeleteTarget,
+  localProjects, refreshLocalProjects, localPublished, staleFetchedAt,
+  orphans = [], onCleanupOrphans,
 }: PublishedProjectsProps) {
   const {
     setWorkspace, setGithubTab, setProjectsView, setActiveProjectMeta, openGithubBoard,
-    setPlanningContext, setPlanningTitle, setPlanningSession, projectKeyAlias,
+    setPlanningContext, setPlanningTitle, setPlanningSession, githubToken,
+    setRelaunchOnOpen, triagedProjects,
   } = useAppStore();
   const [deleteTarget, setDeleteTarget] = useState<GhProject | null>(null);
 
@@ -69,7 +98,10 @@ export function PublishedProjects({
     openGithubBoard("board");
   }
 
-  function handleEditPlan(p: GhProject) {
+  // Enter the planning session for a board project under its settled key (#2409): the key is
+  // DERIVED from the name (`projectSlug`), never looked up through a node-id alias — the seam that
+  // fed recovery the wrong hub ("video game"). The node id stays in activeProjectId for API calls.
+  function openPlanning(p: GhProject, key: string) {
     const allRepos = p.repositories?.nodes?.map((r) => r.nameWithOwner) ?? [];
     const repo     = allRepos[0] ?? "";
     setActiveProjectMeta(p.id, p.title, repo, p.number, allRepos);
@@ -79,21 +111,57 @@ export function PublishedProjects({
     // title ("ok") would otherwise win and mislabel a published project's triage/fleet tab (#1988).
     setPlanningTitle(p.title);
     setPlanningContext(p.shortDescription ?? p.title, repo);
-    // Resolve the session key through the node-id alias set at publish (#1741): a project
-    // created with a stable id lives under that id on disk, so reopening it from the board must
-    // key the session to `projectKeyAlias[p.id]`, not the (display-only, freely-renamed) title.
-    // Grandfathered/title-keyed projects have no such alias (or it maps back to the title), so
-    // the fallback preserves their existing behavior exactly. The node id stays in
-    // activeProjectId for API calls only.
-    setPlanningSession(projectKeyAlias[p.id] ?? p.title);
+    setPlanningSession(key);
     setProjectsView("planning");
+  }
+
+  // Derivation first, modal on a mismatch (#2409): a hub at `projectSlug(title)` opens in place;
+  // otherwise the reopen-mismatch modal offers a one-time link (real on-disk move) or a fresh start.
+  const reopen = useReopenProject<GhProject>(openPlanning, refreshLocalProjects);
+  function handleEditPlan(p: GhProject) {
+    reopen.begin(p, p.title, localProjects);
+  }
+  // #3044 — relaunch a project's fleet from the list: arm the auto-launch signal for its frozen key, then
+  // open it (reopen handles hub derivation / the mismatch modal). usePlanPublish fires launchTriage once
+  // the planning session has loaded. Reuses the whole tested launch path — no bespoke relaunch orchestration.
+  function relaunchFleet(p: GhProject) {
+    setRelaunchOnOpen(projectSlug(p.title));
+    handleEditPlan(p);
   }
 
   const publishedAndDrafts = publishedCount + fDrafts.length;
   // The main (projects) column is empty when there are no projects or drafts; the
-  // blueprints rail shows its own empty state independently.
-  const projectsEmpty = publishedCount === 0 && fDrafts.length === 0;
+  // blueprints rail shows its own empty state independently. Local published hubs count as
+  // content (#2445) — logged out they ARE the published column.
+  const projectsEmpty = publishedCount === 0 && fDrafts.length === 0 && localPublished.length === 0;
   const q = query.trim().toLowerCase();
+
+  // #2998: split the drafts into two lifecycle groups by the durable projects.db state — a bare
+  // DRAFTED idea (drafted / absent) vs a CREATED/in-progress project whose hub + plan already exist
+  // (created / planning). The group header now conveys the state, so the chip drops its per-chip
+  // label; the dot color is the group's (accent for drafts · violet for in-progress).
+  const inProgress = fDrafts.filter(d => { const st = dbStateByKey[d.key]; return st === "created" || st === "planning"; });
+  const drafts     = fDrafts.filter(d => { const st = dbStateByKey[d.key]; return st !== "created" && st !== "planning"; });
+
+  // One chip, reused by both groups — the dot color comes from the group (accent vs violet).
+  const draftChip = (d: DraftRow, dot: string) => (
+    <Box as="span"
+      key={d.key}
+      onClick={() => reopenDraft(d)}
+      title={d.pitch || undefined}
+      className="mono"
+      pad={[5, 12]} bg="var(--bg-elev)" border="soft" radius={7} style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--fg)", cursor: "pointer" }}
+    >
+      <Box as="span" bg={dot} radius={99} style={{ width: 5, height: 5, flexShrink: 0 }} />
+      {d.title}
+      <Text as="span" tone="dim">{timeAgoMs(d.sort)}</Text>
+      <Box as="span"
+        onClick={e => { e.stopPropagation(); setDraftDeleteTarget(d); }}
+        title="delete draft"
+        style={{ color: "var(--fg-dim)", cursor: "pointer", paddingLeft: 2 }}
+      >✕</Box>
+    </Box>
+  );
 
   return (
     <>
@@ -104,6 +172,7 @@ export function PublishedProjects({
       <Stack style={{ flex: "1 1 0", minWidth: 320 }}>
         <PublishedHeader
           visibleProjects={visibleProjects}
+          localProjects={localProjects}
           publishedAndDrafts={publishedAndDrafts}
           totalSummary={totalSummary}
           lastSync={lastSync}
@@ -114,16 +183,26 @@ export function PublishedProjects({
           sort={sort}
           setSort={setSort}
           grandTotal={grandTotal}
+          openExistingPublished={handleEditPlan}
+          openExistingLocal={(lp) => reopenDraft({ key: lp.key, title: lp.title, pitch: "" })}
         />
 
         {/* scroll area: errors · drafts chips · active/shipped groups · empty */}
         <Box style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "4px 28px 28px" }}>
           {error && (
-            <InlineError pad={[12, 16]} radius={6} style={{ marginBottom: 16 }}>
-              {error.includes("read:project")
-                ? 'This token lacks the "read:project" scope. Re-authenticate in Settings → GitHub with project access.'
-                : error}
-            </InlineError>
+            // A rate-limited fetch (#2448) is a quiet note, not a red error — the persisted
+            // overlay keeps rendering the last-known boards and requests resume after the reset.
+            rateLimitNote(error) ? (
+              <Text as="div" mono size={11} tone="dim" style={{ marginBottom: 16 }}>
+                {rateLimitNote(error)}
+              </Text>
+            ) : (
+              <InlineError pad={[12, 16]} radius={6} style={{ marginBottom: 16 }}>
+                {error.includes("read:project")
+                  ? 'This token lacks the "read:project" scope. Re-authenticate in Settings → GitHub with project access.'
+                  : error}
+              </InlineError>
+            )
           )}
 
           {loading && visibleProjects.length === 0 && (
@@ -136,31 +215,66 @@ export function PublishedProjects({
             <InlineError radius="md" borderFade={60} style={{ marginBottom: 12 }}>{draftError}</InlineError>
           )}
 
-          {/* drafts — compact chips (click = resume · ✕ = delete) */}
-          {fDrafts.length > 0 && (
+          {/* drafts — bare ideas (compact chips: click = resume · ✕ = delete). #2998 splits the single
+              chip row into two lifecycle groups by projects.db state: DRAFTS (drafted/absent) then IN
+              PROGRESS (created/planning), rendered in that lifecycle order and only when non-empty. */}
+          {drafts.length > 0 && (
             <Row gap={9} wrap style={{ marginBottom: 20 }}>
               <Text mono size={9.5} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".08em", whiteSpace: "nowrap" }}>
-                {fDrafts.length} draft{fDrafts.length !== 1 ? "s" : ""}
+                {drafts.length} draft{drafts.length !== 1 ? "s" : ""}
               </Text>
-              {fDrafts.map(d => (
-                <Box as="span"
-                  key={d.key}
-                  onClick={() => reopenDraft(d)}
-                  title={d.pitch || undefined}
-                  className="mono"
-                  pad={[5, 12]} bg="var(--bg-elev)" border="soft" radius={7} style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--fg)", cursor: "pointer" }}
-                >
-                  <Box as="span" bg="var(--accent)" radius={99} style={{ width: 5, height: 5, flexShrink: 0 }} />
-                  {d.title}
-                  <Text as="span" tone="dim">{timeAgoMs(d.sort)}</Text>
-                  <Box as="span"
-                    onClick={e => { e.stopPropagation(); setDraftDeleteTarget(d); }}
-                    title="delete draft"
-                    style={{ color: "var(--fg-dim)", cursor: "pointer", paddingLeft: 2 }}
-                  >✕</Box>
-                </Box>
-              ))}
+              {drafts.map(d => draftChip(d, "var(--accent)"))}
             </Row>
+          )}
+
+          {inProgress.length > 0 && (
+            <Row gap={9} wrap style={{ marginBottom: 20 }}>
+              <Text mono size={9.5} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".08em", whiteSpace: "nowrap" }}>
+                {inProgress.length} in progress
+              </Text>
+              {inProgress.map(d => draftChip(d, "var(--violet)"))}
+            </Row>
+          )}
+
+          {/* Staleness hint (#2445/#2446): pre-sync, the column renders the local copies and/or the
+              persisted last-known board state. With persisted data the hint carries its age ("last
+              synced 2h ago"); with none — and logged out — it keeps the #2445 "not synced" wording. */}
+          {staleFetchedAt != null ? (
+            <Text className="hint" as="div" mono size={10} style={{ margin: "0 0 7px", paddingLeft: 2 }}>
+              last synced {timeAgoMs(staleFetchedAt)}
+            </Text>
+          ) : (!githubToken && localPublished.length > 0 && (
+            <Text className="hint" as="div" mono size={10} style={{ margin: "0 0 7px", paddingLeft: 2 }}>
+              not synced — GitHub is disconnected, showing the local copies
+            </Text>
+          ))}
+
+          {/* published hubs from the LOCAL inventory (#2445) — the offline published set. Rendered
+              from `.published` + `.title` with the hub key as the identity; a fetched GitHub board
+              (live, or the persisted #2446 overlay) matching a hub OVERLAYS it (the hub leaves this
+              list, the full ProjectRow renders below). */}
+          {localPublished.length > 0 && (
+            <Box style={{ marginBottom: 22 }}>
+              <GroupHeader label="published" count={localPublished.length} dot="var(--success)" />
+              <Box border="soft" radius="lg" style={{ overflow: "hidden" }}>
+                {localPublished.map((lp, i) => (
+                  <Row
+                    key={lp.key}
+                    gap={10}
+                    align="center"
+                    onClick={() => reopenDraft({ key: lp.key, title: lp.title, pitch: "" })}
+                    title={`local copy · ${lp.key}`}
+                    style={{ padding: "10px 14px", cursor: "pointer", borderTop: i ? "1px solid var(--border-soft)" : "none" }}
+                  >
+                    <Box as="span" bg="var(--success)" radius={99} style={{ width: 5, height: 5, flexShrink: 0 }} />
+                    <Text as="span" mono size={12} style={{ color: "var(--fg)", whiteSpace: "nowrap" }}>{lp.title}</Text>
+                    <Text as="span" mono size={10} tone="dim" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lp.key}</Text>
+                    <Box style={{ flex: 1 }} />
+                    <Text as="span" mono size={10} tone="dim" style={{ whiteSpace: "nowrap" }}>{timeAgoMs(lp.updatedAt)}</Text>
+                  </Row>
+                ))}
+              </Box>
+            </Box>
           )}
 
           {/* published projects, grouped by lifecycle */}
@@ -180,6 +294,7 @@ export function PublishedProjects({
                         onPlan={handleEditPlan}
                         onBoard={handleOpenGithubBoard}
                         onDelete={setDeleteTarget}
+                        onRelaunch={triagedProjects[projectSlug(p.title)] != null ? relaunchFleet : undefined}
                         menuOpenId={menuOpenId}
                         setMenuOpenId={setMenuOpenId}
                       />
@@ -202,8 +317,26 @@ export function PublishedProjects({
               </Text>
             )
           )}
+
+          {/* Orphaned scaffolds (#2998): bare on-disk hubs with no plan/title/publish — invisible in the
+              lists above yet cluttering the projects dir. A quiet, de-emphasized cleanup affordance; the
+              confirm modal (which lists exactly what gets deleted) is owned by the composer. */}
+          {orphans.length > 0 && onCleanupOrphans && (
+            <Row gap={8} align="center" style={{ marginTop: 10, paddingTop: 4 }}>
+              <Text as="span" mono size={10} tone="dim">
+                {orphans.length} orphaned scaffold{orphans.length !== 1 ? "s" : ""} · no plan
+              </Text>
+              <Box as="button" onClick={onCleanupOrphans} className="mono"
+                style={{ background: "none", border: "none", padding: 0, color: "var(--fg-muted)", cursor: "pointer", fontSize: 10, textDecoration: "underline" }}>
+                Clean up
+              </Box>
+            </Row>
+          )}
         </Box>
       </Stack>
+
+      {/* Reopen-mismatch modal (#2409): link an existing local hub onto the name key, or start fresh. */}
+      {reopen.modal}
 
       {deleteTarget && (
         <DeleteProjectModal

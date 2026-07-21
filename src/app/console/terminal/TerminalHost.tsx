@@ -16,6 +16,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { TerminalView } from "@/app/console/panes/views/TerminalView";
+import { isStudioSessionPaneId } from "@/shared/lib/session/systemSessions";
 
 /** The terminal props a slot supplies to the shared <TerminalView>. The console cell is the `primary`
  *  (it owns the launch/data props); the Glance dock is a viewer that supplies only visibility/focus. */
@@ -31,10 +32,24 @@ export interface SlotTerminalProps {
    *  The host sources launch/data props from the primary claim so a Glance-owned terminal still reports
    *  cwd/status back to the console; visibility/focus always follow the current owner. */
   primary?: boolean;
+  /** True for an off-screen HOLDING claim that exists only to keep the PTY alive (the app-owned session
+   *  mounts, #3326/#3357) — it must never take ownership away from a real surface. Ownership is normally
+   *  "last claim wins", but a holding claim can register at an arbitrary time (its cwd resolves async), so
+   *  without this it could land AFTER a visible dock and park the terminal off-screen. A parked claim owns
+   *  the terminal only when it is the ONLY kind of claim left. */
+  parked?: boolean;
 }
 
-/** A registered claim on a paneId's terminal. Claims are ordered by registration; the LAST is the current
- *  owner (the surface that visually hosts + drives the terminal). `propsRef` is read live at portal-render
+/** The claim that visually HOSTS the terminal: the last non-parked claim, else the last claim (every
+ *  remaining claim is a parked holding mount). Pure — exported for the unit test. */
+export function ownerClaim<T extends { propsRef: { readonly current: SlotTerminalProps } }>(claims: readonly T[]): T | undefined {
+  for (let i = claims.length - 1; i >= 0; i--) if (!claims[i].propsRef.current.parked) return claims[i];
+  return claims[claims.length - 1];
+}
+
+/** A registered claim on a paneId's terminal. Claims are ordered by registration; the last non-`parked`
+ *  claim is the current owner (see {@link ownerClaim}) — the surface that visually hosts + drives the
+ *  terminal. `propsRef` is read live at portal-render
  *  time so callback-identity churn never forces a host re-render (only visible/focus changes do, via touch). */
 interface Claim {
   slotId: string;
@@ -118,7 +133,7 @@ export function TerminalHost({ children }: { children: ReactNode }) {
     const containers = containersRef.current;
     for (const [paneId, container] of containers) {
       const claims = map.get(paneId);
-      const owner = claims && claims[claims.length - 1];
+      const owner = claims && ownerClaim(claims);
       if (owner?.el) {
         if (container.parentElement !== owner.el) owner.el.appendChild(container);
       } else if (map.has(paneId)) {
@@ -143,9 +158,28 @@ export function TerminalHost({ children }: { children: ReactNode }) {
       <div ref={holdingRef} style={{ display: "none" }} aria-hidden />
       {activePaneIds.map((paneId) => {
         const claims = registryRef.current.get(paneId)!;
-        const owner = claims[claims.length - 1];
+        const owner = ownerClaim(claims)!;
         // Launch/data props from the primary (console) claim; visibility/focus from the current owner.
-        const primary = claims.find((c) => c.propsRef.current.primary) ?? owner;
+        const primaryClaim = claims.find((c) => c.propsRef.current.primary);
+        // #3427 — an APP-OWNED session must not launch before its dedicated mount claims it. Its page dock
+        // (`DesignerTerminal` and friends) calls `openStudio` and renders its viewer <TerminalSlot> in the
+        // SAME commit, while the mount that supplies the launch props only appears after an async
+        // `setup_*_workspace` invoke resolves. The viewer therefore always registered first, and with no
+        // primary to source from, `TerminalView` mounted with `initialCwd`/`initCmd` UNDEFINED — a one-shot
+        // launch, so the primary arriving a tick later never repaired it. `pty_create` then ran with
+        // `cwd=<none>`: the shell inherited the app's own working directory instead of the studio
+        // workspace, loaded none of its spec CLAUDE.md, skipped `--continue` + the persona kickoff, and
+        // (because `ensure_session_settings` is skipped for an empty cwd) ran PERMISSION-LESS with no role
+        // gate at all. Waiting one tick for the mount costs nothing visible and makes the launch correct.
+        //
+        // Scoped to the fixed app-owned ids, each of which HAS such a mount (StudioSessionMount ×4 +
+        // DebugSessionMount) that is guaranteed to arrive — a fleet pane's primary is its console grid
+        // cell, which may legitimately never mount while Glance shows the terminal, so gating it would
+        // hide a working session. And only BEFORE the first render: once a pane has a container its
+        // TerminalView stays mounted whatever the claims do, so a mount unmounting later (a tear-off, the
+        // idle reaper) can never tear a live PTY down through this path.
+        if (!primaryClaim && isStudioSessionPaneId(paneId) && !containersRef.current.has(paneId)) return null;
+        const primary = primaryClaim ?? owner;
         const op = owner.propsRef.current;
         const pp = primary.propsRef.current;
         return createPortal(

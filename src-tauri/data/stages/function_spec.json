@@ -1,0 +1,12 @@
+{
+  "directive": "**Function** — this project is a SINGLE-PURPOSE serverless function, NOT a multi-feature app. Establish its whole spec in ONE lean pass and write it to `function.md`: the TASK (the one job it does), the TRIGGER (how it's invoked — a manual run, a cron schedule, an HTTP/webhook call, an event, or an MCP tool an agent calls), its INPUTS → OUTPUT contract, and the RUNTIME (language + serverless target). Keep it to one function, one job — do not decompose it into a product. Propose, interrogate with the user, write `function.md`, then present it and let the USER confirm the section — never advance the stage yourself.",
+  "name": "Function",
+  "glyph": "λ",
+  "icon": "bolt",
+  "hue": 50,
+  "gate": "spec confirmed",
+  "deps": [],
+  "blurb": "Define the one task this function does, how it's invoked, and its inputs and output.",
+  "prompt": "This project is a SINGLE-PURPOSE, invocable function — the smallest kind of application, NOT a\nmulti-feature product. Establish its whole spec in ONE pass and write it to `function.md`:\n\n- TASK — the one job it does, in the user's terms.\n- TRIGGER — how it's invoked: a manual run, a cron schedule, an HTTP/webhook call, an event, or an\n  MCP tool an agent calls. This is the heart of the spec — pin it down first.\n- I/O — its inputs and the single output or effect (the contract a caller relies on).\n- RUNTIME — the language + the serverless target it runs on.\n\nKeep it lean: one function, one job — resist decomposing it into a feature set. Propose the spec,\ninterrogate it with the user, write `function.md`, then present it and let the USER confirm.\n\nGate: the user has confirmed the function spec.",
+  "output": "plan-file"
+}

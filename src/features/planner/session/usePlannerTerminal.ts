@@ -8,20 +8,19 @@
 //   • re-sync — re-run setup_workspaces when a linked repo resolves after the initial mount.
 // This is a behavior-preserving move out of the component; the once-effect deps (and the two
 // eslint-disables they require) are reproduced exactly — NO logic change.
-import { useEffect, useRef, type RefObject, type MutableRefObject } from "react";
+import { useEffect, type RefObject, type MutableRefObject } from "react";
+import type { Terminal } from "@xterm/xterm";
 import { invoke } from "@tauri-apps/api/core";
-import { safeInvoke, fireInvoke } from "@/shared/lib/core/safeInvoke";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import "@xterm/xterm/css/xterm.css";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { roleCapability, roleDeniedCommands, roleWriteRules } from "@/shared/lib/session/sessionRoles";
+import { useScreenSession } from "@/shared/lib/session/useScreenSession";
+import { TURN_ACCOUNTING_HOOKS } from "@/shared/lib/session/turnHooks";
 import { resolveAllInstalledMcp, toSessionPayloads, mcpAllowRules } from "@/features/mcp";
 import { plannerIntroMode, composePlannerIntro } from "./plannerIntro";
 import { plannerLaunchConfig } from "./plannerLaunch";
 import { resolvePlannerSandbox } from "./plannerSandbox";
-import { TERM_THEME } from "./planningTerminal";
+import { TERM_THEME } from "@/app/console/lib/terminalConstants";
 import type { Command, Schedule } from "@/shared/data/mock";
 
 export interface PlannerTerminalOpts {
@@ -63,66 +62,42 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
     processChunk, commands, schedules, setPlanningDir,
   } = opts;
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const termRef      = useRef<Terminal | null>(null);
-  const fitRef       = useRef<FitAddon | null>(null);
-  const unlistenData = useRef<UnlistenFn | null>(null);
-  const unlistenExit = useRef<UnlistenFn | null>(null);
+  // The whole xterm + PTY lifecycle (terminal literal, subscribe-before-create ordering,
+  // ResizeObserver, refit, cleanup) lives in the shared hook; this wrapper owns only the PLANNER
+  // launch path (workspace setup → role gate + MCP → intro → sandbox → pty_create), the tag-parse
+  // onData hook, and the repo-resync effect below. pty_kill is called on unmount so navigating away
+  // ends the session cleanly. The once-effect launch is a behavior-preserving move — NO logic change.
+  const { containerRef, termRef } = useScreenSession({
+    paneId,
+    termTheme: TERM_THEME,
+    visible,
+    exitBanner: "\r\n\x1b[33m[session ended — navigate away and back to restart]\x1b[0m\r\n",
 
-  // Mount xterm.js and spawn the planning PTY (once per Planning screen lifecycle).
-  // pty_kill is called on unmount so navigating away ends the session cleanly.
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
+    // Parse structured tags out of the stripped output stream (#1474, usePlannerTagStream).
+    onData: (payload) => processChunk(payload),
 
-    const term = new Terminal({
-      theme: TERM_THEME,
-      fontFamily: '"JetBrains Mono", monospace',
-      fontSize: 12,
-      lineHeight: 1.4,
-      cursorBlink: true,
-      cursorStyle: "bar",
-      scrollback: 10000,
-    });
+    // Capture state at mount time (synchronously, before the RAF) for workspace sync.
+    snapshot: () => ({
+      repoSnapshot:        linkedRepos, // string[] of full_names
+      treatAsExistingSnap: treatAsExisting,
+      isAuthoringSnap:     isAuthoring,
+      projNameSnap:        activeProjectName,
+      projNumberSnap:      activeProjectNumber,
+      pitchSnap:           planningPitch,
+      projIdSnap:          effectiveProjectId,
+      ghLoginSnap:         useAppStore.getState().githubUser?.login ?? "",
+      ghNameSnap:          useAppStore.getState().githubUser?.name  ?? "",
+      automationsSnap: [
+        ...commands.map(c => ({ id: c.id, name: c.name, command: c.cmd, schedule: null })),
+        ...schedules.map(sc => ({ id: sc.id, name: sc.name, command: sc.detail, schedule: sc.when })),
+      ],
+    }),
 
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(el);
-    termRef.current = term;
-    fitRef.current  = fitAddon;
-
-    term.onData(data => {
-      fireInvoke("pty_write", { paneId: paneId, data }, console.error);
-    });
-
-    // Capture state at mount time for workspace sync.
-    const repoSnapshot    = linkedRepos;  // string[] of full_names
-    const treatAsExistingSnap = treatAsExisting;
-    const isAuthoringSnap = isAuthoring;
-    const projNameSnap    = activeProjectName;
-    const projNumberSnap  = activeProjectNumber;
-    const pitchSnap       = planningPitch;
-    const projIdSnap      = effectiveProjectId;
-    const ghLoginSnap     = useAppStore.getState().githubUser?.login ?? "";
-    const ghNameSnap      = useAppStore.getState().githubUser?.name  ?? "";
-    const automationsSnap = [
-      ...commands.map(c => ({ id: c.id, name: c.name, command: c.cmd, schedule: null })),
-      ...schedules.map(sc => ({ id: sc.id, name: sc.name, command: sc.detail, schedule: sc.when })),
-    ];
-
-    requestAnimationFrame(async () => {
-      fitAddon.fit();
-
-      // Subscribe before creating the PTY so we never miss early output.
-      unlistenData.current = await listen<string>(`pty_data_${paneId}`, ev => {
-        term.write(ev.payload);
-        // Parse structured tags out of the stripped output stream (#1474, usePlannerTagStream).
-        processChunk(ev.payload);
-      });
-
-      unlistenExit.current = await listen<unknown>(`pty_exit_${paneId}`, () => {
-        term.write("\r\n\x1b[33m[session ended — navigate away and back to restart]\x1b[0m\r\n");
-      });
+    launch: async (term, snap) => {
+      const {
+        repoSnapshot, treatAsExistingSnap, isAuthoringSnap, projNameSnap, projNumberSnap,
+        pitchSnap, projIdSnap, ghLoginSnap, ghNameSnap, automationsSnap,
+      } = snap;
 
       // Create the isolated planning workspace directory with settings.json + CLAUDE.md.
       const paths = await safeInvoke<{ planning_dir: string } | null>(
@@ -170,7 +145,10 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
         allowedCommands: [],
         deniedCommands:  roleDeniedCommands(plannerCap),
         mcpServers:      plannerMcp,
-        hooks:           null,
+        // Turn accounting (#3455): the planner's bespoke launch must ALSO register the observability
+        // floor. bsc-tokens is the only per-session token source, so without it the planner's (often
+        // large) planning cost is invisible to `bsc metrics`. Shared with the generic path.
+        hooks:           TURN_ACCOUNTING_HOOKS,
         // Auto-approve every MCP server the planner sees (Research/Compliance + any downloaded one)
         // so it can call them while planning — e.g. the Research MCP when grounding a skill — without
         // a per-tool permission prompt. `enabledMcpjsonServers` only trusts the server to LOAD.
@@ -225,51 +203,8 @@ export function usePlannerTerminal(opts: PlannerTerminalOpts): PlannerTerminalHa
         providerId: launch.providerId,
         wslDistro: sandbox.wslDistro,
       }, undefined, console.error);
-    });
-
-    const ro = new ResizeObserver(() => {
-      // No visibility guard: a hidden panel is display:none → zero client size,
-      // already skipped below. Guarding on a `visible` ref instead raced with
-      // React's commit and dropped the first fit after un-hiding, leaving the
-      // terminal smaller than its container.
-      const { clientWidth, clientHeight } = el;
-      if (clientWidth === 0 || clientHeight === 0) return;
-      fitAddon.fit();
-      fireInvoke("pty_resize", { paneId: paneId, cols: term.cols, rows: term.rows }, console.error);
-    });
-    ro.observe(el);
-
-    return () => {
-      unlistenData.current?.();
-      unlistenExit.current?.();
-      ro.disconnect();
-      term.dispose();
-      termRef.current = null;
-      fitRef.current  = null;
-      fireInvoke("pty_kill", { paneId: paneId }, console.error);
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Re-fit the terminal when the planning panel becomes visible (hidden → shown).
-  // The panel mounts lazily and has variable-height content above the terminal,
-  // so a single in-RAF fit can measure before the final layout — and cell metrics
-  // are wrong until the mono font loads. Re-fit on the frame, after a short delay,
-  // and once fonts are ready so it reliably fills the available space.
-  useEffect(() => {
-    if (!visible) return;
-    const refit = (focusToo: boolean) => {
-      const fit = fitRef.current, term = termRef.current, el = containerRef.current;
-      if (!fit || !term || !el || el.clientWidth === 0 || el.clientHeight === 0) return;
-      fit.fit();
-      fireInvoke("pty_resize", { paneId: paneId, cols: term.cols, rows: term.rows }, console.error);
-      if (focusToo) term.focus();
-    };
-    let cancelled = false;
-    const raf = requestAnimationFrame(() => refit(true));
-    const delayed = setTimeout(() => refit(false), 120);
-    document.fonts?.ready?.then(() => { if (!cancelled) refit(false); }).catch(() => {});
-    return () => { cancelled = true; cancelAnimationFrame(raf); clearTimeout(delayed); };
-  }, [visible]);
+    },
+  });
 
   // Re-sync CLAUDE.md whenever a repo resolves after the initial mount.
   useEffect(() => {

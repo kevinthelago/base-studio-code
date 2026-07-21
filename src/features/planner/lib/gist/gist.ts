@@ -135,23 +135,42 @@ export async function updateGist(
   return { id: res.id, htmlUrl: res.html_url };
 }
 
+/** A gist's manifest file fetched VERBATIM — the exact bytes the publisher wrote, before any
+ *  parsing. The kit-store integrity path (#2465) hashes these bytes, so it must see the raw text,
+ *  not a re-serialization. `owner` is the gist owner's login when the API reports one. */
+export type GistTextResult =
+  | { ok: true; text: string; owner?: string }
+  | { ok: false; error: string };
+
+/**
+ * Fetch a gist's manifest file content verbatim (no auth needed for public/secret gists; `token`
+ * raises rate limits / reads a private gist). The raw-text layer both `installFromGist` (parse +
+ * validate) and the kit-store fetch (hash-before-accept, #2465) share.
+ */
+export async function fetchGistManifestText(ref: string, token = ""): Promise<GistTextResult> {
+  const id = gistIdFromUrl(ref);
+  if (!id) return { ok: false, error: "that doesn't look like a gist URL or id" };
+  let gist: GistApiResponse | null;
+  try {
+    gist = (await invoke("github_request", { token, path: `gists/${id}`, maxAgeSecs: 0, force: true })) as GistApiResponse | null;
+  } catch (e) {
+    return { ok: false, error: `couldn't fetch the gist: ${String(e)}` };
+  }
+  // A missing/404 gist can come back as null rather than a throw (#2515) — that's a soft
+  // "not found", never a TypeError.
+  const content = pickManifestContent(gist?.files);
+  if (!content) return { ok: false, error: "no extension manifest found in that gist" };
+  return { ok: true, text: content, ...(gist?.owner?.login ? { owner: gist.owner.login } : {}) };
+}
+
 /**
  * Install from a gist URL/id: fetch the gist (no auth needed for public/secret), pull
  * its manifest file, and validate it. `token` is optional (used only to raise rate
  * limits / read a private gist).
  */
 export async function installFromGist(ref: string, token = ""): Promise<ValidateResult> {
-  const id = gistIdFromUrl(ref);
-  if (!id) return { ok: false, error: "that doesn't look like a gist URL or id" };
-  let gist: GistApiResponse;
-  try {
-    gist = (await invoke("github_request", { token, path: `gists/${id}`, maxAgeSecs: 0, force: true })) as GistApiResponse;
-  } catch (e) {
-    return { ok: false, error: `couldn't fetch the gist: ${String(e)}` };
-  }
-  const content = pickManifestContent(gist.files);
-  if (!content) return { ok: false, error: "no extension manifest found in that gist" };
-  return parseManifest(content);
+  const raw = await fetchGistManifestText(ref, token);
+  return raw.ok ? parseManifest(raw.text) : raw;
 }
 
 /** Map a gist's API `history` into our GistRevision list (newest first). Pure. */

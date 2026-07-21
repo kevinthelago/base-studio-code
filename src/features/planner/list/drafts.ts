@@ -4,12 +4,19 @@
 // The Drafts list = on-disk local hubs ∪ the store draft map, MINUS anything already published.
 // Published-ness is the authoritative in-place `.published` marker (#922), surfaced per hub as
 // `LocalProject.published`. The earlier dedup excluded a draft only when its folder `key` matched
-// `sanitizeProjectKey(githubTitle)` or an alias value — a fragile title→key derivation that drifts
-// from the marker: `sanitizeProjectKey` is case-PRESERVING, but the published-marker reconcile
-// matches the GitHub board case-INSENSITIVELY (and the title is read from goal.md), so a hub whose
-// folder key differs in case/spelling from the board title got marked published yet survived the
-// draft filter — showing in BOTH lists. Keying off `lp.published` is the fix; the title/alias keys
-// stay as a secondary signal for hubs the reconcile hasn't marked yet.
+// a title-derived key or a node-id alias value — a fragile derivation that drifts from the marker:
+// `sanitizeProjectKey` is case-PRESERVING, but the published-marker reconcile matches the GitHub
+// board case-INSENSITIVELY (and the title is read from goal.md), so a hub whose folder key differs
+// in case/spelling from the board title got marked published yet survived the draft filter —
+// showing in BOTH lists. Keying off `lp.published` is the fix; the board-title keys stay as a
+// secondary signal for hubs the reconcile hasn't marked yet. (The node-id alias is retired, #2409 —
+// a board's key derives from its name.)
+//
+// #2995 adds a THIRD source unioned in on top: the durable projects DB (`bsc project db`). That layer
+// is a strictly ADDITIVE mirror of the store draft map so a draft survives a restart even when the
+// fragile `localDraftProjects` cache misses — see `mergeDbDrafts`.
+
+import type { DbProject } from "./projectsDbBridge";
 
 /** The fields of the backend `LocalProject` this selection needs. */
 export interface LocalProjectLite {
@@ -18,10 +25,25 @@ export interface LocalProjectLite {
   hasPlan: boolean;
   updatedAt: number;
   published: boolean;
+  /** True when the title came from the `.title` sidecar (user input) — false = derived (de-slugged
+   *  key / goal.md / placeholder), the board-title backfill's target set (#2467). Optional only for
+   *  older fixtures; the live wire always carries it. */
+  titled?: boolean;
 }
 
 /** A store draft-map entry (`addDraftProject`). */
 export interface DraftMapEntry { title: string; pitch: string; createdAt: number }
+
+/**
+ * A bare on-disk scaffold hub — no plan, no user title, and never published (#2998). `buildDrafts`
+ * filters these out of the Drafts list (only `hasPlan || titled` hubs are kept), so they're invisible
+ * yet clutter the `projects/` dir. The Projects page surfaces them for a confirm-gated cleanup. Pure
+ * so the predicate is unit-testable independently of the memo that also excludes anything already
+ * shown as a draft.
+ */
+export function isOrphanScaffold(lp: LocalProjectLite): boolean {
+  return !lp.hasPlan && !lp.titled && !lp.published;
+}
 
 /** A row in the Drafts list. */
 export interface DraftRow { key: string; title: string; pitch: string; sort: number }
@@ -31,28 +53,30 @@ export interface DraftRow { key: string; title: string; pitch: string; sort: num
  *
  * @param localProjects     on-disk hubs from `list_local_projects` (carry the `.published` marker).
  * @param localDraftProjects the store's draft map (key → {title, pitch, createdAt}).
- * @param projectKeyAlias   GitHub node id → folder key aliases (published projects).
- * @param publishedTitleKeys `sanitizeProjectKey(title)` for each visible GitHub board.
+ * @param publishedTitleKeys every key form of each visible GitHub board title — the name-derived
+ *                           `projectSlug(title)` (#2409) plus the legacy `sanitizeProjectKey(title)`
+ *                           for grandfathered title-keyed hubs.
  * @returns draft rows, deduped by key, sorted not applied (caller sorts).
  */
 export function buildDrafts(
   localProjects: LocalProjectLite[],
   localDraftProjects: Record<string, DraftMapEntry>,
-  projectKeyAlias: Record<string, string>,
   publishedTitleKeys: string[],
 ): DraftRow[] {
   const safeLocals = Array.isArray(localProjects) ? localProjects : [];
   const publishedKeys = new Set<string>([
-    ...Object.values(projectKeyAlias),
     ...publishedTitleKeys,
     // The authoritative signal (#922): a hub flagged published is never a draft, regardless of
-    // whether its folder key matches the (case-preserving) sanitized board title.
+    // whether its folder key matches a board-title-derived key.
     ...safeLocals.filter(lp => lp?.published).map(lp => lp.key),
   ]);
 
   const byKey = new Map<string, DraftRow>();
   for (const lp of safeLocals) {
-    if (!lp?.hasPlan) continue;   // skip bare scaffold dirs
+    // A hub is a draft when it has a plan OR the user named it (`titled`, #2994) — a user-titled hub
+    // with a plan.db but no goal/scope section yet is still a real draft. Only a bare, UNTITLED
+    // scaffold is skipped. (Interim until the DB-backed list, epic #2993.)
+    if (!lp?.hasPlan && !lp?.titled) continue;
     if (lp.published) continue;   // published hubs are not drafts (#922)
     byKey.set(lp.key, { key: lp.key, title: lp.title, pitch: "", sort: lp.updatedAt });
   }
@@ -61,4 +85,37 @@ export function buildDrafts(
     byKey.set(key, { key, title: d.title, pitch: d.pitch, sort: Math.max(ex?.sort ?? 0, d.createdAt) });
   }
   return [...byKey.values()].filter(d => !publishedKeys.has(d.key));
+}
+
+/**
+ * Union the durable projects-DB rows (#2995) into the assembled Drafts list. ADDITIVE only: every
+ * `existing` row is kept, and a DB row that isn't already represented is appended — so a draft the
+ * `localDraftProjects` cache lost on restart still surfaces from the DB. Only `drafted`/`planning`-state
+ * rows are drafts; `published`/`created` rows are ignored (a published project is not a draft). Deduped
+ * by key — an existing entry KEEPS its title + pitch when non-empty (the on-disk hub / store draft map
+ * is the richer source), only borrowing the DB's when it has none; `sort` is the newer of the two.
+ * Pure so it's unit-testable.
+ *
+ * @param existing the rows {@link buildDrafts} produced (on-disk hubs ∪ store draft map, minus published).
+ * @param dbRows   every row from `bsc project db list` (see {@link DbProject}); non-draft states ignored.
+ */
+export function mergeDbDrafts(existing: DraftRow[], dbRows: DbProject[]): DraftRow[] {
+  const byKey = new Map<string, DraftRow>();
+  for (const d of existing) byKey.set(d.key, d);
+  for (const r of Array.isArray(dbRows) ? dbRows : []) {
+    if (r.state !== "drafted" && r.state !== "planning") continue;
+    const dbSort = r.updatedAt || r.createdAt || 0;
+    const ex = byKey.get(r.key);
+    if (ex) {
+      byKey.set(r.key, {
+        key: r.key,
+        title: ex.title || r.title,
+        pitch: ex.pitch || r.pitch,
+        sort: Math.max(ex.sort, dbSort),
+      });
+    } else {
+      byKey.set(r.key, { key: r.key, title: r.title, pitch: r.pitch, sort: dbSort });
+    }
+  }
+  return [...byKey.values()];
 }

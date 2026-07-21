@@ -14,15 +14,19 @@ import { resolveMcpServers, toBscAgentMcp, resolveHooks, toSessionPayloads } fro
 import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/skills";
 import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
-import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs } from "@/shared/lib/session/sessionRoles";
-import { resolveProfileSettings } from "@/features/agents";
+import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands, isRestrictedRole, editPathRule, HARVEST_ROOT_APP_REPO, type SessionRole } from "@/shared/lib/session/sessionRoles";
+import { isFullCapabilitySession, isStudioSessionPaneId } from "@/shared/lib/session/systemSessions";
+import { TURN_ACCOUNTING_HOOKS } from "@/shared/lib/session/turnHooks";
+import { studioRoleForPaneId } from "@/features/studio-sessions";
+import { resolveProfileSettings } from "@/features/security";
 import { flowPermissionRules, flowGrantedPushCommands } from "@/features/planner";
 import type { ConsoleProvider, ProviderLaunchConfig } from "@/app/console/lib/providers";
 import type { AppStore } from "@/store/types";
 
 /**
  * Base session env for `pty_create`. Carries `GH_TOKEN` for gh/git-over-https; the write-scope globs
- * (`BSC_SCOPE_GLOBS`) for the `bsc-scope` PreToolUse hook on any gated pane; and, for a bsc-agent
+ * (`BSC_SCOPE_GLOBS`) for the `bsc-scope` PreToolUse hook on any gated pane; the role's per-store
+ * access scopes (`BSC_SCOPES`, #2470) for the store CLIs' runtime write check; and, for a bsc-agent
  * session, the selected LLM provider/model/key, role-derived perms (`BSC_AGENT_PERMS`) and resolved
  * MCP servers (`BSC_AGENT_MCP`). Returns undefined when nothing needs to be injected.
  *
@@ -36,6 +40,22 @@ import type { AppStore } from "@/store/types";
  *  survives `bypassPermissions`, #1916 Step 3.5). MUST match the literal in `bsc-scope` (shell_rc.rs). */
 export const SCOPE_DENY_ALL = "__bsc_deny_all__";
 
+/**
+ * The pane's role gate. Prefers the store, then DERIVES it from the pane id for an app-owned studio
+ * session (#3423).
+ *
+ * The store entry is written by `seedStudioLaunchState`, which only runs when `StudioSessionMount`
+ * renders — and that happens only for a studio in `wantedStudios`, a transient set (absent from
+ * `partialize`) that is empty after every app restart. A studio opened in that window reached this
+ * function with NO role, and a missing role means no role gate, no `restrictedAllow` and no denies: a
+ * fully unconfined shell on the most restricted surface in the app. A studio's pane id is stable and
+ * app-owned, so it is sufficient on its own — confinement now travels with the session's identity
+ * rather than with setup order. Any other pane keeps the store as its only authority.
+ */
+function paneRole(s: AppStore, paneId: string): SessionRole | undefined {
+  return s.paneRoles[paneId] ?? studioRoleForPaneId(paneId) ?? undefined;
+}
+
 export function buildAgentEnv(
   s: AppStore,
   paneId: string,
@@ -43,33 +63,66 @@ export function buildAgentEnv(
   ghToken: string,
 ): Record<string, string> | undefined {
   const e: Record<string, string> = {};
-  if (ghToken) e.GH_TOKEN = ghToken;
+  // The pane's role capability, resolved up-front: it gates both the write-scope env below AND whether
+  // this session is handed a GitHub credential at all.
+  const scopeRole = paneRole(s, paneId);
+  const roleGlobs = s.paneRoleGlobs[paneId] ?? [];
+  const scopeCap = scopeRole ? roleCapability(scopeRole, { writeGlobs: roleGlobs }) : null;
+  // GH_TOKEN carries gh / git-over-https auth. A role denied BOTH axes has no use for it: the app-owned
+  // studio sessions (designer/librarian/architect — `none` on every axis, #3357) cannot run git or gh at
+  // all, so placing a GitHub credential in the environment of the app's MOST restricted sessions would
+  // widen them for nothing. Before #3357 these launched via a bespoke hook that passed no token; keep it
+  // that way now that they run through the generic path. An ungated pane (no role) is unaffected, as is
+  // any role with real git/gh access (a triage pane is `git:none` but `github:write`, so it keeps it).
+  const noGitOrGithub = !!scopeCap && scopeCap.git === "none" && scopeCap.github === "none";
+  if (ghToken && !noGitOrGithub) e.GH_TOKEN = ghToken;
+  // Role-declared READ-only harvest roots (#3509). The ROLE names intent (`app-repo`) because a role is
+  // machine-independent; the launch resolves it to a real path. This widens only what `bsc ui harvest`
+  // / `bsc graph harvest` may SCAN — it grants no write anywhere, which is the point: the designer is
+  // `code: none` with `scratch/**` its only writable glob, yet must be able to mine the app's own UI
+  // (#3451/#3471). A token that resolves to nothing contributes nothing, mirroring the CLI's rule that
+  // an unresolvable allow-list entry is skipped rather than widening access.
+  const harvestRoots = (scopeCap?.harvestRoots ?? [])
+    .map((token) => (token === HARVEST_ROOT_APP_REPO ? s.appRepoRoot : null))
+    .filter((p): p is string => !!p);
+  // Newline-separated to match the CLI parser (a Windows path contains both `;` and a `:`).
+  if (harvestRoots.length) e.BSC_HARVEST_ROOTS = harvestRoots.join("\n");
   // Write-scope gate (#1297): hand the session its allowed write globs so the `bsc-scope`
   // PreToolUse hook hard-blocks any write outside them — the hard deny the role gate's
   // allow-only rules lack. Applies to every gated pane.
-  const scopeRole = s.paneRoles[paneId];
-  if (scopeRole) {
-    const roleGlobs = s.paneRoleGlobs[paneId] ?? [];
+  if (scopeRole && scopeCap) {
     const sg = scopeWriteGlobs(scopeRole, roleGlobs);
     if (sg.length > 0) {
       e.BSC_SCOPE_GLOBS = sg.join(" ");
-    } else if (roleCapability(scopeRole, { writeGlobs: roleGlobs }).code === "none") {
+    } else if (scopeCap.code === "none") {
       // code:none with no write globs ⇒ DENY ALL writes (#1916 Step 3.5). The sentinel makes bsc-scope
       // hard-block every Edit/Write — surviving bypassPermissions, where the role's permissions.deny
       // write rule is ignored. (A code:none role WITH globs — e.g. a director's commons — is scoped
       // above; an ungated pane has no scopeRole, so it stays allow-all.)
       e.BSC_SCOPE_GLOBS = SCOPE_DENY_ALL;
     }
+    // Store scopes (#2470, defense-in-depth): the role's per-store access tiers (currently just `ui`)
+    // for the store CLIs — `bsc ui` refuses its mutating verbs when scoped read-only. Guards accidents
+    // + non-Claude runtimes; the launch-time deny rules (sessionDeniedCommands) are the boundary.
+    e.BSC_SCOPES = JSON.stringify(sessionScopes(scopeCap));
   }
   // Deny-list (#1916): the session's role/user/profile deny patterns for the `bsc-deny` PreToolUse
   // hook (newline-separated; the dangerous floor itself is compiled into `bsc hook bash-deny`). This
   // carries the role/user denies through the bypassPermissions flip.
   const denies = sessionDeniedCommands(s, paneId);
   if (denies.length > 0) e.BSC_DENY_BASH = denies.join("\n");
+  // Per-stream plan scoping (#3279): a WORKER pane owns exactly one fleet stream, so scope its
+  // `bsc plan` to that stream — it reads + touches only its own issues (the plandb CLI enforces it).
+  // `fleetPaneStreams[paneId]` is set only for worker panes at fleet launch; coordinating roles
+  // (director/planner/triage/reviewer/…) get NO $BSC_STREAM and keep full cross-stream access, which
+  // they need to integrate + judge. Gate on the worker role too, so a non-worker stream pane (a
+  // reviewer/juror that judges another stream's landing) isn't accidentally boxed into its own.
+  const streamId = s.fleetPaneStreams[paneId]?.id;
+  if (streamId && paneRole(s, paneId) === "worker") e.BSC_STREAM = streamId;
   if (providerId === "bsc-agent") {
     Object.assign(e, bscAgentEnv(resolveLlmConfig(s)));
     // Gate the runtime by the pane's role (least-privilege parity with Claude); no role ⇒ permissive.
-    const bscRole = s.paneRoles[paneId];
+    const bscRole = paneRole(s, paneId);
     if (bscRole) {
       const cap = roleCapability(bscRole, { writeGlobs: s.paneRoleGlobs[paneId] ?? [] });
       // Reconcile role ↔ flow (#304): the flow owns git push / gh pr create, so lift them from
@@ -110,7 +163,7 @@ export function providerLaunchConfig(
     startupPrompt: startupPrompt && startupPrompt.trim() ? startupPrompt : undefined,
     // A worker's plan scope (CLAUDE.local.md, copied into the worktree by ensure_worktree) — handed to
     // Aider read-only since it does no ancestor-CLAUDE.md walk. Only workers have one.
-    readFiles: s.paneRoles[paneId] === "worker" ? ["CLAUDE.local.md"] : undefined,
+    readFiles: paneRole(s, paneId) === "worker" ? ["CLAUDE.local.md"] : undefined,
   };
 }
 
@@ -122,7 +175,7 @@ export function providerLaunchConfig(
  * is ignored but the hook still fires + blocks.
  */
 export function sessionDeniedCommands(s: AppStore, paneId: string): string[] {
-  const role = s.paneRoles[paneId];
+  const role = paneRole(s, paneId);
   const cap = role ? roleCapability(role, { writeGlobs: s.paneRoleGlobs[paneId] ?? [] }) : null;
   const profileId = s.paneProfiles[paneId];
   const profile = profileId ? s.agentProfiles.find((p) => p.id === profileId) : undefined;
@@ -144,11 +197,19 @@ export function sessionDeniedCommands(s: AppStore, paneId: string): string[] {
 export function buildSessionSettings(s: AppStore, paneId: string) {
   // Role gate (#219): a planner/worker/triage session has its mutating git/gh commands denied at
   // launch (deny > the broad gh/git allow), plus a write-tool guard (#238). Absent role ⇒ unrestricted.
-  const role = s.paneRoles[paneId];
+  const role = paneRole(s, paneId);
   // The worker's write boundary (its owned globs) makes roleWriteRules auto-approve Edit/Write within
   // its lane; without it a worker (code:write, empty writeGlobs) prompts on every edit.
+  //
+  // The empty case must FLOOR to the role table rather than override it (#3428) — `roleCapability` is a
+  // plain spread, so passing `{ writeGlobs: [] }` REPLACES the role's own default boundary. `paneRoleGlobs`
+  // is a fleet concept (only `fleetStartProject` writes it), so every non-fleet pane arrives here empty:
+  // that erased the restricted studios' `scratch/**` carve-out (#3373), collapsing `hasScopedWriteCarveOut`
+  // to false and denying the bare write tools — leaving a designer unable to stage the payload file that
+  // `bsc ui set --file` exists to read. Mirrors `scopeWriteGlobs` (writeScope.ts), which floors it the same
+  // way so the launch settings and the bsc-scope hook agree on one boundary.
   const roleGlobs = s.paneRoleGlobs[paneId] ?? [];
-  const cap = role ? roleCapability(role, { writeGlobs: roleGlobs }) : null;
+  const cap = role ? roleCapability(role, roleGlobs.length ? { writeGlobs: roleGlobs } : {}) : null;
   const write = cap ? roleWriteRules(cap) : { allow: [], deny: [] };
   // Agents gate (#255): the profile assigned to this pane is the SOLE source of auto-approved
   // commands (#1457), plus its per-tool/path rules, on top of the role gate (deny wins for both).
@@ -160,19 +221,35 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
   // Per-agent flow (#297): narrow the GitHub-propagation writes per the stream's push policy + gate.
   const paneFlow = s.paneFlows[paneId];
   const flowRules = flowPermissionRules(paneFlow);
-  const allowedCommands = prof?.allowedCommands ?? [];
+  // The role's fixed store-CLI surface (#3095): a curator pane always auto-runs `bsc ui`/`bsc graph`
+  // (its harvest + graph-optimize channels) whether or not a profile assigned them. Empty for every
+  // other role, so this is a no-op elsewhere.
+  const restrictedCommands = restrictedRoleCommands(role);
+  const allowedCommands = [...(prof?.allowedCommands ?? []), ...restrictedCommands];
+  // Tighten a role with a fixed store surface to `restrictedAllow` (#3098): suppress the Bash baseline
+  // tiers entirely (git/build/read-only), so the curator's WHOLE auto-run command surface is exactly
+  // the two store CLIs above — mirroring the standing-tab designer/librarian/architect. Bash-only:
+  // the verbatim tool rules (Read/Edit/…) still apply, so `Read` (added below) keeps the curator able
+  // to read generated source to `bsc ui set` it.
+  const restrictedAllow = restrictedCommands.length > 0;
   // Shell posture (#1572): the profile's bash tier scales the backend's auto-approve baseline.
   // No profile ⇒ the broad default ("allow").
   const bashPosture = prof?.bashPosture ?? "allow";
   // Denied commands (#304/#1916): user + role (minus the flow-granted pushes) + profile denies — the
   // SAME set wired into `$BSC_DENY_BASH` for the bsc-deny hook (see sessionDeniedCommands).
   const denied = sessionDeniedCommands(s, paneId);
-  const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? [])];
+  // A restricted role (#3098) suppresses the Bash baselines, so grant the `Read` tool explicitly —
+  // the curator reads generated component source before harvesting it via `bsc ui set`. Mirrors the
+  // designer hook's `[...write.allow, "Read"]`. The backend dedupes, so a redundant Read is harmless.
+  const allowToolRules = [...write.allow, ...(prof?.allowToolRules ?? []), ...(restrictedAllow ? ["Read"] : [])];
   // Confinement self-protection (#1916): the agent must not disable the FS-confinement hook or its own
-  // permission set by editing them. Deny the file-write tools on `.claude/**` — the in-repo config the
+  // permission set by editing them. Deny file writes on `.claude/**` — the in-repo config the
   // bsc-confine hook itself can't catch (it only blocks paths OUTSIDE the repo root). The app stays
   // authoritative regardless (it re-writes `.claude/settings.json` at every launch). On EVERY pane.
-  const confinementConfigDeny = ["Edit", "Write", "MultiEdit", "NotebookEdit"].map((t) => `${t}(.claude/**)`);
+  // ONE `Edit(.claude/**)` rule (#3534): Claude Code matches file-permission rules on the Edit tool
+  // alone and it covers every file-editing tool — the former `Write/MultiEdit/NotebookEdit(.claude/**)`
+  // rules were NEVER enforced (MultiEdit is not even a tool), so this deny was silently a no-op.
+  const confinementConfigDeny = [editPathRule(".claude/**")];
   // Worker sub-agent block (#1036): deny the Task tool for workers. Deny wins over any profile allow.
   const denyToolRules = [...confinementConfigDeny, ...write.deny, ...(cap ? roleDeniedTools(cap) : []), ...(prof?.denyToolRules ?? []), ...flowRules.denyToolRules];
   const askToolRules = flowRules.askToolRules;
@@ -193,8 +270,17 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
   const skills = toSkillCfgs(skillDefs);
   // Agents audit (#257): on a gated pane (role or profile assigned), install PreToolUse hooks: log
   // each tool attempt (bsc-audit), time MCP calls (bsc-mcp), enforce the write-scope gate (bsc-scope,
-  // #1297), the tainted-turn gate (bsc-taint, #1167), and the worker-only Stop bounce (bsc-defer,
-  // #369). FS confinement (bsc-confine, #158) is NOT gated — it's defaulted onto every pane below (#1916).
+  // #1297), the tainted-turn gate (bsc-taint, #1167), and a Stop bounce that keeps a session going —
+  // the worker's issue→PR bounce (bsc-defer, #369) or, for a restricted STUDIO session, the studio
+  // keep-going bounce (bsc-continue, #3547) so the designer/librarian/etc. power through clear guided
+  // work instead of pausing to self-assess between items. Both bounce ONCE per stop (`stop_hook_active`),
+  // so a genuinely-finished session is never trapped. FS confinement (bsc-confine, #158) is NOT gated —
+  // it's defaulted onto every pane below (#1916).
+  const stopBounce = role === "worker"
+    ? [{ event: "Stop", matcher: "", command: "bsc-defer" }]
+    : isRestrictedRole(role)
+      ? [{ event: "Stop", matcher: "", command: "bsc-continue" }]
+      : [];
   const gatedHooks = (cap || prof)
     ? [...hooks,
        { event: "PreToolUse", matcher: "", command: "bsc-audit" },
@@ -202,7 +288,7 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
        { event: "PostToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
        { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit", command: "bsc-scope" },
        { event: "PreToolUse", matcher: "", command: "bsc-taint" },
-       ...(role === "worker" ? [{ event: "Stop", matcher: "", command: "bsc-defer" }] : [])]
+       ...stopBounce]
     : hooks;
   // Skill telemetry (#406) follows the SKILLS, not the role gate: install the bsc-skill Pre/Post hooks
   // whenever skills are present (incl. an ungated console with a per-session skill, #1056).
@@ -227,9 +313,11 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
     // hooks still fire+block). The foundation the deny-list switch builds on; reads `$BSC_DENY_BASH`
     // for the per-session role/user denies wired in at the bypass flip.
     { event: "PreToolUse", matcher: "Bash", command: "bsc-deny" },
-    { event: "UserPromptSubmit", matcher: "", command: "bsc-activity run" },
-    { event: "Stop", matcher: "", command: "bsc-activity idle" },
-    { event: "SubagentStop", matcher: "", command: "bsc-activity idle" },
+    // Turn accounting (bsc-activity + bsc-tokens, #1184/#416) — the un-gated observability floor, from
+    // the ONE shared constant every launch path spreads (#3452 fleet / #3455 planner both silently lost
+    // this set when it was inlined per-path). bsc-tokens is the ONLY per-session token source, so it
+    // must fire on Stop even for a worker whose `bsc-defer` blocks the stop (all hooks still run).
+    ...TURN_ACCOUNTING_HOOKS,
   ];
   return {
     allowedCommands,
@@ -241,9 +329,20 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
     askToolRules,
     skills,
     bashPosture,
+    // Restricted allow-list (#3098): when set, `build_allow_rules` emits ONLY the wrapped
+    // allowedCommands — no Bash baselines/mandatory tier. True only for a role with a fixed store
+    // surface (curator today); false-y leaves the normal posture-scaled baselines intact.
+    restrictedAllow,
     // Permission posture (#1916): bypass=true ⇒ deny-list (auto-run; the PreToolUse hooks gate); false ⇒
     // allow-list (Claude's `default` mode — require approval). User-toggled in Settings; default true.
-    bypass: s.bypassPermissions,
+    // Two role/session-derived carve-outs override the global toggle in OPPOSITE directions:
+    //   • A full-capability app-owned session (the DEBUG session, #3326) is ALWAYS bypass — it's the
+    //     unrestricted maintenance session by definition (preserves its old bespoke posture).
+    //   • A RESTRICTED role (designer/librarian/architect/curator) is NEVER bypass: bypass auto-runs
+    //     everything and ignores `permissions.deny`, which would hand a session deliberately confined to
+    //     its store CLI (the designer is `bsc ui`-only) a general shell. The confinement travels with the
+    //     role, so it holds on every launch path.
+    bypass: isFullCapabilitySession(paneId) ? true : isRestrictedRole(role) ? false : s.bypassPermissions,
   };
 }
 
@@ -305,5 +404,11 @@ export function resolveEffectiveInitCmd(
  */
 export function resolveStartupPromptFreshOnly(s: AppStore, paneId: string, isClaudeProvider: boolean): boolean {
   if (!isClaudeProvider || isManualPaneId(paneId)) return false;
-  return !!s.restoreRequested[paneId];
+  // EVERY app-owned studio session (the DEBUG session #3326, and the designer/librarian/architect since
+  // #3357) resumes with `claude --continue` across app restarts, so its baked charter/persona kickoff must
+  // be fresh-only — delivered on the first launch (no history) but suppressed when it resumes an existing
+  // conversation, so returning isn't re-greeted (or, worse, re-instructed). The backend's
+  // `fresh_only && has_history` guard makes this exact: a genuinely fresh launch still fires. Reproduces
+  // the old `useScreenSession` launches' hardcoded `startupPromptFreshOnly: true`.
+  return !!s.restoreRequested[paneId] || isFullCapabilitySession(paneId) || isStudioSessionPaneId(paneId);
 }

@@ -1,9 +1,9 @@
 // Commit a DRAFT project's title edit (#1222) — the pure guard, extracted from Planning.tsx so
 // it's unit-testable. The draft record (localDraftProjects[key].title, persisted) is the source of
 // truth a reopen reads, so persisting the edit there is what makes it survive. The FROZEN key is
-// kept — the new title is a display name; the on-disk folder doesn't move (stable-id refactor).
+// kept — renames are display-only (#2409): the on-disk folder keeps its birth-slug.
 
-import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
+import { projectSlug } from "@/shared/lib/core/projectPaths";
 
 export type DraftCommit =
   | { kind: "revert" }                       // empty → restore the saved title
@@ -21,7 +21,9 @@ export function planDraftCommit(raw: string, saved: string, otherKeys: ReadonlyS
   const next = raw.trim();
   if (!next) return { kind: "revert" };
   if (next === saved) return { kind: "noop" };
-  if (otherKeys.has(sanitizeProjectKey(next))) {
+  // Keys are name-derived slugs (#2409): a title whose slug lands on another project's key would
+  // make two names resolve to ONE hub at reopen — block it here.
+  if (otherKeys.has(projectSlug(next))) {
     return { kind: "error", message: "Another project already uses that name." };
   }
   return { kind: "commit", title: next };

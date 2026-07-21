@@ -1,7 +1,7 @@
 use crate::StrErr;
 use super::prompts::*;
 use super::directives::*;
-use crate::{PerfSpan, sanitize_project_key, project_dir, repo_dir};
+use crate::{PerfSpan, sanitize_project_key, planning_cwd, repo_dir};
 
 #[derive(serde::Deserialize)]
 pub(crate) struct AutomationData {
@@ -81,15 +81,18 @@ pub(crate) fn setup_workspaces_inner(args: SetupWorkspacesArgs) -> Result<Worksp
     } = args;
     let _perf = PerfSpan::new("setup_workspaces");
     crate::session::claude_config::sanitize_claude_config();
-    // Planner session CWD = the project hub (`projects/<key>`), holding plan
-    // sections + control files FLAT alongside the project's CLAUDE.md.
+    // Planner session CWD (#2997) = the EXISTING hub (`projects/<key>`) when it's already on disk, else
+    // the ephemeral `planning/<key>` workspace, so a never-launched greenfield draft leaves no
+    // half-baked hub behind. Either way it holds the plan sections + control files FLAT alongside the
+    // project's CLAUDE.md, and `materialize_hub` promotes an ephemeral workspace into the real hub at
+    // fleet launch.
     let safe_key     = sanitize_project_key(&project_key);
     // A blank key would resolve the project dir to `projects/` itself and scatter
     // `.claude/` and the plan sections across the parent — refuse it instead.
     if safe_key.is_empty() {
         return Err("setup_workspaces: empty project_key".to_string());
     }
-    let planning_dir = project_dir(&project_key);
+    let planning_dir = planning_cwd(&project_key);
 
     // Runtime-fault instrumentation (#2262, epic #2258): mint + persist the durable per-project ingest
     // token at GENERATION so it exists before any session launches. The session env wiring then exports
@@ -285,7 +288,10 @@ pub(crate) fn compute_context_signature(repo_full_names: Vec<String>, enabled_st
 /// Returns an empty string when the file doesn't exist yet.
 #[tauri::command]
 pub(crate) fn get_context_signature(project_key: String) -> String {
-    let path = project_dir(&project_key).join("context_signature.txt");
+    // Read from the SAME resolver `setup_workspaces` wrote through (#2997), so the recorded baseline
+    // and the actual planner mount can't diverge — an ephemeral-planning draft's signature lives in
+    // `planning/<key>`, a materialized hub's in `projects/<key>`.
+    let path = planning_cwd(&project_key).join("context_signature.txt");
     std::fs::read_to_string(path).unwrap_or_default()
 }
 

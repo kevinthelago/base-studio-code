@@ -31,6 +31,8 @@ const stageRegistry = overlayFile("planner/stage-registry.json", stageRegistryEm
  *  but exists in the union so other stages and signal consumers can reference it by name. */
 export type StageId =
   | "discovery"
+  | "market"
+  | "transformations"
   | "deployment"
   | "source"
   | "features"
@@ -75,9 +77,9 @@ export interface PlanStageState {
   /** Whether a migration source pipeline is active for this project — drives the source
    *  stage's applicability. False for projects with no data migration component. */
   migrationSourceEnabled: boolean;
-  /** Signals derived from datamodel.json (written by the source-experience stream).
-   *  Absent artifact reads as all-false. */
-  datamodel: {
+  /** Data Model progress signals, derived from the live source-scan state (#1446 — the canonical
+   *  Data Model itself lives in the project's DuckDB store). Absent signals read as all-false. */
+  dataModel: {
     sourceReachable: boolean;
     modelInferred: boolean;
     schemaRefined: boolean;
@@ -161,7 +163,7 @@ export function buildPlanStageState(p: Partial<PlanStageState> = {}): PlanStageS
     automationsAck: p.automationsAck ?? false,
     skillsAck: p.skillsAck ?? false,
     migrationSourceEnabled: p.migrationSourceEnabled ?? false,
-    datamodel: p.datamodel ?? {
+    dataModel: p.dataModel ?? {
       sourceReachable: false,
       modelInferred: false,
       schemaRefined: false,

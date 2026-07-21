@@ -11,8 +11,12 @@ function fakeVp(over: Partial<GraphViewport> = {}): GraphViewport {
     setVp: () => {},
     onCanvasDown: () => {},
     fit: () => {},
+    centerOn: () => {},
     zoomBy: () => {},
     zoomTo: () => {},
+    zoomToCentered: () => {},
+    panBy: () => {},
+    zoomAtClient: () => {},
     dragMoved: { current: false },
     worldTransform: { transform: "translate(0px,0px) scale(1)" },
     ...over,
@@ -49,6 +53,7 @@ describe("GraphCanvas (#2208)", () => {
     expect(worldLayer.style.width).toBe("800px");
     expect(worldLayer.style.height).toBe("600px");
     expect(worldLayer.style.transform).toBe("translate(0px,0px) scale(1)");
+    expect(worldLayer.style.userSelect).toBe("none"); // no text-selecting nodes/edges on drag (#2527)
   });
 
   it("omits the rail and inspector when not provided", () => {
@@ -59,6 +64,21 @@ describe("GraphCanvas (#2208)", () => {
     );
     expect(screen.queryByText("RAIL")).toBeNull();
     expect(screen.queryByText("INSPECTOR")).toBeNull();
+  });
+
+  it("renders the dock strip below the canvas when provided, and nothing when absent", () => {
+    const { rerender } = render(
+      <GraphCanvas vp={fakeVp()} world={{ w: 10, h: 10 }} toolbar={null}>
+        <span>WORLD</span>
+      </GraphCanvas>,
+    );
+    expect(screen.queryByText("DOCK")).toBeNull();
+    rerender(
+      <GraphCanvas vp={fakeVp()} world={{ w: 10, h: 10 }} toolbar={null} dock={<span>DOCK</span>}>
+        <span>WORLD</span>
+      </GraphCanvas>,
+    );
+    expect(screen.getByText("DOCK")).toBeInTheDocument();
   });
 
   it("renders drag-resize splitters when the rail/inspector are resizable", () => {

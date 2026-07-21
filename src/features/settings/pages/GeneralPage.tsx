@@ -6,12 +6,14 @@ import { TerminalFontSizeCard } from "../cards/TerminalFontSizeCard";
 import { AccentColorCard } from "../cards/AccentColorCard";
 import { ThemeCard } from "../cards/ThemeCard";
 import { KitThemeCard } from "../cards/KitThemeCard";
+import { SoundNotificationsCard } from "../cards/SoundNotificationsCard";
 import { KeyboardCard } from "../cards/KeyboardCard";
 import { AchievementsCard } from "../cards/AchievementsCard";
 import { DiagnosticsCard } from "../cards/DiagnosticsCard";
 import { SandboxDependencyCard } from "../cards/SandboxDependencyCard";
 import { ConfigBundleCard } from "../cards/ConfigBundleCard";
 import { DemoStateCard } from "../cards/DemoStateCard";
+import { StudioCard } from "../cards/StudioCard";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { SettingsPageHeader, SettingsSubHeader as Sub } from "./SettingsPageHeader";
@@ -31,6 +33,7 @@ export function GeneralPage() {
 
       <Sub>Configuration</Sub>
       <ConfigBundleCard />
+      <StudioCard />
       <DemoStateCard />
 
       <Sub>Required dependencies</Sub>
@@ -47,6 +50,7 @@ export function GeneralPage() {
       <AccentColorCard />
       <ThemeCard />
       <KitThemeCard />
+      <SoundNotificationsCard />
 
       <Sub>Keyboard</Sub>
       <KeyboardCard />

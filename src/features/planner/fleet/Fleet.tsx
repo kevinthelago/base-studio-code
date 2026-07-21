@@ -5,16 +5,17 @@
 // accounting (#416) and show an explicit note.
 import { useMemo, useState } from "react";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
-import { Button } from "@/shared/ui/controls/Button";
-import { Donut, Bars, LineArea, RangeToggle, Legend, StatCard, CardHead, Avatar, useTip } from "@/shared/ui/charts";
+import { Donut, Bars, LineArea, RangeToggle, Legend, CardHead, Avatar, useTip } from "@/shared/ui/charts";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Card } from "@/shared/ui/data/Card";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
-import { Skeleton, SkeletonChart } from "@/shared/ui/feedback/Skeleton";
+import { SkeletonChart } from "@/shared/ui/feedback/Skeleton";
+import { CardEmpty, SkeletonRows } from "@/shared/ui/feedback/CardStates";
+import { KitRenderer } from "@/shared/ui/spec";
+import { FLEET_PAGE_SPEC } from "./fleetPageSpec";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
@@ -27,20 +28,6 @@ import type { LiveWorker } from "@/shared/lib/fleet/fleetLive";
 import type { ThroughputSlice } from "@/shared/lib/github/fleetGithub";
 
 const GRID = "150px 96px 1fr 70px 22px";
-
-/** A compact empty state for a card body (#2234) — the card frame + head stay; the body shows this. */
-function CardEmpty({ icon = "○", title, hint }: { icon?: React.ReactNode; title: string; hint?: string }) {
-  return <EmptyState size="sm" iconVariant="dashed" icon={icon} title={title} description={hint} style={{ padding: "20px 12px" }} />;
-}
-
-/** A stack of shimmer rows — a loading placeholder for a list/table/chart card body (#2234). */
-function SkeletonRows({ rows = 4, h = 30 }: { rows?: number; h?: number }) {
-  return (
-    <Stack gap={6}>
-      {Array.from({ length: rows }).map((_, i) => <Skeleton key={i} h={h} radius={6} />)}
-    </Stack>
-  );
-}
 
 function WorkerBoard({ workers, onOpen }: { workers: LiveWorker[]; onOpen: (w: LiveWorker) => void }) {
   return (
@@ -216,53 +203,43 @@ export function Fleet() {
     return <WorkerDetail worker={selected} onBack={() => setSelected(null)} />;
   }
 
-  // The card layout ALWAYS renders (#2234) — each card shows a loading skeleton or a compact empty
-  // state, rather than a page-wide blank screen when no fleet is running.
-  return (
-    <section className="an-page">
-      <Box className="an-wrap">
-        <Row align="start" gap={14} style={{ marginBottom: 14 }}>
-          <Box style={{ flex: 1 }}>
-            <Text as="h2" mono size={20} weight={600} style={{ margin: 0 }}>Fleet</Text>
-            <Text as="div" size={12} tone="muted" style={{ marginTop: 4 }}>
-              {hasFleet
-                ? <>{activeProjectName ? `${activeProjectName} · ` : ""}{kpis.total} worker{kpis.total === 1 ? "" : "s"} · {kpis.active} running · {kpis.needAttention} need attention{kpis.maintenance > 0 ? ` · ${kpis.maintenance} parked` : ""}</>
-                : "No fleet running — launch one from a project's plan to populate these panels."}
-            </Text>
-          </Box>
-          <Button variant="ghost" onClick={() => setRefreshNonce(n => n + 1)} disabled={gh.loading}>
-            {gh.loading ? "refreshing…" : "↻ refresh"}
-          </Button>
-          <Button title="Launch the fleet from this project's plan"
-            onClick={() => { setProjectsPageMode("projects"); setProjectsView("planning"); }}>
-            launch worker
-          </Button>
-        </Row>
+  // The page's STRUCTURE renders from a validated node tree (#3504) — the header, the six-tile stat
+  // grid and the 1.6fr/1fr split live in `fleetPageSpec.ts`, not here. This host stays code because it
+  // owns what a spec cannot: the live hooks, the GitHub query, and the `selected` routing above.
+  //
+  // `values` feeds the tiles + header prose; `slots` supplies the nine panels, which own hooks and app
+  // state of their own. The card layout ALWAYS renders (#2234) — each panel shows a loading skeleton or
+  // a compact empty state, rather than a page-wide blank screen when no fleet is running.
+  const values = {
+    summary: hasFleet
+      ? `${activeProjectName ? `${activeProjectName} · ` : ""}${kpis.total} worker${kpis.total === 1 ? "" : "s"} · ${kpis.active} running · ${kpis.needAttention} need attention${kpis.maintenance > 0 ? ` · ${kpis.maintenance} parked` : ""}`
+      : "No fleet running — launch one from a project's plan to populate these panels.",
+    refreshLabel: gh.loading ? "refreshing…" : "↻ refresh",
+    loading: gh.loading,
+    activeOfTotal: `${kpis.active}/${kpis.total}`,
+    needAttention: String(kpis.needAttention),
+    attentionTone: kpis.needAttention > 0 ? "danger" : "fg",
+    idle: String(kpis.idle),
+    landedToday: String(gh.kpis.landedToday),
+    prsMergedWeek: String(gh.kpis.prsMergedWeek),
+    avgLand: gh.kpis.avgLandH ? `${gh.kpis.avgLandH}h` : "—",
+  };
 
-        <Box className="statgrid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
-          <StatCard k="active workers" v={`${kpis.active}/${kpis.total}`} sub="running now" tone="accent" />
-          <StatCard k="need attention" v={String(kpis.needAttention)} sub="blocked · asking · waiting" tone={kpis.needAttention > 0 ? "danger" : "fg"} />
-          <StatCard k="idle" v={String(kpis.idle)} sub="at rest" tone="fg" />
-          <StatCard k="landed today" v={String(gh.kpis.landedToday)} sub="issues closed" tone="success" loading={gh.loading} />
-          <StatCard k="PRs merged · 7d" v={String(gh.kpis.prsMergedWeek)} sub="across the fleet's repos" tone="info" loading={gh.loading} />
-          <StatCard k="time-to-land" v={gh.kpis.avgLandH ? `${gh.kpis.avgLandH}h` : "—"} sub="open → merge median" tone="fg" loading={gh.loading} />
-        </Box>
+  const slots = {
+    workerBoard: <WorkerBoard workers={workers} onOpen={setSelected} />,
+    fleetHealth: <FleetHealth workers={workers} />,
+    throughput: <Throughput gh={gh} />,
+    timeToLand: <TimeToLand gh={gh} />,
+    fleetStatus: <FleetStatus counts={counts} total={kpis.total} />,
+    costEnergy: <CostEnergy workers={workers} />,
+    fleetLessons: <FleetLessons />,
+    mergeQueue: <MergeQueue gh={gh} />,
+  };
 
-        <Grid cols="1.6fr 1fr" gap={14}>
-          <Stack gap={14} style={{ minWidth: 0 }}>
-            <WorkerBoard workers={workers} onOpen={setSelected} />
-            <FleetHealth workers={workers} />
-            <Throughput gh={gh} />
-            <TimeToLand gh={gh} />
-          </Stack>
-          <Stack gap={14} style={{ minWidth: 0 }}>
-            <FleetStatus counts={counts} total={kpis.total} />
-            <CostEnergy workers={workers} />
-            <FleetLessons />
-            <MergeQueue gh={gh} />
-          </Stack>
-        </Grid>
-      </Box>
-    </section>
-  );
+  const on = {
+    refresh: () => setRefreshNonce(n => n + 1),
+    launchWorker: () => { setProjectsPageMode("projects"); setProjectsView("planning"); },
+  };
+
+  return <KitRenderer node={FLEET_PAGE_SPEC} values={values} slots={slots} on={on} />;
 }

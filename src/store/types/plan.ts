@@ -9,9 +9,9 @@ import type { StageConfig, StageId } from "@/features/planner/stages/planStages"
 import type { StageRunState } from "@/features/planner/preview/stageRun";
 import type { Blueprint, BlueprintStage } from "@/features/planner/stages/blueprints";
 import type { DeployConfig } from "@/features/planner/lib/deployConfig";
+import type { MarketConfig } from "@/features/planner/lib/marketConfig";
+import type { TransformationRow } from "@/features/planner/lib/transformations";
 import type { SourceConfig } from "@/features/planner/lib/sourceConfig";
-import type { IntegrationConfig } from "@/features/planner/lib/integrationConfig";
-import type { DataModel } from "@/features/planner/data/dataModel";
 import type { IntegrationStrategy } from "@/features/planner/lib/integrationStrategy";
 import type { DirectorDrive } from "@/features/planner/fleet/directorDrive";
 
@@ -59,16 +59,21 @@ export interface PlanState {
    *  stage pane; the `deploymentDefined` gate signal derives from it. */
   planDeployConfig: Record<string, DeployConfig>;
   setPlanDeployConfig: (projectId: string, cfg: DeployConfig) => void;
+  /** Per-project market assessment (#2430) — the scored desk-research rubric the planner records
+   *  via `bsc plan market set` (reflected from plan.db by the stage poll); the `marketDefined`
+   *  gate signal derives from it. */
+  planMarketConfig: Record<string, MarketConfig>;
+  setPlanMarketConfig: (projectId: string, cfg: MarketConfig) => void;
+  /** Per-project transformations list (#2509) — the verb-shaped modification rows the planner
+   *  records via `bsc plan transformation add` (reflected from plan.db by the stage poll); the
+   *  `transformationsConfirmed` gate signal derives from it. */
+  planTransformations: Record<string, TransformationRow[]>;
+  setPlanTransformations: (projectId: string, rows: TransformationRow[]) => void;
   /** Per-project migration SOURCE config (#source-pane) — the legacy systems a project migrates
    *  from, declared + connected read-only in the Source stage pane; the `sourcesConnected` gate
    *  signal derives from it. Secret credentials are NEVER stored here (they live in the OS keychain). */
   planSourceConfig: Record<string, SourceConfig>;
   setPlanSourceConfig: (projectId: string, cfg: SourceConfig) => void;
-  /** Per-project Integration config (#1207) — the destination/sink + sync strategy the Integration
-   *  blueprint's Destination and Sync stages edit; the `destinationDefined` / `syncDefined` gate
-   *  signals derive from it. */
-  planIntegrationConfig: Record<string, IntegrationConfig>;
-  setPlanIntegrationConfig: (projectId: string, cfg: IntegrationConfig) => void;
   /** Per-project DEFAULT GitHub repo visibility for new repos at publish (#…). Absent ⇒ false ⇒
    *  PRIVATE; a per-repo override (`repoPublic`) wins over it. Set the default for the project (and
    *  the fallback for repos with no override). */
@@ -119,22 +124,6 @@ export interface PlanState {
   blueprints:         Blueprint[];
   activeBlueprintId:  string;
   setActiveBlueprint: (id: string) => void;
-  // Canonical Data Models (#780) — the schema library the data blueprints map into and
-  // the build side later generates over. Seeded with a starter CRM model; persisted.
-  dataModels:         DataModel[];
-  activeDataModelId:  string;
-  setActiveDataModel: (id: string) => void;
-  /** Add a new empty Data Model; returns its id. */
-  addDataModel:       () => string;
-  /** Replace a model wholesale (the editor computes the next model from the pure transforms). */
-  setDataModel:       (id: string, model: DataModel) => void;
-  /** Delete a model; if it was active, the active id falls back to the first remaining. */
-  removeDataModel:    (id: string) => void;
-  /** Per-project, per-entity load verification (#ls-reconcile-ui).
-   *  projectKey → entityKey → verified. A verified load has passed the quality gate and
-   *  is ready for cutover; persisted so it survives app restarts. */
-  loadVerified:       Record<string, Record<string, boolean>>;
-  setLoadVerified:    (projectKey: string, entity: string, verified: boolean) => void;
   // Which blueprint each project was last seeded/reset from (#647), keyed by project key.
   // Lets the planner detect when the selected blueprint differs from the project's and
   // offer to reset. Set on first seed + on an explicit blueprint switch.

@@ -4,29 +4,36 @@
 @keyframes glance-dashmove { to { stroke-dashoffset: -26; } }
 @keyframes glance-softpulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
 
-/* Node → live-terminal morph (#2401): a node grows in place into its CLI session. JS sets the panel's
-   geometry (left/top/width/height) from the node's rect → an expanded rect; the CSS animates that change
-   (never a scale, so the terminal stays crisp). The body cross-fades in on the second half of the grow. */
-.glance-morph { position: fixed; inset: 0; z-index: 60; }
-.glance-morph-scrim {
-  position: absolute; inset: 0; background: rgba(6, 9, 13, .5); backdrop-filter: blur(2px);
-  opacity: 0; transition: opacity .26s cubic-bezier(.22, .61, .36, 1);
-}
-.glance-morph.open .glance-morph-scrim { opacity: 1; }
-.glance-morph-panel {
-  position: absolute; display: flex; overflow: hidden;
+/* The fenced UI-KIT band (#3007) — the kit nodes lifted into their own zone across the top of the graph,
+   mirroring the Design Studio composition swimlanes (.ds-lane-*). The fill/stroke colour (KIT_COLOR) is
+   set inline on the elements; these rules keep the treatment SUBTLE so the band reads as a backdrop, not
+   foreground chrome: a faint cyan wash, a dashed divider, and a small uppercase mono label. */
+.glance-kit-band-bg { opacity: .045; }
+.glance-kit-band-divider { stroke-width: 1; stroke-dasharray: 5 7; opacity: .5; }
+.glance-kit-band-label { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; opacity: .7; }
+
+/* Node → live-terminal card (#2401/#2534): a node grows in place into its CLI session, IN the graph — a
+   WORLD-LAYER child, so it pans/zooms/scales with the canvas (no portal, no scrim; the graph stays fully
+   visible + interactive). JS sets the card's WORLD geometry (left/top/width/height) from the node box →
+   an expanded box; CSS animates that change. The body cross-fades in as the card grows. */
+.glance-card {
+  overflow: hidden;
   background: var(--bg-panel); border: 1px solid var(--border); border-radius: 12px;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
+  /* A subtle graph-level lift, NOT a floating-modal drop (#2659): the panel reads as embedded in the
+     graph (which it is — it pans/zooms with the world layer), not a screen hovering on top. */
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .32);
+  /* The .4s cubic-bezier here is mirrored by MORPH_EASE in GlanceCanvas.tsx — the neighbour nodes part
+     off the SAME curve/duration, so the panel grow + the graph parting are one motion (#2671). Keep in sync. */
   transition: left .4s cubic-bezier(.22, .61, .36, 1), top .4s cubic-bezier(.22, .61, .36, 1),
               width .4s cubic-bezier(.22, .61, .36, 1), height .4s cubic-bezier(.22, .61, .36, 1),
               border-color .4s;
 }
-.glance-morph.open .glance-morph-panel { border-color: var(--border-strong, var(--border)); }
-.glance-morph-body {
-  flex: 1; min-width: 0; min-height: 0; display: flex;
+.glance-card.open { border-color: var(--border-strong, var(--border)); }
+.glance-card-body {
+  width: 100%; height: 100%; min-width: 0; min-height: 0; display: flex;
   opacity: 0; transition: opacity .22s .14s cubic-bezier(.22, .61, .36, 1);
 }
-.glance-morph.open .glance-morph-body { opacity: 1; }
+.glance-card.open .glance-card-body { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
-  .glance-morph-scrim, .glance-morph-panel, .glance-morph-body { transition-duration: .001ms !important; }
+  .glance-card, .glance-card-body { transition-duration: .001ms !important; }
 }

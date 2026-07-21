@@ -11,18 +11,65 @@ describe("persona built-ins (#2094 / externalized #2185)", () => {
 
   it("assembles the full packaged set from the @data/personas JSON, ordered", () => {
     const built = makeBuiltinPersonas();
-    // The nine packaged personas are all present, one per role (documentor now its own role, #1555).
+    // The packaged personas are all present, one per role (documentor #1555, designer #2471) plus the
+    // auditor persona (#2578 — a juror in a standing iteration loop), the marketer (#2431), the team
+    // architect (#2755 — the Teams Studio's teams/personas authoring session), and the knowledge
+    // librarian (#2787 — the Algorithms tab's knowledge-store session).
     for (const id of [
       "persona-planner", "persona-worker", "persona-director", "persona-triage", "persona-reviewer",
-      "persona-tester", "persona-issuer", "persona-juror", "persona-documentor",
+      "persona-tester", "persona-issuer", "persona-juror", "persona-auditor", "persona-marketer", "persona-documentor", "persona-designer", "persona-architect", "persona-librarian", "persona-debugger",
     ]) {
       expect(built.some((p) => p.id === id)).toBe(true);
     }
-    // Ordered by each def's `order` field: planner leads, documentor trails.
+    // Ordered by each def's `order` field: planner leads, the debugger trails (order 13, after the librarian #3322).
     expect(built[0]?.id).toBe("persona-planner");
-    expect(built[built.length - 1]?.id).toBe("persona-documentor");
+    expect(built[built.length - 1]?.id).toBe("persona-debugger");
     // `order`/`protocolFile` are load-time-only — they must not leak onto the assembled Persona.
     expect(built.every((p) => !("order" in p) && !("protocolFile" in p))).toBe(true);
+  });
+
+  it("the architect persona (#2755) rides the architect role and kicks off onto bsc teams + bsc persona", () => {
+    const architect = makeBuiltinPersonas().find((p) => p.id === "persona-architect")!;
+    expect(architect.role).toBe("architect");
+    expect(architect.builtin).toBe(true);
+    // The start prompt IS the session kickoff (baked into the launch arg by useArchitectTerminal):
+    // it must anchor the session to its two command surfaces and the discover-before-write loop.
+    for (const needle of ["bsc teams", "bsc persona", "bsc teams list", "bsc persona list"]) {
+      expect(architect.startPrompt).toContain(needle);
+    }
+  });
+
+  it("the designer persona (#2471) rides the designer role and kicks off onto the bsc ui surface", () => {
+    const designer = makeBuiltinPersonas().find((p) => p.id === "persona-designer")!;
+    expect(designer.role).toBe("designer");
+    expect(designer.builtin).toBe(true);
+    // The start prompt IS the session kickoff (baked into the launch arg by useDesignerTerminal):
+    // it must anchor the session to the bsc ui contract + CRUD and the deprecated alias.
+    for (const needle of ["bsc ui", "bsc ui schema", "bsc ui validate", "bsc component", "composes"]) {
+      expect(designer.startPrompt).toContain(needle);
+    }
+    // ...and teach the graduated bsc ui ladder (#2585): the discover verbs, the per-rung edit
+    // verbs, and the default-to-the-highest-rung rule that makes the runtime design loop reachable.
+    for (const needle of ["ladder", "highest rung", "bsc ui tokens", "bsc ui components", "set-token", "define-variant"]) {
+      expect(designer.startPrompt).toContain(needle);
+    }
+    // ...and, on a bsc ui wall, file a request for the debug session instead of asking for out-of-surface
+    // permissions (#3300 — the designer→debug channel), grounded in the failing command.
+    for (const needle of ["bsc request new", "bsc request list --open", "FAILING COMMAND"]) {
+      expect(designer.startPrompt).toContain(needle);
+    }
+  });
+
+  it("the issuer persona (#2509) decomposes a modification into transformations at intake", () => {
+    const issuer = makeBuiltinPersonas().find((p) => p.id === "persona-issuer")!;
+    expect(issuer.role).toBe("issuer");
+    // Runtime intake wiring: a modification decomposes into transformation rows via the plan.db CLI
+    // (the uniform confirm queue), the user confirms, the issuer never confirms/routes/touches code.
+    for (const needle of ["DECOMPOSE", "transformation", "bsc plan transformation add", "NEVER"]) {
+      expect(issuer.startPrompt).toContain(needle);
+    }
+    // A net-new feature still becomes a single well-formed GitHub issue.
+    expect(issuer.startPrompt).toContain("GitHub issue");
   });
 
   it("resolves the real fleet protocol prose into the worker/director start prompts", () => {

@@ -5,12 +5,14 @@ import { bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import { hashString } from "@/shared/lib/core/hashString";
 import type { AppStore } from "../types";
 import { makeBlueprints, mkStage, cloneStages, blueprintToStageConfig, canSwitchBlueprint, DEFAULT_BLUEPRINT_ID, type Blueprint } from "@/features/planner/stages/blueprints";
+import { packagedUiKitPin, resolveBlueprintUiKit } from "@/features/planner/blueprints/uiKitPin";
+import { packagedSoundKitPin, resolveBlueprintSoundKit } from "@/features/planner/blueprints/soundKitPin";
 import { canonicalTopicKey } from "@/features/planner/stages/planTopics";
 import { emptyFleet } from "@/features/planner/fleet/planFleet";
 import { defaultStageConfig, discoveryOnlyStageConfig } from "@/features/planner/stages/planStages";
-import { seedDataModels, emptyDataModel } from "@/features/planner/data/dataModel";
 import { normalizeFlow, resolveFlow } from "@/features/planner/fleet/agentFlow";
-import { setMapEntry, deleteMapEntry } from "../updateHelpers";
+import { setMapEntry } from "../updateHelpers";
+import { dropProjectScoped } from "./projectScopedMaps";
 /** The `repoPublic` key for one repo within a project (#1227): `<projectKey>::<repoFullName>`,
  *  the repo-scoped convention used elsewhere (e.g. repoStartupPromptDoc). */
 export function repoVisibilityKey(projectKey: string, repoId: string): string {
@@ -33,15 +35,9 @@ export function resolveRepoPublic(
   return reposPublic[projectKey] ?? false;
 }
 
-/** Drop every per-repo entry for `projectKey` from a `<projectKey>::<repoId>`-keyed map (#1227). */
-function dropRepoScoped<T>(m: Record<string, T>, projectKey: string): Record<string, T> {
-  const prefix = `${projectKey}::`;
-  return Object.fromEntries(Object.entries(m).filter(([k]) => !k.startsWith(prefix)));
-}
-
 /** Record the project→kit consumer-index edge for a blueprint bind (#2277). If the blueprint declares a
  *  component `kit`, the seeded project is a CONSUMER of it, so `addKitUsage` files the edge (idempotent by
- *  (projectKey, kitId), write-through to `bsc component usage`). A blueprint with no `kit` is a no-op — so
+ *  (projectKey, kitId), write-through to `bsc ui usage`). A blueprint with no `kit` is a no-op — so
  *  this fills the consumer index automatically at every blueprint bind (creation + switch). */
 function recordBlueprintKit(get: () => AppStore, projectId: string, blueprintId: string): void {
   const kit = get().blueprints.find((b) => b.id === blueprintId)?.kit;
@@ -49,7 +45,7 @@ function recordBlueprintKit(get: () => AppStore, projectId: string, blueprintId:
 }
 
 type PlanSlice = Pick<AppStore,
-  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "markStageConfirmedLocal" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planSourceConfig" | "setPlanSourceConfig" | "planIntegrationConfig" | "setPlanIntegrationConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "markStageSkippedLocal" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "dataModels" | "activeDataModelId" | "setActiveDataModel" | "addDataModel" | "setDataModel" | "removeDataModel" | "loadVerified" | "setLoadVerified" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
+  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "markStageConfirmedLocal" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planMarketConfig" | "setPlanMarketConfig" | "planTransformations" | "setPlanTransformations" | "planSourceConfig" | "setPlanSourceConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "markStageSkippedLocal" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
@@ -80,6 +76,20 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
     set({ planFleet: setMapEntry(get().planFleet, projectId, next) });
     void bscWrite(projectId, ["plan", "fleet", "set"], next);
   };
+  // Shallow-merge a patch into exactly one stream (by id), leaving the rest of the fleet untouched.
+  // The shared body of every single-field stream setter (profile/model/strategy/persona) — a no-op
+  // when the project has no fleet yet. NOT for add/remove (they mutate the stream list) or flow
+  // (its value derives from the stream's own current flow, not a plain field patch).
+  const patchStream = (
+    projectId: string,
+    streamId: string,
+    patch: Partial<AppStore["planFleet"][string]["streams"][number]>,
+  ) =>
+    mutateFleet(projectId, (cur) => {
+      if (!cur) return null;
+      const streams = cur.streams.map((x) => (x.id === streamId ? { ...x, ...patch } : x));
+      return { ...cur, streams };
+    });
   return ({
       configProfiles: [],
       addConfigProfile: (profile) =>
@@ -144,12 +154,15 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       planDeployConfig: {},
       setPlanDeployConfig: (projectId, cfg) =>
         set((s) => ({ planDeployConfig: setMapEntry(s.planDeployConfig, projectId, cfg) })),
+      planMarketConfig: {},
+      setPlanMarketConfig: (projectId, cfg) =>
+        set((s) => ({ planMarketConfig: setMapEntry(s.planMarketConfig, projectId, cfg) })),
+      planTransformations: {},
+      setPlanTransformations: (projectId, rows) =>
+        set((s) => ({ planTransformations: setMapEntry(s.planTransformations, projectId, rows) })),
       planSourceConfig: {},
       setPlanSourceConfig: (projectId, cfg) =>
         set((s) => ({ planSourceConfig: setMapEntry(s.planSourceConfig, projectId, cfg) })),
-      planIntegrationConfig: {},
-      setPlanIntegrationConfig: (projectId, cfg) =>
-        set((s) => ({ planIntegrationConfig: setMapEntry(s.planIntegrationConfig, projectId, cfg) })),
       reposPublic: {},
       setReposPublic: (projectId, isPublic) =>
         set((s) => ({ reposPublic: setMapEntry(s.reposPublic, projectId, isPublic) })),
@@ -255,29 +268,17 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
 
       blueprints: makeBlueprints(),
       activeBlueprintId: DEFAULT_BLUEPRINT_ID,
-      setActiveBlueprint: (id) => set({ activeBlueprintId: id }),
-
-      dataModels: seedDataModels(),
-      activeDataModelId: "dm-crm",
-      setActiveDataModel: (id) => set({ activeDataModelId: id }),
-      addDataModel: () => {
-        const id = `dm-${Date.now().toString(36)}`;
-        set((s) => ({ dataModels: [...s.dataModels, emptyDataModel(id)], activeDataModelId: id }));
-        return id;
+      setActiveBlueprint: (id) => {
+        set({ activeBlueprintId: id });
+        // Opening a pinned blueprint resolves its UI kit against the local store (#2465):
+        // store hit ⇒ zero downloads; miss ⇒ fetch its typed gist, verified before storing.
+        // Fire-and-forget; a blueprint without a pin is a no-op.
+        resolveBlueprintUiKit(get().blueprints.find((b) => b.id === id), get().githubToken);
+        // …and its SOUND kit the same way (#3372) — same store-hit/fetch-verify discipline, one
+        // pillar over. Independent of the UI resolve: either pin can be absent or fail on its own.
+        resolveBlueprintSoundKit(get().blueprints.find((b) => b.id === id), get().githubToken);
       },
-      setDataModel: (id, model) =>
-        set((s) => ({ dataModels: s.dataModels.map((m) => (m.id === id ? { ...model, id } : m)) })),
-      removeDataModel: (id) =>
-        set((s) => {
-          const dataModels = s.dataModels.filter((m) => m.id !== id);
-          const activeDataModelId = s.activeDataModelId === id ? (dataModels[0]?.id ?? "") : s.activeDataModelId;
-          return { dataModels, activeDataModelId };
-        }),
-      loadVerified: {},
-      setLoadVerified: (projectKey, entity, verified) =>
-        set((s) => ({
-          loadVerified: setMapEntry(s.loadVerified, projectKey, { ...(s.loadVerified[projectKey] ?? {}), [entity]: verified }),
-        })),
+
       projectBlueprintId: {},
       setProjectBlueprintId: (projectId, blueprintId) => {
         set((s) => ({ projectBlueprintId: setMapEntry(s.projectBlueprintId, projectId, blueprintId) }));
@@ -292,30 +293,12 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         // every other origin/target (incl. the locked blueprint-author) is refused.
         const current = get().blueprints.find((b) => b.id === get().projectBlueprintId[projectId]);
         if (!canSwitchBlueprint(current, bp)) return;
-        const drop = <T,>(m: Record<string, T>): Record<string, T> => deleteMapEntry(m, projectId);
-        // Full reset: wipe ALL of the project's planning state (everything clearPlan
-        // drops) so no section reads as completed afterwards, then re-seed the stage
-        // config from the new blueprint + record it (#664).
+        // Full reset: wipe ALL of the project's planning state (everything the `applyBlueprint` op
+        // set in projectScopedMaps.ts drops — #2712) so no section reads as completed afterwards,
+        // then re-seed the stage config from the new blueprint + record it (#664). planStageConfig
+        // / projectBlueprintId are re-seeded (not dropped) so they are excluded from the op set.
         set((s) => ({
-          planStages:          drop(s.planStages),
-          planConfirmedStages: drop(s.planConfirmedStages),
-          planAuthoredBlueprint: drop(s.planAuthoredBlueprint),
-          planDeployConfig:      drop(s.planDeployConfig),
-          planSourceConfig:      drop(s.planSourceConfig),
-          planIntegrationConfig: drop(s.planIntegrationConfig),
-          reposPublic:           drop(s.reposPublic),
-          repoPublic:            dropRepoScoped(s.repoPublic, projectId),
-          planInjectionAck:      drop(s.planInjectionAck),
-          planSkippedStages:   drop(s.planSkippedStages),
-          planAutomations:       drop(s.planAutomations),
-          planFleet:             drop(s.planFleet),
-          issueLinks:            drop(s.issueLinks),
-          uiScreens:             drop(s.uiScreens),
-          uiApproved:            drop(s.uiApproved),
-          stagePreview:          drop(s.stagePreview),
-          stageRuns:     drop(s.stageRuns),
-          pinnedContext:         drop(s.pinnedContext),
-          projectLocalRepos:     drop(s.projectLocalRepos),
+          ...dropProjectScoped(s, "applyBlueprint", projectId),
           planStageConfig:    setMapEntry(s.planStageConfig, projectId, blueprintToStageConfig(bp)),
           projectBlueprintId: setMapEntry(s.projectBlueprintId, projectId, blueprintId),
         }));
@@ -327,6 +310,13 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         const bp: Blueprint = {
           id, name: "Untitled blueprint", desc: "New configuration",
           sections: [mkStage("discovery", { expanded: true })],
+          // Default-pin the packaged UI kit (#2465): a NEW blueprint is always fully specified.
+          // The pin resolves against the store's embedded fallback, so it costs zero downloads;
+          // existing blueprints without a pin are untouched (this only runs at creation).
+          uiKit: packagedUiKitPin(),
+          // …and the packaged SOUND kit (#3372): a new blueprint is fully specified on BOTH library
+          // pillars. Resolves against the store's embedded fallback, so it also costs zero downloads.
+          soundKit: packagedSoundKitPin(),
         };
         set((s) => ({ blueprints: [...s.blueprints, bp] }));
         syncBlueprintFile(bp);
@@ -337,7 +327,12 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         set((s) => {
           const src = s.blueprints.find((b) => b.id === id);
           if (!src) return {};
-          const copy: Blueprint = { ...src, id: nid, name: `${src.name} copy`, sections: cloneStages(src.sections) };
+          // Deep-copy the composed sub-models (sections; team #2450) so the duplicate never shares
+          // mutable graph objects with its source — the same fork isolation as forkTeamFromOrg.
+          const copy: Blueprint = {
+            ...src, id: nid, name: `${src.name} copy`, sections: cloneStages(src.sections),
+            ...(src.team ? { team: structuredClone(src.team) } : {}),
+          };
           const i = s.blueprints.findIndex((b) => b.id === id);
           const blueprints = [...s.blueprints];
           blueprints.splice(i + 1, 0, copy);
@@ -366,9 +361,19 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       },
       importBlueprint: (bp) => {
         const id = `bp-${Date.now().toString(36)}`;
-        const created: Blueprint = { ...bp, id, sections: cloneStages(bp.sections) };
+        // Deep-copy the team (#2450) so the imported/library copy never shares graph objects with
+        // the caller's blueprint (e.g. the in-progress authored one it was published from).
+        const created: Blueprint = {
+          ...bp, id, sections: cloneStages(bp.sections),
+          ...(bp.team ? { team: structuredClone(bp.team) } : {}),
+        };
         set((s) => ({ blueprints: [...s.blueprints, created] }));
         syncBlueprintFile(created);
+        // An imported blueprint's UI-kit pin resolves immediately (#2465): already-stored
+        // id@version ⇒ no download; else fetch-verify-store from the pin's source gist.
+        resolveBlueprintUiKit(created, get().githubToken);
+        // Same for its sound-kit pin (#3372).
+        resolveBlueprintSoundKit(created, get().githubToken);
         return id;
       },
 
@@ -426,11 +431,7 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           return { ...cur, streams: cur.streams.filter((x) => x.id !== id) };
         }),
       setPlanAgentStreamProfile: (projectId, streamId, profileId) =>
-        mutateFleet(projectId, (cur) => {
-          if (!cur) return null;
-          const streams = cur.streams.map((x) => (x.id === streamId ? { ...x, profile: profileId ?? undefined } : x));
-          return { ...cur, streams };
-        }),
+        patchStream(projectId, streamId, { profile: profileId ?? undefined }),
       setPlanAgentStreamFlow: (projectId, streamId, patch) =>
         mutateFleet(projectId, (cur) => {
           if (!cur) return null;
@@ -439,27 +440,12 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           return { ...cur, streams };
         }),
       setPlanAgentStreamModel: (projectId, streamId, model) =>
-        mutateFleet(projectId, (cur) => {
-          if (!cur) return null;
-          const streams = cur.streams.map((x) =>
-            x.id === streamId ? { ...x, model: model ?? undefined } : x);
-          return { ...cur, streams };
-        }),
+        patchStream(projectId, streamId, { model: model ?? undefined }),
       setPlanAgentStreamStrategy: (projectId, streamId, strategy) =>
-        mutateFleet(projectId, (cur) => {
-          if (!cur) return null;
-          const streams = cur.streams.map((x) =>
-            x.id === streamId ? { ...x, strategy } : x);
-          return { ...cur, streams };
-        }),
+        patchStream(projectId, streamId, { strategy }),
       // #2094: the persona a stream launches as — resolved at fleet launch to role/prompt/skills/model.
       setPlanAgentStreamPersona: (projectId, streamId, personaId) =>
-        mutateFleet(projectId, (cur) => {
-          if (!cur) return null;
-          const streams = cur.streams.map((x) =>
-            x.id === streamId ? { ...x, persona: personaId ?? undefined } : x);
-          return { ...cur, streams };
-        }),
+        patchStream(projectId, streamId, { persona: personaId ?? undefined }),
       setPlanFleetMeta: (projectId, recommended, reasoning, strategy) =>
         mutateFleet(projectId, (raw) => {
           const cur = raw ?? emptyFleet();
@@ -477,36 +463,11 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         }),
       clearPlanFleet: (projectId) =>
         set((s) => ({ planFleet: setMapEntry(s.planFleet, projectId, emptyFleet()) })),
+      // Drop the single `key` from every map in the `clearPlan` op set (projectScopedMaps.ts,
+      // #2712): the plan section maps, plan-config, rendered artifacts + pipeline run states, pinned
+      // context, and the project's repo links (clear means clear — the repos stage resets, #664).
       clearPlan: (key) =>
-        set((s) => {
-          const omitKey = <T,>(m: Record<string, T>): Record<string, T> => deleteMapEntry(m, key);
-          return {
-          planStages:          omitKey(s.planStages),
-          planConfirmedStages: omitKey(s.planConfirmedStages),
-          planAuthoredBlueprint: omitKey(s.planAuthoredBlueprint),
-          planDeployConfig:      omitKey(s.planDeployConfig),
-          planSourceConfig:      omitKey(s.planSourceConfig),
-          planIntegrationConfig: omitKey(s.planIntegrationConfig),
-          reposPublic:           omitKey(s.reposPublic),
-          repoPublic:            dropRepoScoped(s.repoPublic, key),
-          planInjectionAck:      omitKey(s.planInjectionAck),
-          planSkippedStages:   omitKey(s.planSkippedStages),
-          planAutomations:       omitKey(s.planAutomations),
-          planStageConfig:       omitKey(s.planStageConfig),
-          projectBlueprintId:    omitKey(s.projectBlueprintId),
-          uiScreens:             omitKey(s.uiScreens),
-          uiApproved:            omitKey(s.uiApproved),
-          planFleet:             omitKey(s.planFleet),
-          issueLinks:            omitKey(s.issueLinks),
-          // rendered artifacts + planning context — the UI preview is "the ui" that must
-          // also clear, plus pipeline run states and pinned context (#651).
-          stagePreview:          omitKey(s.stagePreview),
-          stageRuns:     omitKey(s.stageRuns),
-          pinnedContext:         omitKey(s.pinnedContext),
-          // clear means clear: unlink the project's repos so the repos stage resets (#664).
-          projectLocalRepos:     omitKey(s.projectLocalRepos),
-          };
-        }),
+        set((s) => dropProjectScoped(s, "clearPlan", key)),
 
   });
 };

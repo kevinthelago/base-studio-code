@@ -3,8 +3,15 @@
 // `--chip-*` in styles/tokens.css). Applying a theme just sets those CSS custom properties — globally
 // on :root (`applyThemeToRoot`, the accent's mechanism) or scoped on a subtree (`<ThemeScope>`), so
 // every `.card`/`.btn`/`.input`/`.chip` follows without touching any component's markup or a spec's
-// structure. Registry loaded from the ONE source of truth (`@data/ui/themes.json`, also served by
-// `bsc ui theme`). Pure (the root apply takes the element as a param) → unit-testable.
+// structure.
+//
+// TWO sources compose here (#2488): the PACKAGED registry (`@data/ui/themes.json`, also embedded by
+// `bsc ui theme`) is the boot fallback, and the designer-writable theme STORE (hydrated on boot by the
+// components slice via `bsc ui theme list --full`) is the live set once reachable. The hydrate pushes
+// the store's collection in through `setActiveKitThemes`, so every consumer of `themeById`/`themeVars`/
+// `applyThemeToRoot`/`<ThemeScope>` resolves against the SAME set without importing the Zustand store
+// (which would cycle: store → features → shared). Pure (the root apply takes the element as a param)
+// → unit-testable.
 
 import type { CSSProperties } from "react";
 import THEMES_DATA from "@data/ui/themes.json";
@@ -12,21 +19,49 @@ import THEMES_DATA from "@data/ui/themes.json";
 export interface KitTheme {
   /** Stable id persisted in the store + used by `bsc ui theme get`. */
   id: string;
+  /** The DESIGN GROUP this theme belongs to (#2749) — the lowercase `tech` slug a kit carries
+   *  (`react`, `vue`, …). REQUIRED and 1:1 from the theme's side: a theme belongs to exactly one
+   *  design group (a group hosts its own set of themes), so `bsc ui theme set`/`validate` reject a
+   *  theme with no `tech` and the Themes page groups by it. Not optional — a theme is meaningless
+   *  without the group whose token contract it is resolved and emitted against. */
+  tech: string;
   label: string;
   description: string;
+  /** The SURFACE the theme sits on (#2545). Absent ⇒ `"dark"` (the historical base). The Design
+   *  Studio preview reads this to pick its sandbox surface, so light/dark is theme data (seeded in
+   *  `@data/ui/themes.json`, then served by `bsc ui theme`) rather than a hardcoded toggle. */
+  base?: "dark" | "light";
   /** Semantic-token overrides — CSS var name → value. Empty for the base look. */
   vars: Record<string, string>;
 }
 
-/** Every built-in theme, in registry order (`default` first). */
+/** The PACKAGED built-in themes, in registry order (`default` first) — the boot fallback (#2488). */
 export const KIT_THEMES: KitTheme[] = (THEMES_DATA as unknown as { themes: KitTheme[] }).themes;
 
 export const DEFAULT_THEME = "default";
 
-/** The theme for an id, falling back to `default` (so a corrupt persisted value can't blank the UI). */
+/** The live theme set: the hydrated store collection once `setActiveKitThemes` ran, else packaged. */
+let activeThemes: KitTheme[] = KIT_THEMES;
+
+/** Sync the hydrated store collection in (#2488). An empty array resets to the packaged registry, so
+ *  a degenerate hydrate can never blank every theme. Called by the components slice's
+ *  `hydrateThemes`; tests call it directly (and reset with `setActiveKitThemes([])`). */
+export function setActiveKitThemes(themes: KitTheme[]): void {
+  activeThemes = themes.length ? themes : KIT_THEMES;
+}
+
+/** The current theme set — hydrated store themes when available, else the packaged registry. */
+export function activeKitThemes(): KitTheme[] {
+  return activeThemes;
+}
+
+/** The theme for an id, falling back to `default` (so a corrupt persisted value can't blank the UI).
+ *  Resolves against the live set first, then the packaged registry (the hydrated set always contains
+ *  the built-ins — the reconcile re-seeds them — so the packaged hop is a belt-and-braces fallback). */
 export function themeById(id: string | undefined): KitTheme {
   return (
-    KIT_THEMES.find((t) => t.id === id) ??
+    activeThemes.find((t) => t.id === id) ??
+    activeThemes.find((t) => t.id === DEFAULT_THEME) ??
     KIT_THEMES.find((t) => t.id === DEFAULT_THEME) ??
     KIT_THEMES[0]
   );
@@ -37,11 +72,19 @@ export function themeVars(id: string | undefined): CSSProperties {
   return { ...themeById(id).vars } as CSSProperties;
 }
 
-/** The union of every token any theme touches — the set to CLEAR when switching, so a prior theme's
- *  overrides don't linger after moving to one that doesn't set them. */
+/** The union of every token any PACKAGED theme touches. Kept for compatibility; the apply path uses
+ *  {@link kitTokens}, which also covers store-authored themes. */
 export const KIT_TOKENS: string[] = Array.from(
   new Set(KIT_THEMES.flatMap((t) => Object.keys(t.vars))),
 );
+
+/** The union of every token any CURRENT theme (live set ∪ packaged) touches — the set to CLEAR when
+ *  switching, so a prior theme's overrides don't linger after moving to one that doesn't set them. */
+export function kitTokens(): string[] {
+  return Array.from(
+    new Set([...activeThemes, ...KIT_THEMES].flatMap((t) => Object.keys(t.vars))),
+  );
+}
 
 /**
  * Apply a theme GLOBALLY by writing its overrides to a root element's inline style — and clearing any
@@ -53,7 +96,7 @@ export const KIT_TOKENS: string[] = Array.from(
  */
 export function applyThemeToRoot(id: string | undefined, root: HTMLElement = document.documentElement): void {
   const { vars } = themeById(id);
-  for (const token of KIT_TOKENS) {
+  for (const token of kitTokens()) {
     if (token in vars) root.style.setProperty(token, vars[token]);
     else root.style.removeProperty(token);
   }

@@ -1,7 +1,9 @@
 //! Native per-project plan store (#plan-db). The canonical, granular store for a project's plan: the
 //! planner upserts ONE item at a time (via the `bsc-plan` CLI) instead of rewriting whole files, and
 //! the execution files (issues.json, …) are RENDERED from here at launch — so everything downstream
-//! is unchanged and a file is still inspectable. One SQLite db per project hub: `projects/<key>/plan.db`.
+//! is unchanged and a file is still inspectable. One SQLite db per project, in the central store
+//! `plans/<key>.db` (#2996 — relocated OUT of the hub so the plan persists folder-independently; the
+//! app resolves the path via `plan_db_path` and passes it in `$BSC_PLAN_DB`).
 //!
 //! This crate is Tauri-free on purpose: the desktop app (`src-tauri`) and the `bsc-plan` agent CLI
 //! both depend on it, so the CLI stays a tiny binary instead of relinking the whole app.
@@ -27,7 +29,7 @@
 //! codec. Each cohesive cluster of `Store` methods (and its serde row types) lives in its own module
 //! and hangs its methods off `Store` via a split inherent `impl` (Rust allows this within a crate):
 //! `schema` (DDL + migrations), `issues`, `features`, `repos`, `fleet`, `deploy` (deploy + deps),
-//! `mcp`, `blueprint`, `assignments` (automations + startup scripts), `discovery`, `triage`, and
+//! `market`, `transformations` (the modification list, #2509), `mcp`, `blueprint`, `ui` (the {kit, theme} pairing, #2489), `assignments` (automations + startup scripts), `discovery`, `triage`, and
 //! `lessons` (self-correction lessons, #1362). Each type is re-exported here so the crate's public
 //! API stays flat (`plandb::PlanIssue`, `plandb::Store`, …).
 
@@ -35,6 +37,7 @@
 /// dispatched to by the unified `bsc` umbrella and the legacy `bsc-plan` shim.
 pub mod cli;
 
+mod artifacts;
 mod assignments;
 mod blueprint;
 mod confirmed;
@@ -44,22 +47,28 @@ mod features;
 mod fleet;
 mod issues;
 mod lessons;
+mod market;
 mod mcp;
 mod repos;
 mod schema;
+/// Per-stream access scoping (#3279): a worker session sees + touches only its own stream's issues.
+/// `pub` so the app/bridge can reuse the same pure rules the `bsc plan` CLI enforces.
+pub mod scope;
 mod sessions;
 mod skipped;
-/// Agent todo lists — the feature scope (#1872). `pub` so the global sibling store (`crates/bsc-todo`)
-/// reuses the [`todos::Todo`] type + the connection-level `add`/`list`/… helpers over its own db.
-pub mod todos;
+mod transformations;
 mod triage;
+mod ui;
+/// Set-time validation for the structured JSON writes (#2395) — `pub` so the app/bridge can reuse
+/// the same shape checks the `bsc plan` CLI enforces.
+pub mod validate;
 
+pub use artifacts::Artifact;
 pub use assignments::{Automation, StartupScript};
 pub use features::PlanFeature;
 pub use issues::{is_valid_status, IssueSummary, PlanIssue, STATUSES};
 pub use lessons::Lesson;
 pub use sessions::FleetSession;
-pub use todos::Todo;
 
 use rusqlite::{params, Connection};
 use std::path::Path;
@@ -94,8 +103,8 @@ impl Store {
         self.conn.execute_batch(&stmt)
     }
 
-    // ── singleton-blob helpers (#1688) — the deploy/deps/fleet_meta/blueprint tables each hold ONE
-    //    row (`id = 1`) carrying a JSON blob. These two methods are the shared upsert/read those four
+    // ── singleton-blob helpers (#1688) — the deploy/deps/fleet_meta/blueprint/ui tables each hold ONE
+    //    row (`id = 1`) carrying a JSON blob. These two methods are the shared upsert/read those five
     //    set/get pairs delegate to, so the `ON CONFLICT … DO UPDATE` / `from_str().ok()` pattern lives
     //    in exactly one place. `table` is a hardcoded string literal at every call site (never user
     //    input), so formatting it into the SQL is safe — there is no injection surface. ──

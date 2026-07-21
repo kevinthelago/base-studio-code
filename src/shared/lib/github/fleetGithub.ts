@@ -4,7 +4,9 @@
 // durations). Reuses the day-bucketing + review-latency helpers from
 // repoPulseLive. Framework-free + unit-tested; fetch orchestration is in
 // hooks/useFleetGithub.
-import { dayWindow, tallyByDay, mapReviewLatency, medianLatencyH, type GhPull } from "./repoPulseLive";
+import { mapReviewLatency, medianLatencyH, type GhPull } from "./repoPulseLive";
+import { orderByRank } from "@/shared/lib/algorithms/orderByRank";
+import { windowedTally } from "@/shared/lib/algorithms/windowedTally";
 import type { GhIssueItem } from "@/shared/lib/github/types";
 
 export type { GhPull };
@@ -18,17 +20,23 @@ export type GhStatusState = "success" | "pending" | "failure" | "error" | string
 
 export interface ThroughputSlice { labels: string[]; landed: number[]; merged: number[] }
 
-/** Issues landed (closed, non-PR) vs PRs merged, per day over the window. */
+/**
+ * Issues landed (closed, non-PR) vs PRs merged, per day over the window.
+ *
+ * The bucketing is the generic `windowedTally` (#3465), which is what guarantees the two series are
+ * ALIGNED — one shared window, one entry per label in both. Tallying each series separately (as this
+ * did) leaves nothing checking that they line up, and a chart layering them cannot tell.
+ */
 export function mapThroughput(pulls: GhPull[], issues: GhIssueItem[], days: number, now: Date): ThroughputSlice {
-  const win = dayWindow(days, now);
-  const landedDates = issues
-    .filter(i => !i.pull_request && i.closed_at)
-    .map(i => i.closed_at);
-  return {
-    labels: win.labels,
-    landed: tallyByDay(win, landedDates),
-    merged: tallyByDay(win, pulls.map(p => p.merged_at)),
-  };
+  const { labels, series } = windowedTally(
+    {
+      landed: issues.filter(i => !i.pull_request && i.closed_at).map(i => i.closed_at),
+      merged: pulls.map(p => p.merged_at),
+    },
+    days,
+    now,
+  );
+  return { labels, landed: series.landed, merged: series.merged };
 }
 
 /** A PR awaiting integration, with its repo + CI state. */
@@ -46,10 +54,15 @@ export interface MergeQueueRow {
   checks: string;
 }
 
+/** The merge queue's ATTENTION order (#3465): ready-but-failing first (needs a human), then running,
+ *  then green, then drafts. Declared as data + applied by the generic `orderByRank` — it was a chain
+ *  of magic numbers inside a comparator, where this domain decision could not be read as a list. */
+const MERGE_QUEUE_ORDER: MergeQueueRow["state"][] = ["blocked", "running", "green", "draft"];
+
 /** Map open PRs (+ CI status) to merge-queue rows. Draft PRs read "draft";
  *  otherwise green/running/blocked from the combined commit status. */
 export function mapMergeQueue(items: MergeQueueInput[]): MergeQueueRow[] {
-  return items.map(({ pr, repo, status }) => {
+  const rows = items.map(({ pr, repo, status }): MergeQueueRow => {
     const state: MergeQueueRow["state"] =
       pr.draft ? "draft"
       : status === "success" ? "green"
@@ -57,13 +70,8 @@ export function mapMergeQueue(items: MergeQueueInput[]): MergeQueueRow[] {
       : "blocked";
     const checks = pr.draft ? "draft" : status ?? "—";
     return { pr: `#${pr.number}`, repo, title: pr.title, state, checks };
-  })
-  // Ready-but-failing first, then running, then green, then drafts — the queue's
-  // attention order.
-  .sort((a, b) => order(a.state) - order(b.state));
-}
-function order(s: MergeQueueRow["state"]): number {
-  return s === "blocked" ? 0 : s === "running" ? 1 : s === "green" ? 2 : 3;
+  });
+  return orderByRank(rows, (r) => r.state, MERGE_QUEUE_ORDER);
 }
 
 // Re-export the shared latency mappers so the Fleet hook imports from one place.

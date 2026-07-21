@@ -22,10 +22,11 @@ const discoveryModules = import.meta.glob<{ default: { requires?: string[] } }>(
  *  then adjusts it with `bsc-plan context require/unrequire`. */
 export const DISCOVERY_BASELINE: string[] = Object.values(discoveryModules)[0]?.default.requires ?? [];
 
-// Data-model gate signals (#1446: the model itself now lives in the project's DuckDB store, not a
-// datamodel.json file). These boolean SIGNALS are derived from the live frontend SourceConfig
-// (see datamodelSignals in shared/sourceConfig.ts), NOT read from any artifact — the canonical
-// model/scan are persisted separately to DuckDB via `bsc data model set` / bsc-data.
+// Data Model gate signals (#1446: the canonical Data Model lives in the project's DuckDB store,
+// read/written via `bsc data model get` / `bsc data model set`). These boolean SIGNALS are derived
+// from the live frontend SourceConfig (see `dataModelSignals` in lib/sourceGate.ts), NOT read back
+// from that store — they track scan PROGRESS, while the model/scan themselves are persisted to
+// DuckDB by the Source pane.
 // Reader:  planner-plumbing (this file) — missing fields read as false
 // Shape (all fields optional at the top level; absent ⇒ false):
 // {
@@ -59,14 +60,26 @@ export interface DerivePlanStageInput {
   dependencies?: { count: number };
   /** Whether a data migration source pipeline is active for this project. Absent ⇒ false. */
   migrationSourceEnabled?: boolean;
-  /** Parsed datamodel.json artifact from the source-experience stream. Absent ⇒ all-false. */
-  datamodelArtifact?: {
-    sourceReachable?: boolean;
-    modelInferred?: boolean;
-    schemaRefined?: boolean;
-    mappingComplete?: boolean;
-    loadVerified?: boolean;
-  };
+  /** Data Model progress signals derived from the live scan state (see the block comment above).
+   *  Absent, or any absent field ⇒ false. */
+  dataModelSignals?: DataModelSignals;
+}
+
+/**
+ * The five Data Model progress booleans the source stage's gate reads. Derived from the live
+ * `SourceConfig` scan state — NOT parsed from any file and NOT read back from the canonical Data
+ * Model in DuckDB (#1446). Every field is optional; an absent field reads as false.
+ *
+ * `loadVerified` here is a Data Model signal (the load run was verified against expectations). It is
+ * unrelated to any similarly-named store field — the dead `dataModels` store array that once shared
+ * the name was removed in #3244.
+ */
+export interface DataModelSignals {
+  sourceReachable?: boolean;
+  modelInferred?: boolean;
+  schemaRefined?: boolean;
+  mappingComplete?: boolean;
+  loadVerified?: boolean;
 }
 
 /**
@@ -126,7 +139,7 @@ export function derivePlanStageState(input: DerivePlanStageInput): PlanStageStat
   const resolved = input.discoveryRequired.filter(present).length;
   const requiredDiscoveryReady = total > 0 && resolved >= total;
 
-  const art = input.datamodelArtifact ?? {};
+  const sig = input.dataModelSignals ?? {};
   return buildPlanStageState({
     discovery: { resolved, total, requiredDiscoveryReady },
     repoCount: input.repoCount,
@@ -139,12 +152,12 @@ export function derivePlanStageState(input: DerivePlanStageInput): PlanStageStat
     automationsAck: input.automationsAck,
     skillsAck: input.skillsAck,
     migrationSourceEnabled: input.migrationSourceEnabled ?? false,
-    datamodel: {
-      sourceReachable: art.sourceReachable ?? false,
-      modelInferred:   art.modelInferred   ?? false,
-      schemaRefined:   art.schemaRefined   ?? false,
-      mappingComplete: art.mappingComplete  ?? false,
-      loadVerified:    art.loadVerified     ?? false,
+    dataModel: {
+      sourceReachable: sig.sourceReachable ?? false,
+      modelInferred:   sig.modelInferred   ?? false,
+      schemaRefined:   sig.schemaRefined   ?? false,
+      mappingComplete: sig.mappingComplete ?? false,
+      loadVerified:    sig.loadVerified    ?? false,
     },
   });
 }
@@ -176,11 +189,11 @@ export function planStateToSignals(s: PlanStageState): PlanSignals {
     profilesComplete: s.fleet.profilesComplete,
     automationsAck: s.automationsAck,
     skillsAck: s.skillsAck,
-    // datamodel.json signals (source-experience stream writes the artifact; absent ⇒ false).
-    sourceReachable: s.datamodel.sourceReachable,
-    modelInferred:   s.datamodel.modelInferred,
-    schemaRefined:   s.datamodel.schemaRefined,
-    mappingComplete: s.datamodel.mappingComplete,
-    loadVerified:    s.datamodel.loadVerified,
+    // Data Model progress signals, derived from the live scan state (absent ⇒ false).
+    sourceReachable: s.dataModel.sourceReachable,
+    modelInferred:   s.dataModel.modelInferred,
+    schemaRefined:   s.dataModel.schemaRefined,
+    mappingComplete: s.dataModel.mappingComplete,
+    loadVerified:    s.dataModel.loadVerified,
   };
 }

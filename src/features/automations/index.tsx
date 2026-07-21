@@ -4,10 +4,10 @@ import { SchedulesTab, ScheduleDrawer } from "./Schedules";
 import { HistoryTab } from "./History";
 import { HooksView } from "@/features/mcp";
 import { HookAnalyticsTab } from "./HookAnalytics";
-import { Screen } from "@/app/chrome/Screen";
+import { Screen } from "@/shared/ui/layouts/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { useDraft } from "@/shared/hooks/useDraft";
-import type { TabItem } from "@/app/chrome/TabBar";
+import type { TabItem } from "@/shared/ui/layouts/TabBar";
 import type { RunStatus, Every, Automation } from "./lib/scheduler";
 import "./automations.css";
 

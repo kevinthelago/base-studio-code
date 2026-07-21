@@ -4,12 +4,13 @@ import { Titlebar } from "@/app/chrome/Titlebar";
 import { ConsoleWorkspace } from "@/app/console";
 import { TerminalHost } from "@/app/console/terminal/TerminalHost";
 import { detachedTabId, detachedSection } from "@/app/console/lib/detachWindow";
+import { StudioSessionHosts } from "@/features/studio-sessions";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, ProjectsWorkspace,
-  SkillsWorkspace, AgentsWorkspace, WorkspaceFallback,
+  SkillsWorkspace, SecurityWorkspace, WorkspaceFallback,
 } from "./lazyWorkspaces";
 
 // Render a detached page's section. A switch over literal cases (not a dynamic
@@ -19,7 +20,7 @@ function renderDetachedSection(page: string, section: string): React.ReactNode {
     case "automations": return <AutomationsWorkspace pageOverride={section} />;
     case "skills":      return <SkillsWorkspace pageOverride={section} />;
     case "mcp":         return <McpWorkspace pageOverride={section} />;
-    case "agents":      return <AgentsWorkspace pageOverride={section} />;
+    case "security":      return <SecurityWorkspace pageOverride={section} />;
     case "github":      return <GitHubWorkspace pageOverride={section} />;
     case "projects":    return <ProjectsWorkspace pageOverride={section} />;
     default:
@@ -47,9 +48,14 @@ export function DetachedWindow() {
   const tabs = useAppStore((s) => s.tabs);
   const hasHydrated = useAppStore((s) => s.hasHydrated);
 
-  // Detached page-section window: minimal chrome, just that page's section.
+  // Detached page-section window: minimal chrome, just that page's section. Like the detached TAB window
+  // below it needs its OWN <TerminalHost> (#2378) — a torn-off Design/Algorithms studio docks a
+  // <TerminalSlot> (#3357), which is inert without a host ancestor — plus the studio session hosts, since
+  // this window is the SOLE owner of that studio's terminal while it is torn off (the main window skips it,
+  // see `studioDetached`).
   if (detSection) {
     return (
+      <TerminalHost>
       <Box className="app">
         <Titlebar workspace={`${detSection.page} · ${detSection.section}`} />
         <Box className="shell">
@@ -60,6 +66,8 @@ export function DetachedWindow() {
           </Box>
         </Box>
       </Box>
+      <StudioSessionHosts />
+      </TerminalHost>
     );
   }
 

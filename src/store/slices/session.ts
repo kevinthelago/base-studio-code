@@ -11,7 +11,7 @@ import { setMapEntry } from "../updateHelpers";
 // allowed-command tiers were retired (#1457) — profiles own command auto-approval. This slice
 // keeps the global denied-command block-list and the session-wide flags/models.
 type SessionSlice = Pick<AppStore,
-  "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "bypassPermissions" | "setBypassPermissions" | "sandboxConsoles" | "setSandboxConsoles" | "showConsolePage" | "setShowConsolePage" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel"
+  "deniedCommands" | "addDeniedCommand" | "removeDeniedCommand" | "setDeniedCommands" | "autoFocusMode" | "setAutoFocusMode" | "autoAdvanceOnReply" | "setAutoAdvanceOnReply" | "autoResumeClaude" | "setAutoResumeClaude" | "injectionHardGate" | "setInjectionHardGate" | "bypassPermissions" | "setBypassPermissions" | "sandboxConsoles" | "setSandboxConsoles" | "debugSession" | "setDebugSession" | "autoSpawnDebugSessions" | "setAutoSpawnDebugSessions" | "activeDebugSlots" | "setActiveDebugSlots" | "appRepoRoot" | "setAppRepoRoot" | "showConsolePage" | "setShowConsolePage" | "autoPlanWithClaude" | "setAutoPlanWithClaude" | "autoCompleteGates" | "setAutoCompleteGates" | "allowGateOverride" | "setAllowGateOverride" | "restrictToBscIssues" | "setRestrictToBscIssues" | "coordAutoWake" | "setCoordAutoWake" | "defaultModel" | "setDefaultModel" | "fleetHarness" | "setFleetHarness" | "paneModels" | "setPaneModel" | "activeStudioTargets" | "setActiveStudioTargets"
 >;
 
 export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = (set) => ({
@@ -47,6 +47,19 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       setBypassPermissions: (v) => set({ bypassPermissions: v }),
       sandboxConsoles: false,
       setSandboxConsoles: (v) => set({ sandboxConsoles: v }),
+      debugSession: false,
+      setDebugSession: (v) => set({ debugSession: v }),
+      // #3498: auto-spawn is OFF by default. See `shared/lib/session/autoSpawn.ts` — this is only the
+      // outer gate; the inner one refuses every role but `debugger` even when this is on.
+      autoSpawnDebugSessions: false,
+      setAutoSpawnDebugSessions: (v) => set({ autoSpawnDebugSessions: v }),
+      // #3498: which requests have a live session — read by the Glance graph so each one is a visible,
+      // openable node rather than a hidden background actor.
+      activeDebugSlots: [],
+      setActiveDebugSlots: (slots) => set({ activeDebugSlots: slots }),
+      // #3509: resolved once at boot; null on a shipped binary with no source tree.
+      appRepoRoot: null,
+      setAppRepoRoot: (p) => set({ appRepoRoot: p }),
       showConsolePage: false,
       setShowConsolePage: (v) => set({ showConsolePage: v }),
 
@@ -71,4 +84,11 @@ export const createSessionSlice: StateCreator<AppStore, [], [], SessionSlice> = 
       paneModels: {},
       setPaneModel: (paneId, m) =>
         set((s) => ({ paneModels: setMapEntry(s.paneModels, paneId, m) })),
+
+      // Studio network (#2940): which app-owned studio sessions the pump wants reachable right now
+      // (targets with open commissions). Transient (NOT persisted) — it drives the lazy-mount hosts
+      // in ConsoleWorkspace, which launch the designer/librarian session on demand and tear it down
+      // when the list empties.
+      activeStudioTargets: [],
+      setActiveStudioTargets: (t) => set({ activeStudioTargets: t }),
 });

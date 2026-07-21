@@ -11,12 +11,11 @@ export const McpWorkspace         = lazy(() => import("@/features/mcp").then((m)
 export const SettingsWorkspace    = lazy(() => import("@/features/settings").then((m) => ({ default: m.SettingsWorkspace })));
 export const ProjectsWorkspace    = lazy(() => import("@/features/planner").then((m) => ({ default: m.ProjectsWorkspace })));
 export const SkillsWorkspace      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsWorkspace })));
-export const AgentsWorkspace      = lazy(() => import("@/features/agents").then((m) => ({ default: m.AgentsWorkspace })));
+export const SecurityWorkspace      = lazy(() => import("@/features/security").then((m) => ({ default: m.SecurityWorkspace })));
 export const GlanceWorkspace      = lazy(() => import("@/features/glance").then((m) => ({ default: m.GlanceWorkspace })));
-// Design Studio (#2303 workspace, #2308 page): the full-page component workbench — its own toolbar,
-// resizable kits→components rail, Library/Graph center, and inspector. Distinct from the planner's
-// condensed `PlannerComponentsPane` (#2314) that lives in the `test_ui` stage.
-export const DesignWorkspace      = lazy(() => import("@/features/components").then((m) => ({ default: m.DesignStudio })));
+// Design Studio (#2303/#2308) + the Algorithms knowledge graph (#2785) are no longer rail Workspaces —
+// each moved into the Planner Screen as a page (lazy-loaded there, in features/planner/index.tsx), so
+// neither is lazy-mounted here.
 
 /** Lightweight placeholder shown while a lazy screen's chunk loads. */
 export function WorkspaceFallback() {

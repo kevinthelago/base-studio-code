@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo } from "react";
 import { useAppStore } from "@/store";
 import { moveInArray } from "@/shared/lib/core/arrayMove";
 import { openDetachedSection } from "@/shared/lib/core/detachSection";
-import type { TabItem } from "@/app/chrome/TabBar";
+import type { TabItem } from "@/shared/ui/layouts/TabBar";
 
 const EMPTY: string[] = [];
 

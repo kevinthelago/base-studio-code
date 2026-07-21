@@ -11,6 +11,7 @@ import { bscJson } from "@/shared/lib/core/bsc";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 import { useDraft } from "@/shared/hooks/useDraft";
 import { usePoll } from "@/shared/hooks/usePoll";
+import { useDragResize } from "@/shared/hooks/useDragResize";
 import { useAppStore } from "@/store";
 import {
   blankSkill, deriveSkillKpis, groupSkillCount, type SkillDef,
@@ -24,17 +25,22 @@ import { tintBg } from "./skillStyles";
 import { SkillsListView, SkillsCardsView, SkillsGroupedView, type SkillRowHandlers } from "./SkillsViews";
 import { Checkbox } from "@/shared/ui/controls/Checkbox";
 import { Button } from "@/shared/ui/controls/Button";
+import { SearchField } from "@/shared/ui/controls/SearchField";
 import { Box } from "@/shared/ui/layout/Box";
 import { Stack } from "@/shared/ui/layout/Stack";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
-import { type TabItem } from "@/app/chrome/TabBar";
-import { Screen } from "@/app/chrome/Screen";
+import { RailRow } from "@/shared/ui/layouts/RailRow";
+import { RailSection } from "@/shared/ui/layouts/RailSection";
+import { GraphRail } from "@/shared/ui/layouts/GraphRail";
+import { useRailSections } from "@/shared/hooks/useRailSections";
+import { type TabItem } from "@/shared/ui/layouts/TabBar";
+import { Screen } from "@/shared/ui/layouts/Screen";
 import { usePageTabs } from "@/shared/hooks/usePageTabs";
 import { LessonsTab } from "./LessonsTab";
 import { NewGroupDialog } from "./NewGroupDialog";
 import { SkillDrawer } from "./SkillDrawer";
-import { SkillsDigest } from "./SkillsDigest";
+import { SkillsDigestBar, SkillsDigestPanel } from "./SkillsDigest";
 import { RunsTab } from "./RunsTab";
 import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
 import type { GhProjectRef as GhProject } from "@/shared/lib/github/types";
@@ -81,6 +87,9 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [groupFilter, setGroupFilter] = useState<string | null>(null);     // selected task group id
   const [facetSel, setFacetSel] = useState<FacetSelection>({});
+  const railSections = useRailSections();                                  // collapsible sidebar sections (#2803)
+  // Drag-resizable left rail (#2816), same pattern as the graph rails (GraphCanvas railResizable).
+  const railDrag = useDragResize({ initial: 200, min: 180, max: 420, axis: "x" });
   const drawer = useDraft<SkillDef>({
     items: skills,
     newDraft: () => ({ ...blankSkill(), id: DRAFT_ID }),
@@ -204,89 +213,100 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
 
 
       {mode === "library" && (
-        <Stack style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-          {/* KPI digest (collapsible) */}
-          <SkillsDigest merged={merged} stats={stats} kpis={kpis} statsLoaded={statsLoaded} digestOpen={digestOpen} onToggle={() => setDigestOpen((v) => !v)} />
-
-          {/* Command bar */}
-          <Row gap={10} style={{ padding: "10px 18px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
-            <Row gap={8} style={{ flex: 1, maxWidth: 440, height: 30, padding: "0 11px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
-              <Text as="span" tone="dim" size={13}>⌕</Text>
-              {/* eslint-disable-next-line no-restricted-syntax -- inline borderless search box inside a toolbar Row; TextField's .field wrapper doesn't fit */}
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, description, tools…" style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--fg)", fontSize: 12.5 }} />
-            </Row>
-            <Text as="span" mono size={11} tone="muted">{filtered.length} <Text as="span" tone="dim">of {kpis.total}</Text></Text>
-            <Box as="span" style={{ flex: 1 }} />
-            <Row gap={6} style={{ position: "relative" }}>
-              <Text as="span" mono size={10} tone="dim" style={{ textTransform: "uppercase" }}>Sort</Text>
-              {/* eslint-disable-next-line no-restricted-syntax -- bespoke dropdown trigger with a custom popover menu, not a .btn control */}
-              <button onClick={() => setSortOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 6, height: 28, padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", fontSize: 11.5, color: "var(--fg)", cursor: "pointer" }}>{sort} <Text as="span" tone="dim" size={9}>▾</Text></button>
-              {sortOpen && (
-                <Box pad={4} bg="var(--bg-elev)" border radius="md" style={{ position: "absolute", top: 34, right: 0, zIndex: 40, minWidth: 184, boxShadow: "0 14px 36px rgba(0,0,0,.45)"}}>
-                  {SORTS.map((o) => <Row key={o} onClick={() => { setSort(o); setSortOpen(false); }} gap={8} style={{ padding: "6px 9px", borderRadius: 4, fontSize: 11.5, cursor: "pointer", color: sort === o ? "var(--fg)" : "var(--fg-muted)", background: sort === o ? "var(--bg-elev2)" : "transparent" }}><Box as="span" style={{ flex: 1 }}>{o}</Box><Text as="span" tone="accent">{sort === o ? "✓" : ""}</Text></Row>)}
+        // Unified layout (#2813): the search + collapsible facets live in the LEFT RAIL; a slim header
+        // sits OVER THE LIST (digest stats + sort/density/Select) — no full-width top header.
+        <Row align="stretch" className="skills-main" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+            {/* Left rail — DRAG-RESIZABLE (#2816), the same pattern GraphCanvas uses (railResizable): a
+                sized wrapper + a `.resize-x` splitter. GraphRail fills the wrapper (its default flex:1). */}
+            <Box style={{ flex: `0 0 ${railDrag.size}px`, width: railDrag.size, minWidth: 0, display: "flex", overflow: "hidden" }}>
+            <GraphRail
+              bodyPad="12px 10px 20px"
+              tools={
+                <SearchField value={query} onChange={setQuery} placeholder="Search name, description, tools…" aria-label="Search skills" style={{ width: "100%" }} />
+              }
+              footer={(activeFacetCount > 0 || query || groupFilter) ? (
+                <Box style={{ borderTop: "1px solid var(--border-soft)", padding: "10px 12px" }}>
+                  <Box as="button" onClick={clearFilters} style={{ fontSize: 11, color: "var(--fg-muted)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>clear all filters</Box>
                 </Box>
-              )}
-            </Row>
-            <Row align="stretch" style={{ height: 28, border: "1px solid var(--border)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
-              {([["list", "☰ List"], ["cards", "▦ Cards"], ["grouped", "⬡ Group"], ["kind", "⊟ Kind"]] as const).map(([d, lbl], i) => (
-                <Row key={d} onClick={() => setDensity(d)} style={{ padding: "0 11px", fontSize: 11, cursor: "pointer", background: density === d ? "var(--bg-elev2)" : "transparent", color: density === d ? "var(--fg)" : "var(--fg-dim)", borderRight: i < 3 ? "1px solid var(--border)" : "none" }}>{lbl}</Row>
-              ))}
-            </Row>
-            {/* eslint-disable-next-line no-restricted-syntax -- bespoke toggle button with active-state inline styling, not a .btn control */}
-            <button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} style={{ height: 28, padding: "0 12px", borderRadius: "var(--r-md)", fontSize: 11.5, cursor: "pointer", border: "1px solid " + (selectMode ? "var(--accent-dim)" : "var(--border)"), background: selectMode ? tintBg("var(--accent)", 86) : "var(--bg-canvas)", color: selectMode ? "var(--accent)" : "var(--fg)" }}>{selectMode ? "✓ Selecting" : "☑ Select"}</button>
-          </Row>
-
-          {/* Body */}
-          <Row align="stretch" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-            {/* Facet column */}
-            <Box bg="var(--bg-canvas)" style={{ flex: "0 0 200px", overflowY: "auto", borderRight: "1px solid var(--border-soft)", padding: "14px 14px 40px 18px" }}>
-              {/* Groups — the task-group selector (single-select, like the old quick-filter). */}
-              <Box style={{ marginBottom: 18 }}>
-                <Row gap={6} style={{ marginBottom: 8 }}>
-                  <Text as="span" mono size={9.5} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".08em" }}>⬡ Groups</Text>
-                  <Box as="span" style={{ flex: 1 }} />
-                  {/* eslint-disable-next-line no-restricted-syntax -- bespoke borderless text link in a facet header, not a .btn control */}
-                  <button onClick={() => setAddGroupOpen(true)} title="New group" style={{ background: "none", border: "none", color: "var(--fg-dim)", cursor: "pointer", fontSize: 11, padding: 0 }}>＋ New group</button>
-                </Row>
+              ) : undefined}
+            >
+              {/* Groups — the task-group selector (single-select), collapsible (#2813: the ＋New group
+                  action was removed; groups are still created from the grouped-density empty-state hint). */}
+              <RailSection
+                label="⬡ Groups"
+                open={railSections.isOpen("groups")}
+                onToggle={() => railSections.toggle("groups")}
+              >
                 {/* "All" / clear row */}
-                <Row onClick={() => setGroupFilter(null)} gap={8} style={{ padding: "3px 0", cursor: "pointer" }}>
-                  <Text as="span" size={11} style={{ width: 13, textAlign: "center", color: !groupFilter ? "var(--accent)" : "var(--fg-dim)" }}>≡</Text>
-                  <Text as="span" size={12} style={{ color: !groupFilter ? "var(--fg)" : "var(--fg-muted)", fontWeight: !groupFilter ? 600 : 400 }}>All</Text>
-                  <Box as="span" style={{ flex: 1 }} />
-                  <Text as="span" mono size={10} tone="dim">{merged.length}</Text>
-                </Row>
+                <RailRow active={!groupFilter} onClick={() => setGroupFilter(null)}
+                  leading={<Box as="span" style={{ width: 13, textAlign: "center", color: !groupFilter ? "var(--accent)" : "var(--fg-dim)" }}>≡</Box>}
+                  trailing={<Text as="span" mono size={10} tone="dim">{merged.length}</Text>}>
+                  All
+                </RailRow>
                 {skillGroups.map((g) => { const active = groupFilter === g.id; return (
-                  <Row key={g.id} data-group-id={g.id} onClick={() => setGroupFilter((v) => (v === g.id ? null : g.id))} gap={8} style={{ padding: "3px 0", cursor: "pointer" }}>
-                    <Text as="span" size={11} style={{ width: 13, textAlign: "center", color: g.hue }}>⬡</Text>
-                    <Text as="span" size={12} style={{ color: active ? g.hue : "var(--fg)", fontWeight: active ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</Text>
-                    {active && <Text as="span" tone="danger" size={11} title="Delete group" onClick={(e: React.MouseEvent) => { e.stopPropagation(); if (confirm("Delete this group? Skills are not deleted.")) { removeSkillGroup(g.id); setGroupFilter(null); } }} style={{ cursor: "pointer" }}>✕</Text>}
-                    <Box as="span" style={{ flex: 1 }} />
-                    <Text as="span" mono size={10} tone="dim">{groupSkillCount(g, skills)}</Text>
-                  </Row>
+                  <RailRow key={g.id} data-group-id={g.id} active={active}
+                    onClick={() => setGroupFilter((v) => (v === g.id ? null : g.id))}
+                    leading={<Box as="span" style={{ width: 13, textAlign: "center", color: g.hue }}>⬡</Box>}
+                    trailing={<>
+                      {active && <Text as="span" tone="danger" size={11} title="Delete group" onClick={(e: React.MouseEvent) => { e.stopPropagation(); if (confirm("Delete this group? Skills are not deleted.")) { removeSkillGroup(g.id); setGroupFilter(null); } }} style={{ cursor: "pointer" }}>✕</Text>}
+                      <Text as="span" mono size={10} tone="dim">{groupSkillCount(g, skills)}</Text>
+                    </>}>
+                    {g.name}
+                  </RailRow>
                 ); })}
                 {skillGroups.length === 0 && <Text as="div" size={10.5} tone="dim" style={{ padding: "2px 0", lineHeight: 1.4 }}>No groups yet — bundle related skills into a group.</Text>}
-              </Box>
+              </RailSection>
               {facetDefs.map((f) => (
-                <Box key={f.key} style={{ marginBottom: 18 }}>
-                  <Text as="div" mono size={9.5} tone="dim" style={{ textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>{f.title}</Text>
+                <RailSection key={f.key} label={f.title} count={f.options.length}
+                  open={railSections.isOpen(f.key)} onToggle={() => railSections.toggle(f.key)}>
                   {f.options.map((o) => { const on = facetSel[f.key]?.has(o.value) ?? false; return (
-                    <Row key={o.value} onClick={() => toggleFacet(f.key, o.value)} gap={8} style={{ padding: "3px 0", cursor: "pointer" }}>
-                      <Checkbox checked={on} />
-                      {o.glyph && <Text as="span" mono size={11} style={{ color: o.color, width: 13, textAlign: "center" }}>{o.glyph}</Text>}
-                      <Text as="span" size={12} style={{ color: "var(--fg)", textTransform: "capitalize" }}>{o.label}</Text>
-                      <Box as="span" style={{ flex: 1 }} />
-                      <Text as="span" mono size={10} tone="dim">{o.count}</Text>
-                    </Row>
+                    <RailRow key={o.value} onClick={() => toggleFacet(f.key, o.value)}
+                      leading={<>
+                        <Checkbox checked={on} />
+                        {o.glyph && <Box as="span" style={{ fontFamily: "var(--mono)", fontSize: 11, color: o.color, width: 13, textAlign: "center" }}>{o.glyph}</Box>}
+                      </>}
+                      trailing={<Text as="span" mono size={10} tone="dim">{o.count}</Text>}>
+                      <Box as="span" style={{ textTransform: "capitalize" }}>{o.label}</Box>
+                    </RailRow>
                   ); })}
-                </Box>
+                </RailSection>
               ))}
-              {(activeFacetCount > 0 || query || groupFilter) &&
-                // eslint-disable-next-line no-restricted-syntax -- bespoke borderless underlined text link, not a .btn control
-                <button onClick={clearFilters} style={{ fontSize: 11, color: "var(--fg-muted)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>clear all filters</button>}
+            </GraphRail>
             </Box>
+            <Box className="resize-x" {...railDrag.handleProps} title="Drag to resize" />
 
-            {/* Main */}
-            <Box style={{ flex: 1, minWidth: 0, overflowY: "auto", paddingBottom: 60 }}>
+            {/* Main column: the header OVER THE LIST (digest stats + controls), then the list (#2813).
+                A query container so the header can drop the digest first when this column narrows. */}
+            <Stack className="skills-listcol" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+              {/* Header like the graph toolbar (#2816): 52px, elevated bg, soft border. */}
+              <Row className="skills-listhead" gap={16} align="center" style={{ height: 52, flex: "none", padding: "0 16px", background: "var(--bg-elev)", borderBottom: "1px solid var(--border-soft)" }}>
+                {/* Digest stats — the FIRST to hide when the header narrows (container query in skills.css). */}
+                <Box className="skills-listhead-digest" style={{ minWidth: 0, overflow: "hidden" }}>
+                  <SkillsDigestBar merged={merged} stats={stats} kpis={kpis} digestOpen={digestOpen} onToggle={() => setDigestOpen((v) => !v)} />
+                </Box>
+                <Box as="span" style={{ flex: 1 }} />
+                {/* Controls — always kept. */}
+                <Text as="span" mono size={11} tone="muted" style={{ flex: "none" }}>{filtered.length} <Text as="span" tone="dim">of {kpis.total}</Text></Text>
+                <Row gap={6} style={{ position: "relative", flex: "none" }}>
+                  <Text as="span" mono size={10} tone="dim" style={{ textTransform: "uppercase" }}>Sort</Text>
+                  <Button onClick={() => setSortOpen((v) => !v)} style={{ padding: "0 10px", background: "var(--bg-canvas)", border: "1px solid var(--border)", fontSize: 11.5, color: "var(--fg)" }}>{sort} <Text as="span" tone="dim" size={9}>▾</Text></Button>
+                  {sortOpen && (
+                    <Box pad={4} bg="var(--bg-elev)" border radius="md" style={{ position: "absolute", top: 34, right: 0, zIndex: 40, minWidth: 184, boxShadow: "0 14px 36px rgba(0,0,0,.45)"}}>
+                      {SORTS.map((o) => <Row key={o} onClick={() => { setSort(o); setSortOpen(false); }} gap={8} style={{ padding: "6px 9px", borderRadius: 4, fontSize: 11.5, cursor: "pointer", color: sort === o ? "var(--fg)" : "var(--fg-muted)", background: sort === o ? "var(--bg-elev2)" : "transparent" }}><Box as="span" style={{ flex: 1 }}>{o}</Box><Text as="span" tone="accent">{sort === o ? "✓" : ""}</Text></Row>)}
+                    </Box>
+                  )}
+                </Row>
+                <Row align="stretch" style={{ height: 28, border: "1px solid var(--border)", borderRadius: "var(--r-md)", overflow: "hidden", flex: "none" }}>
+                  {([["list", "☰ List"], ["cards", "▦ Cards"], ["grouped", "⬡ Group"], ["kind", "⊟ Kind"]] as const).map(([d, lbl], i) => (
+                    <Row key={d} onClick={() => setDensity(d)} style={{ padding: "0 11px", fontSize: 11, cursor: "pointer", background: density === d ? "var(--bg-elev2)" : "transparent", color: density === d ? "var(--fg)" : "var(--fg-dim)", borderRight: i < 3 ? "1px solid var(--border)" : "none" }}>{lbl}</Row>
+                  ))}
+                </Row>
+                <Button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} style={{ fontSize: 11.5, flex: "none", border: "1px solid " + (selectMode ? "var(--accent-dim)" : "var(--border)"), background: selectMode ? tintBg("var(--accent)", 86) : "var(--bg-canvas)", color: selectMode ? "var(--accent)" : "var(--fg)" }}>{selectMode ? "✓ Selecting" : "☑ Select"}</Button>
+              </Row>
+              {/* The expandable "Fleet digest" panel drops below the header when open (#2813). */}
+              {digestOpen && <SkillsDigestPanel merged={merged} kpis={kpis} statsLoaded={statsLoaded} />}
+              {/* The list */}
+              <Box style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", paddingBottom: 60 }}>
               {selectMode && (
                 <Row gap={10} wrap style={{ margin: "12px 18px", padding: "9px 13px", background: tintBg("var(--accent)", 90), border: "1px solid var(--accent-dim)", borderRadius: "var(--r-lg)" }}>
                   <Text as="span" mono size={12} weight={600} tone="accent">{selected.size} selected</Text>
@@ -339,9 +359,9 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
                 <SkillsGroupedView sections={groupedSections} showNoGroupsHint={groupedNoGroups}
                   onNewGroup={() => setAddGroupOpen(true)} h={rowHandlers} />
               )}
-            </Box>
+              </Box>
+            </Stack>
           </Row>
-        </Stack>
       )}
 
       {mode === "lessons" && (

@@ -8,11 +8,11 @@ import reactRefresh from "eslint-plugin-react-refresh";
 // (`@/features/<x>/<anything deeper>`: lib/*, components, subdirs). `import type` stays allowed (erased
 // at build; a type-only coupling doesn't wire runtime). Own-feature modules DO use the
 // `@/features/<self>/...` alias (the repo's alias-over-`../../` convention), so this is enforced
-// PER-FEATURE: each feature forbids only the OTHER features' internals. Tests are exempt. `components/**`
+// PER-FEATURE: each feature forbids only the OTHER features' internals. Tests are exempt. `designs/**`
 // and `glance/**` are exempt AS IMPORTERS while a parallel session restructures them
 // (#2197/#2214/#2372) — remove them from EXEMPT_IMPORTERS to fold them in once that lands.
-const FEATURES = ["agents", "automations", "components", "github", "glance", "mcp", "org", "personas", "planner", "settings", "skills", "tunnel"];
-const EXEMPT_IMPORTERS = ["components", "glance"];
+const FEATURES = ["algorithms", "security", "automations", "designs", "github", "glance", "mcp", "sounds", "teams", "personas", "planner", "settings", "skills", "studio", "studio-sessions", "tunnel"];
+const EXEMPT_IMPORTERS = ["designs", "glance"];
 const BOUNDARY_MSG =
   "Import another feature through its barrel (@/features/<x>), not its internals (#1545): a feature's " +
   "public API is its index.ts; deeper paths (lib/*, components, subdirs) are private. `import type` is allowed.";
@@ -43,7 +43,51 @@ const appBoundaryRule = {
 };
 
 export default tseslint.config(
-  { ignores: ["dist", "target", "design", "node_modules", "relay"] },
+  {
+    // #3392: coverage is DECLARATIVE — the CLI arg is `.` (see package.json `lint`), so what is and
+    // isn't linted lives here, not in an argument that silently under-covers a new top-level dir.
+    // That makes these ignores load-bearing:
+    //   - `**/wt*/**` + `**/.claude/worktrees/**` — nested git worktrees (the #3379 leak). Lint used
+    //     to avoid them only because the CLI arg was `src`; with `.` they MUST be ignored here or
+    //     every sibling worktree gets walked (8 on a typical dev box) and the run explodes.
+    //   - `crates/**/tests/fixtures/**` — Rust-owned test DATA, not app code. Its shape (e.g. the
+    //     deliberately-unreferenced fns in bsc-graph's sample.ts) is the fixture's whole point.
+    ignores: [
+      "dist",
+      "target",
+      "design",
+      "node_modules",
+      "relay",
+      "**/wt*/**",
+      "**/.claude/worktrees/**",
+      "crates/**/tests/fixtures/**",
+    ],
+  },
+  {
+    // Plain JS/ESM — the build + release tooling under `scripts/` (#3392). These ran completely
+    // unlinted before: the CLI arg was `src`, and even once walked they matched no config block
+    // (which is `**/*.{ts,tsx}`), so they were checked with ZERO rules — a vacuous pass. They are
+    // Node scripts, so declare the Node globals they use; `globals` isn't a dependency of this repo,
+    // so the handful in play are listed explicitly rather than pulling in a package for it.
+    extends: [js.configs.recommended],
+    files: ["**/*.{js,mjs,cjs}"],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        console: "readonly",
+        Buffer: "readonly",
+        URL: "readonly",
+        fetch: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        __dirname: "readonly",
+        __filename: "readonly",
+      },
+    },
+    rules: {
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+    },
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],

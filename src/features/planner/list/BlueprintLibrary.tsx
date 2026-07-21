@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Layers, Download } from "lucide-react";
 import { useAppStore } from "@/store";
-import { sanitizeProjectKey } from "@/shared/lib/core/projectPaths";
-import { AUTHORING_BLUEPRINT_ID, uid, type Blueprint, type BlueprintStage } from "../stages/blueprints";
+import { projectSlug } from "@/shared/lib/core/projectPaths";
+import { AUTHORING_BLUEPRINT_ID, uid, type Blueprint, type BlueprintStage, type BlueprintDesign } from "../stages/blueprints";
 import { ImportModal, type PreviewBlueprint } from "../blueprints/BlueprintModals";
 import { BlueprintImportModal } from "../blueprints/BlueprintImportModal";
+import { DesignReconcileModal } from "@/features/designs";
+import { reconcileDesign } from "@/shared/ui/kit";
 import { DEFAULT_GIST_SOURCE } from "../blueprints/blueprintCatalog";
 import { manifestToBlueprint, bundledSkillsFromManifest } from "../blueprints/blueprintShare";
 import { installFromGist, gistIdFromUrl } from "@/features/planner/lib/gist/gist";
@@ -16,6 +18,7 @@ import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import type { DraftRow } from "./drafts";
+import { addDbProject } from "./projectsDbBridge";
 import { BlueprintCard } from "./BlueprintCard";
 import { buildBlueprintItems, type BpItem } from "./blueprintLibrary.helpers";
 
@@ -44,11 +47,15 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
     blueprints, activeBlueprintId, setActiveBlueprint, removeBlueprint, setBlueprintStages, updateBlueprintMeta,
     importBlueprint, installBundledSkills, githubToken, githubUser, setProjectBlueprintId, setAuthoredBlueprint,
     setPlanningTitle, setPlanningContext, setActiveProjectMeta, addDraftProject, setPlanningSession, setProjectsView,
+    removeDesignContribution,
   } = useAppStore();
   const [bpNewOpen, setBpNewOpen] = useState(false);   // rail "+ author a blueprint" inline form
   const [bpTitle, setBpTitle]     = useState("");
   const [importOpen, setImportOpen]   = useState(false); // manual "paste a gist URL / ID" modal
   const [catalogOpen, setCatalogOpen] = useState(false); // browse-my-gists catalog overlay
+  // Blueprint-download reconciliation (#2658): when an imported blueprint introduces design categories
+  // the contract doesn't define, alert the user with the confirm-list to generate + register them.
+  const [reconcileTarget, setReconcileTarget] = useState<{ source: string; label: string; missing: string[]; themeRef?: string } | null>(null);
   // Drag-resizable blueprints rail (mirrors the GitHub / planning splitters). It sits on the
   // right, so it grows as the pointer moves left → invert. Wider default to seat each card's
   // gated-icon progression comfortably.
@@ -65,13 +72,18 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
       return;
     }
     const full = blueprints.find(x => x.id === b.id);
-    const key = sanitizeProjectKey(b.name);
+    // The authoring session keys off the blueprint's NAME — the same name-derived key rule as
+    // projects (#2409), so its draft/hub are derivable from the name alone.
+    const key = projectSlug(b.name);
     setProjectBlueprintId(key, AUTHORING_BLUEPRINT_ID);
     if (full) setAuthoredBlueprint(key, full);
     setPlanningTitle(b.name);
     setPlanningContext(b.pitch || "Design a reusable blueprint to publish as a gist.", "");
     setActiveProjectMeta(null, "", "", 0);
     addDraftProject(key, { title: b.name, pitch: b.pitch ?? "", createdAt: Date.now() });
+    // Durable dual-write (#2995): mirror the draft into the projects DB so it survives a restart even
+    // if the `localDraftProjects` cache misses. Fire-and-forget; degrades silently. KEEPS the store write.
+    void addDbProject({ key, title: b.name, pitch: b.pitch ?? "", blueprint: AUTHORING_BLUEPRINT_ID, category: full?.category ?? null, state: "drafted" });
     setPlanningSession(key);
     setProjectsView("planning");
   }
@@ -80,7 +92,12 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
     // same as a normal draft chip. A saved library blueprint is store-only, no confirm needed.
     if (b.kind === "draft" && b.draftKey) {
       setDraftDeleteTarget({ key: b.draftKey, title: b.draftTitle ?? b.name, pitch: b.draftPitch ?? "", sort: b.sort });
-    } else removeBlueprint(b.id);
+    } else {
+      removeBlueprint(b.id);
+      // Drop any design overlay this blueprint contributed (#2658) — compose-don't-mutate: removing the
+      // blueprint recomputes the applied look without its tokens (a no-op if it never contributed one).
+      removeDesignContribution(b.id);
+    }
   }
 
   // The rail "+" authors a NEW blueprint: bind a fresh key to the authoring lifecycle and open the
@@ -88,12 +105,14 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
   function startNewBlueprint() {
     const title = bpTitle.trim();
     if (!title) return;
-    const key = sanitizeProjectKey(title);
+    const key = projectSlug(title);
     setProjectBlueprintId(key, AUTHORING_BLUEPRINT_ID);
     setPlanningTitle(title);
     setPlanningContext("Design a reusable blueprint to publish as a gist.", "");
     setActiveProjectMeta(null, "", "", 0);
     addDraftProject(key, { title, pitch: "Design a reusable blueprint.", createdAt: Date.now() });
+    // Durable dual-write (#2995): mirror into the projects DB (fire-and-forget; degrades silently).
+    void addDbProject({ key, title, pitch: "Design a reusable blueprint.", blueprint: AUTHORING_BLUEPRINT_ID, state: "drafted" });
     setPlanningSession(key);
     setBpNewOpen(false);
     setBpTitle("");
@@ -116,6 +135,14 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
       bundled: bundledSkillsFromManifest(r.manifest), gistId: gistIdFromUrl(ref) ?? undefined,
     };
   }
+  // Reconcile a just-imported blueprint's design contribution (#2658): if it introduces categories the
+  // contract doesn't define, arm the confirm-list so the user can generate + register them (no silent
+  // holes). A `complete` design (or none) is a no-op. `source` is the local blueprint id so a later
+  // removal drops exactly that overlay.
+  function reconcileImportedDesign(source: string, label: string, design: BlueprintDesign | undefined) {
+    const r = reconcileDesign(design);
+    if (!r.complete) setReconcileTarget({ source, label, missing: r.missingCategories, themeRef: r.themeRef });
+  }
   function importBlueprintPreview(preview: PreviewBlueprint, opts: { updatedAt?: string } = {}) {
     // Reconstitute the share's embedded skills so the blueprint's skill refs resolve once imported.
     if (preview.bundled?.length) installBundledSkills(preview.bundled);
@@ -133,6 +160,7 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
           updatedAt: opts.updatedAt ?? existing.gist?.updatedAt, behind: false,
         },
       });
+      reconcileImportedDesign(existing.id, base?.name ?? existing.name, base?.design);
       // Close only the manual paste dialog; the catalog stays open so its rows update live.
       setImportOpen(false);
       return;
@@ -142,7 +170,11 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
       icon: preview.icon, h: preview.h, origin: "imported", tags: ["imported"],
       gist: { state: "synced", id: gId, author: preview.author, rev: preview.rev ?? "r1", public: true, updatedAt: opts.updatedAt },
     };
-    importBlueprint(bp);
+    // importBlueprint mints a FRESH id (it never reuses the manifest's bp.id) — key the design
+    // contribution off that stored id, not the pre-import id (#2663), so removeDesignContribution(b.id)
+    // on delete matches and a second same-manifest-id import can't clobber the first's overlay.
+    const newId = importBlueprint(bp);
+    reconcileImportedDesign(newId, bp.name, bp.design);
     setImportOpen(false);
   }
 
@@ -224,6 +256,15 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
       )}
       {importOpen && (
         <ImportModal onClose={() => setImportOpen(false)} onResolve={resolveBlueprintImport} onImport={importBlueprintPreview} />
+      )}
+      {reconcileTarget && (
+        <DesignReconcileModal
+          source={reconcileTarget.source}
+          label={reconcileTarget.label}
+          missingCategories={reconcileTarget.missing}
+          themeRef={reconcileTarget.themeRef}
+          onClose={() => setReconcileTarget(null)}
+        />
       )}
     </>
   );

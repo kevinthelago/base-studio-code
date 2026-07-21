@@ -32,10 +32,10 @@ import orgData from "@data/demo/org.json";
 import blueprintData from "@data/demo/blueprint.json";
 import fleetsData from "@data/demo/fleets.json";
 import automationsData from "@data/demo/automations.json";
-import { SAMPLE_GRAPH, type GRole, type GStatus } from "@/features/glance";
+import { SAMPLE_GRAPH, type GRole, type GCategory, type GHealth, type GActivity } from "@/features/glance";
 import { projectLinkId, type ProjectLink } from "@/features/glance/lib/projectLinks";
 import type { Persona } from "@/features/personas/lib/persona";
-import type { Org } from "@/features/org/lib/org";
+import type { Team } from "@/features/teams/lib/team";
 import type { SkillDef } from "@/features/skills/lib/skillsModel";
 import type { SkillGroup } from "@/features/skills/lib/skillGroups";
 import { makeBlueprints, type Blueprint } from "@/features/planner/stages/blueprints";
@@ -59,18 +59,26 @@ const DEMO_EPOCH = Date.UTC(2026, 0, 15); // 2026-01-15
 
 // ── Projects — the Glance spine ──────────────────────────────────────────────────────────────────
 // Display name + one-line pitch for each SAMPLE_GRAPH node (`@data/demo/project-meta.json`).
-// role/status come straight from the sample graph so the loaded Glance network matches the packaged
-// sample exactly (the cycle hazard included).
+// role/health/activity come straight from the sample graph so the loaded Glance network matches the
+// packaged sample exactly (the cycle hazard + the curated warning/error nodes included).
 const PROJECT_META: Record<string, { title: string; pitch: string }> = projectMetaData;
 
-type DemoProject = { title: string; pitch: string; createdAt: number; role?: GRole; status?: GStatus };
+type DemoProject = { title: string; pitch: string; createdAt: number; role?: GRole; category?: GCategory; health?: GHealth; activity?: GActivity; reason?: string };
+
+/** Demo LIFECYCLE category per sample role (#2583) — a deterministic, varied showcase of the category
+ *  palette so the loaded demo network reads as greenfield/harden/maintain/data at a glance (the legend
+ *  still documents `transform`). Intentionally inline: demo-assembler glue over the `@data/demo/*` seeds,
+ *  not seed state itself — kept here by design (reviewed in #2912). */
+const DEMO_CATEGORY: Record<GRole, GCategory> = {
+  infra: "maintain", service: "greenfield", data: "data", client: "harden",
+};
 
 /** The 14 demo projects, keyed by the SAMPLE_GRAPH node id (also the Glance node id + fleet/plan key). */
 function demoProjects(): Record<string, DemoProject> {
   const out: Record<string, DemoProject> = {};
   for (const n of SAMPLE_GRAPH.rawNodes) {
     const meta = PROJECT_META[n.id] ?? { title: n.id, pitch: "" };
-    out[n.id] = { title: meta.title, pitch: meta.pitch, createdAt: DEMO_EPOCH, role: n.role, status: n.status };
+    out[n.id] = { title: meta.title, pitch: meta.pitch, createdAt: DEMO_EPOCH, role: n.role, category: DEMO_CATEGORY[n.role], health: n.health, activity: n.activity, reason: n.reason };
   }
   return out;
 }
@@ -107,9 +115,9 @@ function demoPersonas(): Persona[] {
   return clone(personasData) as Persona[];
 }
 
-// ── Org — the persona-relationship graph (`@data/demo/org.json`) ─────────────────────────────────
-function demoOrg(): Org {
-  return clone(orgData) as Org;
+// ── Team — the persona-relationship graph (`@data/demo/org.json`) ─────────────────────────────────
+function demoOrg(): Team {
+  return clone(orgData) as Team;
 }
 
 // ── Blueprint — the reusable template that seeds the platform's projects ─────────────────────────
@@ -185,8 +193,10 @@ export function demoSnapshot(): AppStateSnapshot {
 
   const org = demoOrg();
   return {
-    // Glance — the project network
+    // Glance — the project network. Every demo project is TRIAGED (#2541) so the curated network
+    // renders (the drafted→triaged gate would otherwise hide un-worked projects).
     localDraftProjects: projects,
+    triagedProjects: Object.fromEntries(Object.keys(projects).map((k) => [k, DEMO_EPOCH])),
     projectLinks: demoLinks(),
     achievements: { "super-user": DEMO_EPOCH },
 
@@ -194,8 +204,8 @@ export function demoSnapshot(): AppStateSnapshot {
     skills: demoSkills(),
     skillGroups: demoSkillGroups(),
     personas: demoPersonas(),
-    orgs: [org],
-    orgZoom: { [org.id]: 1 },
+    teams: [org],
+    teamsZoom: { [org.id]: 1 },
     blueprints: [demoBlueprint()],
     activeBlueprintId: DEMO_BLUEPRINT_ID,
 

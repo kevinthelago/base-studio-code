@@ -22,6 +22,12 @@ export interface ShellState {
    *  to the front tab via `usePageTabs`'s validity effect. */
   activePageTab: Record<string, string>;
   setActivePageTab: (page: string, id: string) => void;
+  /** The navigated ENTITY label per graph, keyed by page id (`glance`/`teams`/`designs`/`algorithms`),
+   *  reported by each graph via `useCrumbEntity` so the titlebar location crumb can name where you are
+   *  INSIDE a graph — the drilled project, entered team, active kit, active language (#3041). Session-only
+   *  transient (NOT persisted): each graph re-reports on mount, so it's always live. Empty = no entity. */
+  crumbEntity: Record<string, string>;
+  setCrumbEntity: (key: string, label: string) => void;
   /** Console tab ids currently shown in their own window (#430). Session-only
    *  (NOT persisted): hidden from this window's tab bar while detached, cleared
    *  on re-dock or app restart — so the tab returns to its persisted place. */

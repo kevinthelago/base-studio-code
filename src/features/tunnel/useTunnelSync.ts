@@ -2,15 +2,20 @@
 // from the store, regardless of which screen is mounted — previously this lived in
 // Console.tsx, so the mirror went stale (and excluded the planner) the moment you left
 // the Console screen. Mounted once in App. PTY *bytes* are teed in Rust; this is the
-// low-volume names/cwds/statuses + the planner pane (via tunnelExtraPanes).
+// low-volume names/cwds/statuses + every registered extra session (planner/designer,
+// via the keyed `tunnelExtraPanes` registry, #2497).
+//
+// Roster identity (#2497): panes ride under their IDENTITY id (`paneIdFor`, #1176) — the
+// same id their PTY/status/cwd are keyed by — with a `kind` derived from the id grammar,
+// so fleet workers (`<key>:<stream>`), the director, triage panes, and manual consoles
+// are all addressable from mobile.
 
 import { useEffect } from "react";
 import { useAppStore } from "@/store";
+import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { buildPanePayload } from "./lib/tunnel";
 import { tunnelSetPanes, tunnelSetSessions } from "./lib/tunnelClient";
 import { log } from "@/shared/lib/core/log";
-
-const paneId = (tabIdx: number, paneIdx: number): string => `t${tabIdx}p${paneIdx}`;
 
 export function useTunnelSync(): void {
   const tunnelRunning = useAppStore((s) => s.tunnelRunning);
@@ -24,11 +29,16 @@ export function useTunnelSync(): void {
 
   useEffect(() => {
     if (!tunnelRunning) return;
-    const awaiting = new Set(focusQueue.map((q) => paneId(q.tab, q.pane)));
+    // The focus queue is positional (tab/pane indices) — resolve each entry to the same
+    // identity id the payload keys panes by.
+    const awaiting = new Set(focusQueue.map((q) => paneIdFor(tabs[q.tab], q.tab, q.pane)));
+    // Flatten the keyed extra-pane registry in stable (sorted-source) order so re-registration
+    // by one source never reorders another's panes.
+    const extras = Object.keys(extraPanes).sort().flatMap((source) => extraPanes[source]);
     const { panes, sessions } = buildPanePayload({
       tabs, paneNames, paneCwds, paneStatuses, disabledPanes, awaiting,
       nowIso: new Date().toISOString(),
-      extraPanes,
+      extraPanes: extras,
     });
     tunnelSetPanes(panes).catch((e) => log.error(`tunnel: set_panes failed: ${e}`));
     tunnelSetSessions(sessions).catch((e) => log.error(`tunnel: set_sessions failed: ${e}`));

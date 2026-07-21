@@ -19,8 +19,9 @@ clarifying questions.
 
 ## Your mandate — plan only, and plan for hand-off
 
-**This session plans; it does not implement.** You may write the plan section files
-(`goal.md`/`scope.md`/…) and the `prompts/` kickoff scripts, and record the structured
+**This session plans; it does not implement.** You record the plan sections in the **plan
+store** — `bsc plan artifact set section <topic>` (`goal`/`scope`/…), plus a mirror section
+file during the transition — write the `prompts/` kickoff scripts, and record the structured
 plan — features, fleet, dependencies, linked repos — in the **plan store** via
 `bsc plan …` (NOT JSON files like `issues.json`/`fleet.json`/`repos.json`). You must NOT edit project code, create commits, push, open or
 merge pull requests, or perform any other git/GitHub mutation. The build agents
@@ -136,8 +137,8 @@ right mode:
    brings (error/empty states, edge cases, migrations, cross-repo contracts) and
    write it before moving on, then sequence by dependency. The longest, most
    interactive part: be Socratic, propose then interrogate, and don't shortcut it.
-5. **Plan the agent fleet** — split the work into parallel, non-conflicting sessions
-   and set the optimal session count (see "Plan the agent fleet").
+5. **Plan the agent fleet** — split the work into parallel, non-conflicting streams,
+   one session each; the fleet size follows from that split (see "Plan the agent fleet").
 
 When the plan is complete and the user has confirmed it, your work is done — stop
 there. Putting it on GitHub is the user's job, not yours.

@@ -1,0 +1,62 @@
+/* Dropdown (#2675) — the app-themed replacement for a native <select>. A native select's popup list is
+   drawn by the OS (a white system menu on Windows), which no CSS can reach; this control renders the whole
+   surface — trigger + floating listbox + options — from divs on base-studio-code tokens, so it matches the
+   rest of the app. Trigger idiom follows .btn/.input; the menu follows the .card/context-menu elevation. */
+
+.dd { display: inline-flex; position: relative; min-width: 0; }
+
+/* ── trigger ── */
+.dd-trigger {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 0;
+  border-radius: var(--r-md); cursor: pointer; color: var(--fg);
+  font-family: inherit; font-weight: 600; line-height: 1;
+  background: transparent; border: 1px solid transparent;
+  transition: background .14s, border-color .14s, color .14s;
+}
+.dd-trigger.sz-sm { height: 28px; padding: 0 8px 0 10px; font-size: 12.5px; }
+.dd-trigger.sz-md { height: 32px; padding: 0 10px 0 12px; font-size: 14px; }
+.dd-trigger:disabled { opacity: .45; cursor: default; }
+
+/* field — a bordered, input-like control */
+.dd-trigger.v-field { background: var(--bg-elev); border-color: var(--border-soft); }
+.dd-trigger.v-field:hover:not(:disabled) { background: var(--bg-elev2); }
+/* ghost — borderless until hover (toolbars, inline title switchers) */
+.dd-trigger.v-ghost:hover:not(:disabled) { background: var(--bg-elev); }
+.dd-trigger.v-ghost.open { background: var(--bg-elev); }
+
+.dd-trigger:focus-visible { outline: none; border-color: var(--accent-dim); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent); }
+
+.dd-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-value.dd-placeholder { color: var(--fg-muted); font-weight: 500; }
+.dd-lead { display: inline-flex; align-items: center; flex: none; }
+
+.dd-caret { flex: none; margin-left: 2px; color: var(--fg-muted); transition: transform .16s ease, color .14s; }
+.dd-trigger:hover:not(:disabled) .dd-caret { color: var(--fg); }
+.dd-trigger.open .dd-caret { transform: rotate(180deg); color: var(--fg); }
+
+/* ── floating menu (position:fixed set inline from the trigger rect) ── */
+.dd-backdrop { position: fixed; inset: 0; z-index: 199; }
+.dd-menu {
+  z-index: 200; padding: 4px; max-height: 320px; overflow-y: auto;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--r-md);
+  box-shadow: var(--shadow-md); outline: none;
+  animation: dd-in .12s ease;
+}
+@keyframes dd-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .dd-menu { animation: none; } .dd-caret { transition: none; } }
+
+.dd-option {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: var(--r-sm); cursor: pointer; color: var(--fg);
+  white-space: nowrap; user-select: none;
+}
+.dd-menu.sz-sm .dd-option { font-size: 12.5px; }
+.dd-menu.sz-md .dd-option { font-size: 13.5px; }
+/* keyboard-active OR hovered — one highlight so pointer + keyboard agree */
+.dd-option.active { background: color-mix(in oklch, var(--accent) 12%, transparent); }
+.dd-option.selected { color: var(--accent-text); font-weight: 600; }
+.dd-option.selected.active { background: color-mix(in oklch, var(--accent) 18%, transparent); }
+.dd-option.disabled { opacity: .45; cursor: default; }
+
+.dd-option-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dd-check { margin-left: auto; padding-left: 10px; color: var(--accent); font-size: 12px; flex: none; }

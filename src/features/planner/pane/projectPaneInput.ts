@@ -3,7 +3,7 @@
 // Structure/Context/Relationships) and the thin projectPaneData composition can
 // all share it without a circular import back through projectPaneData.
 
-import type { AgentProfile } from "@/features/agents";
+import type { AgentProfile } from "@/features/security";
 import type { FleetPlan } from "../fleet/planFleet";
 import type { PlanIssue } from "../issues/planIssues";
 import type { Section } from "../github/ghStructure";
@@ -51,6 +51,9 @@ export interface BuildProjectPaneInput {
   /** The locked dependency manifest (#1127/#1133) — surfaced in the Deploy pane. */
   dependencies?: PlanDependency[];
   registries?: Record<string, DependencyRegistry>;
+  /** The project's {kit, theme} pairing (#2489) — inlined into each agent card's scope preview as
+   *  the UI-palette lock block, matching what the launch path builds. */
+  uiPairing?: import("../fleet/workerScope").WorkerUiPairing;
   sections: Section[];
   /** Context-file names the project has explicitly pinned in the pane (from the
    *  store). When present it drives each context file's `pinned` instead of the

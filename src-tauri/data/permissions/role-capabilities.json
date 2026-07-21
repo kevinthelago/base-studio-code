@@ -1,16 +1,202 @@
 {
-  "_comment": "The role→capability table for the session role gate (#219). Least-privilege per session type. The frontend loads this via sessionRoles.ts, which computes each session's permissions and passes them to the backend's ensure_session_settings — so this is the SINGLE source (Rust does not duplicate it). Externalized #2027 P1. github/git/code/net are access tiers (none|read|write); writeGlobs are the paths a role may write (empty = no code writes).",
+  "_comment": "The role→capability table for the session role gate (#219). Least-privilege per session type. The frontend loads this via sessionRoles.ts, which computes each session's permissions and passes them to the backend's ensure_session_settings — so this is the SINGLE source (Rust does not duplicate it). Externalized #2027 P1. github/git/code/net/ui are access tiers (none|read|write) — ui (#2470) gates the `bsc ui` component/kit store (read = use the kit, never redefine it); writeGlobs are the paths a role may write (empty = no code writes).",
   "roleDefaults": {
-    "planner":   { "role": "planner",   "github": "read",  "git": "read",  "code": "write", "net": "read", "writeGlobs": ["*.md", "*.json", "prompts/*.md", "prompts/*", "discovery/*.md", "discovery/*"] },
-    "worker":    { "role": "worker",    "github": "read",  "git": "write", "code": "write", "net": "read", "writeGlobs": [] },
-    "director":  { "role": "director",  "github": "write", "git": "write", "code": "none",  "net": "read", "writeGlobs": [] },
-    "triage":    { "role": "triage",    "github": "write", "git": "none",  "code": "none",  "net": "read", "writeGlobs": [] },
-    "tester":    { "role": "tester",    "github": "read",  "git": "read",  "code": "none",  "net": "read", "writeGlobs": [] },
-    "reviewer":  { "role": "reviewer",  "github": "read",  "git": "read",  "code": "none",  "net": "read", "writeGlobs": [] },
-    "issuer":    { "role": "issuer",    "github": "write", "git": "read",  "code": "none",  "net": "read", "writeGlobs": [] },
-    "juror":     { "role": "juror",     "github": "read",  "git": "read",  "code": "none",  "net": "read", "writeGlobs": [] },
-    "documentor": { "role": "documentor", "github": "read", "git": "read", "code": "none", "net": "read", "writeGlobs": ["*.md", "**/*.md", "README*", "**/README*", "CHANGELOG*"] }
+    "planner": {
+      "role": "planner",
+      "github": "read",
+      "git": "read",
+      "code": "write",
+      "net": "read",
+      "ui": "read",
+      "writeGlobs": [
+        "*.md",
+        "*.json",
+        "prompts/*.md",
+        "prompts/*",
+        "discovery/*.md",
+        "discovery/*"
+      ]
+    },
+    "worker": {
+      "role": "worker",
+      "github": "read",
+      "git": "write",
+      "code": "write",
+      "net": "read",
+      "ui": "read",
+      "writeGlobs": []
+    },
+    "director": {
+      "role": "director",
+      "github": "write",
+      "git": "write",
+      "code": "none",
+      "net": "read",
+      "ui": "read",
+      "writeGlobs": []
+    },
+    "triage": {
+      "role": "triage",
+      "github": "write",
+      "git": "none",
+      "code": "none",
+      "net": "read",
+      "ui": "read",
+      "writeGlobs": []
+    },
+    "tester": {
+      "role": "tester",
+      "github": "read",
+      "git": "read",
+      "code": "none",
+      "net": "read",
+      "ui": "read",
+      "writeGlobs": []
+    },
+    "reviewer": {
+      "role": "reviewer",
+      "github": "read",
+      "git": "read",
+      "code": "none",
+      "net": "read",
+      "ui": "read",
+      "writeGlobs": []
+    },
+    "issuer": {
+      "role": "issuer",
+      "github": "write",
+      "git": "read",
+      "code": "none",
+      "net": "read",
+      "ui": "read",
+      "writeGlobs": []
+    },
+    "juror": {
+      "role": "juror",
+      "github": "read",
+      "git": "read",
+      "code": "none",
+      "net": "read",
+      "ui": "read",
+      "writeGlobs": []
+    },
+    "documentor": {
+      "role": "documentor",
+      "github": "read",
+      "git": "read",
+      "code": "none",
+      "net": "read",
+      "ui": "read",
+      "writeGlobs": [
+        "*.md",
+        "**/*.md",
+        "README*",
+        "**/README*",
+        "CHANGELOG*"
+      ]
+    },
+    "designer": {
+      "role": "designer",
+      "github": "none",
+      "git": "none",
+      "code": "none",
+      "net": "none",
+      "ui": "write",
+      "writeGlobs": [
+        "scratch/**"
+      ],
+      "harvestRoots": [
+        "app-repo"
+      ]
+    },
+    "architect": {
+      "role": "architect",
+      "github": "none",
+      "git": "none",
+      "code": "none",
+      "net": "none",
+      "ui": "none",
+      "writeGlobs": [
+        "scratch/**"
+      ]
+    },
+    "librarian": {
+      "role": "librarian",
+      "github": "none",
+      "git": "none",
+      "code": "none",
+      "net": "none",
+      "ui": "none",
+      "writeGlobs": [
+        "scratch/**"
+      ],
+      "harvestRoots": [
+        "app-repo"
+      ]
+    },
+    "sound-designer": {
+      "role": "sound-designer",
+      "github": "none",
+      "git": "none",
+      "code": "none",
+      "net": "none",
+      "ui": "none",
+      "writeGlobs": [
+        "scratch/**"
+      ]
+    },
+    "curator": {
+      "role": "curator",
+      "github": "none",
+      "git": "read",
+      "code": "none",
+      "net": "none",
+      "ui": "write",
+      "writeGlobs": []
+    },
+    "marketer": {
+      "role": "marketer",
+      "github": "read",
+      "git": "read",
+      "code": "none",
+      "net": "read",
+      "ui": "read",
+      "writeGlobs": [
+        "marketing/**/*.md",
+        "marketing/**/*.mdx",
+        "content/**/*.md",
+        "content/**/*.mdx",
+        "README*",
+        "**/README*",
+        "CHANGELOG*",
+        "**/CHANGELOG*"
+      ]
+    },
+    "debugger": {
+      "role": "debugger",
+      "github": "write",
+      "git": "write",
+      "code": "write",
+      "net": "read",
+      "ui": "write",
+      "writeGlobs": []
+    }
   },
-  "dbOwnedPlanFiles": ["deploy.md", "deploy.json", "phases.json", "issues.json", "fleet.json", "repos.json", "features.json"],
-  "depManifestFiles": ["package.json", "package-lock.json", "Cargo.toml", "Cargo.lock", "pnpm-lock.yaml", "yarn.lock"]
+  "dbOwnedPlanFiles": [
+    "deploy.md",
+    "deploy.json",
+    "phases.json",
+    "issues.json",
+    "fleet.json",
+    "repos.json",
+    "features.json"
+  ],
+  "depManifestFiles": [
+    "package.json",
+    "package-lock.json",
+    "Cargo.toml",
+    "Cargo.lock",
+    "pnpm-lock.yaml",
+    "yarn.lock"
+  ]
 }

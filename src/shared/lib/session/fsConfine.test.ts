@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isPathConfined, isConfigProtected } from "./fsConfine";
+import { isPathConfined, isConfigProtected, isUnderHarvestRoot } from "./fsConfine";
 
 describe("isPathConfined", () => {
   const root = "/c/dev/repo";
@@ -53,5 +53,38 @@ describe("isConfigProtected", () => {
     expect(isConfigProtected(root, "src/.claude/x")).toBe(false); // only the repo-root .claude
     expect(isConfigProtected(root, "/etc/.claude/x")).toBe(false); // outside the root (escape-checked)
     expect(isConfigProtected(root, ".claudette/x")).toBe(false); // must be the whole `.claude` segment
+  });
+});
+
+describe("isUnderHarvestRoot (#3530 — read-only harvest reach)", () => {
+  const roots = ["/c/dev/base-studio-code", "C:/other/repo"];
+
+  it("allows an absolute path under a listed harvest root", () => {
+    expect(isUnderHarvestRoot(roots, "/c/dev/base-studio-code/src/shared/ui/feedback/shimmer.ts")).toBe(true);
+    expect(isUnderHarvestRoot(roots, "/c/dev/base-studio-code")).toBe(true); // the root itself
+  });
+
+  it("normalizes Windows separators and matches a drive-letter root", () => {
+    expect(isUnderHarvestRoot(roots, "C:\\other\\repo\\lib\\util.ts")).toBe(true);
+  });
+
+  it("rejects a path outside every harvest root", () => {
+    expect(isUnderHarvestRoot(roots, "/c/dev/somewhere-else/x")).toBe(false);
+    // A shared prefix is not containment — /c/dev/base-studio-code-2 must NOT count as inside.
+    expect(isUnderHarvestRoot(roots, "/c/dev/base-studio-code-2/x")).toBe(false);
+  });
+
+  it("rejects `..` traversal even toward a real harvest root", () => {
+    expect(isUnderHarvestRoot(roots, "/c/dev/base-studio-code/../secrets")).toBe(false);
+  });
+
+  it("ignores a relative path — it resolves against the in-repo cwd, never a harvest root", () => {
+    expect(isUnderHarvestRoot(roots, "src/shared/ui/shimmer.ts")).toBe(false);
+    expect(isUnderHarvestRoot(roots, "")).toBe(false);
+  });
+
+  it("grants nothing when no harvest roots are declared", () => {
+    expect(isUnderHarvestRoot([], "/c/dev/base-studio-code/src/x.ts")).toBe(false);
+    expect(isUnderHarvestRoot([""], "/c/dev/base-studio-code/src/x.ts")).toBe(false);
   });
 });

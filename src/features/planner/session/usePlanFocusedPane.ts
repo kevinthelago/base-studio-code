@@ -2,17 +2,19 @@
 // derived advance-bar/pill/prompt-help. Owns `focusSel` (null = auto-follow the active stage; a
 // number = a user-pinned selection), resets it on a project/blueprint switch, and derives:
 //   • focusSelectedIdx — the clamped resolved index (selection ?? active).
-//   • focusFooter — the advance-bar action (footerAction → resolveFooter); lit by pendingConfirm, and
-//     with gate-override on (#1285) a blocking gate becomes a cautionary "override gate & continue".
+//   • focusFooter — the advance-bar action (footerAction → resolveFooter); the primary is lit by
+//     pendingConfirm, and a Skip control (skipEnabled) RENDERS only when the active stage is
+//     skippable now (its `skipWhen` rule passes / it's optional) or gate-override is on (#2854).
 //   • focusPill — the selected stage's gate pill.
-//   • focusStagePrompts — the injectable prompts for the SELECTED stage (the header "?" helper).
+//   • focusStagePrompt — the SINGLE current-step prompt for the SELECTED stage (the header "?"
+//     helper), resolved from the stage's substep progress (#2859).
 // The JSX wires `setFocusSel` into onSelect/onBack/onSkip/onPrimary. Behavior-preserving move — the
 // state, reset effect, and derivations are verbatim; only their call-site moved below usePlanGates +
 // usePlanConfirmations (whose `pendingConfirm` the footer reads). The skip/confirm/publish actions
 // stay in the component (they close over usePlanConfirmations + usePlanPublish).
 import { useState, useEffect, useMemo } from "react";
 import { clampIndex, gatePill, footerAction, resolveFooter, type stagesFrom } from "../stages/focusedPlan";
-import { stagePrompts } from "./plannerConductor";
+import { activeStagePrompt } from "./plannerConductor";
 import type { BlueprintStage } from "../stages/blueprints";
 
 type Stages = ReturnType<typeof stagesFrom>;
@@ -33,6 +35,12 @@ export interface PlanFocusedPaneOpts {
   allowGateOverride: boolean;
   /** The blueprint's stages — resolves the selected stage's injectable prompts by key (#815). */
   planSecs: BlueprintStage[];
+  /** #2859 — the substep keys already resolved for the current plan (a section file written or a
+   *  step confirmed), so the "?" helper can pick the CURRENT-step prompt via `activeSubstep`. */
+  stageDone: Set<string>;
+  /** #2859 — whether the Features workshop loop is complete (every feature defined), the completion
+   *  signal for the one loop substep the "?" helper can't infer from written section files. */
+  featuresComplete: boolean;
   /** #2121 — the active UI stage's design is missing or stale (not routed / changed since routed),
    *  so its primary footer action becomes "route design" instead of "approve & continue". */
   uiNeedsRoute: boolean;
@@ -45,6 +53,7 @@ export function usePlanFocusedPane(opts: PlanFocusedPaneOpts) {
   const {
     stages, focusActiveIdx, planComplete, focusGateReady, pendingConfirm,
     allowGateOverride, planSecs, effectiveProjectId, effectiveBlueprintId, uiNeedsRoute,
+    stageDone, featuresComplete,
   } = opts;
 
   // The SELECTION — auto-follows the active stage (`focusSel` null) or pins to a user pick; reset on
@@ -53,24 +62,26 @@ export function usePlanFocusedPane(opts: PlanFocusedPaneOpts) {
   useEffect(() => { setFocusSel(null); }, [effectiveProjectId, effectiveBlueprintId]);
   const focusSelectedIdx = clampIndex(focusSel ?? focusActiveIdx, stages.length);
 
-  // The active stage is an enabled OPTIONAL stage the user hasn't decided yet — so the advance bar
-  // offers a "Skip stage" control beside the primary action (#921).
-  const activeSkippable = stages[focusActiveIdx]?.optional === true && stages[focusActiveIdx]?.status === "active";
+  // Whether the active stage is SKIPPABLE right now (#2854) — its declarative `skipWhen` rule passes
+  // (e.g. an empty Features stage) or it's intrinsically optional. This drives whether the footer
+  // renders a Skip control AT ALL: a required stage like Discovery shows none (no disabled ghost).
+  const activeSkippable = stages[focusActiveIdx]?.skippable === true;
   // #2121: on the active UI stage with missing/stale design, the primary action routes the design.
   const routeDesign = stages[focusActiveIdx]?.key === "ui" && uiNeedsRoute;
-  const footerRaw = footerAction(focusSelectedIdx, focusActiveIdx, planComplete, focusGateReady, activeSkippable, routeDesign);
+  const footerRaw = footerAction(focusSelectedIdx, focusActiveIdx, planComplete, focusGateReady, routeDesign);
   // Let "approve & continue" light up as soon as there are drafted sections to confirm (clicking
-  // confirms them, see onPrimary), and — when the user enabled gate override (#1285) — let a blocking
-  // gate be force-advanced as a cautionary "override gate & continue".
-  const focusFooter = resolveFooter(footerRaw, pendingConfirm.length, allowGateOverride);
+  // confirms them, see onPrimary); resolveFooter also sets `skipEnabled` from skippable + override.
+  const focusFooter = resolveFooter(footerRaw, pendingConfirm.length, allowGateOverride, activeSkippable);
   const focusSelStage = stages[focusSelectedIdx];
   const focusPill = focusSelStage ? gatePill(focusSelStage) : "wait";
-  // Injectable prompts for the SELECTED stage — the header "?" helper lists them and the user picks
-  // one to inject (the app no longer auto-injects). Resolve the section BY KEY (stages is a filtered
-  // subset of planSecs, #815).
-  const focusStagePrompts = useMemo(
-    () => stagePrompts(planSecs.find(s => s.key === focusSelStage?.key)),
-    [planSecs, focusSelStage]);
+  // The SINGLE current-step prompt for the SELECTED stage — the header "?" helper shows one prompt at
+  // a time (#2859), resolved from substep progress (`activeSubstep`). The only loop substep the helper
+  // can't infer from written files is the Features workshop, so `loopDone` is fed only for that stage.
+  // Resolve the section BY KEY (stages is a filtered subset of planSecs, #815).
+  const selKey = focusSelStage?.key;
+  const focusStagePrompt = useMemo(
+    () => activeStagePrompt(planSecs.find(s => s.key === selKey), stageDone, selKey === "features" && featuresComplete),
+    [planSecs, selKey, stageDone, featuresComplete]);
 
-  return { setFocusSel, focusSelectedIdx, focusPill, focusFooter, focusStagePrompts };
+  return { setFocusSel, focusSelectedIdx, focusPill, focusFooter, focusStagePrompt };
 }

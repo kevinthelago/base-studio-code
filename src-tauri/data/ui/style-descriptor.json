@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "note": "The design-system STYLE DESCRIPTOR (#2567) — the authoritative source of truth for the semantic token contract. `tokens-contract.css` is GENERATED from this file (styleContract.ts + the styleContract.gen drift test), and `bsc ui tokens` reads it to enumerate the addressable surface for an LLM. Each token carries a stable custom-property name, a type, a default, and a `governs` blurb. Component tokens are grouped by component (+ per-variant), so `bsc ui component <name> set-token <key>` resolves `--<component>[-<variant>]-<key>`. Additive-first: a new token defaults to today's value so landing it is a zero-visual-change commit. STYLESHEET ORDER stays the contract: tokens.css (this, generated) -> theme.css (a theme's overrides) -> app styles (components reference ONLY these semantic tokens, never raw colors).",
+  "base": [
+    { "name": "--bg-canvas", "type": "color", "value": "oklch(0.13 0.005 250)", "governs": "app canvas — the deepest surface (field backgrounds sit here)" },
+    { "name": "--bg-panel", "type": "color", "value": "oklch(0.17 0.005 250)", "governs": "panel surface — the default card background" },
+    { "name": "--bg-elev", "type": "color", "value": "oklch(0.21 0.006 250)", "governs": "elevated surface — the default button background" },
+    { "name": "--bg-elev2", "type": "color", "value": "oklch(0.26 0.006 250)", "governs": "higher elevation — button hover + chip background" },
+    { "name": "--border", "type": "color", "value": "oklch(0.30 0.006 250)", "governs": "the default (stronger) border colour" },
+    { "name": "--border-soft", "type": "color", "value": "oklch(0.24 0.006 250)", "governs": "the soft border colour — most component borders" },
+    { "name": "--fg", "type": "color", "value": "oklch(0.94 0.004 250)", "governs": "primary text colour" },
+    { "name": "--fg-muted", "type": "color", "value": "oklch(0.66 0.008 250)", "governs": "muted text — chip text" },
+    { "name": "--fg-dim", "type": "color", "value": "oklch(0.46 0.008 250)", "governs": "dim / de-emphasised text" },
+    { "name": "--accent", "type": "color", "value": "oklch(0.80 0.14 70)", "governs": "the brand accent — primary button, focus" },
+    { "name": "--accent-dim", "type": "color", "value": "oklch(0.55 0.10 70)", "governs": "the dimmed accent — field focus border" },
+    { "name": "--success", "type": "color", "value": "oklch(0.74 0.13 145)", "governs": "success / positive state colour" },
+    { "name": "--info", "type": "color", "value": "oklch(0.72 0.10 230)", "governs": "informational state colour" },
+    { "name": "--danger", "type": "color", "value": "oklch(0.68 0.18 25)", "governs": "danger / destructive / error state colour" },
+    { "name": "--r-md", "type": "dimension", "value": "6px", "governs": "medium corner radius" },
+    { "name": "--r-lg", "type": "dimension", "value": "10px", "governs": "large corner radius" },
+    { "name": "--dur-fast", "type": "duration", "value": "120ms", "governs": "fast motion — hovers & small state flips" },
+    { "name": "--dur-base", "type": "duration", "value": "220ms", "governs": "base motion — the default transition / animation duration" },
+    { "name": "--dur-slow", "type": "duration", "value": "400ms", "governs": "slow motion — larger enters & exits" },
+    { "name": "--ease-standard", "type": "easing", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "governs": "standard easing — most transitions" },
+    { "name": "--ease-emphasized", "type": "easing", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "governs": "emphasized easing — expressive ease-out enters" }
+  ],
+  "components": [
+    {
+      "component": "card",
+      "governs": "the Card surface",
+      "tokens": [
+        { "key": "bg", "name": "--card-bg", "type": "color", "default": "var(--bg-panel)", "governs": "card background" },
+        { "key": "border", "name": "--card-border", "type": "color", "default": "var(--border-soft)", "governs": "card border colour" },
+        { "key": "radius", "name": "--card-radius", "type": "dimension", "default": "var(--r-lg)", "governs": "card corner radius" },
+        { "key": "pad", "name": "--card-pad", "type": "dimension", "default": "16px", "governs": "card inner padding" }
+      ],
+      "variants": []
+    },
+    {
+      "component": "btn",
+      "governs": "the Button",
+      "tokens": [
+        { "key": "bg", "name": "--btn-bg", "type": "color", "default": "var(--bg-elev)", "governs": "button background" },
+        { "key": "bg-hover", "name": "--btn-bg-hover", "type": "color", "default": "var(--bg-elev2)", "governs": "button hover background" },
+        { "key": "border", "name": "--btn-border", "type": "color", "default": "var(--border-soft)", "governs": "button border colour" },
+        { "key": "border-width", "name": "--btn-border-width", "type": "dimension", "default": "1px", "governs": "button border thickness" },
+        { "key": "fg", "name": "--btn-fg", "type": "color", "default": "var(--fg)", "governs": "button text colour" },
+        { "key": "radius", "name": "--btn-radius", "type": "dimension", "default": "var(--r-md)", "governs": "button corner radius" },
+        { "key": "height", "name": "--btn-height", "type": "dimension", "default": "28px", "governs": "button height" },
+        { "key": "pad-x", "name": "--btn-pad-x", "type": "dimension", "default": "12px", "governs": "button horizontal padding" },
+        { "key": "gap", "name": "--btn-gap", "type": "dimension", "default": "6px", "governs": "gap between a button's icon and its label" },
+        { "key": "font-family", "name": "--btn-font-family", "type": "font", "default": "var(--mono)", "governs": "button typeface" },
+        { "key": "font-size", "name": "--btn-font-size", "type": "dimension", "default": "11px", "governs": "button text size" },
+        { "key": "font-weight", "name": "--btn-font-weight", "type": "number", "default": "400", "governs": "button text weight" },
+        { "key": "disabled-opacity", "name": "--btn-disabled-opacity", "type": "number", "default": "0.4", "governs": "opacity of a disabled button" }
+      ],
+      "variants": [
+        {
+          "variant": "primary",
+          "governs": "the primary (accent) button",
+          "tokens": [
+            { "key": "bg", "name": "--btn-primary-bg", "type": "color", "default": "var(--accent)", "governs": "primary button background" },
+            { "key": "fg", "name": "--btn-primary-fg", "type": "color", "default": "#1a120a", "governs": "primary button text colour" },
+            { "key": "border", "name": "--btn-primary-border", "type": "color", "default": "transparent", "governs": "primary button border colour" },
+            { "key": "font-weight", "name": "--btn-primary-font-weight", "type": "number", "default": "600", "governs": "primary button text weight" },
+            { "key": "hover-brightness", "name": "--btn-primary-hover-brightness", "type": "number", "default": "1.05", "governs": "brightness multiplier applied to the primary button on hover" }
+          ]
+        },
+        {
+          "variant": "ghost",
+          "governs": "the ghost (chromeless) button",
+          "tokens": [
+            { "key": "bg", "name": "--btn-ghost-bg", "type": "color", "default": "transparent", "governs": "ghost button background" }
+          ]
+        },
+        {
+          "variant": "danger",
+          "governs": "the destructive button",
+          "tokens": [
+            { "key": "fg", "name": "--btn-danger-fg", "type": "color", "default": "var(--danger)", "governs": "danger button text colour" },
+            { "key": "border", "name": "--btn-danger-border", "type": "color", "default": "color-mix(in oklch, var(--danger), transparent 70%)", "governs": "danger button border colour" }
+          ]
+        },
+        {
+          "variant": "sm",
+          "governs": "the small size variant",
+          "tokens": [
+            { "key": "height", "name": "--btn-sm-height", "type": "dimension", "default": "24px", "governs": "small button height" },
+            { "key": "pad-x", "name": "--btn-sm-pad-x", "type": "dimension", "default": "9px", "governs": "small button horizontal padding" },
+            { "key": "font-size", "name": "--btn-sm-font-size", "type": "dimension", "default": "10.5px", "governs": "small button text size" }
+          ]
+        }
+      ]
+    },
+    {
+      "component": "field",
+      "governs": "the input Field",
+      "tokens": [
+        { "key": "bg", "name": "--field-bg", "type": "color", "default": "var(--bg-canvas)", "governs": "field background" },
+        { "key": "border", "name": "--field-border", "type": "color", "default": "var(--border-soft)", "governs": "field border colour" },
+        { "key": "fg", "name": "--field-fg", "type": "color", "default": "var(--fg)", "governs": "field text colour" },
+        { "key": "radius", "name": "--field-radius", "type": "dimension", "default": "var(--r-md)", "governs": "field corner radius" },
+        { "key": "focus-border", "name": "--field-focus-border", "type": "color", "default": "var(--accent-dim)", "governs": "field border colour when focused" }
+      ],
+      "variants": []
+    },
+    {
+      "component": "chip",
+      "governs": "the Chip / tag",
+      "tokens": [
+        { "key": "bg", "name": "--chip-bg", "type": "color", "default": "var(--bg-elev2)", "governs": "chip background" },
+        { "key": "fg", "name": "--chip-fg", "type": "color", "default": "var(--fg-muted)", "governs": "chip text colour" },
+        { "key": "border", "name": "--chip-border", "type": "color", "default": "var(--border-soft)", "governs": "chip border colour" }
+      ],
+      "variants": []
+    }
+  ],
+  "domain": [
+    {
+      "group": "graph-health",
+      "governs": "node HEALTH status hues (the two-axis status system) — a categorical/status palette a kit consumes and a theme binds",
+      "tokens": [
+        { "key": "idle", "name": "--graph-health-idle", "type": "color", "value": "#5b9dff", "governs": "idle — not yet started" },
+        { "key": "healthy", "name": "--graph-health-healthy", "type": "color", "value": "#4fd6a0", "governs": "healthy — running clean" },
+        { "key": "warning", "name": "--graph-health-warning", "type": "color", "value": "#f2b155", "governs": "warning — degraded" },
+        { "key": "error", "name": "--graph-health-error", "type": "color", "value": "#f2555f", "governs": "error — failing (pulses)" }
+      ]
+    },
+    {
+      "group": "graph-kind",
+      "governs": "node KIND hues — the architectural tier of a node",
+      "tokens": [
+        { "key": "infra", "name": "--graph-kind-infra", "type": "color", "value": "#5b9dff", "governs": "infrastructure" },
+        { "key": "service", "name": "--graph-kind-service", "type": "color", "value": "#4fd6a0", "governs": "service / backend" },
+        { "key": "data", "name": "--graph-kind-data", "type": "color", "value": "#b98bff", "governs": "data / storage" },
+        { "key": "client", "name": "--graph-kind-client", "type": "color", "value": "#f2b155", "governs": "client / frontend" }
+      ]
+    },
+    {
+      "group": "graph-category",
+      "governs": "blueprint lifecycle CATEGORY hues — how a project node came to be",
+      "tokens": [
+        { "key": "greenfield", "name": "--graph-category-greenfield", "type": "color", "value": "#16b3a7", "governs": "greenfield — creating from a pitch (teal)" },
+        { "key": "transform", "name": "--graph-category-transform", "type": "color", "value": "#7b74f2", "governs": "transform — restructuring existing repos (indigo)" },
+        { "key": "harden", "name": "--graph-category-harden", "type": "color", "value": "#b8862f", "governs": "harden — improving/securing in place (bronze)" },
+        { "key": "maintain", "name": "--graph-category-maintain", "type": "color", "value": "#8b93a7", "governs": "maintain — keeping it running (slate)" },
+        { "key": "data", "name": "--graph-category-data", "type": "color", "value": "#d05fa8", "governs": "data — a data migration (magenta)" },
+        { "key": "script", "name": "--graph-category-script", "type": "color", "value": "#d0a92e", "governs": "script — a single-purpose invocable function (gold)" }
+      ]
+    },
+    {
+      "group": "graph-edge",
+      "governs": "dependency EDGE-kind hues — the relationship between two nodes",
+      "tokens": [
+        { "key": "api", "name": "--graph-edge-api", "type": "color", "value": "#5b9dff", "governs": "depends on — build & runtime dependency" },
+        { "key": "data", "name": "--graph-edge-data", "type": "color", "value": "#b98bff", "governs": "data flow — consumes a data feed" },
+        { "key": "events", "name": "--graph-edge-events", "type": "color", "value": "#4fd6a0", "governs": "event stream — async messages" }
+      ]
+    }
+  ]
+}

@@ -16,7 +16,7 @@ import { WriteBar } from "./WriteBar";
 
 export function ClaudeConfigCard() {
   const {
-    projectLocalRepos, bscBaseDir, projectKeyAlias,
+    projectLocalRepos, bscBaseDir,
     configProfiles, addConfigProfile, updateConfigProfile, removeConfigProfile,
   } = useAppStore();
 
@@ -24,8 +24,8 @@ export function ClaudeConfigCard() {
   // Repos live under `<base>/projects/<projectKey>/<repoShort>`, so the path is
   // derived from the project key each repo was cloned under.
   const allRepos = useMemo(
-    () => deriveAllRepos(projectLocalRepos, bscBaseDir, projectKeyAlias),
-    [projectLocalRepos, bscBaseDir, projectKeyAlias],
+    () => deriveAllRepos(projectLocalRepos, bscBaseDir),
+    [projectLocalRepos, bscBaseDir],
   );
 
   // Editor state

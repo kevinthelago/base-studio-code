@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { useAppStore } from "@/store";
 import { SplitView } from "@/shared/ui/layouts/SplitView";
@@ -19,6 +20,7 @@ import { defaultStageConfig, enabledOrderedStages } from "../stages/planStages";
 import { writeBlueprintSkillContext, collectBlueprintSkillIds } from "../blueprints/blueprintSkills";
 import { type McpInstallState } from "../lib/mcpPaneData";
 import { buildProjectPaneData } from "../pane/projectPaneData";
+import { toWorkerUiPairing } from "../fleet/workerScope";
 import { normalizeDeployConfig } from "../lib/deployConfig";
 // Blueprint-driven focused-pane model (#652) — restored after the #668 lossy rebase deleted it
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
@@ -46,7 +48,7 @@ import { usePlanningTitle } from "./usePlanningTitle";
 import { useCtxRequired } from "./useCtxRequired";
 import { usePlanConfirmations } from "./usePlanConfirmations";
 import { usePlanFocusedPane } from "./usePlanFocusedPane";
-import { useDesignRouteState } from "./useDesignRouteState";
+import { useDesignRouteState, uiNeedsRouting } from "./useDesignRouteState";
 import { invoke } from "@tauri-apps/api/core";
 import { parseIntake, markRouted, serializeIntake, INTAKE_DIR, INTAKE_MANIFEST } from "../lib/fileIntake";
 import { useSetupSignature } from "./useSetupSignature";
@@ -57,13 +59,15 @@ import { usePlannerTunnelSync } from "./usePlannerTunnelSync";
 import { usePlanAutopilot, type AutopilotDeps } from "./planAutopilotRunner";
 import { oneShotComplete } from "@/shared/lib/core/claudeComplete";
 import { resolveLlmConfig, hasLlmKey } from "@/shared/lib/core/llmConfig";
-import { TERM_THEME } from "./planningTerminal";
+import { TERM_THEME } from "@/app/console/lib/terminalConstants";
 import { PlanningHeader } from "./PlanningHeader";
 import { PlanningNotices } from "./PlanningNotices";
 import { PublishProgressView } from "./PublishProgressView";
 import { PlanningDialogs } from "./PlanningDialogs";
 
 export function Planning({ visible }: { visible: boolean }) {
+  // Subscribe to exactly the fields this component reads (#2714) — a memoized `useShallow`
+  // selector, so unrelated store writes no longer re-render the whole planning surface.
   const {
     setProjectsView,
     planningPitch, planningRepo, planningTitle, setPlanningTitle,
@@ -75,14 +79,15 @@ export function Planning({ visible }: { visible: boolean }) {
     planStages, planConfirmedStages,
     planAuthoredBlueprint, importBlueprint, setAuthoredBlueprint,
     planDeployConfig, setPlanDeployConfig,
-    planSourceConfig, planIntegrationConfig,
+    planMarketConfig,
+    planTransformations,
+    planSourceConfig,
     reposPublic, repoPublic,
     injectionHardGate, planInjectionAck, acknowledgePlanInjections,
     planSkippedStages, skipPlanStage,
     planFleet,
     planFleetTopology, setPlanFleetTopology,
     planFleetDirectorDrive, setPlanFleetDirectorDrive,
-    projectKeyAlias,
     pinnedContext,
     blueprints, planStageConfig,
     projectBlueprintId, setProjectBlueprintId,
@@ -94,7 +99,42 @@ export function Planning({ visible }: { visible: boolean }) {
     setPlanAgentStreamPersona,
     commands, schedules,
     confirmPlanStage,
-  } = useAppStore();
+  } = useAppStore(useShallow(s => ({
+    setProjectsView: s.setProjectsView,
+    planningPitch: s.planningPitch, planningRepo: s.planningRepo,
+    planningTitle: s.planningTitle, setPlanningTitle: s.setPlanningTitle,
+    planningSessionKey: s.planningSessionKey,
+    activeProjectId: s.activeProjectId, activeProjectName: s.activeProjectName,
+    activeProjectNumber: s.activeProjectNumber,
+    githubToken: s.githubToken,
+    activeProjectRepos: s.activeProjectRepos,
+    projectLocalRepos: s.projectLocalRepos,
+    planStages: s.planStages, planConfirmedStages: s.planConfirmedStages,
+    planAuthoredBlueprint: s.planAuthoredBlueprint, importBlueprint: s.importBlueprint,
+    setAuthoredBlueprint: s.setAuthoredBlueprint,
+    planDeployConfig: s.planDeployConfig, setPlanDeployConfig: s.setPlanDeployConfig,
+    planMarketConfig: s.planMarketConfig,
+    planTransformations: s.planTransformations,
+    planSourceConfig: s.planSourceConfig,
+    reposPublic: s.reposPublic, repoPublic: s.repoPublic,
+    injectionHardGate: s.injectionHardGate, planInjectionAck: s.planInjectionAck,
+    acknowledgePlanInjections: s.acknowledgePlanInjections,
+    planSkippedStages: s.planSkippedStages, skipPlanStage: s.skipPlanStage,
+    planFleet: s.planFleet,
+    planFleetTopology: s.planFleetTopology, setPlanFleetTopology: s.setPlanFleetTopology,
+    planFleetDirectorDrive: s.planFleetDirectorDrive, setPlanFleetDirectorDrive: s.setPlanFleetDirectorDrive,
+    pinnedContext: s.pinnedContext,
+    blueprints: s.blueprints, planStageConfig: s.planStageConfig,
+    projectBlueprintId: s.projectBlueprintId, setProjectBlueprintId: s.setProjectBlueprintId,
+    uiScreens: s.uiScreens, uiApproved: s.uiApproved, planAutomations: s.planAutomations,
+    setPlanAgentStreamFlow: s.setPlanAgentStreamFlow, setPlanAgentStreamModel: s.setPlanAgentStreamModel,
+    addProjectRepo: s.addProjectRepo, fleetStartProject: s.fleetStartProject,
+    agentProfiles: s.agentProfiles,
+    personas: s.personas,
+    setPlanAgentStreamPersona: s.setPlanAgentStreamPersona,
+    commands: s.commands, schedules: s.schedules,
+    confirmPlanStage: s.confirmPlanStage,
+  })));
   const autoPlanWithClaude = useAppStore(s => s.autoPlanWithClaude);
   const autoCompleteGates = useAppStore(s => s.autoCompleteGates);
   const allowGateOverride = useAppStore(s => s.allowGateOverride);
@@ -109,12 +149,11 @@ export function Planning({ visible }: { visible: boolean }) {
   // for the planning directory, PTY slot, and plan buckets — identical to the
   // remount key in projects/index.tsx. It is frozen for the session, so the
   // publish flow assigning a GitHub Project id or a title edit cannot move the
-  // working directory. The ref fallbacks keep older/in-flight sessions working.
-  // Resolve through the alias so a project reached via the board (only
-  // `activeProjectId` set = the GitHub node id) maps to the stable folder/data
-  // key its plan files live under, instead of an empty node-id key.
+  // working directory. Every entry path sets `planningSessionKey` to the
+  // name-derived key (#2409), so there is no alias to resolve through; the ref
+  // fallbacks keep older/in-flight sessions working if the key was never set.
   const rawSessionKey = planningSessionKey || activeProjectId || planningTitle || planningPitch;
-  const sessionKeyRef = useRef(projectKeyAlias[rawSessionKey] ?? rawSessionKey);
+  const sessionKeyRef = useRef(rawSessionKey);
   const effectiveProjectId = sessionKeyRef.current;
   // The skills that apply to THIS project (#1056) — the global library filtered to enabled global +
   // project-scoped, mapped to the focused Skills body's shape. Skills the planner authored THIS
@@ -246,9 +285,11 @@ export function Planning({ visible }: { visible: boolean }) {
     const raw = savedSections[FLEET_KEY] ?? "";
     if (raw === fleetSyncedRef.current) return;
     fleetSyncedRef.current = raw;
-    const fleet = parseFleetFile(raw);
+    // Pass the project's linked repos so a repo-less stream defaults to the sole repo (#2611) instead
+    // of silently vanishing from the plan.
+    const fleet = parseFleetFile(raw, effectiveRepos);
     if (fleet) useAppStore.getState().setPlanFleet(effectiveProjectId, fleet);
-  }, [savedSections, effectiveProjectId]);
+  }, [savedSections, effectiveProjectId, effectiveRepos]);
 
   // Backfill durable confirmations for an already-published project (#2259). A project published
   // BEFORE #2256 has no plan.db confirmations to rehydrate, so it would ask to reconfirm every stage
@@ -283,7 +324,7 @@ export function Planning({ visible }: { visible: boolean }) {
     draftTitleErr, setDraftTitleErr, commitDraftTitle,
   } = usePlanningTitle({
     activeProjectId, activeProjectName, activeProjectNumber, activeProjectRepos,
-    projectKeyAlias, planningTitle, setPlanningTitle, effectiveProjectId,
+    planningTitle, setPlanningTitle, effectiveProjectId,
   });
   const ghStructure  = buildGhStructure(sections, publishRepos, projectTitle, planFleet[effectiveProjectId]);
 
@@ -324,16 +365,23 @@ export function Planning({ visible }: { visible: boolean }) {
     () => normalizeDeployConfig(planDeployConfig[effectiveProjectId], publishRepos),
     [planDeployConfig, effectiveProjectId, publishRepos],
   );
+  // Market stage (#2430): the scored desk-research assessment the planner records via
+  // `bsc plan market set`; drives the `marketDefined` gate signal.
+  const marketCfg = useMemo(
+    () => planMarketConfig[effectiveProjectId] ?? null,
+    [planMarketConfig, effectiveProjectId],
+  );
+  // Transformations stage (#2509): the verb-shaped modification rows the planner records via
+  // `bsc plan transformation add`; drive the `transformationsConfirmed` gate signal.
+  const transformationRows = useMemo(
+    () => planTransformations[effectiveProjectId] ?? [],
+    [planTransformations, effectiveProjectId],
+  );
   // Source stage (#source-pane): the project's migration-source config — declared + connected
   // legacy systems; the `sourcesConnected` gate signal derives from it.
   const sourceCfg = useMemo(
     () => planSourceConfig[effectiveProjectId],
     [planSourceConfig, effectiveProjectId],
-  );
-  // Integration stage (#1207): the destination/sink + sync strategy; drives destinationDefined/syncDefined.
-  const intgCfg = useMemo(
-    () => planIntegrationConfig[effectiveProjectId],
-    [planIntegrationConfig, effectiveProjectId],
   );
   const paneData = useMemo(
     () => buildProjectPaneData({
@@ -355,8 +403,11 @@ export function Planning({ visible }: { visible: boolean }) {
       mcpInstallState,
       topologyOverride: planFleetTopology[effectiveProjectId],
       directorDriveOverride: planFleetDirectorDrive[effectiveProjectId],
+      // #2489: the blueprint's {kit, theme} pin drives the agent cards' UI-palette lock preview
+      // (the launch path additionally merges plan.db's per-project `ui` record on top).
+      uiPairing: toWorkerUiPairing(null, blueprints.find(b => b.id === effectiveBlueprintId)?.uiKit),
     }),
-    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, personas, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, depManifest, planDependencies, mcpServers, paneSkills, mcpInstallState],
+    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, personas, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, depManifest, planDependencies, mcpServers, paneSkills, mcpInstallState, blueprints, effectiveBlueprintId],
   );
 
   // The planner MCP install lifecycle (#1474, usePlanMcpManagement). mcpInstallState stays here
@@ -403,6 +454,14 @@ export function Planning({ visible }: { visible: boolean }) {
     [sections, publishRepos],
   );
   const featureState = useMemo(() => featuresSummary(planFeatures), [planFeatures]);
+  // The substep keys already resolved for the CURRENT-step "?" helper (#2859): every written/confirmed
+  // section file (its key IS the substep key for the discovery dimensions), plus the synthetic Features
+  // "propose" step once any feature exists. Drives `activeStagePrompt` via usePlanFocusedPane.
+  const stageDone = useMemo(() => {
+    const done = new Set(sections.filter((s) => s.state !== "pending").map((s) => s.k));
+    if (featureState.count > 0) done.add("propose");
+    return done;
+  }, [sections, featureState.count]);
   // The feature dependency DAG must stay acyclic (#plan-db) — a cycle is a planning deadlock that
   // holds the Features gate. `[]` when acyclic; otherwise the slugs on the offending cycle.
   const featureCycle = useMemo(() => featureDependencyCycle(planFeatures), [planFeatures]);
@@ -432,7 +491,7 @@ export function Planning({ visible }: { visible: boolean }) {
     sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
     confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
-    deployCfg, intgCfg, isAuthoring, authoringSig,
+    deployCfg, marketCfg, transformationRows, isAuthoring, authoringSig,
   });
 
   // The focused-pane SELECTION + its derived footer/pill/prompts live in usePlanFocusedPane, called
@@ -446,6 +505,8 @@ export function Planning({ visible }: { visible: boolean }) {
   usePlannerTunnelSync({
     effectiveProjectId, savedSections, confirmedSet, currentStage, planStatusLabel,
     planningDir, paneId, projectTitle, confirmPlanStage,
+    // #2498: the stage/gate board (the `plan` store_state domain) + gate-ready/planner-waiting alerts.
+    stages, focusGateReady, planComplete,
   });
 
   // Stage gate-confirm/skip logic (#1775, usePlanConfirmations): the active stage's pending sections,
@@ -460,13 +521,18 @@ export function Planning({ visible }: { visible: boolean }) {
   // (content-hash diff, polled). While true the footer's primary action ROUTES the design (the
   // route-design branch of onPrimary, below) instead of advancing; once routed-and-current it
   // reverts to the normal "approve & continue". Replaces the removed FileIntakePane route button.
-  const designChanged = useDesignRouteState(effectiveProjectId, requiresUi);
-  const uiNeedsRoute = requiresUi && (!confirmedSet.has("ui") || designChanged);
+  // #2860 — the design "needs routing" only when there ARE staged files (design.hasFiles) AND either
+  // the `ui` section is unconfirmed or a staged file changed since the last route. Without the
+  // hasFiles guard the footer offered "route design to project" on a fresh UI stage with nothing to
+  // route (the `!confirmed('ui')` half is true before any file is dropped).
+  const design = useDesignRouteState(effectiveProjectId, requiresUi);
+  const uiNeedsRoute = uiNeedsRouting(requiresUi, confirmedSet.has("ui"), design);
   // Focused-pane SELECTION + its derived advance-bar/pill/prompt-help (#1490, usePlanFocusedPane).
   // Called here so the footer can read `pendingConfirm` (above) and the gate snapshot (usePlanGates).
-  const { setFocusSel, focusSelectedIdx, focusPill, focusFooter, focusStagePrompts } = usePlanFocusedPane({
+  const { setFocusSel, focusSelectedIdx, focusPill, focusFooter, focusStagePrompt } = usePlanFocusedPane({
     stages, focusActiveIdx, planComplete, focusGateReady, pendingConfirm,
     allowGateOverride, planSecs, effectiveProjectId, effectiveBlueprintId, uiNeedsRoute,
+    stageDone, featuresComplete: featureState.allConfirmed,
   });
 
   // #2121 — the UI stage footer's "route design to project" action (replaces the FileIntakePane
@@ -755,17 +821,23 @@ export function Planning({ visible }: { visible: boolean }) {
                 onSelect: (i) => setFocusSel(i),
                 pill: focusPill,
                 footer: focusFooter,
-                // Per-stage "?" prompt helper (#…): the user injects a stage prompt on demand
-                // (the auto-injecting conductor was removed).
-                promptHelp: { prompts: focusStagePrompts, onInject: sendPrompt },
+                // Per-stage "?" prompt helper (#2859): the user injects the SINGLE current-step
+                // prompt on demand (one at a time, not the whole list). Absent when the stage has none.
+                promptHelp: focusStagePrompt ? { prompt: focusStagePrompt, onInject: sendPrompt } : undefined,
                 // The live required-context set (#1061): the Context body names each required file
                 // as written/missing so the gate's "why" is visible at a glance.
                 requiredContext: ctxRequired,
                 // Once a board exists, the publish action reads as "Update GitHub" — a re-sync of
                 // the plan, not a first publish (handlePublish sets activeProjectId on create) (#823).
                 published: !!activeProjectId,
-                // An authoring project publishes a gist, not a GitHub board (#923).
-                publishLabel: isAuthoring ? "⎙ Publish blueprint" : undefined,
+                // An authoring project publishes a gist, not a GitHub board (#923). #3280 local-first:
+                // with no GitHub token the action COMMITS the plan to plan.db (no board to publish/update),
+                // so the label says so — "Commit plan" (first) / "Recommit plan" (re-materialize).
+                publishLabel: isAuthoring
+                  ? "⎙ Publish blueprint"
+                  : !githubToken
+                    ? (activeProjectId ? "✓ Recommit plan" : "✓ Commit plan")
+                    : undefined,
                 // The user deliberately skips the active optional stage (#921); the gate resolves
                 // and the selection re-follows to the next live stage.
                 onSkip: () => { onSkipStage(); setFocusSel(null); },
@@ -776,12 +848,10 @@ export function Planning({ visible }: { visible: boolean }) {
                   // confirm the ui section). Stays on the stage so the footer flips to advance.
                   if (focusFooter.kind === "route-design") { void routeDesignToProject(); return; }
                   if (focusFooter.kind === "approve-continue") {
-                    // User gate override (#1285): the gate isn't met but the user chose to advance —
-                    // force past the active stage (the skip/advance primitive) and tell the planner.
-                    if (focusFooter.override) { onSkipStage(); setFocusSel(null); return; }
                     // One-click stage approval: confirm every drafted section the active stage needs,
                     // then tell the planner in a single message. The gate re-evaluates and the
-                    // selection re-follows to the next live stage (#807-followup).
+                    // selection re-follows to the next live stage (#807-followup). Moving past a
+                    // blocking gate now goes through the uniform Skip control (#2533), not the primary.
                     if (pendingConfirm.length > 0) confirmStageKeys(pendingConfirm);
                   }
                   setFocusSel(null); // re-follow the live stage

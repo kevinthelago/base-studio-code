@@ -33,6 +33,8 @@ export {
   DEP_MANIFEST_FILES,
   roleCapability,
   hasScopedWriteCarveOut,
+  restrictedRoleCommands,
+  isRestrictedRole, HARVEST_ROOT_APP_REPO,
 } from "./roleModel";
 
 export type { CommandClass, CommandDecision } from "./commandGate";
@@ -46,4 +48,6 @@ export {
   roleDeniedTools,
   roleDeniedCommands,
   bscAgentPerms,
+  sessionScopes,
+  editPathRule,
 } from "./launchRules";

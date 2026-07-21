@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { UI_KIT, findPrimitive, primitivesByGroup, manifestJson, type PropType } from "./manifest";
+import { BASE_ANIMATIONS } from "./kit/baseAnimations";
 import { UI_COMPONENTS, componentFor } from "./registry";
 
 const PROP_TYPES: PropType[] = [
@@ -44,6 +45,32 @@ describe("UI kit manifest — integrity", () => {
     const groups = primitivesByGroup();
     const total = Object.values(groups).reduce((n, g) => n + g.length, 0);
     expect(total).toBe(UI_KIT.length);
+  });
+
+  it("carries the pages tier (#2505, +RecordPage #2508) — the seven complete page compositions in their own group", () => {
+    expect(primitivesByGroup().pages.map((p) => p.name).sort()).toEqual(
+      ["CollectionPage", "DashboardPage", "NetworkPage", "PipelinePage", "RecordPage", "TablePage", "TreeExplorerPage"]);
+  });
+
+  it("binds the base motions by NAME (#2871/#3451) — the defs are owned by the `base` kit", () => {
+    // The primitives REFERENCE the shared base motion library; they no longer carry the defs
+    // themselves (those moved to `shared/ui/kit/baseAnimations.ts`, so ONE edit propagates to every
+    // consuming kit instead of react-ui owning motion the whole platform leans on).
+    const exemplars = { StatusDot: "pulse", Card: "fade-in", Button: "lift" } as const;
+    for (const [comp, want] of Object.entries(exemplars)) {
+      expect(findPrimitive(comp as never)?.animations, `${comp} binds the base motion`).toEqual([want]);
+    }
+  });
+
+  it("references only base animations that actually exist (#3451) — no dangling motion refs", () => {
+    // A name with no def in the base library resolves to NOTHING and the component silently plays no
+    // motion — exactly the failure the name-ref indirection introduces, so it is pinned here.
+    const defined = new Set(BASE_ANIMATIONS.map((a) => a.name));
+    for (const p of UI_KIT) {
+      for (const name of p.animations ?? []) {
+        expect(defined.has(name), `${p.name} references a base animation that exists: ${name}`).toBe(true);
+      }
+    }
   });
 });
 

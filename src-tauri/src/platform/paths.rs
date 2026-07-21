@@ -37,13 +37,56 @@ pub(crate) fn project_dir(project_key: &str) -> std::path::PathBuf {
     projects_root().join(sanitize_project_key(project_key))
 }
 
-/// The project hub's per-project SQLite plan store: `projects/<key>/plan.db` (#plan-db). The sole fleet
-/// store (#1805). One helper so the path stops being spelled two ways — `project_dir(key).join("plan.db")`
-/// vs `bsc_base_dir().join("projects").join(key).join("plan.db")` — which is exactly the drift this
-/// module exists to prevent (#2081). Key sanitize is idempotent, so a cwd-derived (already-sanitized)
-/// key resolves to the same path.
+/// The ephemeral, per-project planning workspace: `~/.base-studio-code/planning/<key>` (#2997, epic
+/// #2993). Where a NEVER-MATERIALIZED greenfield draft's planner session mounts, so a draft that's
+/// abandoned before triage leaves no half-baked `projects/<key>/` hub behind. STABLE per key (no
+/// timestamp / random component) so Claude's cwd-keyed `--continue` history survives a relaunch. Its
+/// contents are promoted into the real [`project_dir`] at fleet launch by
+/// [`crate::project::hub::materialize_hub`]. Sanitizes the key exactly like `project_dir`.
+pub(crate) fn planning_workspace_dir(project_key: &str) -> std::path::PathBuf {
+    bsc_base_dir().join("planning").join(sanitize_project_key(project_key))
+}
+
+/// The planner session's CWD for `key` (#2997): the EXISTING **materialized** hub if one is on disk,
+/// else the ephemeral [`planning_workspace_dir`]. Grandfathered / repo-linked / already-materialized
+/// projects (whose `project_dir` holds a real hub) keep their EXACT mount + `--continue` history
+/// unchanged; a fresh greenfield draft plans in the ephemeral workspace until
+/// [`crate::project::hub::materialize_hub`] promotes it at triage. This is the ONE resolver both the
+/// planner mount (`setup_workspaces`) and its determinism guard (`get_context_signature`) read, so the
+/// recorded signature and the actual mount can never disagree.
+///
+/// The "materialized" test is `project_dir/CLAUDE.md`, NOT bare `project_dir` existence: `setup_workspaces`
+/// writes `CLAUDE.md` into the resolved planning dir (so a greenfield draft's `CLAUDE.md` lands in
+/// `planning/<key>`, never `project_dir`), while `mint_ingest_token` DOES stub `project_dir/ingest-token`
+/// during planning. Keying off bare existence would let that token stub flip the mount back to the hub on
+/// the next planner relaunch — orphaning the draft's files and losing its `--continue` history (#2997).
+/// A materialized hub always has `CLAUDE.md` (every legacy hub was set up with one; `materialize_hub`
+/// moves the planner's `CLAUDE.md` in), and a token-only stub never does — so `CLAUDE.md` cleanly tells
+/// the two apart.
+pub(crate) fn planning_cwd(project_key: &str) -> std::path::PathBuf {
+    let hub = project_dir(project_key);
+    if hub.join("CLAUDE.md").is_file() {
+        hub
+    } else {
+        planning_workspace_dir(project_key)
+    }
+}
+
+/// The root that holds every project's plan store, OUT of the hub (#2996): `~/.base-studio-code/plans`.
+/// plan.db moved here (from `projects/<key>/plan.db`) so the plan persists independently of whether the
+/// hub folder exists — the database is the source of truth; the hub is a projection materialized at
+/// triage (epic #2993). One source of truth for the path (#2081).
+pub(crate) fn plans_root() -> std::path::PathBuf {
+    bsc_base_dir().join("plans")
+}
+
+/// The per-project SQLite plan store: `plans/<key>.db` (#plan-db; relocated OUT of the hub, #2996). The
+/// sole fleet store (#1805). Resolved by every session via `$BSC_PLAN_DB`; existing in-hub
+/// `projects/<key>/plan.db` files are moved here once at startup by
+/// [`crate::project::plan_db::migrate_plan_dbs_to_central`]. Key sanitize is idempotent, so a
+/// cwd-derived (already-sanitized) key resolves to the same path.
 pub(crate) fn plan_db_path(project_key: &str) -> std::path::PathBuf {
-    project_dir(project_key).join("plan.db")
+    plans_root().join(format!("{}.db", sanitize_project_key(project_key)))
 }
 
 /// The project hub's per-project SQLite **runtime-fault store**: `projects/<key>/error.db` (#2260).
@@ -75,6 +118,14 @@ pub(crate) fn ingest_port_file() -> std::path::PathBuf {
 /// callers that write create the parent themselves. Sanitizes the key (idempotent on a cwd-derived key).
 pub(crate) fn data_db_path(project_key: &str) -> std::path::PathBuf {
     bsc_base_dir().join("data").join(format!("{}.duckdb", sanitize_project_key(project_key)))
+}
+
+/// The persisted GitHub REST response cache (#2448): `~/.base-studio-code/github-http-cache.json`
+/// — `{path → {etag, body, fetched_at}}` so `If-None-Match` revalidation (free 304s) works cold
+/// across restarts, not just within one process. Size-capped at write time; corrupt/absent ⇒ the
+/// in-memory cache starts empty.
+pub(crate) fn github_http_cache_file() -> std::path::PathBuf {
+    bsc_base_dir().join("github-http-cache.json")
 }
 
 /// The global skills store: `~/.base-studio-code/skills.db` (the `bsc skill` CLI's db). Not per-project.
@@ -216,13 +267,13 @@ mod relocated_tests {
     }
 
     #[test]
-    fn plan_db_path_collapses_the_two_former_spellings() {
-        // #2081 regression: plan.db was spelled `project_dir(k).join("plan.db")` in one place and
-        // `bsc_base_dir().join("projects").join(k).join("plan.db")` in another. Both must resolve to
-        // the SAME path so the drift can't recur. Key sanitize is idempotent, so an already-sanitized
-        // (cwd-derived) key resolves identically.
-        assert_eq!(plan_db_path("my-app"), project_dir("my-app").join("plan.db"));
-        assert_eq!(plan_db_path("my-app"), projects_root().join("my-app").join("plan.db"));
+    fn plan_db_path_is_the_central_store_not_the_hub() {
+        // #2996: plan.db was relocated OUT of the hub to the central `plans/<key>.db` store, so the plan
+        // persists folder-independently. One canonical spelling (the #2081 anti-drift point still holds).
+        assert_eq!(plan_db_path("my-app"), plans_root().join("my-app.db"));
+        assert_eq!(plan_db_path("my-app"), bsc_base_dir().join("plans").join("my-app.db"));
+        // It is NO LONGER under the project hub.
+        assert_ne!(plan_db_path("my-app"), project_dir("my-app").join("plan.db"));
         // sanitize is applied and idempotent.
         assert_eq!(plan_db_path("a/b"), plan_db_path("a_b"));
     }
@@ -276,6 +327,36 @@ mod relocated_tests {
         // First '--' is the boundary → repo short truncates to "a", slug is the remainder.
         assert_eq!(parse_worktree_dir_name(&name), Some(("a", "b--s1")));
     }
+    #[test]
+    fn planning_cwd_prefers_an_existing_hub_else_the_ephemeral_workspace() {
+        // #2997: the planner mounts at the EXISTING hub when one is on disk (grandfathered / repo-linked
+        // projects keep their exact mount + --continue history), otherwise at the stable ephemeral
+        // `planning/<key>` workspace, so a never-launched greenfield draft leaves no half-baked hub.
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = temp_home("plancwd");
+        let key = "greenfield-draft";
+        // Fresh (no hub yet) → the ephemeral planning workspace, which is STABLE per key.
+        assert_eq!(planning_cwd(key), planning_workspace_dir(key));
+        assert_eq!(planning_workspace_dir(key), bsc_base_dir().join("planning").join(key));
+        assert!(!planning_workspace_dir(key).to_string_lossy().contains(".."));
+        // Stable across calls (no timestamp/random) so --continue history survives a relaunch.
+        assert_eq!(planning_workspace_dir(key), planning_workspace_dir(key));
+        // Regression (#2997): a token-STUB project_dir (mint_ingest_token writes `ingest-token` during
+        // planning) must NOT flip the mount — no CLAUDE.md means it's not a materialized hub, so a
+        // planner relaunch keeps planning in the ephemeral workspace (else the draft's files orphan and
+        // its --continue history is lost).
+        std::fs::create_dir_all(project_dir(key)).unwrap();
+        std::fs::write(project_dir(key).join("ingest-token"), "tok").unwrap();
+        assert_eq!(planning_cwd(key), planning_workspace_dir(key), "token stub must not count as a hub");
+        // Once a REAL hub exists on disk (marked by CLAUDE.md), planning_cwd resolves there instead —
+        // grandfathered / materialized projects keep their exact mount.
+        std::fs::write(project_dir(key).join("CLAUDE.md"), "# hub").unwrap();
+        assert_eq!(planning_cwd(key), project_dir(key));
+        // The key is sanitized (idempotent on an already-slug key), like project_dir.
+        assert_eq!(planning_workspace_dir("a/b"), planning_workspace_dir("a_b"));
+        std::fs::remove_dir_all(&home).ok();
+    }
+
     #[test]
     fn worktrees_dir_is_outside_the_project_hub() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());

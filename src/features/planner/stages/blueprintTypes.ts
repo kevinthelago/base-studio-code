@@ -7,6 +7,9 @@
 import { type ClassificationSignals } from "./classification";
 import { type StageGate, type Requirement } from "./stageGate";
 import { type AgentFlow } from "../fleet/agentFlow";
+// Type-only cross-feature import (allowed by the #1545 boundary): the blueprint team (#2450)
+// reuses the org feature's graph shape rather than redeclaring it.
+import type { Position, Relationship } from "@/features/teams";
 
 // ── Substeps ─────────────────────────────────────────────────────────────────
 // A discrete step WITHIN a stage. The conductor injects ONE substep's prompt at a time and
@@ -105,9 +108,17 @@ export interface SectionDef {
   /** Optional applicability rule (e.g. UI only when the project needs a UI). Absent ⇒
    *  the section always applies. */
   appliesWhen?: Requirement;
+  /** Declarative "skippable RIGHT NOW" rule (#2854) — the same {@link Requirement} shape as
+   *  {@link appliesWhen}/gateRule, evaluated against the live signal bag, that makes a section's
+   *  Skip control appear. It expresses the "empty ⇒ skippable, populated ⇒ required" pattern
+   *  WITHOUT the stage disappearing (unlike `appliesWhen`, which drops it entirely): e.g. Features
+   *  carries `{ signal: "featuresDefined", target: 0, op: "==" }`, so an empty Features stage is
+   *  skippable but one with content is required. Absent ⇒ not skippable on its own (only an
+   *  {@link optional} section or gate-override offers Skip). Drives `Stage.skippable`. */
+  skipWhen?: Requirement;
   /** An OPTIONAL section is shown but never required: it doesn't block plan completion or
    *  downstream dependents, and it's off the critical path (currentStage skips it) — the
-   *  user can fill it or skip it (#676). */
+   *  user can fill it or skip it (#676). Equivalent to an always-passing {@link skipWhen}. */
   optional?: boolean;
   /** Context stage only (#1019): the baseline REQUIRED topics this section seeds into the project's
    *  dynamic context manifest (plan.db) when first adopted. The planner then adjusts the set with
@@ -155,7 +166,7 @@ export type BlueprintOrigin = "built-in" | "local" | "forked" | "imported";
 /** Lifecycle intent of a blueprint (#645) — what part of a project's life it serves.
  *  Greenfield = create from a pitch; transform = restructure existing repos; harden =
  *  improve quality in place; maintain = ongoing upkeep. Drives library grouping/labels. */
-export type BlueprintCategory = "greenfield" | "transform" | "harden" | "maintain" | "data";
+export type BlueprintCategory = "greenfield" | "transform" | "harden" | "maintain" | "data" | "script";
 
 /** Whether a blueprint starts from a pitch (create) or runs against existing repos
  *  (operate) — selects the planner intro at launch. */
@@ -199,6 +210,86 @@ export interface FleetPolicy {
   flow?: AgentFlow;
 }
 
+/** The TEAM a blueprint carries (#2450) — an embedded org configuration: positions (personas
+ *  referenced by id — personas stay a global library) wired by relationships, with the canvas
+ *  layout coords on each position. The same graph shape the `bsc org` store holds, MINUS the
+ *  library identity fields (`id`/`name`/`blurb`/`builtin`) — the blueprint itself is the identity.
+ *
+ *  FORK-ON-ATTACH: authoring starts by DEEP-COPYING a library org (or blank) into
+ *  `blueprint.team` (see `forkTeamFromOrg`); the `bsc org` store remains the archetype library.
+ *  Editing a blueprint's team never mutates the library org and vice versa — reproducibility of
+ *  the blueprint artifact wins. Persisted inside the blueprint's JSON (the `bsc blueprint` store
+ *  is verbatim JSON), so export/import carries it automatically. Optional — a blueprint without
+ *  `team` behaves exactly as before; plan-time consumption (seeding fleet streams from the team)
+ *  is a deliberate follow-up, not this field's contract. */
+export interface BlueprintTeam {
+  positions: Position[];
+  relationships: Relationship[];
+}
+
+/** The UI KIT a blueprint pins (#2465) — a LOCKFILE entry, deliberately the opposite of `team`:
+ *  the kit is REFERENCED, never embedded, because kits are immutable versioned artifacts shared
+ *  across blueprints (one copy in the global store, `~/.base-studio-code/kits/<id>/<version>/`,
+ *  no matter how many blueprints pin it). Exact pins only — no version ranges (reproducibility).
+ *
+ *  `hash` is the sha256 (lowercase hex) of the kit artifact's bytes, verified BEFORE a fetched
+ *  kit is accepted into the store (resolve flow, `uiKitPin.ts`); `source` is the typed-gist URL
+ *  to fetch from when `id@version` isn't in the local store yet. A new blueprint default-pins the
+ *  packaged `bsc/react-ui` kit ({@link Blueprint.uiKit} set in `addBlueprint`); a blueprint
+ *  without a pin behaves exactly as before. */
+export interface BlueprintUiKit {
+  /** Publisher-scoped kit id (e.g. `"bsc/react-ui"`). */
+  id: string;
+  /** Exact semver of the pinned artifact (immutable once published). */
+  version: string;
+  /** sha256 (lowercase hex) of the artifact bytes. */
+  hash: string;
+  /** Typed-gist URL to fetch from when the id@version is missing locally. */
+  source?: string;
+  /** The kit THEME paired with the pin (#2489) — a `bsc ui theme` id. Absent ⇒ `"default"`. An ID,
+   *  never the vars: the theme resolves through `bsc ui theme get` at EMISSION time
+   *  (`bsc ui emit-css --theme <id>` → the generated app's tokens.css + theme.css), so
+   *  designer-authored themes apply the moment they exist. This is the blueprint-level default;
+   *  the planned application's actual pair is recorded per project in plan.db (`bsc plan ui`). */
+  themeId?: string;
+}
+
+/** The SOUND KIT a blueprint pins (#3372, epic #3071 phase 4) — the sounds twin of
+ *  {@link BlueprintUiKit}, deliberately the SAME lockfile discipline: the kit is REFERENCED, never
+ *  embedded, against the global versioned sound-kit release store
+ *  (`~/.base-studio-code/sound-kits/<id>/<version>/`, the Rust `bsc sound release` CLI, #3371).
+ *  Exact pins only — no ranges (reproducibility). A new blueprint default-pins the packaged
+ *  `bsc/signal` kit ({@link Blueprint.soundKit} set in `addBlueprint`), which resolves against the
+ *  store's embedded fallback and so needs no fetch.
+ *
+ *  NO `themeId` twin: a theme restyles a component kit's tokens, and a sound kit has no token
+ *  contract to restyle — its cues ARE the palette. Adding a dead field "for symmetry" would invent
+ *  a knob nothing reads. */
+export interface BlueprintSoundKit {
+  /** Publisher-scoped kit id (e.g. `"bsc/signal"`). */
+  id: string;
+  /** Exact semver of the pinned artifact (immutable once published). */
+  version: string;
+  /** sha256 (lowercase hex) of the artifact bytes — the canonical SoundKit object, NOT a wrapper. */
+  hash: string;
+  /** Typed-gist URL to fetch from when the id@version is missing locally. */
+  source?: string;
+}
+
+/** A blueprint's DESIGN contribution (#2646, epic #2606) — the categorical dimensions it introduces
+ *  that need design-token backing (a `simulation` node-kind, say), plus an optional theme by reference.
+ *  Downloading a blueprint RECONCILES this against the local design contract: categories the contract
+ *  doesn't define are surfaced (a dedicated confirm-list, 5b) and filled by the generator (#2636), so a
+ *  shared blueprint brings its look with NO holes. Deliberately the opposite of embedding: categories
+ *  are KEYS (the generator derives on-brand colours), `theme` is a `bsc ui theme` id (never the vars). */
+export interface BlueprintDesign {
+  /** Categorical keys the blueprint introduces — reconciled against the contract's graph-category group;
+   *  any the contract doesn't define is a gap the generator fills (5b). */
+  categories?: string[];
+  /** Optional theme by reference — a `bsc ui theme` id (mirrors the uiKit pin's `themeId`; absent ⇒ default). */
+  theme?: string;
+}
+
 export interface Blueprint {
   id: string;
   name: string;
@@ -221,7 +312,7 @@ export interface Blueprint {
   /** Blueprint-wide attached MCP servers (#897) — applied across every stage, in addition to
    *  each section's own `mcp`. Server NAMES (the portable ref). */
   mcp?: string[];
-  /** The component KIT (#2277) an app seeded from this blueprint is built on — a `bsc component` kit id
+  /** The component KIT (#2277) an app seeded from this blueprint is built on — a `bsc ui` kit id
    *  (e.g. `"react-ui"`). Recording it makes every project seeded here a CONSUMER of that kit, so a kit
    *  change fans out to it (the `kit_usage` consumer index self-fills at planning). Absent ⇒ the blueprint
    *  isn't tied to a shared kit (an authoring blueprint, or one that operates on a repo's own UI). */
@@ -230,6 +321,22 @@ export interface Blueprint {
    *  when it generates this project type's fleet. A composed sub-model; see {@link FleetPolicy}.
    *  Absent ⇒ today's launch-time defaults apply (byte-identical). */
   fleetPolicy?: FleetPolicy;
+  /** The blueprint's own TEAM (#2450) — an embedded org configuration forked from the org library
+   *  (or authored blank). A composed sub-model; see {@link BlueprintTeam}. Absent ⇒ no team
+   *  authored (today's behavior, byte-identical everywhere). */
+  team?: BlueprintTeam;
+  /** The UI kit this blueprint pins (#2465) — a lockfile entry referencing an immutable
+   *  `id@version` artifact in the global kit store; see {@link BlueprintUiKit}. Absent ⇒ no pin
+   *  (existing blueprints are unaffected); a NEW blueprint default-pins the packaged kit. */
+  uiKit?: BlueprintUiKit;
+  /** The SOUND kit this blueprint pins (#3372) — the same lockfile entry one pillar over, against
+   *  the versioned sound-kit release store; see {@link BlueprintSoundKit}. Absent ⇒ no pin
+   *  (existing blueprints are unaffected); a NEW blueprint default-pins the packaged `bsc/signal`. */
+  soundKit?: BlueprintSoundKit;
+  /** The blueprint's DESIGN contribution (#2646) — the categorical keys it introduces + an optional
+   *  theme ref; reconciled against the local design contract on download. Absent ⇒ nothing to reconcile
+   *  (existing blueprints unaffected). See {@link BlueprintDesign}. */
+  design?: BlueprintDesign;
   /** Lifecycle intent (#645). Absent ⇒ greenfield (the create-a-project default). */
   category?: BlueprintCategory;
   /** Create (from a pitch) vs operate (against existing repos). Absent ⇒ create. */

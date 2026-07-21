@@ -2,8 +2,8 @@
 // navigable stepper, the stage header with gate pill, lock/done banners, and the footer
 // advance bar. Pure presentational (props in, callbacks out); the stage model + footer
 // logic live in focusedPlan.ts. Styling: projectPane.css, scoped under .fp.
-import { useState } from "react";
 import { BackButton } from "@/shared/ui/controls/BackButton";
+import { Button } from "@/shared/ui/controls/Button";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { connectorKind, type Stage, type GatePill, type FooterKind } from "../stages/focusedPlan";
@@ -11,73 +11,61 @@ import { stageKind } from "../blueprints/blueprintCatalog";
 import { ProgressionRail, type RailNode } from "./ProgressionRail";
 import type { StagePrompt } from "../session/plannerConductor";
 
-/** The per-stage prompt helper (#…): the "?" affordance in the focused-pane header. The app no
- *  longer auto-injects prompts; instead this lists every injectable prompt for the stage and the
- *  user picks one to send into the planner chat. Renders nothing when the stage has no prompts. */
-export function StagePromptHelp({ prompts, onInject }: {
-  prompts: StagePrompt[];
-  onInject: (text: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  if (prompts.length === 0) return null;
-  return (
-    <>
-      {/* eslint-disable-next-line no-restricted-syntax -- bespoke floating prompt-helper toggle (absolute-positioned, open-state accent-tinted inline styling, not the .btn/IconButton kit) */}
-      <button
-        className="mono"
-        title="Inject a prompt for this stage"
-        aria-label="Stage prompt helper"
-        onClick={() => setOpen((o) => !o)}
-        style={{
-          position: "absolute", top: 12, right: 14, zIndex: 42,
-          width: 26, height: 26, display: "inline-flex", alignItems: "center", justifyContent: "center",
-          borderRadius: 999, cursor: "pointer", fontSize: 14, fontWeight: 700,
-          background: open ? "color-mix(in oklch, var(--accent), transparent 84%)" : "var(--bg-elev)",
-          border: `1px solid ${open ? "var(--accent)" : "var(--border)"}`,
-          color: open ? "var(--accent)" : "var(--fg-muted)",
-        }}
-      >?</button>
-      {open && (
-        <>
-          {/* click-away catcher */}
-          <Box onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 41 }} />
-          <Box role="menu" pad={6} bg="var(--bg-panel)" border radius="lg" style={{
-            position: "absolute", top: 44, right: 14, zIndex: 42, width: 360, maxHeight: 380, overflowY: "auto",
-            boxShadow: "0 16px 48px rgba(0,0,0,.5)",
-          }}>
-            <Text as="div" mono size={9.5} tone="dim" style={{
-              padding: "6px 8px 8px", letterSpacing: ".06em",
-              textTransform: "uppercase",
-            }}>Inject a prompt for this stage</Text>
-            {prompts.map((p, i) => (
-              // eslint-disable-next-line no-restricted-syntax -- bespoke prompt-list menu item (block card-styled, text-left inline styling, not the .btn kit)
-              <button
-                key={i}
-                onClick={() => { onInject(p.text); setOpen(false); }}
-                title="Inject into the planner chat"
-                style={{
-                  display: "block", width: "100%", textAlign: "left", cursor: "pointer",
-                  background: "var(--bg-elev)", border: "1px solid var(--border-soft)", borderRadius: "var(--r-md)",
-                  padding: "8px 10px", marginBottom: 5, color: "var(--fg)",
-                }}
-              >
-                <Text as="div" mono size={11.5} weight={600} style={{ marginBottom: 3 }}>{p.label}</Text>
-                <Text as="div" size={10.5} tone="muted" style={{
-                  lineHeight: 1.5,
-                  display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
-                }}>{p.text}</Text>
-              </button>
-            ))}
-          </Box>
-        </>
-      )}
-    </>
-  );
-}
-
 /** Format one unmet requirement: "resolve the discovery topics (3 of 5)". */
 function reasonText(u: { label: string; detail?: string }): string {
   return u.detail ? `${u.label} (${u.detail})` : u.label;
+}
+
+/**
+ * The Stage Guidance card (#2862) — the panel that pairs the gate's REQUIREMENTS with the suggested
+ * next-step PROMPT. Shows the unmet requirements inline (`stage.unmet`) while the gate is blocking, and
+ * the single current-step prompt (#2859) with a legible Inject button. Once the gate passes it collapses
+ * to a "Gate ready" row. Renders nothing when there's neither a requirement nor a prompt.
+ *
+ * DISCLOSURE (#3257): `open` is the gate-pill toggle state — `false` collapses the card entirely (the
+ * default in the focused pane, so the surface stays clean until the user opens the gate). `undefined`
+ * keeps it always-shown (the pre-#3257 behavior, for any caller that doesn't wire the toggle).
+ */
+export function StageGuidanceCard({ stage, pill, prompt, onInject, open }: {
+  stage: Stage;
+  pill: GatePill;
+  /** The current-step prompt for this stage (#2859) — absent when the stage has none. */
+  prompt?: StagePrompt;
+  onInject?: (text: string) => void;
+  /** Disclosure state (#3257) — `false` hides the card; the gate pill toggles it. `undefined` ⇒ shown. */
+  open?: boolean;
+}) {
+  if (open === false) return null; // collapsed by the gate-pill toggle (#3257)
+  const unmet = stage.unmet ?? [];
+  const showReqs = pill !== "pass" && unmet.length > 0;
+  const showPrompt = !!prompt && !!onInject;
+  if (!showReqs && !showPrompt) return null;
+  const ready = pill === "pass";
+  return (
+    <Box className={"stage-guide " + pill} role="group" aria-label="Stage guidance">
+      <Box className="sg-head">
+        <Box as="span" className="sg-dot" />
+        <Text as="span" className="sg-title">{ready ? "Gate ready" : "What’s still needed"}</Text>
+      </Box>
+      {showReqs && (
+        <ul className="sg-reqs">
+          {unmet.map((u, i) => (
+            <li key={i}>{u.label}{u.detail && <Text as="span" tone="dim"> — {u.detail}</Text>}</li>
+          ))}
+        </ul>
+      )}
+      {showPrompt && (
+        <Box className="sg-prompt">
+          <Text as="div" className="sg-eyebrow">Suggested next step</Text>
+          <Text as="div" className="sg-plabel">{prompt!.label}</Text>
+          <Text as="div" className="sg-ptext">{prompt!.text}</Text>
+          <Button variant="primary" size="sm" className="sg-inject" onClick={() => onInject!(prompt!.text)}>
+            Inject →
+          </Button>
+        </Box>
+      )}
+    </Box>
+  );
 }
 
 /**
@@ -113,51 +101,41 @@ export function Stepper({ stages, selectedIdx, onSelect, highlight }: {
   );
 }
 
-/** Eyebrow + title + blurb + gate pill for the focused stage. The pill surfaces WHY the
- *  gate isn't met (#805): a hover tooltip + a click-to-toggle popover of what's still needed. */
-export function StageHeader({ stage, pill, promptHelp }: {
+/** Eyebrow + title + blurb + a SLIM gate status pill for the focused stage. The pill is at-a-glance
+ *  status (pass/wait, with a hover tooltip of what's left, #805); when `onToggleGate` is wired (#3257) it
+ *  DOUBLES as the disclosure control for the {@link StageGuidanceCard} — a clickable chip with a caret
+ *  that reflects `open`. Absent ⇒ a static status chip (the pre-#3257 behavior). The requirement DETAIL +
+ *  the suggested prompt live in the guidance card (#2862). */
+export function StageHeader({ stage, pill, open, onToggleGate }: {
   stage: Stage;
   pill: GatePill;
-  /** Injectable prompts for this stage + the inject handler — drives the "?" helper (#…). */
-  promptHelp?: { prompts: StagePrompt[]; onInject: (text: string) => void };
+  /** Whether the guidance card is open (#3257) — reflected on the pill (caret + `.open`). */
+  open?: boolean;
+  /** When set, the gate pill TOGGLES the guidance card (#3257); absent ⇒ a static status chip. */
+  onToggleGate?: () => void;
 }) {
-  const [showReasons, setShowReasons] = useState(false);
   const unmet = stage.unmet ?? [];
-  // Only offer reasons while the gate isn't passing and there's something to explain.
-  const hasReasons = pill !== "pass" && unmet.length > 0;
-  const tip = hasReasons ? "Still needed: " + unmet.map(reasonText).join("; ") : undefined;
+  const tip = pill !== "pass" && unmet.length > 0 ? "Still needed: " + unmet.map(reasonText).join("; ") : undefined;
+  const cls = "ph-gate " + pill + (open ? " open" : "");
   return (
-    <Box className="ph-head" style={{ position: "relative" }}>
-      {promptHelp && <StagePromptHelp prompts={promptHelp.prompts} onInject={promptHelp.onInject} />}
+    <Box className="ph-head">
       <Box className="ph-title">
         <h2>{stage.name}</h2>
-        <Box as="span"
-          className={"ph-gate " + pill}
-          title={tip}
-          onClick={hasReasons ? () => setShowReasons((v) => !v) : undefined}
-          style={{ cursor: hasReasons ? "pointer" : undefined }}
-        >
-          <Box as="span" className="gd" />
-          gate
-          {hasReasons && <Box as="span" style={{ marginLeft: 6, opacity: 0.75, textDecoration: "underline" }}>why?</Box>}
-        </Box>
+        {onToggleGate ? (
+          // eslint-disable-next-line no-restricted-syntax -- bespoke `.ph-gate` toggle chip (styled by the `.fp .ph-gate` CSS, not the .btn kit)
+          <button type="button" className={cls} title={tip} aria-expanded={!!open} aria-label="Toggle gate details" onClick={onToggleGate}>
+            <Box as="span" className="gd" />
+            gate
+            <Box as="span" className="ph-caret" aria-hidden>{open ? "▾" : "▸"}</Box>
+          </button>
+        ) : (
+          <Box as="span" className={cls} title={tip}>
+            <Box as="span" className="gd" />
+            gate
+          </Box>
+        )}
       </Box>
       <p className="ph-blurb">{stage.blurb}</p>
-      {hasReasons && showReasons && (
-        <Box role="status" className="mono" pad={[8, 11]} bg="var(--bg-elev)" border="soft" radius={7} style={{
-          marginTop: 8, maxWidth: 420,
-          fontSize: 11, lineHeight: 1.6, color: "var(--fg-muted)",
-        }}>
-          <Text as="div" tone="dim" size={9.5} style={{ textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 4 }}>
-            Still needed to pass this gate
-          </Text>
-          <ul style={{ margin: 0, paddingLeft: 16 }}>
-            {unmet.map((u, i) => (
-              <li key={i}>{u.label}{u.detail && <Text as="span" tone="dim"> — {u.detail}</Text>}</li>
-            ))}
-          </ul>
-        </Box>
-      )}
     </Box>
   );
 }
@@ -191,7 +169,7 @@ const FOOTER_LABEL: Record<FooterKind, string> = {
 /** The advance bar: back · progress · the context-sensitive primary action. */
 export function StageFooter({ stage, action, published, publishLabel, onBack, onPrimary, onSkip }: {
   stage: Stage;
-  action: { kind: FooterKind; enabled: boolean; canSkip?: boolean; override?: boolean };
+  action: { kind: FooterKind; enabled: boolean; canSkip?: boolean; skipEnabled?: boolean };
   /** The project already has a GitHub board — the publish action re-syncs it ("Update GitHub", #823). */
   published?: boolean;
   /** Override the publish action's label (#923) — e.g. "Publish blueprint" for an authoring project,
@@ -199,36 +177,42 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
   publishLabel?: string;
   onBack: () => void;
   onPrimary: () => void;
-  /** Skip the active OPTIONAL stage (#921) — rendered when `action.canSkip`. */
+  /** Skip the active stage (#921/#2854) — rendered only when `action.skipEnabled` (the stage is
+   *  skippable now, or gate-override is on). A required stage shows no Skip at all. */
   onSkip?: () => void;
 }) {
   const primaryLabel =
-    action.override ? "⚠ override gate & continue →"
-    : action.kind === "approve-continue" && !action.enabled ? "gate blocking…"
-    : action.kind === "publish" && published ? "⟳ Update GitHub"
+    action.kind === "approve-continue" && !action.enabled ? "gate blocking…"
+    // An explicit publishLabel WINS over the "Update GitHub" re-sync default (#3280): offline there's no
+    // board to update, so the caller's "Recommit plan" must show even when `published` is true.
     : action.kind === "publish" && publishLabel ? publishLabel
+    : action.kind === "publish" && published ? "⟳ Update GitHub"
     : FOOTER_LABEL[action.kind];
   const primary = action.kind === "approve-continue" || action.kind === "route-design" || action.kind === "publish";
   // When the gate is blocking the advance button, the tooltip says what's still needed (#805).
-  // In override mode (#1285) the button IS enabled, but the tooltip warns it bypasses the gate.
   const unmet = stage.unmet ?? [];
   const stillNeeded = unmet.length > 0 ? "Still needed: " + unmet.map(reasonText).join("; ") : "";
-  const blockedTip = action.override
-    ? ("Override: advance past this stage's gate without meeting it." + (stillNeeded ? " " + stillNeeded : ""))
-    : action.kind === "approve-continue" && !action.enabled && stillNeeded ? stillNeeded
-    : undefined;
+  const blockedTip =
+    action.kind === "approve-continue" && !action.enabled && stillNeeded ? stillNeeded : undefined;
+  // Skip tooltip (#2854): Skip only renders when actionable, so no "how to enable" case — an
+  // intrinsically-skippable/optional stage is the ordinary skip; a stage skippable only because
+  // gate-override is on warns it bypasses the gate.
+  const skipTip = stage.skippable
+    ? "This stage is skippable — skip it and continue without completing its gate."
+    : "⚠ Gate override: skip past this required stage without meeting its gate.";
   return (
     <Box className="ph-foot">
       <BackButton variant="text" label="back" className="nav-btn" disabled={stage.index === 0} onClick={onBack} aria-label="Back" />
       <Box as="span" className="prog">stage {stage.index + 1} of {stage.total}</Box>
       <Box as="span" style={{ flex: 1 }} />
-      {/* This stage is OPTIONAL — the USER decides whether to do or skip it (#921). */}
-      {action.canSkip && onSkip && (
+      {/* The Skip control renders only when the active stage is skippable now, or gate-override is on
+          (#2854) — a required stage like Discovery shows none, not a disabled ghost. */}
+      {action.skipEnabled && onSkip && (
         // eslint-disable-next-line no-restricted-syntax -- bespoke `.nav-btn` footer button (styled by the `.fp .nav-btn` CSS, not the .btn kit)
         <button
           className="nav-btn"
           onClick={onSkip}
-          title="This stage is optional — skip it and continue without completing its gate"
+          title={skipTip}
         >
           skip stage →
         </button>
@@ -239,7 +223,6 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
         disabled={!action.enabled}
         onClick={onPrimary}
         title={blockedTip}
-        style={action.override ? { background: "var(--danger)", borderColor: "var(--danger)", color: "#1a120a" } : undefined}
       >
         {primaryLabel}
       </button>

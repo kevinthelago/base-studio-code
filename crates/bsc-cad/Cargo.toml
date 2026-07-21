@@ -1,0 +1,18 @@
+[package]
+name = "bsc-cad"
+version = "0.1.0"
+edition = "2021"
+description = "Rust-native mesh/SDF geometry kernel (#2621) — a declarative implicit CSG op-tree evaluated as a signed-distance field, polygonized (surface nets) to a watertight mesh, exported to binary STL. Metric (mm). Tauri-free; reached from a live session as the `bsc cad` subcommand (#3387). Foundation for the Design Studio's AI-authored 3D objects; icebox #2620 splits it into its own package."
+
+# Library only — no `[[bin]]`. The standalone `bsc-cad` binary was retired in #3387: only `bsc` and
+# `bsc-agent` are bundled with the app (tauri.conf.json `externalBin`), so a second sidecar was
+# unreachable from a live session. `cli::run` is dispatched by the unified `bsc` binary, matching every
+# other tool crate (bsc-shot, bsc-navigate, bsc-graph, bsc-ui, …). A WASM build reuses the same lib.
+[lib]
+name = "bsc_cad"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The shared CLI scaffold (#1762): CmdDoc help dispatch, the unknown-command renderer, `emit`.
+bsc-cli-util = { path = "../bsc-cli-util" }

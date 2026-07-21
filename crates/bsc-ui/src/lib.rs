@@ -1,29 +1,31 @@
-//! `bsc-ui` — the spec-first UI SDK's agent-facing core (#1852 Phase 2). A KitNode is a declarative,
+//! `bsc-ui` — the spec-first UI SDK's agent-facing core (#1852 Phase 2). A UI spec is a declarative,
 //! style/theme-independent description of UI that an AI emits as *data* (never JSX). This crate embeds
-//! the KitNode contract from the ONE source of truth — `src-tauri/data/ui/kit-nodes.json`, the same
-//! file the frontend SDK reads via `@data` — and provides a structural validator over it, surfaced as
-//! the `bsc ui` CLI ([`cli`]). So a live session can author a spec and check it with `bsc ui validate`
-//! from its own shell, against the exact contract the frontend `KitRenderer` renders.
+//! the PRIMITIVE contract from the ONE source of truth — `src-tauri/data/ui/primitives.json`, generated
+//! from the frontend's `shared/ui/manifest.ts` — and provides a structural validator over it, surfaced
+//! as the `bsc ui` CLI ([`cli`]). So a live session can author a spec and check it with
+//! `bsc ui validate` from its own shell, against the exact contract the frontend `KitRenderer` renders.
 //!
-//! The validator mirrors the frontend `validateKitNode` (src/shared/ui/spec/schema.ts) rule-for-rule:
-//! at every node — `kind` present + known · every required field present · no field outside the kind's
-//! allowed set · enum fields hold an allowed value · a children-bearing kind's `children` (when present)
-//! is an array — recursing into any nested node (`header`) or array-of-nodes (`children`).
+//! The validator mirrors the frontend `validateGeneralNode` (src/shared/ui/spec/generalNode.ts)
+//! rule-for-rule — the agreement is TESTED, not asserted: both run the shared fixture set in
+//! `src-tauri/data/ui/node-validation.fixtures.json`, so a divergence in either implementation (down
+//! to the wording of an error) fails the build rather than passing quietly.
+//!
+//! #3500 retired the closed `KitNode` vocabulary — 8 hardcoded node kinds, each with a hand-written
+//! branch in the renderer — in favour of nodes that name REAL kit primitives.
+
+//! Home, too, of the global UI-KIT STORE (#2465) — [`kit`]: immutable versioned kit artifacts
+//! (`~/.base-studio-code/kits/<id>/<version>/`) blueprints PIN by `{ id, version, hash }`, with the
+//! packaged `bsc/react-ui` kit resolving as an embedded fallback entry. Surfaced as `bsc ui kit`.
 
 pub mod cli;
+pub mod emit;
+/// The GENERAL node validator (#3485) — `{ type, props, children }` over the full primitive registry,
+/// the Rust face of `src/shared/ui/spec/generalNode.ts`. Both read the same generated contract.
+pub mod general_node;
+pub mod harvest;
+pub mod kit;
 
 use serde_json::Value;
-
-/// The KitNode contract, embedded at compile time from the single source of truth
-/// (`src-tauri/data/ui/kit-nodes.json`). The frontend SDK reads the same file via `@data/ui/...`, so
-/// the two faces of the SDK can never drift.
-pub const CONTRACT_JSON: &str = include_str!("../../../src-tauri/data/ui/kit-nodes.json");
-
-/// The parsed contract. The embedded file is valid JSON (guarded by [`tests::contract_is_valid`]), so
-/// this does not fail in practice.
-pub fn contract() -> Value {
-    serde_json::from_str(CONTRACT_JSON).expect("embedded kit-nodes.json is valid JSON")
-}
 
 /// The kit THEME registry (#1852 Phase 3), embedded from the same source of truth the frontend reads
 /// via `@data/ui/themes.json`. A theme is a map of semantic-token overrides; `bsc ui theme` serves it.
@@ -42,79 +44,335 @@ pub fn theme_by_id(id: &str) -> Option<Value> {
     themes().into_iter().find(|t| t.get("id").and_then(Value::as_str) == Some(id))
 }
 
-/// Structurally validate a KitNode tree against the contract — the EXACT rules the frontend
-/// `validateKitNode` enforces, so a spec valid here is valid there. Returns the flat list of
-/// human-readable errors (empty = valid).
-pub fn validate_spec(node: &Value) -> Vec<String> {
-    let contract = contract();
-    let nodes = contract.get("nodes").cloned().unwrap_or(Value::Null);
-    let mut errors = Vec::new();
-    walk(node, "$", &nodes, &mut errors);
-    errors
+/// The semantic token contract layer (#2489) a generated app receives as its `tokens.css` — the
+/// base palette defaults + the semantic component tokens (`--card-*`/`--btn-*`/`--field-*`/
+/// `--chip-*`) kit components consume. Embedded from the one seed
+/// (`src-tauri/data/ui/tokens-contract.css`); served by `bsc ui emit-css`.
+pub const TOKENS_CONTRACT_CSS: &str = include_str!("../../../src-tauri/data/ui/tokens-contract.css");
+
+/// Render one theme as the `theme.css` override block a generated app receives (#2489): a header
+/// documenting the swap contract + a `:root` block of the theme's semantic-token overrides.
+///
+/// The theme resolves BY ID at emission time through the same lookup `bsc ui theme get` serves
+/// ([`theme_by_id`] — today the embedded registry; designer-authored themes ride the same lookup
+/// when the theme store lands), so a re-emit always reflects the theme's current definition —
+/// vars are never snapshotted into a plan.
+///
+/// # Errors
+/// An unknown `id` errors, listing every available theme id.
+pub fn theme_css(id: &str) -> Result<String, String> {
+    let theme = theme_by_id(id).ok_or_else(|| {
+        let ids: Vec<String> = themes()
+            .iter()
+            .filter_map(|t| t.get("id").and_then(Value::as_str).map(str::to_owned))
+            .collect();
+        format!("unknown theme '{id}' — available: {}", ids.join(", "))
+    })?;
+    let label = theme.get("label").and_then(Value::as_str).unwrap_or(id);
+    let vars = theme.get("vars").and_then(Value::as_object).cloned().unwrap_or_default();
+    let mut css = format!(
+        "/* ===== theme: {id} — {label}. Generated by `bsc ui emit-css --theme {id}`.\n   \
+         This file IS the app's palette: semantic-token overrides loaded AFTER tokens.css (the\n   \
+         contract layer) and BEFORE the app's own styles. Re-theme the app by replacing this ONE\n   \
+         file (`bsc ui emit-css --theme <other-id>`) — zero component changes. ===== */\n:root {{\n"
+    );
+    if vars.is_empty() {
+        css.push_str("  /* no overrides — the base look */\n");
+    }
+    for (name, value) in &vars {
+        let v = value.as_str().map_or_else(|| value.to_string(), str::to_owned);
+        css.push_str(&format!("  {name}: {v};\n"));
+    }
+    css.push_str("}\n");
+    Ok(css)
 }
 
-fn walk(node: &Value, path: &str, nodes: &Value, errors: &mut Vec<String>) {
-    let Some(obj) = node.as_object() else {
-        errors.push(format!("{path}: expected a node object"));
-        return;
-    };
-    let Some(kind) = obj.get("kind").and_then(Value::as_str) else {
-        errors.push(format!("{path}: missing string \"kind\""));
-        return;
-    };
-    let Some(spec) = nodes.get(kind) else {
-        errors.push(format!("{path}: unknown kind \"{kind}\""));
-        return;
-    };
+// ── the STYLE DESCRIPTOR — the design-system token contract's source of truth (#2567/#2568) ──────────
 
-    let fields: Vec<&str> = spec
-        .get("fields")
+/// The style descriptor (#2567), embedded from the ONE source of truth
+/// (`src-tauri/data/ui/style-descriptor.json`) — the same file the frontend's `styleContract.ts`
+/// generates `tokens-contract.css` from. `bsc ui tokens`/`components` enumerate it as the addressable
+/// design surface for the designer LLM (#2568), so discovery and CSS emission share one SoT.
+pub const STYLE_DESCRIPTOR_JSON: &str =
+    include_str!("../../../src-tauri/data/ui/style-descriptor.json");
+
+/// The parsed descriptor (valid JSON, guarded by a test).
+pub fn style_descriptor() -> Value {
+    serde_json::from_str(STYLE_DESCRIPTOR_JSON).expect("embedded style-descriptor.json is valid JSON")
+}
+
+/// One flat token row (base → component → per-variant), preserving descriptor order. Each row is
+/// `{ name, type, default, governs, family }` (+ `component`/`variant`/`key` for component tokens) —
+/// the shape `bsc ui tokens` serialises. `family` is "base" for the palette, else the component name.
+pub fn flatten_tokens() -> Vec<Value> {
+    let d = style_descriptor();
+    let mut out = Vec::new();
+    for b in d.get("base").and_then(Value::as_array).into_iter().flatten() {
+        out.push(serde_json::json!({
+            "name": b.get("name"), "type": b.get("type"),
+            "default": b.get("value"), "governs": b.get("governs"), "family": "base",
+        }));
+    }
+    for c in d.get("components").and_then(Value::as_array).into_iter().flatten() {
+        let cname = c.get("component").and_then(Value::as_str).unwrap_or_default();
+        for t in c.get("tokens").and_then(Value::as_array).into_iter().flatten() {
+            out.push(comp_token_row(t, cname, None));
+        }
+        for v in c.get("variants").and_then(Value::as_array).into_iter().flatten() {
+            let vname = v.get("variant").and_then(Value::as_str);
+            for t in v.get("tokens").and_then(Value::as_array).into_iter().flatten() {
+                out.push(comp_token_row(t, cname, vname));
+            }
+        }
+    }
+    // Domain / categorical tokens (#2607) — data-viz palettes (graph status/kind/category/edge). Part
+    // of the contract vocabulary (a kit consumes, a theme binds) but NOT components: `family` is the
+    // group, `default` is the literal `value` (like base tokens), no `component`/`variant`.
+    for g in d.get("domain").and_then(Value::as_array).into_iter().flatten() {
+        let group = g.get("group").and_then(Value::as_str).unwrap_or_default();
+        for t in g.get("tokens").and_then(Value::as_array).into_iter().flatten() {
+            out.push(serde_json::json!({
+                "name": t.get("name"), "type": t.get("type"),
+                "default": t.get("value"), "governs": t.get("governs"),
+                "family": group, "key": t.get("key"),
+            }));
+        }
+    }
+    out
+}
+
+fn comp_token_row(t: &Value, component: &str, variant: Option<&str>) -> Value {
+    let mut o = serde_json::json!({
+        "name": t.get("name"), "type": t.get("type"), "default": t.get("default"),
+        "governs": t.get("governs"), "family": component, "component": component, "key": t.get("key"),
+    });
+    if let (Some(obj), Some(v)) = (o.as_object_mut(), variant) {
+        obj.insert("variant".into(), Value::String(v.to_string()));
+    }
+    o
+}
+
+/// Every token NAME the descriptor defines (base + component + per-variant) — the set a theme may
+/// override and a value may reference through the closed grammar.
+pub fn token_names() -> std::collections::HashSet<String> {
+    flatten_tokens()
+        .iter()
+        .filter_map(|t| t.get("name").and_then(Value::as_str).map(str::to_owned))
+        .collect()
+}
+
+/// Resolve a component's SHORT token key (+ optional variant) to its full custom-property name — e.g.
+/// (`btn`, `Some("primary")`, `bg`) → `--btn-primary-bg`, (`card`, `None`, `radius`) → `--card-radius`.
+/// `None` when the descriptor has no such token, so `bsc ui component <c> set-token <key>` addresses
+/// tokens by the discoverable keys `bsc ui components` reports — never the naming convention itself.
+pub fn resolve_component_token(component: &str, variant: Option<&str>, key: &str) -> Option<String> {
+    flatten_tokens().into_iter().find_map(|row| {
+        let same_comp = row.get("component").and_then(Value::as_str) == Some(component);
+        let same_key = row.get("key").and_then(Value::as_str) == Some(key);
+        let same_variant = row.get("variant").and_then(Value::as_str) == variant;
+        (same_comp && same_key && same_variant)
+            .then(|| row.get("name").and_then(Value::as_str).map(str::to_owned))
+            .flatten()
+    })
+}
+
+/// A component's base token KEYS — the short keys a NEW variant may set — e.g. `btn` → [bg, bg-hover,
+/// border, fg, radius]. From the descriptor's per-component base tokens (not its variant tokens).
+pub fn component_token_keys(component: &str) -> Vec<String> {
+    style_descriptor()
+        .get("components")
         .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
-    for key in obj.keys() {
-        if key != "kind" && !fields.contains(&key.as_str()) {
-            errors.push(format!("{path}: unknown field \"{key}\" for kind \"{kind}\""));
-        }
-    }
+        .into_iter()
+        .flatten()
+        .find(|c| c.get("component").and_then(Value::as_str) == Some(component))
+        .and_then(|c| c.get("tokens").and_then(Value::as_array))
+        .map(|ts| ts.iter().filter_map(|t| t.get("key").and_then(Value::as_str).map(str::to_owned)).collect())
+        .unwrap_or_default()
+}
 
-    if let Some(req) = spec.get("required").and_then(Value::as_array) {
-        for r in req.iter().filter_map(Value::as_str) {
-            if obj.get(r).is_none_or(Value::is_null) {
-                errors.push(format!("{path}: missing required field \"{r}\" for kind \"{kind}\""));
-            }
-        }
+/// Validate a NEW variant NAME (#2569 security). The name becomes a CSS selector / data-attribute value
+/// when the frontend compiles the variant, so it needs a STRICTER grammar than a token value: lowercase,
+/// starts with a letter, then `[a-z0-9-]`, no leading/trailing/double hyphen — a safe CSS identifier an
+/// LLM cannot inject a selector through.
+pub fn sanitize_variant_name(name: &str) -> Result<(), String> {
+    let ok = !name.is_empty()
+        && name.starts_with(|c: char| c.is_ascii_lowercase())
+        && !name.ends_with('-')
+        && !name.contains("--")
+        && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "variant name '{name}' must be a safe CSS identifier: lowercase [a-z][a-z0-9-]*, no leading/trailing/double hyphen"
+        ))
     }
+}
 
-    if let Some(enums) = spec.get("enums").and_then(Value::as_object) {
-        for (field, values) in enums {
-            let Some(v) = obj.get(field).filter(|v| !v.is_null()) else { continue };
-            let allowed: Vec<&str> = values
-                .as_array()
-                .map(|a| a.iter().filter_map(Value::as_str).collect())
-                .unwrap_or_default();
-            let shown = v.as_str().map_or_else(|| v.to_string(), String::from);
-            if !allowed.contains(&shown.as_str()) {
-                errors.push(format!("{path}.{field}: \"{shown}\" not one of {}", allowed.join(", ")));
-            }
+/// Validate a NEW variant's token bundle (#2569): at least one token, every key a base token key of the
+/// component, and every value passing the closed grammar. Flat error list (empty = valid).
+pub fn validate_variant_tokens(component: &str, tokens: &serde_json::Map<String, Value>) -> Vec<String> {
+    let keys: std::collections::HashSet<String> = component_token_keys(component).into_iter().collect();
+    let names = token_names();
+    let mut errs = Vec::new();
+    if tokens.is_empty() {
+        errs.push("a variant must set at least one token (--set <key>=<value>)".to_string());
+    }
+    for (key, value) in tokens {
+        if !keys.contains(key) {
+            errs.push(format!("'{key}' is not a token of component '{component}' — see `bsc ui component {component} list-tokens`"));
+        }
+        let s = value.as_str().map_or_else(|| value.to_string(), str::to_owned);
+        if let Err(e) = validate_value(&s, &names) {
+            errs.push(e);
         }
     }
+    errs
+}
 
-    // Recurse nested nodes: any field value that is itself a node, or an array of nodes.
-    for (field, value) in obj {
-        if field == "kind" {
-            continue;
-        }
-        if let Some(arr) = value.as_array() {
-            for (i, child) in arr.iter().enumerate() {
-                if child.is_object() && child.get("kind").is_some() {
-                    walk(child, &format!("{path}.{field}[{i}]"), nodes, errors);
-                }
-            }
-        } else if value.is_object() && value.get("kind").is_some() {
-            walk(value, &format!("{path}.{field}"), nodes, errors);
+/// Every `--custom-property` referenced in a value (for the closed grammar's known-token check).
+fn referenced_vars(value: &str) -> Vec<String> {
+    value
+        .match_indices("--")
+        .map(|(i, _)| {
+            value[i..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-').collect::<String>()
+        })
+        .filter(|s| s.len() > 2)
+        .collect()
+}
+
+/// The CLOSED VALUE GRAMMAR (#2568) — the guard on every designer-authored token value. It is a SAFETY
+/// grammar, not a full CSS type system: it makes an LLM-authored value unable to break out of its
+/// declaration or inject CSS, and requires every referenced token to be one the contract defines. A
+/// value may be a `var(--x)` reference (callers expand the `@x` shorthand first), a hex colour, a
+/// dimension, or a `color-mix()`/`oklch()`/`rgb()` over those. It REJECTS any declaration-ending or
+/// injection sequence (`;` `{` `}` `url(` `expression(` comments `@import` …) and any character outside
+/// the safe set. `names` is [`token_names`].
+pub fn validate_value(value: &str, names: &std::collections::HashSet<String>) -> Result<(), String> {
+    let v = value.trim();
+    if v.is_empty() {
+        return Err("value is empty".into());
+    }
+    for bad in [";", "{", "}", "url(", "expression(", "/*", "*/", "</", "\\", "@import", "@", "javascript:"] {
+        if v.contains(bad) {
+            return Err(format!("value '{v}' contains the disallowed sequence '{bad}'"));
         }
     }
+    if let Some(c) = v.chars().find(|c| !(c.is_ascii_alphanumeric() || " \t-._,()%#".contains(*c))) {
+        return Err(format!("value '{v}' contains the disallowed character '{c}'"));
+    }
+    for r in referenced_vars(v) {
+        if !names.contains(&r) {
+            return Err(format!("value '{v}' references '{r}', which the token contract does not define"));
+        }
+    }
+    Ok(())
+}
+
+/// Validate a theme's `vars` map against the token contract + the value grammar (#2568): every key must
+/// be a token the contract defines and every value must pass [`validate_value`]. Flat error list (empty
+/// = valid) — the shape `bsc ui theme validate` prints.
+pub fn validate_theme_vars(vars: &serde_json::Map<String, Value>) -> Vec<String> {
+    let names = token_names();
+    let mut errs = Vec::new();
+    for (name, value) in vars {
+        if !names.contains(name) {
+            errs.push(format!("overrides '{name}', which the token contract does not define"));
+        }
+        let s = value.as_str().map_or_else(|| value.to_string(), str::to_owned);
+        if let Err(e) = validate_value(&s, &names) {
+            errs.push(e);
+        }
+    }
+    errs
+}
+
+/// Validate a whole theme OBJECT (#2749): its DESIGN GROUP binding + its `vars`. `tech` — the design
+/// group the theme belongs to — is REQUIRED (mandatory, 1:1 from the theme's side), so a theme with no
+/// non-empty string `tech` is rejected here; the `vars` are then checked by [`validate_theme_vars`].
+/// Flat error list (empty = valid) — what `bsc ui theme set`/`validate` enforce.
+pub fn validate_theme(theme: &Value) -> Vec<String> {
+    let mut errs = Vec::new();
+    match theme.get("tech").and_then(Value::as_str) {
+        Some(t) if !t.trim().is_empty() => {}
+        _ => errs.push(
+            "must declare its design group — add a non-empty string \"tech\" (e.g. \"react\")".into(),
+        ),
+    }
+    let vars = theme.get("vars").and_then(Value::as_object).cloned().unwrap_or_default();
+    errs.extend(validate_theme_vars(&vars));
+    errs
+}
+
+/// Validate a UI spec against the embedded primitive contract. Returns a list of human-readable
+/// errors, empty when the spec is valid. Every node is `{ type, props, children, binds, actions }`
+/// naming a real kit primitive; the rules live in [`general_node`].
+pub fn validate_spec(node: &Value) -> Vec<String> {
+    crate::general_node::validate_general_node(node)
+}
+
+// ── palette generator (#2634) — the "data generates design" engine + the no-holes guarantee ─────────
+// Pure + DETERMINISTIC (no RNG): a seed + a category count (or the hues already in use) → coherent
+// token VALUES, so a growing vocabulary (a new kit/blueprint category) is filled with an on-brand
+// colour instead of leaving a theme with a hole. This layer only PRODUCES values; writing/applying
+// them is the reconciliation slice.
+
+/// The brand-anchored default seed hue — the `--accent` hue (70°, amber) — so a fresh categorical
+/// scale reads as part of the same identity.
+pub const GEN_SEED_HUE: f64 = 70.0;
+/// The categorical scale's fixed lightness + chroma: equal across the set so only the HUE distinguishes
+/// categories (the standard data-viz technique), tuned to read on the app's dark canvas.
+pub const GEN_LIGHTNESS: f64 = 0.72;
+pub const GEN_CHROMA: f64 = 0.15;
+
+/// Format one categorical colour at the fixed scale L/C and the given hue.
+pub fn categorical_color(hue: f64) -> String {
+    format!("oklch({GEN_LIGHTNESS:.2} {GEN_CHROMA:.2} {:.1})", hue.rem_euclid(360.0))
+}
+
+/// Generate `count` maximally-distinct categorical colours (#2634): evenly-spaced OKLCH hues from
+/// `seed_hue`, so N categories are equally vivid and equally spaced around the wheel. Deterministic.
+pub fn generate_categorical(seed_hue: f64, count: usize) -> Vec<String> {
+    if count == 0 {
+        return Vec::new();
+    }
+    let step = 360.0 / count as f64;
+    (0..count).map(|i| categorical_color(seed_hue + i as f64 * step)).collect()
+}
+
+/// Fill ONE new categorical slot coherently (#2634) — the literal no-holes primitive: place the new
+/// hue at the midpoint of the LARGEST circular gap among the hues already in use, so it is as distinct
+/// as possible from every existing colour. Deterministic; returns [`GEN_SEED_HUE`] when none exist.
+pub fn next_distinct_hue(existing: &[f64]) -> f64 {
+    let mut hs: Vec<f64> = existing.iter().map(|h| h.rem_euclid(360.0)).collect();
+    if hs.is_empty() {
+        return GEN_SEED_HUE;
+    }
+    hs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let (mut best_mid, mut best_gap) = (hs[0], -1.0_f64);
+    for i in 0..hs.len() {
+        let a = hs[i];
+        // The wrap segment closes the circle: last hue → first hue + 360°.
+        let b = if i + 1 < hs.len() { hs[i + 1] } else { hs[0] + 360.0 };
+        let gap = b - a;
+        if gap > best_gap {
+            best_gap = gap;
+            best_mid = ((a + b) / 2.0).rem_euclid(360.0);
+        }
+    }
+    best_mid
+}
+
+/// The STATUS palette (#2634): health/state keys → the SEMANTIC base tokens, so status colours compose
+/// with the active theme rather than freezing a raw hue. `warning` rides `--accent` (the app's amber) —
+/// there is no dedicated warning base token.
+pub fn status_palette() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("idle", "var(--info)"),
+        ("healthy", "var(--success)"),
+        ("warning", "var(--accent)"),
+        ("error", "var(--danger)"),
+    ]
 }
 
 #[cfg(test)]
@@ -122,22 +380,67 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    // ── palette generator (#2634) ────────────────────────────────────────────────────────────────
+
     #[test]
-    fn contract_is_valid() {
-        let c = contract();
-        assert!(c.get("nodes").and_then(Value::as_object).is_some(), "contract has a nodes map");
-        // Every required/enum field a node names must be one of its allowed fields.
-        for (kind, spec) in c["nodes"].as_object().unwrap() {
-            let fields: Vec<&str> =
-                spec["fields"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
-            if let Some(req) = spec.get("required").and_then(Value::as_array) {
-                for r in req.iter().filter_map(Value::as_str) {
-                    assert!(fields.contains(&r), "{kind}.required {r} is an allowed field");
-                }
-            }
-            if let Some(enums) = spec.get("enums").and_then(Value::as_object) {
-                for f in enums.keys() {
-                    assert!(fields.contains(&f.as_str()), "{kind}.enums {f} is an allowed field");
+    fn generate_categorical_is_deterministic_and_evenly_spaced() {
+        assert_eq!(generate_categorical(GEN_SEED_HUE, 6), generate_categorical(GEN_SEED_HUE, 6),
+            "same seed+count → same palette (deterministic, shareable)");
+        let a = generate_categorical(GEN_SEED_HUE, 6);
+        assert_eq!(a.len(), 6);
+        assert!(a.iter().all(|c| c.starts_with("oklch(0.72 0.15 ")), "fixed L/C, only hue varies: {a:?}");
+        // Evenly spaced: 4 hues 90° apart from a 0° seed.
+        assert_eq!(generate_categorical(0.0, 4), vec![
+            "oklch(0.72 0.15 0.0)", "oklch(0.72 0.15 90.0)",
+            "oklch(0.72 0.15 180.0)", "oklch(0.72 0.15 270.0)",
+        ]);
+        assert!(generate_categorical(GEN_SEED_HUE, 0).is_empty());
+    }
+
+    #[test]
+    fn next_distinct_hue_lands_in_the_largest_gap() {
+        assert_eq!(next_distinct_hue(&[]), GEN_SEED_HUE, "no existing → the brand seed");
+        assert_eq!(next_distinct_hue(&[0.0]), 180.0, "one hue → its opposite");
+        assert_eq!(next_distinct_hue(&[0.0, 90.0]), 225.0, "largest gap 90→360, mid 225");
+        assert_eq!(next_distinct_hue(&[90.0, 0.0]), 225.0, "order-independent");
+        assert_eq!(next_distinct_hue(&[350.0, 10.0]), 180.0, "wraps mod 360 — opposite the 350/10 cluster");
+    }
+
+    #[test]
+    fn status_palette_maps_to_semantic_tokens() {
+        let p = status_palette();
+        assert_eq!(p.iter().find(|(k, _)| *k == "error").map(|(_, v)| *v), Some("var(--danger)"));
+        assert_eq!(p.iter().find(|(k, _)| *k == "healthy").map(|(_, v)| *v), Some("var(--success)"));
+        assert!(p.iter().all(|(_, v)| v.starts_with("var(--")), "status → semantic tokens, never raw hues: {p:?}");
+    }
+
+    /// The embedded PRIMITIVE contract must be internally coherent (#3500 — this replaced the
+    /// equivalent guard over the retired `kit-nodes.json`). It is GENERATED from the frontend
+    /// manifest, so the risk is not a typo but a regeneration that silently drops structure the
+    /// validator depends on — an enum with no `values` constrains nothing, and a prop with no `type`
+    /// is unvalidatable. Both would make the validator quietly permissive rather than fail loudly.
+    #[test]
+    fn primitive_contract_is_coherent() {
+        let parsed: Value =
+            serde_json::from_str(general_node::PRIMITIVES_JSON).expect("primitives.json is valid JSON");
+        let list = parsed.get("primitives").and_then(Value::as_array).expect("a primitives array");
+        assert!(list.len() > 50, "expected the full kit, got {}", list.len());
+        for p in list {
+            let name = p.get("name").and_then(Value::as_str).expect("every primitive is named");
+            let props = p.get("props").and_then(Value::as_array).expect("{name} declares props");
+            for prop in props {
+                let pname =
+                    prop.get("name").and_then(Value::as_str).unwrap_or_else(|| panic!("{name}: a prop with no name"));
+                let ty = prop
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or_else(|| panic!("{name}.{pname}: a prop with no type is unvalidatable"));
+                if ty == "enum" {
+                    let values = prop.get("values").and_then(Value::as_array);
+                    assert!(
+                        values.is_some_and(|v| !v.is_empty()),
+                        "{name}.{pname}: an enum with no declared values constrains nothing"
+                    );
                 }
             }
         }
@@ -156,16 +459,223 @@ mod tests {
     }
 
     #[test]
+    fn tokens_contract_covers_every_theme_token_and_base_reference() {
+        // The drift guard for the emitted pair (#2489): every semantic token ANY theme overrides,
+        // and every base token a theme's values or the semantic defaults reference, must be
+        // DEFINED in the contract layer — otherwise the emitted theme.css would override (or
+        // reference) a var the generated app never received a default for.
+        let defined: std::collections::HashSet<&str> = TOKENS_CONTRACT_CSS
+            .lines()
+            .filter_map(|l| {
+                let t = l.trim();
+                t.starts_with("--").then(|| t.split(':').next().unwrap().trim())
+            })
+            .collect();
+        assert!(defined.contains("--card-bg") && defined.contains("--chip-border"), "the semantic set is present");
+        let re_var = |s: &str| {
+            s.match_indices("--")
+                .map(|(i, _)| s[i..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-').collect::<String>())
+                .collect::<Vec<_>>()
+        };
+        for t in themes() {
+            let id = t["id"].as_str().unwrap();
+            for (name, value) in t["vars"].as_object().unwrap() {
+                assert!(defined.contains(name.as_str()), "theme '{id}' overrides {name}, which the contract layer must define");
+                for referenced in re_var(&value.as_str().map_or_else(|| value.to_string(), str::to_owned)) {
+                    assert!(defined.contains(referenced.as_str()), "theme '{id}' value for {name} references {referenced}, which the contract layer must define");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn style_descriptor_flattens_and_covers_the_contract() {
+        let flat = flatten_tokens();
+        let base: Vec<_> = flat.iter().filter(|t| t["family"] == "base").collect();
+        assert!(!base.is_empty() && base.iter().all(|t| t.get("component").is_none()), "base rows carry no component");
+        // The btn `primary` variant token carries component + variant + key so
+        // `component btn set-token bg --variant primary` resolves to --btn-primary-bg (#2569).
+        let primary = flat.iter().find(|t| t["name"] == "--btn-primary-bg").unwrap();
+        assert_eq!(primary["component"], "btn");
+        assert_eq!(primary["variant"], "primary");
+        assert_eq!(primary["key"], "bg");
+        // Every descriptor token is DECLARED in the generated contract — the Rust parser's precondition,
+        // mirrored from the frontend styleContract.gen test.
+        let defined: std::collections::HashSet<&str> = TOKENS_CONTRACT_CSS
+            .lines()
+            .filter_map(|l| {
+                let t = l.trim();
+                t.starts_with("--").then(|| t.split(':').next().unwrap().trim())
+            })
+            .collect();
+        for name in token_names() {
+            assert!(defined.contains(name.as_str()), "{name} is declared in tokens-contract.css");
+        }
+    }
+
+    #[test]
+    fn value_grammar_accepts_safe_forms_and_rejects_injection() {
+        let names = token_names();
+        for ok in ["var(--accent)", "#1a120a", "14px", "color-mix(in oklch, var(--bg-panel), var(--accent) 7%)", "black"] {
+            assert!(validate_value(ok, &names).is_ok(), "{ok} is a safe value");
+        }
+        for bad in ["red; color: blue", "var(--x)}", "url(evil.png)", "expression(alert(1))", "@import x", "a/*b*/", "var(--nope)"] {
+            assert!(validate_value(bad, &names).is_err(), "{bad} must be rejected");
+        }
+    }
+
+    #[test]
+    fn theme_vars_validation_flags_unknown_tokens_and_bad_values() {
+        let good: serde_json::Map<String, Value> =
+            serde_json::from_str(r#"{"--card-bg":"var(--bg-elev)","--card-radius":"14px"}"#).unwrap();
+        assert!(validate_theme_vars(&good).is_empty(), "a clean vars map validates");
+        let bad: serde_json::Map<String, Value> =
+            serde_json::from_str(r#"{"--not-a-token":"var(--accent)","--card-bg":"red; }"}"#).unwrap();
+        let errs = validate_theme_vars(&bad);
+        assert!(errs.iter().any(|e| e.contains("--not-a-token")), "flags the unknown token: {errs:?}");
+        assert!(errs.iter().any(|e| e.contains("disallowed")), "flags the injection: {errs:?}");
+    }
+
+    #[test]
+    fn every_packaged_theme_declares_its_design_group() {
+        // #2749 — the theme↔design-group binding is mandatory: every packaged theme carries a
+        // non-empty `tech` slug. React is the only design group today, so they are all "react".
+        for t in themes() {
+            let id = t.get("id").and_then(Value::as_str).unwrap_or("?");
+            let tech = t.get("tech").and_then(Value::as_str);
+            assert!(
+                matches!(tech, Some(s) if !s.trim().is_empty()),
+                "theme '{id}' must declare a non-empty design group `tech`",
+            );
+            assert_eq!(tech, Some("react"), "theme '{id}' is in the react design group");
+        }
+    }
+
+    #[test]
+    fn validate_theme_requires_a_design_group() {
+        // #2749 — validate_theme rejects a group-less theme and still validates the vars alongside.
+        let no_group: Value =
+            serde_json::from_str(r#"{"id":"x","vars":{"--card-bg":"var(--bg-elev)"}}"#).unwrap();
+        assert!(
+            validate_theme(&no_group).iter().any(|e| e.contains("design group")),
+            "a theme with no `tech` is rejected",
+        );
+        let blank_group: Value = serde_json::from_str(r#"{"id":"x","tech":"  ","vars":{}}"#).unwrap();
+        assert!(!validate_theme(&blank_group).is_empty(), "a blank `tech` is rejected");
+
+        let ok: Value =
+            serde_json::from_str(r#"{"id":"x","tech":"react","vars":{"--card-bg":"var(--bg-elev)"}}"#).unwrap();
+        assert!(validate_theme(&ok).is_empty(), "a grouped theme with clean vars validates: {:?}", validate_theme(&ok));
+
+        let bad_vars: Value =
+            serde_json::from_str(r#"{"id":"x","tech":"react","vars":{"--not-a-token":"red"}}"#).unwrap();
+        assert!(
+            validate_theme(&bad_vars).iter().any(|e| e.contains("--not-a-token")),
+            "the vars are validated alongside the group binding",
+        );
+    }
+
+    #[test]
+    fn variant_authoring_validates_name_keys_and_values() {
+        // The token surface a component exposes GROWS as the design system does — `btn` went from 5
+        // keys to 13 — so pinning the exact list only records a snapshot and goes red on every
+        // addition (it had, on develop). This test is about variant NAME + VALUE validation; the key
+        // set matters here only insofar as `validate_variant_tokens` agrees with it, so assert THAT
+        // relationship instead of the membership.
+        let btn_keys = component_token_keys("btn");
+        assert!(btn_keys.len() >= 5, "btn exposes a real token surface: {btn_keys:?}");
+        for expected in ["bg", "fg"] {
+            assert!(btn_keys.contains(&expected.to_string()), "{expected} is a btn token: {btn_keys:?}");
+        }
+        assert!(!btn_keys.contains(&"nope".to_string()), "the bad key below is genuinely unknown");
+        // Every declared key must be authorable — otherwise the surface and the validator disagree.
+        let all: serde_json::Map<String, Value> =
+            btn_keys.iter().map(|k| (k.clone(), Value::String("var(--fg)".into()))).collect();
+        assert!(validate_variant_tokens("btn", &all).is_empty(), "every declared key validates");
+        assert!(sanitize_variant_name("danger-outline").is_ok());
+        for bad in ["Danger", "1x", "a--b", "a-", "a b", "a}b", ""] {
+            assert!(sanitize_variant_name(bad).is_err(), "'{bad}' rejected");
+        }
+        let good: serde_json::Map<String, Value> =
+            serde_json::from_str(r#"{"bg":"var(--danger)","fg":"var(--fg)"}"#).unwrap();
+        assert!(validate_variant_tokens("btn", &good).is_empty());
+        let bad: serde_json::Map<String, Value> =
+            serde_json::from_str(r#"{"nope":"var(--fg)","bg":"red; }"}"#).unwrap();
+        let errs = validate_variant_tokens("btn", &bad);
+        assert!(errs.iter().any(|e| e.contains("'nope'")), "flags the bad key: {errs:?}");
+        assert!(errs.iter().any(|e| e.contains("disallowed")), "flags the injection: {errs:?}");
+        assert!(!validate_variant_tokens("btn", &serde_json::Map::new()).is_empty(), "empty bundle rejected");
+    }
+
+    #[test]
+    fn resolve_component_token_maps_short_keys_to_full_names() {
+        assert_eq!(resolve_component_token("card", None, "radius").as_deref(), Some("--card-radius"));
+        assert_eq!(resolve_component_token("btn", Some("primary"), "bg").as_deref(), Some("--btn-primary-bg"));
+        assert_eq!(resolve_component_token("btn", None, "bg").as_deref(), Some("--btn-bg"));
+        // a base token addressed AS a variant, or an absent key/component, does not resolve.
+        assert!(resolve_component_token("btn", Some("primary"), "radius").is_none());
+        assert!(resolve_component_token("card", None, "nope").is_none());
+        assert!(resolve_component_token("nope", None, "bg").is_none());
+    }
+
+    #[test]
+    fn theme_css_emits_the_default_theme_as_an_empty_override_block() {
+        let css = theme_css("default").unwrap();
+        assert!(css.contains("theme: default"), "header names the theme");
+        assert!(css.contains(":root {"), "an override block exists even with no vars — the file stays the swappable slot");
+        assert!(css.contains("no overrides"), "the empty block says why it's empty");
+        assert!(!css.contains("--card-bg"), "default sets nothing");
+    }
+
+    #[test]
+    fn theme_css_emits_a_named_theme_s_vars_verbatim() {
+        let css = theme_css("nord").unwrap();
+        assert!(css.contains("theme: nord"));
+        // Every var of the theme appears as a CSS declaration.
+        let t = theme_by_id("nord").unwrap();
+        for (name, value) in t["vars"].as_object().unwrap() {
+            let line = format!("{name}: {};", value.as_str().unwrap());
+            assert!(css.contains(&line), "theme.css carries `{line}`");
+        }
+        // The swap contract is documented in the file itself.
+        assert!(css.contains("replacing this ONE"), "the header teaches re-theming = replace this file");
+    }
+
+    #[test]
+    fn theme_css_unknown_id_errors_listing_available_ids() {
+        let err = theme_css("nope").unwrap_err();
+        assert!(err.contains("unknown theme 'nope'"), "{err}");
+        for id in ["default", "light", "nord", "monokai"] {
+            assert!(err.contains(id), "error lists available id {id}: {err}");
+        }
+    }
+
+    /// `validate_spec` is the PUBLIC entry (`bsc ui validate`). The rules themselves are covered in
+    /// depth by the shared cross-language fixtures in [`general_node`]; these cases prove the public
+    /// function is wired to them, and pin the errors an agent sees most often.
+    #[test]
     fn accepts_the_demo_spec() {
         // The same LLM-provider card the frontend demoSpec renders — validates clean here too.
         let demo = json!({
-            "kind": "card", "tone": "var(--accent)",
-            "header": { "kind": "header", "title": "LLM provider", "hint": "API-tier" },
+            "type": "Card",
+            "props": {
+                "tone": "var(--accent)",
+                "header": { "type": "Text", "props": { "size": "md", "weight": 600 }, "children": "LLM provider" }
+            },
             "children": [
-                { "kind": "field", "control": "select", "label": "Provider", "bind": "provider", "options": ["anthropic", "openai"] },
-                { "kind": "field", "control": "password", "label": "API key", "bind": "apiKey" },
-                { "kind": "row", "label": "Stream responses", "children": [{ "kind": "toggle", "bind": "stream" }] },
-                { "kind": "button", "variant": "primary", "label": "Save", "action": "save" }
+                { "type": "SelectField",
+                  "props": { "label": "Provider", "children": [
+                      { "type": "Option", "props": { "value": "anthropic" }, "children": "anthropic" }
+                  ] },
+                  "binds": { "value": "provider" }, "actions": { "onChange": "setProvider" } },
+                { "type": "TextField", "props": { "label": "API key" },
+                  "binds": { "value": "apiKey" }, "actions": { "onChange": "setApiKey" } },
+                { "type": "Row", "props": { "gap": "sm", "justify": "between" }, "children": [
+                    { "type": "Text", "children": "Stream responses" },
+                    { "type": "Toggle", "binds": { "on": "stream" }, "actions": { "onClick": "toggleStream" } }
+                ] },
+                { "type": "Button", "props": { "variant": "primary" }, "children": "Save",
+                  "actions": { "onClick": "save" } }
             ]
         });
         assert_eq!(validate_spec(&demo), Vec::<String>::new());
@@ -177,42 +687,63 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_and_unknown_kind() {
-        assert_eq!(validate_spec(&json!({ "title": "x" })), vec!["$: missing string \"kind\""]);
-        assert_eq!(validate_spec(&json!({ "kind": "widget" })), vec!["$: unknown kind \"widget\""]);
+    fn rejects_missing_and_unknown_type() {
+        assert_eq!(validate_spec(&json!({ "title": "x" })), vec!["$: missing string \"type\""]);
+        assert_eq!(
+            validate_spec(&json!({ "type": "Widget" })),
+            vec!["$: unknown primitive \"Widget\""]
+        );
     }
 
+    /// The retired `kind` vocabulary must FAIL, not pass quietly (#3500). An agent working from a
+    /// stale example has to be told, or it will keep emitting specs nothing can render.
     #[test]
-    fn reports_missing_required_field() {
+    fn rejects_the_retired_kind_vocabulary() {
         assert_eq!(
-            validate_spec(&json!({ "kind": "field", "control": "text" })),
-            vec!["$: missing required field \"label\" for kind \"field\""]
+            validate_spec(&json!({ "kind": "card", "children": [] })),
+            vec!["$: missing string \"type\""]
         );
     }
 
     #[test]
-    fn reports_unknown_field() {
+    fn reports_missing_required_prop() {
         assert_eq!(
-            validate_spec(&json!({ "kind": "tag", "label": "x", "bogus": 1 })),
-            vec!["$: unknown field \"bogus\" for kind \"tag\""]
+            validate_spec(&json!({ "type": "Toggle" })),
+            vec!["$.props.on: missing required prop for \"Toggle\""]
+        );
+    }
+
+    #[test]
+    fn reports_unknown_prop() {
+        assert_eq!(
+            validate_spec(&json!({ "type": "Spacer", "props": { "bogus": 1 } })),
+            vec!["$.props.bogus: unknown prop for \"Spacer\""]
         );
     }
 
     #[test]
     fn reports_bad_enum() {
-        let errs = validate_spec(&json!({ "kind": "field", "control": "radio", "label": "x" }));
-        assert!(errs.contains(&"$.control: \"radio\" not one of text, password, select".to_string()));
+        let errs = validate_spec(&json!({ "type": "Text", "children": "x", "props": { "tone": "radio" } }));
+        assert!(
+            errs.iter().any(|e| e.contains("\"radio\" is not one of") && e.contains("accent")),
+            "{errs:?}"
+        );
     }
 
     #[test]
-    fn recurses_into_children_and_header() {
+    fn recurses_into_children_and_prop_slots() {
         assert_eq!(
-            validate_spec(&json!({ "kind": "card", "children": [{ "kind": "button" }] })),
-            vec!["$.children[0]: missing required field \"label\" for kind \"button\""]
+            validate_spec(&json!({ "type": "Stack", "children": [{ "type": "Toggle" }] })),
+            vec!["$.children[0].props.on: missing required prop for \"Toggle\""]
         );
         assert_eq!(
-            validate_spec(&json!({ "kind": "card", "header": { "kind": "header" }, "children": [] })),
-            vec!["$.header: missing required field \"title\" for kind \"header\""]
+            validate_spec(&json!({
+                "type": "Card",
+                "props": { "header": { "type": "Text" } },
+                "children": []
+            })),
+            vec!["$.props.header.props.children: missing required prop for \"Text\""]
         );
     }
+
 }

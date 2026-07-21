@@ -1,0 +1,435 @@
+{
+  "version": 2,
+  "note": "The Algorithms knowledge library (#2760) — RUST-first, PRIMITIVES-ROOTED, impl-is-concept (#2961): each language is a tier of IMPLEMENTATIONS rooted in that language's PRIMITIVES (role: primitive — Vec, slice, Iterator, Option, HashMap, VecDeque, BinaryHeap, i64, bool, tuple), with algorithms (role: algorithm) composing UP from them; the implementation IS the concept — there is NO abstract concept ontology (nodes/edges/concept removed #2961). The ONE source of truth read by BOTH the frontend (src/features/algorithms) AND the `bsc graph` CLI (crates/bsc-graph embeds it). Each impl: { id, tech, role, name, summary, composes, code }.",
+  "implementations": [
+    {
+      "id": "merge.rs",
+      "tech": "rust",
+      "name": "merge",
+      "summary": "Interleave two sorted slices into one sorted Vec.",
+      "composes": [
+        "rust.vec",
+        "rust.slice"
+      ],
+      "code": "/// Interleave two sorted slices into one sorted `Vec`.\npub fn merge<T: Ord + Clone>(a: &[T], b: &[T]) -> Vec<T> {\n    let mut out = Vec::with_capacity(a.len() + b.len());\n    let (mut i, mut j) = (0, 0);\n    while i < a.len() && j < b.len() {\n        if a[i] <= b[j] {\n            out.push(a[i].clone());\n            i += 1;\n        } else {\n            out.push(b[j].clone());\n            j += 1;\n        }\n    }\n    out.extend_from_slice(&a[i..]);\n    out.extend_from_slice(&b[j..]);\n    out\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "merge-sort.rs",
+      "tech": "rust",
+      "name": "merge_sort",
+      "summary": "Split, recursively sort the halves, and merge — built on the merge primitive.",
+      "composes": [
+        "merge.rs",
+        "rust.vec",
+        "rust.slice"
+      ],
+      "code": "use crate::merge::merge;\n\n/// Stable merge sort — split, sort halves, merge.\npub fn merge_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {\n    if xs.len() <= 1 {\n        return xs.to_vec();\n    }\n    let mid = xs.len() / 2;\n    let left = merge_sort(&xs[..mid]);\n    let right = merge_sort(&xs[mid..]);\n    merge(&left, &right)\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "binary-search.rs",
+      "tech": "rust",
+      "name": "binary_search",
+      "summary": "Halve a sorted range each step until the target is found.",
+      "composes": [
+        "rust.slice",
+        "rust.option"
+      ],
+      "code": "/// Binary search a sorted slice; `Some(index)` on a hit, else `None`.\npub fn binary_search<T: Ord>(xs: &[T], target: &T) -> Option<usize> {\n    let (mut lo, mut hi) = (0, xs.len());\n    while lo < hi {\n        let mid = lo + (hi - lo) / 2;\n        match xs[mid].cmp(target) {\n            std::cmp::Ordering::Equal => return Some(mid),\n            std::cmp::Ordering::Less => lo = mid + 1,\n            std::cmp::Ordering::Greater => hi = mid,\n        }\n    }\n    None\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "quick-sort.rs",
+      "tech": "rust",
+      "name": "quick_sort",
+      "summary": "Partition around a pivot and recurse each side.",
+      "composes": [
+        "rust.vec",
+        "rust.slice",
+        "rust.iterator"
+      ],
+      "code": "/// Quick sort — partition around the first element, recurse each side.\npub fn quick_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {\n    if xs.len() <= 1 {\n        return xs.to_vec();\n    }\n    let pivot = xs[0].clone();\n    let left: Vec<T> = xs[1..].iter().filter(|x| **x < pivot).cloned().collect();\n    let right: Vec<T> = xs[1..].iter().filter(|x| **x >= pivot).cloned().collect();\n    let mut out = quick_sort(&left);\n    out.push(pivot);\n    out.extend(quick_sort(&right));\n    out\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "bfs.rs",
+      "domain": "logistics",
+      "tech": "rust",
+      "name": "bfs",
+      "summary": "Explore a graph level by level using a queue.",
+      "composes": [
+        "rust.hashmap",
+        "rust.vecdeque",
+        "rust.vec"
+      ],
+      "code": "use std::collections::{HashMap, HashSet, VecDeque};\n\n/// Breadth-first traversal order from `start` over an adjacency map.\npub fn bfs(adj: &HashMap<&str, Vec<&str>>, start: &str) -> Vec<String> {\n    let mut order = Vec::new();\n    let mut seen = HashSet::from([start]);\n    let mut queue = VecDeque::from([start]);\n    while let Some(node) = queue.pop_front() {\n        order.push(node.to_string());\n        for &next in adj.get(node).into_iter().flatten() {\n            if seen.insert(next) {\n                queue.push_back(next);\n            }\n        }\n    }\n    order\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "bubble-sort.rs",
+      "tech": "rust",
+      "name": "bubble_sort",
+      "summary": "Swap adjacent out-of-order pairs each pass, stopping early once a pass makes no swap.",
+      "composes": [
+        "rust.vec",
+        "rust.slice"
+      ],
+      "code": "/// Bubble sort — repeatedly swap adjacent out-of-order pairs; stop early once a pass makes no swap.\npub fn bubble_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {\n    let mut out = xs.to_vec();\n    let n = out.len();\n    for end in (1..n).rev() {\n        let mut swapped = false;\n        for i in 0..end {\n            if out[i] > out[i + 1] {\n                out.swap(i, i + 1);\n                swapped = true;\n            }\n        }\n        if !swapped {\n            break;\n        }\n    }\n    out\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "insertion-sort.rs",
+      "tech": "rust",
+      "name": "insertion_sort",
+      "summary": "Grow a sorted prefix, shifting larger elements right to open a slot for each key.",
+      "composes": [
+        "rust.vec",
+        "rust.slice"
+      ],
+      "code": "/// Insertion sort — grow a sorted prefix, shifting larger elements right to open a slot.\npub fn insertion_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {\n    let mut out = xs.to_vec();\n    for i in 1..out.len() {\n        let mut j = i;\n        while j > 0 && out[j - 1] > out[j] {\n            out.swap(j - 1, j);\n            j -= 1;\n        }\n    }\n    out\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "heap-sort.rs",
+      "tech": "rust",
+      "name": "heap_sort",
+      "summary": "Build a max-heap in place, then swap the root to the end and re-sift the remaining prefix.",
+      "composes": [
+        "rust.vec",
+        "rust.slice"
+      ],
+      "code": "/// Heap sort — build a max-heap in place, then swap the root to the end and re-sift the rest.\npub fn heap_sort<T: Ord + Clone>(xs: &[T]) -> Vec<T> {\n    fn sift_down<T: Ord>(a: &mut [T], start: usize, end: usize) {\n        let mut root = start;\n        loop {\n            let left = 2 * root + 1;\n            if left > end {\n                return;\n            }\n            let right = left + 1;\n            let mut largest = root;\n            if a[largest] < a[left] {\n                largest = left;\n            }\n            if right <= end && a[largest] < a[right] {\n                largest = right;\n            }\n            if largest == root {\n                return;\n            }\n            a.swap(root, largest);\n            root = largest;\n        }\n    }\n    let mut out = xs.to_vec();\n    let n = out.len();\n    if n < 2 {\n        return out;\n    }\n    for start in (0..n / 2).rev() {\n        sift_down(&mut out, start, n - 1);\n    }\n    for end in (1..n).rev() {\n        out.swap(0, end);\n        sift_down(&mut out, 0, end - 1);\n    }\n    out\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "linear-search.rs",
+      "tech": "rust",
+      "name": "linear_search",
+      "summary": "Scan for the first element equal to the target; Some(index) on a hit, else None.",
+      "composes": [
+        "rust.slice",
+        "rust.iterator",
+        "rust.option"
+      ],
+      "code": "/// Linear search — the index of the first element equal to `target`, else `None`.\npub fn linear_search<T: PartialEq>(xs: &[T], target: &T) -> Option<usize> {\n    xs.iter().position(|x| x == target)\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "dfs.rs",
+      "domain": "logistics",
+      "tech": "rust",
+      "name": "dfs",
+      "summary": "Explore as deep as possible from a start node, backtracking — recursive over the adjacency map.",
+      "composes": [
+        "rust.hashmap",
+        "rust.vec"
+      ],
+      "code": "use std::collections::{HashMap, HashSet};\n\n/// Depth-first traversal order from `start` over a weighted adjacency map (weights ignored).\npub fn dfs(adj: &HashMap<String, Vec<(String, u32)>>, start: &str) -> Vec<String> {\n    fn visit(\n        adj: &HashMap<String, Vec<(String, u32)>>,\n        node: &str,\n        seen: &mut HashSet<String>,\n        order: &mut Vec<String>,\n    ) {\n        if !seen.insert(node.to_string()) {\n            return;\n        }\n        order.push(node.to_string());\n        if let Some(neighbors) = adj.get(node) {\n            for (next, _) in neighbors {\n                visit(adj, next, seen, order);\n            }\n        }\n    }\n    let mut order = Vec::new();\n    let mut seen = HashSet::new();\n    visit(adj, start, &mut seen, &mut order);\n    order\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "dijkstra.rs",
+      "domain": "logistics",
+      "tech": "rust",
+      "name": "dijkstra",
+      "summary": "Greedy non-negative-weight shortest distances from a start node, using a binary min-heap.",
+      "composes": [
+        "rust.hashmap",
+        "rust.binaryheap"
+      ],
+      "code": "use std::cmp::Reverse;\nuse std::collections::{BinaryHeap, HashMap};\n\n/// Dijkstra shortest-path distances from `start` over a non-negative weighted adjacency map.\npub fn dijkstra(adj: &HashMap<String, Vec<(String, u32)>>, start: &str) -> HashMap<String, u32> {\n    let mut dist: HashMap<String, u32> = HashMap::from([(start.to_string(), 0)]);\n    let mut heap: BinaryHeap<Reverse<(u32, String)>> = BinaryHeap::new();\n    heap.push(Reverse((0, start.to_string())));\n    while let Some(Reverse((d, node))) = heap.pop() {\n        if d > dist.get(&node).copied().unwrap_or(u32::MAX) {\n            continue;\n        }\n        if let Some(neighbors) = adj.get(&node) {\n            for (next, w) in neighbors {\n                let nd = d + w;\n                if nd < dist.get(next).copied().unwrap_or(u32::MAX) {\n                    dist.insert(next.clone(), nd);\n                    heap.push(Reverse((nd, next.clone())));\n                }\n            }\n        }\n    }\n    dist\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "a-star.rs",
+      "domain": "logistics",
+      "tech": "rust",
+      "name": "a_star",
+      "summary": "Dijkstra guided by an admissible heuristic; returns the shortest node path to the goal, or None.",
+      "composes": [
+        "rust.hashmap",
+        "rust.vec"
+      ],
+      "code": "use std::collections::{HashMap, HashSet};\n\n/// A* shortest path from `start` to `goal`, guided by `heuristic`. Returns the node path\n/// (inclusive of both ends) or `None` if `goal` is unreachable.\npub fn a_star(\n    adj: &HashMap<String, Vec<(String, u32)>>,\n    start: &str,\n    goal: &str,\n    heuristic: impl Fn(&str) -> u32,\n) -> Option<Vec<String>> {\n    let mut g_score: HashMap<String, u32> = HashMap::from([(start.to_string(), 0)]);\n    let mut came_from: HashMap<String, String> = HashMap::new();\n    let mut open: HashSet<String> = HashSet::from([start.to_string()]);\n    while !open.is_empty() {\n        let current = open\n            .iter()\n            .min_by_key(|n| {\n                g_score.get(*n).copied().unwrap_or(u32::MAX).saturating_add(heuristic(n))\n            })\n            .cloned()\n            .unwrap();\n        if current == goal {\n            let mut path = vec![current.clone()];\n            let mut step = current;\n            while let Some(prev) = came_from.get(&step) {\n                path.push(prev.clone());\n                step = prev.clone();\n            }\n            path.reverse();\n            return Some(path);\n        }\n        open.remove(&current);\n        let g_current = g_score.get(&current).copied().unwrap_or(u32::MAX);\n        if let Some(neighbors) = adj.get(&current) {\n            for (next, w) in neighbors {\n                let tentative = g_current.saturating_add(*w);\n                if tentative < g_score.get(next).copied().unwrap_or(u32::MAX) {\n                    came_from.insert(next.clone(), current.clone());\n                    g_score.insert(next.clone(), tentative);\n                    open.insert(next.clone());\n                }\n            }\n        }\n    }\n    None\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "topological-sort.rs",
+      "domain": "logistics",
+      "tech": "rust",
+      "name": "topological_sort",
+      "summary": "Kahn's algorithm — repeatedly emit in-degree-zero nodes; None when a cycle is present.",
+      "composes": [
+        "rust.hashmap",
+        "rust.vecdeque",
+        "rust.vec"
+      ],
+      "code": "use std::collections::{HashMap, VecDeque};\n\n/// Kahn's algorithm — a topological ordering of a DAG, or `None` if a cycle is present.\npub fn topological_sort(adj: &HashMap<String, Vec<(String, u32)>>) -> Option<Vec<String>> {\n    let mut indegree: HashMap<String, usize> = HashMap::new();\n    for (node, edges) in adj {\n        indegree.entry(node.clone()).or_insert(0);\n        for (next, _) in edges {\n            *indegree.entry(next.clone()).or_insert(0) += 1;\n        }\n    }\n    let mut queue: VecDeque<String> = indegree\n        .iter()\n        .filter(|(_, &d)| d == 0)\n        .map(|(n, _)| n.clone())\n        .collect();\n    let mut order = Vec::new();\n    while let Some(node) = queue.pop_front() {\n        order.push(node.clone());\n        if let Some(edges) = adj.get(&node) {\n            for (next, _) in edges {\n                let d = indegree.get_mut(next).unwrap();\n                *d -= 1;\n                if *d == 0 {\n                    queue.push_back(next.clone());\n                }\n            }\n        }\n    }\n    if order.len() == indegree.len() {\n        Some(order)\n    } else {\n        None\n    }\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "fibonacci.rs",
+      "tech": "rust",
+      "name": "fibonacci",
+      "summary": "The nth Fibonacci number (F0 = 0, F1 = 1), iterated bottom-up in O(n).",
+      "composes": [
+        "rust.i64"
+      ],
+      "code": "/// The nth Fibonacci number (0-indexed: F0 = 0, F1 = 1), iterated bottom-up.\npub fn fibonacci(n: u64) -> u64 {\n    if n < 2 {\n        return n;\n    }\n    let (mut a, mut b) = (0u64, 1u64);\n    for _ in 2..=n {\n        let next = a + b;\n        a = b;\n        b = next;\n    }\n    b\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "euclid-gcd.rs",
+      "tech": "rust",
+      "name": "gcd",
+      "summary": "Greatest common divisor by repeated remainder — the Euclidean algorithm.",
+      "composes": [
+        "rust.i64"
+      ],
+      "code": "/// Greatest common divisor via the Euclidean algorithm (iterated remainder).\npub fn gcd(mut a: u64, mut b: u64) -> u64 {\n    while b != 0 {\n        let r = a % b;\n        a = b;\n        b = r;\n    }\n    a\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "fft.rs",
+      "domain": "signal-processing",
+      "tech": "rust",
+      "name": "fft",
+      "summary": "Recursive radix-2 Cooley–Tukey FFT over complex samples (re, im); input length must be a power of two.",
+      "composes": [
+        "rust.vec",
+        "rust.tuple"
+      ],
+      "code": "/// Recursive radix-2 Cooley–Tukey FFT over complex samples `(re, im)`.\n/// `input.len()` must be a power of two.\npub fn fft(input: &[(f64, f64)]) -> Vec<(f64, f64)> {\n    let n = input.len();\n    if n <= 1 {\n        return input.to_vec();\n    }\n    assert!(n & (n - 1) == 0, \"fft: length must be a power of two\");\n    let even = fft(&input.iter().step_by(2).copied().collect::<Vec<_>>());\n    let odd = fft(&input.iter().skip(1).step_by(2).copied().collect::<Vec<_>>());\n    let mut out = vec![(0.0, 0.0); n];\n    for k in 0..n / 2 {\n        let angle = -2.0 * std::f64::consts::PI * k as f64 / n as f64;\n        let (tw_re, tw_im) = (angle.cos(), angle.sin());\n        let (o_re, o_im) = odd[k];\n        let t = (tw_re * o_re - tw_im * o_im, tw_re * o_im + tw_im * o_re);\n        let (e_re, e_im) = even[k];\n        out[k] = (e_re + t.0, e_im + t.1);\n        out[k + n / 2] = (e_re - t.0, e_im - t.1);\n    }\n    out\n}\n",
+      "role": "algorithm"
+    },
+    {
+      "id": "rust.iterator",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "Iterator",
+      "summary": "Lazy sequence adaptor — map/filter/fold that sort/search compose over slices.",
+      "composes": [],
+      "ref": "std::iter::Iterator"
+    },
+    {
+      "id": "rust.i64",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "Integer",
+      "summary": "Fixed-width signed integer — the scalar arithmetic and counting run on (i32/i64/u64/usize).",
+      "composes": [],
+      "ref": "i64"
+    },
+    {
+      "id": "rust.bool",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "Boolean",
+      "summary": "true / false — the branch and predicate primitive every comparison collapses to.",
+      "composes": [],
+      "ref": "bool"
+    },
+    {
+      "id": "rust.tuple",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "Tuple",
+      "summary": "A fixed heterogeneous group — pairs like (node, weight) or a complex sample (re, im).",
+      "composes": [],
+      "ref": "(T, U, …)"
+    },
+    {
+      "id": "rust.slice",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "Slice",
+      "summary": "&[T] — a borrowed contiguous view; the sequence sort and search read it without owning it.",
+      "composes": [],
+      "ref": "&[T]"
+    },
+    {
+      "id": "rust.vec",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "Vec",
+      "summary": "Vec<T> — the growable owned buffer sort results and graph traversal orders are built up in.",
+      "composes": [],
+      "ref": "std::vec::Vec"
+    },
+    {
+      "id": "rust.option",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "Option",
+      "summary": "Option<T> — Some(x) | None; the presence/absence primitive a search returns.",
+      "composes": [],
+      "ref": "std::option::Option"
+    },
+    {
+      "id": "rust.hashmap",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "HashMap",
+      "summary": "HashMap<K, V> — average-O(1) keyed lookup; the adjacency map and the memo / distance table.",
+      "composes": [],
+      "ref": "std::collections::HashMap"
+    },
+    {
+      "id": "rust.vecdeque",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "VecDeque",
+      "summary": "VecDeque<T> — a double-ended queue; the FIFO frontier BFS and Kahn's algorithm pop from.",
+      "composes": [],
+      "ref": "std::collections::VecDeque"
+    },
+    {
+      "id": "rust.binaryheap",
+      "tech": "rust",
+      "role": "primitive",
+      "name": "BinaryHeap",
+      "summary": "BinaryHeap<T> — a binary max-heap; the priority queue Dijkstra pulls the min from via Reverse.",
+      "composes": [],
+      "ref": "std::collections::BinaryHeap"
+    },
+    {
+      "id": "typescript.number",
+      "tech": "typescript",
+      "role": "primitive",
+      "name": "number",
+      "summary": "The IEEE-754 double every TypeScript numeric algorithm computes over — the language's numeric base.",
+      "composes": [],
+      "ref": "number"
+    },
+    {
+      "id": "fibonacci.ts",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "fibonacci",
+      "summary": "The nth Fibonacci number (F0 = 0, F1 = 1), iterated bottom-up in O(n) — the TypeScript twin of fibonacci.rs and the #3116 Component→Algorithm example: a React component imports it via @bsc/algorithms/fibonacci and the Design Studio preview vendors this code so it runs the library impl live.",
+      "composes": [
+        "typescript.number"
+      ],
+      "code": "export function fibonacci(n: number): number {\n  if (n < 2) return n;\n  let a = 0,\n    b = 1;\n  for (let i = 2; i <= n; i++) {\n    const next = a + b;\n    a = b;\n    b = next;\n  }\n  return b;\n}\n"
+    },
+    {
+      "id": "sort.ts",
+      "tech": "typescript",
+      "role": "algorithm",
+      "kind": "sort",
+      "vizCode": "({\n  datatype: \"array\",\n  input: [5, 2, 9, 1, 6, 3],\n  run(a) {\n    // Insertion sort — walk each new value down into the sorted prefix.\n    for (let i = 1; i < a.length; i++) {\n      let j = i;\n      a.cursor(\"i\", i);\n      while (j > 0) {\n        a.cursor(\"j\", j);\n        if (a.compare(j - 1, j) <= 0) break;\n        a.swap(j - 1, j);\n        j--;\n      }\n    }\n    a.markSorted();\n  },\n})",
+      "name": "sort",
+      "summary": "In-place insertion sort authored as a step-yielding generator (#3171 generator-as-source): the plain `sort` drains it to order the array, and the Algorithms Visualization pane animates the SAME yields — compare/swap/set verbs bound to the <ArrayView> renderer's designed animations. The array proof-of-loop (#3178/#3177) for the algorithm-visualization epic.",
+      "composes": [
+        "typescript.number"
+      ],
+      "code": "import type { ArrayFrame } from \"@bsc/algorithms/trace\";\n\n/** Insertion sort as a step-yielding generator (generator-as-source, #3171): mutates `a` in place and\n *  yields one ArrayFrame per step. The plain `sort` drains it to order the array; the Algorithms\n *  Visualization pane animates the same yields - compare/swap verbs bound to <ArrayView>'s animations. */\nexport function* sortSteps(a: number[]): Generator<ArrayFrame> {\n  yield { structure: \"array\", data: [...a] };\n  for (let i = 1; i < a.length; i++) {\n    let j = i;\n    while (j > 0) {\n      yield { structure: \"array\", data: [...a], ops: [{ op: \"compare\", at: [j - 1, j] }], cursors: { i, j } };\n      if (a[j - 1] <= a[j]) break;\n      [a[j - 1], a[j]] = [a[j], a[j - 1]];\n      yield { structure: \"array\", data: [...a], ops: [{ op: \"swap\", at: [j - 1, j] }], cursors: { i, j } };\n      j--;\n    }\n  }\n  yield { structure: \"array\", data: [...a], ops: a.map((_, k) => ({ op: \"mark\", at: k, as: \"sorted\" })) };\n}\n\n/** Sort ascending by draining the generator (one source of truth). Pure - never mutates the input. */\nexport const sort = (input: number[]): number[] => {\n  const a = [...input];\n  const steps = sortSteps(a);\n  while (!steps.next().done) { /* drain - sortSteps mutates `a` in place */ }\n  return a;\n};\n"
+    },
+    {
+      "id": "transpose.ts",
+      "domain": "graphics",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "transpose",
+      "kind": "transform",
+      "summary": "Transpose a square matrix in place — swap each (i, j) with (j, i) across the main diagonal. The Algorithms Visualization animates the diagonal swaps via the <MatrixView> renderer (#3221).",
+      "composes": [
+        "typescript.number"
+      ],
+      "code": "export function transpose(m: number[][]): number[][] {\n  const a = m.map((r) => [...r]);\n  const n = a.length;\n  for (let i = 0; i < n; i++)\n    for (let j = i + 1; j < n; j++) [a[i][j], a[j][i]] = [a[j][i], a[i][j]];\n  return a;\n}\n"
+    },
+    {
+      "id": "rotate.ts",
+      "domain": "graphics",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "rotate",
+      "kind": "transform",
+      "summary": "Rotate a square matrix 90° clockwise in place — a four-way cycle per ring (all four cells move together). Animated cell-by-cell in the Matrix visualization (#3221).",
+      "composes": [
+        "typescript.number"
+      ],
+      "code": "export function rotate90(m: number[][]): number[][] {\n  const a = m.map((r) => [...r]);\n  const n = a.length;\n  for (let l = 0; l < Math.floor(n / 2); l++) {\n    const f = l, e = n - 1 - l;\n    for (let i = f; i < e; i++) {\n      const o = i - f, t = a[f][i];\n      a[f][i] = a[e - o][f];\n      a[e - o][f] = a[e][e - o];\n      a[e][e - o] = a[i][e];\n      a[i][e] = t;\n    }\n  }\n  return a;\n}\n"
+    },
+    {
+      "id": "reflect.ts",
+      "domain": "graphics",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "reflect",
+      "kind": "transform",
+      "summary": "Reflect a square matrix horizontally (mirror left↔right) — swap columns c and n-1-c in every row. Animated as column swaps in the Matrix visualization (#3221).",
+      "composes": [
+        "typescript.number"
+      ],
+      "code": "export function reflect(m: number[][]): number[][] {\n  const a = m.map((r) => [...r]);\n  const n = a[0].length;\n  for (const r of a)\n    for (let c = 0; c < Math.floor(n / 2); c++) [r[c], r[n - 1 - c]] = [r[n - 1 - c], r[c]];\n  return a;\n}\n"
+    },
+    {
+      "id": "llm-energy.ts",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "estimateEnergyWh",
+      "summary": "Estimate the energy (Wh) an LLM call costs from the model name and its input/output token split: classify the model into a tier by name pattern, then apply per-1k-token coefficients. Directional, not metered — unknown hosted models fall to the mid tier rather than zero, so an unrecognised model is never free. Harvested from the Fleet page's cost panel (#3462).",
+      "composes": [
+        "typescript.number"
+      ],
+      "code": "/** Wh per 1k tokens by model tier — directional coefficients, not metered readings. */\nconst WH_PER_1K: Record<\"large\" | \"medium\" | \"small\" | \"local\", { in: number; out: number }> = {\n  large: { in: 0.05, out: 0.9 },\n  medium: { in: 0.03, out: 0.4 },\n  small: { in: 0.01, out: 0.15 },\n  local: { in: 0, out: 0 },\n};\n\n/** Classify a model name into an energy tier by name pattern; unknown hosted models fall to medium. */\nfunction tier(model: string): keyof typeof WH_PER_1K {\n  const m = model.toLowerCase();\n  if (/local|ollama|llama|mistral|qwen|deepseek|phi/.test(m)) return \"local\";\n  if (/opus|ultra|gpt-4(?!o)|gpt4(?!o)/.test(m)) return \"large\";\n  if (/haiku|mini|flash|nano|small|lite/.test(m)) return \"small\";\n  return \"medium\";\n}\n\n/** Estimated Wh for an input/output token split at the model's tier. Directional, not metered. */\nexport function estimateEnergyWh(model: string, inputTokens: number, outputTokens: number): number {\n  const k = WH_PER_1K[tier(model)];\n  return (inputTokens / 1000) * k.in + (outputTokens / 1000) * k.out;\n}"
+    },
+    {
+      "id": "precedence-resolve.ts",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "resolveByPrecedence",
+      "summary": "Resolve ONE state from N independent signal sources by a DECLARED precedence order, first match wins, sources consulted lazily. The ordering is data rather than control flow: the usual form is a chain of `if` returns where the precedence exists only in statement order and cannot be read, tested or reordered without editing branches. Total by construction (a fallback is required, so there is no resolved-to-nothing case). `matchingPrecedence` returns every rule that claimed the subject, not just the winner — the winner answers \"what is it?\", the rest is what an explanation needs. Harvested from the Fleet page's per-worker status (#3462/#3465).",
+      "composes": [
+        "typescript.number"
+      ],
+      "code": "/**\n * Resolve ONE state from N independent signal sources, by a declared precedence order.\n *\n * The everyday shape of \"which status is this thing in?\" when several sources can each claim it at\n * once and the answer must be single-valued and stable. The ordering is DATA, not control flow: the\n * common alternative is a chain of `if` returns, where the precedence exists only in the sequence of\n * the statements and cannot be read, tested, or changed without editing the branch order.\n *\n * The first source (in order) that claims the subject wins. Sources are consulted lazily, so an\n * expensive predicate placed low in the order is not paid for when something above it already matched.\n *\n * Harvested from the Fleet page's per-worker status (#3462/#3465), where coordination signals\n * (asking / waiting / blocked) outrank the raw run/idle sample, which in turn outranks a parked\n * maintenance worker — an order chosen so a worker that needs a human is never hidden behind a\n * mechanical \"running\".\n */\n\n/** One candidate state and the test that claims it. `when` is only called until one matches. */\nexport interface PrecedenceRule<TSubject, TState> {\n  /** The state this rule resolves to when it claims the subject. */\n  state: TState;\n  /** Does this source claim the subject? */\n  when: (subject: TSubject) => boolean;\n}\n\n/**\n * The first rule (in order) whose `when` claims `subject`, else `fallback`.\n *\n * Total by construction — a `fallback` is required rather than optional, so there is no \"resolved to\n * nothing\" case for a caller to forget. That matters here: the states this resolves are rendered, and\n * an undefined status is a blank badge rather than a visible problem.\n */\nexport function resolveByPrecedence<TSubject, TState>(\n  subject: TSubject,\n  rules: ReadonlyArray<PrecedenceRule<TSubject, TState>>,\n  fallback: TState,\n): TState {\n  for (const rule of rules) {\n    if (rule.when(subject)) return rule.state;\n  }\n  return fallback;\n}\n\n/**\n * The rules that claimed `subject`, in precedence order — every match, not just the winner.\n *\n * The winner alone answers \"what is it?\"; this answers \"what else was true?\", which is what an\n * explanation needs. A worker resolving to `running` while also matching `maintenance` is a different\n * situation from one that matches `running` only, and a UI that can say so is more use than one that\n * silently discards the runners-up.\n */\nexport function matchingPrecedence<TSubject, TState>(\n  subject: TSubject,\n  rules: ReadonlyArray<PrecedenceRule<TSubject, TState>>,\n): TState[] {\n  return rules.filter((r) => r.when(subject)).map((r) => r.state);\n}"
+    },
+    {
+      "id": "windowed-tally.ts",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "windowedTally",
+      "summary": "Bucket K timestamp streams into per-day counts over a rolling N-day UTC window, aligned to one label axis. Two properties are the point: EMPTY DAYS ARE PRESENT (the window is built first and streams tally into it, where deriving labels from the data silently compresses quiet days out of the axis and makes a gap look like a dip), and THE SERIES ARE ALIGNED (every series has one entry per label, in order, so index i means the same day in all of them — a chart layering two series cannot check this). UTC because a window whose bucket boundaries move with the viewer's timezone makes the same data tell two stories. Harvested from the Fleet page's throughput panel (#3462/#3465).",
+      "composes": [
+        "typescript.number"
+      ],
+      "code": "/**\n * Bucket K timestamp streams into per-day counts over a rolling N-day window, aligned to one label\n * axis — the shape every \"activity over the last N days\" chart needs.\n *\n * Two properties are the whole point, and both are easy to get wrong by hand:\n *\n * 1. **Empty days are present.** The window is built first and every stream is tallied INTO it, so a\n *    day with no events is a `0`, not a missing entry. Deriving labels from the data instead (the\n *    obvious shortcut) silently compresses quiet days out of the axis, which makes a gap look like a\n *    dip and misstates the trend.\n * 2. **The series are aligned.** Every returned series has exactly `days` entries in the same order as\n *    `labels`, so index `i` means the same day in all of them. A chart layering two series cannot check\n *    this and will happily plot them against each other misaligned.\n *\n * Days are UTC — a rolling window whose bucket boundaries move with the viewer's timezone would make\n * the same data tell two stories. Timestamps are ISO-8601; anything unparseable or outside the window\n * is dropped rather than clamped, because a bad timestamp landing on an edge day is a fabricated event.\n *\n * Harvested from the Fleet page's throughput panel (#3462/#3465).\n */\n\n/** The day axis: display labels and the `YYYY-MM-DD` keys they bucket by, oldest → newest. */\nexport interface DayWindow {\n  labels: string[];\n  keys: string[];\n}\n\n/** The aligned result: one label axis and one equal-length numeric series per input stream. */\nexport interface WindowedTally<TName extends string> {\n  labels: string[];\n  series: Record<TName, number[]>;\n}\n\n/**\n * The last `days` UTC days ending at `now` (inclusive), oldest first.\n *\n * `days <= 0` yields an empty window rather than throwing — a caller asking for no window gets no\n * window, and every tally over it is correctly empty.\n */\nexport function dayWindow(days: number, now: Date): DayWindow {\n  const labels: string[] = [];\n  const keys: string[] = [];\n  for (let i = Math.max(0, Math.floor(days)) - 1; i >= 0; i--) {\n    const d = new Date(now.getTime() - i * 86_400_000);\n    labels.push(`${d.getUTCMonth() + 1}/${d.getUTCDate()}`);\n    keys.push(d.toISOString().slice(0, 10));\n  }\n  return { labels, keys };\n}\n\n/**\n * Count the timestamps falling on each day of `win`, in window order.\n *\n * Null/undefined/unparseable entries are skipped — these streams come from APIs where \"not merged\n * yet\" is a null timestamp, so filtering at the call site would be required of every caller.\n */\nexport function tallyByDay(win: DayWindow, timestamps: ReadonlyArray<string | null | undefined>): number[] {\n  const index = new Map(win.keys.map((k, i) => [k, i]));\n  const out = new Array<number>(win.keys.length).fill(0);\n  for (const ts of timestamps) {\n    if (!ts) continue;\n    const at = index.get(ts.slice(0, 10));\n    if (at !== undefined) out[at] += 1;\n  }\n  return out;\n}\n\n/**\n * Tally several named streams over ONE window, so the result is aligned by construction.\n *\n * Preferred over calling {@link tallyByDay} per stream: sharing the window is what guarantees the\n * series line up, and doing it here removes the caller's opportunity to build two windows a\n * millisecond apart and land the boundary event in different buckets.\n */\nexport function windowedTally<TName extends string>(\n  streams: Record<TName, ReadonlyArray<string | null | undefined>>,\n  days: number,\n  now: Date,\n): WindowedTally<TName> {\n  const win = dayWindow(days, now);\n  const series = {} as Record<TName, number[]>;\n  for (const name of Object.keys(streams) as TName[]) {\n    series[name] = tallyByDay(win, streams[name]);\n  }\n  return { labels: win.labels, series };\n}"
+    },
+    {
+      "id": "stream-merge.ts",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "mergeFeeds",
+      "summary": "Merge K differently-shaped event streams into ONE recent-first feed, with a distinguished class PINNED above the time sort, plus a count per kind. Each stream carries its own projection to a common item so the merge never sees the source shapes — adding a stream is a (source, project) pair, not editing a growing sort. The pin is a real flag, not the `sortKey: Infinity` sentinel the harvested code used (two Infinity items compare to NaN and their order is undefined). Counts come from the merged feed in one pass, so the badge can never disagree with the list. Stable within a rank. Harvested from the Fleet page's health panel (#3462/#3465).",
+      "composes": [
+        "typescript.number"
+      ],
+      "code": "/**\n * Merge K differently-shaped event streams into ONE recent-first feed, with a distinguished class\n * pinned ABOVE the time sort, plus a count per kind.\n *\n * The shape behind every \"activity\" / \"what needs attention\" panel that draws from several sources at\n * once (errors, warnings, denials, …). Three things it gets right that the hand-written version gets\n * wrong under maintenance:\n *\n * 1. **Heterogeneous in, homogeneous out.** Each stream has its OWN shape and its own projection to a\n *    common item; the merge never sees the source shapes. Adding a stream is adding a `(source,\n *    project)` pair, not editing a growing sort.\n * 2. **A pinned class outranks recency.** Some items are LIVE (\"this is happening now\") and must sit\n *    at the top regardless of timestamp — a currently-stalled worker above yesterday's resolved error.\n *    Modelled as a real flag (`pinned`), not the sentinel `sortKey: Infinity` the original used, which\n *    silently breaks the moment a second pinned item needs ordering among its peers.\n * 3. **Counts come from the merged feed, not recomputed.** One pass, so the badge can never disagree\n *    with the list it summarises.\n *\n * Sort is STABLE within a rank: pinned-vs-unpinned first, then `sortKey` descending, ties keeping\n * input order — so equal-timestamp items don't reshuffle between renders. Harvested from the Fleet\n * page's health panel (#3462/#3465).\n */\n\n/** One normalized feed entry. `kind` is the caller's classification (counted); `pinned` lifts it above\n *  the time sort; `sortKey` orders the rest (a timestamp, descending = newest first). */\nexport interface FeedItem<TKind extends string> {\n  kind: TKind;\n  pinned: boolean;\n  sortKey: number;\n}\n\n/** One input stream: its raw items plus how to project each to a {@link FeedItem}. Generic over the\n *  source shape AND the extra payload `P` the projection carries through (label, detail, …). */\nexport interface FeedStream<TKind extends string, P> {\n  items: readonly unknown[];\n  project: (raw: unknown) => (FeedItem<TKind> & P) | null;\n}\n\n/** Build one typed stream — a small helper so the source type is inferred rather than cast at the\n *  call site (each stream keeps its own element type until `project` normalizes it). */\nexport function feedStream<TRaw, TKind extends string, P>(\n  items: readonly TRaw[],\n  project: (raw: TRaw) => (FeedItem<TKind> & P) | null,\n): FeedStream<TKind, P> {\n  return { items, project: (raw) => project(raw as TRaw) };\n}\n\n/** The merged result: the ordered feed and a count per kind (every kind in `kinds` present, zeros\n *  included, so a caller can render a fixed set of badges without guarding for missing keys). */\nexport interface MergedFeed<TKind extends string, P> {\n  items: Array<FeedItem<TKind> & P>;\n  counts: Record<TKind, number>;\n  total: number;\n  hasItems: boolean;\n}\n\n/**\n * Merge the streams into one ordered feed with per-kind counts.\n *\n * `kinds` is the closed set of classifications, passed IN so `counts` has a zero for every one — the\n * feed alone can only count kinds that occurred, and a badge row that appears and disappears with the\n * data is worse than one that reads `0`.\n *\n * A stream's `project` returning null drops that raw item (a \"done\" verdict is not an error), so\n * filtering is part of the projection rather than a separate pass the caller has to remember.\n */\nexport function mergeFeeds<TKind extends string, P>(\n  streams: ReadonlyArray<FeedStream<TKind, P>>,\n  kinds: readonly TKind[],\n): MergedFeed<TKind, P> {\n  const items: Array<FeedItem<TKind> & P> = [];\n  for (const stream of streams) {\n    for (const raw of stream.items) {\n      const item = stream.project(raw);\n      if (item) items.push(item);\n    }\n  }\n  // Stable: pinned first, then newest first, ties keeping insertion order (Array.sort is stable).\n  items.sort((a, b) => (a.pinned === b.pinned ? b.sortKey - a.sortKey : a.pinned ? -1 : 1));\n\n  const counts = Object.fromEntries(kinds.map((k) => [k, 0])) as Record<TKind, number>;\n  for (const it of items) counts[it.kind] += 1;\n\n  return { items, counts, total: items.length, hasItems: items.length > 0 };\n}"
+    },
+    {
+      "id": "order-by-rank.ts",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "orderByRank",
+      "summary": "Sort items by a DECLARED priority ranking of a category — an order deliberately NOT the category's natural/alphabetical one (an attention queue: by urgency, which no property of the state gives you). The ranking is DATA (an array, first = highest), not magic numbers buried in a comparator's ternary chain where the priority cannot be read as a list or reordered without recounting. An UNRANKED category sorts AFTER every ranked one, not to rank 0 — unranked is 'no stated priority', not 'top priority', the trap the `?? 0` hand-version falls into. Stable within a rank; decorate-sort-undecorate so the category is derived once per item, not per comparison. Harvested from the Fleet page's merge queue (#3462/#3465).",
+      "composes": [
+        "typescript.number"
+      ],
+      "code": "/**\n * Sort items by a DECLARED priority ranking of a category — an order that is deliberately NOT the\n * category's natural or alphabetical one.\n *\n * The everyday case is an \"attention queue\": items fall into a few states and the useful order is by\n * urgency, which no property of the state gives you. Written by hand it becomes a bare comparator with\n * the ranking buried in a chain of ternaries (`s === \"blocked\" ? 0 : s === \"running\" ? 1 : …`) — the\n * priority is real domain knowledge but exists only as magic numbers inside a sort, where it cannot be\n * read as a list, reused, or reordered without recounting.\n *\n * Here the ranking is DATA: an array, first = highest priority. That array is the decision; the sort\n * is mechanical. A category not in the ranking sorts AFTER every ranked one (rather than silently\n * becoming rank 0 and jumping the queue) — an unranked value is \"no stated priority\", not \"top\n * priority\". The sort is STABLE, so items of equal rank keep their input order.\n *\n * Harvested from the Fleet page's merge queue (#3462/#3465).\n */\n\n/**\n * A stable copy of `items` ordered by the priority of each item's category.\n *\n * `ranking[0]` is highest priority. An item whose category is not in `ranking` sorts after every\n * ranked item, in input order among its unranked peers.\n */\nexport function orderByRank<T, R>(\n  items: readonly T[],\n  categoryOf: (item: T) => R,\n  ranking: readonly R[],\n): T[] {\n  const rankOf = new Map<R, number>(ranking.map((r, i) => [r, i]));\n  // Unranked → after everything ranked. `ranking.length` sits past the last real rank.\n  const rank = (item: T) => rankOf.get(categoryOf(item)) ?? ranking.length;\n  // Decorate-sort-undecorate keeps it stable AND calls `categoryOf` once per item rather than O(n log n)\n  // times — the naive `.sort((a,b) => rank(a) - rank(b))` re-derives the category on every comparison.\n  return items\n    .map((item, i) => ({ item, i, r: rank(item) }))\n    .sort((a, b) => a.r - b.r || a.i - b.i)\n    .map((d) => d.item);\n}"
+    },
+    {
+      "id": "group-totals.ts",
+      "tech": "typescript",
+      "role": "algorithm",
+      "name": "groupTotals",
+      "summary": "Group rows by a key and total a set of numeric FIELDS — per group AND overall — in ONE pass. The back half of every 'spend by X' rollup. The fields to sum are DATA (a record of named numeric accessors), so adding a tracked metric is one entry, not editing three reducers. Group subtotals and the grand total come from the SAME traversal, so they cannot drift apart — the bug the hand-written three-separate-reductions version has. Groups in first-seen order (the one order needing no opinion; a caller wanting another sorts the result). Harvested from the Fleet page's cost panel (#3462/#3465), rolling per-worker token usage up to fleet totals + a by-model breakdown.",
+      "composes": [
+        "typescript.number"
+      ],
+      "code": "/**\n * Group rows by a key and total a set of numeric fields — per group AND overall — in ONE pass.\n *\n * The back half of every \"spend by X\" / \"usage by Y\" rollup: you have a flat list of rows, each with\n * several numbers, and you want both the grand totals and the same totals broken down by some\n * secondary key. Written by hand it is three separate reductions plus a `Map` accumulator, and the\n * usual bug is the group subtotals and the grand total drifting apart because they were summed\n * independently — here they come from the same traversal, so they cannot disagree.\n *\n * The fields to sum are DATA: a record of named numeric accessors. Adding a tracked metric is adding\n * one entry, not editing three reducers. Every field is totalled at both levels; a caller wanting only\n * some grouped just reads the ones it needs.\n *\n * Group order is FIRST-SEEN (insertion order of the backing Map), so the result is deterministic for a\n * given input and a caller that wants a different order sorts the returned groups itself — this does\n * not bake a sort in, because \"by first appearance\" is the one order that needs no opinion.\n *\n * Harvested from the Fleet page's cost panel (#3462/#3465), where it rolls per-worker token usage up\n * to fleet totals and a by-model breakdown.\n */\n\n/** The totals for one field set — the same keys as the `fields` record, each a summed number. */\nexport type FieldTotals<F extends string> = Record<F, number>;\n\n/** One group: its key, how many rows fell into it, and the per-field totals for those rows. */\nexport interface Group<K, F extends string> {\n  key: K;\n  count: number;\n  totals: FieldTotals<F>;\n}\n\n/** The rollup: the grand totals over every row, and the per-group breakdown (first-seen order). */\nexport interface GroupTotals<K, F extends string> {\n  totals: FieldTotals<F>;\n  count: number;\n  groups: Array<Group<K, F>>;\n}\n\n/**\n * Total `fields` over `rows`, grouped by `keyOf`.\n *\n * @param rows   the flat input.\n * @param keyOf  the grouping key for a row (the secondary axis — e.g. model name).\n * @param fields named numeric accessors; each is summed at both the group and grand-total level.\n */\nexport function groupTotals<T, K, F extends string>(\n  rows: readonly T[],\n  keyOf: (row: T) => K,\n  fields: Record<F, (row: T) => number>,\n): GroupTotals<K, F> {\n  const names = Object.keys(fields) as F[];\n  const zero = (): FieldTotals<F> => Object.fromEntries(names.map((n) => [n, 0])) as FieldTotals<F>;\n\n  const grand = zero();\n  const groups = new Map<K, Group<K, F>>();\n\n  for (const row of rows) {\n    const key = keyOf(row);\n    let group = groups.get(key);\n    if (!group) {\n      group = { key, count: 0, totals: zero() };\n      groups.set(key, group);\n    }\n    group.count += 1;\n    for (const name of names) {\n      const v = fields[name](row);\n      group.totals[name] += v;\n      grand[name] += v;\n    }\n  }\n\n  return { totals: grand, count: rows.length, groups: [...groups.values()] };\n}"
+    }
+  ]
+}
