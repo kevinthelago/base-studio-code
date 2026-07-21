@@ -65,6 +65,14 @@ pub struct Finding {
     pub why: String,
     /// The concrete next step (e.g. which id to remove, or which to merge into which).
     pub suggested_action: String,
+    /// Structured diagnostic detail, one entry per distinct cause — currently populated only for
+    /// `no-implementation` (each entry names ONE reason the preview build check failed: a missing
+    /// `export`, an elision marker, or one specific unresolved import). Empty for every other
+    /// category. This is what closes the "guess why" gap: `why` collapses everything into one prose
+    /// line, but an agent deciding what to fix wants the individual, machine-checkable causes — the
+    /// same reasons `bsc_ui::harvest`'s `buildability` already reports at harvest time, so a
+    /// component's failure is diagnosable from `doctor` alone instead of re-deriving it by hand.
+    pub reasons: Vec<String>,
 }
 
 impl Finding {
@@ -79,6 +87,7 @@ impl Finding {
             "nodeNames": self.node_names,
             "why": self.why,
             "suggestedAction": self.suggested_action,
+            "reasons": self.reasons,
         })
     }
 }
@@ -489,16 +498,19 @@ fn internal_targets() -> &'static BTreeSet<String> {
 
 /// Is `spec` an INTERNAL first-party import — a `@/…` alias or a RELATIVE (`./`, `../`) path — as opposed
 /// to a bare npm specifier or an absolute path? These resolve against the kit's components + runtime
-/// closure, not the preview import-map. Mirrors `isInternalSpecifier` (TS).
-fn is_internal_specifier(spec: &str) -> bool {
+/// closure, not the preview import-map. Mirrors `isInternalSpecifier` (TS). `pub` so `bsc_ui::harvest`
+/// shares this ONE implementation for its own internal-import scan rather than drifting a copy.
+pub fn is_internal_specifier(spec: &str) -> bool {
     spec.starts_with("@/") || spec.starts_with("./") || spec.starts_with("../")
 }
 
 /// Resolve an INTERNAL import `spec` — imported FROM module `from_rel` (a `src/`-relative path) — to its
 /// `src/`-relative module BASE (no extension), or `None` when it isn't internal. `@/x` → `x`; a relative
 /// path is joined onto the importer's directory and `.`/`..` segments collapsed. Mirrors the closure
-/// walker's resolver (reactUiKit.gen.test.ts) and `resolveInternalBase` (TS).
-fn resolve_internal_base(spec: &str, from_rel: &str) -> Option<String> {
+/// walker's resolver (reactUiKit.gen.test.ts) and `resolveInternalBase` (TS). `pub` so `bsc_ui::harvest`
+/// resolves a harvested candidate's `./`/`../` imports against its OWN sibling set with the exact same
+/// join/collapse rules `doctor` judges it by — the two must never drift into disagreeing over a base.
+pub fn resolve_internal_base(spec: &str, from_rel: &str) -> Option<String> {
     let segs: Vec<&str> = if let Some(rest) = spec.strip_prefix("@/") {
         rest.split('/').collect()
     } else if spec.starts_with("./") || spec.starts_with("../") {
@@ -542,6 +554,55 @@ fn is_buildable(node: &Node, buildable: &BTreeSet<String>, kit_targets: &BTreeSe
     (!node.src.is_empty() && buildable.contains(&node.src))
         || !node.source.trim().is_empty()
         || is_preview_buildable(&node.src_text, &node.src, kit_targets)
+}
+
+/// Why [`is_buildable`] said no — one entry per distinct cause, in the SAME terms `is_buildable` checks
+/// them (so this can never report a reason that isn't actually why the verdict came out false). Only
+/// meaningful once a caller already knows `is_buildable` is false for this node — that rules out the
+/// packaged-built-in and own-`source` arms, leaving `is_preview_buildable`'s checks on `srcText` as the
+/// only possible explanations, and every one of those is independently sufficient to fail it (empty text,
+/// no `export`, an elision marker), while the import loop names every INDIVIDUAL specifier that didn't
+/// resolve rather than just the fact that one exists.
+///
+/// This is what closes the "certified buildable, reported unbuildable, no detail" gap (a promoted
+/// component's `bsc ui harvest` verdict can differ from `doctor`'s — see `bsc_ui::harvest::buildability`'s
+/// docs on why a harvest-time verdict is judged against a different sibling set): instead of the caller
+/// re-deriving which check failed and why, `doctor` states it outright, and a SPECIFIC unresolved import
+/// is named rather than the component just being called "a spec, not code".
+fn no_implementation_reasons(node: &Node, kit_targets: &BTreeSet<String>) -> Vec<String> {
+    let mut reasons = Vec::new();
+    let s = node.src_text.trim();
+    if s.is_empty() {
+        reasons.push(
+            "the record carries no `srcText` or `source` — nothing for the preview to build (a bare spec, not code)"
+                .to_string(),
+        );
+        return reasons;
+    }
+    if !contains_word(s, "export") {
+        reasons.push("no `export` — the preview has nothing to import and mount".to_string());
+    }
+    if has_code_elision(s) {
+        reasons.push("a `…` elision marker stands in for omitted code — a sketch, not compilable code".to_string());
+    }
+    for spec in import_specifiers(s) {
+        if is_internal_specifier(&spec) && !resolves_internal(&spec, &node.src, kit_targets) {
+            reasons.push(format!(
+                "imports `{spec}` but no such module exists in this kit's components or the packaged runtime closure"
+            ));
+        }
+    }
+    if reasons.is_empty() {
+        // Every srcText check above passed, so the only remaining `is_buildable` arm — a packaged
+        // built-in shipping `source` for this exact `src` — is what's missing. Reachable only if a
+        // caller invokes this without first confirming `is_buildable` is false; kept so the function
+        // never silently returns an unexplained empty list (fail loud, not quiet, #3087's own rule).
+        reasons.push(format!(
+            "`{}` is not one of the packaged built-ins that ship real `source` for that path, and it carries neither its own `source` nor a buildable `srcText`",
+            node.src
+        ));
+    }
+    reasons
 }
 
 /// Sibling-aware buildability of a preview MODULE (#3112) — the Rust mirror of `isPreviewBuildable`
@@ -1070,6 +1131,7 @@ fn analyze_kit(
             node_names: names.clone(),
             why: format!("these components form a `composes` cycle: {}", names.join(" → ")),
             suggested_action: "break the loop — a composition graph must be acyclic (it also breaks the layered layout)".to_string(),
+            reasons: Vec::new(),
         });
     }
 
@@ -1083,6 +1145,7 @@ fn analyze_kit(
         if is_buildable(n, buildable, &kit_targets) {
             continue;
         }
+        let reasons = no_implementation_reasons(n, &kit_targets);
         out.push(Finding {
             category: "no-implementation",
             severity: 3,
@@ -1090,13 +1153,15 @@ fn analyze_kit(
             node_ids: vec![n.id.clone()],
             node_names: vec![n.name.clone()],
             why: format!(
-                "`{}` has no buildable implementation — the preview can't render it (a spec, not code)",
-                n.name
+                "`{}` has no buildable implementation — the preview can't render it (a spec, not code): {}",
+                n.name,
+                reasons.join("; ")
             ),
             suggested_action: format!(
                 "author a self-contained module for `{}` (its own `source`/`srcText`) or compose it from built-in kit components",
                 n.name
             ),
+            reasons,
         });
     }
 
@@ -1122,6 +1187,7 @@ fn analyze_kit(
                 "replace `{}`'s source with its REAL body — the elements/state/effects that produce its output — never a call to `<{}>`",
                 n.name, n.name
             ),
+            reasons: Vec::new(),
         });
     }
 
@@ -1143,6 +1209,7 @@ fn analyze_kit(
                     node_names: vec![n.name.clone()],
                     why: format!("`{}` is isolated (nothing composes it) and unused (used = 0)", n.name),
                     suggested_action: format!("prune it — `bsc ui remove {}` (confirm-gated)", n.id),
+                    reasons: Vec::new(),
                 });
             }
             // A dead isolated page/layout is unusual (a stray screen); leave it for the human — it's
@@ -1174,6 +1241,7 @@ fn analyze_kit(
                     "prune the branch from its root `{}` — check each dependency isn't shared before removing",
                     n.name
                 ),
+                reasons: Vec::new(),
             });
         }
     }
@@ -1200,6 +1268,7 @@ fn analyze_kit(
             node_names: names.clone(),
             why: format!("{} components all wrap the raw `<{}>`: {}", group.len(), intrinsic, names.join(", ")),
             suggested_action: format!("merge into `{target}` (the most-used) and repoint the others"),
+            reasons: Vec::new(),
         });
     }
     // Byte-identical source (a stronger duplicate signal than `wraps`).
@@ -1223,6 +1292,7 @@ fn analyze_kit(
             node_names: names.clone(),
             why: format!("{} components have byte-identical source: {}", group.len(), names.join(", ")),
             suggested_action: format!("merge into `{target}` (the most-used) and repoint the others"),
+            reasons: Vec::new(),
         });
     }
 
@@ -1302,6 +1372,7 @@ fn analyze_kit(
                 reasons.join("; ")
             ),
             suggested_action: actions.join("; "),
+            reasons,
         });
     }
 
@@ -1356,6 +1427,7 @@ fn analyze_kit(
                 "import {} instead of re-declaring {} inline in `{}`",
                 imports, names, n.name
             ),
+            reasons: Vec::new(),
         });
     }
 
@@ -1394,6 +1466,7 @@ fn analyze_kit(
                 n.name,
                 if unwired.len() == 1 { "it" } else { "them" }
             ),
+            reasons: Vec::new(),
         });
     }
 
@@ -1440,6 +1513,7 @@ fn analyze_kit(
                 n.name,
                 if phantom.len() == 1 { "it" } else { "them" }
             ),
+            reasons: Vec::new(),
         });
     }
 
@@ -1473,6 +1547,7 @@ fn analyze_kit(
                     "add an EmptyState / empty-data render to `{}` so its empty state is viewable",
                     n.name
                 ),
+                reasons: Vec::new(),
             });
         }
         if !n.props.iter().any(|p| is_loading_prop(&p.0, &p.1)) {
@@ -1488,6 +1563,7 @@ fn analyze_kit(
                     collections.join(", ")
                 ),
                 suggested_action: format!("add a boolean `loading` prop to `{}` that renders a skeleton", n.name),
+                reasons: Vec::new(),
             });
         }
     }
@@ -1524,6 +1600,7 @@ fn analyze_kit(
                 slots.join(", "),
                 n.composes.join(", ")
             ),
+            reasons: Vec::new(),
         });
     }
 }
@@ -1742,6 +1819,7 @@ pub fn analyze_motion(components: &[Value]) -> Vec<Finding> {
                         suggested_action: format!(
                             "render the element `{anim_name}` targets in `{name}`'s source, or fix the animation's `selector`"
                         ),
+                        reasons: Vec::new(),
                     });
                 }
             }
@@ -1766,6 +1844,7 @@ pub fn analyze_motion(components: &[Value]) -> Vec<Finding> {
                     suggested_action: format!(
                         "set `pathLength` on the animated path in `{name}` so its stroke-dash draw has a stable length"
                     ),
+                    reasons: Vec::new(),
                 });
             }
 
@@ -1783,6 +1862,7 @@ pub fn analyze_motion(components: &[Value]) -> Vec<Finding> {
                     suggested_action: format!(
                         "move the transform in `{name}` to CSS (drop the SVG `transform=` attribute), or animate the attribute instead of a CSS `transform` keyframe"
                     ),
+                    reasons: Vec::new(),
                 });
             }
 
@@ -1818,6 +1898,7 @@ pub fn analyze_motion(components: &[Value]) -> Vec<Finding> {
             suggested_action: format!(
                 "namespace the per-component animations (#3163), or lift `{anim_name}` into the kit's shared animation library and reference it by name from each component"
             ),
+            reasons: Vec::new(),
         });
     }
 
@@ -2713,6 +2794,99 @@ mod tests {
             fs.iter().any(|f| f.category == "no-implementation"),
             "an import resolving to no sibling is not buildable: {fs:?}"
         );
+    }
+
+    // ── no-implementation reasons (#4: surface the actual failure, not just "a spec, not code") ──────
+
+    /// A relative (`./`) import to a module NOT in the kit is the exact class harvest's own buildability
+    /// check was blind to (it only scanned `@/…` specifiers) — the report must name the specifier.
+    #[test]
+    fn no_implementation_names_an_unresolved_relative_import() {
+        let box_ = json!({ "id": "box", "name": "Box", "kitId": "harvested", "role": "primitive", "used": 0,
+            "composes": [], "src": "src/shared/ui/layout/Box.tsx", "source": "",
+            "srcText": "import { space } from \"./space\";\nexport function Box() { return space; }" });
+        let fs = analyze(&[box_]);
+        let f = fs.iter().find(|f| f.category == "no-implementation").expect("flagged");
+        assert_eq!(f.reasons.len(), 1, "{:?}", f.reasons);
+        assert!(f.reasons[0].contains("`./space`"), "names the specifier: {:?}", f.reasons);
+        assert!(f.reasons[0].contains("no such module"), "{:?}", f.reasons);
+        assert!(f.why.contains("`./space`"), "the prose `why` also carries the reason: {}", f.why);
+    }
+
+    /// The SAME relative import resolves cleanly once its target module IS a sibling in the kit — the
+    /// reasons machinery must fail closed (no reasons manufactured) once the node is actually buildable.
+    #[test]
+    fn no_implementation_is_not_flagged_once_the_relative_sibling_exists() {
+        let box_ = json!({ "id": "box", "name": "Box", "kitId": "harvested", "role": "primitive", "used": 0,
+            "composes": [], "src": "src/shared/ui/layout/Box.tsx", "source": "",
+            "srcText": "import { space } from \"./space\";\nexport function Box() { return space; }" });
+        let space = json!({ "id": "space", "name": "space", "kitId": "harvested", "role": "primitive",
+            "used": 1, "composes": [], "src": "src/shared/ui/layout/space.ts",
+            "source": "export const space = 8;" });
+        let fs = analyze(&[box_, space]);
+        assert!(
+            fs.iter().all(|f| f.category != "no-implementation"),
+            "a resolvable sibling makes it buildable: {fs:?}"
+        );
+    }
+
+    #[test]
+    fn no_implementation_names_a_missing_export() {
+        let n = json!({ "id": "n", "name": "NoExport", "kitId": "k", "role": "primitive", "used": 0,
+            "composes": [], "src": "k/NoExport.tsx", "source": "",
+            "srcText": "function NoExport() { return null; }" });
+        let fs = analyze(&[n]);
+        let f = fs.iter().find(|f| f.category == "no-implementation").expect("flagged");
+        assert!(f.reasons.iter().any(|r| r.contains("no `export`")), "{:?}", f.reasons);
+    }
+
+    #[test]
+    fn no_implementation_names_a_code_elision_marker() {
+        let n = json!({ "id": "n", "name": "Sketch", "kitId": "k", "role": "primitive", "used": 0,
+            "composes": [], "src": "k/Sketch.tsx", "source": "",
+            "srcText": "export function Sketch() { … }" });
+        let fs = analyze(&[n]);
+        let f = fs.iter().find(|f| f.category == "no-implementation").expect("flagged");
+        assert!(f.reasons.iter().any(|r| r.contains("elision marker")), "{:?}", f.reasons);
+    }
+
+    #[test]
+    fn no_implementation_reasons_names_the_missing_built_in_when_theres_no_srctext_at_all() {
+        // The `GraphExplorerPage` fixture from `flags_a_source_less_user_spec_but_never_a_built_in`:
+        // a usage-snippet `srcText` (no `export`) and no `source` — the "nothing to build at all" arm.
+        let n = json!({ "id": "gx", "name": "GraphExplorerPage", "kitId": "react-ui", "role": "page",
+            "used": 1, "composes": [], "src": "user/pages/GraphExplorerPage.tsx", "source": "",
+            "srcText": "import { GraphExplorerPage } from \"@/x\";\n<GraphExplorerPage nodes={…} />" });
+        let fs = analyze(&[n]);
+        let f = fs.iter().find(|f| f.category == "no-implementation").expect("flagged");
+        assert!(!f.reasons.is_empty(), "always names at least one reason: {f:?}");
+    }
+
+    /// Every OTHER category leaves `reasons` empty — it's currently a `no-implementation`-only detail,
+    /// not a general field every finding populates.
+    #[test]
+    fn only_no_implementation_populates_reasons() {
+        let comps = [
+            comp("Ghost", "primitive", 0, &[]), // orphan
+            json!({ "id": "a", "name": "A", "kitId": "k", "role": "composite", "used": 1, "composes": ["B"], "srcText": "a", "source": "export const C = () => null;" }),
+            json!({ "id": "b", "name": "B", "kitId": "k", "role": "composite", "used": 1, "composes": ["A"], "srcText": "b", "source": "export const C = () => null;" }),
+        ];
+        let fs = analyze(&comps);
+        assert!(fs.iter().any(|f| f.category == "cycle"));
+        assert!(fs.iter().any(|f| f.category == "orphan"));
+        assert!(fs.iter().all(|f| f.reasons.is_empty()), "{fs:?}");
+    }
+
+    #[test]
+    fn to_value_serializes_reasons() {
+        let n = json!({ "id": "n", "name": "NoExport", "kitId": "k", "role": "primitive", "used": 0,
+            "composes": [], "src": "k/NoExport.tsx", "source": "",
+            "srcText": "function NoExport() { return null; }" });
+        let fs = analyze(&[n]);
+        let f = fs.iter().find(|f| f.category == "no-implementation").unwrap();
+        let v = f.to_value();
+        assert!(v["reasons"].is_array());
+        assert_eq!(v["reasons"].as_array().unwrap().len(), f.reasons.len());
     }
 
     #[test]
