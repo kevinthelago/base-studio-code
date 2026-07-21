@@ -37,6 +37,33 @@ Every feature or bug fix must include tests as part of the same branch — never
 
 Mocks for Tauri APIs (`invoke`, `listen`, `plugin-store`) are pre-configured in `src/test/setup.ts` and apply to every test file automatically.
 
+### Browser interaction tests (`e2e/`, opt-in — #3264)
+
+jsdom has **no text selection, no native drag, no layout and no CSS cascade**, so it structurally cannot
+observe a whole class of preview bug — #3251 (drag stopped panning the Design Studio preview) shipped with
+green tests three times for exactly this reason. `e2e/` holds a Playwright harness that drives the **real**
+preview srcdoc in headless Chromium: a Vite-served page calls the shipped `bundleComponent` →
+`collectAppCss` → `buildComponentSrcDoc` chain and mounts the result in a `sandbox="allow-scripts"` iframe,
+so there is no forked render path. Reach for it when a change's correctness depends on real input, real
+layout, or the real cascade — and NOT for logic a vitest unit test can already see.
+
+```bash
+npx playwright install chromium   # ONE TIME — the browser is not implied by `npm install`
+npm run test:e2e                  # boots Vite on :1421 and drives Chromium (~15s)
+npm run test:e2e -- --headed      # watch it happen
+npm run typecheck:e2e             # e2e/ has its OWN tsconfig (see below)
+```
+
+**It is deliberately outside the default gate.** `e2e/` is excluded from `tsconfig.json` and from vitest
+discovery, so `npm run typecheck` / `npm test` cannot break for a checkout that has not reinstalled — the
+zero-install nested-worktree workflow (#1669) stays intact and no worktree agent pays for a browser it never
+asked for. `npm run lint` **does** cover `e2e/`, so the dir is never unchecked by accident.
+
+> **Gotcha — gesture granularity is load-bearing.** The preview's pan engine ignores movement under a 5px
+> threshold. A coarse drag (`{ steps: 24 }` over 300px) crosses it on the first move, so the engine
+> `preventDefault`s before the browser can start a selection and the #3251 bug becomes **invisible**. Drive
+> drags at ~2px per move, as `dragBy` in `previewInteraction.spec.ts` does.
+
 ## Commands
 
 ```bash
@@ -82,7 +109,7 @@ base-studio-code/
 │   ├── bsc-agent/           #   model-agnostic agent runtime
 │   ├── bsc-blueprint/       #   user blueprint store + bsc blueprint CLI
 │   ├── bsc-persona/         #   user persona store (agent identities) + bsc persona CLI (#2094)
-│   ├── bsc-org/             #   user org store: persona-relationship graph (positions + relationships) + bsc org CLI (#2193)
+│   ├── bsc-teams/           #   user teams store: persona-relationship graph (positions + relationships) + bsc teams CLI (#2193/#2700; `bsc org` deprecated alias; on-disk store dir stays orgs/)
 │   ├── bsc-project/         #   project-hub list/published store + bsc project CLI
 │   ├── mcp-rpc/             #   shared stdio JSON-RPC MCP server scaffold
 │   ├── bsc-tunnel/          #   mobile-tunnel wire contract + Noise IK crypto (Tauri-free; shared with mobile-studio-code)
@@ -93,14 +120,16 @@ base-studio-code/
 │   ├── app/                 # the SHELL — knows every feature; features don't know it
 │   │   ├── main.tsx  App.tsx   #   Vite entry + the Titlebar/Rail/screen-switcher shell
 │   │   ├── registry.ts      #   canonical Workspace → {label, icon} (#1879); the rail + titlebar both read it
-│   │   ├── chrome/          #   Rail, Titlebar, Screen (shared tabbed shell, #1878), Tabstrip, TabBar, StatusBar
+│   │   ├── chrome/          #   the SHELL-PRIVATE chrome: Rail, Titlebar, Tabstrip, StatusBar, locationCrumb
+│   │   │                    #   (Screen + TabBar moved to shared/ui/layouts/ in #3245 — every Workspace
+│   │   │                    #    composes them, so they are shared UI, not shell-private)
 │   │   ├── console/         #   the execution surface: ConsoleWorkspace + panes/ + lib/ (pane system)
 │   │   ├── safety/          #   the crash layer: ErrorBoundary + fatalOverlay (self-installing DOM crash overlay, #1905)
 │   │   └── *Banner.tsx      #   crash/quarantine/readiness banners
 │   ├── features/            # ONE FOLDER PER FEATURE = UI + lib/ (pure domain) + store.ts (its slice)
 │   │   │                    #   + index.ts (public API barrel). Import UI via @/features/<x>; import
 │   │   │                    #   the pure domain via @/features/<x>/lib/* (keeps React out of non-UI).
-│   │   ├── skills/ · mcp/ · automations/ · github/ · tunnel/ · agents/ · settings/
+│   │   ├── skills/ · mcp/ · automations/ · github/ · tunnel/ · security/ · settings/
 │   │   └── planner/         #   the flagship (session/, pane/, bodies/, blueprints/, stages/, …, lib/)
 │   ├── shared/              # feature-agnostic; no feature imports it
 │   │   ├── lib/             #   core (log/perf/llm), session, fleet, security, cleanup
@@ -123,7 +152,7 @@ feature) · `shared/` (feature-agnostic) · `store/`. There are no layer dirs (`
 `hooks/`, `screens/`, `data/` are gone). Rules:
 
 - **Page-structure vocabulary (#1878/#1879):** one word per level — the **Rail** switches
-  **Workspaces**; a Workspace is composed of a **Screen** (the shared tabbed shell, `app/chrome/Screen.tsx`)
+  **Workspaces**; a Workspace is composed of a **Screen** (the shared tabbed shell, `shared/ui/layouts/Screen.tsx`)
   that shows one **Page** at a time over a **PageTabs** strip (`usePageTabs` + `TabBar`). Rail
   destinations are `*Workspace` (`registry.ts` `Workspace` type + `activeWorkspace`); Settings sections
   are Pages (`features/settings/pages/*Page`). Console keeps its own nested **Tab → Pane → View**. Full
@@ -206,9 +235,9 @@ A **blueprint** is the reusable template that seeds a project's plan: an ordered
 ### The project key
 `effectiveProjectId = planningSessionKey || activeProjectId || planningTitle || planningPitch` (Planning.tsx). In practice `planningSessionKey` wins. `sanitize_project_key` (`platform/fsx.rs`) slugifies it: keep `[A-Za-z0-9-]`, everything else to `_`, cap 80 chars (the backend treats the key as fully **opaque**).
 
-**Stable id at creation (#1741).** A new project mints a **stable, opaque key** at creation (`mintProjectId` in `shared/lib/core/projectPaths.ts` → `p-<base36 epoch>-<random>`, already slug-safe so `sanitize_project_key` is a no-op). It's stored as the `localDraftProjects` map key and used as `planningSessionKey`, so the project **title/name is display-only** — renaming changes only the label, never the key or any on-disk path (hub, plan.db, DuckDB store, worktrees, session skill group), and two same-titled projects get **distinct** keys. The node-id alias set at publish (`projectKeyAlias[nodeId] = stableId`) is how a published project reopened from the board (`handleEditPlan` / `ProjectsHeader.handlePlan`) resolves back to its stable key.
+**One name-derived key (#2409, supersedes the minted id #1741).** A project's key is **`projectSlug(name)`** (`shared/lib/core/projectPaths.ts` — lowercase `[a-z0-9-]`, capped 60, slug-safe so `sanitize_project_key` is a no-op), **frozen at creation**. That one value names everything — `projects/<key>/`, its `plan.db`, `worktrees/<key>/…`, the session skill group, the pane ids (`<key>:director` / `<key>:<stream>` / `<key>:<repo>:triage`), every app-state map key, and (1:1) the GitHub project via `slug(github.name)`. **Recovery is derivation, not lookup**: reopening from the board derives the hub as `projectSlug(title)` — the `projectKeyAlias`/`resolveProjectKey`/`canonicalProjectKey` bridge and `mintProjectId` are **deleted**. Renaming stays **display-only** (the folder keeps its birth-slug). Edge cases are **modals, not machinery**: a create whose slug already exists opens the **collision modal** (open existing / pick a different name, `PublishedHeader`); a board project whose slug has no local hub opens the **reopen-mismatch modal** (`ReopenProjectModal`) — *Link to an existing local project* performs the one-time on-disk move (`relink_project_hub`: hub + worktrees + `git worktree repair`) plus the store rekey (`rekeyProjectData`), or *Start fresh* scaffolds under the slug.
 
-**Grandfathering.** The rule is `key = project.stableId ?? <legacy title-derived key>`: a project created **before** #1741 has no minted id, so its key resolution falls back to today's title-derived behavior and its on-disk hub/plan.db/worktrees are **untouched** (no migration, no directory move). Migrating legacy title-keyed projects onto stable ids (which would require moving on-disk dirs + `git worktree repair`) is a deliberate follow-up, out of scope here.
+**Grandfathering.** Existing legacy-keyed hubs (minted `p-…` ids or title-sanitized keys) are **untouched on disk** — no startup migration. Drafts reopen by their frozen key as before; a legacy project reopened **from the board** hits the reopen-mismatch modal once (its legacy hub is the pre-selected link candidate) and linking migrates it onto its name-slug permanently.
 
 ### Workspace layout
 `setup_workspaces` creates the project hub at `~/.base-studio-code/projects/<key>/`:
@@ -232,7 +261,7 @@ Role gate #219: `git: read`, `github: read`, `code: none`. It reads for context 
 6. **Publish** (`handlePublish`): repos, project board, one milestone per phase, one GitHub issue per `PlanIssue` (body = acceptance + owns + deps, pinned to its milestone), `stream:<id>` labels.
 
 ### Per-agent configuration set during planning
-- **Profiles** (#289, `src/features/agents/`): a least-privilege `AgentProfile` (commands / tools / write-paths / net) per stream, applied at launch.
+- **Profiles** (#289, `src/features/security/`): a least-privilege `AgentProfile` (commands / tools / write-paths / net) per stream, applied at launch.
 - **Flows** (#297, `src/features/planner/fleet/agentFlow.ts`): `autonomy` (continuous/checkpoint/confirm) + `push` (auto-pr/push-confirm/commit-only/none) + `trigger` + `gate` — drives each agent's git/gh permissions, kickoff prose, and pause-visibility.
 
 ### Session roles + the CLAUDE.md model (and a known issue)
@@ -262,8 +291,9 @@ Every session has a role bounding its capabilities (least privilege), applied at
 | issuer | read | write | none |
 | juror | read | read | none |
 | documentor | read | read | none (prose docs only) |
+| designer | none | none | none (UI kits via `bsc ui` only) |
 
-(`tester`/`reviewer` are the pipeline-stage roles, #220; `issuer` is intake-only — shapes a request into a GitHub issue and hands off, #376; `juror` independently judges a landing against its acceptance criteria, #394; `documentor` is the post-refactor lifecycle actor that reconciles the project's PROSE docs — CLAUDE.md structure tree, architecture docs, README — after a change lands, #1555. Like the director's commons carve-out (#851) it keeps `code: none` yet writes EXACTLY its `DOC_GLOBS` (markdown + `docs/**`) and is hard-blocked on every code path; push/PR are flow-governed.) `roleDeniedCommands` denies the mutating git/gh commands a role cannot run; `roleWriteRules` denies/scopes the file-write tools. The session allows Bash broadly and guarantees `gh`/`git` on PATH; Claude Code precedence is **deny > ask > allow**. (**Permission postures** (#1916/#2050): the PreToolUse hooks — `bsc-deny` (dangerous floor + role/user denies), `bsc-confine` (FS confinement), `bsc-scope` (write-scope) — are the always-on floor, firing **and blocking under BOTH postures** (even bypass, where `permissions.deny` is ignored). The **default is the ALLOW-LIST** (#2050): Claude's `default` mode auto-runs the broad `base.json` allow-list (git/gh + the read-only inspection set + the mainstream build/test toolchains) and prompts for anything else — low-friction but safe. **Bypass** (sessions auto-run everything, hooks-only gating) is the opt-in power **posture toggle** (Settings → Security). On top, an opt-in **model-agnostic OS sandbox** (#1988): a session runs inside a **sealed WSL2 distro** (`bsc-agent-sandbox` — no `/mnt/c` mount, no Windows interop, baked into `/etc/wsl.conf`), so the cage is the *environment* and confines whatever LLM drives the session, not just Claude (`pty_create`'s opt-in `wsl_distro`; provision + readiness in Settings → Security; a Settings → Agents toggle launches consoles inside it). **Per-agent isolation via Linux users** is planned for v1.0.5 (#1994).)
+(`tester`/`reviewer` are the pipeline-stage roles, #220; `issuer` is intake-only — shapes a request into a GitHub issue and hands off, #376; `juror` independently judges a landing against its acceptance criteria, #394; `documentor` is the post-refactor lifecycle actor that reconciles the project's PROSE docs — CLAUDE.md structure tree, architecture docs, README — after a change lands, #1555. Like the director's commons carve-out (#851) it keeps `code: none` yet writes EXACTLY its `DOC_GLOBS` (markdown + `docs/**`) and is hard-blocked on every code path; push/PR are flow-governed. `designer` (#2471) is the Design Studio's UI-kit session — `none` on every axis, launched with `restrictedAllow` so the baseline command tiers are suppressed and its whole auto-runnable surface is `bsc ui` + the deprecated `bsc component` alias.) `roleDeniedCommands` denies the mutating git/gh commands a role cannot run; `roleWriteRules` denies/scopes the file-write tools. The session allows Bash broadly and guarantees `gh`/`git` on PATH; Claude Code precedence is **deny > ask > allow**. (**Permission postures** (#1916/#2050): the PreToolUse hooks — `bsc-deny` (dangerous floor + role/user denies), `bsc-confine` (FS confinement), `bsc-scope` (write-scope) — are the always-on floor, firing **and blocking under BOTH postures** (even bypass, where `permissions.deny` is ignored). The **default is the ALLOW-LIST** (#2050): Claude's `default` mode auto-runs the broad `base.json` allow-list (git/gh + the read-only inspection set + the mainstream build/test toolchains) and prompts for anything else — low-friction but safe. **Bypass** (sessions auto-run everything, hooks-only gating) is the opt-in power **posture toggle** (Settings → Security). On top, an opt-in **model-agnostic OS sandbox** (#1988): a session runs inside a **sealed WSL2 distro** (`bsc-agent-sandbox` — no `/mnt/c` mount, no Windows interop, baked into `/etc/wsl.conf`), so the cage is the *environment* and confines whatever LLM drives the session, not just Claude (`pty_create`'s opt-in `wsl_distro`; provision + readiness in Settings → Security; a Settings → Agents toggle launches consoles inside it). **Per-agent isolation via Linux users** is planned for v1.0.5 (#1994).)
 
 ### The fleet (`fleetStartProject`)
 One click fills a build tab:
@@ -279,7 +309,7 @@ Agents emit structured events to an app-wide `coord.log`: `bsc-wait` (paused for
 ### bsc-* shell helpers + the runtime state-CLI surface (#1325)
 Two distinct mechanisms reach a live session's own shell. **Pure-shell helpers** are installed into every session via `BASH_ENV` to `~/.base-studio-code/bsc-env.sh` (written by `pty_create`, `console/shell_rc.rs`): `bsc-checkpoint` (resume note), `bsc-note` (DECISIONS.md provenance), `bsc-audit` (#257 tool-attempt log), `bsc-confine` (#158 FS confinement), `bsc-wait` + the coord emitters (`bsc-ask`/`bsc-answer`, `bsc-landed/merged/closed/failed`, `bsc-issue`/`bsc-assign`, `bsc-brief` — planner→director/issuer, #2377). **WARNING: each rc constant must end with a trailing newline** or the concatenated shell functions glue together and the whole rc breaks with a syntax error (#296) — the `full_bsc_rc_is_syntactically_valid_bash` test guards this. (`bsc-blocked` was removed, #1039.)
 
-**The unified `bsc` state CLI (#1877):** the runtime principle is that **every persistent app store is reachable from a live session via the one bundled `bsc` binary** — execed by an absolute path from `$BSC_BIN` (no PATH changes), with each former per-store sidecar now a **subcommand** of `bsc`: `bsc plan` (plan.db, `$BSC_PLAN_DB`), `bsc skill` (global skills.db, incl. `get`/`remove`), `bsc data` (canonical DuckDB model/scan/tables + `connector` — which **replaces** the deprecated `bsc plan integration`, #1721), `bsc logs` (unified logs + perf/cost), `bsc compliance` (compliance standards — the CLI alongside the `bsc mcp compliance` server), `bsc blueprint` (user blueprints), `bsc persona` (user persona library — agent identities: start prompt + skills + model over a role, #2094), `bsc org` (user org library — the persona-relationship graph: positions wired by relationship archetypes → communication forms, #2193), `bsc project` (project-hub list/published), and `bsc files` (file tree). The bundled MCP servers are reached the same way — `bsc mcp research` / `bsc mcp compliance`. So a live session can read or drive any of these stores directly from bash. (The only other bundled binary is `bsc-agent`, `$BSC_AGENT_BIN`, the model-agnostic agent runtime.)
+**The unified `bsc` state CLI (#1877):** the runtime principle is that **every persistent app store is reachable from a live session via the one bundled `bsc` binary** — execed by an absolute path from `$BSC_BIN` (no PATH changes), with each former per-store sidecar now a **subcommand** of `bsc`: `bsc plan` (plan.db, `$BSC_PLAN_DB`), `bsc skill` (global skills.db, incl. `get`/`remove`), `bsc data` (canonical DuckDB model/scan/tables + `connector` — which **replaces** the deprecated `bsc plan integration`, #1721), `bsc logs` (unified logs + perf/cost), `bsc compliance` (compliance standards — the CLI alongside the `bsc mcp compliance` server), `bsc blueprint` (user blueprints), `bsc persona` (user persona library — agent identities: start prompt + skills + model over a role, #2094), `bsc teams` (user teams library — the persona-relationship graph: positions wired by relationship archetypes → communication forms, #2193/#2700; `bsc org` is a deprecated alias, the on-disk store dir stays `orgs/`), `bsc project` (project-hub list/published), and `bsc files` (file tree). The bundled MCP servers are reached the same way — `bsc mcp research` / `bsc mcp compliance`. So a live session can read or drive any of these stores directly from bash. (The only other bundled binary is `bsc-agent`, `$BSC_AGENT_BIN`, the model-agnostic agent runtime.)
 
 ### GitHub-readiness (#297 S1)
 - **GitHub-readiness probe**: on launch each claude-launching pane probes `gh`/`git` on PATH + `gh auth`; if not ready it shows a dismissible amber banner in the pane so the gap surfaces before the agent hits it mid-task.
@@ -327,8 +357,9 @@ with other work — so the version numbers are **deliberately loose** until it's
 1. **`1.0.4n` — fix & polish (COMPLETE).** Bump the trailing digit for each release (`1.0.41`,
    `1.0.42`, …). Development stays the firehose: the fleet pushes to `develop`, features overlap,
    nothing is gated on a tidy theme. A release is just a snapshot of `develop`.
-2. **`1.0.5` — the UI release + finishing the maintenance bots (CURRENT).** The themed step now
-   being built (releases on this line: `1.0.5`, `1.0.51`, …).
+2. **`1.0.5x` — themed steps on the `1.0.x` line (CURRENT: `1.0.52`).** Each release carries its own
+   theme, worked one at a time, release-and-continue: `1.0.5` the UI release, `1.0.51` market
+   research/marketing/usage analytics, **`1.0.52` accessibility & text-to-speech (current)**.
 3. **`2.0.0` — unification.** Once every feature the maintainer wants is added and the app is a
    defined product, we cut `2.0.0` and switch to **rigorous semver** (major/minor/patch by their real
    meaning), followed strictly from there. This is the hand-off point where release discipline tightens.
@@ -357,12 +388,15 @@ Run it from an up-to-date `develop` with a clean working tree. Only `package.jso
 | v1.0.3 | Complete | User experience, resiliency, and the core **Default** (greenfield) blueprint and its **triage** — the progress-gated relaunch that resumes from plan.db and skips completed workers. Running in parallel, the **model-agnostic agent shell** (`bsc-agent`, epic #1078) lets the platform run on any LLM (Anthropic/OpenAI/Gemini/local); Claude Code stays the default until parity. |
 | v1.0.4 | Complete | **Enterprise integration & migration** — connect **read-only** to an existing system (CRM/ERP/BPM, Salesforce first) and **scan the whole platform**: data types *and* configurations *and* behaviors. The planner produces a **Platform Behavior Summary** — objects/fields, automations (validation rules, workflows, Flows/Process Builder), business processes (approval processes), and derived logic (formula fields, Apex) — so **automations, business processes, and data are all migratable**: reproduced as the generated app's schema and logic via canonical **data models** + **agent-authored connector manifests** (the planner probes the source and authors the connector; native per-vendor connectors were removed, #1976) + MCP connectors, with a compliance layer baked into the planner. The v1.0.5 line generalizes this into a global **Integrations Platform** (#1965). |
 | v1.0.4n | Complete · fix & polish | The rolling `1.0.4n` fix-and-polish line (`1.0.41`, `1.0.42`, …, per the Versioning policy above) — the large volume of no-user-facing-feature refactor, integration-architecture, and hardening work, plus ongoing polish. **Codebase refactor & consolidation**: feature-first frontend vertical slices (#1309) — `app/` shell · `features/` (UI + pure `lib/` + slice + `index.ts` barrel) · `shared/` · `store/`, `@/…` alias; shared UI primitives (`Banner`/`Card`/`Button`/`StatTile`/`EmptyState`/`BackButton`/`IconButton`/`ModalScrim`/`Dialog`/…) + a consistency sweep; `Planning.tsx`+`FocusedBodies.tsx` decomposition, `handlePublish`→`publishSteps.ts`, reusable `usePoll`/`useGithubQuery`/`useCoordLog` + `safeInvoke`/`fireInvoke`; Rust consolidation (`bsc-cli-util`, Tauri-free `bsc-blueprint`/`bsc-project`/`bsc-tunnel`, `session/` domain, `src-tauri/prompts`→`data`, **plan.db as the sole fleet store**, `tests.rs` decomposed, reference-context removed). **Integrations as agent-authored connectors** (#1962): the planner probes a source and authors the connector manifest (probe→validate→try, captured as skills); native connectors/presets/catalog removed (#1976); dynamic Source pane + runtime OAuth. **Data-driven planner**: Rust-inline prose/stage-registry/role-capabilities/deploy-taxonomy extracted to `@data/*`; tag-parsing → `bsc`. **Planner/fleet hardening**: unified stage vocabulary (#1958) + milestone phases removed (#1942); Repos+Deploy→**Deployment** and Fleet+Streams→**Streams** (carded, collapsible); fleet-identity, warden re-quarantine, worker-trust/prompt, and triage-tab-naming fixes. |
-| **v1.0.5** | **Current** | **The UI release** — an in-app, Claude-Design-like way to define each page, component, and animation, rendered live by the render-preview (closing the external Claude Design round-trip), plus **iterative UI loops** (generate → live-preview → refine in-app, the same tight loop the fleet runs for code) — **and finishing the maintenance bots** (#1957). |
+| v1.0.5 | Complete | **The UI release** — an in-app, Claude-Design-like way to define each page, component, and animation, rendered live by the render-preview (closing the external Claude Design round-trip), plus **iterative UI loops** (generate → live-preview → refine in-app, the same tight loop the fleet runs for code) — **and the maintenance bots** (#1957). Its builds shipped through the **v1.0.51** tag; UI/design-studio work still in flight was **rolled forward to the 1.0.52 milestone**. |
+| v1.0.51 | Complete | **Market research, marketing & usage analytics** — the **Marketer** (market on your behalf via channel MCP servers, keychain-backed secrets) and generated-apps **usage analytics** (planner-toggleable, agent-readable). Its remaining Marketer-epic work is tracked in the `1.0.51` milestone. |
+| **v1.0.52** | **Current** | **Accessibility & text-to-speech** — the current themed step. Its milestone also carries the continued **UI / design-studio** work rolled forward from v1.0.5. |
 | v2.0.0 | Planned | **Unification + rigorous semver.** Once every feature the maintainer wants is added and the app is a defined product, cut `2.0.0` and switch to **strict semver** (see the Versioning policy above) — the hand-off point where release discipline tightens. |
 
 The agent-shell track shipped alongside v1.0.3 but is themed separately on the public [Roadmap](README.md#roadmap)
-("Run on any model"). v1.0.4 (and its 1.0.4n line) is now **Complete**; **v1.0.5** is **Current**. When v1.0.5 is
-complete, promote the next version to **Current**.
+("Run on any model"). v1.0.4 (and its 1.0.4n line), **v1.0.5** (the UI release), and **v1.0.51** (market
+research/marketing/analytics) are now **Complete**; **v1.0.52** (accessibility & text-to-speech) is **Current**.
+When v1.0.52 is complete, promote the next version to **Current**.
 
 The *codebase refactor & consolidation* work (the frontend feature-first reorg, shared UI primitives,
 large-file decomposition, Rust crate consolidation) plus the integration-architecture and planner/fleet
