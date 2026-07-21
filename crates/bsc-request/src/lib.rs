@@ -145,6 +145,22 @@ impl Store {
         )?;
         Ok(n > 0)
     }
+
+    /// Delete every RESOLVED request; returns how many rows were removed (#3522). The store only ever grew
+    /// before this — `resolve` flips the status but the row stayed, so completed work accumulated forever.
+    /// Keys off `status`, NOT a timestamp, because legacy rows resolved before #3295 stamped `resolved_at`
+    /// carry a null one; an OPEN request (even a corrupted one) is never touched.
+    pub fn prune_resolved(&self) -> rusqlite::Result<usize> {
+        self.conn.execute("DELETE FROM requests WHERE status = 'resolved'", [])
+    }
+
+    /// Delete ONE request by id, regardless of status; returns whether a row matched (#3522). The escape
+    /// hatch `prune_resolved` can't reach: a request that will never be legitimately resolved — e.g. one
+    /// whose text was corrupted at filing time — is still `open`, so only an explicit removal clears it.
+    pub fn remove(&self, id: i64) -> rusqlite::Result<bool> {
+        let n = self.conn.execute("DELETE FROM requests WHERE id = ?1", params![id])?;
+        Ok(n > 0)
+    }
 }
 
 /// The column list `row_to_request` decodes, in one place so the SELECTs can't drift from the mapper.
@@ -205,6 +221,49 @@ mod tests {
         assert_eq!(got.resolved_at, Some(50));
         assert!(s.list(&Filter { open_only: true, ..Default::default() }).unwrap().is_empty(), "dropped from the open queue");
         assert_eq!(s.list(&Filter::default()).unwrap().len(), 1, "still listed unfiltered");
+    }
+
+    #[test]
+    fn prune_resolved_removes_only_resolved_rows_and_reports_the_count() {
+        let s = Store::open_in_memory().unwrap();
+        let a = s.create(&req("open gap", None, 1)).unwrap();
+        let b = s.create(&req("will resolve", None, 2)).unwrap();
+        let c = s.create(&req("also resolve", None, 3)).unwrap();
+        assert!(s.resolve(b.id, Some("fixed b"), 20).unwrap());
+        assert!(s.resolve(c.id, None, 30).unwrap());
+
+        assert_eq!(s.prune_resolved().unwrap(), 2, "both resolved rows removed");
+        let left = s.list(&Filter::default()).unwrap();
+        assert_eq!(left.len(), 1, "the open one survives");
+        assert_eq!(left[0].id, a.id);
+
+        assert_eq!(s.prune_resolved().unwrap(), 0, "idempotent — nothing left to prune");
+    }
+
+    #[test]
+    fn prune_resolved_keys_off_status_not_a_timestamp_so_a_legacy_null_resolved_at_is_pruned() {
+        // Legacy rows resolved before `resolve` stamped `resolved_at` carry a null one (seen live: #1-#3).
+        // Simulate one by writing the resolved status directly with no timestamp, then prune.
+        let s = Store::open_in_memory().unwrap();
+        let r = s.create(&req("legacy", None, 1)).unwrap();
+        s.conn
+            .execute("UPDATE requests SET status = 'resolved', resolved_at = NULL WHERE id = ?1", params![r.id])
+            .unwrap();
+        assert_eq!(s.get(r.id).unwrap().unwrap().resolved_at, None, "no timestamp, like the legacy rows");
+        assert_eq!(s.prune_resolved().unwrap(), 1, "pruned by status despite the null resolved_at");
+    }
+
+    #[test]
+    fn remove_deletes_one_row_of_any_status_and_reports_whether_it_matched() {
+        let s = Store::open_in_memory().unwrap();
+        let a = s.create(&req("corrupted, still open", None, 1)).unwrap();
+        let b = s.create(&req("keep me", None, 2)).unwrap();
+        assert!(s.remove(a.id).unwrap(), "an OPEN row is removable (the escape hatch prune can't reach)");
+        assert!(!s.remove(a.id).unwrap(), "gone → no-op");
+        assert!(!s.remove(999).unwrap(), "unknown → no-op");
+        let left = s.list(&Filter::default()).unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].id, b.id);
     }
 
     #[test]
