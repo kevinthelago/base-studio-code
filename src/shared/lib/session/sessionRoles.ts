@@ -49,4 +49,5 @@ export {
   roleDeniedCommands,
   bscAgentPerms,
   sessionScopes,
+  editPathRule,
 } from "./launchRules";

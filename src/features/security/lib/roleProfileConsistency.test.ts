@@ -11,7 +11,7 @@ import { PROFILES, APP_ROLES, type AgentProfile } from "./agentProfiles";
 const ROLES = Object.keys(ROLE_DEFAULTS) as SessionRole[];
 const ALL: AgentProfile[] = [...PROFILES, ...APP_ROLES];
 const profileFor = (role: SessionRole) => ALL.find((p) => p.id === roleProfileId(role));
-const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+const WRITE_TOOLS = ["Edit", "Write", "NotebookEdit"]; // no MultiEdit — removed tool (#3534)
 
 describe("role → profile consistency (sessionRoles ↔ roleProfile)", () => {
   it("every role maps to a packaged profile that exists", () => {
