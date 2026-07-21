@@ -260,10 +260,14 @@ describe("componentBundle — pan/zoom engine (#3190 crisp pass)", () => {
     expect(s).toContain("scrollWidth");               // FIT measures the content to show the whole component
   });
 
-  it("buildComponentSrcDoc injects the engine + overflow guard under zoomEngine, suppressing the fit-shim", () => {
+  it("buildComponentSrcDoc injects the engine + a NON-clipping content box under zoomEngine, suppressing the fit-shim", () => {
     const doc = buildComponentSrcDoc("X", { zoomEngine: {}, fitContent: true });
     expect(doc).toContain('getElementById("root")');        // the engine is present
-    expect(doc).toContain("html,body{overflow:hidden}");    // the engine's clip / no-scrollbar CSS
+    expect(doc).toContain("html,body{overflow:hidden}");    // no scrollbars — the frame is the viewport
+    // #3551: #root and the mount wrapper must NOT clip, so the full component height renders + is measurable.
+    expect(doc).toContain("#root{overflow:visible}");
+    expect(doc).toContain("min-height:100%;overflow:visible!important");
+    expect(doc).not.toContain("#root{overflow:hidden}");    // the old clip that cut off overflow is gone
     expect(doc).not.toContain("content.offsetWidth");       // the scale-to-fit shim is suppressed
     const bare = buildComponentSrcDoc("X");
     expect(buildComponentSrcDoc("X", { zoomEngine: undefined })).toBe(bare); // off ⇒ byte-for-byte unchanged
