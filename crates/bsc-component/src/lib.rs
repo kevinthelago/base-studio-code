@@ -20,5 +20,6 @@ pub mod motion;
 pub mod preview_errors;
 pub mod preview_props;
 pub mod record;
+pub mod similarity;
 pub mod syntax;
 pub mod usage;
