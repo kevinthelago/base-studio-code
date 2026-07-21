@@ -11,12 +11,19 @@
 // (an id) rather than frozen as raw coords, so the grid tracks the graph if the layout recomputes (the
 // live-status overlays rebuild the model every poll).
 //
-// THE LATTICE IS SIGNED AND DIRECTIONAL (#3367). Cells extend every way from the anchor — (-1,0) is one
-// cell LEFT, (0,-1) one cell UP — and a newly opened node takes the free cell whose direction from the
-// anchor best matches ITS node's direction from the anchor node. So the grid reads as a spatial
-// projection of the graph: open a node to the left of the anchor and its terminal opens to the LEFT.
-// (Before #3367 cells were handed out row-major, so the second morph was always to the right and the
-// fourth always wrapped below, no matter where their nodes actually sat.)
+// THE LATTICE IS SIGNED (#3367). Cells extend every way from the anchor — (-1,0) is one cell LEFT,
+// (0,-1) one cell UP.
+//
+// PLACEMENT IS UNIFORMITY-FIRST, DIRECTION SECOND (#3525). #3367 placed each node in the free cell whose
+// direction from the anchor best matched its node's direction. That kept a lone node on its own side but
+// let the block spread into a sparse, non-square arrangement — three left-hand nodes could sit in a
+// 1×3 column with gaps rather than collapsing into a tight tile. A newly opened node now first looks for
+// the cell that keeps the OPEN BLOCK most uniform — a compact, near-square rectangle with no interior
+// holes — and only uses direction to break ties BETWEEN equally-compact cells. So the block still leans
+// toward the side its nodes sit on (a left-heavy graph opens a left-leaning block), but it always reads
+// as a tidy tile grid rather than a scatter. The trade is deliberate: an individual left-hand node may
+// land in the anchor's own column when that is what completes the square, because a uniform block beats
+// a strictly-sided but ragged one.
 import type { MorphRect } from "./glancePush";
 import { NW, NH } from "./glanceGraph";
 
@@ -31,10 +38,9 @@ export const GRID_GAP = 28;
 /** How far out the placement search looks for a free cell. Ring 6 spans 169 cells — far past any
  *  plausible number of simultaneously open sessions, so this is a termination guard, not a cap. */
 export const MAX_RING = 6;
-/** How much a cell's score is docked per ring beyond the first — the compactness-vs-direction trade.
- *  At 0.35 a ring-1 cell at cos 0.71 (0.71) still beats a perfectly-aligned ring-2 cell (1.0 − 0.35 =
- *  0.65), so the block stays tight; but a ring-1 cell pointing the WRONG way (cos ≈ 0) loses to it, so a
- *  node never lands on the opposite side of the anchor from where it sits. */
+/** The most cells a compact block can be off a perfect square before direction stops mattering — unused
+ *  as a tunable now that compactness is lexicographically primary (#3525); kept exported for callers/tests
+ *  that referenced the old direction-vs-distance trade. */
 export const RING_PENALTY = 0.35;
 
 /** The shared cell size — mutated as one by any morph's resize handles. */
@@ -94,20 +100,39 @@ function alignment(at: GridCell, ux: number, uy: number): number {
 
 const key = (at: GridCell) => `${at.col},${at.row}`;
 
+/** The two numbers that make a placement UNIFORM (#3525), for the occupied set INCLUDING the candidate.
+ *  Compared lexicographically, smaller = more uniform:
+ *   1. `maxDim` — the longer side of the bounding box. Minimising it caps how far the block can stretch
+ *      in any one direction, so N cells collapse toward a √N-square instead of a long strip.
+ *   2. `holes` — empty cells inside that box (`area − filled`). With `maxDim` fixed, the fewest holes
+ *      wins, so a candidate that fills a gap always beats one that opens the block up. */
+function uniformity(cells: readonly GridCell[]): { maxDim: number; holes: number } {
+  let minC = Infinity, maxC = -Infinity, minR = Infinity, maxR = -Infinity;
+  for (const c of cells) {
+    if (c.col < minC) minC = c.col;
+    if (c.col > maxC) maxC = c.col;
+    if (c.row < minR) minR = c.row;
+    if (c.row > maxR) maxR = c.row;
+  }
+  const w = maxC - minC + 1, h = maxR - minR + 1;
+  return { maxDim: Math.max(w, h), holes: w * h - cells.length };
+}
+
 /**
- * Place `nodeId` in the free cell that best matches `delta` — its node's world offset FROM THE ANCHOR
- * NODE. A node to the left of the anchor gets a cell to the left; one up-and-right gets an up-and-right
- * cell. This is what makes the grid a spatial projection of the graph rather than an arbitrary queue.
+ * Place `nodeId` in the free cell that keeps the open block most UNIFORM, breaking ties by `delta` — its
+ * node's world offset FROM THE ANCHOR NODE (#3525, was direction-first in #3367).
  *
- * Search runs ring by ring outward, so placement stays compact: within the first ring holding a free
- * cell, the best-aligned one wins. Two nodes on the same side therefore both land on that side — the
- * second takes the next-best cell there (a diagonal), never the opposite side.
+ * For each free cell the candidate occupied set is scored by {@link uniformity} (compact, hole-free
+ * first); among equally-uniform cells the one whose direction best matches `delta` wins, so the block
+ * still leans toward the side its nodes sit on. This is what makes N morphs collapse into a tidy tile
+ * grid (a 2×2, then 3×3, …) rather than the sparse strips direction-first could leave — while a
+ * left-heavy graph still opens a left-leaning block.
  *
- * The FIRST placement is always the anchor itself at (0,0). Afterwards the search starts at ring 1, so a
- * centre freed by the anchor's own morph closing cannot swallow a node that clearly belongs to one side.
- * The one exception is a `delta` of zero — the anchor node itself re-opening — which takes (0,0) back.
+ * The FIRST placement is always the anchor itself at (0,0). A `delta` of zero — the anchor node itself
+ * re-opening — takes (0,0) back when free; every other node is scored, so a freed centre is filled only
+ * when it is also the most uniform choice.
  *
- * Placed morphs are NEVER moved: direction decides where a morph goes when it OPENS. Re-ranking every
+ * Placed morphs are NEVER moved: placement decides where a morph goes when it OPENS. Re-ranking every
  * morph on each open would make a terminal being read jump, which is worse than an imperfect
  * arrangement. Re-placing an already-placed node is a no-op.
  */
@@ -123,38 +148,36 @@ export function placeByDirection(
   const taken = new Set(placements.map(key));
   const len = Math.hypot(delta.dx, delta.dy);
 
-  // A zero delta means this IS the anchor node, re-opened after its own morph closed — it belongs at the
-  // centre. Every other node starts at ring 1, so a freed centre never steals a directional placement.
-  if (len === 0) {
-    if (!taken.has(key({ col: 0, row: 0 }))) return [...placements, { nodeId, col: 0, row: 0 }];
-    for (let r = 1; r <= maxRing; r++) {
-      const free = ringCells(r).find((c) => !taken.has(key(c)));
-      if (free) return [...placements, { nodeId, ...free }];
-    }
-    return placements.slice();
+  // The anchor node re-opening (zero delta) belongs at the centre when it is free — the block was built
+  // around (0,0). Otherwise it falls through to the uniform scoring like any node.
+  if (len === 0 && !taken.has(key({ col: 0, row: 0 }))) {
+    return [...placements, { nodeId, col: 0, row: 0 }];
   }
+  const ux = len === 0 ? 0 : delta.dx / len;
+  const uy = len === 0 ? 0 : delta.dy / len;
+  const occupied = placements.map((p) => ({ col: p.col, row: p.row }));
 
-  const ux = delta.dx / len, uy = delta.dy / len;
-  // Score every free cell GLOBALLY rather than taking the first ring with a vacancy: staying on the
-  // right SIDE matters more than staying close. With three nodes already open to the left, a fourth
-  // left-hand node must spill further left (-2,0) rather than drop into a near-but-wrong cell below the
-  // anchor — first-free-ring did exactly that, which is the #3367 bug in miniature.
-  //
-  // The penalty is tuned so a well-aligned neighbour still beats a perfectly-aligned distant cell (a
-  // ring-1 cell at cos 0.71 scores 0.71, a ring-2 cell at cos 1.0 scores 0.65), keeping the block
-  // compact, while a badly-aligned neighbour (cos ~0) loses to it.
-  let best: { cell: GridCell; score: number } | null = null;
-  for (let r = 1; r <= maxRing; r++) {
+  // Score every free cell out to `maxRing`. Compactness is lexicographically PRIMARY: a smaller longer
+  // side wins, then fewer holes, so the block collapses toward a square with no gaps. Direction only
+  // separates cells that are equally uniform, and a deterministic (col,row) order settles the rest so
+  // the same graph always lays out identically.
+  // From ring 0: the origin is a candidate too, so a centre freed by the anchor's morph closing gets
+  // filled when that keeps the block compact (it is normally `taken`, hence skipped). The zero-delta
+  // anchor re-open above already claimed a free (0,0), so this only reconsiders it for other nodes.
+  let best: { cell: GridCell; maxDim: number; holes: number; align: number } | null = null;
+  for (let r = 0; r <= maxRing; r++) {
     for (const c of ringCells(r)) {
       if (taken.has(key(c))) continue;
-      const score = alignment(c, ux, uy) - RING_PENALTY * (r - 1);
-      if (!best
-          || score > best.score + 1e-9
-          // Deterministic tie-break, so the same graph always lays out the same way.
-          || (Math.abs(score - best.score) <= 1e-9
-              && (c.col < best.cell.col || (c.col === best.cell.col && c.row < best.cell.row)))) {
-        best = { cell: c, score };
-      }
+      const { maxDim, holes } = uniformity([...occupied, c]);
+      const align = alignment(c, ux, uy);
+      const better =
+        !best
+        || maxDim < best.maxDim
+        || (maxDim === best.maxDim && holes < best.holes)
+        || (maxDim === best.maxDim && holes === best.holes && align > best.align + 1e-9)
+        || (maxDim === best.maxDim && holes === best.holes && Math.abs(align - best.align) <= 1e-9
+            && (c.col < best.cell.col || (c.col === best.cell.col && c.row < best.cell.row)));
+      if (better) best = { cell: c, maxDim, holes, align };
     }
   }
   // Every ring out to maxRing is full — refuse rather than overlap. Unreachable in practice (169 cells).
