@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { RequestSessionsMount } from "./RequestSessionsMount";
-import { requestPaneId, requestCharter } from "./requestSession";
+import { poolCharter, poolPaneId } from "./requestSession";
 import { bscRun } from "@/shared/lib/core/bsc";
 import { useAppStore } from "@/store";
 
@@ -10,16 +10,17 @@ import { useAppStore } from "@/store";
 // store does, at init). The tests still passed green while that rejection fired — exactly the kind of
 // green-but-throwing suite worth not shipping.
 const { REQUESTS } = vi.hoisted(() => ({
+  // The full-list shape `bsc request list --json` returns (status + claimed_by) — two CLAIMABLE requests.
   REQUESTS: [
-    { id: 1, surface: "bsc ui", cmd: "bsc ui harvest src/shared/ui", text: "the deny list blocks every path" },
-    { id: 2, surface: "bsc ui", cmd: "bsc ui doctor --fix", text: "doctor wants to delete the pages tier" },
+    { id: 1, status: "open", surface: "bsc ui", cmd: "bsc ui harvest src/shared/ui", text: "the deny list blocks every path" },
+    { id: 2, status: "open", surface: "bsc ui", cmd: "bsc ui doctor --fix", text: "doctor wants to delete the pages tier" },
   ],
 }));
 
-// The queue read, the repo-root probe and the terminal itself are all external systems; stub them so
-// the LAUNCH DECISION (what gets seeded, for which pane) is what the test observes.
-// Mock EVERY export, not just the one under test: the store also calls into this module, and a partial
-// mock leaves the rest `undefined`, which throws asynchronously while the tests still pass green.
+// The queue read, the repo-root probe and the terminal itself are all external systems; stub them so the
+// POOL DECISION (what gets seeded, for which slot) is what the test observes. Mock EVERY export, not just
+// the one under test: the store also calls into this module, and a partial mock leaves the rest
+// `undefined`, which throws asynchronously while the tests still pass green.
 vi.mock("@/shared/lib/core/bsc", () => ({
   bscJson: vi.fn(async () => REQUESTS),
   bsc: vi.fn(async () => ""),
@@ -36,52 +37,47 @@ vi.mock("@/shared/hooks/usePoll", () => ({
 // Unmount every rendered component between tests. Without it, a prior test's RequestSessionsMount stays
 // mounted and subscribed to the store, so a later test that toggles `autoSpawnDebugSessions` also drives
 // the stale instances — which was masking a mutation of the prune-on-transition guard in the full run
-// (the isolated test caught it; the full run did not). The gate runs the full file, so this matters.
+// (#3522). The gate runs the full file, so this matters.
 afterEach(cleanup);
 
-describe("RequestSessionsMount — a debug session per open request (#3498)", () => {
+describe("RequestSessionsMount — the overflow pool (#3535)", () => {
   beforeEach(() =>
-    useAppStore.setState({ autoSpawnDebugSessions: false, paneContinue: {}, paneStartupPromptText: {} }));
+    useAppStore.setState({ autoSpawnDebugSessions: false, paneContinue: {}, paneStartupPromptText: {}, activeDebugSlots: [] }));
 
   it("spawns NOTHING while auto-spawn is off — the default", async () => {
-    // The safety assertion. With the toggle off the mount must seed no pane at all, however many
-    // requests are open.
     const { container } = render(<RequestSessionsMount />);
     await new Promise((r) => setTimeout(r, 0));
     expect(useAppStore.getState().paneStartupPromptText).toEqual({});
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("spawns a session for each open request once auto-spawn is ON", async () => {
+  it("spawns ONE overflow session — paced, not one per request", async () => {
+    // Two requests are claimable, but the pool grows one step at a time: only slot 0 this cycle.
     useAppStore.setState({ autoSpawnDebugSessions: true });
     render(<RequestSessionsMount />);
     await waitFor(() => {
-      const prompts = useAppStore.getState().paneStartupPromptText;
-      // CAP is 2, and there are 2 open requests — both get a pane, each its own.
-      expect(Object.keys(prompts).sort()).toEqual([requestPaneId(1), requestPaneId(2)].sort());
+      expect(Object.keys(useAppStore.getState().paneStartupPromptText)).toEqual([poolPaneId(0)]);
+    });
+    expect(useAppStore.getState().activeDebugSlots).toEqual([0]);
+  });
+
+  it("launches the overflow session FRESH — never resumes (#3497)", async () => {
+    useAppStore.setState({ autoSpawnDebugSessions: true });
+    render(<RequestSessionsMount />);
+    await waitFor(() => {
+      expect(useAppStore.getState().paneContinue[poolPaneId(0)]).toBe(false);
     });
   });
 
-  it("gives each session its OWN pane and never resumes (#3497)", async () => {
+  it("charters the overflow session GENERICALLY — it claims, not a hard-wired request", async () => {
     useAppStore.setState({ autoSpawnDebugSessions: true });
     render(<RequestSessionsMount />);
     await waitFor(() => {
-      const cont = useAppStore.getState().paneContinue;
-      expect(cont[requestPaneId(1)]).toBe(false);
-      expect(cont[requestPaneId(2)]).toBe(false);
-    });
-    // Distinct pane ids ⇒ distinct conversation namespaces; two requests can never share a session.
-    expect(requestPaneId(1)).not.toBe(requestPaneId(2));
-  });
-
-  it("charters each session with ITS request, not the whole queue", async () => {
-    useAppStore.setState({ autoSpawnDebugSessions: true });
-    render(<RequestSessionsMount />);
-    await waitFor(() => {
-      const p = useAppStore.getState().paneStartupPromptText[requestPaneId(1)];
-      expect(p).toContain("REQUEST #1");
-      expect(p).toContain("the deny list blocks every path");
-      expect(p).not.toContain("doctor wants to delete the pages tier");
+      const p = useAppStore.getState().paneStartupPromptText[poolPaneId(0)];
+      expect(p).toContain("bsc request claim");
+      // NOT tied to a specific request id or its reported text — that is the point of the pool model.
+      expect(p).not.toContain("the deny list blocks every path");
+      expect(p).not.toMatch(/REQUEST #\d+ SPECIFICALLY/);
     });
   });
 });
@@ -95,27 +91,24 @@ describe("pruning completed requests when auto-spawn turns on (#3522)", () => {
     useAppStore.setState({ autoSpawnDebugSessions: false });
   });
 
-  // FIRST, from a clean slate: mounting with the setting ALREADY on must not prune. This is the only
-  // case that distinguishes "prune on the transition" from "prune whenever enabled" — the transition
-  // cases below behave identically under both — so it must render a fresh component with no prior
-  // toggling in the same describe to have observed. (Ordering matters: a preceding off→on test leaves
-  // the store on, and re-rendering into an already-on store no longer exercises a first mount.)
+  // FIRST, from a clean slate: mounting with the setting ALREADY on must not prune (see #3522 — this is
+  // the only case that distinguishes "prune on transition" from "prune whenever enabled").
   it("does NOT prune on a persisted-on startup — that is not 'turning it on'", async () => {
-    useAppStore.setState({ autoSpawnDebugSessions: true }); // already on before the first mount
+    useAppStore.setState({ autoSpawnDebugSessions: true });
     render(<RequestSessionsMount />);
     await new Promise((r) => setTimeout(r, 0));
     expect(pruneCalls()).toHaveLength(0);
   });
 
   it("prunes ONCE on the off→on transition — the user turning the setting on", async () => {
-    render(<RequestSessionsMount />); // mounts with the setting off
+    render(<RequestSessionsMount />);
     expect(pruneCalls()).toHaveLength(0);
     act(() => useAppStore.setState({ autoSpawnDebugSessions: true }));
     await waitFor(() => expect(pruneCalls()).toHaveLength(1));
     expect(pruneCalls()[0]).toEqual([null, ["request", "prune"]]);
   });
 
-  it("does NOT prune when the setting is turned OFF, and never re-prunes without a new transition", async () => {
+  it("does NOT prune when turned OFF, and never re-prunes without a new transition", async () => {
     useAppStore.setState({ autoSpawnDebugSessions: true });
     render(<RequestSessionsMount />);
     await new Promise((r) => setTimeout(r, 0));
@@ -125,23 +118,14 @@ describe("pruning completed requests when auto-spawn turns on (#3522)", () => {
   });
 });
 
-describe("the per-request charter", () => {
-  it("names the request, cites the failing command, and demands a resolve", () => {
-    const c = requestCharter(REQUESTS[0]);
-    expect(c).toContain("REQUEST #1 SPECIFICALLY");
-    expect(c).toContain("bsc ui harvest src/shared/ui");
-    expect(c).toContain("bsc request resolve 1");
-    // A request must never be left open with no explanation — the failure this feature removes.
+describe("the generic overflow charter (#3535)", () => {
+  it("claims a request, stamps its own pane, logs via resolve, and never leaves one open", () => {
+    const c = poolCharter();
+    expect(c).toContain("bsc request claim");
+    expect(c).toContain("$BSC_AUDIT_PANE"); // stamps the holder so the pool can tell busy from idle
+    expect(c).toContain("bsc request resolve");
     expect(c).toMatch(/never be left open/i);
-  });
-
-  it("omits the command line when the request cites none", () => {
-    const c = requestCharter({ id: 9, surface: "bsc ui", text: "no command", cmd: null });
-    expect(c).not.toContain("The exact command that failed");
-    expect(c).toContain("bsc request resolve 9");
-  });
-
-  it("keys panes per request", () => {
-    expect(requestPaneId(7)).toBe("debug-studio:req-7");
+    // Generic — it names no specific request.
+    expect(c).not.toMatch(/REQUEST #\d+/);
   });
 });

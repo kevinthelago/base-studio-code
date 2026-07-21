@@ -27,7 +27,7 @@ describe("the debug session's launch contract (#3497)", () => {
   it("carries the charter that sends it at the request queue", () => {
     // The charter is the ONLY thing that makes this session the debugger. If it stops naming the queue
     // command, the pane launches and does nothing — the exact silent failure #3497 was.
-    expect(DEBUG_START_PROMPT).toContain("bsc request list --open");
+    expect(DEBUG_START_PROMPT).toContain("bsc request claim"); // #3535: claim, not list+pick, so it coordinates with the pool
     expect(DEBUG_START_PROMPT).toContain("bsc request resolve");
     expect(DEBUG_START_PROMPT).toMatch(/DEBUG session/);
   });
