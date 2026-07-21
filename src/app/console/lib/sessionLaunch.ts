@@ -270,8 +270,17 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
   const skills = toSkillCfgs(skillDefs);
   // Agents audit (#257): on a gated pane (role or profile assigned), install PreToolUse hooks: log
   // each tool attempt (bsc-audit), time MCP calls (bsc-mcp), enforce the write-scope gate (bsc-scope,
-  // #1297), the tainted-turn gate (bsc-taint, #1167), and the worker-only Stop bounce (bsc-defer,
-  // #369). FS confinement (bsc-confine, #158) is NOT gated — it's defaulted onto every pane below (#1916).
+  // #1297), the tainted-turn gate (bsc-taint, #1167), and a Stop bounce that keeps a session going —
+  // the worker's issue→PR bounce (bsc-defer, #369) or, for a restricted STUDIO session, the studio
+  // keep-going bounce (bsc-continue, #3547) so the designer/librarian/etc. power through clear guided
+  // work instead of pausing to self-assess between items. Both bounce ONCE per stop (`stop_hook_active`),
+  // so a genuinely-finished session is never trapped. FS confinement (bsc-confine, #158) is NOT gated —
+  // it's defaulted onto every pane below (#1916).
+  const stopBounce = role === "worker"
+    ? [{ event: "Stop", matcher: "", command: "bsc-defer" }]
+    : isRestrictedRole(role)
+      ? [{ event: "Stop", matcher: "", command: "bsc-continue" }]
+      : [];
   const gatedHooks = (cap || prof)
     ? [...hooks,
        { event: "PreToolUse", matcher: "", command: "bsc-audit" },
@@ -279,7 +288,7 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
        { event: "PostToolUse", matcher: "mcp__.*", command: "bsc-mcp" },
        { event: "PreToolUse", matcher: "Edit|Write|MultiEdit|NotebookEdit", command: "bsc-scope" },
        { event: "PreToolUse", matcher: "", command: "bsc-taint" },
-       ...(role === "worker" ? [{ event: "Stop", matcher: "", command: "bsc-defer" }] : [])]
+       ...stopBounce]
     : hooks;
   // Skill telemetry (#406) follows the SKILLS, not the role gate: install the bsc-skill Pre/Post hooks
   // whenever skills are present (incl. an ungated console with a per-session skill, #1056).
