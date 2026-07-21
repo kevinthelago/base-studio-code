@@ -99,14 +99,18 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   const pageLike = comp.role === "page" || comp.role === "layout";
   // The page canvas + scale-to-fit ratio (#3139): render at the frame WIDTH (the selected sm/md/auto
   // breakpoint = the page's authored layout width) × a taller viewport canvas, then contain-scale so the
-  // whole page shows. `null` for non-pages (they render 1:1) or before the frame is measured.
+  // whole page shows. `null` for non-pages (they render 1:1) or before the frame is measured — AND under
+  // `zoomEngine` (#3551): the in-iframe pan/zoom engine owns ALL scaling, so this pre-#3190 parent
+  // CSS-scale must NOT also apply (a page in the expanded try-on was scaled twice, and the second
+  // transform fought the engine → the drag couldn't pan). The engine's iframe then fills the frame 1:1.
+  const hasZoomEngine = !!zoomEngine;
   const canvas = useMemo(() => {
-    if (!pageLike || frame.w === 0 || frame.h === 0) return null;
+    if (!pageLike || hasZoomEngine || frame.w === 0 || frame.h === 0) return null;
     const naturalW = frame.w;
     const naturalH = Math.max(frame.h, Math.round(naturalW * PAGE_ASPECT));
     const scale = Math.min(1, frame.w / naturalW, frame.h / naturalH);
     return { naturalW, naturalH, scale };
-  }, [pageLike, frame.w, frame.h]);
+  }, [pageLike, hasZoomEngine, frame.w, frame.h]);
   // The kit-scoped animation defs this component BINDS (#2942) — the kit owns the keyframes, the
   // component references them by name. A derived key so authoring/removing a binding OR editing the
   // kit's motion re-renders the preview (the object identity alone isn't a stable dep).
@@ -214,7 +218,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         const srcDoc = buildComponentSrcDoc(js, {
           injectedCss, theme, rootClass, exitSelectors,
           fitContent: !pageLike && !doScroll, scrollY: doScroll,
-          zoomEngine: zoomEngine ? { initial: zoomEngine.initial } : undefined,
+          zoomEngine: zoomEngine ? {} : undefined,
         });
         if (iframeRef.current) iframeRef.current.srcdoc = srcDoc;
         // #3437: publish what this frame IS, for `bsc debug frames`. Recorded here because the pair that
@@ -237,7 +241,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, themeId, previewState, scrollY, zoomEngine?.initial, retry, previewData, libResolver]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, themeId, previewState, scrollY, hasZoomEngine, retry, previewData, libResolver]);
 
   // #3190 crisp pass: hand the host the engine's +/−/fit controls. The engine lives in the iframe, so each
   // call posts a `__cmd` message to it; re-registered whenever the iframe rebuilds (`retry`/comp switch).
