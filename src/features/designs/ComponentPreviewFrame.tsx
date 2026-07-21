@@ -159,6 +159,14 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   );
   const exitKey = exitSelectors.join("|");
 
+  // #3556: the selected theme's `:root` token overrides, as a standalone stylesheet string. Kept OUT of the
+  // build effect's `injectedCss` so a theme change never rebuilds the iframe — it is applied LIVE via a
+  // `{ __bsc_theme }` postMessage (below), preserving the pan/zoom engine's view across a theme switch.
+  const themeCss = useMemo(() => {
+    const vars = Object.entries(themeVars).map(([k, v]) => `${k}:${v}`).join(";");
+    return vars ? `:root{${vars}}` : "";
+  }, [themeVars]);
+
   // Studio network (#2940): a bound librarian algorithm's generated dataset for this component's preview
   // props (`{ prop: JS-source literal }`), or `{}`. Resolves async (sandbox run); the reference is stable
   // (a shared EMPTY until it lands) so it rebuilds the preview exactly once when the data arrives.
@@ -192,8 +200,6 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
       try {
         const js = await bundleComponent(build.files, build.entry);
         if (cancelled) return;
-        // App styles (tokens + component CSS) + the selected theme's semantic-token overrides on :root.
-        const themeCss = Object.entries(themeVars).map(([k, v]) => `${k}:${v}`).join(";");
         // The previewed component's bound kit MOTION (#2942): compile the kit animations it plays into
         // the iframe (guaranteed present, not reliant on the global managed <style>), and put their
         // `.<kit>-anim-<name>` classes on #root so the motion actually plays — hover/mount/always all
@@ -206,7 +212,9 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
           .map((d) => animClassName(d))
           .filter((c) => /^[a-z][a-z0-9-]+$/.test(c))
           .join(" ");
-        const injectedCss = collectAppCss() + (themeCss ? `\n:root{${themeCss}}` : "") + (animCss ? `\n${animCss}` : "");
+        // #3556: theme vars are NO LONGER folded in here (they go in a dedicated `<style id="__bsc_theme">`
+        // via `themeCss`, applied live) — only the app CSS + this component's animation CSS.
+        const injectedCss = collectAppCss() + (animCss ? `\n${animCss}` : "");
         // #3141: pages/layouts are scaled parent-side (the canvas above); a component that overflows the
         // frame gets the in-iframe scale-to-fit shim instead so it shows whole rather than clipping.
         // #3190: a scrollable component renders at natural size (no fit-shim) and scrolls tall content;
@@ -216,7 +224,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         // else a non-page mount scales-to-fit (#3141); pages always scale parent-side (#3139).
         const doScroll = !!scrollY && !pageLike && !zoomEngine;
         const srcDoc = buildComponentSrcDoc(js, {
-          injectedCss, theme, rootClass, exitSelectors,
+          injectedCss, themeCss, theme, rootClass, exitSelectors,
           fitContent: !pageLike && !doScroll, scrollY: doScroll,
           zoomEngine: zoomEngine ? {} : undefined,
         });
@@ -240,8 +248,18 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
       }
     })();
     return () => { cancelled = true; };
+    // #3556: `themeId`/`themeCss`/`theme` are deliberately NOT deps — a theme change must NOT rebuild (that
+    // would reset the pan/zoom engine). It's applied live by the effect below; the initial build reads the
+    // current `themeCss`/`theme` fresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, themeId, previewState, scrollY, hasZoomEngine, retry, previewData, libResolver]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, previewState, scrollY, hasZoomEngine, retry, previewData, libResolver]);
+
+  // #3556: apply a theme change LIVE to the mounted iframe (data-theme base + the `__bsc_theme` token
+  // overrides) via postMessage — no rebuild, so the in-iframe pan/zoom view survives a theme switch. Keyed
+  // on `themeId` (the stable theme identity); the initial build already baked the current theme in.
+  useEffect(() => {
+    iframeRef.current?.contentWindow?.postMessage({ __bsc_theme: { base: theme, css: themeCss } }, "*");
+  }, [themeId, theme, themeCss]);
 
   // #3190 crisp pass: hand the host the engine's +/−/fit controls. The engine lives in the iframe, so each
   // call posts a `__cmd` message to it; re-registered whenever the iframe rebuilds (`retry`/comp switch).

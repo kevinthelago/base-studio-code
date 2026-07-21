@@ -56,6 +56,29 @@ describe("componentBundle — buildComponentSrcDoc", () => {
     expect(doc).toContain(COMPONENT_IMPORTMAP["react"]);
   });
 
+  it("puts the theme overrides in a DEDICATED swappable style, separate from injectedCss (#3556)", () => {
+    const doc = buildComponentSrcDoc("X", { injectedCss: ".app{color:red}", themeCss: ":root{--accent:#0f0}", theme: "dark" });
+    expect(doc).toContain('<style id="__bsc_theme">:root{--accent:#0f0}</style>'); // the swappable theme style
+    expect(doc).toContain(".app{color:red}");                                      // app CSS in its own style
+    expect(doc).toContain("__bsc_theme");                                          // the live-apply handler
+  });
+
+  it("the srcdoc handler applies a theme message LIVE — data-theme + the style text (#3556)", () => {
+    const doc = buildComponentSrcDoc("X", { themeCss: ":root{--a:1}", theme: "dark" });
+    const script = /<script>([\s\S]*?__bsc_theme[\s\S]*?)<\/script>/.exec(doc)?.[1];
+    expect(script).toBeTruthy();
+    document.documentElement.setAttribute("data-theme", "dark");
+    const style = document.createElement("style");
+    style.id = "__bsc_theme";
+    style.textContent = ":root{--a:1}";
+    document.head.appendChild(style);
+    (0, eval)(script!); // installs the message listener (+ harmless error listeners)
+    window.dispatchEvent(new MessageEvent("message", { data: { __bsc_theme: { base: "light", css: ":root{--a:2}" } } }));
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+    expect(style.textContent).toBe(":root{--a:2}");
+    style.remove();
+  });
+
   it("puts the animation classes on #root, or a bare #root when there are none (#2870)", () => {
     expect(buildComponentSrcDoc("X", { rootClass: "card-anim-fade-in" })).toContain('<div id="root" class="card-anim-fade-in">');
     expect(buildComponentSrcDoc("X")).toContain('<div id="root"></div>'); // no class attribute when empty
