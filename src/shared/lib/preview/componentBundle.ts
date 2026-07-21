@@ -324,28 +324,16 @@ export function fitShimScript(fit: boolean): string {
  */
 export function gestureEngineScript(cfg: { initial?: number; min?: number; max?: number } | undefined): string {
   if (!cfg) return "";
-  const initial = cfg.initial ?? 1;
   const min = cfg.min ?? 0.2;
   const max = cfg.max ?? 8;
   return `\n<script>
 (function () {
-  var MIN = ${min}, MAX = ${max}, INITIAL = ${initial};
+  var MIN = ${min}, MAX = ${max};
   // A press on a form field keeps its NATIVE drag (text selection / caret); everything else drag-pans.
   var DRAG_NATIVE = 'input,textarea,select,[contenteditable]';
   function dragNative(el) {
     for (var n = el; n && n !== document.documentElement && n !== document.body; n = n.parentElement) {
       if (n.nodeType === 1 && n.matches && n.matches(DRAG_NATIVE)) return true;
-    }
-    return false;
-  }
-  function scrollableAt(el, dy) {
-    for (var n = el; n && n !== document.documentElement; n = n.parentElement) {
-      if (n.nodeType !== 1) continue;
-      if (n.scrollHeight <= n.clientHeight) continue;
-      var oy; try { oy = getComputedStyle(n).overflowY; } catch (e) { continue; }
-      if (oy !== "auto" && oy !== "scroll") continue;
-      if (dy < 0 && n.scrollTop > 0) return true;
-      if (dy > 0 && n.scrollTop + n.clientHeight < n.scrollHeight - 1) return true;
     }
     return false;
   }
@@ -361,7 +349,20 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
     view.tx = px - wx * ns; view.ty = py - wy * ns; view.scale = ns; apply();  // …held fixed after the zoom
   }
   function centerXY() { return [ (window.innerWidth || document.documentElement.clientWidth || 1) / 2, (window.innerHeight || document.documentElement.clientHeight || 1) / 2 ]; }
-  function fit() { view = { tx: 0, ty: 0, scale: 1 }; apply(); }
+  function viewport() { return [ window.innerWidth || document.documentElement.clientWidth || 1, window.innerHeight || document.documentElement.clientHeight || 1 ]; }
+  // FIT: show the WHOLE component. Measure #root's natural content box (transform removed so the read is
+  // un-scaled; scrollWidth/Height report full content even under overflow:hidden), then scale so it fits the
+  // viewport — never UPSCALING past 1:1 (crisp) — centered horizontally, TOP-anchored so a tall page's
+  // header stays visible and you pan/zoom DOWN. Falls back to identity when unmeasured (jsdom / pre-layout).
+  function fit() {
+    var t = tgt();
+    var vp = viewport(), cw = vp[0], ch = vp[1], bw = 0, bh = 0;
+    if (t) { var prev = t.style.transform; t.style.transform = "none"; bw = t.scrollWidth; bh = t.scrollHeight; t.style.transform = prev; }
+    if (!bw || !bh) { view = { tx: 0, ty: 0, scale: 1 }; apply(); return; }
+    var s = Math.min(1, cw / bw, ch / bh);
+    view = { scale: s, tx: (cw - bw * s) / 2, ty: 0 };
+    apply();
+  }
   // DRAG-PAN: a press-and-MOVE (past a small threshold) pans — ANYWHERE, even over a button — so a
   // component that fills the frame is still draggable; a press-WITHOUT-move stays a CLICK (the control
   // keeps it, since a moved drag suppresses the trailing click).
@@ -386,13 +387,11 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
   // die mid-gesture. Cancel it (form fields keep theirs, matching DRAG_NATIVE).
   document.addEventListener("dragstart", function (e) { if (!dragNative(e.target)) e.preventDefault(); }, true);
   document.addEventListener("click", function (e) { if (moved) { e.preventDefault(); e.stopPropagation(); moved = false; } }, true);
-  // WHEEL: pans/scrolls the content by default (so overflow is navigable); ctrl/⌘ + wheel zooms about the
-  // cursor. An inner scroll container scrolls itself.
+  // WHEEL = ZOOM about the cursor. The try-on is a zoomable design canvas, not a document: scrolling zooms
+  // in/out (any wheel/trackpad delta), and CLICK-DRAG is what moves across the screen (the pan above).
   document.addEventListener("wheel", function (e) {
-    if (scrollableAt(e.target, e.deltaY)) return;
     e.preventDefault();
-    if (e.ctrlKey || e.metaKey) { zoomAt(Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY); }
-    else { view.tx -= e.deltaX; view.ty -= e.deltaY; apply(); }
+    zoomAt(Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY);
   }, { capture: true, passive: false });
   window.addEventListener("message", function (e) {
     var d = e.data; if (!d) return;
@@ -416,7 +415,10 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
     else if (d.__cmd === "zoomOut") zoomAt(1 / 1.2, c[0], c[1]);
     else if (d.__cmd === "fit") fit();
   });
-  fit(); if (INITIAL !== 1) { zoomAt(INITIAL, centerXY()[0], 0); }  // initial zoom anchored at the TOP so a page's headers stay visible (crop the bottom, not the top)
+  // Open showing the WHOLE component. Fit now (reading scrollHeight forces a sync layout), then again on the
+  // next frame so late layout — fonts, images, a chart that measures itself — is fitted too.
+  fit();
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(fit);
 })();
 </script>`;
 }

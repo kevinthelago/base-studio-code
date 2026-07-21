@@ -218,7 +218,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
         const srcDoc = buildComponentSrcDoc(js, {
           injectedCss, theme, rootClass, exitSelectors,
           fitContent: !pageLike && !doScroll, scrollY: doScroll,
-          zoomEngine: zoomEngine ? { initial: zoomEngine.initial } : undefined,
+          zoomEngine: zoomEngine ? {} : undefined,
         });
         if (iframeRef.current) iframeRef.current.srcdoc = srcDoc;
         // #3437: publish what this frame IS, for `bsc debug frames`. Recorded here because the pair that
@@ -241,7 +241,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, themeId, previewState, scrollY, zoomEngine?.initial, retry, previewData, libResolver]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, themeId, previewState, scrollY, hasZoomEngine, retry, previewData, libResolver]);
 
   // #3190 crisp pass: hand the host the engine's +/−/fit controls. The engine lives in the iframe, so each
   // call posts a `__cmd` message to it; re-registered whenever the iframe rebuilds (`retry`/comp switch).
