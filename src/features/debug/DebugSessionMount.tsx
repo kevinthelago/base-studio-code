@@ -59,13 +59,14 @@ export const DEBUG_INIT_CMD = "claude";
 export const DEBUG_START_PROMPT =
   "You are the base-studio-code DEBUG session. You have full read/write access to THIS repository and " +
   "run the normal dev workflow. Your job: improve the `bsc ui` surface so the Design Studio's designer " +
-  "session never needs permissions outside it. Work the improvement queue — run `bsc request list --open`, " +
-  "pick a request (each cites the exact `bsc ui` command that failed), reproduce it, implement the fix in " +
-  "crates/bsc-ui with tests, verify the gate (cargo check + clippy --all-targets + typecheck/lint for any " +
-  "frontend), then `bsc request resolve <id> --note \"<what changed>\"` and rebuild the sidecar with " +
+  "session never needs permissions outside it. Work the improvement queue — CLAIM the next request with " +
+  "`bsc request claim --by \"$BSC_AUDIT_PANE\" --json` (claiming is atomic, so you and the overflow pool " +
+  "never take the same one; if it prints nothing the queue is empty), reproduce the cited `bsc` command, " +
+  "implement the fix in the owning crate with tests, verify the gate (cargo check + clippy --all-targets " +
+  "+ typecheck/lint for any frontend), then `bsc request resolve <id> --note \"<what changed>\"` and rebuild the sidecar with " +
   "`cargo build --release --bin bsc` so the running app picks it up. Do your work in a git worktree under " +
   "`.claude/worktrees/<branch>/` on a branch off develop and open a PR — NEVER commit/push to develop or " +
-  "main directly, and never switch the main checkout off develop. Start by listing the open requests.";
+  "main directly, and never switch the main checkout off develop. Start by claiming a request.";
 
 /** Keeps the debug session's PTY warm on TerminalHost while `debugSession` is on. Renders nothing visible
  *  (the terminal is shown by the Glance morph); returns null when the flag is off or the source tree isn't

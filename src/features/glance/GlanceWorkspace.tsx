@@ -68,7 +68,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const teams = useAppStore((s) => s.teams);
   const debugSession = useAppStore((s) => s.debugSession);
   // #3498: the auto-spawned request sessions, so each is a visible, openable node in this graph.
-  const activeRequestSessions = useAppStore((s) => s.activeRequestSessions);
+  const activeDebugSlots = useAppStore((s) => s.activeDebugSlots);
   const setDebugSession = useAppStore((s) => s.setDebugSession);
   // The blueprint LIBRARY + the drilled project's blueprint id (#2572) — so the fleet drill can overlay
   // the project blueprint's authored TEAM relationships (an Org) onto the derived coordination.
@@ -244,7 +244,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     if (!drillNode) return null;
     // The synthetic base-studio-code project (#3319) drills into the app's OWN studio-session graph — the
     // Studio Network team, with the debugger node gated by the Settings toggle (#3317). No plan.db fleet.
-    if (drillNode.id === BASE_STUDIO_PROJECT_ID) return buildStudioFleetData(teams, personas, debugSession, activeRequestSessions);
+    if (drillNode.id === BASE_STUDIO_PROJECT_ID) return buildStudioFleetData(teams, personas, debugSession, activeDebugSlots);
     // Team-driven fleet (#3101/#3103): fold the team's ROLE-ACTOR streams (curator/documentor/…) into
     // the drilled graph so what SHOWS matches what LAUNCHES — the same `teamRoleStreams` the launch
     // composes (`usePlanPublish`). A team position for a seedable role becomes a node even before the
@@ -256,7 +256,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       : buildFleetData({ id: drillNode.id, name: drillNode.slug });
     // Add the preview node when the project has finished building (idempotent, no-op while building).
     return withPreviewNode(base, drillComplete);
-  }, [drillNode, effectiveFleet, personas, drillTeam, drillComplete, teams, debugSession, activeRequestSessions]);
+  }, [drillNode, effectiveFleet, personas, drillTeam, drillComplete, teams, debugSession, activeDebugSlots]);
   // Overlay the LIVE session state onto the drilled fleet's agent nodes (#3252) — the L1 twin of the L0
   // stall/fault overlays: an agent lifts off its planned idle to building/waiting/warning per its session.
   // Applied to rawNodes BEFORE buildGraph so the rollup + inherited-health recompute over the live values.

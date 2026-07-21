@@ -27,7 +27,7 @@ export const DEBUG_STUDIO_SESSION_ID = "debug-studio:debugger";
 
 /** The pane-id prefix shared by EVERY session in the debug studio: the standing debugger
  *  (`debug-studio:debugger`) and each auto-spawned per-request session (`debug-studio:req-<id>`,
- *  {@link requestPaneId}). Every one of them is the app's full-capability maintenance session in the
+ *  {@link poolPaneId}). Every one of them is the app's full-capability maintenance session in the
  *  source tree, so the prefix — not the singleton id — is what `isFullCapabilitySession` keys on. */
 export const DEBUG_STUDIO_PANE_PREFIX = "debug-studio:";
 

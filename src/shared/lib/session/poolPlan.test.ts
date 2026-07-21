@@ -102,10 +102,10 @@ describe("planPool — the warm-pool overflow decision (#3535)", () => {
     expect(p.sessions[0].pollsWarming).toBe(1);
   });
 
-  it("respects the overflow cap (cap - 1), counting live sessions", () => {
-    // cap 3 ⇒ 2 overflow max. Two already busy + more claimable work ⇒ still no spawn.
+  it("respects the overflow cap (cap - 1), counting live sessions, and flags capacity pressure", () => {
+    // cap 3 ⇒ 2 overflow max. Two already busy + more claimable work ⇒ still no spawn, AND atCapacity.
     const p = planPool({
-      requests: [claimed(1, "pool-a"), claimed(2, "pool-b"), open(3)],
+      requests: [claimed(1, "pool-a"), claimed(2, "pool-b"), open(3), open(4)],
       sessions: [busy("pool-a", 1), busy("pool-b", 2)],
       enabled: true,
       cap: CAP,
@@ -113,6 +113,19 @@ describe("planPool — the warm-pool overflow decision (#3535)", () => {
     expect(p.spawn).toBe(false);
     expect(p.reason).toMatch(/cap/i);
     expect(p.close).toEqual([]);
+    // The "we need more but can't" signal the mount logs (#3535).
+    expect(p.atCapacity).toBe(true);
+    expect(p.waiting).toBe(2); // #3 and #4 are waiting with no free session
+  });
+
+  it("does not flag capacity pressure when the block is pacing or empty queue, only the cap", () => {
+    // warming (paced) — not capacity pressure.
+    const paced = planPool({ requests: [open(1), open(2)], sessions: [warming("x")], enabled: true, cap: CAP });
+    expect(paced.atCapacity).toBe(false);
+    expect(paced.waiting).toBe(0);
+    // empty queue — not capacity pressure.
+    const empty = planPool({ requests: [claimed(1, "x")], sessions: [busy("x", 1)], enabled: true, cap: CAP });
+    expect(empty.atCapacity).toBe(false);
   });
 
   it("does not spawn when there is no claimable work even if under cap", () => {

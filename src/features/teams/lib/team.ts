@@ -5,7 +5,7 @@
 // prose hardcoded in fleet/*-protocol.md. Pure model (no React/Tauri) so it's unit-testable and the
 // store seeds from it directly. The closed vocabulary (forms + archetypes) is externalized to
 // @data/teams/*; the built-in orgs to @data/teams/orgs/*.json — overlay-editable + in the config bundle.
-import { requestNodeId } from "@/shared/lib/session/requestSpawn";
+import { poolNodeId } from "@/shared/lib/session/requestSpawn";
 import formsEmbedded from "@data/teams/communication-forms.json";
 import archetypesEmbedded from "@data/teams/archetypes.json";
 import { overlayFile, overlayGlob } from "@/shared/lib/core/configOverrides";
@@ -182,18 +182,18 @@ export function augmentStudioNetworkForDebug(org: Team, debugOn: boolean): Team 
  * while the `debugSession` flag is on, and an edge to an absent node would dangle. Idempotent, and a
  * no-op off the Studio Network or with no live sessions.
  */
-export function augmentStudioNetworkForRequests(org: Team, requestIds: readonly number[]): Team {
-  if (!requestIds.length || org.id !== STUDIO_NETWORK_ID) return org;
+export function augmentStudioNetworkForRequests(org: Team, poolSlots: readonly number[]): Team {
+  if (!poolSlots.length || org.id !== STUDIO_NETWORK_ID) return org;
   const present = new Set(org.positions.map((p) => p.nodeId));
-  const add = requestIds.filter((id) => !present.has(requestNodeId(id)));
+  const add = poolSlots.filter((slot) => !present.has(poolNodeId(slot)));
   if (!add.length) return org;
   return {
     ...org,
     positions: [
       ...org.positions,
       // Fanned in a row beneath the debugger's slot so N sessions never stack on one point.
-      ...add.map((id, i) => ({
-        nodeId: requestNodeId(id),
+      ...add.map((slot, i) => ({
+        nodeId: poolNodeId(slot),
         kind: "agent" as const,
         personaId: "persona-debugger",
         x: 96 + i * 72,
@@ -202,10 +202,10 @@ export function augmentStudioNetworkForRequests(org: Team, requestIds: readonly 
     ],
     relationships: [
       ...org.relationships,
-      ...add.map((id) => ({
-        id: `r-serves-${requestNodeId(id)}`,
+      ...add.map((slot) => ({
+        id: `r-serves-${poolNodeId(slot)}`,
         archetype: "serves",
-        from: requestNodeId(id),
+        from: poolNodeId(slot),
         to: "designer",
         bow: -18,
       })),
