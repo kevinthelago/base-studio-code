@@ -66,6 +66,7 @@ fn label_for(key: &str) -> &'static str {
         "coord" => "Coordination events",
         "perm" => "Permission denials",
         "tokens" => "Token & cost accounting",
+        "ui" => "UI design activity",
         "app" => "Application log",
         "perf" => "Performance database",
         _ => "Log stream",

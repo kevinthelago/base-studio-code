@@ -341,7 +341,7 @@ mod tests {
                 Some(stem)
             })
             .collect();
-        let expected: BTreeSet<String> = ["discovery","deployment","ui","features",
+        let expected: BTreeSet<String> = ["discovery","deployment","ui","features","function_spec",
             "automations","skills","purpose","bp_stages","bp_capabilities",
             "bp_review","streams","source","test_ui","market","transformations"].iter().map(|s| s.to_string()).collect();
         assert_eq!(with_directive, expected, "stage `directive` set drifted from the expected set");
