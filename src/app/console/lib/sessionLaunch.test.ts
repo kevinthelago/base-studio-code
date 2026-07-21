@@ -307,10 +307,20 @@ describe("buildSessionSettings", () => {
     for (const d of roleDenies.filter((x) => !granted.includes(x))) expect(out.deniedCommands).toContain(d);
   });
 
-  it("gates a director without the worker-only Stop bounce", () => {
+  it("gates a director without ANY Stop bounce (unrestricted, non-worker)", () => {
     const c = cmds(buildSessionSettings(mkStore({ paneRoles: { p: "director" } }), "p"));
     expect(c).toContain("bsc-audit");
     expect(c).not.toContain("bsc-defer");
+    expect(c).not.toContain("bsc-continue"); // #3547: only RESTRICTED studio roles get the studio bounce
+  });
+
+  it("gives a restricted STUDIO role the studio Stop-bounce (bsc-continue), never the worker one (#3547)", () => {
+    // The designer/librarian/etc. power through clear guided work instead of pausing to self-assess.
+    for (const role of ["designer", "librarian", "sound-designer", "architect", "curator"]) {
+      const c = cmds(buildSessionSettings(mkStore({ paneRoles: { p: role } }), "p"));
+      expect(c, role).toContain("bsc-continue");
+      expect(c, role).not.toContain("bsc-defer");
+    }
   });
 
   it("takes allowedCommands + bashPosture from the assigned profile", () => {
