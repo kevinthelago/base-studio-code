@@ -273,7 +273,7 @@ describe("roleDeniedTools (sub-agent block, #1036)", () => {
 });
 
 describe("roleWriteRules (write-tool guard)", () => {
-  const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+  const WRITE_TOOLS = ["Edit", "Write", "NotebookEdit"]; // whole-tool deny set (no MultiEdit — removed tool, #3534)
 
   it("denies every write tool for no-code roles (director/triage)", () => {
     for (const role of ["director", "triage"] as const) {
@@ -288,15 +288,15 @@ describe("roleWriteRules (write-tool guard)", () => {
     // Every PLANNER_WRITE_GLOB is represented in the allow list (section files stay writable).
     for (const glob of PLANNER_WRITE_GLOBS) {
       expect(rules.allow).toContain(`Edit(${glob})`);
-      expect(rules.allow).toContain(`Write(${glob})`);
+      expect(rules.allow).toContain(`Edit(${glob})`);
     }
     // DB-owned artifacts (deploy/phases/issues/fleet/repos/features) are denied as files so the
     // planner uses `bsc-plan` instead — deny wins over the *.md/*.json glob allow.
     for (const f of DB_OWNED_PLAN_FILES) {
-      expect(rules.deny).toContain(`Write(${f})`);
+      expect(rules.deny).toContain(`Edit(${f})`);
       expect(rules.deny).toContain(`Edit(${f})`);
     }
-    expect(rules.deny).toContain("Write(deploy.md)");
+    expect(rules.deny).toContain("Edit(deploy.md)");
   });
 
   it("does NOT deny the DB-owned plan-state file forms for non-planner roles (#1070)", () => {
@@ -304,7 +304,7 @@ describe("roleWriteRules (write-tool guard)", () => {
     const workerDeny = roleWriteRules(roleCapability("worker", { writeGlobs: ["src/**"] })).deny;
     for (const f of DB_OWNED_PLAN_FILES) {
       if (DEP_MANIFEST_FILES.includes(f)) continue; // (no overlap today, but be precise)
-      expect(workerDeny).not.toContain(`Write(${f})`);
+      expect(workerDeny).not.toContain(`Edit(${f})`);
     }
   });
 
@@ -315,26 +315,26 @@ describe("roleWriteRules (write-tool guard)", () => {
     const deny = roleWriteRules(worker).deny;
     for (const f of DEP_MANIFEST_FILES) {
       expect(deny).toContain(`Edit(${f})`);
-      expect(deny).toContain(`Write(${f})`);
+      expect(deny).toContain(`Edit(${f})`);
     }
-    expect(deny).toContain("Write(package.json)");
-    expect(deny).toContain("Write(Cargo.toml)");
+    expect(deny).toContain("Edit(package.json)");
+    expect(deny).toContain("Edit(Cargo.toml)");
   });
 
   it("scopes a worker to its boundary globs (one allow per tool per glob)", () => {
     const worker = roleCapability("worker", { writeGlobs: ["src/api/**", "tests/**"] });
     const rules = roleWriteRules(worker);
     // deny is the dependency-manifest lock (#1111), not boundary rules.
-    expect(rules.deny).toEqual(DEP_MANIFEST_FILES.flatMap((f) => WRITE_TOOLS.map((t) => `${t}(${f})`)));
+    expect(rules.deny).toEqual(DEP_MANIFEST_FILES.map((f) => `Edit(${f})`)); // Edit(path) covers all file-editing tools (#3534)
     expect(rules.allow).toContain("Edit(src/api/**)");
-    expect(rules.allow).toContain("Write(tests/**)");
-    expect(rules.allow).toHaveLength(WRITE_TOOLS.length * 2);
+    expect(rules.allow).toContain("Edit(tests/**)"); // path rules are Edit-only (#3534)
+    expect(rules.allow).toHaveLength(2); // one Edit(glob) per glob (#3534)
   });
 
   it("imposes only the manifest lock for a boundary-less worker (writes otherwise follow the default)", () => {
     const rules = roleWriteRules(ROLE_DEFAULTS.worker);
     expect(rules.allow).toEqual([]);
-    expect(rules.deny).toEqual(DEP_MANIFEST_FILES.flatMap((f) => WRITE_TOOLS.map((t) => `${t}(${f})`)));
+    expect(rules.deny).toEqual(DEP_MANIFEST_FILES.map((f) => `Edit(${f})`)); // Edit(path) covers all file-editing tools (#3534)
   });
 
   it("agrees with canWritePath: planner writes plan files; worker writes its globs", () => {
@@ -348,7 +348,7 @@ describe("roleWriteRules (write-tool guard)", () => {
     expect(canWritePath(planner, "src/x.ts")).toBe(false);
     // Section-file globs auto-approve; the DB-owned plan-state file forms are denied (#1070).
     expect(roleWriteRules(planner).allow).toContain("Edit(*.md)");
-    expect(roleWriteRules(planner).deny).toContain("Write(deploy.md)");
+    expect(roleWriteRules(planner).deny).toContain("Edit(deploy.md)");
 
     // worker with a boundary: every allow-rule glob is exactly a canWritePath-true path.
     const worker = roleCapability("worker", { writeGlobs: ["src/api/**"] });
@@ -429,14 +429,14 @@ describe("issuer + juror roles (#376 / #394)", () => {
     expect(juror.code).toBe("none");
     expect(checkCommand(juror, "git merge develop").allowed).toBe(false);
     expect(checkCommand(juror, "git log").allowed).toBe(true);
-    expect(roleWriteRules(juror).deny).toEqual(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+    expect(roleWriteRules(juror).deny).toEqual(["Edit", "Write", "NotebookEdit"]);
   });
 });
 
 // #851 — the director's scoped commons write carve-out: it keeps code:"none" (no feature-code
 // writes) yet may write EXACTLY the commons globs assigned to it, and nothing else.
 describe("director commons carve-out (#851)", () => {
-  const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+  const WRITE_TOOLS = ["Edit", "Write", "NotebookEdit"]; // whole-tool deny set (no MultiEdit — removed tool, #3534)
   // A representative commons set (what fleetStartProject assigns to the director from the stack).
   const COMMONS = [".gitignore", "package.json", "tsconfig.json", ".github/workflows/**", ".env.example"];
 
@@ -474,9 +474,9 @@ describe("director commons carve-out (#851)", () => {
     expect(rules.deny).toEqual([]);
     for (const g of COMMONS) {
       expect(rules.allow).toContain(`Edit(${g})`);
-      expect(rules.allow).toContain(`Write(${g})`);
+      expect(rules.allow).toContain(`Edit(${g})`);
     }
-    expect(rules.allow).toHaveLength(COMMONS.length * WRITE_TOOLS.length);
+    expect(rules.allow).toHaveLength(COMMONS.length); // one Edit(glob) per commons glob (#3534)
   });
 
   it("scopeWriteGlobs hard-limits the director's writes to the commons (bsc-scope hook)", () => {
@@ -504,7 +504,6 @@ describe("director commons carve-out (#851)", () => {
 // nothing else. It reads git/GitHub, mutates neither (push/PR are flow-governed), and is hard-blocked
 // on every code path — mirroring the #851 director carve-out but active as-launched.
 describe("documentor prose-doc carve-out (#1555)", () => {
-  const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
   const documentor = ROLE_DEFAULTS.documentor;
 
   it("is a code:none role that reads git/GitHub and mutates neither", () => {
@@ -550,9 +549,9 @@ describe("documentor prose-doc carve-out (#1555)", () => {
     expect(rules.deny).toEqual([]);
     for (const g of DOC_GLOBS) {
       expect(rules.allow).toContain(`Edit(${g})`);
-      expect(rules.allow).toContain(`Write(${g})`);
+      expect(rules.allow).toContain(`Edit(${g})`);
     }
-    expect(rules.allow).toHaveLength(DOC_GLOBS.length * WRITE_TOOLS.length);
+    expect(rules.allow).toHaveLength(DOC_GLOBS.length); // one Edit(glob) per doc glob (#3534)
   });
 
   it("scopeWriteGlobs hard-limits the documentor's writes to DOC_GLOBS (bsc-scope hook), no assignment needed", () => {
@@ -579,7 +578,6 @@ describe("documentor prose-doc carve-out (#1555)", () => {
 // command surface (`bsc ui` + the deprecated `bsc component` alias) is granted at launch via the
 // restricted allow-list (`restrictedAllow`, settings.rs), not by the role gate.
 describe("designer role (#2471)", () => {
-  const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
   const designer = ROLE_DEFAULTS.designer;
 
   it("is none on every axis except the kit store — no git, no GitHub, no code, no net; ui: write", () => {
@@ -623,7 +621,7 @@ describe("designer role (#2471)", () => {
     const rules = roleWriteRules(designer);
     // A carve-out emits per-glob ALLOWS and no whole-tool deny (deny > allow would mask the allows).
     expect(rules.deny).toEqual([]);
-    expect(rules.allow).toEqual(WRITE_TOOLS.map((t) => `${t}(scratch/**)`));
+    expect(rules.allow).toEqual(["Edit(scratch/**)"]); // Edit(path) covers Write/NotebookEdit too (#3534)
 
     // The boundary itself: inside the scratch dir yes, anywhere else no.
     expect(canWritePath(designer, "scratch/kit.json")).toBe(true);
@@ -672,7 +670,6 @@ describe("designer role (#2471)", () => {
 // surface (`bsc teams` + `bsc persona`) is granted at launch via the restricted allow-list
 // (`restrictedAllow`, settings.rs), not by the role gate. The Teams graph stays the read-only viewer.
 describe("architect role (#2755)", () => {
-  const WRITE_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
   const architect = ROLE_DEFAULTS.architect;
 
   it("is none on EVERY axis — no git, no GitHub, no code, no net, and ui:none (not a UI-kit session)", () => {
@@ -715,7 +712,7 @@ describe("architect role (#2755)", () => {
 
     const rules = roleWriteRules(architect);
     expect(rules.deny).toEqual([]);
-    expect(rules.allow).toEqual(WRITE_TOOLS.map((t) => `${t}(scratch/**)`));
+    expect(rules.allow).toEqual(["Edit(scratch/**)"]); // Edit(path) covers Write/NotebookEdit too (#3534)
 
     expect(canWritePath(architect, "scratch/team.json")).toBe(true);
     expect(canWritePath(architect, "src/App.tsx")).toBe(false);
