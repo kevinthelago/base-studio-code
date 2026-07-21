@@ -19,9 +19,6 @@ We work one version at a time, **release-and-continue**: a version ships builds 
 > **`1.0.5x`** steps (**`1.0.5`** UI release → **`1.0.51`** the UI-release delivery build → **`1.0.52`**
 > accessibility & TTS + market research/marketing/analytics, current) → **`2.0.0`** (unification, then rigorous semver from there). The phase
 > boundaries are tracked as GitHub milestones.
->
-> _(The dated per-version sections below still describe the `1.0.4`/`1.0.5` era and lag this table — a
-> fuller catch-up of that prose is pending.)_
 
 ---
 
@@ -40,9 +37,9 @@ We work one version at a time, **release-and-continue**: a version ships builds 
 - **Fleet model** — least-privilege workers in git worktrees coordinated by a director; workers build against planned contracts **in parallel** (no runtime dependency-wait) and don't spin up their own sub-agents
 - Parallel **console** sessions, the **Skills** library, **GitHub** integration, **automations**, **MCP extensions**, the **Deploy** stage + pane, and the optional **mobile tunnel** (zero-knowledge Cloudflare relay, Noise IK E2E)
 
-## 🚧 Current — `1.0.4` · enterprise integration & migration
+## ✅ Complete — `1.0.4` · enterprise integration & migration
 
-> Released and in active development — we ship builds early and keep working `1.0.4` until its theme is complete.
+> Shipped; the focus moved on through the `1.0.41` checkpoint to the `1.0.5` UI release.
 
 - **Pull data from enterprise systems** — ERP, CRM, BPM, and other software solutions — into canonical **data models** via **agent-authored connector manifests** (the planner probes the source and authors the connector — no native per-vendor code) + MCP connectors (Salesforce, monday.com, QuickBooks, Quickbase, HubSpot, Airtable), capturing **data, configurations, and behaviors** (automations, business processes), not just rows
 - **Migrate off an existing solution to bespoke generated software** — the source scan dictates the app's schema + logic; map it into your own custom app, generated and run by the fleet
@@ -65,16 +62,39 @@ We work one version at a time, **release-and-continue**: a version ships builds 
 - **Planner & fleet hardening** — a unified **stage vocabulary** (one canonical token per stage) with milestone phases removed; the **Repos + Deploy** stages merged into one **Deployment** pane and **Fleet + Streams** into one **Streams** pane (both carded and collapsible); plus a wave of fixes: the Fleet "No fleet running" identity mismatch, the stale warden re-quarantine across relaunch, worker folder-trust and the `bsc-*` prompt-on-every-command, the triage/fleet tab mis-named "# Goal", session settings written to a bogus cwd path, conflicting self-merge vs `auto-pr` stream responsibilities, and mode-aware deploy gates
 - **Observability** — pane-tagged permission-deny logging (`perm.log`) from the deny hooks, surfaced as a stream in `crates/logs`
 
-## 🔜 Next — `1.0.5` · the UI release
+## ✅ Complete — `1.0.5` · the UI release
+
+> The UI-release theme — shipped, with its bulk delivered through the `1.0.51` build (below).
 
 - An in-app, **Claude-Design-like** way to define each **page, component, and animation** — generate, preview, and iterate UI inside the planner (closing the external Claude Design round-trip), rendered live by the render-preview
 - **UI loops** — iterative design loops that **generate → live-preview → refine** a UI in-app until it's right, the same tight loop the agent fleet runs for code
 
-> Foundation work for the `1.0.5` line, landing ahead of the UI editor:
+> Foundation work that landed across the `1.0.5` line:
 
 - **Integrations platform** — one global connection registry reused across every project, projected four ways (migration **data source** · **incident/CVE** stream · **MCP server** · **app seed**); connectors are **authored by the planner agent** as validated manifests
 - **Per-agent OS isolation** — a Linux user per worker/director inside the sandbox (#1994), building on the sealed-WSL2 environment
 - **Maintenance mode** — a worker that finishes its issues stays alive in a ready posture for the director to dispatch new or regressed lane work to, instead of ending
+
+## ✅ Complete — `1.0.51` · the UI-release delivery
+
+> The build that carried the bulk of the `1.0.5` theme to `develop` — the Design Studio and the systems around it. Its namesake market-research/marketing/analytics theme moved to `1.0.52`.
+
+- **The Design Studio** — in-app page/component/animation authoring: a live **build-and-iframe preview** that renders real components from any library; a token → variant → composition authoring ladder over a loud design-system token contract; **component behavior authored as data** (motion + interaction, live-compiled to CSS); and a graph-health **`doctor`** that flags orphans, cycles, duplicates / near-duplicates, unbuildable specs, and runtime render errors
+- **The Algorithms knowledge graph** (`bsc graph`) — a read-only Planner tab mapping concepts to real code, with per-language kits (impl-is-concept) and a tree-sitter extractor
+- **Studio snapshots** — save, share (as a gist), and re-seed the whole app-library state (`bsc studio`)
+- **The maintenance-bot suite** — `bsc debug` (inspect the running app's live DOM + preview state), `bsc metrics` (the fleet-wide generation scoreboard), a **warm-pool debugger** that spawns to work open `bsc request`s, and component + algorithm **harvest** (scan a repo for reusable candidates)
+- **The CAD geometry kernel** (`bsc cad`) — op-tree → SDF → mesh, dual-contouring sharp edges, STL + glTF/GLB export
+- **The Sounds pillar** — a synthesis-descriptor sound model + the `sound-designer` authoring session (`bsc sound`)
+- **Glance-as-cockpit** — the live project-network graph matured into the fleet cockpit: fleet-as-org rendering, preview-in-graph, and several node sessions open at once, snapped to a grid
+- **Platform** — the `org` → `teams` rename, one name-derived project key, tunnel contract v2, and headless-browser interaction verification for the preview
+
+## 🚧 Current — `1.0.52` · accessibility & text-to-speech + market research, marketing & usage analytics
+
+> The current step: the accessibility & TTS theme, plus the market-research/marketing/analytics work rolled forward from `1.0.51` and the UI / design-studio work still in flight from `1.0.5`.
+
+- **Accessibility & text-to-speech** — the themed focus of this step
+- **The Marketer** — market on your behalf via **channel MCP servers** (keychain-backed secrets), with an outbound confirm gate and a draft → approve → publish loop
+- **Usage analytics** — generated apps ship with planner-toggleable, agent-readable usage analytics
 
 ## Later
 
