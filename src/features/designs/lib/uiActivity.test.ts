@@ -7,16 +7,21 @@ import { invoke } from "@tauri-apps/api/core";
 import { parseUiActivityLine, latestUiTouch, useUiActivity } from "./uiActivity";
 import { useAppStore } from "@/store";
 
-const line = (collection: string, id: string, ts = "2026-07-07T00:00:00Z", pane = "design-studio:designer") =>
-  `${ts}\t${pane}\tui-touch\t${collection}\t${id}`;
+const line = (collection: string, id: string, ts = "2026-07-07T00:00:00Z", pane = "design-studio:designer", kind = "ui-touch") =>
+  `${ts}\t${pane}\t${kind}\t${collection}\t${id}`;
 
-describe("parseUiActivityLine (#2525)", () => {
-  it("parses a well-formed ui-touch line into its collection + id + ts", () => {
+describe("parseUiActivityLine (#2525/#3545)", () => {
+  it("parses a well-formed ui-touch (WRITE) line into kind + collection + id + ts", () => {
     const t = parseUiActivityLine(line("component", "button", "2026-07-07T00:00:00Z"));
-    expect(t).toEqual({ collection: "component", id: "button", pane: "design-studio:designer", at: Date.parse("2026-07-07T00:00:00Z") });
+    expect(t).toEqual({ kind: "touch", collection: "component", id: "button", pane: "design-studio:designer", at: Date.parse("2026-07-07T00:00:00Z") });
   });
 
-  it("rejects non-touch kinds, short rows, an empty id, and tolerates a trailing newline", () => {
+  it("parses a ui-focus (READ, #3545) line as kind: focus", () => {
+    const t = parseUiActivityLine(line("component", "chip", "2026-07-07T00:00:00Z", "design-studio:designer", "ui-focus"));
+    expect(t).toMatchObject({ kind: "focus", collection: "component", id: "chip" });
+  });
+
+  it("rejects unknown kinds, short rows, an empty id, and tolerates a trailing newline", () => {
     expect(parseUiActivityLine("2026-07-07T00:00:00Z\tp\tlanded\tcomponent\tbutton")).toBeNull(); // wrong kind
     expect(parseUiActivityLine("2026-07-07T00:00:00Z\tp\tui-touch\tcomponent")).toBeNull();        // too few cols
     expect(parseUiActivityLine("2026-07-07T00:00:00Z\tp\tui-touch\tcomponent\t")).toBeNull();       // empty id
@@ -55,6 +60,12 @@ describe("useUiActivity (#2525)", () => {
 
   it("drives the most-recent touch into the store when the session is booted", async () => {
     mockBridge([line("component", "button"), line("component", "chip")]);
+    renderHook(() => useUiActivity(true, 10));
+    await waitFor(() => expect(useAppStore.getState().aiFocusedId).toBe("chip"));
+  });
+
+  it("drives a ui-focus (READ, #3545) into the store, so the preview follows Claude's inspection", async () => {
+    mockBridge([line("component", "chip", "2026-07-07T00:00:00Z", "design-studio:designer", "ui-focus")]);
     renderHook(() => useUiActivity(true, 10));
     await waitFor(() => expect(useAppStore.getState().aiFocusedId).toBe("chip"));
   });
