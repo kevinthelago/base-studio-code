@@ -5,7 +5,7 @@
 // now lives on the app-level TerminalHost (#3326) — kept warm by `DebugSessionMount` and shown in the
 // in-graph morph when the node is opened.
 export { DebugSessionMount, DEBUG_PANE_ID } from "./DebugSessionMount";
-// #3498: one debug session PER open `bsc request`, so a filed request is worked because it exists.
-// Inert unless the Settings auto-spawn toggle is on (off by default).
+// #3535: the standing debug session is the always-on primary; RequestSessionsMount is the paced,
+// capped OVERFLOW pool beside it. Inert unless the Settings auto-spawn toggle is on (off by default).
 export { RequestSessionsMount } from "./RequestSessionsMount";
-export { requestPaneId, requestCharter } from "./requestSession";
+export { poolPaneId, poolCharter } from "./requestSession";

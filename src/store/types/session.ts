@@ -60,8 +60,11 @@ export interface SessionState {
   /** #3498: the request ids that currently have a spawned debug session. Lives in the STORE, not in the
    *  mount's local state, because the Glance graph must render a node per live session — an auto-spawned
    *  session that appears nowhere is one the user cannot open, supervise or stop. Session-only. */
-  activeRequestSessions: number[];
-  setActiveRequestSessions: (ids: number[]) => void;
+  /** Live debugger OVERFLOW pool SLOT indices (#3535) — one per running overflow session, published by
+   *  RequestSessionsMount so the Glance graph can render a node per slot. Not request ids: a slot claims
+   *  a request only after it launches. Session-only. */
+  activeDebugSlots: number[];
+  setActiveDebugSlots: (slots: number[]) => void;
   /** #3509: the base-studio-code source tree this app was built from, or null on a shipped binary.
    *  Resolved ONCE at boot so a launch can turn a role's symbolic `app-repo` harvest root into a real
    *  path synchronously. Session-only — it is a property of the machine, not of the user's state. */
