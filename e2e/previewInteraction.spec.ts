@@ -53,6 +53,17 @@ async function pan(frame: Frame): Promise<{ x: number; y: number }> {
   return { x: parts[4] ?? 0, y: parts[5] ?? 0 };
 }
 
+/** `#root`'s live scale, read from the COMPUTED transform matrix (`a`) — what the browser actually applied. */
+async function scaleOf(frame: Frame): Promise<number> {
+  const t = await frame.evaluate(() => {
+    const root = document.getElementById("root");
+    return root ? getComputedStyle(root).transform : "none";
+  });
+  const m = /matrix\(([^)]+)\)/.exec(t);
+  if (!m) return 1; // "none" — identity
+  return Number(m[1].split(",")[0]?.trim() ?? 1);
+}
+
 async function rectOf(frame: Frame, selector: string): Promise<Rect> {
   return frame.evaluate((sel) => {
     const el = document.querySelector(sel);
@@ -200,5 +211,40 @@ test.describe("preview srcdoc — real interaction", () => {
     // `oklch()` is one of the things the issue calls out as unresolvable in jsdom — seeing the real
     // token value arrive is proof the harness is looking at a real cascade.
     expect(token).toContain("oklch");
+  });
+
+  test("opens FIT — the whole component is visible (#3551)", async ({ page }) => {
+    const frame = await mount(page, { zoomEngine: true });
+    // Fit never upscales past 1:1 (crisp) …
+    const scale = await scaleOf(frame);
+    expect(scale).toBeGreaterThan(0);
+    expect(scale).toBeLessThanOrEqual(1);
+    // …and the LAST element (the image at the bottom of the fixture) sits within the viewport, so the
+    // whole component is shown rather than the top being cropped — the "full component rendered in" goal.
+    const wholeThingVisible = await frame.evaluate(() => {
+      const last = document.getElementById("pic");
+      if (!last) return false;
+      return last.getBoundingClientRect().bottom <= (window.innerHeight || 1) + 1;
+    });
+    expect(wholeThingVisible).toBe(true);
+  });
+
+  test("scroll wheel ZOOMS (up = in, down = out); drag is what pans (#3551)", async ({ page }) => {
+    const frame = await mount(page, { zoomEngine: true });
+    const box = (await page.locator("#preview").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+
+    const s0 = await scaleOf(frame);
+    await page.mouse.wheel(0, -300); // scroll UP → zoom IN
+    await expect.poll(() => scaleOf(frame)).toBeGreaterThan(s0);
+
+    const s1 = await scaleOf(frame);
+    await page.mouse.wheel(0, 600); // scroll DOWN → zoom OUT
+    await expect.poll(() => scaleOf(frame)).toBeLessThan(s1);
+
+    // The wheel did NOT pan (translation stays put beyond the zoom-about-cursor adjustment is fine, but a
+    // pure scroll must not run away horizontally the way the old wheel-pan did): a drag is what pans.
+    await dragBy(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, 120, 0);
+    expect((await pan(frame)).x).not.toBe(0);
   });
 });

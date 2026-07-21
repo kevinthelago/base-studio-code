@@ -100,8 +100,9 @@ async function mount(opts: MountOptions = {}): Promise<void> {
   const srcDoc = buildComponentSrcDoc(js, {
     injectedCss: collectAppCss(),
     theme: "dark",
-    // The live frame passes `{ initial }` only; min/max fall back to the engine's own defaults.
-    zoomEngine: opts.zoomEngine ? { initial: 1 } : undefined,
+    // The engine has no options that vary per-mount (it opens FIT and reads its own defaults); an empty
+    // object enables it, exactly as the live frame passes `zoomEngine={{}}`.
+    zoomEngine: opts.zoomEngine ? {} : undefined,
   });
 
   await new Promise<void>((resolve, reject) => {

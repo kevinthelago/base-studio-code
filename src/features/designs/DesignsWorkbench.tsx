@@ -205,12 +205,10 @@ export function DesignsWorkbench() {
     () => expandedPreviewFit(vp, previewCanvas.w, previewCanvas.h),
     [vp, previewCanvas.w, previewCanvas.h],
   );
-  // Fluid fills the canvas at 1:1 → open at real size. A fixed small breakpoint (or a page, letterboxed
-  // small by its render ratio) opens zoomed IN so it reads; the user zooms further via the engine.
-  const previewInitialZoom = vp === "auto" ? 1 : sel && (sel.role === "page" || sel.role === "layout") ? 1.4 : 1.15;
   const [previewZoomApi, setPreviewZoomApi] = useState<{ zoomIn: () => void; zoomOut: () => void; fit: () => void } | null>(null);
   // The expanded try-on's live frame — defined once so it mounts EITHER directly (fluid: it fills the
   // canvas at scale 1) OR inside the centering placer (a fixed breakpoint), without duplicating props.
+  // The zoom engine opens FIT (whole component visible); scroll zooms, drag pans.
   const expandedPreviewFrame = sel && (
     <ComponentPreviewFrame
       comp={sel}
@@ -221,7 +219,7 @@ export function DesignsWorkbench() {
       height={previewH}
       extraAnimation={tryAnimDef}
       previewState={previewState}
-      zoomEngine={{ initial: previewInitialZoom }}
+      zoomEngine={{}}
       registerZoomApi={setPreviewZoomApi}
     />
   );
