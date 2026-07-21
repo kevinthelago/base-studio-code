@@ -49,10 +49,14 @@ export type ComponentBuildStatus =
  * What the scan should mirror to the DURABLE preview-error log (`bsc ui preview-error`) for a component
  * whose status went `prior` → `next` (#3540) — so `bsc ui doctor` sees the COMPLETE errored set, not
  * just components a human opened. Returns:
- *  - the message to RECORD, for a RUNTIME throw (the render-error class doctor reports);
+ *  - the message to RECORD, for BOTH a `build` failure and a `runtime` throw (#3549). Doctor's STATIC
+ *    checks assume a build error is always statically detectable, but it isn't (WorkspaceShellPage's
+ *    extensionless `src` built clean by the analyzer yet the real esbuild loader rejected its TS), so
+ *    the real preview build is the authority — its failures must reach the log too. The message is
+ *    prefixed with the kind (`build:`/`render:`) so the doctor finding reads correctly for either;
  *  - `""` to CLEAR, when a component that WAS an error is now ok/empty (so a fixed one drops out);
- *  - `null` to do nothing — including a first-visit `ok` (no prior error), so a sweep of ~50 healthy
- *    components logs nothing, and a `build` error (a different, statically-detectable class).
+ *  - `null` to do nothing — a first-visit `ok`/`empty` (no prior error), so a sweep of ~50 healthy
+ *    components logs nothing.
  *
  * Pure — the hook calls `recordPreviewError` only when this is non-null.
  */
@@ -60,8 +64,8 @@ export function durableLogSync(
   prior: ComponentBuildStatus | undefined,
   next: ComponentBuildStatus,
 ): string | null {
-  if (next.state === "error" && next.kind === "runtime") return next.message;
-  if (next.state !== "error" && prior?.state === "error") return ""; // a prior error is now resolved
+  if (next.state === "error") return `${next.kind === "build" ? "build" : "render"}: ${next.message}`;
+  if (prior?.state === "error") return ""; // next is now ok/empty — a prior error is resolved, so clear it
   return null;
 }
 

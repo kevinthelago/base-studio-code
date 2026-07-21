@@ -23,6 +23,20 @@ describe("componentBundle — lookupMem", () => {
     expect(lookupMem(files, "shared/lib/x")?.contents).toBe("IDX"); // index resolution
     expect(lookupMem(files, "nope")).toBeNull();
   });
+
+  it("loads an EXTENSIONLESS key (a `src` recorded as a directory) as tsx, not jsx (#3549)", () => {
+    // WorkspaceShellPage's `src` was `src/shared/ui/layouts` — no extension — and its source is
+    // TypeScript (`import type {…}`). The extensionless key must resolve to the tsx loader, else esbuild
+    // parses the TS with the jsx loader and fails: `Expected "from" but found "{"`.
+    const dirKeyed = { "src/shared/ui/layouts": "import type { ReactNode } from 'react';" };
+    expect(lookupMem(dirKeyed, "src/shared/ui/layouts")?.loader).toBe("tsx");
+  });
+
+  it("keeps an explicit .jsx/.js key on the jsx loader (only tsx is the widened default)", () => {
+    const js = { "boot.jsx": "JSX", "util.js": "JS" };
+    expect(lookupMem(js, "boot")?.loader).toBe("jsx");
+    expect(lookupMem(js, "util")?.loader).toBe("jsx");
+  });
 });
 
 describe("componentBundle — buildComponentSrcDoc", () => {

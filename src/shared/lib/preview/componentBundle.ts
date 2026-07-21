@@ -28,7 +28,12 @@ export function lookupMem(files: Record<string, string>, path: string): { conten
   for (const ext of ["", ".tsx", ".ts", ".jsx", ".js", "/index.tsx", "/index.ts", "/index.jsx"]) {
     const key = path + ext;
     if (files[key] != null) {
-      const loader: "jsx" | "tsx" = key.endsWith(".tsx") || key.endsWith(".ts") ? "tsx" : "jsx";
+      // A component source is TypeScript/TSX. `.tsx`/`.ts` are obviously tsx; an EXTENSIONLESS key
+      // (a `src` recorded as a directory, e.g. WorkspaceShellPage's `src/shared/ui/layouts` — #3549)
+      // is ALSO a component source, so DEFAULT to tsx and use jsx only for an explicit `.jsx`/`.js`.
+      // The tsx loader is a superset (parses TS + JS + JSX), so this can only widen what parses — a
+      // TS-only source loaded as `jsx` fails on `import type {…}` with `Expected "from" but found "{"`.
+      const loader: "jsx" | "tsx" = key.endsWith(".jsx") || key.endsWith(".js") ? "jsx" : "tsx";
       return { contents: files[key], loader };
     }
   }
