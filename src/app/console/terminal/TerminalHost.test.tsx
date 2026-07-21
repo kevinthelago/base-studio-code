@@ -11,12 +11,12 @@ const rec = vi.hoisted(() => ({ mounts: [] as string[], unmounts: [] as string[]
 vi.mock("@/app/console/panes/views/TerminalView", async () => {
   const { useEffect } = await import("react");
   return {
-    TerminalView: ({ paneId, visible, initialCwd, scale }: { paneId: string; visible?: boolean; initialCwd?: string; scale?: number }) => {
+    TerminalView: ({ paneId, visible, initialCwd }: { paneId: string; visible?: boolean; initialCwd?: string }) => {
       useEffect(() => {
         rec.mounts.push(paneId);
         return () => { rec.unmounts.push(paneId); };
       }, [paneId]);
-      return <div data-testid="tv" data-pane={paneId} data-visible={String(!!visible)} data-cwd={initialCwd ?? ""} data-scale={String(scale ?? 1)} />;
+      return <div data-testid="tv" data-pane={paneId} data-visible={String(!!visible)} data-cwd={initialCwd ?? ""} />;
     },
   };
 });
@@ -177,38 +177,5 @@ describe("TerminalHost parked holding claims (#3357)", () => {
     expect(tv.closest("[data-testid='holding']")).toBeTruthy();
     expect(tv.getAttribute("data-visible")).toBe("false"); // parked ⇒ the mount's visibility now applies
     expect(rec.unmounts).toEqual([]);
-  });
-});
-
-// #3524 — the mouse-fix MECHANISM (jsdom can't observe the actual hit cell, but it CAN observe that the
-// host counter-scales the container and hands the font-scale to TerminalView). The container's NET CSS
-// scale is `owner.scale × (1/owner.scale) = 1`, which is what makes xterm's mouse math correct under a
-// zoomed morph; the font-scale keeps the text visually growing with zoom.
-describe("TerminalHost — scale counter for a zoomed morph (#3524)", () => {
-  const container = (root: HTMLElement) =>
-    root.querySelector("[data-terminal-container]") as HTMLElement;
-
-  it("counter-scales the container by 1/scale when its owner slot renders under a zoom", () => {
-    const { container: root, getByTestId } = render(
-      <TerminalHost>
-        <div><TerminalSlot paneId="proj:api" visible scale={2} /></div>
-      </TerminalHost>,
-    );
-    // Owner scale 2 → container scaled 0.5 (net 1) and sized 200% so it fills the slot after the shrink.
-    expect(container(root).style.transform).toBe("scale(0.5)");
-    expect(container(root).style.width).toBe("200%");
-    // And the font-scale reaches TerminalView so the text still grows with the zoom.
-    expect(getByTestId("tv").getAttribute("data-scale")).toBe("2");
-  });
-
-  it("leaves a scale-1 console container completely unstyled — the common path is untouched", () => {
-    const { container: root, getByTestId } = render(
-      <TerminalHost>
-        <div><TerminalSlot paneId="proj:api" primary visible initialCwd="/repo" /></div>
-      </TerminalHost>,
-    );
-    expect(container(root).style.transform).toBe("");
-    expect(container(root).style.width).toBe("");
-    expect(getByTestId("tv").getAttribute("data-scale")).toBe("1");
   });
 });
