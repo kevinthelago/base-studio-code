@@ -21,11 +21,11 @@ export function ProjectsGrid({ projects, repoIssues, loading }: {
   repoIssues: Record<string, GhIssue[]>;
   loading: boolean;
 }) {
-  const { setProjectsPageMode, setWorkspace, setActiveProjectMeta, openGithubBoard } = useAppStore();
+  const { navigate, setActiveProjectMeta, openGithubBoard } = useAppStore();
   // This portfolio lives in the GitHub screen (#421); "view list" jumps to the
   // Projects tab for planning, while opening a card shows that project's board
   // right here on the GitHub page (#498).
-  const openProjects = () => { setWorkspace("projects"); setProjectsPageMode("projects"); };
+  const openProjects = () => navigate({ workspace: "projects", page: "projects" });
   const openBoard = (p: GhProject) => {
     const repos = p.repositories?.nodes?.map(r => r.nameWithOwner) ?? [];
     setActiveProjectMeta(p.id, p.title, repos[0] ?? "", p.number, repos);
