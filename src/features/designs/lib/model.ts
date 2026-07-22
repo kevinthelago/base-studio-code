@@ -112,12 +112,14 @@ export interface ComponentRecord {
   name: string;
   kitId: string;
   role: Role;
-  /** The component's PURPOSE partition within the kit (#3048) — e.g. `data-viz` / `pages` / `forms`.
-   *  ORTHOGONAL to {@link role} (the architectural tier that drives the composition swimlanes): `group`
-   *  answers "what is this component FOR in the kit", `role` answers "what tier is it". ORGANIZATIONAL
-   *  only — `composes` still resolves across the WHOLE kit, so components in DIFFERENT groups compose
-   *  freely (a `pages` component composes a `data-viz` chart directly; kits never cross). Absent ⇒ the
-   *  kit's trailing "ungrouped" bucket (`kitGroups.ts`). OPTIONAL and NEVER defaulted — like
+  /** The component's FOLDER PATH within the kit (#3048/#3579) — a nested, `/`-delimited path
+   *  (`shared/ui/controls`, `features/github`) that organizes the kit like a completed project's
+   *  folders, DERIVED from `src` (`group_from_src` in `bsc-component`; the harvest seeds it and
+   *  `bsc ui regroup` re-derives it for the whole store). ORTHOGONAL to {@link role} (the architectural
+   *  tier that drives the composition swimlanes): `group` answers "where does this live in the project",
+   *  `role` answers "what tier is it". ORGANIZATIONAL only — `composes` still resolves across the WHOLE
+   *  kit, so components in DIFFERENT folders compose freely (kits never cross). Absent ⇒ the kit's
+   *  trailing "ungrouped" bucket (`kitGroups.ts`). OPTIONAL and NEVER defaulted — like
    *  {@link Kit.tech}/`style`, an absent `group` must stay absent (never `""`) so a store copy keeps
    *  hashing to its recorded `seedHash` and the #2483 reconcile can refresh it. */
   group?: string;
