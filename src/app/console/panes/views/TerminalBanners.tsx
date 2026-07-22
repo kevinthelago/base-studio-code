@@ -52,7 +52,7 @@ export function TerminalBanners({
           onDismiss={onDismissWarn}
           onSignInGitHub={
             warningChecks.some((c) => c.id === "gh-auth")
-              ? () => { useAppStore.getState().setWorkspace("settings"); }
+              ? () => { const s = useAppStore.getState(); s.setSettingsSection("github"); s.setWorkspace("settings"); } // #3598: land on the GitHub settings section, not the last-viewed one
               : undefined
           }
         />
