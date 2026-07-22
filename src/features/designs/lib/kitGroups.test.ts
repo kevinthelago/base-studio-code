@@ -3,7 +3,7 @@
 // ordering ("other" last), and missing-field tolerance.
 import { describe, it, expect } from "vitest";
 import type { Kit, ComponentRecord } from "./model";
-import { groupKits, groupComponentsByGroup, OTHER_BUCKET, UNGROUPED_LABEL, type KitGroup, type KitTreeNode } from "./kitGroups";
+import { groupKits, groupComponentsByFolder, folderComponentCount, OTHER_BUCKET, UNGROUPED_LABEL, UNGROUPED_KEY, type KitGroup, type KitTreeNode } from "./kitGroups";
 import { SEED_KITS, BASE_STUDIO_CODE_KIT_ID } from "./seed";
 
 const kit = (id: string, tech?: string, style?: string): Kit =>
@@ -118,34 +118,61 @@ describe("groupKits — always technology → style (#2506)", () => {
   });
 });
 
-describe("groupComponentsByGroup — the orthogonal `group` axis under a kit (#3048)", () => {
-  it("partitions by `group` in first-appearance order, the ungrouped bucket forced LAST", () => {
-    // "b" (no group) appears 2nd but its ungrouped bucket still orders last.
-    const g = groupComponentsByGroup([comp("a", "data-viz"), comp("b"), comp("c", "forms"), comp("d", "data-viz")]);
-    expect(g).not.toBeNull();
-    expect(g!.map((x) => x.label)).toEqual(["data-viz", "forms", UNGROUPED_LABEL]);
-    expect(g!.map((x) => x.key)).toEqual(["data-viz", "forms", OTHER_BUCKET]);
-    expect(g!.map((x) => x.ungrouped)).toEqual([false, false, true]);
-    // input order preserved within a bucket.
-    expect(g!.find((x) => x.key === "data-viz")!.components.map((c) => c.id)).toEqual(["a", "d"]);
-    expect(g!.find((x) => x.ungrouped)!.components.map((c) => c.id)).toEqual(["b"]);
+describe("groupComponentsByFolder — the nested folder tree under a kit (#3048/#3582)", () => {
+  it("a depth-1 group is the shallow case — flat root folders, ungrouped forced LAST", () => {
+    // "b" (no group) appears 2nd but its ungrouped bucket still orders last (the old flat behavior).
+    const t = groupComponentsByFolder([comp("a", "data-viz"), comp("b"), comp("c", "forms"), comp("d", "data-viz")]);
+    expect(t).not.toBeNull();
+    expect(t!.map((x) => x.label)).toEqual(["data-viz", "forms", UNGROUPED_LABEL]);
+    expect(t!.map((x) => x.key)).toEqual(["data-viz", "forms", UNGROUPED_KEY]);
+    expect(t!.map((x) => x.ungrouped)).toEqual([false, false, true]);
+    expect(t!.every((x) => x.folders.length === 0)).toBe(true); // depth-1 ⇒ no subfolders
+    // input order preserved within a folder.
+    expect(t!.find((x) => x.key === "data-viz")!.components.map((c) => c.id)).toEqual(["a", "d"]);
+    expect(t!.find((x) => x.ungrouped)!.components.map((c) => c.id)).toEqual(["b"]);
+  });
+
+  it("nests a `/`-path into real subfolders — a component sits at the LEAF of its path", () => {
+    const t = groupComponentsByFolder([
+      comp("btn", "shared/ui/controls"),
+      comp("field", "shared/ui/controls"),
+      comp("box", "shared/ui/layout"),
+      comp("card", "features/github"),
+    ])!;
+    expect(t.map((f) => f.label)).toEqual(["shared", "features"]); // first-appearance order
+    const shared = t.find((f) => f.key === "shared")!;
+    expect(shared.components).toEqual([]); // nothing lives directly in `shared`
+    const ui = shared.folders.find((f) => f.key === "shared/ui")!;
+    expect(ui.folders.map((f) => f.label)).toEqual(["controls", "layout"]);
+    const controls = ui.folders.find((f) => f.key === "shared/ui/controls")!;
+    expect(controls.components.map((c) => c.id)).toEqual(["btn", "field"]); // both leaves land here
+    expect(t.find((f) => f.key === "features")!.folders[0].components.map((c) => c.id)).toEqual(["card"]);
+  });
+
+  it("a folder holds BOTH direct components and subfolders (a component grouped at an interior path)", () => {
+    const t = groupComponentsByFolder([
+      comp("panel", "shared/ui"), // sits directly in `shared/ui`
+      comp("btn", "shared/ui/controls"),
+    ])!;
+    const ui = t[0].folders.find((f) => f.key === "shared/ui")!;
+    expect(ui.components.map((c) => c.id)).toEqual(["panel"]); // its own direct member
+    expect(ui.folders.map((f) => f.label)).toEqual(["controls"]); // AND a subfolder
+    expect(folderComponentCount(t[0])).toBe(2); // transitive count spans the subtree
   });
 
   it("returns null when NO component carries a group — the rail renders flat (zero regression)", () => {
-    expect(groupComponentsByGroup([comp("a"), comp("b")])).toBeNull();
+    expect(groupComponentsByFolder([comp("a"), comp("b")])).toBeNull();
     // blank/whitespace-only group counts as absent — still flat.
-    expect(groupComponentsByGroup([comp("a", "  "), comp("b", "")])).toBeNull();
-    expect(groupComponentsByGroup([])).toBeNull();
+    expect(groupComponentsByFolder([comp("a", "  "), comp("b", "")])).toBeNull();
+    expect(groupComponentsByFolder([])).toBeNull();
   });
 
-  it("any component with a group triggers nesting — even a single group, or a partial-group kit", () => {
-    // A single group nests under one header.
-    const one = groupComponentsByGroup([comp("a", "forms"), comp("b", "forms")]);
-    expect(one!.map((x) => x.label)).toEqual(["forms"]);
-    expect(one![0].components.map((c) => c.id)).toEqual(["a", "b"]);
-    // A partial-group kit: grouped components + an ungrouped-last bucket.
-    const partial = groupComponentsByGroup([comp("a", "data-viz"), comp("b")]);
-    expect(partial!.map((x) => x.label)).toEqual(["data-viz", UNGROUPED_LABEL]);
-    expect(partial![1].ungrouped).toBe(true);
+  it("a partial-group kit keeps its grouped tree plus the trailing ungrouped bucket", () => {
+    const partial = groupComponentsByFolder([comp("a", "shared/ui/data"), comp("b")])!;
+    expect(partial.map((x) => x.label)).toEqual(["shared", UNGROUPED_LABEL]);
+    expect(partial[partial.length - 1].ungrouped).toBe(true);
+    // OTHER_BUCKET stays the tech/style axis sentinel; the folder tree uses UNGROUPED_KEY.
+    expect(partial[partial.length - 1].key).toBe(UNGROUPED_KEY);
+    expect(OTHER_BUCKET).not.toBe(UNGROUPED_KEY);
   });
 });
