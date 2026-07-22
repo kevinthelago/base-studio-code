@@ -85,6 +85,7 @@ export function SessionRecoveryBanner() {
   const fleetStartProject = useAppStore((s) => s.fleetStartProject);
   const triageStartProject = useAppStore((s) => s.triageStartProject);
   const setGlanceDrill = useAppStore((s) => s.setGlanceDrill);
+  const setActivePageTab = useAppStore((s) => s.setActivePageTab);
   const setWorkspace = useAppStore((s) => s.setWorkspace);
 
   const [recoverable, setRecoverable] = useState<RecoverableSession[]>([]);
@@ -123,6 +124,7 @@ export function SessionRecoveryBanner() {
         // fleetStartProject's console navigation — after a recovery the fleet-level Glance view is
         // the surface that shows what just came back (and works even with GitHub disconnected).
         setGlanceDrill(projectKey);
+        setActivePageTab("glance", "network"); // #3598: land on the Network tab, else the drill shows nothing
         setWorkspace("glance");
       }
     }
@@ -143,7 +145,7 @@ export function SessionRecoveryBanner() {
       }
     }
     drop(new Set(sessions.map((s) => s.paneId)));
-  }, [fleetStartProject, triageStartProject, setGlanceDrill, setWorkspace, drop]);
+  }, [fleetStartProject, triageStartProject, setGlanceDrill, setActivePageTab, setWorkspace, drop]);
 
   const discard = useCallback(async (s: RecoverableSession) => {
     await invoke("reap_session", { paneId: s.paneId }).catch(() => {});
@@ -351,6 +353,7 @@ function ProjectCompleteBanner() {
   const activeProjectName = useAppStore((s) => s.activeProjectName);
   const planFleet = useAppStore((s) => s.planFleet);
   const setGlanceDrill = useAppStore((s) => s.setGlanceDrill);
+  const setActivePageTab = useAppStore((s) => s.setActivePageTab);
   const setWorkspace = useAppStore((s) => s.setWorkspace);
   const [acked, setAcked] = useState<Set<string>>(() => new Set());
   const [completeKey, setCompleteKey] = useState<string | null>(null);
@@ -382,7 +385,7 @@ function ProjectCompleteBanner() {
         <Button
           variant="primary"
           style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-          onClick={() => { setGlanceDrill(key); setWorkspace("glance"); ack(key); }}
+          onClick={() => { setGlanceDrill(key); setActivePageTab("glance", "network"); setWorkspace("glance"); ack(key); }}
         >
           Preview &amp; review
         </Button>
