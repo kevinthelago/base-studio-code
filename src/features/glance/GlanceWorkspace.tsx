@@ -103,7 +103,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const findFleetTabIdx = useAppStore((s) => s.findFleetTabIdx);
   // Opening a base-studio-code studio node reveals its session on its own workspace page (#glance-resume);
   // `paneClaudeActive` tells us whether that stable-id session is already running.
-  const setProjectsPageMode = useAppStore((s) => s.setProjectsPageMode);
+  const navigate = useAppStore((s) => s.navigate);
   const paneClaudeActive = useAppStore((s) => s.paneClaudeActive);
   const projectLinks = useAppStore((s) => s.projectLinks);
   const removeProjectLink = useAppStore((s) => s.removeProjectLink);
@@ -470,7 +470,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       const home = studioNodeHome(nodeId);
       if (!home) return;                                   // a library/resource node — no session to open
       if (home.kind === "morph") openChat(nodeId);
-      else { setWorkspace("projects"); setProjectsPageMode(home.pageMode); }
+      else navigate({ workspace: "projects", page: home.pageMode });
       return;
     }
     if (!canResume) return;
