@@ -205,7 +205,7 @@ function RepoResolverStrip({ project }: { project: ActiveProjectInfo }) {
 
 export function ProjectsHeader({ project }: ProjectsHeaderProps) {
   const {
-    setProjectsView, setPlanningContext, setPlanningSession,
+    setProjectsView, setProjectsPageMode, setPlanningContext, setPlanningSession,
     setWorkspace, githubBoardTab, setGithubBoardTab, closeGithubBoard,
   } = useAppStore();
   const { tabs: boardTabs, activeId: boardActive, select: boardSelect, reorder: boardReorder, tearOff: boardTearOff } =
@@ -221,8 +221,10 @@ export function ProjectsHeader({ project }: ProjectsHeaderProps) {
       proj.repo,
     );
     setPlanningSession(key);
-    // Planning lives on the Projects page; from the GitHub board, jump there.
+    // Planning lives on the Projects page; from the GitHub board, jump there — and onto the `projects`
+    // page MODE, else the planning view is hidden behind whatever mode (designs/teams/…) was active (#3598).
     setWorkspace("projects");
+    setProjectsPageMode("projects");
     setProjectsView("planning");
   });
 
