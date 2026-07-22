@@ -17,14 +17,15 @@ use serde_json::Value;
 /// agreed with each other and both disagreed with the CLI. Deriving the expected surface from here
 /// closes that loop: a verb renamed or removed drops out of this list, and the spec test fails on the
 /// now-unknown verb its prose still names.
-pub const VERBS: [&str; 6] = ["impl", "harvest", "curate", "dump", "doctor", "help"];
+pub const VERBS: [&str; 8] = ["impl", "harvest", "curate", "dump", "doctor", "used-by", "merge", "help"];
 
 /// The `impl` subverbs — MUST match the `match positional.get(1)` arms in [`run`].
 pub const IMPL_SUBVERBS: [&str; 3] = ["set", "remove", "list"];
 
 /// Every flag [`run`] reads, across all verbs — MUST match the `flag_value` / `args.iter()` reads below.
-pub const FLAGS: [&str; 16] = [
+pub const FLAGS: [&str; 17] = [
     "--pretty",
+    "--all",
     "--id",
     "--tech",
     "--role",
@@ -224,11 +225,52 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 emit(&serde_json::json!({ "findings": findings, "count": findings.len() }))
             }
         }
+        // `used-by <id>` / `--all` (#3594) — the composes-inverse USAGE read (measure step of the optimize
+        // loop; mirrors `bsc ui used-by`). A read.
+        "used-by" => {
+            let g = crate::load();
+            let idx = crate::used_by_index(&g);
+            if args.iter().any(|a| a == "--all") {
+                let mut rows: Vec<Value> = crate::implementations_of(&g)
+                    .iter()
+                    .map(|im| {
+                        let id = im.get("id").and_then(Value::as_str).unwrap_or("");
+                        serde_json::json!({
+                            "id": id,
+                            "name": im.get("name").and_then(Value::as_str).unwrap_or(""),
+                            "tech": im.get("tech").and_then(Value::as_str).unwrap_or(""),
+                            "count": idx.get(id).map_or(0, Vec::len),
+                        })
+                    })
+                    .collect();
+                rows.sort_by(|a, b| {
+                    b["count"].as_u64().cmp(&a["count"].as_u64()).then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
+                });
+                emit(&Value::Array(rows))
+            } else {
+                let id = positional.get(1).copied().ok_or("usage: bsc graph used-by <id>  |  bsc graph used-by --all")?;
+                if !crate::implementations_of(&g).iter().any(|im| im.get("id").and_then(Value::as_str) == Some(id)) {
+                    return Err(format!("unknown implementation '{id}'"));
+                }
+                let composers = idx.get(id).cloned().unwrap_or_default();
+                emit(&serde_json::json!({ "id": id, "usedBy": composers, "count": composers.len() }))
+            }
+        }
+        // `merge <from-id> <into-id>` (#3594) — the combine ACT (mirrors `bsc ui merge`): repoint every
+        // impl's `composes` from→into, then remove `from`.
+        "merge" => {
+            let from = positional.get(1).copied().ok_or("usage: bsc graph merge <from-id> <into-id>")?;
+            let into = positional.get(2).copied().ok_or("usage: bsc graph merge <from-id> <into-id> — the survivor id is required")?;
+            let mut g = crate::load();
+            let repointed = crate::merge_impls(&mut g, from, into)?;
+            crate::save(&g)?;
+            emit(&serde_json::json!({ "from": from, "into": into, "repointed": repointed, "removed": from }))
+        }
         "help" | "-h" | "--help" => {
             print!("{}", help(prog));
             Ok(())
         }
-        other => Err(format!("unknown graph command '{other}' — read: impl list | dump | harvest <dir> | curate <dir> | doctor; write: impl set | impl remove\n\n{}", help(prog))),
+        other => Err(format!("unknown graph command '{other}' — read: impl list | dump | harvest <dir> | curate <dir> | doctor | used-by; write: impl set | impl remove | merge\n\n{}", help(prog))),
     }
 }
 
@@ -258,10 +300,12 @@ fn help(prog: &str) -> String {
          {prog} dump [--pretty]                         # the whole store document (the implementations tier)\n  \
          {prog} harvest <dir> [--tech T] [--worthy-only] [--pretty]   # harvest a project's functions into candidate library implementations, each classified worthy vs. glue (#2745)\n  \
          {prog} curate <dir> [--tech T] [--apply] [--pretty]          # curate a project's WORTHY candidates into the library — add/optimize; --apply writes the runtime store (#2745)\n  \
-         {prog} doctor [--fix] [--pretty]               # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n\n\
+         {prog} doctor [--fix] [--pretty]               # diagnose viz typing + coverage: untyped / invalid-kind / mistyped / missing-viz; --fix assigns the inferred kind to untyped impls (#3212)\n  \
+         {prog} used-by <id> [--pretty] | used-by --all [--pretty]   # the composes-INVERSE usage: which impls compose <id>, or every impl ranked by usage — the measure step before a merge (#3594)\n\n\
          WRITE (#2853) — curate the store; a read after reflects the write:\n  \
          {prog} impl set --tech <lang> --id <id> --role primitive|algorithm --name <n> [--code <c>] [--ref <std-path>] [--composes a,b] [--summary <s>] [--domain <d>] [--tags a,b] [--kind sort|search|traversal|accumulate] [--viz-code <js>]   # upsert a language-kit impl (#2863/#2972); --domain/--tags #3120, --kind #3210 animation type, --viz-code #3218 JS trace-program\n  \
-         {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n\n\
+         {prog} impl remove <id>                        # delete an implementation + scrub it from every composes\n  \
+         {prog} merge <from-id> <into-id> [--pretty]    # fold a DUPLICATE into a survivor: repoint every impl's composes from→into (deduped), then remove `from` — the combine ACT (#3594)\n\n\
          Implementation roles (#2863): primitive (a LANGUAGE built-in — Vec, Iterator — DESCRIBED via `--ref`, not re-coded, #2972) · algorithm (real `--code` composing primitives up).\n\
          Implementation techs (#2770): typescript · rust — each `composes` other same-tech impls, rooted in the language's primitives.\n\
          The library is the per-language implementation tier; `harvest`/`curate` (#2745) mine a project's real code into candidate implementations.\n",
