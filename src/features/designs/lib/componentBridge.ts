@@ -41,6 +41,7 @@ export async function loadComponents(): Promise<ComponentRecord[] | null> {
         rules: c.rules,
         shapes: c.shapes,
         animations: c.animations, // #2942 — MOTION binding (the kit-animation names it plays); rides verbatim
+        spec: c.spec, // #3569 — a page/layout node's renderable GeneralNode skeleton; rides verbatim so the host can render from the store
         seedHash: c.seedHash, // #2483 — must ride the allowlist or the refresh baseline is lost on write-through
       }));
   } catch {
