@@ -374,6 +374,11 @@ field yourself; you only supply the `--note`.
 
 - `bsc ui list [--full]` · `bsc ui get <id>` · `bsc ui set [--by <tag>] [--note <text>]` (JSON on stdin
   or `--file`, upsert by `id`) · `bsc ui log <id>` (its change history) · `bsc ui remove <id>` — the components.
+- `bsc ui rename <id> <NewName> [--by designer] [--note <why>]` — **rename a component in one command.**
+  Never rename by hand (edit `name`, then chase every `composes`/`rules` reference, then re-`set`): this
+  does it all in one sweep, and does it right. The `id` is FROZEN, so history/tokens/variants survive; the
+  command moves the `name` + its `srcText` identifier and rewrites every sibling's `composes[]`/`rules.use`
+  across the kit. Reach for it the moment a component deserves a clearer name — a good name is cheap now.
 - `bsc ui kit list` · `bsc ui kit get <id>` · `bsc ui kit set` · `bsc ui kit remove <id>` — the kits
   (technology-scoped namespaces: `{ id, name, tech, style, stack?, dot }` — see "The kit model";
   `tech` + `style` place the kit in the rail, omit them and it shows as "other/other").
@@ -522,6 +527,9 @@ Each component record carries:
   one — extend it with a variant (rung 3) rather than duplicating it.
 - **Variants over forks**: a visual tweak is a new `variant` on the existing component, not a new
   component.
+- **Rename, don't re-create**: a component that outgrew its name gets `bsc ui rename <id> <NewName>` —
+  never a fresh component under a new id (that forks the graph, orphans the history, and leaves the old
+  one to prune). The rename keeps the id and sweeps every reference for you.
 - **Rules protect the kit**: when a component `wraps` an intrinsic or replaces a library, carry the
   matching rule so generated apps can't drift around it.
 - **Validate first**: run `bsc ui validate` on every spec before `bsc ui set`; never write a spec
