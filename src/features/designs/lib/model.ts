@@ -6,6 +6,7 @@
 
 import type { KitAnimation, AnimationDef } from "@/shared/ui/kit/animations";
 import { BASE_KIT_ID } from "@/shared/ui/kit/baseAnimations";
+import type { GeneralNode } from "@/shared/ui/spec";
 
 /** A component's architectural role — drives its accent color + grouping. */
 export type Role = "primitive" | "composite" | "layout" | "page" | "service";
@@ -156,6 +157,12 @@ export interface ComponentRecord {
    *  data-rendering composites (rows, feeds, property lists); absent ⇒ not shape-indexed (chrome,
    *  controls, chrome-level layouts that host arbitrary panes rather than render a data collection). */
   shapes?: DataShape[];
+  /** The renderable STRUCTURE of a `page`/`layout`-role component as a validated data tree (#3569),
+   *  rendered by `KitRenderer`. This is what makes a page's skeleton editable IN THE GRAPH: the host
+   *  (e.g. `Fleet.tsx`) renders the store node's `spec` — its hand-authored const is only the
+   *  seed/fallback — so editing the node in the Design Studio reflects on the real page. Absent ⇒ the
+   *  component has no data-tree layout (a leaf primitive, or a page not migrated to a spec yet). */
+  spec?: GeneralNode;
   /** Content hash of the seed copy this record came from (#2483) — see {@link Kit.seedHash}. */
   seedHash?: string;
   /** MOTION binding (#2942/#3065) — each entry is EITHER a kit-animation NAME (resolved from the owning
