@@ -702,6 +702,10 @@ function Inspector(p: InspProps) {
             <Box style={{ flex: 1, minWidth: 0 }}>
               <Text weight={600} size={16} style={{ letterSpacing: "-.01em" }}>{sel.name}</Text>
               <Text size={11.5} tone="muted" as="div" style={{ marginTop: 2 }}>{sel.role} · {p.kitName}</Text>
+              {/* Folder breadcrumb (#3589) — WHERE this component lives in the kit's project tree. */}
+              {sel.group && (
+                <Text mono size={10} tone="dim" as="div" title="folder" style={{ marginTop: 1 }}>{sel.group}</Text>
+              )}
             </Box>
             {/* THEME switcher (#2488/#2545) — a header-level control beside the component name (#3085):
                 the ONE theme control (hydrated light/dark + designer-authored), driving both the surface
