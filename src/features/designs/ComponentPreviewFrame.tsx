@@ -16,7 +16,7 @@ import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { bundleComponent, buildComponentSrcDoc } from "@/shared/lib/preview/componentBundle";
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
 import { compileAnimationsCss, animClassName, type AnimationDef } from "@/shared/ui/kit";
-import { componentPreviewFiles, type KitArtifact, type PreviewState } from "./lib/componentPreview";
+import { componentPreviewFiles, supportedStates, type KitArtifact, type PreviewState } from "./lib/componentPreview";
 import { usePreviewData } from "./usePreviewData";
 import { recordPreviewError } from "./lib/componentBridge";
 import { registerPreviewFrame, unregisterPreviewFrame } from "./lib/previewRegistry";
@@ -178,6 +178,11 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   // sounding like the packaged starter kit.
   const soundKit = useActiveSoundKit();
   const libResolver = useMemo(() => makeLibraryResolvers(soundKit).libraryModuleResolver, [soundKit]);
+  // #3567: build ONCE with every supported state's props embedded, so a state change is a live re-render
+  // (postMessage below), not an esbuild rebuild + reload + "building" flash — the same live-apply pattern
+  // as the theme (#3556). The scan keeps its per-state single builds (not passed `liveStates`).
+  const liveStates = useMemo(() => supportedStates(comp), [comp]);
+  const liveStatesKey = liveStates.join(",");
 
   // Rebuild when the selection / theme / retry / resolved preview-data changes (keyed on stable fields).
   useEffect(() => {
@@ -186,7 +191,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     setStatus("building");
     setError("");
     /* eslint-enable react-hooks/set-state-in-effect */
-    const build = componentPreviewFiles(comp, ARTIFACT, siblings, libResolver, previewState, previewData);
+    const build = componentPreviewFiles(comp, ARTIFACT, siblings, libResolver, previewState, previewData, liveStates);
     if (!build) {
       setStatus("error");
       setError(
@@ -248,11 +253,12 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
       }
     })();
     return () => { cancelled = true; };
-    // #3556: `themeId`/`themeCss`/`theme` are deliberately NOT deps — a theme change must NOT rebuild (that
-    // would reset the pan/zoom engine). It's applied live by the effect below; the initial build reads the
-    // current `themeCss`/`theme` fresh.
+    // #3556: `themeId`/`themeCss`/`theme` are NOT deps — a theme change must NOT rebuild (it would reset the
+    // pan/zoom engine); applied live below. #3567: `previewState` is NOT a dep either — a state change must
+    // NOT rebuild (it flashes "building"); applied live below. The initial build reads the current theme +
+    // state fresh; `liveStatesKey` rebuilds only when the component gains/loses a supported state.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, previewState, scrollY, hasZoomEngine, retry, previewData, libResolver]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, liveStatesKey, scrollY, hasZoomEngine, retry, previewData, libResolver]);
 
   // #3556: apply a theme change LIVE to the mounted iframe (data-theme base + the `__bsc_theme` token
   // overrides) via postMessage — no rebuild, so the in-iframe pan/zoom view survives a theme switch. Keyed
@@ -260,6 +266,13 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   useEffect(() => {
     iframeRef.current?.contentWindow?.postMessage({ __bsc_theme: { base: theme, css: themeCss } }, "*");
   }, [themeId, theme, themeCss]);
+
+  // #3567: apply a STATE change LIVE — post `{ __state }` to the mounted iframe, which re-renders the
+  // component with that state's embedded props. No esbuild, no reload, no "building" flash. The initial
+  // build already mounted the current state.
+  useEffect(() => {
+    iframeRef.current?.contentWindow?.postMessage({ __state: previewState }, "*");
+  }, [previewState]);
 
   // #3190 crisp pass: hand the host the engine's +/−/fit controls. The engine lives in the iframe, so each
   // call posts a `__cmd` message to it; re-registered whenever the iframe rebuilds (`retry`/comp switch).

@@ -353,6 +353,30 @@ describe("bootstrapSource — data-state threads to the sampled props (#3135)", 
     expect(bootstrapSource(chart, "@/x/Chart", "empty")).toContain('"data": []');
     expect(bootstrapSource(chart, "@/x/Chart", "loading")).toContain('"loading": true');
   });
+
+  it("with liveStates, embeds EVERY state's props once + a `__state` re-render handler (#3567)", () => {
+    const src = bootstrapSource(chart, "@/x/Chart", "loaded", {}, ["loading", "loaded", "empty"]);
+    // every state's props are in the __STATES map …
+    expect(src).toContain("const __STATES = {");
+    expect(src).toContain('"loading": {'); // loading state's props
+    expect(src).toContain('"loaded": {');
+    expect(src).toContain('"empty": {');
+    expect(src).toContain('"data": []'); // the empty state's collection, embedded alongside the others
+    // … one root, switched by a message, not rebuilt.
+    expect(src).toContain('let __state = "loaded"'); // opens on the requested initial state
+    expect(src).toContain("createRoot(document.getElementById(\"root\"))");
+    expect(src).toContain("e.data && e.data.__state"); // the live-switch handler
+    expect(src).toContain("__STATES[__state]");
+    // a single root (not one per state) — the whole point is no rebuild/remount.
+    expect(src.match(/createRoot\(/g)?.length).toBe(1);
+  });
+
+  it("without liveStates, the single-state entry is byte-unchanged (the scan's path) (#3567)", () => {
+    const single = bootstrapSource(chart, "@/x/Chart", "loading");
+    expect(single).not.toContain("__STATES");
+    expect(single).not.toContain("__state");
+    expect(single).toContain('"loading": true'); // just the one state, inline
+  });
 });
 
 describe("bootstrapSource — role-aware mount wrapper (#3139)", () => {
