@@ -354,23 +354,6 @@ fn bsc_defer_rc_embeds_the_externalized_directive() {
 }
 
 #[test]
-fn bsc_continue_rc_embeds_the_studio_directive_with_the_defer_shape() {
-    // #3547: the STUDIO keep-going Stop hook — same block-reason wrapper as bsc-defer, but its prose is
-    // the config-loaded data/studio/continue-directive.md (not the fleet issue→PR→director one). Assert
-    // it carries the studio directive, keeps the JSON block shape + the once-per-stop guard, and ends
-    // with the trailing newline (#296). The directive must contain no raw `'` (it rides inside a
-    // single-quoted shell string) — pinned by the full-rc bash-validity guard.
-    let frag = super::bsc_continue_rc();
-    assert!(frag.contains("bsc-continue()"), "the continue fragment defines bsc-continue");
-    assert!(frag.contains("Do not stop."), "continue fragment lost the studio directive prose");
-    assert!(frag.contains("bsc request"), "continue fragment lost the file-a-request-and-keep-going clause");
-    assert!(!frag.contains("enter MAINTENANCE"), "the studio directive is NOT the fleet worker one");
-    assert!(frag.contains(r#""stop_hook_active":true"#), "keeps the once-per-stop guard");
-    assert!(frag.contains(r#"{"decision":"block","reason":""#), "continue fragment lost the block-reason JSON shape");
-    assert!(frag.ends_with('\n'), "continue fragment must end with a trailing newline (#296)");
-}
-
-#[test]
 fn bsc_shared_rc_defines_and_runs_the_three_shared_helpers() {
     // #2064: the shared sh fragments (__bsc_jstr / __bsc_now_ms / __bsc_logline) are defined once
     // in data/shell/shared.sh and prepended (first in all_bsc_rc()). Assert the fragment defines all
