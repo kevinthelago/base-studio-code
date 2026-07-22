@@ -16,7 +16,7 @@
 // The seam is: this file says WHERE, the host says WHAT (`slots`) and WITH WHICH VALUES (`binds`).
 // The six stat tiles bind their numbers individually rather than being one opaque host slot — a stat
 // grid delivered as a single slot would render identically and prove nothing.
-import type { GeneralNode } from "@/shared/ui/spec";
+import { validateGeneralNode, type GeneralNode } from "@/shared/ui/spec";
 
 /** One KPI tile. `v`/`tone`/`loading` come from host state; the label and caption are fixed prose. */
 function statCard(k: string, sub: string, valueKey: string, opts: { tone?: string; toneKey?: string; loadingKey?: string } = {}): GeneralNode {
@@ -39,6 +39,11 @@ function column(slots: string[]): GeneralNode {
     children: slots.map((name) => ({ type: "Slot", props: { name } }) as GeneralNode),
   };
 }
+
+/** The Fleet page's node id in the components store (the harvested `FleetPage`, #3569) — the host reads
+ *  that node's `spec` and renders it, so a Design Studio edit reflects on the real page. This const below
+ *  is the SEED/FALLBACK, used until the store node carries a valid `spec`. */
+export const FLEET_PAGE_ID = "fleetpage";
 
 export const FLEET_PAGE_SPEC: GeneralNode = {
   type: "Box",
@@ -117,3 +122,10 @@ export const FLEET_PAGE_SPEC: GeneralNode = {
     },
   },
 };
+
+/** Resolve the Fleet page's skeleton (#3569): the components-store node's `spec` when it is present AND
+ *  valid, else the packaged {@link FLEET_PAGE_SPEC} seed. Validating here means a malformed store edit
+ *  falls back to a working page instead of crashing the renderer. Pure — the host wraps it in `useMemo`. */
+export function resolveFleetSpec(storeSpec: GeneralNode | undefined): GeneralNode {
+  return storeSpec && validateGeneralNode(storeSpec).length === 0 ? storeSpec : FLEET_PAGE_SPEC;
+}
