@@ -196,13 +196,16 @@ export const ROLE_COLOR: Record<Role, string> = {
   service: "var(--state-wait)",
 };
 
-/** Does a component match a free-text query (name / role / tag, case-insensitive)? Empty query → all. */
+/** Does a component match a free-text query (name / role / folder / tag, case-insensitive)? The `group`
+ *  folder path (#3579) matches too, so a query like `charts` or `features/github` filters the rail to a
+ *  folder. Empty query → all. */
 export function matchesQuery(c: ComponentRecord, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   return (
     c.name.toLowerCase().includes(q) ||
     c.role.includes(q) ||
+    (c.group ?? "").toLowerCase().includes(q) ||
     c.tags.some((t) => t.toLowerCase().includes(q))
   );
 }
