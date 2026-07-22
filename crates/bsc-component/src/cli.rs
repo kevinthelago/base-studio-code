@@ -970,10 +970,11 @@ fn cmd_regroup(args: &[String]) -> Result<(), String> {
     let mut scanned = 0usize;
     let mut changed = Vec::new();
     let mut updated = Vec::new();
-    for id in store.list() {
-        let Some(raw) = store.get(&id)? else { continue };
+    // `Store::list()` yields each record's VERBATIM JSON (NOT its id) — parse each directly; the id is
+    // the record's own `id` field (which `set_stamped` also keys the write off).
+    for raw in store.list() {
         let mut rec: serde_json::Value = serde_json::from_str(&raw)
-            .map_err(|e| format!("stored record '{id}' is not valid JSON: {e}"))?;
+            .map_err(|e| format!("a stored component is not valid JSON: {e}"))?;
         if let Some(k) = &kit {
             if rec.get("kitId").and_then(serde_json::Value::as_str) != Some(k.as_str()) {
                 continue;
@@ -986,6 +987,7 @@ fn cmd_regroup(args: &[String]) -> Result<(), String> {
         if old == new_group {
             continue;
         }
+        let id = rec.get("id").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
         changed.push(serde_json::json!({ "id": id, "from": old, "to": new_group }));
         rec["group"] = serde_json::Value::String(new_group);
         updated.push(rec);
