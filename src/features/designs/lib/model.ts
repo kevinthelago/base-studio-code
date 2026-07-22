@@ -92,6 +92,21 @@ export interface KitRule {
 }
 
 /** One proven component in a kit — the record the library stores and the pane renders. */
+/** One row of a component's change {@link ComponentRecord.history} (#3568) — appended by the Rust stamp
+ *  boundary on every write so a session can review what changed, when, by whom, and why before editing. */
+export interface ChangeEntry {
+  /** The record `rev` this write produced (1 = the first write). */
+  rev: number;
+  /** ISO-8601 UTC timestamp of the write. */
+  at: string;
+  /** The writer tag — `bsc ui set --by …`, else the session's `$BSC_UI_WRITER`, else `"unknown"`. */
+  by: string;
+  /** Optional human summary of WHY the write happened (`bsc ui set --note …`). */
+  note?: string;
+  /** The top-level fields that changed on this write; `["created"]` on the very first write. */
+  changed: string[];
+}
+
 export interface ComponentRecord {
   id: string;
   name: string;
@@ -156,6 +171,14 @@ export interface ComponentRecord {
    *  draw-in or a component-scoped `selector` animation not worth lifting to the kit). Resolved by
    *  {@link resolveComponentAnimations}. Absent ⇒ no motion. */
   animations?: (string | KitAnimation)[];
+  /** Provenance stamp (#3164) — the store bumps `rev` and records who/when on every write. Absent on a
+   *  legacy record never written since the stamp landed (reads as rev 0). */
+  rev?: number;
+  updatedAt?: string;
+  updatedBy?: string;
+  /** Change history (#3568) — one capped entry per write, stored NEWEST-LAST. `bsc ui log <id>` reads
+   *  them newest-first; the inspector's History tab renders them. Absent ⇒ never written since #3568. */
+  history?: ChangeEntry[];
 }
 
 /** The shared zero-state title — Design Studio and the Planner Components pane must say the same

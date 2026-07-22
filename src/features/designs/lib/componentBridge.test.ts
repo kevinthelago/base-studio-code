@@ -50,6 +50,27 @@ describe("componentBridge → bsc ui (#2469)", () => {
     expect(comps?.[1].group).toBeUndefined();
   });
 
+  it("a component's #3568 change `history` + provenance ride through loadComponents (the inspector History tab reads them)", async () => {
+    vi.mocked(bsc).mockResolvedValueOnce(JSON.stringify([
+      {
+        id: "btn", name: "Button", kitId: "react-ui", role: "primitive",
+        rev: 2, updatedAt: "2026-07-16T00:01:00Z", updatedBy: "alice",
+        history: [
+          { rev: 1, at: "2026-07-16T00:00:00Z", by: "designer", note: "initial", changed: ["created"] },
+          { rev: 2, at: "2026-07-16T00:01:00Z", by: "alice", changed: ["name"] },
+        ],
+      },
+      { id: "chip", name: "Chip", kitId: "react-ui", role: "primitive" }, // legacy — no stamp/history
+    ]));
+    const comps = await loadComponents();
+    expect(comps?.[0]).toMatchObject({ rev: 2, updatedBy: "alice" });
+    expect(comps?.[0].history).toHaveLength(2);
+    expect(comps?.[0].history?.[1]).toEqual({ rev: 2, at: "2026-07-16T00:01:00Z", by: "alice", changed: ["name"] });
+    // A legacy row surfaces no provenance (absent ⇒ the History tab falls back).
+    expect(comps?.[1].history).toBeUndefined();
+    expect(comps?.[1].rev).toBeUndefined();
+  });
+
   it("a page node's #3569 `spec` (GeneralNode skeleton) rides verbatim through loadComponents — so the host can render from the store", async () => {
     const spec = { type: "Box", props: { className: "an-page" }, children: [{ type: "Slot", props: { name: "workerBoard" } }] };
     vi.mocked(bsc).mockResolvedValueOnce(JSON.stringify([

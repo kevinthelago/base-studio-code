@@ -45,7 +45,8 @@ import { analyzeGraphHealth, analyzeMotion, HEALTH_SEVERITY, HEALTH_BADGE, type 
 import { StatusDot } from "@/shared/ui/feedback/StatusDot";
 import { RoleDot } from "./kitChrome";
 import { RailTree } from "./RailTree";
-import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNamedAnimation, selectAnimationPreset, ROLE_COLOR, ROLES, type ComponentRecord } from "./lib/model";
+import { matchesQuery, resolveComposes, resolveComponentAnimationDefs, resolveNamedAnimation, selectAnimationPreset, ROLE_COLOR, ROLES, type ComponentRecord, type ChangeEntry } from "./lib/model";
+import { timeAgo } from "@/shared/lib/core/format";
 import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useUiActivity } from "./lib/uiActivity";
 import { useComponentScan } from "./lib/useComponentScan";
@@ -67,7 +68,7 @@ type PreviewTheme = "dark" | "light";
 import type { KitThemeRecord } from "./lib/themes";
 import "./designStudio.css";
 
-type Tab = "overview" | "source" | "usage";
+type Tab = "overview" | "source" | "usage" | "history";
 type Viewport = "sm" | "md" | "auto";
 
 // Cross-graph library band (#3116) — the fenced top band of algorithm nodes a kit's components `require`.
@@ -756,7 +757,7 @@ function Inspector(p: InspProps) {
           {/* detail tabs */}
           <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <Box className="ds-tabs">
-              {(["overview", "source", "usage"] as Tab[]).map((t) => (
+              {(["overview", "source", "usage", "history"] as Tab[]).map((t) => (
                 <Box as="button" key={t} role="tab" aria-selected={p.tab === t} className={`ds-tab${p.tab === t ? " on" : ""}`} onClick={() => p.setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</Box>
               ))}
               <Box style={{ flex: 1 }} />
@@ -776,6 +777,7 @@ function Inspector(p: InspProps) {
                   <GuideCard tone="danger" title="✗ When NOT to use" items={sel.whenNot} glyph="✕" />
                 </Box>
               )}
+              {p.tab === "history" && <InspectorHistory sel={sel} />}
             </Box>
           </Box>
     </Box>
@@ -835,6 +837,53 @@ function InspectorOverview({ sel, allVariants, activeVariant, composes, onSelect
           </>
         ) : <Text size={11.5} tone="dim" style={{ fontStyle: "italic" }}>Primitive — composes nothing.</Text>}
       </Box>
+    </Box>
+  );
+}
+
+/** The History tab body (#3568) — the component's change log, newest-first: one row per write with its
+ *  rev, writer, when, optional note, and the fields that changed. The Rust stamp boundary records these on
+ *  every `bsc ui` write (`bsc ui log <id>` reads the same log), so a session can review a component's past
+ *  before editing it. Legacy records (never written since #3568) fall back to the single provenance stamp. */
+function InspectorHistory({ sel }: { sel: ComponentRecord }) {
+  // Stored oldest-first; the log reads newest-first (mirrors record::log_value).
+  const entries: ChangeEntry[] = useMemo(() => [...(sel.history ?? [])].reverse(), [sel.history]);
+  return (
+    <Box style={{ padding: "14px 14px 16px" }}>
+      <Text mono size="xxs" tone="dim" as="div" style={{ letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 10 }}>
+        Change history{entries.length ? ` · ${entries.length}` : ""}
+      </Text>
+      {entries.length ? (
+        <Box style={{ display: "flex", flexDirection: "column", gap: 0, borderLeft: "1px dashed var(--border)", paddingLeft: 14 }}>
+          {entries.map((e, i) => (
+            <Box key={`${e.rev}-${i}`} style={{ position: "relative", paddingBottom: i === entries.length - 1 ? 0 : 16 }}>
+              {/* timeline dot */}
+              <Box style={{ position: "absolute", left: -20, top: 3, width: 8, height: 8, borderRadius: "50%", background: i === 0 ? "var(--accent)" : "var(--fg-muted)", border: "2px solid var(--bg-canvas)" }} />
+              <Box style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: e.note ? 5 : 6 }}>
+                <Text mono size={10.5} tone="accent" style={{ background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 5, padding: "1px 6px" }}>rev {e.rev}</Text>
+                <Text size={11.5} weight={600}>{e.by || "unknown"}</Text>
+                {e.at && <Text size={11} tone="dim" title={e.at}>{timeAgo(e.at) || e.at}</Text>}
+              </Box>
+              {e.note && <Text size={11.5} tone="muted" as="div" style={{ lineHeight: 1.45, marginBottom: 6 }}>{e.note}</Text>}
+              <Box style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {e.changed.map((f) => (
+                  <Text key={f} mono size={10.5} tone={f === "created" ? "accent" : "muted"} style={{ background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 5, padding: "1px 6px" }}>{f}</Text>
+                ))}
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      ) : (
+        <Box className="ds-inspbox">
+          <Box className="ds-insprow">
+            <Text size={11.5} tone="dim">
+              {sel.updatedBy
+                ? `No detailed history — last written by ${sel.updatedBy}${sel.updatedAt ? ` ${timeAgo(sel.updatedAt) || ""}` : ""} (rev ${sel.rev ?? 0}).`
+                : "No change history yet — it accrues one entry per edit as the component is authored."}
+            </Text>
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 }
