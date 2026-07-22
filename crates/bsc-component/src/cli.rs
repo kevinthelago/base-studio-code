@@ -163,6 +163,28 @@ REFUSES when <NewName> is not a PascalCase identifier, equals the current name, 
 component in the same kit (which would make `composes` ambiguous). A ui-scope MUTATION.",
     },
     CmdDoc {
+        name: "merge",
+        summary: "combine a duplicate INTO a survivor — repoints every reference, then removes it (#3592)",
+        usage: "\
+USAGE:
+  bsc ui merge <from-id> <into-id> [--by <tag>] [--note <text>] [--dir D] [--pretty]
+
+Folds the component `<from-id>` INTO `<into-id>` (the survivor) in ONE operation — the ACT step that closes
+the `dupes`/`similar` loop (which only PROPOSE). `<into>` stays authoritative (its own name, srcText,
+props); `<from>` is removed and everything that referenced it now references `<into>`. Scoped to the kit —
+`composes` is name-keyed and kits never cross, so a cross-kit merge is refused.
+
+Repoints, across the survivor's kit:
+  • every component's `composes[]` entry == <from>'s name → <into>'s name (deduped; a self-reference the
+    fold would create — e.g. <into> composed <from> — is dropped, never a component composing itself);
+  • every `rules[].use` == <from>'s name → <into>'s name.
+Then DELETES the `<from>` record. Every repointed record gets a change-history entry (#3568); `--note`
+overrides the default \"merged <from> → <into>\" summary. Prints { from, into, kit, repointed: [ids], removed }.
+
+Pair with `bsc ui used-by`: merge the LESS-used component into the more-used one. REFUSES when either id is
+absent, they are the same, or they live in different kits. A ui-scope MUTATION.",
+    },
+    CmdDoc {
         name: "kit",
         summary: "operate on the KITS instead of the components",
         usage: "\
@@ -585,7 +607,7 @@ fn is_scoped_mutation(args: &[String]) -> bool {
     };
     matches!(
         verb.map(String::as_str),
-        Some("set") | Some("remove") | Some("rename") | Some("define-animation") | Some("remove-animation") | Some("regroup")
+        Some("set") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("regroup")
     ) && next.map(String::as_str) != Some("help")
 }
 
@@ -825,6 +847,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("rename") if args.get(1).map(String::as_str) != Some("help") => cmd_rename(&args[1..]),
         Some("rename") => {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "rename"));
+            Ok(())
+        }
+        // `merge` (#3592) — fold a duplicate INTO a survivor, repointing the NAME-keyed composes/rules
+        // references then removing it. The ACT step of the optimize loop. Scope gate above applies.
+        Some("merge") if args.get(1).map(String::as_str) != Some("help") => cmd_merge(&args[1..]),
+        Some("merge") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "merge"));
             Ok(())
         }
         // `list --shape <shape>` (#2475) filters to one shape's ideal components — intercepted here
@@ -1168,6 +1197,132 @@ fn cmd_rename(args: &[String]) -> Result<(), String> {
         "kit": kit_id,
         "updated": updated,
         "referencesUpdated": references_updated,
+    });
+    let text = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    println!("{}", text.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `merge <from-id> <into-id> [--by <tag>] [--note <text>] [--dir D] [--pretty]` (#3592) — fold the
+/// component `from` INTO `into` (the survivor) and remove `from`. The ACT step of the optimize loop
+/// (`dupes`/`similar` only propose). `into` stays authoritative; every same-kit `composes[]`/`rules[].use`
+/// that named `from` is repointed to `into` (deduped; a self-reference the fold would create is dropped),
+/// then `from` is deleted. Every repointed record gets a change-history entry (#3568). Scoped to the kit
+/// (`composes` is name-keyed; a cross-kit merge is refused). A ui-scope MUTATION, gated in [`run`].
+fn cmd_merge(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut pretty, mut by, mut note) = (None::<String>, false, None::<String>, None::<String>);
+    let mut positionals: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            "--by" => by = it.next().cloned(),
+            "--note" => note = it.next().cloned(),
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            positional => positionals.push(positional.to_string()),
+        }
+    }
+    let from_id = positionals.first().ok_or("usage: bsc ui merge <from-id> <into-id> [--by <tag>] [--note <text>]")?;
+    let into_id = positionals.get(1).ok_or("usage: bsc ui merge <from-id> <into-id> — the survivor id is required")?;
+    if from_id == into_id {
+        return Err(format!("cannot merge '{from_id}' into itself"));
+    }
+
+    let store = open_component_store(&dir)?;
+    let load = |id: &str| -> Result<serde_json::Value, String> {
+        let raw = store
+            .get(id)?
+            .ok_or_else(|| format!("no component '{id}' in the store (see `bsc ui list --raw`)"))?;
+        serde_json::from_str(&raw).map_err(|e| format!("stored component '{id}' is not valid JSON: {e}"))
+    };
+    let from = load(from_id)?;
+    let into = load(into_id)?;
+    let from_name = from.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+    let into_name = into.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+    if from_name.is_empty() || into_name.is_empty() {
+        return Err("both components must have a `name` to merge".to_string());
+    }
+    let from_kit = from.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("");
+    let into_kit = into.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("");
+    if from_kit != into_kit {
+        return Err(format!(
+            "'{from_id}' is in kit '{from_kit}' but '{into_id}' is in '{into_kit}' — `composes` is name-keyed WITHIN a kit, so a cross-kit merge is unsafe. Move one into the other's kit first, or merge within a kit."
+        ));
+    }
+    let kit_id = from_kit.to_string();
+
+    let now = crate::record::now_iso();
+    let writer = crate::record::resolve_writer(by.as_deref());
+    let default_note = format!("merged {from_name} → {into_name}");
+    let note_str = note.as_deref().map(str::trim).filter(|s| !s.is_empty()).unwrap_or(&default_note);
+
+    let records: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    let mut repointed: Vec<String> = Vec::new();
+    for mut rec in records {
+        // Only same-kit records reference `from` by name; and the `from` record itself is being removed.
+        if rec.get("kitId").and_then(serde_json::Value::as_str) != Some(kit_id.as_str()) {
+            continue;
+        }
+        let rid = match rec.get("id").and_then(serde_json::Value::as_str) {
+            Some(s) if !s.is_empty() && s != from_id => s.to_string(),
+            _ => continue,
+        };
+        let own_name = rec.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+        let mut changed = false;
+
+        if let Some(arr) = rec.get_mut("composes").and_then(serde_json::Value::as_array_mut) {
+            let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+            let mut next: Vec<serde_json::Value> = Vec::with_capacity(arr.len());
+            let mut any = false;
+            for e in arr.iter() {
+                let Some(orig) = e.as_str() else { continue };
+                let mapped: &str = if orig == from_name.as_str() { into_name.as_str() } else { orig };
+                if orig == from_name.as_str() {
+                    any = true; // a from → into repoint
+                }
+                // Drop a self-reference the fold would create, and dedup (a component that composed BOTH
+                // `from` AND `into` must not end up composing `into` twice).
+                if mapped == own_name.as_str() || !seen.insert(mapped.to_string()) {
+                    any = true;
+                    continue;
+                }
+                next.push(serde_json::Value::from(mapped));
+            }
+            if any {
+                *arr = next;
+                changed = true;
+            }
+        }
+        if let Some(rules) = rec.get_mut("rules").and_then(serde_json::Value::as_array_mut) {
+            for rule in rules.iter_mut() {
+                if rule.get("use").and_then(serde_json::Value::as_str) == Some(from_name.as_str()) {
+                    rule["use"] = serde_json::Value::from(into_name.as_str());
+                    changed = true;
+                }
+            }
+        }
+
+        if changed {
+            let prior = current_record(&store, &rid)?;
+            crate::record::stamp_with_history(&mut rec, &prior, &writer, &now, Some(note_str));
+            store.set(&rid, &serde_json::to_string(&rec).map_err(|e| format!("merge write: {e}"))?)?;
+            bsc_util::emit_ui_activity("component", &rid);
+            repointed.push(rid);
+        }
+    }
+
+    // Remove the merged-away component LAST, once every reference is repointed.
+    store.remove(from_id)?;
+    bsc_util::emit_ui_activity("component", from_id);
+
+    let out = serde_json::json!({
+        "from": from_id,
+        "into": into_id,
+        "kit": kit_id,
+        "repointed": repointed,
+        "removed": from_id,
     });
     let text = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
     println!("{}", text.map_err(|e| e.to_string())?);
@@ -3249,7 +3404,7 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "list", "shapes", "get", "log", "set", "remove", "rename", "kit", "eslint-preset", "usage",
+                "list", "shapes", "get", "log", "set", "remove", "rename", "merge", "kit", "eslint-preset", "usage",
                 "doctor", "dupes", "similar", "used-by", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "regroup", "preview-props", "preview-errors", "preview-error"
             ]
@@ -4466,6 +4621,70 @@ mod tests {
             let err = run(vec!["rename".into(), "button".into(), "New".into()], "bsc ui").unwrap_err();
             assert!(err.contains("read-only"), "rename refuses read-scoped: {err}");
             assert!(run(vec!["rename".into(), "help".into()], "bsc ui").is_ok(), "rename help stays reachable read-scoped");
+        });
+    }
+
+    #[test]
+    fn merge_folds_from_into_survivor_repoints_dedups_and_removes() {
+        let store = tmp_component_store("merge");
+        let dir = store.dir().to_string_lossy().into_owned();
+        // Card (survivor) · CardView (dup) · Page composes BOTH + a rule using CardView · Card composes
+        // CardView (the self-ref the fold creates) · a same-named CardView in ANOTHER kit.
+        for rec in [
+            serde_json::json!({ "id": "card", "name": "Card", "kitId": "k", "role": "composite", "composes": ["CardView"] }),
+            serde_json::json!({ "id": "cardview", "name": "CardView", "kitId": "k", "role": "composite", "composes": [] }),
+            serde_json::json!({ "id": "page", "name": "Page", "kitId": "k", "role": "page",
+                "composes": ["Card", "CardView", "Icon"],
+                "rules": [{ "id": "r1", "kind": "forbid-element", "target": "div", "use": "CardView" }] }),
+            serde_json::json!({ "id": "muicardview", "name": "CardView", "kitId": "mui", "role": "composite" }),
+        ] {
+            store.set(rec["id"].as_str().unwrap(), &rec.to_string()).unwrap();
+        }
+
+        run(vec!["merge".into(), "cardview".into(), "card".into(), "--by".into(), "curator".into(), "--dir".into(), dir.clone()], "bsc ui")
+            .expect("merge lands");
+
+        // `from` is GONE; `into` survives.
+        assert!(store.get("cardview").unwrap().is_none(), "the merged-away component is removed");
+        // Page: CardView→Card, DEDUPED (had both Card + CardView ⇒ Card once); Icon kept; rule repointed; history stamped.
+        let p = stored(&store, "page");
+        assert_eq!(p["composes"], serde_json::json!(["Card", "Icon"]), "deduped composes; Icon untouched");
+        assert_eq!(p["rules"][0]["use"], "Card", "rules.use repointed");
+        assert_eq!(p["history"].as_array().unwrap().last().unwrap()["note"], "merged CardView → Card");
+        // Card composed CardView (== itself after the fold) ⇒ the self-reference is DROPPED.
+        assert_eq!(stored(&store, "card")["composes"], serde_json::json!([]), "no component composes itself");
+        // The other kit's CardView is never touched (kits never cross).
+        assert_eq!(stored(&store, "muicardview")["name"], "CardView");
+        assert!(stored(&store, "muicardview").get("history").is_none());
+    }
+
+    #[test]
+    fn merge_refuses_self_absent_and_cross_kit_without_removing() {
+        let store = tmp_component_store("merge-refuse");
+        let dir = store.dir().to_string_lossy().into_owned();
+        store.set("a", &serde_json::json!({ "id": "a", "name": "A", "kitId": "k1" }).to_string()).unwrap();
+        store.set("b", &serde_json::json!({ "id": "b", "name": "B", "kitId": "k2" }).to_string()).unwrap();
+        let refuse = |args: &[&str], needle: &str| {
+            let v: Vec<String> = args.iter().map(|s| s.to_string()).chain(["--dir".to_string(), dir.clone()]).collect();
+            let err = run(v, "bsc ui").unwrap_err();
+            assert!(err.contains(needle), "expected '{needle}' in: {err}");
+        };
+        refuse(&["merge", "a", "a"], "into itself");
+        refuse(&["merge", "ghost", "a"], "no component 'ghost'");
+        refuse(&["merge", "a", "b"], "cross-kit merge is unsafe");
+        assert!(store.get("a").unwrap().is_some() && store.get("b").unwrap().is_some(), "no refusal removed anything");
+    }
+
+    #[test]
+    fn merge_is_registered_gated_and_help_reachable() {
+        assert!(COMPONENT_COMMANDS.iter().any(|c| c.name == "merge"));
+        let a = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(is_scoped_mutation(&a(&["merge", "a", "b"])), "merge is a mutation");
+        assert!(!is_scoped_mutation(&a(&["merge", "help"])), "merge help is not a mutation");
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            let err = run(vec!["merge".into(), "a".into(), "b".into()], "bsc ui").unwrap_err();
+            assert!(err.contains("read-only"), "merge refuses read-scoped: {err}");
+            assert!(run(vec!["merge".into(), "help".into()], "bsc ui").is_ok(), "merge help reachable read-scoped");
         });
     }
 }
