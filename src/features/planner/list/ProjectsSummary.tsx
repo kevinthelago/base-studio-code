@@ -26,9 +26,9 @@ import { ProjectsGrid } from "./summary/ProjectsGrid";
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export function ProjectsSummary() {
-  const { setProjectsPageMode, setWorkspace } = useAppStore();
+  const { navigate } = useAppStore();
   // Hosted in the GitHub screen (#421) — "browse projects" jumps to the Projects tab.
-  const openProjects = () => { setWorkspace("projects"); setProjectsPageMode("projects"); };
+  const openProjects = () => navigate({ workspace: "projects", page: "projects" });
   const { loading, projects, events, repoMilestones, repoIssues, burndown } = useProjectsSummaryData();
 
   const activeProjects = projects.filter(p => !p.closed);
