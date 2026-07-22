@@ -86,26 +86,29 @@ non-string value prints as compact JSON), and without --raw the value prints as 
     },
     CmdDoc {
         name: "log",
-        summary: "a record's history stamp — rev / updatedAt / updatedBy (#3164)",
+        summary: "a record's change history — the current stamp + the per-write log (#3164/#3568)",
         usage: "\
 USAGE:
   bsc ui log <id> [--kit] [--dir D] [--pretty]
 
-Prints the record's provenance as JSON — { id, rev, updatedAt, updatedBy } — the optimistic-concurrency
-+ attribution metadata every write stamps (#3164). `rev` is the monotonically-increasing revision (a
-record never stamped, or a legacy one, reads as rev 0); `updatedAt` is the last write's ISO-8601 UTC
-timestamp; `updatedBy` is the writer tag (`bsc ui set --by <tag>` / $BSC_UI_WRITER, else \"unknown\").
+Prints the record's provenance AND its change history as JSON —
+{ id, rev, updatedAt, updatedBy, history: [ { rev, at, by, note?, changed } ] }. The top-level fields are
+the current stamp (#3164): `rev` is the monotonically-increasing revision (a record never stamped, or a
+legacy one, reads as rev 0); `updatedAt` is the last write's ISO-8601 UTC timestamp; `updatedBy` is the
+writer tag (`bsc ui set --by <tag>` / $BSC_UI_WRITER, else \"unknown\"). `history` (#3568) is the per-write
+log, NEWEST-FIRST, one entry per write: its `rev`, `at` (ISO-8601), `by` (the writer), an optional `note`
+(`bsc ui set --note <text>`), and `changed` (the top-level fields that moved, `[\"created\"]` on the first
+write). Capped to the most recent 30 writes. Review it before editing so you know what changed and why.
 --kit logs a KIT record instead of a component. Read-only. Use the `rev` to guard your next write:
-`bsc ui set --if-version <rev>` refuses to overwrite if the record has moved on. The store keeps only
-the current row, so this is the current stamp — not a full history table.",
+`bsc ui set --if-version <rev>` refuses to overwrite if the record has moved on.",
     },
     CmdDoc {
         name: "set",
         summary: "upsert from component JSON on stdin (stamps rev/updatedAt/updatedBy); prints id(s)",
         usage: "\
 USAGE:
-  bsc ui set [--by <tag>] [--if-version <n>] [--pretty]   # component JSON (one object or an array) on stdin
-  bsc ui set --file <name> [--by <tag>] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name>
+  bsc ui set [--by <tag>] [--note <text>] [--if-version <n>] [--pretty]   # component JSON (one object or an array) on stdin
+  bsc ui set --file <name> [--by <tag>] [--note <text>] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name>
 
 Upserts each component by its (required, non-empty) \"id\" field, written verbatim. Prints the id(s)
 written — how an agent (or the pane) authors/updates a component in the shared kit.
@@ -399,7 +402,7 @@ UTF-8, LF-only — byte-clean for `while read id` / `$( )`.",
     CmdDoc {
         name: "set",
         summary: "upsert from kit JSON on stdin (stamps rev/updatedAt/updatedBy); prints id(s)",
-        usage: "USAGE:\n  bsc ui kit set [--by <tag>] [--if-version <n>] [--pretty]   # kit JSON (object or array) on stdin\n  bsc ui kit set --file <name> [--by <tag>] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name> (#3373)\n\nUpserts each kit by its \"id\", written verbatim. Fields: { id, name, tech, style, stack?, dot } — tech + style place the kit in the rail (omit either ⇒ it shows as \"other/other\"); stack is a display label only. Every write stamps provenance (#3164): auto-bump `rev`, set `updatedAt` (ISO-8601 UTC) + `updatedBy` (--by / $BSC_UI_WRITER / \"unknown\"). --if-version <n> rejects the write unless the kit's current rev is <n> (`bsc ui log <id> --kit` reads it).",
+        usage: "USAGE:\n  bsc ui kit set [--by <tag>] [--note <text>] [--if-version <n>] [--pretty]   # kit JSON (object or array) on stdin\n  bsc ui kit set --file <name> [--by <tag>] [--note <text>] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name> (#3373)\n\nUpserts each kit by its \"id\", written verbatim. Fields: { id, name, tech, style, stack?, dot } — tech + style place the kit in the rail (omit either ⇒ it shows as \"other/other\"); stack is a display label only. Every write stamps provenance (#3164): auto-bump `rev`, set `updatedAt` (ISO-8601 UTC) + `updatedBy` (--by / $BSC_UI_WRITER / \"unknown\"), and appends a change-history entry (#3568: --note is its summary; `bsc ui log <id> --kit` reads it). --if-version <n> rejects the write unless the kit's current rev is <n>.",
     },
     CmdDoc {
         name: "remove",
@@ -780,11 +783,16 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
 
 /// The record's CURRENT stored `rev` (0 when absent or never stamped — the backward-compat contract),
 /// read straight from the store so a stamp/version-check always compares against what's on disk.
+#[cfg(test)]
 fn current_rev(store: &bsc_json_store::Store, id: &str) -> Result<i64, String> {
-    Ok(store
-        .get(id)?
-        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
-        .map_or(0, |v| crate::record::read_rev(&v)))
+    Ok(crate::record::read_rev(&current_record(store, id)?))
+}
+
+/// The record's CURRENT stored JSON (`Value::Null` when absent), so a write can carry its change history
+/// forward and diff what changed (#3568). Malformed stored JSON reads as absent (fail-safe: the write
+/// still lands, just starting a fresh history rather than erroring on a corrupt row).
+fn current_record(store: &bsc_json_store::Store, id: &str) -> Result<serde_json::Value, String> {
+    Ok(store.get(id)?.and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok()).unwrap_or(serde_json::Value::Null))
 }
 
 /// Stamp `value` for a write (bump `rev`, set `updatedAt` + `updatedBy`), then upsert it by `id`. The
@@ -797,8 +805,8 @@ fn stamped_set(
     mut value: serde_json::Value,
     writer: &str,
 ) -> Result<(), String> {
-    let prior = current_rev(store, id)?;
-    crate::record::stamp(&mut value, prior, writer, &crate::record::now_iso());
+    let prior = current_record(store, id)?;
+    crate::record::stamp_with_history(&mut value, &prior, writer, &crate::record::now_iso(), None);
     store.set(id, &serde_json::to_string(&value).map_err(|e| format!("set: {e}"))?)
 }
 
@@ -830,6 +838,7 @@ fn set_stamped(
     if_version: Option<i64>,
     writer: &str,
     noun: &str,
+    note: Option<&str>,
 ) -> Result<Vec<String>, String> {
     if if_version.is_some() && items.len() != 1 {
         return Err(format!(
@@ -841,16 +850,17 @@ fn set_stamped(
     let mut ids = Vec::new();
     for item in items {
         let id = bsc_json_store::cli::id_of(item, noun)?;
-        let prior = current_rev(store, &id)?;
+        let prior = current_record(store, &id)?;
+        let prior_rev = crate::record::read_rev(&prior);
         if let Some(n) = if_version {
-            if prior != n {
+            if prior_rev != n {
                 return Err(format!(
-                    "version conflict on {noun} '{id}': its current rev is {prior}, not {n} — it changed since you read it. Re-read (`bsc ui log {id}`) and retry."
+                    "version conflict on {noun} '{id}': its current rev is {prior_rev}, not {n} — it changed since you read it. Re-read (`bsc ui log {id}`) and retry."
                 ));
             }
         }
         let mut stamped = item.clone();
-        crate::record::stamp(&mut stamped, prior, writer, &now);
+        crate::record::stamp_with_history(&mut stamped, &prior, writer, &now, note);
         store.set(&id, &serde_json::to_string(&stamped).map_err(|e| format!("set: {e}"))?)?;
         bsc_util::emit_ui_activity(noun, &id);
         ids.push(id);
@@ -858,10 +868,11 @@ fn set_stamped(
     Ok(ids)
 }
 
-/// `set [--by <tag>] [--if-version <n>] [--dir D] [--pretty]` (#3164) — the STAMPING upsert for a
-/// collection. Parses the ui-write flags, reads the record(s) from stdin, runs the domain batch
-/// `validate` (the component srcText gate / the kit-axis nudge), then stamps + upserts each via
-/// [`set_stamped`]. Prints the written id(s). Shared by the component and kit collections (`open` +
+/// `set [--by <tag>] [--note <text>] [--if-version <n>] [--dir D] [--pretty]` (#3164/#3568) — the
+/// STAMPING upsert for a collection. Parses the ui-write flags, reads the record(s) from stdin, runs the
+/// domain batch `validate` (the component srcText gate / the kit-axis nudge), then stamps + upserts each
+/// via [`set_stamped`], which also appends a change-history entry (`--note` is its summary; `bsc ui log
+/// <id>` reads the log). Prints the written id(s). Shared by the component and kit collections (`open` +
 /// `validate` + `noun` differ). Already ui-scope gated in [`run`].
 fn cmd_set(
     args: &[String],
@@ -869,8 +880,8 @@ fn cmd_set(
     validate: fn(&[serde_json::Value]) -> Result<(), String>,
     noun: &'static str,
 ) -> Result<(), String> {
-    let (mut dir, mut pretty, mut by, mut if_version, mut file) =
-        (None::<String>, false, None::<String>, None::<i64>, None::<String>);
+    let (mut dir, mut pretty, mut by, mut if_version, mut file, mut note) =
+        (None::<String>, false, None::<String>, None::<i64>, None::<String>, None::<String>);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -881,6 +892,8 @@ fn cmd_set(
             // — newlines are command separators). Resolution + the traversal defence live in bsc-cli-util.
             "--file" => file = it.next().cloned(),
             "--by" => by = it.next().cloned(),
+            // #3568: a human-readable summary of WHY this write happened, recorded in the change history.
+            "--note" => note = it.next().cloned(),
             "--if-version" => {
                 let raw = it.next().ok_or("--if-version needs an integer revision (see `bsc ui log <id>`)")?;
                 if_version = Some(
@@ -900,7 +913,7 @@ fn cmd_set(
     validate(&items)?;
     let store = open(&dir)?;
     let writer = crate::record::resolve_writer(by.as_deref());
-    let ids = set_stamped(&store, &items, if_version, &writer, noun)?;
+    let ids = set_stamped(&store, &items, if_version, &writer, noun, note.as_deref())?;
     let json = if pretty { serde_json::to_string_pretty(&ids) } else { serde_json::to_string(&ids) };
     println!("{}", json.map_err(|e| e.to_string())?);
     Ok(())
@@ -3572,7 +3585,7 @@ mod tests {
         let rec = serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui" });
 
         // First write of a brand-new record → rev 1, updatedBy = the writer, updatedAt an ISO stamp.
-        let ids = set_stamped(&store, std::slice::from_ref(&rec), None, "alice", "component").unwrap();
+        let ids = set_stamped(&store, std::slice::from_ref(&rec), None, "alice", "component", None).unwrap();
         assert_eq!(ids, vec!["button".to_string()]);
         let s = stored(&store, "button");
         assert_eq!(s["rev"], serde_json::json!(1), "a fresh record's first write is rev 1");
@@ -3583,7 +3596,7 @@ mod tests {
         assert_eq!(s["kitId"], "react-ui");
 
         // A second write of the same id bumps from the STORED rev (1 → 2), even though the payload carries none.
-        set_stamped(&store, std::slice::from_ref(&rec), None, "bob", "component").unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), None, "bob", "component", None).unwrap();
         let s = stored(&store, "button");
         assert_eq!(s["rev"], serde_json::json!(2), "the second write bumps to rev 2");
         assert_eq!(s["updatedBy"], "bob", "attribution follows the latest writer");
@@ -3593,20 +3606,20 @@ mod tests {
     fn set_stamped_if_version_rejects_a_stale_write_and_allows_a_current_one() {
         let store = tmp_component_store("stamp-ifver");
         let rec = serde_json::json!({ "id": "chip", "name": "Chip" });
-        set_stamped(&store, std::slice::from_ref(&rec), None, "x", "component").unwrap(); // → rev 1
+        set_stamped(&store, std::slice::from_ref(&rec), None, "x", "component", None).unwrap(); // → rev 1
 
         // --if-version 0 is STALE (current rev is 1): rejected with a clear message, nothing overwritten.
-        let err = set_stamped(&store, std::slice::from_ref(&rec), Some(0), "x", "component").unwrap_err();
+        let err = set_stamped(&store, std::slice::from_ref(&rec), Some(0), "x", "component", None).unwrap_err();
         assert!(err.contains("version conflict") && err.contains("rev is 1"), "clear conflict message: {err}");
         assert_eq!(stored(&store, "chip")["rev"], serde_json::json!(1), "the stale write did NOT clobber");
 
         // --if-version 1 matches the current rev → the write lands and bumps to 2.
-        set_stamped(&store, std::slice::from_ref(&rec), Some(1), "x", "component").unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), Some(1), "x", "component", None).unwrap();
         assert_eq!(stored(&store, "chip")["rev"], serde_json::json!(2));
 
         // --if-version guards a SINGLE record — a batch with a lone version number is a usage error.
         let batch = vec![serde_json::json!({ "id": "a" }), serde_json::json!({ "id": "b" })];
-        let err = set_stamped(&store, &batch, Some(1), "x", "component").unwrap_err();
+        let err = set_stamped(&store, &batch, Some(1), "x", "component", None).unwrap_err();
         assert!(err.contains("--if-version") && err.contains("single"), "batch + version rejected: {err}");
     }
 
@@ -3620,7 +3633,7 @@ mod tests {
 
         // So --if-version 0 succeeds against it (backward-compatible), stamping it forward to rev 1.
         let rec = serde_json::json!({ "id": "legacy", "name": "Legacy v2" });
-        set_stamped(&store, std::slice::from_ref(&rec), Some(0), "migrator", "component").unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), Some(0), "migrator", "component", None).unwrap();
         let s = stored(&store, "legacy");
         assert_eq!(s["rev"], serde_json::json!(1));
         assert_eq!(s["updatedBy"], "migrator");
@@ -3634,7 +3647,7 @@ mod tests {
         let rec = serde_json::json!({
             "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout", "group": "pages", "shapes": ["list"]
         });
-        set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component").unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component", None).unwrap();
 
         // The lean projection is byte-for-byte the same — the stamp fields don't leak into it, the axes still project.
         let meta = bsc_json_store::cli::lean_meta(&store.get("card").unwrap().unwrap(), COMPONENT_SPEC.meta_fields);
@@ -3655,7 +3668,7 @@ mod tests {
         let store = tmp_component_store("stamp-log");
         let dir = store.dir().to_string_lossy().into_owned();
         let rec = serde_json::json!({ "id": "hero", "name": "Hero" });
-        set_stamped(&store, std::slice::from_ref(&rec), None, "ada", "component").unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), None, "ada", "component", None).unwrap();
 
         // `log <id>` reads Ok over the stamped record (compact + --pretty); `log` of an absent id errors.
         assert!(run(vec!["log".into(), "hero".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
@@ -3684,6 +3697,67 @@ mod tests {
         let s = stored(&store, "card");
         assert_eq!(s["rev"], serde_json::json!(2), "a second animation write bumps to rev 2");
         assert_eq!(s["animations"].as_array().map(Vec::len), Some(2), "both animations survive the stamp");
+    }
+
+    #[test]
+    fn set_stamped_accumulates_a_change_history_with_notes_and_diffs() {
+        // #3568: every write through the stamp boundary appends a capped history entry that Claude can review.
+        let store = tmp_component_store("history");
+        let v1 = serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui" });
+        set_stamped(&store, std::slice::from_ref(&v1), None, "designer", "component", Some("initial draft")).unwrap();
+        // A second, real edit with a note — one field changes.
+        let v2 = serde_json::json!({ "id": "button", "name": "Primary Button", "kitId": "react-ui" });
+        set_stamped(&store, std::slice::from_ref(&v2), None, "alice", "component", Some("rename")).unwrap();
+
+        let s = stored(&store, "button");
+        let hist = s["history"].as_array().expect("history is recorded");
+        assert_eq!(hist.len(), 2, "one entry per write, newest-last");
+        assert_eq!(hist[0]["rev"], serde_json::json!(1));
+        assert_eq!(hist[0]["by"], "designer");
+        assert_eq!(hist[0]["note"], "initial draft");
+        assert_eq!(hist[0]["changed"], serde_json::json!(["created"]), "the first write is 'created'");
+        assert_eq!(hist[1]["rev"], serde_json::json!(2));
+        assert_eq!(hist[1]["by"], "alice");
+        assert_eq!(hist[1]["note"], "rename");
+        assert_eq!(hist[1]["changed"], serde_json::json!(["name"]), "only name diffed on the second write");
+
+        // The animation path (a different writer) also records history — the boundary catches every writer.
+        upsert_animation(&store, "button", &valid_anim("fade-in")).unwrap();
+        let hist = stored(&store, "button")["history"].as_array().unwrap().clone();
+        assert_eq!(hist.len(), 3, "the animation edit is logged too");
+        assert_eq!(hist[2]["changed"], serde_json::json!(["animations"]), "the animation write diffs `animations`");
+    }
+
+    #[test]
+    fn set_command_argv_records_by_and_note_in_history_end_to_end() {
+        // #3568: drive the REAL `run(["set", …])` dispatch (not just set_stamped) so the `--by` / `--note`
+        // flag parsing → stored history entry is covered end-to-end. `--file` carries the payload (the one
+        // allow-listable authoring channel), read from a scoped $BSC_SCRATCH.
+        let store = tmp_component_store("history-argv");
+        let dir = store.dir().to_string_lossy().into_owned();
+        let base = std::env::temp_dir().join(format!("bsc-scratch-note-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let scratch = base.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        std::fs::write(scratch.join("c.json"), r#"{"id":"btn","name":"Button","kitId":"react-ui"}"#).unwrap();
+
+        bsc_cli_util::with_scratch(scratch.to_str(), || {
+            run(
+                vec![
+                    "set".into(), "--file".into(), "c.json".into(),
+                    "--by".into(), "designer".into(), "--note".into(), "add error state".into(),
+                    "--dir".into(), dir.clone(),
+                ],
+                "bsc ui",
+            )
+            .expect("set --by --note lands");
+        });
+
+        let entry = stored(&store, "btn")["history"].as_array().unwrap()[0].clone();
+        assert_eq!(entry["by"], "designer", "--by flows to the history entry");
+        assert_eq!(entry["note"], "add error state", "--note flows to the history entry");
+        assert_eq!(entry["changed"], serde_json::json!(["created"]), "the first write is 'created'");
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

@@ -380,6 +380,89 @@ fn harvest_roots() -> Vec<PathBuf> {
         .collect()
 }
 
+/// A read-only view of the session-scoped environment a confined CLI session runs under (#3571) — the
+/// data behind `bsc ui env`. A restricted studio session (designer/librarian) is cwd'd in its own
+/// sealed workspace, NOT the repo, so it cannot see its scratch dir, its write scopes, or — the reason
+/// this exists — the roots it may HARVEST. `harvest` refused every guessed path with only a terse "outside
+/// every root" message, leaving the session no way to DISCOVER where the app's UI actually lives. This
+/// surfaces all of it. Every field is read through the same `session_env` accessor the gates use, so the
+/// thread-local test overrides ([`with_scratch`]/[`with_scopes`]/[`with_repo_root`]/[`with_harvest_roots`])
+/// apply.
+pub struct SessionEnvSnapshot {
+    /// `$BSC_SCRATCH` — the sealed dir a `--file` payload is staged in. `None` ⇒ no scratch dir.
+    pub scratch: Option<String>,
+    /// `$BSC_SCOPES` — the write-scope doc (`{"ui":"read"}`). `None` ⇒ unconfined (full write access).
+    pub scopes: Option<String>,
+    /// `$BSC_REPO_ROOT` — the FS-confinement root, which is also the session's own harvestable root.
+    /// `None` ⇒ an unconfined session (a plain console / a direct CLI run).
+    pub repo_root: Option<String>,
+    /// `$BSC_HARVEST_ROOTS` — the EXTRA read-only trees this session may harvest (e.g. the app's own
+    /// source tree granted to the designer), already split and trimmed. Empty ⇒ none beyond `repo_root`.
+    pub harvest_roots: Vec<String>,
+}
+
+impl SessionEnvSnapshot {
+    /// The roots `harvest` will accept a directory under — the confinement root plus every extra harvest
+    /// root, in the order [`require_harvestable_root`] checks them.
+    pub fn harvestable_roots(&self) -> Vec<&str> {
+        self.repo_root.as_deref().into_iter().chain(self.harvest_roots.iter().map(String::as_str)).collect()
+    }
+}
+
+fn nonblank(o: Option<String>) -> Option<String> {
+    o.filter(|s| !s.trim().is_empty())
+}
+
+/// Snapshot the session-scoped env ([`SessionEnvSnapshot`]) — what `bsc ui env` reports so a confined
+/// session can discover its scratch dir, scopes, and harvestable roots.
+pub fn session_env_snapshot() -> SessionEnvSnapshot {
+    SessionEnvSnapshot {
+        scratch: nonblank(session_env(&SCRATCH_OVERRIDE, BSC_SCRATCH_ENV)),
+        scopes: nonblank(session_env(&SCOPES_OVERRIDE, BSC_SCOPES_ENV)),
+        repo_root: nonblank(session_env(&REPO_ROOT_OVERRIDE, BSC_REPO_ROOT_ENV)),
+        harvest_roots: session_env(&HARVEST_ROOTS_OVERRIDE, BSC_HARVEST_ROOTS_ENV)
+            .unwrap_or_default()
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect(),
+    }
+}
+
+/// Render [`session_env_snapshot`] as the human-readable `bsc ui env` report. `prog` is the command
+/// surface (`"bsc ui"`) so the closing hint names the real harvest verb the session should run.
+pub fn format_session_env(prog: &str) -> String {
+    let s = session_env_snapshot();
+    let mut out = String::new();
+    out.push_str(&format!(
+        "scratch dir:  {}\n",
+        s.scratch.as_deref().unwrap_or("(none — this session has no scratch dir)")
+    ));
+    out.push_str(&format!(
+        "write scopes: {}\n",
+        s.scopes.as_deref().unwrap_or("(unconfined — full write access)")
+    ));
+    out.push_str(&format!(
+        "confinement:  {}\n",
+        s.repo_root.as_deref().unwrap_or("(unconfined — no FS confinement)")
+    ));
+    let harvestable = s.harvestable_roots();
+    out.push_str("harvest roots (READ-only — the trees `harvest` may scan):\n");
+    if harvestable.is_empty() {
+        out.push_str("  (unconfined — harvest may scan any path)\n");
+    } else {
+        for r in &harvestable {
+            out.push_str(&format!("  {r}\n"));
+        }
+    }
+    // Point at the app's own source tree (an EXTRA root) when granted, else the session's own root.
+    if let Some(target) = s.harvest_roots.first().or(s.repo_root.as_ref()) {
+        out.push_str(&format!("\nMine a tree's components with:  {prog} harvest {target}\n"));
+    }
+    out
+}
+
 /// The pure core of [`scope_allows_write`]: `doc` is the raw `$BSC_SCOPES` value (or `None` when the
 /// var is unset). Split out so the tier logic is testable without touching the process environment.
 pub fn scope_allows_write_in(doc: Option<&str>, scope: &str) -> bool {
@@ -936,6 +1019,59 @@ mod tests {
             let err = require_harvestable_root(&outside).unwrap_err();
             assert!(err.contains("outside every root this session may harvest"), "{err}");
             assert!(err.contains("#158"), "cites the confinement: {err}");
+        });
+    }
+
+    #[test]
+    fn session_env_snapshot_surfaces_the_harvest_roots_a_confined_session_cannot_otherwise_see() {
+        // #3571: the whole point — a designer session cwd'd in its own workspace learns the app source
+        // tree (its granted extra root) from this, then harvests it.
+        with_scratch(Some("C:/ws/scratch"), || {
+            with_scopes(Some(r#"{"ui":"read"}"#), || {
+                with_repo_root(Some("C:/ws/design-studio"), || {
+                    with_harvest_roots(Some("C:/src/base-studio-code\nC:/src/other"), || {
+                        let s = session_env_snapshot();
+                        assert_eq!(s.scratch.as_deref(), Some("C:/ws/scratch"));
+                        assert_eq!(s.scopes.as_deref(), Some(r#"{"ui":"read"}"#));
+                        assert_eq!(s.repo_root.as_deref(), Some("C:/ws/design-studio"));
+                        assert_eq!(
+                            s.harvest_roots,
+                            vec!["C:/src/base-studio-code".to_string(), "C:/src/other".to_string()],
+                        );
+                        // Gate order: the confinement root first, then the extra harvest roots.
+                        assert_eq!(
+                            s.harvestable_roots(),
+                            vec!["C:/ws/design-studio", "C:/src/base-studio-code", "C:/src/other"],
+                        );
+                        let report = format_session_env("bsc ui");
+                        assert!(report.contains("C:/src/base-studio-code"), "names the app root:\n{report}");
+                        // The closing hint gives the exact verb + prefers the app tree (an extra root).
+                        assert!(
+                            report.contains("bsc ui harvest C:/src/base-studio-code"),
+                            "actionable hint:\n{report}",
+                        );
+                    });
+                });
+            });
+        });
+    }
+
+    #[test]
+    fn session_env_report_reads_gracefully_when_unconfined() {
+        // A plain console / direct CLI run sets none of these; the report says so rather than erroring.
+        with_scratch(None, || {
+            with_scopes(None, || {
+                with_repo_root(None, || {
+                    with_harvest_roots(None, || {
+                        let s = session_env_snapshot();
+                        assert!(s.scratch.is_none() && s.scopes.is_none());
+                        assert!(s.repo_root.is_none() && s.harvest_roots.is_empty());
+                        assert!(s.harvestable_roots().is_empty());
+                        let report = format_session_env("bsc ui");
+                        assert!(report.contains("unconfined"), "{report}");
+                    });
+                });
+            });
         });
     }
 

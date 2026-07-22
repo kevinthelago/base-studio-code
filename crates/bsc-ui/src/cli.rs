@@ -250,14 +250,18 @@ which group's contract it resolved against. Compact JSON by default; --pretty in
         usage: "USAGE:
   bsc ui harvest <repo-dir> [--kit K] [--worthy-only] [--pretty]
 
-Parses the repo's real .tsx/.ts source with tree-sitter and lifts each React component into a CANDIDATE
-component record — the component half of `bsc graph harvest`, so a project that gets BUILT fills the
-component graph instead of the library being hand-authored one `bsc ui set` at a time. Deterministic and
-zero-egress: parsing is local, and the walk is sorted so the output is order-stable. READ-ONLY — it
+Parses the repo's real .tsx/.ts/.jsx/.js source with tree-sitter and lifts each React component into a
+CANDIDATE component record — the component half of `bsc graph harvest`, so a project that gets BUILT fills
+the component graph instead of the library being hand-authored one `bsc ui set` at a time. Deterministic
+and zero-egress: parsing is local, and the walk is sorted so the output is order-stable. READ-ONLY — it
 emits candidates, never stores them; promoting one is the curation gate's job.
 
-A component is a PascalCase-named function that renders JSX (React cannot treat a lowercase name as a
-component, so the capital is a real signal). Vendored/build/VCS dirs and test/story files are skipped.
+A component is a PascalCase-named function that renders JSX — a `function`, an arrow, or one WRAPPED in a
+higher-order call (`memo`/`forwardRef`/`observer`). Vendored/build/VCS dirs, test/story files, and NESTED
+git roots (worktrees/submodules, whose src duplicates the primary tree) are skipped.
+
+Not sure WHICH dir to harvest? A confined session's cwd is its own workspace, not the repo — run
+`bsc ui env` to see the roots you may harvest (e.g. the app's own source tree), then harvest one of those.
 
 Unlike the algorithms harvest, a candidate's `srcText` is a CLOSURE, not a node slice: the component plus
 the same-file declarations it transitively references plus exactly the imports those need — because a
@@ -269,6 +273,20 @@ quietly degraded (a srcText with unresolved `@/…` imports otherwise stores wit
 Prints { candidates: [...], count }. --kit sets the kit candidates would join (default `harvested` — NOT
 an existing kit, since unreviewed candidates must not contaminate a curated one). --worthy-only keeps
 those the classifier scores net-positive.",
+    },
+    CmdDoc {
+        name: "env",
+        summary: "show this session's scratch dir, write scopes, and the roots it may harvest (#3571)",
+        usage: "USAGE:
+  bsc ui env [--json]
+
+Prints the session-scoped environment a confined studio session runs under — its scratch dir
+($BSC_SCRATCH), its write scopes ($BSC_SCOPES), its FS-confinement root ($BSC_REPO_ROOT), and the READ-only
+HARVEST roots it may scan ($BSC_HARVEST_ROOTS, e.g. the app's own source tree granted to the designer).
+
+WHY: a restricted session is cwd'd in its own sealed workspace, NOT the repo, so it cannot otherwise
+discover WHERE the app's UI lives on disk. Run this, read the harvest roots, then `bsc ui harvest <root>`
+to mine that tree's components. READ-ONLY. --json emits the same as a machine-readable object.",
     },
     CmdDoc {
         name: "emit",
@@ -348,6 +366,7 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("resolve") => cmd_resolve(&args[1..]),
         Some("emit") => cmd_emit(&args[1..], prog),
         Some("harvest") => cmd_harvest(&args[1..]),
+        Some("env") => cmd_env(&args[1..]),
         Some("changes") => cmd_changes(&args[1..]),
         // A KNOWN component-library verb (list/get/set/remove · kit · eslint-preset · usage) falls
         // through to the mounted store CLI, keeping this prog for its help/errors. Unknown verbs stay
@@ -577,6 +596,38 @@ fn cmd_harvest(args: &[String]) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
     println!("{text}");
     Ok(())
+}
+
+/// `bsc ui env [--json]` (#3571) — surface the session-scoped environment a confined studio session
+/// runs under, chiefly the READ-only HARVEST roots it may scan. A designer/librarian session is cwd'd
+/// in its own sealed workspace, not the repo, so without this it has no way to DISCOVER where the app's
+/// UI lives — the reach was granted (`$BSC_HARVEST_ROOTS`) but never surfaced, so `harvest` refused every
+/// guessed path with only a terse "outside every root". READ-ONLY (no scope gate); the report itself
+/// lives in `bsc-cli-util` so `bsc graph env` can adopt it too.
+fn cmd_env(args: &[String]) -> Result<(), String> {
+    match args.first().map(String::as_str) {
+        Some("help") => {
+            print!("{}", bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "env"));
+            Ok(())
+        }
+        Some("--json") => {
+            let s = bsc_cli_util::session_env_snapshot();
+            let out = serde_json::json!({
+                "scratch": s.scratch,
+                "scopes": s.scopes,
+                "repoRoot": s.repo_root,
+                "harvestRoots": s.harvest_roots,
+                "harvestableRoots": s.harvestable_roots(),
+            });
+            println!("{}", serde_json::to_string(&out).map_err(|e| e.to_string())?);
+            Ok(())
+        }
+        Some(other) => Err(format!("unknown flag '{other}' — usage: bsc ui env [--json]")),
+        None => {
+            print!("{}", bsc_cli_util::format_session_env("bsc ui"));
+            Ok(())
+        }
+    }
 }
 
 /// One harvested candidate as the store's component-record shape (plus the harvest-only verdict
@@ -2799,5 +2850,25 @@ mod tests {
         );
         // An unconfined session (no root set) is unchanged.
         assert!(bsc_cli_util::with_repo_root(None, || run(vec!["harvest".into(), fixtures], "bsc ui")).is_ok());
+    }
+
+    #[test]
+    fn env_command_dispatches_reports_the_harvest_roots_and_is_in_help() {
+        // #3571: the read-only discovery verb — Ok in every form; a bad flag errs; and with a granted
+        // harvest root it names the exact `bsc ui harvest <root>` the session should run.
+        assert!(run(vec!["env".into()], "bsc ui").is_ok());
+        assert!(run(vec!["env".into(), "--json".into()], "bsc ui").is_ok());
+        assert!(run(vec!["env".into(), "help".into()], "bsc ui").is_ok());
+        assert!(run(vec!["env".into(), "--nope".into()], "bsc ui").is_err());
+        // The report (pure core in bsc-cli-util) surfaces a granted app-source root as a harvest target.
+        let report = bsc_cli_util::with_harvest_roots(Some("C:/src/base-studio-code"), || {
+            bsc_cli_util::format_session_env("bsc ui")
+        });
+        assert!(report.contains("bsc ui harvest C:/src/base-studio-code"), "{report}");
+        // It is in the help catalog and points at the harvest verb.
+        let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "env");
+        for needle in ["$BSC_HARVEST_ROOTS", "harvest", "--json"] {
+            assert!(d.contains(needle), "env help mentions {needle}");
+        }
     }
 }

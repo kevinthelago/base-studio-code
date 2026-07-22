@@ -6,6 +6,7 @@
 
 import type { KitAnimation, AnimationDef } from "@/shared/ui/kit/animations";
 import { BASE_KIT_ID } from "@/shared/ui/kit/baseAnimations";
+import type { GeneralNode } from "@/shared/ui/spec";
 
 /** A component's architectural role — drives its accent color + grouping. */
 export type Role = "primitive" | "composite" | "layout" | "page" | "service";
@@ -91,6 +92,21 @@ export interface KitRule {
 }
 
 /** One proven component in a kit — the record the library stores and the pane renders. */
+/** One row of a component's change {@link ComponentRecord.history} (#3568) — appended by the Rust stamp
+ *  boundary on every write so a session can review what changed, when, by whom, and why before editing. */
+export interface ChangeEntry {
+  /** The record `rev` this write produced (1 = the first write). */
+  rev: number;
+  /** ISO-8601 UTC timestamp of the write. */
+  at: string;
+  /** The writer tag — `bsc ui set --by …`, else the session's `$BSC_UI_WRITER`, else `"unknown"`. */
+  by: string;
+  /** Optional human summary of WHY the write happened (`bsc ui set --note …`). */
+  note?: string;
+  /** The top-level fields that changed on this write; `["created"]` on the very first write. */
+  changed: string[];
+}
+
 export interface ComponentRecord {
   id: string;
   name: string;
@@ -141,6 +157,12 @@ export interface ComponentRecord {
    *  data-rendering composites (rows, feeds, property lists); absent ⇒ not shape-indexed (chrome,
    *  controls, chrome-level layouts that host arbitrary panes rather than render a data collection). */
   shapes?: DataShape[];
+  /** The renderable STRUCTURE of a `page`/`layout`-role component as a validated data tree (#3569),
+   *  rendered by `KitRenderer`. This is what makes a page's skeleton editable IN THE GRAPH: the host
+   *  (e.g. `Fleet.tsx`) renders the store node's `spec` — its hand-authored const is only the
+   *  seed/fallback — so editing the node in the Design Studio reflects on the real page. Absent ⇒ the
+   *  component has no data-tree layout (a leaf primitive, or a page not migrated to a spec yet). */
+  spec?: GeneralNode;
   /** Content hash of the seed copy this record came from (#2483) — see {@link Kit.seedHash}. */
   seedHash?: string;
   /** MOTION binding (#2942/#3065) — each entry is EITHER a kit-animation NAME (resolved from the owning
@@ -149,6 +171,14 @@ export interface ComponentRecord {
    *  draw-in or a component-scoped `selector` animation not worth lifting to the kit). Resolved by
    *  {@link resolveComponentAnimations}. Absent ⇒ no motion. */
   animations?: (string | KitAnimation)[];
+  /** Provenance stamp (#3164) — the store bumps `rev` and records who/when on every write. Absent on a
+   *  legacy record never written since the stamp landed (reads as rev 0). */
+  rev?: number;
+  updatedAt?: string;
+  updatedBy?: string;
+  /** Change history (#3568) — one capped entry per write, stored NEWEST-LAST. `bsc ui log <id>` reads
+   *  them newest-first; the inspector's History tab renders them. Absent ⇒ never written since #3568. */
+  history?: ChangeEntry[];
 }
 
 /** The shared zero-state title — Design Studio and the Planner Components pane must say the same
