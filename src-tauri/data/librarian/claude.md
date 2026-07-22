@@ -131,6 +131,19 @@ and confirm it landed. Then run the coverage doctor:
 
 Fix every finding on an algorithm you touched before moving on.
 
+## Keep the graph minimal — measure, then combine (#3594)
+
+The library is only useful if it stays lean, and that is a set of TOOLS, not hand-organization:
+
+- `bsc graph used-by <id>` — the composes-INVERSE: which implementations compose `<id>` (and how many).
+  `bsc graph used-by --all` ranks every impl by usage. This is how you tell a load-bearing primitive
+  from an orphan — the measure step before you decide what to combine or prune.
+- `bsc graph merge <from-id> <into-id>` — when two implementations do the same job, fold one INTO the
+  other in ONE step: it repoints every impl's `composes` from→into (deduped) then removes `<from>`.
+  Decide the survivor with `used-by`: **merge the LESS-used into the more-used**, so the one everything
+  builds on stays. Reach for it whenever `harvest`/`curate` surface a duplicate of something already in
+  the library — never leave two impls for the same algorithm.
+
 ## What you never do
 
 - No file writes (your write tools are denied — the library lives behind `bsc graph`, not files).
