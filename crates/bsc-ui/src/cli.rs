@@ -631,9 +631,12 @@ fn cmd_env(args: &[String]) -> Result<(), String> {
 }
 
 /// One harvested candidate as the store's component-record shape (plus the harvest-only verdict
-/// fields), so a curator can pipe it straight into `bsc ui set` after review.
+/// fields), so a curator can pipe it straight into `bsc ui set` after review. Seeds `group` as the
+/// component's FOLDER PATH derived from `src` (#3579, [`bsc_component::group_from_src`]) so a fresh
+/// harvest organizes like the project's folders; omitted (not `null`) when `src` yields no folder, per
+/// the "absent ⇒ ungrouped" record convention.
 fn harvest_json(c: &crate::harvest::Candidate) -> serde_json::Value {
-    serde_json::json!({
+    let mut v = serde_json::json!({
         "id": c.id,
         "name": c.name,
         "kitId": c.kit_id,
@@ -646,7 +649,11 @@ fn harvest_json(c: &crate::harvest::Candidate) -> serde_json::Value {
         "worthy": c.classification.worthy,
         "score": c.classification.score,
         "reasons": c.classification.reasons,
-    })
+    });
+    if let Some(group) = bsc_component::group_from_src(&c.src) {
+        v["group"] = serde_json::Value::String(group);
+    }
+    v
 }
 
 fn cmd_emit(args: &[String], prog: &str) -> Result<(), String> {
@@ -2792,6 +2799,28 @@ mod tests {
         assert!(run(vec!["harvest".into(), "no-such-dir-here".into()], "bsc ui").is_err());
         assert!(run(vec!["harvest".into(), ".".into(), "--nope".into()], "bsc ui").is_err());
         assert!(run(vec!["harvest".into()], "bsc ui").is_err(), "the repo dir is required");
+    }
+
+    #[test]
+    fn harvest_json_seeds_group_as_the_folder_path_from_src() {
+        // #3579: a fresh harvest organizes like the project's folders — `group` is seeded from `src`.
+        let mk = |src: &str| crate::harvest::Candidate {
+            id: "button".into(),
+            name: "Button".into(),
+            kit_id: "harvested".into(),
+            role: "primitive",
+            composes: vec![],
+            src_text: String::new(),
+            src: src.into(),
+            buildable: true,
+            unbuildable_reasons: vec![],
+            classification: crate::harvest::Classification::default(),
+        };
+        let with_folder = harvest_json(&mk("src/shared/ui/controls/Button.tsx"));
+        assert_eq!(with_folder["group"], "shared/ui/controls", "group seeded as the folder path");
+        // No folder ⇒ the key is OMITTED (not `null`), matching the absent-⇒-ungrouped record convention.
+        let no_folder = harvest_json(&mk("Button.tsx"));
+        assert!(no_folder.get("group").is_none(), "a folderless src emits no `group` key at all");
     }
 
     #[test]
