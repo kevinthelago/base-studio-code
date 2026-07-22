@@ -5,7 +5,9 @@ import { useAppStore } from "@/store";
 import { SHORTCUT_GROUPS, SHORTCUT_REGISTRY } from "../lib/shortcuts";
 
 beforeEach(() => {
-  useAppStore.setState({ keybindings: {} });
+  // Console-scoped rows only render while the (opt-in, #2372) Console page is on — the default suite
+  // exercises the console shortcuts, so enable it. The #3575 block covers the hidden-when-off case.
+  useAppStore.setState({ keybindings: {}, showConsolePage: true });
 });
 
 describe("KeyboardCard", () => {
@@ -138,6 +140,33 @@ describe("KeyboardCard — reference rendering", () => {
           expect(screen.getAllByText(key).length).toBeGreaterThan(0);
         }
       }
+    }
+  });
+});
+
+describe("KeyboardCard — console rows follow the Console-page toggle (#3575)", () => {
+  // The Console-scoped groups (all items scope === "Console"); Navigation is Global and always shows.
+  const consoleGroups = SHORTCUT_GROUPS.filter((g) => g.items.every((s) => s.scope === "Console"));
+
+  it("hides the Console-scoped groups when the page is off, keeping Navigation", () => {
+    useAppStore.setState({ showConsolePage: false });
+    render(<KeyboardCard />);
+
+    expect(screen.getByText("Navigation")).toBeTruthy();          // global nav stays
+    expect(screen.getByText("Switch to workspace tab by number")).toBeTruthy();
+    for (const group of consoleGroups) {
+      expect(screen.queryByText(group.title)).toBeNull();         // console group titles gone
+      for (const s of group.items) {
+        expect(screen.queryByText(s.desc)).toBeNull();            // …and their rows
+      }
+    }
+  });
+
+  it("shows the Console-scoped groups when the page is on", () => {
+    useAppStore.setState({ showConsolePage: true });
+    render(<KeyboardCard />);
+    for (const group of consoleGroups) {
+      expect(screen.getByText(group.title)).toBeTruthy();
     }
   });
 });

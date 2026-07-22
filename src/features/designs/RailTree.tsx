@@ -13,7 +13,7 @@ import { RailRow } from "@/shared/ui/layouts/RailRow";
 import { RailGroupHeader } from "@/shared/ui/layouts/RailGroupHeader";
 import { RoleDot } from "./kitChrome";
 import type { ComponentRecord, Kit } from "./lib/model";
-import { type KitTreeNode, groupComponentsByGroup } from "./lib/kitGroups";
+import { type KitTreeNode, type ComponentFolder, groupComponentsByFolder, folderComponentCount } from "./lib/kitGroups";
 import { byTier } from "./lib/compositionLayout";
 
 interface RailTreeProps {
@@ -59,9 +59,38 @@ export function RailTree({ railTree, expanded, setExpanded, kitId, setKitId, com
         {c.name}
       </RailRow>
     );
-    // When this kit's components carry `group` values, nest them under group sub-headers (#3048);
-    // otherwise `groups` is null and the flat list renders EXACTLY as before (zero regression).
-    const groups = groupComponentsByGroup(rows);
+    // One folder of the kit's tree (#3582): a collapsible header (default OPEN), its subfolders
+    // (recursion), then its direct component rows. Expand state is namespaced by kit so two kits'
+    // identically-named folders (`shared/ui`) don't share a toggle. Mirrors a file explorer:
+    // subfolders list before a folder's own files.
+    const renderFolder = (f: ComponentFolder): ReactNode => {
+      const fkey = `${k.id}::${f.key}`;
+      const open = expanded[fkey] ?? true;
+      return (
+        <Box key={f.key} className="ds-compfolder" style={{ marginBottom: 2 }}>
+          <RailGroupHeader
+            className="ds-compfolderhead"
+            collapsible
+            open={open}
+            onToggle={() => setExpanded((e) => ({ ...e, [fkey]: !(e[fkey] ?? true) }))}
+            count={folderComponentCount(f)}
+            size={9}
+            title={f.ungrouped ? "components with no folder" : `folder: ${f.key}`}
+          >
+            {f.label}
+          </RailGroupHeader>
+          {open && (
+            <Box style={{ paddingLeft: 6 }}>
+              {f.folders.map(renderFolder)}
+              {f.components.map(renderCompRow)}
+            </Box>
+          )}
+        </Box>
+      );
+    };
+    // When this kit's components carry `group` folder paths, render them as a nested folder tree
+    // (#3582); otherwise `folders` is null and the flat list renders EXACTLY as before (zero regression).
+    const folders = groupComponentsByFolder(rows);
     return (
       <Box key={k.id} style={{ marginBottom: 4 }}>
         <RailRow
@@ -78,22 +107,8 @@ export function RailTree({ railTree, expanded, setExpanded, kitId, setKitId, com
         </RailRow>
         {open && (
           <Box style={{ margin: "2px 0 6px", paddingLeft: 6 }}>
-            {groups
-              ? groups.map((g) => (
-                  <Box key={g.key} className="ds-compgroup" style={{ marginBottom: 2 }}>
-                    <RailGroupHeader
-                      className="ds-compgrouphead"
-                      count={g.components.length}
-                      size={9}
-                      title={g.ungrouped ? "components with no group" : `group: ${g.label}`}
-                    >
-                      {g.label}
-                    </RailGroupHeader>
-                    {g.components.map(renderCompRow)}
-                  </Box>
-                ))
-              : rows.map(renderCompRow)}
-            {open && rows.length === 0 && query && (
+            {folders ? folders.map(renderFolder) : rows.map(renderCompRow)}
+            {rows.length === 0 && query && (
               <Text size={11} tone="dim" as="div" style={{ padding: "6px 10px", fontStyle: "italic" }}>no matches</Text>
             )}
           </Box>
