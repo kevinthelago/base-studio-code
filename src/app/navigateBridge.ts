@@ -59,6 +59,10 @@ const DESIGNS_PAGE = "designs";
 export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
   const { read, workspaces, pages } = vocab;
   const s = read();
+  // #3599: was the Design Studio ALREADY on screen before this navigate? A designer follow-along focus
+  // (`bsc navigate component`, fired before each `bsc shot preview`) must not YANK the user off whatever
+  // page they're on — so the component intent below only folds to the Studio when it's already showing.
+  const wasShowingStudio = s.activeWorkspace === DESIGNS_WORKSPACE && s.projectsPageMode === DESIGNS_PAGE;
 
   // ── Validate EVERYTHING before mutating anything ──────────────────────────────────────────────
   // A half-applied navigation is worse than a refused one: the caller gets an error AND a view that
@@ -97,10 +101,16 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
   if (req.workspace !== undefined) s.setWorkspace(req.workspace as Workspace);
   if (req.page !== undefined) s.setProjectsPageMode(req.page as AppStore["projectsPageMode"]);
 
-  // `component` implies its workspace + page — the intent is "show me this", not "set a field".
+  // `component` implies its workspace + page — the intent is "show me this", not "set a field". But
+  // (#3599) a designer follow-along must not steal the user's current page: only SWITCH to the Studio
+  // when it's already showing, or when the request EXPLICITLY asked for a workspace/page (a deliberate
+  // steer, not a background focus). Off-Studio, we still set the focus so it's there when the user opens
+  // the Studio themselves — their current view is untouched.
   if (comp) {
-    s.setWorkspace(DESIGNS_WORKSPACE);
-    s.setProjectsPageMode(DESIGNS_PAGE as AppStore["projectsPageMode"]);
+    if (wasShowingStudio || req.workspace !== undefined || req.page !== undefined) {
+      s.setWorkspace(DESIGNS_WORKSPACE);
+      s.setProjectsPageMode(DESIGNS_PAGE as AppStore["projectsPageMode"]);
+    }
     // setDesignsKit CLEARS the component (a component belongs to one kit), so the kit must come first.
     s.setDesignsKit(comp.kitId);
     s.setDesignsComp(comp.id);
