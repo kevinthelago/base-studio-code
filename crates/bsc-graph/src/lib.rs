@@ -230,6 +230,82 @@ pub fn remove_impl(g: &mut Value, id: &str) -> bool {
     true
 }
 
+// ── optimize (#3594) — the measure + combine mirror of the component graph (#3584/#3592) ──
+
+/// The composes-INVERSE (#3594): implementation id → the ids of implementations that list it in
+/// `composes` (sorted + deduped). The algorithm graph's USAGE signal — how load-bearing an impl is —
+/// keyed by id (algorithms compose by id; there are no kits, unlike the component graph). Computed live
+/// from the graph, so it is never a placeholder. The measure step a `merge` decision reads.
+pub fn used_by_index(g: &Value) -> std::collections::BTreeMap<String, Vec<String>> {
+    let mut idx: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+    for im in implementations_of(g) {
+        let Some(consumer) = im.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()) else { continue };
+        for dep in im.get("composes").and_then(Value::as_array).into_iter().flatten() {
+            if let Some(dep_id) = dep.as_str().filter(|s| !s.is_empty()) {
+                idx.entry(dep_id.to_string()).or_default().push(consumer.to_string());
+            }
+        }
+    }
+    for consumers in idx.values_mut() {
+        consumers.sort();
+        consumers.dedup();
+    }
+    idx
+}
+
+/// Fold implementation `from` INTO `into` (#3594) — the combine ACT that mirrors `bsc ui merge`: repoint
+/// every impl's `composes` from→into (deduped; a self-reference the fold would create is dropped), then
+/// remove `from`. `into` stays authoritative. Returns the ids of the impls whose `composes` were
+/// repointed. Errs on a self-merge or an absent id. No history stamp — the graph store has no #3164
+/// provenance layer (unlike the component store).
+pub fn merge_impls(g: &mut Value, from: &str, into: &str) -> Result<Vec<String>, String> {
+    if from == into {
+        return Err(format!("cannot merge '{from}' into itself"));
+    }
+    let ids: std::collections::BTreeSet<String> = implementations_of(g)
+        .iter()
+        .filter_map(|im| im.get("id").and_then(Value::as_str).map(str::to_string))
+        .collect();
+    if !ids.contains(from) {
+        return Err(format!("unknown implementation '{from}'"));
+    }
+    if !ids.contains(into) {
+        return Err(format!("unknown implementation '{into}'"));
+    }
+    let mut repointed = Vec::new();
+    for im in ensure_array(g, "implementations").iter_mut() {
+        let own_id = im.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+        if own_id == from {
+            continue; // being removed
+        }
+        if let Some(list) = im.get_mut("composes").and_then(Value::as_array_mut) {
+            let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+            let mut next: Vec<Value> = Vec::with_capacity(list.len());
+            let mut any = false;
+            for v in list.iter() {
+                let Some(orig) = v.as_str() else { continue };
+                let mapped = if orig == from { into } else { orig };
+                if orig == from {
+                    any = true;
+                }
+                // Drop a self-reference the fold would create, and dedup (a consumer of BOTH from and into
+                // must not end up composing into twice).
+                if mapped == own_id || !seen.insert(mapped.to_string()) {
+                    any = true;
+                    continue;
+                }
+                next.push(Value::String(mapped.to_string()));
+            }
+            if any {
+                *list = next;
+                repointed.push(own_id);
+            }
+        }
+    }
+    remove_impl(g, from); // remove `from` (its refs are already repointed; scrub is a harmless no-op)
+    Ok(repointed)
+}
+
 // ── the doctor (#3212) — diagnose visualization typing + coverage ──
 
 /// The known manipulation kinds — MUST match the frontend `ALGO_KINDS` (`src/features/algorithms/lib/
@@ -407,6 +483,52 @@ mod tests {
                 other => panic!("impl '{id}' has an unexpected role {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn used_by_index_is_the_composes_inverse_by_id() {
+        // #3594: the algorithm graph's usage signal — keyed by id (algorithms compose by id, no kits).
+        let g = serde_json::json!({ "implementations": [
+            { "id": "swap", "tech": "rust", "role": "primitive", "name": "swap", "ref": "std", "composes": [] },
+            { "id": "bubble", "tech": "rust", "role": "algorithm", "name": "bubble", "code": "x", "composes": ["swap"] },
+            { "id": "insertion", "tech": "rust", "role": "algorithm", "name": "insertion", "code": "x", "composes": ["swap"] },
+            { "id": "quick", "tech": "rust", "role": "algorithm", "name": "quick", "code": "x", "composes": ["swap", "swap"] },
+        ] });
+        let idx = used_by_index(&g);
+        assert_eq!(
+            idx.get("swap"),
+            Some(&vec!["bubble".to_string(), "insertion".to_string(), "quick".to_string()]),
+            "swap: composed by all three, sorted + deduped (quick listed it twice)",
+        );
+        assert!(!idx.contains_key("bubble"), "nothing composes bubble ⇒ absent (a root)");
+    }
+
+    #[test]
+    fn merge_impls_repoints_dedups_drops_self_ref_and_removes() {
+        // #3594: merge `xchg` INTO `swap`. `swap` composed `xchg` (→ a self-ref the fold drops); `bubble`
+        // composed BOTH swap + xchg (→ dedups to swap once) plus an unrelated `cmp` (kept).
+        let mut g = serde_json::json!({ "implementations": [
+            { "id": "swap", "tech": "rust", "role": "algorithm", "name": "swap", "code": "x", "composes": ["xchg"] },
+            { "id": "xchg", "tech": "rust", "role": "algorithm", "name": "xchg", "code": "x", "composes": [] },
+            { "id": "bubble", "tech": "rust", "role": "algorithm", "name": "bubble", "code": "x", "composes": ["swap", "xchg", "cmp"] },
+        ] });
+        let repointed = merge_impls(&mut g, "xchg", "swap").unwrap();
+        assert!(repointed.contains(&"swap".to_string()) && repointed.contains(&"bubble".to_string()));
+        let by = |id: &str| implementations_of(&g).into_iter().find(|im| im["id"] == *id).unwrap();
+        assert_eq!(by("swap")["composes"], serde_json::json!([]), "the self-reference the fold created is dropped");
+        assert_eq!(by("bubble")["composes"], serde_json::json!(["swap", "cmp"]), "deduped to swap once; cmp kept");
+        assert!(implementations_of(&g).iter().all(|im| im["id"] != "xchg"), "the merged-away impl is removed");
+    }
+
+    #[test]
+    fn merge_impls_refuses_self_and_absent() {
+        let mut g = serde_json::json!({ "implementations": [
+            { "id": "a", "tech": "rust", "role": "primitive", "name": "a", "ref": "std", "composes": [] },
+        ] });
+        assert!(merge_impls(&mut g, "a", "a").unwrap_err().contains("into itself"));
+        assert!(merge_impls(&mut g, "ghost", "a").unwrap_err().contains("unknown implementation 'ghost'"));
+        assert!(merge_impls(&mut g, "a", "ghost").unwrap_err().contains("unknown implementation 'ghost'"));
+        assert_eq!(implementations_of(&g).len(), 1, "no refusal mutated the graph");
     }
 
     #[test]
