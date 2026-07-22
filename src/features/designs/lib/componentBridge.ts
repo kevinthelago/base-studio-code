@@ -42,6 +42,13 @@ export async function loadComponents(): Promise<ComponentRecord[] | null> {
         shapes: c.shapes,
         animations: c.animations, // #2942 — MOTION binding (the kit-animation names it plays); rides verbatim
         seedHash: c.seedHash, // #2483 — must ride the allowlist or the refresh baseline is lost on write-through
+        // #3164/#3568 — provenance + change history, surfaced by the inspector History tab. SERVER-MANAGED:
+        // the Rust stamp boundary recomputes rev/stamps + history from the PRIOR stored record and discards
+        // whatever rides back on a write-through, so passing them here is display-only (never authoritative).
+        rev: c.rev,
+        updatedAt: c.updatedAt,
+        updatedBy: c.updatedBy,
+        history: c.history,
       }));
   } catch {
     return null;

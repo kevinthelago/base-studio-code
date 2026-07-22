@@ -354,8 +354,25 @@ Every component you `bsc ui set` must contain the component's REAL body — its 
 and library (d3/…) calls, the code that produces the pixels — **never a reference to itself**. Build the
 whole implementation, then store it.
 
-- `bsc ui list [--full]` · `bsc ui get <id>` · `bsc ui set` (JSON on stdin, upsert by `id`) ·
-  `bsc ui remove <id>` — the components.
+**Record WHY you changed it (#3568).** Every `bsc ui set` appends an entry to the component's **change
+history** — a log a later session (or you) reviews with `bsc ui log <id>` before editing, and that the
+Design Studio inspector shows under a **History** tab. Two flags make that log worth reading, so pass
+them on every write:
+
+- `--by designer` — attributes the entry to you (otherwise it records `"unknown"`).
+- `--note "<one line>"` — WHY this write happened, in your words (`"add loading + error states"`,
+  `"tune spacing to match Card"`). The history already captures WHAT fields changed and WHEN; the note
+  is the only part it can't infer.
+
+```
+bsc ui set --file button.json --by designer --note "add error state"
+```
+
+The history is SERVER-managed and capped (the most recent 30 writes) — you never author the `history`
+field yourself; you only supply the `--note`.
+
+- `bsc ui list [--full]` · `bsc ui get <id>` · `bsc ui set [--by <tag>] [--note <text>]` (JSON on stdin
+  or `--file`, upsert by `id`) · `bsc ui log <id>` (its change history) · `bsc ui remove <id>` — the components.
 - `bsc ui kit list` · `bsc ui kit get <id>` · `bsc ui kit set` · `bsc ui kit remove <id>` — the kits
   (technology-scoped namespaces: `{ id, name, tech, style, stack?, dot }` — see "The kit model";
   `tech` + `style` place the kit in the rail, omit them and it shows as "other/other").
