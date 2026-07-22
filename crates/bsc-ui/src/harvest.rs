@@ -81,9 +81,12 @@ pub struct Classification {
     pub reasons: Vec<String>,
 }
 
-/// Test/story files carry no production component.
+/// Test/story files carry no production component. Extension-agnostic (#3571): the same `.test` / `.spec`
+/// / `.stories` marker excludes a `.js`/`.jsx` test as well as a `.ts`/`.tsx` one. Checks the stem before
+/// the final extension so `Foo.test.tsx` matches while `latest.tsx` (no dot before `test`) does not.
 fn is_test_file(name: &str) -> bool {
-    [".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx", ".stories.tsx"].iter().any(|s| name.ends_with(s))
+    let stem = name.rsplit_once('.').map_or(name, |(s, _)| s);
+    stem.ends_with(".test") || stem.ends_with(".spec") || stem.ends_with(".stories")
 }
 
 /// The store's component id for a source name — lowercased, non-alphanumerics dropped
@@ -147,9 +150,10 @@ fn language_for(path: &Path) -> Option<Language> {
         return None;
     }
     match path.extension().and_then(|e| e.to_str()).unwrap_or("") {
-        // Both parse as TSX: a `.ts` file cannot contain JSX, so using the TSX grammar for it is
-        // harmless, and it keeps one code path.
-        "ts" | "tsx" => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
+        // All four parse with the TSX grammar — a strict superset of JS+JSX+TS, so a `.ts`/`.js` file
+        // that contains no JSX is parsed harmlessly and JS/JSX components are lifted just like TS ones.
+        // Without `.jsx`/`.js` a JavaScript React project harvested to ZERO candidates (#3571).
+        "ts" | "tsx" | "jsx" | "js" | "mjs" | "cjs" => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
         _ => None,
     }
 }
@@ -401,6 +405,13 @@ struct Found {
     tags: Vec<String>,
 }
 
+/// Is `dir` the root of a NESTED git tree — a worktree, submodule, or vendored clone (#3571)? A git
+/// worktree/submodule marks its root with a `.git` FILE (a `gitdir:` pointer), a standalone clone with a
+/// `.git` DIRECTORY; either presence means a separate git root whose sources duplicate the primary tree.
+fn is_nested_git_root(dir: &Path) -> bool {
+    dir.join(".git").exists()
+}
+
 fn walk(root: &Path, dir: &Path, out: &mut Vec<Found>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
@@ -408,7 +419,13 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<Found>) {
     for path in paths {
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if path.is_dir() {
-            if !SKIP_DIRS.contains(&name) {
+            // Never descend a vendored/build/VCS dir, NOR a NESTED git root (#3571): a subdir carrying its
+            // own `.git` is a worktree or submodule — its `src/` is a duplicate copy of components already
+            // harvested from the primary tree, so walking it double-counts every one. base-studio-code
+            // keeps its issue worktrees (`wt3568/`, …) right beside `src/`, so harvesting the repo root was
+            // reporting each component once per live worktree. (`.git` itself is in SKIP_DIRS, so this only
+            // affects the CHILD dir that contains one — the root's own `.git` is never in play here.)
+            if !SKIP_DIRS.contains(&name) && !is_nested_git_root(&path) {
                 walk(root, &path, out);
             }
         } else if let Some((src, tree)) = parse(&path) {
@@ -456,11 +473,18 @@ fn fn_def_name(node: Node, src: &[u8]) -> Option<String> {
     match node.kind() {
         "function_declaration" | "function_item" | "method_definition" => field_text(node, "name", src),
         "variable_declarator" => {
-            let bound_to_fn = node
+            // A component bound to a variable: either DIRECTLY (`const X = () => …`) or WRAPPED in a
+            // higher-order call (`const X = memo(…)` / `forwardRef(…)` / `observer(…)`) — a
+            // `call_expression` value (#3571). The wrapped form was invisible before: the name still names
+            // a component, and the JSX gate in `collect_component_defs` (`contains_jsx`) keeps a non-render
+            // call like `const X = loadConfig()` out, since its subtree has no JSX. A bare JSX-element value
+            // (`const X = <div/>`) is deliberately NOT matched — that is an element constant, not a
+            // component the preview can mount.
+            let bound_to_component = node
                 .child_by_field_name("value")
-                .map(|v| matches!(v.kind(), "arrow_function" | "function" | "function_expression"))
+                .map(|v| matches!(v.kind(), "arrow_function" | "function" | "function_expression" | "call_expression"))
                 .unwrap_or(false);
-            bound_to_fn.then(|| field_text(node, "name", src)).flatten()
+            bound_to_component.then(|| field_text(node, "name", src)).flatten()
         }
         _ => None,
     }
@@ -828,10 +852,52 @@ mod tests {
     #[test]
     fn every_candidate_carries_its_source_path_and_kit() {
         for c in run() {
-            assert!(c.src.ends_with(".tsx"), "{} -> {}", c.name, c.src);
+            assert!(
+                [".tsx", ".ts", ".jsx", ".js"].iter().any(|e| c.src.ends_with(e)),
+                "{} -> {}", c.name, c.src,
+            );
             assert_eq!(c.kit_id, DEFAULT_KIT);
             assert!(!c.src_text.is_empty());
         }
+    }
+
+    #[test]
+    fn a_higher_order_wrapped_component_is_lifted() {
+        // #3571: `export const Badge = memo(({text}) => <span/>)` — the value is a `call_expression`, so
+        // the harvester skipped it before. The name still names a component and the closure renders JSX.
+        let names: Vec<String> = run().into_iter().map(|c| c.name).collect();
+        assert!(names.contains(&"Badge".to_string()), "a memo()-wrapped component is harvested: {names:?}");
+        let b = by_name("Badge");
+        assert!(b.src_text.contains("export const Badge = memo("), "keeps the wrapping call:\n{}", b.src_text);
+    }
+
+    #[test]
+    fn a_plain_javascript_jsx_component_is_lifted() {
+        // #3571: a `.jsx` file — a JS-React project harvested to ZERO candidates before .jsx/.js parsed.
+        let c = by_name("LegacyChip");
+        assert!(c.src.ends_with(".jsx"), "harvested from the .jsx source: {}", c.src);
+        assert!(c.buildable, "a self-contained JS component is buildable: {:?}", c.unbuildable_reasons);
+    }
+
+    #[test]
+    fn a_nested_git_worktree_is_not_walked() {
+        // #3571: a subdir carrying its own `.git` is a worktree/submodule whose src is a DUPLICATE of the
+        // primary tree — walking it double-counts every component. base-studio-code keeps `wt####/` beside
+        // `src/`, so harvesting the repo root reported each component once per live worktree.
+        let base = std::env::temp_dir().join(format!("bsc-harvest-nested-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        // Primary tree: one real component.
+        std::fs::create_dir_all(base.join("src")).unwrap();
+        std::fs::write(base.join("src").join("Real.tsx"), "export const Real = () => <div/>;").unwrap();
+        // A nested worktree with a `.git` marker (a file, as a real git worktree uses) and a duplicate.
+        let wt = base.join("wt1234");
+        std::fs::create_dir_all(wt.join("src")).unwrap();
+        std::fs::write(wt.join(".git"), "gitdir: ../.git/worktrees/wt1234").unwrap();
+        std::fs::write(wt.join("src").join("Real.tsx"), "export const Real = () => <div/>;").unwrap();
+
+        let names: Vec<String> = harvest(&base, DEFAULT_KIT).into_iter().map(|c| c.name).collect();
+        assert_eq!(names, vec!["Real".to_string()], "the worktree copy is skipped — no duplicate: {names:?}");
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
