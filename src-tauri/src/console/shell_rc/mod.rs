@@ -88,24 +88,6 @@ pub(crate) fn bsc_defer_rc() -> String {
     s
 }
 
-/// The `bsc-continue` Stop hook (#3547) — the STUDIO analogue of `bsc-defer`. Fires when a restricted
-/// studio session (designer / librarian / sound-designer / architect / curator) tries to end its turn on
-/// clear, guided work. Like `bsc-defer` it bounces ONCE per stop (`stop_hook_active`) with a `block`
-/// decision, so it powers the session through its queue without trapping one that is genuinely done — but
-/// the `reason` is the STUDIO keep-going directive (`data/studio/continue-directive.md`), not the
-/// worker's issue→PR→director prose. Same shell wrapper as [`bsc_defer_rc`]; the directive is
-/// JSON-string-embedded (a single line, `"`/`\` escaped, no raw `'`).
-pub(crate) fn bsc_continue_rc() -> String {
-    let directive = crate::platform::config::load_str("studio/continue-directive.md");
-    let directive = directive.trim().replace('\\', "\\\\").replace('"', "\\\""); // backslash first
-    let mut s = String::new();
-    s.push_str(r#"bsc-continue() { j="$(cat)"; case "$j" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) return 0 ;; esac; printf '%s' '{"decision":"block","reason":""#);
-    s.push_str(&directive);
-    s.push_str(r#""}'; }"#);
-    s.push('\n');
-    s
-}
-
 /// Every `bsc-*` rc fragment, in the EXACT sequence the rc file concatenates them. This is the single
 /// source of truth for the concat order: the rc writer (`wire_bsc_env` → `bsc_rc_body`) and the
 /// `full_bsc_rc_is_syntactically_valid_bash` syntax guard both derive from it, so a new helper (or a
@@ -132,7 +114,6 @@ pub(crate) fn all_bsc_rc() -> Vec<String> {
         load_shell("taint.sh"),
         load_shell("coord-emit.sh"),
         bsc_defer_rc(),
-        bsc_continue_rc(),
         load_shell("fleet.sh"),
         load_shell("bsc.sh"),
         load_shell("learned.sh"),
