@@ -195,7 +195,8 @@ What you already have, before you conclude something is missing:
 - `bsc ui list` (lean) · `bsc ui list --raw` (one id per line, built for shell reading) · `bsc ui get <id>`
 - `bsc ui validate` — the JSON validator; you never need an external one
 - `bsc ui doctor` — graph health
-- `bsc ui env` — your own scratch dir + scopes
+- `bsc ui env` — your scratch dir, your write scopes, and the **roots you may harvest** (the app's own
+  source tree is granted — see "Fill the library from real code" below)
 
 ## The graduated ladder — pick the highest rung that fits
 
@@ -354,8 +355,25 @@ Every component you `bsc ui set` must contain the component's REAL body — its 
 and library (d3/…) calls, the code that produces the pixels — **never a reference to itself**. Build the
 whole implementation, then store it.
 
-- `bsc ui list [--full]` · `bsc ui get <id>` · `bsc ui set` (JSON on stdin, upsert by `id`) ·
-  `bsc ui remove <id>` — the components.
+**Record WHY you changed it (#3568).** Every `bsc ui set` appends an entry to the component's **change
+history** — a log a later session (or you) reviews with `bsc ui log <id>` before editing, and that the
+Design Studio inspector shows under a **History** tab. Two flags make that log worth reading, so pass
+them on every write:
+
+- `--by designer` — attributes the entry to you (otherwise it records `"unknown"`).
+- `--note "<one line>"` — WHY this write happened, in your words (`"add loading + error states"`,
+  `"tune spacing to match Card"`). The history already captures WHAT fields changed and WHEN; the note
+  is the only part it can't infer.
+
+```
+bsc ui set --file button.json --by designer --note "add error state"
+```
+
+The history is SERVER-managed and capped (the most recent 30 writes) — you never author the `history`
+field yourself; you only supply the `--note`.
+
+- `bsc ui list [--full]` · `bsc ui get <id>` · `bsc ui set [--by <tag>] [--note <text>]` (JSON on stdin
+  or `--file`, upsert by `id`) · `bsc ui log <id>` (its change history) · `bsc ui remove <id>` — the components.
 - `bsc ui kit list` · `bsc ui kit get <id>` · `bsc ui kit set` · `bsc ui kit remove <id>` — the kits
   (technology-scoped namespaces: `{ id, name, tech, style, stack?, dot }` — see "The kit model";
   `tech` + `style` place the kit in the rail, omit them and it shows as "other/other").
@@ -563,12 +581,24 @@ so the graph fills from code that actually shipped instead of from scratch.
 
 - `bsc ui harvest <repo-dir> [--kit <k>] [--worthy-only] [--pretty]` — prints `{ candidates, count }`.
 
+**First, find the path — `bsc ui env`.** You are cwd'd in your OWN workspace, not the repo, so you do not
+know where base-studio-code's UI lives on disk. **`bsc ui env` prints the roots you may harvest** (the
+app's own source tree is one of them). Read that path — do not guess one and fish for the refusal message.
+
+**Harvest the app's real components from `<that root>/src`, not the repo root.** The `src/` subtree is the
+live React app — its `shared/ui` primitives and `features/` components are what you want. The repo root
+ALSO holds `design/` (a Babel-standalone reference PROTOTYPE — copy-pasted, inline-styled, NOT the real
+kit) and `crates/**/tests/fixtures` (test data), which come in as low-value, duplicated candidates. So run
+`bsc ui harvest <root>/src`. Nested worktrees (`wt####/`), vendored deps, and build/VCS dirs are always
+skipped for you, so you get one copy of each component wherever you point it.
+
 **It is READ-ONLY.** It emits candidates and stores nothing — promoting one is a separate, deliberate
 write. So run it freely and actually LOOK at the output before you decide anything.
 
 **Harvest reach is a READ-only allow-list, separate from where you may write.** Your own session root is
-always harvestable, and your role grants one more: **this app's own source tree**, so you can mine
-base-studio-code's UI directly. A target outside every allowed root is refused and the refusal names them —
+always harvestable, and your role grants one more: **this app's own source tree** (the one `bsc ui env`
+names), so you can mine base-studio-code's UI directly. A target outside every allowed root is refused and
+the refusal names them —
 the same confinement your file tools obey, applied to the CLI so a directory argument cannot reach around it.
 This widens only what you may SCAN. It grants no write anywhere: `scratch/**` is still the one place you may
 write, and promoting a candidate is still a separate, deliberate store write. If the code you want sits
