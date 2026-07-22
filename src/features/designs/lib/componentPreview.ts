@@ -355,24 +355,26 @@ export function previewCycleStates(comp: ComponentRecord): PreviewState[] {
  * quirks. Resolves the component export by `name`, falling back to the default export. Builds the props
  * from {@link previewPropList} / {@link previewChild} (the SAME source `bsc ui preview-props` inspects).
  */
+/** The props object-literal (JS source) `comp` is mounted with in `state`: the sampled props (schema
+ *  order), then any resolved preview-data OVERRIDES layered on top (#2940) — a bound prop renders the
+ *  algorithm-generated dataset instead of its trivial sample, and a bound prop the sampler OMITTED (an
+ *  optional collection) is added. `previewPropList` stays pure, so the Rust parity fixture is unaffected. */
+function statePropsLiteral(comp: ComponentRecord, state: PreviewState, previewData: Record<string, string>): string {
+  const byName = new Map(previewPropList(comp, state).map((e) => [e.name, e.value] as const));
+  for (const [name, value] of Object.entries(previewData)) {
+    if (name !== "children") byName.set(name, value);
+  }
+  return `{ ${[...byName].map(([name, value]) => `${JSON.stringify(name)}: ${value}`).join(", ")} }`;
+}
+
 export function bootstrapSource(
   comp: ComponentRecord,
   importSpec: string,
   state: PreviewState = "loaded",
   previewData: Record<string, string> = {},
+  liveStates?: PreviewState[],
 ): string {
   const childText = previewChild(comp);
-  // The sampled props (schema order), then any resolved preview-data OVERRIDES layered on top (#2940): a
-  // bound prop renders the algorithm-generated dataset (a JS-source literal, e.g. `JSON.stringify(graph)`)
-  // instead of its `[]`/trivial sample, and a bound prop the sampler OMITTED (an optional collection) is
-  // added. `previewPropList` itself stays pure, so the Rust `bsc ui preview-props` parity fixture is
-  // unaffected — the override is a preview-time render concern, not part of the static props contract.
-  const byName = new Map(previewPropList(comp, state).map((e) => [e.name, e.value] as const));
-  for (const [name, value] of Object.entries(previewData)) {
-    if (name !== "children") byName.set(name, value);
-  }
-  const propEntries = [...byName].map(([name, value]) => `${JSON.stringify(name)}: ${value}`);
-  const propsLiteral = `{ ${propEntries.join(", ")} }`;
   const childArg = childText ? `, ${childText}` : "";
   // Role-aware mount wrapper (#3139). A PAGE/LAYOUT is authored for a full viewport (flex:1 / height:100%),
   // so it gets a full-bleed, TOP-LEFT wrapper (no centering, no padding) — its header sits at the top and
@@ -383,15 +385,41 @@ export function bootstrapSource(
   const wrapStyle = pageLike
     ? `{ height: "100%", width: "100%", boxSizing: "border-box", overflow: "hidden" }`
     : `{ padding: 20, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }`;
-  return [
+  const head = [
     `import { createRoot } from "react-dom/client";`,
     `import { createElement } from "react";`,
     `import * as __mod from "${importSpec}";`,
     `const __C = __mod[${JSON.stringify(comp.name)}] ?? __mod.default;`,
     `if (!__C) throw new Error("preview: no export ${comp.name} (or default) in ${importSpec}");`,
+  ];
+
+  // #3567: LIVE-STATE form — embed EVERY state's props once and switch on a `{ __state }` message with a
+  // React re-render, NOT a rebuild. The compiled bundle is identical across states (only props differ), so
+  // the small preview's auto-cycle (#3555) becomes an instant re-render instead of an esbuild + reload +
+  // "building" flash. `null`-guarded so an unknown/missing state falls back to the initial.
+  if (liveStates && liveStates.length) {
+    const initial = liveStates.includes(state) ? state : liveStates[0];
+    const statesLiteral = liveStates
+      .map((s) => `${JSON.stringify(s)}: ${statePropsLiteral(comp, s, previewData)}`)
+      .join(", ");
+    return [
+      ...head,
+      `const __STATES = { ${statesLiteral} };`,
+      `let __state = ${JSON.stringify(initial)};`,
+      `const __root = createRoot(document.getElementById("root"));`,
+      `function __render(){ __root.render(createElement("div", { style: ${wrapStyle} }, createElement(__C, __STATES[__state] || {}${childArg}))); }`,
+      `__render();`,
+      `window.addEventListener("message", function (e) { var s = e && e.data && e.data.__state; if (typeof s === "string" && __STATES[s]) { __state = s; __render(); } });`,
+      "",
+    ].join("\n");
+  }
+
+  // Single-state form (the on-visit scan, one state per build — byte-unchanged from before #3567).
+  return [
+    ...head,
     `createRoot(document.getElementById("root")).render(`,
     `  createElement("div", { style: ${wrapStyle} },`,
-    `    createElement(__C, ${propsLiteral}${childArg})));`,
+    `    createElement(__C, ${statePropsLiteral(comp, state, previewData)}${childArg})));`,
     "",
   ].join("\n");
 }
@@ -420,6 +448,7 @@ export function componentPreviewFiles(
   libResolver?: LibraryModuleResolver,
   state: PreviewState = "loaded",
   previewData: Record<string, string> = {},
+  liveStates?: PreviewState[],
 ): ComponentPreviewBuild | null {
   const inArtifact = comp.src ? artifact.components.find((c) => c.src === comp.src && c.source) : undefined;
 
@@ -429,7 +458,7 @@ export function componentPreviewFiles(
     for (const c of artifact.components) if (c.source) files[c.src] = c.source;
     vendorLibraryModules(files, libResolver); // #3116: any `@bsc/…` a built-in references
     const importSpec = `@/${stripExt(inArtifact.src)}`;
-    files[PREVIEW_ENTRY] = bootstrapSource(comp, importSpec, state, previewData);
+    files[PREVIEW_ENTRY] = bootstrapSource(comp, importSpec, state, previewData, liveStates);
     return { files, entry: PREVIEW_ENTRY };
   }
 
@@ -478,7 +507,7 @@ export function componentPreviewFiles(
     }
   }
   vendorLibraryModules(files, libResolver); // #3116: vendor any `@bsc/…` library imports (recursively)
-  files[PREVIEW_ENTRY] = bootstrapSource(comp, `@/${stripExt(path)}`, state, previewData);
+  files[PREVIEW_ENTRY] = bootstrapSource(comp, `@/${stripExt(path)}`, state, previewData, liveStates);
   return { files, entry: PREVIEW_ENTRY };
 }
 
