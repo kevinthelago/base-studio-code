@@ -261,7 +261,26 @@ uses), most-similar first. The discover-before-authoring read: BEFORE a session 
 asks whether one like it already exists, so the library converges instead of sprouting a fourth `Card`.
 Cross-kit. --top caps the rows (default 10); --threshold sets a minimum overall score (default 0 — the
 internal name gate already drops unrelated names). --json emits `[{ id, name, kit, score, name_similarity,
-contract_similarity }]`. PROPOSE-ONLY — reads only. #3544.",
+contract_similarity, usedBy }]` — `usedBy` is the candidate's graph-usage (#3584), so a combine proposal
+carries which side is load-bearing. PROPOSE-ONLY — reads only. #3544.",
+    },
+    CmdDoc {
+        name: "used-by",
+        summary: "a component's REAL graph usage — how many kit components compose it (composes-inverse, #3584)",
+        usage: "\
+USAGE:
+  bsc ui used-by <id> [--json] [--pretty]           # one component: its composers + count
+  bsc ui used-by --all [--kit K] [--json] [--pretty] # every component, ranked by usage (most-used first)
+
+The USAGE read the optimizer needs before combining. `usedBy` = how many components in the SAME kit list
+this one in `composes` (kits never cross, so a composer must share the kit) — the composes-INVERSE. Unlike
+the `used` field (a codebase-usage placeholder that is unpopulated for real components), this is computed
+live from the graph, is never a placeholder, and is the right signal for optimizing THIS graph: a primitive
+composed by 9 is load-bearing; one at 0 is an orphan candidate. Pair it with `bsc ui similar` / `dupes`: find
+overlap, then fold the LESS-used component into the more-used one.
+
+<id> form prints { id, name, kit, usedBy: [composer names], count }. --all prints every component as
+{ id, name, kit, count }, most-used first (--kit scopes to one kit). A READ — never scope-gated.",
     },
     CmdDoc {
         name: "define-animation",
@@ -657,6 +676,15 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 Ok(())
             } else {
                 cmd_similar(&args[1..])
+            }
+        }
+        // `used-by` (#3584) — the graph-usage read (composes-inverse); a READ, never scope-gated.
+        Some("used-by") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "used-by"));
+                Ok(())
+            } else {
+                cmd_used_by(&args[1..])
             }
         }
         // The component-animation authoring verbs (#2869): motion as DATA on a component record. Custom
@@ -1462,7 +1490,17 @@ fn cmd_similar(args: &[String]) -> Result<(), String> {
     if !comps.iter().any(|c| c.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str())) {
         return Err(format!("no component with id '{id}' (see `bsc ui list --raw`)"));
     }
-    let rows = crate::similarity::rank_similar(&id, &comps, top, floor);
+    // #3584: fold each candidate's graph-USAGE (composes-inverse) into the row, so a "these two overlap"
+    // proposal arrives with which side is load-bearing — the optimizer folds the LESS-used into the more.
+    let idx = used_by_index(&comps);
+    let rows: Vec<serde_json::Value> = crate::similarity::rank_similar(&id, &comps, top, floor)
+        .into_iter()
+        .map(|mut r| {
+            let key = (r["kit"].as_str().unwrap_or("").to_string(), r["name"].as_str().unwrap_or("").to_string());
+            r["usedBy"] = serde_json::Value::from(idx.get(&key).map_or(0, Vec::len));
+            r
+        })
+        .collect();
     if json {
         let out = if pretty { serde_json::to_string_pretty(&rows) } else { serde_json::to_string(&rows) };
         println!("{}", out.map_err(|e| e.to_string())?);
@@ -1475,13 +1513,127 @@ fn cmd_similar(args: &[String]) -> Result<(), String> {
     println!("components similar to '{id}', most-similar first:");
     for r in &rows {
         println!(
-            "  {:>3.0}%  {} ({})  [name {:.2} · contract {:.2}]",
+            "  {:>3.0}%  {} ({})  [name {:.2} · contract {:.2} · used-by {}]",
             r["score"].as_f64().unwrap_or(0.0) * 100.0,
             r["name"].as_str().unwrap_or(""),
             r["kit"].as_str().unwrap_or(""),
             r["name_similarity"].as_f64().unwrap_or(0.0),
             r["contract_similarity"].as_f64().unwrap_or(0.0),
+            r["usedBy"].as_u64().unwrap_or(0),
         );
+    }
+    Ok(())
+}
+
+/// The composes-INVERSE (#3584): for each `(kitId, name)`, the sorted+deduped names of same-kit components
+/// that list it in `composes`. The graph-internal USAGE signal — how load-bearing a component is within its
+/// kit — keyed by `(kit, name)` because `composes` resolves by NAME and a name can recur across kits (kits
+/// never cross, so a `Button` in kit A and one in kit B are distinct). Computed live from the records, so
+/// it is never a placeholder (unlike the codebase-usage `used` field).
+fn used_by_index(
+    components: &[serde_json::Value],
+) -> std::collections::BTreeMap<(String, String), Vec<String>> {
+    let mut idx: std::collections::BTreeMap<(String, String), Vec<String>> = std::collections::BTreeMap::new();
+    for c in components {
+        let kit = c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+        let Some(composer) = c.get("name").and_then(serde_json::Value::as_str).filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        for dep in c.get("composes").and_then(serde_json::Value::as_array).into_iter().flatten() {
+            if let Some(dep_name) = dep.as_str().filter(|s| !s.is_empty()) {
+                idx.entry((kit.clone(), dep_name.to_string())).or_default().push(composer.to_string());
+            }
+        }
+    }
+    for composers in idx.values_mut() {
+        composers.sort();
+        composers.dedup();
+    }
+    idx
+}
+
+/// `bsc ui used-by <id>` / `--all` (#3584) — the graph-usage read (composes-inverse). A READ verb, never
+/// scope-gated. Single form: one component's composers + count. `--all`: every component ranked by usage,
+/// most-used first (`--kit` scopes to one kit) — the whole-library "what is load-bearing" view.
+fn cmd_used_by(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut json, mut pretty, mut all, mut kit_filter, mut id) =
+        (None::<String>, false, false, false, None::<String>, None::<String>);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            "--all" => all = true,
+            "--kit" => kit_filter = it.next().cloned(),
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other if id.is_none() => id = Some(other.to_string()),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let comps: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    let idx = used_by_index(&comps);
+    let count_of = |c: &serde_json::Value| -> usize {
+        let key = (
+            c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("").to_string(),
+            c.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string(),
+        );
+        idx.get(&key).map_or(0, Vec::len)
+    };
+
+    if all {
+        // Whole-library ranking, most-used first (id tiebreak for order-stability).
+        let mut rows: Vec<serde_json::Value> = comps
+            .iter()
+            .filter(|c| kit_filter.as_deref().is_none_or(|k| c.get("kitId").and_then(serde_json::Value::as_str) == Some(k)))
+            .map(|c| serde_json::json!({
+                "id": c.get("id").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "name": c.get("name").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "kit": c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "count": count_of(c),
+            }))
+            .collect();
+        rows.sort_by(|a, b| {
+            b["count"].as_u64().cmp(&a["count"].as_u64()).then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
+        });
+        if json {
+            let out = if pretty { serde_json::to_string_pretty(&rows) } else { serde_json::to_string(&rows) };
+            println!("{}", out.map_err(|e| e.to_string())?);
+        } else {
+            println!("components by graph usage (composes-inverse), most-used first:");
+            for r in &rows {
+                println!("  {:>3}  {} ({})", r["count"].as_u64().unwrap_or(0), r["name"].as_str().unwrap_or(""), r["kit"].as_str().unwrap_or(""));
+            }
+        }
+        return Ok(());
+    }
+
+    let id = id.ok_or("usage: bsc ui used-by <id> [--json]  |  bsc ui used-by --all [--kit K]")?;
+    let target = comps
+        .iter()
+        .find(|c| c.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str()))
+        .ok_or_else(|| format!("no component with id '{id}' (see `bsc ui list --raw`)"))?;
+    let key = (
+        target.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("").to_string(),
+        target.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string(),
+    );
+    let composers = idx.get(&key).cloned().unwrap_or_default();
+    let out = serde_json::json!({
+        "id": id,
+        "name": key.1,
+        "kit": key.0,
+        "usedBy": composers,
+        "count": composers.len(),
+    });
+    if json {
+        let text = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+        println!("{}", text.map_err(|e| e.to_string())?);
+    } else if composers.is_empty() {
+        println!("'{}' ({}) is composed by NOTHING in its kit — an orphan candidate (used-by 0).", key.1, key.0);
+    } else {
+        println!("'{}' ({}) is composed by {} component(s): {}", key.1, key.0, composers.len(), composers.join(", "));
     }
     Ok(())
 }
@@ -2893,8 +3045,8 @@ mod tests {
             names,
             vec![
                 "list", "shapes", "get", "log", "set", "remove", "kit", "eslint-preset", "usage",
-                "doctor", "dupes", "similar", "define-animation", "list-animations", "remove-animation",
-                "set-src", "patch", "preview-props", "preview-errors", "preview-error"
+                "doctor", "dupes", "similar", "used-by", "define-animation", "list-animations", "remove-animation",
+                "set-src", "patch", "regroup", "preview-props", "preview-errors", "preview-error"
             ]
         );
         for c in command_docs() {
@@ -3940,5 +4092,76 @@ mod tests {
             assert!(run(vec!["set".into(), "help".into()], "bsc ui").is_ok(), "set help stays reachable read-scoped");
             assert!(run(vec!["log".into(), "help".into()], "bsc ui").is_ok(), "log help stays reachable read-scoped");
         });
+    }
+
+    #[test]
+    fn used_by_index_is_the_kit_scoped_composes_inverse() {
+        // #3584: the graph-usage signal. Button is composed by Card + Panel (2) in react-ui; a SAME-NAMED
+        // Button in another kit is counted SEPARATELY (composes resolves by name WITHIN a kit).
+        let comps = vec![
+            serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui", "composes": [] }),
+            serde_json::json!({ "id": "card", "name": "Card", "kitId": "react-ui", "composes": ["Button", "Icon"] }),
+            serde_json::json!({ "id": "panel", "name": "Panel", "kitId": "react-ui", "composes": ["Button"] }),
+            serde_json::json!({ "id": "muibutton", "name": "Button", "kitId": "mui", "composes": [] }),
+            serde_json::json!({ "id": "toolbar", "name": "Toolbar", "kitId": "mui", "composes": ["Button"] }),
+        ];
+        let idx = used_by_index(&comps);
+        assert_eq!(
+            idx.get(&("react-ui".into(), "Button".into())),
+            Some(&vec!["Card".to_string(), "Panel".to_string()]),
+            "react-ui Button: composed by Card + Panel, sorted+deduped",
+        );
+        assert_eq!(idx.get(&("mui".into(), "Button".into())).map(Vec::len), Some(1), "the other kit's Button is separate");
+        assert!(!idx.contains_key(&("react-ui".into(), "Card".into())), "nothing composes Card ⇒ absent (an orphan/root)");
+        assert_eq!(idx.get(&("react-ui".into(), "Icon".into())).map(Vec::len), Some(1), "a composed NAME appears even with no own record");
+    }
+
+    #[test]
+    fn used_by_command_reads_single_and_all_and_is_never_gated() {
+        let store = tmp_component_store("usedby");
+        let dir = store.dir().to_string_lossy().into_owned();
+        for rec in [
+            serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui", "role": "primitive", "composes": [] }),
+            serde_json::json!({ "id": "card", "name": "Card", "kitId": "react-ui", "role": "composite", "composes": ["Button"] }),
+        ] {
+            store.set(rec["id"].as_str().unwrap(), &rec.to_string()).unwrap();
+        }
+        let d = |extra: &[&str]| {
+            extra.iter().map(|s| s.to_string()).chain(["--dir".to_string(), dir.clone()]).collect::<Vec<_>>()
+        };
+        assert!(run(d(&["used-by", "button", "--json"]), "bsc ui").is_ok(), "single form");
+        assert!(run(d(&["used-by", "--all"]), "bsc ui").is_ok(), "--all ranking");
+        assert!(run(d(&["used-by", "--all", "--kit", "react-ui", "--json"]), "bsc ui").is_ok(), "--all --kit --json");
+        assert!(run(vec!["used-by".into(), "help".into()], "bsc ui").is_ok(), "help reachable");
+        let err = run(d(&["used-by", "ghost"]), "bsc ui").unwrap_err();
+        assert!(err.contains("no component with id 'ghost'"), "{err}");
+
+        // A READ — in the catalog, never a scoped mutation, and runs under a read-only ui scope.
+        assert!(COMPONENT_COMMANDS.iter().any(|c| c.name == "used-by"));
+        assert!(!is_scoped_mutation(&["used-by".to_string(), "button".to_string()]), "used-by is a read");
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            assert!(run(d(&["used-by", "button"]), "bsc ui").is_ok(), "used-by works read-scoped");
+        });
+    }
+
+    #[test]
+    fn similar_folds_in_each_candidate_usage() {
+        // #3584: `similar` still ranks by name+contract, but each row now carries `usedBy` so a combine
+        // proposal shows which side is load-bearing. Card2 duplicates Card's contract; Card is composed by
+        // Page (used-by 1), Card2 by nothing (0) — so the optimizer folds Card2 → Card.
+        let comps = vec![
+            serde_json::json!({ "id": "card", "name": "Card", "kitId": "k", "role": "composite", "props": [{ "name": "title", "type": "string" }], "variants": [], "composes": [], "srcText": "<div/>" }),
+            serde_json::json!({ "id": "card2", "name": "CardView", "kitId": "k", "role": "composite", "props": [{ "name": "title", "type": "string" }], "variants": [], "composes": [], "srcText": "<div/>" }),
+            serde_json::json!({ "id": "page", "name": "Page", "kitId": "k", "role": "page", "composes": ["Card"] }),
+        ];
+        let idx = used_by_index(&comps);
+        // The fold is a lookup on this index (exercised live by `cmd_similar`): Card is load-bearing, CardView isn't.
+        assert_eq!(idx.get(&("k".into(), "Card".into())).map(Vec::len), Some(1));
+        assert!(!idx.contains_key(&("k".into(), "CardView".into())));
+        // And the command runs end-to-end.
+        let store = tmp_component_store("similar-usage");
+        let dir = store.dir().to_string_lossy().into_owned();
+        for c in &comps { store.set(c["id"].as_str().unwrap(), &c.to_string()).unwrap(); }
+        assert!(run(vec!["similar".into(), "card2".into(), "--json".into(), "--dir".into(), dir], "bsc ui").is_ok());
     }
 }
