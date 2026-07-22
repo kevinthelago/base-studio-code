@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { compileAnimationsCss, kitAnimations } from "@/shared/ui/kit";
 import {
-  resolveMemPath, lookupMem, buildComponentSrcDoc, exitShimScript, fitShimScript, gestureEngineScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
+  resolveMemPath, lookupMem, buildComponentSrcDoc, exitShimScript, fitShimScript, gestureEngineScript, inspectEngineScript, COMPONENT_IMPORTMAP, COMPONENT_EXTERNALS,
 } from "./componentBundle";
 
 // The esbuild-wasm bundle can't run under jsdom; these cover the PURE pieces (path resolution + srcdoc
@@ -281,6 +281,24 @@ describe("componentBundle — pan/zoom engine (#3190 crisp pass)", () => {
     expect(s).toContain("typeof d.__cmd");            // obeys host zoomIn/zoomOut/fit commands
     expect(s).toContain("DRAG_NATIVE");               // form fields keep their native drag; else drag-pans
     expect(s).toContain("scrollWidth");               // FIT measures the content to show the whole component
+  });
+
+  it("inspectEngineScript embeds the navigable names + the fiber/data-attr picker; empty ⇒ empty", () => {
+    expect(inspectEngineScript([])).toBe("");
+    const s = inspectEngineScript(["WorkerBoard", "FleetHealth"]);
+    expect(s.startsWith("\n<script>")).toBe(true);
+    expect(s).toContain('["WorkerBoard","FleetHealth"]');   // the navigable child set (the component's composes)
+    expect(s).toContain("__reactFiber$");                    // primary path: React fiber-walk (unminified names)
+    expect(s).toContain("data-bsc-comp");                    // fallback: explicit tag (non-React / e2e seam)
+    expect(s).toContain("__navigate");                       // posts the chosen child to the host on Alt-click
+    expect(s).toContain("elementFromPoint");                 // hit-tests under the cursor
+  });
+
+  it("buildComponentSrcDoc adds the Alt-hold inspect layer only when `inspect` names are passed (else unchanged)", () => {
+    expect(buildComponentSrcDoc("X", {})).not.toContain("__navigate");
+    const doc = buildComponentSrcDoc("X", { inspect: ["Card"] });
+    expect(doc).toContain("__navigate");
+    expect(doc).toContain('["Card"]');
   });
 
   it("buildComponentSrcDoc injects the engine + a NON-clipping content box under zoomEngine, suppressing the fit-shim", () => {

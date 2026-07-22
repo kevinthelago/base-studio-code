@@ -223,6 +223,14 @@ export function DesignsWorkbench() {
       previewState={previewState}
       zoomEngine={{}}
       registerZoomApi={setPreviewZoomApi}
+      // #3596: hold Alt in the expanded preview → clicking a child component navigates the graph to it.
+      // Uses the store setters directly (selectComp is declared below this const); the inspector re-derives.
+      onNavigate={(name) => {
+        const child = components.find((c) => c.name === name && c.kitId === kitId);
+        if (!child) return;
+        if (child.kitId !== kitId) setKitId(child.kitId);
+        setCompId(child.id);
+      }}
     />
   );
 

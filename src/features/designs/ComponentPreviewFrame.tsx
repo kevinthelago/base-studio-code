@@ -35,7 +35,7 @@ const PAGE_ASPECT = 1.15;
 
 type Status = "building" | "ready" | "error";
 
-export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", scrollY, zoomEngine, registerZoomApi, shotTarget }: {
+export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, height = 260, onExpand, extraAnimation, previewState = "loaded", scrollY, zoomEngine, registerZoomApi, onNavigate, shotTarget }: {
   comp: ComponentRecord;
   /** The selected theme's light/dark surface (its `base`). */
   theme: "dark" | "light";
@@ -66,6 +66,10 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   /** Receives the engine's +/−/fit control API (or `null` on teardown) so the host can wire its zoom
    *  buttons — the engine lives in the iframe, so the buttons post `__cmd` messages to it (#3190). */
   registerZoomApi?: (api: { zoomIn: () => void; zoomOut: () => void; fit: () => void } | null) => void;
+  /** Enable Alt-hold inspect (#3596): while Alt is held the preview rings the child component under the
+   *  cursor and calls this with its NAME on click. Only the EXPANDED try-on passes it (its `composes`
+   *  become the navigable set); omit for thumbnails, which stay plain interactable previews. */
+  onNavigate?: (name: string) => void;
   /** #3308: mark THIS frame as the app's `"preview"` shot target — the inspector's lead preview passes it
    *  so `bsc shot preview` crops the webview to just this component (the designer's ground truth). Only
    *  ONE mounted frame should set it. */
@@ -232,6 +236,9 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
           injectedCss, themeCss, theme, rootClass, exitSelectors,
           fitContent: !pageLike && !doScroll, scrollY: doScroll,
           zoomEngine: zoomEngine ? {} : undefined,
+          // #3596: the expanded try-on (which passes onNavigate) gets the Alt-hold inspect layer, keyed
+          // to THIS component's composed children — the names the fiber-walk navigates to.
+          inspect: onNavigate ? comp.composes : undefined,
         });
         if (iframeRef.current) iframeRef.current.srcdoc = srcDoc;
         // #3437: publish what this frame IS, for `bsc debug frames`. Recorded here because the pair that
@@ -258,7 +265,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     // NOT rebuild (it flashes "building"); applied live below. The initial build reads the current theme +
     // state fresh; `liveStatesKey` rebuilds only when the component gains/loses a supported state.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild keyed on the stable identity fields
-  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, liveStatesKey, scrollY, hasZoomEngine, retry, previewData, libResolver]);
+  }, [comp.id, comp.src, comp.source, comp.srcText, comp.name, pageLike, siblingsKey, animKey, exitKey, liveStatesKey, scrollY, hasZoomEngine, retry, previewData, libResolver, !!onNavigate]);
 
   // #3556: apply a theme change LIVE to the mounted iframe (data-theme base + the `__bsc_theme` token
   // overrides) via postMessage — no rebuild, so the in-iframe pan/zoom view survives a theme switch. Keyed
@@ -293,10 +300,13 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       const d = e.data;
-      if (!d || !d.__preview) return;
-      // Errors/renders are PER-FRAME — match THIS iframe's window so a concurrent scan probe's error
-      // doesn't leak into (and falsely fail) this live preview (#2908).
+      if (!d) return;
+      // Per-frame messages — match THIS iframe's window so a concurrent scan probe's message doesn't
+      // leak into (and falsely fail / mis-navigate) this live preview (#2908).
       if (e.source !== iframeRef.current?.contentWindow) return;
+      // #3596: Alt-hold inspect navigated to a child — route it to the host (the graph selects that node).
+      if (d.__navigate && onNavigate) { onNavigate(String(d.__navigate)); return; }
+      if (!d.__preview) return;
       if (d.__preview === "error") {
         const message = String(d.message);
         setStatus("error");
@@ -306,7 +316,7 @@ export function ComponentPreviewFrame({ comp, theme, themeId, themeVars, width, 
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [comp.id]);
+  }, [comp.id, onNavigate]);
 
   // #3308: when this is the designated shot target (the inspector's lead preview), keep its on-screen rect
   // registered with the backend so `bsc shot preview` crops the webview to JUST this component (the
