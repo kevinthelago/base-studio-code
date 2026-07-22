@@ -44,3 +44,12 @@ const BY_KEY = Object.fromEntries(WORKSPACES.map((s) => [s.key, s])) as Record<W
 export function workspaceLabel(key: Workspace): string {
   return BY_KEY[key]?.label ?? key;
 }
+
+/** The Workspace to actually render for a raw store `activeWorkspace`. The legacy Console page is
+ *  opt-in (#2372): when `showConsolePage` is off, a persisted (or just-toggled-off) console-active
+ *  workspace falls back to Glance. This is the ONE definition of that redirect — the App shell uses it
+ *  for the render + all chrome, and `useHotkeys` uses it to gate the console-pane hotkeys (which read
+ *  the raw store value, so without this they'd keep firing while Glance is on screen, #3575). */
+export function effectiveWorkspace(raw: Workspace, showConsolePage: boolean): Workspace {
+  return !showConsolePage && raw === "console" ? "glance" : raw;
+}

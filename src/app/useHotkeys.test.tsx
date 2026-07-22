@@ -24,6 +24,9 @@ const BROADCAST_TOGGLE: KeyboardEventInit = { code: "KeyC", ctrlKey: true, shift
 beforeEach(() => {
   useAppStore.setState({
     activeWorkspace: "console",
+    // The console-pane hotkeys only fire when the (opt-in, #2372) Console page is enabled — the default
+    // suite scenario is "console is the live surface", so turn it on. The #3575 block below covers off.
+    showConsolePage: true,
     fullscreenPaneIdx: -1,
     consoleBroadcast: false,
     keybindings: {},
@@ -96,6 +99,43 @@ describe("useHotkeys — Console-only listener (#1218)", () => {
     act(() => { useAppStore.setState({ activeWorkspace: "console" }); });
     rerender();
     expect(pressKey(BROADCAST_TOGGLE).defaultPrevented).toBe(true);
+    expect(useAppStore.getState().consoleBroadcast).toBe(true);
+  });
+});
+
+describe("useHotkeys — console hotkeys follow the Console-page toggle (#3575)", () => {
+  it("does NOT fire the console hotkeys when the page is off, even if the workspace is stale-console", () => {
+    // A persisted (or just-toggled-off) `activeWorkspace: "console"` renders Glance (App redirects), so
+    // the console hotkeys must stay inert — this is the leak the gating closes.
+    useAppStore.setState({ activeWorkspace: "console", showConsolePage: false });
+    renderHook(() => useHotkeys());
+
+    const ev = pressKey(BROADCAST_TOGGLE);
+
+    expect(useAppStore.getState().consoleBroadcast).toBe(false);
+    expect(ev.defaultPrevented).toBe(false);
+  });
+
+  it("still navigates screens via F-keys while the console page is off (redirect → Glance)", () => {
+    // The console-effect is detached, so the always-on nav listener (gated on the EFFECTIVE workspace)
+    // must own F-keys on the redirected Glance surface — otherwise screen nav would go dead.
+    useAppStore.setState({ activeWorkspace: "console", showConsolePage: false });
+    renderHook(() => useHotkeys());
+
+    const ev = pressKey({ code: "F6" }); // screen-github
+
+    expect(useAppStore.getState().activeWorkspace).toBe("github");
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it("resumes firing the console hotkeys when the page toggle flips on", () => {
+    useAppStore.setState({ activeWorkspace: "console", showConsolePage: false });
+    const { rerender } = renderHook(() => useHotkeys());
+    expect(pressKey(BROADCAST_TOGGLE).defaultPrevented).toBe(false); // off → inert
+
+    act(() => { useAppStore.setState({ showConsolePage: true }); });
+    rerender();
+    expect(pressKey(BROADCAST_TOGGLE).defaultPrevented).toBe(true);  // on → fires
     expect(useAppStore.getState().consoleBroadcast).toBe(true);
   });
 });
