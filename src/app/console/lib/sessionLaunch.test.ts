@@ -311,15 +311,18 @@ describe("buildSessionSettings", () => {
     const c = cmds(buildSessionSettings(mkStore({ paneRoles: { p: "director" } }), "p"));
     expect(c).toContain("bsc-audit");
     expect(c).not.toContain("bsc-defer");
-    expect(c).not.toContain("bsc-continue"); // #3547: only RESTRICTED studio roles get the studio bounce
+    expect(c).not.toContain("bsc-continue"); // #3580: the studio bsc-continue Stop hook was removed
   });
 
-  it("gives a restricted STUDIO role the studio Stop-bounce (bsc-continue), never the worker one (#3547)", () => {
-    // The designer/librarian/etc. power through clear guided work instead of pausing to self-assess.
+  it("gives a restricted STUDIO role NO Stop-bounce — its keep-going is the loop pump, not a hook (#3580)", () => {
+    // #3547 installed bsc-continue for every studio role; #3580 dropped it. Keep-going in loop mode is the
+    // app-side loop pump (useDesignerLoopPump, #3292), so an interactive studio session stops and hands
+    // back instead of being told to power through a queue that isn't there. The pane is still gated.
     for (const role of ["designer", "librarian", "sound-designer", "architect", "curator"]) {
       const c = cmds(buildSessionSettings(mkStore({ paneRoles: { p: role } }), "p"));
-      expect(c, role).toContain("bsc-continue");
+      expect(c, role).not.toContain("bsc-continue");
       expect(c, role).not.toContain("bsc-defer");
+      expect(c, role).toContain("bsc-audit");
     }
   });
 

@@ -139,6 +139,30 @@ USAGE:
 Deletes the component keyed by <id>. A no-op (not an error) when it does not exist.",
     },
     CmdDoc {
+        name: "rename",
+        summary: "rename a component in place — sweeps every composes/rules reference (#3576)",
+        usage: "\
+USAGE:
+  bsc ui rename <id> <NewName> [--by <tag>] [--note <text>] [--dir D] [--pretty]
+
+Renames the component keyed by <id> to <NewName> in ONE operation. <id> is the STABLE store key (frozen at
+creation, never re-derived), so only the display/code NAME moves — nothing keyed by id (the store key, the
+change history #3164/#3568, tokens, the cross-graph URN) is disturbed.
+
+Because the composition graph is NAME-keyed, a rename rewrites, scoped to the component's OWN kit (kits
+never cross):
+  • the record's `name`, and the identifier in its `srcText` (+ `source` if present) — `export function
+    <Old>` and self-`<Old>` → `<New>`, matched on whole-identifier boundaries so `IconButton` /
+    `ButtonGroup` are never touched;
+  • every sibling's `composes[]` entry == <Old>, and every `rules[].use` == <Old>, → <New>.
+
+Every touched record gets a change-history entry (#3568); `--note` overrides the default
+\"renamed <Old> → <New>\" summary. Prints { id, from, to, kit, updated: [ids], referencesUpdated }.
+
+REFUSES when <NewName> is not a PascalCase identifier, equals the current name, or already names another
+component in the same kit (which would make `composes` ambiguous). A ui-scope MUTATION.",
+    },
+    CmdDoc {
         name: "kit",
         summary: "operate on the KITS instead of the components",
         usage: "\
@@ -561,7 +585,7 @@ fn is_scoped_mutation(args: &[String]) -> bool {
     };
     matches!(
         verb.map(String::as_str),
-        Some("set") | Some("remove") | Some("define-animation") | Some("remove-animation") | Some("regroup")
+        Some("set") | Some("remove") | Some("rename") | Some("define-animation") | Some("remove-animation") | Some("regroup")
     ) && next.map(String::as_str) != Some("help")
 }
 
@@ -796,6 +820,13 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "set"));
             Ok(())
         }
+        // `rename` (#3576) — id-stable rename that sweeps the NAME-keyed composes/rules references across
+        // the kit + stamps history. The scope gate above already refused a read-scoped session.
+        Some("rename") if args.get(1).map(String::as_str) != Some("help") => cmd_rename(&args[1..]),
+        Some("rename") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "rename"));
+            Ok(())
+        }
         // `list --shape <shape>` (#2475) filters to one shape's ideal components — intercepted here
         // (the shared store CLI rejects unknown flags); a plain `list` still delegates unchanged.
         Some("list") if args.iter().any(|a| a == "--shape") => cmd_list_shape(&args[1..]),
@@ -971,6 +1002,178 @@ fn cmd_set(
     Ok(())
 }
 
+/// A valid component NAME — a PascalCase identifier: an uppercase ASCII first char, then ASCII
+/// alphanumerics. React cannot treat a lowercase name as a component, so the capital is a real rule, not a
+/// style one; alphanumeric-only keeps the derived `--<name>-<token>` conventions and JSX tag clean.
+fn is_component_name_ident(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_uppercase()) && chars.all(|c| c.is_ascii_alphanumeric())
+}
+
+/// Replace WHOLE-IDENTIFIER occurrences of `old` with `new` in `text` — `old` must be bounded on both
+/// sides by a non-identifier char (or the string edge), so renaming `Button` never rewrites `IconButton`
+/// or `ButtonGroup`. Identifier chars are ASCII alphanumeric, `_`, and `$` (the JS identifier set).
+/// Component names are ASCII, so matching on char boundaries is safe. Used to rewrite the renamed
+/// component's own `srcText`/`source` identifier.
+fn rename_ident(text: &str, old: &str, new: &str) -> String {
+    if old.is_empty() {
+        return text.to_string();
+    }
+    let is_ident = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '$';
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < text.len() {
+        if text[i..].starts_with(old) {
+            let before_ok = i == 0 || !text[..i].chars().next_back().is_some_and(is_ident);
+            let after = i + old.len();
+            let after_ok = after >= text.len() || !text[after..].chars().next().is_some_and(is_ident);
+            if before_ok && after_ok {
+                out.push_str(new);
+                i = after;
+                continue;
+            }
+        }
+        let ch = text[i..].chars().next().expect("i is a char boundary");
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+/// `rename <id> <NewName> [--by <tag>] [--note <text>] [--dir D] [--pretty]` (#3576) — rename a component
+/// in place. `id` is the STABLE store key (frozen at creation, never re-derived), so only the NAME moves:
+/// the record's `name` + the identifier in its `srcText`/`source`, and — because the composition graph is
+/// NAME-keyed (`model.ts`) — every sibling's `composes[]` + `rules[].use` that named it, swept across the
+/// SAME kit only (kits never cross). Every touched record gets a change-history entry (#3568). Everything
+/// keyed by id (store key, history, tokens, cross-graph URN) is untouched. A ui-scope MUTATION.
+fn cmd_rename(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut pretty, mut by, mut note) = (None::<String>, false, None::<String>, None::<String>);
+    let mut positionals: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            "--by" => by = it.next().cloned(),
+            "--note" => note = it.next().cloned(),
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            positional => positionals.push(positional.to_string()),
+        }
+    }
+    let id = positionals
+        .first()
+        .ok_or("usage: bsc ui rename <id> <NewName> [--by <tag>] [--note <text>]")?;
+    let new_name = positionals
+        .get(1)
+        .ok_or("usage: bsc ui rename <id> <NewName> — the new PascalCase name is required")?;
+    if !is_component_name_ident(new_name) {
+        return Err(format!(
+            "'{new_name}' is not a valid component name — a component is a PascalCase identifier ([A-Z][A-Za-z0-9]*)"
+        ));
+    }
+
+    let store = open_component_store(&dir)?;
+    let target_raw = store.get(id)?.ok_or_else(|| {
+        format!("no component '{id}' in the store — nothing to rename (ids are stable; see `bsc ui list`)")
+    })?;
+    let target: serde_json::Value = serde_json::from_str(&target_raw)
+        .map_err(|e| format!("stored component '{id}' is not valid JSON: {e}"))?;
+    let old_name = target.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+    if old_name.is_empty() {
+        return Err(format!("component '{id}' has no `name` to rename"));
+    }
+    if old_name == *new_name {
+        return Err(format!("component '{id}' is already named '{new_name}' — nothing to do"));
+    }
+    let kit_id = target.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+
+    let records: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    // Collision: `composes` resolves by NAME within a kit, so two same-named components in one kit make it
+    // ambiguous. Refuse before writing anything.
+    let collides = records.iter().any(|r| {
+        r.get("kitId").and_then(serde_json::Value::as_str) == Some(kit_id.as_str())
+            && r.get("name").and_then(serde_json::Value::as_str) == Some(new_name.as_str())
+            && r.get("id").and_then(serde_json::Value::as_str) != Some(id.as_str())
+    });
+    if collides {
+        return Err(format!(
+            "kit '{kit_id}' already has a component named '{new_name}' — a rename would make `composes` ambiguous (it resolves by name within a kit). Pick another name."
+        ));
+    }
+
+    let now = crate::record::now_iso();
+    let writer = crate::record::resolve_writer(by.as_deref());
+    let default_note = format!("renamed {old_name} → {new_name}");
+    let note_str = note.as_deref().map(str::trim).filter(|s| !s.is_empty()).unwrap_or(&default_note);
+
+    let mut updated: Vec<String> = Vec::new();
+    for mut rec in records {
+        // The sweep is bounded to the renamed component's OWN kit — kits never cross, so a same-named
+        // component elsewhere is a different component and must NOT be touched.
+        if rec.get("kitId").and_then(serde_json::Value::as_str) != Some(kit_id.as_str()) {
+            continue;
+        }
+        let rid = match rec.get("id").and_then(serde_json::Value::as_str) {
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => continue,
+        };
+        let mut changed = false;
+
+        if rid == *id {
+            rec["name"] = serde_json::Value::from(new_name.as_str());
+            changed = true;
+            // Rewrite the identifier in the component's own source (usage snippet + any vendored module).
+            for field in ["srcText", "source"] {
+                if let Some(s) = rec.get(field).and_then(serde_json::Value::as_str) {
+                    let rewritten = rename_ident(s, &old_name, new_name);
+                    if rewritten != s {
+                        rec[field] = serde_json::Value::from(rewritten);
+                    }
+                }
+            }
+        }
+        // Every record in the kit: rewrite composes[] + rules[].use references to the old name.
+        if let Some(arr) = rec.get_mut("composes").and_then(serde_json::Value::as_array_mut) {
+            for e in arr.iter_mut() {
+                if e.as_str() == Some(old_name.as_str()) {
+                    *e = serde_json::Value::from(new_name.as_str());
+                    changed = true;
+                }
+            }
+        }
+        if let Some(rules) = rec.get_mut("rules").and_then(serde_json::Value::as_array_mut) {
+            for rule in rules.iter_mut() {
+                if rule.get("use").and_then(serde_json::Value::as_str) == Some(old_name.as_str()) {
+                    rule["use"] = serde_json::Value::from(new_name.as_str());
+                    changed = true;
+                }
+            }
+        }
+
+        if changed {
+            let prior = current_record(&store, &rid)?;
+            crate::record::stamp_with_history(&mut rec, &prior, &writer, &now, Some(note_str));
+            store.set(&rid, &serde_json::to_string(&rec).map_err(|e| format!("rename write: {e}"))?)?;
+            bsc_util::emit_ui_activity("component", &rid);
+            updated.push(rid);
+        }
+    }
+
+    let references_updated = updated.iter().filter(|u| *u != id).count();
+    let out = serde_json::json!({
+        "id": id,
+        "from": old_name,
+        "to": new_name,
+        "kit": kit_id,
+        "updated": updated,
+        "referencesUpdated": references_updated,
+    });
+    let text = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    println!("{}", text.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
 /// `regroup [--kit <id>] [--dir D] [--dry-run] [--pretty]` (#3579) — re-derive every stored component's
 /// `group` as a nested `/`-delimited FOLDER PATH from its `src` ([`crate::group_from_src`]), so a kit
 /// organizes like a completed project's folders (`shared/ui/controls`, `features/github`). Rewrites ONLY
@@ -998,10 +1201,11 @@ fn cmd_regroup(args: &[String]) -> Result<(), String> {
     let mut scanned = 0usize;
     let mut changed = Vec::new();
     let mut updated = Vec::new();
-    for id in store.list() {
-        let Some(raw) = store.get(&id)? else { continue };
+    // `Store::list()` yields each record's VERBATIM JSON (NOT its id) — parse each directly; the id is
+    // the record's own `id` field (which `set_stamped` also keys the write off).
+    for raw in store.list() {
         let mut rec: serde_json::Value = serde_json::from_str(&raw)
-            .map_err(|e| format!("stored record '{id}' is not valid JSON: {e}"))?;
+            .map_err(|e| format!("a stored component is not valid JSON: {e}"))?;
         if let Some(k) = &kit {
             if rec.get("kitId").and_then(serde_json::Value::as_str) != Some(k.as_str()) {
                 continue;
@@ -1014,6 +1218,7 @@ fn cmd_regroup(args: &[String]) -> Result<(), String> {
         if old == new_group {
             continue;
         }
+        let id = rec.get("id").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
         changed.push(serde_json::json!({ "id": id, "from": old, "to": new_group }));
         rec["group"] = serde_json::Value::String(new_group);
         updated.push(rec);
@@ -3044,7 +3249,7 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "list", "shapes", "get", "log", "set", "remove", "kit", "eslint-preset", "usage",
+                "list", "shapes", "get", "log", "set", "remove", "rename", "kit", "eslint-preset", "usage",
                 "doctor", "dupes", "similar", "used-by", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "regroup", "preview-props", "preview-errors", "preview-error"
             ]
@@ -4163,5 +4368,104 @@ mod tests {
         let dir = store.dir().to_string_lossy().into_owned();
         for c in &comps { store.set(c["id"].as_str().unwrap(), &c.to_string()).unwrap(); }
         assert!(run(vec!["similar".into(), "card2".into(), "--json".into(), "--dir".into(), dir], "bsc ui").is_ok());
+    }
+
+    #[test]
+    fn rename_ident_replaces_whole_identifiers_only() {
+        // #3576: the boundary rule — `Button` → `PrimaryButton` rewrites the declaration and the JSX tag,
+        // but NEVER the substring inside `IconButton` / `ButtonGroup` / `notButton`.
+        assert_eq!(rename_ident("export function Button() {}", "Button", "PrimaryButton"), "export function PrimaryButton() {}");
+        assert_eq!(rename_ident("<Button label=\"x\" />", "Button", "PrimaryButton"), "<PrimaryButton label=\"x\" />");
+        assert_eq!(
+            rename_ident("import { IconButton } from x; <ButtonGroup/> notButton", "Button", "PrimaryButton"),
+            "import { IconButton } from x; <ButtonGroup/> notButton",
+            "substrings of a larger identifier are untouched",
+        );
+        assert_eq!(rename_ident("Button, Button.Item", "Button", "B2"), "B2, B2.Item", "punctuation is a boundary");
+        assert_eq!(rename_ident("nothing here", "Button", "B2"), "nothing here");
+    }
+
+    #[test]
+    fn is_component_name_ident_requires_pascal_case() {
+        for ok in ["Button", "Button2", "A", "PrimaryButton"] {
+            assert!(is_component_name_ident(ok), "{ok} is valid");
+        }
+        for bad in ["button", "", "My-Button", "2Button", "Foo Bar", "with_underscore"] {
+            assert!(!is_component_name_ident(bad), "{bad:?} is invalid");
+        }
+    }
+
+    #[test]
+    fn rename_moves_the_name_sweeps_references_and_freezes_the_id() {
+        let store = tmp_component_store("rename");
+        let dir = store.dir().to_string_lossy().into_owned();
+        // Button (target) · Card (composes Button + a rule using Button) · a SAME-NAMED Button in another kit.
+        for rec in [
+            serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui", "role": "primitive",
+                "srcText": "export function Button() { return <button/>; }" }),
+            serde_json::json!({ "id": "card", "name": "Card", "kitId": "react-ui", "role": "composite",
+                "composes": ["Button", "Icon"],
+                "rules": [{ "id": "r1", "kind": "forbid-element", "target": "button", "use": "Button" }] }),
+            serde_json::json!({ "id": "muibutton", "name": "Button", "kitId": "mui", "role": "primitive" }),
+        ] {
+            store.set(rec["id"].as_str().unwrap(), &rec.to_string()).unwrap();
+        }
+
+        run(vec!["rename".into(), "button".into(), "PrimaryButton".into(), "--by".into(), "designer".into(), "--dir".into(), dir.clone()], "bsc ui")
+            .expect("rename lands");
+
+        // id is FROZEN; name + srcText identifier moved; history stamped with the default note.
+        let b = stored(&store, "button");
+        assert_eq!(b["id"], "button", "the store key never moves");
+        assert_eq!(b["name"], "PrimaryButton");
+        assert!(b["srcText"].as_str().unwrap().contains("export function PrimaryButton"), "srcText: {}", b["srcText"]);
+        assert!(b["srcText"].as_str().unwrap().contains("<button/>"), "the intrinsic <button/> is NOT touched");
+        assert_eq!(b["history"].as_array().unwrap().last().unwrap()["note"], "renamed Button → PrimaryButton");
+
+        // Card's NAME-keyed references rewired; the intrinsic `target` + the unrelated `Icon` are not.
+        let c = stored(&store, "card");
+        assert_eq!(c["composes"], serde_json::json!(["PrimaryButton", "Icon"]));
+        assert_eq!(c["rules"][0]["use"], "PrimaryButton");
+        assert_eq!(c["rules"][0]["target"], "button", "the raw intrinsic is left alone");
+
+        // A same-named component in ANOTHER kit is never touched (kits never cross).
+        let o = stored(&store, "muibutton");
+        assert_eq!(o["name"], "Button");
+        assert!(o.get("history").is_none(), "the other kit's Button was not even written");
+    }
+
+    #[test]
+    fn rename_refuses_bad_name_collision_and_absent_without_mutating() {
+        let store = tmp_component_store("rename-refuse");
+        let dir = store.dir().to_string_lossy().into_owned();
+        store.set("button", &serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui" }).to_string()).unwrap();
+        store.set("chip", &serde_json::json!({ "id": "chip", "name": "Chip", "kitId": "react-ui" }).to_string()).unwrap();
+
+        let refuse = |args: &[&str], needle: &str| {
+            let v: Vec<String> = args.iter().map(|s| s.to_string()).chain(["--dir".to_string(), dir.clone()]).collect();
+            let err = run(v, "bsc ui").unwrap_err();
+            assert!(err.contains(needle), "expected '{needle}' in: {err}");
+        };
+        refuse(&["rename", "button", "lowercase"], "PascalCase");
+        refuse(&["rename", "button", "Button"], "already named");
+        refuse(&["rename", "button", "Chip"], "already has a component named");
+        refuse(&["rename", "ghost", "NewName"], "no component 'ghost'");
+
+        // Not one refusal mutated the record.
+        assert_eq!(stored(&store, "button")["name"], "Button");
+        assert!(stored(&store, "button").get("history").is_none(), "no write happened");
+    }
+
+    #[test]
+    fn rename_is_registered_gated_and_help_reachable() {
+        assert!(COMPONENT_COMMANDS.iter().any(|c| c.name == "rename"));
+        let a = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(is_scoped_mutation(&a(&["rename", "button", "New"])), "rename is a mutation");
+        assert!(!is_scoped_mutation(&a(&["rename", "help"])), "rename help is not a mutation");
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            let err = run(vec!["rename".into(), "button".into(), "New".into()], "bsc ui").unwrap_err();
+            assert!(err.contains("read-only"), "rename refuses read-scoped: {err}");
+            assert!(run(vec!["rename".into(), "help".into()], "bsc ui").is_ok(), "rename help stays reachable read-scoped");
+        });
     }
 }
