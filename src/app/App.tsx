@@ -30,6 +30,7 @@ import { useNotificationSounds } from "@/features/sounds";
 import { useAppBoot } from "@/app/useAppBoot";
 import { useNavHistory } from "@/shared/hooks/useNavHistory";
 import { DetachedWindow, isDetachedWindow } from "@/app/DetachedWindow";
+import { effectiveWorkspace } from "@/app/registry";
 import {
   GitHubWorkspace, AutomationsWorkspace, McpWorkspace, SettingsWorkspace,
   ProjectsWorkspace, SkillsWorkspace, SecurityWorkspace, GlanceWorkspace, WorkspaceFallback,
@@ -78,7 +79,8 @@ export default function App() {
   // console-active workspace falls back to Glance — derived, so every downstream `activeWorkspace`
   // check (rail highlight, chrome, the console mount's display:none) redirects with no reset effect.
   // The console STILL mounts hidden (its PTYs stay alive for the Glance stream dock to reconnect).
-  const activeWorkspace = !showConsolePage && rawActiveWorkspace === "console" ? "glance" : rawActiveWorkspace;
+  // effectiveWorkspace (registry.ts) is the shared definition — useHotkeys gates on it too (#3575).
+  const activeWorkspace = effectiveWorkspace(rawActiveWorkspace, showConsolePage);
 
   // Resolve the app's own source tree once (#3509) so a launch can turn a role's symbolic
   // `app-repo` harvest root into a real path without awaiting.

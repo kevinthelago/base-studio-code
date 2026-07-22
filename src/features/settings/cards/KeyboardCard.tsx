@@ -65,6 +65,16 @@ export function KeyboardCard() {
   const setKeybinding = useAppStore((s) => s.setKeybinding);
   const resetKeybinding = useAppStore((s) => s.resetKeybinding);
   const resetAllKeybindings = useAppStore((s) => s.resetAllKeybindings);
+  const showConsolePage = useAppStore((s) => s.showConsolePage);
+
+  // The legacy Console page is opt-in (#2372); when it's off, its hotkeys don't fire (useHotkeys gates
+  // on the same toggle — #3575), so hide the Console-scoped groups from the reference too. Navigation
+  // (global F-keys) always stays. Drop the console items, then any group left empty.
+  const visibleGroups = showConsolePage
+    ? SHORTCUT_GROUPS
+    : SHORTCUT_GROUPS
+        .map((g) => ({ ...g, items: g.items.filter((s) => s.scope !== "Console") }))
+        .filter((g) => g.items.length > 0);
 
   const [capturingId, setCapturingId] = useState<RebindableId | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -156,7 +166,7 @@ export function KeyboardCard() {
         <InlineError style={{ marginBottom: 12 }}>{error}</InlineError>
       )}
 
-      {SHORTCUT_GROUPS.map((group) => (
+      {visibleGroups.map((group) => (
         <Card key={group.title} title={group.title} style={{ marginBottom: 16 }}>
           <Stack gap={1}>
             {group.items.map((s, i) => {
