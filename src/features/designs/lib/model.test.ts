@@ -37,6 +37,15 @@ describe("component model helpers (#2269)", () => {
     expect(matchesQuery(chip, "zzz")).toBe(false);
   });
 
+  it("matchesQuery also matches the folder-path group (#3589)", () => {
+    const withFolder = { ...byName("Chip"), group: "shared/ui/controls" };
+    expect(matchesQuery(withFolder, "controls")).toBe(true); // folder leaf
+    expect(matchesQuery(withFolder, "shared/ui")).toBe(true); // a folder prefix path
+    expect(matchesQuery(withFolder, "SHARED/UI")).toBe(true); // case-insensitive
+    // A component with no folder doesn't spuriously match a folder query.
+    expect(matchesQuery({ ...byName("Chip"), group: undefined }, "controls")).toBe(false);
+  });
+
   it("resolveComposes pairs each dependency with its record (undefined when absent)", () => {
     const seg = byName("SegmentedControl"); // composes ["Button"]
     const resolved = resolveComposes(seg, LIB);
