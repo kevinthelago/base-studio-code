@@ -50,6 +50,17 @@ describe("componentBridge → bsc ui (#2469)", () => {
     expect(comps?.[1].group).toBeUndefined();
   });
 
+  it("a page node's #3569 `spec` (GeneralNode skeleton) rides verbatim through loadComponents — so the host can render from the store", async () => {
+    const spec = { type: "Box", props: { className: "an-page" }, children: [{ type: "Slot", props: { name: "workerBoard" } }] };
+    vi.mocked(bsc).mockResolvedValueOnce(JSON.stringify([
+      { id: "fleetpage", name: "FleetPage", kitId: "harvested", role: "page", spec },
+      { id: "btn", name: "Button", kitId: "react-ui", role: "primitive" }, // no spec ⇒ undefined
+    ]));
+    const comps = await loadComponents();
+    expect(comps?.[0].spec).toEqual(spec);
+    expect(comps?.[1].spec).toBeUndefined();
+  });
+
   it("writes component upsert/removal through the ui surface", async () => {
     const comp = { id: "c1" } as unknown as ComponentRecord;
     await pushComponent(comp);

@@ -6,8 +6,8 @@
 // only checked "the page mounts" would have passed for every one of those regressions.
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { KitRenderer, validateGeneralNode, visitNodes } from "@/shared/ui/spec";
-import { FLEET_PAGE_SPEC } from "./fleetPageSpec";
+import { KitRenderer, validateGeneralNode, visitNodes, type GeneralNode } from "@/shared/ui/spec";
+import { FLEET_PAGE_SPEC, resolveFleetSpec } from "./fleetPageSpec";
 
 /** Every slot name the spec expects the host to fill. */
 function slotNames(): string[] {
@@ -126,5 +126,23 @@ describe("Fleet — the host fills every slot the spec asks for (#3504)", () => 
 
     expect(screen.queryByText(/unfilled slot/)).toBeNull();
     expect(screen.queryByText(/unknown primitive/)).toBeNull();
+  });
+});
+
+describe("resolveFleetSpec — the Fleet page skeleton comes from the store; the const is the fallback (#3569)", () => {
+  it("returns the STORE spec when present and valid — so a Design Studio edit reflects on the page", () => {
+    const stored: GeneralNode = { type: "Text", props: { children: "from the graph" } };
+    expect(validateGeneralNode(stored)).toEqual([]); // precondition: it really is a valid tree
+    expect(resolveFleetSpec(stored)).toBe(stored);
+  });
+
+  it("falls back to the packaged FLEET_PAGE_SPEC when the store node has no spec", () => {
+    expect(resolveFleetSpec(undefined)).toBe(FLEET_PAGE_SPEC);
+  });
+
+  it("falls back to the seed when the store spec is INVALID — a malformed edit can't crash the page", () => {
+    const bad = { type: "NotAPrimitive" } as unknown as GeneralNode;
+    expect(validateGeneralNode(bad).length).toBeGreaterThan(0); // precondition: it really is invalid
+    expect(resolveFleetSpec(bad)).toBe(FLEET_PAGE_SPEC);
   });
 });
