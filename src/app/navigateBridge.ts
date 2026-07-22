@@ -16,6 +16,7 @@
 //   against the wrong screen.
 import type { AppStore } from "@/store/types";
 import type { Workspace } from "@/app/registry";
+import { dispatchPage } from "@/app/navigate";
 
 /** What `bsc navigate` asks for. Every field optional; absent ⇒ leave it alone. Mirrors Rust `NavRequest`. */
 export interface NavRequest {
@@ -99,7 +100,11 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
   // ── Commit ────────────────────────────────────────────────────────────────────────────────────
   if (req.theme !== undefined) s.setKitTheme(req.theme);
   if (req.workspace !== undefined) s.setWorkspace(req.workspace as Workspace);
-  if (req.page !== undefined) s.setProjectsPageMode(req.page as AppStore["projectsPageMode"]);
+  // Dispatch the page through the SAME per-workspace mechanism the UI uses (#3602) instead of hard-coding
+  // one workspace's setter. The page vocab is still PROJECT_MODES (validated above), so for the projects
+  // workspace this is exactly the old `setProjectsPageMode`; a page with no target workspace defaults to
+  // the Studio's (projects), preserving today's behavior.
+  if (req.page !== undefined) dispatchPage(s, (req.workspace as Workspace) ?? DESIGNS_WORKSPACE, req.page);
 
   // `component` implies its workspace + page — the intent is "show me this", not "set a field". But
   // (#3599) a designer follow-along must not steal the user's current page: only SWITCH to the Studio
