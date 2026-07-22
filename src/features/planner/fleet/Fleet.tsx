@@ -15,7 +15,7 @@ import { Card } from "@/shared/ui/data/Card";
 import { SkeletonChart } from "@/shared/ui/feedback/Skeleton";
 import { CardEmpty, SkeletonRows } from "@/shared/ui/feedback/CardStates";
 import { KitRenderer } from "@/shared/ui/spec";
-import { FLEET_PAGE_SPEC } from "./fleetPageSpec";
+import { resolveFleetSpec, FLEET_PAGE_ID } from "./fleetPageSpec";
 import { useAppStore } from "@/store";
 import { STATUS } from "@/shared/data/fleet";
 import { useFleetLive } from "@/shared/hooks/useFleetLive";
@@ -199,6 +199,13 @@ export function Fleet() {
   const setProjectsPageMode = useAppStore(s => s.setProjectsPageMode);
   const setProjectsView = useAppStore(s => s.setProjectsView);
 
+  // The page's SKELETON now comes from the components STORE (#3569): the harvested `FleetPage` node's
+  // `spec`, so editing it in the Design Studio reflects on this real page. `FLEET_PAGE_SPEC` is the
+  // seed/fallback — used until the store node carries a VALID spec, so the page never renders blank and
+  // a malformed store edit can't crash it (validate → fall back).
+  const storeSpec = useAppStore(s => s.components.find(c => c.id === FLEET_PAGE_ID)?.spec);
+  const fleetSpec = useMemo(() => resolveFleetSpec(storeSpec), [storeSpec]);
+
   if (selected) {
     return <WorkerDetail worker={selected} onBack={() => setSelected(null)} />;
   }
@@ -241,5 +248,5 @@ export function Fleet() {
     launchWorker: () => { setProjectsPageMode("projects"); setProjectsView("planning"); },
   };
 
-  return <KitRenderer node={FLEET_PAGE_SPEC} values={values} slots={slots} on={on} />;
+  return <KitRenderer node={fleetSpec} values={values} slots={slots} on={on} />;
 }
