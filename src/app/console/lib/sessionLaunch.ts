@@ -270,17 +270,16 @@ export function buildSessionSettings(s: AppStore, paneId: string) {
   const skills = toSkillCfgs(skillDefs);
   // Agents audit (#257): on a gated pane (role or profile assigned), install PreToolUse hooks: log
   // each tool attempt (bsc-audit), time MCP calls (bsc-mcp), enforce the write-scope gate (bsc-scope,
-  // #1297), the tainted-turn gate (bsc-taint, #1167), and a Stop bounce that keeps a session going —
-  // the worker's issue→PR bounce (bsc-defer, #369) or, for a restricted STUDIO session, the studio
-  // keep-going bounce (bsc-continue, #3547) so the designer/librarian/etc. power through clear guided
-  // work instead of pausing to self-assess between items. Both bounce ONCE per stop (`stop_hook_active`),
-  // so a genuinely-finished session is never trapped. FS confinement (bsc-confine, #158) is NOT gated —
-  // it's defaulted onto every pane below (#1916).
+  // #1297), the tainted-turn gate (bsc-taint, #1167), and — for a fleet WORKER only — the issue→PR Stop
+  // bounce (bsc-defer, #369) that keeps it going or defers a real question to the director (it bounces
+  // ONCE per stop, so a finished worker is never trapped). A restricted STUDIO session gets NO Stop
+  // bounce (#3580): its keep-going is the LOOP pump (useDesignerLoopPump, #3292), which drives it
+  // turn-by-turn ONLY while an open loop exists — so an interactive studio session stops and hands back
+  // instead of being told to power through a queue that isn't there. FS confinement (bsc-confine, #158)
+  // is NOT gated — it's defaulted onto every pane below (#1916).
   const stopBounce = role === "worker"
     ? [{ event: "Stop", matcher: "", command: "bsc-defer" }]
-    : isRestrictedRole(role)
-      ? [{ event: "Stop", matcher: "", command: "bsc-continue" }]
-      : [];
+    : [];
   const gatedHooks = (cap || prof)
     ? [...hooks,
        { event: "PreToolUse", matcher: "", command: "bsc-audit" },
