@@ -124,9 +124,10 @@ Every write STAMPS provenance (#3164): it auto-bumps the record's `rev` integer,
 stored) unless the record's CURRENT rev is exactly <n> — so a background rewrite can't silently clobber
 your edit. Read a record's current rev with `bsc ui log <id>`; --if-version takes a single record on stdin.
 
-An optional `group` field names the component's PURPOSE partition within the kit
-(`data-viz`/`pages`/`forms`) — orthogonal to `role` (the arch tier), organizational only (`composes`
-still resolves across the whole kit).",
+An optional `group` field is the component's FOLDER PATH within the kit — a nested, `/`-delimited path
+(`shared/ui/controls`, `features/github`) that organizes the kit like a completed project's folders
+(#3579). Orthogonal to `role` (the arch tier), organizational only (`composes` still resolves across the
+whole kit). `bsc ui regroup` re-derives it from `src` for the whole store; the harvest seeds it too.",
     },
     CmdDoc {
         name: "remove",
@@ -339,6 +340,21 @@ the `bsc ui set` JSX syntax gate (#2928). Errors when the component or the point
 ui-scope MUTATION (#2470).",
     },
     CmdDoc {
+        name: "regroup",
+        summary: "re-derive every component's `group` as a folder path from its `src` (#3579)",
+        usage: "\
+USAGE:
+  bsc ui regroup [--kit <id>] [--dry-run] [--pretty]
+
+Re-derives each stored component's `group` as a nested, `/`-delimited FOLDER PATH from its `src`
+(`src/shared/ui/controls/Button.tsx` → `shared/ui/controls`; a leading `src/` root is stripped, the
+filename dropped), so a kit organizes like a completed project's folders instead of ad-hoc flat buckets.
+Rewrites ONLY the records whose derived group differs — each write is stamped + logged (`bsc ui log`) —
+and leaves a component with no usable `src` untouched. --kit scopes the pass to one kit; --dry-run
+reports the moves without writing. Prints { scanned, changed: [{ id, from, to }], applied }. A ui-scope
+MUTATION (#2470).",
+    },
+    CmdDoc {
         name: "preview-props",
         summary: "the schema-derived sample props the live preview passes a component, per state (#3165)",
         usage: "\
@@ -526,7 +542,7 @@ fn is_scoped_mutation(args: &[String]) -> bool {
     };
     matches!(
         verb.map(String::as_str),
-        Some("set") | Some("remove") | Some("define-animation") | Some("remove-animation")
+        Some("set") | Some("remove") | Some("define-animation") | Some("remove-animation") | Some("regroup")
     ) && next.map(String::as_str) != Some("help")
 }
 
@@ -720,6 +736,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             } else {
                 cmd_patch(&args[1..])
             }
+        }
+        // `regroup` (#3579) re-derives every stored component's `group` as a nested folder path from its
+        // `src` — a ui-scope MUTATION (gated above), so a kit organizes like a completed project's
+        // folders. `regroup help` prints the doc; the scope gate already refused a read-scoped session.
+        Some("regroup") if args.get(1).map(String::as_str) != Some("help") => cmd_regroup(&args[1..]),
+        Some("regroup") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "regroup"));
+            Ok(())
         }
         // `get --field <json-pointer> [--raw]` (#3162) prints ONE field — intercepted here (the shared
         // store CLI rejects unknown flags); a plain `get <id>` (incl. the whole-record `--raw`, #3166)
@@ -916,6 +940,66 @@ fn cmd_set(
     let ids = set_stamped(&store, &items, if_version, &writer, noun, note.as_deref())?;
     let json = if pretty { serde_json::to_string_pretty(&ids) } else { serde_json::to_string(&ids) };
     println!("{}", json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `regroup [--kit <id>] [--dir D] [--dry-run] [--pretty]` (#3579) — re-derive every stored component's
+/// `group` as a nested `/`-delimited FOLDER PATH from its `src` ([`crate::group_from_src`]), so a kit
+/// organizes like a completed project's folders (`shared/ui/controls`, `features/github`). Rewrites ONLY
+/// the records whose derived group differs (each write stamped + logged via [`set_stamped`]); a record
+/// with no usable `src` is left untouched. `--kit` scopes the pass to one kit; `--dry-run` reports the
+/// moves without writing. Prints `{ scanned, changed: [{ id, from, to }], applied }`. A ui-scope
+/// mutation, gated in [`run`].
+fn cmd_regroup(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut kit, mut dry, mut pretty) = (None::<String>, None::<String>, false, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--kit" => kit = it.next().cloned(),
+            "--dry-run" => dry = true,
+            "--pretty" => pretty = true,
+            other => {
+                return Err(format!(
+                    "unknown flag '{other}' — usage: bsc ui regroup [--kit <id>] [--dry-run] [--pretty]"
+                ))
+            }
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let mut scanned = 0usize;
+    let mut changed = Vec::new();
+    let mut updated = Vec::new();
+    for id in store.list() {
+        let Some(raw) = store.get(&id)? else { continue };
+        let mut rec: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| format!("stored record '{id}' is not valid JSON: {e}"))?;
+        if let Some(k) = &kit {
+            if rec.get("kitId").and_then(serde_json::Value::as_str) != Some(k.as_str()) {
+                continue;
+            }
+        }
+        scanned += 1;
+        let src = rec.get("src").and_then(serde_json::Value::as_str).unwrap_or_default();
+        let Some(new_group) = crate::group_from_src(src) else { continue };
+        let old = rec.get("group").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if old == new_group {
+            continue;
+        }
+        changed.push(serde_json::json!({ "id": id, "from": old, "to": new_group }));
+        rec["group"] = serde_json::Value::String(new_group);
+        updated.push(rec);
+    }
+    let applied = if !dry && !updated.is_empty() {
+        let writer = crate::record::resolve_writer(None);
+        set_stamped(&store, &updated, None, &writer, "component", Some("regroup: folder-path group from src"))?;
+        true
+    } else {
+        false
+    };
+    let report = serde_json::json!({ "scanned": scanned, "changed": changed, "applied": applied });
+    let out = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
+    println!("{}", out.map_err(|e| e.to_string())?);
     Ok(())
 }
 
@@ -2583,6 +2667,82 @@ mod tests {
         // The two collections live in DIFFERENT dirs (a component and a kit can share an id).
         assert_ne!(COMPONENT_SPEC.dir_segment, KIT_SPEC.dir_segment);
         assert_ne!(COMPONENT_SPEC.dir_env, KIT_SPEC.dir_env);
+    }
+
+    #[test]
+    fn regroup_rederives_group_from_src_and_skips_srcless_records() {
+        use serde_json::json;
+        let dir = tmp_store_dir("regroup");
+        let store = open_component_store(&Some(dir.clone())).unwrap();
+        // A stale FLAT group + a real src path → must become the folder path.
+        store
+            .set(
+                "button",
+                &json!({ "id": "button", "name": "Button", "kitId": "harvested", "role": "primitive",
+                         "group": "controls", "src": "src/shared/ui/controls/Button.tsx" })
+                .to_string(),
+            )
+            .unwrap();
+        // A group that ALREADY equals its derived path → left as-is (idempotent, not re-stamped).
+        store
+            .set(
+                "box",
+                &json!({ "id": "box", "name": "Box", "kitId": "harvested", "role": "layout",
+                         "group": "shared/ui/layout", "src": "src/shared/ui/layout/Box.tsx" })
+                .to_string(),
+            )
+            .unwrap();
+        // No usable `src` → untouched (never bucketed under "").
+        store
+            .set(
+                "stub",
+                &json!({ "id": "stub", "name": "Stub", "kitId": "harvested", "role": "primitive" }).to_string(),
+            )
+            .unwrap();
+
+        cmd_regroup(&["--dir".into(), dir.clone()]).unwrap();
+
+        let group_of = |id: &str| -> Option<String> {
+            let raw = store.get(id).unwrap().unwrap();
+            let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            v.get("group").and_then(serde_json::Value::as_str).map(str::to_owned)
+        };
+        assert_eq!(group_of("button").as_deref(), Some("shared/ui/controls"), "flat group → folder path");
+        assert_eq!(group_of("box").as_deref(), Some("shared/ui/layout"), "already-correct group unchanged");
+        assert_eq!(group_of("stub"), None, "a src-less record stays ungrouped");
+    }
+
+    #[test]
+    fn regroup_kit_flag_scopes_the_pass_to_one_kit() {
+        use serde_json::json;
+        let dir = tmp_store_dir("regroup-kit");
+        let store = open_component_store(&Some(dir.clone())).unwrap();
+        store
+            .set(
+                "a",
+                &json!({ "id": "a", "name": "A", "kitId": "harvested", "role": "primitive",
+                         "group": "old", "src": "src/shared/ui/controls/A.tsx" })
+                .to_string(),
+            )
+            .unwrap();
+        store
+            .set(
+                "b",
+                &json!({ "id": "b", "name": "B", "kitId": "react-d3", "role": "composite",
+                         "group": "old", "src": "shared/ui/d3/charts/B.tsx" })
+                .to_string(),
+            )
+            .unwrap();
+
+        cmd_regroup(&["--dir".into(), dir.clone(), "--kit".into(), "harvested".into()]).unwrap();
+
+        let group_of = |id: &str| -> String {
+            let raw = store.get(id).unwrap().unwrap();
+            let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            v["group"].as_str().unwrap().to_owned()
+        };
+        assert_eq!(group_of("a"), "shared/ui/controls", "the targeted kit is regrouped");
+        assert_eq!(group_of("b"), "old", "a component in another kit is untouched");
     }
 
     #[test]
