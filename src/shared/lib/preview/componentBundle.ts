@@ -174,6 +174,11 @@ export interface ComponentSrcDocOptions {
    *  disconnected and #3251 removed: forwarding existed to drive a host CSS scale, and that is exactly
    *  what blurs. The iframe owns the viewport now, so there is nothing to forward. */
   zoomEngine?: { initial?: number; min?: number; max?: number };
+  /** Enable the Alt-hold INSPECT layer (#3596) with this list of navigable child component NAMES (the
+   *  previewed component's `composes`). While Alt is held the preview rings the child under the cursor and
+   *  posts `{__navigate: name}` on click; releasing Alt returns full interactivity. Only the EXPANDED
+   *  preview passes it — empty/absent ⇒ no inspect layer (byte-for-byte unchanged srcdoc). */
+  inspect?: string[];
 }
 
 /**
@@ -382,7 +387,7 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
   // keeps it, since a moved drag suppresses the trailing click).
   var pending = false, panning = false, moved = false, sx = 0, sy = 0, lx = 0, ly = 0;
   document.addEventListener("mousedown", function (e) {
-    if (e.button !== 0 || dragNative(e.target)) return;
+    if (e.button !== 0 || e.altKey || dragNative(e.target)) return;   // #3596: Alt-held is INSPECT, not pan
     pending = true; moved = false; sx = lx = e.clientX; sy = ly = e.clientY;
   }, true);
   document.addEventListener("mousemove", function (e) {
@@ -454,8 +459,106 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
  * Assemble the sandboxed-iframe srcdoc: import-map for the externals + the injected app CSS + the bundle
  * as a module, posting `ready`/`error` to the parent. Pure.
  */
+/**
+ * The Alt-hold INSPECT layer (#3596) — a self-contained `<script>` that, WHILE Alt is held, rings the
+ * child component under the cursor and navigates the graph to it on click; releasing Alt returns the
+ * preview to full interactivity. A momentary hold modifier, not a mode.
+ *
+ * It needs no DOM tagging: the preview bundle is UNMINIFIED (see {@link bundleComponent} — no `minify`),
+ * so a React fiber's `type.name` is the real component name. From `elementFromPoint` it reads the
+ * element's fiber and walks `.return` up to the nearest component whose name is in `navSet` (the
+ * previewed component's `composes`) — exactly how React DevTools' element picker works. On Alt-click it
+ * `preventDefault`/`stopPropagation`s at document-capture (BEFORE React's root-delegated handler, so the
+ * component's own onClick never fires) and posts `{__navigate: name}` to the host.
+ *
+ * Only the EXPANDED preview passes `components` (its `composes`); the small inspector thumbnail gets ""
+ * (byte-for-byte unchanged srcdoc). Vanilla, backtick-free (it lives in the outer template literal,
+ * #3551). Pans are suppressed while Alt is held by the gesture engine's own `e.altKey` bail.
+ */
+export function inspectEngineScript(components: string[]): string {
+  if (!components.length) return "";
+  return `\n<script>
+(function () {
+  var NAV = ${JSON.stringify(components)};
+  var navSet = {};
+  for (var i = 0; i < NAV.length; i++) navSet[NAV[i]] = true;
+  var alt = false, box = null, label = null;
+  // React 18 stashes a DOM node's fiber as an own '__reactFiber$<hash>' key (present in prod too).
+  function fiberOf(node) {
+    var ks = Object.keys(node);
+    for (var i = 0; i < ks.length; i++) {
+      if (ks[i].indexOf("__reactFiber$") === 0 || ks[i].indexOf("__reactInternalInstance$") === 0) return node[ks[i]];
+    }
+    return null;
+  }
+  // The first HOST (real DOM) node under a component fiber — its on-screen box for the highlight.
+  function hostEl(fiber, fallback) {
+    for (var f = fiber; f; f = f.child) { if (f.stateNode && f.stateNode.nodeType === 1) return f.stateNode; }
+    return fallback;
+  }
+  // The nearest composed-child component under (x,y): { name, el } or null. Primary path is the React
+  // fiber-walk (the real app); the DATA-ATTR fallback ('data-bsc-comp') keeps it working when fibers are
+  // absent (a non-React or minified render) and is the seam the headless e2e harness drives.
+  function pick(x, y) {
+    // Our own highlight overlay must never intercept the hit-test — hide it across elementFromPoint even
+    // though it is pointer-events:none, since the app CSS injected into the iframe can override that.
+    if (box) box.style.display = "none";
+    if (label) label.style.display = "none";
+    var el = document.elementFromPoint(x, y);
+    if (box) box.style.display = "";
+    if (label) label.style.display = "";
+    if (!el) return null;
+    for (var fiber = fiberOf(el); fiber; fiber = fiber.return) {
+      var t = fiber.type;
+      if (typeof t === "function" && t.name && navSet[t.name]) return { name: t.name, el: hostEl(fiber, el) };
+    }
+    var m = el.closest ? el.closest("[data-bsc-comp]") : null;
+    if (m) { var n = m.getAttribute("data-bsc-comp"); if (navSet[n]) return { name: n, el: m }; }
+    return null;
+  }
+  function overlay() {
+    if (box) return;
+    box = document.createElement("div");
+    box.setAttribute("style", "position:fixed;pointer-events:none;z-index:2147483647;box-sizing:border-box;border:2px solid var(--accent,#6ea);border-radius:4px;background:color-mix(in oklch, var(--accent,#6ea) 12%, transparent);");
+    label = document.createElement("div");
+    label.setAttribute("style", "position:fixed;pointer-events:none;z-index:2147483647;font:600 10px/1.5 var(--mono,ui-monospace,monospace);color:#0b0f14;background:var(--accent,#6ea);padding:1px 6px;border-radius:4px;white-space:nowrap;");
+    document.body.appendChild(box); document.body.appendChild(label);
+  }
+  function clear() { if (box) { box.remove(); label.remove(); box = label = null; } }
+  function draw(hit) {
+    if (!hit || !hit.el) { clear(); return; }
+    overlay();
+    var r = hit.el.getBoundingClientRect();
+    box.style.left = r.left + "px"; box.style.top = r.top + "px"; box.style.width = r.width + "px"; box.style.height = r.height + "px";
+    label.textContent = hit.name;
+    label.style.left = r.left + "px"; label.style.top = Math.max(0, r.top - 17) + "px";
+  }
+  var downAlt = false;
+  function setAlt(on) { if (on === alt) return; alt = on; document.body.style.cursor = on ? "crosshair" : ""; if (!on) clear(); }
+  window.addEventListener("keydown", function (e) { if (e.altKey) setAlt(true); });
+  window.addEventListener("keyup", function (e) { setAlt(e.altKey); });
+  window.addEventListener("blur", function () { setAlt(false); });
+  // The move re-syncs the cursor/overlay from the LIVE modifier (reliable on a move) — releasing Alt then
+  // moving clears the ring and lets the next click through. But the generated CLICK event drops the
+  // modifier, so gate the navigation on the MODIFIER CAPTURED AT MOUSEDOWN (reliable, fresh per gesture)
+  // instead of the click's own altKey.
+  document.addEventListener("mousemove", function (e) { setAlt(e.altKey); if (e.altKey) draw(pick(e.clientX, e.clientY)); }, true);
+  // Capture the modifier at MOUSEDOWN (a browser drops it from the generated CLICK), so an Alt-press-then-
+  // click navigates even though the click event itself no longer reports altKey.
+  document.addEventListener("mousedown", function (e) { downAlt = e.altKey; }, true);
+  document.addEventListener("click", function (e) {
+    if (!downAlt && !e.altKey) { downAlt = false; return; }
+    downAlt = false;
+    var hit = pick(e.clientX, e.clientY);
+    e.preventDefault(); e.stopPropagation();   // suppress the component's own onClick
+    if (hit) { try { parent.postMessage({ __navigate: hit.name }, "*"); } catch (_) {} }
+  }, true);
+})();
+</script>`;
+}
+
 export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOptions = {}): string {
-  const { injectedCss = "", themeCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, scrollY = false, zoomEngine } = opts;
+  const { injectedCss = "", themeCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, scrollY = false, zoomEngine, inspect = [] } = opts;
   // #3057: the exit-runtime shim, injected right after `#root` and BEFORE the module script so the
   // observer is watching before React mounts (and later unmounts) subtrees. "" when no exit selectors —
   // the non-exit srcdoc is then byte-for-byte unchanged.
@@ -471,6 +574,10 @@ export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOpti
   // #3190 crisp pass: the in-iframe pan/zoom ENGINE — transforms `#root` (crisp DOM) instead of forwarding
   // to a host CSS scale (a blurry iframe texture). Clip cleanly + no scrollbars while it drives the view.
   const engineShim = gestureEngineScript(zoomEngine);
+  // #3596: the Alt-hold inspect layer — navigate to a child component under the cursor. "" (unchanged
+  // srcdoc) unless the expanded preview passed the `composes` names. Injected after the engine so its
+  // capture-phase click handler is in place; the engine's own `e.altKey` bail keeps Alt from panning.
+  const inspectShim = inspectEngineScript(inspect);
   // #3251: the engine's drag lives INSIDE the iframe, so the selection guard must too — the host
   // wrapper's `user-select:none` cannot cross a document boundary. Without this, a press-and-move
   // starts a native text selection instead of panning. Form fields keep caret + selection (mirrors the
@@ -521,6 +628,6 @@ setTimeout(() => {
     parent.postMessage({ __preview: "rendered", empty: empty }, "*");
   } catch (e) { /* measurement is best-effort */ }
 }, 400);
-</script>${fitShim}${engineShim}
+</script>${fitShim}${engineShim}${inspectShim}
 </body></html>`;
 }
