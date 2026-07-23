@@ -204,10 +204,10 @@ pub(crate) fn worktree_is_disposable(clone: &Path, wt: &Path) -> bool {
 ///
 /// Best-effort, pure over `base_dir` for testability; never removes a dirty worktree. Returns the
 /// number of worktree directories reclaimed.
-pub(crate) fn gc_worktrees_impl(base_dir: &Path) -> usize {
+pub(crate) fn gc_worktrees_impl(base_dir: &Path) -> Vec<String> {
     let root = base_dir.join("worktrees");
-    let Ok(rd) = std::fs::read_dir(&root) else { return 0 };
-    let mut removed = 0usize;
+    let Ok(rd) = std::fs::read_dir(&root) else { return Vec::new() };
+    let mut removed: Vec<String> = Vec::new();
     for entry in rd.flatten() {
         if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
             continue;
@@ -228,7 +228,13 @@ pub(crate) fn gc_worktrees_impl(base_dir: &Path) -> usize {
             };
             let disposable = hub_gone || worktree_is_disposable(&clone, &wt);
             if disposable && remove_worktree_at(&clone, &wt).is_ok() {
-                removed += 1;
+                // #3614: log EACH reclaimed worktree by identity (not just a count) and return the set,
+                // so the fleet split-brain this can cause — a persisted `<project> · build` tab that then
+                // relaunches workers into the deleted dirs, jamming the backend on every boot — is
+                // diagnosable and reconcilable rather than a silent "reclaimed N".
+                let id = format!("{key}/{name}");
+                log::info!("boot-gc: reclaimed worktree {id} ({})", if hub_gone { "orphan project" } else { "merged+clean" });
+                removed.push(id);
             }
         }
         // Drop the per-project root if the whole project is gone (and now emptied).
@@ -236,15 +242,15 @@ pub(crate) fn gc_worktrees_impl(base_dir: &Path) -> usize {
             let _ = std::fs::remove_dir(entry.path());
         }
     }
-    if removed > 0 {
-        log::info!("boot-gc: reclaimed {removed} stale fleet worktree(s)");
+    if !removed.is_empty() {
+        log::info!("boot-gc: reclaimed {} stale fleet worktree(s)", removed.len());
     }
     removed
 }
 
 /// Boot entry point: GC stale worktrees against the real base dir (#worktree-disk). Off the
 /// synchronous boot path.
-pub(crate) fn gc_worktrees_on_boot() -> usize {
+pub(crate) fn gc_worktrees_on_boot() -> Vec<String> {
     gc_worktrees_impl(&crate::bsc_base_dir())
 }
 
@@ -373,7 +379,10 @@ mod tests {
         assert!(ahead.exists(), "unmerged worktree with work kept");
         assert!(dirty.exists(), "dirty worktree kept (no work lost)");
         assert!(!orphan_wt.exists(), "orphaned-project worktree reclaimed");
-        assert!(removed >= 2, "reclaimed at least the merged + orphan worktrees (got {removed})");
+        assert!(removed.len() >= 2, "reclaimed at least the merged + orphan worktrees (got {removed:?})");
+        // #3614: the reclaimed set is returned BY IDENTITY (`<key>/<name>`), not just a count — so a
+        // caller/boot reconciliation can see exactly which fleet workers were dropped.
+        assert!(removed.iter().any(|r| r.as_str() == "gone/api--x"), "orphan identity in the reclaimed set: {removed:?}");
         let _ = fs::remove_dir_all(&base);
     }
 
