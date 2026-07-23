@@ -21,6 +21,10 @@ describe("the clean-slate seed (#3543)", () => {
     expect(SEED_COMPONENTS.map((c) => c.id)).toContain("fleetpage");
     // tech "react" is load-bearing: themes bind to the design group by tech, not kit id.
     expect(SEED_KITS[0].tech).toBe("react");
+    // `style` is the Components-rail group label — deliberately NOT "studio" (#3640), which would
+    // collide with the "Studio" app-library snapshot concept (bsc-studio) in the UI.
+    expect(SEED_KITS[0].style).not.toBe("studio");
+    expect(SEED_KITS[0].style).toBe("base-studio-code");
   });
 
   it("the packaged kit carries a self-consistent seedHash (#2483)", () => {

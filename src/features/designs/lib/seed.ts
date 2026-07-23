@@ -22,14 +22,15 @@ import { reconcileSeed, stampSeedHash, type SeedReconcile } from "./seedRefresh"
 /** The one packaged kit id — the base-studio-code app's own UI as a single graph (#3543). */
 export const BASE_STUDIO_CODE_KIT_ID = "base-studio-code";
 
-/** The single EMPTY packaged kit. No components, no animations — the designer session fills it and the
- *  studio command exports it. `tech: "react"` is load-bearing: packaged themes bind to the design group
- *  by `tech` (never kit id), so keeping it "react" preserves every theme. */
+/** The single packaged kit — the app's own UI as one graph. `tech: "react"` is load-bearing: packaged
+ *  themes bind to the design group by `tech` (never kit id), so keeping it "react" preserves every theme.
+ *  `style` is the Components-rail GROUP label; it is deliberately the kit's own name (NOT "studio", which
+ *  would collide with the "Studio" app-library snapshot concept — bsc-studio — and confuse users, #3640). */
 const baseStudioCodeKit: Kit = stampSeedHash({
   id: BASE_STUDIO_CODE_KIT_ID,
   name: "base-studio-code",
   tech: "react",
-  style: "studio",
+  style: "base-studio-code",
   stack: "base-studio-code",
   dot: "var(--accent)",
   animations: [],
