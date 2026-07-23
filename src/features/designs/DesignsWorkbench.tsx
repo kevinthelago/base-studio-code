@@ -50,6 +50,7 @@ import { timeAgo } from "@/shared/lib/core/format";
 import { GraphLegend } from "@/shared/ui/layouts/GraphLegend";
 import { useUiActivity } from "./lib/uiActivity";
 import { useComponentScan } from "./lib/useComponentScan";
+import { designStudioVisible } from "./lib/studioVisibility";
 import { makeLibraryResolvers } from "./lib/libraryModules";
 import { useActiveSoundKit } from "./lib/useActiveSoundKit";
 import { groupKits } from "./lib/kitGroups";
@@ -166,7 +167,12 @@ export function DesignsWorkbench() {
   // scan, and health pass all share, so a badge, a build, and a played cue can never disagree.
   const soundKit = useActiveSoundKit();
   const libResolver = useMemo(() => makeLibraryResolvers(soundKit).libraryModuleResolver, [soundKit]);
-  useComponentScan(true, kitComps, undefined, libResolver);
+  // Gate the scan on the Studio being VISIBLE, not merely mounted (#3616). KeptMountedPage keeps this
+  // Workbench mounted (display:none) after the first visit, so an unconditional `true` here kept
+  // esbuild-building + iframe-probing all 154 components forever in the background (~40% renderer CPU for
+  // a page nobody's on). Paused when hidden; the sig-cache means resuming re-scans nothing unchanged.
+  const scanVisible = useAppStore((s) => designStudioVisible(s.activeWorkspace, s.projectsPageMode));
+  useComponentScan(scanVisible, kitComps, undefined, libResolver);
   // The FOCUSED component — strictly the one the user picked, in the current kit; drives the graph's
   // `.on` selection ring. No fallback to "the first".
   const sel = compId ? components.find((c) => c.id === compId && c.kitId === kitId) ?? null : null;
