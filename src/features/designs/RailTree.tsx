@@ -16,6 +16,21 @@ import type { ComponentRecord, Kit } from "./lib/model";
 import { type KitTreeNode, type ComponentFolder, groupComponentsByFolder, folderComponentCount } from "./lib/kitGroups";
 import { byTier } from "./lib/compositionLayout";
 
+/** A small folder glyph for the rail's component-folder rows (#3632). Monochrome `currentColor`, so it
+ *  inherits the RailRow's `--fg-muted → --fg` hover/select brighten — the leaf-vs-container cue that the
+ *  dim uppercase micro-label lacked. Sized a touch larger than the leaf RoleDots so folders read as the
+ *  tree's structure. The caret already carries open/closed, so one (closed-style) glyph covers both. */
+function FolderGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: "block", opacity: 0.8 }}
+    >
+      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+    </svg>
+  );
+}
+
 interface RailTreeProps {
   /** The technology → style rail hierarchy (from `groupKits`). */
   railTree: KitTreeNode[];
@@ -62,23 +77,25 @@ export function RailTree({ railTree, expanded, setExpanded, kitId, setKitId, com
     // One folder of the kit's tree (#3582): a collapsible header (default OPEN), its subfolders
     // (recursion), then its direct component rows. Expand state is namespaced by kit so two kits'
     // identically-named folders (`shared/ui`) don't share a toggle. Mirrors a file explorer:
-    // subfolders list before a folder's own files.
+    // subfolders list before a folder's own files. Rendered as a readable RailRow (#3632) — a folder
+    // glyph + caret + `weight:500`, the same fg-muted→fg row look as the leaves — NOT the dim uppercase
+    // micro-label it used to wear (which was hard to read for what is the browsable tree here).
     const renderFolder = (f: ComponentFolder): ReactNode => {
       const fkey = `${k.id}::${f.key}`;
       const open = expanded[fkey] ?? true;
       return (
         <Box key={f.key} className="ds-compfolder" style={{ marginBottom: 2 }}>
-          <RailGroupHeader
+          <RailRow
             className="ds-compfolderhead"
-            collapsible
-            open={open}
-            onToggle={() => setExpanded((e) => ({ ...e, [fkey]: !(e[fkey] ?? true) }))}
-            count={folderComponentCount(f)}
-            size={9}
+            caret={open}
+            weight={500}
+            onClick={() => setExpanded((e) => ({ ...e, [fkey]: !(e[fkey] ?? true) }))}
+            leading={<FolderGlyph />}
+            trailing={<Text mono size="xxs" tone="dim">{folderComponentCount(f)}</Text>}
             title={f.ungrouped ? "components with no folder" : `folder: ${f.key}`}
           >
             {f.label}
-          </RailGroupHeader>
+          </RailRow>
           {open && (
             <Box style={{ paddingLeft: 6 }}>
               {f.folders.map(renderFolder)}
