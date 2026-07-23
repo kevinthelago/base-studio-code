@@ -40,3 +40,28 @@ export function logsPaneActivity<T = PaneActivityRow>(): Promise<T[]> {
 export function logsDonePanes(): Promise<string[]> {
   return safeInvoke<string[]>("logs_done_panes", undefined, []);
 }
+
+/**
+ * The canonical stream key for a read alias — mirrors Rust `logs::canonical_stream`. The UI reads a few
+ * streams by alias (`audit`→`tool`, `skills`→`skill`); everything else is already canonical. Used to
+ * line a read alias up with the backend's `logs://<canonical>` change event (#3638), so a subscriber
+ * never misses an emit because it named the stream differently than the watcher did.
+ */
+export function canonicalStream(alias: string): string {
+  switch (alias) {
+    case "audit":
+    case "tools":
+      return "tool";
+    case "skills":
+      return "skill";
+    default:
+      return alias;
+  }
+}
+
+/** The Tauri event the backend log watcher (`observability::log_watch`) emits when `stream` changes —
+ *  the event `useLogStream` subscribes to. Accepts a read alias (canonicalized). MUST stay in sync with
+ *  the Rust `event_name` (#3638). */
+export function logEventName(stream: string): string {
+  return `logs://${canonicalStream(stream)}`;
+}

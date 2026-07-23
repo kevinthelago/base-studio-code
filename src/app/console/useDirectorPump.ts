@@ -16,7 +16,7 @@
 // directorDrive.ts + coordination.ts; this is the thin Tauri/React actuator.
 import { useRef, type RefObject } from "react";
 import { useAppStore } from "@/store";
-import { usePoll } from "@/shared/hooks/usePoll";
+import { useLogStream } from "@/shared/hooks/useLogStream";
 import { injectPrompt } from "@/shared/lib/fleet/paneInject";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import {
@@ -25,7 +25,7 @@ import {
   DEFAULT_HEARTBEAT_MS, INJECT_COOLDOWN_MS,
 } from "@/features/planner";
 
-const POLL_MS = 1000;
+// #3638: event-driven on the `logs://coord` change (+ mount + slow backstop), not a fixed poll.
 
 interface PaneCursor { cursor: number; lastInjectAt: number; }
 
@@ -35,7 +35,7 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
   // Per (pane|ask) keys already surfaced, pruned when the ask is no longer pending — so a
   // question is injected exactly once (not re-queued every 3s) until it is answered.
   const surfaced = useRef<Set<string>>(new Set());
-  usePoll(async (isCancelled) => {
+  useLogStream("coord", async (isCancelled) => {
     if (isCancelled()) return;
     const drives = useAppStore.getState().paneDirectorDrive;
     const paneIds = Object.keys(drives);
@@ -109,5 +109,5 @@ export function useDirectorPump(paneStatusesRef: RefObject<Record<string, "run" 
           .finally(() => inFlight.current.delete(paneId));
       }
     }
-  }, POLL_MS, [paneStatusesRef]);
+  }, [paneStatusesRef]);
 }
