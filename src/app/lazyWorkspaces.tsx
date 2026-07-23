@@ -14,7 +14,9 @@ export const McpWorkspace         = lazy(() => import("@/features/mcp").then((m)
 export const SettingsWorkspace    = lazy(() => import("@/features/settings").then((m) => ({ default: m.SettingsWorkspace })));
 export const ProjectsWorkspace    = lazy(() => import("@/features/planner").then((m) => ({ default: m.ProjectsWorkspace })));
 export const SkillsWorkspace      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsWorkspace })));
-export const SecurityWorkspace      = lazy(() => import("@/features/security").then((m) => ({ default: m.SecurityWorkspace })));
+// Security renders FROM THE GRAPH (#3646, epic #3604) — the graph host mounts the authored `securitypage`
+// node; the symbol name stays so App.tsx + DetachedWindow (which passes `pageOverride`) need no change.
+export const SecurityWorkspace      = lazy(() => import("@/features/security").then((m) => ({ default: m.SecurityGraphHost })));
 export const GlanceWorkspace      = lazy(() => import("@/features/glance").then((m) => ({ default: m.GlanceWorkspace })));
 // Design Studio (#2303/#2308) + the Algorithms knowledge graph (#2785) are no longer rail Workspaces —
 // each moved into the Planner Screen as a page (lazy-loaded there, in features/planner/index.tsx), so

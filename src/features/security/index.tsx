@@ -26,6 +26,9 @@ import { ActivityTab } from "./ActivityTab";
 import { FlowTab } from "./FlowTab";
 import "./security.css";
 
+// The graph-hosted workspace (#3646) — App.tsx/DetachedWindow render this via the lazy SecurityWorkspace.
+export { SecurityGraphHost } from "./SecurityGraphHost";
+
 // Re-exported for tests + back-compat: the pane-profile picker + app-session label
 // helpers used to live here; they moved to ./AssignmentsTab and ./lib/appSession (#1643).
 export { ProfileSelect } from "./AssignmentsTab";
