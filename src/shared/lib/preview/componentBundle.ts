@@ -49,7 +49,7 @@ export function lookupMem(files: Record<string, string>, path: string): { conten
 // the belt-and-suspenders so an already-initialized throw resolves to the live module instead of sticking.
 const ESBUILD_INIT = Symbol.for("bsc.esbuildInit");
 type EsbuildInitHost = { [ESBUILD_INIT]?: Promise<typeof Esbuild> };
-function ensureEsbuild(): Promise<typeof Esbuild> {
+export function ensureEsbuild(): Promise<typeof Esbuild> {
   const host = globalThis as unknown as EsbuildInitHost;
   if (!host[ESBUILD_INIT]) {
     host[ESBUILD_INIT] = import("esbuild-wasm").then(async (m) => {

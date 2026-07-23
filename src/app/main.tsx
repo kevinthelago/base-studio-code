@@ -6,7 +6,13 @@ import ReactDOM from "react-dom/client";
 import { ErrorBoundary } from "./safety/ErrorBoundary";
 import { markBoot } from "@/shared/lib/core/startupTrace";
 import { primeConfigOverrides } from "@/shared/lib/core/configOverrides";
+import { registerPlatformModules } from "./runtime/appModules";
 import "@/styles/tokens.css";
+
+// #3605: register the app's OWN modules (this React instance, the store, …) so a component LOADED from the
+// graph at runtime resolves its imports to the live app — the same React (a second copy breaks hooks) and
+// the real store. Must run before any GraphComponent mounts; harmless if none does.
+registerPlatformModules();
 
 // #2047: prime the runtime config-dir overrides BEFORE importing App (and its config modules), so
 // their eager `@data` consts (STAGE_DEFS / blueprints / roles / skills / taxonomies) build from the
