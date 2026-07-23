@@ -421,9 +421,10 @@ export function DesignsWorkbench() {
             <Button variant="ghost" title="Share or import a kit (gist / share code)" onClick={() => setShareOpen(true)}><Text as="span" tone="dim">⇅</Text> Share</Button>
           </>
         )}
-        rail={
+        rail={scanVisible ? (
           // Headerless graph-nav menu (#2797): search over the collapsible kits→components tree — no
-          // label bar (the PageTabs strip already titles the studio).
+          // label bar (the PageTabs strip already titles the studio). #3620: gated with the world content
+          // so a hidden Studio doesn't re-render the 154-row component tree in the background either.
           <GraphRail
             tools={
               <SearchField
@@ -441,7 +442,7 @@ export function DesignsWorkbench() {
               components={components} match={match} selectComp={selectComp} query={query}
             />
           </GraphRail>
-        }
+        ) : undefined}
         // Details pane — selection-driven visibility (#3090, restoring #2705 over #2818): the Inspector
         // renders ONLY when a component is focused (`focusComp` = the user's pick, else the node Claude is
         // working), so the graph is full-width by default — a clean rail + graph at half-screen. Focusing a
@@ -552,6 +553,12 @@ export function DesignsWorkbench() {
           </Box>
         ) : legend}
       >
+        {/* #3620: skip the 154-node world render while the Studio is HIDDEN (kept-mounted) — it was
+            re-rendering at 20-32ms every few seconds in the background (a frequently-changing store
+            subscription re-runs this whole subtree even at display:none). The DesignerTerminal dock (a
+            prop above) stays mounted, so the always-on designer session survives; viewport + selection
+            state live in DesignsWorkbench, so nothing is lost when the Studio is shown again. */}
+        {scanVisible && (<>
         <svg width={world.w} height={world.h} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none", overflow: "visible" }}>
           {/* Semantic swimlanes (#2964): Pages (top) · Composables (middle) · Fundamentals (base) — shifted
               below the library band (#3116) when the kit reaches into the library. */}
@@ -657,6 +664,7 @@ export function DesignsWorkbench() {
             </Box>
           );
         })}
+        </>)}
       </GraphCanvas>
     </>
   );
