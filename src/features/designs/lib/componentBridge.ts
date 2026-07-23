@@ -11,46 +11,56 @@ import { bsc, bscRun, bscWrite } from "@/shared/lib/core/bsc";
 import type { ComponentRecord, Kit, Role } from "./model";
 import { ROLES } from "./model";
 
+/**
+ * Project one raw `bsc ui list --full` row into a full {@link ComponentRecord}, defaulting absent
+ * optionals to their empty shape so an odd record never crashes hydration. Exported (#3606) so the
+ * packaged SEED is assembled through the SAME projection — a seed record then equals `load(push(seed))`
+ * by construction, satisfying the #2514 round-trip contract without hand-mirroring these defaults (the
+ * server-stamped provenance the two copies differ by — `rev`/`updatedAt`/… — is excluded from the hash).
+ */
+export function projectComponent(c: Partial<ComponentRecord>): ComponentRecord {
+  return {
+    id: c.id!,
+    name: c.name!,
+    kitId: c.kitId!,
+    role: (ROLES.includes(c.role as Role) ? c.role : "primitive") as Role,
+    group: c.group, // #3048 — the kit-purpose partition; rides verbatim (never defaulted), like tech/style on a kit
+    version: c.version ?? "",
+    used: typeof c.used === "number" ? c.used : 0,
+    tags: c.tags ?? [],
+    variants: c.variants?.length ? c.variants : ["default"],
+    composes: c.composes ?? [],
+    props: c.props ?? [],
+    whenUse: c.whenUse ?? [],
+    whenNot: c.whenNot ?? [],
+    src: c.src ?? "",
+    srcText: c.srcText ?? "",
+    builtin: c.builtin,
+    wraps: c.wraps,
+    rules: c.rules,
+    shapes: c.shapes,
+    animations: c.animations, // #2942 — MOTION binding (the kit-animation names it plays); rides verbatim
+    spec: c.spec, // #3569 — a page/layout node's renderable GeneralNode skeleton; rides verbatim so the host can render from the store
+    seedHash: c.seedHash, // #2483 — must ride the allowlist or the refresh baseline is lost on write-through
+    // #3164/#3568 — provenance + change history, surfaced by the inspector History tab. SERVER-MANAGED:
+    // the Rust stamp boundary recomputes rev/stamps + history from the PRIOR stored record and discards
+    // whatever rides back on a write-through, so passing them here is display-only (never authoritative).
+    rev: c.rev,
+    updatedAt: c.updatedAt,
+    updatedBy: c.updatedBy,
+    history: c.history,
+  };
+}
+
 /** Load every component from the global store via `bsc ui list --full`; `null` when unreachable. */
 export async function loadComponents(): Promise<ComponentRecord[] | null> {
   try {
     const out = await bsc(null, ["ui", "list", "--full"]);
     const rows = JSON.parse(out.trim() || "[]") as Partial<ComponentRecord>[];
-    // Defensive: keep only well-formed rows (id + name + kitId), defaulting the rest so an odd record
-    // never crashes hydration.
+    // Defensive: keep only well-formed rows (id + name + kitId) before the projection.
     return (rows ?? [])
       .filter((c): c is ComponentRecord => typeof c.id === "string" && !!c.id && !!c.name && !!c.kitId)
-      .map((c) => ({
-        id: c.id,
-        name: c.name!,
-        kitId: c.kitId!,
-        role: (ROLES.includes(c.role as Role) ? c.role : "primitive") as Role,
-        group: c.group, // #3048 — the kit-purpose partition; rides verbatim (never defaulted), like tech/style on a kit
-        version: c.version ?? "",
-        used: typeof c.used === "number" ? c.used : 0,
-        tags: c.tags ?? [],
-        variants: c.variants?.length ? c.variants : ["default"],
-        composes: c.composes ?? [],
-        props: c.props ?? [],
-        whenUse: c.whenUse ?? [],
-        whenNot: c.whenNot ?? [],
-        src: c.src ?? "",
-        srcText: c.srcText ?? "",
-        builtin: c.builtin,
-        wraps: c.wraps,
-        rules: c.rules,
-        shapes: c.shapes,
-        animations: c.animations, // #2942 — MOTION binding (the kit-animation names it plays); rides verbatim
-        spec: c.spec, // #3569 — a page/layout node's renderable GeneralNode skeleton; rides verbatim so the host can render from the store
-        seedHash: c.seedHash, // #2483 — must ride the allowlist or the refresh baseline is lost on write-through
-        // #3164/#3568 — provenance + change history, surfaced by the inspector History tab. SERVER-MANAGED:
-        // the Rust stamp boundary recomputes rev/stamps + history from the PRIOR stored record and discards
-        // whatever rides back on a write-through, so passing them here is display-only (never authoritative).
-        rev: c.rev,
-        updatedAt: c.updatedAt,
-        updatedBy: c.updatedBy,
-        history: c.history,
-      }));
+      .map(projectComponent);
   } catch {
     return null;
   }

@@ -16,6 +16,7 @@
 // on-disk `bsc` store); the empty `base-studio-code` kit is seeded in its place. (A hand-edited builtin
 // is kept with an `orphaned` notice — the designer can delete it, or a hard reset can force-clear.)
 import type { ComponentRecord, Kit } from "./model";
+import { projectComponent } from "./componentBridge";
 import { reconcileSeed, stampSeedHash, type SeedReconcile } from "./seedRefresh";
 
 /** The one packaged kit id — the base-studio-code app's own UI as a single graph (#3543). */
@@ -39,8 +40,22 @@ const baseStudioCodeKit: Kit = stampSeedHash({
  *  round-trip drift guards. */
 export const SEED_KITS: Kit[] = [baseStudioCodeKit];
 
-/** The packaged built-in components — NONE (the kit starts empty; the designer fills it, #3543). */
-export const SEED_COMPONENTS: ComponentRecord[] = [];
+// The migrated app-page components — the app's own UI authored as graph source under
+// `src-tauri/data/components/app/**` (#3604, moving the code UI into the one `base-studio-code` graph).
+// Vite-glob-imported (eager) so a newly-migrated page is PACKAGED simply by dropping its `.json` there,
+// no seed edit. Each row runs through the SAME `projectComponent` load projection + is stamped
+// `builtin`/`seedHash`, so `seed === load(push(seed))` (the #2514 round-trip) holds BY CONSTRUCTION and
+// the #2483 reconcile seeds it on first run + tracks it release-to-release.
+const migratedApp = import.meta.glob<Partial<ComponentRecord>>("@data/components/app/**/*.json", {
+  eager: true,
+  import: "default",
+});
+
+/** The packaged built-in components — the migrated app pages (#3604); the `base-studio-code` kit fills as
+ *  the code UI moves into the graph. Empty until the first page migrated (fleetpage, #3606). */
+export const SEED_COMPONENTS: ComponentRecord[] = Object.keys(migratedApp)
+  .sort() // deterministic order — glob key order is filesystem-dependent
+  .map((path) => stampSeedHash({ ...projectComponent(migratedApp[path]), builtin: true }));
 
 /**
  * Reconcile the store's loaded components with the packaged built-ins (#2483, hash-based refresh — the

@@ -11,10 +11,14 @@ const priorKit = (id: string): Kit =>
   stampSeedHash({ id, name: id, tech: "react", style: "studio", stack: id, dot: "green", builtin: true } as Kit);
 
 describe("the clean-slate seed (#3543)", () => {
-  it("is exactly ONE empty kit — base-studio-code, no components, no animations", () => {
+  it("is the one base-studio-code kit, now carrying the migrated app-page components (#3543/#3604)", () => {
     expect(SEED_KITS.map((k) => k.id)).toEqual([BASE_STUDIO_CODE_KIT_ID]);
     expect(SEED_KITS[0].animations).toEqual([]);
-    expect(SEED_COMPONENTS).toEqual([]);
+    // No longer empty (#3604): the kit fills as the code UI migrates into the graph — every seeded
+    // component belongs to base-studio-code, is a stamped built-in, and fleetpage led the way.
+    expect(SEED_COMPONENTS.length).toBeGreaterThan(0);
+    expect(SEED_COMPONENTS.every((c) => c.kitId === BASE_STUDIO_CODE_KIT_ID && c.builtin)).toBe(true);
+    expect(SEED_COMPONENTS.map((c) => c.id)).toContain("fleetpage");
     // tech "react" is load-bearing: themes bind to the design group by tech, not kit id.
     expect(SEED_KITS[0].tech).toBe("react");
   });
@@ -41,14 +45,17 @@ describe("the wipe — the reconcile retires every prior packaged kit (#3543)", 
     expect(r.pushes.map((k) => k.id)).toEqual([BASE_STUDIO_CODE_KIT_ID]);
   });
 
-  it("drops every prior pristine component (the seed carries none now)", () => {
+  it("drops a prior pristine component AND seeds the migrated app pages (#3604)", () => {
     const staleComp = stampSeedHash<ComponentRecord>({
       id: "old-button", name: "Button", kitId: "react-ui", role: "primitive", version: "1", used: 0,
       tags: [], variants: [], composes: [], props: [], whenUse: [], whenNot: [], src: "", srcText: "", builtin: true,
     });
     const r = reconcileComponents([staleComp]);
-    expect(r.records).toEqual([]);
-    expect(r.drops).toEqual(["old-button"]);
+    expect(r.drops).toEqual(["old-button"]); // the retired pristine built-in still goes
+    // the migrated seed components are appended + pushed (the fresh-install add path)
+    const seededIds = SEED_COMPONENTS.map((c) => c.id).sort();
+    expect(r.records.map((c) => c.id).sort()).toEqual(seededIds);
+    expect(r.pushes.map((c) => c.id).sort()).toEqual(seededIds);
   });
 
   it("KEEPS a user-edited prior kit, surfacing an orphaned notice (store wins, #2483)", () => {
