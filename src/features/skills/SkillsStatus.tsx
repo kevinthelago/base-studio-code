@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { logsTail } from "@/shared/lib/core/logsBridge";
 import { Box } from "@/shared/ui/layout/Box";
 import { useAppStore } from "@/store";
 import { parseSkillLog, aggregateSkillTelemetry, skillStatusKpis, type SkillStats } from "./lib/skillTelemetry";
@@ -15,7 +15,7 @@ export function SkillsStatus() {
 
   useEffect(() => {
     let cancelled = false;
-    bscJson<string[]>(null, ["logs", "tail", "skill", "--limit", "4000", "--json"], [])
+    logsTail("skill", 4000)
       .then((lines) => {
         if (!cancelled) setStats(aggregateSkillTelemetry(parseSkillLog((lines ?? []).join("\n")), new Date()));
       });

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { logsTail } from "@/shared/lib/core/logsBridge";
 import { useAppStore } from "@/store";
 import { parseMcpLog, aggregateMcpTelemetry, type McpAnalytics, type McpCall } from "./lib/mcpTelemetry";
 import { StatCard, StackedDayBars, TelemetryPanel, ItemBars, SplitBar } from "@/shared/ui/charts";
@@ -53,7 +53,7 @@ export function McpAnalyticsTab() {
   const [filter, setFilter] = useState<"all" | "ok" | "errors">("all");
   useEffect(() => {
     let cancelled = false;
-    bscJson<string[]>(null, ["logs", "tail", "mcp", "--limit", "8000", "--json"], [])
+    logsTail("mcp", 8000)
       .then((lines) => { if (!cancelled) setAn(aggregateMcpTelemetry(parseMcpLog((lines ?? []).join("\n")), new Date(), DAYS)); });
     return () => { cancelled = true; };
   }, []);

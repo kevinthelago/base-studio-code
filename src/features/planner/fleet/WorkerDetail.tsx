@@ -5,7 +5,7 @@
 // "not measured yet" placeholders (same honesty as Fleet's tokens card).
 import { useState, useEffect } from "react";
 import { BackButton } from "@/shared/ui/controls/BackButton";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { logsTail } from "@/shared/lib/core/logsBridge";
 import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { usePoll } from "@/shared/hooks/usePoll";
@@ -58,7 +58,7 @@ export function WorkerDetail({ worker, onBack }: { worker: LiveWorker; onBack: (
   // Real per-worker activity from the bsc-audit log (#257): tool attempts tagged
   // with this pane id, polled while the page is open, newest first.
   const [audit, setAudit] = useState<AuditRecord[]>([]);
-  usePoll((isCancelled) => bscJson<string[]>(null, ["logs", "tail", "audit", "--limit", "4000", "--json"], [])
+  usePoll((isCancelled) => logsTail("audit", 4000)
     .then((lines) => {
       if (isCancelled()) return;
       const rows = parseAuditLog((lines ?? []).join("\n")).filter((r) => r.pane === worker.id);
