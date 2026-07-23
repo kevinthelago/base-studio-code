@@ -386,6 +386,7 @@ export function DesignsWorkbench() {
         />
       )}
       <GraphCanvas
+        profileId="designs"
         vp={gvp}
         world={world}
         className="ds-graph"
