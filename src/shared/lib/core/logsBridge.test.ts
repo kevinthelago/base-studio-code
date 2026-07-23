@@ -1,7 +1,7 @@
 // In-process log-stream reads (#3630).
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { logsTail, logsPaneActivity, logsDonePanes } from "./logsBridge";
+import { logsTail, logsPaneActivity, logsDonePanes, canonicalStream, logEventName } from "./logsBridge";
 
 describe("logsTail", () => {
   beforeEach(() => vi.mocked(invoke).mockReset());
@@ -57,5 +57,25 @@ describe("logsDonePanes", () => {
   it("degrades to [] on a rejection", async () => {
     vi.mocked(invoke).mockRejectedValueOnce(new Error("ipc down"));
     expect(await logsDonePanes()).toEqual([]);
+  });
+});
+
+describe("canonicalStream / logEventName (#3638)", () => {
+  it("maps the read aliases to their canonical stream (mirrors Rust canonical_stream)", () => {
+    expect(canonicalStream("audit")).toBe("tool");
+    expect(canonicalStream("tools")).toBe("tool");
+    expect(canonicalStream("skills")).toBe("skill");
+  });
+
+  it("passes canonical names through unchanged", () => {
+    for (const s of ["coord", "activity", "done", "ui", "tool", "hook", "mcp", "skill", "perm"]) {
+      expect(canonicalStream(s)).toBe(s);
+    }
+  });
+
+  it("builds the logs:// event name off the CANONICAL stream, so a subscriber lines up with the emit", () => {
+    expect(logEventName("coord")).toBe("logs://coord");
+    expect(logEventName("activity")).toBe("logs://activity");
+    expect(logEventName("audit")).toBe("logs://tool"); // aliased read → canonical event
   });
 });

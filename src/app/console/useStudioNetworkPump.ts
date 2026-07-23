@@ -18,7 +18,7 @@
 // studioNetworkDrive.ts; this is the thin Tauri/React actuator, like useDirectorPump.
 import { useRef } from "react";
 import { useAppStore } from "@/store";
-import { usePoll } from "@/shared/hooks/usePoll";
+import { useLogStream } from "@/shared/hooks/useLogStream";
 import { injectPrompt } from "@/shared/lib/fleet/paneInject";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
 import {
@@ -26,7 +26,7 @@ import {
   type StudioTarget,
 } from "@/shared/lib/fleet/studioNetworkDrive";
 
-const POLL_MS = 1000;
+// #3638: event-driven on the `logs://coord` change (+ mount + slow backstop), not a fixed poll.
 // How long after a target first becomes active before the pump injects its author task — enough for
 // the lazy-mount host to run `pty_create` + start Claude. Claude queues input typed mid-turn, so a
 // slightly-early inject is buffered rather than lost; this just avoids writing to a not-yet-open pty.
@@ -44,7 +44,7 @@ export function useStudioNetworkPump(): void {
   const injected = useRef<Set<string>>(new Set());
   const inFlight = useRef(false);
 
-  usePoll(async (isCancelled) => {
+  useLogStream("coord", async (isCancelled) => {
     if (isCancelled() || inFlight.current) return;
     const res = await readCoordState(2000);
     if (isCancelled() || !res) return;
@@ -80,5 +80,5 @@ export function useStudioNetworkPump(): void {
     } finally {
       inFlight.current = false;
     }
-  }, POLL_MS);
+  });
 }

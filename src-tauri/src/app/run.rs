@@ -181,6 +181,9 @@ pub fn run() {
             // watcher snapshots the webview and answers. Cheap poll on a worker thread; a missing dir
             // just disables captures rather than aborting startup.
             crate::appchan::spawn_watcher(app.handle().clone());
+            // Log-stream change watcher (#3638): emit `logs://<stream>` when a unified log file's mtime
+            // advances, so the frontend reads each stream on CHANGE instead of polling it every ~1s.
+            observability::log_watch::spawn(app.handle().clone());
             // Start the localhost fault-ingest receiver (#2261): binds 127.0.0.1:0 and runs its accept
             // loop on a background thread. A bind failure is logged and leaves the port at 0 (ingest
             // unavailable) rather than aborting startup.

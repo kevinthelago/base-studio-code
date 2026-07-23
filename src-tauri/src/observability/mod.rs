@@ -4,6 +4,7 @@ use std::sync::{Mutex, MutexGuard};
 
 pub mod collector;
 pub mod graph_log;
+pub mod log_watch;
 pub mod logs;
 pub mod perf;
 pub mod pty_faults;

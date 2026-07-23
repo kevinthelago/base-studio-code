@@ -14,7 +14,7 @@
 
 import { useState } from "react";
 import { logsTail } from "@/shared/lib/core/logsBridge";
-import { usePoll } from "@/shared/hooks/usePoll";
+import { useLogStream } from "@/shared/hooks/useLogStream";
 import { ingestCoordLog, emptyCoordState } from "./coordination";
 
 /** The replayed coord state (`state`/`ready`/`answered`) plus the raw `lines` — the director
@@ -32,19 +32,23 @@ export async function readCoordState(limit = 1000): Promise<CoordResult | null> 
 interface UseCoordLogOptions {
   /** Lines to read from the tail of the log (default 1000). */
   limit?: number;
-  /** Poll cadence in ms (default 1000). */
+  /** @deprecated Legacy poll cadence — ignored since #3638 (reads are event-driven on `logs://coord`).
+   *  Kept so existing `{ ms }` call sites still type-check; remove once none pass it. */
   ms?: number;
 }
 
 /** Poll the coordination log and return the latest replay. Keeps the last good result on a
  *  transient read failure rather than blanking. */
 export function useCoordLog(opts: UseCoordLogOptions = {}): CoordResult {
-  const { limit = 1000, ms = 1000 } = opts;
+  const { limit = 1000 } = opts;
   const [result, setResult] = useState<CoordResult>(() => ({ lines: [], ...ingestCoordLog([], emptyCoordState()) }));
-  usePoll(async (isCancelled) => {
+  // Event-driven (#3638): re-read + replay only when the coord log changes (plus mount + a slow
+  // backstop), instead of polling every `ms`. `opts.ms` is retained on the type for back-compat but no
+  // longer drives the read cadence — the `logs://coord` change event does.
+  useLogStream("coord", async (isCancelled) => {
     const res = await readCoordState(limit);
     if (isCancelled() || !res) return;
     setResult(res);
-  }, ms, [limit]);
+  }, [limit]);
   return result;
 }
