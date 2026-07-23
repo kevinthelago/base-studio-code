@@ -6,7 +6,10 @@ import { Row } from "@/shared/ui/layout/Row";
 // startup path — both the dev transform and the production bundle. Shared by the shell's screen
 // switcher and the detached-window renderer.
 export const GitHubWorkspace      = lazy(() => import("@/features/github").then((m) => ({ default: m.GitHubWorkspace })));
-export const AutomationsWorkspace = lazy(() => import("@/features/automations").then((m) => ({ default: m.AutomationsWorkspace })));
+// Automations renders FROM THE GRAPH (#3642, epic #3604) — the graph host mounts the authored
+// `automationspage` node; the symbol name stays so App.tsx + DetachedWindow (which passes `pageOverride`,
+// forwarded through) need no change.
+export const AutomationsWorkspace = lazy(() => import("@/features/automations").then((m) => ({ default: m.AutomationsGraphHost })));
 export const McpWorkspace         = lazy(() => import("@/features/mcp").then((m) => ({ default: m.McpWorkspace })));
 export const SettingsWorkspace    = lazy(() => import("@/features/settings").then((m) => ({ default: m.SettingsWorkspace })));
 export const ProjectsWorkspace    = lazy(() => import("@/features/planner").then((m) => ({ default: m.ProjectsWorkspace })));
