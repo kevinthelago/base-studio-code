@@ -28,7 +28,7 @@ import { RailRow } from "@/shared/ui/layouts/RailRow";
 import { SearchField } from "@/shared/ui/controls/SearchField";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { resolveKitLibraryRefs } from "@/features/designs";
-import { Fleet } from "@/features/planner/fleet/Fleet";
+import { FleetGraphHost } from "@/features/planner/fleet/FleetGraphHost";
 import { teamRoleStreams } from "@/features/planner/fleet/teamFleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
@@ -573,7 +573,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       pageOverride={pageOverride}
       className="glance-workspace"
     >
-      {page === "fleet" ? <Fleet /> : (
+      {page === "fleet" ? <FleetGraphHost /> : (
       // The graph must FILL the screen body (a pan/zoom canvas, not scrolling content); the shared
       // .screen-body is a block scroll container, so give it an explicit full-height flex column.
       <Box style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>

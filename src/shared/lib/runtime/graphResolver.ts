@@ -1,6 +1,7 @@
 // The store-backed graph-sibling resolver (#3606, epic #3604) — lets a graph component import ANOTHER graph
-// component by id, so a page can compose its panels. Lives in `app/` because only the shell knows the store;
-// the loader (shared/lib) stays store-agnostic and takes this as an injected [`GraphSourceResolver`].
+// component by id, so a page can compose its panels. Feature-agnostic (it only reads `@/store`, which shared/
+// may import), so it sits with the loader in shared/lib/runtime; the loader stays store-agnostic and takes
+// this as an injected [`GraphSourceResolver`].
 import { useAppStore } from "@/store";
 import type { GraphSourceResolver } from "@/shared/lib/runtime/componentLoader";
 
