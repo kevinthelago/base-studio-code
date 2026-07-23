@@ -512,6 +512,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         }
         if (destroyed) return;
       }
+      // #3614: a fleet worker whose worktree was reclaimed by the boot-GC is marked ended by the boot
+      // reconciliation (useAppBoot). PaneAt renders its resting card instead of this view — but if this
+      // mount effect was already in flight when `endedPanes` flipped, bail here so we NEVER spawn a PTY
+      // into a deleted worktree (the burst of doomed sessions that jams the backend on boot).
+      if (useAppStore.getState().endedPanes[paneId]) return;
       const isNew = await safeInvoke<boolean>("pty_create", {
         paneId,
         cols: term.cols,
