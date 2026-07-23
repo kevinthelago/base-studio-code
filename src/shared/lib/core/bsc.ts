@@ -10,15 +10,23 @@
 // same type. Kept React-free so it's unit-testable, mirroring safeInvoke.ts.
 
 import { invoke } from "@tauri-apps/api/core";
+import { startInvokeTimer, bscLabel } from "@/shared/lib/core/invokeTiming";
 
 /**
  * Run the bundled `bsc` CLI with `args` against `projectKey`'s stores; resolves to its raw stdout.
  * `projectKey` `null` (or empty) scopes to global-only subcommands (e.g. `bsc skill …`). Rejects when
  * the bundled binary can't be resolved or `bsc` exits non-zero (its stderr becomes the rejection).
+ * The one choke point for every bsc-bridge call, so timing it here (#3626, labelled by subcommand)
+ * covers `bscJson`/`bscRun`/`bscWrite` — a slow `bsc <sub> <verb>` gets a `[invoke]` app-log line.
  */
 export async function bsc(projectKey: string | null, args: string[], stdin?: string): Promise<string> {
-  // Only include `stdin` when given, so read/positional calls keep their exact 2-key payload.
-  return invoke<string>("bsc", stdin === undefined ? { projectKey, args } : { projectKey, args, stdin });
+  const done = startInvokeTimer(bscLabel(args), "bsc");
+  try {
+    // Only include `stdin` when given, so read/positional calls keep their exact 2-key payload.
+    return await invoke<string>("bsc", stdin === undefined ? { projectKey, args } : { projectKey, args, stdin });
+  } finally {
+    done();
+  }
 }
 
 /**
