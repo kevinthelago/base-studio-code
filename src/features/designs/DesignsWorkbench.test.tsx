@@ -593,3 +593,30 @@ describe("theme try-on preview (#2834)", () => {
     expect(screen.getByText(/Composition graph/)).toBeTruthy();          // restored on exit
   });
 });
+
+describe("component folders render as readable rows (#3632)", () => {
+  const kit = REACT_UI_KIT;
+  const grouped = (id: string, name: string, group: string) =>
+    ({ ...REACT_UI_COMPONENTS[0], id, name, kitId: kit.id, group });
+
+  it("a folder header is the readable RailRow (not the dim uppercase micro-label) and toggles its children", () => {
+    // The first kit auto-expands, so its folder tree renders. The seed carries no `group` (hence a flat
+    // list), so inject grouped components to make `groupComponentsByFolder` produce a folder.
+    useAppStore.setState({
+      kits: [kit],
+      components: [grouped("g-a", "Alpha", "widgets"), grouped("g-b", "Beta", "widgets")],
+      designsKitId: kit.id,
+      designsCompId: null,
+    });
+    const { container } = render(<DesignsWorkbench />);
+    const folder = container.querySelector(".ds-compfolderhead") as HTMLElement;
+    expect(folder).toBeTruthy();
+    // The fix (#3632): folders wear the readable nav-row look, NOT the dim uppercase group micro-label.
+    expect(folder.matches("button.rail-row")).toBe(true);
+    expect(folder.classList.contains("rail-grouphead")).toBe(false);
+    expect(folder.textContent).toContain("widgets");           // label reads in normal case (not "WIDGETS")
+    expect(screen.getByText("Alpha")).toBeTruthy();            // its components list under it (open by default)
+    fireEvent.click(folder);                                   // collapse the folder…
+    expect(screen.queryByText("Alpha")).toBeNull();            // …hides its components
+  });
+});
