@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/store";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { logsTail } from "@/shared/lib/core/logsBridge";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { useGlanceProjects, useGlanceFaults, useProjectFleet } from "@/features/glance";
 import { loadPendingLessons } from "@/features/skills";
@@ -146,7 +146,7 @@ export function useStoreProjector(): void {
   const [audit, setAudit] = useState<AuditRecord[]>([]);
   usePoll(async (isCancelled) => {
     if (!tunnelRunning) { setAudit([]); return; } // React bails when already []
-    const lines = await bscJson<string[]>(null, ["logs", "tail", "audit", "--limit", "300", "--json"], []);
+    const lines = await logsTail("audit", 300);
     if (isCancelled()) return;
     setAudit(parseAuditLog(lines.join("\n")));
   }, AUDIT_POLL_MS, [tunnelRunning]);
