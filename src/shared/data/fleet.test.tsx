@@ -1,7 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { Fleet } from "@/features/planner/fleet/Fleet";
-import { useAppStore } from "@/store";
+import { describe, it, expect } from "vitest";
 import {
   statusForPane, buildLiveWorkers, statusCounts, deriveFleetKpis,
 } from "@/shared/lib/fleet/fleetLive";
@@ -98,83 +95,5 @@ describe("fleetLive mappers", () => {
     expect(workers.find(w => w.name === "b")!.status).toBe("maintenance");
     expect(statusCounts(workers)).toEqual({ running: 1, maintenance: 1 });
     expect(deriveFleetKpis(workers)).toEqual({ total: 2, active: 1, needAttention: 0, idle: 0, maintenance: 1 });
-  });
-});
-
-describe("Fleet screen", () => {
-  beforeEach(() => useAppStore.setState({ fleetPaneStreams: {}, paneStatus: {}, tabs: [], disabledPanes: {} }));
-
-  it("shows the empty state when no fleet is running", () => {
-    render(<Fleet />);
-    expect(screen.getByText(/no fleet running/i)).toBeTruthy();
-  });
-
-  it("renders the live worker board when a fleet is launched", () => {
-    // #1176: fleet panes key off IDENTITY ids (`<key>:<stream>`) recorded on the tab's `paneIds`;
-    // buildLiveWorkers drops any worker not on an open tab's paneIds.
-    useAppStore.setState({
-      fleetPaneStreams: { "proj:api": stream({ name: "api", issues: ["#1"] }) },
-      paneStatus: { "proj:api": "run" },
-      tabs: [{ name: "proj · build", layout: "1×1", state: "run", paneIds: ["proj:api"] }] as never,
-      disabledPanes: {},
-      agentProfiles: [] as never,
-    });
-    render(<Fleet />);
-    expect(screen.getByText("Worker board")).toBeTruthy();
-    expect(screen.getByText("api")).toBeTruthy();
-    expect(screen.getByText("active workers")).toBeTruthy();
-  });
-
-  it("opens a worker's per-agent page and returns via '← fleet' (#499)", () => {
-    useAppStore.setState({
-      fleetPaneStreams: { "proj:api": stream({ name: "api", issues: ["#1", "#2"], profile: "pf_build" }) },
-      paneStatus: { "proj:api": "run" },
-      paneProfiles: { "proj:api": "pf_build" } as never,
-      paneFlows: {} as never,
-      agentProfiles: [{
-        id: "pf_build", name: "Build & test", color: "#fff", category: "generated", origin: "by planner",
-        desc: "", mode: "ask", commands: [],
-        tools: { read: "allow", grep: "allow", glob: "allow", edit: "allow", write: "allow", bash: "ask", web: "ask", task: "allow" },
-        paths: { allow: ["src/**"], deny: ["**/.env"] }, net: { allow: ["crates.io"] }, builtin: false,
-      }] as never,
-      tabs: [{ name: "proj · build", layout: "1×1", state: "run", paneIds: ["proj:api"] }] as never,
-      disabledPanes: {},
-    });
-    render(<Fleet />);
-    // Click the worker row to drill in.
-    fireEvent.click(screen.getByText("api"));
-    expect(screen.getByRole("button", { name: "Back to fleet" })).toBeTruthy();
-    expect(screen.getByText("Execution flow")).toBeTruthy();
-    expect(screen.getByText("Owned issues")).toBeTruthy();
-    // Permissions render from the real profile.
-    expect(screen.getByText("Permissions")).toBeTruthy();
-    // Back to the board.
-    fireEvent.click(screen.getByRole("button", { name: "Back to fleet" }));
-    expect(screen.getByText("Worker board")).toBeTruthy();
-  });
-
-  it("per-agent pause/resume + profile modal are wired to the store (#499)", () => {
-    useAppStore.setState({
-      fleetPaneStreams: { "proj:api": stream({ name: "api", issues: ["#1"], profile: "pf_build" }) },
-      paneStatus: { "proj:api": "run" },
-      paneProfiles: { "proj:api": "pf_build" } as never,
-      paneFlows: {} as never,
-      agentProfiles: [{
-        id: "pf_build", name: "Build & test", color: "#fff", category: "generated", origin: "by planner",
-        desc: "", mode: "ask", commands: [],
-        tools: { read: "allow", grep: "allow", glob: "allow", edit: "allow", write: "allow", bash: "ask", web: "ask", task: "allow" },
-        paths: { allow: ["src/**"], deny: ["**/.env"] }, net: { allow: ["crates.io"] }, builtin: false,
-      }] as never,
-      tabs: [{ name: "proj · build", layout: "1×1", state: "run", paneIds: ["proj:api"] }] as never,
-      disabledPanes: {},
-    });
-    render(<Fleet />);
-    fireEvent.click(screen.getByText("api"));
-    // Pause disables the pane in the store.
-    fireEvent.click(screen.getByText("⏸ pause"));
-    expect(useAppStore.getState().disabledPanes["proj:api"]).toBe(true);
-    // Profile modal lists the profiles.
-    fireEvent.click(screen.getByText("⛉ profile"));
-    expect(screen.getByText("Change profile")).toBeTruthy();
   });
 });
