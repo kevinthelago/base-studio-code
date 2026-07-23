@@ -1,15 +1,76 @@
-// The platform module registration (#3605, epic #3604) — the shell's list of the app's OWN modules that
-// graph-loaded code is allowed to import, wired to the LIVE instances. This is the platform ↔ graph
-// boundary: everything registered here stays real code (React, the store, shared primitives); everything
-// else the graph provides. Lives in `app/` because only the shell knows the whole module set (features
-// don't), and it must register the SAME React/store instances the running app uses — a second copy would
-// break hooks.
+// The platform module registration (#3605/#3606, epic #3604) — the shell's list of the app's OWN modules
+// that graph-loaded code may import, wired to the LIVE instances. This is the platform ↔ graph boundary:
+// everything registered here stays real code (React, the store, the shared/ui design system, and the few
+// behavioural leaves a migrated page composes but does NOT redraw); everything else the graph provides.
 //
-// #3606 grows the shared/ui primitive list so a graph-loaded page can compose the real Card/Grid/charts.
+// Lives in `app/` because only the shell knows the whole module set, and it must register the SAME
+// React/store instances the running app uses — a second copy would break hooks. Registered LAZILY (after
+// `primeConfigOverrides`, see main.tsx): these imports pull in `@data`-backed modules, so evaluating them
+// before the config prime would freeze the wrong config into their eager consts.
+//
+// The FLEET-specific data/hooks/logic (below) are injected for #3606 (a UI-only slice); #3607 relocates the
+// logic into the algorithms graph, at which point those specifiers drop out of this list.
 import * as React from "react";
 import * as JsxRuntime from "react/jsx-runtime";
 import * as Store from "@/store";
+// ── The design system: the platform UI vocabulary a graph page composes ──────────────────────────────
+import * as ColorSwatch from "@/shared/ui/controls/ColorSwatch";
+import * as Button from "@/shared/ui/controls/Button";
+import * as Charts from "@/shared/ui/charts";
+import * as Stack from "@/shared/ui/layout/Stack";
+import * as Row from "@/shared/ui/layout/Row";
+import * as GridMod from "@/shared/ui/layout/Grid";
+import * as BoxMod from "@/shared/ui/layout/Box";
+import * as TextMod from "@/shared/ui/typography/Text";
+import * as Card from "@/shared/ui/data/Card";
+import * as Chip from "@/shared/ui/data/Chip";
+import * as Skeleton from "@/shared/ui/feedback/Skeleton";
+import * as CardStates from "@/shared/ui/feedback/CardStates";
+import * as EmptyStateMod from "@/shared/ui/feedback/EmptyState";
+// ── Live data + hooks the FleetPage panels read (feature-agnostic → stay injected permanently) ────────
+import * as FleetData from "@/shared/data/fleet";
+import * as UseFleetLive from "@/shared/hooks/useFleetLive";
+import * as UsePoll from "@/shared/hooks/usePoll";
+import * as UsePaneTokenUsage from "@/app/console/lib/usePaneTokenUsage";
+import * as Bsc from "@/shared/lib/core/bsc";
+import * as ProjectPaths from "@/shared/lib/core/projectPaths";
+import * as UseCoordLog from "@/shared/lib/fleet/useCoordLog";
+import * as CoordinationWakes from "@/shared/lib/fleet/coordinationWakes";
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
+
+// The FLEET-specific injected leaves (WorkerDetail) + logic (useFleetGithub / fleetCost) are NOT registered
+// here — the shell must not reach a feature's internals (#1545), and eager-importing them would de-lazy the
+// whole planner at boot. The fleet feature registers its OWN graph-platform surface (`registerFleetPlatform`,
+// features/planner/fleet/graphPlatform.ts), called by the fleet host that renders the graph page.
+
+/** specifier → the app's live module. A graph component's `import … from "<specifier>"` resolves here. */
+const PLATFORM: Record<string, unknown> = {
+  // React — the app's ONE instance, so a loaded component's hooks share the app's dispatcher.
+  react: React,
+  "react/jsx-runtime": JsxRuntime, // esbuild `jsx: "automatic"` emits this
+  "@/store": Store, // the live app state — a loaded page reads/subscribes to the REAL store, not a stub
+  "@/shared/ui/controls/ColorSwatch": ColorSwatch,
+  "@/shared/ui/controls/Button": Button,
+  "@/shared/ui/charts": Charts,
+  "@/shared/ui/layout/Stack": Stack,
+  "@/shared/ui/layout/Row": Row,
+  "@/shared/ui/layout/Grid": GridMod,
+  "@/shared/ui/layout/Box": BoxMod,
+  "@/shared/ui/typography/Text": TextMod,
+  "@/shared/ui/data/Card": Card,
+  "@/shared/ui/data/Chip": Chip,
+  "@/shared/ui/feedback/Skeleton": Skeleton,
+  "@/shared/ui/feedback/CardStates": CardStates,
+  "@/shared/ui/feedback/EmptyState": EmptyStateMod,
+  "@/shared/data/fleet": FleetData,
+  "@/shared/hooks/useFleetLive": UseFleetLive,
+  "@/shared/hooks/usePoll": UsePoll,
+  "@/app/console/lib/usePaneTokenUsage": UsePaneTokenUsage,
+  "@/shared/lib/core/bsc": Bsc,
+  "@/shared/lib/core/projectPaths": ProjectPaths,
+  "@/shared/lib/fleet/useCoordLog": UseCoordLog,
+  "@/shared/lib/fleet/coordinationWakes": CoordinationWakes,
+};
 
 let done = false;
 
@@ -17,9 +78,5 @@ let done = false;
 export function registerPlatformModules(): void {
   if (done) return;
   done = true;
-  // React itself — the app's ONE instance, so a loaded component's hooks share the app's dispatcher.
-  registerAppModule("react", React);
-  registerAppModule("react/jsx-runtime", JsxRuntime); // esbuild `jsx: "automatic"` emits this
-  // The live app state — a loaded page reads/subscribes to the REAL store, not a stub.
-  registerAppModule("@/store", Store);
+  for (const [specifier, mod] of Object.entries(PLATFORM)) registerAppModule(specifier, mod);
 }

@@ -139,6 +139,30 @@ USAGE:
 Deletes the component keyed by <id>. A no-op (not an error) when it does not exist.",
     },
     CmdDoc {
+        name: "export",
+        summary: "dump every component to a folder tree — <dir>/<group>/<id>.json, lossless (#3606)",
+        usage: "\
+USAGE:
+  bsc ui export <dir> [--dir <store>] [--pretty]
+
+Writes each stored component VERBATIM to <dir>/<group>/<id>.json, nesting by its `group` folder path
+(#3579) so the tree mirrors a project's folders. The seed half of components-as-data: round-trips
+through `bsc ui import`. Files are written pretty (readable diffs); --pretty also indents the report.
+A READ — no `ui` write scope required. `--dir` overrides the STORE location, not the output <dir>.",
+    },
+    CmdDoc {
+        name: "import",
+        summary: "load a folder tree of component records into the store — the seed half (#3606)",
+        usage: "\
+USAGE:
+  bsc ui import <dir> [--dir <store>] [--pretty]
+
+Walks <dir> recursively for *.json and UPSERTS each into the store, keyed by the record's own `id`. A
+file that is a KIT BUNDLE ({\"components\":[…]}, e.g. react-ui.json) is exploded — every component in it
+is imported. A missing <dir> is empty, not an error. A ui-scope MUTATION. The load half that pairs
+with `bsc ui export`; boot-seeding imports the packaged `data/components/` tree the same way.",
+    },
+    CmdDoc {
         name: "rename",
         summary: "rename a component in place — sweeps every composes/rules reference (#3576)",
         usage: "\
@@ -607,7 +631,7 @@ fn is_scoped_mutation(args: &[String]) -> bool {
     };
     matches!(
         verb.map(String::as_str),
-        Some("set") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("regroup")
+        Some("set") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("regroup") | Some("import")
     ) && next.map(String::as_str) != Some("help")
 }
 
@@ -817,6 +841,14 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("regroup") if args.get(1).map(String::as_str) != Some("help") => cmd_regroup(&args[1..]),
         Some("regroup") => {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "regroup"));
+            Ok(())
+        }
+        // `export`/`import` (#3606) — components-as-data round-trip: dump the store to a folder tree under
+        // `data/` and load it back. `export` is a read; `import` is a ui-scope MUTATION (gated above).
+        Some("export") if args.get(1).map(String::as_str) != Some("help") => cmd_export(&args[1..]),
+        Some("import") if args.get(1).map(String::as_str) != Some("help") => cmd_import(&args[1..]),
+        Some(v @ ("export" | "import")) => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
             Ok(())
         }
         // `get --field <json-pointer> [--raw]` (#3162) prints ONE field — intercepted here (the shared
@@ -1388,6 +1420,107 @@ fn cmd_regroup(args: &[String]) -> Result<(), String> {
     let report = serde_json::json!({ "scanned": scanned, "changed": changed, "applied": applied });
     let out = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
     println!("{}", out.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `bsc ui export <dir> [--dir <store>] [--pretty]` (#3606) — dump the component store to a folder tree,
+/// `<dir>/<group>/<id>.json`, so components-as-data round-trips: the seed half `bsc ui import` reads it back.
+/// Files are written pretty (readable git diffs); `--pretty` also indents the stdout report.
+fn cmd_export(args: &[String]) -> Result<(), String> {
+    let (mut out, mut dir, mut pretty) = (None::<String>, None::<String>, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            other if !other.starts_with("--") && out.is_none() => out = Some(other.to_string()),
+            other => return Err(format!("unknown flag '{other}' — usage: bsc ui export <dir> [--dir <store>] [--pretty]")),
+        }
+    }
+    let out = out.ok_or("usage: bsc ui export <dir> [--dir <store>] [--pretty]")?;
+    let store = open_component_store(&dir)?;
+    let out_root = std::path::Path::new(&out);
+    let mut ids = Vec::new();
+    for raw in store.list() {
+        let rec: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("a stored component is not valid JSON: {e}"))?;
+        let id = rec.get("id").and_then(serde_json::Value::as_str).ok_or("a stored component has no `id`")?;
+        // `group` is a `/`-delimited FOLDER PATH (#3579) → nest the file, so the tree mirrors the project.
+        let group = rec.get("group").and_then(serde_json::Value::as_str).unwrap_or("");
+        let mut path = out_root.to_path_buf();
+        for seg in group.split('/').filter(|s| !s.is_empty()) {
+            path.push(seg);
+        }
+        std::fs::create_dir_all(&path).map_err(|e| format!("cannot create {}: {e}", path.display()))?;
+        path.push(format!("{id}.json"));
+        let text = serde_json::to_string_pretty(&rec).map_err(|e| e.to_string())?;
+        std::fs::write(&path, text).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        ids.push(id.to_string());
+    }
+    let report = serde_json::json!({ "exported": ids.len(), "dir": out, "ids": ids });
+    let s = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
+    println!("{}", s.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `bsc ui import <dir> [--dir <store>] [--pretty]` (#3606) — load a folder tree of component records into
+/// the store (the load half of components-as-data). Each `*.json` is UPSERT by its `id`; a KIT BUNDLE
+/// (`{"components":[…]}`, e.g. react-ui.json) is exploded so every component in it imports.
+fn cmd_import(args: &[String]) -> Result<(), String> {
+    let (mut inp, mut dir, mut pretty) = (None::<String>, None::<String>, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            other if !other.starts_with("--") && inp.is_none() => inp = Some(other.to_string()),
+            other => return Err(format!("unknown flag '{other}' — usage: bsc ui import <dir> [--dir <store>] [--pretty]")),
+        }
+    }
+    let inp = inp.ok_or("usage: bsc ui import <dir> [--dir <store>] [--pretty]")?;
+    let store = open_component_store(&dir)?;
+    let mut files = Vec::new();
+    collect_json_files(std::path::Path::new(&inp), &mut files).map_err(|e| format!("cannot read {inp}: {e}"))?;
+    files.sort(); // deterministic import order (stable across platforms)
+    let mut ids = Vec::new();
+    for f in &files {
+        let raw = std::fs::read_to_string(f).map_err(|e| format!("cannot read {}: {e}", f.display()))?;
+        let v: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("{} is not valid JSON: {e}", f.display()))?;
+        // A kit bundle → import each of its components; anything else is a single record.
+        let records: Vec<&serde_json::Value> = match v.get("components").and_then(|c| c.as_array()) {
+            Some(arr) => arr.iter().collect(),
+            None => vec![&v],
+        };
+        for rec in records {
+            let id = rec
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| format!("a record in {} has no `id`", f.display()))?;
+            store.set(id, &serde_json::to_string(rec).map_err(|e| e.to_string())?)?;
+            bsc_util::emit_ui_activity("component", id); // Design Studio live-focus (#2525) re-hydrates
+            ids.push(id.to_string());
+        }
+    }
+    let report = serde_json::json!({ "imported": ids.len(), "dir": inp, "ids": ids });
+    let s = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
+    println!("{}", s.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// Recursively collect every `*.json` under `root` (a missing dir ⇒ empty, matching the store's leniency).
+fn collect_json_files(root: &std::path::Path, out: &mut Vec<std::path::PathBuf>) -> std::io::Result<()> {
+    if !root.exists() {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(root)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_json_files(&path, out)?;
+        } else if path.extension().is_some_and(|e| e == "json") {
+            out.push(path);
+        }
+    }
     Ok(())
 }
 
@@ -3025,6 +3158,44 @@ fn cmd_get_field(args: &[String]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #3606 — export dumps the store to a folder tree nested by `group`, import loads it back, and the
+    /// round-trip is lossless; a kit BUNDLE ({components:[…]}, e.g. react-ui.json) is exploded on import.
+    #[test]
+    fn export_import_round_trips_a_folder_tree_and_explodes_a_bundle() {
+        let base = std::env::temp_dir().join(format!("bsc-comp-io-roundtrip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let store_dir = base.join("store");
+        let tree = base.join("tree");
+        std::fs::create_dir_all(&store_dir).unwrap();
+        let store = bsc_json_store::Store::new(store_dir.clone(), "component");
+        // One nested-by-group component, one ungrouped.
+        store.set("card", r#"{"id":"card","name":"Card","group":"ui/data","srcText":"export const Card=()=>null;"}"#).unwrap();
+        store.set("loose", r#"{"id":"loose","name":"Loose","srcText":"export const Loose=()=>null;"}"#).unwrap();
+
+        // export → files nest by the `group` folder path; ungrouped sits at the root.
+        cmd_export(&["--dir".into(), store_dir.to_string_lossy().into_owned(), tree.to_string_lossy().into_owned()]).unwrap();
+        assert!(tree.join("ui/data/card.json").exists(), "grouped component nests by its folder path");
+        assert!(tree.join("loose.json").exists(), "ungrouped component sits at the tree root");
+
+        // wipe the store, then import the tree back — lossless.
+        store.remove("card").unwrap();
+        store.remove("loose").unwrap();
+        assert_eq!(store.list().len(), 0, "store cleared before re-import");
+        cmd_import(&["--dir".into(), store_dir.to_string_lossy().into_owned(), tree.to_string_lossy().into_owned()]).unwrap();
+        let card: serde_json::Value = serde_json::from_str(&store.get("card").unwrap().unwrap()).unwrap();
+        assert_eq!(card["group"], "ui/data", "the grouped record imported back verbatim");
+        assert_eq!(card["srcText"], "export const Card=()=>null;");
+        assert!(store.get("loose").unwrap().is_some(), "the ungrouped record imported back too");
+
+        // a kit bundle file is exploded — every component inside it is imported.
+        std::fs::write(tree.join("bundle.json"), r#"{"id":"kit","components":[{"id":"x","name":"X"},{"id":"y","name":"Y"}]}"#).unwrap();
+        cmd_import(&["--dir".into(), store_dir.to_string_lossy().into_owned(), tree.to_string_lossy().into_owned()]).unwrap();
+        assert!(store.get("x").unwrap().is_some() && store.get("y").unwrap().is_some(), "the bundle's components were exploded in");
+        assert!(store.get("kit").unwrap().is_none(), "the bundle wrapper itself is NOT stored as a component");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn validate_component_batch_rejects_a_corrupt_module_srctext_but_passes_valid_ones() {

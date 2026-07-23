@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import * as React from "react";
 import { registerAppModule, __resetRegistry } from "./moduleRegistry";
-import { classifyImport, makeRequire, pickComponent, evalCjsModule } from "./componentLoader";
+import { classifyImport, makeRequire, pickComponent, evalCjsModule, routeImport } from "./componentLoader";
 
 // The compile step (esbuild-wasm, browser-only) is exercised end-to-end by the e2e harness; here we verify
 // the runtime half — that the CommonJS esbuild WOULD emit runs against the registry, resolving `react` to
@@ -35,6 +35,27 @@ describe("classifyImport (#3605)", () => {
     expect(classifyImport("@/shared/ui/data/Card", registered)).toBe("graph");
     expect(classifyImport("./Sibling", registered)).toBe("graph");
     expect(classifyImport("d3", registered)).toBe("library");
+  });
+});
+
+describe("routeImport — platform external · sibling vendored · else external (#3606)", () => {
+  it("registered → external; a resolved sibling → vendored; everything else → external", () => {
+    registerAppModule("react", React);
+    registerAppModule("@/store", {});
+    const panels: Record<string, string> = { "@/components/worker-board": "export const P = () => null;" };
+    const resolve = (s: string) => panels[s] ?? null;
+
+    // platform (registered) → external, even though a resolver is present
+    expect(routeImport("react", resolve)).toEqual({ external: true });
+    expect(routeImport("@/store", resolve)).toEqual({ external: true });
+    // a graph sibling the app resolves → vendored (its source bundles in)
+    expect(routeImport("@/components/worker-board", resolve)).toEqual({ vendor: panels["@/components/worker-board"] });
+    // a first-party path the resolver does NOT know → external (→ require throws a named error)
+    expect(routeImport("@/components/missing", resolve)).toEqual({ external: true });
+    // a bare library → external
+    expect(routeImport("d3", resolve)).toEqual({ external: true });
+    // no resolver at all → degrades to #3605 "everything external"
+    expect(routeImport("@/components/worker-board")).toEqual({ external: true });
   });
 });
 
