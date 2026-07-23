@@ -58,22 +58,27 @@ export default function App() {
   useAppBoot();    // accent vars · startup trace · base-dir/crash/skills hydration · deferred perf monitor
   useNavHistory(); // mouse back/forward (X1/X2) → app-wide navigation history (workspace + Glance drill)
 
-  const {
-    activeWorkspace: rawActiveWorkspace, setWorkspace,
-    tabs, activeTabIdx,
-    focusedAgentName,
-    activeRepoName,
-    activePageTab,
-    crumbEntity,
-    projectsPageMode,
-    projectsView,
-    githubTab,
-    githubBoardOpen,
-    githubBoardTab,
-    settingsSection,
-    hasHydrated,
-    showConsolePage,
-  } = useAppStore();
+  // Per-field selectors, NOT a bare `useAppStore()` (#3612): the shell is always mounted, and a
+  // whole-store read re-renders the ENTIRE app tree (9 terminals + the 154-component Studio + Glance) on
+  // EVERY store mutation anywhere — including the Design Studio scan's ~308 componentBuildStatus writes,
+  // which produced the measured 100–386 ms jank. Subscribing per field compares by Object.is, so an
+  // unrelated write stays silent. (Same pattern the console pinned in storeSelectors.test.tsx.)
+  const rawActiveWorkspace = useAppStore((s) => s.activeWorkspace);
+  const setWorkspace = useAppStore((s) => s.setWorkspace);
+  const tabs = useAppStore((s) => s.tabs);
+  const activeTabIdx = useAppStore((s) => s.activeTabIdx);
+  const focusedAgentName = useAppStore((s) => s.focusedAgentName);
+  const activeRepoName = useAppStore((s) => s.activeRepoName);
+  const activePageTab = useAppStore((s) => s.activePageTab);
+  const crumbEntity = useAppStore((s) => s.crumbEntity);
+  const projectsPageMode = useAppStore((s) => s.projectsPageMode);
+  const projectsView = useAppStore((s) => s.projectsView);
+  const githubTab = useAppStore((s) => s.githubTab);
+  const githubBoardOpen = useAppStore((s) => s.githubBoardOpen);
+  const githubBoardTab = useAppStore((s) => s.githubBoardTab);
+  const settingsSection = useAppStore((s) => s.settingsSection);
+  const hasHydrated = useAppStore((s) => s.hasHydrated);
+  const showConsolePage = useAppStore((s) => s.showConsolePage);
 
   // The legacy Console page is opt-in (#2372). When it's off, a persisted (or just-toggled-off)
   // console-active workspace falls back to Glance — derived, so every downstream `activeWorkspace`

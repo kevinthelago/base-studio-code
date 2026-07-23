@@ -18,6 +18,16 @@ pub(crate) fn read_worktree_changes(cwd: String) -> Vec<String> {
     let untracked = git_lines(&cwd, &["ls-files", "--others", "--exclude-standard"]);
     merge_change_lists(tracked, untracked)
 }
+
+/// #3614: does `path` exist as a host directory? Normalizes a git-bash cwd first (like `pty_create`),
+/// so the frontend can pass a persisted `paneCwds[...]` value verbatim. The boot reconciliation uses
+/// this to detect a fleet worker whose worktree was reclaimed by the boot-GC — a vanished worktree means
+/// the work landed (the GC only reclaims merged + clean), so that worker is marked ENDED instead of
+/// relaunched into a deleted directory (the split-brain that jammed the backend on every boot).
+#[tauri::command]
+pub(crate) fn dir_exists(path: String) -> bool {
+    !path.trim().is_empty() && std::path::Path::new(&to_native_path(&path)).is_dir()
+}
 /// One commit in a worker's done-time audit (#920).
 #[derive(serde::Serialize)]
 pub(crate) struct WorktreeCommit {
@@ -163,5 +173,18 @@ mod relocated_tests {
     fn read_worktree_changes_empty_cwd_is_empty() {
         assert!(read_worktree_changes(String::new()).is_empty());
         assert!(read_worktree_changes("   ".into()).is_empty());
+    }
+
+    #[test]
+    fn dir_exists_true_for_a_real_dir_false_otherwise() {
+        // The crate manifest dir is a guaranteed-real directory.
+        let real = env!("CARGO_MANIFEST_DIR").to_string();
+        assert!(super::dir_exists(real), "an existing directory reports true");
+        assert!(!super::dir_exists(String::new()), "empty path is false (no silent home)");
+        assert!(!super::dir_exists("   ".into()), "blank path is false");
+        assert!(
+            !super::dir_exists(format!("{}/definitely--not--here--3614", env!("CARGO_MANIFEST_DIR"))),
+            "a missing worktree-shaped path is false (→ worker marked done, not relaunched)",
+        );
     }
 }
