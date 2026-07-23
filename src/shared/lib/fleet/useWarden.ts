@@ -11,6 +11,7 @@
 import { useRef } from "react";
 import { safeInvoke } from "../core/safeInvoke";
 import { bscJson } from "../core/bsc";
+import { logsTail } from "../core/logsBridge";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import { roleCapability } from "../session/sessionRoles";
@@ -39,7 +40,7 @@ async function buildSession(paneId: string): Promise<WardenSession | null> {
   if (!cwd) return null;
 
   const changedFiles = await safeInvoke<string[]>("read_worktree_changes", { cwd }, []);
-  const auditLines = await bscJson<string[]>(null, ["logs", "tail", "audit", "--limit", "500", "--json"], []);
+  const auditLines = await logsTail("audit", 500);
   return {
     paneId,
     anchor: {

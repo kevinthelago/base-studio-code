@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke, safeInvoke } from "@/shared/lib/core/safeInvoke";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { logsPaneActivity } from "@/shared/lib/core/logsBridge";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -635,7 +635,7 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // UserPromptSubmit reopens `run`; the grace window keeps the gate closed across that gap so the
   // dot doesn't blink idle→run.
   usePoll(async (isCancelled) => {
-    const rows = await bscJson<PaneActivity[]>(null, ["logs", "pane-activity", "--json"], []);
+    const rows = await logsPaneActivity<PaneActivity>();
     if (isCancelled()) return;
     turnOpenRef.current = isTurnOpenDebounced(paneActivityFor(rows, paneId), Date.now());
   }, 1000, [paneId]);

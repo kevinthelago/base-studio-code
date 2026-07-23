@@ -13,7 +13,7 @@
 //    across a transient read failure.
 
 import { useState } from "react";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { logsTail } from "@/shared/lib/core/logsBridge";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { ingestCoordLog, emptyCoordState } from "./coordination";
 
@@ -23,7 +23,8 @@ export type CoordResult = ReturnType<typeof ingestCoordLog> & { lines: string[] 
 
 /** Read + replay the coordination log. `null` on a read failure; the replay + raw lines otherwise. */
 export async function readCoordState(limit = 1000): Promise<CoordResult | null> {
-  const lines = await bscJson<string[] | null>(null, ["logs", "tail", "coord", "--limit", String(limit), "--oldest", "--json"], null);
+  // In-process read (#3630) — `null` fallback preserves the "read failed → skip this tick" guard.
+  const lines = await logsTail("coord", limit, true, null);
   if (!lines) return null;
   return { lines, ...ingestCoordLog(lines, emptyCoordState()) };
 }
