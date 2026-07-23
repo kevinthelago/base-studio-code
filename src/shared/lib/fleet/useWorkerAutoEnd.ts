@@ -12,6 +12,7 @@ import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { safeInvoke } from "../core/safeInvoke";
 import { bscJson } from "../core/bsc";
+import { logsDonePanes, logsPaneActivity } from "../core/logsBridge";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 import { emptyCoordState } from "./coordination";
@@ -101,7 +102,7 @@ export function useWorkerAutoEnd(): void {
   // classify from plan.db (markPaneEnded) AND pty_kill the still-live shell. The endedPanes guard
   // in evaluateExit makes this idempotent across polls (a lingering done.log line won't re-kill).
   usePoll(async (isCancelled) => {
-    const done = await bscJson<string[]>(null, ["logs", "done-panes", "--json"], []);
+    const done = await logsDonePanes();
     if (isCancelled() || !Array.isArray(done)) return;
     const s = useAppStore.getState();
     for (const paneId of done) {
@@ -118,7 +119,7 @@ export function useWorkerAutoEnd(): void {
   const nudgedRef = useRef<Set<string>>(new Set());
   const resurfacedRef = useRef<Set<string>>(new Set()); // lost-ask resurfaces, one per stale ask
   usePoll(async (isCancelled) => {
-    const activity = await bscJson<ActivityRow[]>(null, ["logs", "pane-activity", "--json"], []);
+    const activity = await logsPaneActivity<ActivityRow>();
     const coordRes = await readCoordState(5000);
     if (isCancelled() || !Array.isArray(activity)) return;
     const coord = coordRes?.state ?? emptyCoordState();

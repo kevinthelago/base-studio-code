@@ -8,7 +8,7 @@
 // DS-specific, so it lives in the components feature's lib (not shared/) — modeled on
 // `shared/lib/fleet/coordinationLog.ts` `parseCoordLine` + `shared/lib/fleet/useCoordLog.ts`.
 import { useRef } from "react";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { logsTail } from "@/shared/lib/core/logsBridge";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { useAppStore } from "@/store";
 
@@ -68,11 +68,7 @@ export function useUiActivity(active: boolean, ms = 1500): void {
   usePoll(
     async (isCancelled) => {
       if (!active) return;
-      const lines = await bscJson<string[] | null>(
-        null,
-        ["logs", "tail", "ui", "--limit", "50", "--oldest", "--json"],
-        null,
-      );
+      const lines = await logsTail("ui", 50, true, null);
       if (isCancelled() || !lines) return;
       const touch = latestUiTouch(lines);
       if (!touch) return;
