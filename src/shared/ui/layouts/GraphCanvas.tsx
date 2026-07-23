@@ -18,6 +18,7 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { IconButton } from "@/shared/ui/controls/IconButton";
 import { useDragResize } from "@/shared/hooks/useDragResize";
+import { ProfiledRegion } from "@/shared/lib/core/renderProfiler";
 import type { GraphViewport } from "./useGraphViewport";
 import "./graphCanvas.css"; // the shared .graph-drill-anim drill transition (#2418)
 
@@ -52,6 +53,9 @@ export interface GraphCanvasProps {
   canvasBackground?: string;
   /** Extra class on the root (a page scoping hook). */
   className?: string;
+  /** #3618: id for the render Profiler wrapped around this graph — logs slow commits to the app log
+   *  tagged by graph (glance/designs/algorithms/…). Defaults to `className`, else "graph". */
+  profileId?: string;
   /** Make the left rail drag-resizable (a `.resize-x` splitter, like MasterDetail #2209). When set, the
    *  rail node should FILL its wrapper (GraphCanvas owns the width) — don't give it a fixed width. */
   railResizable?: boolean;
@@ -69,7 +73,7 @@ export interface GraphCanvasProps {
 export function GraphCanvas({
   vp, world, toolbar, children, rail, inspector, dock, overlays,
   grid = false, gridSize = 24, gridColor = "color-mix(in oklch, var(--fg) 8%, transparent)",
-  canvasBackground, className,
+  canvasBackground, className, profileId,
   railResizable = false, railWidth = 260, railMin = 200, railMax = 460,
   inspectorResizable = false, inspectorWidth = 344, inspectorMin = 260, inspectorMax = 620,
   onBackgroundClick,
@@ -93,10 +97,13 @@ export function GraphCanvas({
   // is too narrow to hold rail + inspector + graph, so nothing overflows off the right edge (#3097).
   const paneBox = (size: number, shrink = 0): CSSProperties => ({ flex: `0 ${shrink} ${size}px`, width: size, minWidth: 0, display: "flex", overflow: "hidden" });
   return (
-    // rail · content-column · inspector — the rail/inspector run FULL HEIGHT (siblings of the content
-    // column) so the toolbar spans only the canvas, not the whole page (#2754). minWidth:0 keeps the flex
-    // shrink chain intact (with KeptMountedPage above): without it this Row pins to the graph's intrinsic
-    // width, can't shrink, and pushes the inspector off the right edge (#3097). Load-bearing — don't drop.
+    // #3618: ProfiledRegion logs slow commits of this graph (tagged) to the app log — the fix stays inert
+    // (quiet) unless a graph render exceeds one frame, so it pinpoints a laggy graph without spamming.
+    <ProfiledRegion id={profileId ?? className ?? "graph"}>
+    {/* rail · content-column · inspector — the rail/inspector run FULL HEIGHT (siblings of the content
+        column) so the toolbar spans only the canvas, not the whole page (#2754). minWidth:0 keeps the flex
+        shrink chain intact (with KeptMountedPage above): without it this Row pins to the graph's intrinsic
+        width, can't shrink, and pushes the inspector off the right edge (#3097). Load-bearing — don't drop. */}
     <Row gap={0} align="stretch" className={className} style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
       {rail && (railResizable ? (
         <>
@@ -155,6 +162,7 @@ export function GraphCanvas({
         </>
       ) : inspector)}
     </Row>
+    </ProfiledRegion>
   );
 }
 

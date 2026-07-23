@@ -9,7 +9,11 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ extra }: StatusBarProps) {
-  const { claudeApiKey, githubConnected, tabs } = useAppStore();
+  // Per-field selectors, not a bare whole-store read (#3612) — the StatusBar is always mounted, so a
+  // whole-store subscription would re-render it on every unrelated store write.
+  const claudeApiKey = useAppStore((s) => s.claudeApiKey);
+  const githubConnected = useAppStore((s) => s.githubConnected);
+  const tabs = useAppStore((s) => s.tabs);
 
   // The real app version (from tauri.conf.json); drops the old hardcoded
   // "vX · rust Y" string (#215). Empty in a non-Tauri/web context.
