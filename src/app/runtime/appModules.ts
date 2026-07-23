@@ -27,6 +27,15 @@ import * as Chip from "@/shared/ui/data/Chip";
 import * as Skeleton from "@/shared/ui/feedback/Skeleton";
 import * as CardStates from "@/shared/ui/feedback/CardStates";
 import * as EmptyStateMod from "@/shared/ui/feedback/EmptyState";
+import * as Field from "@/shared/ui/controls/Field";
+import * as SegmentedControl from "@/shared/ui/controls/SegmentedControl";
+import * as StatTile from "@/shared/ui/data/StatTile";
+import * as Pane from "@/shared/ui/overlay/Pane";
+// ── The tabbed-workspace shell a page composes (#3642): Screen + the page-tab + draft hooks ───────────
+import * as Screen from "@/shared/ui/layouts/Screen";
+import * as UsePageTabs from "@/shared/hooks/usePageTabs";
+import * as UseDraft from "@/shared/hooks/useDraft";
+import * as LogsBridge from "@/shared/lib/core/logsBridge";
 // ── Live data + hooks the FleetPage panels read (feature-agnostic → stay injected permanently) ────────
 import * as FleetData from "@/shared/data/fleet";
 import * as UseFleetLive from "@/shared/hooks/useFleetLive";
@@ -62,6 +71,15 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/feedback/Skeleton": Skeleton,
   "@/shared/ui/feedback/CardStates": CardStates,
   "@/shared/ui/feedback/EmptyState": EmptyStateMod,
+  "@/shared/ui/controls/Field": Field,
+  "@/shared/ui/controls/SegmentedControl": SegmentedControl,
+  "@/shared/ui/data/StatTile": StatTile,
+  "@/shared/ui/overlay/Pane": Pane,
+  // The tabbed-workspace shell + its hooks a migrated page composes (#3642, Automations onward).
+  "@/shared/ui/layouts/Screen": Screen,
+  "@/shared/hooks/usePageTabs": UsePageTabs,
+  "@/shared/hooks/useDraft": UseDraft,
+  "@/shared/lib/core/logsBridge": LogsBridge,
   "@/shared/data/fleet": FleetData,
   "@/shared/hooks/useFleetLive": UseFleetLive,
   "@/shared/hooks/usePoll": UsePoll,

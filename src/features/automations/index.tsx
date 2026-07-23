@@ -85,6 +85,7 @@ export function AutomationsWorkspace({ pageOverride }: { pageOverride?: string }
 }
 
 // Re-exported feature surface — this index is the automations feature's public API barrel (#1309).
+export { AutomationsGraphHost } from "./AutomationsGraphHost"; // the graph-hosted workspace (#3642)
 export { AutomationsStatus } from "./AutomationsStatus";
 export { useScheduler } from "./useScheduler";
 
