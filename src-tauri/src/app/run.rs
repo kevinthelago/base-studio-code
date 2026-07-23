@@ -318,6 +318,7 @@ pub fn run() {
             tunnel::tunnel_set_store_state,
             tunnel::tunnel_emit_alert,
             fleet::inspect::read_worktree_changes,
+            fleet::inspect::dir_exists,
             fleet::inspect::read_worktree_branch,
             fleet::inspect::read_worktree_commits,
             fleet::inspect::find_branch_pr,
