@@ -20,13 +20,14 @@ import {
   producesFromPaneStreams,
 } from "@/shared/lib/fleet/coordination";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
-import { usePoll } from "@/shared/hooks/usePoll";
+import { useLogStream } from "@/shared/hooks/useLogStream";
 import type { SessionMeta } from "@/features/tunnel";
 import { injectWake } from "@/shared/lib/fleet/coordinatorActuate";
 import { tunnelStatus, tunnelSetSessions } from "@/features/tunnel";
 import { log } from "@/shared/lib/core/log";
 
-const POLL_MS = 1000;  // snappy: a director answer should wake the worker within ~1s
+// #3638: coord reads are event-driven now — the wake fires on the `logs://coord` change (instant,
+// better than the old ~1s poll), plus a mount read + a slow safety-net backstop.
 const FRESH_MS = 15 * 60 * 1000;
 
 export function useCoordinator(): void {
@@ -34,7 +35,7 @@ export function useCoordinator(): void {
   // Notification keys already pushed to mobile this app run -- so the poll loop fires
   // each alert exactly once (FCM is a push, not a poll).
   const notified = useRef<Set<string>>(new Set());
-  usePoll(async (isCancelled) => {
+  useLogStream("coord", async (isCancelled) => {
     if (isCancelled()) return;
     const res = await readCoordState(1000);
     if (isCancelled() || !res) return;
@@ -56,7 +57,7 @@ export function useCoordinator(): void {
     void pushNotifications(state, ready, notified.current).catch((e) =>
       log.error(`coordinator: notify failed: ${e}`),
     );
-  }, POLL_MS, []);
+  }, []);
 }
 
 /**

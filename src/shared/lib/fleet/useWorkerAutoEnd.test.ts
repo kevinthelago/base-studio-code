@@ -23,15 +23,15 @@ beforeEach(() => {
     handlers[name] = () => (cb as (e: { payload: unknown }) => void)({ payload: null });
     return Promise.resolve(() => {});
   });
-  // Default invoke: the fleet issue read AND the log reads (coord/pane-activity/done-panes) now route
-  // through the `bsc` bridge (#2114/#2144), each returning a JSON string on stdout. Route by args:
-  // `logs …` → the log read (empty here); anything else → `plan list … --full` (all issues complete).
-  vi.mocked(invoke).mockImplementation((cmd: string, payload?: unknown) => {
-    if (cmd === "bsc") {
-      const args = (payload as { args: string[] }).args;
-      if (args[0] === "logs") return Promise.resolve(JSON.stringify([])); // coord/activity/done → empty
-      return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
-    }
+  // Default invoke: the log reads are the in-process `logs_*` commands (#3630, arrays); the plan issue
+  // read stays on the `bsc` bridge (a JSON string). Route by command: `logs_*` → empty log; `bsc` →
+  // `plan list … --full` (all issues complete). The done read is event-driven now (#3638) but
+  // `useLogStream` still does an initial read on mount, so these fire the same way under `renderHook`.
+  vi.mocked(invoke).mockImplementation((cmd: string, _payload?: unknown) => {
+    if (cmd === "logs_done_panes") return Promise.resolve([]);     // no self-reported-done panes
+    if (cmd === "logs_pane_activity") return Promise.resolve([]);  // no activity rows
+    if (cmd === "logs_tail") return Promise.resolve([]);           // coord log empty
+    if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
     return Promise.resolve(undefined);
   });
   useAppStore.setState({
@@ -61,12 +61,9 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
   });
 
   it("flags needs-attention when an owned issue is still open", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string, payload?: unknown) => {
-      if (cmd === "bsc") {
-        const args = (payload as { args: string[] }).args;
-        if (args[0] === "logs") return Promise.resolve(JSON.stringify([]));
-        return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "in_progress" }]));
-      }
+    vi.mocked(invoke).mockImplementation((cmd: string, _payload?: unknown) => {
+      if (cmd === "logs_done_panes" || cmd === "logs_pane_activity" || cmd === "logs_tail") return Promise.resolve([]);
+      if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "in_progress" }]));
       return Promise.resolve(undefined);
     });
     renderHook(() => useWorkerAutoEnd());
@@ -78,18 +75,15 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
   });
 
   it("self-closes a worker that reported done via bsc-done — ends it AND kills the PTY (#1379)", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string, payload?: unknown) => {
-      if (cmd === "bsc") {
-        const args = (payload as { args: string[] }).args;
-        if (args[0] === "logs" && args[1] === "done-panes") return Promise.resolve(JSON.stringify([WORKER]));
-        if (args[0] === "logs") return Promise.resolve(JSON.stringify([])); // coord/activity empty
-        return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
-      }
+    vi.mocked(invoke).mockImplementation((cmd: string, _payload?: unknown) => {
+      if (cmd === "logs_done_panes") return Promise.resolve([WORKER]);
+      if (cmd === "logs_pane_activity" || cmd === "logs_tail") return Promise.resolve([]); // coord/activity empty
+      if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
       return Promise.resolve(undefined);
     });
     renderHook(() => useWorkerAutoEnd());
 
-    // The done poller reaps the self-reported worker on its first tick.
+    // The done reader (event-driven, but read once on mount) reaps the self-reported worker.
     await waitFor(() => expect(useAppStore.getState().endedPanes[WORKER]).toBeTruthy());
     expect(useAppStore.getState().endedPanes[WORKER]).toMatchObject({ state: "done", streamId: "api" });
     expect(invoke).toHaveBeenCalledWith("pty_kill", { paneId: WORKER }); // the live shell is actually killed
@@ -105,8 +99,8 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(useAppStore.getState().endedPanes[WORKER]).toBeUndefined();
-    // No plan.db query for this pane — the project-agnostic log polls (#2144) still fire via bsc, so
-    // narrow the assertion to the `plan list` read the "no DB query" behavior actually means.
+    // No plan.db query for this pane — the project-agnostic log reads (`logs_*`) still fire, so narrow
+    // the assertion to the `bsc plan list` read the "no DB query" behavior actually means.
     expect(invoke).not.toHaveBeenCalledWith(
       "bsc",
       expect.objectContaining({ args: expect.arrayContaining(["plan", "list"]) }),
@@ -114,14 +108,11 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
   });
 
   it("nudges an idle, complete, question-free worker to self-close (#1379 stage 3)", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string, payload?: unknown) => {
-      if (cmd === "bsc") {
-        const args = (payload as { args: string[] }).args;
-        // Idle since epoch 1ms ⇒ idleMs is huge, well past the close-nudge window.
-        if (args[0] === "logs" && args[1] === "pane-activity") return Promise.resolve(JSON.stringify([{ pane: WORKER, state: "idle", at: 1 }]));
-        if (args[0] === "logs") return Promise.resolve(JSON.stringify([])); // coord (no ask/wait) + done-panes empty
-        return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
-      }
+    vi.mocked(invoke).mockImplementation((cmd: string, _payload?: unknown) => {
+      // Idle since epoch 1ms ⇒ idleMs is huge, well past the close-nudge window.
+      if (cmd === "logs_pane_activity") return Promise.resolve([{ pane: WORKER, state: "idle", at: 1 }]);
+      if (cmd === "logs_done_panes" || cmd === "logs_tail") return Promise.resolve([]); // done + coord (no ask/wait) empty
+      if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
       return Promise.resolve(undefined);
     });
     renderHook(() => useWorkerAutoEnd());
@@ -135,13 +126,10 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
   });
 
   it("nudges the director to close still-open issues when a worker finishes done (#1379 stage 3)", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string, payload?: unknown) => {
-      if (cmd === "bsc") {
-        const args = (payload as { args: string[] }).args;
-        if (args[0] === "logs" && args[1] === "done-panes") return Promise.resolve(JSON.stringify([WORKER])); // worker self-reported done
-        if (args[0] === "logs") return Promise.resolve(JSON.stringify([]));
-        return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
-      }
+    vi.mocked(invoke).mockImplementation((cmd: string, _payload?: unknown) => {
+      if (cmd === "logs_done_panes") return Promise.resolve([WORKER]); // worker self-reported done
+      if (cmd === "logs_pane_activity" || cmd === "logs_tail") return Promise.resolve([]);
+      if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "complete" }, { ref: "#2", status: "complete" }]));
       return Promise.resolve(undefined);
     });
     renderHook(() => useWorkerAutoEnd());
@@ -154,15 +142,12 @@ describe("useWorkerAutoEnd (#920 / #1379)", () => {
   });
 
   it("resurfaces a lost director question to the director after the long wait (#1379 stage 4)", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string, payload?: unknown) => {
-      if (cmd === "bsc") {
-        const args = (payload as { args: string[] }).args;
-        if (args[0] === "logs" && args[1] === "pane-activity") return Promise.resolve(JSON.stringify([{ pane: WORKER, state: "idle", at: 1 }])); // idle ages ago
-        // An outstanding bsc-ask for the worker, never answered.
-        if (args[0] === "logs" && args[1] === "tail" && args[2] === "coord") return Promise.resolve(JSON.stringify([`2020-01-01T00:00:00Z\t${WORKER}\task\tWhich pagination?\t`]));
-        if (args[0] === "logs") return Promise.resolve(JSON.stringify([])); // done-panes empty
-        return Promise.resolve(JSON.stringify([{ ref: "#1", status: "in_progress" }]));
-      }
+    vi.mocked(invoke).mockImplementation((cmd: string, _payload?: unknown) => {
+      if (cmd === "logs_pane_activity") return Promise.resolve([{ pane: WORKER, state: "idle", at: 1 }]); // idle ages ago
+      // An outstanding bsc-ask for the worker, never answered (the coord read is `logs_tail` stream=coord).
+      if (cmd === "logs_tail") return Promise.resolve([`2020-01-01T00:00:00Z\t${WORKER}\task\tWhich pagination?\t`]);
+      if (cmd === "logs_done_panes") return Promise.resolve([]);
+      if (cmd === "bsc") return Promise.resolve(JSON.stringify([{ ref: "#1", status: "in_progress" }]));
       return Promise.resolve(undefined);
     });
     renderHook(() => useWorkerAutoEnd());
