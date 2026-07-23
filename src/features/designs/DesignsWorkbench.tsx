@@ -136,9 +136,15 @@ export function DesignsWorkbench() {
   const [rightAxis, setRightAxis] = useState<"themes" | "animations">("themes");
   // The kit animation PLAYED on the vehicle — the motion try-on (#2942), or null.
   const [tryAnim, setTryAnim] = useState<string | null>(null);
-  // Live-focus (#2525): the designer session is ALWAYS mounted (#2597), so poll its activity stream
-  // for the whole Design Studio lifecycle; clear the focus when the studio unmounts.
-  useUiActivity(true);
+  // Whether the Design Studio is the VISIBLE page (not merely mounted). KeptMountedPage keeps this
+  // Workbench mounted (display:none) after the first visit, and a hidden child's effects keep firing —
+  // so this one flag gates every background loop below (#3616/#3620/#3627) on real visibility.
+  const scanVisible = useAppStore((s) => designStudioVisible(s.activeWorkspace, s.projectsPageMode));
+  // Live-focus (#2525): poll the designer session's activity stream to show what Claude is working on.
+  // Gate on `scanVisible` (#3627) — an unconditional `true` kept polling `bsc logs tail ui` against a
+  // hidden page forever (the same KeptMountedPage leak #3616 fixed for the scan below). Paused when
+  // hidden; `bsc logs tail` catches up on return; the `setAiFocused(null)` cleanup handles unmount.
+  useUiActivity(scanVisible);
   useDesignerLoopPump(); // #3292: drive the open designer loop (bsc loop) from this long-lived workspace
   useEffect(() => () => useAppStore.getState().setAiFocused(null), []);
 
@@ -167,11 +173,10 @@ export function DesignsWorkbench() {
   // scan, and health pass all share, so a badge, a build, and a played cue can never disagree.
   const soundKit = useActiveSoundKit();
   const libResolver = useMemo(() => makeLibraryResolvers(soundKit).libraryModuleResolver, [soundKit]);
-  // Gate the scan on the Studio being VISIBLE, not merely mounted (#3616). KeptMountedPage keeps this
-  // Workbench mounted (display:none) after the first visit, so an unconditional `true` here kept
-  // esbuild-building + iframe-probing all 154 components forever in the background (~40% renderer CPU for
-  // a page nobody's on). Paused when hidden; the sig-cache means resuming re-scans nothing unchanged.
-  const scanVisible = useAppStore((s) => designStudioVisible(s.activeWorkspace, s.projectsPageMode));
+  // Gate the scan on the Studio being VISIBLE, not merely mounted (#3616): an unconditional `true` here
+  // kept esbuild-building + iframe-probing all 154 components forever in the background (~40% renderer
+  // CPU for a page nobody's on). Paused when hidden; the sig-cache means resuming re-scans nothing
+  // unchanged. `scanVisible` is computed once above (#3627) and shared with the activity poll.
   useComponentScan(scanVisible, kitComps, undefined, libResolver);
   // The FOCUSED component — strictly the one the user picked, in the current kit; drives the graph's
   // `.on` selection ring. No fallback to "the first".
