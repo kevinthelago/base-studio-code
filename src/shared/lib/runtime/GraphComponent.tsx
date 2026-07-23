@@ -9,6 +9,13 @@ import { Component, useEffect, useState, type ComponentType, type ReactNode } fr
 import { useAppStore } from "@/store";
 import { loadComponentFromSource } from "@/shared/lib/runtime/componentLoader";
 import { resolveGraphSource } from "./graphResolver";
+import { log } from "@/shared/lib/core/log";
+
+// Per-id COMPILE counter (module-level, survives re-renders) — the loop probe. A healthy page compiles
+// ONCE (`#1`) and never again, because the load effect keys on the srcText VALUE and a re-hydrate re-reads
+// the same string (`Object.is` true → effect skipped). A fast-climbing `#N` in the `graph-loader` log means
+// the source is churning (a new srcText value each hydrate) and the page is recompiling — the real lag risk.
+const compileCounts = new Map<string, number>();
 
 /** Catches a RENDER throw from the loaded component (load-time throws are caught by the effect below).
  *  Keyed by the caller so a new source remounts a fresh boundary (React boundaries don't self-reset). */
@@ -44,10 +51,22 @@ export function GraphComponent({
     setLoaded(null);
     /* eslint-enable react-hooks/set-state-in-effect */
     if (!source) return;
+    const n = (compileCounts.get(id) ?? 0) + 1;
+    compileCounts.set(id, n);
+    const startedAt = performance.now();
+    log.info(`graph-loader: compile #${n} "${id}" (source ${source.length} chars)`, "graph-loader");
     loadComponentFromSource(source, resolveGraphSource) // vendor sibling panels (#3606)
       // setState((prev) => …) treats a function arg as an UPDATER — a component IS a function, so wrap it.
-      .then((c) => { if (!cancelled) setLoaded(() => c); })
-      .catch(() => { if (!cancelled) setLoaded(null); }); // fall through to fallback (a load error → fallback)
+      .then((c) => {
+        if (cancelled) return;
+        log.info(`graph-loader: mounted "${id}" (compile #${n}) in ${Math.round(performance.now() - startedAt)}ms`, "graph-loader");
+        setLoaded(() => c);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        log.warn(`graph-loader: "${id}" failed to load — falling back: ${String(e).slice(0, 160)}`, "graph-loader");
+        setLoaded(null); // fall through to fallback (a load error → fallback)
+      });
     return () => { cancelled = true; };
   }, [id, source]);
 
