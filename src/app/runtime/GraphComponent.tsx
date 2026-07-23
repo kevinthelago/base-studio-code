@@ -8,6 +8,7 @@
 import { Component, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { loadComponentFromSource } from "@/shared/lib/runtime/componentLoader";
+import { resolveGraphSource } from "./graphResolver";
 
 /** Catches a RENDER throw from the loaded component (load-time throws are caught by the effect below).
  *  Keyed by the caller so a new source remounts a fresh boundary (React boundaries don't self-reset). */
@@ -43,7 +44,7 @@ export function GraphComponent({
     setLoaded(null);
     /* eslint-enable react-hooks/set-state-in-effect */
     if (!source) return;
-    loadComponentFromSource(source)
+    loadComponentFromSource(source, resolveGraphSource) // vendor sibling panels (#3606)
       // setState((prev) => …) treats a function arg as an UPDATER — a component IS a function, so wrap it.
       .then((c) => { if (!cancelled) setLoaded(() => c); })
       .catch(() => { if (!cancelled) setLoaded(null); }); // fall through to fallback (a load error → fallback)
