@@ -36,6 +36,7 @@ import { cellRect, placeByDirection, releaseCell, occupants, clampCell, DEFAULT_
 import { fleetPaneId, findPaneOwnerTab } from "@/app/console/lib/paneIdentity";
 import { resumeProjectFleet } from "./lib/resumeProject";
 import { buildGraph, focusSets, isLibraryNode, HEALTH_META, ROLE_COLOR } from "./lib/glanceGraph";
+import { timedSync } from "@/shared/lib/core/perf";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
 import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus } from "./lib/studioProject";
@@ -163,7 +164,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     () => buildGlanceData(projects, projectLinks, kitUsage, kits, libraryRefs),
     [projects, projectLinks, kitUsage, kits, libraryRefs],
   );
-  const projectModel = useMemo(() => buildGraph(projectData.rawNodes, projectData.rawEdges), [projectData]);
+  const projectModel = useMemo(() => timedSync("buildGraph:glance-project", () => buildGraph(projectData.rawNodes, projectData.rawEdges)), [projectData]);
 
   const { tabs, activeId, select, reorder, tearOff } = usePageTabs("glance", GLANCE_TABS);
   const page = pageOverride ?? activeId;
@@ -276,7 +277,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         : fleetData,
     [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive],
   );
-  const fleetModel = useMemo(() => (liveFleetData ? buildGraph(liveFleetData.rawNodes, liveFleetData.rawEdges) : null), [liveFleetData]);
+  const fleetModel = useMemo(() => (liveFleetData ? timedSync("buildGraph:glance-fleet", () => buildGraph(liveFleetData.rawNodes, liveFleetData.rawEdges)) : null), [liveFleetData]);
   // The ACTIVE graph — the drilled fleet (with live status), else the project network. Everything downstream
   // (canvas, sidebar, focus, cycles, viewport) reads these, so the whole page swaps its graph on drill.
   const data = liveFleetData ?? projectData;
@@ -579,6 +580,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       <Box style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
       <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
     <GraphCanvas
+      profileId="glance"
       vp={vp}
       world={{ w: model.worldW || 1600, h: model.worldH || 900 }}
       canvasBackground="radial-gradient(120% 120% at 30% 0%, var(--bg-elev) 0%, var(--bg) 100%)"
