@@ -45,6 +45,17 @@ import * as Bsc from "@/shared/lib/core/bsc";
 import * as ProjectPaths from "@/shared/lib/core/projectPaths";
 import * as UseCoordLog from "@/shared/lib/fleet/useCoordLog";
 import * as CoordinationWakes from "@/shared/lib/fleet/coordinationWakes";
+// ── Additional shared UI + libs a migrated page composes (#3646, Security onward) ─────────────────────
+import * as StatusDot from "@/shared/ui/feedback/StatusDot";
+import * as CardListRow from "@/shared/ui/data/CardListRow";
+import * as IconBox from "@/shared/ui/data/IconBox";
+import * as Banner from "@/shared/ui/feedback/Banner";
+import * as SectionHeader from "@/shared/ui/layout/SectionHeader";
+import * as Spacer from "@/shared/ui/layout/Spacer";
+import * as PromptDialog from "@/shared/ui/overlay/promptDialog";
+import * as Format from "@/shared/lib/core/format";
+import * as Coordination from "@/shared/lib/fleet/coordination";
+import * as CoordinatorActuate from "@/shared/lib/fleet/coordinatorActuate";
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 
 // The FLEET-specific injected leaves (WorkerDetail) + logic (useFleetGithub / fleetCost) are NOT registered
@@ -79,6 +90,17 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/layouts/Screen": Screen,
   "@/shared/hooks/usePageTabs": UsePageTabs,
   "@/shared/hooks/useDraft": UseDraft,
+  // Shared UI + libs the Security page composes (#3646, Security onward).
+  "@/shared/ui/feedback/StatusDot": StatusDot,
+  "@/shared/ui/data/CardListRow": CardListRow,
+  "@/shared/ui/data/IconBox": IconBox,
+  "@/shared/ui/feedback/Banner": Banner,
+  "@/shared/ui/layout/SectionHeader": SectionHeader,
+  "@/shared/ui/layout/Spacer": Spacer,
+  "@/shared/ui/overlay/promptDialog": PromptDialog,
+  "@/shared/lib/core/format": Format,
+  "@/shared/lib/fleet/coordination": Coordination,
+  "@/shared/lib/fleet/coordinatorActuate": CoordinatorActuate,
   "@/shared/lib/core/logsBridge": LogsBridge,
   "@/shared/data/fleet": FleetData,
   "@/shared/hooks/useFleetLive": UseFleetLive,
