@@ -26,7 +26,7 @@ import {
   TERM_THEME,
 } from "@/app/console/lib/terminalConstants";
 import { useTerminalSession } from "@/app/console/useTerminalSession";
-import { usePoll } from "@/shared/hooks/usePoll";
+import { useLogStream } from "@/shared/hooks/useLogStream";
 import { useAppStore, PROJECT_INIT_PROMPT } from "@/store";
 import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus } from "@/shared/lib/core/diagnostics";
 import { TerminalBanners } from "@/app/console/panes/views/TerminalBanners";
@@ -634,11 +634,14 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // Debounced (#1184): a worker's blocked Stop records `idle` for the gap before its next turn's
   // UserPromptSubmit reopens `run`; the grace window keeps the gate closed across that gap so the
   // dot doesn't blink idle→run.
-  usePoll(async (isCancelled) => {
+  // Event-driven (#3638): re-check this pane's turn state only when the activity log changes (plus
+  // mount + a slow backstop), instead of polling every 1s. The debounce in `isTurnOpenDebounced` still
+  // smooths the idle→run gap between turns.
+  useLogStream("activity", async (isCancelled) => {
     const rows = await logsPaneActivity<PaneActivity>();
     if (isCancelled()) return;
     turnOpenRef.current = isTurnOpenDebounced(paneActivityFor(rows, paneId), Date.now());
-  }, 1000, [paneId]);
+  }, [paneId]);
 
   // Re-fit when this view becomes visible again (e.g. switching back from
   // files view, or coming back to a background tab). Also flush anything the
