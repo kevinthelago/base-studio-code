@@ -44,4 +44,27 @@ describe("usePoll", () => {
     vi.advanceTimersByTime(1000);
     expect(b).toHaveBeenCalledTimes(1); // next tick uses the latest fn
   });
+
+  it("does NOT re-enter while a previous async run is still pending (#3666)", async () => {
+    let resolve: (() => void) | null = null;
+    const fn = vi.fn(() => new Promise<void>((r) => { resolve = r; }));
+    renderHook(() => usePoll(fn, 1000));
+    expect(fn).toHaveBeenCalledTimes(1); // immediate run — now pending
+
+    // Ticks fire while the run is still pending → SKIPPED, so overlapping runs never pile up.
+    vi.advanceTimersByTime(3000);
+    expect(fn).toHaveBeenCalledTimes(1); // still just the one in-flight run, not 4
+
+    // Once it settles, the `running` guard clears (its finally microtask) and the next tick runs.
+    resolve!();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it("a SYNC (void-returning) poller is unaffected — it still fires every tick", () => {
+    const fn = vi.fn(); // returns undefined, not a promise → guard never engages
+    renderHook(() => usePoll(fn, 1000));
+    vi.advanceTimersByTime(3000);
+    expect(fn).toHaveBeenCalledTimes(4); // immediate + 3 ticks, exactly as before
+  });
 });
