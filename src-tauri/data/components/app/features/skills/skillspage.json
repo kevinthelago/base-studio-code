@@ -10,7 +10,11 @@
     "Button",
     "Checkbox",
     "EmptyState",
+    "GraphRail",
+    "RailRow",
+    "RailSection",
     "Row",
+    "Screen",
     "SearchField",
     "SkillDrawer",
     "SkillsDigest",
@@ -19,6 +23,7 @@
     "SkillsRunsTab",
     "SkillsViews",
     "Stack",
+    "TabBar",
     "Text"
   ],
   "src": "src/features/skills/SkillsWorkspace.tsx"
