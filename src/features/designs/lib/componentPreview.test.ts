@@ -152,6 +152,29 @@ describe("componentPreviewFiles — sibling vendoring (#3112)", () => {
   });
 });
 
+describe("componentPreviewFiles — graph-source provides + artifact resolution (#43)", () => {
+  it("a graph-source component importing an artifact util + a provides-sibling BUILDS (not no-implementation)", () => {
+    // Box provides `@/shared/ui/layout/Box` and imports an artifact RUNTIME util (`@/shared/lib/core/format`)
+    // AND a sibling it provides (`@/shared/ui/feedback/Skeleton`). Before #43 the user-authored path didn't
+    // seed the artifact runtime and ignored `provides`, so this returned null (a false no-implementation).
+    const box: ComponentRecord = { ...base, id: "box", name: "Box", provides: "@/shared/ui/layout/Box",
+      src: "src/shared/ui/layout/Box.tsx",
+      srcText: 'import { fmt } from "@/shared/lib/core/format";\nimport { Sk } from "@/shared/ui/feedback/Skeleton";\nexport function Box(){ return fmt || Sk ? null : null; }' };
+    const sk: ComponentRecord = { ...base, id: "sk", name: "Sk", provides: "@/shared/ui/feedback/Skeleton",
+      src: "src/shared/ui/feedback/Skeleton.tsx", srcText: "export function Sk(){ return null; }" };
+    const build = componentPreviewFiles(box, ARTIFACT, [box, sk]);
+    expect(build).not.toBeNull();
+    expect(build!.files["shared/lib/core/format.ts"]).toBeTruthy();          // artifact runtime vendored → @/ util resolves
+    expect(build!.files["shared/ui/feedback/Skeleton.tsx"]).toContain("Sk"); // provides-sibling vendored (graph-first) → @/ resolves
+  });
+
+  it("still returns null when an internal import resolves to NOTHING (honest no-implementation)", () => {
+    const bad: ComponentRecord = { ...base, id: "bad", name: "Bad", src: "user/Bad.tsx",
+      srcText: 'import { Nope } from "@/shared/ui/does/not/Exist";\nexport function Bad(){ return null; }' };
+    expect(componentPreviewFiles(bad, ARTIFACT, [bad])).toBeNull();
+  });
+});
+
 describe("componentPreviewFiles — library (algorithm) vendoring (#3116)", () => {
   // A FAKE resolver (kept pure — no algorithms store): resolve exactly the fibonacci reference.
   const FIB = "export function fibonacci(n: number): number { return n < 2 ? n : fibonacci(n - 1) + fibonacci(n - 2); }";

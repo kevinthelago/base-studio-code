@@ -87,8 +87,13 @@ function ownModuleSource(c: ComponentRecord, siblings: readonly ComponentRecord[
   const srcText = c.srcText ?? "";
   if (!srcText.trim()) return null;
   if (siblings.length) {
+    // Resolve `@/` the way `componentPreviewFiles` does (#43/#3660): a graph `provides` specifier, the
+    // packaged artifact runtime/built-ins, OR a sibling `src` base — so a graph-source primitive that
+    // composes siblings + app utilities is scanned as the real module it is (lockstep with the build).
+    const providesSpecs = new Set([c, ...siblings].map((s) => s.provides?.trim()).filter(Boolean) as string[]);
     const sibTargets = new Set(siblings.filter((s) => s.id !== c.id).map((s) => s.src).filter(Boolean));
-    const resolves = (spec: string, fromRel: string) => resolvesInternal(spec, fromRel, sibTargets);
+    const resolves = (spec: string, fromRel: string): boolean =>
+      providesSpecs.has(spec) || resolvesInternal(spec, fromRel, sibTargets) || resolvesInternal(spec, fromRel, INTERNAL_TARGETS);
     return isPreviewBuildable(srcText, c.src, resolves) ? srcText : null;
   }
   return looksBuildableModule(srcText) ? srcText : null;
@@ -434,6 +439,12 @@ export function analyzeGraphHealth(
   // Only own-source components (`ownModuleSource`) — the source the preview actually builds. Rust twin:
   // the `unresolvable-import` loop in graph_health.rs.
   const internalTargets = new Set<string>([...INTERNAL_TARGETS, ...comps.map((c) => c.src).filter(Boolean)]);
+  // #43/#3660: a `@/X` import also resolves to the graph component that `provides` X (a graph-source
+  // primitive), exactly as the build does — so it's not falsely flagged an unresolvable internal import.
+  for (const c of comps) {
+    const base = c.provides ? resolveInternalBase(c.provides, "") : null;
+    if (base) internalTargets.add(`${base}.tsx`);
+  }
   const fmtSpecs = (v: string[]) => v.map((s) => `\`${s}\``).join(", ");
   for (const c of comps) {
     const src = ownModuleSource(c, comps);
