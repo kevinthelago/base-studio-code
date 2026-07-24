@@ -88,6 +88,10 @@ import * as TypographyType from "@/shared/ui/typography/type"; // Text: fontSize
 import * as Shimmer from "@/shared/ui/feedback/shimmer";       // Skeleton: the shimmer style const
 import * as GithubColors from "@/shared/lib/github/colors";    // Avatar: avatarColor/palette
 import * as LayoutSpace from "@/shared/ui/layout/space";       // Box/Stack/Row/Grid/Spacer: space/pad/flexStyle (#3680)
+import * as UseModalDismiss from "@/shared/hooks/useModalDismiss"; // ModalScrim/TabBar (#3684)
+import * as UseClickOutside from "@/shared/hooks/useClickOutside"; // TabBar (#3684)
+import * as ReactDOM from "react-dom";                             // TabBar: createPortal (#3684)
+import * as Eyebrow from "@/shared/ui/typography/Eyebrow";         // SessionDock (#3684)
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 
 // The FLEET-specific injected leaves (WorkerDetail) + logic (useFleetGithub / fleetCost) are NOT registered
@@ -165,6 +169,10 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/feedback/shimmer": Shimmer,
   "@/shared/lib/github/colors": GithubColors,
   "@/shared/ui/layout/space": LayoutSpace,
+  "@/shared/hooks/useModalDismiss": UseModalDismiss,
+  "@/shared/hooks/useClickOutside": UseClickOutside,
+  "react-dom": ReactDOM,
+  "@/shared/ui/typography/Eyebrow": Eyebrow,
   "@/shared/lib/core/logsBridge": LogsBridge,
   "@/shared/data/fleet": FleetData,
   "@/shared/hooks/useFleetLive": UseFleetLive,

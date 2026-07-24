@@ -8,7 +8,9 @@
   "composes": [
     "AutomationsHistory",
     "AutomationsHookAnalytics",
-    "AutomationsSchedules"
+    "AutomationsSchedules",
+    "Screen",
+    "TabBar"
   ],
   "src": "src/features/automations/AutomationsWorkspace.tsx"
 }
