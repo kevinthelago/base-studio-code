@@ -7,25 +7,15 @@
 // On a normal (boot-seeded) install the source is always present. The fallback shows ONLY if the source is
 // missing or fails to compile/load — a graceful notice, never a blank cockpit.
 import { GraphComponent } from "@/shared/lib/runtime/GraphComponent";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { GraphPageFallback } from "@/shared/lib/runtime/GraphPageFallback";
 import { registerFleetPlatform } from "./graphPlatform";
 
 // Register at module load — before GlanceWorkspace ever renders the fleet page — so the fleet's injected
 // modules are in the registry when the graph page's compiled `require()` runs. Idempotent.
 registerFleetPlatform();
 
-/** Shown only if the `fleetpage` graph source is absent or fails to load — rare on a seeded install. */
-function FleetUnavailable() {
-  return (
-    <EmptyState
-      icon="⑃"
-      title="Fleet page unavailable"
-      description="The fleet dashboard loads from the components graph, and its source isn't in the library. Reopen the page, or re-seed the component library (Studio → apply)."
-      style={{ padding: 48 }}
-    />
-  );
-}
-
 export function FleetGraphHost() {
-  return <GraphComponent id="fleetpage" fallback={<FleetUnavailable />} />;
+  // Shown only if the `fleetpage` graph source is absent or fails to load — rare on a seeded install; the
+  // fallback offers a one-click re-seed (#3648) so recovery never needs a Settings/Studio trip.
+  return <GraphComponent id="fleetpage" fallback={<GraphPageFallback page="Fleet" icon="⑃" />} />;
 }
