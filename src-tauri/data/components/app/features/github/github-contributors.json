@@ -10,6 +10,8 @@
     "Card",
     "CardStates",
     "FillBar",
+    "Grid",
+    "Stack",
     "Text"
   ],
   "src": "src/features/github/GitHubContributors.tsx"

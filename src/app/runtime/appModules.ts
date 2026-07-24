@@ -87,6 +87,7 @@ import * as HookCatalog from "@/shared/data/hookCatalog";
 import * as TypographyType from "@/shared/ui/typography/type"; // Text: fontSize/toneColor
 import * as Shimmer from "@/shared/ui/feedback/shimmer";       // Skeleton: the shimmer style const
 import * as GithubColors from "@/shared/lib/github/colors";    // Avatar: avatarColor/palette
+import * as LayoutSpace from "@/shared/ui/layout/space";       // Box/Stack/Row/Grid/Spacer: space/pad/flexStyle (#3680)
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 
 // The FLEET-specific injected leaves (WorkerDetail) + logic (useFleetGithub / fleetCost) are NOT registered
@@ -163,6 +164,7 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/ui/typography/type": TypographyType,
   "@/shared/ui/feedback/shimmer": Shimmer,
   "@/shared/lib/github/colors": GithubColors,
+  "@/shared/ui/layout/space": LayoutSpace,
   "@/shared/lib/core/logsBridge": LogsBridge,
   "@/shared/data/fleet": FleetData,
   "@/shared/hooks/useFleetLive": UseFleetLive,
