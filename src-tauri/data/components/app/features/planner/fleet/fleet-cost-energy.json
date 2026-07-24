@@ -8,6 +8,7 @@
   "composes": [
     "Box",
     "Card",
+    "Charts",
     "EmptyState",
     "Grid",
     "Row",
