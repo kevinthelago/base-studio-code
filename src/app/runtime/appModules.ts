@@ -67,6 +67,19 @@ import * as RepoPulseLive from "@/shared/lib/github/repoPulseLive";
 import * as GithubLib from "@/shared/lib/github/github";
 import * as MathLib from "@/shared/lib/core/math";
 import * as Opener from "@tauri-apps/plugin-opener"; // a graph page may open an external URL
+// ── Additional shared UI + hooks a migrated page composes (#3654, Skills onward) ──────────────────────
+import * as Toggle from "@/shared/ui/controls/Toggle";
+import * as SearchField from "@/shared/ui/controls/SearchField";
+import * as Checkbox from "@/shared/ui/controls/Checkbox";
+import * as DataTableRow from "@/shared/ui/data/DataTableRow";
+import * as ModalScrim from "@/shared/ui/overlay/ModalScrim";
+import * as RailSection from "@/shared/ui/layouts/RailSection";
+import * as RailRow from "@/shared/ui/layouts/RailRow";
+import * as GraphRail from "@/shared/ui/layouts/GraphRail";
+import * as UseRailSections from "@/shared/hooks/useRailSections";
+import * as UseDragResize from "@/shared/hooks/useDragResize";
+import * as SkillsData from "@/shared/data/skills";
+import * as TauriCore from "@tauri-apps/api/core"; // a graph page may `invoke` a Tauri command
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 
 // The FLEET-specific injected leaves (WorkerDetail) + logic (useFleetGithub / fleetCost) are NOT registered
@@ -123,6 +136,19 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/github/github": GithubLib,
   "@/shared/lib/core/math": MathLib,
   "@tauri-apps/plugin-opener": Opener,
+  // Shared UI + hooks the Skills page composes (#3654, Skills onward).
+  "@/shared/ui/controls/Toggle": Toggle,
+  "@/shared/ui/controls/SearchField": SearchField,
+  "@/shared/ui/controls/Checkbox": Checkbox,
+  "@/shared/ui/data/DataTableRow": DataTableRow,
+  "@/shared/ui/overlay/ModalScrim": ModalScrim,
+  "@/shared/ui/layouts/RailSection": RailSection,
+  "@/shared/ui/layouts/RailRow": RailRow,
+  "@/shared/ui/layouts/GraphRail": GraphRail,
+  "@/shared/hooks/useRailSections": UseRailSections,
+  "@/shared/hooks/useDragResize": UseDragResize,
+  "@/shared/data/skills": SkillsData,
+  "@tauri-apps/api/core": TauriCore,
   "@/shared/lib/core/logsBridge": LogsBridge,
   "@/shared/data/fleet": FleetData,
   "@/shared/hooks/useFleetLive": UseFleetLive,
