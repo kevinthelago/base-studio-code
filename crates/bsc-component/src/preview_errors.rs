@@ -53,6 +53,24 @@ pub fn latest_error_by_id() -> Vec<(String, String)> {
     log_path().map(|p| latest_error_by_id_from(&p)).unwrap_or_default()
 }
 
+/// Clear the CURRENT preview error for `id` (#43) — append an empty-message "clear" record so
+/// [`latest_error_by_id`] drops it, but ONLY when `id` actually HAS an error right now (so a routine write
+/// never bloats the capped log with clears for components that never errored). Called when a component is
+/// WRITTEN/edited (`bsc ui set`): the edit invalidates the last render's error — the doctor can't know the
+/// NEW source's behaviour until a fresh preview records it, so a stale pre-edit error must not linger.
+pub fn clear(id: &str) -> Result<(), String> {
+    clear_at(&log_path()?, id)
+}
+
+/// Core of [`clear`] over an explicit path (unit-testable). A no-op when `id` has no current error.
+fn clear_at(path: &Path, id: &str) -> Result<(), String> {
+    if latest_error_by_id_from(path).iter().any(|(k, _)| k == id) {
+        record_to(path, id, "")
+    } else {
+        Ok(())
+    }
+}
+
 /// Core of [`record`] over an explicit path (unit-testable without touching the process env).
 fn record_to(path: &Path, id: &str, message: &str) -> Result<(), String> {
     let rec = json!({ "at": bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms()), "id": id, "message": message });
@@ -181,5 +199,23 @@ mod tests {
     #[test]
     fn latest_error_by_id_of_absent_log_is_empty() {
         assert!(latest_error_by_id_from(Path::new("/no/such/bsc-preview-errors-abc.log")).is_empty());
+    }
+
+    #[test]
+    fn clear_drops_a_current_error_and_is_a_noop_otherwise() {
+        // #43: an edit clears the stale error. `clear` on an errored id drops it; on an id with no error it
+        // writes NOTHING (so a routine write never bloats the capped log).
+        let path = temp_log();
+        record_to(&path, "icons", "TypeError: Icons is not defined").unwrap();
+        record_to(&path, "other", "boom").unwrap();
+        let before = read_lines(&path).len();
+
+        clear_at(&path, "no-error-here").unwrap(); // id has no error → no write
+        assert_eq!(read_lines(&path).len(), before, "clearing a non-errored id writes nothing");
+
+        clear_at(&path, "icons").unwrap(); // id HAS an error → append an empty clear
+        let got = latest_error_by_id_from(&path);
+        assert_eq!(got, vec![("other".to_string(), "boom".to_string())], "icons was cleared, other remains");
+        let _ = std::fs::remove_file(&path);
     }
 }
