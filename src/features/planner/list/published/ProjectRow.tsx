@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { Chip, tagTone } from "@/shared/ui/data/Chip";
 import { useClickOutside } from "@/shared/hooks/useClickOutside";
-import { ExternalLink, MoreHorizontal, RotateCcw, Trash2 } from "lucide-react";
+import { ExternalLink, MoreHorizontal, Trash2 } from "lucide-react";
 import { timeAgo } from "@/shared/lib/core/format";
 import { Button } from "@/shared/ui/controls/Button";
 import { FillBar } from "@/shared/ui/data/FillBar";
@@ -44,14 +44,11 @@ interface ProjectRowProps {
   onPlan: (p: GhProject) => void;
   onBoard: (p: GhProject) => void;
   onDelete: (p: GhProject) => void;
-  /** #3044 — relaunch this project's fleet (opens it + auto-fires the launch). Provided only for a
-   *  project that's been triaged; absent otherwise (a fresh project launches via the planning session). */
-  onRelaunch?: (p: GhProject) => void;
   menuOpenId: string | null;
   setMenuOpenId: (id: string | null) => void;
 }
 
-export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, onRelaunch, menuOpenId, setMenuOpenId }: ProjectRowProps) {
+export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, menuOpenId, setMenuOpenId }: ProjectRowProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const isOpen  = menuOpenId === p.id;
   const [hover, setHover] = useState(false);
@@ -94,16 +91,6 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, onRe
 
       <Row gap={10} style={{ flexShrink: 0 }}>
         <FleetPill running={running} paused={paused} />
-        {/* #3044 — a stopped fleet (e.g. after a rebuild/restart) gets a one-click relaunch right here,
-            where the project is visible, instead of forcing a reopen-into-planning hunt. */}
-        {onRelaunch && running === 0 && (
-          <Button variant="ghost"
-            onClick={e => { e.stopPropagation(); onRelaunch(p); }}
-            title="Relaunch this project's fleet — resumes from plan.db, skips completed workers"
-            style={{ height: 26, fontSize: 11, whiteSpace: "nowrap" }}>
-            <RotateCcw size={12} /> Relaunch fleet
-          </Button>
-        )}
         <Box as="span" className="mono" style={{
           fontSize: 10.5, whiteSpace: "nowrap",
           color: hover ? "var(--accent)" : "var(--fg-dim)", transition: "color .12s",
@@ -127,14 +114,6 @@ export function ProjectRow({ p, running, paused, onPlan, onBoard, onDelete, onRe
               <button className="menu-item" onClick={() => { setMenuOpenId(null); onBoard(p); }}>
                 <ExternalLink size={12} /> open board on GitHub
               </button>
-              {/* #3044 — relaunch is also here in the menu so it's reachable when the fleet IS running (the
-                  inline button only shows for a stopped fleet). */}
-              {onRelaunch && (
-                /* eslint-disable-next-line no-restricted-syntax -- dropdown menu item (.menu-item), not a .btn-family button */
-                <button className="menu-item" onClick={() => { setMenuOpenId(null); onRelaunch(p); }}>
-                  <RotateCcw size={12} /> relaunch fleet
-                </button>
-              )}
               <Box style={{ borderTop: "1px solid var(--border-soft)", margin: "4px 0" }} />
               {/* eslint-disable-next-line no-restricted-syntax -- dropdown menu item (.menu-item), not a .btn-family button */}
               <button className="menu-item danger" onClick={() => { setMenuOpenId(null); onDelete(p); }}>
