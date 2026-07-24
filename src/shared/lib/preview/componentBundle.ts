@@ -10,8 +10,11 @@ import type * as Esbuild from "esbuild-wasm";
 import wasmURL from "esbuild-wasm/esbuild.wasm?url";
 import importmapEmbedded from "@data/ui/preview-importmap.json";
 import { collapseSegments } from "./importPath";
+import { PREVIEW_SHIM_NAMESPACE, shimModuleFor, scanStubImports, previewCspMeta } from "./previewShims";
 
-/** The esm.sh import-map for the externals (React et al.), shared with the skeleton preview (#2419). */
+/** The esm.sh import-map for the externals (React et al.), shared with the skeleton preview (#2419). This is
+ *  the ONLY set of specifiers fetched from a CDN; every OTHER bare import resolves to a bundled-in local
+ *  shim/stub (#3696), never to esm.sh at large. */
 export const COMPONENT_IMPORTMAP: Record<string, string> = importmapEmbedded;
 
 /** Bare specifiers resolved in the iframe by the import-map (everything else bare → esm.sh at large). */
@@ -65,14 +68,12 @@ export function ensureEsbuild(): Promise<typeof Esbuild> {
   return host[ESBUILD_INIT];
 }
 
-/** Is a bare (non-relative, non-`@/`) specifier — an npm package left external (→ esm.sh). */
-function isBare(spec: string): boolean {
-  return !spec.startsWith(".") && !spec.startsWith("@/") && !spec.startsWith("/");
-}
-
 const CSS_NOOP = "css-noop";
 
 function componentPlugin(files: Record<string, string>, entry: string): Esbuild.Plugin {
+  // The named bindings each universal-stubbed package is imported with — so a generated stub exports exactly
+  // those (#3696). Scanned once from the component's own files (the dedicated shims have static exports).
+  const stubExports = scanStubImports(files, (s) => COMPONENT_EXTERNALS.includes(s));
   return {
     name: "component-preview",
     setup(build) {
@@ -90,10 +91,14 @@ function componentPlugin(files: Record<string, string>, entry: string): Esbuild.
         if (args.path.startsWith("@bsc/")) return { path: args.path, namespace: "mem" };
         // Relative → resolve against the importer within the mem filesystem.
         if (args.path.startsWith(".")) return { path: resolveMemPath(args.importer, args.path), namespace: "mem" };
-        // Anything else bare → external (React via the import-map; any other lib → esm.sh at large).
-        if (isBare(args.path)) return { path: args.path, external: true };
-        return { path: args.path, external: true };
+        // Any other bare specifier: a curated external (React et al.) stays external — resolved in the iframe
+        // by the import-map (esm.sh). EVERYTHING ELSE resolves to a bundled-in LOCAL shim/stub (#3696), NEVER
+        // esm.sh at large — so resolution can't fail (dynamic + always works) and no uncurated CDN code runs
+        // (supply-chain safe). react-native → real layout, react-native-svg → real SVG, else the universal stub.
+        if (COMPONENT_EXTERNALS.includes(args.path)) return { path: args.path, external: true };
+        return { path: args.path, namespace: PREVIEW_SHIM_NAMESPACE };
       });
+      build.onLoad({ filter: /.*/, namespace: PREVIEW_SHIM_NAMESPACE }, (args) => ({ contents: shimModuleFor(args.path, stubExports.get(args.path)), loader: "js" }));
       build.onLoad({ filter: /.*/, namespace: "empty" }, () => ({ contents: "", loader: "js" }));
       build.onLoad({ filter: /.*/, namespace: "mem" }, (args) => {
         const hit = lookupMem(files, args.path);
@@ -594,6 +599,7 @@ export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOpti
       + `input,textarea,select,[contenteditable]{user-select:text;-webkit-user-select:text}</style>`
     : "";
   return `<!doctype html><html data-theme="${theme}"><head><meta charset="utf-8" />
+${previewCspMeta()}
 <style>html,body,#root{margin:0;height:100%;box-sizing:border-box}#root{overflow:auto}*,*::before,*::after{box-sizing:inherit}
 /* Fit oversized preview media (d3 charts/graphs, images) within the frame rather than overflowing it (#2915).
    Aspect-preserving on replaced/viewBox elements; the definite height chain above lets max-height:100% resolve.
