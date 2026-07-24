@@ -56,6 +56,17 @@ import * as PromptDialog from "@/shared/ui/overlay/promptDialog";
 import * as Format from "@/shared/lib/core/format";
 import * as Coordination from "@/shared/lib/fleet/coordination";
 import * as CoordinatorActuate from "@/shared/lib/fleet/coordinatorActuate";
+// ── Additional shared UI + libs a migrated page composes (#3650, GitHub onward) ───────────────────────
+import * as ActivityFeed from "@/shared/ui/data/ActivityFeed";
+import * as Avatar from "@/shared/ui/data/Avatar";
+import * as FillBar from "@/shared/ui/data/FillBar";
+import * as SectionLabel from "@/shared/ui/layout/SectionLabel";
+import * as MasterDetail from "@/shared/ui/layouts/MasterDetail";
+import * as RepoPulse from "@/shared/data/repoPulse";
+import * as RepoPulseLive from "@/shared/lib/github/repoPulseLive";
+import * as GithubLib from "@/shared/lib/github/github";
+import * as MathLib from "@/shared/lib/core/math";
+import * as Opener from "@tauri-apps/plugin-opener"; // a graph page may open an external URL
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 
 // The FLEET-specific injected leaves (WorkerDetail) + logic (useFleetGithub / fleetCost) are NOT registered
@@ -101,6 +112,17 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/lib/core/format": Format,
   "@/shared/lib/fleet/coordination": Coordination,
   "@/shared/lib/fleet/coordinatorActuate": CoordinatorActuate,
+  // Shared UI + libs the GitHub page composes (#3650, GitHub onward).
+  "@/shared/ui/data/ActivityFeed": ActivityFeed,
+  "@/shared/ui/data/Avatar": Avatar,
+  "@/shared/ui/data/FillBar": FillBar,
+  "@/shared/ui/layout/SectionLabel": SectionLabel,
+  "@/shared/ui/layouts/MasterDetail": MasterDetail,
+  "@/shared/data/repoPulse": RepoPulse,
+  "@/shared/lib/github/repoPulseLive": RepoPulseLive,
+  "@/shared/lib/github/github": GithubLib,
+  "@/shared/lib/core/math": MathLib,
+  "@tauri-apps/plugin-opener": Opener,
   "@/shared/lib/core/logsBridge": LogsBridge,
   "@/shared/data/fleet": FleetData,
   "@/shared/hooks/useFleetLive": UseFleetLive,

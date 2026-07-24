@@ -13,6 +13,9 @@ import { GitHubSummary } from "./GitHubSummary";
 import { ProjectsSummary, ProjectBoard, Roadmap, Issues, Insights } from "@/features/planner";
 import { Pulse } from "./Pulse";
 
+// The graph-hosted workspace (#3650) — App.tsx/DetachedWindow render this via the lazy GitHubWorkspace.
+export { GitHubGraphHost } from "./GitHubGraphHost";
+
 const GITHUB_TABS: TabItem[] = [
   { id: "summary", label: "Summary", hint: "all repos · analytics" },
   { id: "projects", label: "Projects", hint: "portfolio · analytics" },
