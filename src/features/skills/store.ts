@@ -12,7 +12,7 @@ import type { StateCreator } from "zustand";
 import type { AppStore } from "@/store/types";
 import type { SkillPayload } from "@/features/planner/blueprints/blueprintSkills";
 import {
-  seedSkills, refreshPackagedSkills, skillFromPayload, applySessionSkillChoice, skillSlug,
+  seedSkills, refreshPackagedSkills, skillFromPayload, applySessionSkillChoice, skillSlug, skillContentKey,
   type SkillDef, type SessionSkillOverride, type SkillGroup,
 } from "./lib/skills";
 import { loadLibrary, pushSkill, dropSkill, pushGroup, dropGroup } from "./lib/skillBridge";
@@ -75,9 +75,15 @@ export const createSkillsSlice: StateCreator<AppStore, [], [], SkillsSlice> = (s
     // just the packaged set; later: packaged refreshed from code + the user's skills preserved).
     const skills = refreshPackagedSkills(lib.skills);
     set({ skills, skillGroups: lib.groups });
-    // Seed/refresh the db with the reconciled set so first-run packaged skills + any code updates
-    // persist (and a freshly-installed app populates its global library).
-    for (const s of skills) void pushSkill(s);
+    // Push ONLY skills the db is missing or whose authored content drifted (a packaged code update),
+    // mirroring hydrateOrgs (#3672). A normal boot re-writes NOTHING — this used to unconditionally
+    // re-push all ~40 packaged skills, a `bsc skill add` subprocess-spawn burst that jammed the backend
+    // every boot. User-state edits (enabled/pinned/projects) still write through via their own actions.
+    const dbKeys = new Map(lib.skills.map((s) => [s.id, skillContentKey(s)]));
+    for (const s of skills) {
+      const prior = dbKeys.get(s.id);
+      if (prior === undefined || prior !== skillContentKey(s)) void pushSkill(s);
+    }
   },
   refreshSkills: async () => {
     const lib = await loadLibrary();
