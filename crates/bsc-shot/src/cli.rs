@@ -289,8 +289,13 @@ fn run_capture(args: &Args, target: Option<&str>) -> Result<(), String> {
 
     // Single frame: the original behavior + output (a bare path, or { path, w, h }).
     if frames == 1 {
+        let shots = shots_dir()?;
         let id = bsc_appchan::new_id(now);
-        let res = capture_one(&chan, &id, now, args.rect, args.out.clone(), target, timeout)?;
+        // Resolve the PNG path HERE — in the session env, honoring $BSC_SHOT_DIR (#3662). The app has
+        // NO $BSC_SHOT_DIR, so leaving `out` unset let it default to the GLOBAL shots dir, outside the
+        // studio session's confined workspace — every capture became unreadable to the caller.
+        let out = resolve_out(args.out.as_deref(), &shots, &id);
+        let res = capture_one(&chan, &id, now, args.rect, Some(out), target, timeout)?;
         bsc_cli_util::emit(args.pretty, args.json, &res, || res.path.clone());
         return Ok(());
     }
@@ -305,10 +310,13 @@ fn run_capture(args: &Args, target: Option<&str>) -> Result<(), String> {
     for i in 1..=frames {
         let n = i as usize;
         let id = format!("{base_id}-{n:0pad$}");
-        let out = match args.out.as_deref() {
-            Some(base) => insert_suffix(base, n, pad),
-            None => shots.join(format!("{id}.png")).to_string_lossy().into_owned(),
-        };
+        // Number the burst frame, then resolve against the SESSION shots dir (#3662) so a relative
+        // --out lands inside the workspace, not the app's cwd.
+        let out = resolve_out(
+            args.out.as_deref().map(|base| insert_suffix(base, n, pad)).as_deref(),
+            &shots,
+            &id,
+        );
         match capture_one(&chan, &id, bsc_util::now_ms(), args.rect, Some(out), target, timeout) {
             Ok(res) => results.push(res),
             // Keep the frames already captured — a partial burst is still useful; report how many landed.
@@ -329,6 +337,20 @@ fn run_capture(args: &Args, target: Option<&str>) -> Result<(), String> {
     let payload = serde_json::json!({ "frames": results });
     bsc_cli_util::emit(args.pretty, args.json, &payload, || plain.clone());
     Ok(())
+}
+
+/// Resolve the PNG destination IN THE CALLER'S ENV (honoring the session's `$BSC_SHOT_DIR` via
+/// [`shots_dir`]) so the app writes where the CALLER expects. The app process has no `$BSC_SHOT_DIR`, so
+/// a request that left `out` unset — or gave a RELATIVE `--out` — was resolved by the app against its
+/// OWN (global) dir / cwd: the #3662 mismatch where `bsc shot dir` and the real PNG path disagreed and
+/// every capture landed outside the studio session's confined workspace. No `--out` ⇒ `<shots>/<id>.png`;
+/// a relative `--out` ⇒ inside the shots dir; an absolute `--out` ⇒ as-is.
+fn resolve_out(out: Option<&str>, shots: &std::path::Path, id: &str) -> String {
+    match out {
+        Some(o) if std::path::Path::new(o).is_absolute() => o.to_string(),
+        Some(o) => shots.join(o).to_string_lossy().into_owned(),
+        None => shots.join(format!("{id}.png")).to_string_lossy().into_owned(),
+    }
 }
 
 /// One webview snapshot: request → wait → prove the PNG is real. Shared by the single capture and each
@@ -494,5 +516,20 @@ mod tests {
         // error (returned BEFORE any channel I/O), not a silent no-op.
         let a = parse_args(vec!["preview".into(), "--rect".into(), "1,2,3,4".into()]).unwrap();
         assert!(cmd_preview(&a).is_err());
+    }
+
+    #[test]
+    fn resolve_out_anchors_the_png_in_the_session_shots_dir() {
+        let shots = std::path::Path::new(if cfg!(windows) { "C:\\ws\\design-studio\\shots" } else { "/ws/design-studio/shots" });
+        // No --out ⇒ <shots>/<id>.png (the #3662 fix: the app used to default to its OWN global dir).
+        let def = resolve_out(None, shots, "abc");
+        assert!(def.contains("design-studio") && def.ends_with("abc.png"), "default lands in the session dir: {def}");
+        // A relative --out ⇒ inside the shots dir, NOT left cwd-relative for the app to misplace.
+        let rel = resolve_out(Some("frame.png"), shots, "abc");
+        assert!(rel.contains("design-studio") && rel.ends_with("frame.png"), "got {rel}");
+        assert_ne!(rel, "frame.png", "a relative --out must be anchored");
+        // An absolute --out ⇒ honored as-is (the designer's known-good workaround stays valid).
+        let abs = if cfg!(windows) { "C:\\elsewhere\\x.png" } else { "/elsewhere/x.png" };
+        assert_eq!(resolve_out(Some(abs), shots, "abc"), abs);
     }
 }
