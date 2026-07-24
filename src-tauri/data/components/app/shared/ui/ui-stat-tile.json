@@ -10,5 +10,49 @@
     "Card",
     "Skeleton"
   ],
-  "src": "src/shared/ui/data/StatTile.tsx"
+  "src": "src/shared/ui/data/StatTile.tsx",
+  "props": [
+    {
+      "name": "k",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "v",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "sub",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "tone",
+      "type": "\"success\" | \"accent\" | \"danger\"",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "vStyle",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "loading",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    }
+  ]
 }

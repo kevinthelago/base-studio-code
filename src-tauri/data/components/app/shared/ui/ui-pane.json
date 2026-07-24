@@ -9,5 +9,91 @@
   "composes": [
     "IconButton"
   ],
-  "src": "src/shared/ui/overlay/Pane.tsx"
+  "src": "src/shared/ui/overlay/Pane.tsx",
+  "props": [
+    {
+      "name": "mode",
+      "type": "\"drawer\" | \"inline\"",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "open",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "header",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "body",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "children",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "footer",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onClose",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onRemove",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "isDraft",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onCommit",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "commitDisabled",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "flush",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "bare",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    }
+  ]
 }

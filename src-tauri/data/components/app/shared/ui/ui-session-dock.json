@@ -10,5 +10,43 @@
     "Box",
     "Text"
   ],
-  "src": "src/shared/ui/layouts/SessionDock.tsx"
+  "src": "src/shared/ui/layouts/SessionDock.tsx",
+  "props": [
+    {
+      "name": "containerRef",
+      "type": "RefObject<HTMLDivElement | null>",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "children",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "title",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "subtitle",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "height",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "testid",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    }
+  ]
 }
