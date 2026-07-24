@@ -80,6 +80,9 @@ import * as UseRailSections from "@/shared/hooks/useRailSections";
 import * as UseDragResize from "@/shared/hooks/useDragResize";
 import * as SkillsData from "@/shared/data/skills";
 import * as TauriCore from "@tauri-apps/api/core"; // a graph page may `invoke` a Tauri command
+// ── Catalog data a migrated page composes (#3656, MCP onward) ─────────────────────────────────────────
+import * as McpCatalog from "@/shared/data/mcpCatalog";
+import * as HookCatalog from "@/shared/data/hookCatalog";
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 
 // The FLEET-specific injected leaves (WorkerDetail) + logic (useFleetGithub / fleetCost) are NOT registered
@@ -149,6 +152,9 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/hooks/useDragResize": UseDragResize,
   "@/shared/data/skills": SkillsData,
   "@tauri-apps/api/core": TauriCore,
+  // Catalog data the MCP page composes (#3656, MCP onward).
+  "@/shared/data/mcpCatalog": McpCatalog,
+  "@/shared/data/hookCatalog": HookCatalog,
   "@/shared/lib/core/logsBridge": LogsBridge,
   "@/shared/data/fleet": FleetData,
   "@/shared/hooks/useFleetLive": UseFleetLive,

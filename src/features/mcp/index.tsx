@@ -29,6 +29,9 @@ import { SegmentedControl } from "@/shared/ui/controls/SegmentedControl";
 import { Field, TextField } from "@/shared/ui/controls/Field";
 import "./mcp.css";
 
+// The graph-hosted workspace (#3656) — App.tsx/DetachedWindow render this via the lazy McpWorkspace.
+export { McpGraphHost } from "./McpGraphHost";
+
 // #1545: public API for cross-feature consumers (planner, automations, app/console, store).
 // Re-export the exact lib symbols other features reach for so Phase 2 can target the barrel.
 export {
