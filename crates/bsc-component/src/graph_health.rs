@@ -50,9 +50,9 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
     /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
-    /// `unresolvable-import` | `reimplementation` | `orphan` | `unwired-prop` | `phantom-compose` |
-    /// `no-empty-state` | `no-loading-state` | `no-error-state` (#3555) | `slot-shell` |
-    /// `render-error` (#3540, CLI-only — see [`render_error_findings`]).
+    /// `unresolvable-import` | `stubbed-import` (#3696, sev-1) | `reimplementation` | `orphan` |
+    /// `unwired-prop` | `phantom-compose` | `no-empty-state` | `no-loading-state` |
+    /// `no-error-state` (#3555) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -1311,9 +1311,11 @@ fn analyze_kit(
 
     // ── unresolvable-import (severity 3): a component whose module imports something the preview CAN'T
     // resolve — the class `bsc ui doctor` was blind to (the static graph looked clean while the component
-    // was broken). Three kinds, all flagged here (#2934 bare, #2954 internal, #3116 library):
-    //   • BARE — an npm package not in the preview import-map → the iframe throws "Failed to resolve
-    //     module specifier".
+    // was broken). Kinds (#2934 bare, #2954 internal, #3116 library):
+    //   • BARE npm (#3696) — a package not among the curated preview externals no longer FAILS: the preview
+    //     bundles a local shim/stub for it, so it renders APPROXIMATELY. Emitted as a severity-1
+    //     `stubbed-import` NOTE (not the old sev-3 error) so the designer knows the preview isn't the real
+    //     package. Only INTERNAL/LIBRARY below are genuine (sev-3 `unresolvable-import`) — they have no stub.
     //   • INTERNAL — a `@/…` or RELATIVE import resolving to NEITHER a kit component NOR a runtime-closure
     //     module → "module not found" (exactly the `Code`→`../typography/type` / `Skeleton`→`./shimmer`
     //     failure #2954 fixed in the packaged closure; this catches any future/user-authored recurrence).
@@ -1331,11 +1333,15 @@ fn analyze_kit(
         let resolvable = resolvable_specifiers();
         let specs = import_specifiers(src);
         // A `@bsc/…` LIBRARY reference (#3116) is bare-shaped but resolves against the algorithms store, NOT
-        // the import-map — so it's excluded from `bare` and judged by `resolves_library` (a match ⇒ the
+        // the import-map — so it's excluded from `stubbed` and judged by `resolves_library` (a match ⇒ the
         // preview vendors its code ⇒ clean; a `@bsc/algorithms/<missing>` ⇒ flagged here).
         let mut library: Vec<String> =
             specs.iter().filter(|s| is_library_specifier(s) && !resolves_library(s, sounds)).cloned().collect();
-        let mut bare: Vec<String> = specs
+        // A BARE npm specifier that isn't a curated preview external (#3696): it no longer FAILS — the
+        // preview bundles a local shim/stub for any such import (react-native → real layout, react-native-svg
+        // → real SVG, else a universal passthrough), so nothing throws "Failed to resolve module specifier".
+        // It renders APPROXIMATELY (a stub, not the real package) → a severity-1 note, not the old sev-3 error.
+        let mut stubbed: Vec<String> = specs
             .iter()
             .filter(|s| is_bare_specifier(s) && !is_library_specifier(s) && !resolvable.contains(*s))
             .cloned()
@@ -1345,47 +1351,62 @@ fn analyze_kit(
             .filter(|s| is_internal_specifier(s) && !resolves_internal(s, &n.src, &targets))
             .cloned()
             .collect();
-        for v in [&mut bare, &mut library, &mut internal] {
+        for v in [&mut stubbed, &mut library, &mut internal] {
             v.sort();
             v.dedup();
         }
-        if bare.is_empty() && library.is_empty() && internal.is_empty() {
-            continue;
-        }
         let fmt = |v: &[String]| v.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>().join(", ");
-        let mut reasons = Vec::new();
-        let mut actions = Vec::new();
-        if !bare.is_empty() {
-            reasons.push(format!("{} (no preview import-map entry)", fmt(&bare)));
-            actions.push(format!(
-                "pin {} in the preview import-map (src-tauri/data/ui/preview-importmap.json) or drop it",
-                fmt(&bare)
-            ));
+        // GENUINELY unresolvable (severity 3): a first-party `@/…`/relative module mapping to no kit
+        // component or runtime file, or a `@bsc/…` library reference naming no real node. Unlike a bare npm
+        // import, these have NO stub fallback — the preview really can't build them.
+        if !library.is_empty() || !internal.is_empty() {
+            let mut reasons = Vec::new();
+            let mut actions = Vec::new();
+            if !library.is_empty() {
+                reasons.push(format!("{} (no matching node in the library)", fmt(&library)));
+                actions.push(format!(
+                    "reference an EXISTING library node for {} (e.g. `@bsc/algorithms/fibonacci`), or author it in the library",
+                    fmt(&library)
+                ));
+            }
+            if !internal.is_empty() {
+                reasons.push(format!("{} (no such module in the kit or its runtime closure)", fmt(&internal)));
+                actions.push(format!("fix or add the module for {} (it resolves to no kit component or runtime file)", fmt(&internal)));
+            }
+            out.push(Finding {
+                category: "unresolvable-import",
+                severity: 3,
+                kit: kit.to_string(),
+                node_ids: vec![n.id.clone()],
+                node_names: vec![n.name.clone()],
+                why: format!(
+                    "`{}` imports {} — the preview can't resolve it, so it throws \"module not found\" when rendered",
+                    n.name,
+                    reasons.join("; ")
+                ),
+                suggested_action: actions.join("; "),
+            });
         }
-        if !library.is_empty() {
-            reasons.push(format!("{} (no matching node in the library)", fmt(&library)));
-            actions.push(format!(
-                "reference an EXISTING library node for {} (e.g. `@bsc/algorithms/fibonacci`), or author it in the library",
-                fmt(&library)
-            ));
+        // STUBBED npm imports (severity 1): the component renders, but the package is a local shim/stub, not
+        // the real thing — informational so the designer knows the preview is approximate (#3696).
+        if !stubbed.is_empty() {
+            out.push(Finding {
+                category: "stubbed-import",
+                severity: 1,
+                kit: kit.to_string(),
+                node_ids: vec![n.id.clone()],
+                node_names: vec![n.name.clone()],
+                why: format!(
+                    "`{}` imports {} — not a curated preview external, so the preview renders it via a bundled-in local shim/stub (approximate, not the real package)",
+                    n.name,
+                    fmt(&stubbed)
+                ),
+                suggested_action: format!(
+                    "acceptable for most native/app packages; if {} needs its REAL behaviour in the preview, add it to the curated externals (src-tauri/data/ui/preview-importmap.json)",
+                    fmt(&stubbed)
+                ),
+            });
         }
-        if !internal.is_empty() {
-            reasons.push(format!("{} (no such module in the kit or its runtime closure)", fmt(&internal)));
-            actions.push(format!("fix or add the module for {} (it resolves to no kit component or runtime file)", fmt(&internal)));
-        }
-        out.push(Finding {
-            category: "unresolvable-import",
-            severity: 3,
-            kit: kit.to_string(),
-            node_ids: vec![n.id.clone()],
-            node_names: vec![n.name.clone()],
-            why: format!(
-                "`{}` imports {} — the preview can't resolve it, so it throws \"module not found\" when rendered",
-                n.name,
-                reasons.join("; ")
-            ),
-            suggested_action: actions.join("; "),
-        });
     }
 
     // ── reimplementation (severity 3): the "compose, don't recreate" guardrail (#3118, epic #3114). An
@@ -2036,18 +2057,21 @@ mod tests {
     }
 
     #[test]
-    fn flags_a_user_component_importing_a_preview_unresolvable_package() {
-        // Imports d3-scale (NOT in the preview import-map) alongside react + lucide-react (both pinned).
+    fn notes_a_bare_npm_miss_as_stubbed_not_an_error() {
+        // #3696: d3-scale (NOT a curated external) alongside react + lucide-react (both pinned). A bare npm
+        // miss no longer FAILS — the preview bundles a local stub for it → a severity-1 `stubbed-import`
+        // NOTE, never the old sev-3 `unresolvable-import` error.
         let comps = [json!({
             "id":"chart", "name":"Chart", "kitId":"k", "role":"composite", "used":2, "composes":[],
             "srcText":"import React from \"react\";\nimport { scaleLinear } from \"d3-scale\";\nimport { Icon } from \"lucide-react\";\nexport function Chart(){ return React.createElement(Icon, null, scaleLinear); }"
         })];
         let fs = analyze(&comps);
-        let f = fs.iter().find(|f| f.category == "unresolvable-import").expect("flagged");
-        assert_eq!(f.severity, 3);
-        assert!(f.why.contains("d3-scale"), "names the unresolvable specifier");
-        assert!(!f.why.contains("`react`") && !f.why.contains("`lucide-react`"), "pinned imports not listed");
+        let f = fs.iter().find(|f| f.category == "stubbed-import").expect("noted as stubbed");
+        assert_eq!(f.severity, 1);
+        assert!(f.why.contains("d3-scale"), "names the stubbed specifier");
+        assert!(!f.why.contains("`react`") && !f.why.contains("`lucide-react`"), "pinned externals not listed");
         assert!(f.suggested_action.contains("preview-importmap"));
+        assert!(!fs.iter().any(|f| f.category == "unresolvable-import"), "a bare npm miss is no longer an ERROR");
     }
 
     #[test]
@@ -2079,9 +2103,9 @@ mod tests {
     }
 
     #[test]
-    fn does_not_flag_an_absolute_url_import_but_still_flags_a_bare_miss() {
-        // #2963: a full esm.sh URL resolves DIRECTLY in the preview (no import-map entry) → not flagged;
-        // a bare package missing from the map (d3-scale) is still flagged.
+    fn an_absolute_url_import_is_clean_and_a_bare_miss_is_only_a_stub_note() {
+        // #2963: a full esm.sh URL resolves DIRECTLY in the preview → never flagged. #3696: a bare package
+        // missing from the curated externals (d3-scale) is a severity-1 `stubbed-import` NOTE, not an error.
         let comps = [
             json!({ "id":"chart", "name":"Chart", "kitId":"k", "role":"composite", "used":2, "composes":[],
                     "srcText":"import * as d3 from \"https://esm.sh/d3@7\";\nexport function Chart(){ return d3; }" }),
@@ -2089,10 +2113,11 @@ mod tests {
                     "srcText":"import { scaleLinear } from \"d3-scale\";\nexport function Bad(){ return scaleLinear; }" }),
         ];
         let fs = analyze(&comps);
-        let flagged: Vec<_> = fs.iter().filter(|f| f.category == "unresolvable-import").collect();
-        assert_eq!(flagged.len(), 1, "only the bare miss is flagged, not the esm.sh URL");
-        assert_eq!(flagged[0].node_names, ["Bad"]);
-        assert!(flagged[0].why.contains("d3-scale"));
+        assert!(!fs.iter().any(|f| f.category == "unresolvable-import"), "neither a URL nor a bare miss is an ERROR");
+        let stubbed: Vec<_> = fs.iter().filter(|f| f.category == "stubbed-import").collect();
+        assert_eq!(stubbed.len(), 1, "only the bare miss gets a stub note, not the esm.sh URL");
+        assert_eq!(stubbed[0].node_names, ["Bad"]);
+        assert!(stubbed[0].why.contains("d3-scale"));
     }
 
     #[test]
