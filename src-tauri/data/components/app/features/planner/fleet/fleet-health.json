@@ -8,6 +8,7 @@
   "composes": [
     "Card",
     "CardStates",
+    "Charts",
     "Chip",
     "Row",
     "Stack",

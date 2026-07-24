@@ -8,6 +8,7 @@
   "composes": [
     "Box",
     "CardStates",
+    "Charts",
     "ColorSwatch",
     "Grid",
     "Row",
