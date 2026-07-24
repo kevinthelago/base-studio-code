@@ -50,9 +50,9 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
     /// `cycle` | `dangling-branch` | `duplicate` | `no-implementation` | `self-reference` |
-    /// `unresolvable-import` | `stubbed-import` (#3696, sev-1) | `reimplementation` | `orphan` |
-    /// `unwired-prop` | `phantom-compose` | `no-empty-state` | `no-loading-state` |
-    /// `no-error-state` (#3555) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
+    /// `unresolvable-import` | `stubbed-import` (#3696, sev-1) | `hardcoded-color` (#3704, sev-1) |
+    /// `reimplementation` | `orphan` | `unwired-prop` | `phantom-compose` | `no-empty-state` |
+    /// `no-loading-state` | `no-error-state` (#3555) | `slot-shell` | `render-error` (#3540, CLI-only — see [`render_error_findings`]).
     pub category: &'static str,
     /// Higher = more severe; the report is sorted by this, descending.
     pub severity: u8,
@@ -869,6 +869,47 @@ pub struct HealthOptions<'a> {
     pub sound_kit_json: Option<&'a str>,
 }
 
+/// The hardcoded COLOR literals in `text` (#3704, the theme-adherence check) — the leak candidates a theme
+/// change can NOT reach (a `var(--token)` carries none): a 6- or 8-digit hex (`#rrggbb` / `#rrggbbaa`) or an
+/// `rgb(` / `rgba(` / `hsl(` / `hsla(` / `oklch(` / `oklab(` function. Deliberately conservative — a 3-digit
+/// `#219` (an issue ref) is skipped, named colors + values in comments aren't caught. Mirrors `colorLiterals`
+/// (TS) + `bsc ui`'s `count_color_literals` (reimplemented here — this crate can't depend on `bsc-ui`).
+fn color_literals(text: &str) -> Vec<String> {
+    let b = text.as_bytes();
+    let n = b.len();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < n {
+        if b[i] == b'#' {
+            let mut j = i + 1;
+            while j < n && b[j].is_ascii_hexdigit() {
+                j += 1;
+            }
+            let len = j - i - 1;
+            if len == 6 || len == 8 {
+                out.push(text[i..j].to_string());
+            }
+            i = j.max(i + 1);
+        } else {
+            i += 1;
+        }
+    }
+    let lower = text.to_ascii_lowercase();
+    for kw in ["rgb(", "rgba(", "hsl(", "hsla(", "oklch(", "oklab("] {
+        for _ in 0..lower.matches(kw).count() {
+            out.push(kw.trim_end_matches('(').to_string());
+        }
+    }
+    out
+}
+
+/// Does `text` reference a THEME TOKEN — a `var(--…)` design-token consumer? A component that does is
+/// considered wired to the theme (it re-themes with the active palette); one that hardcodes colors and has
+/// NONE is the `hardcoded-color` finding (#3704). Mirrors `usesThemeToken` (TS).
+fn uses_theme_token(text: &str) -> bool {
+    text.contains("var(--")
+}
+
 /// [`analyze_with`] against the packaged seeds — the unpinned default (see [`HealthOptions`]).
 pub fn analyze(components: &[Value]) -> Vec<Finding> {
     analyze_with(components, &HealthOptions::default())
@@ -1197,6 +1238,43 @@ fn analyze_kit(
                 "author a self-contained module for `{}` (its own `source`/`srcText`) or compose it from built-in kit components",
                 n.name
             ),
+        });
+    }
+
+    // ── hardcoded-color (severity 1, #3704): a component NOT wired to the theme — its own source hardcodes
+    // color literals (hex / rgb / hsl / oklch) and references NO `var(--…)` design token, so it won't follow
+    // the active theme/preset (the contract is "components reference ONLY semantic tokens, never raw
+    // colors"). Built-ins are skipped (their store record is a curated snippet, not the real source). Uses
+    // the node's own source (`source` else `srcText`) — independent of buildability, so an unthemed mobile
+    // component is flagged whether or not its imports resolve standalone. Mirrors `analyzeGraphHealth` (TS).
+    for n in nodes {
+        if n.builtin {
+            continue;
+        }
+        let src = if !n.source.trim().is_empty() { n.source.as_str() } else { n.src_text.as_str() };
+        if src.trim().is_empty() || uses_theme_token(src) {
+            continue;
+        }
+        let colors = color_literals(src);
+        if colors.is_empty() {
+            continue;
+        }
+        let sample = colors.iter().take(4).map(|c| format!("`{c}`")).collect::<Vec<_>>().join(", ");
+        let more = if colors.len() > 4 { format!(", +{}", colors.len() - 4) } else { String::new() };
+        out.push(Finding {
+            category: "hardcoded-color",
+            severity: 1,
+            kit: kit.to_string(),
+            node_ids: vec![n.id.clone()],
+            node_names: vec![n.name.clone()],
+            why: format!(
+                "`{}` hardcodes {} color literal{} ({sample}{more}) and references no theme token — it won't follow the active theme/preset",
+                n.name,
+                colors.len(),
+                if colors.len() == 1 { "" } else { "s" },
+            ),
+            suggested_action:
+                "replace the raw colors with `var(--…)` design tokens (e.g. `var(--fg)`, `var(--bg-panel)`, `var(--accent)`; see `bsc ui tokens`) so it re-themes with the palette".to_string(),
         });
     }
 
@@ -2902,6 +2980,38 @@ mod tests {
             "a graph-source primitive importing an artifact util + a provides-sibling is buildable: {fs:?}");
         assert!(!fs.iter().any(|f| f.category == "unresolvable-import"),
             "its @/ imports resolve (artifact + provides), not unresolvable: {fs:?}");
+    }
+
+    #[test]
+    fn color_literals_finds_hex_and_color_functions_not_short_refs() {
+        let lits = color_literals("color:#e8ecf4; background:rgba(0,0,0,.5); border:#0b0e14ff; issue #219 var(--fg)");
+        assert!(lits.contains(&"#e8ecf4".to_string()), "6-digit hex");
+        assert!(lits.contains(&"#0b0e14ff".to_string()), "8-digit hex");
+        assert!(lits.iter().any(|c| c == "rgba"), "an rgba() function");
+        assert!(!lits.iter().any(|c| c.contains("219")), "a 3-digit ref like #219 is not a color");
+        assert!(uses_theme_token("x var(--fg) y") && !uses_theme_token("color:#fff"));
+    }
+
+    #[test]
+    fn flags_a_component_not_wired_to_the_theme_as_hardcoded_color() {
+        // #3704: a component that hardcodes colors and references NO `var(--…)` token isn't wired to the
+        // theme → a severity-1 `hardcoded-color` note. One that uses a token, and a built-in, are clean.
+        let unwired = json!({ "id":"card", "name":"WorkerCard", "kitId":"mobile-studio-code", "role":"composite",
+            "used":2, "composes":[], "src":"WorkerCard.tsx",
+            "srcText":"export function WorkerCard(){ const s={ color:\"#e8ecf4\", background:\"#161b26\", accent:\"#7aa2ff\" }; return s ? null : null; }" });
+        let themed = json!({ "id":"btn", "name":"Btn", "kitId":"base-studio-code", "role":"primitive",
+            "used":2, "composes":[], "src":"Btn.tsx",
+            "srcText":"export function Btn(){ const s={ color:\"var(--fg)\", background:\"var(--btn-bg)\" }; return s ? null : null; }" });
+        let builtin = json!({ "id":"bi", "name":"BuiltIn", "kitId":"react-ui", "role":"primitive", "used":2,
+            "composes":[], "src":"BuiltIn.tsx", "builtin": true,
+            "srcText":"export function BuiltIn(){ const s={ color:\"#ffffff\" }; return s ? null : null; }" });
+        let fs = analyze(&[unwired, themed, builtin]);
+        let hc: Vec<_> = fs.iter().filter(|f| f.category == "hardcoded-color").collect();
+        assert_eq!(hc.len(), 1, "only the unwired component is flagged: {fs:?}");
+        assert_eq!(hc[0].node_names, ["WorkerCard"]);
+        assert_eq!(hc[0].severity, 1);
+        assert!(hc[0].why.contains("#e8ecf4"), "names a sample literal: {}", hc[0].why);
+        assert!(hc[0].suggested_action.contains("var(--"), "points at design tokens");
     }
 
     #[test]
