@@ -10,7 +10,7 @@
 // The CSS still ships as a normal bundled import here (the loader can't resolve a CSS side-effect import,
 // so it was stripped from the graph source): the host owns the stylesheet the graph page's classes need.
 import { GraphComponent } from "@/shared/lib/runtime/GraphComponent";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { GraphPageFallback } from "@/shared/lib/runtime/GraphPageFallback";
 import { registerAutomationsPlatform } from "./graphPlatform";
 import "./automations.css";
 
@@ -18,24 +18,13 @@ import "./automations.css";
 // when the graph page's compiled `require()` runs. Idempotent.
 registerAutomationsPlatform();
 
-/** Shown only if the `automationspage` graph source is absent or fails to load — rare on a seeded install. */
-function AutomationsUnavailable() {
-  return (
-    <EmptyState
-      icon="⏱"
-      title="Automations page unavailable"
-      description="The Automations workspace loads from the components graph, and its source isn't in the library. Reopen the page, or re-seed the component library (Studio → apply)."
-      style={{ padding: 48 }}
-    />
-  );
-}
-
 export function AutomationsGraphHost({ pageOverride }: { pageOverride?: string } = {}) {
+  // Fallback offers a one-click re-seed (#3648) when the source isn't in the library yet.
   return (
     <GraphComponent
       id="automationspage"
       props={pageOverride ? { pageOverride } : undefined}
-      fallback={<AutomationsUnavailable />}
+      fallback={<GraphPageFallback page="Automations" icon="⏱" />}
     />
   );
 }
