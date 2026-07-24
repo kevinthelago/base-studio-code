@@ -28,7 +28,9 @@ const LAYOUT_NAMES = new Set([
  *  Skeleton), so the well-known atoms are curated. */
 const PRIMITIVE_NAMES = new Set([
   "Text", "Chip", "Button", "IconButton", "Badge", "StatusDot", "ColorSwatch", "Avatar", "IconBox",
-  "FillBar", "StatTile", "Kbd", "Toggle", "Checkbox", "Skeleton", "Spinner", "Dot", "Tag",
+  "FillBar", "StatTile", "Kbd", "Skeleton", "Spinner", "Dot", "Tag",
+  // form controls are fundamentals (even Field, which composes a Skeleton loading state)
+  "Field", "TextField", "SelectField", "TextArea", "SearchField", "SegmentedControl", "Toggle", "Checkbox",
 ]);
 
 /** The graph components a source composes → their NAMES (deduped, sorted). An import of a `@/components/<id>`
