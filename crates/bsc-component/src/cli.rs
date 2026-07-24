@@ -1007,6 +1007,12 @@ fn set_stamped(
         crate::record::stamp_with_history(&mut stamped, &prior, writer, &now, note);
         store.set(&id, &serde_json::to_string(&stamped).map_err(|e| format!("set: {e}"))?)?;
         bsc_util::emit_ui_activity(noun, &id);
+        // #43: editing a COMPONENT invalidates the last preview render — clear any stale `render-error` so
+        // `bsc ui doctor` doesn't keep reporting the pre-edit throw for source that just changed. Best-effort
+        // (a diagnostic side-effect must never fail the write); a no-op unless this id currently has an error.
+        if noun == "component" {
+            let _ = crate::preview_errors::clear(&id);
+        }
         ids.push(id);
     }
     Ok(ids)
