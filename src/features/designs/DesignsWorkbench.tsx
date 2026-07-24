@@ -658,13 +658,16 @@ export function DesignsWorkbench() {
               {emptyRender && (
                 <Text as="span" className="ds-emptyrender" title={emptyRender}>▢</Text>
               )}
-              <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                <RoleDot role={c.role} /><Text weight={600} size={13}>{c.name}</Text>
+              <Box style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, minWidth: 0 }}>
+                {/* name truncates to ONE line (#3699) — a long name (GitHubCrossRepoActivity) must fit the
+                    fixed-width node, not wrap + overflow. Full name on hover via `title`. */}
+                <RoleDot role={c.role} /><Text weight={600} size={13} title={c.name} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</Text>
               </Box>
-              <Box style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <Box style={{ display: "flex", alignItems: "center", justifyContent: "space-between", minWidth: 0 }}>
                 {/* group indicator (#3048) — the component's purpose partition, read inline on the
-                    existing role line (no layout change; role-tier banding is unchanged). */}
-                <Text size={10} tone="dim">{c.role}{c.group ? <Text as="span" tone="muted"> · {c.group}</Text> : ""}</Text><Text mono size="xxs" tone="muted">×{c.used}</Text>
+                    existing role line. Truncates to one line (#3699) — a long group (features/planner/fleet)
+                    must not wrap; the ×used count is kept, never squeezed off. */}
+                <Text size={10} tone="dim" title={c.group ? `${c.role} · ${c.group}` : c.role} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.role}{c.group ? <Text as="span" tone="muted"> · {c.group}</Text> : ""}</Text><Text mono size="xxs" tone="muted" style={{ flexShrink: 0, marginLeft: 6 }}>×{c.used}</Text>
               </Box>
             </Box>
           );
