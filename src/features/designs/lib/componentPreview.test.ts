@@ -257,9 +257,31 @@ describe("samplePropValue (#2824)", () => {
     expect(samplePropValue(prop("open", "boolean"))).toBe("true");
     expect(samplePropValue(prop("onClick", "() => void"))).toBe("() => {}");
     expect(samplePropValue(prop("rows", "Row[]"))).toBeNull(); // optional collection → omitted in loaded (#3135)
-    expect(samplePropValue(prop("rows", "Row[]", true))).toBe("[]"); // a REQUIRED collection still renders
+    expect(samplePropValue(prop("rows", "Row[]", true))).toBeNull(); // #3693: required collection ALSO omits in loaded (default demo shows)
     expect(samplePropValue(prop("tone", '"neutral" | "danger"'))).toBe('"neutral"');
     expect(samplePropValue(prop("color", "string"))).toBe('"var(--accent)"');
+  });
+
+  it("treats Record / Set / Map as data containers, not strings (#3693)", () => {
+    // A Record<string, number> / Set<string> type STRING contains "string"/"number"; without a container
+    // check it fell through to the string branch → a title-cased string (NaN nonsense, or `.has()` crash).
+    expect(samplePropValue(prop("langTotals", "Record<string, number>", true))).toBeNull(); // omitted in loaded
+    expect(samplePropValue(prop("langTotals", "Record<string, number>", true), "empty")).toBe("{}");
+    expect(samplePropValue(prop("highlight", "Set<string>"))).toBeNull();
+    expect(samplePropValue(prop("highlight", "Set<string>"), "empty")).toBe("new Set()");
+    expect(samplePropValue(prop("byId", "Map<string, Row>"), "empty")).toBe("new Map()");
+    // word-boundary: `offset` is a number, not a Set; `dataset` prop name is not a Set type either.
+    expect(samplePropValue(prop("offset", "number"))).toBe("3");
+  });
+
+  it("gives a layout-column width a fixed px, not the viewport (#3693)", () => {
+    // A flex:none sidebar sized to window.innerWidth eats the whole preview frame — a rail/aside width is 240.
+    expect(samplePropValue(prop("railWidth", "number"))).toBe("240");
+    expect(samplePropValue(prop("asideWidth", "number"))).toBe("240");
+    expect(samplePropValue(prop("sidebarHeight", "number"))).toBe("240");
+    // a canvas width still fills the frame; a style-dim width stays small.
+    expect(samplePropValue(prop("chartWidth", "number"))).toBe("window.innerWidth");
+    expect(samplePropValue(prop("strokeWidth", "number"))).toBe("3");
   });
 
   it("samples canvas-dimension props with the frame size so a sized component fills the frame (#2918)", () => {
@@ -297,8 +319,11 @@ describe("samplePropValue (#2824)", () => {
     expect(samplePropValue(data, "loading")).toBeNull();
     // a non-loading boolean is unaffected by state (always true).
     expect(samplePropValue(prop("stacked", "boolean"), "loading")).toBe("true");
-    // a REQUIRED collection always renders ([]), even in loaded — so a required-data component isn't blank.
-    expect(samplePropValue(prop("rows", "Row[]", true), "loaded")).toBe("[]");
+    // #3693: a REQUIRED collection now omits in loaded/loading (default demo shows), `[]` only in empty —
+    // so a 'loaded' preview no longer renders identical to 'empty' for a required-data component.
+    expect(samplePropValue(prop("rows", "Row[]", true), "loaded")).toBeNull();
+    expect(samplePropValue(prop("rows", "Row[]", true), "loading")).toBeNull();
+    expect(samplePropValue(prop("rows", "Row[]", true), "empty")).toBe("[]");
   });
 
   it("drives an ERROR-family prop only in the error state (#3555)", () => {

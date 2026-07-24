@@ -197,13 +197,28 @@ export function isLoadingProp(p: PropSpec): boolean {
   return (t === "boolean" || t.includes("boolean")) && /^(loading|busy|pending|isloading)$/i.test(p.name);
 }
 
-/** Is `p` a COLLECTION prop — an array of data (`Row[]`, `array`)? The thing `empty` empties and `loaded`
- *  fills. An OPTIONAL collection is OMITTED in loaded/loading so the component's own demo/default shows
- *  (the demo-on-undefined convention, #3135); `empty` always passes an explicit `[]`. Exported (#3191) so
- *  the scan gates its empty-state blank probe on the SAME predicate that empties the sampled collection. */
+/** Is `p` a COLLECTION prop — an array of data (`Row[]`, `array`)? The thing `empty` empties. A collection
+ *  is OMITTED in loaded/loading so the component's own demo/default shows (the demo-on-undefined convention,
+ *  #3135/#3693 — required collections omit too now); `empty` always passes an explicit `[]`. Exported (#3191)
+ *  so the scan gates its empty-state blank probe on the SAME predicate that empties the sampled collection. */
 export function isCollectionProp(p: PropSpec): boolean {
   const t = (p.type || "").toLowerCase();
   return t.includes("[]") || t.includes("array");
+}
+
+/** Is `t` (a LOWERCASED type) a `Record<K, V>` map object — a data container whose empty literal is `{}`
+ *  (distinct from an array's `[]`)? Rust twin: `is_record_type`. */
+function isRecordType(t: string): boolean {
+  return t.startsWith("record<");
+}
+/** Is `t` (LOWERCASED) a `Set<T>` / `ReadonlySet<T>`? Empty literal `new Set()`; the `set<` boundary (or an
+ *  exact bare `set`) keeps `offset`/`dataset`/`subset` out. Rust twin: `is_set_type`. */
+function isSetType(t: string): boolean {
+  return t === "set" || t.startsWith("set<") || t.startsWith("readonlyset<");
+}
+/** Is `t` (LOWERCASED) a `Map<K, V>` / `ReadonlyMap<K, V>`? Empty literal `new Map()`. Rust twin: `is_map_type`. */
+function isMapType(t: string): boolean {
+  return t === "map" || t.startsWith("map<") || t.startsWith("readonlymap<");
 }
 
 /** Is `p` an ERROR-family prop — the thing that puts a component into its error render (`error` / `err` /
@@ -220,9 +235,10 @@ export function isErrorProp(p: PropSpec): boolean {
  * A best-effort sample value (as a JS source literal) for a prop, from its (loosely-typed) schema, or
  * `null` to omit it. Enough to render a component whose required props would otherwise be missing —
  * NOT a curated example. `children` is handled by the caller (it becomes the element's child). `state`
- * (#3135) drives the data-state: `loading` turns on a loading-family boolean; `empty` passes an explicit
- * `[]` for collections; `loaded` (default) omits an OPTIONAL collection so a demo-on-undefined component
- * shows its demo. A REQUIRED collection always gets `[]` (so the component still renders).
+ * (#3135) drives the data-state: `loading` turns on a loading-family boolean; `empty` passes the typed
+ * EMPTY literal for a data container (`[]` array, `{}` Record, `new Set()`, `new Map()`); `loaded`
+ * (default) / `loading` OMIT a container so a demo-on-undefined component shows its own default demo — the
+ * same path object props (`gh`) already take. A required container omits too (#3693), not `[]`.
  */
 export function samplePropValue(p: PropSpec, state: PreviewState = "loaded"): string | null {
   if (isLoadingProp(p)) return state === "loading" ? "true" : null;
@@ -235,7 +251,15 @@ export function samplePropValue(p: PropSpec, state: PreviewState = "loaded"): st
     return t === "boolean" || t.includes("boolean") ? "true" : JSON.stringify("Something went wrong");
   }
   if (isFn) return "() => {}";
-  if (isCollectionProp(p)) return state === "empty" ? "[]" : p.req ? "[]" : null;
+  // Data-container props (#3693): omitted in loaded/loading so the component's own default demo shows; the
+  // empty state passes the typed EMPTY literal. BEFORE the string/number branches — a `Record<string, number>`
+  // / `Set<string>` type contains "string"/"number" and would otherwise sample as a title-cased string
+  // (rendering `Object.values("Lang Totals")` NaN nonsense, or crashing `"Highlight".has(k)`). Required
+  // containers omit too, exactly as the object-prop fall-through (`MergeQueue.gh`) already does.
+  if (isCollectionProp(p)) return state === "empty" ? "[]" : null;
+  if (isRecordType(t)) return state === "empty" ? "{}" : null;
+  if (isSetType(t)) return state === "empty" ? "new Set()" : null;
+  if (isMapType(t)) return state === "empty" ? "new Map()" : null;
   if (t.includes("reactnode") || t.includes("node")) return JSON.stringify(prettyName(p.name));
   if (t === "string" || t.includes("string")) return JSON.stringify(sampleString(p.name));
   if (t === "number" || t.includes("number")) return numberSample(p.name);
@@ -267,9 +291,16 @@ function numberSample(name: string): string {
   const n = name.toLowerCase();
   // Exclude style dimensions so `strokeWidth`/`borderWidth`/`fontSize`/… never become the viewport size.
   const styleDim = /stroke|border|font|line|gap|margin|pad|spacing|weight|gutter|inset|offset/.test(n);
+  // A LAYOUT-COLUMN width/height (a fixed sidebar/rail/panel column, flex:none) must NOT be the viewport
+  // size — that makes the column eat the whole preview frame (#3693). A fixed 240px keeps two-column layouts
+  // intact; a canvas width (`width`/`w`/`chartWidth`) still fills the frame below.
+  const layoutDim = /rail|aside|sidebar|drawer|panel|col/.test(n);
   if (!styleDim) {
-    if (n === "w" || n === "width" || n.endsWith("width")) return "window.innerWidth";
-    if (n === "h" || n === "height" || n.endsWith("height")) return "window.innerHeight";
+    const isW = n === "w" || n === "width" || n.endsWith("width");
+    const isH = n === "h" || n === "height" || n.endsWith("height");
+    if (layoutDim && (isW || isH)) return "240";
+    if (isW) return "window.innerWidth";
+    if (isH) return "window.innerHeight";
     if (n === "size" || n === "extent") return "Math.min(window.innerWidth, window.innerHeight)";
   }
   return /value|fraction|ratio|progress|percent|opacity/i.test(name) ? "0.6" : "3";
