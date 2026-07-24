@@ -9,7 +9,8 @@
     "Chip",
     "GitHubEmpty",
     "GitHubPulse",
-    "GitHubSummary"
+    "GitHubSummary",
+    "Text"
   ],
   "src": "src/features/github/GitHubWorkspace.tsx"
 }

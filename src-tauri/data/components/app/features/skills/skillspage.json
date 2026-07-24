@@ -12,7 +12,8 @@
     "SkillsLessonsTab",
     "SkillsNewGroupDialog",
     "SkillsRunsTab",
-    "SkillsViews"
+    "SkillsViews",
+    "Text"
   ],
   "src": "src/features/skills/SkillsWorkspace.tsx"
 }
