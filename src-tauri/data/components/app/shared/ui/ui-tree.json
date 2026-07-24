@@ -16,5 +16,91 @@
     "Stack",
     "Text"
   ],
-  "src": "src/shared/ui/layouts/Tree.tsx"
+  "src": "src/shared/ui/layouts/Tree.tsx",
+  "props": [
+    {
+      "name": "nodes",
+      "type": "TreeNodeData[]",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "variant",
+      "type": "TreeVariant",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "selectedId",
+      "type": "string | null",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "defaultSelectedId",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onSelect",
+      "type": "(id: string) => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "detail",
+      "type": "ReactNode | ((node: TreeNodeData | undefined) => ReactNode)",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "toolbar",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "defaultCollapsedIds",
+      "type": "string[]",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onToggle",
+      "type": "(id: string, expanded: boolean) => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "indent",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "railWidth",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "resizable",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "detailWidth",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    }
+  ]
 }

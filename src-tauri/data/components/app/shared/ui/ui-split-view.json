@@ -11,5 +11,85 @@
     "Row",
     "Stack"
   ],
-  "src": "src/shared/ui/layouts/SplitView.tsx"
+  "src": "src/shared/ui/layouts/SplitView.tsx",
+  "props": [
+    {
+      "name": "primary",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "secondary",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "orientation",
+      "type": "\"horizontal\" | \"vertical\"",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "resizable",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "secondarySize",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "secondaryMin",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "secondaryMax",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "toolbar",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "divider",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "primaryStyle",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "secondaryStyle",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "style",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    }
+  ]
 }
