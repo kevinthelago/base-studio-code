@@ -11,7 +11,7 @@
 // The CSS still ships as a normal bundled import here (the loader can't resolve a CSS side-effect import,
 // so it was stripped from the graph source): the host owns the stylesheet the graph page's classes need.
 import { GraphComponent } from "@/shared/lib/runtime/GraphComponent";
-import { EmptyState } from "@/shared/ui/feedback/EmptyState";
+import { GraphPageFallback } from "@/shared/lib/runtime/GraphPageFallback";
 import { registerSecurityPlatform } from "./graphPlatform";
 import "./security.css";
 
@@ -19,24 +19,13 @@ import "./security.css";
 // when the graph page's compiled `require()` runs. Idempotent.
 registerSecurityPlatform();
 
-/** Shown only if the `securitypage` graph source is absent or fails to load — rare on a seeded install. */
-function SecurityUnavailable() {
-  return (
-    <EmptyState
-      icon="⛊"
-      title="Security page unavailable"
-      description="The Security workspace loads from the components graph, and its source isn't in the library. Reopen the page, or re-seed the component library (Studio → apply)."
-      style={{ padding: 48 }}
-    />
-  );
-}
-
 export function SecurityGraphHost({ pageOverride }: { pageOverride?: string } = {}) {
+  // Fallback offers a one-click re-seed (#3648) when the source isn't in the library yet.
   return (
     <GraphComponent
       id="securitypage"
       props={pageOverride ? { pageOverride } : undefined}
-      fallback={<SecurityUnavailable />}
+      fallback={<GraphPageFallback page="Security" icon="⛊" />}
     />
   );
 }
