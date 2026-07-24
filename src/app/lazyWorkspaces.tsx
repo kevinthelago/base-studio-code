@@ -15,7 +15,9 @@ export const AutomationsWorkspace = lazy(() => import("@/features/automations").
 export const McpWorkspace         = lazy(() => import("@/features/mcp").then((m) => ({ default: m.McpWorkspace })));
 export const SettingsWorkspace    = lazy(() => import("@/features/settings").then((m) => ({ default: m.SettingsWorkspace })));
 export const ProjectsWorkspace    = lazy(() => import("@/features/planner").then((m) => ({ default: m.ProjectsWorkspace })));
-export const SkillsWorkspace      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsWorkspace })));
+// Skills renders FROM THE GRAPH (#3654, epic #3604) — the graph host mounts the authored `skillspage` node;
+// the symbol name stays so App.tsx + DetachedWindow (which passes `pageOverride`) need no change.
+export const SkillsWorkspace      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsGraphHost })));
 // Security renders FROM THE GRAPH (#3646, epic #3604) — the graph host mounts the authored `securitypage`
 // node; the symbol name stays so App.tsx + DetachedWindow (which passes `pageOverride`) need no change.
 export const SecurityWorkspace      = lazy(() => import("@/features/security").then((m) => ({ default: m.SecurityGraphHost })));

@@ -377,6 +377,7 @@ export function SkillsWorkspace({ pageOverride }: { pageOverride?: string } = {}
 }
 
 // Re-exported feature surface — this index is the skills feature's public API barrel (#1309).
+export { SkillsGraphHost } from "./SkillsGraphHost"; // the graph-hosted workspace (#3654)
 export { SkillsStatus } from "./SkillsStatus";
 export { SessionSkillsModal, type SessionSkillsModalProps } from "./SessionSkillsModal";
 
