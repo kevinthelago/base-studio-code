@@ -85,7 +85,7 @@
       }
     },
     {
-      "desc": "loading-family (busy), fraction (progress), canvas size, style-dim (strokeWidth), required array",
+      "desc": "loading-family (busy), fraction (progress), canvas size, style-dim (strokeWidth), required array (#3693: omitted in loaded/loading so the default demo shows, [] only in empty)",
       "comp": {
         "name": "Meter",
         "props": [
@@ -101,8 +101,7 @@
           "props": [
             { "name": "progress", "value": "0.6" },
             { "name": "size", "value": "Math.min(window.innerWidth, window.innerHeight)" },
-            { "name": "strokeWidth", "value": "3" },
-            { "name": "items", "value": "[]" }
+            { "name": "strokeWidth", "value": "3" }
           ],
           "child": null
         },
@@ -120,8 +119,7 @@
             { "name": "busy", "value": "true" },
             { "name": "progress", "value": "0.6" },
             { "name": "size", "value": "Math.min(window.innerWidth, window.innerHeight)" },
-            { "name": "strokeWidth", "value": "3" },
-            { "name": "items", "value": "[]" }
+            { "name": "strokeWidth", "value": "3" }
           ],
           "child": null
         }
@@ -217,6 +215,82 @@
             { "name": "h", "value": "window.innerHeight" },
             { "name": "extent", "value": "Math.min(window.innerWidth, window.innerHeight)" },
             { "name": "opacity", "value": "0.6" }
+          ],
+          "child": null
+        }
+      }
+    },
+    {
+      "desc": "#3693 data containers: Record<K,V>, Set<T>, Map<K,V> omit in loaded/loading (component default shows), typed-empty in empty — NEVER a title-cased string (langTotals as a string → Object.values NaN nonsense; highlight as a string → `.has()` crash)",
+      "comp": {
+        "name": "Insights",
+        "props": [
+          { "name": "langTotals", "type": "Record<string, number>", "req": true },
+          { "name": "tags", "type": "Set<string>", "req": false },
+          { "name": "byId", "type": "Map<string, number>", "req": false },
+          { "name": "title", "type": "string", "req": false }
+        ]
+      },
+      "expected": {
+        "loaded": {
+          "props": [
+            { "name": "title", "value": "\"Title\"" }
+          ],
+          "child": null
+        },
+        "empty": {
+          "props": [
+            { "name": "langTotals", "value": "{}" },
+            { "name": "tags", "value": "new Set()" },
+            { "name": "byId", "value": "new Map()" },
+            { "name": "title", "value": "\"Title\"" }
+          ],
+          "child": null
+        },
+        "loading": {
+          "props": [
+            { "name": "title", "value": "\"Title\"" }
+          ],
+          "child": null
+        }
+      }
+    },
+    {
+      "desc": "#3693 layout-column widths: rail/aside width → a fixed 240 (a flex:none sidebar sized to the viewport eats the frame); a canvas chartWidth still fills; strokeWidth stays a style dim",
+      "comp": {
+        "name": "MasterDetail",
+        "props": [
+          { "name": "railWidth", "type": "number", "req": false },
+          { "name": "asideWidth", "type": "number", "req": false },
+          { "name": "chartWidth", "type": "number", "req": false },
+          { "name": "strokeWidth", "type": "number", "req": false }
+        ]
+      },
+      "expected": {
+        "loaded": {
+          "props": [
+            { "name": "railWidth", "value": "240" },
+            { "name": "asideWidth", "value": "240" },
+            { "name": "chartWidth", "value": "window.innerWidth" },
+            { "name": "strokeWidth", "value": "3" }
+          ],
+          "child": null
+        },
+        "empty": {
+          "props": [
+            { "name": "railWidth", "value": "240" },
+            { "name": "asideWidth", "value": "240" },
+            { "name": "chartWidth", "value": "window.innerWidth" },
+            { "name": "strokeWidth", "value": "3" }
+          ],
+          "child": null
+        },
+        "loading": {
+          "props": [
+            { "name": "railWidth", "value": "240" },
+            { "name": "asideWidth", "value": "240" },
+            { "name": "chartWidth", "value": "window.innerWidth" },
+            { "name": "strokeWidth", "value": "3" }
           ],
           "child": null
         }
