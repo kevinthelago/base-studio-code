@@ -495,8 +495,20 @@ fn import_specifiers(source: &str) -> Vec<String> {
             }
             last_word = w;
         } else {
-            // A non-identifier char (whitespace, `(`, `;`, …) — keep `last_word` so `import(` / `import "x"`
-            // still see the `import` keyword.
+            // A non-identifier char between a keyword and a string decides whether the string is a REAL
+            // import target. A pending `from`/`import` survives ONLY across whitespace (`from "x"`,
+            // `import "x"`); `import` additionally survives a single `(` (dynamic `import("x")`). Anything
+            // else — a `:` (`{ from: "x" }` graph-edge demo data), a `(` after `from` (`Array.from("x")`),
+            // a `.`, `,`, `{`, … — means the keyword was an object key or member, NOT an import clause, so
+            // clear it. Without this a graph component's demo edge `{ from: "node-id" }` was misread as
+            // importing "node-id" and flagged unresolvable-import (#3687: false positives on
+            // RelationshipGraphView / TeamsCanvas, filed 5×). Mirrors the regex twins `\bfrom\s+["']`.
+            let survives = last_word.is_empty()
+                || c.is_whitespace()
+                || (c == '(' && last_word == "import");
+            if !survives {
+                last_word.clear();
+            }
             i += 1;
         }
     }
@@ -1998,6 +2010,29 @@ mod tests {
         assert!(specs.contains(&"lucide-react".to_string()));
         assert!(!specs.contains(&"commented-out".to_string()), "a comment's string is not captured");
         assert!(!specs.contains(&"not-an-import".to_string()), "a plain string is not an import");
+    }
+
+    #[test]
+    fn import_specifiers_ignores_a_from_field_in_object_data_and_a_from_call() {
+        // #3687: a `from` OBJECT KEY (graph-edge demo data) or a `.from(` CALL is not an import. Renaming a
+        // graph node's `id` used to move this false positive in lockstep (an edge's `from` value == the id),
+        // which looked like the scanner keyed on `id`; it actually keyed on the `from` keyword.
+        let src = "import React from \"react\";\n\
+                   const DEMO_GRAPH = { edges: [{ from: 'agentA', to: 'reviewer-2' }] };\n\
+                   const ids = Array.from('n1n2g1');\n\
+                   export function View(){ return React.createElement('div'); }";
+        let specs = import_specifiers(src);
+        assert!(specs.contains(&"react".to_string()), "the real import still resolves");
+        assert!(!specs.contains(&"agentA".to_string()), "a `from:` object key is not an import");
+        assert!(!specs.contains(&"reviewer-2".to_string()), "the edge's `to` value is not an import");
+        assert!(!specs.contains(&"n1n2g1".to_string()), "an `Array.from(` call arg is not an import");
+        // The real forms all still capture (guarded alongside so the gate can't over-tighten).
+        let real = import_specifiers(
+            "import \"./side-effect\";\nexport { a } from \"pkg-a\";\nconst m = import(\"pkg-b\");\nimport X from\"pkg-c\";",
+        );
+        for want in ["./side-effect", "pkg-a", "pkg-b", "pkg-c"] {
+            assert!(real.contains(&want.to_string()), "still captures {want}");
+        }
     }
 
     #[test]
