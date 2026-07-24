@@ -62,6 +62,7 @@ import type { PreviewState } from "./lib/componentPreview";
 import { ThemesMenu } from "./ThemesMenu";
 import { AnimationsMenu } from "./AnimationsMenu";
 import { PaletteStrip } from "./PaletteStrip";
+import { PaletteToggle } from "./PaletteToggle";
 import { DEFAULT_THEME } from "@/shared/ui/kit";
 
 /** The preview surface's light/dark axis, read off the selected theme's `base`. */
@@ -134,6 +135,10 @@ export function DesignsWorkbench() {
   const [previewMode, setPreviewMode] = useState(false);
   // Preview-mode right-pane axis (#2942): try on the palette (Themes) or the kit's MOTION (Animations).
   const [rightAxis, setRightAxis] = useState<"themes" | "animations">("themes");
+  // The theme try-on's raw palette strip is HIDDEN by default (#3706); the top-bar theme label is now a
+  // toggle (PaletteToggle) that reveals it — so the swatch band is opt-in and the specimen owns the full
+  // preview height until you ask for the raw palette.
+  const [showPalette, setShowPalette] = useState(false);
   // The kit animation PLAYED on the vehicle — the motion try-on (#2942), or null.
   const [tryAnim, setTryAnim] = useState<string | null>(null);
   // Whether the Design Studio is the VISIBLE page (not merely mounted). KeptMountedPage keeps this
@@ -528,11 +533,13 @@ export function DesignsWorkbench() {
                 <Button variant="ghost" onClick={() => previewZoomApi?.zoomIn()} aria-label="zoom in">+</Button>
                 <Button variant="ghost" onClick={() => previewZoomApi?.fit()}>fit</Button>
               </Box>
-              <Text mono size="xxs" tone="muted">{activeTheme?.label}</Text>
+              {activeTheme && (
+                <PaletteToggle label={activeTheme.label} open={showPalette} onToggle={() => setShowPalette((v) => !v)} />
+              )}
             </Box>
             {/* Palette strip (#2834): the theme's semantic swatches — the raw palette beside the applied
-                result — so the try-on shows both at once. */}
-            {activeTheme && <PaletteStrip theme={activeTheme} />}
+                result. HIDDEN by default (#3706); the top-bar PaletteToggle reveals it on demand. */}
+            {activeTheme && showPalette && <PaletteStrip theme={activeTheme} />}
             {/* Crisp pan/zoom (#3190): the host is just the FRAME. It measures this canvas and places the
                 design viewport (previewW×previewH) at a fixed downscale-only fit (never upscales → the
                 iframe texture stays 1:1-or-smaller → sharp). ALL pan/zoom happens INSIDE the iframe as a
