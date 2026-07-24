@@ -13,6 +13,10 @@ const LAYOUT_NAMES = new Set([
   "Box", "Stack", "Row", "Grid", "Spacer", "Screen", "MasterDetail", "SectionHeader", "SectionLabel",
   "GraphRail", "GraphCanvas", "RailRow", "RailSection", "Pane", "TabBar", "Divider",
 ]);
+const PRIMITIVE_NAMES = new Set([
+  "Text", "Chip", "Button", "IconButton", "Badge", "StatusDot", "ColorSwatch", "Avatar", "IconBox",
+  "FillBar", "StatTile", "Kbd", "Toggle", "Checkbox", "Skeleton", "Spinner", "Dot", "Tag",
+]);
 const deriveComposes = (srcText, resolveName) => {
   const names = new Set();
   const re = /\bfrom\s+"([^"]+)"/g;
@@ -28,6 +32,7 @@ const renderedComponentCount = (srcText) => {
 const deriveRole = (name, existingRole, composes, rendered) => {
   if (existingRole === "page") return "page";
   if (LAYOUT_NAMES.has(name)) return "layout";
+  if (PRIMITIVE_NAMES.has(name)) return "primitive";
   if (composes.length >= 1 || rendered >= 3) return "composite";
   return "primitive";
 };

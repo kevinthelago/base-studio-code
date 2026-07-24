@@ -8,7 +8,9 @@
   "composes": [
     "Chip",
     "EmptyState",
-    "McpAnalytics"
+    "McpAnalytics",
+    "Skeleton",
+    "Text"
   ],
   "src": "src/features/mcp/McpWorkspace.tsx"
 }

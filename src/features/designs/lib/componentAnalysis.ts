@@ -22,6 +22,15 @@ const LAYOUT_NAMES = new Set([
   "GraphRail", "GraphCanvas", "RailRow", "RailSection", "Pane", "TabBar", "Divider",
 ]);
 
+/** Content-atom FUNDAMENTALS — always `primitive`, even if they compose a utility (a Skeleton loading
+ *  shim doesn't make an atom a composite). Mirrors compositionLayout's exemplars (Button/Text/Chip …). A
+ *  composes-count alone can't separate `Text` (atom, composes Skeleton) from `Card` (composite, composes
+ *  Skeleton), so the well-known atoms are curated. */
+const PRIMITIVE_NAMES = new Set([
+  "Text", "Chip", "Button", "IconButton", "Badge", "StatusDot", "ColorSwatch", "Avatar", "IconBox",
+  "FillBar", "StatTile", "Kbd", "Toggle", "Checkbox", "Skeleton", "Spinner", "Dot", "Tag",
+]);
+
 /** The graph components a source composes → their NAMES (deduped, sorted). An import of a `@/components/<id>`
  *  sibling or a `@/shared/ui/*` specifier a component provides is an edge; everything else (plain code) isn't. */
 export function deriveComposes(srcText: string, resolveName: NameResolver): string[] {
@@ -50,6 +59,7 @@ export function renderedComponentCount(srcText: string): number {
 export function deriveRole(name: string, existingRole: string | undefined, composes: string[], rendered: number): Role {
   if (existingRole === "page") return "page";
   if (LAYOUT_NAMES.has(name)) return "layout";
+  if (PRIMITIVE_NAMES.has(name)) return "primitive"; // a curated content atom stays a fundamental
   if (composes.length >= 1 || rendered >= 3) return "composite";
   return "primitive";
 }
