@@ -21,6 +21,7 @@ const LAYOUT_NAMES = new Set([
   "Box", "Stack", "Row", "Grid", "Spacer", "Screen", "MasterDetail", "SectionHeader", "SectionLabel",
   "GraphRail", "GraphCanvas", "RailRow", "RailSection", "Pane", "TabBar", "Divider",
   "ModalScrim", "ModalCard", "Dialog", "GraphLegend", "RailGroupHeader", "PaneGrid", "SessionDock", "SplitView",
+  "Tree",
 ]);
 
 /** Content-atom FUNDAMENTALS — always `primitive`, even if they compose a utility (a Skeleton loading
