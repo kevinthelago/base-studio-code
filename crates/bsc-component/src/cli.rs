@@ -1576,8 +1576,14 @@ fn validate_component_batch(items: &[serde_json::Value]) -> Result<(), String> {
         if src_text.trim().is_empty() {
             continue; // no source to judge — a record can legitimately carry none.
         }
+        // #43: a graph-source component (carries `provides`) is a real app primitive whose `@/` imports the
+        // runtime loader — and the now provides-aware preview build/doctor — resolve. `looks_buildable_module`
+        // treats ANY `@/` import as unbuildable, so it emits a FALSE "unresolved first-party @/" warning for
+        // it. Skip the buildability advisory for these (buildability is judged by `doctor`); the syntax check
+        // below still runs, so real corruption is still caught.
+        let provides = item.get("provides").and_then(serde_json::Value::as_str).unwrap_or_default();
         // #3470: not-a-module is REPORTED, never an unchecked skip. Still permissive — it stores.
-        if !crate::graph_health::looks_buildable_module(src_text) {
+        if provides.trim().is_empty() && !crate::graph_health::looks_buildable_module(src_text) {
             eprintln!("{}", unbuildable_module_warning(item, src_text));
             continue;
         }
@@ -3217,6 +3223,23 @@ mod tests {
             serde_json::json!({ "id": "c", "name": "C" }),
         ];
         assert!(validate_component_batch(&ok_batch).is_ok());
+    }
+
+    #[test]
+    fn a_provides_component_with_at_imports_is_syntax_checked_not_warned_as_unbuildable() {
+        use serde_json::json;
+        // #43: a graph-source component (carries `provides`) has its `@/` imports resolved by the runtime
+        // loader — so the gate must NOT emit the false "unresolved first-party @/" advisory for it, and
+        // instead runs the real syntax check. A valid one passes.
+        let ok = json!({ "id":"box", "name":"Box", "provides":"@/shared/ui/layout/Box",
+            "srcText":"import { space } from \"@/shared/ui/layout/space\";\nexport function Box(){ return null; }" });
+        assert!(validate_component_batch(std::slice::from_ref(&ok)).is_ok(), "a valid provides-component with @/ imports passes");
+        // ...and a CORRUPT one is now caught (before #43 the `@/` import made `looks_buildable_module` false,
+        // which skipped syntax-checking entirely, so it stored silently).
+        let corrupt = json!({ "id":"box2", "name":"Box2", "provides":"@/shared/ui/layout/Box",
+            "srcText":"import { x } from \"@/x\";\nexport const s = [1,2].join(\"\n\");" });
+        let err = validate_component_batch(std::slice::from_ref(&corrupt)).unwrap_err();
+        assert!(err.contains("Box2"), "a corrupt provides-component is caught, not silently stored: {err}");
     }
 
     /// #3470 — the two edge rows of the issue's table. The gate used to be INVERTED at its edges: a
