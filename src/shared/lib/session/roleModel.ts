@@ -133,6 +133,12 @@ export interface RoleCapability {
  *  a machine's paths. */
 export const HARVEST_ROOT_APP_REPO = "app-repo";
 
+/** The symbolic harvest root meaning "the `~/.base-studio-code/projects/` tree — every downloaded
+ *  project repo". Resolved by the launch to `<bscBaseDir>/projects` (#3664), so a UI/logic session can
+ *  mine components from the OTHER repos, not just the app's own source. Read-only like every harvest
+ *  root — the whole `projects/` tree is readable, but writes stay confined to the session's workspace. */
+export const HARVEST_ROOT_PROJECTS = "projects";
+
 // The role→capability table + the write-glob / db-owned / dep-manifest lists load from
 // `@data/permissions/role-capabilities.json` (#2027 P1) — see the file's `_comment` for the policy.
 // The exported names below keep the SAME semantics they always had:

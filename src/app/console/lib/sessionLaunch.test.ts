@@ -73,6 +73,16 @@ describe("buildAgentEnv", () => {
     expect(e?.BSC_SCOPE_GLOBS).toBe("scratch/**");
   });
 
+  it("adds the whole projects/ dir as a second read-only harvest root for the designer (#3664)", () => {
+    // The designer can now mine UI from every downloaded project repo, not just the app's own source.
+    const s = mkStore({ paneRoles: { p: "designer" }, appRepoRoot: "C:/src/base-studio-code", bscBaseDir: "C:/Users/k/.base-studio-code" });
+    const e = buildAgentEnv(s, "p", "claude", "");
+    // Both roots, newline-separated, in declared order (app-repo, then projects).
+    expect(e?.BSC_HARVEST_ROOTS).toBe("C:/src/base-studio-code\nC:/Users/k/.base-studio-code/projects");
+    // Still read-only — the extra root does NOT widen the write scope.
+    expect(e?.BSC_SCOPE_GLOBS).toBe("scratch/**");
+  });
+
   it("omits BSC_HARVEST_ROOTS when the role declares none (#3509)", () => {
     const s = mkStore({ paneRoles: { p: "worker" }, appRepoRoot: "C:/src/base-studio-code" });
     expect(buildAgentEnv(s, "p", "claude", "")?.BSC_HARVEST_ROOTS).toBeUndefined();
