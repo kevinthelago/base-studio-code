@@ -333,6 +333,22 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(map.get("Card")).toBeUndefined();
   });
 
+  it("flags a component not wired to the theme as hardcoded-color (#3704)", () => {
+    // Hardcodes hex colors + NO `var(--…)` token → not wired to the theme (the mobile-studio-code case).
+    const unwired = comp("WorkerCard", "composite", 2, [], {
+      source: 'export function WorkerCard(){ const s = { color: "#e8ecf4", background: "#161b26", accent: "#7aa2ff" }; return s ? null : null; }',
+    });
+    // Uses a theme token → wired → NOT flagged, even though it also has one raw value.
+    const themed = comp("Btn", "primitive", 2, [], {
+      source: 'export function Btn(){ const s = { color: "var(--fg)", ring: "#000000" }; return s ? null : null; }',
+    });
+    const builtin = comp("Native", "primitive", 2, [], { builtin: true, source: 'export function Native(){ const s = { color: "#ffffff" }; return s ? null : null; }' });
+    const hc = analyzeGraphHealth([unwired, themed, builtin]).filter((f) => f.category === "hardcoded-color");
+    expect(hc.map((f) => f.nodeNames[0])).toEqual(["WorkerCard"]); // only the unwired one
+    expect(hc[0].severity).toBe(1);
+    expect(hc[0].why).toContain("#e8ecf4"); // names a sample literal
+  });
+
   it("flags a component that declares `composes` its source never renders as phantom-compose (#3111)", () => {
     // A user chart that DECLARES it composes ChartFrame/Axis but redraws them inline (renders neither) —
     // the graph would draw phantom edges AND the false in-edges would hide ChartFrame/Axis from orphan
