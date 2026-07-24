@@ -15,7 +15,8 @@ const LAYOUT_NAMES = new Set([
 ]);
 const PRIMITIVE_NAMES = new Set([
   "Text", "Chip", "Button", "IconButton", "Badge", "StatusDot", "ColorSwatch", "Avatar", "IconBox",
-  "FillBar", "StatTile", "Kbd", "Toggle", "Checkbox", "Skeleton", "Spinner", "Dot", "Tag",
+  "FillBar", "StatTile", "Kbd", "Skeleton", "Spinner", "Dot", "Tag",
+  "Field", "TextField", "SelectField", "TextArea", "SearchField", "SegmentedControl", "Toggle", "Checkbox",
 ]);
 const deriveComposes = (srcText, resolveName) => {
   const names = new Set();
