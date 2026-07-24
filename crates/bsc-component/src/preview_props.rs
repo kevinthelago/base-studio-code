@@ -74,9 +74,11 @@ fn preview_child(comp_name: &str, props: &[Prop]) -> Value {
 
 /// A best-effort sample value (as JS source) for a prop, or `None` to omit it — the Rust twin of
 /// `samplePropValue`. `state` drives the data-state: `loading` turns a loading-family boolean on; `empty`
-/// passes an explicit `[]` for a collection; `loaded` omits an OPTIONAL collection (demo-on-undefined). A
-/// REQUIRED collection always gets `[]`.
-fn sample_prop_value(name: &str, ty: &str, req: bool, state: &str) -> Option<String> {
+/// passes the typed EMPTY literal for a data container (`[]` array, `{}` Record, `new Set()`, `new Map()`);
+/// `loaded`/`loading` OMIT a container so the component's own default demo renders (the demo-on-undefined
+/// convention — the same path object props like `gh` already take, #3693). `req` no longer forces a value:
+/// a required container omits in loaded exactly as a required object prop already does.
+fn sample_prop_value(name: &str, ty: &str, _req: bool, state: &str) -> Option<String> {
     if is_loading_prop(name, ty) {
         return if state == "loading" { Some("true".into()) } else { None };
     }
@@ -85,8 +87,22 @@ fn sample_prop_value(name: &str, ty: &str, req: bool, state: &str) -> Option<Str
     if is_fn {
         return Some("() => {}".into());
     }
+    // Data-container props (#3693): omitted in loaded/loading so the component's own default demo shows; the
+    // empty state passes the typed EMPTY literal. Checked BEFORE the string/number branches because a
+    // `Record<string, number>` / `Set<string>` type STRING contains "string"/"number" and would otherwise be
+    // sampled as a title-cased string — rendering NaN nonsense (`Object.values("Lang Totals")`) or crashing
+    // an optional-Set consumer (`"Highlight".has(k)` — a string has no `.has()`; `?.` guards only undefined).
     if is_collection_prop(ty) {
-        return if state == "empty" || req { Some("[]".into()) } else { None };
+        return if state == "empty" { Some("[]".into()) } else { None };
+    }
+    if is_record_type(&t) {
+        return if state == "empty" { Some("{}".into()) } else { None };
+    }
+    if is_set_type(&t) {
+        return if state == "empty" { Some("new Set()".into()) } else { None };
+    }
+    if is_map_type(&t) {
+        return if state == "empty" { Some("new Map()".into()) } else { None };
     }
     if t.contains("reactnode") || t.contains("node") {
         return Some(json_string(&pretty_name(name)));
@@ -115,6 +131,23 @@ fn is_loading_prop(name: &str, ty: &str) -> bool {
 fn is_collection_prop(ty: &str) -> bool {
     let t = ty.to_lowercase();
     t.contains("[]") || t.contains("array")
+}
+
+/// Is `t` (a LOWERCASED type) a `Record<K, V>` map object — a data container whose empty literal is `{}`
+/// (distinct from an array's `[]`)? Mirrors `isRecordType`.
+fn is_record_type(t: &str) -> bool {
+    t.starts_with("record<")
+}
+
+/// Is `t` (LOWERCASED) a `Set<T>` / `ReadonlySet<T>`? Its empty literal is `new Set()`. The `set<` boundary
+/// (or an exact bare `set`) keeps `offset`/`dataset`/`subset` out. Mirrors `isSetType`.
+fn is_set_type(t: &str) -> bool {
+    t == "set" || t.starts_with("set<") || t.starts_with("readonlyset<")
+}
+
+/// Is `t` (LOWERCASED) a `Map<K, V>` / `ReadonlyMap<K, V>`? Its empty literal is `new Map()`. Mirrors `isMapType`.
+fn is_map_type(t: &str) -> bool {
+    t == "map" || t.starts_with("map<") || t.starts_with("readonlymap<")
 }
 
 /// Does `name` match `/^on[A-Z]/` — an `onFoo` handler by convention? Case-sensitive `on` + an ASCII
@@ -161,17 +194,25 @@ fn sample_string(name: &str) -> String {
 
 /// A number sample as JS source. CANVAS-dimension names (width/height/size/extent) sample with the frame
 /// size (`window.innerWidth`/…) so a sized d3 component fills the frame; STYLE dimensions (stroke/border/
-/// font/…) are guarded out. Ratio-ish names → `0.6`, else `3`. Mirrors `numberSample`.
+/// font/…) are guarded out. A LAYOUT-COLUMN width/height (`rail`/`aside`/`sidebar`/`drawer`/`panel`/`col`)
+/// is a fixed `240` — a `flex: none` sidebar sized to the viewport otherwise eats the whole preview frame
+/// (#3693). Ratio-ish names → `0.6`, else `3`. Mirrors `numberSample`.
 fn number_sample(name: &str) -> String {
     let n = name.to_lowercase();
     let style_dim = ["stroke", "border", "font", "line", "gap", "margin", "pad", "spacing", "weight", "gutter", "inset", "offset"]
         .iter()
         .any(|k| n.contains(k));
+    let layout_dim = ["rail", "aside", "sidebar", "drawer", "panel", "col"].iter().any(|k| n.contains(k));
     if !style_dim {
-        if n == "w" || n == "width" || n.ends_with("width") {
+        let is_w = n == "w" || n == "width" || n.ends_with("width");
+        let is_h = n == "h" || n == "height" || n.ends_with("height");
+        if layout_dim && (is_w || is_h) {
+            return "240".into();
+        }
+        if is_w {
             return "window.innerWidth".into();
         }
-        if n == "h" || n == "height" || n.ends_with("height") {
+        if is_h {
             return "window.innerHeight".into();
         }
         if n == "size" || n == "extent" {
@@ -260,6 +301,9 @@ mod tests {
         assert_eq!(number_sample("height"), "window.innerHeight");
         assert_eq!(number_sample("size"), "Math.min(window.innerWidth, window.innerHeight)");
         assert_eq!(number_sample("strokeWidth"), "3"); // style dim — never the viewport size
+        assert_eq!(number_sample("railWidth"), "240"); // #3693 layout column — a fixed px, not the viewport
+        assert_eq!(number_sample("asideWidth"), "240");
+        assert_eq!(number_sample("sidebarHeight"), "240");
         assert_eq!(number_sample("opacity"), "0.6");
         assert_eq!(number_sample("count"), "3");
     }
@@ -270,8 +314,19 @@ mod tests {
         assert_eq!(sample_prop_value("data", "Row[]", false, "loaded"), None);
         assert_eq!(sample_prop_value("data", "Row[]", false, "empty"), Some("[]".into()));
         assert_eq!(sample_prop_value("data", "Row[]", false, "loading"), None);
-        // required collection: `[]` in every state.
-        assert_eq!(sample_prop_value("items", "array", true, "loaded"), Some("[]".into()));
+        // #3693: a REQUIRED collection now also omits in loaded/loading (only `empty` passes `[]`), so the
+        // component's own default demo data renders in loaded instead of an empty list identical to `empty`.
+        assert_eq!(sample_prop_value("items", "array", true, "loaded"), None);
+        assert_eq!(sample_prop_value("items", "array", true, "loading"), None);
+        assert_eq!(sample_prop_value("items", "array", true, "empty"), Some("[]".into()));
+        // #3693: Record / Set / Map containers omit in loaded, and pass the TYPED empty literal in `empty`
+        // — never a title-cased string (which rendered NaN nonsense / crashed `x?.has()`).
+        assert_eq!(sample_prop_value("langTotals", "Record<string, number>", true, "loaded"), None);
+        assert_eq!(sample_prop_value("langTotals", "Record<string, number>", true, "empty"), Some("{}".into()));
+        assert_eq!(sample_prop_value("highlight", "Set<string>", false, "loaded"), None);
+        assert_eq!(sample_prop_value("highlight", "Set<string>", false, "empty"), Some("new Set()".into()));
+        assert_eq!(sample_prop_value("byId", "Map<string, Row>", false, "empty"), Some("new Map()".into()));
+        assert_eq!(sample_prop_value("offset", "number", false, "loaded"), Some("3".into())); // not a Set
         // loading-family boolean: `true` only in loading.
         assert_eq!(sample_prop_value("loading", "boolean", false, "loading"), Some("true".into()));
         assert_eq!(sample_prop_value("loading", "boolean", false, "loaded"), None);
