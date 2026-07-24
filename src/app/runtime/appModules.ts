@@ -92,6 +92,7 @@ import * as UseModalDismiss from "@/shared/hooks/useModalDismiss"; // ModalScrim
 import * as UseClickOutside from "@/shared/hooks/useClickOutside"; // TabBar (#3684)
 import * as ReactDOM from "react-dom";                             // TabBar: createPortal (#3684)
 import * as Eyebrow from "@/shared/ui/typography/Eyebrow";         // SessionDock (#3684)
+import * as LucideReact from "lucide-react";                       // icons: createLucideIcon (#3686)
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 
 // The FLEET-specific injected leaves (WorkerDetail) + logic (useFleetGithub / fleetCost) are NOT registered
@@ -173,6 +174,7 @@ const PLATFORM: Record<string, unknown> = {
   "@/shared/hooks/useClickOutside": UseClickOutside,
   "react-dom": ReactDOM,
   "@/shared/ui/typography/Eyebrow": Eyebrow,
+  "lucide-react": LucideReact,
   "@/shared/lib/core/logsBridge": LogsBridge,
   "@/shared/data/fleet": FleetData,
   "@/shared/hooks/useFleetLive": UseFleetLive,
