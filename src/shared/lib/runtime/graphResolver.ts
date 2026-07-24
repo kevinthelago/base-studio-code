@@ -10,12 +10,19 @@ import type { GraphSourceResolver } from "@/shared/lib/runtime/componentLoader";
  *  real module — the loader intercepts it and vendors the sibling's source in its place. */
 export const GRAPH_SIBLING_PREFIX = "@/components/";
 
-/** Resolve `@/components/<id>` → that component's `srcText` from the LIVE store, for the loader to vendor.
- *  Reads a snapshot (`getState`), not a subscription: a page re-loads on ITS OWN source change (the host
- *  keys on that); a sibling edit reflects on the page's next load. Non-sibling specifiers return `null` so
- *  they stay external (→ the registry). */
+/** Resolve a graph import to `srcText` the loader vendors — reading a snapshot (`getState`), not a
+ *  subscription: a page re-loads on ITS OWN source change (the host keys on that); a sibling/override edit
+ *  reflects on the page's next load. Two forms resolve to graph source; anything else returns `null` so it
+ *  stays external (→ the registry):
+ *    1. `@/components/<id>` — a SIBLING by id (a page composing its panels, #3606).
+ *    2. a component whose `provides` field equals the specifier — a graph component OVERRIDING a registered
+ *       PLATFORM module (#3660), e.g. a shared/ui primitive authored as DATA. Graph-first: this is why
+ *       `routeImport` consults the resolver before the registry. */
 export const resolveGraphSource: GraphSourceResolver = (specifier) => {
-  if (!specifier.startsWith(GRAPH_SIBLING_PREFIX)) return null;
-  const id = specifier.slice(GRAPH_SIBLING_PREFIX.length);
-  return useAppStore.getState().components.find((c) => c.id === id)?.srcText ?? null;
+  const components = useAppStore.getState().components;
+  if (specifier.startsWith(GRAPH_SIBLING_PREFIX)) {
+    const id = specifier.slice(GRAPH_SIBLING_PREFIX.length);
+    return components.find((c) => c.id === id)?.srcText ?? null;
+  }
+  return components.find((c) => c.provides === specifier)?.srcText ?? null;
 };

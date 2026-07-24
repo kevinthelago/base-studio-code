@@ -20,6 +20,9 @@ test("runtime loader: graph source compiles + renders with real modules + a vend
   await expect(page.getByText("from a real shared/ui Text")).toBeVisible();
   // The graph SIBLING was VENDORED (from the resolver) into the same compile and rendered.
   await expect(page.getByTestId("sibling")).toHaveText("sibling:vendored");
+  // GRAPH-FIRST (#3660): a graph component PROVIDES "@/shared/ui/probe-tile", overriding the registered
+  // platform module → the DATA version renders ("graph"), not the bundled one ("platform").
+  await expect(page.getByTestId("provide")).toHaveText("graph");
   // The loaded component's OWN useState updates on click — proof it shares the app's ONE React instance
   // (a second copy would throw "Invalid hook call" instead of re-rendering).
   await page.getByTestId("bump").click();

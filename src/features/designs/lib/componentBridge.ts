@@ -37,6 +37,7 @@ export function projectComponent(c: Partial<ComponentRecord>): ComponentRecord {
     srcText: c.srcText ?? "",
     builtin: c.builtin,
     wraps: c.wraps,
+    provides: c.provides, // #3660 — the platform specifier this component overrides; rides verbatim (loader reads it)
     rules: c.rules,
     shapes: c.shapes,
     animations: c.animations, // #2942 — MOTION binding (the kit-animation names it plays); rides verbatim
