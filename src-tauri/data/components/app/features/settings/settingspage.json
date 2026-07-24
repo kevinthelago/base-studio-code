@@ -12,7 +12,8 @@
     "SettingsMcpPage",
     "SettingsPlannerPage",
     "SettingsSecurityPage",
-    "SettingsSkillsPage"
+    "SettingsSkillsPage",
+    "Text"
   ],
   "src": "src/features/settings/SettingsWorkspace.tsx"
 }

@@ -35,6 +35,10 @@ describe("deriveRole (#3667) — the swimlane tier", () => {
     expect(deriveRole("SettingsGeneralPage", "component", [], 6)).toBe("composite"); // renders ≥3 (code cards)
     expect(deriveRole("Chip", "primitive", [], 1)).toBe("primitive"); // a leaf atom
     expect(deriveRole("ColorSwatch", "primitive", [], 0)).toBe("primitive");
+    // a curated fundamental stays primitive even when it composes a utility (Text composes Skeleton) —
+    // while a composite container that composes the same utility (Card) is a composite.
+    expect(deriveRole("Text", "component", ["Skeleton"], 1)).toBe("primitive");
+    expect(deriveRole("Card", "primitive", ["Skeleton"], 1)).toBe("composite");
   });
 });
 

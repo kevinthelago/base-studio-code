@@ -83,6 +83,10 @@ import * as TauriCore from "@tauri-apps/api/core"; // a graph page may `invoke` 
 // ── Catalog data a migrated page composes (#3656, MCP onward) ─────────────────────────────────────────
 import * as McpCatalog from "@/shared/data/mcpCatalog";
 import * as HookCatalog from "@/shared/data/hookCatalog";
+// ── Small leaf deps a graph-loaded shared/ui primitive needs (#3674, shared/ui-as-data batch 3) ────────
+import * as TypographyType from "@/shared/ui/typography/type"; // Text: fontSize/toneColor
+import * as Shimmer from "@/shared/ui/feedback/shimmer";       // Skeleton: the shimmer style const
+import * as GithubColors from "@/shared/lib/github/colors";    // Avatar: avatarColor/palette
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 
 // The FLEET-specific injected leaves (WorkerDetail) + logic (useFleetGithub / fleetCost) are NOT registered
@@ -155,6 +159,10 @@ const PLATFORM: Record<string, unknown> = {
   // Catalog data the MCP page composes (#3656, MCP onward).
   "@/shared/data/mcpCatalog": McpCatalog,
   "@/shared/data/hookCatalog": HookCatalog,
+  // Small leaf deps a graph-loaded shared/ui primitive imports (#3674, batch 3).
+  "@/shared/ui/typography/type": TypographyType,
+  "@/shared/ui/feedback/shimmer": Shimmer,
+  "@/shared/lib/github/colors": GithubColors,
   "@/shared/lib/core/logsBridge": LogsBridge,
   "@/shared/data/fleet": FleetData,
   "@/shared/hooks/useFleetLive": UseFleetLive,

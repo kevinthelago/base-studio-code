@@ -14,7 +14,8 @@
     "GitHubOpenPRs",
     "GitHubPageModeStrip",
     "GitHubReposGrid",
-    "StatTile"
+    "StatTile",
+    "Text"
   ],
   "src": "src/features/github/GitHubSummary.tsx"
 }
