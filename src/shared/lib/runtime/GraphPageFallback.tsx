@@ -1,11 +1,17 @@
-// GraphPageFallback (#3648, epic #3604) — the shared fallback for a graph-hosted page (Fleet / Automations
-// / Security …) whose source isn't loadable from the components graph: missing (the store hasn't re-seeded
-// after a migration landed) or failing to compile/load. Instead of sending the user to Settings/Studio to
-// re-seed, it offers a ONE-CLICK re-seed right here — `hydrateComponents()` reconciles the store toward the
-// packaged seed and pushes any missing built-ins. GraphComponent subscribes to the page's `srcText`, so a
-// successful re-seed makes the source appear and the host re-renders straight into the real page (this
-// fallback unmounts). If the source seeds but the load still fails (a page's platform modules register at
-// startup, so a mid-session code update needs one reload), the button's done-state points at that.
+// GraphPageFallback (#3648/#3652, epic #3604) — the shared fallback for a graph-hosted page (Fleet /
+// Automations / Security / GitHub …) whose source isn't loadable from the components graph. It offers TWO
+// in-app recoveries, because the two failure modes need DIFFERENT fixes:
+//
+//   • "Reload to apply" — `window.location.reload()`. A JUST-MERGED/updated page brings NEW platform-module
+//     registrations (appModules + register<X>Platform — BOOT-bound + guarded) and a NEW `SEED_COMPONENTS`
+//     glob entry (`import.meta.glob` resolves at module-eval). Neither can be applied mid-session by a
+//     re-seed — only a fresh boot re-runs registration + re-globs the seed + re-hydrates. This reload does
+//     exactly that, so it reliably applies a new/updated page live without hunting for F5. (#3652)
+//
+//   • "Re-seed in place" — `hydrateComponents()` reconciles the store toward the packaged seed and pushes
+//     missing built-ins. Fixes the lighter case where the library only LOST this page's record but its
+//     platform is already live (the common shipped-app case). GraphComponent subscribes to the page's
+//     srcText, so a successful re-seed makes the source appear and the host re-renders into the real page.
 import { useState, type ReactNode } from "react";
 import { useAppStore } from "@/store";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
@@ -13,26 +19,26 @@ import { Button } from "@/shared/ui/controls/Button";
 
 export function GraphPageFallback({ page, icon = "⑃" }: { page: string; icon?: ReactNode }) {
   const hydrateComponents = useAppStore((s) => s.hydrateComponents);
-  const [status, setStatus] = useState<"idle" | "seeding" | "done" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "seeding" | "seeded" | "error">("idle");
 
   async function reseed() {
     setStatus("seeding");
     try {
+      // If the record seeds AND its platform is already registered, GraphComponent re-renders into the page
+      // and this unmounts. If it's still here after, the page was just added/updated → Reload to apply.
       await hydrateComponents();
-      // On success with the source present, GraphComponent re-renders into the page and this unmounts.
-      // If it's still here after this, the source seeded but the load failed → the done-copy guides a reload.
-      setStatus("done");
+      setStatus("seeded");
     } catch {
       setStatus("error");
     }
   }
 
   const description =
-    status === "done"
-      ? `Re-seeded the component library. If ${page} is still blank, reload the window — a page's modules register at startup.`
+    status === "seeded"
+      ? `Re-seeded the library in place. If ${page} is still blank it was just added or updated — use Reload to apply it.`
       : status === "error"
-        ? "Re-seed failed. Reload the window and try again."
-        : `The ${page} workspace loads from the components graph, and its source isn't in the library yet. Re-seed to restore it — no need to leave the page.`;
+        ? "Re-seed failed. Use Reload to apply the latest."
+        : `${page} loads from the components graph. If ${page} was just added or updated, Reload to apply it; if the library only lost its record, Re-seed restores it in place.`;
 
   return (
     <EmptyState
@@ -40,11 +46,12 @@ export function GraphPageFallback({ page, icon = "⑃" }: { page: string; icon?:
       title={`${page} page unavailable`}
       description={description}
       actions={
-        status === "done" ? undefined : (
-          <Button variant="primary" onClick={reseed} disabled={status === "seeding"}>
-            {status === "seeding" ? "Re-seeding…" : "Re-seed component library"}
+        <>
+          <Button variant="primary" onClick={() => window.location.reload()}>Reload to apply</Button>
+          <Button onClick={reseed} disabled={status === "seeding"}>
+            {status === "seeding" ? "Re-seeding…" : "Re-seed in place"}
           </Button>
-        )
+        </>
       }
       style={{ padding: 48 }}
     />
