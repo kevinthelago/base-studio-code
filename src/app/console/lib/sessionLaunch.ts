@@ -14,7 +14,7 @@ import { resolveMcpServers, toBscAgentMcp, resolveHooks, toSessionPayloads } fro
 import { effectiveSessionSkills, expandGroups, toSkillCfgs } from "@/features/skills";
 import { resolveInitCmd } from "@/app/console/lib/resumeClaude";
 import { isManualPaneId } from "@/app/console/lib/paneIdentity";
-import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands, isRestrictedRole, editPathRule, HARVEST_ROOT_APP_REPO, type SessionRole } from "@/shared/lib/session/sessionRoles";
+import { roleCapability, roleDeniedCommands, roleWriteRules, roleDeniedTools, bscAgentPerms, scopeWriteGlobs, sessionScopes, restrictedRoleCommands, isRestrictedRole, editPathRule, HARVEST_ROOT_APP_REPO, HARVEST_ROOT_PROJECTS, type SessionRole } from "@/shared/lib/session/sessionRoles";
 import { isFullCapabilitySession, isStudioSessionPaneId } from "@/shared/lib/session/systemSessions";
 import { TURN_ACCOUNTING_HOOKS } from "@/shared/lib/session/turnHooks";
 import { studioRoleForPaneId } from "@/features/studio-sessions";
@@ -83,7 +83,13 @@ export function buildAgentEnv(
   // (#3451/#3471). A token that resolves to nothing contributes nothing, mirroring the CLI's rule that
   // an unresolvable allow-list entry is skipped rather than widening access.
   const harvestRoots = (scopeCap?.harvestRoots ?? [])
-    .map((token) => (token === HARVEST_ROOT_APP_REPO ? s.appRepoRoot : null))
+    .map((token) => {
+      if (token === HARVEST_ROOT_APP_REPO) return s.appRepoRoot;
+      // The whole downloaded-repos tree (#3664), resolved to `<base>/projects` — read-only, so the
+      // designer can mine other repos' UI. An empty `bscBaseDir` (pre-hydration) contributes nothing.
+      if (token === HARVEST_ROOT_PROJECTS) return s.bscBaseDir ? `${s.bscBaseDir}/projects` : null;
+      return null;
+    })
     .filter((p): p is string => !!p);
   // Newline-separated to match the CLI parser (a Windows path contains both `;` and a `:`).
   if (harvestRoots.length) e.BSC_HARVEST_ROOTS = harvestRoots.join("\n");
