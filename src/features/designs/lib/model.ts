@@ -151,6 +151,13 @@ export interface ComponentRecord {
   /** The raw intrinsic this component REPLACES (`"button"`, `"input"`) — the authoring hint that
    *  derives the flagship anti-duplication lint rule ("use <Name> not a raw <wraps>"). Absent ⇒ none. */
   wraps?: string;
+  /** The registered PLATFORM module specifier this graph component OVERRIDES (#3660, epic #3604) — e.g.
+   *  `@/shared/ui/layout/Spacer`. When present, the runtime loader vendors THIS component's `srcText` in
+   *  place of the bundled module wherever a graph component imports that specifier, so a shared/ui
+   *  primitive renders from the graph (DATA) rather than code. Absent ⇒ the component provides no platform
+   *  override (a normal graph component, imported only as a `@/components/<id>` sibling). Graph-first with a
+   *  code fallback: an unmatched specifier stays external (→ the registry), exactly as before. */
+  provides?: string;
   /** Author-declared lint rules this component contributes to its kit's preset (in addition to the
    *  ones derived from `wraps`). Absent ⇒ none. */
   rules?: KitRule[];
