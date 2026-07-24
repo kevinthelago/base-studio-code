@@ -163,6 +163,10 @@ struct Node {
     /// The component's own implementation `source`, when it carries one (a user-authored module).
     /// The store strips a built-in's `source` (#2794), so this is empty for built-ins.
     source: String,
+    /// The registered PLATFORM module specifier this graph-source component OVERRIDES (#3660), e.g.
+    /// `@/shared/ui/typography/Text` — empty when it's an ordinary component. The runtime loader resolves a
+    /// `@/…` import to the component that `provides` it; the buildability check mirrors that (#43).
+    provides: String,
     /// `(name, type)` per prop — for the slot-shell check (a non-`children` ReactNode content slot).
     props: Vec<(String, String)>,
     /// Whether this is a packaged built-in (its store record is a contract catalog: `source` stripped,
@@ -201,6 +205,7 @@ fn parse_node(v: &Value) -> Option<Node> {
         src_text: s(v, "srcText"),
         src: s(v, "src"),
         source: s(v, "source"),
+        provides: s(v, "provides"),
         props: v
             .get("props")
             .and_then(Value::as_array)
@@ -1133,10 +1138,22 @@ fn analyze_kit(
     let node_by_id: BTreeMap<&str, &&Node> = nodes.iter().map(|n| (n.id.as_str(), n)).collect();
     let name_of = |id: &str| node_by_id.get(id).map(|n| n.name.clone()).unwrap_or_default();
 
-    // The kit's component `src` paths — what a user component's internal (`@/`, `./`) import can resolve
-    // to, so a srcText that COMPOSES a sibling builds and is scanned as the module it is (#3112).
-    let kit_targets: BTreeSet<String> =
-        nodes.iter().map(|n| n.src.clone()).filter(|s| !s.is_empty()).collect();
+    // What a component's internal (`@/`, `./`) import resolves to when the preview BUILDS it — the Rust
+    // mirror of `componentPreviewFiles`'s resolution (#43/#3660): this kit's component `src` paths, the
+    // packaged artifact's built-in sources + runtime closure (the app's real modules), AND every graph
+    // component's `provides` specifier (a graph-source primitive importing a sibling resolves exactly as the
+    // runtime loader does). So a graph-source component composing siblings + app utilities builds — and is
+    // scanned as the module it is — instead of being falsely flagged no-implementation (#3112).
+    let kit_targets: BTreeSet<String> = {
+        let mut t = internal_targets().clone();
+        t.extend(nodes.iter().map(|n| n.src.clone()).filter(|s| !s.is_empty()));
+        for n in nodes {
+            if let Some(base) = resolve_internal_base(&n.provides, "") {
+                t.insert(format!("{base}.tsx"));
+            }
+        }
+        t
+    };
 
     // ── cycles (severity 4) — a `composes` loop; report each SCC of size > 1 (or a self-loop).
     for scc in strongly_connected(nodes, &out_ids) {
@@ -1323,9 +1340,9 @@ fn analyze_kit(
     //     nor first-party) naming NO real library node. A `@bsc/algorithms/<name>` matching a real algorithm
     //     is a NEW resolvable class (the preview vendors its code), NEVER flagged; only a missing one is.
     // Scanned on own-source components (a built-in's `source`, or a `looks_buildable_module` srcText) — the
-    // source the preview actually builds. Mirrors `graphHealth.ts`.
-    let mut targets = internal_targets().clone();
-    targets.extend(nodes.iter().map(|n| n.src.clone()).filter(|s| !s.is_empty()));
+    // source the preview actually builds. Resolution uses `kit_targets` (the full build set: artifact +
+    // node srcs + `provides`, #43), so a graph-source import resolves here exactly as the build does.
+    // Mirrors `graphHealth.ts`.
     for n in nodes {
         let Some(src) = own_module_source(n, &kit_targets) else {
             continue;
@@ -1348,7 +1365,7 @@ fn analyze_kit(
             .collect();
         let mut internal: Vec<String> = specs
             .iter()
-            .filter(|s| is_internal_specifier(s) && !resolves_internal(s, &n.src, &targets))
+            .filter(|s| is_internal_specifier(s) && !resolves_internal(s, &n.src, &kit_targets))
             .cloned()
             .collect();
         for v in [&mut stubbed, &mut library, &mut internal] {
@@ -2863,6 +2880,28 @@ mod tests {
             fs.iter().any(|f| f.category == "no-implementation"),
             "an import resolving to no sibling is not buildable: {fs:?}"
         );
+    }
+
+    #[test]
+    fn a_graph_source_primitive_importing_artifact_and_provides_siblings_is_buildable() {
+        // #43/#3660: a `provides` component (a shared/ui primitive migrated into the graph, #3604) whose
+        // srcText imports an artifact RUNTIME util (`@/shared/ui/layout/space`) AND a SIBLING it provides
+        // (`@/shared/ui/feedback/Skeleton`) is a real, buildable module — resolved via the artifact + the
+        // graph's `provides`, exactly as the runtime loader does — so it is NOT falsely flagged
+        // no-implementation. Before #43 the buildability check saw neither and reported it "a spec, not code".
+        let box_c = json!({ "id":"box", "name":"Box", "kitId":"base-studio-code", "role":"primitive",
+            "used":2, "composes":[], "src":"src/shared/ui/layout/Box.tsx", "source":"",
+            "provides":"@/shared/ui/layout/Box",
+            "srcText":"import { space } from \"@/shared/ui/layout/space\";\nimport { Skeleton } from \"@/shared/ui/feedback/Skeleton\";\nexport function Box(){ return space || Skeleton ? null : null; }" });
+        let skeleton = json!({ "id":"skeleton", "name":"Skeleton", "kitId":"base-studio-code", "role":"primitive",
+            "used":2, "composes":[], "src":"src/shared/ui/feedback/Skeleton.tsx", "source":"",
+            "provides":"@/shared/ui/feedback/Skeleton",
+            "srcText":"export function Skeleton(){ return null; }" });
+        let fs = analyze(&[box_c, skeleton]);
+        assert!(!fs.iter().any(|f| f.category == "no-implementation"),
+            "a graph-source primitive importing an artifact util + a provides-sibling is buildable: {fs:?}");
+        assert!(!fs.iter().any(|f| f.category == "unresolvable-import"),
+            "its @/ imports resolve (artifact + provides), not unresolvable: {fs:?}");
     }
 
     #[test]

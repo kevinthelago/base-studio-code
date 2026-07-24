@@ -500,7 +500,32 @@ export function componentPreviewFiles(
   if (userSource === null) return null;
   const path = comp.src?.trim() ? comp.src : `user/${comp.id || "component"}.tsx`;
 
-  // Sibling modules keyed by their import BASE (`src` minus extension) — what an internal import lands on.
+  // #43/#3660: resolve `@/…` imports the way the RUNTIME loader does, so a graph-source primitive (a
+  // `provides` component migrated from the app, #3604) BUILDS instead of falsely reporting no-implementation.
+  // Three resolution tiers, keyed by the import SPECIFIER (which also sidesteps the `src/`-prefix mismatch a
+  // sibling's `src` path carries):
+  //   (b) the packaged artifact's built-in sources + runtime closure — the app's real modules, seeded first;
+  //   (a) a graph component whose `provides` EQUALS the specifier — its source, seeded AFTER (graph-first
+  //       wins, #3660), keyed at the specifier's mem path so `@/X` resolves to it;
+  //   (c) a sibling user component by `src` base (the pre-#3112 path).
+  const files: Record<string, string> = {};
+  for (const [p, src] of Object.entries(artifact.runtime ?? {})) files[p] = src; // (b) runtime closure
+  for (const c of artifact.components) if (c.source) files[c.src] = c.source;     // (b) built-in sources
+  const artifactBases = new Set(Object.keys(files).map(stripExt));
+
+  // (a) `provides` — a `@/X` specifier → a graph-source component's module, keyed at the mem path for `X`.
+  const providesMod = new Map<string, string>(); // `${base}.tsx` → source
+  const providesSpecs = new Set<string>();        // the `@/…` specifiers the graph provides
+  for (const s of [comp, ...siblings]) {
+    const spec = s.provides?.trim();
+    const impl = ownImplSource(s);
+    const base = spec ? resolveInternalBase(spec, "") : null;
+    if (!spec || !impl || base === null) continue;
+    providesSpecs.add(spec);
+    providesMod.set(`${base}.tsx`, impl);
+  }
+
+  // (c) sibling user components keyed by their import BASE (`src` minus extension).
   const sibByBase = new Map<string, { src: string; source: string }>();
   for (const s of siblings) {
     if (s.id === comp.id) continue;
@@ -508,21 +533,26 @@ export function componentPreviewFiles(
     const sp = s.src?.trim();
     if (source && sp) sibByBase.set(stripExt(sp), { src: sp, source });
   }
-  const resolvesToSibling = (spec: string, fromRel: string): boolean => {
+
+  const resolvesInternal = (spec: string, fromRel: string): boolean => {
+    if (providesSpecs.has(spec)) return true; // (a) exact `provides` match
     const base = resolveInternalBase(spec, fromRel);
-    return base !== null && sibByBase.has(base);
+    return base !== null && (artifactBases.has(base) || providesMod.has(`${base}.tsx`) || sibByBase.has(base)); // (b)/(a)/(c)
   };
 
-  // Buildable? An explicit `source` is trusted; a `srcText` must be a module (sibling-aware when siblings
-  // are supplied, else the conservative `looksBuildableModule` — identical pre-#3112 behavior).
+  // Buildable? An explicit `source` is trusted; a `srcText` must be a module whose internal imports all
+  // resolve (provides / artifact / sibling). `looksBuildableModule` (no `@/` at all) is the fallback when
+  // there is nothing to resolve against.
+  const canResolveInternal = providesMod.size > 0 || sibByBase.size > 0 || artifactBases.size > 0;
   const buildable = explicitSource !== null
-    || (sibByBase.size > 0 ? isPreviewBuildable(userSource, path, resolvesToSibling) : looksBuildableModule(userSource));
+    || (canResolveInternal ? isPreviewBuildable(userSource, path, resolvesInternal) : looksBuildableModule(userSource));
   if (!buildable) return null;
 
-  // Vendor the transitive closure of siblings the source imports (BFS over internal imports). esbuild
-  // tree-shakes, but vendoring only the reachable set keeps the build lean and never parses an unrelated
-  // broken sibling.
-  const files: Record<string, string> = { [path]: userSource };
+  // Seed the graph-first `provides` overrides (they win over the artifact built-in of the same path), the
+  // target's own source, then the transitive closure of SIBLING imports (artifact + provides modules are
+  // already seeded; esbuild tree-shakes the unreached).
+  for (const [key, src] of providesMod) files[key] = src;
+  files[path] = userSource;
   const seenBase = new Set<string>([stripExt(path)]);
   const queue: Array<{ source: string; fromRel: string }> = [{ source: userSource, fromRel: path }];
   while (queue.length) {
