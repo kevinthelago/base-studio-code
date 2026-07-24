@@ -93,6 +93,10 @@ import * as UseClickOutside from "@/shared/hooks/useClickOutside"; // TabBar (#3
 import * as ReactDOM from "react-dom";                             // TabBar: createPortal (#3684)
 import * as Eyebrow from "@/shared/ui/typography/Eyebrow";         // SessionDock (#3684)
 import * as LucideReact from "lucide-react";                       // icons: createLucideIcon (#3686)
+import * as UseGraphViewport from "@/shared/ui/layouts/useGraphViewport"; // GraphCanvas/Tree (#3692)
+import * as RenderProfiler from "@/shared/lib/core/renderProfiler";       // GraphCanvas (#3692)
+import * as TreeLayout from "@/shared/ui/layouts/treeLayout";             // Tree (#3692)
+import * as EdgePath from "@/shared/lib/graph/edgePath";                  // Tree (#3692)
 import { registerAppModule } from "@/shared/lib/runtime/moduleRegistry";
 
 // The FLEET-specific injected leaves (WorkerDetail) + logic (useFleetGithub / fleetCost) are NOT registered
@@ -175,6 +179,10 @@ const PLATFORM: Record<string, unknown> = {
   "react-dom": ReactDOM,
   "@/shared/ui/typography/Eyebrow": Eyebrow,
   "lucide-react": LucideReact,
+  "@/shared/ui/layouts/useGraphViewport": UseGraphViewport,
+  "@/shared/lib/core/renderProfiler": RenderProfiler,
+  "@/shared/ui/layouts/treeLayout": TreeLayout,
+  "@/shared/lib/graph/edgePath": EdgePath,
   "@/shared/lib/core/logsBridge": LogsBridge,
   "@/shared/data/fleet": FleetData,
   "@/shared/hooks/useFleetLive": UseFleetLive,
