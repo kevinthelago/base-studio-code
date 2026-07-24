@@ -65,7 +65,11 @@ export function routeImport(
   path: string,
   resolveGraphSource?: GraphSourceResolver,
 ): { external: true } | { vendor: string } {
-  if (isAppModule(path)) return { external: true };
+  // GRAPH-FIRST (#3660): consult the resolver BEFORE the registry, so a graph component that PROVIDES a
+  // platform specifier (a shared/ui primitive authored as data) overrides the bundled module. An unmatched
+  // specifier (a registered module the graph doesn't override, a library, or an unresolved sibling) returns
+  // null → external → `makeRequire` resolves it via the registry or throws — identical to the pre-#3660
+  // behaviour, so this is inert until a component opts in with `provides`.
   const source = resolveGraphSource?.(path);
   return source != null ? { vendor: source } : { external: true };
 }

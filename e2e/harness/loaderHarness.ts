@@ -21,12 +21,14 @@ import "@/styles/tokens.css";
 const STORE_STUB = { useAppStore: (sel: (s: { tally: number }) => unknown) => sel({ tally: 7 }) };
 
 // A representative GRAPH page (compiled at runtime): a real React hook, `@/store` (→ the stub), a REAL
-// `shared/ui` primitive, and a graph SIBLING via `@/components/<id>` (vendored by the resolver below).
+// `shared/ui` primitive, a graph SIBLING via `@/components/<id>`, and a `@/shared/ui/*` primitive that a
+// graph component OVERRIDES via `provides` (#3660) — all vendored/resolved by the resolver below.
 const PAGE_SOURCE = `
 import { useState } from "react";
 import { useAppStore } from "@/store";
 import { Text } from "@/shared/ui/typography/Text";
 import { Badge } from "@/components/probe-badge";
+import { ProbeTile } from "@/shared/ui/probe-tile";
 export function Probe() {
   const [n, setN] = useState(0);
   const tally = useAppStore(function (s) { return s.tally; });
@@ -35,6 +37,7 @@ export function Probe() {
       <div data-testid="probe">tally:{tally} clicks:{n}</div>
       <Text as="div">from a real shared/ui Text</Text>
       <Badge label="vendored" />
+      <ProbeTile />
       <button data-testid="bump" onClick={function () { setN(n + 1); }}>bump</button>
     </div>
   );
@@ -47,8 +50,18 @@ export function Badge({ label }) {
 }
 `;
 
+// A graph component that PROVIDES a shared/ui specifier (#3660) — the loader must vendor THIS over the
+// registered platform module below, so `data-testid="provide"` reads "graph", not "platform".
+const PROVIDES_SOURCE = `
+export function ProbeTile() {
+  return <span data-testid="provide">graph</span>;
+}
+`;
+
 const resolveGraphSource = (spec: string): string | null =>
-  spec === "@/components/probe-badge" ? SIBLING_SOURCE : null;
+  spec === "@/components/probe-badge" ? SIBLING_SOURCE
+  : spec === "@/shared/ui/probe-tile" ? PROVIDES_SOURCE // graph-first: overrides the registered module
+  : null;
 
 /** Compile + load + mount the representative page; rejects (→ the spec fails) on any loader error. */
 async function load(): Promise<void> {
@@ -57,6 +70,11 @@ async function load(): Promise<void> {
   registerAppModule("react/jsx-runtime", JsxRuntime);
   registerAppModule("@/store", STORE_STUB);
   registerAppModule("@/shared/ui/typography/Text", Text);
+  // Register a PLATFORM ProbeTile that renders "platform" — graph-first (#3660) must SHADOW it with the
+  // provided graph source, so if the override works this registered module is never reached.
+  registerAppModule("@/shared/ui/probe-tile", {
+    ProbeTile: () => React.createElement("span", { "data-testid": "provide" }, "platform"),
+  });
   const Loaded = await loadComponentFromSource(PAGE_SOURCE, resolveGraphSource);
   ReactDOMClient.createRoot(document.getElementById("root")!).render(React.createElement(Loaded));
 }
