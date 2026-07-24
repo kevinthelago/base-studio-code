@@ -212,6 +212,7 @@ const INTERNAL_TARGETS = new Set<string>([
 export type HealthCategory =
   | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "self-reference" | "unresolvable-import"
   | "stubbed-import" // #3696 — a bare npm import rendered via a local shim/stub (sev 1, not an error)
+  | "hardcoded-color" // #3704 — hardcodes color literals + no theme token (not wired to the theme, sev 1)
   | "reimplementation" | "orphan" | "unwired-prop" | "phantom-compose"
   // MOTION checks (#3163, `bsc ui doctor --motion` / `analyzeMotion`) — mechanical faults an author used to
   // hand-diagnose: a dead animation-selector hook, a stroke-dash draw with no pathLength, a CSS-transform
@@ -241,6 +242,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "self-reference": 3,
   "unresolvable-import": 3,
   "stubbed-import": 1,
+  "hardcoded-color": 1,
   reimplementation: 3,
   orphan: 2,
   "unwired-prop": 2,
@@ -276,6 +278,7 @@ export const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string
   "self-reference": { glyph: "↺", label: "self-referential stub — only renders itself; supply its real body" },
   "unresolvable-import": { glyph: "↯", label: "imports a package the preview can't resolve — throws at preview time" },
   "stubbed-import": { glyph: "◍", label: "imports a non-curated package — renders via a local shim/stub (approximate, not the real package)" },
+  "hardcoded-color": { glyph: "▦", label: "hardcodes colors + no theme token — won't follow the active theme; wire it to var(--…) tokens" },
   reimplementation: { glyph: "♻", label: "reimplements a library node — compose it via @bsc/… instead of re-coding it" },
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
   "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
@@ -331,6 +334,21 @@ function cycleNodes(ids: string[], out: Map<string, string[]>): Set<string> {
   };
   for (const id of ids) if ((color.get(id) ?? 0) === 0) dfs(id);
   return onCycle;
+}
+
+/** The hardcoded COLOR literals in `text` (#3704) — a 6- or 8-digit hex or an `rgb()/rgba()/hsl()/hsla()/
+ *  oklch()/oklab()` function; the leak candidates a theme change can't reach. A 3-digit `#219` (an issue
+ *  ref) is skipped. Rust twin: `color_literals`. */
+function colorLiterals(text: string): string[] {
+  const hex = text.match(/#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6})\b/g) ?? [];
+  const fns = text.match(/\b(?:rgba|rgb|hsla|hsl|oklch|oklab)\(/gi) ?? [];
+  return [...hex, ...fns.map((f) => f.replace("(", ""))];
+}
+
+/** Does `text` reference a THEME TOKEN (`var(--…)`)? A component that does is wired to the theme. Rust twin:
+ *  `uses_theme_token`. */
+function usesThemeToken(text: string): boolean {
+  return text.includes("var(--");
 }
 
 /**
@@ -413,6 +431,22 @@ export function analyzeGraphHealth(
       findings.push({ category: "no-implementation", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
         why: `${c.name} has no buildable implementation — the preview can't render it (a spec, not code)` });
     }
+  }
+
+  // hardcoded-color (#3704) — a component NOT wired to the theme: its own source hardcodes color literals
+  // (hex / rgb / hsl / oklch) and references NO `var(--…)` design token, so it won't follow the active
+  // theme/preset (the contract is "components reference ONLY semantic tokens, never raw colors"). Built-ins
+  // are skipped (their record is a curated snippet). Uses the node's own source, independent of
+  // buildability, so an unthemed mobile component is flagged whether or not its imports resolve. Rust twin.
+  for (const c of comps) {
+    if (c.builtin) continue;
+    const src = (c.source && c.source.trim() ? c.source : c.srcText) ?? "";
+    if (!src.trim() || usesThemeToken(src)) continue;
+    const colors = colorLiterals(src);
+    if (!colors.length) continue;
+    const sample = colors.slice(0, 4).map((x) => `\`${x}\``).join(", ") + (colors.length > 4 ? `, +${colors.length - 4}` : "");
+    findings.push({ category: "hardcoded-color", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
+      why: `${c.name} hardcodes ${colors.length} color literal${colors.length === 1 ? "" : "s"} (${sample}) and references no theme token — it won't follow the active theme/preset` });
   }
 
   // self-reference — an own-module component whose only rendered element is ITSELF (`<Name/>`): a
