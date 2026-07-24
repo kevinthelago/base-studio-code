@@ -8,7 +8,7 @@
 // lib/mcpServers.ts. Decomposed into colocated modules (#2151); this barrel keeps
 // the original public API intact so every importer works unchanged.
 
-export { type SkillDef, skillSlug, blankSkill } from "./skillsModel";
+export { type SkillDef, skillSlug, skillContentKey, blankSkill } from "./skillsModel";
 export { skillFromPayload, seedSkills, refreshPackagedSkills } from "./skillsSeed";
 export {
   resolveSkills, sessionSkillState, effectiveSessionSkills, applySessionSkillChoice,
