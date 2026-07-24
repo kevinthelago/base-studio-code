@@ -87,28 +87,6 @@ export function usePlanPublish(deps: PlanPublishDeps) {
   // self-rendering modal node the JSX mounts.
   const { confirm, dialog: quarantineDialog } = useConfirmDialog();
 
-  // #3044 re-triage: when a "Relaunch fleet" action (projects list / Glance) targeted THIS project, auto-
-  // fire the launch once its planning session has finished loading (planFleet/planReady hydrate async).
-  // launchTriage self-gates via canLaunchTriage, so an early call is a harmless no-op — we re-check each
-  // render and fire EXACTLY once (clear the signal before launching). Reuses the whole tested launch path.
-  const relaunchOnOpen = useAppStore((s) => s.relaunchOnOpen);
-  const setRelaunchOnOpen = useAppStore((s) => s.setRelaunchOnOpen);
-  useEffect(() => {
-    if (relaunchOnOpen !== effectiveProjectId) return;
-    const fleet = planFleet[effectiveProjectId];
-    const ready = canLaunchTriage({
-      published: !!activeProjectId,
-      hasRepos: publishRepos.length > 0,
-      hasFleet: !!fleet && fleet.streams.length > 0,
-      busy: triaging,
-      planReady,
-    });
-    if (!ready) return; // still loading — leave the signal set and re-check on the next render
-    setRelaunchOnOpen(null); // fire once
-    void launchTriage();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- launchTriage is re-created each render; the relaunchOnOpen guard makes re-runs safe, and it only fires when the target is loaded + launchable.
-  }, [relaunchOnOpen, effectiveProjectId, planFleet, activeProjectId, publishRepos, planReady, triaging, setRelaunchOnOpen]);
-
   async function launchTriage() {
     const fleet = planFleet[effectiveProjectId];
     // Pre-flight gate (#444/#551) — mirror the button's gate so a programmatic / Enter-key
