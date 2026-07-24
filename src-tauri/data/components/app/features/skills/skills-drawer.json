@@ -9,6 +9,7 @@
     "Banner",
     "Box",
     "Field",
+    "Pane",
     "Row",
     "SegmentedControl",
     "Spacer",

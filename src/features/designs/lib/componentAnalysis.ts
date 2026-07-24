@@ -20,6 +20,7 @@ export type NameResolver = (specifier: string) => string | null;
 const LAYOUT_NAMES = new Set([
   "Box", "Stack", "Row", "Grid", "Spacer", "Screen", "MasterDetail", "SectionHeader", "SectionLabel",
   "GraphRail", "GraphCanvas", "RailRow", "RailSection", "Pane", "TabBar", "Divider",
+  "ModalScrim", "ModalCard", "Dialog", "GraphLegend", "RailGroupHeader", "PaneGrid", "SessionDock", "SplitView",
 ]);
 
 /** Content-atom FUNDAMENTALS — always `primitive`, even if they compose a utility (a Skeleton loading

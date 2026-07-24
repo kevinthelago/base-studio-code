@@ -8,6 +8,7 @@
   "composes": [
     "Box",
     "Button",
+    "ModalScrim",
     "Row",
     "Text"
   ],
