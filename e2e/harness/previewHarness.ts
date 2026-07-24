@@ -123,7 +123,7 @@ export interface MountOptions {
 declare global {
   interface Window {
     /** The Playwright-facing entry point, installed below. */
-    __previewHarness?: { mount: (opts?: MountOptions) => Promise<void> };
+    __previewHarness?: { mount: (opts?: MountOptions) => Promise<void>; mountRaw: (source: string) => Promise<void> };
     /** #3596: every `{__navigate}` the inspect layer posts, in order — the spec reads this. */
     __navigations?: string[];
     /** #3596: per-child click counters set inside the composing fixture's iframe (`ChildA`/`ChildB`),
@@ -154,7 +154,12 @@ async function mount(opts: MountOptions = {}): Promise<void> {
     inspect: opts.inspect,
   });
 
-  await new Promise<void>((resolve, reject) => {
+  await assignAndWait(iframe, srcDoc);
+}
+
+/** Assign a srcdoc to the preview iframe and resolve once it reports `ready`; reject on `error`/timeout. */
+function assignAndWait(iframe: HTMLIFrameElement, srcDoc: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       window.removeEventListener("message", onMsg);
       reject(new Error("preview harness: iframe never reported ready"));
@@ -179,6 +184,20 @@ async function mount(opts: MountOptions = {}): Promise<void> {
   });
 }
 
+/**
+ * Bundle + mount ARBITRARY component source through the shipped chain (`bundleComponent` →
+ * `buildComponentSrcDoc`) under the real CSP — for the #3696 shim-resolution spec. A component importing
+ * native/unknown packages (react-native, expo-router, a made-up package) must BUNDLE + RENDER (its imports
+ * resolve to bundled-in local shims/stubs), not fail with "Failed to resolve module specifier". Offline: the
+ * universal stub needs no React, so this exercises the whole resolution path with zero CDN dependency.
+ */
+async function mountRaw(source: string): Promise<void> {
+  const iframe = document.getElementById("preview") as HTMLIFrameElement;
+  const js = await bundleComponent({ "fixture.ts": source }, "fixture.ts");
+  const srcDoc = buildComponentSrcDoc(js, { injectedCss: collectAppCss(), theme: "dark" });
+  await assignAndWait(iframe, srcDoc);
+}
+
 // #3596: record every `{__navigate}` the inspect layer posts from a mounted preview, so the spec can
 // assert Alt-click navigation. Correlating by source window is unnecessary here (only one preview mounts).
 window.__navigations = [];
@@ -187,4 +206,4 @@ window.addEventListener("message", (e: MessageEvent) => {
   if (d && typeof d.__navigate === "string") window.__navigations!.push(d.__navigate);
 });
 
-window.__previewHarness = { mount };
+window.__previewHarness = { mount, mountRaw };
