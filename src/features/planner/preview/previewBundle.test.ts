@@ -43,6 +43,8 @@ describe("previewBundle — buildPreviewSrcDoc", () => {
     expect(doc).toContain("/*BUNDLE*/");
     expect(doc).toContain('__preview');                   // ready/error postMessage
     expect(doc).toContain('id="root"');
+    expect(doc).toContain('http-equiv="Content-Security-Policy"'); // #3696 — same iframe lockdown
+    expect(doc).toContain("connect-src 'none'");
   });
   it("react + three are in the externals list", () => {
     expect(PREVIEW_EXTERNALS).toContain("react");

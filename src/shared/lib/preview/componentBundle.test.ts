@@ -50,6 +50,13 @@ describe("componentBundle — buildComponentSrcDoc", () => {
     expect(doc).toContain('__preview: "error"');               // error signal to the host
   });
 
+  it("locks the iframe with a CSP that blocks exfiltration + uncurated code (#3696)", () => {
+    const doc = buildComponentSrcDoc("X");
+    expect(doc).toContain('http-equiv="Content-Security-Policy"');
+    expect(doc).toContain("connect-src 'none'");               // a compromised esm.sh dep can render but can't phone home
+    expect(doc).toContain("script-src 'unsafe-inline' https://esm.sh"); // only the inlined bundle + curated CDN
+  });
+
   it("defaults to the shared import-map + dark theme", () => {
     const doc = buildComponentSrcDoc("X");
     expect(doc).toContain('data-theme="dark"');

@@ -206,6 +206,7 @@ const INTERNAL_TARGETS = new Set<string>([
 
 export type HealthCategory =
   | "cycle" | "dangling-branch" | "duplicate" | "no-implementation" | "self-reference" | "unresolvable-import"
+  | "stubbed-import" // #3696 — a bare npm import rendered via a local shim/stub (sev 1, not an error)
   | "reimplementation" | "orphan" | "unwired-prop" | "phantom-compose"
   // MOTION checks (#3163, `bsc ui doctor --motion` / `analyzeMotion`) — mechanical faults an author used to
   // hand-diagnose: a dead animation-selector hook, a stroke-dash draw with no pathLength, a CSS-transform
@@ -234,6 +235,7 @@ export const HEALTH_SEVERITY: Record<HealthCategory, number> = {
   "no-implementation": 3,
   "self-reference": 3,
   "unresolvable-import": 3,
+  "stubbed-import": 1,
   reimplementation: 3,
   orphan: 2,
   "unwired-prop": 2,
@@ -268,6 +270,7 @@ export const HEALTH_BADGE: Record<HealthCategory, { glyph: string; label: string
   "no-implementation": { glyph: "∅", label: "no buildable implementation — a spec, not code" },
   "self-reference": { glyph: "↺", label: "self-referential stub — only renders itself; supply its real body" },
   "unresolvable-import": { glyph: "↯", label: "imports a package the preview can't resolve — throws at preview time" },
+  "stubbed-import": { glyph: "◍", label: "imports a non-curated package — renders via a local shim/stub (approximate, not the real package)" },
   reimplementation: { glyph: "♻", label: "reimplements a library node — compose it via @bsc/… instead of re-coding it" },
   orphan: { glyph: "○", label: "orphan — isolated & unused" },
   "unwired-prop": { glyph: "⊘", label: "unwired props — declares an interface its source never uses" },
@@ -437,17 +440,25 @@ export function analyzeGraphHealth(
     if (!src) continue;
     const specs = importSpecifiers(src);
     // A `@bsc/…` library spec is bare-shaped but resolves against the algorithms store, NOT the import-map
-    // — so it's excluded from `bare` and judged by `libraryModuleResolver` (resolvable ⇒ vendored ⇒ clean).
+    // — so it's excluded from `stubbed` and judged by `libraryModuleResolver` (resolvable ⇒ vendored ⇒ clean).
     const library = specs.filter((s) => isLibrarySpec(s) && libResolver(s) === null).sort();
-    const bare = specs.filter((s) => isBareSpecifier(s) && !isLibrarySpec(s) && !RESOLVABLE_SPECIFIERS.has(s)).sort();
+    // #3696: a bare npm specifier that isn't a curated preview external no longer FAILS — the preview bundles
+    // a local shim/stub for it, so it renders approximately → a severity-1 `stubbed-import` note, not an error.
+    const stubbed = specs.filter((s) => isBareSpecifier(s) && !isLibrarySpec(s) && !RESOLVABLE_SPECIFIERS.has(s)).sort();
     const internal = specs.filter((s) => isInternalSpecifier(s) && !resolvesInternal(s, c.src, internalTargets)).sort();
-    if (bare.length === 0 && internal.length === 0 && library.length === 0) continue;
-    const reasons: string[] = [];
-    if (bare.length) reasons.push(`${fmtSpecs(bare)} (no preview import-map entry)`);
-    if (library.length) reasons.push(`${fmtSpecs(library)} (no matching node in the library)`);
-    if (internal.length) reasons.push(`${fmtSpecs(internal)} (no such module in the kit or its runtime closure)`);
-    findings.push({ category: "unresolvable-import", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
-      why: `${c.name} imports ${reasons.join("; ")} — the preview can't resolve it, so it throws "module not found" when rendered` });
+    // GENUINELY unresolvable (sev 3): a `@/…`/relative or `@bsc/…` import with NO stub fallback.
+    if (internal.length || library.length) {
+      const reasons: string[] = [];
+      if (library.length) reasons.push(`${fmtSpecs(library)} (no matching node in the library)`);
+      if (internal.length) reasons.push(`${fmtSpecs(internal)} (no such module in the kit or its runtime closure)`);
+      findings.push({ category: "unresolvable-import", severity: 3, nodeIds: [c.id], nodeNames: [c.name],
+        why: `${c.name} imports ${reasons.join("; ")} — the preview can't resolve it, so it throws "module not found" when rendered` });
+    }
+    // STUBBED npm imports (sev 1): renders, but via a local shim/stub, not the real package (#3696).
+    if (stubbed.length) {
+      findings.push({ category: "stubbed-import", severity: 1, nodeIds: [c.id], nodeNames: [c.name],
+        why: `${c.name} imports ${fmtSpecs(stubbed)} — not a curated preview external, so the preview renders it via a bundled-in local shim/stub (approximate, not the real package)` });
+    }
   }
 
   // reimplementation — the "compose, don't recreate" guardrail (#3118, epic #3114). An own-source

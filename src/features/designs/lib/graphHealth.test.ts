@@ -134,8 +134,9 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(cats).not.toContain("unwired-prop");
   });
 
-  it("flags a user component importing a preview-unresolvable package as unresolvable-import (#2934)", () => {
-    // Imports d3-scale (NOT in the preview import-map) alongside react + lucide-react (both pinned).
+  it("notes a bare npm miss as stubbed-import, not an error (#3696)", () => {
+    // Imports d3-scale (NOT a curated external) alongside react + lucide-react (both pinned). A bare npm miss
+    // no longer FAILS — the preview bundles a local stub for it → a severity-1 `stubbed-import` note.
     const chart = comp("Chart", "composite", 2, [], {
       source: undefined,
       srcText:
@@ -143,12 +144,13 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
         "export function Chart(){ return React.createElement(Icon, null, scaleLinear); }",
     });
     const fs = analyzeGraphHealth([chart]);
-    const f = fs.find((x) => x.category === "unresolvable-import");
+    const f = fs.find((x) => x.category === "stubbed-import");
     expect(f).toBeTruthy();
-    expect(f!.severity).toBe(3);
-    expect(f!.why).toContain("d3-scale"); // not in the map → flagged
-    expect(f!.why).not.toContain("`react`"); // react is pinned → resolvable, not listed
-    expect(f!.why).not.toContain("`lucide-react`"); // pinned (#2934) → resolvable, not listed
+    expect(f!.severity).toBe(1);
+    expect(f!.why).toContain("d3-scale"); // not curated → stubbed
+    expect(f!.why).not.toContain("`react`"); // react is pinned → real, not listed
+    expect(f!.why).not.toContain("`lucide-react`"); // pinned → real, not listed
+    expect(fs.some((x) => x.category === "unresolvable-import")).toBe(false); // a bare npm miss is no longer an ERROR
   });
 
   it("does NOT flag unresolvable-import when every import resolves, or for a non-module snippet (#2934)", () => {
@@ -162,20 +164,22 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(cats).not.toContain("unresolvable-import");
   });
 
-  it("does NOT flag an absolute URL import (esm.sh) but still flags a bare miss (#2963)", () => {
+  it("keeps an absolute URL import clean and a bare miss only a stub note (#2963/#3696)", () => {
     // A full esm.sh URL resolves directly in the preview (the import-map's own values are esm.sh URLs).
     const urlImport = comp("Chart", "composite", 2, [], {
       source: undefined,
       srcText: 'import * as d3 from "https://esm.sh/d3@7";\nexport function Chart(){ return d3; }',
     });
-    // a genuine bare package missing from the map is STILL flagged.
+    // a genuine bare package missing from the curated externals is now a stub NOTE, not an error.
     const bareMiss = comp("Bad", "composite", 2, [], {
       source: undefined,
       srcText: 'import { scaleLinear } from "d3-scale";\nexport function Bad(){ return scaleLinear; }',
     });
-    const flagged = analyzeGraphHealth([urlImport, bareMiss]).filter((f) => f.category === "unresolvable-import");
-    expect(flagged.map((f) => f.nodeNames[0])).toEqual(["Bad"]); // only the bare miss
-    expect(flagged[0].why).toContain("d3-scale");
+    const fs = analyzeGraphHealth([urlImport, bareMiss]);
+    expect(fs.some((f) => f.category === "unresolvable-import")).toBe(false); // neither a URL nor a bare miss is an ERROR
+    const stubbed = fs.filter((f) => f.category === "stubbed-import");
+    expect(stubbed.map((f) => f.nodeNames[0])).toEqual(["Bad"]); // only the bare miss
+    expect(stubbed[0].why).toContain("d3-scale");
   });
 
   it("resolves @bsc/algorithms/fibonacci (not flagged) but flags @bsc/algorithms/<missing> (#3116)", () => {
