@@ -11,7 +11,7 @@
 //   • `role` — the TIER (`primitive | composite | layout | page | service`): the swimlane band. A page stays
 //     a page; a structural container is a layout; anything that ASSEMBLES (composes a sibling, or renders
 //     several imported components) is a composite; a leaf atom is a primitive.
-import type { ComponentRecord, Role } from "./model";
+import type { ComponentRecord, PropSpec, Role } from "./model";
 
 /** Resolve an import specifier → the composed graph component's NAME, or null if it's not a graph node. */
 export type NameResolver = (specifier: string) => string | null;
@@ -68,10 +68,37 @@ export function deriveRole(name: string, existingRole: string | undefined, compo
   return "primitive";
 }
 
-/** The categorization metadata derived for one record — `composes` (edges) + `role` (tier). */
+/** Derive the PROP interface of a record's PRIMARY component (`interface <name>Props {…}`) → PropSpec[].
+ *  Single-component records get their props; a record with no `<name>Props` interface (a page with an inline
+ *  prop type, or a multi-export barrel like charts) gets `[]` — accurate, not wrong. `desc` is left empty
+ *  (author/LLM fills it); `name`/`type`/`req` are the catalog signal. */
+export function deriveProps(srcText: string, name: string): PropSpec[] {
+  const open = srcText.search(new RegExp(`interface\\s+${name}Props\\b[^{]*\\{`));
+  if (open < 0) return [];
+  const braceAt = srcText.indexOf("{", open);
+  let depth = 0, end = -1;
+  for (let k = braceAt; k < srcText.length; k++) {
+    if (srcText[k] === "{") depth++;
+    else if (srcText[k] === "}" && --depth === 0) { end = k; break; }
+  }
+  if (end < 0) return [];
+  const body = srcText.slice(braceAt + 1, end)
+    .replace(/\/\*[\s\S]*?\*\//g, "") // strip block/JSDoc comments
+    .replace(/\/\/[^\n]*/g, "");      // strip line comments
+  const props: PropSpec[] = [];
+  const re = /(?:^|[;\n{])\s*([A-Za-z_]\w*)(\?)?\s*:\s*([\s\S]*?);/g; // name(?): type;  (type may span lines)
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    props.push({ name: m[1], type: m[3].replace(/\s+/g, " ").trim().slice(0, 100), req: !m[2], desc: "" });
+  }
+  return props;
+}
+
+/** The categorization metadata derived for one record — `composes` (edges) + `role` (tier) + `props`. */
 export interface DerivedMeta {
   composes: string[];
   role: Role;
+  props: PropSpec[];
 }
 
 /** Analyze a record: derive its `composes` edges + `role` tier from its `srcText`. `role` is typed loosely
@@ -83,7 +110,8 @@ export function analyzeComponent(
 ): DerivedMeta {
   const composes = deriveComposes(record.srcText, resolveName);
   const role = deriveRole(record.name, record.role, composes, renderedComponentCount(record.srcText));
-  return { composes, role };
+  const props = deriveProps(record.srcText, record.name);
+  return { composes, role, props };
 }
 
 /** Build a `NameResolver` from a component set: `@/components/<id>` → the record's name; a `@/shared/ui/*`

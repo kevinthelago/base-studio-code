@@ -11,5 +11,79 @@
     "Row",
     "Stack"
   ],
-  "src": "src/shared/ui/layouts/MasterDetail.tsx"
+  "src": "src/shared/ui/layouts/MasterDetail.tsx",
+  "props": [
+    {
+      "name": "rail",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "detail",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "toolbar",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "railWidth",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "railPad",
+      "type": "Space | [Space, Space]",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "detailPad",
+      "type": "Space | [Space, Space]",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "resizable",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "railMin",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "railMax",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "railStyle",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "detailStyle",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    }
+  ]
 }

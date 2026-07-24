@@ -9,5 +9,61 @@
   "composes": [
     "Box"
   ],
-  "src": "src/shared/ui/layouts/TabBar.tsx"
+  "src": "src/shared/ui/layouts/TabBar.tsx",
+  "props": [
+    {
+      "name": "tabs",
+      "type": "TabItem[]",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "activeId",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onSelect",
+      "type": "(id: string) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onReorder",
+      "type": "(from: number, to: number) => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onTearOff",
+      "type": "(id: string) => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onClose",
+      "type": "(id: string) => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onAdd",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onRename",
+      "type": "(id: string, name: string) => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "renderMenu",
+      "type": "(id: string, ctx: { close: () => void",
+      "req": false,
+      "desc": ""
+    }
+  ]
 }

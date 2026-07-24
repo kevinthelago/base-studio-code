@@ -9,5 +9,37 @@
   "composes": [
     "ModalScrim"
   ],
-  "src": "src/shared/ui/overlay/Dialog.tsx"
+  "src": "src/shared/ui/overlay/Dialog.tsx",
+  "props": [
+    {
+      "name": "title",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "children",
+      "type": "React.ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "actions",
+      "type": "React.ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onDismiss",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "danger",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    }
+  ]
 }

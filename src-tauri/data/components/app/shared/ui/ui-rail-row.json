@@ -9,5 +9,67 @@
   "composes": [
     "Box"
   ],
-  "src": "src/shared/ui/layouts/RailRow.tsx"
+  "src": "src/shared/ui/layouts/RailRow.tsx",
+  "props": [
+    {
+      "name": "active",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onClick",
+      "type": "(e: MouseEvent) => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "leading",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "trailing",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "caret",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "indent",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "weight",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "style",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "children",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    }
+  ]
 }

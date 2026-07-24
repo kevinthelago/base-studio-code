@@ -10,5 +10,67 @@
     "Box",
     "TabBar"
   ],
-  "src": "src/shared/ui/layouts/Screen.tsx"
+  "src": "src/shared/ui/layouts/Screen.tsx",
+  "props": [
+    {
+      "name": "tabs",
+      "type": "TabItem[]",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "active",
+      "type": "string",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onSelect",
+      "type": "(id: string) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onReorder",
+      "type": "(from: number, to: number) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onTearOff",
+      "type": "(id: string) => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "pageOverride",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "bodyClassName",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "children",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "overlay",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    }
+  ]
 }

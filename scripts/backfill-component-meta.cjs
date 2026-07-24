@@ -39,6 +39,18 @@ const deriveRole = (name, existingRole, composes, rendered) => {
   if (composes.length >= 1 || rendered >= 3) return "composite";
   return "primitive";
 };
+const deriveProps = (srcText, name) => {
+  const open = srcText.search(new RegExp(`interface\\s+${name}Props\\b[^{]*\\{`));
+  if (open < 0) return [];
+  const braceAt = srcText.indexOf("{", open);
+  let depth = 0, end = -1;
+  for (let k = braceAt; k < srcText.length; k++) { if (srcText[k] === "{") depth++; else if (srcText[k] === "}" && --depth === 0) { end = k; break; } }
+  if (end < 0) return [];
+  const body = srcText.slice(braceAt + 1, end).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  const props = []; const re = /(?:^|[;\n{])\s*([A-Za-z_]\w*)(\?)?\s*:\s*([\s\S]*?);/g; let m;
+  while ((m = re.exec(body)) !== null) props.push({ name: m[1], type: m[3].replace(/\s+/g, " ").trim().slice(0, 100), req: !m[2], desc: "" });
+  return props;
+};
 // ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 // collect every extracted record
@@ -62,14 +74,15 @@ for (const { f, j } of records) {
   if (j.kitId !== KIT) continue;
   const composes = deriveComposes(j.srcText || "", resolveName);
   const role = deriveRole(j.name, j.role, composes, renderedComponentCount(j.srcText || ""));
+  const props = deriveProps(j.srcText || "", j.name);
   const src = j.src || `src/${j.group}/${j.name}.tsx`;
-  const before = JSON.stringify([j.composes || [], j.role, j.src || null]);
-  const after = JSON.stringify([composes, role, src]);
+  const before = JSON.stringify([j.composes || [], j.role, j.src || null, j.props || []]);
+  const after = JSON.stringify([composes, role, src, props]);
   if (before !== after) {
-    j.composes = composes; j.role = role; j.src = src;
+    j.composes = composes; j.role = role; j.src = src; j.props = props;
     fs.writeFileSync(f, JSON.stringify(j, null, 2) + "\n");
     changed++;
-    console.log(`  ${j.id.padEnd(24)} role→${role.padEnd(9)} composes[${composes.length}] ${composes.slice(0, 4).join(",")}${composes.length > 4 ? "…" : ""}`);
+    console.log(`  ${j.id.padEnd(24)} role→${role.padEnd(9)} composes[${composes.length}] props[${props.length}] ${composes.slice(0, 3).join(",")}`);
   }
 }
 console.log(`\nbackfilled ${changed}/${inKit.length} ${KIT} records`);
