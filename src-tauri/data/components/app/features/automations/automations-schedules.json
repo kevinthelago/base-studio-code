@@ -13,6 +13,7 @@
     "EmptyState",
     "Field",
     "Grid",
+    "Pane",
     "Row",
     "SegmentedControl",
     "Stack",

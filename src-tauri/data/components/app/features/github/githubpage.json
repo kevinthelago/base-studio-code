@@ -11,8 +11,11 @@
     "GitHubEmpty",
     "GitHubPulse",
     "GitHubSummary",
+    "MasterDetail",
     "Row",
+    "Screen",
     "Stack",
+    "TabBar",
     "Text"
   ],
   "src": "src/features/github/GitHubWorkspace.tsx"

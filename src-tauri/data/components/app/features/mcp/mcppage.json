@@ -12,10 +12,13 @@
     "EmptyState",
     "Field",
     "McpAnalytics",
+    "Pane",
     "Row",
+    "Screen",
     "SectionHeader",
     "SegmentedControl",
     "Skeleton",
+    "TabBar",
     "Text"
   ],
   "src": "src/features/mcp/McpWorkspace.tsx"
