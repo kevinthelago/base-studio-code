@@ -38,24 +38,31 @@ describe("classifyImport (#3605)", () => {
   });
 });
 
-describe("routeImport — platform external · sibling vendored · else external (#3606)", () => {
-  it("registered → external; a resolved sibling → vendored; everything else → external", () => {
+describe("routeImport — GRAPH-FIRST: resolver override · sibling vendored · else external (#3606/#3660)", () => {
+  it("a resolved specifier vendors (even one it OVERRIDES); everything unresolved → external (code fallback)", () => {
     registerAppModule("react", React);
     registerAppModule("@/store", {});
-    const panels: Record<string, string> = { "@/components/worker-board": "export const P = () => null;" };
-    const resolve = (s: string) => panels[s] ?? null;
+    registerAppModule("@/shared/ui/data/Chip", { Chip: () => null }); // the bundled platform Chip…
+    const graph: Record<string, string> = {
+      "@/components/worker-board": "export const P = () => null;", //          …a graph SIBLING
+      "@/shared/ui/data/Chip": "export const Chip = () => null;", //           …a graph OVERRIDE of the platform Chip (#3660)
+    };
+    const resolve = (s: string) => graph[s] ?? null;
 
-    // platform (registered) → external, even though a resolver is present
+    // GRAPH-FIRST (#3660): a component that PROVIDES a platform specifier overrides the registry → vendored,
+    // so a shared/ui primitive can render from the graph (DATA) rather than the bundled module.
+    expect(routeImport("@/shared/ui/data/Chip", resolve)).toEqual({ vendor: graph["@/shared/ui/data/Chip"] });
+    // a graph sibling the app resolves → vendored (its source bundles in)
+    expect(routeImport("@/components/worker-board", resolve)).toEqual({ vendor: graph["@/components/worker-board"] });
+    // an UNRESOLVED registered module → external → the registry (the code fallback, identical to pre-#3660)
     expect(routeImport("react", resolve)).toEqual({ external: true });
     expect(routeImport("@/store", resolve)).toEqual({ external: true });
-    // a graph sibling the app resolves → vendored (its source bundles in)
-    expect(routeImport("@/components/worker-board", resolve)).toEqual({ vendor: panels["@/components/worker-board"] });
     // a first-party path the resolver does NOT know → external (→ require throws a named error)
     expect(routeImport("@/components/missing", resolve)).toEqual({ external: true });
     // a bare library → external
     expect(routeImport("d3", resolve)).toEqual({ external: true });
-    // no resolver at all → degrades to #3605 "everything external"
-    expect(routeImport("@/components/worker-board")).toEqual({ external: true });
+    // no resolver at all → degrades to #3605 "everything external" (no override possible)
+    expect(routeImport("@/shared/ui/data/Chip")).toEqual({ external: true });
   });
 });
 
