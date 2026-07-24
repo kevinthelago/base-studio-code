@@ -13,5 +13,133 @@
     "Stack",
     "Text"
   ],
-  "src": "src/shared/ui/layouts/GraphCanvas.tsx"
+  "src": "src/shared/ui/layouts/GraphCanvas.tsx",
+  "props": [
+    {
+      "name": "vp",
+      "type": "GraphViewport",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "world",
+      "type": "{ w: number",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "toolbar",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "children",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "rail",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "inspector",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "dock",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "overlays",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "grid",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "gridSize",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "gridColor",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "canvasBackground",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "profileId",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "railResizable",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "railWidth",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "railMax",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "inspectorResizable",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "inspectorWidth",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "inspectorMax",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onBackgroundClick",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    }
+  ]
 }

@@ -11,5 +11,79 @@
     "Row",
     "Stack"
   ],
-  "src": "src/shared/ui/layouts/Sequence.tsx"
+  "src": "src/shared/ui/layouts/Sequence.tsx",
+  "props": [
+    {
+      "name": "steps",
+      "type": "SequenceStep[]",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "detail",
+      "type": "(step: SequenceStep) => ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "orientation",
+      "type": "\"horizontal\" | \"vertical\"",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "toolbar",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "selectedId",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "defaultSelectedId",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onSelect",
+      "type": "(id: string) => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "railWidth",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "detailPad",
+      "type": "Space | [Space, Space]",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "stripStyle",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "detailStyle",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    }
+  ]
 }

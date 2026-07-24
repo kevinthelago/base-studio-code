@@ -9,5 +9,67 @@
   "composes": [
     "Skeleton"
   ],
-  "src": "src/shared/ui/typography/Text.tsx"
+  "src": "src/shared/ui/typography/Text.tsx",
+  "props": [
+    {
+      "name": "children",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "size",
+      "type": "TextSize",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "tone",
+      "type": "Tone",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "mono",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "weight",
+      "type": "CSSProperties[\"fontWeight\"]",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "as",
+      "type": "ElementType",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "loading",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "loadingWidth",
+      "type": "number | string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "style",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    }
+  ]
 }

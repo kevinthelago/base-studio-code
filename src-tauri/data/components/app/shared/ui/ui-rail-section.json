@@ -10,5 +10,43 @@
     "Box",
     "RailGroupHeader"
   ],
-  "src": "src/shared/ui/layouts/RailSection.tsx"
+  "src": "src/shared/ui/layouts/RailSection.tsx",
+  "props": [
+    {
+      "name": "label",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "count",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "open",
+      "type": "boolean",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "onToggle",
+      "type": "() => void",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "action",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "children",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    }
+  ]
 }

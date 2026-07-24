@@ -9,5 +9,31 @@
   "composes": [
     "Box"
   ],
-  "src": "src/shared/ui/feedback/Skeleton.tsx"
+  "src": "src/shared/ui/feedback/Skeleton.tsx",
+  "props": [
+    {
+      "name": "w",
+      "type": "number | string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "h",
+      "type": "number | string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "radius",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "style",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    }
+  ]
 }

@@ -14,5 +14,115 @@
     "Row",
     "Text"
   ],
-  "src": "src/shared/ui/overlay/ModalCard.tsx"
+  "src": "src/shared/ui/overlay/ModalCard.tsx",
+  "props": [
+    {
+      "name": "title",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "sub",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "icon",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "iconBackground",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "iconColor",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "onClose",
+      "type": "() => void",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "busy",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "width",
+      "type": "number | string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "maxHeight",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "align",
+      "type": "\"center\" | \"start\"",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "blur",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "headExtra",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "foot",
+      "type": "ReactNode",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "bodyStyle",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "footStyle",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "ariaLabel",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "children",
+      "type": "ReactNode",
+      "req": true,
+      "desc": ""
+    }
+  ]
 }

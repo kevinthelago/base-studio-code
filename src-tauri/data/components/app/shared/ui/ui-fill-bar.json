@@ -9,5 +9,55 @@
   "composes": [
     "Skeleton"
   ],
-  "src": "src/shared/ui/data/FillBar.tsx"
+  "src": "src/shared/ui/data/FillBar.tsx",
+  "props": [
+    {
+      "name": "value",
+      "type": "number",
+      "req": true,
+      "desc": ""
+    },
+    {
+      "name": "loading",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "color",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "track",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "height",
+      "type": "number",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "rounded",
+      "type": "boolean",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "className",
+      "type": "string",
+      "req": false,
+      "desc": ""
+    },
+    {
+      "name": "style",
+      "type": "CSSProperties",
+      "req": false,
+      "desc": ""
+    }
+  ]
 }

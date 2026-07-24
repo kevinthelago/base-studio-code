@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveComposes, deriveRole, renderedComponentCount, analyzeComponent, buildNameResolver } from "./componentAnalysis";
+import { deriveComposes, deriveRole, renderedComponentCount, analyzeComponent, buildNameResolver, deriveProps } from "./componentAnalysis";
 
 const RECORDS = [
   { id: "githubpage", name: "GitHubWorkspace", provides: undefined, kitId: "base-studio-code" },
@@ -49,12 +49,31 @@ describe("renderedComponentCount — distinct JSX component tags", () => {
   });
 });
 
-describe("analyzeComponent — composes + role together", () => {
+describe("deriveProps (#3697) — the record's primary prop interface", () => {
+  it("parses <name>Props into PropSpec[] (name/type/req), across multi-line types", () => {
+    const src = `interface ButtonProps {
+      /** the look */ variant?: "default" | "primary" | (string & {});
+      onClick: () => void;
+      size?: "sm" | "md";
+    }
+    export function Button(p: ButtonProps){ return null; }`;
+    expect(deriveProps(src, "Button")).toEqual([
+      { name: "variant", type: '"default" | "primary" | (string & {})', req: false, desc: "" },
+      { name: "onClick", type: "() => void", req: true, desc: "" },
+      { name: "size", type: '"sm" | "md"', req: false, desc: "" },
+    ]);
+  });
+  it("returns [] with no <name>Props interface (a multi-export barrel or inline props)", () => {
+    expect(deriveProps(`export function Charts(){ return null; }`, "Charts")).toEqual([]);
+  });
+});
+
+describe("analyzeComponent — composes + role + props together", () => {
   it("a tab body that composes a sibling → composite with the sibling name as an edge", () => {
     const meta = analyzeComponent(
-      { name: "GitHubSummary", role: "component", srcText: `import { GitHubReposGrid } from "@/components/github-repos-grid"; export function GitHubSummary(){ return <GitHubReposGrid/>; }` },
+      { name: "GitHubSummary", role: "component", srcText: `import { GitHubReposGrid } from "@/components/github-repos-grid"; interface GitHubSummaryProps { repo: string; } export function GitHubSummary(){ return <GitHubReposGrid/>; }` },
       resolve,
     );
-    expect(meta).toEqual({ composes: ["GitHubReposGrid"], role: "composite" });
+    expect(meta).toEqual({ composes: ["GitHubReposGrid"], role: "composite", props: [{ name: "repo", type: "string", req: true, desc: "" }] });
   });
 });
