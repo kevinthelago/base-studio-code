@@ -5,7 +5,9 @@ import { Row } from "@/shared/ui/layout/Row";
 // loads on first navigation, keeping the heavy module graph (esp. the planner) off the cold
 // startup path — both the dev transform and the production bundle. Shared by the shell's screen
 // switcher and the detached-window renderer.
-export const GitHubWorkspace      = lazy(() => import("@/features/github").then((m) => ({ default: m.GitHubWorkspace })));
+// GitHub renders FROM THE GRAPH (#3650, epic #3604) — the graph host mounts the authored `githubpage` node;
+// the symbol name stays so App.tsx + DetachedWindow (which passes `pageOverride`) need no change.
+export const GitHubWorkspace      = lazy(() => import("@/features/github").then((m) => ({ default: m.GitHubGraphHost })));
 // Automations renders FROM THE GRAPH (#3642, epic #3604) — the graph host mounts the authored
 // `automationspage` node; the symbol name stays so App.tsx + DetachedWindow (which passes `pageOverride`,
 // forwarded through) need no change.
