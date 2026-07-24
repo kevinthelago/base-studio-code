@@ -53,6 +53,15 @@ export function skillSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
+/** A stable content key over a skill's AUTHORED fields — the analogue of teams' `orgStructureKey`
+ *  (#3330). `hydrateSkills` compares it (#3672) to re-push ONLY skills whose packaged content drifted
+ *  (a code update) instead of re-writing every skill each boot. User/display state (enabled / pinned /
+ *  projects / telemetry) is deliberately excluded — those write through via their own mutations, so a
+ *  toggle never triggers a hydrate re-push. */
+export function skillContentKey(s: SkillDef): string {
+  return JSON.stringify([s.name, s.kind, s.source, s.desc, s.prompt, s.tools, s.profiles]);
+}
+
 /** A blank custom skill, ready for the new-skill form. */
 export function blankSkill(): Omit<SkillDef, "id"> {
   return {
