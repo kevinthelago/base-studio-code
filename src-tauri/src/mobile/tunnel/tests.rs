@@ -211,6 +211,19 @@ fn shared_fixture_matches_serde() {
         .unwrap(),
         s["store_state"]
     );
+    // store_state_chunk (#3757): a fragment of an over-cap store_state — the `chunk` is a raw UTF-8
+    // slice of the json (deliberately NOT valid JSON on its own), reassembled by (domain, rev).
+    assert_eq!(
+        serde_json::to_value(ServerMsg::StoreStateChunk {
+            domain: store_domains::COMPONENTS.into(),
+            rev: 7,
+            seq: 0,
+            total: 2,
+            chunk: "{\"kits\":[{\"id\":\"react-ui\"".into(),
+        })
+        .unwrap(),
+        s["store_state_chunk"]
+    );
     assert_eq!(
         serde_json::to_value(ServerMsg::PlanSyncManifest {
             project_id: "proj-bf9cf968".into(),
