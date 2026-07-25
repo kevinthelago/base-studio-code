@@ -58,7 +58,7 @@ function coerceComponent(v: unknown, kitId: string): ComponentRecord | null {
     src: str(o.src), srcText: str(o.srcText),
   };
   if (str(o.wraps)) rec.wraps = str(o.wraps);
-  // The data-shape axis (#2475) rides a shared kit, filtered to the six-shape vocabulary.
+  // The data-shape axis (#2475/#3517) rides a shared kit, filtered to the seven-shape vocabulary.
   const shapes = strArr(o.shapes).filter((s): s is DataShape => (DATA_SHAPES as string[]).includes(s));
   if (shapes.length) rec.shapes = shapes;
   return rec;

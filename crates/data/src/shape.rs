@@ -2,8 +2,8 @@
 //! canonical [`DataModel`], so the planning session picks a layout mechanically instead of judging
 //! the taxonomy by hand.
 //!
-//! The shape vocabulary is NOT invented here: it is the six-shape axis landed by #2475
-//! (`list` · `linked-list` · `tree` · `graph` · `table` · `key-value`), mirrored from
+//! The shape vocabulary is NOT invented here: it is the seven-shape axis (#2475 + `series` #3517)
+//! (`list` · `linked-list` · `tree` · `graph` · `table` · `key-value` · `series`), mirrored from
 //! `DATA_SHAPES` in `crates/bsc-component/src/cli.rs` and `DataShape` in
 //! `src/features/designs/lib/model.ts`. This module is the OTHER half of that loop: #2475 answers
 //! "which components render shape X" (`bsc ui shapes <shape>`), this answers "what shape IS my
@@ -27,8 +27,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::schema::{DataModel, Entity, Field, FieldType};
 
-/// The six canonical data shapes (#2475). Serializes as the vocabulary slug (`linked-list`,
-/// `key-value`, …) so `bsc data shapes` output feeds straight into `bsc ui shapes <shape>`.
+/// The seven canonical data shapes (#2475 + `series` #3517). Serializes as the vocabulary slug
+/// (`linked-list`, `key-value`, `series`, …) so `bsc data shapes` output feeds straight into
+/// `bsc ui shapes <shape>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DataShape {
@@ -38,17 +39,19 @@ pub enum DataShape {
     Graph,
     Table,
     KeyValue,
+    Series,
 }
 
 impl DataShape {
     /// Every shape in vocabulary order — the same order `bsc ui shapes` prints.
-    pub const ALL: [DataShape; 6] = [
+    pub const ALL: [DataShape; 7] = [
         DataShape::List,
         DataShape::LinkedList,
         DataShape::Tree,
         DataShape::Graph,
         DataShape::Table,
         DataShape::KeyValue,
+        DataShape::Series,
     ];
 
     /// The vocabulary slug — the exact token `bsc ui shapes <shape>` / `bsc ui list --shape` accept.
@@ -60,6 +63,7 @@ impl DataShape {
             DataShape::Graph => "graph",
             DataShape::Table => "table",
             DataShape::KeyValue => "key-value",
+            DataShape::Series => "series",
         }
     }
 
@@ -72,6 +76,7 @@ impl DataShape {
             DataShape::Graph => "nodes joined by arbitrary edges (many-to-many)",
             DataShape::Table => "homogeneous records with fixed, aligned columns",
             DataShape::KeyValue => "one record's named fields — a label → value map",
+            DataShape::Series => "an ordered label axis with one or more aligned numeric value series — a time-series",
         }
     }
 
@@ -258,6 +263,8 @@ impl Bag {
 /// - a **join table** (nearly all wiring, ≥2 distinct FK targets) or **join-heavy** entity (≥3
 ///   distinct FK targets) → `graph`.
 /// - an **attribute bag** (a name column + a value column) → `key-value`.
+/// - a **temporal axis + numeric measure** (a `Date` field paired with ≥1 non-key `Number`/`Money`
+///   measure) → `series` — a time-series over an ordered domain, offered alongside table/list (#3517).
 /// - otherwise a **plain collection** → `table` when column-dense, `list` when lean; the other
 ///   stays as the alternative.
 ///
@@ -412,6 +419,32 @@ pub fn infer_entity_shapes(model: &DataModel, entity: &Entity) -> EntityShapes {
         );
     }
 
+    // ── temporal axis + numeric measure → series (#3517) ──
+    // A temporal axis (a `Date` field) paired with ≥1 non-key numeric measure (`Number`/`Money`) IS a
+    // time-series over an ordered domain — an aligned label axis + one or more numeric value series
+    // (exactly the `{ labels, series }` shape `windowedTally` produces). Offered as a RANKED candidate
+    // ALONGSIDE the table/list readings — it never replaces them: the schema argues for it (a date + a
+    // measure), but a plain tabular reading stays plausible, so `Likely`, and the user confirms.
+    let temporal = entity.fields.iter().find(|f| f.ty == FieldType::Date);
+    let measures: Vec<&Field> = entity
+        .fields
+        .iter()
+        .filter(|f| matches!(f.ty, FieldType::Number | FieldType::Money) && !entity.identity.contains(&f.key))
+        .collect();
+    if let (Some(axis), false) = (temporal, measures.is_empty()) {
+        bag.add(
+            DataShape::Series,
+            Confidence::Likely,
+            format!(
+                "`{}` pairs a temporal axis (`{}`) with {} numeric measure{} — an ordered label axis + aligned value series, a time-series renderable as a line/bar chart",
+                entity.key,
+                axis.key,
+                measures.len(),
+                if measures.len() == 1 { "" } else { "s" }
+            ),
+        );
+    }
+
     // ── plain collection: list vs table by column density ──
     // Always offered — every entity collection renders one way or the other; the density decides
     // which leads.
@@ -499,7 +532,7 @@ mod tests {
         // The slugs MUST stay byte-identical to `bsc ui shapes` / DATA_SHAPES, or the mechanical
         // hand-off `bsc data shapes` → `bsc ui shapes <shape>` breaks.
         let slugs: Vec<&str> = DataShape::ALL.iter().map(|s| s.slug()).collect();
-        assert_eq!(slugs, vec!["list", "linked-list", "tree", "graph", "table", "key-value"]);
+        assert_eq!(slugs, vec!["list", "linked-list", "tree", "graph", "table", "key-value", "series"]);
         for s in DataShape::ALL {
             assert_eq!(DataShape::parse(s.slug()), Some(s));
             assert!(!s.desc().is_empty());
@@ -713,6 +746,41 @@ mod tests {
         let es = shapes_of(&dense, "invoice");
         assert_eq!(es.best().unwrap().shape, DataShape::Table);
         assert_eq!(conf(&es, DataShape::List), Some(Confidence::Possible));
+    }
+
+    #[test]
+    fn temporal_axis_plus_numeric_measure_suggests_series() {
+        // #3517: a Date axis + a non-key numeric measure IS a time-series over an ordered domain —
+        // offered ALONGSIDE the table/list readings, never replacing them.
+        let m = model(vec![entity(
+            "metric",
+            vec![f("id", FieldType::String), f("date", FieldType::Date), f("value", FieldType::Number)],
+        )]);
+        let es = shapes_of(&m, "metric");
+        assert_eq!(conf(&es, DataShape::Series), Some(Confidence::Likely));
+        let series = es.candidates.iter().find(|c| c.shape == DataShape::Series).unwrap();
+        assert!(series.reason.contains("temporal axis") && series.reason.contains("time-series"));
+        // The plain-collection readings still stand — series is an ADDITIONAL candidate, not a swap.
+        assert!(es.candidates.iter().any(|c| c.shape == DataShape::List || c.shape == DataShape::Table));
+
+        // A `Money` measure over a date axis is a series too (revenue over time).
+        let m2 = model(vec![entity(
+            "sale",
+            vec![f("id", FieldType::String), f("day", FieldType::Date), f("total", FieldType::Money)],
+        )]);
+        assert_eq!(conf(&shapes_of(&m2, "sale"), DataShape::Series), Some(Confidence::Likely));
+
+        // No temporal axis → NO series candidate, even with a numeric measure.
+        let no_axis =
+            model(vec![entity("score", vec![f("id", FieldType::String), f("value", FieldType::Number)])]);
+        assert_eq!(conf(&shapes_of(&no_axis, "score"), DataShape::Series), None);
+
+        // A date column but no numeric measure → NO series (an axis alone is not a series).
+        let no_measure = model(vec![entity(
+            "event",
+            vec![f("id", FieldType::String), f("at", FieldType::Date), f("label", FieldType::String)],
+        )]);
+        assert_eq!(conf(&shapes_of(&no_measure, "event"), DataShape::Series), None);
     }
 
     #[test]

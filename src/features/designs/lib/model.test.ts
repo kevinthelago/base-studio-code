@@ -75,14 +75,36 @@ describe("component model helpers (#2269)", () => {
     expect(byName("Button").id).toBe("button");
   });
 
-  it("the data-shape vocabulary is exactly the six canonical shapes (#2475)", () => {
-    expect(DATA_SHAPES).toEqual(["list", "linked-list", "tree", "graph", "table", "key-value"]);
+  it("the data-shape vocabulary is exactly the seven canonical shapes (#2475/#3517)", () => {
+    expect(DATA_SHAPES).toEqual(["list", "linked-list", "tree", "graph", "table", "key-value", "series"]);
     // `shapes` is an optional, typed axis on ComponentRecord — every stamped value is in-vocabulary.
     for (const c of LIB) {
       for (const s of c.shapes ?? []) {
         expect(DATA_SHAPES, `${c.name} stamps an in-vocabulary shape`).toContain(s as DataShape);
       }
     }
+  });
+
+  it("the `series` shape names windowedTally's structural signature — an axis + aligned numeric series (#3517)", () => {
+    // No runtime value→shape classifier exists (component `shapes` are stamped, not derived from a
+    // value; schema→shape inference lives in Rust `bsc data shapes`). This documents the STRUCTURE
+    // `series` names: `windowedTally` emits `{ labels: string[], series: Record<name, number[]> }` —
+    // an ordered label axis plus one or more numeric value series, each ALIGNED to the axis (one entry
+    // per label). That is exactly `series`, and none of the other six describe it.
+    expect(DATA_SHAPES).toContain("series" as DataShape);
+    // A representative windowedTally-shaped value (2 aligned streams over a 3-day axis).
+    const value = { labels: ["7/1", "7/2", "7/3"], series: { opened: [2, 0, 5], merged: [1, 3, 4] } };
+    const isSeriesShaped = (v: { labels: unknown; series: Record<string, unknown> }) =>
+      Array.isArray(v.labels) &&
+      v.labels.every((l) => typeof l === "string") &&
+      Object.values(v.series).length >= 1 &&
+      Object.values(v.series).every(
+        (arr) => Array.isArray(arr) && arr.length === (v.labels as unknown[]).length && arr.every((n) => typeof n === "number"),
+      );
+    expect(isSeriesShaped(value), "labels axis + ≥1 aligned numeric series IS the `series` shape").toBe(true);
+    // The axis-less / misaligned negatives the signature must reject.
+    expect(isSeriesShaped({ labels: ["7/1", "7/2"], series: { a: [1] } })).toBe(false); // misaligned length
+    expect(isSeriesShaped({ labels: [], series: {} })).toBe(false); // no series at all
   });
 
   it("every packaged kit carries the rail-hierarchy axes: tech (a lowercase slug) + style (#2487)", () => {
