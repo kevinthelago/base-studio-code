@@ -23,11 +23,11 @@ use std::io::Read;
 const TAGLINE: &str = "the component library — proven components in technology-scoped kits (#2281)";
 const KIT_TAGLINE: &str = "the component library's kits — technology-scoped component namespaces (#2281)";
 
-/// The data-shape vocabulary (#2475) — the six canonical shapes a feature's data can take, each with
-/// the one-line description `bsc ui shapes` prints. A component's optional `shapes` JSON field stamps
-/// the shapes it is an IDEAL rendering for; the CLI computes the index from those fields verbatim
-/// (no Rust schema — the store stays verbatim JSON). Mirrors `DataShape` in
-/// `src/features/components/lib/model.ts`.
+/// The data-shape vocabulary (#2475 + `series` #3517) — the seven canonical shapes a feature's data
+/// can take, each with the one-line description `bsc ui shapes` prints. A component's optional `shapes`
+/// JSON field stamps the shapes it is an IDEAL rendering for; the CLI computes the index from those
+/// fields verbatim (no Rust schema — the store stays verbatim JSON). Mirrors `DataShape` in
+/// `src/features/designs/lib/model.ts`.
 const DATA_SHAPES: &[(&str, &str)] = &[
     ("list", "a flat, ordered collection of homogeneous items"),
     ("linked-list", "a sequence whose items chain by explicit next/prev links"),
@@ -35,6 +35,7 @@ const DATA_SHAPES: &[(&str, &str)] = &[
     ("graph", "nodes joined by arbitrary edges (many-to-many)"),
     ("table", "homogeneous records with fixed, aligned columns"),
     ("key-value", "one record's named fields — a label → value map"),
+    ("series", "an ordered axis + one or more aligned numeric value series — a time-series (LineArea · Bars · Spark)"),
 ];
 
 const COMPONENT_COMMANDS: &[CmdDoc] = &[
@@ -47,7 +48,7 @@ USAGE:
 
 Prints every component's { id, name, kitId, role, group, shapes } as JSON (compact; --pretty for indented).
 --shape filters to the components whose `shapes` field stamps <shape> — the kit's IDEAL renderings
-for that data shape (#2475; one of list · linked-list · tree · graph · table · key-value — see
+for that data shape (#2475/#3517; one of list · linked-list · tree · graph · table · key-value · series — see
 `bsc ui shapes`). --full emits the COMPLETE component objects (variants + props + composes + guidance
 + source + …) as a plain array — the full-fidelity read the desktop library hydration needs.
 --raw (#3166) drops the JSON entirely and prints ONE id per line, raw UTF-8, LF-only — byte-clean for
@@ -60,7 +61,7 @@ for that data shape (#2475; one of list · linked-list · tree · graph · table
 USAGE:
   bsc ui shapes [<shape>] [--pretty]
 
-Prints the six-shape data vocabulary — list · linked-list · tree · graph · table · key-value — as a
+Prints the seven-shape data vocabulary — list · linked-list · tree · graph · table · key-value · series — as a
 JSON array of { shape, desc, components }, where components are the stored components whose `shapes`
 field stamps that shape (the kit's IDEAL renderings for it, as lean {id, name, kitId, role, group, shapes}
 rows). With <shape>, prints just that shape's entry. An EMPTY components array means the kit has no
@@ -1870,7 +1871,7 @@ fn open_kit_store(dir: &Option<String>) -> Result<bsc_json_store::Store, String>
     Ok(bsc_json_store::Store::new(dir, "kit"))
 }
 
-/// Validate a shape token against the six-shape vocabulary (#2475); the error teaches the whole set.
+/// Validate a shape token against the seven-shape vocabulary (#2475/#3517); the error teaches the whole set.
 fn require_shape(shape: &str) -> Result<(), String> {
     if DATA_SHAPES.iter().any(|(s, _)| *s == shape) {
         return Ok(());
@@ -4054,9 +4055,9 @@ mod tests {
     // ── the data-shape picker (#2475) ──────────────────────────────────────────────────────────
 
     #[test]
-    fn data_shapes_vocabulary_is_exactly_the_six_canonical_shapes() {
+    fn data_shapes_vocabulary_is_exactly_the_seven_canonical_shapes() {
         let names: Vec<&str> = DATA_SHAPES.iter().map(|(s, _)| *s).collect();
-        assert_eq!(names, vec!["list", "linked-list", "tree", "graph", "table", "key-value"]);
+        assert_eq!(names, vec!["list", "linked-list", "tree", "graph", "table", "key-value", "series"]);
         for (s, d) in DATA_SHAPES {
             assert!(!d.is_empty(), "{s} carries a description");
             assert!(require_shape(s).is_ok());
@@ -4064,7 +4065,7 @@ mod tests {
         // An off-vocabulary token errors, teaching the whole set.
         let err = require_shape("blob").unwrap_err();
         assert!(err.contains("unknown shape 'blob'"));
-        for s in ["list", "linked-list", "tree", "graph", "table", "key-value"] {
+        for s in ["list", "linked-list", "tree", "graph", "table", "key-value", "series"] {
             assert!(err.contains(s), "the error teaches {s}");
         }
     }
@@ -4127,7 +4128,7 @@ mod tests {
         .is_ok());
         // An off-vocabulary shape errors BEFORE any store is touched (no --dir needed), teaching the set.
         let err = run(vec!["shapes".into(), "blob".into()], "bsc ui").unwrap_err();
-        assert!(err.contains("unknown shape 'blob'") && err.contains("key-value"));
+        assert!(err.contains("unknown shape 'blob'") && err.contains("key-value") && err.contains("series"));
         let err = run(vec!["list".into(), "--shape".into(), "blob".into()], "bsc ui").unwrap_err();
         assert!(err.contains("unknown shape 'blob'"));
         // A bare `--shape` with no value is a usage error pointing at the vocabulary verb.
@@ -4140,7 +4141,7 @@ mod tests {
         let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMPONENT_COMMANDS);
         assert!(ov.contains("shapes"));
         let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "shapes");
-        assert!(d.contains("key-value") && d.contains("ideal"), "shapes detail teaches the vocabulary");
+        assert!(d.contains("key-value") && d.contains("series") && d.contains("ideal"), "shapes detail teaches the vocabulary");
         let list = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "list");
         assert!(list.contains("--shape"), "list detail documents the --shape filter");
         // `shapes help` resolves to the doc (a read, reachable from any scope).

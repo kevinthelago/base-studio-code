@@ -122,7 +122,7 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     const claimants = (shape: string, role: string) =>
       REACT_UI_COMPONENTS.filter((c) => c.role === role && ((c.shapes ?? []) as string[]).includes(shape))
         .map((c) => c.name);
-    for (const s of ["list", "linked-list", "tree", "graph", "table", "key-value"]) {
+    for (const s of ["list", "linked-list", "tree", "graph", "table", "key-value", "series"]) {
       expect(claimants(s, "layout").length, `layout tier claims ${s} at most once`).toBeLessThanOrEqual(1);
       expect(claimants(s, "page").length, `page tier claims ${s} at most once`).toBeLessThanOrEqual(1);
     }
@@ -133,6 +133,9 @@ describe("react-ui kit generated from the manifest (#2305)", () => {
     expect(all("tree")).toEqual(["Tree", "TreeExplorerPage"]);
     expect(all("linked-list")).toEqual(["PipelinePage", "Sequence"]);
     expect(all("key-value")).toEqual(["KeyValueList", "RecordPage"]);
+    // series (#3517): the four charting composites claim it — an axis + aligned numeric value series
+    // (windowedTally's { labels, series }). No layout/page tier claims it (per-tier ≤1 holds trivially).
+    expect(all("series")).toEqual(["Bars", "LineArea", "Spark", "StackedDayBars"]);
   });
 
   it("the packaged seed is a single EMPTY kit — base-studio-code — the designer fills it (#3543)", () => {
