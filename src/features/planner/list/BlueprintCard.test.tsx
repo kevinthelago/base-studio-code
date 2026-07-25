@@ -4,7 +4,7 @@ import { BlueprintCard } from "./BlueprintCard";
 import type { BpItem } from "./blueprintLibrary.helpers";
 
 const item = (over: Partial<BpItem> = {}): BpItem => ({
-  id: "a", kind: "library", name: "Alpha", pitch: "", category: "greenfield",
+  id: "a", name: "Alpha", pitch: "", category: "greenfield",
   stages: 0, sections: [], updatedLabel: "", sort: 0, ...over,
 });
 
@@ -13,7 +13,7 @@ describe("BlueprintCard", () => {
     render(
       <BlueprintCard
         b={item({ gistLabel: "gist · abc1234" })}
-        onUse={() => {}} onOpen={() => {}} onDelete={() => {}}
+        onUse={() => {}} onDelete={() => {}}
         menuOpenId={null} setMenuOpenId={() => {}}
       />,
     );
@@ -25,7 +25,7 @@ describe("BlueprintCard", () => {
   it("selects the blueprint on a card click (onUse)", () => {
     const onUse = vi.fn();
     render(
-      <BlueprintCard b={item()} onUse={onUse} onOpen={() => {}} onDelete={() => {}} menuOpenId={null} setMenuOpenId={() => {}} />,
+      <BlueprintCard b={item()} onUse={onUse} onDelete={() => {}} menuOpenId={null} setMenuOpenId={() => {}} />,
     );
     fireEvent.click(screen.getByText("Alpha"));
     expect(onUse).toHaveBeenCalledWith("a");
@@ -33,13 +33,12 @@ describe("BlueprintCard", () => {
 
   it("shows the delete action only for non-built-in blueprints when its menu is open", () => {
     const { rerender } = render(
-      <BlueprintCard b={item({ builtIn: true })} onUse={() => {}} onOpen={() => {}} onDelete={() => {}} menuOpenId="bp:a" setMenuOpenId={() => {}} />,
+      <BlueprintCard b={item({ builtIn: true })} onUse={() => {}} onDelete={() => {}} menuOpenId="bp:a" setMenuOpenId={() => {}} />,
     );
     expect(screen.queryByText("delete blueprint")).not.toBeInTheDocument();
-    expect(screen.getByText("modify in planner")).toBeInTheDocument();
 
     rerender(
-      <BlueprintCard b={item({ builtIn: false })} onUse={() => {}} onOpen={() => {}} onDelete={() => {}} menuOpenId="bp:a" setMenuOpenId={() => {}} />,
+      <BlueprintCard b={item({ builtIn: false })} onUse={() => {}} onDelete={() => {}} menuOpenId="bp:a" setMenuOpenId={() => {}} />,
     );
     expect(screen.getByText("delete blueprint")).toBeInTheDocument();
   });

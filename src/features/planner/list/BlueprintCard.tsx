@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { useClickOutside } from "@/shared/hooks/useClickOutside";
-import { MoreHorizontal, Pencil, Check, Layers, Link2, Trash2 } from "lucide-react";
+import { MoreHorizontal, Check, Layers, Link2, Trash2 } from "lucide-react";
 import { PlanGateRow } from "../pane/PlanStageBar";
 import { IconBox } from "@/shared/ui/data/IconBox";
 import { Button } from "@/shared/ui/controls/Button";
@@ -10,10 +10,9 @@ import { CAT_ICON, catHue, type BpItem } from "./blueprintLibrary.helpers";
 
 /** A compact blueprint card for the right rail — hued icon tile + name + ⋯ menu, then a
  *  category / stages / visibility meta row and an optional gist link. */
-export function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId, setMenuOpenId }: {
+export function BlueprintCard({ b, onUse, onDelete, activeId, menuOpenId, setMenuOpenId }: {
   b: BpItem;
   onUse: (id: string) => void;
-  onOpen: (b: BpItem) => void;
   onDelete: (b: BpItem) => void;
   activeId?: string;
   menuOpenId: string | null;
@@ -57,10 +56,6 @@ export function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId
               {/* eslint-disable-next-line no-restricted-syntax -- dropdown menu item (.menu-item), not a .btn-family button */}
               <button className="menu-item" onClick={() => { setMenuOpenId(null); onUse(b.id); }}>
                 <Check size={12} /> use for new projects
-              </button>
-              {/* eslint-disable-next-line no-restricted-syntax -- dropdown menu item (.menu-item), not a .btn-family button */}
-              <button className="menu-item" onClick={() => { setMenuOpenId(null); onOpen(b); }}>
-                <Pencil size={12} /> modify in planner
               </button>
               {!b.builtIn && (
                 <>

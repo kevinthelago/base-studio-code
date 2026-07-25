@@ -10,7 +10,6 @@ import type { Section } from "../github/ghStructure";
 import type { NodeProgress } from "../github/ghProgress";
 import type { PaneAutomation, PaneSkill } from "./projectPane.types";
 import type { PlanFeature } from "../issues/featureList";
-import type { Blueprint } from "../stages/blueprints";
 import type { DeployConfig } from "../lib/deployConfig";
 import type { PlanDependency, DependencyRegistry } from "../issues/dependencies";
 import type { McpInstallState } from "../lib/mcpPaneData";
@@ -37,9 +36,6 @@ export interface BuildProjectPaneInput {
   mcpInstallState?: McpInstallState;
   /** Features defined in the Features stage (parsed from features.json) (#…). */
   features?: PlanFeature[];
-  /** The in-progress blueprint an authoring project is designing (#923) — passed through to the
-   *  pane so the authoring stages can render it. */
-  authoredBlueprint?: Blueprint;
   /** Per-project coordination-topology override (#…) — set in the Permissions pane,
    *  wins over the planner's `fleet.json` topology. */
   topologyOverride?: import("../relationship/relationshipGraph").Topology;

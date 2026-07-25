@@ -19,15 +19,6 @@ describe("STAGE_KINDS ↔ project-pane stage coverage", () => {
     expect(bad).toEqual([]);
   });
 
-  it("keeps the add-stage palette a curated subset (no authoring internals)", () => {
-    // The palette must stay user-facing — the blueprint-authoring meta-stages have icons in the map
-    // but must not be hand-addable. (The data-platform stages were archived in 5def26b7.)
-    expect(STAGE_KIND_KEYS).not.toContain("bp_stages");
-    expect(STAGE_KIND_KEYS).not.toContain("purpose");
-    // …yet they still resolve a real (non-fallback) icon.
-    expect(stageKind("bp_stages").glyph in ICONS).toBe(true);
-  });
-
   it("falls back to the category glyph only for a genuinely unknown key", () => {
     expect(stageKind("totally-made-up").glyph).toBe("category");
   });

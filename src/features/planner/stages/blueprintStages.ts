@@ -37,37 +37,6 @@ export function stageSeed(section: Pick<SectionDef, "seed"> | undefined): StageS
   return seed?.content?.trim() ? seed : undefined;
 }
 
-/** The built-in blueprint-author lifecycle's id (#923). */
-export const AUTHORING_BLUEPRINT_ID = "blueprint-author";
-
-/** Whether a blueprint's deliverable is a blueprint itself (#923) — the authoring lifecycle:
- *  publish → gist, and no fleet / triage. */
-export function isAuthoringBlueprint(bp: Blueprint | undefined): boolean {
-  return bp?.deliverable === "blueprint";
-}
-
-/** The gate signals the blueprint-authoring stages read, derived from the in-progress blueprint the
- *  planner is designing (#923, gates per the blueprint-author design):
- *  - `bpName` — Purpose gate: name + pitch + ≥1 catalog tag.
- *  - `bpStageCount` — how many stages (display).
- *  - `bpStagesReady` — Stages gate: ≥2 stages, each with a prompt module written.
- *  - `bpValid` — Review gate: every publish check passes (identity + stages + prompts).
- *  Pure; mirrors the design's validation without importing the editor. */
-export function authoringSignals(bp: Blueprint | undefined): Record<string, number | boolean> {
-  const sections = bp?.sections ?? [];
-  const hasName = !!bp?.name?.trim();
-  const hasPitch = !!bp?.pitch?.trim();
-  const hasTag = (bp?.tags?.length ?? 0) > 0;
-  const enoughStages = sections.length >= 2;
-  const everyPrompt = sections.length > 0 && sections.every((s) => !!s.prompt?.trim());
-  return {
-    bpName: hasName && hasPitch && hasTag,
-    bpStageCount: sections.length,
-    bpStagesReady: enoughStages && everyPrompt,
-    bpValid: hasName && hasPitch && hasTag && enoughStages && everyPrompt,
-  };
-}
-
 /** A blueprint's category, defaulting to greenfield. */
 export function blueprintCategory(bp: Blueprint): BlueprintCategory {
   return bp.category ?? "greenfield";
