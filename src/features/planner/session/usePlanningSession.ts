@@ -27,10 +27,8 @@ export interface PlanningSessionDeps {
   bufRef: MutableRefObject<string>;
   paneId: string;
   linkedRepos: string[];
-  /** Whether the planner runs in the "operate" (existing-system) intro mode (#923). */
+  /** Whether the planner runs in the "operate" (existing-system) intro mode (#1286). */
   treatAsExisting: boolean;
-  /** Whether this project DESIGNS a blueprint (use the author intro, #923). */
-  isAuthoring: boolean;
   activeProjectName: string;
   activeProjectNumber: number;
   planningPitch: string;
@@ -52,7 +50,7 @@ export interface PlanningSession {
 
 export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
   const {
-    termRef, bufRef, paneId, linkedRepos, treatAsExisting, isAuthoring,
+    termRef, bufRef, paneId, linkedRepos, treatAsExisting,
     activeProjectName, activeProjectNumber, planningPitch, effectiveProjectId,
     stageIdsFor, refreshSetupSig,
     setShowBlueprintModal, setShowClearConfirm,
@@ -83,7 +81,6 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
         githubLogin: store.githubUser?.login ?? "",
         githubName:  store.githubUser?.name  ?? "",
         enabledStages: stageIdsFor(effectiveProjectId), // scope the planner CLAUDE.md (#A)
-        authoring:   isAuthoring,                       // use the blueprint-author intro (#923)
       },
       null,
       (e: unknown) => console.error("workspace setup failed:", e),
@@ -112,7 +109,7 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
     // The intro rides along on every restart: a `fresh` restart always fires it (#1240 — the user
     // wiped the plan, so re-greet even though history exists); the default resume restart keeps the
     // fresh-only guard, so a returning user with history resumes quietly instead of being re-greeted.
-    const introMode = plannerIntroMode({ isAuthoring, isExisting: treatAsExisting });
+    const introMode = plannerIntroMode({ isExisting: treatAsExisting });
     const introText = await safeInvoke<string>("planner_intro_prompt", { mode: introMode }, "",
       (e: unknown) => console.error("planner intro prompt failed:", e));
     // Relaunch on the selected harness (Claude Code or bsc-agent for any LLM, incl. a forced

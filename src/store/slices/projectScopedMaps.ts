@@ -31,7 +31,6 @@ type AnyMap = Record<string, unknown>;
 const PROJECT_MAP_OPS: Partial<Record<keyof AppStore, ProjectMapOp[]>> = {
   planStages:              ["delete", "rekey", "clearPlan"],
   planConfirmedStages:     ["delete", "rekey", "clearPlan"],
-  planAuthoredBlueprint:   ["delete", "rekey", "clearPlan"],
   planDeployConfig:        ["delete", "rekey", "clearPlan"],
   planMarketConfig:        ["delete", "rekey", "clearPlan"],
   planTransformations:     ["delete", "rekey", "clearPlan"],

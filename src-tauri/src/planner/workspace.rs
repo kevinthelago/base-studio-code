@@ -28,9 +28,6 @@ pub(crate) struct SetupWorkspacesArgs {
     pub github_login: String,
     pub github_name: String,
     pub enabled_stages: Vec<String>,
-    /// The active blueprint's deliverable is a blueprint itself (#923) — use the authoring intro
-    /// and omit the software-planning process block.
-    pub authoring: bool,
 }
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // wire contract: the frontend passes these as named invoke args.
@@ -45,8 +42,6 @@ pub(crate) fn setup_workspaces(
     github_login: String,
     github_name: String,
     enabled_stages: Vec<String>,
-    // Optional so older call sites default to false.
-    authoring: Option<bool>,
 ) -> Result<WorkspacePaths, String> {
     setup_workspaces_inner(SetupWorkspacesArgs {
         repo_full_names,
@@ -59,7 +54,6 @@ pub(crate) fn setup_workspaces(
         github_login,
         github_name,
         enabled_stages,
-        authoring: authoring.unwrap_or(false),
     })
 }
 /// Synchronous core of [`setup_workspaces`] (testable without a Tauri runtime): creates the planner
@@ -77,7 +71,6 @@ pub(crate) fn setup_workspaces_inner(args: SetupWorkspacesArgs) -> Result<Worksp
         github_login,
         github_name,
         enabled_stages,
-        authoring,
     } = args;
     let _perf = PerfSpan::new("setup_workspaces");
     crate::session::claude_config::sanitize_claude_config();
@@ -132,7 +125,7 @@ pub(crate) fn setup_workspaces_inner(args: SetupWorkspacesArgs) -> Result<Worksp
     std::fs::write(
         planning_dir.join("CLAUDE.md"),
         build_planning_claude_md(
-            authoring, is_existing, &project_name, project_number, &pitch,
+            is_existing, &project_name, project_number, &pitch,
             &enabled_stages, &repo_full_names, &project_key,
         ),
     ).str_err()?;
@@ -172,13 +165,11 @@ fn render_repo_items(repos: &[String], project_key: &str, template: &str) -> Str
     out
 }
 
-/// Assemble the planner `CLAUDE.md`: the orientation-specific INTRO + shared PROCESS block (the
-/// blueprint-authoring lifecycle #923 is self-contained — its intro carries the whole task and omits
-/// the software-planning process), the anti-injection framing (#1107, every spec), the enabled-stages
-/// scope (#512/#542), and — for existing projects — the linked-repositories section.
+/// Assemble the planner `CLAUDE.md`: the orientation-specific INTRO + shared PROCESS block, the
+/// anti-injection framing (#1107, every spec), the enabled-stages scope (#512/#542), and — for
+/// existing projects — the linked-repositories section.
 #[allow(clippy::too_many_arguments)]
 fn build_planning_claude_md(
-    authoring: bool,
     is_existing: bool,
     project_name: &str,
     project_number: u32,
@@ -187,9 +178,7 @@ fn build_planning_claude_md(
     repo_full_names: &[String],
     project_key: &str,
 ) -> String {
-    let mut md = if authoring {
-        planning_blueprint_intro()
-    } else if is_existing {
+    let mut md = if is_existing {
         format!(
             "{}{}",
             planning_existing_intro()
@@ -334,7 +323,6 @@ mod tests {
             github_login: String::new(),
             github_name: String::new(),
             enabled_stages: vec![],
-            authoring: false,
         };
         // Happy path: every hub file is written.
         let paths = super::setup_workspaces_inner(base()).unwrap();

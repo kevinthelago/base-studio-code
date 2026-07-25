@@ -2006,7 +2006,7 @@ describe("blueprints library (#513/#514)", () => {
   });
 
   it("seeds the starter library with a default active", () => {
-    // default + complete + blueprint-author after the data/transform blueprints were archived (5def26b7).
+    // default + complete after the data/transform blueprints were archived (5def26b7).
     expect(useAppStore.getState().blueprints.length).toBeGreaterThanOrEqual(3);
     expect(useAppStore.getState().activeBlueprintId).toBe("default");
   });
@@ -2093,7 +2093,6 @@ describe("clearPlan (#505)", () => {
     useAppStore.setState({
       planStages: { myproj: { goal: "# Goal" }, other: { scope: "# Scope" } },
       planConfirmedStages: { myproj: ["goal"], other: [] },
-      planAuthoredBlueprint: { myproj: { id: "bp", name: "BP", desc: "", sections: [] } },
       planSkippedStages: { myproj: ["ui"], other: [] },
       planAutomations: { myproj: [] },
       planStageConfig: {},
@@ -2114,7 +2113,6 @@ describe("clearPlan (#505)", () => {
     const s = useAppStore.getState();
     expect(s.planStages["myproj"]).toBeUndefined();
     expect(s.planConfirmedStages["myproj"]).toBeUndefined();
-    expect(s.planAuthoredBlueprint["myproj"]).toBeUndefined();
     expect(s.planSkippedStages["myproj"]).toBeUndefined();
     expect(s.planAutomations["myproj"]).toBeUndefined();
     expect(s.uiScreens["myproj"]).toBeUndefined();
@@ -2135,17 +2133,6 @@ describe("clearPlan (#505)", () => {
     useAppStore.getState().clearPlan("nonexistent");
     const s = useAppStore.getState();
     expect(s.planStages["myproj"]).toEqual({ goal: "# Goal" });
-  });
-
-  it("setAuthoredBlueprint records the in-progress blueprint per project (#923)", () => {
-    useAppStore.setState({ planAuthoredBlueprint: {} });
-    const bp = { id: "x", name: "Authored", desc: "", sections: [] };
-    useAppStore.getState().setAuthoredBlueprint("proj", bp);
-    expect(useAppStore.getState().planAuthoredBlueprint["proj"]).toEqual(bp);
-    // overwrite replaces (the planner re-emits the full blueprint)
-    const bp2 = { ...bp, name: "Authored v2" };
-    useAppStore.getState().setAuthoredBlueprint("proj", bp2);
-    expect(useAppStore.getState().planAuthoredBlueprint["proj"].name).toBe("Authored v2");
   });
 });
 

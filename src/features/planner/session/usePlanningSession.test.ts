@@ -21,7 +21,6 @@ function makeDeps(over: Partial<PlanningSessionDeps> = {}): PlanningSessionDeps 
     paneId: "planning_proj",
     linkedRepos: [],
     treatAsExisting: false,
-    isAuthoring: false,
     activeProjectName: "Proj",
     activeProjectNumber: 7,
     planningPitch: "a pitch",

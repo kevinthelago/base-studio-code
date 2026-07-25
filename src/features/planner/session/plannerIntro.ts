@@ -4,7 +4,7 @@
 
 import type { BlueprintMode } from "../stages/blueprints";
 
-export type PlannerIntroMode = "new" | "existing" | "blueprint";
+export type PlannerIntroMode = "new" | "existing";
 
 /**
  * Whether the planner should take the "existing repos" orientation — for BOTH the intro greeting
@@ -19,9 +19,9 @@ export function plannerTreatAsExisting({ isSaved, mode }: { isSaved: boolean; mo
 }
 
 /** Pick the intro mode from the session signals — mirrors the planner.rs CLAUDE.md branch
- *  (authoring wins, then an existing project, else a new greenfield project). */
-export function plannerIntroMode({ isAuthoring, isExisting }: { isAuthoring: boolean; isExisting: boolean }): PlannerIntroMode {
-  return isAuthoring ? "blueprint" : isExisting ? "existing" : "new";
+ *  (an existing project, else a new greenfield project). */
+export function plannerIntroMode({ isExisting }: { isExisting: boolean }): PlannerIntroMode {
+  return isExisting ? "existing" : "new";
 }
 
 /** Compose the startup prompt: the mode's intro, plus the user's pitch for a NEW project so the

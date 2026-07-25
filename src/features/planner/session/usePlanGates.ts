@@ -6,12 +6,11 @@
 // Pure derivation, no side effects. `planSecs` (the blueprint sections) and the focused-pane
 // SELECTION state (`focusSel`/`focusSelectedIdx`/`focusSelStage`) STAY in Planning and are passed
 // in / read off this hook's outputs — only the auto-derived `stages`/`focusActiveIdx` move here.
-// `isAuthoring`/`authoringSig` come from usePlannerBlueprint, so call this immediately after it.
 
 import { useMemo } from "react";
 import type { Section } from "../github/ghStructure";
 import type { BlueprintStage } from "../stages/blueprints";
-import { skippedSignal, confirmedSignal, planStagesComplete, authoringSignals } from "../stages/blueprints";
+import { skippedSignal, confirmedSignal, planStagesComplete } from "../stages/blueprints";
 import { derivePlanStageState, planStateToSignals } from "../stages/planStageDerive";
 import { FEATURES_KEY } from "../stages/planTopics";
 import { parseIssuesFile } from "../issues/planIssues";
@@ -50,9 +49,6 @@ interface PlanGatesDeps {
   marketCfg: Parameters<typeof marketDefined>[0];
   /** The transformations rows (#2509) — drive the `transformationsConfirmed` gate signal. */
   transformationRows: TransformationRow[];
-  /** From usePlannerBlueprint. */
-  isAuthoring: boolean;
-  authoringSig: ReturnType<typeof authoringSignals>;
 }
 
 export function usePlanGates(deps: PlanGatesDeps) {
@@ -60,7 +56,7 @@ export function usePlanGates(deps: PlanGatesDeps) {
     sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
     confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
-    deployCfg, marketCfg, transformationRows, isAuthoring, authoringSig,
+    deployCfg, marketCfg, transformationRows,
   } = deps;
 
   // The live snapshot the declarative section gates read.
@@ -143,8 +139,8 @@ export function usePlanGates(deps: PlanGatesDeps) {
     // replaced the old `featuresPhased` (every feature assigned a roadmap phase) — sequencing is now
     // expressed purely via feature `dependsOn`, with no milestone phases.
     const featuresDefined = featureState.count > 0 && featureCycle.length === 0;
-    return { ...planStateToSignals(stageState), hasPlanGaps, featuresDefined, deploymentDefined: deploymentDefined(deployCfg), marketDefined: marketDefined(marketCfg), transformationsConfirmed: transformationsConfirmed(transformationRows), sharedDepsLocked, sourcesConnected: allSourcesConnected(sourceCfg), ...(isAuthoring ? authoringSig : {}), ...skipSignals, ...confirmSignals };
-  }, [stageState, hasPlanGaps, featureState, featureCycle, deployCfg, marketCfg, transformationRows, sourceCfg, isAuthoring, authoringSig, skipSignals, confirmSignals, planFleet, effectiveProjectId, planDependencies]);
+    return { ...planStateToSignals(stageState), hasPlanGaps, featuresDefined, deploymentDefined: deploymentDefined(deployCfg), marketDefined: marketDefined(marketCfg), transformationsConfirmed: transformationsConfirmed(transformationRows), sharedDepsLocked, sourcesConnected: allSourcesConnected(sourceCfg), ...skipSignals, ...confirmSignals };
+  }, [stageState, hasPlanGaps, featureState, featureCycle, deployCfg, marketCfg, transformationRows, sourceCfg, skipSignals, confirmSignals, planFleet, effectiveProjectId, planDependencies]);
 
   // Focused pane (#652): one stage at a time. `stages` derive from the blueprint sections +
   // signals; the active stage auto-follows the frontier (the user-pick SELECTION stays in Planning).
