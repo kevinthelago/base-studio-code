@@ -264,6 +264,21 @@ pub enum ServerMsg {
         rev: u64,
         json: String,
     },
+    /// One fragment of an over-cap [`StoreState`] whose serialized JSON exceeds the Noise
+    /// transport's per-message plaintext cap (~64 KB). The send side splits the domain's `json`
+    /// on UTF-8 boundaries into `total` chunks (`seq` `0..total`) that each fit, and mobile buffers
+    /// them keyed by `(domain, rev)` — once all `total` arrive it concatenates the `chunk`s into the
+    /// full `json` and applies it exactly as a [`StoreState`]. A newer `rev` seen mid-reassembly
+    /// drops the stale partial, so a lost/late chunk can't wedge the reassembler. Additive within v2
+    /// (an older mobile ignores the unknown `type`): `store_state` is the only realistically over-cap
+    /// frame — `pane_output` already chunks and every other frame is small. #3757.
+    StoreStateChunk {
+        domain: String,
+        rev: u64,
+        seq: u32,
+        total: u32,
+        chunk: String,
+    },
     #[serde(rename_all = "camelCase")]
     PaneOutput {
         pane_id: String,
