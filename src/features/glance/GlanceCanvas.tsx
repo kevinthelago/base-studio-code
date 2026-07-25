@@ -402,7 +402,7 @@ export function GlanceOverlays({ drill = false, archetypes = [] }: { drill?: boo
             {edgeRows.map(([label, color, dash]) => (
               <Box key={label} style={{ display: "flex", alignItems: "center", gap: 7 }}>
                 <svg width={14} height={2} style={{ flex: "none", overflow: "visible" }}><line x1={0} y1={1} x2={14} y2={1} strokeWidth={2} strokeDasharray={dash} style={{ stroke: color }} /></svg>
-                <Text as="span" mono size={10} style={{ color: label === "cycle" ? "#f2848b" : "var(--fg-muted)" }}>{label}</Text>
+                <Text as="span" mono size={10} style={{ color: label === "cycle" ? "var(--cycle)" : "var(--fg-muted)" }}>{label}</Text>
               </Box>
             ))}
           </Box>
