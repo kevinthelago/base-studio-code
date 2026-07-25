@@ -17,10 +17,11 @@ const comp = (over: Partial<ComponentRecord>): ComponentRecord => ({
 });
 
 // A deterministic stub so the RESOLUTION logic is tested without the real algorithm registry.
-const STUB: DatasetForStructure = (s): VizDataset =>
-  s === "array"
-    ? { kind: "array", data: [3, 1, 4, 1, 5] }
-    : { kind: "graph", nodes: [{ id: "a", label: "A" }, { id: "b", label: "B" }], edges: [{ from: "a", to: "b" }] };
+const STUB: DatasetForStructure = (s): VizDataset => {
+  if (s === "array") return { kind: "array", data: [3, 1, 4, 1, 5] };
+  if (s === "graph") return { kind: "graph", nodes: [{ id: "a", label: "A" }, { id: "b", label: "B" }], edges: [{ from: "a", to: "b" }] };
+  return { kind: "tree", roots: [{ id: "r", label: "50", children: [{ id: "l", label: "30" }, { id: "rr", label: "70" }] }] };
+};
 
 describe("shapePreviewData (#3439)", () => {
   it("fills a list component's array prop with render-safe objects carrying the real value", () => {
@@ -58,8 +59,15 @@ describe("shapePreviewData (#3439)", () => {
     expect(shapePreviewData(comp({ shapes: ["list"], props: [prop("rail", "ReactNode"), prop("detail", "ReactNode")] }), STUB)).toEqual({});
   });
 
-  it("falls through cleanly for an unsupported shape (tree #3790 / key-value / linked-list)", () => {
-    expect(shapePreviewData(comp({ shapes: ["tree"], props: [prop("nodes", "T[]")] }), STUB)).toEqual({});
+  it("fills a tree component's nodes prop with the nested forest (Tree / TreeExplorerPage, #3790)", () => {
+    const out = shapePreviewData(comp({ shapes: ["tree"], props: [prop("nodes", "T[]")] }), STUB);
+    expect(Object.keys(out)).toEqual(["nodes"]);
+    const roots = JSON.parse(out.nodes) as Array<{ id: string; label: string; children?: unknown[] }>;
+    expect(roots[0]).toMatchObject({ id: expect.any(String), label: expect.any(String) });
+    expect(Array.isArray(roots[0].children)).toBe(true); // nested children present
+  });
+
+  it("falls through cleanly for shapes with no tracer (key-value / linked-list)", () => {
     expect(shapePreviewData(comp({ shapes: ["key-value"], props: [prop("items", "T[]")] }), STUB)).toEqual({});
     expect(shapePreviewData(comp({ shapes: ["linked-list"], props: [prop("steps", "T[]")] }), STUB)).toEqual({});
   });

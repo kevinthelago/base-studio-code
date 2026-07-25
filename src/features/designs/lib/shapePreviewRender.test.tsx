@@ -11,6 +11,7 @@ import { datasetForStructure } from "@/features/algorithms/viz/previewDataset";
 import { ActivityFeed } from "@/shared/ui/data/ActivityFeed";
 import { CollectionPage } from "@/shared/ui/pages/CollectionPage";
 import { NetworkPage } from "@/shared/ui/pages/NetworkPage";
+import { Tree, type TreeNodeData } from "@/shared/ui/layouts/Tree";
 import { shapePreviewData } from "./shapePreview";
 import type { ComponentRecord, DataShape, PropSpec } from "./model";
 
@@ -26,6 +27,7 @@ const graphData = () => {
   const o = shapePreviewData(comp(["graph"], [prop("nodes", "T[]"), prop("edges", "T[]")]), datasetForStructure);
   return { nodes: JSON.parse(o.nodes), edges: JSON.parse(o.edges) };
 };
+const treeNodes = (): TreeNodeData[] => JSON.parse(shapePreviewData(comp(["tree"], [prop("nodes", "T[]")]), datasetForStructure).nodes);
 
 describe("shape-tier data renders in the real components (#3439)", () => {
   it("ActivityFeed renders the generated items — Avatar(login) + action, no crash", () => {
@@ -46,6 +48,14 @@ describe("shape-tier data renders in the real components (#3439)", () => {
     expect(nodes.length).toBeGreaterThan(0);
     const { container } = render(<NetworkPage title="Preview" nodes={nodes} edges={edges} />);
     // a node label (or its id fallback) is painted somewhere in the tree
+    expect(container.textContent).toContain(String(nodes[0].label));
+  });
+
+  it("Tree renders the generated nested forest, no crash (#3790)", () => {
+    const nodes = treeNodes();
+    expect(nodes.length).toBe(1);
+    const { container } = render(<Tree nodes={nodes} />);
+    // the BST root label is painted (a node value)
     expect(container.textContent).toContain(String(nodes[0].label));
   });
 });
