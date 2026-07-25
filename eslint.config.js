@@ -2,6 +2,7 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
+import jsxA11y from "eslint-plugin-jsx-a11y";
 
 // #1545 feature-boundary: a feature is a black box behind its `index.ts` barrel. A feature (and the
 // app shell) may import another feature's PUBLIC API (`@/features/<x>`) but NOT its internals
@@ -110,6 +111,27 @@ export default tseslint.config(
       // so the compiler can't "preserve" their manual useMemo — but those memos are
       // correct + doing real work (the compiler isn't enabled at build). Warn, not error.
       "react-hooks/preserve-manual-memoization": "warn",
+    },
+  },
+  {
+    // Accessibility guardrail (#3773) — jsx-a11y on JSX. Because the no-raw-<div>/<button>/<input>
+    // discipline routes interactive elements through UI-kit primitives (custom components jsx-a11y can't
+    // inspect), the real coverage is the shared/ui primitives that render DOM elements — exactly where the
+    // accessible name/role/keyboard contract belongs. Tests are exempt.
+    files: ["src/**/*.tsx"],
+    ignores: ["src/**/*.test.tsx", "src/**/*.spec.tsx"],
+    plugins: { "jsx-a11y": jsxA11y },
+    rules: {
+      ...jsxA11y.flatConfigs.recommended.rules,
+      // Ratchet (#3773): the 5 rules with an existing backlog (48 sites) are `warn` so the guardrail can
+      // land WITHOUT a risky 48-site behavioral sweep — every OTHER jsx-a11y rule (alt-text, aria-role,
+      // aria-props, role-validity, redundant-roles, …) stays at its recommended `error`, so a NEW a11y
+      // mistake fails the gate today. Follow-up: clear the backlog, then re-error these five.
+      "jsx-a11y/click-events-have-key-events": "warn",
+      "jsx-a11y/no-static-element-interactions": "warn",
+      "jsx-a11y/no-autofocus": "warn",
+      "jsx-a11y/label-has-associated-control": "warn",
+      "jsx-a11y/interactive-supports-focus": "warn",
     },
   },
   {
