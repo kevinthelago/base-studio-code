@@ -301,6 +301,10 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           ...dropProjectScoped(s, "applyBlueprint", projectId),
           planStageConfig:    setMapEntry(s.planStageConfig, projectId, blueprintToStageConfig(bp)),
           projectBlueprintId: setMapEntry(s.projectBlueprintId, projectId, blueprintId),
+          // #3785: seed the blueprint's captured feature list into the new project's Features stage, so
+          // a project started from a goal blueprint (CRM/ERP/…) begins WITH that route's features to
+          // refine — not a blank Features stage. Overrides the reset's cleared sections for this key.
+          ...(bp.features ? { planStages: setMapEntry(s.planStages, projectId, { [FEATURES_KEY]: bp.features }) } : {}),
         }));
         // #2277: the newly-seeded blueprint's kit becomes a consumer edge (idempotent; no-op when unset).
         recordBlueprintKit(get, projectId, blueprintId);
