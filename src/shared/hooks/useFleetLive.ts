@@ -23,7 +23,7 @@ export function useFleetLive(): UseFleetLive {
 
   // The coordination log is the fleet's own activity feed (blocked/asking/waiting,
   // landed/merged). Polled while the screen is mounted — no store wiring needed.
-  const { state: coord } = useCoordLog({ limit: 1000, ms: 4000 });
+  const { state: coord } = useCoordLog({ limit: 1000 });
 
   const workers = useMemo(
     () => buildLiveWorkers({ fleetPaneStreams, paneStatus, coord, tabs, disabledPanes, profiles }),
