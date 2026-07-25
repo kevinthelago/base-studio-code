@@ -1,6 +1,7 @@
 // fleetCost (#2237) — cost aggregation (real) + energy estimate (directional).
 import { describe, it, expect } from "vitest";
 import { aggregateFleetCost, estimateEnergyWh, type TokenUsage } from "./fleetCost";
+import { estimateEnergyWh as graphEstimateEnergyWh } from "@/shared/lib/algorithms/llmEnergy";
 
 const usage = (over: Partial<TokenUsage> & { pane: string }): TokenUsage => ({
   model: "claude-sonnet-4-6", input_tokens: 0, output_tokens: 0,
@@ -40,5 +41,9 @@ describe("estimateEnergyWh (#2237)", () => {
   });
   it("attributes ~no cloud energy to local models", () => {
     expect(estimateEnergyWh("ollama/llama3", 5000, 5000)).toBe(0);
+  });
+  it("delegates to the llmEnergy graph node — no second local copy (#3607)", () => {
+    // The re-export IS the graph node; a regression that reintroduces a local copy breaks this.
+    expect(estimateEnergyWh).toBe(graphEstimateEnergyWh);
   });
 });
