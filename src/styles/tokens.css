@@ -387,7 +387,7 @@ html, body {
 textarea.input{ height:auto; min-height:64px; padding:8px 10px; resize:vertical; line-height:1.5; }
 
 .field{ display:flex; flex-direction:column; gap:6px; }
-.field label{ font-family:var(--mono); font-size:10.5px; color:var(--fg-muted); letter-spacing:.04em; text-transform:uppercase; }
+.field label, .field .field-caption{ font-family:var(--mono); font-size:10.5px; color:var(--fg-muted); letter-spacing:.04em; text-transform:uppercase; }
 .hint{ font-size:10.5px; color:var(--fg-dim); }
 
 /* ===== mono text vocabulary (#typography) — `.mono` is the base font (one place to change it);

@@ -123,15 +123,18 @@ export default tseslint.config(
     plugins: { "jsx-a11y": jsxA11y },
     rules: {
       ...jsxA11y.flatConfigs.recommended.rules,
-      // Ratchet (#3773): the 5 rules with an existing backlog (48 sites) are `warn` so the guardrail can
-      // land WITHOUT a risky 48-site behavioral sweep — every OTHER jsx-a11y rule (alt-text, aria-role,
-      // aria-props, role-validity, redundant-roles, …) stays at its recommended `error`, so a NEW a11y
-      // mistake fails the gate today. Follow-up: clear the backlog, then re-error these five.
+      // Ratchet (#3773/#3775): the backlog is being cleared rule-by-rule. Re-erroring first the two
+      // MECHANICAL rules — `no-autofocus` (10 sites: dialog/inline-edit focus-on-open, the WAI-ARIA
+      // dialog pattern, each carrying an inline `-- intentional` disable) and `label-has-associated-control`
+      // (6 sites: 5 are `<label>` wrapping a custom `Checkbox`/`Toggle`, recognized via `controlComponents`;
+      // the 6th was a group caption, fixed). The remaining THREE stay `warn` (#3775 follow-up) because
+      // clearing them is a per-site role + keyboard-handler + runtime-focus sweep, not a mechanical pass —
+      // every OTHER jsx-a11y rule stays at its recommended `error`, so a NEW a11y mistake fails the gate.
       "jsx-a11y/click-events-have-key-events": "warn",
       "jsx-a11y/no-static-element-interactions": "warn",
-      "jsx-a11y/no-autofocus": "warn",
-      "jsx-a11y/label-has-associated-control": "warn",
       "jsx-a11y/interactive-supports-focus": "warn",
+      "jsx-a11y/no-autofocus": "error",
+      "jsx-a11y/label-has-associated-control": ["error", { controlComponents: ["Checkbox", "Toggle"] }],
     },
   },
   {

@@ -30,8 +30,9 @@ export function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
       </>
     }>
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <Box className="field">
-          <label>Layout</label>
+        <Box className="field" role="group" aria-labelledby="new-tab-layout-label">
+          {/* group caption, not a <label>: it names the swatch group below, not a single control */}
+          <Box as="span" id="new-tab-layout-label" className="field-caption">Layout</Box>
           <Row gap={6} align="stretch" wrap>
             {LAYOUTS.map((l) => {
               const [c, r] = l.split("×").map(Number);
@@ -42,6 +43,7 @@ export function NewTabDialog({ onConfirm, onDismiss }: NewTabDialogProps) {
                   key={l}
                   className="mono"
                   type="button"
+                  // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional: focus the active layout swatch when the dialog opens
                   autoFocus={l === layout}
                   onClick={() => setLayout(l)}
                   style={{
