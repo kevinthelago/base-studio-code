@@ -15,9 +15,10 @@ export const AutomationsWorkspace = lazy(() => import("@/features/automations").
 // MCP renders FROM THE GRAPH (#3656, epic #3604) — the graph host mounts the authored `mcppage` node; the
 // symbol name stays so App.tsx + DetachedWindow (which passes `pageOverride`) need no change.
 export const McpWorkspace         = lazy(() => import("@/features/mcp").then((m) => ({ default: m.McpGraphHost })));
-// Settings renders FROM THE GRAPH (#3658, epic #3604) — the graph host mounts the authored `settingspage`
-// node; the symbol name stays so App.tsx needs no change.
-export const SettingsWorkspace    = lazy(() => import("@/features/settings").then((m) => ({ default: m.SettingsGraphHost })));
+// Settings renders from the HAND-CODED pages (#3758) — restored from the graph-hosted version (#3658),
+// which stays dormant in the barrel (`SettingsGraphHost` + the `settingspage` graph records are unmounted,
+// not deleted). Flip the resolved default back to `m.SettingsGraphHost` to re-enable the graph version.
+export const SettingsWorkspace    = lazy(() => import("@/features/settings").then((m) => ({ default: m.SettingsWorkspace })));
 export const ProjectsWorkspace    = lazy(() => import("@/features/planner").then((m) => ({ default: m.ProjectsWorkspace })));
 // Skills renders FROM THE GRAPH (#3654, epic #3604) — the graph host mounts the authored `skillspage` node;
 // the symbol name stays so App.tsx + DetachedWindow (which passes `pageOverride`) need no change.
