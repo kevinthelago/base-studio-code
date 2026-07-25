@@ -377,22 +377,10 @@ async fn replay_state(
         send_msg(sink, tx, &frame).await?;
     }
 
-    // Replay fleet roster (F2) — non-empty only after the fleet has launched.
-    let fleet = snap(app, |s| s.fleet_snapshot());
-    if !fleet.is_empty() {
-        send_msg(sink, tx, &ServerMsg::FleetRoster { sessions: fleet }).await?;
-    }
-
     // Replay automation list (A2).
     let automations = snap(app, |s| s.automations_snapshot());
     if !automations.is_empty() {
         send_msg(sink, tx, &ServerMsg::AutomationList { automations }).await?;
-    }
-
-    // Replay MCP extension list (M2).
-    let mcp = snap(app, |s| s.mcp_snapshot());
-    if !mcp.is_empty() {
-        send_msg(sink, tx, &ServerMsg::McpList { extensions: mcp }).await?;
     }
 
     // Replay the last hook-telemetry summary (M3 / #937) — non-empty only after the

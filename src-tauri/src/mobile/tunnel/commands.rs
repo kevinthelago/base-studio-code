@@ -238,16 +238,6 @@ pub fn tunnel_emit_plan_status(
 
 // ── Fleet / coordination (F2) — Tauri commands ──────────────────────────────
 
-/// Push the full fleet roster from the frontend store. Stored for replay to new
-/// clients and broadcast to connected ones.
-#[tauri::command]
-pub fn tunnel_set_fleet_state(sessions: Vec<FleetSession>, state: State<'_, TunnelState>) {
-    log::debug!("tunnel: fleet state updated ({} session(s))", sessions.len());
-    state.set_and_broadcast(ServerMsg::FleetRoster { sessions: sessions.clone() }, |inner| {
-        inner.fleet_sessions = sessions;
-    });
-}
-
 /// Push one coordination event to connected mobile clients. When the event kind is
 /// "waiting" or "asking" (an agent paused for user input), an FCM push is also queued
 /// (F4) so the user is notified even when the mobile app is backgrounded.
@@ -289,20 +279,6 @@ pub fn tunnel_set_automations(automations: Vec<AutomationFrame>, state: State<'_
     });
 }
 
-/// Push a non-critical automation-ran notification. No FCM push — skipped/ok runs are
-/// informational and don't require user attention.
-#[tauri::command]
-pub fn tunnel_automation_ran(
-    id: String,
-    at: u64,
-    status: String,
-    note: String,
-    state: State<'_, TunnelState>,
-) {
-    log::debug!("tunnel: automation {id} ran (status={status})");
-    let _ = state.event_tx.send(ServerMsg::AutomationRan { id, at, status, note });
-}
-
 /// Push a non-transient automation failure. Broadcasts `automation_failed` to
 /// connected clients and queues an FCM push (A4) so a backgrounded phone is notified.
 #[tauri::command]
@@ -316,18 +292,6 @@ pub fn tunnel_automation_failed(
     log::warn!("tunnel: automation {id} ({name}) failed: {error}");
     state.enqueue_autom_failed_push(&name, &error);
     let _ = state.event_tx.send(ServerMsg::AutomationFailed { id, at, error });
-}
-
-// ── MCP extensions (M2) — Tauri commands ────────────────────────────────────
-
-/// Push the full MCP extension list from the frontend store. Stored for replay to new
-/// clients and broadcast to connected ones. Read-only on mobile.
-#[tauri::command]
-pub fn tunnel_set_mcp_state(extensions: Vec<McpExtFrame>, state: State<'_, TunnelState>) {
-    log::debug!("tunnel: MCP list updated ({} extension(s))", extensions.len());
-    state.set_and_broadcast(ServerMsg::McpList { extensions: extensions.clone() }, |inner| {
-        inner.mcp_extensions = extensions;
-    });
 }
 
 // ── Hook telemetry (M3 / #937) — Tauri commands ──────────────────────────────
@@ -356,9 +320,10 @@ pub fn tunnel_set_hook_telemetry(telemetry: HookTelemetryFrame, state: State<'_,
 /// domain, and `json` is the opaque serialized projection. Stored per domain for replay to
 /// freshly-paired clients and broadcast to connected ones.
 ///
-/// The bespoke `tunnel_set_fleet_state` / `tunnel_set_automations` / `tunnel_set_mcp_state`
-/// / `tunnel_set_hook_telemetry` pushes remain wire-compatible alongside this; retiring
-/// them onto store_state domains is a follow-up once mobile consumes the new frames.
+/// The bespoke `tunnel_set_automations` / `tunnel_set_hook_telemetry` pushes remain
+/// wire-compatible alongside this; retiring them onto store_state domains is a follow-up
+/// once mobile consumes the new frames. (`tunnel_set_fleet_state` / `tunnel_set_mcp_state`
+/// were removed in #3748 — fleet + MCP now travel as `store_state` domains.)
 #[tauri::command]
 pub fn tunnel_set_store_state(domain: String, rev: u64, json: String, state: State<'_, TunnelState>) {
     log::debug!("tunnel: store_state[{domain}] rev {rev} pushed ({} bytes)", json.len());

@@ -182,9 +182,10 @@ export type StoreDomain = (typeof STORE_DOMAINS)[number];
  *  (last per domain) and replayed on connect.
  *
  *  This has superseded the bespoke fleet/MCP pushes on the desktop side: their frontend
- *  bindings are gone (#3244) and those domains now ride store_state. The Rust commands
- *  (`tunnel_set_fleet_state` / `tunnel_set_mcp_state`) stay registered and wire-compatible
- *  until mobile consumes the new frames — retiring them is a cross-repo follow-up.
+ *  bindings went with #3244 and the dead Rust commands (`tunnel_set_fleet_state` /
+ *  `tunnel_set_mcp_state`) with #3748 — both domains now ride store_state. The
+ *  `ServerMsg::{FleetRoster,McpList}` wire variants stay for mobile back-compat until mobile
+ *  consumes the new frames (dropping them is a cross-repo follow-up).
  *  `tunnelSetAutomations` / `tunnelSetHookTelemetry` are still bespoke and live. */
 export const tunnelSetStoreState = (domain: string, rev: number, json: string): Promise<void> =>
   invoke("tunnel_set_store_state", { domain, rev, json });
