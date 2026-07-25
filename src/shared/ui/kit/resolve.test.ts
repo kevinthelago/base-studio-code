@@ -65,9 +65,16 @@ describe("resolveThemeTokens (#3711) — the JS projection", () => {
 
   it("passes literal values through untouched (colors, dimensions, durations)", () => {
     const t = resolveThemeTokens("default");
-    expect(t["--btn-primary-fg"]).toBe("#1a120a");
+    expect(t["--btn-primary-border"]).toBe("transparent");
     expect(t["--r-md"]).toBe("6px");
     expect(t["--dur-fast"]).toBe("120ms");
+  });
+
+  it("resolves --btn-primary-fg through the new --on-accent base token (#3727)", () => {
+    const t = resolveThemeTokens("default");
+    expect(t["--on-accent"]).toBe("#1a120a");
+    // --btn-primary-fg is now `var(--on-accent)` → dereferences to the on-accent ink (zero-visual).
+    expect(t["--btn-primary-fg"]).toBe("#1a120a");
   });
 
   it("leaves an unknown (non-contract) token reference in place — --btn-font-family = var(--mono), a global outside the descriptor", () => {

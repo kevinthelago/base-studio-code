@@ -277,7 +277,7 @@ html, body {
   --btn-font-weight: 400;
   --btn-disabled-opacity: 0.4;
   --btn-primary-bg: var(--accent);
-  --btn-primary-fg: #1a120a;
+  --btn-primary-fg: var(--on-accent);
   --btn-primary-border: transparent;
   --btn-primary-font-weight: 600;
   --btn-primary-hover-brightness: 1.05;
