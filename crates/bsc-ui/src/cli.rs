@@ -248,8 +248,9 @@ which group's contract it resolved against. Compact JSON by default; --pretty in
         name: "harvest",
         summary: "scan a repo and surface reusable COMPONENT candidates for the library (#3471)",
         usage: "USAGE:
-  bsc ui harvest <repo-dir> [--kit K] [--worthy-only] [--pretty]
+  bsc ui harvest <repo-dir-or-file> [--kit K] [--worthy-only] [--out <name>] [--pretty]
 
+The target is a directory (scan the tree) OR a single FILE (#3722 — scope to one component's module).
 Parses the repo's real .tsx/.ts/.jsx/.js source with tree-sitter and lifts each React component into a
 CANDIDATE component record — the component half of `bsc graph harvest`, so a project that gets BUILT fills
 the component graph instead of the library being hand-authored one `bsc ui set` at a time. Deterministic
@@ -272,7 +273,9 @@ quietly degraded (a srcText with unresolved `@/…` imports otherwise stores wit
 
 Prints { candidates: [...], count }. --kit sets the kit candidates would join (default `harvested` — NOT
 an existing kit, since unreviewed candidates must not contaminate a curated one). --worthy-only keeps
-those the classifier scores net-positive.",
+those the classifier scores net-positive. --out <name> (#3722) writes the JSON to a BARE-named file in
+$BSC_SCRATCH instead of stdout, then prints that path — use it when a large harvest would be truncated on
+stdout (and spilled OUT of the confinement, unreadable); the scratch file is Read-able in full.",
     },
     CmdDoc {
         name: "env",
@@ -563,41 +566,58 @@ fn cmd_harvest(args: &[String]) -> Result<(), String> {
         print!("{}", bsc_cli_util::help_for("bsc ui", TAGLINE, COMMANDS, "harvest"));
         return Ok(());
     }
-    let mut dir: Option<&str> = None;
+    let mut target: Option<&str> = None;
     let (mut kit, mut worthy_only, mut pretty) = (crate::harvest::DEFAULT_KIT.to_string(), false, false);
+    let mut out: Option<String> = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--kit" => kit = it.next().cloned().ok_or("--kit needs a kit id")?,
             "--worthy-only" => worthy_only = true,
             "--pretty" => pretty = true,
+            "--out" => out = Some(it.next().cloned().ok_or("--out needs a bare file name")?),
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
-            other => dir = Some(other),
+            other => target = Some(other),
         }
     }
-    let dir = dir.ok_or("usage: bsc ui harvest <repo-dir> [--kit K] [--worthy-only] [--pretty]")?;
-    let path = std::path::Path::new(dir);
-    if !path.is_dir() {
-        return Err(format!("not a directory: {dir}"));
+    let target = target
+        .ok_or("usage: bsc ui harvest <repo-dir-or-file> [--kit K] [--worthy-only] [--out <name>] [--pretty]")?;
+    let path = std::path::Path::new(target);
+    // #3722: a single FILE is a valid target now (scope to one component's module) — not only a dir.
+    let is_file = path.is_file();
+    if !path.is_dir() && !is_file {
+        return Err(format!("no such file or directory: {target}"));
     }
     // #3475: a harvest hands back file CONTENTS, so it must honor the SAME boundary the file tools do.
     // `bsc-confine` only inspects Claude's file-tool payloads and is blind to what this binary reads —
     // without this, a confined studio session (designer/librarian) reads any path on disk through an
-    // allow-listed CLI. Checked after the is_dir test so the target is known to exist.
+    // allow-listed CLI. Checked after the existence test so the target is known to exist.
     bsc_cli_util::require_harvestable_root(path)?;
-    let mut candidates = crate::harvest::harvest(path, &kit);
+    let mut candidates =
+        if is_file { crate::harvest::harvest_file(path, &kit) } else { crate::harvest::harvest(path, &kit) };
     if worthy_only {
         candidates.retain(|c| c.classification.worthy);
     }
     let items: Vec<serde_json::Value> = candidates.iter().map(harvest_json).collect();
-    let out = serde_json::json!({ "candidates": items, "count": items.len() });
+    let payload = serde_json::json!({ "candidates": items, "count": items.len() });
     let text = if pretty {
-        serde_json::to_string_pretty(&out)
+        serde_json::to_string_pretty(&payload)
     } else {
-        serde_json::to_string(&out)
+        serde_json::to_string(&payload)
     }
     .map_err(|e| e.to_string())?;
-    println!("{text}");
+    // #3722: `--out <name>` spills the JSON to the session scratch dir — a confinement-allowed path the
+    // session Reads in full — instead of stdout, which a restricted session truncates for a large harvest
+    // (and spills OUT of the confinement, unreadable). Symmetric with `bsc ui get --out` (#20).
+    match out {
+        Some(name) => {
+            let file = bsc_cli_util::resolve_scratch_out(&name)?;
+            std::fs::write(&file, format!("{text}\n"))
+                .map_err(|e| format!("cannot write --out {}: {e}", file.display()))?;
+            println!("{}", file.display());
+        }
+        None => println!("{text}"),
+    }
     Ok(())
 }
 
@@ -2869,6 +2889,32 @@ mod tests {
             .is_ok(),
             "a listed harvest root must permit the scan",
         );
+    }
+
+    #[test]
+    fn harvest_accepts_a_single_file_and_out_spills_to_the_scratch_dir() {
+        // #3722: a single FILE target (not only a dir), and `--out` writing the JSON to the scratch dir
+        // (a confinement-allowed path) instead of stdout — the truncation fix for a large harvest.
+        let base = std::env::temp_dir().join(format!("bsc-harvest-cli-out-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (root, scratch) = (base.join("root"), base.join("scratch"));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&scratch).unwrap();
+        let file = root.join("Widget.tsx");
+        std::fs::write(&file, "export const Widget = () => <div/>;").unwrap();
+
+        let root_s = root.to_string_lossy().into_owned();
+        let scratch_s = scratch.to_string_lossy().into_owned();
+        let file_s = file.to_string_lossy().into_owned();
+        bsc_cli_util::with_repo_root(Some(&root_s), || {
+            bsc_cli_util::with_scratch(Some(&scratch_s), || {
+                run(vec!["harvest".into(), file_s.clone(), "--out".into(), "harvest.json".into()], "bsc ui").unwrap();
+            });
+        });
+        let written = std::fs::read_to_string(scratch.join("harvest.json")).unwrap();
+        assert!(written.contains("\"Widget\""), "the single-file harvest landed in the scratch file: {written}");
+        assert!(written.contains("\"count\":1"), "exactly one candidate from the single file: {written}");
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
