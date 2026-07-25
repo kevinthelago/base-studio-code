@@ -271,8 +271,11 @@ component's stored source must be a module the preview can COMPILE. Every candid
 quietly degraded (a srcText with unresolved `@/…` imports otherwise stores with no complaint at all,
 #3470). `composes` lists component NAMES (the component graph composes by name, not by id).
 
-Prints { candidates: [...], count }. --kit sets the kit candidates would join (default `harvested` — NOT
-an existing kit, since unreviewed candidates must not contaminate a curated one). --worthy-only keeps
+Prints { candidates: [...], count }, plus (#3740) `functionalModules` + a `note` when the tree also holds
+functional/algorithmic modules (functions, hooks, utils) that are NOT components — those belong in the
+ALGORITHMS graph, so harvest them with `bsc graph harvest <dir>` instead (this surfaces + routes them so
+they aren't lost between the two harvests). --kit sets the kit candidates would join (default `harvested`
+— NOT an existing kit, since unreviewed candidates must not contaminate a curated one). --worthy-only keeps
 those the classifier scores net-positive. --out <name> (#3722) writes the JSON to a BARE-named file in
 $BSC_SCRATCH instead of stdout, then prints that path — use it when a large harvest would be truncated on
 stdout (and spilled OUT of the confinement, unreadable); the scratch file is Read-able in full.",
@@ -599,7 +602,19 @@ fn cmd_harvest(args: &[String]) -> Result<(), String> {
         candidates.retain(|c| c.classification.worthy);
     }
     let items: Vec<serde_json::Value> = candidates.iter().map(harvest_json).collect();
-    let payload = serde_json::json!({ "candidates": items, "count": items.len() });
+    let mut payload = serde_json::json!({ "candidates": items, "count": items.len() });
+    // #3740: surface the functional/algorithmic modules (functions, hooks, utils) this component harvest
+    // SKIPS — they belong in the ALGORITHMS graph, not the component graph. Route them to `bsc graph
+    // harvest` so they aren't lost between the two harvests. Omitted entirely when the tree has none.
+    let functional = crate::harvest::functional_module_names(path);
+    if !functional.is_empty() {
+        payload["note"] = serde_json::json!(format!(
+            "{} functional/algorithmic module(s) here are NOT components — harvest them into the algorithms \
+             graph with `bsc graph harvest {target}` (functions, hooks, and utils belong there).",
+            functional.len()
+        ));
+        payload["functionalModules"] = serde_json::json!(functional);
+    }
     let text = if pretty {
         serde_json::to_string_pretty(&payload)
     } else {
