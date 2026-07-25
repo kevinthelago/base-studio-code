@@ -188,14 +188,14 @@ html, body {
 
 /* horizontal tab strip (consoles) */
 .tabstrip{
-  height:34px; flex:0 0 34px; background:var(--bg-panel);
-  border-bottom:1px solid var(--border-soft);
+  height:34px; flex:0 0 34px; background:var(--tab-strip-bg);
+  border-bottom:1px solid var(--tab-strip-border);
   display:flex; align-items:end; padding:0 8px; gap:1px;
   font-family:var(--mono); font-size:11px;
 }
 .tab{
   height:28px; padding:0 12px; display:flex; align-items:center; gap:8px;
-  background:transparent; color:var(--fg-muted);
+  background:var(--tab-bg); color:var(--tab-fg);
   border-top-left-radius:6px; border-top-right-radius:6px;
   border:1px solid transparent; border-bottom:0;
   cursor:pointer; max-width:200px;
@@ -231,7 +231,7 @@ html, body {
 }
 .tab-tearoff-preview .ttp-body{ padding:18px 12px; display:flex; justify-content:center; }
 .tab-tearoff-preview .ttp-hint{ font-size:10px; color:var(--accent); }
-.tab.active{ background:var(--bg-canvas); color:var(--fg); border-color:var(--border-soft); }
+.tab.active{ background:var(--tab-active-bg); color:var(--tab-active-fg); border-color:var(--tab-active-border); }
 .tab .dot{ width:6px; height:6px; border-radius:50%; background:var(--success); flex:0 0 6px; }
 .tab .dot.idle{ background:var(--fg-dim); }
 .tab .dot.run{ background:var(--accent); animation:pulse 1.4s ease-in-out infinite; }
@@ -298,6 +298,16 @@ html, body {
   --chip-bg: var(--bg-elev2);
   --chip-fg: var(--fg-muted);
   --chip-border: var(--border-soft);
+  --tab-bg: transparent;
+  --tab-fg: var(--fg-muted);
+  --tab-strip-bg: var(--bg-panel);
+  --tab-strip-border: var(--border-soft);
+  --tab-active-bg: var(--bg-canvas);
+  --tab-active-fg: var(--fg);
+  --tab-active-border: var(--border-soft);
+  --modal-bg: var(--bg-elev);
+  --modal-border: var(--border);
+  --modal-radius: var(--r-lg);
 }
 
 /* generic UI primitives */
@@ -346,8 +356,8 @@ html, body {
 /* modal */
 .overlay{ position:fixed; inset:0; z-index:var(--z-modal); background:var(--scrim); display:flex; align-items:center; justify-content:center; }
 .overlay.blur{ backdrop-filter:blur(2px); }
-.modal{ width:480px; max-width:92vw; max-height:82vh; overflow:auto; background:var(--bg-elev); border:1px solid var(--border);
-  border-radius:var(--r-lg); box-shadow:0 20px 60px rgba(0,0,0,.5); }
+.modal{ width:480px; max-width:92vw; max-height:82vh; overflow:auto; background:var(--modal-bg); border:1px solid var(--modal-border);
+  border-radius:var(--modal-radius); box-shadow:0 20px 60px rgba(0,0,0,.5); }
 /* shared centered-modal scrim (#1776) — the single overlay wrapper behind <ModalScrim>/<Dialog> */
 .modal-scrim{ position:fixed; inset:0; z-index:var(--z-modal); background:var(--scrim); display:flex; align-items:center; justify-content:center; }
 .modal-scrim.start{ align-items:flex-start; }
