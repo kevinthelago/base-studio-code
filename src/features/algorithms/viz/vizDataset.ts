@@ -9,12 +9,22 @@
 import type { VizRun } from "./examples/vizProgram";
 import type { GraphInput } from "../lib/tracer";
 
+/** A nested tree node (#3790) — a `{ id, label, children? }` forest node, structurally the shared
+ *  Tree/TreeExplorerPage `nodes` prop shape (`TreeNodeData`), so it binds directly. */
+export interface TreeDatasetNode {
+  id: string;
+  label: string;
+  children?: TreeDatasetNode[];
+}
+
 /** A normalized dataset extracted from a run — discriminated by the run's datatype, structurally-cloneable
- *  and directly bindable to a component prop. `graph` covers both the `graph` and `scene` datatypes. */
+ *  and directly bindable to a component prop. `graph` covers both the `graph` and `scene` datatypes; `tree`
+ *  (#3790) is a NESTED forest (built from a BST's pure shape, not a run — see `datasetForStructure`). */
 export type VizDataset =
   | { kind: "array"; data: number[] }
   | { kind: "matrix"; data: number[][] }
-  | { kind: "graph"; nodes: GraphInput["nodes"]; edges: GraphInput["edges"] };
+  | { kind: "graph"; nodes: GraphInput["nodes"]; edges: GraphInput["edges"] }
+  | { kind: "tree"; roots: TreeDatasetNode[] };
 
 // Frames are snapshots; we read the last one that carries the structure's data. Typed loosely here
 // (the tracer's Frame union lives module-private) — we only touch the snapshot fields we extract.
