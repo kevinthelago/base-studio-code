@@ -1,0 +1,11 @@
+{
+  "id": "no-install-scripts",
+  "name": "Install with lifecycle scripts off (supply-chain floor)",
+  "kind": "workflow",
+  "source": "first-party",
+  "desc": "Every fleet install runs with npm/pnpm/yarn lifecycle scripts OFF by default (the Shai-Hulud execution vector). Build trusted natives via `bsc-build-allowed`; never re-enable scripts for a whole install.",
+  "body": "Package lifecycle scripts (`preinstall` / `install` / `postinstall`) are how supply-chain worms (Shai-Hulud and its kind) execute the moment a compromised dependency is installed. In every fleet/agent session `npm_config_ignore_scripts=true` is set by default, so `npm install` / `pnpm install` / `yarn install` install the dependency TREE without running any lifecycle script. Work WITH that floor, never around it:\n1. Install normally. `npm install` (or ci/pnpm/yarn) just works — the packages land, scripts are skipped. This is the safe default; do not change it.\n2. If a TRUSTED native package needs its build (esbuild, better-sqlite3, @swc/core, sharp, node-pty, …), run `bsc-build-allowed` AFTER the install. It runs `npm rebuild` for exactly the packages on the app's trusted build allowlist that are actually present under `./node_modules`, re-enabling scripts for that one step only. Nothing off the allowlist ever runs a script.\n3. NEVER re-enable scripts for a whole install to 'fix' a build — do not run `npm install --ignore-scripts=false`, do not `export npm_config_ignore_scripts=false`, do not edit `.npmrc` to turn scripts back on. That reopens the exact hole the floor closes.\n4. If a build genuinely needs a package that is NOT on the allowlist, STOP and surface it (ask the director via `bsc-ask`, or open an issue) so the package can be reviewed and added deliberately — don't silently disable the floor to get unblocked.\n5. A missing native binary at runtime (`Cannot find module '…/build/Release/…'`, an esbuild/swc host-binary error) almost always means the install skipped a legit build — the fix is `bsc-build-allowed`, not turning scripts back on.\nThe posture: scripts off by default, trusted natives rebuilt explicitly, the allowlist is the only exception surface.",
+  "tools": ["bash"],
+  "profiles": ["build"],
+  "pinned": false
+}

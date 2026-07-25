@@ -354,6 +354,46 @@ fn bsc_defer_rc_embeds_the_externalized_directive() {
 }
 
 #[test]
+fn bsc_build_allowed_rebuilds_only_present_allowlisted_packages() {
+    // #3795 supply-chain floor: with npm_config_ignore_scripts=true the fleet default, bsc-build-allowed
+    // is the ONLY path that re-runs a lifecycle script — and only for a trusted @data allowlist package
+    // that is actually present under ./node_modules. First pin the rendered shape, then prove the
+    // gating behaviorally in a real subshell.
+    let frag = super::build_allowed_rc();
+    assert!(frag.contains("bsc-build-allowed()"), "defines the helper");
+    assert!(frag.contains("npm_config_ignore_scripts=false npm rebuild"), "re-enables scripts only for the rebuild");
+    assert!(frag.contains(r#"[ -d "node_modules/$p" ]"#), "gates on the package being present");
+    assert!(frag.contains("esbuild"), "bakes in the @data build allowlist");
+    assert!(frag.ends_with('\n'), "trailing newline (#296)");
+    assert!(super::bsc_rc_body().contains("bsc-build-allowed()"), "wired into the concat body");
+
+    use std::process::{Command, Stdio};
+    with_rc_subshell("build-allowed", super::build_allowed_rc(), |RcSub { shell, dir, rc_bash }| {
+        // A stub `npm` that logs its args + the visible ignore-scripts value — so we observe exactly
+        // which packages get a rebuild and prove the scripts-off default is overridden for the rebuild.
+        let log = dir.join("npm.log");
+        let log_bash = crate::to_bash_path(&log.to_string_lossy());
+        // esbuild is allowlisted AND present; every other allowlisted package is absent → skipped.
+        let _ = std::fs::create_dir_all(dir.join("node_modules").join("esbuild"));
+        let dir_bash = crate::to_bash_path(&dir.to_string_lossy());
+        let script = format!(
+            r#"cd "{dir_bash}" || exit 1; npm() {{ printf '%s ignore=%s\n' "$*" "${{npm_config_ignore_scripts:-unset}}" >> "{log_bash}"; }}; npm_config_ignore_scripts=true; bsc-build-allowed"#,
+        );
+        let ok = Command::new(&shell).arg("-c").arg(&script)
+            .env("BASH_ENV", &rc_bash)
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+            .status().unwrap().success();
+        assert!(ok, "bsc-build-allowed should run cleanly");
+        let logged = std::fs::read_to_string(&log).unwrap_or_default();
+        assert!(logged.contains("rebuild esbuild"), "the present allowlisted package is rebuilt: {logged:?}");
+        assert!(logged.contains("ignore=false"), "scripts are re-enabled for that rebuild: {logged:?}");
+        // Exactly ONE rebuild ran — no other allowlisted package is present, so none else is touched.
+        assert_eq!(logged.lines().filter(|l| l.contains("rebuild")).count(), 1, "only the present package: {logged:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    });
+}
+
+#[test]
 fn bsc_shared_rc_defines_and_runs_the_three_shared_helpers() {
     // #2064: the shared sh fragments (__bsc_jstr / __bsc_now_ms / __bsc_logline) are defined once
     // in data/shell/shared.sh and prepended (first in all_bsc_rc()). Assert the fragment defines all
