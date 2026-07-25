@@ -14,6 +14,8 @@
 import type { ProjectLite, GlanceFault } from "@/features/glance";
 import type { ProjectLink } from "@/features/glance/lib/projectLinks";
 import type { FleetPlan } from "@/features/planner/fleet/planFleet";
+import type { Stage } from "@/features/planner/stages/focusedPlan";
+import type { MarketConfig } from "@/features/planner/lib/marketConfig";
 import type { Team } from "@/features/teams";
 import type { Persona } from "@/features/personas";
 import type { Blueprint } from "@/features/planner/stages/blueprintTypes";
@@ -183,11 +185,41 @@ const inbox = [
   { id: "gate-ready:demo:1721900000000", kind: "gate-ready", text: "Plan ready to publish", at: 1721900000000, paneId: "demo:director", project: "demo" },
 ] satisfies AlertEvent[];
 
+// ── plan (#3760) ─────────────────────────────────────────────────────────────────────────────────
+// The planner-published board domain. Its builder (buildPlanBoardPayload) lives in the PLANNER feature
+// (the plan domain rides usePlannerTunnelSync, not useStoreProjector), so its inputs are planner types —
+// but it's guarded like every other domain now. Non-degenerate: real stage statuses + an unmet gate
+// reason, a fleet with streams, and a fully-scored market verdict (`defined` true). Deploy stays
+// unconfigured — an honest mid-plan state, and a full DeployService is too deep to hand-author (its
+// `defaultService` builder can't be value-imported cross-feature).
+const planStages = [
+  { key: "discovery", name: "Discovery", glyph: "◇", blurb: "scope the problem", gate: "sections confirmed",
+    index: 0, total: 3, status: "complete", fraction: 1, unmet: [] },
+  { key: "features", name: "Features", glyph: "◆", blurb: "map the build", gate: "≥1 feature mapped",
+    index: 1, total: 3, status: "active", fraction: 0.5, optional: false,
+    unmet: [{ label: "features defined", detail: "0 of 3 mapped" }] },
+  { key: "market", name: "Market", glyph: "◈", blurb: "size the market", gate: "verdict reached",
+    index: 2, total: 3, status: "upcoming", fraction: 0, optional: true, unmet: [] },
+] satisfies Stage[];
+
+const planMarket = {
+  summary: "Strong niche: solo indie builders underserved by heavyweight suites.",
+  scores: {
+    problemSeverity: { score: 4, rationale: "manual setup burns ~a day per project", sources: ["survey-2026"] },
+    problemFrequency: { score: 5, rationale: "hit on every new project", sources: ["survey-2026"] },
+    reachableMarket: { score: 3, rationale: "~2M indie devs reachable on GitHub", sources: ["octoverse-2025"] },
+    competitiveGap: { score: 4, rationale: "incumbents target teams, not solos", sources: ["g2-scan"] },
+    timing: { score: 4, rationale: "agentic tooling just crossed the usability line", sources: ["trend-2026"] },
+    moat: { score: 3, rationale: "the blueprint library compounds with use", sources: ["thesis"] },
+  },
+  verdict: { recommendation: "go", rationale: "severe, frequent problem in a reachable niche" },
+} satisfies MarketConfig;
+
 /**
  * The canonical input to every `build*Payload`, keyed by store_state domain. The generator
  * (`storePayloads.fixtures.test.ts`) runs the REAL builders over these — it never hand-authors JSON.
- * `plan` is intentionally absent: it is published by the planner (`usePlannerTunnelSync`), not by
- * `useStoreProjector`, so it has no builder here (see the UNPROJECTED_DOMAINS exemption + #3760).
+ * `plan` is now covered too (#3760): its builder lives in the planner feature (`buildPlanBoardPayload`,
+ * imported by the generator via the `@/features/planner` barrel), so its input here is planner-typed.
  */
 export const PROJECTION_INPUTS = {
   glance: {
@@ -207,6 +239,12 @@ export const PROJECTION_INPUTS = {
     paneRoles: { t0p0: "worker" }, paneProfiles: { t0p0: "pf_worker" }, auditRows,
   },
   alerts: inbox,
+  plan: {
+    projectId: "demo", title: "Demo", currentStage: "features", statusLabel: "in_progress",
+    gateReady: true, planComplete: false,
+    stages: planStages, confirmed: ["goal", "scope"], skipped: ["stack"],
+    fleet, market: planMarket,
+  },
 };
 // NOT `as const`: the builders take MUTABLE arrays, and a `readonly` PROJECTION_INPUTS would fail every
 // builder call in the generator. The per-block `satisfies` above are the model tripwires; the generator's

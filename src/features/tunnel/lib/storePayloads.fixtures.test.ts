@@ -18,16 +18,19 @@ import {
   buildComponentsPayload, buildThemesPayload, buildAutomationsPayload, buildMcpPayload,
   buildAlertsPayload, buildSecurityPayload,
 } from "./storeProjections";
+// #3760: the `plan` domain's builder lives in the planner feature (it's planner-published), reached
+// via the barrel so the harness covers plan like every other domain.
+import { buildPlanBoardPayload } from "@/features/planner";
 import { PROJECTION_INPUTS } from "./storeProjections.fixtures";
 import { STORE_DOMAINS } from "./tunnelClient";
 
 // Resolved from cwd (repo/worktree root when vitest runs), matching the primitives.gen idiom.
 const FILE = join(process.cwd(), "src/features/tunnel/lib/storePayloads.fixtures.json");
 
-// `plan` is published by the planner (`usePlannerTunnelSync`), not by `useStoreProjector`, so it has
-// no `build*Payload` in `storeProjections.ts`. It is EXEMPTED from the coverage guard here rather than
-// silently dropped — bringing it into the harness is tracked by #3760.
-const UNPROJECTED_DOMAINS = ["plan"] as const;
+// Every registered store domain now has a builder + fixture (#3760 brought `plan` in — its builder
+// lives in the planner feature, `buildPlanBoardPayload`). The exemption list is kept (empty) so a
+// future planner-only or transient domain can be documented here rather than silently dropped.
+const UNPROJECTED_DOMAINS = [] as const;
 
 // The canonical payloads — the REAL builders over the canonical inputs, one per projected domain.
 const domains = {
@@ -41,6 +44,7 @@ const domains = {
   mcp: buildMcpPayload(PROJECTION_INPUTS.mcp),
   alerts: buildAlertsPayload(PROJECTION_INPUTS.alerts),
   security: buildSecurityPayload(PROJECTION_INPUTS.security),
+  plan: buildPlanBoardPayload(PROJECTION_INPUTS.plan),
 };
 
 // Variants pin optionality + nullability the way `auth_ok_pre_grant` does for frames: each toggles ONE
@@ -64,7 +68,8 @@ const generated = {
     "'read correctly' from 'fell back' — a pure field DELETION still fails. Small on purpose (2-3 rows / " +
     "collection); cap behaviour (SECURITY_AUDIT_CAP / AUTOMATION_RUNS_CAP) is asserted in " +
     "storeProjections.test.ts, NOT by inflating this file. Regenerate: `npm run fixtures:store`. " +
-    "`plan` is absent — published by the planner, not projected here (UNPROJECTED_DOMAINS, #3760).",
+    "All 11 registered domains are covered — `plan` (planner-published, built by buildPlanBoardPayload) " +
+    "was brought in by #3760.",
   domains,
   variants,
 };

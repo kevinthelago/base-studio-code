@@ -16,6 +16,10 @@ import "./projectsScreen.css";
 // #1545: public API for cross-feature consumers. tunnel reaches plannerCore for CanonicalFile;
 // components reaches the gist manifest/publish helpers (included for barrel completeness).
 export type { CanonicalFile } from "./lib/plannerCore";
+// #3760: the `plan` store_state builder lives in the planner feature (the plan domain is planner-
+// published, not projected by useStoreProjector); exposed so the tunnel payload-parity harness can
+// cover it like every other domain.
+export { buildPlanBoardPayload, type PlanBoardPayload } from "./session/planBoardProjection";
 export {
   validateManifest, wrapExtension, encodeShareCode, decodeShareCode,
   type ExtensionManifest, type ValidateResult,
