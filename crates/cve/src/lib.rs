@@ -14,6 +14,7 @@
 pub mod cache;
 pub mod cli;
 pub mod engine;
+pub mod install;
 pub mod lockfile;
 pub mod mcp;
 pub mod osv;
