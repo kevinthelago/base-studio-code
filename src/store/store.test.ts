@@ -2019,8 +2019,10 @@ describe("blueprints library (#513/#514)", () => {
     expect(bp.sections.length).toBeGreaterThan(0);
   });
 
-  it("generateBlueprint promotes a project's plan into a named user blueprint (#3785)", () => {
+  it("generateBlueprint promotes a project's plan — route + feature list — into a named user blueprint (#3785)", () => {
     useAppStore.getState().setPlanningTitle("Acme CRM");
+    // The project's Features stage content — the curated feature list the promote should carry.
+    useAppStore.setState((s) => ({ planStages: { ...s.planStages, "proj-key": { features: "## Contacts\nManage contacts." } } }));
     const before = useAppStore.getState().blueprints.length;
     // No custom stage config for this key → generateBlueprint falls back to the default enabled set,
     // so the promoted blueprint still captures a plan route as sections.
@@ -2030,6 +2032,7 @@ describe("blueprints library (#513/#514)", () => {
     expect(bp.name).toBe("Acme CRM blueprint"); // named after the project
     expect(bp.origin).toBe("local"); // a user blueprint — persisted + share-eligible
     expect(bp.sections.length).toBeGreaterThan(0); // the plan route captured as sections
+    expect(bp.features).toContain("Contacts"); // the curated feature list captured too
   });
 
   it("setActiveBlueprint switches the active id", () => {
