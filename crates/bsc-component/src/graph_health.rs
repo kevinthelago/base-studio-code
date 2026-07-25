@@ -106,6 +106,13 @@ pub fn render_error_findings(components: &[Value], errors: &[(String, String)]) 
         .iter()
         .filter_map(|(id, message)| {
             let comp = by_id.get(id.as_str())?; // drop a stale error for a component no longer in the store
+            // #3737: drop a render-error for a component whose current srcText is EMPTY — an empty spec
+            // can't have a live render error (the preview shows no-implementation, not a throw), so a
+            // persisted error there is stale by definition (the component was reduced to a spec since).
+            // Conservative: a NON-empty srcText keeps its error (a real build/render failure is possible).
+            if comp.get("srcText").and_then(Value::as_str).unwrap_or_default().trim().is_empty() {
+                return None;
+            }
             let name = comp.get("name").and_then(Value::as_str).unwrap_or(id.as_str()).to_string();
             let kit = comp.get("kitId").and_then(Value::as_str).unwrap_or_default().to_string();
             // The scan records the failure with a `build:`/`render:` kind prefix (#3549). Strip it for
@@ -3446,8 +3453,10 @@ mod tests {
     #[test]
     fn render_error_findings_reports_each_errored_component_and_skips_the_unknown() {
         let comps = vec![
-            json!({ "id": "bsc-keyvaluelist", "name": "BscKeyValueList", "kitId": "harvested" }),
-            json!({ "id": "bsc-dropdown", "name": "BscDropdown", "kitId": "harvested" }),
+            json!({ "id": "bsc-keyvaluelist", "name": "BscKeyValueList", "kitId": "harvested",
+                    "srcText": "export const BscKeyValueList = () => null;" }),
+            json!({ "id": "bsc-dropdown", "name": "BscDropdown", "kitId": "harvested",
+                    "srcText": "export const BscDropdown = () => null;" }),
         ];
         let errors = vec![
             ("bsc-keyvaluelist".to_string(), "Cannot read properties of undefined (reading 'map')".to_string()),
@@ -3470,8 +3479,27 @@ mod tests {
     }
 
     #[test]
+    fn render_error_findings_drops_a_stale_error_for_an_empty_srctext_component() {
+        // #3737: a component reduced to an empty spec can't have a LIVE render error (the preview shows
+        // no-implementation, not a throw), so a persisted error there is stale by definition. A non-empty
+        // component keeps its recorded error.
+        let comps = vec![
+            json!({ "id": "empty", "name": "Empty", "kitId": "k", "srcText": "   " }),
+            json!({ "id": "real", "name": "Real", "kitId": "k", "srcText": "export const Real = () => null;" }),
+        ];
+        let errors = vec![
+            ("empty".to_string(), "no export Empty in @/x".to_string()),
+            ("real".to_string(), "threw at render".to_string()),
+        ];
+        let f = render_error_findings(&comps, &errors);
+        let ids: Vec<&str> = f.iter().flat_map(|x| x.node_ids.iter().map(String::as_str)).collect();
+        assert!(!ids.contains(&"empty"), "the empty-srcText render-error is dropped as stale: {ids:?}");
+        assert!(ids.contains(&"real"), "the non-empty component keeps its error: {ids:?}");
+    }
+
+    #[test]
     fn render_error_findings_is_empty_with_no_errors() {
-        let comps = vec![json!({ "id": "a", "name": "A", "kitId": "k" })];
+        let comps = vec![json!({ "id": "a", "name": "A", "kitId": "k", "srcText": "export const A = () => null;" })];
         assert!(render_error_findings(&comps, &[]).is_empty());
     }
 
