@@ -670,6 +670,15 @@ mod tests {
         graphics.sort();
         assert_eq!(graphics, ["reflect.ts", "rotate.ts", "transpose.ts"], "the graphics collection");
         assert_eq!(in_domain("signal-processing"), ["fft.rs"]);
+        // The FleetPage dashboard's harvested algorithms (#3462/#3465) form a discoverable "fleet"
+        // collection (#3607) — in the graph but ungrouped until tagged, so `bsc graph` surfaced none.
+        let mut fleet = in_domain("fleet");
+        fleet.sort();
+        assert_eq!(
+            fleet,
+            ["group-totals.ts", "llm-energy.ts", "order-by-rank.ts", "precedence-resolve.ts", "stream-merge.ts", "windowed-tally.ts"],
+            "the fleet collection is the FleetPage dashboard's harvested algorithms"
+        );
 
         // The facet is ADDITIVE: the seed's general-purpose sorts/searches stay UNTAGGED rather than
         // being forced into a domain, so a domain collection never surfaces an unrelated algorithm.

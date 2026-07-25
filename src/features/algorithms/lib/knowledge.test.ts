@@ -156,12 +156,19 @@ describe("domain facet (#3120) — a lightweight, cross-language collection tag"
     // #3120 shipped the facet but left the seed untagged, which HID the rail affordance out of the box.
     // #3134 tags the seed, so `domainsOf` is non-empty and the "a logistics app pulls from its logistics
     // algorithms" example is real without manual `bsc graph impl set --domain` curation.
-    expect(domainsOf(KNOWLEDGE)).toEqual(["graphics", "logistics", "signal-processing"]);
+    expect(domainsOf(KNOWLEDGE)).toEqual(["fleet", "graphics", "logistics", "signal-processing"]);
     expect(implsByDomain(KNOWLEDGE, "logistics").map((i) => i.id)).toEqual([
       "bfs.rs", "dfs.rs", "dijkstra.rs", "a-star.rs", "topological-sort.rs",
     ]);
     expect(implsByDomain(KNOWLEDGE, "graphics").map((i) => i.id)).toEqual([
       "transpose.ts", "rotate.ts", "reflect.ts",
+    ]);
+    // The Fleet page's dashboard algorithms form a discoverable "fleet" collection (#3607) — the
+    // 6 nodes harvested from it (#3462/#3465) were in the graph but ungrouped, so the rail showed
+    // no fleet collection at all until they were tagged.
+    expect(implsByDomain(KNOWLEDGE, "fleet").map((i) => i.id)).toEqual([
+      "llm-energy.ts", "precedence-resolve.ts", "windowed-tally.ts",
+      "stream-merge.ts", "order-by-rank.ts", "group-totals.ts",
     ]);
     // Primitives are language built-ins, never domain members.
     expect(KNOWLEDGE.implementations.filter((i) => i.role === "primitive" && i.domain)).toEqual([]);
