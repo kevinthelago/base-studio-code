@@ -318,6 +318,18 @@ fn bsc_fleet_joins_roster_with_coord_state() {
 }
 
 #[test]
+fn bsc_supply_fragment_calls_the_supply_hook() {
+    // #3799: the supply-chain PreToolUse hook fragment defines `bsc-supply` → `bsc hook bash-supply`,
+    // keeps its mandatory trailing newline (#296), and is wired into the one ordered concat the rc
+    // writer + syntax guard both derive from.
+    assert_eq!(frag("supply.sh"), "bsc-supply() { bsc hook bash-supply; }\n");
+    assert!(
+        super::bsc_rc_body().contains("bsc-supply() { bsc hook bash-supply; }"),
+        "the bsc-supply helper must be in the concat body",
+    );
+}
+
+#[test]
 fn full_bsc_rc_is_syntactically_valid_bash() {
     // Regression for the rc-glue bug: every rc fragment must end with a newline so the
     // bsc-env.sh that pty_create writes keeps each helper on its own line. A missing

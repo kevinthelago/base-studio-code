@@ -43,6 +43,8 @@
 //                   $BSC_SCOPE_GLOBS (the hard deny the role gate's allow-only rules lack). Mirrors sessionRoles.ts.
 //  * deny.sh      — bsc-deny (#1916): Bash PreToolUse hook → `bsc hook bash-deny` (the dangerous-command
 //                   floor + role/user denies that survive bypassPermissions). Backed by the bsc binary.
+//  * supply.sh    — bsc-supply (#3799): Bash PreToolUse hook → `bsc hook bash-supply` (blocks a dependency
+//                   ADD of a malicious/known-vulnerable package via OSV/`bsc cve`; fail-open). Gated panes only.
 //  * taint.sh     — bsc-taint (#1167): tainted-turn gate; return 2 on outward/destructive Bash within
 //                   $BSC_TAINT_WINDOW of ingesting untrusted input (WebFetch / curl / gh issue|pr view).
 //  * coord-emit.sh— __bsc_coord(+_log) + bsc-landed/merged/closed/failed/wait/maintain/ask/answer/issue/
@@ -121,8 +123,11 @@ pub(crate) fn build_allowed_rc() -> String {
     let list = build_allowlist().join(" ");
     // Every name is charset-filtered above, so an unquoted `for` list is injection-safe. Each rebuild
     // re-enables scripts locally (`npm_config_ignore_scripts=false`) against the scripts-off default.
+    // `return 0` so the helper always succeeds — else the loop's exit status is the LAST `[ -d ]` test,
+    // which is falsey (non-zero) whenever the last allowlist entry isn't installed, making a clean run
+    // look like a failure to any `$?` check (#3799: caught once the subshell test was actually run).
     format!(
-        "bsc-build-allowed() {{ for p in {list}; do [ -d \"node_modules/$p\" ] && npm_config_ignore_scripts=false npm rebuild \"$p\"; done; }}\n"
+        "bsc-build-allowed() {{ for p in {list}; do [ -d \"node_modules/$p\" ] && npm_config_ignore_scripts=false npm rebuild \"$p\"; done; return 0; }}\n"
     )
 }
 
@@ -149,6 +154,7 @@ pub(crate) fn all_bsc_rc() -> Vec<String> {
         load_shell("confine.sh"),
         load_shell("scope.sh"),
         load_shell("deny.sh"),
+        load_shell("supply.sh"),
         load_shell("taint.sh"),
         load_shell("coord-emit.sh"),
         bsc_defer_rc(),
