@@ -308,6 +308,17 @@ html, body {
   --modal-bg: var(--bg-elev);
   --modal-border: var(--border);
   --modal-radius: var(--r-lg);
+  --switch-bg: var(--bg-elev2);
+  --switch-border: var(--border);
+  --switch-thumb: var(--fg-muted);
+  --switch-on-bg: color-mix(in oklch, var(--accent), transparent 30%);
+  --switch-on-border: var(--accent-dim);
+  --switch-on-thumb: var(--on-accent);
+  --icon-btn-bg: transparent;
+  --icon-btn-fg: var(--fg-dim);
+  --icon-btn-hover-bg: var(--bg-elev2);
+  --icon-btn-hover-fg: var(--fg);
+  --icon-btn-danger-hover-fg: var(--danger);
 }
 
 /* generic UI primitives */
@@ -333,12 +344,12 @@ html, body {
 
 /* ===== blueprints page (#513/#514) ===== */
 /* toggle switch */
-.sw{ width:30px; height:17px; border-radius:99px; background:var(--bg-elev2); border:1px solid var(--border);
+.sw{ width:30px; height:17px; border-radius:99px; background:var(--switch-bg); border:1px solid var(--switch-border);
   position:relative; cursor:pointer; flex:0 0 auto; transition:background .15s, border-color .15s; }
-.sw.on{ background:color-mix(in oklch, var(--accent), transparent 30%); border-color:var(--accent-dim); }
+.sw.on{ background:var(--switch-on-bg); border-color:var(--switch-on-border); }
 .sw i{ position:absolute; top:1.5px; left:1.5px; width:12px; height:12px; border-radius:50%;
-  background:var(--fg-muted); transition:left .15s, background .15s; }
-.sw.on i{ left:14px; background:var(--on-accent); }
+  background:var(--switch-thumb); transition:left .15s, background .15s; }
+.sw.on i{ left:14px; background:var(--switch-on-thumb); }
 .sw.dis{ opacity:.5; cursor:default; }
 /* small select + text input */
 .sel{ height:24px; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:var(--r-sm);
@@ -346,10 +357,10 @@ html, body {
 .sel:focus{ border-color:var(--accent-dim); }
 .dragging{ opacity:.4; }
 /* small icon button */
-.icon-btn{ width:24px; height:24px; border-radius:5px; border:1px solid transparent; background:transparent; color:var(--fg-dim);
+.icon-btn{ width:24px; height:24px; border-radius:5px; border:1px solid transparent; background:var(--icon-btn-bg); color:var(--icon-btn-fg);
   cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:13px; }
-.icon-btn:hover{ background:var(--bg-elev2); color:var(--fg); }
-.icon-btn.danger:hover{ color:var(--danger); }
+.icon-btn:hover{ background:var(--icon-btn-hover-bg); color:var(--icon-btn-hover-fg); }
+.icon-btn.danger:hover{ color:var(--icon-btn-danger-hover-fg); }
 .icon-btn.sm{ width:20px; height:20px; font-size:12px; }
 .icon-btn.xs{ width:16px; height:16px; border-radius:4px; font-size:11px; }
 .icon-btn:disabled{ opacity:.5; cursor:not-allowed; }

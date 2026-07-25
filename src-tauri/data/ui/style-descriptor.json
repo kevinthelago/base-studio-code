@@ -146,6 +146,45 @@
         { "key": "radius", "name": "--modal-radius", "type": "dimension", "default": "var(--r-lg)", "governs": "modal corner radius" }
       ],
       "variants": []
+    },
+    {
+      "component": "switch",
+      "governs": "the toggle Switch",
+      "tokens": [
+        { "key": "bg", "name": "--switch-bg", "type": "color", "default": "var(--bg-elev2)", "governs": "switch track background (off)" },
+        { "key": "border", "name": "--switch-border", "type": "color", "default": "var(--border)", "governs": "switch track border (off)" },
+        { "key": "thumb", "name": "--switch-thumb", "type": "color", "default": "var(--fg-muted)", "governs": "switch thumb colour (off)" }
+      ],
+      "variants": [
+        {
+          "variant": "on",
+          "governs": "the switched-on (accent) state",
+          "tokens": [
+            { "key": "bg", "name": "--switch-on-bg", "type": "color", "default": "color-mix(in oklch, var(--accent), transparent 30%)", "governs": "switch track background when on" },
+            { "key": "border", "name": "--switch-on-border", "type": "color", "default": "var(--accent-dim)", "governs": "switch track border when on" },
+            { "key": "thumb", "name": "--switch-on-thumb", "type": "color", "default": "var(--on-accent)", "governs": "switch thumb colour when on" }
+          ]
+        }
+      ]
+    },
+    {
+      "component": "icon-btn",
+      "governs": "the icon Button",
+      "tokens": [
+        { "key": "bg", "name": "--icon-btn-bg", "type": "color", "default": "transparent", "governs": "icon-button background (resting)" },
+        { "key": "fg", "name": "--icon-btn-fg", "type": "color", "default": "var(--fg-dim)", "governs": "icon-button glyph colour (resting)" },
+        { "key": "hover-bg", "name": "--icon-btn-hover-bg", "type": "color", "default": "var(--bg-elev2)", "governs": "icon-button background on hover" },
+        { "key": "hover-fg", "name": "--icon-btn-hover-fg", "type": "color", "default": "var(--fg)", "governs": "icon-button glyph colour on hover" }
+      ],
+      "variants": [
+        {
+          "variant": "danger",
+          "governs": "the destructive icon-button",
+          "tokens": [
+            { "key": "hover-fg", "name": "--icon-btn-danger-hover-fg", "type": "color", "default": "var(--danger)", "governs": "danger icon-button glyph colour on hover" }
+          ]
+        }
+      ]
     }
   ],
   "domain": [

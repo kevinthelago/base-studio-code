@@ -22,6 +22,8 @@ describe("resolveTheme / themeHoles (#2637)", () => {
     expect(CONTRACT_TOKENS.has("--card-bg")).toBe(true); // component
     expect(CONTRACT_TOKENS.has("--tab-active-bg")).toBe(true); // tab variant (#3739)
     expect(CONTRACT_TOKENS.has("--modal-bg")).toBe(true); // modal (#3739)
+    expect(CONTRACT_TOKENS.has("--switch-on-bg")).toBe(true); // switch variant (#3745)
+    expect(CONTRACT_TOKENS.has("--icon-btn-danger-hover-fg")).toBe(true); // icon-btn variant (#3745)
     expect(CONTRACT_TOKENS.has("--graph-health-error")).toBe(true); // domain (#2607)
     expect(CONTRACT_TOKENS.has("--nope")).toBe(false);
   });
@@ -98,5 +100,24 @@ describe("resolveThemeTokens (#3711) — the JS projection", () => {
     // a theme override composes THROUGH the chain (nord retints --bg-canvas)
     const n = resolveThemeTokens("nord");
     expect(n["--tab-active-bg"]).toBe(n["--bg-canvas"]);
+  });
+
+  it("resolves the switch + icon-btn control tokens through their var() chains (#3745)", () => {
+    const t = resolveThemeTokens("default");
+    // literal passthrough
+    expect(t["--icon-btn-bg"]).toBe("transparent");
+    // component tokens dereference to the SAME concrete value as their base token
+    expect(t["--switch-bg"]).toBe(t["--bg-elev2"]);
+    expect(t["--switch-thumb"]).toBe(t["--fg-muted"]);
+    expect(t["--switch-on-border"]).toBe(t["--accent-dim"]);
+    expect(t["--switch-on-thumb"]).toBe(t["--on-accent"]);
+    expect(t["--icon-btn-fg"]).toBe(t["--fg-dim"]);
+    expect(t["--icon-btn-hover-bg"]).toBe(t["--bg-elev2"]);
+    expect(t["--icon-btn-danger-hover-fg"]).toBe(t["--danger"]);
+    // the on-state track is a color-mix whose var(--accent) operand is dereferenced (like btn-danger-border)
+    expect(t["--switch-on-bg"]).toBe(`color-mix(in oklch, ${t["--accent"]}, transparent 30%)`);
+    // a theme override composes THROUGH the color-mix (nord retints --accent)
+    const n = resolveThemeTokens("nord");
+    expect(n["--switch-on-bg"]).toBe(`color-mix(in oklch, ${n["--accent"]}, transparent 30%)`);
   });
 });
