@@ -21,8 +21,10 @@ import { ROLES } from "./model";
 export function projectComponent(c: Partial<ComponentRecord>): ComponentRecord {
   return {
     id: c.id!,
-    name: c.name!,
-    kitId: c.kitId!,
+    // #3725: a suppression tombstone carries only `{id, suppressed}` — fall its name/kitId back to the id
+    // so the projection stays total; the reconcile drops it before it's ever rendered anyway.
+    name: c.name ?? c.id!,
+    kitId: c.kitId ?? "",
     role: (ROLES.includes(c.role as Role) ? c.role : "primitive") as Role,
     group: c.group, // #3048 — the kit-purpose partition; rides verbatim (never defaulted), like tech/style on a kit
     version: c.version ?? "",
@@ -36,6 +38,7 @@ export function projectComponent(c: Partial<ComponentRecord>): ComponentRecord {
     src: c.src ?? "",
     srcText: c.srcText ?? "",
     builtin: c.builtin,
+    suppressed: c.suppressed, // #3725 — the tombstone marker; reconcile intercepts it, doctor skips it
     wraps: c.wraps,
     provides: c.provides, // #3660 — the platform specifier this component overrides; rides verbatim (loader reads it)
     rules: c.rules,
@@ -58,9 +61,10 @@ export async function loadComponents(): Promise<ComponentRecord[] | null> {
   try {
     const out = await bsc(null, ["ui", "list", "--full"]);
     const rows = JSON.parse(out.trim() || "[]") as Partial<ComponentRecord>[];
-    // Defensive: keep only well-formed rows (id + name + kitId) before the projection.
+    // Defensive: keep only well-formed rows (id + name + kitId) — OR a suppression tombstone (#3725), which
+    // carries only `{id, suppressed}` and must survive the filter so the reconcile can block the re-seed.
     return (rows ?? [])
-      .filter((c): c is ComponentRecord => typeof c.id === "string" && !!c.id && !!c.name && !!c.kitId)
+      .filter((c): c is ComponentRecord => typeof c.id === "string" && !!c.id && (c.suppressed === true || (!!c.name && !!c.kitId)))
       .map(projectComponent);
   } catch {
     return null;
@@ -73,10 +77,12 @@ export async function loadKits(): Promise<Kit[] | null> {
     const out = await bsc(null, ["ui", "kit", "list", "--full"]);
     const rows = JSON.parse(out.trim() || "[]") as Partial<Kit>[];
     return (rows ?? [])
-      .filter((k): k is Kit => typeof k.id === "string" && !!k.id && !!k.name)
+      // A suppression tombstone (#3725, `{id, suppressed}`) survives the filter so the reconcile blocks the
+      // kit's re-seed; its name falls back to the id.
+      .filter((k): k is Kit => typeof k.id === "string" && !!k.id && (k.suppressed === true || !!k.name))
       // tech/style (#2487) ride VERBATIM — an absent field must stay absent (never defaulted), so a
       // pre-#2487 copy still hashes to its recorded seedHash and the #2483 reconcile can refresh it.
-      .map((k) => ({ id: k.id, name: k.name!, tech: k.tech, style: k.style, stack: k.stack ?? "", dot: k.dot ?? "var(--fg-muted)", animations: k.animations, builtin: k.builtin, seedHash: k.seedHash }));
+      .map((k) => ({ id: k.id, name: k.name ?? k.id!, tech: k.tech, style: k.style, stack: k.stack ?? "", dot: k.dot ?? "var(--fg-muted)", animations: k.animations, builtin: k.builtin, suppressed: k.suppressed, seedHash: k.seedHash }));
   } catch {
     return null;
   }

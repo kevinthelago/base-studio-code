@@ -51,6 +51,9 @@ export interface SeedRecord {
   label?: string;
   /** A packaged built-in. Absent/false ⇒ user-authored (never touched by the reconcile). */
   builtin?: boolean;
+  /** A SUPPRESSION tombstone (#3725) — `true` marks this id as a PERMANENTLY removed packaged builtin.
+   *  The reconcile skips it (not a record to render) and its presence blocks the seed from re-adding it. */
+  suppressed?: boolean;
   /** The content hash stamped when this copy was seeded (#2483). Absent ⇒ a legacy pre-#2483 copy. */
   seedHash?: string;
 }
@@ -159,6 +162,11 @@ export function reconcileSeed<T extends SeedRecord>(loaded: T[], seed: T[], type
   const notices: SeedNotice[] = [];
 
   for (const rec of loaded) {
+    // #3725: a SUPPRESSION tombstone — a marker that a packaged builtin of this id is permanently removed.
+    // It is not a record to render (skip it from `records`), and its presence in `loaded` (hence `have`
+    // below) makes the re-seed step SKIP that id, so the builtin never comes back. It stays in the store
+    // (never dropped) so the block persists; `unsuppress` (remove it) lets the next hydrate re-seed.
+    if (rec.suppressed) continue;
     if (!rec.builtin) {
       records.push(rec); // user-authored — never touched
       continue;
