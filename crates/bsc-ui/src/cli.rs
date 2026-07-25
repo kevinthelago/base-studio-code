@@ -298,12 +298,15 @@ USAGE:
   bsc ui emit sync <dir>             # re-emit MANAGED files whose kit source moved; warn on hand-edited
 
 Writes REAL, compilable source into <dir> (mirroring the src/ layout), every first-party `@/…` import
-rewritten to a resolvable relative path — so the emitted tree builds with NO alias config and NO
-network. Resolves against the EMBEDDED kit artifact (the packaged `bsc/react-ui`), so it works inside
-the sealed sandbox where the mutable stores aren't reachable. Each file is provenance-stamped
-(`// vendored from bsc/react-ui@<version> (sha256:…)`), the fingerprint `sync` keys on. `component`/`kit`
-print { emitted, dir, files, externalDeps } — `externalDeps` lists the npm packages (react, d3-*) the
-vendored code imports and the app must declare (the closure vendors first-party source only).
+rewritten to a resolvable relative path — so the emitted tree builds with NO alias config and NO network.
+`component` resolves against the WHOLE component store (#3720) when it's reachable — so ANY kit's
+component emits (react-d3, harvested, …), not just react-ui — overlaid on the packaged artifact (which
+supplies the react-ui sources + the shared runtime closure); when the store isn't mounted (the sealed
+sandbox) it falls back to the packaged `bsc/react-ui` artifact, so react-ui still emits offline. (`kit`
+and `sync` remain packaged-react-ui only.) Each file is provenance-stamped (`// vendored from <kit>@<ver>
+(sha256:…)`), the fingerprint `sync` keys on. `component`/`kit` print { emitted, dir, files, externalDeps }
+— `externalDeps` lists the npm packages (react, d3-*) the vendored code imports and the app must declare
+(the closure vendors first-party source only).
 
 `sync` is the ADOPT step (the atomic-upgrade model — re-run the command, don't hand-edit): it re-emits
 every MANAGED file (unchanged since it was emitted — its body still matches the stamp's sha256) from
@@ -665,7 +668,9 @@ fn cmd_emit(args: &[String], prog: &str) -> Result<(), String> {
         Some("component") => {
             let id = args.get(1).ok_or("usage: bsc ui emit component <id> <dir>")?;
             let dir = args.get(2).ok_or("usage: bsc ui emit component <id> <dir>")?;
-            write_plan(&crate::emit::EmitKit::packaged().plan_component(id)?, dir)
+            // #3720: resolve against the WHOLE store (any kit) when it's reachable, else the packaged
+            // react-ui artifact (the sealed-sandbox fallback — the store isn't mounted there).
+            write_plan(&emit_kit().plan_component(id)?, dir)
         }
         Some("kit") => {
             let dir = args.get(1).ok_or("usage: bsc ui emit kit <dir>")?;
@@ -679,6 +684,25 @@ fn cmd_emit(args: &[String], prog: &str) -> Result<(), String> {
             "unknown emit command '{other}' — want: component <id> <dir> | kit <dir> | sync <dir>"
         )),
     }
+}
+
+/// The `EmitKit` `emit component` resolves against (#3720): the live component STORE overlaid on the
+/// packaged artifact when the store is reachable (so ANY kit's component emits), else the packaged
+/// artifact alone — the sealed-sandbox fallback, where the mutable store isn't mounted and react-ui still
+/// emits. A store that resolves but is empty (a fresh install) also falls back to packaged.
+fn emit_kit() -> crate::emit::EmitKit {
+    match load_store_components() {
+        Ok(comps) if !comps.is_empty() => crate::emit::EmitKit::from_store(&comps),
+        _ => crate::emit::EmitKit::packaged(),
+    }
+}
+
+/// Every component record in the working store (`BSC_COMPONENT_DIR` → `~/.base-studio-code/components/`),
+/// parsed; malformed rows are skipped. `Err` only when the store dir can't be resolved (no home) — the
+/// caller treats that, like an empty store, as "fall back to packaged".
+fn load_store_components() -> Result<Vec<serde_json::Value>, String> {
+    let store = component_collection("components", "BSC_COMPONENT_DIR", "component")?;
+    Ok(store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect())
 }
 
 /// `bsc ui emit sync <dir>` (#2804) — the ADOPT step: re-emit every MANAGED vendored kit file (one
