@@ -25,7 +25,7 @@ export function Avatar({ login, size = 20, palette = false, bordered = false, ml
   return (
     <span title={"@" + login} className="mono" style={{
       width: size, height: size, borderRadius: "50%",
-      background: palette ? avatarColor(login) : loginColor(login), color: "#1a120a",
+      background: palette ? avatarColor(login) : loginColor(login), color: "var(--on-accent)",
       fontWeight: 700, fontSize: size * fontScale,
       display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
       ...(ml ? { marginLeft: ml } : {}),

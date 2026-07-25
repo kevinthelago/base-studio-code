@@ -325,7 +325,7 @@ html, body {
 .sw.on{ background:color-mix(in oklch, var(--accent), transparent 30%); border-color:var(--accent-dim); }
 .sw i{ position:absolute; top:1.5px; left:1.5px; width:12px; height:12px; border-radius:50%;
   background:var(--fg-muted); transition:left .15s, background .15s; }
-.sw.on i{ left:14px; background:#1a120a; }
+.sw.on i{ left:14px; background:var(--on-accent); }
 .sw.dis{ opacity:.5; cursor:default; }
 /* small select + text input */
 .sel{ height:24px; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:var(--r-sm);
