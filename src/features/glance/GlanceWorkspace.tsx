@@ -141,7 +141,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // wait overstaying the threshold escalates its project to a warning. `now` ticks on the same slow
   // cadence (kept out of render — `Date.now()` is impure) so a threshold crossing surfaces without a
   // coord change.
-  const coord = useCoordLog({ ms: STALL_POLL_MS });
+  const coord = useCoordLog();
   const [now, setNow] = useState(0);
   usePoll(async (isCancelled) => { if (!isCancelled()) setNow(Date.now()); }, STALL_POLL_MS, []);
   // Overlay order: base (merge+liveness) → STALL (waiting/warn) → FAULT (error) → OFF (#3239) last, so a
