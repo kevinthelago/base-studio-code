@@ -511,13 +511,18 @@ record when a preview throws), so a preview runtime failure is observable from a
         summary: "record a preview runtime error — the frontend's durable append path (#3165)",
         usage: "\
 USAGE:
-  bsc ui preview-error <id>   # the error message / stack trace on stdin
+  bsc ui preview-error <id>         # the error message / stack trace on stdin
+  bsc ui preview-error clear <id>   # clear a STALE error (#3737)
 
 Appends one { at, id, message } record (message read from stdin) to the preview-error log
 (~/.base-studio-code/preview-errors.log, or $BSC_PREVIEW_ERROR_LOG), capped to the most recent 200. The
 Design Studio's live preview calls this when the sandboxed iframe posts `{__preview:\"error\"}`, so the
 throw becomes durable + tail-able via `bsc ui preview-errors`. A diagnostic append (not a store
-mutation), so it is not ui-scope gated. Prints the recorded id.",
+mutation), so it is not ui-scope gated. Prints the recorded id.
+
+`clear <id>` (#3737) drops the current error for <id> — for when the recorded throw no longer reflects the
+component's source (editing it via `set`/`set-src`/`patch` now clears automatically; this is the manual
+lever). A no-op when the id has no current error.",
     },
 ];
 
@@ -2671,10 +2676,19 @@ fn cmd_preview_errors(args: &[String]) -> Result<(), String> {
 /// `preview-error <id>` (#3165) — append a preview-error record (message read from stdin) to the durable
 /// log `preview-errors` tails. A diagnostic append, so NOT ui-scope gated.
 fn cmd_preview_error(args: &[String]) -> Result<(), String> {
+    // #3737: `preview-error clear <id>` clears a stale render-error directly (without re-writing the
+    // component), for when the recorded error no longer reflects the current source. Everything else is
+    // the RECORD form: `preview-error <id>` with the message on stdin.
+    if args.first().map(String::as_str) == Some("clear") {
+        let id = args.get(1).ok_or("usage: preview-error clear <id>")?;
+        crate::preview_errors::clear(id)?;
+        println!("{id}");
+        return Ok(());
+    }
     let id = args
         .iter()
         .find(|a| !a.starts_with("--"))
-        .ok_or("usage: preview-error <id>   # error message / stack trace on stdin")?;
+        .ok_or("usage: preview-error <id>   # error message / stack trace on stdin (or `clear <id>`)")?;
     let mut message = String::new();
     std::io::stdin().read_to_string(&mut message).map_err(|e| format!("cannot read stdin: {e}"))?;
     crate::preview_errors::record(id, message.trim())?;
@@ -3244,7 +3258,12 @@ fn replace_src(store: &bsc_json_store::Store, id: &str, src: &str) -> Result<(),
         .expect("load_component_object guarantees an object")
         .insert("srcText".to_string(), serde_json::Value::String(src.to_string()));
     validate_component_batch(std::slice::from_ref(&record))?;
-    stamped_set(store, id, record, &crate::record::resolve_writer(None))
+    stamped_set(store, id, record, &crate::record::resolve_writer(None))?;
+    // #3737: `set-src` invalidates the last render — clear any stale `render-error` so `bsc ui doctor`
+    // doesn't keep reporting the pre-edit throw (batch `set` already does this, #43; set-src/patch didn't,
+    // which is how the #11/#21 stale errors survived). Best-effort; a no-op unless this id has an error.
+    let _ = crate::preview_errors::clear(id);
+    Ok(())
 }
 
 /// Set `value` at `pointer` on component `id`'s record, then run the `set` syntax gate (#2928) — so a
@@ -3260,7 +3279,10 @@ fn apply_patch(
     let mut record = load_component_object(store, id)?;
     set_at_pointer(&mut record, &normalize_pointer(pointer)?, value)?;
     validate_component_batch(std::slice::from_ref(&record))?;
-    stamped_set(store, id, record, &crate::record::resolve_writer(None))
+    stamped_set(store, id, record, &crate::record::resolve_writer(None))?;
+    // #3737: a component patch invalidates the last render — clear any stale `render-error` (see `replace_src`).
+    let _ = crate::preview_errors::clear(id);
+    Ok(())
 }
 
 /// Render ONE resolved field value for `get --field` to the string to emit: `raw` unwraps a string (no
