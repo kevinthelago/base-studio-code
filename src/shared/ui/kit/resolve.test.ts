@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveTheme, themeHoles, referencedTokens, CONTRACT_TOKENS } from "./resolve";
+import { resolveTheme, themeHoles, referencedTokens, CONTRACT_TOKENS, resolveThemeTokens } from "./resolve";
 
 describe("resolveTheme / themeHoles (#2637)", () => {
   it("referencedTokens extracts var(--x) names incl. fallbacks + color-mix operands", () => {
@@ -35,5 +35,42 @@ describe("resolveTheme / themeHoles (#2637)", () => {
     expect(nord.holes).toEqual([]); // built-in themes are clean
     // the applied vars are exactly the theme's override set (byte-identical to themeVars → zero visual)
     expect(Object.keys(nord.vars as Record<string, unknown>).length).toBe(Object.keys(nord.provenance).length);
+  });
+});
+
+describe("resolveThemeTokens (#3711) — the JS projection", () => {
+  it("flattens a base-look theme: a component token dereferences to its contract default", () => {
+    const t = resolveThemeTokens("default");
+    expect(t["--bg-panel"]).toBe("oklch(0.17 0.005 250)");
+    // --card-bg is `var(--bg-panel)` in the contract → dereferenced to the same concrete value.
+    expect(t["--card-bg"]).toBe("oklch(0.17 0.005 250)");
+    expect(t["--card-bg"]).toBe(t["--bg-panel"]);
+  });
+
+  it("composes a theme's override THROUGH the var() chain", () => {
+    // Nord overrides --bg-panel; --card-bg = var(--bg-panel), so it must resolve to nord's value.
+    const t = resolveThemeTokens("nord");
+    expect(t["--bg-panel"]).toBe("#323947");
+    expect(t["--card-bg"]).toBe("#323947");
+  });
+
+  it("dereferences a var() nested inside color-mix", () => {
+    expect(resolveThemeTokens("default")["--btn-danger-border"]).toBe(
+      "color-mix(in oklch, oklch(0.68 0.18 25), transparent 70%)",
+    );
+    expect(resolveThemeTokens("nord")["--btn-danger-border"]).toBe(
+      "color-mix(in oklch, #bf616a, transparent 70%)",
+    );
+  });
+
+  it("passes literal values through untouched (colors, dimensions, durations)", () => {
+    const t = resolveThemeTokens("default");
+    expect(t["--btn-primary-fg"]).toBe("#1a120a");
+    expect(t["--r-md"]).toBe("6px");
+    expect(t["--dur-fast"]).toBe("120ms");
+  });
+
+  it("leaves an unknown (non-contract) token reference in place — --btn-font-family = var(--mono), a global outside the descriptor", () => {
+    expect(resolveThemeTokens("default")["--btn-font-family"]).toBe("var(--mono)");
   });
 });
