@@ -204,6 +204,7 @@ export function DeleteProjectModal({ target, onClose, setProjects }: DeleteProje
               variant="primary"
               onClick={handleDeleteKeep}
               disabled={deleting}
+              // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional: focus the safe default (Keep) action when the modal opens
               autoFocus
               style={{ width: "100%", textAlign: "left", padding: "11px 14px", height: "auto", display: "block", marginBottom: 10 }}
             >

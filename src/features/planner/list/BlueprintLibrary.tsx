@@ -211,6 +211,7 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
             <Row gap={6} style={{ marginTop: 10 }}>
               {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline rail input (custom sizing/border, not a Field stack) */}
               <input
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional: focus the blueprint-name field when the inline form opens
                 autoFocus
                 value={bpTitle}
                 onChange={e => setBpTitle(e.target.value)}
