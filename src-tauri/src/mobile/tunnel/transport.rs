@@ -28,10 +28,10 @@ const MAX_PLAINTEXT: usize = 48 * 1024;
 
 /// The largest plaintext a single Noise transport message can carry: the 65535-byte ciphertext
 /// cap minus the 16-byte ChaChaPoly tag. A frame whose serialized JSON exceeds this cannot be
-/// `write_message`'d at all (`snow` returns `Error::Input`), so `send_msg` SKIPS it with a warning
-/// rather than propagating the error — a single oversized `store_state` domain must not tear down
-/// the whole session mid-replay and blank EVERY domain on mobile (#3755). The real fix is
-/// fragmentation (mobile reassembly); until then, over-cap domains are simply not mirrored.
+/// `write_message`'d at all (`snow` returns `Error::Input`), so `encode` returns `Ok(None)` rather
+/// than letting the error propagate and tear down the whole session mid-replay (#3755). An over-cap
+/// `store_state` is then FRAGMENTED into `store_state_chunk` frames mobile reassembles (#3757); any
+/// other over-cap frame (none exist in practice — every other frame is small) is skipped.
 const MAX_NOISE_PLAINTEXT: usize = 65535 - 16;
 
 /// A high-entropy, URL-safe room id matching the relay's `validateRoomId`
@@ -99,20 +99,56 @@ pub fn encode<T: Serialize>(tx: &mut snow::TransportState, msg: &T) -> Result<Op
 async fn send_msg(sink: &mut WsSink, tx: &mut snow::TransportState, msg: &ServerMsg) -> Result<(), String> {
     match encode(tx, msg)? {
         Some(frame) => sink.send(Message::Binary(frame.into())).await.str_err(),
-        // Oversized frame → SKIP, not fatal. Erroring here tore down the whole session mid-replay,
-        // blanking EVERY store_state domain on mobile, not just the one over the cap (#3755).
-        None => {
-            let kind = match msg {
-                ServerMsg::StoreState { domain, .. } => format!("store_state[{domain}]"),
-                _ => "frame".to_string(),
-            };
-            log::warn!(
-                "tunnel: skipped oversized {kind} (serialized > {MAX_NOISE_PLAINTEXT}-byte Noise cap) — \
-                 it won't reach mobile until fragmentation lands (#3755)"
-            );
-            Ok(())
+        // Oversized frame → don't error (that tore down the whole session mid-replay and blanked
+        // EVERY domain on mobile, #3755). A `store_state` is FRAGMENTED into `store_state_chunk`
+        // frames mobile reassembles by `(domain, rev)` (#3757); anything else — which shouldn't
+        // happen, every other frame is small — is skipped with a warning.
+        None => match msg {
+            ServerMsg::StoreState { domain, rev, json } => {
+                send_store_state_chunks(sink, tx, domain, *rev, json).await
+            }
+            _ => {
+                log::warn!(
+                    "tunnel: skipped oversized frame (serialized > {MAX_NOISE_PLAINTEXT}-byte Noise cap) \
+                     — only store_state is fragmented"
+                );
+                Ok(())
+            }
+        },
+    }
+}
+
+/// Fragment an over-cap `store_state` domain's `json` into `store_state_chunk` frames (#3757). Each
+/// chunk is a ≤ [`MAX_PLAINTEXT`] UTF-8 slice, safely under the Noise cap, so it always `encode`s to
+/// `Some`. Mobile buffers by `(domain, rev)` and reassembles once all `total` arrive. Sent inline
+/// (not via `send_msg`) to avoid async recursion, and because a fitting chunk never needs re-splitting.
+async fn send_store_state_chunks(
+    sink: &mut WsSink,
+    tx: &mut snow::TransportState,
+    domain: &str,
+    rev: u64,
+    json: &str,
+) -> Result<(), String> {
+    let pieces = split_utf8(json, MAX_PLAINTEXT);
+    let total = pieces.len() as u32;
+    for (seq, chunk) in pieces.iter().enumerate() {
+        let msg = ServerMsg::StoreStateChunk {
+            domain: domain.to_string(),
+            rev,
+            seq: seq as u32,
+            total,
+            chunk: (*chunk).to_string(),
+        };
+        match encode(tx, &msg)? {
+            Some(frame) => sink.send(Message::Binary(frame.into())).await.str_err()?,
+            // A single MAX_PLAINTEXT slice + the small chunk wrapper cannot exceed the cap, so this
+            // is unreachable in practice; warn rather than tear down if it ever does (the domain
+            // stays incomplete on mobile until the next full rev, which its reassembler tolerates).
+            None => log::warn!("tunnel: store_state_chunk[{domain}] seq {seq} over cap — dropped"),
         }
     }
+    log::debug!("tunnel: fragmented store_state[{domain}] rev {rev} into {total} chunk(s)");
+    Ok(())
 }
 
 async fn send_output(sink: &mut WsSink, tx: &mut snow::TransportState, po: &PaneOutputChunk) -> Result<(), String> {
