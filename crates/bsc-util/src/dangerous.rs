@@ -40,6 +40,24 @@ pub const DANGEROUS_BASH: &[DangerousCmd] = &[
     DangerousCmd { claude_rule: Some("Bash(curl *| sh)"), agent_substring: None },
     DangerousCmd { claude_rule: Some("Bash(curl *| bash)"), agent_substring: None },
     DangerousCmd { claude_rule: Some("Bash(wget *| sh)"), agent_substring: None },
+    // ── gh credential-exfiltration + CI-seeding surface (#3793, supply-chain #2433) ──
+    // base-studio-code runs many parallel agent sessions with LIVE `gh` auth. These subcommands
+    // exfiltrate the token (`gh auth token` prints it to stdout), re-point auth, plant attacker
+    // creds/keys, or trigger/enable/disable CI — the exact moves of a Shai-Hulud-class worm. Unlike the
+    // role gate's `GH_WRITE_DENY` (which only applies to a `github: "read"` role, and covers the ordinary
+    // issue/pr/repo mutations, not these), the floor blocks them in EVERY posture and for EVERY role
+    // incl. a `github: "write"` director. Reads (`gh pr view`, `gh issue list`, `gh api` GET, `gh auth
+    // status`) and the flow-granted `gh pr create` stay allowed — these are the credential/CI plane only.
+    DangerousCmd { claude_rule: Some("Bash(gh auth token*)"), agent_substring: Some("gh auth token") },
+    DangerousCmd { claude_rule: Some("Bash(gh auth login*)"), agent_substring: Some("gh auth login") },
+    DangerousCmd { claude_rule: Some("Bash(gh auth switch*)"), agent_substring: Some("gh auth switch") },
+    DangerousCmd { claude_rule: Some("Bash(gh auth setup-git*)"), agent_substring: Some("gh auth setup-git") },
+    DangerousCmd { claude_rule: Some("Bash(gh secret *)"), agent_substring: Some("gh secret ") },
+    DangerousCmd { claude_rule: Some("Bash(gh ssh-key add*)"), agent_substring: Some("gh ssh-key add") },
+    DangerousCmd { claude_rule: Some("Bash(gh gpg-key add*)"), agent_substring: Some("gh gpg-key add") },
+    DangerousCmd { claude_rule: Some("Bash(gh workflow run*)"), agent_substring: Some("gh workflow run") },
+    DangerousCmd { claude_rule: Some("Bash(gh workflow enable*)"), agent_substring: Some("gh workflow enable") },
+    DangerousCmd { claude_rule: Some("Bash(gh workflow disable*)"), agent_substring: Some("gh workflow disable") },
 ];
 
 /// The Claude harness deny rules — the `Bash(<glob>)` floor written into `.claude/settings.json`'s
@@ -59,29 +77,59 @@ mod tests {
     use super::*;
 
     #[test]
-    fn claude_floor_is_byte_identical_to_the_legacy_default_deny() {
-        // Pins the exact `.claude/settings.json` deny rules the Claude harness wrote before #1844 —
-        // same rules, same order — so unifying the floor changes no Claude behavior.
+    fn claude_floor_pins_the_full_deny_list() {
+        // Pins the exact `.claude/settings.json` deny rules — same rules, same order — so the floor can't
+        // drift. The legacy catastrophic set (#1844) followed by the gh credential/CI floor (#3793).
         let rules: Vec<&str> = claude_deny_rules().collect();
         assert_eq!(
             rules,
             [
+                // legacy catastrophic floor (#1844) — unchanged
                 "Bash(sudo *)", "Bash(rm -rf /*)", "Bash(rm -fr /*)", "Bash(rm -rf ~*)", "Bash(dd *)",
                 "Bash(mkfs *)", "Bash(shutdown *)", "Bash(reboot *)", "Bash(git push --force*)",
                 "Bash(git push -f *)", "Bash(curl *| sh)", "Bash(curl *| bash)", "Bash(wget *| sh)",
+                // gh credential-exfiltration + CI-seeding floor (#3793)
+                "Bash(gh auth token*)", "Bash(gh auth login*)", "Bash(gh auth switch*)",
+                "Bash(gh auth setup-git*)", "Bash(gh secret *)", "Bash(gh ssh-key add*)",
+                "Bash(gh gpg-key add*)", "Bash(gh workflow run*)", "Bash(gh workflow enable*)",
+                "Bash(gh workflow disable*)",
             ],
         );
     }
 
     #[test]
-    fn agent_floor_is_byte_identical_to_the_legacy_base_dangerous_bash() {
-        // Pins the exact bsc-agent runtime substrings — same set, same order — so the runtime floor is
-        // unchanged (no security regression on the model-agnostic harness).
+    fn agent_floor_pins_the_full_substring_list() {
+        // Pins the exact bsc-agent runtime substrings — same set, same order. Legacy floor (#1844) then
+        // the gh credential/CI floor (#3793), so the model-agnostic harness gets the same coverage.
         let subs: Vec<&str> = agent_dangerous_substrings().collect();
         assert_eq!(
             subs,
-            ["sudo ", "rm -rf /", "rm -fr /", "rm -rf ~", "mkfs.", ":(){", "git push --force", "git push -f "],
+            [
+                "sudo ", "rm -rf /", "rm -fr /", "rm -rf ~", "mkfs.", ":(){", "git push --force", "git push -f ",
+                "gh auth token", "gh auth login", "gh auth switch", "gh auth setup-git", "gh secret ",
+                "gh ssh-key add", "gh gpg-key add", "gh workflow run", "gh workflow enable", "gh workflow disable",
+            ],
         );
+    }
+
+    #[test]
+    fn gh_credential_and_ci_commands_are_floored_in_both_harnesses() {
+        // #3793: every gh credential/CI-abuse command is denied in BOTH harnesses (so it's blocked under
+        // every posture + role — the role gate's GH_WRITE_DENY is not enough, it skips a `github: write`
+        // role). The exfil/plant/seed verbs must all be covered; the read plane must NOT be.
+        let rules: Vec<&str> = claude_deny_rules().collect();
+        let subs: Vec<&str> = agent_dangerous_substrings().collect();
+        for (rule, sub) in [
+            ("Bash(gh auth token*)", "gh auth token"),   // prints the live OAuth token → exfiltration
+            ("Bash(gh secret *)", "gh secret "),         // plant/exfil via repo/org secrets
+            ("Bash(gh ssh-key add*)", "gh ssh-key add"), // add an attacker key to the account
+            ("Bash(gh workflow run*)", "gh workflow run"), // seed/trigger malicious CI
+        ] {
+            assert!(rules.contains(&rule), "Claude floor must deny {rule}");
+            assert!(subs.contains(&sub), "bsc-agent floor must deny {sub}");
+        }
+        // The read plane stays open — `gh auth status` / `gh pr view` are NOT floored.
+        assert!(!subs.iter().any(|s| *s == "gh auth status" || *s == "gh pr view"));
     }
 
     #[test]
