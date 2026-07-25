@@ -175,6 +175,28 @@ fn parse(path: &Path) -> Option<(Vec<u8>, tree_sitter::Tree)> {
 pub fn harvest(dir: &Path, kit_id: &str) -> Vec<Candidate> {
     let mut found: Vec<Found> = Vec::new();
     walk(dir, dir, &mut found);
+    build_candidates(found, kit_id)
+}
+
+/// Harvest a SINGLE file (#3722) — parse just `file` and lift its components, `composes` resolved within
+/// the file. For targeting ONE component's module instead of a whole tree (and pairing with `--out` so a
+/// large candidate's `srcText` is recoverable). A non-parseable path (a test/story file, a non-source
+/// extension) yields no candidates, exactly as the dir walk skips it. The recorded `src` is the file's
+/// own name — a single-file harvest has no root to make the path relative to.
+pub fn harvest_file(file: &Path, kit_id: &str) -> Vec<Candidate> {
+    let mut found: Vec<Found> = Vec::new();
+    if let Some((src, tree)) = parse(file) {
+        let rel = file.file_name().and_then(|n| n.to_str()).unwrap_or("").replace('\\', "/");
+        collect_file(tree.root_node(), &src, &rel, &mut found);
+    }
+    build_candidates(found, kit_id)
+}
+
+/// Resolve `composes` edges + buildability across a harvested `Found` set and render each into a
+/// `Candidate`. Shared by the directory [`harvest`] and the single-file [`harvest_file`], so both apply
+/// the same in-set sibling resolution (a single file's siblings are simply the components defined beside
+/// it in that one module).
+fn build_candidates(found: Vec<Found>, kit_id: &str) -> Vec<Candidate> {
     // Which component NAMES were harvested, and from which MODULE — `composes` only links in-set
     // candidates, and a sibling import must agree on BOTH (see `SiblingIndex`).
     let mut in_set = SiblingIndex::default();
@@ -897,6 +919,29 @@ mod tests {
 
         let names: Vec<String> = harvest(&base, DEFAULT_KIT).into_iter().map(|c| c.name).collect();
         assert_eq!(names, vec!["Real".to_string()], "the worktree copy is skipped — no duplicate: {names:?}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn harvest_file_lifts_components_from_a_single_module() {
+        // #3722: scope a harvest to ONE file. Two components in one module; `composes` resolves within it.
+        let base = std::env::temp_dir().join(format!("bsc-harvest-file-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let file = base.join("Widgets.tsx");
+        std::fs::write(&file, "export const Chip = () => <span/>;\nexport const Bar = () => <Chip/>;").unwrap();
+
+        let cands = harvest_file(&file, DEFAULT_KIT);
+        let names: Vec<&str> = cands.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"Chip") && names.contains(&"Bar"), "both components lifted: {names:?}");
+        let bar = cands.iter().find(|c| c.name == "Bar").unwrap();
+        assert_eq!(bar.composes, vec!["Chip".to_string()], "a sibling in the same file is a composes edge");
+        assert_eq!(bar.src, "Widgets.tsx", "src is the file name for a single-file harvest");
+
+        // A non-parseable single file (a test file) yields nothing — same skip the dir walk applies.
+        let test = base.join("Widgets.test.tsx");
+        std::fs::write(&test, "export const T = () => <span/>;").unwrap();
+        assert!(harvest_file(&test, DEFAULT_KIT).is_empty(), "a test file yields no candidates");
         let _ = std::fs::remove_dir_all(&base);
     }
 
