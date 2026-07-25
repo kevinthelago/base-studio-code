@@ -6,7 +6,7 @@ import type { Team } from "@/features/teams";
 import type { Persona } from "@/features/personas";
 import type { Blueprint } from "@/features/planner/stages/blueprintTypes";
 import type { SkillDef } from "@/features/skills/lib/skillsModel";
-import type { Kit, ComponentRecord } from "@/features/designs";
+import type { Kit, ComponentRecord, KitConsumer, KitLibraryRef } from "@/features/designs";
 import type { Automation } from "@/features/automations/lib/scheduler";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
 import type { Hook } from "@/features/mcp/lib/hooks";
@@ -74,6 +74,24 @@ describe("buildGlancePayload", () => {
     expect(out.personaRoles).toEqual({ "backend-dev": "worker", lead: "director" });
     // a stream's persona id resolves to its role through the map
     expect(out.personaRoles[fleet.streams[0].persona!]).toBe("worker");
+  });
+
+  it("carries the kit + library bands so mobile rebuilds the full cockpit, paring kits to id+name (#3743)", () => {
+    const kits = [{ id: "react-ui", name: "React UI", tech: "react", style: "studio" }] as unknown as Kit[];
+    const kitUsage = [{ projectKey: "demo", kitId: "react-ui" }] as unknown as KitConsumer[];
+    const libraryRefs = [{ kitId: "react-ui", node: "dijkstra" }] as unknown as KitLibraryRef[];
+    const out = buildGlancePayload({ projects, links: [], faults: {}, drill: null, fleets: {}, personas, kitUsage, kits, libraryRefs });
+    // kits are pared to id+name (the wire node reads the name); kitUsage/libraryRefs pass through verbatim.
+    expect(out.kits).toEqual([{ id: "react-ui", name: "React UI" }]);
+    expect(out.kitUsage).toBe(kitUsage);
+    expect(out.libraryRefs).toBe(libraryRefs);
+  });
+
+  it("defaults the kit + library bands to empty when omitted (#3743)", () => {
+    const out = buildGlancePayload({ projects, links: [], faults: {}, drill: null, fleets: {}, personas });
+    expect(out.kitUsage).toEqual([]);
+    expect(out.kits).toEqual([]);
+    expect(out.libraryRefs).toEqual([]);
   });
 });
 
