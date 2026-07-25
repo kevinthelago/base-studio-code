@@ -1,0 +1,14 @@
+[package]
+name = "channel"
+version = "0.1.0"
+edition = "2021"
+description = "Marketing channel MCP servers for the Marketer (#3146, epic #3145). A marketing channel IS an MCP server: its tools ARE the channel actions (send_email / post / schedule / get_metrics), assigned to the marketer stream via the normal MCP lifecycle. Ships the MOCK channel first — it RECORDS every call to a JSONL log instead of sending, so the whole plan→draft→approve→publish→metrics loop is testable end-to-end with ZERO real sends. Real adapters (Resend email, Bluesky) land later behind the same tool surface. Behind the shared mcp_rpc stdio core."
+
+[lib]
+name = "channel"
+
+[dependencies]
+# Shared stdio JSON-RPC 2.0 core (#1622): the handshake, builders, dispatch, run-loop + `arg_str`.
+# This crate supplies its own `tool_schemas` + `call_tool` via the `ToolServer` trait.
+mcp-rpc = { path = "../mcp-rpc" }
+serde_json = "1"
