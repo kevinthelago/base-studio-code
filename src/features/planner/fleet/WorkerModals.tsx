@@ -41,7 +41,9 @@ export function WorkerModals({ modal, setModal, worker, st, draft, setDraft, sen
             </Box>
           )}
           <Box className="hint" style={{ marginBottom: 8 }}>Typed straight into this worker's running session.</Box>
-          <TextArea value={draft} onChange={setDraft} autoFocus
+          <TextArea value={draft} onChange={setDraft}
+            // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional: focus the reply field when the modal opens
+            autoFocus
             placeholder={modal === "answer" ? "your decision…" : "e.g. skip the migration; focus on the API contract"}
             className="mono"
             style={{ width: "100%", minHeight: 84, resize: "vertical", background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, padding: 10, color: "var(--fg)", fontSize: 12, outline: "none" }} />

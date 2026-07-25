@@ -146,6 +146,7 @@ export function PublishedHeader({
           <Text mono size={10} tone="dim" style={{ whiteSpace: "nowrap" }}>+ plan</Text>
           {/* eslint-disable-next-line no-restricted-syntax -- bespoke borderless inline title input (not a Field stack) */}
           <input
+            // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional: focus the plan-title field when the inline form opens
             autoFocus
             value={title}
             onChange={e => setTitle(e.target.value)}

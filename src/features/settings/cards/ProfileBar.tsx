@@ -65,6 +65,7 @@ export function ProfileBar({
           {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline save-dialog input (fixed width/height) beside Buttons in a Row; a TextField .field wrapper would break the layout */}
           <input
             className="input mono"
+            // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional: focus the profile-name field when the save dialog opens
             autoFocus
             value={newProfileName}
             onChange={(e) => setNewProfileName(e.target.value)}

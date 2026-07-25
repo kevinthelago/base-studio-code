@@ -66,6 +66,7 @@ export function DeploymentBody({
       <Row gap={6}>
         {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline-styled input in a flex link row; TextField's .field wrapper would change layout */}
         <input
+          // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional: focus the repo-link field when it opens
           autoFocus aria-label="Link a repository" value={linkInput} placeholder="owner/repo"
           onChange={(e) => setLinkInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") submitLink(); else if (e.key === "Escape") { setLinking(false); setLinkInput(""); } }}

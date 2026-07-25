@@ -101,6 +101,7 @@ export function ImportModal({ onClose, onResolve, onImport }: {
       ) : (
         <>
           <TextField label="Gist URL or ID" hint="Paste a full URL or the raw gist ID."
+            // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional: focus the URL field when the import dialog opens
             autoFocus placeholder="gist.github.com/user/a91f3c0e7  ·  or  ·  a91f3c0e7"
             value={val} onChange={setVal} onKeyDown={(e) => { if (e.key === "Enter") void resolve(); }} />
           {phase === "error" && <Box className="mono" style={{ color: "var(--danger)", fontSize: 11, marginTop: 10 }}>Couldn't resolve: {err}</Box>}
