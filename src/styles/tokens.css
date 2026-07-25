@@ -55,6 +55,9 @@
      and oklch(0.20 0.04 145) that were scattered through the feature CSS. */
   --on-accent:  #1a120a;                  /* ink on an --accent fill */
   --on-success: oklch(0.20 0.04 145);     /* ink on a --success fill */
+  /* dependency-cycle / coordination-hazard accent (Glance) — extracted from scattered #f2848b/#f3a4a9. */
+  --cycle:      #f2848b;                   /* emphatic — cycle chips, hazard header, counts */
+  --cycle-soft: #f3a4a9;                   /* soft — cycle descriptions / fault counts */
 
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --sans: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
