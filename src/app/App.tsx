@@ -24,6 +24,8 @@ import { AutomationsStatus } from "@/features/automations";
 import { SkillsStatus } from "@/features/skills";
 import { Achievements } from "@/app/Achievement";
 import { AppBanners } from "@/app/AppBanners";
+import { LiveRegion } from "@/shared/ui/feedback/LiveRegion";
+import { useCoordAnnouncer } from "@/app/a11y/useCoordAnnouncer";
 import { useWarden } from "@/shared/lib/fleet/useWarden";
 import { useWorkerAutoEnd } from "@/shared/lib/fleet/useWorkerAutoEnd";
 import { useNotificationSounds } from "@/features/sounds";
@@ -55,6 +57,7 @@ export default function App() {
   useTunnelAutomations(); // project automations + accept arm/run-now from a paired phone (#937)
   useTunnelHookTelemetry(); // project read-only hook-fire telemetry to a paired phone (#937)
   useTunnelCoordControl(); // route a paired phone's wake/approve into the coordinator (#935)
+  useCoordAnnouncer(); // announce structured coord events to the screen reader via the live region (#3770)
   useAppBoot();    // accent vars · startup trace · base-dir/crash/skills hydration · deferred perf monitor
   useNavHistory(); // mouse back/forward (X1/X2) → app-wide navigation history (workspace + Glance drill)
 
@@ -133,6 +136,7 @@ export default function App() {
     // grid cells and the Glance dock — so wrapping the whole shell gives both surfaces the same host.
     <TerminalHost>
     <Box className="app">
+      <LiveRegion />
       <Achievements />
       <Titlebar workspace={titleWorkspace} />
       <AppBanners />
