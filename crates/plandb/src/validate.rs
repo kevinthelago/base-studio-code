@@ -553,7 +553,7 @@ pub fn validate_classify_config(v: &Value) -> Result<(), String> {
             errs.push(r#""uiMode" must be "custom" (in-app designer preview) or "external" (bring design files)"#.into());
         }
     }
-    for k in ["needsSource", "needsMcp", "needsSkills"] {
+    for k in ["needsSource", "needsMcp", "needsSkills", "needsAutomations"] {
         if let Some(b) = v.get(k) {
             if !b.is_boolean() {
                 errs.push(format!(r#""{k}" must be a boolean (true/false) when present"#));
@@ -572,6 +572,7 @@ pub fn classify_readiness(v: &Value) -> String {
     if on("needsSource") { stages.push("source"); }
     if on("needsMcp") { stages.push("mcp"); }
     if on("needsSkills") { stages.push("skills"); }
+    if on("needsAutomations") { stages.push("automations"); }
     let list = if stages.is_empty() { "none".to_string() } else { stages.join(", ") };
     format!(" — uiMode {ui}; optional stages: {list}")
 }

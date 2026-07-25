@@ -23,6 +23,7 @@ import { transformationsConfirmed, type TransformationRow } from "../lib/transfo
 import { allSourcesConnected, migrationActive, dataModelSignals } from "../lib/sourceConfig";
 import { unlockedSharedRepos } from "../issues/dependencies";
 import { stagesFrom, activeIndex, currentGateReady } from "../stages/focusedPlan";
+import type { ClassifyConfig } from "../lib/classifyConfig";
 
 interface PlanGatesDeps {
   sections: Section[];
@@ -49,6 +50,12 @@ interface PlanGatesDeps {
   marketCfg: Parameters<typeof marketDefined>[0];
   /** The transformations rows (#2509) — drive the `transformationsConfirmed` gate signal. */
   transformationRows: TransformationRow[];
+  /** The planner's per-project classification (#3784) — drives the source/mcp/skills/automations
+   *  visibility signals (all default OFF → those stages hidden until the planner opts in). */
+  classifyCfg: ClassifyConfig | undefined;
+  /** How many skills the project has (resolveSkills length) — the skills stage also shows when a
+   *  project has >=1 skill even if the planner didn't pre-flag needsSkills (research -> skills). */
+  projectSkillCount: number;
 }
 
 export function usePlanGates(deps: PlanGatesDeps) {
@@ -56,7 +63,7 @@ export function usePlanGates(deps: PlanGatesDeps) {
     sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
     confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
-    deployCfg, marketCfg, transformationRows,
+    deployCfg, marketCfg, transformationRows, classifyCfg, projectSkillCount,
   } = deps;
 
   // The live snapshot the declarative section gates read.
@@ -139,8 +146,8 @@ export function usePlanGates(deps: PlanGatesDeps) {
     // replaced the old `featuresPhased` (every feature assigned a roadmap phase) — sequencing is now
     // expressed purely via feature `dependsOn`, with no milestone phases.
     const featuresDefined = featureState.count > 0 && featureCycle.length === 0;
-    return { ...planStateToSignals(stageState), hasPlanGaps, featuresDefined, deploymentDefined: deploymentDefined(deployCfg), marketDefined: marketDefined(marketCfg), transformationsConfirmed: transformationsConfirmed(transformationRows), sharedDepsLocked, sourcesConnected: allSourcesConnected(sourceCfg), ...skipSignals, ...confirmSignals };
-  }, [stageState, hasPlanGaps, featureState, featureCycle, deployCfg, marketCfg, transformationRows, sourceCfg, skipSignals, confirmSignals, planFleet, effectiveProjectId, planDependencies]);
+    return { ...planStateToSignals(stageState), hasPlanGaps, featuresDefined, deploymentDefined: deploymentDefined(deployCfg), marketDefined: marketDefined(marketCfg), transformationsConfirmed: transformationsConfirmed(transformationRows), sharedDepsLocked, sourcesConnected: allSourcesConnected(sourceCfg), classified: classifyCfg !== undefined, needsSource: !!classifyCfg?.needsSource, needsMcp: !!classifyCfg?.needsMcp, needsAutomations: !!classifyCfg?.needsAutomations, needsSkills: !!classifyCfg?.needsSkills || projectSkillCount > 0, ...skipSignals, ...confirmSignals };
+  }, [stageState, hasPlanGaps, featureState, featureCycle, deployCfg, marketCfg, transformationRows, sourceCfg, skipSignals, confirmSignals, planFleet, effectiveProjectId, planDependencies, classifyCfg, projectSkillCount]);
 
   // Focused pane (#652): one stage at a time. `stages` derive from the blueprint sections +
   // signals; the active stage auto-follows the frontier (the user-pick SELECTION stays in Planning).

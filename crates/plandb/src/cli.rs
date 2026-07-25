@@ -195,8 +195,8 @@ registry needs a \"url\". A rejected write leaves the stored manifest untouched.
 
 The planner's discovery output (#3783/#3784) that shapes the plan. Fields, all optional:
 uiMode (custom = the in-app designer preview, external = the Claude-Design drop-files intake), and
-the booleans needsSource / needsMcp / needsSkills marking which optional stages (source / mcp /
-skills) the project shows. `set` validates before storing; --force stores an unvalidated blob.",
+the booleans needsSource / needsMcp / needsSkills / needsAutomations marking which optional stages
+(source / mcp / skills / automations) the project shows. `set` validates before storing; --force stores an unvalidated blob.",
     },
     CmdDoc {
         name: "market",

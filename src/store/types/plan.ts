@@ -10,6 +10,7 @@ import type { StageRunState } from "@/features/planner/preview/stageRun";
 import type { Blueprint, BlueprintStage } from "@/features/planner/stages/blueprints";
 import type { DeployConfig } from "@/features/planner/lib/deployConfig";
 import type { MarketConfig } from "@/features/planner/lib/marketConfig";
+import type { ClassifyConfig } from "@/features/planner/lib/classifyConfig";
 import type { TransformationRow } from "@/features/planner/lib/transformations";
 import type { SourceConfig } from "@/features/planner/lib/sourceConfig";
 import type { IntegrationStrategy } from "@/features/planner/lib/integrationStrategy";
@@ -125,11 +126,11 @@ export interface PlanState {
   // offer to reset. Set on first seed + on an explicit blueprint switch.
   projectBlueprintId: Record<string, string>;
   setProjectBlueprintId: (projectId: string, blueprintId: string) => void;
-  /** Which UI surface the `ui` stage renders for a project (#3783): "custom" = the in-app
-   *  designer preview (PreviewPaneShell); "external" = the Claude-Design drop-files intake
-   *  (FileIntakePane). The planner picks this at discovery; defaults to "custom" at the read site. */
-  uiMode: Record<string, "custom" | "external">;
-  setUiMode: (projectId: string, mode: "custom" | "external") => void;
+  /** The planner's per-project classification (#3783/#3784) — UI mode + which optional stages the
+   *  project needs. Set at discovery via `bsc plan classify`, polled in; drives the UI-stage surface
+   *  and the source/mcp/skills/automations visibility signals. */
+  planClassification: Record<string, ClassifyConfig>;
+  setPlanClassification: (projectId: string, cfg: ClassifyConfig) => void;
   addBlueprint:       () => string;
   /** Promote a completed project's plan into a reusable blueprint (#3785); returns the new id. */
   generateBlueprint:  (projectKey: string) => string;

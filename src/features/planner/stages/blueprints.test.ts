@@ -37,7 +37,8 @@ describe("blueprints — seed library", () => {
   it("seeds the starter blueprints with a 'default'", () => {
     const bps = makeBlueprints();
     expect(bps.find((b) => b.id === "default")).toBeTruthy();
-    expect(bps.length).toBeGreaterThanOrEqual(3);
+    // #3785: `default` is now the single built-in superset blueprint.
+    expect(bps.length).toBe(1);
   });
 
   it("each section carries a prompt module and a gate from its def", () => {
@@ -57,24 +58,6 @@ describe("blueprints — seed library", () => {
     }
     // and the UI stage declares the features dependency that enforces it
     expect(STAGE_DEFS.ui.deps).toContain("features");
-  });
-
-  it("adds the Serverless Function blueprint — a lean 'script' category, GitHub deploy, no UI (#2596)", () => {
-    const bp = makeBlueprints().find((b) => b.id === "serverless-function")!;
-    expect(bp).toBeTruthy();
-    expect(bp.category).toBe("script");
-    const keys = bp.sections.map((s) => s.key);
-    // the lean spec replaces discovery; deployment (GitHub) + streams stay; UI + market are dropped
-    expect(keys).toEqual(["function_spec", "features", "deployment", "streams"]);
-    for (const dropped of ["ui", "test_ui", "market", "discovery"]) expect(keys).not.toContain(dropped);
-  });
-
-  it("the function_spec stage is a lean, user-confirmed (gateless) spec stage (#2596)", () => {
-    const def = STAGE_DEFS.function_spec;
-    expect(def).toBeTruthy();
-    expect(def.gateRule).toBeUndefined();                       // gateless → completes on the USER's confirm
-    expect(def.prompt.toLowerCase()).toContain("trigger");      // the invocation trigger is the heart of the spec
-    expect(def.directive?.toLowerCase()).toContain("function.md");
   });
 
   it("test_ui teaches the data-shape layout picker (#2475)", () => {
@@ -136,11 +119,12 @@ describe("blueprints — seed library", () => {
     expect(def.directive).toMatch(/read-only for workers/);
   });
 
-  it("adds an optional MCPs stage after Streams in the Complete blueprint (#878/#1003/#1914)", () => {
+  it("carries the MCPs stage after Streams in the Default blueprint (#878/#1003/#1914/#3785)", () => {
     expect(STAGE_DEFS.mcps).toBeTruthy();
-    expect(STAGE_DEFS.mcps.optional).toBe(true);
-    // #1003: the advanced stages moved off Default onto the Complete greenfield blueprint.
-    for (const id of ["complete"]) {
+    // #3785: mcps is now a non-optional section on the unified Default blueprint (hidden-by-default
+    // via appliesWhen signals, not the `optional` flag).
+    expect(STAGE_DEFS.mcps.optional).not.toBe(true);
+    for (const id of ["default"]) {
       const bp = makeBlueprints().find((b) => b.id === id)!;
       const keys = bp.sections.map((s) => s.key);
       expect(keys, `${id} has an mcps stage`).toContain("mcps");
@@ -149,53 +133,43 @@ describe("blueprints — seed library", () => {
     }
   });
 
-  it("adds an optional market stage right after discovery in the greenfield blueprints (#2430)", () => {
-    for (const id of ["default", "complete"]) {
+  it("adds an optional market stage right after the Configure step in the greenfield blueprints (#2430/#3785)", () => {
+    for (const id of ["default"]) {
       const bp = makeBlueprints().find((b) => b.id === id)!;
       const keys = bp.sections.map((s) => s.key);
-      expect(keys.indexOf("market"), `${id}: market right after discovery`).toBe(keys.indexOf("discovery") + 1);
+      // #3785: the Configure step sits between Discovery and Market, so market follows configure.
+      expect(keys.indexOf("configure"), `${id}: configure right after discovery`).toBe(keys.indexOf("discovery") + 1);
+      expect(keys.indexOf("market"), `${id}: market right after configure`).toBe(keys.indexOf("configure") + 1);
       // Optional — a project that doesn't need the desk-research assessment skips it (#2267).
       expect(bp.sections.find((s) => s.key === "market")!.optional).toBe(true);
     }
   });
 
-  it("keeps the Default blueprint minimal; the advanced stages live on Complete (#1003/#1914)", () => {
+  it("Default is the single superset greenfield blueprint (#1003/#1914/#3785)", () => {
     const bp = (id: string) => makeBlueprints().find((b) => b.id === id)!;
     const keysOf = (id: string) => bp(id).sections.map((s) => s.key);
-    // Default is the simplest greenfield path — no source/mcps/automations/skills. The unified
+    // #3785: Default absorbed Complete's stages — it's now the one greenfield superset. The unified
     // vocabulary (#1914) collapsed repos+deploy → `deployment` and structure+permissions → `streams`.
-    expect(keysOf("default")).toEqual(["discovery", "market", "deployment", "features", "ui", "streams"]);
-    for (const k of ["source", "mcps", "automations", "skills", "repos", "structure", "permissions"]) {
+    expect(keysOf("default")).toEqual(
+      ["discovery", "configure", "market", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
+    );
+    // The legacy collapsed keys never survive the unified vocabulary.
+    for (const k of ["repos", "structure", "permissions"]) {
       expect(keysOf("default"), `default omits ${k}`).not.toContain(k);
     }
-    // Complete is the thorough greenfield path — the trimmed Default flow plus source + the advanced stages.
-    expect(keysOf("complete")).toEqual(
-      ["discovery", "market", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
-    );
-    // Complete sorts right after Default in the greenfield group.
+    // Default is the only built-in greenfield blueprint now.
     const greenfield = makeBlueprints().filter((b) => b.category === "greenfield").map((b) => b.id);
-    expect(greenfield.indexOf("complete")).toBe(greenfield.indexOf("default") + 1);
+    expect(greenfield).toEqual(["default"]);
   });
 
-  it("includes a 'feature-add' transform blueprint: operate mode, canonical stages, no legacy keys", () => {
-    const bp = makeBlueprints().find((b) => b.id === "feature-add");
-    expect(bp).toBeTruthy();
-    expect(bp!.category).toBe("transform");
-    expect(bp!.mode).toBe("operate");
-    expect(bp!.origin).toBe("built-in");
-    const keys = bp!.sections.map((s) => s.key);
-    // Converted from the old imported vocabulary (context/repos/architecture/structure/permissions/
-    // testing) into the current model: discovery → transformations? → deployment → features → ui?
-    // → streams. Transformations (#2509) is the modification list, right after discovery.
-    expect(keys).toEqual(["discovery", "transformations", "deployment", "features", "ui", "streams"]);
-    // every stage key resolves to a real def (no orphan/legacy keys survive the conversion)
-    for (const k of keys) expect(STAGE_DEFS[k], `stage '${k}' resolves`).toBeTruthy();
-    // Transformations right after discovery (#2509), and optional (a pure feature-add plan skips it).
-    expect(keys.indexOf("transformations")).toBe(keys.indexOf("discovery") + 1);
-    expect(bp!.sections.find((s) => s.key === "transformations")!.optional).toBe(true);
-    // Features before UI (#825); UI + transformations are the optional stages
-    expect(keys.indexOf("features")).toBeLessThan(keys.indexOf("ui"));
-    expect(bp!.sections.find((s) => s.key === "ui")!.optional).toBe(true);
+  it("the Configure step follows Discovery and gates on the recorded classification (#3784)", () => {
+    const secs = makeBlueprints().find((b) => b.id === "default")!.sections;
+    const configure = secs.find((s) => s.key === "configure")!;
+    // Every project runs it (it decides which OPTIONAL stages appear) — so it is NOT optional.
+    expect(configure.optional).not.toBe(true);
+    // Gate: `classified` — incomplete until the planner records the classification, complete once it has.
+    expect(stageStatus(configure, secs, { ...sig(), classified: false }).status).not.toBe("complete");
+    expect(stageStatus(configure, secs, { ...sig(), classified: true }).status).toBe("complete");
   });
 
 });
@@ -492,7 +466,7 @@ describe("Deploy + the dependency gate move to Streams (#1127/#1429)", () => {
 
   it("the greenfield blueprints carry the collapsed `deployment` stage (#1914)", () => {
     const depRef = (id: string) => makeBlueprints().find((b) => b.id === id)!.sections.find((s) => s.key === "deployment");
-    for (const id of ["default", "complete"]) {
+    for (const id of ["default"]) {
       expect(depRef(id)?.substeps?.some((s) => s.key === "ship"), `${id} ships via deployment`).toBe(true);
       const keys = makeBlueprints().find((b) => b.id === id)!.sections.map((s) => s.key);
       expect(keys).not.toContain("repos");
@@ -514,7 +488,7 @@ describe("Deploy + the dependency gate move to Streams (#1127/#1429)", () => {
 
   it("greenfield blueprints carry the collapsed `streams` stage (#1914)", () => {
     const streamsRef = (id: string) => makeBlueprints().find((b) => b.id === id)!.sections.find((s) => s.key === "streams");
-    for (const id of ["default", "complete"]) {
+    for (const id of ["default"]) {
       expect(streamsRef(id)?.substeps?.some((s) => s.key === "fleet"), `${id} fleets via streams`).toBe(true);
       const keys = makeBlueprints().find((b) => b.id === id)!.sections.map((s) => s.key);
       expect(keys).not.toContain("structure");
@@ -531,8 +505,8 @@ describe("dedupeSections", () => {
   });
 
   it("a built-in blueprint's planner-overview stage keys ARE the canonical directive ids", () => {
-    const complete = makeBlueprints().find((b) => b.id === "complete")!;
-    const overview = complete.sections.filter((s) => s.enabled).map((s) => s.key);
+    const def = makeBlueprints().find((b) => b.id === "default")!;
+    const overview = def.sections.filter((s) => s.enabled).map((s) => s.key);
     expect(overview).toEqual(
       ["discovery", "market", "deployment", "source", "features", "ui", "streams", "mcps", "automations", "skills"],
     );
@@ -550,10 +524,9 @@ describe("Web SEO capability (#1293)", () => {
     expect(seo!.body ?? "").toMatch(/sitemap|robots|Open Graph|JSON-LD/i);
   });
 
-  it("attaches web-seo to the greenfield web blueprints", () => {
+  it("attaches web-seo to the greenfield web blueprint", () => {
     const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
     expect(by("default").skills).toContain("web-seo");
-    expect(by("complete").skills).toContain("web-seo");
   });
 
   it("every blueprint skill id resolves to a real library skill", () => {

@@ -112,7 +112,7 @@ export function persistedState(s: AppStore) {
     planAutomations:       s.planAutomations,
     planStageConfig:       s.planStageConfig,
     projectBlueprintId:    s.projectBlueprintId,
-    uiMode:                s.uiMode,
+    planClassification:    s.planClassification,
     uiScreens:             s.uiScreens,
     uiApproved:            s.uiApproved,
     blueprints:            s.blueprints,

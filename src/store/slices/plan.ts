@@ -45,7 +45,7 @@ function recordBlueprintKit(get: () => AppStore, projectId: string, blueprintId:
 }
 
 type PlanSlice = Pick<AppStore,
-  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "markStageConfirmedLocal" | "planDeployConfig" | "setPlanDeployConfig" | "planMarketConfig" | "setPlanMarketConfig" | "planTransformations" | "setPlanTransformations" | "planSourceConfig" | "setPlanSourceConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "markStageSkippedLocal" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "projectBlueprintId" | "setProjectBlueprintId" | "uiMode" | "setUiMode" | "addBlueprint" | "generateBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
+  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "markStageConfirmedLocal" | "planDeployConfig" | "setPlanDeployConfig" | "planMarketConfig" | "setPlanMarketConfig" | "planTransformations" | "setPlanTransformations" | "planSourceConfig" | "setPlanSourceConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "markStageSkippedLocal" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "projectBlueprintId" | "setProjectBlueprintId" | "planClassification" | "setPlanClassification" | "addBlueprint" | "generateBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
@@ -284,10 +284,11 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
         recordBlueprintKit(get, projectId, blueprintId);
       },
 
-      // #3783: which surface the UI stage renders (custom in-app preview vs external drop-files);
-      // the planner sets it at discovery. Read sites default an unset project to "custom".
-      uiMode: {},
-      setUiMode: (projectId, mode) => set((s) => ({ uiMode: setMapEntry(s.uiMode, projectId, mode) })),
+      // #3783/#3784: the planner's per-project classification (UI mode + which optional stages the
+      // project needs), set at discovery via `bsc plan classify` and polled in. Drives the UI-stage
+      // surface and the source/mcp/skills/automations visibility signals.
+      planClassification: {},
+      setPlanClassification: (projectId, cfg) => set((s) => ({ planClassification: setMapEntry(s.planClassification, projectId, cfg) })),
       addBlueprint: () => {
         const id = `bp-${Date.now().toString(36)}`;
         const bp: Blueprint = {

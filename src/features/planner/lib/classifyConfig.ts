@@ -22,6 +22,8 @@ export interface ClassifyConfig {
   needsMcp?: boolean;
   /** The project needs attached skills → show the `skills` stage. */
   needsSkills?: boolean;
+  /** The project needs cron automations → show the `automations` stage. */
+  needsAutomations?: boolean;
 }
 
 /** Coerce a `bsc plan classify get` blob into a typed config — a light structural check (the CLI
@@ -35,5 +37,6 @@ export function coerceClassifyConfig(raw: unknown): ClassifyConfig | null {
   if (typeof r.needsSource === "boolean") cfg.needsSource = r.needsSource;
   if (typeof r.needsMcp === "boolean") cfg.needsMcp = r.needsMcp;
   if (typeof r.needsSkills === "boolean") cfg.needsSkills = r.needsSkills;
+  if (typeof r.needsAutomations === "boolean") cfg.needsAutomations = r.needsAutomations;
   return cfg;
 }

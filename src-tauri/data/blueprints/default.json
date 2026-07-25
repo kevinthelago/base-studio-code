@@ -2,32 +2,23 @@
   "order": 0,
   "id": "default",
   "name": "Default",
-  "desc": "The simplest greenfield path — context to agent-ready plan",
+  "desc": "Greenfield app — pitch to agent-ready plan. Integrations, MCP servers, automations & skills switch on only if your project needs them.",
   "origin": "built-in",
   "category": "greenfield",
   "mode": "create",
   "skills": ["web-seo"],
   "sections": [
-    {
-      "key": "discovery"
-    },
-    {
-      "key": "market",
-      "optional": true
-    },
-    {
-      "key": "deployment"
-    },
-    {
-      "key": "features"
-    },
-    {
-      "key": "ui",
-      "optional": true
-    },
-    {
-      "key": "streams"
-    }
+    { "key": "discovery" },
+    { "key": "configure" },
+    { "key": "market", "optional": true },
+    { "key": "deployment" },
+    { "key": "source" },
+    { "key": "features" },
+    { "key": "ui", "optional": true },
+    { "key": "streams" },
+    { "key": "mcps" },
+    { "key": "automations" },
+    { "key": "skills" }
   ],
   "kit": "react-ui"
 }
