@@ -72,6 +72,7 @@ export function usePromptDialog(): { prompt: (opts: PromptOpts) => Promise<strin
       {state.label && <div style={{ marginBottom: 8 }}>{state.label}</div>}
       <input
         className="input"
+        // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional: focus the prompt input when the dialog opens
         autoFocus
         value={state.value}
         placeholder={state.placeholder}
