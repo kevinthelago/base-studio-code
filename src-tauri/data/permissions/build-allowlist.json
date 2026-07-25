@@ -1,0 +1,26 @@
+{
+  "_note": "Supply-chain build allowlist (#3795, epic #2433). With `npm_config_ignore_scripts=true` the default for every fleet install, lifecycle scripts (preinstall/install/postinstall) never run — the Shai-Hulud execution vector is closed. These packages are the trusted exceptions whose native build IS legit: after `npm install`, `bsc-build-allowed` runs `npm rebuild <pkg>` for exactly the ones PRESENT under ./node_modules, with scripts re-enabled for that one invocation. Nothing off this list ever runs a script. Add a package here only when its native build is genuinely required and the package is trusted; the list is embedded at build time (data/permissions/build-allowlist.json) and baked into the bsc-env helper.",
+  "packages": [
+    "esbuild",
+    "@swc/core",
+    "better-sqlite3",
+    "sqlite3",
+    "sharp",
+    "canvas",
+    "@napi-rs/canvas",
+    "node-sass",
+    "sass-embedded",
+    "@parcel/watcher",
+    "fsevents",
+    "bufferutil",
+    "utf-8-validate",
+    "cpu-features",
+    "ssh2",
+    "node-pty",
+    "bcrypt",
+    "re2",
+    "grpc-tools",
+    "keytar",
+    "zeromq"
+  ]
+}

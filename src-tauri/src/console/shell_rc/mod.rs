@@ -88,6 +88,44 @@ pub(crate) fn bsc_defer_rc() -> String {
     s
 }
 
+/// The trusted native-build allowlist (#3795, epic #2433) — the packages whose install lifecycle
+/// script IS legit — read from the embedded `data/permissions/build-allowlist.json`. Names are
+/// filtered to a package-safe charset (`[A-Za-z0-9@/._-]`) so a malformed/hostile seed entry can
+/// never inject shell metacharacters into the rendered `for` list. An unreadable/empty seed yields an
+/// empty list (the helper is still defined, just a no-op).
+fn build_allowlist() -> Vec<String> {
+    #[derive(serde::Deserialize)]
+    struct Allowlist {
+        #[serde(default)]
+        packages: Vec<String>,
+    }
+    let raw = crate::platform::config::load_str("permissions/build-allowlist.json");
+    serde_json::from_str::<Allowlist>(&raw)
+        .map(|a| a.packages)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| {
+            !p.is_empty() && p.bytes().all(|b| b.is_ascii_alphanumeric() || b"@/._-".contains(&b))
+        })
+        .collect()
+}
+
+/// The `bsc-build-allowed` helper (#3795, epic #2433). With `npm_config_ignore_scripts=true` the
+/// supply-chain floor for every fleet install (`platform::pkgcache`), a session's `npm install` skips
+/// ALL lifecycle scripts — so a trusted native package (esbuild, better-sqlite3, …) never builds.
+/// After install, `bsc-build-allowed` runs `npm rebuild` for exactly the [`build_allowlist`] packages
+/// that are PRESENT under `./node_modules`, re-enabling scripts for that one invocation only — nothing
+/// off the allowlist ever runs a script. The allowlist is baked in at render time (like `bsc_defer_rc`).
+/// The fragment keeps its mandatory trailing newline (#296) so it doesn't glue onto the next helper.
+pub(crate) fn build_allowed_rc() -> String {
+    let list = build_allowlist().join(" ");
+    // Every name is charset-filtered above, so an unquoted `for` list is injection-safe. Each rebuild
+    // re-enables scripts locally (`npm_config_ignore_scripts=false`) against the scripts-off default.
+    format!(
+        "bsc-build-allowed() {{ for p in {list}; do [ -d \"node_modules/$p\" ] && npm_config_ignore_scripts=false npm rebuild \"$p\"; done; }}\n"
+    )
+}
+
 /// Every `bsc-*` rc fragment, in the EXACT sequence the rc file concatenates them. This is the single
 /// source of truth for the concat order: the rc writer (`wire_bsc_env` → `bsc_rc_body`) and the
 /// `full_bsc_rc_is_syntactically_valid_bash` syntax guard both derive from it, so a new helper (or a
@@ -115,6 +153,7 @@ pub(crate) fn all_bsc_rc() -> Vec<String> {
         load_shell("coord-emit.sh"),
         bsc_defer_rc(),
         load_shell("fleet.sh"),
+        build_allowed_rc(),
         load_shell("bsc.sh"),
         load_shell("learned.sh"),
     ]
