@@ -630,7 +630,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
               style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", borderRadius: 7, padding: "6px 11px",
                 background: showCycle ? "rgba(242,85,95,.18)" : "rgba(242,85,95,.08)", border: `1px solid ${showCycle ? "rgba(242,85,95,.55)" : "rgba(242,85,95,.3)"}` }}>
               <Text as="span" style={{ color: "var(--graph-health-error)" }}>▲</Text>
-              <Text as="span" mono size={11} weight={600} style={{ color: "#f2848b" }}>{model.cyclePairs.length} cycle</Text>
+              <Text as="span" mono size={11} weight={600} style={{ color: "var(--cycle)" }}>{model.cyclePairs.length} cycle</Text>
             </Box>
           )}
           <ZoomControls vp={vp} step={1.2} />
@@ -648,12 +648,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
             <Box style={{ borderTop: "1px solid var(--border)", padding: "12px 16px" }}>
               <Row gap={7} align="center" style={{ marginBottom: 9 }}>
                 <Text as="span" style={{ color: "var(--graph-health-error)" }}>▲</Text>
-                <Text as="span" mono size={11} style={{ letterSpacing: "1px", color: "#f2848b" }}>COORDINATION HAZARDS</Text>
+                <Text as="span" mono size={11} style={{ letterSpacing: "1px", color: "var(--cycle)" }}>COORDINATION HAZARDS</Text>
               </Row>
               {model.cyclePairs.map(([a, b]) => (
                 <Box key={a + b} onClick={() => { setShowCycle(true); setSel(null); }}
                   style={{ background: "rgba(242,85,95,.08)", border: "1px solid rgba(242,85,95,.28)", borderRadius: 7, padding: "9px 11px", cursor: "pointer", marginBottom: 6 }}>
-                  <Text as="div" mono size={11} style={{ color: "#f3a4a9", marginBottom: 3 }}>dependency cycle</Text>
+                  <Text as="div" mono size={11} style={{ color: "var(--cycle-soft)", marginBottom: 3 }}>dependency cycle</Text>
                   <Text as="div" mono size={11.5}>{model.nodes.find((n) => n.id === a)?.slug} ⇄ {model.nodes.find((n) => n.id === b)?.slug}</Text>
                 </Box>
               ))}

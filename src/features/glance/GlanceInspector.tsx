@@ -203,7 +203,7 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
               </Row>
             : <Row gap={9} align="start" style={{ marginTop: 14, background: CYCLE_BG, border: `1px solid ${CYCLE_BD}`, borderRadius: 8, padding: "10px 12px" }}>
                 <Text as="span" style={{ color: "var(--graph-health-error)", flex: "none" }}>▲</Text>
-                <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: "#f3a4a9" }}>In a cross-project dependency cycle — coordinate release order before shipping to avoid a deadlock.</Text>
+                <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: "var(--cycle-soft)" }}>In a cross-project dependency cycle — coordinate release order before shipping to avoid a deadlock.</Text>
               </Row>
           )}
 
@@ -267,7 +267,7 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
                   {faults > 0
                     ? <Text as="span" style={{ color: FAULT_COLOR, flex: "none" }}>●</Text>
                     : <Text as="span" tone="dim" style={{ flex: "none" }}>○</Text>}
-                  <Text as="span" mono size={13} weight={600} style={{ color: faults > 0 ? "#f3a4a9" : "var(--fg-muted)" }}>
+                  <Text as="span" mono size={13} weight={600} style={{ color: faults > 0 ? "var(--cycle-soft)" : "var(--fg-muted)" }}>
                     {faults > 0 ? `${faults} unresolved` : "no open faults"}
                   </Text>
                 </Row>
@@ -329,7 +329,7 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
       <Box style={PANEL}>
         <Header title={arch ? "RELATIONSHIP" : "CONTRACT INSPECTOR"} onClose={onClose} />
         <Box style={{ flex: 1, overflowY: "auto", padding: "18px 16px" }}>
-          <Text as="span" mono size={11} style={{ color: loop ? kindColor : e.isCycle ? "#f2848b" : kindColor, background: `color-mix(in oklch, ${kindColor} 12%, transparent)`, border: `1px solid color-mix(in oklch, ${kindColor} 32%, transparent)`, borderRadius: 6, padding: "5px 10px" }}>{chipLabel}</Text>
+          <Text as="span" mono size={11} style={{ color: loop ? kindColor : e.isCycle ? "var(--cycle)" : kindColor, background: `color-mix(in oklch, ${kindColor} 12%, transparent)`, border: `1px solid color-mix(in oklch, ${kindColor} 32%, transparent)`, borderRadius: 6, padding: "5px 10px" }}>{chipLabel}</Text>
 
           {loop && (
             <Row gap={9} align="start" style={{ marginTop: 14, background: LOOP_BG, border: `1px solid ${LOOP_BD}`, borderRadius: 8, padding: "11px 12px" }}>
@@ -340,7 +340,7 @@ export function GlanceInspector({ model, selType, selId, onSelectNode, onClose, 
           {e.isCycle && !loop && (
             <Row gap={9} align="start" style={{ marginTop: 14, background: CYCLE_BG, border: `1px solid ${CYCLE_BD}`, borderRadius: 8, padding: "11px 12px" }}>
               <Text as="span" style={{ color: "var(--graph-health-error)", flex: "none" }}>▲</Text>
-              <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: "#f3a4a9" }}>This edge closes a cycle. Two projects depend on each other — releasing either in isolation can deadlock the other.</Text>
+              <Text as="span" size={11.5} style={{ lineHeight: 1.5, color: "var(--cycle-soft)" }}>This edge closes a cycle. Two projects depend on each other — releasing either in isolation can deadlock the other.</Text>
             </Row>
           )}
 
