@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  seedSkills, resolveSkills, toSkillCfgs, skillSlug, blankSkill,
+  seedSkills, resolveSkills, toSkillCfgs, skillSlug, skillContentKey, blankSkill,
   parseSkillsFile, deriveSkillKpis, refreshPackagedSkills,
   sessionSkillState, effectiveSessionSkills, applySessionSkillChoice,
   expandGroups, groupSkillCount, parseSkillGroupsFile, type SkillDef, type SkillGroup,
@@ -173,6 +173,27 @@ describe("toSkillCfgs", () => {
   it("maps to the backend payload and skips name-less skills", () => {
     const cfgs = toSkillCfgs([def({ name: "Open a clean PR" }), def({ id: "x", name: "***" })]);
     expect(cfgs).toEqual([{ id: "s1", name: "Open a clean PR", description: "d", prompt: "body", tools: ["create_pr"] }]);
+  });
+});
+
+describe("skillContentKey (#3672)", () => {
+  it("is equal for identical authored content, differs when any authored field changes, and ignores user/display state", () => {
+    const a = def();
+    expect(skillContentKey(a)).toBe(skillContentKey({ ...a }));
+    // Each AUTHORED field (the packaged code owns) shifts the key, so a code update re-pushes.
+    expect(skillContentKey(a)).not.toBe(skillContentKey({ ...a, name: "Renamed" }));
+    expect(skillContentKey(a)).not.toBe(skillContentKey({ ...a, kind: "review" }));
+    expect(skillContentKey(a)).not.toBe(skillContentKey({ ...a, source: "imported" }));
+    expect(skillContentKey(a)).not.toBe(skillContentKey({ ...a, desc: "changed" }));
+    expect(skillContentKey(a)).not.toBe(skillContentKey({ ...a, prompt: "new body" }));
+    expect(skillContentKey(a)).not.toBe(skillContentKey({ ...a, tools: [...a.tools, "extra"] }));
+    expect(skillContentKey(a)).not.toBe(skillContentKey({ ...a, profiles: ["review"] }));
+    // User/display state is NOT part of the key — enabled/pinned/projects/telemetry write through
+    // their own mutations, so a toggle never triggers a hydrate re-push (the whole point of #3672).
+    expect(skillContentKey(a)).toBe(skillContentKey({
+      ...a, id: "whatever", enabled: false, pinned: true, projects: ["p1"],
+      invocations: 99, success: 42, avgTokensK: 7, trend: [1, 2, 3],
+    }));
   });
 });
 
