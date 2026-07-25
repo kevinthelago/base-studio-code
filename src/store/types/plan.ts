@@ -125,6 +125,11 @@ export interface PlanState {
   // offer to reset. Set on first seed + on an explicit blueprint switch.
   projectBlueprintId: Record<string, string>;
   setProjectBlueprintId: (projectId: string, blueprintId: string) => void;
+  /** Which UI surface the `ui` stage renders for a project (#3783): "custom" = the in-app
+   *  designer preview (PreviewPaneShell); "external" = the Claude-Design drop-files intake
+   *  (FileIntakePane). The planner picks this at discovery; defaults to "custom" at the read site. */
+  uiMode: Record<string, "custom" | "external">;
+  setUiMode: (projectId: string, mode: "custom" | "external") => void;
   addBlueprint:       () => string;
   /** Promote a completed project's plan into a reusable blueprint (#3785); returns the new id. */
   generateBlueprint:  (projectKey: string) => string;
