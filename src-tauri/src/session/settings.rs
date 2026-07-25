@@ -646,6 +646,20 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    #[test]
+    fn gh_credential_floor_applies_even_for_a_role_that_denies_no_gh() {
+        // #3793: a `github: "write"` role (e.g. director) contributes NO gh denies (its GH_WRITE_DENY is
+        // empty), yet the always-on dangerous floor still blocks the gh credential/CI-abuse subcommands —
+        // via build_deny_rules, NOT the role gate. So no role, in any posture, can exfiltrate the token
+        // (`gh auth token`) or seed CI (`gh workflow run`).
+        let deny = super::build_deny_rules(&[]); // as a github:write role: no role-supplied gh denies
+        for rule in ["Bash(gh auth token*)", "Bash(gh secret *)", "Bash(gh ssh-key add*)", "Bash(gh workflow run*)"] {
+            assert!(deny.contains(&rule.to_string()), "floor must deny {rule} regardless of role, got {deny:?}");
+        }
+        // The read plane is NOT floored — a legit `gh pr view` still runs.
+        assert!(!deny.contains(&"Bash(gh pr view*)".to_string()));
+    }
+
     /// #1572: bash_posture scales the auto-approve set — `allow` doers get the read-only AND
     /// build baselines + the bare `Bash`; `ask` coordinators get read-only only (build/unlisted
     /// prompt); `deny` gets neither baseline. The mandatory + per-stream granted commands are
