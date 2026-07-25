@@ -26,12 +26,10 @@ export function Checkbox({ checked, onChange, size = 14, disabled, className, "a
   return (
     <span
       className={className}
-      role={interactive ? "checkbox" : undefined}
-      aria-checked={interactive ? checked : undefined}
       aria-label={ariaLabel}
-      tabIndex={interactive ? 0 : undefined}
-      onClick={interactive ? () => onChange!() : undefined}
-      onKeyDown={onKeyDown}
+      {...(interactive
+        ? { role: "checkbox" as const, "aria-checked": checked, tabIndex: 0, onClick: () => onChange!(), onKeyDown }
+        : {})}
       style={{
         width: size, height: size, flex: "0 0 auto", borderRadius: 4,
         border: "1px solid " + (checked ? "var(--accent)" : "var(--border)"),

@@ -7,6 +7,7 @@
 // hover affordance, and a compact `pad="sm"` density. Layout cards still add their own className.
 import type { ReactNode, CSSProperties, MouseEvent } from "react";
 import { SkeletonText } from "@/shared/ui/feedback/Skeleton";
+import { clickable } from "@/shared/ui/a11y";
 
 export interface CardProps {
   children: ReactNode;
@@ -49,7 +50,7 @@ export function Card({ children, loading, loadingLines = 3, title, hint, right, 
     <div
       className={"card" + (className ? ` ${className}` : "")}
       title={tooltip}
-      onClick={onClick}
+      {...clickable(onClick)}
       style={{
         ...(tone ? { borderColor: `color-mix(in oklch, ${tone}, transparent 72%)` } : {}),
         ...(interactive || onClick ? { cursor: "pointer", transition: "border-color .1s, background .1s" } : {}),

@@ -1,5 +1,6 @@
 import { Minus, Maximize2, X } from "lucide-react";
 import { Box } from "@/shared/ui/layout/Box";
+import { clickable } from "@/shared/ui/a11y";
 
 interface TitlebarProps {
   workspace?: string;
@@ -28,9 +29,9 @@ export function Titlebar({ workspace = "base-studio-code" }: TitlebarProps) {
     return (
       <Box className="titlebar mac">
         <Box className="tl-lights">
-          <i onClick={() => windowAction("close")} title="Close" />
-          <i onClick={() => windowAction("minimize")} title="Minimize" />
-          <i onClick={() => windowAction("toggleMaximize")} title="Zoom" />
+          <i {...clickable(() => windowAction("close"), { label: "Close" })} title="Close" />
+          <i {...clickable(() => windowAction("minimize"), { label: "Minimize" })} title="Minimize" />
+          <i {...clickable(() => windowAction("toggleMaximize"), { label: "Zoom" })} title="Zoom" />
         </Box>
         <Box className="tl-title">{title}</Box>
       </Box>
