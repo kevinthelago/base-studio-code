@@ -10,6 +10,7 @@ import { useAppStore } from "@/store";
 import { loadComponentFromSource } from "@/shared/lib/runtime/componentLoader";
 import { resolveGraphSource } from "./graphResolver";
 import { log } from "@/shared/lib/core/log";
+import { ThemeProvider } from "@/shared/ui/kit";
 
 // Per-id COMPILE counter (module-level, survives re-renders) — the loop probe. A healthy page compiles
 // ONCE (`#1`) and never again, because the load effect keys on the srcText VALUE and a re-hydrate re-reads
@@ -37,12 +38,20 @@ export function GraphComponent({
   id,
   props,
   fallback = null,
+  themeId,
 }: {
   id: string;
   props?: Record<string, unknown>;
   fallback?: ReactNode;
+  /** The theme to resolve for a `themeSystem: "js"` component (#3715) — passed to the wrapping
+   *  `<ThemeProvider>`. Ignored for a CSS component (it follows the cascade). Absent ⇒ the base theme. */
+  themeId?: string;
 }): ReactNode {
   const source = useAppStore((s) => s.components.find((c) => c.id === id)?.srcText);
+  // The theme SYSTEM this component renders under (#3715): "js" → wrap in <ThemeProvider> so it can read the
+  // resolved token VALUES; "css"/absent → it follows the CSS cascade as today. A primitive selector (string
+  // | undefined), so it never churns re-renders (mirrors the `srcText` selector above).
+  const themeSystem = useAppStore((s) => s.components.find((c) => c.id === id)?.themeSystem);
   const [Loaded, setLoaded] = useState<ComponentType<Record<string, unknown>> | null>(null);
 
   useEffect(() => {
@@ -71,9 +80,12 @@ export function GraphComponent({
   }, [id, source]);
 
   if (!Loaded) return fallback;
+  // A `themeSystem: "js"` component renders to a non-CSS surface — wrap it so `useResolvedTheme()` reaches it
+  // (#3715). A "css"/absent component renders bare and follows the cascade, byte-identical to before.
+  const el = <Loaded {...(props ?? {})} />;
   return (
     <GraphErrorBoundary key={`${id}:${source?.length ?? 0}`} fallback={fallback}>
-      <Loaded {...(props ?? {})} />
+      {themeSystem === "js" ? <ThemeProvider themeId={themeId}>{el}</ThemeProvider> : el}
     </GraphErrorBoundary>
   );
 }
