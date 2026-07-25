@@ -31,6 +31,16 @@ describe("seedSkills", () => {
     expect(seed.every(s => s.projects.length === 0)).toBe(true);
     expect(seed.every(s => typeof s.prompt === "string")).toBe(true);
   });
+
+  it("seeds the designer AUTHORING skills (a11y + compliance) as workflow, distinct from the *-review audits (#3766)", () => {
+    const seed = seedSkills();
+    const authoring = seed.filter(s => s.id.startsWith("author-")).map(s => s.id).sort();
+    expect(authoring).toEqual(["author-accessible-components", "author-compliant-components"]);
+    // Authoring = a build-time procedure (workflow), NOT a post-hoc review — that's the shift-left point.
+    expect(seed.filter(s => s.id.startsWith("author-")).every(s => s.kind === "workflow")).toBe(true);
+    // The audit twin stays a review: author → audit is the two-sided loop.
+    expect(seed.find(s => s.id === "wcag-audit")?.kind).toBe("review");
+  });
 });
 
 describe("resolveSkills", () => {
