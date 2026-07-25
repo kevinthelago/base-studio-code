@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   makeBlueprints, mkStage, computeStatus, reorder, cloneStages, blueprintToStageConfig,
   stageStatus, incompleteStages, planStagesComplete, currentStage, confirmedSignal, skippedSignal,
-  isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, stageDone,
+  isAuthoringBlueprint, authoringSignals, stageDone,
   signatureTemplateVersion, blueprintTemplateChanged, shouldAutoOpenBlueprintModal,
   dedupeSections, resolveStagePrompt, stageSeed,
   STAGE_DEFS, type BlueprintStage, type Blueprint, type SectionDef,
@@ -222,27 +222,6 @@ describe("blueprints — seed library", () => {
     // Features before UI (#825); UI + transformations are the optional stages
     expect(keys.indexOf("features")).toBeLessThan(keys.indexOf("ui"));
     expect(bp!.sections.find((s) => s.key === "ui")!.optional).toBe(true);
-  });
-
-  it("canChangeBlueprint: any project blueprint can switch; only the blueprint-author lifecycle is locked (#1281)", () => {
-    const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
-    expect(canChangeBlueprint(by("default"))).toBe(true);           // greenfield → switchable
-    expect(canChangeBlueprint(by("complete"))).toBe(true);          // greenfield → switchable
-    expect(canChangeBlueprint(by("blueprint-author"))).toBe(false); // authoring → locked
-  });
-
-  it("canSwitchBlueprint: any project blueprint → any OTHER, except authoring + self (#1281)", () => {
-    const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
-    // any project blueprint → another is allowed
-    expect(canSwitchBlueprint(by("default"), by("complete"))).toBe(true);        // → another greenfield
-    expect(canSwitchBlueprint(by("complete"), by("default"))).toBe(true);        // → back
-    // refused: switching to the SAME blueprint (a no-op)
-    expect(canSwitchBlueprint(by("default"), by("default"))).toBe(false);
-    // refused: anything touching the authoring lifecycle
-    expect(canSwitchBlueprint(by("blueprint-author"), by("default"))).toBe(false);
-    expect(canSwitchBlueprint(by("default"), by("blueprint-author"))).toBe(false);
-    // refused: unbound (no current) can't "switch"
-    expect(canSwitchBlueprint(undefined, by("default"))).toBe(false);
   });
 
   it("authoringSignals: identity (name+pitch+tag), stages (≥2 + prompts), publishable (#923)", () => {

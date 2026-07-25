@@ -129,10 +129,6 @@ export interface PlanState {
   // offer to reset. Set on first seed + on an explicit blueprint switch.
   projectBlueprintId: Record<string, string>;
   setProjectBlueprintId: (projectId: string, blueprintId: string) => void;
-  /** Re-seed a project's plan from a blueprint and CLEAR its progress (grades, screen
-   *  approvals, preview, pipeline runs) — the destructive "reset plan to blueprint" (#647).
-   *  The planner restarts the session separately. No-op if the blueprint is unknown. */
-  applyBlueprintToProject: (projectId: string, blueprintId: string) => void;
   addBlueprint:       () => string;
   /** Promote a completed project's plan into a reusable blueprint (#3785); returns the new id. */
   generateBlueprint:  (projectKey: string) => string;

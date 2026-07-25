@@ -479,8 +479,7 @@ export function Planning({ visible }: { visible: boolean }) {
   // Blueprint/authoring lifecycle derivations (#1474, usePlannerBlueprint) — call before the gate
   // hook so `usePlanGates` can read this hook's isAuthoring/authoringSig.
   const {
-    isAuthoring, treatAsExisting, switchTargets, canSwitch,
-    switchOpen, setSwitchOpen, authoringSig, authorSkillLib, authorMcpLib,
+    isAuthoring, treatAsExisting, authoringSig, authorSkillLib, authorMcpLib,
   } = usePlannerBlueprint({
     blueprints, effectiveBlueprintId, isExisting, planAuthoredBlueprint, effectiveProjectId, skillDefs, mcpServers,
   });
@@ -558,9 +557,9 @@ export function Planning({ visible }: { visible: boolean }) {
     confirmPlanStage(projectKey, "ui");
   }, [effectiveProjectId, confirmPlanStage]);
 
-  // Session-lifecycle (`restarting` + restart/clear/switch) lives in usePlanningSession (#1642) and
-  // modal open/close state in usePlanningModals (#1642); both hooks are called below, once the data
-  // they read (and the blueprint hook's `setSwitchOpen`) is in scope.
+  // Session-lifecycle (`restarting` + restart/clear) lives in usePlanningSession (#1642) and modal
+  // open/close state in usePlanningModals (#1642); both hooks are called below, once the data they
+  // read is in scope.
 
   // Publish / triage / recovery state + callbacks live in usePlanPublish (#1490) — the hook is
   // called below, once all the plan data it reads is in scope.
@@ -688,13 +687,13 @@ export function Planning({ visible }: { visible: boolean }) {
 
 
   // Session lifecycle (#1642, usePlanningSession): the `restarting` flag + the regenerate /
-  // restart / "keep files" / clear-plan / switch-blueprint operations, moved verbatim. The
-  // workspace mount/re-sync effects above stay here (they own the terminal + PTY).
-  const { restarting, handleRestart, keepPlanFiles, doClearPlan, doSwitchBlueprint } = usePlanningSession({
+  // restart / "keep files" / clear-plan operations, moved verbatim. The workspace mount/re-sync
+  // effects above stay here (they own the terminal + PTY).
+  const { restarting, handleRestart, keepPlanFiles, doClearPlan } = usePlanningSession({
     termRef, bufRef, paneId, linkedRepos, treatAsExisting, isAuthoring,
     activeProjectName, activeProjectNumber, planningPitch, effectiveProjectId,
     stageIdsFor, refreshSetupSig,
-    setShowBlueprintModal, setShowClearConfirm, setSwitchOpen,
+    setShowBlueprintModal, setShowClearConfirm,
   });
 
   // Convert an OPEN planner when the sandbox toggle flips (#1988): the launch reads `sandboxConsoles`
@@ -745,8 +744,6 @@ export function Planning({ visible }: { visible: boolean }) {
         handleRestart={handleRestart}
         restarting={restarting}
         onClearPlan={() => setShowClearConfirm(true)}
-        canSwitch={canSwitch}
-        onSwitchBlueprint={() => setSwitchOpen(true)}
         isAuthoring={isAuthoring}
         published={!!activeProjectId}
         hasRepos={publishRepos.length > 0}
@@ -899,10 +896,6 @@ export function Planning({ visible }: { visible: boolean }) {
         showClearConfirm={showClearConfirm}
         onDismissClear={() => setShowClearConfirm(false)}
         onClearPlan={() => void doClearPlan()}
-        switchOpen={switchOpen}
-        onDismissSwitch={() => setSwitchOpen(false)}
-        switchTargets={switchTargets}
-        onSwitchBlueprint={(id) => void doSwitchBlueprint(id)}
       />
 
       {/* Triage: confirm + clear stale warden quarantines so a prior run's denied command can't

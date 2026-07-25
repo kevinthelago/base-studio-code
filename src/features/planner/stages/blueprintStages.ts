@@ -46,25 +46,6 @@ export function isAuthoringBlueprint(bp: Blueprint | undefined): boolean {
   return bp?.deliverable === "blueprint";
 }
 
-/** Whether a project bound to this blueprint may switch to a different one AT ALL (#1281). ANY
- *  project-lifecycle blueprint can switch now — the confirmation modal (reset / keep / export) is the
- *  safety, not a category rule. Only the locked blueprint-AUTHORING lifecycle stays put (it designs a
- *  blueprint, it doesn't seed a project). Drives whether a "switch blueprint" affordance is offered.
- *  (Replaces the #923 greenfield-only rule, which soft-locked a project the moment it left greenfield.) */
-export function canChangeBlueprint(bp: Blueprint | undefined): boolean {
-  return !!bp && !isAuthoringBlueprint(bp);
-}
-
-/** Whether a project currently on `from` may switch to a `to` blueprint (#1281). ANY project blueprint
- *  → any OTHER project blueprint is allowed; the user confirms each switch via the reset/keep/export
- *  modal. Refused only when: either side is missing, either is the blueprint-authoring lifecycle, or
- *  it's the same blueprint (a no-op). This is the authoritative switch gate. */
-export function canSwitchBlueprint(from: Blueprint | undefined, to: Blueprint | undefined): boolean {
-  if (!from || !to) return false;
-  if (isAuthoringBlueprint(from) || isAuthoringBlueprint(to)) return false;
-  return from.id !== to.id;
-}
-
 /** The gate signals the blueprint-authoring stages read, derived from the in-progress blueprint the
  *  planner is designing (#923, gates per the blueprint-author design):
  *  - `bpName` — Purpose gate: name + pitch + ≥1 catalog tag.

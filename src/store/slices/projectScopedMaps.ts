@@ -1,24 +1,23 @@
 // Project-scoped store-map registry (#2712).
 //
 // The same long list of per-project store maps (`Record<projectKey, …>`) used to be hand-enumerated
-// at FOUR sites that had to stay in sync:
+// at THREE sites that had to stay in sync:
 //   - `deleteLocalProject`        (slices/projects.ts) — drop a SET of project keys from every map
 //   - `rekeyProjectData`          (slices/projects.ts) — move oldKey → newKey (target-wins)
-//   - `applyBlueprintToProject`   (slices/plan.ts)     — drop ONE project key (re-seed reset)
 //   - `clearPlan`                 (slices/plan.ts)     — drop ONE project key
 //
-// The four sites cover **slightly different subsets** — e.g. `clearPlan` resets the plan maps but not
+// The three sites cover **slightly different subsets** — e.g. `clearPlan` resets the plan maps but not
 // the per-project preference maps (`autoTriage`, drafts, …); only `rekeyProjectData` touches
-// `planFleetTopology`; only the plan.ts sites touch `reposPublic` / `stagePreview`.
-// This file is the ONE source of truth: each map declares exactly which of the four operations it
-// participates in, and the generic helpers below drive all four ops from it — so the subsets can no
+// `planFleetTopology`; only the plan.ts `clearPlan` site touches `reposPublic` / `stagePreview`.
+// This file is the ONE source of truth: each map declares exactly which of the three operations it
+// participates in, and the generic helpers below drive all three ops from it — so the subsets can no
 // longer drift, while each op's exact set is preserved byte-for-byte.
 
 import type { AppStore } from "../types";
 import { deleteMapEntry, deleteMapEntries } from "../updateHelpers";
 
-/** The four project-scoped mutations, each with its own subset of the maps below. */
-export type ProjectMapOp = "delete" | "rekey" | "applyBlueprint" | "clearPlan";
+/** The three project-scoped mutations, each with its own subset of the maps below. */
+export type ProjectMapOp = "delete" | "rekey" | "clearPlan";
 
 // A map is opaque here — the values differ per map, but every op is key-only (drop/move by
 // projectKey), so the value type is irrelevant to this module.
@@ -30,32 +29,31 @@ type AnyMap = Record<string, unknown>;
  * complete set of `Record<projectKey, …>` maps any of the four project-scoped ops mutates.
  */
 const PROJECT_MAP_OPS: Partial<Record<keyof AppStore, ProjectMapOp[]>> = {
-  planStages:              ["delete", "rekey", "applyBlueprint", "clearPlan"],
-  planConfirmedStages:     ["delete", "rekey", "applyBlueprint", "clearPlan"],
-  planAuthoredBlueprint:   ["delete", "rekey", "applyBlueprint", "clearPlan"],
-  planDeployConfig:        ["delete", "rekey", "applyBlueprint", "clearPlan"],
-  planMarketConfig:        ["delete", "rekey", "applyBlueprint", "clearPlan"],
-  planTransformations:     ["delete", "rekey", "applyBlueprint", "clearPlan"],
-  planSkippedStages:       ["delete", "rekey", "applyBlueprint", "clearPlan"],
-  planAutomations:         ["delete", "rekey", "applyBlueprint", "clearPlan"],
-  uiScreens:               ["delete", "rekey", "applyBlueprint", "clearPlan"],
-  uiApproved:              ["delete", "rekey", "applyBlueprint", "clearPlan"],
-  planFleet:               ["delete", "rekey", "applyBlueprint", "clearPlan"],
-  pinnedContext:           ["delete", "rekey", "applyBlueprint", "clearPlan"],
-  issueLinks:              ["delete", "rekey", "applyBlueprint", "clearPlan"],
-  projectLocalRepos:       ["delete", "rekey", "applyBlueprint", "clearPlan"],
-  // planStageConfig / projectBlueprintId are DROPPED by delete/rekey/clearPlan, but applyBlueprint
-  // RE-SEEDS them (setMapEntry) instead of dropping — so they are NOT in its op set.
+  planStages:              ["delete", "rekey", "clearPlan"],
+  planConfirmedStages:     ["delete", "rekey", "clearPlan"],
+  planAuthoredBlueprint:   ["delete", "rekey", "clearPlan"],
+  planDeployConfig:        ["delete", "rekey", "clearPlan"],
+  planMarketConfig:        ["delete", "rekey", "clearPlan"],
+  planTransformations:     ["delete", "rekey", "clearPlan"],
+  planSkippedStages:       ["delete", "rekey", "clearPlan"],
+  planAutomations:         ["delete", "rekey", "clearPlan"],
+  uiScreens:               ["delete", "rekey", "clearPlan"],
+  uiApproved:              ["delete", "rekey", "clearPlan"],
+  planFleet:               ["delete", "rekey", "clearPlan"],
+  pinnedContext:           ["delete", "rekey", "clearPlan"],
+  issueLinks:              ["delete", "rekey", "clearPlan"],
+  projectLocalRepos:       ["delete", "rekey", "clearPlan"],
+  // planStageConfig / projectBlueprintId are DROPPED by all three ops (delete/rekey/clearPlan).
   planStageConfig:         ["delete", "rekey", "clearPlan"],
   projectBlueprintId:      ["delete", "rekey", "clearPlan"],
-  // Plan-config maps the plan.ts sites reset; rekey also moves them, delete drops them via… no —
-  // planSourceConfig is NOT in deleteLocalProject's set (only rekey + the two plan.ts reset sites).
-  planSourceConfig:        ["rekey", "applyBlueprint", "clearPlan"],
-  // Only the two plan.ts reset sites touch these (never delete/rekey).
-  reposPublic:             ["applyBlueprint", "clearPlan"],
-  planInjectionAck:        ["applyBlueprint", "clearPlan"],
-  stagePreview:            ["applyBlueprint", "clearPlan"],
-  stageRuns:               ["applyBlueprint", "clearPlan"],
+  // Plan-config maps the plan.ts site resets; rekey also moves them, delete drops them via… no —
+  // planSourceConfig is NOT in deleteLocalProject's set (only rekey + the plan.ts clearPlan reset).
+  planSourceConfig:        ["rekey", "clearPlan"],
+  // Only the plan.ts clearPlan reset touches these (never delete/rekey).
+  reposPublic:             ["clearPlan"],
+  planInjectionAck:        ["clearPlan"],
+  stagePreview:            ["clearPlan"],
+  stageRuns:               ["clearPlan"],
   // Per-project preference / doc maps — deleteLocalProject + rekeyProjectData only (the plan.ts
   // reset sites deliberately leave these alone).
   projectStartupPromptDoc: ["delete", "rekey"],
@@ -78,7 +76,7 @@ const PROJECT_MAP_OPS: Partial<Record<keyof AppStore, ProjectMapOp[]>> = {
 const REPO_MAP_OPS: Partial<Record<keyof AppStore, ProjectMapOp[]>> = {
   repoStartupPromptDoc: ["delete", "rekey"],
   repoTriagePromptDoc:  ["delete", "rekey"],
-  repoPublic:           ["applyBlueprint", "clearPlan"],
+  repoPublic:           ["clearPlan"],
 };
 
 const projectMapNames = (op: ProjectMapOp): (keyof AppStore)[] =>
@@ -147,12 +145,12 @@ export function rekeyProjectScoped(s: AppStore, oldKey: string, newKey: string):
 }
 
 /**
- * applyBlueprintToProject / clearPlan: drop the single `key` from every map registered under the
- * given single-key reset op. Repo maps drop every `<key>::<repo>` entry.
+ * clearPlan: drop the single `key` from every map registered under the single-key reset op.
+ * Repo maps drop every `<key>::<repo>` entry.
  */
 export function dropProjectScoped(
   s: AppStore,
-  op: "applyBlueprint" | "clearPlan",
+  op: "clearPlan",
   key: string,
 ): Partial<AppStore> {
   const prefix = `${key}::`;
