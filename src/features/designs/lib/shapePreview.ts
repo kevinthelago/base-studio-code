@@ -1,17 +1,17 @@
-// shapePreview (#3439) — the SHAPE tier of component preview data. A component that declares a
+// shapePreview (#3439 / #3790) — the SHAPE tier of component preview data. A component that declares a
 // `DataShape` (e.g. `shapes: ["list"]`) is fed REAL algorithm-generated data with NO per-component
 // `PREVIEW_BINDINGS` row. It sits BETWEEN the curated binding and `samplePropValue`:
 //
 //     curated binding  →  shape-mock (here)  →  samplePropValue
 //
-// Only shapes whose data can be both PRODUCED (a `datasetForStructure`) and LANDED on a real data prop
-// are supported — today `list` (an array prop, filled with generic objects that render across the feed /
-// collection components) and `graph` (NetworkPage's `nodes`[+`edges`] arrays). Layout composites with no
-// data-array prop (GraphCanvas `world:object`, MasterDetail render-props) find no target and fall through
-// to `samplePropValue`, exactly as #3439's acceptance requires. `tree` is deferred to #3790 (it needs a
-// new `VizDataset` kind + adapter). Pure + synchronous (the trace programs run on the main thread) and
-// strictly FAIL-SOFT: any gap returns `{}` so the component's own sample shows and a preview is never
-// broken.
+// Supported are the shapes whose data can be both PRODUCED (a `datasetForStructure`) and LANDED on a real
+// data prop: `list` (an array prop, filled with generic objects that render across the feed / collection
+// components), `graph` (NetworkPage's `nodes`[+`edges`] arrays), and `tree` (#3790 — the Tree /
+// TreeExplorerPage `nodes` nested forest, from a BST). Layout composites with no data-array prop
+// (GraphCanvas `world:object`, MasterDetail render-props) find no target and fall through to
+// `samplePropValue`, as #3439's acceptance requires; `linked-list`/`key-value` have no tracer and also fall
+// through. Pure + synchronous (the programs run on the main thread) and strictly FAIL-SOFT: any gap returns
+// `{}` so the component's own sample shows and a preview is never broken.
 import type { VizDataset, PreviewStructure } from "@/features/algorithms";
 import { isCollectionProp } from "./componentPreview";
 import type { ComponentRecord, DataShape, PropSpec } from "./model";
@@ -83,6 +83,16 @@ export const SHAPE_TIER: Partial<Record<DataShape, ShapeTierEntry>> = {
       // NetworkEdgeData { from, to }.
       if (edgesProp) out[edgesProp.name] = ds.edges.map((e) => ({ from: e.from, to: e.to }));
       return out;
+    },
+  },
+  tree: {
+    structure: "tree",
+    fill: (ds, props) => {
+      if (ds.kind !== "tree") return null;
+      const nodesProp = arrayProp(props, "nodes");
+      if (!nodesProp) return null; // a tree layout with no nodes array → fall through
+      // ds.roots are already the nested `{ id, label, children }` forest the Tree/TreeExplorerPage nodes prop wants.
+      return { [nodesProp.name]: ds.roots };
     },
   },
 };
