@@ -249,6 +249,93 @@ fn build_candidates(found: Vec<Found>, kit_id: &str) -> Vec<Candidate> {
         .collect()
 }
 
+/// The names of TOP-LEVEL functional/algorithmic definitions under `path` that are NOT React components
+/// (#3740) — named functions, and arrow-const utils/hooks. A component harvest lifts only PascalCase JSX
+/// components, so these plain function/hook/util modules fall through silently; but they belong in the
+/// ALGORITHMS graph (`bsc graph harvest`, which lifts exactly this shape). So `bsc ui harvest` surfaces
+/// them (and points at `bsc graph harvest`) rather than dropping them between the two harvests. A
+/// PascalCase name that renders JSX is a component (excluded); a data const (`export const x = {…}`) and a
+/// component-internal local are correctly not listed (only top-level function-shaped defs). Handles a
+/// single FILE or a DIR (#3722), order-stable + deduped, same dir/test-file skips as the component walk.
+pub fn functional_module_names(path: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    if path.is_file() {
+        if let Some((src, tree)) = parse(path) {
+            collect_functional_defs(tree.root_node(), &src, &mut out);
+        }
+    } else {
+        functional_walk(path, &mut out);
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn functional_walk(dir: &Path, out: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+    paths.sort();
+    for path in paths {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if path.is_dir() {
+            if !SKIP_DIRS.contains(&name) && !is_nested_git_root(&path) {
+                functional_walk(&path, out);
+            }
+        } else if let Some((src, tree)) = parse(&path) {
+            collect_functional_defs(tree.root_node(), &src, out);
+        }
+    }
+}
+
+/// Collect the file's TOP-LEVEL (module-level) function/arrow-const definition names that are not
+/// components — the reusable functional units. Only direct children of the module (optionally wrapped in
+/// `export …`), never nested helpers, so the list is the module's public functional surface.
+fn collect_functional_defs(root: Node, src: &[u8], out: &mut Vec<String>) {
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        let inner = if child.kind() == "export_statement" {
+            child.named_child(0).unwrap_or(child)
+        } else {
+            child
+        };
+        match inner.kind() {
+            "function_declaration" => {
+                if let Some(name) = field_text(inner, "name", src) {
+                    push_functional(name, inner, out);
+                }
+            }
+            "lexical_declaration" | "variable_declaration" => {
+                let mut c = inner.walk();
+                for d in inner.children(&mut c) {
+                    if d.kind() != "variable_declarator" {
+                        continue;
+                    }
+                    // Only a def bound to a FUNCTION/ARROW is a functional module — a data const
+                    // (`= {…}` / a value / a `call()` result) is not, and is correctly skipped.
+                    let is_fn = d
+                        .child_by_field_name("value")
+                        .is_some_and(|v| matches!(v.kind(), "arrow_function" | "function" | "function_expression"));
+                    if is_fn {
+                        if let Some(name) = field_text(d, "name", src) {
+                            push_functional(name, d, out);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Push `name` as a functional module unless it is a React component (PascalCase + renders JSX — the
+/// component harvest's job) or already collected. `node` is the def whose JSX is checked.
+fn push_functional(name: String, node: Node, out: &mut Vec<String>) {
+    let is_component = is_component_name(&name) && contains_jsx(node);
+    if !(is_component || out.contains(&name)) {
+        out.push(name);
+    }
+}
+
 /// Is the closure a module the preview could compile, and if not, exactly why? The predicate mirrors
 /// `bsc_component::graph_health::is_preview_buildable` (export present · no elision marker · no internal
 /// import that resolves to nothing) but REPORTS its reasons instead of collapsing to a bool — the whole
@@ -942,6 +1029,34 @@ mod tests {
         let test = base.join("Widgets.test.tsx");
         std::fs::write(&test, "export const T = () => <span/>;").unwrap();
         assert!(harvest_file(&test, DEFAULT_KIT).is_empty(), "a test file yields no candidates");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn functional_module_names_lists_functions_and_hooks_not_components_or_data() {
+        // #3740: the functional/algorithmic surface a COMPONENT harvest skips — routed to the algorithms
+        // graph. Functions + arrow utils + hooks are listed; a component and a data const are not.
+        let base = std::env::temp_dir().join(format!("bsc-functional-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(
+            base.join("mix.tsx"),
+            concat!(
+                "export function Card() { return <div/>; }\n",                   // a component — excluded
+                "export function formatDate(d: number) { return String(d); }\n", // a util fn — listed
+                "export const clamp = (x: number) => Math.max(0, x);\n",         // an arrow util — listed
+                "export function useThing() { return 1; }\n",                    // a hook — listed
+                "export const SPACING = { sm: 4, md: 8 };\n",                    // a data const — excluded
+            ),
+        )
+        .unwrap();
+
+        let names = functional_module_names(&base);
+        assert!(names.contains(&"formatDate".to_string()), "a util fn is listed: {names:?}");
+        assert!(names.contains(&"clamp".to_string()), "an arrow util is listed: {names:?}");
+        assert!(names.contains(&"useThing".to_string()), "a hook is listed: {names:?}");
+        assert!(!names.contains(&"Card".to_string()), "a component is NOT listed (the component graph's job): {names:?}");
+        assert!(!names.contains(&"SPACING".to_string()), "a data const is NOT a functional module: {names:?}");
         let _ = std::fs::remove_dir_all(&base);
     }
 
