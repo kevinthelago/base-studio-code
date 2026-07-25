@@ -172,6 +172,7 @@ mod tests {
             kit: None,
             component: None,
             theme: None,
+            state: None,
         })
         .unwrap();
 
