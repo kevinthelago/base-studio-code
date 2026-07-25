@@ -251,7 +251,12 @@ best-effort and exits 0 (or `return 2` for a deny) so it never wedges a tool or 
 - `bsc-activity` (#1184) — turn-boundary signal (`run`/`idle`) that gates the console status dot's
   silence timer so a working-but-silent worker doesn't false-idle.
 - `bsc-done` (#1379) — a finished worker self-closes; the frontend reaps the pane.
-- `bsc-confine` (#158) — PreToolUse file-tool hook: block writes that escape `$BSC_REPO_ROOT`.
+- `bsc-confine` (#158) — PreToolUse file-tool hook: block any file-tool path that escapes
+  `$BSC_REPO_ROOT`. Its matcher covers **`Read` as well as the write tools**, so confinement bounds
+  what a session can SEE, not only what it can change — a `permissions.allow` grant for `Read` cannot
+  override it (a PreToolUse hook blocks under both postures). That is why anything a confined session
+  must read lives INSIDE its root: a studio's shots go to `<cwd>/shots` rather than the global
+  `~/.base-studio-code/shots`, which is a sibling it could write but never open (#3468).
 - `bsc-scope` (#1297) — PreToolUse write-tool hook: hard-deny writes outside the pane's
   `$BSC_SCOPE_GLOBS` (the deny the role gate's allow-only rules lack).
 - `bsc-taint` (#1167) — tainted-turn gate: block outward/destructive Bash (exfil, force-push,

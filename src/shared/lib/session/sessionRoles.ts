@@ -34,7 +34,7 @@ export {
   roleCapability,
   hasScopedWriteCarveOut,
   restrictedRoleCommands,
-  isRestrictedRole,
+  isRestrictedRole, HARVEST_ROOT_APP_REPO, HARVEST_ROOT_PROJECTS,
 } from "./roleModel";
 
 export type { CommandClass, CommandDecision } from "./commandGate";
@@ -49,4 +49,5 @@ export {
   roleDeniedCommands,
   bscAgentPerms,
   sessionScopes,
+  editPathRule,
 } from "./launchRules";

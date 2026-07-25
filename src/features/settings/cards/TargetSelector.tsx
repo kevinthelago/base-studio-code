@@ -30,7 +30,7 @@ export function TargetSelector({
               onClick={() => setTarget(t)}
               pad={[5, 12]} bg={on ? "var(--accent)" : "var(--bg-elev)"} radius={6} style={{ cursor: "pointer",
                 fontSize: 11,
-                color: on ? "#1a120a" : "var(--fg-muted)",
+                color: on ? "var(--on-accent)" : "var(--fg-muted)",
                 border: "1px solid " + (on ? "transparent" : "var(--border-soft)"),
                 fontWeight: on ? 600 : 400,
               }}

@@ -40,6 +40,14 @@ pub struct Permissions {
     /// is unset), preserving the permissive default.
     #[serde(skip)]
     pub repo_root: String,
+    /// The session's read-only HARVEST roots (`$BSC_HARVEST_ROOTS`, newline-separated) — extra trees a
+    /// `read_file` may reach even though they sit OUTSIDE `repo_root` (#3509/#3530). Mirrors the
+    /// `bsc-confine` hook's Read allowance so the two runtimes confine identically: it widens only READS
+    /// (`write_file`/`edit_file` stay confined), so a harvest root grants no write anywhere. Read from the
+    /// environment in [`Permissions::from_env`], NOT the perms JSON (`#[serde(skip)]`). Empty ⇒ no extra
+    /// reach, so behavior is identical to before the flag existed.
+    #[serde(skip)]
+    pub harvest_roots: Vec<String>,
 }
 
 impl Permissions {
@@ -58,6 +66,13 @@ impl Permissions {
         // The confinement root is independent of the perms doc — read it from the env ALWAYS, so even
         // an unconfigured session (no `$BSC_AGENT_PERMS`) is still confined to its worktree (#1916).
         perms.repo_root = std::env::var("BSC_REPO_ROOT").unwrap_or_default();
+        // Read-only harvest roots (#3530), newline-separated like the hook reads them.
+        perms.harvest_roots = std::env::var("BSC_HARVEST_ROOTS")
+            .unwrap_or_default()
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
         perms
     }
 
@@ -76,7 +91,11 @@ impl Permissions {
             && matches!(tool_name, "read_file" | "write_file" | "edit_file")
         {
             let path = args["path"].as_str().unwrap_or("");
-            if !path_confined(&self.repo_root, path) {
+            // #3530: a READ may reach a listed read-only harvest root even though it is outside the repo
+            // root — mirrors the `bsc-confine` hook. Writes/edits stay confined (read-only widening).
+            let harvest_read_ok =
+                tool_name == "read_file" && under_any_harvest_root(&self.harvest_roots, path);
+            if !path_confined(&self.repo_root, path) && !harvest_read_ok {
                 return Err(format!(
                     "permission denied: '{path}' is outside the session's repo root ({}) — #158 FS confinement",
                     self.repo_root
@@ -90,7 +109,9 @@ impl Permissions {
                 if bsc_util::dangerous::agent_dangerous_substrings().any(|p| cmd.contains(p)) {
                     return Err("permission denied: command matches the built-in dangerous-command denylist".into());
                 }
-                if self.deny_bash.iter().any(|p| cmd.contains(p.as_str())) {
+                // #3483: program-name patterns match the PROGRAM token, not any substring of the
+                // command — see `bsc_util::deny`. The floor above keeps `contains` on purpose.
+                if self.deny_bash.iter().any(|p| bsc_util::deny::deny_matches(cmd, p.as_str())) {
                     return Err("permission denied: bash command matches a denied pattern".into());
                 }
             }
@@ -131,6 +152,28 @@ fn path_confined(root: &str, target: &str) -> bool {
         return norm == r || norm.starts_with(&format!("{r}/"));
     }
     true
+}
+
+/// Whether a `read_file` `target` sits under one of the read-only harvest roots (#3530) — mirrors
+/// `isUnderHarvestRoot` in `fsConfine.ts` and the `__bsc_read_harvestable` shell helper. Same
+/// conservatism as [`path_confined`]: only an ABSOLUTE path with no `..` segment, under a listed root
+/// (a shared prefix is not containment). Empty roots contribute nothing.
+fn under_any_harvest_root(roots: &[String], target: &str) -> bool {
+    if target.is_empty() || !is_absolute(target) {
+        return false;
+    }
+    let norm = target.replace('\\', "/");
+    if norm.split('/').any(|seg| seg == "..") {
+        return false;
+    }
+    roots.iter().any(|root| {
+        if root.is_empty() {
+            return false;
+        }
+        let r = root.replace('\\', "/");
+        let r = r.trim_end_matches('/');
+        norm == r || norm.starts_with(&format!("{r}/"))
+    })
 }
 
 /// Absolute paths: POSIX (`/…`), home (`~…`), Windows drive (`C:…`), or UNC (`\\…`).
@@ -193,6 +236,22 @@ mod tests {
     }
 
     #[test]
+    fn deny_bash_program_names_match_the_program_not_a_path_substring() {
+        // #3483: a bare deny entry is a PROGRAM name. Substring-matching it denied `ed` inside
+        // `shared/ui` and `vi` inside `Kevin` — every absolute path on some machines — which left a
+        // confined session unable to run its own tooling.
+        let p = Permissions {
+            deny_bash: vec!["ed".into(), "vi".into(), "tee".into()],
+            ..Default::default()
+        };
+        assert!(p.check("bash", &json!({ "command": "bsc ui harvest src/shared/ui" })).is_ok());
+        assert!(p.check("bash", &json!({ "command": "ls C:/Users/Kevin/p" })).is_ok());
+        assert!(p.check("bash", &json!({ "command": "vi notes.txt" })).is_err());
+        assert!(p.check("bash", &json!({ "command": "cat a | tee b" })).is_err());
+        assert!(p.check("bash", &json!({ "command": "sh -c \"tee out\"" })).is_err(), "no -c bypass");
+    }
+
+    #[test]
     fn write_globs_restrict_paths_when_set() {
         let p = Permissions { write_globs: vec!["src/**".into(), "*.md".into()], ..Default::default() };
         assert!(p.check("write_file", &json!({ "path": "src/lib.rs" })).is_ok());
@@ -226,6 +285,36 @@ mod tests {
         assert!(p.check("write_file", &json!({ "path": "src/../../escape" })).is_err());
         // bash is NOT path-confined here (the OS sandbox's job, not a pure check).
         assert!(p.check("bash", &json!({ "command": "cat ../other/secret" })).is_ok());
+    }
+
+    #[test]
+    fn a_read_only_harvest_root_widens_reads_but_not_writes() {
+        // #3530: the confined designer can Read the app's own source (its harvest root) even though it is
+        // outside its repo root, so it can vendor the sibling files harvest doesn't surface — but writes
+        // there stay blocked, preserving the read-only contract.
+        let p = Permissions {
+            repo_root: "/studio/design".into(),
+            harvest_roots: vec!["/dev/base-studio-code".into(), "/other/repo".into()],
+            ..Default::default()
+        };
+        // Read reaches either harvest root...
+        assert!(p.check("read_file", &json!({ "path": "/dev/base-studio-code/src/shimmer.ts" })).is_ok());
+        assert!(p.check("read_file", &json!({ "path": "/other/repo/x.ts" })).is_ok());
+        // ...but Write/Edit into a harvest root is still confined (read-only widening).
+        assert!(p.check("write_file", &json!({ "path": "/dev/base-studio-code/src/x.ts" })).is_err());
+        assert!(p.check("edit_file", &json!({ "path": "/dev/base-studio-code/src/x.ts" })).is_err());
+        // A Read outside BOTH the repo root and every harvest root is still denied, as is a prefix trap
+        // and a `..` toward a real root.
+        assert!(p.check("read_file", &json!({ "path": "/secrets/creds" })).is_err());
+        assert!(p.check("read_file", &json!({ "path": "/dev/base-studio-code-2/x" })).is_err());
+        assert!(p.check("read_file", &json!({ "path": "/dev/base-studio-code/../secrets" })).is_err());
+    }
+
+    #[test]
+    fn no_harvest_roots_leaves_confinement_unchanged() {
+        // Empty harvest_roots ⇒ byte-identical to before the flag: a read outside the repo root is denied.
+        let p = Permissions { repo_root: "/work/repo".into(), ..Default::default() };
+        assert!(p.check("read_file", &json!({ "path": "/dev/base-studio-code/src/x.ts" })).is_err());
     }
 
     #[test]

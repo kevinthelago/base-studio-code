@@ -84,8 +84,7 @@ function CrashRecoveryBanner() {
 export function SessionRecoveryBanner() {
   const fleetStartProject = useAppStore((s) => s.fleetStartProject);
   const triageStartProject = useAppStore((s) => s.triageStartProject);
-  const setGlanceDrill = useAppStore((s) => s.setGlanceDrill);
-  const setWorkspace = useAppStore((s) => s.setWorkspace);
+  const navigate = useAppStore((s) => s.navigate);
 
   const [recoverable, setRecoverable] = useState<RecoverableSession[]>([]);
   const [open, setOpen] = useState(false);
@@ -119,11 +118,12 @@ export function SessionRecoveryBanner() {
       const fleet = await bscJson<FleetPlan | null>(projectKey, ["plan", "fleet", "get", "--full", "--json"], null);
       if (fleet) {
         fleetStartProject(projectKey, fleet, projectKey);
-        // Land the user on their restored agents (#2445): drill Glance into the project. Overrides
-        // fleetStartProject's console navigation — after a recovery the fleet-level Glance view is
-        // the surface that shows what just came back (and works even with GitHub disconnected).
-        setGlanceDrill(projectKey);
-        setWorkspace("glance");
+        // Land the user on their restored agents (#2445): drill Glance into the project, on the Network
+        // tab (#3598 — else the drill shows nothing). Overrides fleetStartProject's console navigation —
+        // after a recovery the fleet-level Glance view is the surface that shows what just came back (and
+        // works even with GitHub disconnected). One `navigate` sets drill + page + workspace atomically
+        // so none can be forgotten (#3602).
+        navigate({ workspace: "glance", page: "network", drill: projectKey });
       }
     }
     if (triage.length) {
@@ -143,7 +143,7 @@ export function SessionRecoveryBanner() {
       }
     }
     drop(new Set(sessions.map((s) => s.paneId)));
-  }, [fleetStartProject, triageStartProject, setGlanceDrill, setWorkspace, drop]);
+  }, [fleetStartProject, triageStartProject, navigate, drop]);
 
   const discard = useCallback(async (s: RecoverableSession) => {
     await invoke("reap_session", { paneId: s.paneId }).catch(() => {});
@@ -350,8 +350,7 @@ function ProjectCompleteBanner() {
   const activeProjectId = useAppStore((s) => s.activeProjectId);
   const activeProjectName = useAppStore((s) => s.activeProjectName);
   const planFleet = useAppStore((s) => s.planFleet);
-  const setGlanceDrill = useAppStore((s) => s.setGlanceDrill);
-  const setWorkspace = useAppStore((s) => s.setWorkspace);
+  const navigate = useAppStore((s) => s.navigate);
   const [acked, setAcked] = useState<Set<string>>(() => new Set());
   const [completeKey, setCompleteKey] = useState<string | null>(null);
 
@@ -382,7 +381,7 @@ function ProjectCompleteBanner() {
         <Button
           variant="primary"
           style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-          onClick={() => { setGlanceDrill(key); setWorkspace("glance"); ack(key); }}
+          onClick={() => { navigate({ workspace: "glance", page: "network", drill: key }); ack(key); }}
         >
           Preview &amp; review
         </Button>

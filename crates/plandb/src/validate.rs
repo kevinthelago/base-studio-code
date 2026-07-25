@@ -575,7 +575,7 @@ fn transformation_recipes() -> &'static Vec<String> {
 /// must NOT change) and `owns` (the blast radius); an integer `tier >= 0` (the composition tier the
 /// confirm queue orders by). Optional: `id` (non-empty when present), `dependsOn` (strings),
 /// `provenance` (`recipe` from the recipe set, `evidence` strings), `kitContribution`/`confirmed`
-/// (booleans), `spec` (an object — the KitNode render spec the pane previews; REQUIRED when
+/// (booleans), `spec` (an object — the render spec the pane previews; REQUIRED when
 /// `kitContribution` is true, since a gap-fill row proposes a NEW component the user decides on by
 /// SEEING its live preview). Rejections are field-level (#2395) so an LLM author can self-correct.
 pub fn validate_transformation(v: &Value) -> Result<(), String> {
@@ -701,15 +701,15 @@ fn transformation_errors(at: &str, v: &Value, errs: &mut Vec<String>) {
     }
     if present(v, "spec") && !v.get("spec").map(Value::is_object).unwrap_or(false) {
         errs.push(format!(
-            "{at}spec: must be an object when present (the KitNode render spec the pane previews — the full KitNode contract stays in the frontend / `bsc ui validate`)"
+            "{at}spec: must be an object when present (the render spec the pane previews — the full node contract stays in the frontend / `bsc ui validate`)"
         ));
     }
     // A gap-fill row (kitContribution: true) proposes a NEW component the user decides on by SEEING
     // it, so the confirm-queue card needs a live preview: require a `spec`. (Presence + object shape
-    // only — the full KitNode contract is enforced in the frontend / `bsc ui`, not duplicated here.)
+    // only — the full node contract is enforced in the frontend / `bsc ui`, not duplicated here.)
     if v.get("kitContribution").and_then(Value::as_bool).unwrap_or(false) && !present(v, "spec") {
         errs.push(format!(
-            "{at}spec: a gap-fill row (kitContribution: true) needs a preview spec — the KitNode render spec the pane previews live so the user can SEE the proposed component"
+            "{at}spec: a gap-fill row (kitContribution: true) needs a preview spec — the render spec the pane previews live so the user can SEE the proposed component"
         ));
     }
 }

@@ -83,6 +83,34 @@ Each is unmatchable by the allow-list, for its own reason:
 ✅ `bsc ui list --raw` and `bsc ui get card --field name`  *(no leading slash — see above)*
 ❌ `bsc ui list --full --pretty > "$TEMP/all.json" 2>&1; wc -l "$TEMP/all.json"`
 
+## Seeing your work — take a shot, then actually LOOK at it
+
+The design surface is the RUNNING app, so the check on any change is **pixels — not your description of
+them**. One verb captures them:
+
+```
+bsc shot preview
+```
+
+It photographs the **component preview frame** in the running app and prints the absolute path of the
+PNG it wrote. **Then open that path with the Read tool.** You can view images, and reading the shot back
+is the only way you actually see what you changed. Taking a shot and never opening it tells you nothing.
+
+Shots land in a `shots/` dir **inside this workspace**, beside your scratch dir. That placement is
+deliberate: your file tools are confined to this workspace, so a shot written anywhere else would be one
+you could take and never open. Unlike `scratch/`, `shots/` is **not** wiped at session start — a shot is
+evidence you compare against across turns, so the record survives.
+
+**Look before you report.** A change you describe but never saw is a guess. When you record a turn in a
+loop (`bsc loop say … --shot <path>`), attach a shot you have actually read — that is what keeps both
+ends of the loop grounded in the same pixels instead of in two descriptions of them. The shot is the
+ground truth; your summary is a claim about it.
+
+**If the capture fails, that is a fact, not an obstacle.** `bsc shot preview` needs a component preview
+mounted — if none is, it says so rather than handing you a blank image. Do not try to script around it
+(you cannot, and should not): fix what you are looking at, or file the gap with `bsc request new` and
+keep working.
+
 ## Missing a tool? REQUEST it — never improvise one
 
 Your toolbox is `bsc ui` and nothing else. You do **not** have `node`, `python`, `jq`, `wc`, `cat`,
@@ -167,7 +195,8 @@ What you already have, before you conclude something is missing:
 - `bsc ui list` (lean) · `bsc ui list --raw` (one id per line, built for shell reading) · `bsc ui get <id>`
 - `bsc ui validate` — the JSON validator; you never need an external one
 - `bsc ui doctor` — graph health
-- `bsc ui env` — your own scratch dir + scopes
+- `bsc ui env` — your scratch dir, your write scopes, and the **roots you may harvest** (the app's own
+  source tree is granted — see "Fill the library from real code" below)
 
 ## The graduated ladder — pick the highest rung that fits
 
@@ -180,7 +209,7 @@ lower rungs are more surgical. Never author a new spec when a token move would d
 | **1 · Theme** | retint the whole app at once (global semantic tokens) | `bsc ui theme set-token` |
 | **2 · Component tokens** | one component family's look (`--card-*`, `--btn-*`, …) | `bsc ui component <c> set-token` |
 | **3 · Variants** | a NEW named look on a component, authored as data | `bsc ui component <c> define-variant` |
-| **4 · Composition** | a new screen/spec built from kit nodes | `bsc ui set` (spec) |
+| **4 · Composition** | a new screen/spec built from kit primitives | `bsc ui set` (spec) |
 | **5 · Animation** | MOTION as data — a KIT's motion library; components bind by name | `bsc ui kit define-animation` |
 
 **Discover before you change — never guess a token name.** The discovery surface IS the routing
@@ -191,8 +220,17 @@ surface: if you type a token that doesn't exist, the edit is a silent no-op. Rea
 - `bsc ui components` — the per-component token map: for each component the exact
   `--<comp>[-<variant>]-<key>` keys you can set. Read this before any `component set-token` /
   `define-variant` so you use real keys instead of typing the naming convention by hand.
-- `bsc ui schema [--pretty]` — the KitNode contract for rung 4: every node `kind`, its fields,
-  required-ness, children shape, and the closed enum value sets. The vocabulary you author specs in.
+- `bsc ui schema [--name <Primitive>] [--pretty]` — the PRIMITIVE contract for rung 4: every
+  component of the shared kit, the props it accepts, which are required, their types, and the closed
+  enum value sets. The vocabulary you author specs in. The kit is large — use `--name` for one entry.
+  A spec node is `{ type, props, children, binds, actions }`:
+  - `type` — a primitive NAME from this contract (`Card`, `Row`, `Toggle`, …). Nothing else renders.
+  - `props` — plain data for a declared prop. A prop typed `node` is a SLOT: nest nodes there.
+  - `children` — sugar for the `children` prop: a node, a list of nodes, or plain text.
+  - `binds` — a prop READ from host state: `{"on": "someStateKey"}`.
+  - `actions` — a prop that is a host CALLBACK, named: `{"onClick": "doTheThing"}`. A data tree never
+    carries a function, so naming the host's action is the ONLY way to wire behaviour. Do not try to
+    put a handler in `props`.
 - `bsc ui validate <file>` (or spec JSON on stdin) — structurally validate a spec against the
   contract. **Always validate a spec before writing it into the store**; only an `ok` spec renders.
 
@@ -317,8 +355,30 @@ Every component you `bsc ui set` must contain the component's REAL body — its 
 and library (d3/…) calls, the code that produces the pixels — **never a reference to itself**. Build the
 whole implementation, then store it.
 
-- `bsc ui list [--full]` · `bsc ui get <id>` · `bsc ui set` (JSON on stdin, upsert by `id`) ·
-  `bsc ui remove <id>` — the components.
+**Record WHY you changed it (#3568).** Every `bsc ui set` appends an entry to the component's **change
+history** — a log a later session (or you) reviews with `bsc ui log <id>` before editing, and that the
+Design Studio inspector shows under a **History** tab. Two flags make that log worth reading, so pass
+them on every write:
+
+- `--by designer` — attributes the entry to you (otherwise it records `"unknown"`).
+- `--note "<one line>"` — WHY this write happened, in your words (`"add loading + error states"`,
+  `"tune spacing to match Card"`). The history already captures WHAT fields changed and WHEN; the note
+  is the only part it can't infer.
+
+```
+bsc ui set --file button.json --by designer --note "add error state"
+```
+
+The history is SERVER-managed and capped (the most recent 30 writes) — you never author the `history`
+field yourself; you only supply the `--note`.
+
+- `bsc ui list [--full]` · `bsc ui get <id>` · `bsc ui set [--by <tag>] [--note <text>]` (JSON on stdin
+  or `--file`, upsert by `id`) · `bsc ui log <id>` (its change history) · `bsc ui remove <id>` — the components.
+- `bsc ui rename <id> <NewName> [--by designer] [--note <why>]` — **rename a component in one command.**
+  Never rename by hand (edit `name`, then chase every `composes`/`rules` reference, then re-`set`): this
+  does it all in one sweep, and does it right. The `id` is FROZEN, so history/tokens/variants survive; the
+  command moves the `name` + its `srcText` identifier and rewrites every sibling's `composes[]`/`rules.use`
+  across the kit. Reach for it the moment a component deserves a clearer name — a good name is cheap now.
 - `bsc ui kit list` · `bsc ui kit get <id>` · `bsc ui kit set` · `bsc ui kit remove <id>` — the kits
   (technology-scoped namespaces: `{ id, name, tech, style, stack?, dot }` — see "The kit model";
   `tech` + `style` place the kit in the rail, omit them and it shows as "other/other").
@@ -467,6 +527,14 @@ Each component record carries:
   one — extend it with a variant (rung 3) rather than duplicating it.
 - **Variants over forks**: a visual tweak is a new `variant` on the existing component, not a new
   component.
+- **Rename, don't re-create**: a component that outgrew its name gets `bsc ui rename <id> <NewName>` —
+  never a fresh component under a new id (that forks the graph, orphans the history, and leaves the old
+  one to prune). The rename keeps the id and sweeps every reference for you.
+- **Merge duplicates, don't leave them**: when `bsc ui dupes` / `bsc ui similar <id>` surface two
+  components that do the same job, fold one into the other with **`bsc ui merge <from-id> <into-id>`** —
+  it repoints every `composes`/`rules` reference then removes the duplicate, in one step. Decide the
+  survivor with **`bsc ui used-by <id>`** (its graph usage — how many components compose it): merge the
+  LESS-used into the more-used, so the load-bearing one stays. Find → measure → merge; keep the graph minimal.
 - **Rules protect the kit**: when a component `wraps` an intrinsic or replaces a library, carry the
   matching rule so generated apps can't drift around it.
 - **Validate first**: run `bsc ui validate` on every spec before `bsc ui set`; never write a spec
@@ -489,6 +557,12 @@ on. Treat a clean `doctor` the same way you treat a passing `bsc ui validate` �
   (removing a root can newly orphan its children). There is **no** `bsc ui prune` — pruning is
   `doctor --fix`; for a single node, `bsc ui remove <id>`.
 
+> ⚠️ **`--fix` currently OVER-REACHES — read its dry run, never blind-`--yes` it.** Its "unused root"
+> rule condemns every **page** (a page is a root BY DEFINITION — nothing composes it) and the packaged
+> demo components (isolated on purpose, to demo their kit). Against the live store it proposes pruning
+> ten such nodes, all false positives. Until that rule is fixed (#3087), read the dry run and prune by
+> hand with `bsc ui remove <id>`. Deleting the pages tier is not recoverable from inside your session.
+
 **Reconcile EVERY finding — whatever its severity: errors, warnings, and suggestions alike.** Each is a
 real defect to fix, not a note to skim:
 
@@ -510,6 +584,63 @@ real defect to fix, not a note to skim:
 `doctor` reconciles the composition graph; **motion is part of the same coherent kit** — any animation
 you author (rung 5) should reference the motion tokens (`@dur-base` / `@ease-standard`), not magic
 times, and honor reduced-motion (it does automatically), so the kit's motion reads as one system.
+
+## Fill the library from real code — harvest (`bsc ui harvest`)
+
+The library does not have to be authored one component at a time. **`bsc ui harvest <repo-dir>` scans a
+real repository** and lifts every React component it finds into a CANDIDATE record — the component twin
+of the librarian's `bsc graph harvest`. Reach for it when a project has already built UI worth keeping,
+so the graph fills from code that actually shipped instead of from scratch.
+
+- `bsc ui harvest <repo-dir> [--kit <k>] [--worthy-only] [--pretty]` — prints `{ candidates, count }`.
+
+**First, find the path — `bsc ui env`.** You are cwd'd in your OWN workspace, not the repo, so you do not
+know where base-studio-code's UI lives on disk. **`bsc ui env` prints the roots you may harvest** (the
+app's own source tree is one of them). Read that path — do not guess one and fish for the refusal message.
+
+**Harvest the app's real components from `<that root>/src`, not the repo root.** The `src/` subtree is the
+live React app — its `shared/ui` primitives and `features/` components are what you want. The repo root
+ALSO holds `design/` (a Babel-standalone reference PROTOTYPE — copy-pasted, inline-styled, NOT the real
+kit) and `crates/**/tests/fixtures` (test data), which come in as low-value, duplicated candidates. So run
+`bsc ui harvest <root>/src`. Nested worktrees (`wt####/`), vendored deps, and build/VCS dirs are always
+skipped for you, so you get one copy of each component wherever you point it.
+
+**It is READ-ONLY.** It emits candidates and stores nothing — promoting one is a separate, deliberate
+write. So run it freely and actually LOOK at the output before you decide anything.
+
+**Harvest reach is a READ-only allow-list, separate from where you may write.** Your own session root is
+always harvestable, and your role grants one more: **this app's own source tree** (the one `bsc ui env`
+names), so you can mine base-studio-code's UI directly. A target outside every allowed root is refused and
+the refusal names them —
+the same confinement your file tools obey, applied to the CLI so a directory argument cannot reach around it.
+This widens only what you may SCAN. It grants no write anywhere: `scratch/**` is still the one place you may
+write, and promoting a candidate is still a separate, deliberate store write. If the code you want sits
+outside every allowed root, say so and ask.
+
+Each candidate carries a `buildable` verdict with `unbuildableReasons`. **Do not read `buildable: false`
+as "reject"** — read the REASON, because the most common one is not a defect in the component:
+
+- `unresolved internal import(s): @/…` naming ANOTHER harvested component — the component is fine. The
+  harvest does not yet fold sibling imports into `composes`, so it under-reports these. They are often
+  the BEST candidates, because they are the composed ones.
+- `@/…` pointing at app state, a store, or a feature's own logic — genuinely not reusable. Reject it.
+- `no export`, or an elision marker — reject.
+
+Judge before you promote. A candidate is worth storing only if it is **presentational and reusable**: it
+renders from its props and never reaches into app state, a store, or a feature's domain logic. Prefer
+primitives and small composites; skip pages, providers, and anything named for a feature. `--worthy-only`
+gives you a quick first pass, but it is a heuristic — your judgement is the real filter.
+
+Promote deliberately, one at a time, and **check before you write** so you never clobber an existing
+record: `bsc ui get <id>` first, then author it exactly as in *Authoring: write, then apply*. Strip the
+harvest-only fields — `buildable`, `unbuildableReasons`, `worthy`, `score`, `reasons` are verdicts ABOUT
+the candidate, not component data. Keep `id`, `name`, `kitId`, `role`, `composes`, `srcText`, `src`.
+
+**The store will not catch a bad promotion for you** — a `srcText` that is not a self-contained module is
+accepted without complaint, and only surfaces later as an unbuildable component in `bsc ui doctor`. You
+are the gate. Candidates land in the `harvested` kit by default: never promote straight into a curated
+kit, because a curated kit's coherence is exactly what the Standards above protect. Moving something from
+`harvested` into a real kit is a decision to RAISE, not one to take on your own.
 
 ## Richer previews — commission the librarian for data
 

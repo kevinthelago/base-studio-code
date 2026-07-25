@@ -11,7 +11,8 @@
 import { useRef } from "react";
 import { safeInvoke } from "../core/safeInvoke";
 import { bscJson } from "../core/bsc";
-import { usePoll } from "@/shared/hooks/usePoll";
+import { logsTail } from "../core/logsBridge";
+import { useLogStream } from "@/shared/hooks/useLogStream";
 import { useAppStore } from "@/store";
 import { roleCapability } from "../session/sessionRoles";
 import { resolveLlmConfig, hasLlmKey, type LlmConfig } from "../core/llmConfig";
@@ -22,7 +23,9 @@ import { completedWorkerPanes, doneIssueRefs } from "./streamCompletion";
 import type { PlanIssue } from "@/features/planner/issues/planIssues";
 import { log } from "../core/log";
 
-const POLL_MS = 6000;   // heavier than the coord loop (reads a git diff per worker) — every ~6s
+// #3643: event-driven now — re-checks when a worker attempts a tool (`tool`/audit, the write signal
+// the warden already reads), takes/finishes a turn (`activity`), or self-reports done, instead of
+// re-spawning a git diff per worker every 6s. A slow safety-net backstop covers plan-only changes.
 const JUDGE_EVERY = 5;  // run the LLM spot-check ~every 5 ticks (~30s), one worker, round-robin
 
 /** Panes mid-quarantine, so a slow kill+push doesn't double-fire across ticks. */
@@ -39,7 +42,7 @@ async function buildSession(paneId: string): Promise<WardenSession | null> {
   if (!cwd) return null;
 
   const changedFiles = await safeInvoke<string[]>("read_worktree_changes", { cwd }, []);
-  const auditLines = await bscJson<string[]>(null, ["logs", "tail", "audit", "--limit", "500", "--json"], []);
+  const auditLines = await logsTail("audit", 500);
   return {
     paneId,
     anchor: {
@@ -103,7 +106,7 @@ export function useWarden(): void {
   const judgeCursor = useRef(0);   // round-robin cursor for sampling
   const judging = useRef(false);   // one judge call in flight at a time
 
-  usePoll(async (isCancelled) => {
+  useLogStream(["tool", "activity", "done"], async (isCancelled) => {
     if (isCancelled()) return;
     const st = useAppStore.getState();
     const panes = Object.keys(st.fleetPaneStreams);
@@ -154,5 +157,5 @@ export function useWarden(): void {
         }
       }
     }
-  }, POLL_MS, []);
+  }, []);
 }

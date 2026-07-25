@@ -16,6 +16,13 @@
 //   against the wrong screen.
 import type { AppStore } from "@/store/types";
 import type { Workspace } from "@/app/registry";
+import { dispatchPage } from "@/app/navigate";
+
+/** The preview DATA-STATES `--state` navigates to (#3717) — the navigable subset of the Design Studio's
+ *  state axis (`error` is a render OUTCOME, not something you request). Kept in lockstep with the Rust
+ *  `NAV_STATES` in `bsc-navigate`'s CLI. `as const` so the values narrow to a union assignable to the
+ *  store's `PreviewState` without a cross-feature type import. */
+const NAV_STATES = ["loaded", "empty", "loading"] as const;
 
 /** What `bsc navigate` asks for. Every field optional; absent ⇒ leave it alone. Mirrors Rust `NavRequest`. */
 export interface NavRequest {
@@ -24,6 +31,7 @@ export interface NavRequest {
   kit?: string;
   component?: string;
   theme?: string;
+  state?: string;
 }
 
 /** What we send back to Rust. Mirrors Rust `NavAck`. */
@@ -35,6 +43,7 @@ export interface NavAck {
   kit?: string;
   component?: string;
   theme?: string;
+  state?: string;
 }
 
 /** The vocabulary the resolver validates against.
@@ -59,6 +68,10 @@ const DESIGNS_PAGE = "designs";
 export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
   const { read, workspaces, pages } = vocab;
   const s = read();
+  // #3599: was the Design Studio ALREADY on screen before this navigate? A designer follow-along focus
+  // (`bsc navigate component`, fired before each `bsc shot preview`) must not YANK the user off whatever
+  // page they're on — so the component intent below only folds to the Studio when it's already showing.
+  const wasShowingStudio = s.activeWorkspace === DESIGNS_WORKSPACE && s.projectsPageMode === DESIGNS_PAGE;
 
   // ── Validate EVERYTHING before mutating anything ──────────────────────────────────────────────
   // A half-applied navigation is worse than a refused one: the caller gets an error AND a view that
@@ -74,6 +87,9 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
   }
   if (req.theme !== undefined && !s.kitThemes.some((t) => t.id === req.theme)) {
     return { error: `unknown theme '${req.theme}' — one of: ${s.kitThemes.map((t) => t.id).join(", ")}` };
+  }
+  if (req.state !== undefined && !(NAV_STATES as readonly string[]).includes(req.state)) {
+    return { error: `unknown state '${req.state}' — one of: ${NAV_STATES.join(", ")}` };
   }
   // A component is only meaningful inside a kit: resolve against the requested kit, else the current one.
   // Naming a component without a kit is ambiguous the moment two kits share a component name.
@@ -94,13 +110,26 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
 
   // ── Commit ────────────────────────────────────────────────────────────────────────────────────
   if (req.theme !== undefined) s.setKitTheme(req.theme);
+  // The preview DATA-STATE the Studio renders (#3717) — drives the same store value the state control
+  // sets, so a `--state` navigate captures the intended render. Validated above, so the cast is sound.
+  if (req.state !== undefined) s.setDesignsPreviewState(req.state as (typeof NAV_STATES)[number]);
   if (req.workspace !== undefined) s.setWorkspace(req.workspace as Workspace);
-  if (req.page !== undefined) s.setProjectsPageMode(req.page as AppStore["projectsPageMode"]);
+  // Dispatch the page through the SAME per-workspace mechanism the UI uses (#3602) instead of hard-coding
+  // one workspace's setter. The page vocab is still PROJECT_MODES (validated above), so for the projects
+  // workspace this is exactly the old `setProjectsPageMode`; a page with no target workspace defaults to
+  // the Studio's (projects), preserving today's behavior.
+  if (req.page !== undefined) dispatchPage(s, (req.workspace as Workspace) ?? DESIGNS_WORKSPACE, req.page);
 
-  // `component` implies its workspace + page — the intent is "show me this", not "set a field".
+  // `component` implies its workspace + page — the intent is "show me this", not "set a field". But
+  // (#3599) a designer follow-along must not steal the user's current page: only SWITCH to the Studio
+  // when it's already showing, or when the request EXPLICITLY asked for a workspace/page (a deliberate
+  // steer, not a background focus). Off-Studio, we still set the focus so it's there when the user opens
+  // the Studio themselves — their current view is untouched.
   if (comp) {
-    s.setWorkspace(DESIGNS_WORKSPACE);
-    s.setProjectsPageMode(DESIGNS_PAGE as AppStore["projectsPageMode"]);
+    if (wasShowingStudio || req.workspace !== undefined || req.page !== undefined) {
+      s.setWorkspace(DESIGNS_WORKSPACE);
+      s.setProjectsPageMode(DESIGNS_PAGE as AppStore["projectsPageMode"]);
+    }
     // setDesignsKit CLEARS the component (a component belongs to one kit), so the kit must come first.
     s.setDesignsKit(comp.kitId);
     s.setDesignsComp(comp.id);
@@ -120,5 +149,6 @@ function landed(read: () => AppStore): NavAck {
     kit: s.designsKitId || undefined,
     component: s.designsCompId ?? undefined,
     theme: s.kitTheme || undefined,
+    state: s.designsPreviewState || undefined,
   };
 }

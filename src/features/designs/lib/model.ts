@@ -5,18 +5,23 @@
 // module owns only the shapes + pure derivations (search, compose/used-by resolution, role colors).
 
 import type { KitAnimation, AnimationDef } from "@/shared/ui/kit/animations";
+import { BASE_KIT_ID } from "@/shared/ui/kit/baseAnimations";
+import type { GeneralNode } from "@/shared/ui/spec";
 
 /** A component's architectural role — drives its accent color + grouping. */
 export type Role = "primitive" | "composite" | "layout" | "page" | "service";
 
 export const ROLES: Role[] = ["primitive", "composite", "layout", "page", "service"];
 
-/** The data-shape vocabulary (#2475) — the six canonical shapes a feature's data can take. The
+/** The data-shape vocabulary (#2475) — the seven canonical shapes a feature's data can take. The
  *  planner derives its data's shape, then asks the kit for the ideal rendering
- *  (`bsc ui shapes <shape>` / `bsc ui list --shape <shape>`). */
-export type DataShape = "list" | "linked-list" | "tree" | "graph" | "table" | "key-value";
+ *  (`bsc ui shapes <shape>` / `bsc ui list --shape <shape>`). `series` (#3517) is an ordered label
+ *  axis + one or more ALIGNED numeric value series — a time-series over an ordered domain (exactly the
+ *  `{ labels, series }` shape `windowedTally` produces); distinct from `list` (homogeneous items, no
+ *  axis) and `table` (heterogeneous columns per row). */
+export type DataShape = "list" | "linked-list" | "tree" | "graph" | "table" | "key-value" | "series";
 
-export const DATA_SHAPES: DataShape[] = ["list", "linked-list", "tree", "graph", "table", "key-value"];
+export const DATA_SHAPES: DataShape[] = ["list", "linked-list", "tree", "graph", "table", "key-value", "series"];
 
 /** One public prop / API member of a component. */
 export interface PropSpec {
@@ -59,6 +64,10 @@ export interface Kit {
   animations?: KitAnimation[];
   /** A packaged built-in (re-seeded into the store on hydrate). Absent ⇒ user-authored. */
   builtin?: boolean;
+  /** A SUPPRESSION tombstone (#3725) — `true` marks this id as a PERMANENTLY removed packaged builtin, not
+   *  a real kit. `reconcileSeed` skips re-seeding it (the tombstone occupies the id) and the library
+   *  excludes it; `bsc ui kit suppress`/`unsuppress` write/clear it. Absent on every real record. */
+  suppressed?: boolean;
   /** Content hash of the seed copy this record came from (#2483, `seedRefresh.ts`) — stamped at
    *  seed-assembly time; lets hydrate tell a pristine built-in (refreshable) from a user-edited one
    *  (kept). Absent ⇒ user-authored or a legacy pre-#2483 copy. */
@@ -90,17 +99,34 @@ export interface KitRule {
 }
 
 /** One proven component in a kit — the record the library stores and the pane renders. */
+/** One row of a component's change {@link ComponentRecord.history} (#3568) — appended by the Rust stamp
+ *  boundary on every write so a session can review what changed, when, by whom, and why before editing. */
+export interface ChangeEntry {
+  /** The record `rev` this write produced (1 = the first write). */
+  rev: number;
+  /** ISO-8601 UTC timestamp of the write. */
+  at: string;
+  /** The writer tag — `bsc ui set --by …`, else the session's `$BSC_UI_WRITER`, else `"unknown"`. */
+  by: string;
+  /** Optional human summary of WHY the write happened (`bsc ui set --note …`). */
+  note?: string;
+  /** The top-level fields that changed on this write; `["created"]` on the very first write. */
+  changed: string[];
+}
+
 export interface ComponentRecord {
   id: string;
   name: string;
   kitId: string;
   role: Role;
-  /** The component's PURPOSE partition within the kit (#3048) — e.g. `data-viz` / `pages` / `forms`.
-   *  ORTHOGONAL to {@link role} (the architectural tier that drives the composition swimlanes): `group`
-   *  answers "what is this component FOR in the kit", `role` answers "what tier is it". ORGANIZATIONAL
-   *  only — `composes` still resolves across the WHOLE kit, so components in DIFFERENT groups compose
-   *  freely (a `pages` component composes a `data-viz` chart directly; kits never cross). Absent ⇒ the
-   *  kit's trailing "ungrouped" bucket (`kitGroups.ts`). OPTIONAL and NEVER defaulted — like
+  /** The component's FOLDER PATH within the kit (#3048/#3579) — a nested, `/`-delimited path
+   *  (`shared/ui/controls`, `features/github`) that organizes the kit like a completed project's
+   *  folders, DERIVED from `src` (`group_from_src` in `bsc-component`; the harvest seeds it and
+   *  `bsc ui regroup` re-derives it for the whole store). ORTHOGONAL to {@link role} (the architectural
+   *  tier that drives the composition swimlanes): `group` answers "where does this live in the project",
+   *  `role` answers "what tier is it". ORGANIZATIONAL only — `composes` still resolves across the WHOLE
+   *  kit, so components in DIFFERENT folders compose freely (kits never cross). Absent ⇒ the kit's
+   *  trailing "ungrouped" bucket (`kitGroups.ts`). OPTIONAL and NEVER defaulted — like
    *  {@link Kit.tech}/`style`, an absent `group` must stay absent (never `""`) so a store copy keeps
    *  hashing to its recorded `seedHash` and the #2483 reconcile can refresh it. */
   group?: string;
@@ -129,9 +155,29 @@ export interface ComponentRecord {
   source?: string;
   /** A packaged built-in (re-seeded into the store on hydrate). Absent ⇒ user-authored. */
   builtin?: boolean;
+  /** A SUPPRESSION tombstone (#3725) — `true` marks this id as a PERMANENTLY removed packaged builtin, not
+   *  a real component. `reconcileSeed` skips re-seeding it (the tombstone occupies the id) and the library
+   *  excludes it; the Rust doctor skips it; `bsc ui suppress`/`unsuppress` write/clear it. Absent on every
+   *  real record. */
+  suppressed?: boolean;
   /** The raw intrinsic this component REPLACES (`"button"`, `"input"`) — the authoring hint that
    *  derives the flagship anti-duplication lint rule ("use <Name> not a raw <wraps>"). Absent ⇒ none. */
   wraps?: string;
+  /** The registered PLATFORM module specifier this graph component OVERRIDES (#3660, epic #3604) — e.g.
+   *  `@/shared/ui/layout/Spacer`. When present, the runtime loader vendors THIS component's `srcText` in
+   *  place of the bundled module wherever a graph component imports that specifier, so a shared/ui
+   *  primitive renders from the graph (DATA) rather than code. Absent ⇒ the component provides no platform
+   *  override (a normal graph component, imported only as a `@/components/<id>` sibling). Graph-first with a
+   *  code fallback: an unmatched specifier stays external (→ the registry), exactly as before. */
+  provides?: string;
+  /** Which THEME SYSTEM this component renders under (#3715). `"css"` (default, absent) — the component
+   *  consumes the theme through the CSS cascade (`--card-*` etc. resolved by `:root` / `<ThemeScope>`), as
+   *  every component does today. `"js"` — the component renders to a NON-CSS surface (canvas / WebGL / a
+   *  non-web runtime) that can't see the cascade, so the runtime loader wraps it in a `<ThemeProvider>` and
+   *  it reads the resolved token VALUES via `useResolvedTheme()`. Opt-in + inert like {@link provides}: an
+   *  absent / `"css"` value is byte-identical to today, and (like `group`/`provides`) an absent value must
+   *  stay absent — never defaulted to `"css"` — so a store copy keeps hashing to its `seedHash`. */
+  themeSystem?: "css" | "js";
   /** Author-declared lint rules this component contributes to its kit's preset (in addition to the
    *  ones derived from `wraps`). Absent ⇒ none. */
   rules?: KitRule[];
@@ -140,6 +186,12 @@ export interface ComponentRecord {
    *  data-rendering composites (rows, feeds, property lists); absent ⇒ not shape-indexed (chrome,
    *  controls, chrome-level layouts that host arbitrary panes rather than render a data collection). */
   shapes?: DataShape[];
+  /** The renderable STRUCTURE of a `page`/`layout`-role component as a validated data tree (#3569),
+   *  rendered by `KitRenderer`. This is what makes a page's skeleton editable IN THE GRAPH: the host
+   *  (e.g. `Fleet.tsx`) renders the store node's `spec` — its hand-authored const is only the
+   *  seed/fallback — so editing the node in the Design Studio reflects on the real page. Absent ⇒ the
+   *  component has no data-tree layout (a leaf primitive, or a page not migrated to a spec yet). */
+  spec?: GeneralNode;
   /** Content hash of the seed copy this record came from (#2483) — see {@link Kit.seedHash}. */
   seedHash?: string;
   /** MOTION binding (#2942/#3065) — each entry is EITHER a kit-animation NAME (resolved from the owning
@@ -148,6 +200,14 @@ export interface ComponentRecord {
    *  draw-in or a component-scoped `selector` animation not worth lifting to the kit). Resolved by
    *  {@link resolveComponentAnimations}. Absent ⇒ no motion. */
   animations?: (string | KitAnimation)[];
+  /** Provenance stamp (#3164) — the store bumps `rev` and records who/when on every write. Absent on a
+   *  legacy record never written since the stamp landed (reads as rev 0). */
+  rev?: number;
+  updatedAt?: string;
+  updatedBy?: string;
+  /** Change history (#3568) — one capped entry per write, stored NEWEST-LAST. `bsc ui log <id>` reads
+   *  them newest-first; the inspector's History tab renders them. Absent ⇒ never written since #3568. */
+  history?: ChangeEntry[];
 }
 
 /** The shared zero-state title — Design Studio and the Planner Components pane must say the same
@@ -163,13 +223,16 @@ export const ROLE_COLOR: Record<Role, string> = {
   service: "var(--state-wait)",
 };
 
-/** Does a component match a free-text query (name / role / tag, case-insensitive)? Empty query → all. */
+/** Does a component match a free-text query (name / role / folder / tag, case-insensitive)? The `group`
+ *  folder path (#3579) matches too, so a query like `charts` or `features/github` filters the rail to a
+ *  folder. Empty query → all. */
 export function matchesQuery(c: ComponentRecord, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   return (
     c.name.toLowerCase().includes(q) ||
     c.role.includes(q) ||
+    (c.group ?? "").toLowerCase().includes(q) ||
     c.tags.some((t) => t.toLowerCase().includes(q))
   );
 }
@@ -212,16 +275,33 @@ function isInlineAnim(e: unknown): e is KitAnimation {
  *  resolve); every resolved def is stamped with the component's `kitId`, preserving first-appearance
  *  order. Empty when the component binds nothing. Pure (React-free). This is what the right-pane
  *  AnimationsMenu lists so the user can see + switch each slot's variations; the RENDER path
- *  ({@link resolveComponentAnimations}) narrows it to the one-per-group set that actually plays. */
+ *  ({@link resolveComponentAnimations}) narrows it to the one-per-group set that actually plays.
+ *
+ *  CROSS-KIT (#3451): a NAME the component's own kit doesn't define falls back to the shared `base`
+ *  kit's library — the app's foundational motion (`lift`/`fade-in`/`pulse`) is owned there once and
+ *  REFERENCED by every kit, so editing it propagates to all of them. A base-resolved def keeps
+ *  `kit: BASE_KIT_ID` (it is NOT restamped to the consumer): that field names both the compiled
+ *  `@keyframes bsc-base-<name>` and the `.base-anim-<name>` hook the preview stamps, so every consumer
+ *  shares ONE keyframes block instead of duplicating it per kit. A kit's OWN def always wins, so a kit
+ *  can still override a base motion by declaring the same name. */
 export function resolveComponentAnimationDefs(comp: ComponentRecord, kits: Kit[]): AnimationDef[] {
   const entries = comp.animations ?? [];
   if (!entries.length) return [];
-  const kit = kits.find((k) => k.id === comp.kitId);
-  const byName = new Map((kit?.animations ?? []).map((a) => [a.name, a]));
+  const own = new Map((kits.find((k) => k.id === comp.kitId)?.animations ?? []).map((a) => [a.name, a] as const));
+  const base =
+    comp.kitId === BASE_KIT_ID
+      ? null
+      : new Map((kits.find((k) => k.id === BASE_KIT_ID)?.animations ?? []).map((a) => [a.name, a] as const));
   const out: AnimationDef[] = [];
   for (const e of entries) {
-    const def = typeof e === "string" ? byName.get(e) : isInlineAnim(e) ? e : undefined;
-    if (def) out.push({ ...def, kit: comp.kitId });
+    if (typeof e === "string") {
+      const mine = own.get(e);
+      if (mine) { out.push({ ...mine, kit: comp.kitId }); continue; }
+      const shared = base?.get(e);
+      if (shared) out.push({ ...shared, kit: BASE_KIT_ID });
+      continue;
+    }
+    if (isInlineAnim(e)) out.push({ ...e, kit: comp.kitId });
   }
   return out;
 }
@@ -240,7 +320,13 @@ export function resolveNamedAnimation(
   if (!name) return null;
   const own = comp ? resolveComponentAnimationDefs(comp, kits) : [];
   const shelf = kit ? (kit.animations ?? []).map((a) => ({ ...a, kit: kit.id })) : [];
-  return [...own, ...shelf].find((x) => x.name === name) ?? null;
+  // #3451: the shared `base` shelf is reachable from EVERY kit. react-ui's own library is empty now
+  // (its base motions moved to `base`), so without this a base motion could not be tried on at all.
+  const baseShelf =
+    kit?.id === BASE_KIT_ID
+      ? []
+      : (kits.find((k) => k.id === BASE_KIT_ID)?.animations ?? []).map((a) => ({ ...a, kit: BASE_KIT_ID }));
+  return [...own, ...shelf, ...baseShelf].find((x) => x.name === name) ?? null;
 }
 
 /** The animations the render-preview should COMPILE. A try-on ISOLATES the clicked animation — the

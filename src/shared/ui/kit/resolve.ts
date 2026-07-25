@@ -67,3 +67,53 @@ export function resolveTheme(themeId: string | undefined): ResolvedTheme {
   for (const token of Object.keys(raw)) provenance[token] = "theme";
   return { vars: themeVars(themeId), provenance, holes: themeHoles(raw) };
 }
+
+// ── The JS projection (#3711) — the active theme flattened to CONCRETE values ───────────────────────────
+// A component that renders to a NON-CSS surface (canvas / WebGL / a non-web runtime) can't see the CSS
+// cascade, so it needs the theme as a plain-JS object of concrete values. `resolveThemeTokens` composes the
+// contract defaults with the theme's overrides and dereferences every `var(--x)` chain. Pure + off-DOM (NOT
+// `getComputedStyle`), so it is unit-testable in vitest AND portable to any runtime. Colors stay CSS strings
+// (oklch / hex / color-mix); a numeric-rgb layer for WebGL is a follow-up slice.
+
+interface DescriptorValues {
+  base?: { name: string; value?: string }[];
+  components?: { tokens?: { name: string; default?: string }[]; variants?: { tokens?: { name: string; default?: string }[] }[] }[];
+  domain?: { tokens?: { name: string; value?: string }[] }[];
+}
+
+/** The contract's DEFAULT value for every token — base `value` · component/variant `default` · domain
+ *  `value` — the `:root` layer a theme composes over. Computed once. */
+const CONTRACT_DEFAULTS: Readonly<Record<string, string>> = (() => {
+  const d = DESCRIPTOR as DescriptorValues;
+  const m: Record<string, string> = {};
+  for (const b of d.base ?? []) if (b.value != null) m[b.name] = b.value;
+  for (const c of d.components ?? []) {
+    for (const t of c.tokens ?? []) if (t.default != null) m[t.name] = t.default;
+    for (const v of c.variants ?? []) for (const t of v.tokens ?? []) if (t.default != null) m[t.name] = t.default;
+  }
+  for (const g of d.domain ?? []) for (const t of g.tokens ?? []) if (t.value != null) m[t.name] = t.value;
+  return m;
+})();
+
+/** Dereference every `var(--x[, fallback])` in `value` against `map`, recursively — so a reference nested
+ *  inside another value (e.g. a `var(--danger)` inside a `color-mix(…)`) flattens too. A cycle, or an
+ *  unknown token with no fallback, leaves the `var(…)` literal in place — a hole the cascade would no-op
+ *  (`themeHoles` reports contract holes separately; `--mono` and other globals live outside the descriptor). */
+function deepDeref(value: string, map: Readonly<Record<string, string>>, seen: ReadonlySet<string>): string {
+  return value.replace(/var\(\s*(--[a-z0-9-]+)\s*(?:,\s*([^)]*))?\)/gi, (whole: string, name: string, fallback?: string) => {
+    if (seen.has(name)) return fallback != null ? deepDeref(fallback.trim(), map, seen) : whole;
+    const next = map[name];
+    if (next == null) return fallback != null ? deepDeref(fallback.trim(), map, seen) : whole;
+    return deepDeref(next, map, new Set([...seen, name]));
+  });
+}
+
+/** The active theme flattened to CONCRETE token values — the JS projection a non-CSS component consumes.
+ *  Composes {@link CONTRACT_DEFAULTS} with the theme's `vars` overrides, then dereferences every `var(--x)`
+ *  chain to a literal. Pure. Colors remain CSS strings (oklch / hex / color-mix). */
+export function resolveThemeTokens(themeId: string | undefined): Record<string, string> {
+  const merged: Record<string, string> = { ...CONTRACT_DEFAULTS, ...(themeById(themeId).vars ?? {}) };
+  const out: Record<string, string> = {};
+  for (const name of Object.keys(merged)) out[name] = deepDeref(merged[name], merged, new Set<string>());
+  return out;
+}

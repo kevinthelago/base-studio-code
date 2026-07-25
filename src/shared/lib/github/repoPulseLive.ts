@@ -9,6 +9,7 @@
 import type {
   VelocitySlice, ChurnArea, ChurnFile, Contributor, Workflow, Branch, BranchStatusKey,
 } from "@/shared/data/repoPulse";
+import { dayWindow, windowedTally, type DayWindow } from "@/shared/lib/algorithms/windowedTally";
 import { loginColor } from "@/shared/lib/core/format";
 
 // ── GitHub payload shapes (subset of the fields we use) ──────────────────────
@@ -48,37 +49,17 @@ export function isBot(acct: GhAccount | null, fallbackName = ""): boolean {
 }
 
 // ── day bucketing ─────────────────────────────────────────────────────────────
-export interface DayWindow { labels: string[]; keys: string[] }
-/** The last `days` UTC days (oldest→newest): display labels ("M/D") + ISO date keys. */
-export function dayWindow(days: number, now: Date): DayWindow {
-  const labels: string[] = [];
-  const keys: string[] = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 86_400_000);
-    labels.push(`${d.getUTCMonth() + 1}/${d.getUTCDate()}`);
-    keys.push(d.toISOString().slice(0, 10));
-  }
-  return { labels, keys };
-}
-const dayKey = (iso: string) => iso.slice(0, 10);
-
-/** Count timestamps that fall on each day of the window. */
-export function tallyByDay(win: DayWindow, isos: Array<string | null | undefined>): number[] {
-  const idx = new Map(win.keys.map((k, i) => [k, i]));
-  const out = new Array(win.keys.length).fill(0);
-  for (const iso of isos) {
-    if (!iso) continue;
-    const i = idx.get(dayKey(iso));
-    if (i !== undefined) out[i] += 1;
-  }
-  return out;
-}
-/** Sum values bucketed by their day. */
+// Both live in `shared/lib/algorithms/windowedTally` since #3465 — the generic, dependency-free
+// version the algorithms graph also ships as a node. Re-exported here so this module's long-standing
+// public surface (and `repoPulseLive.test.ts`) is unchanged; there is one implementation, not two.
+export { dayWindow, tallyByDay, type DayWindow } from "@/shared/lib/algorithms/windowedTally";
+/** Sum values bucketed by their day — the SUM counterpart to `tallyByDay`'s count. Kept here because it
+ *  aggregates a per-event value, not timestamps, so it is not the same algorithm as the shared tally. */
 export function sumByDay(win: DayWindow, entries: Array<{ date: string; value: number }>): number[] {
   const idx = new Map(win.keys.map((k, i) => [k, i]));
   const out = new Array(win.keys.length).fill(0);
   for (const e of entries) {
-    const i = idx.get(dayKey(e.date));
+    const i = idx.get(e.date.slice(0, 10));
     if (i !== undefined) out[i] += e.value;
   }
   return out;
@@ -88,19 +69,22 @@ export function sumByDay(win: DayWindow, entries: Array<{ date: string; value: n
 export function mapVelocity(
   commits: GhCommitItem[], pulls: GhPull[], details: GhCommitDetail[], days: number, now: Date,
 ): VelocitySlice {
+  // The three COUNT series share one window (#3465) — that is what makes them aligned by construction
+  // rather than by three separate calls happening to agree.
+  const { labels, series } = windowedTally(
+    {
+      commits: commits.map(c => c.commit.author?.date),
+      opened: pulls.map(p => p.created_at),
+      merged: pulls.map(p => p.merged_at),
+    },
+    days,
+    now,
+  );
+  // adds/dels are SUMS of a per-event value, not counts, so they keep `sumByDay` over the same window.
   const win = dayWindow(days, now);
-  const commitDates = commits.map(c => c.commit.author?.date).filter(Boolean) as string[];
-  // adds + dels per day (dels stored positive, like the sample shape).
   const adds = sumByDay(win, details.flatMap(d => d.commit.author?.date && d.stats ? [{ date: d.commit.author.date, value: d.stats.additions }] : []));
   const dels = sumByDay(win, details.flatMap(d => d.commit.author?.date && d.stats ? [{ date: d.commit.author.date, value: d.stats.deletions }] : []));
-  return {
-    labels: win.labels,
-    commits: tallyByDay(win, commitDates),
-    opened: tallyByDay(win, pulls.map(p => p.created_at)),
-    merged: tallyByDay(win, pulls.map(p => p.merged_at)),
-    adds,
-    dels,
-  };
+  return { labels, commits: series.commits, opened: series.opened, merged: series.merged, adds, dels };
 }
 
 // ── churn by top-level area + hottest files (from bounded commit details) ─────

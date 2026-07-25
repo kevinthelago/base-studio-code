@@ -9,6 +9,7 @@ import { resolvePaneFromBuffer, PANE_SELECT_COMMIT_MS } from "@/app/console/lib/
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { paneCountForLayout } from "@/app/console/lib/paneStatus";
 import { SCREEN_HOTKEYS } from "@/features/settings";
+import { effectiveWorkspace } from "@/app/registry";
 import {
   matchesBinding, matchesChord, matchesLeader, eventToLeader, effectiveLeader,
   type RebindableId,
@@ -87,7 +88,15 @@ export function useHotkeys() {
     setConsoleBroadcast,
     setTerminalFontSize,
     advanceFocus,
+    showConsolePage,
   } = useAppStore();
+
+  // Whether the Console page is actually the live surface. The console-pane hotkeys read the RAW store
+  // `activeWorkspace`, but the legacy Console page is opt-in (#2372) and App redirects console→glance
+  // when it's off — so without this the hotkeys (broadcast, view-switch, redraw…) would keep firing
+  // while Glance is on screen. Gating both effects on the same effective workspace makes the hotkeys
+  // follow the toggle, while F-key screen-nav still works on Glance (#3575).
+  const onConsole = effectiveWorkspace(activeWorkspace, showConsolePage) === "console";
 
   // Chained-digit pane selector: digits accumulate while Ctrl+Shift is held,
   // then commit (resolve to a pane) on modifier release or after a short pause.
@@ -100,7 +109,7 @@ export function useHotkeys() {
   // page the pane-hotkey effect below handles nav itself (after its broadcast intercept, so an F-key still
   // broadcasts in broadcast mode), so this one is gated off-Console to avoid double-firing.
   useEffect(() => {
-    if (activeWorkspace === "console") return;
+    if (onConsole) return;
     function onKeyDown(e: KeyboardEvent) {
       const t = e.target as HTMLElement;
       // Don't yank focus away while the user is typing in a field (matches the Console effect's guard).
@@ -110,7 +119,7 @@ export function useHotkeys() {
     }
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [activeWorkspace, setWorkspace]);
+  }, [onConsole, setWorkspace]);
 
   useEffect(() => {
     // #1218: the hotkeys are Console-only. Don't attach the document listeners at all unless the
@@ -119,7 +128,7 @@ export function useHotkeys() {
     // capture-phase listener used to sit in front of all of them). Both gating values are in this
     // effect's dep array, so changing screen or maximizing/restoring re-runs the effect to
     // attach/detach. Exit maximize via the pane header button (the keyboard toggle is off here too).
-    if (activeWorkspace !== "console" || fullscreenPaneIdx >= 0) return;
+    if (!onConsole || fullscreenPaneIdx >= 0) return;
 
     // Resolve the accumulated pane-number buffer and run the focus → fullscreen →
     // restore cycle on it. State is read fresh (the timer fires later) so a stale
@@ -180,7 +189,7 @@ export function useHotkeys() {
       // repaint — the in-app equivalent of dragging the window to un-jumble it. Keys off the STABLE
       // pane id (paneIdFor), the same id the terminal watches.
       if (matchesBinding(e, bindings, "redraw-pane")) {
-        if (activeWorkspace !== "console") return;
+        if (!onConsole) return;
         e.preventDefault();
         e.stopPropagation();
         const idx = fullscreenPaneIdx >= 0 ? fullscreenPaneIdx : focusedPaneIdx;
@@ -386,7 +395,7 @@ export function useHotkeys() {
       if (commitTimerRef.current) { clearTimeout(commitTimerRef.current); commitTimerRef.current = null; }
     };
   }, [
-    activeWorkspace, setWorkspace,
+    onConsole, setWorkspace,
     tabs, activeTabIdx, setActiveTab,
     focusedPaneIdx, fullscreenPaneIdx,
     setFocusedPane, setFullscreenPane,

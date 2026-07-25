@@ -16,6 +16,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { TerminalView } from "@/app/console/panes/views/TerminalView";
+import { isStudioSessionPaneId } from "@/shared/lib/session/systemSessions";
 
 /** The terminal props a slot supplies to the shared <TerminalView>. The console cell is the `primary`
  *  (it owns the launch/data props); the Glance dock is a viewer that supplies only visibility/focus. */
@@ -159,7 +160,26 @@ export function TerminalHost({ children }: { children: ReactNode }) {
         const claims = registryRef.current.get(paneId)!;
         const owner = ownerClaim(claims)!;
         // Launch/data props from the primary (console) claim; visibility/focus from the current owner.
-        const primary = claims.find((c) => c.propsRef.current.primary) ?? owner;
+        const primaryClaim = claims.find((c) => c.propsRef.current.primary);
+        // #3427 — an APP-OWNED session must not launch before its dedicated mount claims it. Its page dock
+        // (`DesignerTerminal` and friends) calls `openStudio` and renders its viewer <TerminalSlot> in the
+        // SAME commit, while the mount that supplies the launch props only appears after an async
+        // `setup_*_workspace` invoke resolves. The viewer therefore always registered first, and with no
+        // primary to source from, `TerminalView` mounted with `initialCwd`/`initCmd` UNDEFINED — a one-shot
+        // launch, so the primary arriving a tick later never repaired it. `pty_create` then ran with
+        // `cwd=<none>`: the shell inherited the app's own working directory instead of the studio
+        // workspace, loaded none of its spec CLAUDE.md, skipped `--continue` + the persona kickoff, and
+        // (because `ensure_session_settings` is skipped for an empty cwd) ran PERMISSION-LESS with no role
+        // gate at all. Waiting one tick for the mount costs nothing visible and makes the launch correct.
+        //
+        // Scoped to the fixed app-owned ids, each of which HAS such a mount (StudioSessionMount ×4 +
+        // DebugSessionMount) that is guaranteed to arrive — a fleet pane's primary is its console grid
+        // cell, which may legitimately never mount while Glance shows the terminal, so gating it would
+        // hide a working session. And only BEFORE the first render: once a pane has a container its
+        // TerminalView stays mounted whatever the claims do, so a mount unmounting later (a tear-off, the
+        // idle reaper) can never tear a live PTY down through this path.
+        if (!primaryClaim && isStudioSessionPaneId(paneId) && !containersRef.current.has(paneId)) return null;
+        const primary = primaryClaim ?? owner;
         const op = owner.propsRef.current;
         const pp = primary.propsRef.current;
         return createPortal(

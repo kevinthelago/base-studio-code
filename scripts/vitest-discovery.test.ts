@@ -33,6 +33,15 @@ describe("vitest discovery excludes: content", () => {
     expect(testExclude).toContain("e2e/**");
   });
 
+  it("excludes Rust test FIXTURES that are real .tsx files (#3471/#3514)", () => {
+    // `bsc ui harvest` scans a directory tree for component candidates, so its Rust fixtures are real
+    // .tsx — including a `Button.test.tsx` whose whole purpose is to prove the harvester SKIPS test
+    // files. Vitest collected it and failed the run with "No test suite found in file": it is input
+    // DATA for another suite, not a suite. A fixture that must look like a test to do its job is
+    // exactly the case discovery has to be told about.
+    expect(testExclude).toContain("crates/**/tests/fixtures/**");
+  });
+
   it("PRESERVES vitest's default excludes rather than replacing them", () => {
     // Replacing (instead of spreading) configDefaults.exclude would silently re-admit
     // node_modules/dist to discovery — a far worse leak than the one being fixed.

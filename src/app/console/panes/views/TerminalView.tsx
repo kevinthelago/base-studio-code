@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { fireInvoke, safeInvoke } from "@/shared/lib/core/safeInvoke";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { logsPaneActivity } from "@/shared/lib/core/logsBridge";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -26,7 +26,7 @@ import {
   TERM_THEME,
 } from "@/app/console/lib/terminalConstants";
 import { useTerminalSession } from "@/app/console/useTerminalSession";
-import { usePoll } from "@/shared/hooks/usePoll";
+import { useLogStream } from "@/shared/hooks/useLogStream";
 import { useAppStore, PROJECT_INIT_PROMPT } from "@/store";
 import { interpretDiagnostics, sessionVerdictFromReport, type PrereqStatus } from "@/shared/lib/core/diagnostics";
 import { TerminalBanners } from "@/app/console/panes/views/TerminalBanners";
@@ -512,6 +512,11 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
         }
         if (destroyed) return;
       }
+      // #3614: a fleet worker whose worktree was reclaimed by the boot-GC is marked ended by the boot
+      // reconciliation (useAppBoot). PaneAt renders its resting card instead of this view — but if this
+      // mount effect was already in flight when `endedPanes` flipped, bail here so we NEVER spawn a PTY
+      // into a deleted worktree (the burst of doomed sessions that jams the backend on boot).
+      if (useAppStore.getState().endedPanes[paneId]) return;
       const isNew = await safeInvoke<boolean>("pty_create", {
         paneId,
         cols: term.cols,
@@ -629,11 +634,14 @@ export function TerminalView({ paneId, visible = true, focused, initialCwd, init
   // Debounced (#1184): a worker's blocked Stop records `idle` for the gap before its next turn's
   // UserPromptSubmit reopens `run`; the grace window keeps the gate closed across that gap so the
   // dot doesn't blink idle→run.
-  usePoll(async (isCancelled) => {
-    const rows = await bscJson<PaneActivity[]>(null, ["logs", "pane-activity", "--json"], []);
+  // Event-driven (#3638): re-check this pane's turn state only when the activity log changes (plus
+  // mount + a slow backstop), instead of polling every 1s. The debounce in `isTurnOpenDebounced` still
+  // smooths the idle→run gap between turns.
+  useLogStream("activity", async (isCancelled) => {
+    const rows = await logsPaneActivity<PaneActivity>();
     if (isCancelled()) return;
     turnOpenRef.current = isTurnOpenDebounced(paneActivityFor(rows, paneId), Date.now());
-  }, 1000, [paneId]);
+  }, [paneId]);
 
   // Re-fit when this view becomes visible again (e.g. switching back from
   // files view, or coming back to a background tab). Also flush anything the

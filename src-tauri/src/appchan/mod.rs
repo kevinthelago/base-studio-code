@@ -94,6 +94,12 @@ fn handle(app: &tauri::AppHandle, env: &bsc_appchan::Envelope) -> Result<serde_j
             let res = crate::navigate::apply(app, &env.id, &req)?;
             serde_json::to_value(res).map_err(|e| e.to_string())
         }
+        bsc_debug::KIND => {
+            let req: bsc_debug::DebugRequest = serde_json::from_value(env.payload.clone())
+                .map_err(|e| format!("malformed debug request: {e}"))?;
+            let res = crate::debug::inspect(app, &env.id, &req)?;
+            serde_json::to_value(res).map_err(|e| e.to_string())
+        }
         // A `bsc` newer than this app asking for a verb it doesn't have. Say so plainly — the caller
         // can't tell "unknown verb" from "the app is old" otherwise.
         other => Err(format!(
@@ -110,6 +116,13 @@ mod tests {
     fn the_verbs_own_their_routing_keys() {
         assert_eq!(bsc_shot::KIND, "shot");
         assert_eq!(bsc_navigate::KIND, "navigate");
-        assert_ne!(bsc_shot::KIND, bsc_navigate::KIND, "two verbs on one channel must not collide");
+        assert_eq!(bsc_debug::KIND, "debug");
+        // One channel, routed by kind — a collision silently sends a request to the wrong handler.
+        let kinds = [bsc_shot::KIND, bsc_navigate::KIND, bsc_debug::KIND];
+        for (i, a) in kinds.iter().enumerate() {
+            for b in &kinds[i + 1..] {
+                assert_ne!(a, b, "two verbs on one channel must not collide");
+            }
+        }
     }
 }

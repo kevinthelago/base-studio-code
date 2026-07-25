@@ -185,3 +185,19 @@ export async function timed<T>(label: string, fn: () => Promise<T>, thresholdMs 
     if (ms >= thresholdMs) log.warn(`[perf] ${label} took ${Math.round(ms)}ms`);
   }
 }
+
+/**
+ * Time a SYNC operation, logging a warning when it exceeds `thresholdMs` (default one frame, 16ms).
+ * Returns the result untouched (and still times on throw). For hot render-path compute an async `timed`
+ * doesn't fit — e.g. the Glance graph layout (#3618), where we want to separate layout-compute time from
+ * React-render time.
+ */
+export function timedSync<T>(label: string, fn: () => T, thresholdMs = 16): T {
+  const t0 = performance.now();
+  try {
+    return fn();
+  } finally {
+    const ms = performance.now() - t0;
+    if (ms >= thresholdMs) log.warn(`[perf] ${label} took ${Math.round(ms)}ms`);
+  }
+}

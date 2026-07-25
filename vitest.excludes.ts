@@ -24,10 +24,18 @@ import { configDefaults } from "vitest/config";
  * root `npx vitest run` collected `e2e/previewInteraction.spec.ts` and the suite failed to resolve
  * `@playwright/test` — a browser dep a zero-install worktree is not meant to need. Playwright runs
  * it via `npm run test:e2e` (its own `playwright.config.ts`), never through vitest.
+ *
+ * The Rust crates' `tests/fixtures` dirs are the THIRD (#3514): `bsc ui harvest` (#3471) scans a tree
+ * for reusable component candidates, so its Rust test fixtures are REAL `.tsx` files — including a
+ * `Button.test.tsx` that exists precisely to prove the harvester skips test files. Vitest's default
+ * include glob collected it and failed the run with "No test suite found in file", because it is input
+ * DATA for another test suite, not a suite. A fixture that must look like a test to do its job is
+ * exactly the thing discovery has to be told about.
  */
 export const testExclude: string[] = [
   ...configDefaults.exclude, // node_modules, dist, .idea, .git, .cache
   "**/wt*/**",
   "**/.claude/worktrees/**",
   "e2e/**",
+  "crates/**/tests/fixtures/**",
 ];

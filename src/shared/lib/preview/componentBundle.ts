@@ -10,8 +10,11 @@ import type * as Esbuild from "esbuild-wasm";
 import wasmURL from "esbuild-wasm/esbuild.wasm?url";
 import importmapEmbedded from "@data/ui/preview-importmap.json";
 import { collapseSegments } from "./importPath";
+import { PREVIEW_SHIM_NAMESPACE, shimModuleFor, scanStubImports, previewCspMeta } from "./previewShims";
 
-/** The esm.sh import-map for the externals (React et al.), shared with the skeleton preview (#2419). */
+/** The esm.sh import-map for the externals (React et al.), shared with the skeleton preview (#2419). This is
+ *  the ONLY set of specifiers fetched from a CDN; every OTHER bare import resolves to a bundled-in local
+ *  shim/stub (#3696), never to esm.sh at large. */
 export const COMPONENT_IMPORTMAP: Record<string, string> = importmapEmbedded;
 
 /** Bare specifiers resolved in the iframe by the import-map (everything else bare → esm.sh at large). */
@@ -28,7 +31,12 @@ export function lookupMem(files: Record<string, string>, path: string): { conten
   for (const ext of ["", ".tsx", ".ts", ".jsx", ".js", "/index.tsx", "/index.ts", "/index.jsx"]) {
     const key = path + ext;
     if (files[key] != null) {
-      const loader: "jsx" | "tsx" = key.endsWith(".tsx") || key.endsWith(".ts") ? "tsx" : "jsx";
+      // A component source is TypeScript/TSX. `.tsx`/`.ts` are obviously tsx; an EXTENSIONLESS key
+      // (a `src` recorded as a directory, e.g. WorkspaceShellPage's `src/shared/ui/layouts` — #3549)
+      // is ALSO a component source, so DEFAULT to tsx and use jsx only for an explicit `.jsx`/`.js`.
+      // The tsx loader is a superset (parses TS + JS + JSX), so this can only widen what parses — a
+      // TS-only source loaded as `jsx` fails on `import type {…}` with `Expected "from" but found "{"`.
+      const loader: "jsx" | "tsx" = key.endsWith(".jsx") || key.endsWith(".js") ? "jsx" : "tsx";
       return { contents: files[key], loader };
     }
   }
@@ -44,7 +52,7 @@ export function lookupMem(files: Record<string, string>, path: string): { conten
 // the belt-and-suspenders so an already-initialized throw resolves to the live module instead of sticking.
 const ESBUILD_INIT = Symbol.for("bsc.esbuildInit");
 type EsbuildInitHost = { [ESBUILD_INIT]?: Promise<typeof Esbuild> };
-function ensureEsbuild(): Promise<typeof Esbuild> {
+export function ensureEsbuild(): Promise<typeof Esbuild> {
   const host = globalThis as unknown as EsbuildInitHost;
   if (!host[ESBUILD_INIT]) {
     host[ESBUILD_INIT] = import("esbuild-wasm").then(async (m) => {
@@ -60,14 +68,12 @@ function ensureEsbuild(): Promise<typeof Esbuild> {
   return host[ESBUILD_INIT];
 }
 
-/** Is a bare (non-relative, non-`@/`) specifier — an npm package left external (→ esm.sh). */
-function isBare(spec: string): boolean {
-  return !spec.startsWith(".") && !spec.startsWith("@/") && !spec.startsWith("/");
-}
-
 const CSS_NOOP = "css-noop";
 
 function componentPlugin(files: Record<string, string>, entry: string): Esbuild.Plugin {
+  // The named bindings each universal-stubbed package is imported with — so a generated stub exports exactly
+  // those (#3696). Scanned once from the component's own files (the dedicated shims have static exports).
+  const stubExports = scanStubImports(files, (s) => COMPONENT_EXTERNALS.includes(s));
   return {
     name: "component-preview",
     setup(build) {
@@ -85,10 +91,14 @@ function componentPlugin(files: Record<string, string>, entry: string): Esbuild.
         if (args.path.startsWith("@bsc/")) return { path: args.path, namespace: "mem" };
         // Relative → resolve against the importer within the mem filesystem.
         if (args.path.startsWith(".")) return { path: resolveMemPath(args.importer, args.path), namespace: "mem" };
-        // Anything else bare → external (React via the import-map; any other lib → esm.sh at large).
-        if (isBare(args.path)) return { path: args.path, external: true };
-        return { path: args.path, external: true };
+        // Any other bare specifier: a curated external (React et al.) stays external — resolved in the iframe
+        // by the import-map (esm.sh). EVERYTHING ELSE resolves to a bundled-in LOCAL shim/stub (#3696), NEVER
+        // esm.sh at large — so resolution can't fail (dynamic + always works) and no uncurated CDN code runs
+        // (supply-chain safe). react-native → real layout, react-native-svg → real SVG, else the universal stub.
+        if (COMPONENT_EXTERNALS.includes(args.path)) return { path: args.path, external: true };
+        return { path: args.path, namespace: PREVIEW_SHIM_NAMESPACE };
       });
+      build.onLoad({ filter: /.*/, namespace: PREVIEW_SHIM_NAMESPACE }, (args) => ({ contents: shimModuleFor(args.path, stubExports.get(args.path)), loader: "js" }));
       build.onLoad({ filter: /.*/, namespace: "empty" }, () => ({ contents: "", loader: "js" }));
       build.onLoad({ filter: /.*/, namespace: "mem" }, (args) => {
         const hit = lookupMem(files, args.path);
@@ -123,6 +133,10 @@ export interface ComponentSrcDocOptions {
    *  themed (their `.css` imports were no-op'd during bundling). Also the previewed component's
    *  authored-animation CSS (#2870), so its `@keyframes` are present. */
   injectedCss?: string;
+  /** The selected theme's `:root` token overrides (#3556), in a DEDICATED `<style id="__bsc_theme">`
+   *  separate from `injectedCss` — so a theme change can be applied LIVE via a `{ __bsc_theme }` message
+   *  (data-theme + this style's text) without rebuilding the iframe and resetting the pan/zoom engine. */
+  themeCss?: string;
   /** The theme attribute set on the iframe root (`data-theme`), so token overrides apply. */
   theme?: "dark" | "light";
   importmap?: Record<string, string>;
@@ -165,6 +179,11 @@ export interface ComponentSrcDocOptions {
    *  disconnected and #3251 removed: forwarding existed to drive a host CSS scale, and that is exactly
    *  what blurs. The iframe owns the viewport now, so there is nothing to forward. */
   zoomEngine?: { initial?: number; min?: number; max?: number };
+  /** Enable the Alt-hold INSPECT layer (#3596) with this list of navigable child component NAMES (the
+   *  previewed component's `composes`). While Alt is held the preview rings the child under the cursor and
+   *  posts `{__navigate: name}` on click; releasing Alt returns full interactivity. Only the EXPANDED
+   *  preview passes it — empty/absent ⇒ no inspect layer (byte-for-byte unchanged srcdoc). */
+  inspect?: string[];
 }
 
 /**
@@ -319,28 +338,16 @@ export function fitShimScript(fit: boolean): string {
  */
 export function gestureEngineScript(cfg: { initial?: number; min?: number; max?: number } | undefined): string {
   if (!cfg) return "";
-  const initial = cfg.initial ?? 1;
   const min = cfg.min ?? 0.2;
   const max = cfg.max ?? 8;
   return `\n<script>
 (function () {
-  var MIN = ${min}, MAX = ${max}, INITIAL = ${initial};
+  var MIN = ${min}, MAX = ${max};
   // A press on a form field keeps its NATIVE drag (text selection / caret); everything else drag-pans.
   var DRAG_NATIVE = 'input,textarea,select,[contenteditable]';
   function dragNative(el) {
     for (var n = el; n && n !== document.documentElement && n !== document.body; n = n.parentElement) {
       if (n.nodeType === 1 && n.matches && n.matches(DRAG_NATIVE)) return true;
-    }
-    return false;
-  }
-  function scrollableAt(el, dy) {
-    for (var n = el; n && n !== document.documentElement; n = n.parentElement) {
-      if (n.nodeType !== 1) continue;
-      if (n.scrollHeight <= n.clientHeight) continue;
-      var oy; try { oy = getComputedStyle(n).overflowY; } catch (e) { continue; }
-      if (oy !== "auto" && oy !== "scroll") continue;
-      if (dy < 0 && n.scrollTop > 0) return true;
-      if (dy > 0 && n.scrollTop + n.clientHeight < n.scrollHeight - 1) return true;
     }
     return false;
   }
@@ -356,20 +363,43 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
     view.tx = px - wx * ns; view.ty = py - wy * ns; view.scale = ns; apply();  // …held fixed after the zoom
   }
   function centerXY() { return [ (window.innerWidth || document.documentElement.clientWidth || 1) / 2, (window.innerHeight || document.documentElement.clientHeight || 1) / 2 ]; }
-  function fit() { view = { tx: 0, ty: 0, scale: 1 }; apply(); }
+  function viewport() { return [ window.innerWidth || document.documentElement.clientWidth || 1, window.innerHeight || document.documentElement.clientHeight || 1 ]; }
+  var userTouched = false;   // the moment the user zooms/pans, stop auto-fitting (the open-fit block below)
+  // FIT: show the WHOLE component. Measure #root's natural content box, then scale so it fits the viewport —
+  // never UPSCALING past 1:1 (crisp) — centered horizontally, TOP-anchored so a tall page's header stays
+  // visible and you pan/zoom DOWN. The measurement removes the transform (un-scaled read) AND forces #root to
+  // a scroll container: #root normally runs overflow:visible so its overflow renders unclipped, but a
+  // visible-overflow element reports scrollHeight === clientHeight (it is not a scroll container), hiding the
+  // very overflow we need to fit — so we flip it to overflow:hidden for the read only, then restore. Falls
+  // back to identity when unmeasured (jsdom / pre-layout).
+  // (NOTE: this text lives INSIDE the engine's template literal — keep it backtick-free, #3551.)
+  function fit() {
+    var t = tgt();
+    var vp = viewport(), cw = vp[0], ch = vp[1], bw = 0, bh = 0;
+    if (t) {
+      var pt = t.style.transform, po = t.style.overflow;
+      t.style.transform = "none"; t.style.overflow = "hidden";
+      bw = t.scrollWidth; bh = t.scrollHeight;
+      t.style.transform = pt; t.style.overflow = po;
+    }
+    if (!bw || !bh) { view = { tx: 0, ty: 0, scale: 1 }; apply(); return; }
+    var s = Math.min(1, cw / bw, ch / bh);
+    view = { scale: s, tx: (cw - bw * s) / 2, ty: 0 };
+    apply();
+  }
   // DRAG-PAN: a press-and-MOVE (past a small threshold) pans — ANYWHERE, even over a button — so a
   // component that fills the frame is still draggable; a press-WITHOUT-move stays a CLICK (the control
   // keeps it, since a moved drag suppresses the trailing click).
   var pending = false, panning = false, moved = false, sx = 0, sy = 0, lx = 0, ly = 0;
   document.addEventListener("mousedown", function (e) {
-    if (e.button !== 0 || dragNative(e.target)) return;
+    if (e.button !== 0 || e.altKey || dragNative(e.target)) return;   // #3596: Alt-held is INSPECT, not pan
     pending = true; moved = false; sx = lx = e.clientX; sy = ly = e.clientY;
   }, true);
   document.addEventListener("mousemove", function (e) {
     if (!pending) return;
     if (!panning) {
       if (Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) < 5) return;   // below the drag threshold → not a pan yet
-      panning = true; document.body.style.cursor = "grabbing";
+      panning = true; userTouched = true; document.body.style.cursor = "grabbing";
     }
     moved = true; e.preventDefault();
     view.tx += e.clientX - lx; view.ty += e.clientY - ly; lx = e.clientX; ly = e.clientY; apply();
@@ -381,22 +411,51 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
   // die mid-gesture. Cancel it (form fields keep theirs, matching DRAG_NATIVE).
   document.addEventListener("dragstart", function (e) { if (!dragNative(e.target)) e.preventDefault(); }, true);
   document.addEventListener("click", function (e) { if (moved) { e.preventDefault(); e.stopPropagation(); moved = false; } }, true);
-  // WHEEL: pans/scrolls the content by default (so overflow is navigable); ctrl/⌘ + wheel zooms about the
-  // cursor. An inner scroll container scrolls itself.
+  // WHEEL = ZOOM about the cursor. The try-on is a zoomable design canvas, not a document: scrolling zooms
+  // in/out (any wheel/trackpad delta), and CLICK-DRAG is what moves across the screen (the pan above).
   document.addEventListener("wheel", function (e) {
-    if (scrollableAt(e.target, e.deltaY)) return;
-    e.preventDefault();
-    if (e.ctrlKey || e.metaKey) { zoomAt(Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY); }
-    else { view.tx -= e.deltaX; view.ty -= e.deltaY; apply(); }
+    e.preventDefault(); userTouched = true;
+    zoomAt(Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY);
   }, { capture: true, passive: false });
   window.addEventListener("message", function (e) {
-    var d = e.data; if (!d || typeof d.__cmd !== "string") return;
+    var d = e.data; if (!d) return;
+    // #3437 (bsc debug frames): the host cannot READ this document (opaque origin - sandbox with no
+    // allow-same-origin), so the engine describes ITSELF on request. Read-only, and the ONLY way to tell
+    // "the script is present but never ran" from "it ran and is listening" without weakening the sandbox.
+    if (d.__probe) {
+      var root0 = document.getElementById("root");
+      try {
+        (e.source || parent).postMessage({ __probeReply: {
+          listening: true,
+          transform: root0 ? getComputedStyle(root0).transform : "none",
+          scale: view.scale, pan: [view.tx, view.ty],
+        } }, "*");
+      } catch (_) { /* a probe must never break the preview */ }
+      return;
+    }
+    if (typeof d.__cmd !== "string") return;
     var c = centerXY();
-    if (d.__cmd === "zoomIn") zoomAt(1.2, c[0], c[1]);
-    else if (d.__cmd === "zoomOut") zoomAt(1 / 1.2, c[0], c[1]);
+    if (d.__cmd === "zoomIn") { userTouched = true; zoomAt(1.2, c[0], c[1]); }
+    else if (d.__cmd === "zoomOut") { userTouched = true; zoomAt(1 / 1.2, c[0], c[1]); }
     else if (d.__cmd === "fit") fit();
   });
-  fit(); if (INITIAL !== 1) { zoomAt(INITIAL, centerXY()[0], 0); }  // initial zoom anchored at the TOP so a page's headers stay visible (crop the bottom, not the top)
+  // Open showing the WHOLE component — ROBUSTLY. The component mounts via a DEFERRED module script that runs
+  // AFTER this classic script, so an immediate fit measures an EMPTY #root; and late layout (fonts, images, a
+  // data-driven chart) resizes it again. So re-fit until the user first zooms/pans: now, next frame, once the
+  // DOM has parsed (the module has mounted), on window load (images), and on any later content resize.
+  function refit() { if (!userTouched) fit(); }
+  refit();
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(refit);
+  window.addEventListener("load", refit);
+  function watchContent() {
+    refit();
+    var child = tgt() && tgt().firstElementChild;   // observe the MOUNTED content (not #root, whose box is fixed)
+    if (child && typeof ResizeObserver === "function") {
+      try { new ResizeObserver(function () { if (!userTouched) fit(); }).observe(child); } catch (_) { /* best-effort */ }
+    }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", watchContent);
+  else watchContent();
 })();
 </script>`;
 }
@@ -405,8 +464,106 @@ export function gestureEngineScript(cfg: { initial?: number; min?: number; max?:
  * Assemble the sandboxed-iframe srcdoc: import-map for the externals + the injected app CSS + the bundle
  * as a module, posting `ready`/`error` to the parent. Pure.
  */
+/**
+ * The Alt-hold INSPECT layer (#3596) — a self-contained `<script>` that, WHILE Alt is held, rings the
+ * child component under the cursor and navigates the graph to it on click; releasing Alt returns the
+ * preview to full interactivity. A momentary hold modifier, not a mode.
+ *
+ * It needs no DOM tagging: the preview bundle is UNMINIFIED (see {@link bundleComponent} — no `minify`),
+ * so a React fiber's `type.name` is the real component name. From `elementFromPoint` it reads the
+ * element's fiber and walks `.return` up to the nearest component whose name is in `navSet` (the
+ * previewed component's `composes`) — exactly how React DevTools' element picker works. On Alt-click it
+ * `preventDefault`/`stopPropagation`s at document-capture (BEFORE React's root-delegated handler, so the
+ * component's own onClick never fires) and posts `{__navigate: name}` to the host.
+ *
+ * Only the EXPANDED preview passes `components` (its `composes`); the small inspector thumbnail gets ""
+ * (byte-for-byte unchanged srcdoc). Vanilla, backtick-free (it lives in the outer template literal,
+ * #3551). Pans are suppressed while Alt is held by the gesture engine's own `e.altKey` bail.
+ */
+export function inspectEngineScript(components: string[]): string {
+  if (!components.length) return "";
+  return `\n<script>
+(function () {
+  var NAV = ${JSON.stringify(components)};
+  var navSet = {};
+  for (var i = 0; i < NAV.length; i++) navSet[NAV[i]] = true;
+  var alt = false, box = null, label = null;
+  // React 18 stashes a DOM node's fiber as an own '__reactFiber$<hash>' key (present in prod too).
+  function fiberOf(node) {
+    var ks = Object.keys(node);
+    for (var i = 0; i < ks.length; i++) {
+      if (ks[i].indexOf("__reactFiber$") === 0 || ks[i].indexOf("__reactInternalInstance$") === 0) return node[ks[i]];
+    }
+    return null;
+  }
+  // The first HOST (real DOM) node under a component fiber — its on-screen box for the highlight.
+  function hostEl(fiber, fallback) {
+    for (var f = fiber; f; f = f.child) { if (f.stateNode && f.stateNode.nodeType === 1) return f.stateNode; }
+    return fallback;
+  }
+  // The nearest composed-child component under (x,y): { name, el } or null. Primary path is the React
+  // fiber-walk (the real app); the DATA-ATTR fallback ('data-bsc-comp') keeps it working when fibers are
+  // absent (a non-React or minified render) and is the seam the headless e2e harness drives.
+  function pick(x, y) {
+    // Our own highlight overlay must never intercept the hit-test — hide it across elementFromPoint even
+    // though it is pointer-events:none, since the app CSS injected into the iframe can override that.
+    if (box) box.style.display = "none";
+    if (label) label.style.display = "none";
+    var el = document.elementFromPoint(x, y);
+    if (box) box.style.display = "";
+    if (label) label.style.display = "";
+    if (!el) return null;
+    for (var fiber = fiberOf(el); fiber; fiber = fiber.return) {
+      var t = fiber.type;
+      if (typeof t === "function" && t.name && navSet[t.name]) return { name: t.name, el: hostEl(fiber, el) };
+    }
+    var m = el.closest ? el.closest("[data-bsc-comp]") : null;
+    if (m) { var n = m.getAttribute("data-bsc-comp"); if (navSet[n]) return { name: n, el: m }; }
+    return null;
+  }
+  function overlay() {
+    if (box) return;
+    box = document.createElement("div");
+    box.setAttribute("style", "position:fixed;pointer-events:none;z-index:2147483647;box-sizing:border-box;border:2px solid var(--accent,#6ea);border-radius:4px;background:color-mix(in oklch, var(--accent,#6ea) 12%, transparent);");
+    label = document.createElement("div");
+    label.setAttribute("style", "position:fixed;pointer-events:none;z-index:2147483647;font:600 10px/1.5 var(--mono,ui-monospace,monospace);color:#0b0f14;background:var(--accent,#6ea);padding:1px 6px;border-radius:4px;white-space:nowrap;");
+    document.body.appendChild(box); document.body.appendChild(label);
+  }
+  function clear() { if (box) { box.remove(); label.remove(); box = label = null; } }
+  function draw(hit) {
+    if (!hit || !hit.el) { clear(); return; }
+    overlay();
+    var r = hit.el.getBoundingClientRect();
+    box.style.left = r.left + "px"; box.style.top = r.top + "px"; box.style.width = r.width + "px"; box.style.height = r.height + "px";
+    label.textContent = hit.name;
+    label.style.left = r.left + "px"; label.style.top = Math.max(0, r.top - 17) + "px";
+  }
+  var downAlt = false;
+  function setAlt(on) { if (on === alt) return; alt = on; document.body.style.cursor = on ? "crosshair" : ""; if (!on) clear(); }
+  window.addEventListener("keydown", function (e) { if (e.altKey) setAlt(true); });
+  window.addEventListener("keyup", function (e) { setAlt(e.altKey); });
+  window.addEventListener("blur", function () { setAlt(false); });
+  // The move re-syncs the cursor/overlay from the LIVE modifier (reliable on a move) — releasing Alt then
+  // moving clears the ring and lets the next click through. But the generated CLICK event drops the
+  // modifier, so gate the navigation on the MODIFIER CAPTURED AT MOUSEDOWN (reliable, fresh per gesture)
+  // instead of the click's own altKey.
+  document.addEventListener("mousemove", function (e) { setAlt(e.altKey); if (e.altKey) draw(pick(e.clientX, e.clientY)); }, true);
+  // Capture the modifier at MOUSEDOWN (a browser drops it from the generated CLICK), so an Alt-press-then-
+  // click navigates even though the click event itself no longer reports altKey.
+  document.addEventListener("mousedown", function (e) { downAlt = e.altKey; }, true);
+  document.addEventListener("click", function (e) {
+    if (!downAlt && !e.altKey) { downAlt = false; return; }
+    downAlt = false;
+    var hit = pick(e.clientX, e.clientY);
+    e.preventDefault(); e.stopPropagation();   // suppress the component's own onClick
+    if (hit) { try { parent.postMessage({ __navigate: hit.name }, "*"); } catch (_) {} }
+  }, true);
+})();
+</script>`;
+}
+
 export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOptions = {}): string {
-  const { injectedCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, scrollY = false, zoomEngine } = opts;
+  const { injectedCss = "", themeCss = "", theme = "dark", importmap = COMPONENT_IMPORTMAP, rootClass = "", exitSelectors = [], fitContent = false, scrollY = false, zoomEngine, inspect = [] } = opts;
   // #3057: the exit-runtime shim, injected right after `#root` and BEFORE the module script so the
   // observer is watching before React mounts (and later unmounts) subtrees. "" when no exit selectors —
   // the non-exit srcdoc is then byte-for-byte unchanged.
@@ -422,27 +579,46 @@ export function buildComponentSrcDoc(bundleJs: string, opts: ComponentSrcDocOpti
   // #3190 crisp pass: the in-iframe pan/zoom ENGINE — transforms `#root` (crisp DOM) instead of forwarding
   // to a host CSS scale (a blurry iframe texture). Clip cleanly + no scrollbars while it drives the view.
   const engineShim = gestureEngineScript(zoomEngine);
+  // #3596: the Alt-hold inspect layer — navigate to a child component under the cursor. "" (unchanged
+  // srcdoc) unless the expanded preview passed the `composes` names. Injected after the engine so its
+  // capture-phase click handler is in place; the engine's own `e.altKey` bail keeps Alt from panning.
+  const inspectShim = inspectEngineScript(inspect);
   // #3251: the engine's drag lives INSIDE the iframe, so the selection guard must too — the host
   // wrapper's `user-select:none` cannot cross a document boundary. Without this, a press-and-move
   // starts a native text selection instead of panning. Form fields keep caret + selection (mirrors the
   // engine's own DRAG_NATIVE list, which already leaves their native drag alone).
+  // #3551: the engine FITS the WHOLE component, so nothing may clamp the content to the frame height and
+  // clip its overflow — the clip cannot be un-scaled away, so the off-screen part never renders. `html,body`
+  // keep `overflow:hidden` (the frame is the viewport — no scrollbars), but `#root` AND the mount wrapper
+  // grow to the content (`height:auto`, at least full-frame) and DON'T self-clip (`overflow:visible`), so
+  // the component lays out to its full natural height, the engine measures it, and fit scales it all in.
   const engineCss = zoomEngine
-    ? `\n<style>html,body{overflow:hidden}#root{overflow:hidden}`
+    ? `\n<style>html,body{overflow:hidden}#root{overflow:visible}`
+      + `#root>*{display:block!important;height:auto!important;min-height:100%;overflow:visible!important}`
       + `body{user-select:none;-webkit-user-select:none}`
       + `input,textarea,select,[contenteditable]{user-select:text;-webkit-user-select:text}</style>`
     : "";
   return `<!doctype html><html data-theme="${theme}"><head><meta charset="utf-8" />
+${previewCspMeta()}
 <style>html,body,#root{margin:0;height:100%;box-sizing:border-box}#root{overflow:auto}*,*::before,*::after{box-sizing:inherit}
 /* Fit oversized preview media (d3 charts/graphs, images) within the frame rather than overflowing it (#2915).
    Aspect-preserving on replaced/viewBox elements; the definite height chain above lets max-height:100% resolve.
    Fluid (width:100%) components are unaffected — the caps only bite oversized fixed-dimension media. */
 #root svg,#root canvas,#root img,#root video{max-width:100%;max-height:100%}</style>${scrollCss}${engineCss}
 <style>${injectedCss}</style>
+<style id="__bsc_theme">${themeCss}</style>
 <script type="importmap">${JSON.stringify({ imports: importmap })}</script>
 </head><body><div id="root"${rootClass ? ` class="${rootClass}"` : ""}></div>${exitShim}
 <script>
   window.addEventListener("error", (e) => parent.postMessage({ __preview: "error", message: String(e.message) }, "*"));
   window.addEventListener("unhandledrejection", (e) => parent.postMessage({ __preview: "error", message: String(e.reason) }, "*"));
+  // #3556: apply a THEME change live — set the data-theme base + swap the token overrides — WITHOUT a
+  // rebuild, so the in-iframe pan/zoom engine (and any other runtime state) survives a theme switch.
+  window.addEventListener("message", (e) => {
+    const t = e.data && e.data.__bsc_theme; if (!t) return;
+    if (typeof t.base === "string") document.documentElement.setAttribute("data-theme", t.base);
+    const s = document.getElementById("__bsc_theme"); if (s && typeof t.css === "string") s.textContent = t.css;
+  });
 </script>
 <script type="module">
 ${bundleJs}
@@ -458,6 +634,6 @@ setTimeout(() => {
     parent.postMessage({ __preview: "rendered", empty: empty }, "*");
   } catch (e) { /* measurement is best-effort */ }
 }, 400);
-</script>${fitShim}${engineShim}
+</script>${fitShim}${engineShim}${inspectShim}
 </body></html>`;
 }

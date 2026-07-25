@@ -55,6 +55,9 @@
      and oklch(0.20 0.04 145) that were scattered through the feature CSS. */
   --on-accent:  #1a120a;                  /* ink on an --accent fill */
   --on-success: oklch(0.20 0.04 145);     /* ink on a --success fill */
+  /* dependency-cycle / coordination-hazard accent (Glance) — extracted from scattered #f2848b/#f3a4a9. */
+  --cycle:      #f2848b;                   /* emphatic — cycle chips, hazard header, counts */
+  --cycle-soft: #f3a4a9;                   /* soft — cycle descriptions / fault counts */
 
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --sans: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
@@ -185,14 +188,14 @@ html, body {
 
 /* horizontal tab strip (consoles) */
 .tabstrip{
-  height:34px; flex:0 0 34px; background:var(--bg-panel);
-  border-bottom:1px solid var(--border-soft);
+  height:34px; flex:0 0 34px; background:var(--tab-strip-bg);
+  border-bottom:1px solid var(--tab-strip-border);
   display:flex; align-items:end; padding:0 8px; gap:1px;
   font-family:var(--mono); font-size:11px;
 }
 .tab{
   height:28px; padding:0 12px; display:flex; align-items:center; gap:8px;
-  background:transparent; color:var(--fg-muted);
+  background:var(--tab-bg); color:var(--tab-fg);
   border-top-left-radius:6px; border-top-right-radius:6px;
   border:1px solid transparent; border-bottom:0;
   cursor:pointer; max-width:200px;
@@ -228,7 +231,7 @@ html, body {
 }
 .tab-tearoff-preview .ttp-body{ padding:18px 12px; display:flex; justify-content:center; }
 .tab-tearoff-preview .ttp-hint{ font-size:10px; color:var(--accent); }
-.tab.active{ background:var(--bg-canvas); color:var(--fg); border-color:var(--border-soft); }
+.tab.active{ background:var(--tab-active-bg); color:var(--tab-active-fg); border-color:var(--tab-active-border); }
 .tab .dot{ width:6px; height:6px; border-radius:50%; background:var(--success); flex:0 0 6px; }
 .tab .dot.idle{ background:var(--fg-dim); }
 .tab .dot.run{ background:var(--accent); animation:pulse 1.4s ease-in-out infinite; }
@@ -277,7 +280,7 @@ html, body {
   --btn-font-weight: 400;
   --btn-disabled-opacity: 0.4;
   --btn-primary-bg: var(--accent);
-  --btn-primary-fg: #1a120a;
+  --btn-primary-fg: var(--on-accent);
   --btn-primary-border: transparent;
   --btn-primary-font-weight: 600;
   --btn-primary-hover-brightness: 1.05;
@@ -295,6 +298,27 @@ html, body {
   --chip-bg: var(--bg-elev2);
   --chip-fg: var(--fg-muted);
   --chip-border: var(--border-soft);
+  --tab-bg: transparent;
+  --tab-fg: var(--fg-muted);
+  --tab-strip-bg: var(--bg-panel);
+  --tab-strip-border: var(--border-soft);
+  --tab-active-bg: var(--bg-canvas);
+  --tab-active-fg: var(--fg);
+  --tab-active-border: var(--border-soft);
+  --modal-bg: var(--bg-elev);
+  --modal-border: var(--border);
+  --modal-radius: var(--r-lg);
+  --switch-bg: var(--bg-elev2);
+  --switch-border: var(--border);
+  --switch-thumb: var(--fg-muted);
+  --switch-on-bg: color-mix(in oklch, var(--accent), transparent 30%);
+  --switch-on-border: var(--accent-dim);
+  --switch-on-thumb: var(--on-accent);
+  --icon-btn-bg: transparent;
+  --icon-btn-fg: var(--fg-dim);
+  --icon-btn-hover-bg: var(--bg-elev2);
+  --icon-btn-hover-fg: var(--fg);
+  --icon-btn-danger-hover-fg: var(--danger);
 }
 
 /* generic UI primitives */
@@ -320,12 +344,12 @@ html, body {
 
 /* ===== blueprints page (#513/#514) ===== */
 /* toggle switch */
-.sw{ width:30px; height:17px; border-radius:99px; background:var(--bg-elev2); border:1px solid var(--border);
+.sw{ width:30px; height:17px; border-radius:99px; background:var(--switch-bg); border:1px solid var(--switch-border);
   position:relative; cursor:pointer; flex:0 0 auto; transition:background .15s, border-color .15s; }
-.sw.on{ background:color-mix(in oklch, var(--accent), transparent 30%); border-color:var(--accent-dim); }
+.sw.on{ background:var(--switch-on-bg); border-color:var(--switch-on-border); }
 .sw i{ position:absolute; top:1.5px; left:1.5px; width:12px; height:12px; border-radius:50%;
-  background:var(--fg-muted); transition:left .15s, background .15s; }
-.sw.on i{ left:14px; background:#1a120a; }
+  background:var(--switch-thumb); transition:left .15s, background .15s; }
+.sw.on i{ left:14px; background:var(--switch-on-thumb); }
 .sw.dis{ opacity:.5; cursor:default; }
 /* small select + text input */
 .sel{ height:24px; background:var(--bg-canvas); border:1px solid var(--border-soft); border-radius:var(--r-sm);
@@ -333,18 +357,18 @@ html, body {
 .sel:focus{ border-color:var(--accent-dim); }
 .dragging{ opacity:.4; }
 /* small icon button */
-.icon-btn{ width:24px; height:24px; border-radius:5px; border:1px solid transparent; background:transparent; color:var(--fg-dim);
+.icon-btn{ width:24px; height:24px; border-radius:5px; border:1px solid transparent; background:var(--icon-btn-bg); color:var(--icon-btn-fg);
   cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:13px; }
-.icon-btn:hover{ background:var(--bg-elev2); color:var(--fg); }
-.icon-btn.danger:hover{ color:var(--danger); }
+.icon-btn:hover{ background:var(--icon-btn-hover-bg); color:var(--icon-btn-hover-fg); }
+.icon-btn.danger:hover{ color:var(--icon-btn-danger-hover-fg); }
 .icon-btn.sm{ width:20px; height:20px; font-size:12px; }
 .icon-btn.xs{ width:16px; height:16px; border-radius:4px; font-size:11px; }
 .icon-btn:disabled{ opacity:.5; cursor:not-allowed; }
 /* modal */
 .overlay{ position:fixed; inset:0; z-index:var(--z-modal); background:var(--scrim); display:flex; align-items:center; justify-content:center; }
 .overlay.blur{ backdrop-filter:blur(2px); }
-.modal{ width:480px; max-width:92vw; max-height:82vh; overflow:auto; background:var(--bg-elev); border:1px solid var(--border);
-  border-radius:var(--r-lg); box-shadow:0 20px 60px rgba(0,0,0,.5); }
+.modal{ width:480px; max-width:92vw; max-height:82vh; overflow:auto; background:var(--modal-bg); border:1px solid var(--modal-border);
+  border-radius:var(--modal-radius); box-shadow:0 20px 60px rgba(0,0,0,.5); }
 /* shared centered-modal scrim (#1776) — the single overlay wrapper behind <ModalScrim>/<Dialog> */
 .modal-scrim{ position:fixed; inset:0; z-index:var(--z-modal); background:var(--scrim); display:flex; align-items:center; justify-content:center; }
 .modal-scrim.start{ align-items:flex-start; }

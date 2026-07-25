@@ -12,7 +12,9 @@ import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { safeInvoke } from "../core/safeInvoke";
 import { bscJson } from "../core/bsc";
+import { logsDonePanes, logsPaneActivity } from "../core/logsBridge";
 import { usePoll } from "@/shared/hooks/usePoll";
+import { useLogStream } from "@/shared/hooks/useLogStream";
 import { useAppStore } from "@/store";
 import { emptyCoordState } from "./coordination";
 import { readCoordState } from "./useCoordLog";
@@ -33,7 +35,8 @@ const CLOSE_NUDGE =
   "this console. If anything remains, keep going instead.";
 
 /** How idle-poll ticks: every 15s. The close-nudge threshold is 60s, so this is responsive enough. */
-const IDLE_POLL_MS = 15_000;
+// #3643: the idle close-nudge is event-driven — it re-checks when a worker's turn state changes
+// (`activity`), coord changes, or a worker self-reports done, + a slow backstop; not a 15s clock.
 
 /**
  * Evaluate a worker's owned issues and mark the pane ended accordingly. `opts.kill` also kills the
@@ -100,15 +103,18 @@ export function useWorkerAutoEnd(): void {
   // bsc-done self-close (#1379): poll the workers that self-reported done and reap each —
   // classify from plan.db (markPaneEnded) AND pty_kill the still-live shell. The endedPanes guard
   // in evaluateExit makes this idempotent across polls (a lingering done.log line won't re-kill).
-  usePoll(async (isCancelled) => {
-    const done = await bscJson<string[]>(null, ["logs", "done-panes", "--json"], []);
+  // Event-driven (#3638): reap self-reported-done workers only when the done log changes (plus mount +
+  // a slow backstop), instead of polling every 2s. The `endedPanes` guard in `evaluateExit` keeps it
+  // idempotent, so a lingering done.log line re-firing on a later event won't re-kill.
+  useLogStream("done", async (isCancelled) => {
+    const done = await logsDonePanes();
     if (isCancelled() || !Array.isArray(done)) return;
     const s = useAppStore.getState();
     for (const paneId of done) {
       if (s.endedPanes[paneId] || !s.fleetPaneStreams[paneId]) continue;
       await evaluateExit(paneId, { kill: true });
     }
-  }, 2000, []);
+  }, []);
 
   // Idle close-nudge (#1379 stage 3): for each at-rest worker, decide via the pure core whether to
   // nudge it to self-close. A worker that's question-free, idle past the short window, and whose
@@ -117,8 +123,8 @@ export function useWorkerAutoEnd(): void {
   // an outstanding director question routes to the resurface path (stage 4), never a close.
   const nudgedRef = useRef<Set<string>>(new Set());
   const resurfacedRef = useRef<Set<string>>(new Set()); // lost-ask resurfaces, one per stale ask
-  usePoll(async (isCancelled) => {
-    const activity = await bscJson<ActivityRow[]>(null, ["logs", "pane-activity", "--json"], []);
+  useLogStream(["activity", "coord", "done"], async (isCancelled) => {
+    const activity = await logsPaneActivity<ActivityRow>();
     const coordRes = await readCoordState(5000);
     if (isCancelled() || !Array.isArray(activity)) return;
     const coord = coordRes?.state ?? emptyCoordState();
@@ -163,7 +169,7 @@ export function useWorkerAutoEnd(): void {
         }
       }
     }
-  }, IDLE_POLL_MS, []);
+  }, []);
 
   // Reclaim a finished worker's worktree once its branch is MERGED (#worktree-disk). Gated on the
   // pane already being ENDED (its work is pushed) AND the PR merged on GitHub — the authoritative

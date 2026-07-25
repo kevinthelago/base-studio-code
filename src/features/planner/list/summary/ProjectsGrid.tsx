@@ -7,35 +7,28 @@ import { ColorSwatch } from "@/shared/ui/controls/ColorSwatch";
 import { Button } from "@/shared/ui/controls/Button";
 import { Row } from "@/shared/ui/layout/Row";
 import { Grid } from "@/shared/ui/layout/Grid";
-import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import type { GhIssueItem as GhIssue } from "@/shared/lib/github/types";
-import { Spark } from "@/shared/ui/charts";
 import { computeProjectStats, type GhProject } from "@/features/planner/list/projectsSummaryDerive";
 
 // ── Projects grid ─────────────────────────────────────────────────────────────
 
-export function ProjectsGrid({ projects, repoIssues, loading }: {
+export function ProjectsGrid({ projects, loading }: {
   projects: GhProject[];
-  repoIssues: Record<string, GhIssue[]>;
   loading: boolean;
 }) {
-  const { setProjectsPageMode, setWorkspace, setActiveProjectMeta, openGithubBoard } = useAppStore();
+  const { navigate, setActiveProjectMeta, openGithubBoard } = useAppStore();
   // This portfolio lives in the GitHub screen (#421); "view list" jumps to the
   // Projects tab for planning, while opening a card shows that project's board
   // right here on the GitHub page (#498).
-  const openProjects = () => { setWorkspace("projects"); setProjectsPageMode("projects"); };
+  const openProjects = () => navigate({ workspace: "projects", page: "projects" });
   const openBoard = (p: GhProject) => {
     const repos = p.repositories?.nodes?.map(r => r.nameWithOwner) ?? [];
     setActiveProjectMeta(p.id, p.title, repos[0] ?? "", p.number, repos);
     openGithubBoard("board");
   };
 
-  const projectsWithStats = useMemo(
-    () => computeProjectStats(projects, repoIssues),
-    [projects, repoIssues],
-  );
+  const projectsWithStats = useMemo(() => computeProjectStats(projects), [projects]);
 
   return (
     <Card
@@ -49,7 +42,7 @@ export function ProjectsGrid({ projects, repoIssues, loading }: {
         <Text as="div" mono size={11} tone="dim" style={{ padding: "8px 0" }}>No projects found. Create one on GitHub.</Text>
       )}
       <Grid cols="repeat(2, minmax(0, 1fr))" gap={8}>
-        {projectsWithStats.map(({ p, c, status, spark, repo }) => (
+        {projectsWithStats.map(({ p, c, status, repo }) => (
           <Box key={p.id} onClick={() => openBoard(p)} pad={[12, 14]} bg="var(--bg-elev)" border="soft" radius={6} style={{
             cursor: "pointer", minWidth: 0, overflow: "hidden",
           }}>
@@ -64,8 +57,6 @@ export function ProjectsGrid({ projects, repoIssues, loading }: {
             <Row gap={12} className="mono" style={{ fontSize: 10, color: "var(--fg-muted)" }}>
               <Box as="span"><b style={{ color: "var(--fg)" }}>{p.items.totalCount}</b> items</Box>
               <Text mono size={9.5} tone="dim">{timeAgo(p.updatedAt)}</Text>
-              <Spacer />
-              {spark.some(v => v > 0) && <Spark data={spark} color={c} w={80} h={18} fill={false} dot={false} />}
             </Row>
           </Box>
         ))}

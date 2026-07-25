@@ -15,9 +15,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/store";
 import { usePoll } from "@/shared/hooks/usePoll";
 import { readCoordState } from "@/shared/lib/fleet/useCoordLog";
-import { bscJson } from "@/shared/lib/core/bsc";
+import { logsTail } from "@/shared/lib/core/logsBridge";
 import { paneIdFor } from "@/app/console/lib/paneIdentity";
 import { useGlanceProjects, useGlanceFaults, useProjectFleet } from "@/features/glance";
+import { resolveKitLibraryRefs } from "@/features/designs";
 import { loadPendingLessons } from "@/features/skills";
 import { resolveAllInstalledMcp } from "@/features/mcp";
 import { parseAuditLog, type AuditRecord } from "@/features/security";
@@ -51,6 +52,14 @@ export function useStoreProjector(): void {
   // Personas: read once, shared by the glance payload (stream-role resolution, #2530) + the org payload.
   const personas = useAppStore((s) => s.personas);
 
+  // Components/kits/kit-usage: read once — shared by the glance kit + library BANDS (#3743) and the
+  // `components` domain below. `libraryRefs` is the cross-graph algorithm/sound roll-up (#3133), the same
+  // `resolveKitLibraryRefs(components)` the Glance workspace feeds `buildGlanceData`.
+  const components = useAppStore((s) => s.components);
+  const kits = useAppStore((s) => s.kits);
+  const kitUsage = useAppStore((s) => s.kitUsage);
+  const libraryRefs = useMemo(() => resolveKitLibraryRefs(components), [components]);
+
   // ── glance — projects + links + faults + drill + PER-PROJECT fleets + stream roles (#2530) ──
   const projects = useGlanceProjects(tunnelRunning);
   const faults = useGlanceFaults(tunnelRunning ? projects.map((p) => p.id) : []);
@@ -68,8 +77,12 @@ export function useStoreProjector(): void {
   );
   useEffect(() => {
     if (!tunnelRunning) return;
-    publishTunnelDomain("glance", buildGlancePayload({ projects, links, faults, drill, fleets, personas }));
-  }, [tunnelRunning, projects, links, faults, drill, fleets, personas]);
+    // #3743: carry the kit + library bands (kitUsage/kits/libraryRefs) so mobile rebuilds the FULL cockpit.
+    publishTunnelDomain(
+      "glance",
+      buildGlancePayload({ projects, links, faults, drill, fleets, personas, kitUsage, kits, libraryRefs }),
+    );
+  }, [tunnelRunning, projects, links, faults, drill, fleets, personas, kitUsage, kits, libraryRefs]);
 
   // ── org — the org library + pared persona refs ────────────────────────────────
   const teams = useAppStore((s) => s.teams);
@@ -107,9 +120,7 @@ export function useStoreProjector(): void {
   }, [tunnelRunning, skills, skillGroups, lessons]);
 
   // ── components + themes — kits/components summaries · the theme registry ──────
-  const components = useAppStore((s) => s.components);
-  const kits = useAppStore((s) => s.kits);
-  const kitUsage = useAppStore((s) => s.kitUsage);
+  // (components/kits/kitUsage are read once above — shared with the glance bands, #3743.)
   useEffect(() => {
     if (!tunnelRunning) return;
     publishTunnelDomain("components", buildComponentsPayload({ kits, components, usage: kitUsage }));
@@ -146,7 +157,7 @@ export function useStoreProjector(): void {
   const [audit, setAudit] = useState<AuditRecord[]>([]);
   usePoll(async (isCancelled) => {
     if (!tunnelRunning) { setAudit([]); return; } // React bails when already []
-    const lines = await bscJson<string[]>(null, ["logs", "tail", "audit", "--limit", "300", "--json"], []);
+    const lines = await logsTail("audit", 300);
     if (isCancelled()) return;
     setAudit(parseAuditLog(lines.join("\n")));
   }, AUDIT_POLL_MS, [tunnelRunning]);

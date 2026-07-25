@@ -18,16 +18,15 @@
 // The authored-motion shape (#2867, epic #2865) — carried through to each emitted `ComponentRecord`'s
 // `animations` and compiled to live `@keyframes` by the render engine (`@/shared/ui/kit`). Imported
 // type-only (erased at compile time) so this module stays pure, JSON-serialisable data.
-import type { KitAnimation } from "@/shared/ui/kit/animations";
 
 /** Every primitive the kit exposes to the builder. Also the key type of the render-map registry. */
 export type PrimitiveName =
   // layout
-  | "Box" | "Stack" | "Row" | "Spacer" | "Grid" | "SectionHeader" | "SectionLabel" | "Dialog" | "ModalScrim" | "ModalCard"
+  | "Box" | "Stack" | "Row" | "Spacer" | "Slot" | "Grid" | "SectionHeader" | "SectionLabel" | "Dialog" | "ModalScrim" | "ModalCard"
   // typography
   | "Text"
   // controls
-  | "Button" | "IconButton" | "Checkbox" | "Toggle" | "SegmentedControl" | "TextField" | "TextArea" | "SelectField"
+  | "Button" | "IconButton" | "Checkbox" | "Toggle" | "SegmentedControl" | "TextField" | "TextArea" | "SelectField" | "Option"
   | "BackButton" | "ColorSwatch" | "ConfirmButton"
   // data
   | "Card" | "Chip" | "StatTile" | "FillBar" | "Code"
@@ -89,11 +88,12 @@ export interface PrimitiveSpec {
   props: PropSpec[];
   /** True when arbitrary extra DOM props (className, style, data-attrs, handlers) pass through to the root. */
   passthrough?: boolean;
-  /** Authored MOTION (#2942, epic #2865) — named animation defs. At generation these are LIFTED into
-   *  the `react-ui` kit's motion library (`Kit.animations`) and the component keeps a name binding
-   *  (`ComponentRecord.animations: string[]`), so a kit's motion is reusable across its components.
-   *  Values may reference the motion tokens (`var(--dur-base)` / `var(--ease-standard)`). Absent ⇒ no motion. */
-  animations?: KitAnimation[];
+  /** MOTION references (#2942, #3451) — the NAMES of the animations this primitive plays. The full
+   *  defs live in the `base` kit's motion library (`shared/ui/kit/baseAnimations.ts`), NOT here: a base
+   *  motion is owned in ONE place and every consumer references it by name, so an edit propagates to all
+   *  (the resolver falls back to the `base` kit — `resolveComponentAnimationDefs`). Emitted verbatim onto
+   *  the generated `ComponentRecord.animations`. Absent ⇒ no motion. */
+  animations?: string[];
 }
 
 // Shared prop fragments reused across the layout primitives.
@@ -143,6 +143,13 @@ export const UI_KIT: PrimitiveSpec[] = [
     name: "Spacer", group: "layout", importPath: "@/shared/ui/layout/Spacer",
     description: "Empty space inside a Row/Stack — flexible (flex:1) by default, or a fixed size.",
     props: [{ name: "size", type: "space", description: "A rigid spacer of this size; omit for a greedy flex:1 filler." }],
+  },
+  {
+    name: "Slot", group: "layout", importPath: "@/shared/ui/layout/Slot",
+    description: "A HOLE the host fills with its own React (#3504) — the seam between a data tree and the app code around it. Not a visual component: the spec says WHERE, the host's `slots` map says WHAT. Use it for a feature component (one owning hooks/queries/app state) that a spec cannot and should not express.",
+    props: [
+      { name: "name", type: "string", required: true, description: "The key the host's `slots` map must carry. An unfilled name renders a visible marker, never nothing." },
+    ],
   },
   {
     name: "Grid", group: "layout", importPath: "@/shared/ui/layout/Grid", passthrough: true,
@@ -245,16 +252,8 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "size", type: "enum", values: ["md", "sm"], default: "md", description: "Control height." },
       { name: "danger", type: "boolean", description: "Destructive (red) styling." },
     ],
-    // Authored-motion exemplar (#2871): a subtle hover lift on the primary action.
-    animations: [
-      {
-        name: "lift", trigger: "hover", duration: "var(--dur-fast)", easing: "var(--ease-standard)",
-        keyframes: {
-          from: { transform: "translateY(0)" },
-          to: { transform: "translateY(-1px)" },
-        },
-      },
-    ],
+    // Base motion (#3451): the primary action plays the `base` kit's hover `lift` (owned in baseAnimations.ts).
+    animations: ["lift"],
   },
   {
     name: "IconButton", group: "controls", importPath: "@/shared/ui/controls/IconButton",
@@ -286,6 +285,11 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "onClick", type: "function", description: "Toggle handler." },
       { name: "size", type: "enum", values: ["xs", "sm", "md"], default: "md", description: "Switch size." },
       { name: "tone", type: "enum", values: ["accent", "success"], default: "accent", description: "On-state color." },
+      // Accessibility (#3500). The component has always accepted these; the manifest omitted them, which
+      // made an accessible switch UNAUTHORABLE as data — Toggle is not passthrough, so a spec setting
+      // them was rejected as an unknown prop. A spec-rendered toggle must be able to say it is a switch.
+      { name: "role", type: "string", description: "ARIA role — pass \"switch\" for an accessible on/off control." },
+      { name: "ariaChecked", type: "boolean", description: "aria-checked; mirror of `on` when role is \"switch\"." },
     ],
   },
   {
@@ -328,9 +332,18 @@ export const UI_KIT: PrimitiveSpec[] = [
     props: [
       { name: "value", type: "string", required: true, description: "Selected value." },
       { name: "onChange", type: "function", required: true, description: "(value) => void." },
-      { name: "children", type: "node", required: true, description: "The <option> elements." },
+      { name: "children", type: "node", required: true, description: "The Option children." },
       { name: "label", type: "node", description: "Field label." },
       { name: "hint", type: "node", description: "Sub-label hint." },
+    ],
+  },
+  {
+    name: "Option", group: "controls", importPath: "@/shared/ui/controls/Option",
+    description: "One choice inside a SelectField — the data-authorable <option>.",
+    props: [
+      { name: "children", type: "node", description: "The visible label." },
+      { name: "value", type: "string", description: "Submitted value; defaults to the visible text." },
+      { name: "disabled", type: "boolean", description: "Unselectable (e.g. a placeholder)." },
     ],
   },
   {
@@ -383,16 +396,8 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "onClick", type: "function", description: "Click handler (implies interactive)." },
       { name: "loading", type: "boolean", description: "Render the card loading — a skeleton body the shape of its content (#2302)." },
     ],
-    // Authored-motion exemplar (#2871): a one-shot enter — the card rises + fades in on mount.
-    animations: [
-      {
-        name: "fade-in", trigger: "mount", duration: "var(--dur-base)", easing: "var(--ease-emphasized)",
-        keyframes: {
-          from: { opacity: "0", transform: "translateY(4px)" },
-          to: { opacity: "1", transform: "translateY(0)" },
-        },
-      },
-    ],
+    // Base motion (#3451): the card plays the `base` kit's one-shot `fade-in` on mount (owned in baseAnimations.ts).
+    animations: ["fade-in"],
   },
   {
     name: "Chip", group: "data", importPath: "@/shared/ui/data/Chip",
@@ -646,17 +651,8 @@ export const UI_KIT: PrimitiveSpec[] = [
       { name: "pulse", type: "boolean", default: false, description: "Pulse animation." },
       { name: "title", type: "string", description: "Native tooltip." },
     ],
-    // Authored-motion exemplar (#2871): the looping breathing pulse for a live status dot.
-    animations: [
-      {
-        name: "pulse", trigger: "always", duration: "var(--dur-slow)", easing: "var(--ease-standard)",
-        keyframes: {
-          "0%": { opacity: "1" },
-          "50%": { opacity: "0.45" },
-          "100%": { opacity: "1" },
-        },
-      },
-    ],
+    // Base motion (#3451): the live status dot plays the `base` kit's breathing `pulse` (owned in baseAnimations.ts).
+    animations: ["pulse"],
   },
   {
     name: "Skeleton", group: "feedback", importPath: "@/shared/ui/feedback/Skeleton",

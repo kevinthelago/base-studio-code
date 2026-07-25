@@ -40,8 +40,7 @@ function Specimen({ comp, height }: { comp: ComponentRecord; scale?: number; hei
 export function PlannerComponentsPane() {
   const components = useAppStore((s) => s.components);
   const kits = useAppStore((s) => s.kits);
-  const setWorkspace = useAppStore((s) => s.setWorkspace);
-  const setProjectsPageMode = useAppStore((s) => s.setProjectsPageMode);
+  const navigate = useAppStore((s) => s.navigate);
 
   const [kitId, setKitId] = useState(() => kits[0]?.id ?? "");
   const [mode, setMode] = useState<Mode>("components");
@@ -69,7 +68,7 @@ export function PlannerComponentsPane() {
 
   // The Design Studio is now a Planner tab (#move-to-planner): open the Planner Workspace on its "designs"
   // page rather than a standalone rail Workspace.
-  const openInStudio = () => { setWorkspace("projects"); setProjectsPageMode("designs"); };
+  const openInStudio = () => navigate({ workspace: "projects", page: "designs" });
 
   if (!kit) {
     return (

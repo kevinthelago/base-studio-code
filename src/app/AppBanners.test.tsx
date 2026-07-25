@@ -46,15 +46,17 @@ describe("SessionRecoveryBanner (#1266)", () => {
     await waitFor(() => expect(fleetStart).toHaveBeenCalledWith("proj", expect.objectContaining({ streams: [] }), "proj"));
   });
 
-  it("restore auto-drills Glance into the restored project (#2445)", async () => {
-    useAppStore.setState({ glanceDrill: null, activeWorkspace: "console" });
+  it("restore auto-drills Glance into the restored project AND lands on the Network tab (#2445/#3598)", async () => {
+    // Start on a DIFFERENT Glance tab: the restore must FORCE Network, else the drill it sets shows nothing.
+    useAppStore.setState({ glanceDrill: null, activeWorkspace: "console", activePageTab: { glance: "fleet" } });
     render(<SessionRecoveryBanner />);
     await waitFor(() => expect(screen.getByText(/2 sessions/)).toBeTruthy());
     fireEvent.click(screen.getByText("Review"));
     fireEvent.click(screen.getByText("Restore 1"));
-    // The fleet restored → the user lands on Glance, drilled into the restored project's agents.
+    // The fleet restored → the user lands on Glance, on the NETWORK tab, drilled into the restored project.
     await waitFor(() => expect(useAppStore.getState().glanceDrill).toBe("proj"));
     expect(useAppStore.getState().activeWorkspace).toBe("glance");
+    expect(useAppStore.getState().activePageTab.glance).toBe("network"); // #3598: not the last-active "fleet" tab
   });
 
   it("the manual scratch shell is reap-only (no Restore) and Discard reaps it", async () => {

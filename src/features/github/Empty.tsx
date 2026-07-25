@@ -19,8 +19,7 @@ import { Button } from "@/shared/ui/controls/Button";
  * lives where its content actually applies.
  */
 export function GitHubEmpty() {
-  const setWorkspace = useAppStore((s) => s.setWorkspace);
-  const setSettingsSection = useAppStore((s) => s.setSettingsSection);
+  const navigate = useAppStore((s) => s.navigate);
 
   return (
     <Box as="section" pad={[40, 32]} bg="var(--bg-canvas)" style={{
@@ -41,7 +40,7 @@ export function GitHubEmpty() {
             <Button
               variant="primary"
               // Land on the GitHub settings tab, not just the Settings screen.
-              onClick={() => { setSettingsSection("github"); setWorkspace("settings"); }}
+              onClick={() => navigate({ workspace: "settings", page: "github" })}
               style={{ height: 38, padding: "0 22px", fontSize: 13, fontWeight: 600, width: "100%", justifyContent: "center", gap: 10 }}
             >
               <Text as="span" mono size={15}>⎇</Text>

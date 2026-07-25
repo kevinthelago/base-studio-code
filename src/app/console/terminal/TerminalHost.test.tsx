@@ -125,6 +125,48 @@ describe("TerminalHost parked holding claims (#3357)", () => {
     }
   });
 
+  // #3427 regression. The page dock calls `openStudio` and renders its viewer slot in the SAME commit,
+  // while the holding mount only appears once an async `setup_*_workspace` invoke resolves — so the dock
+  // ALWAYS claimed first. With no primary to source from, the host fell back to the owner's (empty) launch
+  // props and TerminalView launched with cwd/initCmd undefined. That is a one-shot launch, so the primary
+  // arriving a tick later never repaired it: `pty_create` ran with `cwd=<none>`, the session inherited the
+  // app's own working directory instead of the studio workspace, and `ensure_session_settings` was skipped
+  // entirely — a permission-less session with no role gate.
+  it("does NOT launch an app-owned session before its holding mount claims it (#3427)", () => {
+    // ONE tree whose only change is the mount appearing — the real sequence, since `StudioSessionHosts`
+    // renders alongside the page for the session's whole life and the mount's own slot is what arrives late.
+    const Opening = ({ mounted }: { mounted: boolean }) => (
+      <TerminalHost>
+        <div key="d" data-testid="page-dock"><TerminalSlot paneId="design-studio:designer" visible /></div>
+        {mounted && <div key="m" data-testid="holding"><TerminalSlot paneId="design-studio:designer" primary parked visible={false} initialCwd="/design" /></div>}
+      </TerminalHost>
+    );
+    // First commit: the dock has claimed, the mount's async setup has not resolved. No terminal yet —
+    // crucially NOT one launched with an empty cwd.
+    const { queryByTestId, rerender } = render(<Opening mounted={false} />);
+    expect(queryByTestId("tv")).toBeFalsy();
+    expect(rec.mounts).toEqual([]);
+
+    // The mount resolves its workspace dir and registers: NOW the session launches, with its real cwd,
+    // into the dock the user is already looking at.
+    rerender(<Opening mounted />);
+    expect(rec.mounts).toEqual(["design-studio:designer"]);
+    const tv = queryByTestId("tv")!;
+    expect(tv.getAttribute("data-cwd")).toBe("/design");
+    expect(tv.closest("[data-testid='page-dock']")).toBeTruthy();
+  });
+
+  it("still launches a FLEET pane from a viewer-only claim — the gate is app-owned ids only (#3427)", () => {
+    // A fleet pane's primary is its console grid cell, which legitimately may never mount while Glance
+    // shows the terminal. Gating it would hide a working session, so the gate must not reach it.
+    render(
+      <TerminalHost>
+        <div data-testid="glance-dock"><TerminalSlot paneId="proj:api" visible /></div>
+      </TerminalHost>,
+    );
+    expect(rec.mounts).toEqual(["proj:api"]);
+  });
+
   it("owns the terminal (parked, off-screen) once it is the last claim standing", () => {
     const { getByTestId, rerender } = render(<StudioHarness mountFirst />);
     const tv = getByTestId("tv");

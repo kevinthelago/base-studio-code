@@ -26,6 +26,14 @@ type WsStream = SplitStream<Ws>;
 /// several `pane_output` frames.
 const MAX_PLAINTEXT: usize = 48 * 1024;
 
+/// The largest plaintext a single Noise transport message can carry: the 65535-byte ciphertext
+/// cap minus the 16-byte ChaChaPoly tag. A frame whose serialized JSON exceeds this cannot be
+/// `write_message`'d at all (`snow` returns `Error::Input`), so `send_msg` SKIPS it with a warning
+/// rather than propagating the error — a single oversized `store_state` domain must not tear down
+/// the whole session mid-replay and blank EVERY domain on mobile (#3755). The real fix is
+/// fragmentation (mobile reassembly); until then, over-cap domains are simply not mirrored.
+const MAX_NOISE_PLAINTEXT: usize = 65535 - 16;
+
 /// A high-entropy, URL-safe room id matching the relay's `validateRoomId`
 /// (`[A-Za-z0-9_-]{16,64}`) — 24 random bytes → 32 base64url chars.
 pub fn generate_room_id() -> String {
@@ -72,18 +80,39 @@ fn ct_eq(a: &str, b: &str) -> bool {
     diff == 0
 }
 
-/// Encrypt a JSON-serialized message into one Noise transport frame.
-pub fn encode<T: Serialize>(tx: &mut snow::TransportState, msg: &T) -> Result<Vec<u8>, String> {
+/// Encrypt a JSON-serialized message into one Noise transport frame, or `Ok(None)` when the
+/// serialized plaintext exceeds [`MAX_NOISE_PLAINTEXT`]. Returning `None` (instead of letting
+/// `snow` error on the oversized write) lets `send_msg` skip the frame without tearing down the
+/// session (#3755). Skipping on the SEND side keeps the Noise nonces in lockstep: a frame that is
+/// never written is never read, so both peers stay on the same counter.
+pub fn encode<T: Serialize>(tx: &mut snow::TransportState, msg: &T) -> Result<Option<Vec<u8>>, String> {
     let json = serde_json::to_vec(msg).str_err()?;
+    if json.len() > MAX_NOISE_PLAINTEXT {
+        return Ok(None);
+    }
     let mut buf = vec![0u8; json.len() + 16];
     let n = tx.write_message(&json, &mut buf).str_err()?;
     buf.truncate(n);
-    Ok(buf)
+    Ok(Some(buf))
 }
 
 async fn send_msg(sink: &mut WsSink, tx: &mut snow::TransportState, msg: &ServerMsg) -> Result<(), String> {
-    let frame = encode(tx, msg)?;
-    sink.send(Message::Binary(frame.into())).await.str_err()
+    match encode(tx, msg)? {
+        Some(frame) => sink.send(Message::Binary(frame.into())).await.str_err(),
+        // Oversized frame → SKIP, not fatal. Erroring here tore down the whole session mid-replay,
+        // blanking EVERY store_state domain on mobile, not just the one over the cap (#3755).
+        None => {
+            let kind = match msg {
+                ServerMsg::StoreState { domain, .. } => format!("store_state[{domain}]"),
+                _ => "frame".to_string(),
+            };
+            log::warn!(
+                "tunnel: skipped oversized {kind} (serialized > {MAX_NOISE_PLAINTEXT}-byte Noise cap) — \
+                 it won't reach mobile until fragmentation lands (#3755)"
+            );
+            Ok(())
+        }
+    }
 }
 
 async fn send_output(sink: &mut WsSink, tx: &mut snow::TransportState, po: &PaneOutputChunk) -> Result<(), String> {
@@ -377,22 +406,10 @@ async fn replay_state(
         send_msg(sink, tx, &frame).await?;
     }
 
-    // Replay fleet roster (F2) — non-empty only after the fleet has launched.
-    let fleet = snap(app, |s| s.fleet_snapshot());
-    if !fleet.is_empty() {
-        send_msg(sink, tx, &ServerMsg::FleetRoster { sessions: fleet }).await?;
-    }
-
     // Replay automation list (A2).
     let automations = snap(app, |s| s.automations_snapshot());
     if !automations.is_empty() {
         send_msg(sink, tx, &ServerMsg::AutomationList { automations }).await?;
-    }
-
-    // Replay MCP extension list (M2).
-    let mcp = snap(app, |s| s.mcp_snapshot());
-    if !mcp.is_empty() {
-        send_msg(sink, tx, &ServerMsg::McpList { extensions: mcp }).await?;
     }
 
     // Replay the last hook-telemetry summary (M3 / #937) — non-empty only after the

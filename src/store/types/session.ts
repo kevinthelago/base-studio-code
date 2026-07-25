@@ -49,6 +49,27 @@ export interface SessionState {
    *  the toggle opens/closes the window. */
   debugSession: boolean;
   setDebugSession: (v: boolean) => void;
+  /** #3498: may a session be started AUTOMATICALLY (by the `bsc request` intake), without a human
+   *  asking? OFF by default and the outer gate of the auto-spawn boundary — the inner one being that
+   *  ONLY the `debugger` role is ever auto-spawnable (`shared/lib/session/autoSpawn.ts`, the single
+   *  authoriser). Auto-spawn is the highest-consequence capability in the app — a session that starts
+   *  itself runs a real model against a real repo — so it is opt-in, per-machine, and fails closed:
+   *  anything that is not literally `true` reads as off. */
+  autoSpawnDebugSessions: boolean;
+  setAutoSpawnDebugSessions: (v: boolean) => void;
+  /** #3498: the request ids that currently have a spawned debug session. Lives in the STORE, not in the
+   *  mount's local state, because the Glance graph must render a node per live session — an auto-spawned
+   *  session that appears nowhere is one the user cannot open, supervise or stop. Session-only. */
+  /** Live debugger OVERFLOW pool SLOT indices (#3535) — one per running overflow session, published by
+   *  RequestSessionsMount so the Glance graph can render a node per slot. Not request ids: a slot claims
+   *  a request only after it launches. Session-only. */
+  activeDebugSlots: number[];
+  setActiveDebugSlots: (slots: number[]) => void;
+  /** #3509: the base-studio-code source tree this app was built from, or null on a shipped binary.
+   *  Resolved ONCE at boot so a launch can turn a role's symbolic `app-repo` harvest root into a real
+   *  path synchronously. Session-only — it is a property of the machine, not of the user's state. */
+  appRepoRoot: string | null;
+  setAppRepoRoot: (p: string | null) => void;
   /** #2372: show the legacy Console page as a rail destination. OFF by default — the graph (Glance)
    *  is the execution surface; the console page is being retired. When off, its rail entry is hidden
    *  and a console-active workspace falls back to Glance (derived in App). */

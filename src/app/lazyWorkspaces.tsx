@@ -5,13 +5,27 @@ import { Row } from "@/shared/ui/layout/Row";
 // loads on first navigation, keeping the heavy module graph (esp. the planner) off the cold
 // startup path — both the dev transform and the production bundle. Shared by the shell's screen
 // switcher and the detached-window renderer.
-export const GitHubWorkspace      = lazy(() => import("@/features/github").then((m) => ({ default: m.GitHubWorkspace })));
-export const AutomationsWorkspace = lazy(() => import("@/features/automations").then((m) => ({ default: m.AutomationsWorkspace })));
-export const McpWorkspace         = lazy(() => import("@/features/mcp").then((m) => ({ default: m.McpWorkspace })));
+// GitHub renders FROM THE GRAPH (#3650, epic #3604) — the graph host mounts the authored `githubpage` node;
+// the symbol name stays so App.tsx + DetachedWindow (which passes `pageOverride`) need no change.
+export const GitHubWorkspace      = lazy(() => import("@/features/github").then((m) => ({ default: m.GitHubGraphHost })));
+// Automations renders FROM THE GRAPH (#3642, epic #3604) — the graph host mounts the authored
+// `automationspage` node; the symbol name stays so App.tsx + DetachedWindow (which passes `pageOverride`,
+// forwarded through) need no change.
+export const AutomationsWorkspace = lazy(() => import("@/features/automations").then((m) => ({ default: m.AutomationsGraphHost })));
+// MCP renders FROM THE GRAPH (#3656, epic #3604) — the graph host mounts the authored `mcppage` node; the
+// symbol name stays so App.tsx + DetachedWindow (which passes `pageOverride`) need no change.
+export const McpWorkspace         = lazy(() => import("@/features/mcp").then((m) => ({ default: m.McpGraphHost })));
+// Settings renders from the HAND-CODED pages (#3758) — restored from the graph-hosted version (#3658),
+// which stays dormant in the barrel (`SettingsGraphHost` + the `settingspage` graph records are unmounted,
+// not deleted). Flip the resolved default back to `m.SettingsGraphHost` to re-enable the graph version.
 export const SettingsWorkspace    = lazy(() => import("@/features/settings").then((m) => ({ default: m.SettingsWorkspace })));
 export const ProjectsWorkspace    = lazy(() => import("@/features/planner").then((m) => ({ default: m.ProjectsWorkspace })));
-export const SkillsWorkspace      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsWorkspace })));
-export const SecurityWorkspace      = lazy(() => import("@/features/security").then((m) => ({ default: m.SecurityWorkspace })));
+// Skills renders FROM THE GRAPH (#3654, epic #3604) — the graph host mounts the authored `skillspage` node;
+// the symbol name stays so App.tsx + DetachedWindow (which passes `pageOverride`) need no change.
+export const SkillsWorkspace      = lazy(() => import("@/features/skills").then((m) => ({ default: m.SkillsGraphHost })));
+// Security renders FROM THE GRAPH (#3646, epic #3604) — the graph host mounts the authored `securitypage`
+// node; the symbol name stays so App.tsx + DetachedWindow (which passes `pageOverride`) need no change.
+export const SecurityWorkspace      = lazy(() => import("@/features/security").then((m) => ({ default: m.SecurityGraphHost })));
 export const GlanceWorkspace      = lazy(() => import("@/features/glance").then((m) => ({ default: m.GlanceWorkspace })));
 // Design Studio (#2303/#2308) + the Algorithms knowledge graph (#2785) are no longer rail Workspaces —
 // each moved into the Planner Screen as a page (lazy-loaded there, in features/planner/index.tsx), so

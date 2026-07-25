@@ -13,6 +13,12 @@
 //   - `seedHash`  — the stamp itself can never feed its own hash.
 //   - `builtin`   — provenance, not content (stamped on assembly AND carried by the bridge).
 //   - `used`      — the runtime reuse counter; it drifts without a user edit.
+//   - `rev` / `updatedAt` / `updatedBy` / `history` (#3606) — SERVER-MANAGED provenance the Rust stamp
+//     boundary writes on every `bsc ui set` (a component write-through stamps them). `componentBridge`
+//     projects them for the inspector's History tab, so they ride into the loaded record — but they are
+//     NOT seed content, so hashing them would make a pristine SEEDED component (pushed → stamped → loaded
+//     with a fresh `rev`) mis-hash as user-modified forever. Kits/themes never projected them, so this is
+//     the component-seed case the empty `SEED_COMPONENTS` had never exercised.
 // Everything else on the record IS seed content — a change to any other field is a user edit (store
 // copy) or a new release (seed copy).
 //
@@ -45,6 +51,9 @@ export interface SeedRecord {
   label?: string;
   /** A packaged built-in. Absent/false ⇒ user-authored (never touched by the reconcile). */
   builtin?: boolean;
+  /** A SUPPRESSION tombstone (#3725) — `true` marks this id as a PERMANENTLY removed packaged builtin.
+   *  The reconcile skips it (not a record to render) and its presence blocks the seed from re-adding it. */
+  suppressed?: boolean;
   /** The content hash stamped when this copy was seeded (#2483). Absent ⇒ a legacy pre-#2483 copy. */
   seedHash?: string;
 }
@@ -55,7 +64,7 @@ function displayName(rec: SeedRecord): string {
 }
 
 /** Fields excluded from the seed hash — see the module doc for why each. */
-export const SEED_HASH_EXCLUDED = ["seedHash", "builtin", "used"] as const;
+export const SEED_HASH_EXCLUDED = ["seedHash", "builtin", "used", "rev", "updatedAt", "updatedBy", "history"] as const;
 
 /** Deterministic JSON: keys sorted recursively, `undefined` properties dropped (so an absent
  *  optional field and an explicitly-undefined one hash identically). */
@@ -153,6 +162,11 @@ export function reconcileSeed<T extends SeedRecord>(loaded: T[], seed: T[], type
   const notices: SeedNotice[] = [];
 
   for (const rec of loaded) {
+    // #3725: a SUPPRESSION tombstone — a marker that a packaged builtin of this id is permanently removed.
+    // It is not a record to render (skip it from `records`), and its presence in `loaded` (hence `have`
+    // below) makes the re-seed step SKIP that id, so the builtin never comes back. It stays in the store
+    // (never dropped) so the block persists; `unsuppress` (remove it) lets the next hydrate re-seed.
+    if (rec.suppressed) continue;
     if (!rec.builtin) {
       records.push(rec); // user-authored — never touched
       continue;

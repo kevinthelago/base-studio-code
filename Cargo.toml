@@ -1,14 +1,25 @@
 [workspace]
-members = ["src-tauri", "crates/bsc", "crates/bsc-util", "crates/bsc-sqlite-util", "crates/data", "crates/plandb", "crates/errordb", "crates/skilldb", "crates/llm", "crates/bsc-agent", "crates/mcp-rpc", "crates/research", "crates/compliance", "crates/logs", "crates/bsc-json-store", "crates/bsc-blueprint", "crates/bsc-persona", "crates/bsc-sound", "crates/bsc-teams", "crates/bsc-component", "crates/bsc-ui", "crates/bsc-project", "crates/bsc-files", "crates/bsc-cli-util", "crates/bsc-tunnel", "crates/bsc-cad", "crates/bsc-graph", "crates/bsc-studio", "crates/bsc-shot", "crates/bsc-appchan", "crates/bsc-navigate", "crates/bsc-loop", "crates/bsc-request"]
+members = ["src-tauri", "crates/bsc", "crates/bsc-util", "crates/bsc-sqlite-util", "crates/data", "crates/plandb", "crates/errordb", "crates/skilldb", "crates/llm", "crates/bsc-agent", "crates/mcp-rpc", "crates/research", "crates/compliance", "crates/logs", "crates/bsc-json-store", "crates/bsc-blueprint", "crates/bsc-persona", "crates/bsc-sound", "crates/bsc-teams", "crates/bsc-component", "crates/bsc-ui", "crates/bsc-project", "crates/bsc-files", "crates/bsc-cli-util", "crates/bsc-tunnel", "crates/bsc-cad", "crates/bsc-graph", "crates/bsc-studio", "crates/bsc-shot", "crates/bsc-appchan", "crates/bsc-navigate",
+    "crates/bsc-debug", "crates/bsc-loop", "crates/bsc-request"]
 resolver = "2"
+
+# Fast dev builds WITHOUT release (#3622). The default `tauri dev` compiles at opt-level 0, so the whole
+# backend — the per-second coord-log parses, PTY byte handling, JSON serialization — ran 5-20× slower than
+# it needs to, pinning the Rust host at ~37% while idle and delaying every `invoke`. Fix: our own crates at
+# opt-level 1 (big runtime win, incremental edit→rebuild stays fast); DEPENDENCIES at opt-level 3 (compiled
+# ONCE then cached — near-release backend speed in dev). First rebuild recompiles the Rust deps at opt-3 once.
+[profile.dev]
+opt-level = 1
 
 # Strip debug info from DEPENDENCIES in dev/test builds (our own crates keep theirs).
 # Bundled DuckDB's `-g` C++ objects + arrow bloat the test-binary link so much that the
 # CI linker OOM'd with SIGBUS (#795). `debug = false` also forwards `DEBUG=false` to
 # libduckdb-sys's cc build, dropping `-g` from its C++ objects. `test` is listed
-# explicitly because its package overrides don't inherit from `dev`.
+# explicitly because its package overrides don't inherit from `dev`. opt-level 3 (#3622)
+# optimizes deps to release speed; debug = false keeps the linker memory low (no OOM regression).
 [profile.dev.package."*"]
 debug = false
+opt-level = 3
 
 [profile.test.package."*"]
 debug = false

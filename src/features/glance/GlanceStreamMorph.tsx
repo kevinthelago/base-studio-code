@@ -3,7 +3,7 @@
 // zooms, and scales WITH the graph (#2534, option A) — the rest of the fleet stays visible + interactive.
 // No portal, no scrim: the graph never leaves; a node just gains a second state. The card animates world
 // GEOMETRY (left/top/width/height) from the node's box to an expanded panel hosting the SAME
-// GlanceChatDock (the real PTY stream + a "message the agent" input). It's RESIZABLE from every EDGE and
+// GlanceChatDock (the real PTY stream — the terminal is the input surface, #3523). It's RESIZABLE from every EDGE and
 // CORNER (standard window handles), in WORLD units (so it scales with zoom), and REPORTS its box up
 // (`onRect`) so the canvas can push overlapping neighbour nodes out of the way (#2662). Esc or the dock's
 // ✕ shrinks it back into the node. Reduced-motion → an instant swap (the CSS zeroes the transitions; the

@@ -24,6 +24,11 @@ pub const REV: &str = "rev";
 pub const UPDATED_AT: &str = "updatedAt";
 /// The writer-tag attribution field.
 pub const UPDATED_BY: &str = "updatedBy";
+/// The change-history field (#3568) — a capped list of past write entries, appended NEWEST-LAST.
+pub const HISTORY: &str = "history";
+/// Max history entries kept on a record — older ones drop off so the record (and `bsc ui list --full`)
+/// stays bounded; the recent log is what a session reviews before an edit.
+pub const HISTORY_CAP: usize = 30;
 
 /// The record's current `rev` as an integer — **0** when absent, null, or a non-integer, so a legacy
 /// record with no `rev` reads as rev 0 (the backward-compat contract). Never errors.
@@ -39,6 +44,61 @@ pub fn stamp(record: &mut Value, prior_rev: i64, writer: &str, now_iso: &str) {
         obj.insert(REV.to_string(), Value::from(prior_rev + 1));
         obj.insert(UPDATED_AT.to_string(), Value::from(now_iso));
         obj.insert(UPDATED_BY.to_string(), Value::from(writer));
+    }
+}
+
+/// The top-level fields that DIFFER between the prior record and the new one — the auto-summary of a
+/// change (#3568). Excludes the provenance/history fields themselves and `seedHash` (a derived reconcile
+/// hash, not an authored change). A brand-new record (prior absent/empty at rev 0) → `["created"]`.
+/// Returns names sorted for a stable entry. Pure.
+pub fn changed_fields(prior: &Value, next: &Value) -> Vec<String> {
+    const SKIP: [&str; 5] = [REV, UPDATED_AT, UPDATED_BY, HISTORY, "seedHash"];
+    let Some(n) = next.as_object() else { return vec![] };
+    let p = prior.as_object();
+    if p.is_none_or(serde_json::Map::is_empty) && read_rev(prior) == 0 {
+        return vec!["created".to_string()];
+    }
+    let p = p.expect("non-new ⇒ prior is a non-empty object");
+    let mut changed = std::collections::BTreeSet::new();
+    for (k, v) in n {
+        if !SKIP.contains(&k.as_str()) && p.get(k) != Some(v) {
+            changed.insert(k.clone());
+        }
+    }
+    for k in p.keys() {
+        if !SKIP.contains(&k.as_str()) && !n.contains_key(k) {
+            changed.insert(k.clone()); // a removed field is a change too
+        }
+    }
+    changed.into_iter().collect()
+}
+
+/// Stamp a record for a write AND append a change-history entry (#3568): the provenance [`stamp`] plus one
+/// `{ rev, at, by, note?, changed }` row appended to a capped `history[]`, carried forward from `prior`
+/// (the CURRENT stored record). `changed` is [`changed_fields`] (the first write records `["created"]`).
+/// SERVER-MANAGED — the incoming record's own `history` is discarded and replaced, so a session never
+/// authors it. `note` (trimmed, non-empty) is optional. A no-op on a non-object `record` (defensive).
+pub fn stamp_with_history(record: &mut Value, prior: &Value, writer: &str, now_iso: &str, note: Option<&str>) {
+    let prior_rev = read_rev(prior);
+    let mut history: Vec<Value> =
+        prior.get(HISTORY).and_then(Value::as_array).cloned().unwrap_or_default();
+    let changed = changed_fields(prior, record);
+    stamp(record, prior_rev, writer, now_iso);
+    let mut entry = serde_json::Map::new();
+    entry.insert(REV.to_string(), Value::from(prior_rev + 1));
+    entry.insert("at".to_string(), Value::from(now_iso));
+    entry.insert("by".to_string(), Value::from(writer));
+    if let Some(n) = note.map(str::trim).filter(|s| !s.is_empty()) {
+        entry.insert("note".to_string(), Value::from(n));
+    }
+    entry.insert("changed".to_string(), Value::from(changed));
+    history.push(Value::Object(entry));
+    let overflow = history.len().saturating_sub(HISTORY_CAP);
+    if overflow > 0 {
+        history.drain(0..overflow); // drop the oldest, keep the most recent HISTORY_CAP
+    }
+    if let Some(obj) = record.as_object_mut() {
+        obj.insert(HISTORY.to_string(), Value::from(history));
     }
 }
 
@@ -58,9 +118,9 @@ pub fn now_iso() -> String {
     bsc_util::epoch_ms_to_iso8601(bsc_util::now_ms())
 }
 
-/// The history stamp `bsc ui log <id>` prints for a record: `{ id, rev, updatedAt, updatedBy }`. A
-/// record never stamped (or a legacy one) reports rev 0 and empty `updatedAt`/`updatedBy`. Pure read —
-/// the store keeps only the current row, so this is the current stamp, not a history table.
+/// What `bsc ui log <id>` prints for a record: the current stamp `{ id, rev, updatedAt, updatedBy }` plus
+/// the change `history` (#3568, NEWEST-FIRST for reading), so a session can review a component's past
+/// before editing. A record never stamped (or legacy) reports rev 0, empty stamps, and an empty history.
 pub fn log_value(id: &str, record: &Value) -> Value {
     let mut m = serde_json::Map::new();
     m.insert("id".to_string(), Value::from(id));
@@ -73,6 +133,10 @@ pub fn log_value(id: &str, record: &Value) -> Value {
         UPDATED_BY.to_string(),
         Value::from(record.get(UPDATED_BY).and_then(Value::as_str).unwrap_or("")),
     );
+    // Stored append-order (oldest-first); reverse so the log reads newest-first.
+    let mut history: Vec<Value> = record.get(HISTORY).and_then(Value::as_array).cloned().unwrap_or_default();
+    history.reverse();
+    m.insert(HISTORY.to_string(), Value::from(history));
     Value::Object(m)
 }
 
@@ -127,19 +191,106 @@ mod tests {
 
     #[test]
     fn log_value_reports_the_current_stamp_and_defaults_for_a_legacy_record() {
-        // A legacy record (no stamps) logs as rev 0 with empty attribution.
+        // A legacy record (no stamps) logs as rev 0 with empty attribution and an empty history.
         let legacy = json!({ "id": "old", "name": "Old" });
         assert_eq!(
             log_value("old", &legacy),
-            json!({ "id": "old", "rev": 0, "updatedAt": "", "updatedBy": "" }),
+            json!({ "id": "old", "rev": 0, "updatedAt": "", "updatedBy": "", "history": [] }),
         );
-        // A stamped record surfaces all three.
+        // A stamped record surfaces all three (still an empty history — it was never written via
+        // `stamp_with_history`, only the bare `stamp`).
         let mut rec = json!({ "id": "card", "name": "Card" });
         stamp(&mut rec, 2, "designer", "2026-07-16T09:00:00Z");
         assert_eq!(
             log_value("card", &rec),
-            json!({ "id": "card", "rev": 3, "updatedAt": "2026-07-16T09:00:00Z", "updatedBy": "designer" }),
+            json!({ "id": "card", "rev": 3, "updatedAt": "2026-07-16T09:00:00Z", "updatedBy": "designer", "history": [] }),
         );
+    }
+
+    #[test]
+    fn changed_fields_reports_created_then_the_diffed_top_level_fields() {
+        // A brand-new record (prior absent, rev 0) is summarized as "created", not a field-by-field diff.
+        let fresh = json!({ "id": "button", "name": "Button", "kitId": "react-ui" });
+        assert_eq!(changed_fields(&Value::Null, &fresh), vec!["created".to_string()]);
+        assert_eq!(changed_fields(&json!({}), &fresh), vec!["created".to_string()]);
+
+        // A real edit diffs the top-level fields: a changed value, an added field, and a removed one all
+        // count; unchanged fields do not; the result is sorted for a stable entry.
+        let prior = json!({ "id": "button", "rev": 3, "name": "Button", "kitId": "react-ui", "old": 1 });
+        let next = json!({ "id": "button", "name": "Button", "kitId": "mui", "srcText": "…" });
+        assert_eq!(
+            changed_fields(&prior, &next),
+            vec!["kitId".to_string(), "old".to_string(), "srcText".to_string()],
+            "changed kitId + added srcText + removed old; id/name unchanged",
+        );
+
+        // The provenance/history fields and the derived `seedHash` never count as an authored change.
+        let p2 = json!({ "id": "x", "rev": 2, "name": "X", "seedHash": "aaa" });
+        let n2 = json!({ "id": "x", "rev": 3, "updatedAt": "t", "updatedBy": "u", "history": [1], "name": "X", "seedHash": "bbb" });
+        assert!(changed_fields(&p2, &n2).is_empty(), "only rev/stamps/history/seedHash moved ⇒ no authored change");
+    }
+
+    #[test]
+    fn stamp_with_history_appends_a_capped_newest_last_log() {
+        // First write on a fresh record: rev 1, one "created" entry carrying the note.
+        let mut rec = json!({ "id": "button", "name": "Button" });
+        stamp_with_history(&mut rec, &Value::Null, "designer", "2026-07-16T00:00:00Z", Some("initial"));
+        assert_eq!(rec["rev"], json!(1));
+        let hist = rec["history"].as_array().unwrap();
+        assert_eq!(hist.len(), 1);
+        assert_eq!(
+            hist[0],
+            json!({ "rev": 1, "at": "2026-07-16T00:00:00Z", "by": "designer", "note": "initial", "changed": ["created"] }),
+        );
+
+        // Second write carries the prior history forward and appends newest-LAST; a blank note is dropped.
+        let prior = rec.clone();
+        let mut next = json!({ "id": "button", "name": "Button 2" });
+        stamp_with_history(&mut next, &prior, "alice", "2026-07-16T00:01:00Z", Some("   "));
+        assert_eq!(next["rev"], json!(2));
+        let hist = next["history"].as_array().unwrap();
+        assert_eq!(hist.len(), 2, "prior entry carried forward + the new one");
+        assert_eq!(hist[0]["rev"], json!(1), "oldest stays first (append order)");
+        assert_eq!(hist[1], json!({ "rev": 2, "at": "2026-07-16T00:01:00Z", "by": "alice", "changed": ["name"] }), "no note key when blank");
+
+        // The incoming record's own `history` is SERVER-MANAGED — a forged one is discarded.
+        let mut forged = json!({ "id": "button", "name": "Button 3", "history": [{ "rev": 999, "by": "attacker" }] });
+        stamp_with_history(&mut forged, &next, "bob", "2026-07-16T00:02:00Z", None);
+        let hist = forged["history"].as_array().unwrap();
+        assert_eq!(hist.len(), 3, "grew from the PRIOR's 2, not the forged 1");
+        assert!(hist.iter().all(|e| e["by"] != json!("attacker")), "the forged entry is gone");
+    }
+
+    #[test]
+    fn stamp_with_history_caps_at_history_cap_dropping_the_oldest() {
+        let mut rec = json!({ "id": "x", "name": "n0" });
+        let mut prior = Value::Null;
+        // Write HISTORY_CAP + 5 times; the log must retain exactly the most recent HISTORY_CAP.
+        for i in 0..(HISTORY_CAP + 5) {
+            rec = json!({ "id": "x", "name": format!("n{i}") });
+            stamp_with_history(&mut rec, &prior, "w", "2026-07-16T00:00:00Z", None);
+            prior = rec.clone();
+        }
+        let hist = rec["history"].as_array().unwrap();
+        assert_eq!(hist.len(), HISTORY_CAP, "capped");
+        let oldest_rev = hist[0]["rev"].as_i64().unwrap();
+        let newest_rev = hist[hist.len() - 1]["rev"].as_i64().unwrap();
+        assert_eq!(newest_rev, (HISTORY_CAP + 5) as i64, "the last write's rev is retained");
+        assert_eq!(oldest_rev, newest_rev - (HISTORY_CAP as i64) + 1, "exactly the most recent CAP, oldest dropped");
+    }
+
+    #[test]
+    fn log_value_reverses_history_to_newest_first() {
+        let mut rec = json!({ "id": "x", "name": "a" });
+        stamp_with_history(&mut rec, &Value::Null, "w", "2026-07-16T00:00:00Z", None);
+        let prior = rec.clone();
+        let mut next = json!({ "id": "x", "name": "b" });
+        stamp_with_history(&mut next, &prior, "w", "2026-07-16T00:01:00Z", None);
+        // Stored oldest-first (rev 1 then rev 2); the LOG must read newest-first (rev 2 then rev 1).
+        let logged = log_value("x", &next);
+        let hist = logged["history"].as_array().unwrap();
+        assert_eq!(hist[0]["rev"], json!(2), "newest first");
+        assert_eq!(hist[1]["rev"], json!(1));
     }
 
     #[test]

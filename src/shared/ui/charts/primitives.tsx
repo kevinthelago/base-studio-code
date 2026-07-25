@@ -73,7 +73,7 @@ export function Avatar({ login, size = 20, bot = false }: { login: string; size?
   return (
     <span title={login} className="mono" style={{
       width: size, height: size, borderRadius: bot ? size * 0.28 : "50%",
-      background: color, color: "#1a120a",
+      background: color, color: "var(--on-accent)",
       fontWeight: 700, fontSize: size * 0.46,
       display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
     }}>

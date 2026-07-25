@@ -16,6 +16,8 @@
     { "name": "--success", "type": "color", "value": "oklch(0.74 0.13 145)", "governs": "success / positive state colour" },
     { "name": "--info", "type": "color", "value": "oklch(0.72 0.10 230)", "governs": "informational state colour" },
     { "name": "--danger", "type": "color", "value": "oklch(0.68 0.18 25)", "governs": "danger / destructive / error state colour" },
+    { "name": "--on-accent", "type": "color", "value": "#1a120a", "governs": "ink / foreground on an --accent fill (primary button text, filled toggle knobs)" },
+    { "name": "--on-success", "type": "color", "value": "oklch(0.20 0.04 145)", "governs": "ink / foreground on a --success fill" },
     { "name": "--r-md", "type": "dimension", "value": "6px", "governs": "medium corner radius" },
     { "name": "--r-lg", "type": "dimension", "value": "10px", "governs": "large corner radius" },
     { "name": "--dur-fast", "type": "duration", "value": "120ms", "governs": "fast motion — hovers & small state flips" },
@@ -60,7 +62,7 @@
           "governs": "the primary (accent) button",
           "tokens": [
             { "key": "bg", "name": "--btn-primary-bg", "type": "color", "default": "var(--accent)", "governs": "primary button background" },
-            { "key": "fg", "name": "--btn-primary-fg", "type": "color", "default": "#1a120a", "governs": "primary button text colour" },
+            { "key": "fg", "name": "--btn-primary-fg", "type": "color", "default": "var(--on-accent)", "governs": "primary button text colour" },
             { "key": "border", "name": "--btn-primary-border", "type": "color", "default": "transparent", "governs": "primary button border colour" },
             { "key": "font-weight", "name": "--btn-primary-font-weight", "type": "number", "default": "600", "governs": "primary button text weight" },
             { "key": "hover-brightness", "name": "--btn-primary-hover-brightness", "type": "number", "default": "1.05", "governs": "brightness multiplier applied to the primary button on hover" }
@@ -113,6 +115,76 @@
         { "key": "border", "name": "--chip-border", "type": "color", "default": "var(--border-soft)", "governs": "chip border colour" }
       ],
       "variants": []
+    },
+    {
+      "component": "tab",
+      "governs": "the Tab strip and its tabs",
+      "tokens": [
+        { "key": "bg", "name": "--tab-bg", "type": "color", "default": "transparent", "governs": "resting tab background" },
+        { "key": "fg", "name": "--tab-fg", "type": "color", "default": "var(--fg-muted)", "governs": "resting tab text colour" },
+        { "key": "strip-bg", "name": "--tab-strip-bg", "type": "color", "default": "var(--bg-panel)", "governs": "tab strip background" },
+        { "key": "strip-border", "name": "--tab-strip-border", "type": "color", "default": "var(--border-soft)", "governs": "tab strip bottom border colour" }
+      ],
+      "variants": [
+        {
+          "variant": "active",
+          "governs": "the active (selected) tab",
+          "tokens": [
+            { "key": "bg", "name": "--tab-active-bg", "type": "color", "default": "var(--bg-canvas)", "governs": "active tab background" },
+            { "key": "fg", "name": "--tab-active-fg", "type": "color", "default": "var(--fg)", "governs": "active tab text colour" },
+            { "key": "border", "name": "--tab-active-border", "type": "color", "default": "var(--border-soft)", "governs": "active tab border colour" }
+          ]
+        }
+      ]
+    },
+    {
+      "component": "modal",
+      "governs": "the Modal / Dialog surface",
+      "tokens": [
+        { "key": "bg", "name": "--modal-bg", "type": "color", "default": "var(--bg-elev)", "governs": "modal surface background" },
+        { "key": "border", "name": "--modal-border", "type": "color", "default": "var(--border)", "governs": "modal border colour" },
+        { "key": "radius", "name": "--modal-radius", "type": "dimension", "default": "var(--r-lg)", "governs": "modal corner radius" }
+      ],
+      "variants": []
+    },
+    {
+      "component": "switch",
+      "governs": "the toggle Switch",
+      "tokens": [
+        { "key": "bg", "name": "--switch-bg", "type": "color", "default": "var(--bg-elev2)", "governs": "switch track background (off)" },
+        { "key": "border", "name": "--switch-border", "type": "color", "default": "var(--border)", "governs": "switch track border (off)" },
+        { "key": "thumb", "name": "--switch-thumb", "type": "color", "default": "var(--fg-muted)", "governs": "switch thumb colour (off)" }
+      ],
+      "variants": [
+        {
+          "variant": "on",
+          "governs": "the switched-on (accent) state",
+          "tokens": [
+            { "key": "bg", "name": "--switch-on-bg", "type": "color", "default": "color-mix(in oklch, var(--accent), transparent 30%)", "governs": "switch track background when on" },
+            { "key": "border", "name": "--switch-on-border", "type": "color", "default": "var(--accent-dim)", "governs": "switch track border when on" },
+            { "key": "thumb", "name": "--switch-on-thumb", "type": "color", "default": "var(--on-accent)", "governs": "switch thumb colour when on" }
+          ]
+        }
+      ]
+    },
+    {
+      "component": "icon-btn",
+      "governs": "the icon Button",
+      "tokens": [
+        { "key": "bg", "name": "--icon-btn-bg", "type": "color", "default": "transparent", "governs": "icon-button background (resting)" },
+        { "key": "fg", "name": "--icon-btn-fg", "type": "color", "default": "var(--fg-dim)", "governs": "icon-button glyph colour (resting)" },
+        { "key": "hover-bg", "name": "--icon-btn-hover-bg", "type": "color", "default": "var(--bg-elev2)", "governs": "icon-button background on hover" },
+        { "key": "hover-fg", "name": "--icon-btn-hover-fg", "type": "color", "default": "var(--fg)", "governs": "icon-button glyph colour on hover" }
+      ],
+      "variants": [
+        {
+          "variant": "danger",
+          "governs": "the destructive icon-button",
+          "tokens": [
+            { "key": "hover-fg", "name": "--icon-btn-danger-hover-fg", "type": "color", "default": "var(--danger)", "governs": "danger icon-button glyph colour on hover" }
+          ]
+        }
+      ]
     }
   ],
   "domain": [

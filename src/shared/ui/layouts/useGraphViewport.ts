@@ -135,12 +135,17 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
   useEffect(() => { boundsRef.current = opts.contentBounds; });
   // Set true during a pan-drag so the click that ends it doesn't select a node/edge.
   const dragMoved = useRef(false);
+  // True once the USER has positioned the viewport themselves (pan or zoom). Gates the initial auto-fit
+  // below — a viewport the user placed is never yanked by a later layout change. Programmatic moves
+  // (`fit`, `centerOn`, `zoomToCentered`) deliberately do NOT set it: those ARE the app framing the graph.
+  const userMoved = useRef(false);
 
   /** The box to frame: the live content bounds when a provider gives them, else the nominal world. */
   const frameBox = (): GraphBox => boundsRef.current?.() ?? { x: 0, y: 0, ...worldRef.current };
 
   /** Zoom to `ns` keeping the world point under (mx,my) — viewport-relative client coords — fixed. */
   const zoomAbout = useCallback((ns: number, mx: number, my: number) => {
+    userMoved.current = true;
     setView((v) => zoomAboutPoint(v, ns, mx, my, min, max));
   }, [min, max]);
 
@@ -151,6 +156,38 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
     setView(fitBox(frameBox(), el.clientWidth, el.clientHeight, min, max, fitPad, maxFitScale));
   }, [min, max, fitPad, maxFitScale]);
 
+  // Initial framing (#3433) — re-fit whenever the world's DIMENSIONS change, until the user takes over.
+  //
+  // A page's own fit is a mount effect, so it frames whatever model exists at mount — and every graph
+  // page loads its data async, so that is the EMPTY model. `buildGraph` sizes the world tightly around its
+  // content, so an empty graph is a small-but-valid box (Glance: 266x156): `fitBox` caps at `maxFitScale`
+  // and centers it, parking world origin near the middle of the viewport. The real data then arrives, the
+  // world grows, and nothing re-frames it — the graph renders from screen center off the bottom-right.
+  //
+  // Keyed on the NUMERIC w/h, not the model reference. That distinction is the whole point: #2554 dropped
+  // `model` from Glance's fit deps because the status overlays hand back a fresh model object every poll,
+  // which re-fit the graph every few seconds and wiped the user's pan/zoom. Those polls move no node, so
+  // the world dimensions are byte-identical and this does not fire — #2554's intent is preserved, while a
+  // layout that genuinely changed size gets framed.
+  //
+  // `userMoved` then makes it strictly an INITIAL framing: once the user has panned or zoomed, their
+  // viewport is theirs. An explicit `fit()` (drill in/out, the toolbar button) still works — it is a
+  // direct call, not gated on this.
+  // Skipped while the viewport has no measurable size — a page that mounts HIDDEN (a background tab, the
+  // Design Studio's center pane before its canvas view is chosen) reports 0x0, and fitting against that
+  // yields a degenerate transform. The page's own fit effect already re-frames on the switch back, so
+  // leaving `userMoved` false here just means the next real signal takes it.
+  // (`fit` is stable — its deps are the scalar zoom options — so listing it cannot add a re-fire.)
+  useEffect(() => {
+    if (userMoved.current) return;
+    const id = requestAnimationFrame(() => {
+      const el = vpRef.current;
+      if (userMoved.current || !el || !el.clientWidth || !el.clientHeight) return;
+      fit();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [world.w, world.h, fit]);
+
   /** Pan world point (wx,wy) to the viewport center, keeping the current zoom (#2525). */
   const centerOn = useCallback((wx: number, wy: number) => {
     const el = vpRef.current;
@@ -160,6 +197,7 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
 
   /** Pan by a screen-space delta (px) — for a gesture forwarded from outside the viewport (#3190). */
   const panBy = useCallback((dx: number, dy: number) => {
+    userMoved.current = true;
     setView((v) => ({ ...v, tx: v.tx + dx, ty: v.ty + dy }));
   }, []);
 
@@ -211,7 +249,7 @@ export function useGraphViewport(world: { w: number; h: number }, opts: GraphVie
     if (vpRef.current) vpRef.current.style.cursor = "grabbing";
     const mm = (ev: MouseEvent) => {
       const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
-      if (Math.abs(dx) + Math.abs(dy) > 4) dragMoved.current = true;
+      if (Math.abs(dx) + Math.abs(dy) > 4) { dragMoved.current = true; userMoved.current = true; }
       setView((vv) => ({ ...vv, tx: start.tx + dx, ty: start.ty + dy }));
     };
     const mu = () => {

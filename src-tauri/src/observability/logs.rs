@@ -66,6 +66,7 @@ fn label_for(key: &str) -> &'static str {
         "coord" => "Coordination events",
         "perm" => "Permission denials",
         "tokens" => "Token & cost accounting",
+        "ui" => "UI design activity",
         "app" => "Application log",
         "perf" => "Performance database",
         _ => "Log stream",
@@ -243,6 +244,40 @@ pub fn read_log_tail(stream: String, limit: usize, app: tauri::AppHandle) -> Vec
 // `read_coord_log`) moved to the `bsc logs tail <stream>` CLI over the `bsc` bridge (#2144). The
 // underlying `tail_lines` reader stays — it still backs `read_log_tail` (the raw-viewer command,
 // which also serves the Tauri-owned `app` log and so cannot move to `bsc logs`).
+
+// ── In-process hot-poll readers (#3630) ──────────────────────────────────────────
+//
+// The always-on fleet/console pumps (`useCoordLog`, `useWorkerAutoEnd`, the pane-activity poll, the
+// coordination pumps) read these unified streams every ~1s. Routing each poll through the `bsc`
+// bridge SPAWNED a `bsc.exe` subprocess per read (`console::bsc`), and at 5–10 spawns/sec the Tauri
+// invoke backlog grew without bound → the app progressively froze. These commands read the SAME
+// streams IN-PROCESS via the already-linked `logs` crate — no spawn, no per-call DB/binary init — so
+// the hot polls cost a file read instead of a process. They resolve the log dir with `logs::log_dir`,
+// the exact resolver the `bsc logs` CLI uses (`$BSC_LOG_DIR`, else `~/.base-studio-code`), so they
+// read byte-for-byte the same files the subprocess did. Low-frequency `bsc logs …` reads (cost,
+// analytics one-shots) stay on the bridge.
+
+/// Newest `limit` raw lines of a unified `bsc logs` stream (`coord`/`audit`/`skill`/`hook`/`mcp`/`ui`/
+/// `perm`), read in-process (#3630) — the drop-in for `bsc logs tail <stream> --json`. `oldest` keeps
+/// chronological order (the coord log); otherwise newest-first. Unknown/missing stream ⇒ empty.
+#[tauri::command]
+pub fn logs_tail(stream: String, limit: usize, oldest: bool) -> Vec<String> {
+    ::logs::tail_raw(&::logs::log_dir(), &stream, limit, oldest)
+}
+
+/// The latest turn-boundary state per pane (`run`/`idle`), newest pane first — the in-process drop-in
+/// for `bsc logs pane-activity --json` (#3630).
+#[tauri::command]
+pub fn logs_pane_activity() -> Vec<::logs::PaneActivity> {
+    ::logs::pane_activity(&::logs::log_dir())
+}
+
+/// The deduped set of panes that self-reported `done` (#1379), newest first — the in-process drop-in
+/// for `bsc logs done-panes --json` (#3630).
+#[tauri::command]
+pub fn logs_done_panes() -> Vec<String> {
+    ::logs::done_panes(&::logs::log_dir())
+}
 
 /// Append a `woke` event to the coordination log (#199): records that a parked
 /// session was relaunched, so the coordinator won't re-wake it (idempotent across

@@ -73,6 +73,8 @@ pub fn run() {
         // In-flight `bsc navigate` requests (#3274): the appchan watcher parks on a receiver here and
         // `navigate_ack` (invoked by the frontend once it has applied the view) delivers into it.
         .manage(crate::navigate::NavPending::default())
+        // In-flight `bsc debug` inspections (#3437) — the same park-and-ack shape as navigate.
+        .manage(crate::debug::DebugPending::default())
         .manage(scope_registry.clone())
         // Runtime fault-ingest collector (#2261): the loopback receiver a generated app POSTs
         // faults/heartbeats to. Started (bound + accept loop spawned) in `setup` below.
@@ -126,6 +128,11 @@ pub fn run() {
             if let Err(e) = crate::platform::config::ensure_seeded() {
                 log::warn!("[startup] config seed skipped ({e}); using embedded defaults");
             }
+            // Dev sidecar staging (#3457): in a dev build, copy `bsc`/`bsc-agent` out of the cargo
+            // target dir into a stable dir so a live session's long-lived `bsc` (the MCP servers) locks
+            // the staged copy — leaving `target/<profile>/bsc.exe` free for the next `cargo build` to
+            // relink. No-op in a release bundle. Runs BEFORE the self-check so it reports staged paths.
+            crate::console::pty::stage_dev_sidecars();
             // Sidecar self-check (#1988): `bsc`/`bsc-agent` are built by a SEPARATE step
             // (`npm run build:plan` in dev / `stage:sidecar` for a release) and resolved beside the app
             // exe. If that step was skipped they'd be missing — silently unsetting $BSC_BIN so every
@@ -174,6 +181,9 @@ pub fn run() {
             // watcher snapshots the webview and answers. Cheap poll on a worker thread; a missing dir
             // just disables captures rather than aborting startup.
             crate::appchan::spawn_watcher(app.handle().clone());
+            // Log-stream change watcher (#3638): emit `logs://<stream>` when a unified log file's mtime
+            // advances, so the frontend reads each stream on CHANGE instead of polling it every ~1s.
+            observability::log_watch::spawn(app.handle().clone());
             // Start the localhost fault-ingest receiver (#2261): binds 127.0.0.1:0 and runs its accept
             // loop on a background thread. A bind failure is logged and leaves the port at 0 (ingest
             // unavailable) rather than aborting startup.
@@ -267,6 +277,7 @@ pub fn run() {
             session::sandbox::ensure_sandbox_user,
             app::recovery::was_unclean_shutdown,
             crate::navigate::navigate_ack,
+            crate::debug::debug_ack,
             github::readiness::github_readiness,
             github::readiness::preflight,
             github::readiness::get_preferred_shell,
@@ -300,16 +311,14 @@ pub fn run() {
             tunnel::tunnel_ack_plan_push,
             tunnel::apply_pushed_plan_files,
             tunnel::tunnel_check_relay,
-            tunnel::tunnel_set_fleet_state,
             tunnel::tunnel_emit_coord_event,
             tunnel::tunnel_set_automations,
-            tunnel::tunnel_automation_ran,
             tunnel::tunnel_automation_failed,
-            tunnel::tunnel_set_mcp_state,
             tunnel::tunnel_set_hook_telemetry,
             tunnel::tunnel_set_store_state,
             tunnel::tunnel_emit_alert,
             fleet::inspect::read_worktree_changes,
+            fleet::inspect::dir_exists,
             fleet::inspect::read_worktree_branch,
             fleet::inspect::read_worktree_commits,
             fleet::inspect::find_branch_pr,
@@ -336,6 +345,9 @@ pub fn run() {
             discovery::reap_session,
             logs::list_log_files,
             logs::read_log_tail,
+            logs::logs_tail,
+            logs::logs_pane_activity,
+            logs::logs_done_panes,
             logs::clear_log,
             logs::export_log,
             logs::log_get_config,

@@ -18,9 +18,14 @@ import {
   type DataShape,
 } from "./model";
 import type { KitAnimation } from "@/shared/ui/kit/animations";
-import { SEED_COMPONENTS, SEED_KITS } from "./seed";
+import { BASE_KIT_ID } from "@/shared/ui/kit/baseAnimations";
+import { REACT_UI_COMPONENTS, REACT_UI_KIT } from "./reactUiKit";
 
-const byName = (n: string) => SEED_COMPONENTS.find((c) => c.name === n)!;
+// #3543: the packaged seed is now a single EMPTY kit, so these generic model-helper tests exercise the
+// react-ui LIBRARY (the manifest-generated assembler — the exact set the seed used to carry) as their fixture.
+const LIB = REACT_UI_COMPONENTS;
+const LIB_KITS = [REACT_UI_KIT];
+const byName = (n: string) => LIB.find((c) => c.name === n)!;
 
 describe("component model helpers (#2269)", () => {
   it("matchesQuery is case-insensitive across name/role/tags, and empty → all", () => {
@@ -32,23 +37,32 @@ describe("component model helpers (#2269)", () => {
     expect(matchesQuery(chip, "zzz")).toBe(false);
   });
 
+  it("matchesQuery also matches the folder-path group (#3589)", () => {
+    const withFolder = { ...byName("Chip"), group: "shared/ui/controls" };
+    expect(matchesQuery(withFolder, "controls")).toBe(true); // folder leaf
+    expect(matchesQuery(withFolder, "shared/ui")).toBe(true); // a folder prefix path
+    expect(matchesQuery(withFolder, "SHARED/UI")).toBe(true); // case-insensitive
+    // A component with no folder doesn't spuriously match a folder query.
+    expect(matchesQuery({ ...byName("Chip"), group: undefined }, "controls")).toBe(false);
+  });
+
   it("resolveComposes pairs each dependency with its record (undefined when absent)", () => {
     const seg = byName("SegmentedControl"); // composes ["Button"]
-    const resolved = resolveComposes(seg, SEED_COMPONENTS);
+    const resolved = resolveComposes(seg, LIB);
     expect(resolved.map((r) => r.name)).toEqual(["Button"]);
     expect(resolved[0].comp?.name).toBe("Button");
     // A dependency name not in the kit resolves to undefined (renders non-clickable).
     const orphan = { ...seg, composes: ["Nonexistent"] };
-    expect(resolveComposes(orphan, SEED_COMPONENTS)[0].comp).toBeUndefined();
+    expect(resolveComposes(orphan, LIB)[0].comp).toBeUndefined();
   });
 
   it("resolveUsedBy finds the components that compose the target", () => {
     const button = byName("Button"); // composed by SegmentedControl + ConfirmButton + EmptyState
-    const users = resolveUsedBy(button, SEED_COMPONENTS).map((c) => c.name);
+    const users = resolveUsedBy(button, LIB).map((c) => c.name);
     expect(users).toContain("SegmentedControl");
     expect(users).toContain("EmptyState");
     // A page root that nothing composes.
-    expect(resolveUsedBy(byName("DashboardPage"), SEED_COMPONENTS)).toEqual([]);
+    expect(resolveUsedBy(byName("DashboardPage"), LIB)).toEqual([]);
   });
 
   it("every role has a color token", () => {
@@ -56,25 +70,47 @@ describe("component model helpers (#2269)", () => {
   });
 
   it("seed ids are unique + lowercased from the name", () => {
-    const ids = SEED_COMPONENTS.map((c: ComponentRecord) => c.id);
+    const ids = LIB.map((c: ComponentRecord) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(byName("Button").id).toBe("button");
   });
 
-  it("the data-shape vocabulary is exactly the six canonical shapes (#2475)", () => {
-    expect(DATA_SHAPES).toEqual(["list", "linked-list", "tree", "graph", "table", "key-value"]);
+  it("the data-shape vocabulary is exactly the seven canonical shapes (#2475/#3517)", () => {
+    expect(DATA_SHAPES).toEqual(["list", "linked-list", "tree", "graph", "table", "key-value", "series"]);
     // `shapes` is an optional, typed axis on ComponentRecord — every stamped value is in-vocabulary.
-    for (const c of SEED_COMPONENTS) {
+    for (const c of LIB) {
       for (const s of c.shapes ?? []) {
         expect(DATA_SHAPES, `${c.name} stamps an in-vocabulary shape`).toContain(s as DataShape);
       }
     }
   });
 
+  it("the `series` shape names windowedTally's structural signature — an axis + aligned numeric series (#3517)", () => {
+    // No runtime value→shape classifier exists (component `shapes` are stamped, not derived from a
+    // value; schema→shape inference lives in Rust `bsc data shapes`). This documents the STRUCTURE
+    // `series` names: `windowedTally` emits `{ labels: string[], series: Record<name, number[]> }` —
+    // an ordered label axis plus one or more numeric value series, each ALIGNED to the axis (one entry
+    // per label). That is exactly `series`, and none of the other six describe it.
+    expect(DATA_SHAPES).toContain("series" as DataShape);
+    // A representative windowedTally-shaped value (2 aligned streams over a 3-day axis).
+    const value = { labels: ["7/1", "7/2", "7/3"], series: { opened: [2, 0, 5], merged: [1, 3, 4] } };
+    const isSeriesShaped = (v: { labels: unknown; series: Record<string, unknown> }) =>
+      Array.isArray(v.labels) &&
+      v.labels.every((l) => typeof l === "string") &&
+      Object.values(v.series).length >= 1 &&
+      Object.values(v.series).every(
+        (arr) => Array.isArray(arr) && arr.length === (v.labels as unknown[]).length && arr.every((n) => typeof n === "number"),
+      );
+    expect(isSeriesShaped(value), "labels axis + ≥1 aligned numeric series IS the `series` shape").toBe(true);
+    // The axis-less / misaligned negatives the signature must reject.
+    expect(isSeriesShaped({ labels: ["7/1", "7/2"], series: { a: [1] } })).toBe(false); // misaligned length
+    expect(isSeriesShaped({ labels: [], series: {} })).toBe(false); // no series at all
+  });
+
   it("every packaged kit carries the rail-hierarchy axes: tech (a lowercase slug) + style (#2487)", () => {
-    const byId = new Map(SEED_KITS.map((k) => [k.id, k]));
+    const byId = new Map(LIB_KITS.map((k) => [k.id, k]));
     expect(byId.get("react-ui")).toMatchObject({ tech: "react", style: "studio" });
-    for (const k of SEED_KITS) {
+    for (const k of LIB_KITS) {
       expect(k.tech, `${k.id} tech is a lowercase slug`).toMatch(/^[a-z][a-z0-9-]*$/);
       expect(k.style, `${k.id} carries a visual-language label`).toBeTruthy();
     }
@@ -290,5 +326,62 @@ describe("selectAnimationPreset (#3083)", () => {
     // Two ungrouped animations both play today; selecting one makes it the sole motion.
     const comp = mkComp({ animations: selectAnimationPreset([draw, fade], "fade-in") });
     expect(resolveComponentAnimations(comp, [mkKit({})]).map((d) => d.name)).toEqual(["fade-in"]);
+  });
+});
+
+describe("cross-kit base-motion resolution (#3451)", () => {
+  // The app's foundational motion is owned ONCE by the `base` kit; react-ui (and any other kit)
+  // REFERENCES it by name. Resolution therefore has to leave its own kit — the behaviour this covers.
+  const lift: KitAnimation = { name: "lift", trigger: "hover", keyframes: { from: { transform: "translateY(0)" }, to: { transform: "translateY(-1px)" } } };
+  const baseKit = mkKit({ id: BASE_KIT_ID, name: "Base", animations: [lift] });
+  const reactUi = mkKit({ id: "react-ui", animations: [] });
+
+  it("resolves a name the component's OWN kit does not define from the base kit", () => {
+    const btn = mkComp({ id: "btn", name: "Button", kitId: "react-ui", animations: ["lift"] });
+    const defs = resolveComponentAnimationDefs(btn, [reactUi, baseKit]);
+    expect(defs.map((d) => d.name)).toEqual(["lift"]);
+    expect(defs[0].keyframes).toEqual(lift.keyframes);
+  });
+
+  it("keeps the OWNING kit on a base-resolved def, so every consumer shares one keyframes block", () => {
+    // THE load-bearing assertion. `kit` names both `@keyframes bsc-<kit>-<name>` and the
+    // `.<kit>-anim-<name>` class the preview stamps. Restamping to the CONSUMER would duplicate the
+    // keyframes per kit and defeat propagation — and, if only one side were restamped, the class would
+    // not match the compiled rule and the animation would silently play nothing.
+    const btn = mkComp({ id: "btn", name: "Button", kitId: "react-ui", animations: ["lift"] });
+    expect(resolveComponentAnimationDefs(btn, [reactUi, baseKit])[0].kit).toBe(BASE_KIT_ID);
+  });
+
+  it("prefers a kit's OWN definition over the base one of the same name (override wins)", () => {
+    const ownLift: KitAnimation = { name: "lift", keyframes: { from: { opacity: "0" }, to: { opacity: "1" } } };
+    const overriding = mkKit({ id: "react-ui", animations: [ownLift] });
+    const btn = mkComp({ id: "btn", name: "Button", kitId: "react-ui", animations: ["lift"] });
+    const [def] = resolveComponentAnimationDefs(btn, [overriding, baseKit]);
+    expect(def.keyframes).toEqual(ownLift.keyframes);
+    expect(def.kit, "an own def stays namespaced to its own kit").toBe("react-ui");
+  });
+
+  it("drops a name defined by NEITHER the own kit nor base (no dangling ref)", () => {
+    const btn = mkComp({ id: "btn", name: "Button", kitId: "react-ui", animations: ["nope"] });
+    expect(resolveComponentAnimationDefs(btn, [reactUi, baseKit])).toEqual([]);
+  });
+
+  it("still stamps an INLINE def with the component's own kit (unchanged by the fallback)", () => {
+    const btn = mkComp({ id: "btn", name: "Button", kitId: "react-ui", animations: [fade] });
+    expect(resolveComponentAnimationDefs(btn, [reactUi, baseKit])[0].kit).toBe("react-ui");
+  });
+
+  it("resolves a base component's own animations without changing their kit", () => {
+    const dot = mkComp({ id: "dot", name: "Dot", kitId: BASE_KIT_ID, animations: ["lift"] });
+    expect(resolveComponentAnimationDefs(dot, [reactUi, baseKit])[0].kit).toBe(BASE_KIT_ID);
+  });
+
+  it("exposes the base shelf to a try-on from another kit (react-ui's own library is empty now)", () => {
+    // Without the base shelf, `resolveNamedAnimation` could not find a base motion the component does
+    // not already bind — so clicking it in the AnimationsMenu would preview nothing.
+    const btn = mkComp({ id: "btn", name: "Button", kitId: "react-ui", animations: [] });
+    const found = resolveNamedAnimation(btn, reactUi, [reactUi, baseKit], "lift");
+    expect(found?.name).toBe("lift");
+    expect(found?.kit).toBe(BASE_KIT_ID);
   });
 });

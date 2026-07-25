@@ -17,7 +17,7 @@ import type { Blueprint, BlueprintTeam } from "@/features/planner/stages/bluepri
 import type { SkillDef } from "@/features/skills/lib/skillsModel";
 import type { SkillGroup } from "@/features/skills/lib/skillGroups";
 import type { Lesson } from "@/features/skills/lib/lessons";
-import type { Kit, ComponentRecord, KitConsumer } from "@/features/designs";
+import type { Kit, ComponentRecord, KitConsumer, KitLibraryRef } from "@/features/designs";
 import type { KitThemeRecord } from "@/features/designs/lib/themes";
 import type { Automation, AutomationRun } from "@/features/automations/lib/scheduler";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
@@ -47,6 +47,15 @@ export interface GlancePayload {
    *  glance payload has no personas, so mobile defaulted every agent node to `worker`. This map lets
    *  mobile colour each stream's node by its real role. */
   personaRoles: Record<string, string>;
+  /** The remaining THREE `buildGlanceData` inputs (#3743), so mobile rebuilds the FULL cockpit — not just
+   *  the project network. Without these mobile fed `buildGlanceData` empty kit/library sets and lost the
+   *  UI-kit nodes (#2571) + the algorithm/sound library band (#3133). */
+  /** (project, kit) consumer edges — the `uses-kit` band. */
+  kitUsage: KitConsumer[];
+  /** The kits in use, pared to id + name (a kit node reads its name, else the id). */
+  kits: { id: string; name: string }[];
+  /** The kit→library `requires` roll-up (`resolveKitLibraryRefs`) — the algorithm/sound band. */
+  libraryRefs: KitLibraryRef[];
 }
 
 export function buildGlancePayload(input: {
@@ -58,6 +67,13 @@ export function buildGlancePayload(input: {
   fleets: Record<string, FleetPlan>;
   /** The persona library — only `id` + `role` are read (start prompts stay desktop-side). */
   personas: { id: string; role: string }[];
+  /** (project, kit) consumer edges — the same `kitUsage` the desktop feeds `buildGlanceData` (#3743).
+   *  Optional (defaults empty) so a caller without a kit dimension still builds a valid project-only graph. */
+  kitUsage?: KitConsumer[];
+  /** The kit library — only `id` + `name` are read for the wire (extra Kit fields stay desktop-side). */
+  kits?: Kit[];
+  /** The kit→library `requires` roll-up (`resolveKitLibraryRefs(components)`, #3133/#3743). */
+  libraryRefs?: KitLibraryRef[];
 }): GlancePayload {
   return {
     // Mirror the desktop HEALTH overlay (#2541): a project's worst open fault escalates its health to
@@ -73,6 +89,11 @@ export function buildGlancePayload(input: {
     fleets: input.fleets,
     drillFleet: input.drill ? input.fleets[input.drill] ?? null : null,
     personaRoles: Object.fromEntries(input.personas.map((p) => [p.id, p.role])),
+    // The kit + library bands (#3743): pass kitUsage/libraryRefs verbatim; pare kits to id+name so mobile's
+    // `buildGlanceData(projects, links, kitUsage, kits, libraryRefs)` renders every node the desktop does.
+    kitUsage: input.kitUsage ?? [],
+    kits: (input.kits ?? []).map((k) => ({ id: k.id, name: k.name })),
+    libraryRefs: input.libraryRefs ?? [],
   };
 }
 

@@ -28,7 +28,7 @@ import { RailRow } from "@/shared/ui/layouts/RailRow";
 import { SearchField } from "@/shared/ui/controls/SearchField";
 import { useGraphViewport } from "@/shared/ui/layouts/useGraphViewport";
 import { resolveKitLibraryRefs } from "@/features/designs";
-import { Fleet } from "@/features/planner/fleet/Fleet";
+import { FleetGraphHost } from "@/features/planner/fleet/FleetGraphHost";
 import { teamRoleStreams } from "@/features/planner/fleet/teamFleet";
 import { GlanceCanvas, GlanceOverlays } from "./GlanceCanvas";
 import { GlanceInspector } from "./GlanceInspector";
@@ -36,6 +36,7 @@ import { cellRect, placeByDirection, releaseCell, occupants, clampCell, DEFAULT_
 import { fleetPaneId, findPaneOwnerTab } from "@/app/console/lib/paneIdentity";
 import { resumeProjectFleet } from "./lib/resumeProject";
 import { buildGraph, focusSets, isLibraryNode, HEALTH_META, ROLE_COLOR } from "./lib/glanceGraph";
+import { timedSync } from "@/shared/lib/core/perf";
 import { buildGlanceData } from "./lib/glanceData";
 import { buildFleetData, buildRealFleetData, nodeHasLiveSession, livePanesForProject, withPreviewNode, PREVIEW_NODE_ID } from "./lib/glanceFleet";
 import { BASE_STUDIO_PROJECT, BASE_STUDIO_PROJECT_ID, buildStudioFleetData, studioPaneIdForNode, studioNodeHome, studioSessionLive, applyStudioLiveStatus } from "./lib/studioProject";
@@ -46,7 +47,7 @@ import { usePreviewReview } from "./usePreviewReview";
 import type { PreviewSource } from "@/shared/lib/preview/previewSource";
 import { useGlanceProjects, applyFaultHealth, applyOffHealth } from "./lib/useGlanceProjects";
 import { useGlanceFaults } from "./lib/useGlanceFaults";
-import { applyStallHealth, applyFleetLiveStatus } from "./lib/agentStall";
+import { applyStallHealth, applyFleetLiveStatus, liveWaits } from "./lib/agentStall";
 import { useCoordLog } from "@/shared/lib/fleet/useCoordLog";
 import { useProjectFleet } from "./lib/useProjectFleet";
 import "./glance.css";
@@ -67,6 +68,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // its debugger node.
   const teams = useAppStore((s) => s.teams);
   const debugSession = useAppStore((s) => s.debugSession);
+  // #3498: the auto-spawned request sessions, so each is a visible, openable node in this graph.
+  const activeDebugSlots = useAppStore((s) => s.activeDebugSlots);
   const setDebugSession = useAppStore((s) => s.setDebugSession);
   // The blueprint LIBRARY + the drilled project's blueprint id (#2572) — so the fleet drill can overlay
   // the project blueprint's authored TEAM relationships (an Org) onto the derived coordination.
@@ -101,7 +104,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   const findFleetTabIdx = useAppStore((s) => s.findFleetTabIdx);
   // Opening a base-studio-code studio node reveals its session on its own workspace page (#glance-resume);
   // `paneClaudeActive` tells us whether that stable-id session is already running.
-  const setProjectsPageMode = useAppStore((s) => s.setProjectsPageMode);
+  const navigate = useAppStore((s) => s.navigate);
   const paneClaudeActive = useAppStore((s) => s.paneClaudeActive);
   const projectLinks = useAppStore((s) => s.projectLinks);
   const removeProjectLink = useAppStore((s) => s.removeProjectLink);
@@ -138,18 +141,21 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
   // wait overstaying the threshold escalates its project to a warning. `now` ticks on the same slow
   // cadence (kept out of render — `Date.now()` is impure) so a threshold crossing surfaces without a
   // coord change.
-  const coord = useCoordLog({ ms: STALL_POLL_MS });
+  const coord = useCoordLog();
   const [now, setNow] = useState(0);
   usePoll(async (isCancelled) => { if (!isCancelled()) setNow(Date.now()); }, STALL_POLL_MS, []);
   // Overlay order: base (merge+liveness) → STALL (waiting/warn) → FAULT (error) → OFF (#3239) last, so a
   // real error beats a stall and both beat the resting state — but the user's manual OFF beats them all
   // ("if it's not idle then it should be off").
+  // A stall is only a stall while the agent is still THERE (#3429) — a wait parked by a since-dead session
+  // pinned its project orange forever, since nothing ever clears it and `now - w.at` only grows.
+  const liveWaiting = useMemo(() => liveWaits(coord.state.waiting, livePaneIds), [coord.state.waiting, livePaneIds]);
   const projects = useMemo(
     // The base-studio-code default project (#3319) is always present alongside the user's real projects —
     // the app's own studio sessions live under it; drilling it renders the Studio Network team. It's
     // appended AFTER the health overlays (incl. the manual OFF, #3239) so it stays always-on.
-    () => [...applyOffHealth(applyFaultHealth(applyStallHealth(projectsBase, coord.state.waiting, now), faults), glanceOff), BASE_STUDIO_PROJECT],
-    [projectsBase, coord.state.waiting, faults, now, glanceOff],
+    () => [...applyOffHealth(applyFaultHealth(applyStallHealth(projectsBase, liveWaiting, now), faults), glanceOff), BASE_STUDIO_PROJECT],
+    [projectsBase, liveWaiting, faults, now, glanceOff],
   );
   // L0 — the project-network graph (nodes = real projects + UI-kit nodes #2571 + the algorithm/sound
   // library nodes their kits require #3133, edges = the user-drawn relationships #2253 + one kit→project
@@ -158,7 +164,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     () => buildGlanceData(projects, projectLinks, kitUsage, kits, libraryRefs),
     [projects, projectLinks, kitUsage, kits, libraryRefs],
   );
-  const projectModel = useMemo(() => buildGraph(projectData.rawNodes, projectData.rawEdges), [projectData]);
+  const projectModel = useMemo(() => timedSync("buildGraph:glance-project", () => buildGraph(projectData.rawNodes, projectData.rawEdges)), [projectData]);
 
   const { tabs, activeId, select, reorder, tearOff } = usePageTabs("glance", GLANCE_TABS);
   const page = pageOverride ?? activeId;
@@ -239,7 +245,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
     if (!drillNode) return null;
     // The synthetic base-studio-code project (#3319) drills into the app's OWN studio-session graph — the
     // Studio Network team, with the debugger node gated by the Settings toggle (#3317). No plan.db fleet.
-    if (drillNode.id === BASE_STUDIO_PROJECT_ID) return buildStudioFleetData(teams, personas, debugSession);
+    if (drillNode.id === BASE_STUDIO_PROJECT_ID) return buildStudioFleetData(teams, personas, debugSession, activeDebugSlots);
     // Team-driven fleet (#3101/#3103): fold the team's ROLE-ACTOR streams (curator/documentor/…) into
     // the drilled graph so what SHOWS matches what LAUNCHES — the same `teamRoleStreams` the launch
     // composes (`usePlanPublish`). A team position for a seedable role becomes a node even before the
@@ -251,7 +257,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       : buildFleetData({ id: drillNode.id, name: drillNode.slug });
     // Add the preview node when the project has finished building (idempotent, no-op while building).
     return withPreviewNode(base, drillComplete);
-  }, [drillNode, effectiveFleet, personas, drillTeam, drillComplete, teams, debugSession]);
+  }, [drillNode, effectiveFleet, personas, drillTeam, drillComplete, teams, debugSession, activeDebugSlots]);
   // Overlay the LIVE session state onto the drilled fleet's agent nodes (#3252) — the L1 twin of the L0
   // stall/fault overlays: an agent lifts off its planned idle to building/waiting/warning per its session.
   // Applied to rawNodes BEFORE buildGraph so the rollup + inherited-health recompute over the live values.
@@ -271,7 +277,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         : fleetData,
     [fleetData, drill, livePaneIds, paneStatus, coord.state.waiting, now, debugSession, paneClaudeActive],
   );
-  const fleetModel = useMemo(() => (liveFleetData ? buildGraph(liveFleetData.rawNodes, liveFleetData.rawEdges) : null), [liveFleetData]);
+  const fleetModel = useMemo(() => (liveFleetData ? timedSync("buildGraph:glance-fleet", () => buildGraph(liveFleetData.rawNodes, liveFleetData.rawEdges)) : null), [liveFleetData]);
   // The ACTIVE graph — the drilled fleet (with live status), else the project network. Everything downstream
   // (canvas, sidebar, focus, cycles, viewport) reads these, so the whole page swaps its graph on drill.
   const data = liveFleetData ?? projectData;
@@ -465,7 +471,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       const home = studioNodeHome(nodeId);
       if (!home) return;                                   // a library/resource node — no session to open
       if (home.kind === "morph") openChat(nodeId);
-      else { setWorkspace("projects"); setProjectsPageMode(home.pageMode); }
+      else navigate({ workspace: "projects", page: home.pageMode });
       return;
     }
     if (!canResume) return;
@@ -568,12 +574,13 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
       pageOverride={pageOverride}
       className="glance-workspace"
     >
-      {page === "fleet" ? <Fleet /> : (
+      {page === "fleet" ? <FleetGraphHost /> : (
       // The graph must FILL the screen body (a pan/zoom canvas, not scrolling content); the shared
       // .screen-body is a block scroll container, so give it an explicit full-height flex column.
       <Box style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
       <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
     <GraphCanvas
+      profileId="glance"
       vp={vp}
       world={{ w: model.worldW || 1600, h: model.worldH || 900 }}
       canvasBackground="radial-gradient(120% 120% at 30% 0%, var(--bg-elev) 0%, var(--bg) 100%)"
@@ -589,8 +596,8 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
         <>
           {/* The 'glance' wordmark + 'project network' subtitle were redundant chrome — the Rail already
               names the workspace and the graph IS the project network — so dropped (#2692). The L1 drill
-              breadcrumb (which project's fleet you're in) stays; the '← projects' button exits it. */}
-          {drill && <Text as="span" mono size={11} tone="dim">{`${drillNode?.slug ?? "project"} · fleet`}</Text>}
+              breadcrumb went the same way: the titlebar crumb already names the drilled project, so the
+              toolbar keeps only the '← projects' button that exits the drill. */}
           {drill && <Button variant="ghost" onClick={exitDrill}>← projects</Button>}
           {/* The project filter moved into the rail's search slot (#2797) — every graph nav menu now leads
               with a search box. Manual connect-mode was removed (#2737): links are LLM-authored, not drawn
@@ -598,9 +605,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           <Box style={{ flex: 1 }} />
           {drill
             ? (data.sample
-                ? <Chip color="var(--warn, #f2b155)">sample fleet · no plan.db fleet</Chip>
-                : <Chip color="#4fd6a0">real fleet · {model.nodes.length} agents</Chip>)
-            : (data.sample && <Chip color="var(--warn, #f2b155)">sample topology · preview</Chip>)}
+                ? <Chip color="var(--graph-health-warning)">sample fleet · no plan.db fleet</Chip>
+                : <Chip color="var(--graph-health-healthy)">real fleet · {model.nodes.length} agents</Chip>)
+            : (data.sample && <Chip color="var(--graph-health-warning)">sample topology · preview</Chip>)}
           {/* Project-level bulk kill (#3052): end EVERY live session for the drilled project at once —
               the fast recovery when a whole fleet is soft-locked. Shown only when it has live sessions. */}
           {drill && liveProjectPanes.length > 0 && (
@@ -623,7 +630,7 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
               style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", borderRadius: 7, padding: "6px 11px",
                 background: showCycle ? "rgba(242,85,95,.18)" : "rgba(242,85,95,.08)", border: `1px solid ${showCycle ? "rgba(242,85,95,.55)" : "rgba(242,85,95,.3)"}` }}>
               <Text as="span" style={{ color: "var(--graph-health-error)" }}>▲</Text>
-              <Text as="span" mono size={11} weight={600} style={{ color: "#f2848b" }}>{model.cyclePairs.length} cycle</Text>
+              <Text as="span" mono size={11} weight={600} style={{ color: "var(--cycle)" }}>{model.cyclePairs.length} cycle</Text>
             </Box>
           )}
           <ZoomControls vp={vp} step={1.2} />
@@ -641,12 +648,12 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
             <Box style={{ borderTop: "1px solid var(--border)", padding: "12px 16px" }}>
               <Row gap={7} align="center" style={{ marginBottom: 9 }}>
                 <Text as="span" style={{ color: "var(--graph-health-error)" }}>▲</Text>
-                <Text as="span" mono size={11} style={{ letterSpacing: "1px", color: "#f2848b" }}>COORDINATION HAZARDS</Text>
+                <Text as="span" mono size={11} style={{ letterSpacing: "1px", color: "var(--cycle)" }}>COORDINATION HAZARDS</Text>
               </Row>
               {model.cyclePairs.map(([a, b]) => (
                 <Box key={a + b} onClick={() => { setShowCycle(true); setSel(null); }}
                   style={{ background: "rgba(242,85,95,.08)", border: "1px solid rgba(242,85,95,.28)", borderRadius: 7, padding: "9px 11px", cursor: "pointer", marginBottom: 6 }}>
-                  <Text as="div" mono size={11} style={{ color: "#f3a4a9", marginBottom: 3 }}>dependency cycle</Text>
+                  <Text as="div" mono size={11} style={{ color: "var(--cycle-soft)", marginBottom: 3 }}>dependency cycle</Text>
                   <Text as="div" mono size={11.5}>{model.nodes.find((n) => n.id === a)?.slug} ⇄ {model.nodes.find((n) => n.id === b)?.slug}</Text>
                 </Box>
               ))}

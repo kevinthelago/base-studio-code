@@ -95,68 +95,88 @@ describe("ringCells (#3367)", () => {
   });
 });
 
-// ── The #3367 behaviour: a node's morph opens on the side its NODE sits ─────────────────────────────
-describe("placeByDirection (#3367 — direction relative to the anchor node)", () => {
+// ── #3525: placement is UNIFORMITY-first (a tidy tile block), DIRECTION second (the block leans toward
+//    the side its nodes sit). Replaces the direction-first #3367 contract, which left sparse strips. ──
+/** The bounding box of a set of cells + how many of its cells are empty. */
+const blockShape = (ps: MorphPlacement[]) => {
+  const cols = ps.map((p) => p.col), rows = ps.map((p) => p.row);
+  const w = Math.max(...cols) - Math.min(...cols) + 1;
+  const h = Math.max(...rows) - Math.min(...rows) + 1;
+  return { w, h, maxDim: Math.max(w, h), holes: w * h - ps.length };
+};
+/** The mean cell of the block — used to assert which SIDE of the anchor the block leans to. */
+const centroid = (ps: MorphPlacement[]) => ({
+  col: ps.reduce((a, p) => a + p.col, 0) / ps.length,
+  row: ps.reduce((a, p) => a + p.row, 0) / ps.length,
+});
+
+describe("placeByDirection (#3525 — uniformity first, direction second)", () => {
   it("the first opened node anchors the grid at (0,0)", () => {
     expect(rooted()).toEqual([{ nodeId: "root", col: 0, row: 0 }]);
   });
 
-  it("a node to the LEFT of the anchor opens to the LEFT — the reported bug", () => {
-    const ps = place(rooted(), "west", -900, 0);
-    expect(cellOf(ps, "west")).toEqual({ col: -1, row: 0 });
-  });
-
-  it("maps each of the four cardinal directions to its own side", () => {
+  it("a SECOND node opens adjacent to the anchor on its side — a tight 2×1, never a diagonal", () => {
+    // Two nodes: the most uniform block is a 2×1 with no holes; direction picks WHICH side.
     expect(cellOf(place(rooted(), "n", 0, -900), "n")).toEqual({ col: 0, row: -1 });
     expect(cellOf(place(rooted(), "s", 0, 900), "s")).toEqual({ col: 0, row: 1 });
     expect(cellOf(place(rooted(), "e", 900, 0), "e")).toEqual({ col: 1, row: 0 });
     expect(cellOf(place(rooted(), "w", -900, 0), "w")).toEqual({ col: -1, row: 0 });
   });
 
-  it("maps the four diagonals to diagonal cells", () => {
-    expect(cellOf(place(rooted(), "ne", 700, -700), "ne")).toEqual({ col: 1, row: -1 });
-    expect(cellOf(place(rooted(), "nw", -700, -700), "nw")).toEqual({ col: -1, row: -1 });
-    expect(cellOf(place(rooted(), "se", 700, 700), "se")).toEqual({ col: 1, row: 1 });
-    expect(cellOf(place(rooted(), "sw", -700, 700), "sw")).toEqual({ col: -1, row: 1 });
+  it("a DIAGONALLY-placed node still opens to an ADJACENT cell — a 2×1 beats a hole-y 2×2 (#3525)", () => {
+    // Under direction-first (#3367) a NE node took the diagonal (1,-1), leaving a 2×2 with two gaps.
+    // Uniformity-first prefers a gap-free 2×1: the block is adjacent, and stays on the node's side.
+    for (const [dx, dy] of [[700, -700], [-700, -700], [700, 700], [-700, 700]] as const) {
+      const ps = place(rooted(), "d", dx, dy);
+      expect(blockShape(ps)).toMatchObject({ maxDim: 2, holes: 0 }); // adjacent, no diagonal gap
+    }
   });
 
-  it("uses DIRECTION, not distance — a node just barely left still opens left", () => {
-    // Node offsets are small next to a 760-wide cell; placement must not quantise the raw delta.
-    expect(cellOf(place(rooted(), "near", -12, 0), "near")).toEqual({ col: -1, row: 0 });
+  it("collapses N opened nodes into a tight SQUARE — 4 → an exact 2×2, 9 → an exact 3×3", () => {
+    // The heart of #3525: a filled square with NO holes, not a strip or a scatter.
+    let four = rooted();
+    for (const [id, dx, dy] of [["e", 900, 0], ["w", -900, 0], ["s", 0, 900]] as const) four = place(four, id, dx, dy);
+    expect(blockShape(four)).toEqual({ w: 2, h: 2, maxDim: 2, holes: 0 });
+
+    let nine = rooted();
+    const dirs: [string, number, number][] = [
+      ["e", 900, 0], ["w", -900, 0], ["n", 0, -900], ["s", 0, 900],
+      ["ne", 700, -700], ["nw", -700, -700], ["se", 700, 700], ["sw", -700, 700],
+    ];
+    for (const [id, dx, dy] of dirs) nine = place(nine, id, dx, dy);
+    expect(blockShape(nine)).toEqual({ w: 3, h: 3, maxDim: 3, holes: 0 });
   });
 
-  it("keeps two nodes on the SAME side on that side — the second takes a neighbouring cell, never the opposite", () => {
+  it("never leaves an interior gap while the block is still growing", () => {
+    // 'checks for a pattern before filling its slot': at every step the block is as dense as possible,
+    // so holes (if any) are only the unfilled tail of the last row — always fewer than a full side.
     let ps = rooted();
-    ps = place(ps, "west1", -900, -20);
-    ps = place(ps, "west2", -900, 20);
-    expect(cellOf(ps, "west1").col).toBe(-1);
-    expect(cellOf(ps, "west2").col).toBe(-1);            // still on the LEFT
-    expect(cellOf(ps, "west2")).not.toEqual(cellOf(ps, "west1"));
+    for (let i = 1; i <= 12; i++) {
+      ps = place(ps, `x${i}`, ((i % 3) - 1) * 900, (Math.floor(i / 3) - 2) * 900);
+      const { maxDim, holes } = blockShape(ps);
+      expect(holes).toBeLessThan(maxDim); // at most a partial last row/col, never an interior void
+    }
   });
 
-  it("spills FURTHER LEFT rather than into a near cell on the wrong side, once the left ring-1 cells fill", () => {
-    let ps = rooted();
-    ps = place(ps, "w1", -900, 0);      // (-1, 0)
-    ps = place(ps, "w2", -900, -20);    // (-1,-1)
-    ps = place(ps, "w3", -900, 20);     // (-1, 1)
-    ps = place(ps, "w4", -900, 5);      // left ring-1 is full
-    // The near-but-wrong option is (0,1) — one cell BELOW the anchor, on no particular side. A
-    // first-free-ring search took it; the distance-penalised global score correctly prefers (-2,0),
-    // which is further away but still unambiguously LEFT.
-    expect(cellOf(ps, "w4")).toEqual({ col: -2, row: 0 });
-    for (const id of ["w1", "w2", "w3", "w4"]) expect(cellOf(ps, id).col).toBeLessThan(0);
-  });
-
-  it("NEVER lands a node on the opposite side of the anchor from where its node sits", () => {
-    // The invariant behind the whole issue: whatever else placement does, the sign of the dominant axis
-    // must never flip. Ten left-hand nodes stay left; ten upper nodes stay up.
+  it("the block LEANS toward the side its nodes sit on — direction survives as the tiebreak", () => {
+    // Individual cells may sit in the anchor's column when that completes the square, but the block's
+    // centre of mass is unambiguously on the nodes' side. (Direction-first kept every cell strictly
+    // sided; #3525 trades that for a uniform block that still points the right way.)
     let west = rooted();
-    for (let i = 0; i < 10; i++) west = place(west, `w${i}`, -900, (i - 5) * 30);
-    for (const p of west) if (p.nodeId !== "root") expect(p.col).toBeLessThan(0);
+    for (let i = 0; i < 6; i++) west = place(west, `w${i}`, -900, (i - 3) * 30);
+    expect(centroid(west).col).toBeLessThan(0);
 
     let north = rooted();
-    for (let i = 0; i < 10; i++) north = place(north, `n${i}`, (i - 5) * 30, -900);
-    for (const p of north) if (p.nodeId !== "root") expect(p.row).toBeLessThan(0);
+    for (let i = 0; i < 6; i++) north = place(north, `n${i}`, (i - 3) * 30, -900);
+    expect(centroid(north).row).toBeLessThan(0);
+  });
+
+  it("breaks a uniformity tie by direction — two equally-compact cells go to the matching side", () => {
+    // After the anchor, a west and an east node are each a valid 2×1; direction sends them opposite ways.
+    const w = cellOf(place(rooted(), "w", -900, 0), "w");
+    const e = cellOf(place(rooted(), "e", 900, 0), "e");
+    expect(w.col).toBeLessThan(0);
+    expect(e.col).toBeGreaterThan(0);
   });
 
   it("never places two morphs in the same cell", () => {
@@ -187,12 +207,17 @@ describe("placeByDirection (#3367 — direction relative to the anchor node)", (
     expect(ps.filter((p) => p.nodeId === "west")).toHaveLength(1);
   });
 
-  it("does not steal the freed CENTRE for a node that clearly belongs to one side", () => {
+  it("fills a freed CENTRE to keep the block compact (#3525 — uniformity beats keeping (0,0) reserved)", () => {
+    // Under direction-first (#3367) the freed anchor cell was left empty so a directional node wouldn't
+    // 'steal' it. Uniformity-first fills it: leaving a hole in the middle of the block is exactly the
+    // sparseness this change removes. The two morphs end up a gap-free 2×1.
     let ps = rooted();
-    ps = place(ps, "west", -900, 0);
+    ps = place(ps, "west", -900, 0);                     // (-1,0)
     ps = releaseCell(ps, "root");                        // the anchor's own morph closed; (0,0) is free
     ps = place(ps, "east", 900, 0);
-    expect(cellOf(ps, "east")).toEqual({ col: 1, row: 0 });
+    const open = ps.filter((p) => p.nodeId !== "root");
+    expect(blockShape(open)).toMatchObject({ maxDim: 2, holes: 0 });
+    expect(open.some((p) => p.col === 0 && p.row === 0)).toBe(true); // the gap got filled
   });
 
   it("but the ANCHOR node itself (zero delta) takes the centre back when it re-opens", () => {

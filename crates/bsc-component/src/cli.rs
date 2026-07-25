@@ -23,11 +23,11 @@ use std::io::Read;
 const TAGLINE: &str = "the component library — proven components in technology-scoped kits (#2281)";
 const KIT_TAGLINE: &str = "the component library's kits — technology-scoped component namespaces (#2281)";
 
-/// The data-shape vocabulary (#2475) — the six canonical shapes a feature's data can take, each with
-/// the one-line description `bsc ui shapes` prints. A component's optional `shapes` JSON field stamps
-/// the shapes it is an IDEAL rendering for; the CLI computes the index from those fields verbatim
-/// (no Rust schema — the store stays verbatim JSON). Mirrors `DataShape` in
-/// `src/features/components/lib/model.ts`.
+/// The data-shape vocabulary (#2475 + `series` #3517) — the seven canonical shapes a feature's data
+/// can take, each with the one-line description `bsc ui shapes` prints. A component's optional `shapes`
+/// JSON field stamps the shapes it is an IDEAL rendering for; the CLI computes the index from those
+/// fields verbatim (no Rust schema — the store stays verbatim JSON). Mirrors `DataShape` in
+/// `src/features/designs/lib/model.ts`.
 const DATA_SHAPES: &[(&str, &str)] = &[
     ("list", "a flat, ordered collection of homogeneous items"),
     ("linked-list", "a sequence whose items chain by explicit next/prev links"),
@@ -35,6 +35,7 @@ const DATA_SHAPES: &[(&str, &str)] = &[
     ("graph", "nodes joined by arbitrary edges (many-to-many)"),
     ("table", "homogeneous records with fixed, aligned columns"),
     ("key-value", "one record's named fields — a label → value map"),
+    ("series", "an ordered axis + one or more aligned numeric value series — a time-series (LineArea · Bars · Spark)"),
 ];
 
 const COMPONENT_COMMANDS: &[CmdDoc] = &[
@@ -47,7 +48,7 @@ USAGE:
 
 Prints every component's { id, name, kitId, role, group, shapes } as JSON (compact; --pretty for indented).
 --shape filters to the components whose `shapes` field stamps <shape> — the kit's IDEAL renderings
-for that data shape (#2475; one of list · linked-list · tree · graph · table · key-value — see
+for that data shape (#2475/#3517; one of list · linked-list · tree · graph · table · key-value · series — see
 `bsc ui shapes`). --full emits the COMPLETE component objects (variants + props + composes + guidance
 + source + …) as a plain array — the full-fidelity read the desktop library hydration needs.
 --raw (#3166) drops the JSON entirely and prints ONE id per line, raw UTF-8, LF-only — byte-clean for
@@ -60,7 +61,7 @@ for that data shape (#2475; one of list · linked-list · tree · graph · table
 USAGE:
   bsc ui shapes [<shape>] [--pretty]
 
-Prints the six-shape data vocabulary — list · linked-list · tree · graph · table · key-value — as a
+Prints the seven-shape data vocabulary — list · linked-list · tree · graph · table · key-value · series — as a
 JSON array of { shape, desc, components }, where components are the stored components whose `shapes`
 field stamps that shape (the kit's IDEAL renderings for it, as lean {id, name, kitId, role, group, shapes}
 rows). With <shape>, prints just that shape's entry. An EMPTY components array means the kit has no
@@ -73,8 +74,8 @@ filter, `bsc ui list --shape <shape>`).",
         summary: "print one component (JSON, verbatim) or null — or ONE field with --field (#3162)",
         usage: "\
 USAGE:
-  bsc ui get <id> [--pretty] [--raw]
-  bsc ui get <id> --field <json-pointer> [--raw] [--pretty]
+  bsc ui get <id> [--pretty] [--raw] [--out <name>] [--kit <kitId>]
+  bsc ui get <id> --field <json-pointer> [--raw] [--pretty] [--out <name>] [--kit <kitId>]
 
 Prints the stored component JSON for <id> verbatim, or `null` if absent. --raw (#3166) writes the
 record as raw UTF-8 bytes, LF-only (CR-stripped), no locale layer — safe for `VALUE=$(bsc ui get <id>
@@ -82,30 +83,43 @@ record as raw UTF-8 bytes, LF-only (CR-stripped), no locale layer — safe for `
 (#3162), prints just the value at the RFC-6901 JSON pointer <json-pointer> (e.g. `/name`, `/props/0/req`,
 `/srcText`; a leading `/` is optional) — errors when the component OR the field is absent; --raw unwraps
 a string value (no quotes/escaping) via the SAME raw printer, so a shell `$(...)` capture is clean (a
-non-string value prints as compact JSON), and without --raw the value prints as JSON (--pretty indents).",
+non-string value prints as compact JSON), and without --raw the value prints as JSON (--pretty indents).
+
+--out <name> (#3713) writes the SAME bytes to a BARE-named file in the session's $BSC_SCRATCH dir instead
+of stdout, then prints that path. Use it to review a LARGE value (e.g. a big `srcText`) a restricted
+session would otherwise truncate on stdout — the scratch file is a confinement-allowed path, so Read/Grep
+open it in full. <name> must be bare (no '/', '\\', '..' or ':') and $BSC_SCRATCH must be set. With --out,
+a missing id/field ERRORS (there is nothing to write) rather than emitting an empty capture.
+
+--kit <kitId> (#3729) DISAMBIGUATES — the store is keyed by id ALONE, so there is exactly one record per
+id; this asserts WHICH kit it belongs to, erroring (naming the actual kit) on a mismatch. Note: writing a
+component whose id already lives under another kit OVERWRITES it — `bsc ui set` now warns about that.",
     },
     CmdDoc {
         name: "log",
-        summary: "a record's history stamp — rev / updatedAt / updatedBy (#3164)",
+        summary: "a record's change history — the current stamp + the per-write log (#3164/#3568)",
         usage: "\
 USAGE:
   bsc ui log <id> [--kit] [--dir D] [--pretty]
 
-Prints the record's provenance as JSON — { id, rev, updatedAt, updatedBy } — the optimistic-concurrency
-+ attribution metadata every write stamps (#3164). `rev` is the monotonically-increasing revision (a
-record never stamped, or a legacy one, reads as rev 0); `updatedAt` is the last write's ISO-8601 UTC
-timestamp; `updatedBy` is the writer tag (`bsc ui set --by <tag>` / $BSC_UI_WRITER, else \"unknown\").
+Prints the record's provenance AND its change history as JSON —
+{ id, rev, updatedAt, updatedBy, history: [ { rev, at, by, note?, changed } ] }. The top-level fields are
+the current stamp (#3164): `rev` is the monotonically-increasing revision (a record never stamped, or a
+legacy one, reads as rev 0); `updatedAt` is the last write's ISO-8601 UTC timestamp; `updatedBy` is the
+writer tag (`bsc ui set --by <tag>` / $BSC_UI_WRITER, else \"unknown\"). `history` (#3568) is the per-write
+log, NEWEST-FIRST, one entry per write: its `rev`, `at` (ISO-8601), `by` (the writer), an optional `note`
+(`bsc ui set --note <text>`), and `changed` (the top-level fields that moved, `[\"created\"]` on the first
+write). Capped to the most recent 30 writes. Review it before editing so you know what changed and why.
 --kit logs a KIT record instead of a component. Read-only. Use the `rev` to guard your next write:
-`bsc ui set --if-version <rev>` refuses to overwrite if the record has moved on. The store keeps only
-the current row, so this is the current stamp — not a full history table.",
+`bsc ui set --if-version <rev>` refuses to overwrite if the record has moved on.",
     },
     CmdDoc {
         name: "set",
         summary: "upsert from component JSON on stdin (stamps rev/updatedAt/updatedBy); prints id(s)",
         usage: "\
 USAGE:
-  bsc ui set [--by <tag>] [--if-version <n>] [--pretty]   # component JSON (one object or an array) on stdin
-  bsc ui set --file <name> [--by <tag>] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name>
+  bsc ui set [--by <tag>] [--note <text>] [--if-version <n>] [--pretty]   # component JSON (one object or an array) on stdin
+  bsc ui set --file <name> [--by <tag>] [--note <text>] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name>
 
 Upserts each component by its (required, non-empty) \"id\" field, written verbatim. Prints the id(s)
 written — how an agent (or the pane) authors/updates a component in the shared kit.
@@ -121,9 +135,10 @@ Every write STAMPS provenance (#3164): it auto-bumps the record's `rev` integer,
 stored) unless the record's CURRENT rev is exactly <n> — so a background rewrite can't silently clobber
 your edit. Read a record's current rev with `bsc ui log <id>`; --if-version takes a single record on stdin.
 
-An optional `group` field names the component's PURPOSE partition within the kit
-(`data-viz`/`pages`/`forms`) — orthogonal to `role` (the arch tier), organizational only (`composes`
-still resolves across the whole kit).",
+An optional `group` field is the component's FOLDER PATH within the kit — a nested, `/`-delimited path
+(`shared/ui/controls`, `features/github`) that organizes the kit like a completed project's folders
+(#3579). Orthogonal to `role` (the arch tier), organizational only (`composes` still resolves across the
+whole kit). `bsc ui regroup` re-derives it from `src` for the whole store; the harvest seeds it too.",
     },
     CmdDoc {
         name: "remove",
@@ -132,7 +147,101 @@ still resolves across the whole kit).",
 USAGE:
   bsc ui remove <id> [--pretty]
 
-Deletes the component keyed by <id>. A no-op (not an error) when it does not exist.",
+Deletes the component keyed by <id>. A no-op (not an error) when it does not exist. NOTE: a PACKAGED
+BUILTIN comes back on the next hydrate (the seed re-adds it) — use `suppress` to remove it permanently.",
+    },
+    CmdDoc {
+        name: "suppress",
+        summary: "PERMANENTLY remove a packaged builtin component — it won't re-seed (#3725)",
+        usage: "\
+USAGE:
+  bsc ui suppress <id> [--pretty]
+
+Writes a `{ id, suppressed: true }` TOMBSTONE for <id>, so the frontend seed-reconcile stops re-adding
+the packaged builtin (a plain `remove` re-seeds on the next hydrate). The library and the doctor both
+skip a tombstone. Use for a builtin you never want back; `unsuppress` restores it (re-seeds from source).
+A ui-scope MUTATION.",
+    },
+    CmdDoc {
+        name: "unsuppress",
+        summary: "remove a suppression tombstone so the builtin re-seeds (#3725)",
+        usage: "\
+USAGE:
+  bsc ui unsuppress <id> [--pretty]
+
+Removes the `{ id, suppressed: true }` tombstone written by `suppress`, so the next hydrate re-seeds the
+packaged builtin from its source. Errors if <id> is NOT a tombstone (use `remove` for a real component).
+A ui-scope MUTATION.",
+    },
+    CmdDoc {
+        name: "export",
+        summary: "dump every component to a folder tree — <dir>/<group>/<id>.json, lossless (#3606)",
+        usage: "\
+USAGE:
+  bsc ui export <dir> [--dir <store>] [--pretty]
+
+Writes each stored component VERBATIM to <dir>/<group>/<id>.json, nesting by its `group` folder path
+(#3579) so the tree mirrors a project's folders. The seed half of components-as-data: round-trips
+through `bsc ui import`. Files are written pretty (readable diffs); --pretty also indents the report.
+A READ — no `ui` write scope required. `--dir` overrides the STORE location, not the output <dir>.",
+    },
+    CmdDoc {
+        name: "import",
+        summary: "load a folder tree of component records into the store — the seed half (#3606)",
+        usage: "\
+USAGE:
+  bsc ui import <dir> [--dir <store>] [--pretty]
+
+Walks <dir> recursively for *.json and UPSERTS each into the store, keyed by the record's own `id`. A
+file that is a KIT BUNDLE ({\"components\":[…]}, e.g. react-ui.json) is exploded — every component in it
+is imported. A missing <dir> is empty, not an error. A ui-scope MUTATION. The load half that pairs
+with `bsc ui export`; boot-seeding imports the packaged `data/components/` tree the same way.",
+    },
+    CmdDoc {
+        name: "rename",
+        summary: "rename a component in place — sweeps every composes/rules reference (#3576)",
+        usage: "\
+USAGE:
+  bsc ui rename <id> <NewName> [--by <tag>] [--note <text>] [--dir D] [--pretty]
+
+Renames the component keyed by <id> to <NewName> in ONE operation. <id> is the STABLE store key (frozen at
+creation, never re-derived), so only the display/code NAME moves — nothing keyed by id (the store key, the
+change history #3164/#3568, tokens, the cross-graph URN) is disturbed.
+
+Because the composition graph is NAME-keyed, a rename rewrites, scoped to the component's OWN kit (kits
+never cross):
+  • the record's `name`, and the identifier in its `srcText` (+ `source` if present) — `export function
+    <Old>` and self-`<Old>` → `<New>`, matched on whole-identifier boundaries so `IconButton` /
+    `ButtonGroup` are never touched;
+  • every sibling's `composes[]` entry == <Old>, and every `rules[].use` == <Old>, → <New>.
+
+Every touched record gets a change-history entry (#3568); `--note` overrides the default
+\"renamed <Old> → <New>\" summary. Prints { id, from, to, kit, updated: [ids], referencesUpdated }.
+
+REFUSES when <NewName> is not a PascalCase identifier, equals the current name, or already names another
+component in the same kit (which would make `composes` ambiguous). A ui-scope MUTATION.",
+    },
+    CmdDoc {
+        name: "merge",
+        summary: "combine a duplicate INTO a survivor — repoints every reference, then removes it (#3592)",
+        usage: "\
+USAGE:
+  bsc ui merge <from-id> <into-id> [--by <tag>] [--note <text>] [--dir D] [--pretty]
+
+Folds the component `<from-id>` INTO `<into-id>` (the survivor) in ONE operation — the ACT step that closes
+the `dupes`/`similar` loop (which only PROPOSE). `<into>` stays authoritative (its own name, srcText,
+props); `<from>` is removed and everything that referenced it now references `<into>`. Scoped to the kit —
+`composes` is name-keyed and kits never cross, so a cross-kit merge is refused.
+
+Repoints, across the survivor's kit:
+  • every component's `composes[]` entry == <from>'s name → <into>'s name (deduped; a self-reference the
+    fold would create — e.g. <into> composed <from> — is dropped, never a component composing itself);
+  • every `rules[].use` == <from>'s name → <into>'s name.
+Then DELETES the `<from>` record. Every repointed record gets a change-history entry (#3568); `--note`
+overrides the default \"merged <from> → <into>\" summary. Prints { from, into, kit, repointed: [ids], removed }.
+
+Pair with `bsc ui used-by`: merge the LESS-used component into the more-used one. REFUSES when either id is
+absent, they are the same, or they live in different kits. A ui-scope MUTATION.",
     },
     CmdDoc {
         name: "kit",
@@ -183,8 +292,15 @@ planning (a project seeded from a kit-bearing blueprint uses that kit).",
         usage: "\
 USAGE:
   bsc ui doctor [--kit K] [--json] [--pretty]     # the health report (read-only)
+  bsc ui doctor --sound-kit id@version [--json]   # judge @bsc/sounds/… against a PINNED sound kit (#3412)
   bsc ui doctor --motion [--kit K] [--json]       # ALSO run the four mechanical MOTION checks (#3163)
   bsc ui doctor --fix [--kit K] [--yes]           # OPTIMIZE: merge byte-identical dups + prune dead roots (dry-run unless --yes)
+
+--sound-kit (#3412) names the project's PINNED sound kit (its blueprint's `soundKit`, as `id@version` in the
+`bsc sound release` store), so a `@bsc/sounds/<cue>` reference is judged against the kit the project actually
+adopted — the same target the Design Studio's preview resolves. Omit it for an unpinned project and the
+packaged default kit is used. A ref the store does not hold is a hard ERROR, never a quiet fall back to the
+default: a pinned project reported against the starter kit would call broken sound references clean.
 
 --motion (#3163) ADDS four mechanical animation checks to the report: MOTION-DEAD-SELECTOR (an animation
 `selector` whose class hook the component's source never renders — it matches nothing), MOTION-DASH-NO-
@@ -205,10 +321,71 @@ kit; --json emits the findings array (LLM-consumable).
 
 --fix is the mechanical, SAFE OPTIMIZE (#3089): (1) MERGE byte-identical-source duplicates — fold each
 group into the most-`used` canonical and repoint composers to it (lossless; only byte-identical, never a
-same-`wraps` dup), then (2) PRUNE the safe dead roots — the ROOT of each orphan/dangling-branch finding
+same-`wraps` dup), then (2) PRUNE the GUARDED dead roots — the ROOT of each orphan/dangling-branch finding
 (never a used > 0 node). DRY RUN by default (prints what WOULD change); pass --yes to apply. Cycles and
 same-`wraps` (differing-source) duplicates are NOT auto-resolved — they need a semantic call. Branch
-descendants are left for the next pass (one might be shared) — re-run to clean them. #2678/#2679/#3089.",
+descendants are left for the next pass (one might be shared) — re-run to clean them.
+
+The PRUNE GUARDS (#3087) — the dead-root heuristic is a good REPORT and a dangerous auto-DELETE, so three
+classes of candidate are named, then held back: a `page` (a page is a root BY DEFINITION — nothing composes
+a page, so the heuristic condemns the whole pages tier), a `builtin: true` packaged seed (shipped on
+purpose; the seed reconcile re-adds it), and EVERY candidate while the usage index is unpopulated (no
+component in scope carries used > 0, so `used = 0` means UNKNOWN, not unused). A held-back candidate is
+still REPORTED by `bsc ui doctor` — only the automatic removal is withheld. #2678/#2679/#3089/#3087.",
+    },
+    CmdDoc {
+        name: "dupes",
+        summary: "the whole-library duplicate report — exact + fuzzy NEAR-duplicates (name + contract distance), propose-only (#3544)",
+        usage: "\
+USAGE:
+  bsc ui dupes [--kit K] [--threshold 0..1] [--json] [--pretty]
+
+The DEDUP surface. Reports the EXACT `duplicate` findings the per-kit analyzer emits (two components sharing
+a `wraps` intrinsic, or byte-identical source) PLUS the FUZZY near-duplicates it structurally misses —
+`Donut`≈`DonutChart`, `Bars`≈`BarChart`, `Legend`≈`ChartLegend`, and cross-kit `Card`/`Grid`/`KeyValueList`
+repeats a growing multi-kit library accumulates. Each near-duplicate is scored by NAME distance (normalized
+token-set + edit distance; `Chart`/`View`/`Bsc` affixes stripped, names singularized) and CONTRACT/body
+distance (prop-signature / variant / `composes` Jaccard + a source k-gram shingle overlap), combined
+0.5·name + 0.5·contract. Cross-kit by design — the whole point is consolidating overlapping kits into one.
+
+--threshold tunes the fuzzy bar (default 0.55); --kit scopes to ONE kit (which drops cross-kit near-dups);
+--json emits the findings array (LLM-consumable), each `{ category, severity, kit, nodeIds, nodeNames, why,
+suggestedAction }`. PROPOSE-ONLY: there is no `--fix` here — a near-duplicate is a WEAKER signal than a
+byte-identical dup and the merge is a semantic call, so use these proposals to guide a manual/designer merge.
+Inspect one component's neighborhood with `bsc ui similar <id>`. #3544.",
+    },
+    CmdDoc {
+        name: "similar",
+        summary: "components most similar to <id> across the whole library (name + contract distance) — discover-before-authoring (#3544)",
+        usage: "\
+USAGE:
+  bsc ui similar <id> [--top N] [--threshold 0..1] [--json] [--pretty]
+
+Ranks every OTHER component by its similarity to <id> (the same name + contract distance `bsc ui dupes`
+uses), most-similar first. The discover-before-authoring read: BEFORE a session authors a new component it
+asks whether one like it already exists, so the library converges instead of sprouting a fourth `Card`.
+Cross-kit. --top caps the rows (default 10); --threshold sets a minimum overall score (default 0 — the
+internal name gate already drops unrelated names). --json emits `[{ id, name, kit, score, name_similarity,
+contract_similarity, usedBy }]` — `usedBy` is the candidate's graph-usage (#3584), so a combine proposal
+carries which side is load-bearing. PROPOSE-ONLY — reads only. #3544.",
+    },
+    CmdDoc {
+        name: "used-by",
+        summary: "a component's REAL graph usage — how many kit components compose it (composes-inverse, #3584)",
+        usage: "\
+USAGE:
+  bsc ui used-by <id> [--json] [--pretty]           # one component: its composers + count
+  bsc ui used-by --all [--kit K] [--json] [--pretty] # every component, ranked by usage (most-used first)
+
+The USAGE read the optimizer needs before combining. `usedBy` = how many components in the SAME kit list
+this one in `composes` (kits never cross, so a composer must share the kit) — the composes-INVERSE. Unlike
+the `used` field (a codebase-usage placeholder that is unpopulated for real components), this is computed
+live from the graph, is never a placeholder, and is the right signal for optimizing THIS graph: a primitive
+composed by 9 is load-bearing; one at 0 is an orphan candidate. Pair it with `bsc ui similar` / `dupes`: find
+overlap, then fold the LESS-used component into the more-used one.
+
+<id> form prints { id, name, kit, usedBy: [composer names], count }. --all prints every component as
+{ id, name, kit, count }, most-used first (--kit scopes to one kit). A READ — never scope-gated.",
     },
     CmdDoc {
         name: "define-animation",
@@ -287,6 +464,21 @@ the `bsc ui set` JSX syntax gate (#2928). Errors when the component or the point
 ui-scope MUTATION (#2470).",
     },
     CmdDoc {
+        name: "regroup",
+        summary: "re-derive every component's `group` as a folder path from its `src` (#3579)",
+        usage: "\
+USAGE:
+  bsc ui regroup [--kit <id>] [--dry-run] [--pretty]
+
+Re-derives each stored component's `group` as a nested, `/`-delimited FOLDER PATH from its `src`
+(`src/shared/ui/controls/Button.tsx` → `shared/ui/controls`; a leading `src/` root is stripped, the
+filename dropped), so a kit organizes like a completed project's folders instead of ad-hoc flat buckets.
+Rewrites ONLY the records whose derived group differs — each write is stamped + logged (`bsc ui log`) —
+and leaves a component with no usable `src` untouched. --kit scopes the pass to one kit; --dry-run
+reports the moves without writing. Prints { scanned, changed: [{ id, from, to }], applied }. A ui-scope
+MUTATION (#2470).",
+    },
+    CmdDoc {
         name: "preview-props",
         summary: "the schema-derived sample props the live preview passes a component, per state (#3165)",
         usage: "\
@@ -320,13 +512,18 @@ record when a preview throws), so a preview runtime failure is observable from a
         summary: "record a preview runtime error — the frontend's durable append path (#3165)",
         usage: "\
 USAGE:
-  bsc ui preview-error <id>   # the error message / stack trace on stdin
+  bsc ui preview-error <id>         # the error message / stack trace on stdin
+  bsc ui preview-error clear <id>   # clear a STALE error (#3737)
 
 Appends one { at, id, message } record (message read from stdin) to the preview-error log
 (~/.base-studio-code/preview-errors.log, or $BSC_PREVIEW_ERROR_LOG), capped to the most recent 200. The
 Design Studio's live preview calls this when the sandboxed iframe posts `{__preview:\"error\"}`, so the
 throw becomes durable + tail-able via `bsc ui preview-errors`. A diagnostic append (not a store
-mutation), so it is not ui-scope gated. Prints the recorded id.",
+mutation), so it is not ui-scope gated. Prints the recorded id.
+
+`clear <id>` (#3737) drops the current error for <id> — for when the recorded throw no longer reflects the
+component's source (editing it via `set`/`set-src`/`patch` now clears automatically; this is the manual
+lever). A no-op when the id has no current error.",
     },
 ];
 
@@ -350,12 +547,22 @@ UTF-8, LF-only — byte-clean for `while read id` / `$( )`.",
     CmdDoc {
         name: "set",
         summary: "upsert from kit JSON on stdin (stamps rev/updatedAt/updatedBy); prints id(s)",
-        usage: "USAGE:\n  bsc ui kit set [--by <tag>] [--if-version <n>] [--pretty]   # kit JSON (object or array) on stdin\n  bsc ui kit set --file <name> [--by <tag>] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name> (#3373)\n\nUpserts each kit by its \"id\", written verbatim. Fields: { id, name, tech, style, stack?, dot } — tech + style place the kit in the rail (omit either ⇒ it shows as \"other/other\"); stack is a display label only. Every write stamps provenance (#3164): auto-bump `rev`, set `updatedAt` (ISO-8601 UTC) + `updatedBy` (--by / $BSC_UI_WRITER / \"unknown\"). --if-version <n> rejects the write unless the kit's current rev is <n> (`bsc ui log <id> --kit` reads it).",
+        usage: "USAGE:\n  bsc ui kit set [--by <tag>] [--note <text>] [--if-version <n>] [--pretty]   # kit JSON (object or array) on stdin\n  bsc ui kit set --file <name> [--by <tag>] [--note <text>] [--pretty]        # ...or the same JSON from $BSC_SCRATCH/<name> (#3373)\n\nUpserts each kit by its \"id\", written verbatim. Fields: { id, name, tech, style, stack?, dot } — tech + style place the kit in the rail (omit either ⇒ it shows as \"other/other\"); stack is a display label only. Every write stamps provenance (#3164): auto-bump `rev`, set `updatedAt` (ISO-8601 UTC) + `updatedBy` (--by / $BSC_UI_WRITER / \"unknown\"), and appends a change-history entry (#3568: --note is its summary; `bsc ui log <id> --kit` reads it). --if-version <n> rejects the write unless the kit's current rev is <n>.",
     },
     CmdDoc {
         name: "remove",
         summary: "delete a kit (no-op if absent)",
-        usage: "USAGE:\n  bsc ui kit remove <id> [--pretty]\n\nDeletes the kit keyed by <id>; a no-op when absent.",
+        usage: "USAGE:\n  bsc ui kit remove <id> [--pretty]\n\nDeletes the kit keyed by <id>; a no-op when absent. NOTE: a PACKAGED BUILTIN kit re-seeds on the next hydrate — use `bsc ui kit suppress` to remove it permanently.",
+    },
+    CmdDoc {
+        name: "suppress",
+        summary: "PERMANENTLY remove a packaged builtin kit — it won't re-seed (#3725)",
+        usage: "USAGE:\n  bsc ui kit suppress <id> [--pretty]\n\nWrites a `{ id, suppressed: true }` tombstone for the kit <id>, so the seed-reconcile stops re-adding the packaged builtin (a plain `kit remove` re-seeds it). `bsc ui kit unsuppress` restores it. A ui-scope MUTATION.",
+    },
+    CmdDoc {
+        name: "unsuppress",
+        summary: "remove a kit suppression tombstone so the builtin re-seeds (#3725)",
+        usage: "USAGE:\n  bsc ui kit unsuppress <id> [--pretty]\n\nRemoves the tombstone written by `kit suppress`, so the next hydrate re-seeds the packaged builtin kit. Errors if <id> is not a tombstone. A ui-scope MUTATION.",
     },
     CmdDoc {
         name: "define-animation",
@@ -474,8 +681,54 @@ fn is_scoped_mutation(args: &[String]) -> bool {
     };
     matches!(
         verb.map(String::as_str),
-        Some("set") | Some("remove") | Some("define-animation") | Some("remove-animation")
+        Some("set") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("regroup") | Some("import") | Some("suppress") | Some("unsuppress")
     ) && next.map(String::as_str) != Some("help")
+}
+
+/// `bsc ui suppress <id>` / `bsc ui kit suppress <id>` (#3725) — write a `{ id, suppressed: true }`
+/// TOMBSTONE into the collection's store, PERMANENTLY removing a packaged builtin: the frontend
+/// `reconcileSeed` sees the tombstone occupying the id and never re-seeds the builtin (a plain `remove`
+/// comes back on the next hydrate). A ui-scope MUTATION (gated by [`is_scoped_mutation`] before this runs).
+fn cmd_suppress(
+    args: &[String],
+    open: impl Fn(&Option<String>) -> Result<bsc_json_store::Store, String>,
+    noun: &str,
+) -> Result<(), String> {
+    let kit_prefix = if noun == "kit" { "kit " } else { "" };
+    let (pos, dir, _pretty) = parse_anim_args(args)?;
+    let id = pos.first().ok_or_else(|| format!("usage: bsc ui {kit_prefix}suppress <id>"))?;
+    let store = open(&dir)?;
+    let tombstone = serde_json::json!({ "id": id, "suppressed": true });
+    stamped_set(&store, id, tombstone, &crate::record::resolve_writer(None))?;
+    // A suppressed component carries no live preview — clear any stale render-error keyed to it (#3707).
+    if noun == "component" {
+        let _ = crate::preview_errors::clear(id);
+    }
+    println!("suppressed {noun} '{id}' — the packaged builtin will not re-seed (`unsuppress` to restore)");
+    Ok(())
+}
+
+/// `bsc ui unsuppress <id>` / `bsc ui kit unsuppress <id>` (#3725) — remove a suppression tombstone so the
+/// next hydrate re-seeds the packaged builtin from its source (no data loss). REFUSES on a non-tombstone
+/// id: a real record must go through `remove`, never this.
+fn cmd_unsuppress(
+    args: &[String],
+    open: impl Fn(&Option<String>) -> Result<bsc_json_store::Store, String>,
+    noun: &str,
+) -> Result<(), String> {
+    let kit_prefix = if noun == "kit" { "kit " } else { "" };
+    let (pos, dir, _pretty) = parse_anim_args(args)?;
+    let id = pos.first().ok_or_else(|| format!("usage: bsc ui {kit_prefix}unsuppress <id>"))?;
+    let store = open(&dir)?;
+    let existing = current_record(&store, id)?;
+    if existing.get("suppressed").and_then(serde_json::Value::as_bool) != Some(true) {
+        return Err(format!(
+            "'{id}' is not a suppression tombstone — nothing to unsuppress (use `remove` to delete a real {noun})"
+        ));
+    }
+    store.remove(id)?;
+    println!("unsuppressed {noun} '{id}' — it re-seeds on the next hydrate");
+    Ok(())
 }
 
 /// The component-verb entrypoint: `args` is everything after the mount point (`bsc ui`, or the
@@ -521,6 +774,18 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // below (which fires the "kit" ui-touch on remove). Already ui-scope gated above.
                 Some("set") if args.get(2).map(String::as_str) != Some("help") => {
                     cmd_set(&args[2..], open_kit_store, warn_kit_axes, "kit")
+                }
+                // #3725: permanently remove a packaged builtin KIT (its shell survives a plain `kit
+                // remove`, re-seeded on hydrate). ui-scope gated above (the `kit` prefix → args[1] check).
+                Some("suppress") if args.get(2).map(String::as_str) != Some("help") => {
+                    cmd_suppress(&args[2..], open_kit_store, "kit")
+                }
+                Some("unsuppress") if args.get(2).map(String::as_str) != Some("help") => {
+                    cmd_unsuppress(&args[2..], open_kit_store, "kit")
+                }
+                Some(v @ ("suppress" | "unsuppress")) => {
+                    print!("{}", bsc_cli_util::help_for(&kit_prog, TAGLINE, KIT_COMMANDS, v));
+                    Ok(())
                 }
                 // Emit a `ui-touch` for the Design Studio's live-focus (#2525) after each kit set/remove
                 // write lands — WITH the "kit" collection context (bsc-json-store has none). A no-op for
@@ -571,6 +836,33 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 Ok(())
             } else {
                 cmd_doctor(&args[1..])
+            }
+        }
+        // `dupes` / `similar` (#3544) — the fuzzy DEDUP surface over the whole library (name + contract
+        // distance), the LLM-native "what should I merge?" / "does this already exist?" reads. Propose-only.
+        Some("dupes") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "dupes"));
+                Ok(())
+            } else {
+                cmd_dupes(&args[1..])
+            }
+        }
+        Some("similar") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "similar"));
+                Ok(())
+            } else {
+                cmd_similar(&args[1..])
+            }
+        }
+        // `used-by` (#3584) — the graph-usage read (composes-inverse); a READ, never scope-gated.
+        Some("used-by") => {
+            if args.get(1).map(String::as_str) == Some("help") {
+                print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "used-by"));
+                Ok(())
+            } else {
+                cmd_used_by(&args[1..])
             }
         }
         // The component-animation authoring verbs (#2869): motion as DATA on a component record. Custom
@@ -651,10 +943,28 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 cmd_patch(&args[1..])
             }
         }
-        // `get --field <json-pointer> [--raw]` (#3162) prints ONE field — intercepted here (the shared
-        // store CLI rejects unknown flags); a plain `get <id>` (incl. the whole-record `--raw`, #3166)
-        // still delegates unchanged. A read verb.
-        Some("get") if args.iter().any(|a| a == "--field") => cmd_get_field(&args[1..]),
+        // `regroup` (#3579) re-derives every stored component's `group` as a nested folder path from its
+        // `src` — a ui-scope MUTATION (gated above), so a kit organizes like a completed project's
+        // folders. `regroup help` prints the doc; the scope gate already refused a read-scoped session.
+        Some("regroup") if args.get(1).map(String::as_str) != Some("help") => cmd_regroup(&args[1..]),
+        Some("regroup") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "regroup"));
+            Ok(())
+        }
+        // `export`/`import` (#3606) — components-as-data round-trip: dump the store to a folder tree under
+        // `data/` and load it back. `export` is a read; `import` is a ui-scope MUTATION (gated above).
+        Some("export") if args.get(1).map(String::as_str) != Some("help") => cmd_export(&args[1..]),
+        Some("import") if args.get(1).map(String::as_str) != Some("help") => cmd_import(&args[1..]),
+        Some(v @ ("export" | "import")) => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
+            Ok(())
+        }
+        // `get --field <json-pointer>` (#3162, ONE field), `get … --out <name>` (#3713, spill to the
+        // scratch dir), OR `get … --kit <kitId>` (#3729, disambiguate) — all intercepted here (the shared
+        // store CLI rejects the extra flags), and handled by `cmd_get` (which also emits the whole-record
+        // `ui-focus` the plain path does). A plain `get <id>` (incl. the whole-record `--raw`, #3166) still
+        // delegates unchanged. A read verb.
+        Some("get") if args.iter().any(|a| a == "--field" || a == "--out" || a == "--kit") => cmd_get(&args[1..]),
         // `log` (#3164) is a custom read — the record's history stamp (rev/updatedAt/updatedBy).
         Some("log") => {
             if args.get(1).map(String::as_str) == Some("help") {
@@ -674,9 +984,49 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "set"));
             Ok(())
         }
+        // `rename` (#3576) — id-stable rename that sweeps the NAME-keyed composes/rules references across
+        // the kit + stamps history. The scope gate above already refused a read-scoped session.
+        Some("rename") if args.get(1).map(String::as_str) != Some("help") => cmd_rename(&args[1..]),
+        Some("rename") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "rename"));
+            Ok(())
+        }
+        // `merge` (#3592) — fold a duplicate INTO a survivor, repointing the NAME-keyed composes/rules
+        // references then removing it. The ACT step of the optimize loop. Scope gate above applies.
+        Some("merge") if args.get(1).map(String::as_str) != Some("help") => cmd_merge(&args[1..]),
+        Some("merge") => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "merge"));
+            Ok(())
+        }
+        // `suppress`/`unsuppress` (#3725) — permanently remove a packaged builtin component (a plain
+        // `remove` re-seeds on the next hydrate). Scope gate above applies.
+        Some("suppress") if args.get(1).map(String::as_str) != Some("help") => {
+            cmd_suppress(&args[1..], open_component_store, "component")
+        }
+        Some("unsuppress") if args.get(1).map(String::as_str) != Some("help") => {
+            cmd_unsuppress(&args[1..], open_component_store, "component")
+        }
+        Some(v @ ("suppress" | "unsuppress")) => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
+            Ok(())
+        }
         // `list --shape <shape>` (#2475) filters to one shape's ideal components — intercepted here
         // (the shared store CLI rejects unknown flags); a plain `list` still delegates unchanged.
         Some("list") if args.iter().any(|a| a == "--shape") => cmd_list_shape(&args[1..]),
+        // A plain `get <id>` (read) FOCUSES that component in the Design Studio preview (#3545) — a
+        // `ui-focus`, so the preview follows Claude's working focus as it INSPECTS each node, not only
+        // when it writes one. Distinct from the write `ui-touch`: a read triggers NO library re-hydrate.
+        // `get --field`/`get help` fall through unchanged (the id guard excludes a flag or `help`).
+        Some("get") if args.get(1).is_some_and(|a| !a.starts_with('-') && a != "help") => {
+            bsc_util::emit_ui_focus("component", &args[1]);
+            bsc_json_store::cli::run_hooked_validated(
+                args,
+                prog,
+                &COMPONENT_SPEC,
+                Some(&|id: &str| bsc_util::emit_ui_activity("component", id)),
+                Some(&validate_component_batch),
+            )
+        }
         // The COMPONENT collection's list/get/remove (set is intercepted above, #3164). Fire the
         // live-focus `ui-touch` (#2525) after a component remove write lands, with the "component"
         // collection context.
@@ -699,11 +1049,16 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
 
 /// The record's CURRENT stored `rev` (0 when absent or never stamped — the backward-compat contract),
 /// read straight from the store so a stamp/version-check always compares against what's on disk.
+#[cfg(test)]
 fn current_rev(store: &bsc_json_store::Store, id: &str) -> Result<i64, String> {
-    Ok(store
-        .get(id)?
-        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
-        .map_or(0, |v| crate::record::read_rev(&v)))
+    Ok(crate::record::read_rev(&current_record(store, id)?))
+}
+
+/// The record's CURRENT stored JSON (`Value::Null` when absent), so a write can carry its change history
+/// forward and diff what changed (#3568). Malformed stored JSON reads as absent (fail-safe: the write
+/// still lands, just starting a fresh history rather than erroring on a corrupt row).
+fn current_record(store: &bsc_json_store::Store, id: &str) -> Result<serde_json::Value, String> {
+    Ok(store.get(id)?.and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok()).unwrap_or(serde_json::Value::Null))
 }
 
 /// Stamp `value` for a write (bump `rev`, set `updatedAt` + `updatedBy`), then upsert it by `id`. The
@@ -716,8 +1071,8 @@ fn stamped_set(
     mut value: serde_json::Value,
     writer: &str,
 ) -> Result<(), String> {
-    let prior = current_rev(store, id)?;
-    crate::record::stamp(&mut value, prior, writer, &crate::record::now_iso());
+    let prior = current_record(store, id)?;
+    crate::record::stamp_with_history(&mut value, &prior, writer, &crate::record::now_iso(), None);
     store.set(id, &serde_json::to_string(&value).map_err(|e| format!("set: {e}"))?)
 }
 
@@ -749,6 +1104,7 @@ fn set_stamped(
     if_version: Option<i64>,
     writer: &str,
     noun: &str,
+    note: Option<&str>,
 ) -> Result<Vec<String>, String> {
     if if_version.is_some() && items.len() != 1 {
         return Err(format!(
@@ -760,27 +1116,35 @@ fn set_stamped(
     let mut ids = Vec::new();
     for item in items {
         let id = bsc_json_store::cli::id_of(item, noun)?;
-        let prior = current_rev(store, &id)?;
+        let prior = current_record(store, &id)?;
+        let prior_rev = crate::record::read_rev(&prior);
         if let Some(n) = if_version {
-            if prior != n {
+            if prior_rev != n {
                 return Err(format!(
-                    "version conflict on {noun} '{id}': its current rev is {prior}, not {n} — it changed since you read it. Re-read (`bsc ui log {id}`) and retry."
+                    "version conflict on {noun} '{id}': its current rev is {prior_rev}, not {n} — it changed since you read it. Re-read (`bsc ui log {id}`) and retry."
                 ));
             }
         }
         let mut stamped = item.clone();
-        crate::record::stamp(&mut stamped, prior, writer, &now);
+        crate::record::stamp_with_history(&mut stamped, &prior, writer, &now, note);
         store.set(&id, &serde_json::to_string(&stamped).map_err(|e| format!("set: {e}"))?)?;
         bsc_util::emit_ui_activity(noun, &id);
+        // #43: editing a COMPONENT invalidates the last preview render — clear any stale `render-error` so
+        // `bsc ui doctor` doesn't keep reporting the pre-edit throw for source that just changed. Best-effort
+        // (a diagnostic side-effect must never fail the write); a no-op unless this id currently has an error.
+        if noun == "component" {
+            let _ = crate::preview_errors::clear(&id);
+        }
         ids.push(id);
     }
     Ok(ids)
 }
 
-/// `set [--by <tag>] [--if-version <n>] [--dir D] [--pretty]` (#3164) — the STAMPING upsert for a
-/// collection. Parses the ui-write flags, reads the record(s) from stdin, runs the domain batch
-/// `validate` (the component srcText gate / the kit-axis nudge), then stamps + upserts each via
-/// [`set_stamped`]. Prints the written id(s). Shared by the component and kit collections (`open` +
+/// `set [--by <tag>] [--note <text>] [--if-version <n>] [--dir D] [--pretty]` (#3164/#3568) — the
+/// STAMPING upsert for a collection. Parses the ui-write flags, reads the record(s) from stdin, runs the
+/// domain batch `validate` (the component srcText gate / the kit-axis nudge), then stamps + upserts each
+/// via [`set_stamped`], which also appends a change-history entry (`--note` is its summary; `bsc ui log
+/// <id>` reads the log). Prints the written id(s). Shared by the component and kit collections (`open` +
 /// `validate` + `noun` differ). Already ui-scope gated in [`run`].
 fn cmd_set(
     args: &[String],
@@ -788,8 +1152,8 @@ fn cmd_set(
     validate: fn(&[serde_json::Value]) -> Result<(), String>,
     noun: &'static str,
 ) -> Result<(), String> {
-    let (mut dir, mut pretty, mut by, mut if_version, mut file) =
-        (None::<String>, false, None::<String>, None::<i64>, None::<String>);
+    let (mut dir, mut pretty, mut by, mut if_version, mut file, mut note) =
+        (None::<String>, false, None::<String>, None::<i64>, None::<String>, None::<String>);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -800,6 +1164,8 @@ fn cmd_set(
             // — newlines are command separators). Resolution + the traversal defence live in bsc-cli-util.
             "--file" => file = it.next().cloned(),
             "--by" => by = it.next().cloned(),
+            // #3568: a human-readable summary of WHY this write happened, recorded in the change history.
+            "--note" => note = it.next().cloned(),
             "--if-version" => {
                 let raw = it.next().ok_or("--if-version needs an integer revision (see `bsc ui log <id>`)")?;
                 if_version = Some(
@@ -818,10 +1184,511 @@ fn cmd_set(
     let items = read_set_items(noun, file.as_deref())?;
     validate(&items)?;
     let store = open(&dir)?;
+    // #3729: a component store is keyed by id ALONE — writing an id that already lives under a DIFFERENT
+    // kit silently OVERWRITES it. Warn (never reject) so a promote-over-a-builtin clobber is visible.
+    if noun == "component" {
+        warn_cross_kit_collision(&store, &items);
+    }
     let writer = crate::record::resolve_writer(by.as_deref());
-    let ids = set_stamped(&store, &items, if_version, &writer, noun)?;
+    let ids = set_stamped(&store, &items, if_version, &writer, noun, note.as_deref())?;
     let json = if pretty { serde_json::to_string_pretty(&ids) } else { serde_json::to_string(&ids) };
     println!("{}", json.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// The cross-kit id-overwrite warnings for a `set` batch (#3729) — PURE so the decision is under test;
+/// the CLI prints each to stderr via [`warn_cross_kit_collision`]. The component store is keyed by id
+/// ALONE (not by `(kit, id)`), so writing `fleetpage` under kit `harvested` SILENTLY OVERWRITES a
+/// `fleetpage` already stored under `base-studio-code` — that bit a designer promoting a harvested page
+/// over a builtin of the same name (they believed the two coexisted). One message per colliding id.
+fn cross_kit_collision_warnings(store: &bsc_json_store::Store, items: &[serde_json::Value]) -> Vec<String> {
+    let mut out = Vec::new();
+    for item in items {
+        let (Some(id), Some(new_kit)) = (
+            item.get("id").and_then(serde_json::Value::as_str),
+            item.get("kitId").and_then(serde_json::Value::as_str),
+        ) else {
+            continue;
+        };
+        let prior = current_record(store, id).unwrap_or(serde_json::Value::Null);
+        let prior_kit = prior.get("kitId").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if !prior_kit.is_empty() && prior_kit != new_kit {
+            out.push(format!(
+                "warning: component '{id}' already exists under kit '{prior_kit}' — this write (kit '{new_kit}') \
+                 OVERWRITES it, because the store is keyed by id, NOT by (kit, id). Rename one of them if you \
+                 meant to keep both, or ignore this if the re-home is intended."
+            ));
+        }
+    }
+    out
+}
+
+/// Print each [`cross_kit_collision_warnings`] message to stderr. Non-blocking (never rejects) — a
+/// deliberate re-home is legitimate and the write still lands.
+fn warn_cross_kit_collision(store: &bsc_json_store::Store, items: &[serde_json::Value]) {
+    for w in cross_kit_collision_warnings(store, items) {
+        eprintln!("{w}");
+    }
+}
+
+/// A valid component NAME — a PascalCase identifier: an uppercase ASCII first char, then ASCII
+/// alphanumerics. React cannot treat a lowercase name as a component, so the capital is a real rule, not a
+/// style one; alphanumeric-only keeps the derived `--<name>-<token>` conventions and JSX tag clean.
+fn is_component_name_ident(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_uppercase()) && chars.all(|c| c.is_ascii_alphanumeric())
+}
+
+/// Replace WHOLE-IDENTIFIER occurrences of `old` with `new` in `text` — `old` must be bounded on both
+/// sides by a non-identifier char (or the string edge), so renaming `Button` never rewrites `IconButton`
+/// or `ButtonGroup`. Identifier chars are ASCII alphanumeric, `_`, and `$` (the JS identifier set).
+/// Component names are ASCII, so matching on char boundaries is safe. Used to rewrite the renamed
+/// component's own `srcText`/`source` identifier.
+fn rename_ident(text: &str, old: &str, new: &str) -> String {
+    if old.is_empty() {
+        return text.to_string();
+    }
+    let is_ident = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '$';
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < text.len() {
+        if text[i..].starts_with(old) {
+            let before_ok = i == 0 || !text[..i].chars().next_back().is_some_and(is_ident);
+            let after = i + old.len();
+            let after_ok = after >= text.len() || !text[after..].chars().next().is_some_and(is_ident);
+            if before_ok && after_ok {
+                out.push_str(new);
+                i = after;
+                continue;
+            }
+        }
+        let ch = text[i..].chars().next().expect("i is a char boundary");
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+/// `rename <id> <NewName> [--by <tag>] [--note <text>] [--dir D] [--pretty]` (#3576) — rename a component
+/// in place. `id` is the STABLE store key (frozen at creation, never re-derived), so only the NAME moves:
+/// the record's `name` + the identifier in its `srcText`/`source`, and — because the composition graph is
+/// NAME-keyed (`model.ts`) — every sibling's `composes[]` + `rules[].use` that named it, swept across the
+/// SAME kit only (kits never cross). Every touched record gets a change-history entry (#3568). Everything
+/// keyed by id (store key, history, tokens, cross-graph URN) is untouched. A ui-scope MUTATION.
+fn cmd_rename(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut pretty, mut by, mut note) = (None::<String>, false, None::<String>, None::<String>);
+    let mut positionals: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            "--by" => by = it.next().cloned(),
+            "--note" => note = it.next().cloned(),
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            positional => positionals.push(positional.to_string()),
+        }
+    }
+    let id = positionals
+        .first()
+        .ok_or("usage: bsc ui rename <id> <NewName> [--by <tag>] [--note <text>]")?;
+    let new_name = positionals
+        .get(1)
+        .ok_or("usage: bsc ui rename <id> <NewName> — the new PascalCase name is required")?;
+    if !is_component_name_ident(new_name) {
+        return Err(format!(
+            "'{new_name}' is not a valid component name — a component is a PascalCase identifier ([A-Z][A-Za-z0-9]*)"
+        ));
+    }
+
+    let store = open_component_store(&dir)?;
+    let target_raw = store.get(id)?.ok_or_else(|| {
+        format!("no component '{id}' in the store — nothing to rename (ids are stable; see `bsc ui list`)")
+    })?;
+    let target: serde_json::Value = serde_json::from_str(&target_raw)
+        .map_err(|e| format!("stored component '{id}' is not valid JSON: {e}"))?;
+    let old_name = target.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+    if old_name.is_empty() {
+        return Err(format!("component '{id}' has no `name` to rename"));
+    }
+    if old_name == *new_name {
+        return Err(format!("component '{id}' is already named '{new_name}' — nothing to do"));
+    }
+    let kit_id = target.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+
+    let records: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    // Collision: `composes` resolves by NAME within a kit, so two same-named components in one kit make it
+    // ambiguous. Refuse before writing anything.
+    let collides = records.iter().any(|r| {
+        r.get("kitId").and_then(serde_json::Value::as_str) == Some(kit_id.as_str())
+            && r.get("name").and_then(serde_json::Value::as_str) == Some(new_name.as_str())
+            && r.get("id").and_then(serde_json::Value::as_str) != Some(id.as_str())
+    });
+    if collides {
+        return Err(format!(
+            "kit '{kit_id}' already has a component named '{new_name}' — a rename would make `composes` ambiguous (it resolves by name within a kit). Pick another name."
+        ));
+    }
+
+    let now = crate::record::now_iso();
+    let writer = crate::record::resolve_writer(by.as_deref());
+    let default_note = format!("renamed {old_name} → {new_name}");
+    let note_str = note.as_deref().map(str::trim).filter(|s| !s.is_empty()).unwrap_or(&default_note);
+
+    let mut updated: Vec<String> = Vec::new();
+    for mut rec in records {
+        // The sweep is bounded to the renamed component's OWN kit — kits never cross, so a same-named
+        // component elsewhere is a different component and must NOT be touched.
+        if rec.get("kitId").and_then(serde_json::Value::as_str) != Some(kit_id.as_str()) {
+            continue;
+        }
+        let rid = match rec.get("id").and_then(serde_json::Value::as_str) {
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => continue,
+        };
+        let mut changed = false;
+
+        if rid == *id {
+            rec["name"] = serde_json::Value::from(new_name.as_str());
+            changed = true;
+            // Rewrite the identifier in the component's own source (usage snippet + any vendored module).
+            for field in ["srcText", "source"] {
+                if let Some(s) = rec.get(field).and_then(serde_json::Value::as_str) {
+                    let rewritten = rename_ident(s, &old_name, new_name);
+                    if rewritten != s {
+                        rec[field] = serde_json::Value::from(rewritten);
+                    }
+                }
+            }
+        }
+        // Every record in the kit: rewrite composes[] + rules[].use references to the old name.
+        if let Some(arr) = rec.get_mut("composes").and_then(serde_json::Value::as_array_mut) {
+            for e in arr.iter_mut() {
+                if e.as_str() == Some(old_name.as_str()) {
+                    *e = serde_json::Value::from(new_name.as_str());
+                    changed = true;
+                }
+            }
+        }
+        if let Some(rules) = rec.get_mut("rules").and_then(serde_json::Value::as_array_mut) {
+            for rule in rules.iter_mut() {
+                if rule.get("use").and_then(serde_json::Value::as_str) == Some(old_name.as_str()) {
+                    rule["use"] = serde_json::Value::from(new_name.as_str());
+                    changed = true;
+                }
+            }
+        }
+
+        if changed {
+            let prior = current_record(&store, &rid)?;
+            crate::record::stamp_with_history(&mut rec, &prior, &writer, &now, Some(note_str));
+            store.set(&rid, &serde_json::to_string(&rec).map_err(|e| format!("rename write: {e}"))?)?;
+            bsc_util::emit_ui_activity("component", &rid);
+            updated.push(rid);
+        }
+    }
+
+    let references_updated = updated.iter().filter(|u| *u != id).count();
+    let out = serde_json::json!({
+        "id": id,
+        "from": old_name,
+        "to": new_name,
+        "kit": kit_id,
+        "updated": updated,
+        "referencesUpdated": references_updated,
+    });
+    let text = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    println!("{}", text.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `merge <from-id> <into-id> [--by <tag>] [--note <text>] [--dir D] [--pretty]` (#3592) — fold the
+/// component `from` INTO `into` (the survivor) and remove `from`. The ACT step of the optimize loop
+/// (`dupes`/`similar` only propose). `into` stays authoritative; every same-kit `composes[]`/`rules[].use`
+/// that named `from` is repointed to `into` (deduped; a self-reference the fold would create is dropped),
+/// then `from` is deleted. Every repointed record gets a change-history entry (#3568). Scoped to the kit
+/// (`composes` is name-keyed; a cross-kit merge is refused). A ui-scope MUTATION, gated in [`run`].
+fn cmd_merge(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut pretty, mut by, mut note) = (None::<String>, false, None::<String>, None::<String>);
+    let mut positionals: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            "--by" => by = it.next().cloned(),
+            "--note" => note = it.next().cloned(),
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            positional => positionals.push(positional.to_string()),
+        }
+    }
+    let from_id = positionals.first().ok_or("usage: bsc ui merge <from-id> <into-id> [--by <tag>] [--note <text>]")?;
+    let into_id = positionals.get(1).ok_or("usage: bsc ui merge <from-id> <into-id> — the survivor id is required")?;
+    if from_id == into_id {
+        return Err(format!("cannot merge '{from_id}' into itself"));
+    }
+
+    let store = open_component_store(&dir)?;
+    let load = |id: &str| -> Result<serde_json::Value, String> {
+        let raw = store
+            .get(id)?
+            .ok_or_else(|| format!("no component '{id}' in the store (see `bsc ui list --raw`)"))?;
+        serde_json::from_str(&raw).map_err(|e| format!("stored component '{id}' is not valid JSON: {e}"))
+    };
+    let from = load(from_id)?;
+    let into = load(into_id)?;
+    let from_name = from.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+    let into_name = into.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+    if from_name.is_empty() || into_name.is_empty() {
+        return Err("both components must have a `name` to merge".to_string());
+    }
+    let from_kit = from.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("");
+    let into_kit = into.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("");
+    if from_kit != into_kit {
+        return Err(format!(
+            "'{from_id}' is in kit '{from_kit}' but '{into_id}' is in '{into_kit}' — `composes` is name-keyed WITHIN a kit, so a cross-kit merge is unsafe. Move one into the other's kit first, or merge within a kit."
+        ));
+    }
+    let kit_id = from_kit.to_string();
+
+    let now = crate::record::now_iso();
+    let writer = crate::record::resolve_writer(by.as_deref());
+    let default_note = format!("merged {from_name} → {into_name}");
+    let note_str = note.as_deref().map(str::trim).filter(|s| !s.is_empty()).unwrap_or(&default_note);
+
+    let records: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    let mut repointed: Vec<String> = Vec::new();
+    for mut rec in records {
+        // Only same-kit records reference `from` by name; and the `from` record itself is being removed.
+        if rec.get("kitId").and_then(serde_json::Value::as_str) != Some(kit_id.as_str()) {
+            continue;
+        }
+        let rid = match rec.get("id").and_then(serde_json::Value::as_str) {
+            Some(s) if !s.is_empty() && s != from_id => s.to_string(),
+            _ => continue,
+        };
+        let own_name = rec.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+        let mut changed = false;
+
+        if let Some(arr) = rec.get_mut("composes").and_then(serde_json::Value::as_array_mut) {
+            let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+            let mut next: Vec<serde_json::Value> = Vec::with_capacity(arr.len());
+            let mut any = false;
+            for e in arr.iter() {
+                let Some(orig) = e.as_str() else { continue };
+                let mapped: &str = if orig == from_name.as_str() { into_name.as_str() } else { orig };
+                if orig == from_name.as_str() {
+                    any = true; // a from → into repoint
+                }
+                // Drop a self-reference the fold would create, and dedup (a component that composed BOTH
+                // `from` AND `into` must not end up composing `into` twice).
+                if mapped == own_name.as_str() || !seen.insert(mapped.to_string()) {
+                    any = true;
+                    continue;
+                }
+                next.push(serde_json::Value::from(mapped));
+            }
+            if any {
+                *arr = next;
+                changed = true;
+            }
+        }
+        if let Some(rules) = rec.get_mut("rules").and_then(serde_json::Value::as_array_mut) {
+            for rule in rules.iter_mut() {
+                if rule.get("use").and_then(serde_json::Value::as_str) == Some(from_name.as_str()) {
+                    rule["use"] = serde_json::Value::from(into_name.as_str());
+                    changed = true;
+                }
+            }
+        }
+
+        if changed {
+            let prior = current_record(&store, &rid)?;
+            crate::record::stamp_with_history(&mut rec, &prior, &writer, &now, Some(note_str));
+            store.set(&rid, &serde_json::to_string(&rec).map_err(|e| format!("merge write: {e}"))?)?;
+            bsc_util::emit_ui_activity("component", &rid);
+            repointed.push(rid);
+        }
+    }
+
+    // Remove the merged-away component LAST, once every reference is repointed.
+    store.remove(from_id)?;
+    bsc_util::emit_ui_activity("component", from_id);
+
+    let out = serde_json::json!({
+        "from": from_id,
+        "into": into_id,
+        "kit": kit_id,
+        "repointed": repointed,
+        "removed": from_id,
+    });
+    let text = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+    println!("{}", text.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `regroup [--kit <id>] [--dir D] [--dry-run] [--pretty]` (#3579) — re-derive every stored component's
+/// `group` as a nested `/`-delimited FOLDER PATH from its `src` ([`crate::group_from_src`]), so a kit
+/// organizes like a completed project's folders (`shared/ui/controls`, `features/github`). Rewrites ONLY
+/// the records whose derived group differs (each write stamped + logged via [`set_stamped`]); a record
+/// with no usable `src` is left untouched. `--kit` scopes the pass to one kit; `--dry-run` reports the
+/// moves without writing. Prints `{ scanned, changed: [{ id, from, to }], applied }`. A ui-scope
+/// mutation, gated in [`run`].
+fn cmd_regroup(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut kit, mut dry, mut pretty) = (None::<String>, None::<String>, false, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--kit" => kit = it.next().cloned(),
+            "--dry-run" => dry = true,
+            "--pretty" => pretty = true,
+            other => {
+                return Err(format!(
+                    "unknown flag '{other}' — usage: bsc ui regroup [--kit <id>] [--dry-run] [--pretty]"
+                ))
+            }
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let mut scanned = 0usize;
+    let mut changed = Vec::new();
+    let mut updated = Vec::new();
+    // `Store::list()` yields each record's VERBATIM JSON (NOT its id) — parse each directly; the id is
+    // the record's own `id` field (which `set_stamped` also keys the write off).
+    for raw in store.list() {
+        let mut rec: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| format!("a stored component is not valid JSON: {e}"))?;
+        if let Some(k) = &kit {
+            if rec.get("kitId").and_then(serde_json::Value::as_str) != Some(k.as_str()) {
+                continue;
+            }
+        }
+        scanned += 1;
+        let src = rec.get("src").and_then(serde_json::Value::as_str).unwrap_or_default();
+        let Some(new_group) = crate::group_from_src(src) else { continue };
+        let old = rec.get("group").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if old == new_group {
+            continue;
+        }
+        let id = rec.get("id").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        changed.push(serde_json::json!({ "id": id, "from": old, "to": new_group }));
+        rec["group"] = serde_json::Value::String(new_group);
+        updated.push(rec);
+    }
+    let applied = if !dry && !updated.is_empty() {
+        let writer = crate::record::resolve_writer(None);
+        set_stamped(&store, &updated, None, &writer, "component", Some("regroup: folder-path group from src"))?;
+        true
+    } else {
+        false
+    };
+    let report = serde_json::json!({ "scanned": scanned, "changed": changed, "applied": applied });
+    let out = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
+    println!("{}", out.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `bsc ui export <dir> [--dir <store>] [--pretty]` (#3606) — dump the component store to a folder tree,
+/// `<dir>/<group>/<id>.json`, so components-as-data round-trips: the seed half `bsc ui import` reads it back.
+/// Files are written pretty (readable git diffs); `--pretty` also indents the stdout report.
+fn cmd_export(args: &[String]) -> Result<(), String> {
+    let (mut out, mut dir, mut pretty) = (None::<String>, None::<String>, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            other if !other.starts_with("--") && out.is_none() => out = Some(other.to_string()),
+            other => return Err(format!("unknown flag '{other}' — usage: bsc ui export <dir> [--dir <store>] [--pretty]")),
+        }
+    }
+    let out = out.ok_or("usage: bsc ui export <dir> [--dir <store>] [--pretty]")?;
+    let store = open_component_store(&dir)?;
+    let out_root = std::path::Path::new(&out);
+    let mut ids = Vec::new();
+    for raw in store.list() {
+        let rec: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("a stored component is not valid JSON: {e}"))?;
+        let id = rec.get("id").and_then(serde_json::Value::as_str).ok_or("a stored component has no `id`")?;
+        // `group` is a `/`-delimited FOLDER PATH (#3579) → nest the file, so the tree mirrors the project.
+        let group = rec.get("group").and_then(serde_json::Value::as_str).unwrap_or("");
+        let mut path = out_root.to_path_buf();
+        for seg in group.split('/').filter(|s| !s.is_empty()) {
+            path.push(seg);
+        }
+        std::fs::create_dir_all(&path).map_err(|e| format!("cannot create {}: {e}", path.display()))?;
+        path.push(format!("{id}.json"));
+        let text = serde_json::to_string_pretty(&rec).map_err(|e| e.to_string())?;
+        std::fs::write(&path, text).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        ids.push(id.to_string());
+    }
+    let report = serde_json::json!({ "exported": ids.len(), "dir": out, "ids": ids });
+    let s = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
+    println!("{}", s.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// `bsc ui import <dir> [--dir <store>] [--pretty]` (#3606) — load a folder tree of component records into
+/// the store (the load half of components-as-data). Each `*.json` is UPSERT by its `id`; a KIT BUNDLE
+/// (`{"components":[…]}`, e.g. react-ui.json) is exploded so every component in it imports.
+fn cmd_import(args: &[String]) -> Result<(), String> {
+    let (mut inp, mut dir, mut pretty) = (None::<String>, None::<String>, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--pretty" => pretty = true,
+            other if !other.starts_with("--") && inp.is_none() => inp = Some(other.to_string()),
+            other => return Err(format!("unknown flag '{other}' — usage: bsc ui import <dir> [--dir <store>] [--pretty]")),
+        }
+    }
+    let inp = inp.ok_or("usage: bsc ui import <dir> [--dir <store>] [--pretty]")?;
+    let store = open_component_store(&dir)?;
+    let mut files = Vec::new();
+    collect_json_files(std::path::Path::new(&inp), &mut files).map_err(|e| format!("cannot read {inp}: {e}"))?;
+    files.sort(); // deterministic import order (stable across platforms)
+    let mut ids = Vec::new();
+    for f in &files {
+        let raw = std::fs::read_to_string(f).map_err(|e| format!("cannot read {}: {e}", f.display()))?;
+        let v: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("{} is not valid JSON: {e}", f.display()))?;
+        // A kit bundle → import each of its components; anything else is a single record.
+        let records: Vec<&serde_json::Value> = match v.get("components").and_then(|c| c.as_array()) {
+            Some(arr) => arr.iter().collect(),
+            None => vec![&v],
+        };
+        for rec in records {
+            let id = rec
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| format!("a record in {} has no `id`", f.display()))?;
+            store.set(id, &serde_json::to_string(rec).map_err(|e| e.to_string())?)?;
+            bsc_util::emit_ui_activity("component", id); // Design Studio live-focus (#2525) re-hydrates
+            ids.push(id.to_string());
+        }
+    }
+    let report = serde_json::json!({ "imported": ids.len(), "dir": inp, "ids": ids });
+    let s = if pretty { serde_json::to_string_pretty(&report) } else { serde_json::to_string(&report) };
+    println!("{}", s.map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// Recursively collect every `*.json` under `root` (a missing dir ⇒ empty, matching the store's leniency).
+fn collect_json_files(root: &std::path::Path, out: &mut Vec<std::path::PathBuf>) -> std::io::Result<()> {
+    if !root.exists() {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(root)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_json_files(&path, out)?;
+        } else if path.extension().is_some_and(|e| e == "json") {
+            out.push(path);
+        }
+    }
     Ok(())
 }
 
@@ -853,34 +1720,73 @@ fn cmd_log(args: &[String]) -> Result<(), String> {
 }
 
 /// Write-time gate for a `bsc ui set` batch (#2928): for each record whose `srcText` claims to be a
-/// module (`looks_buildable_module`, the SAME test the preview uses), run the module-syntax check and
-/// reject the whole batch on the first defect — so a silently-corrupted source (an unterminated string
-/// from an escape-collapse) can't be stored. A usage-snippet `srcText` is not a module and is left
-/// alone; a record with no `srcText` is fine. ALSO (non-blocking, #3065): warns on stderr for a bad
-/// INLINE animation def on the record's `animations`, but never rejects over one. The srcText Err
-/// semantics are unchanged; the animation check is a pure side-effect. Driven directly by tests.
+/// module (`looks_buildable_module` — the preview's own buildability test, modulo the #3470 elision
+/// accuracy fix), run the module-syntax check and reject the whole batch on the first defect — so a silently-corrupted source (an unterminated string
+/// from an escape-collapse) can't be stored. A record with no `srcText` is fine.
+///
+/// A `srcText` that is NOT a module is still stored (a spec-only record is legitimate), but that is now
+/// a STATED outcome rather than a silent skip (#3470): it warns on stderr, naming every reason. The old
+/// shape inverted the gate at the edges — the source least like a module (one keeping its unresolved
+/// `@/…` imports) made the predicate false, which skipped the syntax check ENTIRELY, so it stored with
+/// zero complaint and only surfaced much later as a `no-implementation` finding in `bsc ui doctor`, far
+/// from the write that caused it.
+///
+/// ALSO (non-blocking, #3065): warns on stderr for a bad INLINE animation def on the record's
+/// `animations`, but never rejects over one. The srcText Err semantics are unchanged; both warnings are
+/// pure side-effects. Driven directly by tests.
 fn validate_component_batch(items: &[serde_json::Value]) -> Result<(), String> {
     for item in items {
         // #3065: non-blocking — runs for EVERY item, BEFORE the srcText early-continue below, so an
         // inline-animation warning surfaces even on a component whose `srcText` isn't a buildable module.
         warn_component_animations(item);
+        // #3709: same — a JSX-text unicode-escape leak surfaces on any item with source, even a spec.
+        warn_jsx_text_escapes(item);
 
         let src_text = item.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
-        if !crate::graph_health::looks_buildable_module(src_text) {
+        if src_text.trim().is_empty() {
+            continue; // no source to judge — a record can legitimately carry none.
+        }
+        // #43: a graph-source component (carries `provides`) is a real app primitive whose `@/` imports the
+        // runtime loader — and the now provides-aware preview build/doctor — resolve. `looks_buildable_module`
+        // treats ANY `@/` import as unbuildable, so it emits a FALSE "unresolved first-party @/" warning for
+        // it. Skip the buildability advisory for these (buildability is judged by `doctor`); the syntax check
+        // below still runs, so real corruption is still caught.
+        let provides = item.get("provides").and_then(serde_json::Value::as_str).unwrap_or_default();
+        // #3470: not-a-module is REPORTED, never an unchecked skip. Still permissive — it stores.
+        if provides.trim().is_empty() && !crate::graph_health::looks_buildable_module(src_text) {
+            eprintln!("{}", unbuildable_module_warning(item, src_text));
             continue;
         }
         if let Err(msg) = crate::syntax::check_module_syntax(src_text) {
-            let name = item
-                .get("name")
-                .and_then(serde_json::Value::as_str)
-                .or_else(|| item.get("id").and_then(serde_json::Value::as_str))
-                .unwrap_or("component");
             return Err(format!(
-                "{name}: {msg} — its srcText looks like a module but won't build. Fix it, or author it from a raw file to avoid shell-escaping corruption."
+                "{}: {msg} — its srcText looks like a module but won't build. Fix it, or author it from a raw file to avoid shell-escaping corruption.",
+                item_label(item)
             ));
         }
     }
     Ok(())
+}
+
+/// The stderr advisory (#3470) for a non-empty `srcText` that `looks_buildable_module` rejected. Names
+/// every reason `module_defects` found and says plainly what just got stored, so "this is a spec, not
+/// code" is something the writer sees AT WRITE TIME instead of discovering days later as a `doctor`
+/// finding. Returns the message rather than printing it so the wording is under test, like the batch
+/// result. (Only called on the not-a-module branch, where the defect list is non-empty by construction.)
+fn unbuildable_module_warning(item: &serde_json::Value, src_text: &str) -> String {
+    format!(
+        "warning: component '{}' has a srcText that is NOT a buildable module: {} — it is stored as a SPEC, not as compilable code, so the Design Studio preview will show no implementation and `bsc ui doctor` will report it. Author a self-contained module (inline or vendor what it imports) if you meant to ship code.",
+        item_label(item),
+        crate::graph_health::module_defects(src_text).join("; ")
+    )
+}
+
+/// The human handle for a record in a write-time message — its `name`, else its `id`, else the generic
+/// noun. One helper so the syntax REJECTION and the not-a-module WARNING point at the same string.
+fn item_label(item: &serde_json::Value) -> &str {
+    item.get("name")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| item.get("id").and_then(serde_json::Value::as_str))
+        .unwrap_or("component")
 }
 
 /// Non-blocking write-time advisory (#3065) for a component's INLINE animation defs. A component's
@@ -917,6 +1823,32 @@ fn warn_component_animations(item: &serde_json::Value) {
     }
 }
 
+/// Non-blocking write-time advisory (#3709) for a JS unicode/hex escape (`\uXXXX`, `\u{…}`, `\xHH`)
+/// sitting in JSX-TEXT / code position — OUTSIDE any string literal, template, or comment. JSX children
+/// text is not a JS string, so a bare escape typed directly between tags is never interpreted: the browser
+/// renders the literal `backslash-u-…` characters, not the glyph. It passes the syntax check (valid JS) and
+/// stores clean, so ONLY a screenshot catches it — a semantic-but-not-syntactic defect the build can't see.
+/// WARN (naming the leaked escapes + the fix — a real UTF-8 char, or a JS string like `{"·"}`), but
+/// NEVER reject: the record is valid JS. Purely advisory, like [`warn_component_animations`].
+fn warn_jsx_text_escapes(item: &serde_json::Value) {
+    let src_text = item.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
+    let leaks = crate::graph_health::jsx_text_escape_leaks(src_text);
+    if leaks.is_empty() {
+        return;
+    }
+    // Unique escapes, first-seen order, capped so a component riddled with them stays one readable line.
+    let mut seen = std::collections::BTreeSet::new();
+    let uniq: Vec<&str> =
+        leaks.iter().filter(|e| seen.insert(e.as_str())).map(String::as_str).collect();
+    let shown = uniq.iter().take(5).copied().collect::<Vec<_>>().join(", ");
+    let more = if uniq.len() > 5 { format!(", +{} more", uniq.len() - 5) } else { String::new() };
+    eprintln!(
+        "warning: component '{}' has {} unicode escape(s) in JSX-text position ({shown}{more}) — a JS escape typed directly between JSX tags renders as the literal backslash-text, NOT the glyph. Use a real UTF-8 character, or wrap it in a JS string like {{\"\\u00b7\"}}.",
+        item_label(item),
+        leaks.len(),
+    );
+}
+
 /// Resolve the COMPONENT store with the same flag → env (`BSC_COMPONENT_DIR`) → default
 /// (`~/.base-studio-code/components/`) precedence as the shared store CLI, for the custom reads.
 fn open_component_store(dir: &Option<String>) -> Result<bsc_json_store::Store, String> {
@@ -939,7 +1871,7 @@ fn open_kit_store(dir: &Option<String>) -> Result<bsc_json_store::Store, String>
     Ok(bsc_json_store::Store::new(dir, "kit"))
 }
 
-/// Validate a shape token against the six-shape vocabulary (#2475); the error teaches the whole set.
+/// Validate a shape token against the seven-shape vocabulary (#2475/#3517); the error teaches the whole set.
 fn require_shape(shape: &str) -> Result<(), String> {
     if DATA_SHAPES.iter().any(|(s, _)| *s == shape) {
         return Ok(());
@@ -1039,18 +1971,42 @@ fn cmd_list_shape(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `doctor [--kit K] [--json] [--pretty]` (#2678) — the graph-health report. Reads the component
-/// store, runs the pure analyzer ([`crate::graph_health::analyze`]), and prints the ranked findings
-/// as JSON (`--json`, LLM-consumable) or a human summary. `--kit` scopes the OUTPUT to one kit (the
-/// analyzer always groups by kit, so edges never cross kits regardless).
+/// `doctor [--kit K] [--sound-kit id@version] [--json] [--pretty]` (#2678) — the graph-health report.
+/// Reads the component store, runs the pure analyzer ([`crate::graph_health::analyze_with`]), and prints
+/// the ranked findings as JSON (`--json`, LLM-consumable) or a human summary. `--kit` scopes the OUTPUT to
+/// one kit (the analyzer always groups by kit, so edges never cross kits regardless).
+///
+/// `--sound-kit` (#3412) names the project's PINNED sound kit, so `@bsc/sounds/<id>` references are judged
+/// against the kit the project actually adopted — the Rust twin of the Design Studio passing its resolved
+/// `SoundKitSelection`. Omitted ⇒ the packaged default kit (an unpinned project, unchanged). A ref the
+/// release store does not hold is a HARD ERROR, never a quiet fall back to the default: reporting a pinned
+/// project against the starter kit would call broken references clean.
+/// Read a PINNED sound kit's artifact out of the global versioned release store (#3412, `bsc sound
+/// release`) — the same artifact the Design Studio resolves through the `bsc` bridge, so both sides judge
+/// `@bsc/sounds/…` against identical bytes.
+///
+/// FAILS LOUDLY on a ref the store does not hold (or a malformed `id@version`) rather than degrading to
+/// the packaged default: the caller asked for a specific kit, and answering with a different one would
+/// report a component's broken sound references as clean. Mirrors the frontend's `unresolved` arm.
+fn read_pinned_sound_kit(kit_ref: &str) -> Result<String, String> {
+    let (id, version) = bsc_sound::release::split_ref(kit_ref)?;
+    let store = bsc_sound::release::ReleaseStore::open_default()?;
+    store
+        .artifact(id, version)?
+        .ok_or_else(|| format!("sound kit '{kit_ref}' is not in the sound-kit store (`bsc sound release list`)"))
+}
+
 fn cmd_doctor(args: &[String]) -> Result<(), String> {
     let (mut dir, mut kit, mut json, mut pretty) = (None::<String>, None::<String>, false, false);
     let (mut fix, mut yes, mut motion) = (false, false, false);
+    let mut sound_kit = None::<String>;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--dir" => dir = it.next().cloned(),
             "--kit" => kit = it.next().cloned(),
+            // #3412: resolve `@bsc/sounds/…` against the project's PINNED kit instead of the packaged default.
+            "--sound-kit" => sound_kit = it.next().cloned(),
             "--json" => json = true,
             "--pretty" => pretty = true,
             "--fix" => fix = true,
@@ -1083,18 +2039,37 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
         return doctor_fix(&store, &comps, yes);
     }
 
-    let mut findings = crate::graph_health::analyze(&comps);
+    // Resolve the pin BEFORE analyzing so a broken pin fails the whole report rather than silently
+    // producing one measured against the wrong kit (#3412).
+    let sound_kit_json = match &sound_kit {
+        Some(kit_ref) => Some(read_pinned_sound_kit(kit_ref)?),
+        None => None,
+    };
+    let opts = crate::graph_health::HealthOptions { sound_kit_json: sound_kit_json.as_deref() };
+    let mut findings = crate::graph_health::analyze_with(&comps, &opts);
     if motion {
-        // #3163: append the motion findings and re-rank the combined report (most-severe first, stable
-        // kit + node-name tiebreak — the SAME ordering `analyze` uses).
+        // #3163: append the motion findings (re-ranked with the render errors below).
         findings.extend(crate::graph_health::analyze_motion(&comps));
-        findings.sort_by(|a, b| {
-            b.severity
-                .cmp(&a.severity)
-                .then_with(|| a.kit.cmp(&b.kit))
-                .then_with(|| a.node_names.first().cmp(&b.node_names.first()))
-        });
     }
+    // #3540: append the RENDER errors — the runtime throws doctor's static analysis can't see, read from
+    // the durable preview-error log the app's scan + previews record. Scoped to `comps` (already
+    // kit-filtered), so `--kit` narrows these too. Always on: a preview that throws is the most
+    // actionable finding, so it should never need a flag to surface.
+    let render_errors = crate::preview_errors::latest_error_by_id();
+    findings.extend(crate::graph_health::render_error_findings(&comps, &render_errors));
+    // #3544: append the library-wide NEAR-duplicate findings — the fuzzy layer (name + contract distance)
+    // the exact per-kit `duplicate` detector misses (`Donut`≈`DonutChart`, cross-kit `Card` repeats).
+    // PROPOSE-ONLY: emitted here, never fed to `--fix` (only byte-identical merges auto-apply). Cross-kit
+    // by nature, so it fires on the full report; a `--kit` scope filters `comps`, leaving within-kit dups.
+    findings.extend(crate::similarity::near_duplicate_findings(&comps, crate::similarity::DEFAULT_THRESHOLD));
+    // Re-rank the combined report (most-severe first, stable kit + node-name tiebreak — the SAME ordering
+    // `analyze` uses). Render errors (severity 5) sort to the top.
+    findings.sort_by(|a, b| {
+        b.severity
+            .cmp(&a.severity)
+            .then_with(|| a.kit.cmp(&b.kit))
+            .then_with(|| a.node_names.first().cmp(&b.node_names.first()))
+    });
 
     if json {
         let arr: Vec<serde_json::Value> = findings.iter().map(crate::graph_health::Finding::to_value).collect();
@@ -1121,12 +2096,251 @@ fn cmd_doctor(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// `bsc ui dupes` (#3544) — the whole-library duplicate report: the exact `duplicate` findings the per-kit
+/// analyzer emits (shared `wraps` / byte-identical source) PLUS the fuzzy NEAR-duplicates it misses (name +
+/// contract distance — `Donut`≈`DonutChart`, cross-kit `Card` repeats), ranked together. The LLM-native
+/// "what should I merge?" surface; PROPOSE-ONLY — the proposals guide a manual/designer merge, there is no
+/// `--fix` here. `--kit` scopes to one kit (dropping cross-kit near-dups); `--threshold <0..1>` tunes the
+/// fuzzy bar (default [`crate::similarity::DEFAULT_THRESHOLD`]).
+fn cmd_dupes(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut kit, mut json, mut pretty) = (None::<String>, None::<String>, false, false);
+    let mut threshold = crate::similarity::DEFAULT_THRESHOLD;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--kit" => kit = it.next().cloned(),
+            "--threshold" => {
+                threshold = it
+                    .next()
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .ok_or("--threshold needs a number in [0,1]")?;
+            }
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let comps: Vec<serde_json::Value> = store
+        .list()
+        .iter()
+        .filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+        .filter(|v| match &kit {
+            Some(k) => v.get("kitId").and_then(serde_json::Value::as_str) == Some(k.as_str()),
+            None => true,
+        })
+        .collect();
+    // Exact duplicates first (certain — shared wraps / byte-identical), then the ranked near-duplicates.
+    let mut findings: Vec<crate::graph_health::Finding> =
+        crate::graph_health::analyze(&comps).into_iter().filter(|f| f.category == "duplicate").collect();
+    findings.extend(crate::similarity::near_duplicate_findings(&comps, threshold));
+    if json {
+        let arr: Vec<serde_json::Value> = findings.iter().map(crate::graph_health::Finding::to_value).collect();
+        let out = if pretty { serde_json::to_string_pretty(&arr) } else { serde_json::to_string(&arr) };
+        println!("{}", out.map_err(|e| e.to_string())?);
+        return Ok(());
+    }
+    if findings.is_empty() {
+        println!("✓ no duplicates or near-duplicates found.");
+        return Ok(());
+    }
+    println!("{} duplicate / near-duplicate finding(s), most-similar first:", findings.len());
+    for f in &findings {
+        println!("  [{}] {} — {}", f.category, f.kit, f.why);
+        println!("        → {}", f.suggested_action);
+    }
+    Ok(())
+}
+
+/// `bsc ui similar <id> [--top N] [--threshold F]` (#3544) — the components most similar to <id> across the
+/// WHOLE library (name + contract distance), ranked most-similar first. The discover-before-authoring read:
+/// a session checks whether a component like the one it is about to build already exists. Cross-kit;
+/// PROPOSE-ONLY. `--top` caps the rows (default 10); `--threshold` sets a minimum overall score.
+fn cmd_similar(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut json, mut pretty) = (None::<String>, false, false);
+    let (mut id, mut top, mut floor) = (None::<String>, 10usize, 0.0f64);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--top" => {
+                top = it.next().and_then(|s| s.parse::<usize>().ok()).ok_or("--top needs a positive integer")?;
+            }
+            "--threshold" => {
+                floor = it.next().and_then(|s| s.parse::<f64>().ok()).ok_or("--threshold needs a number in [0,1]")?;
+            }
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other if id.is_none() => id = Some(other.to_string()),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let id = id.ok_or("usage: bsc ui similar <id> [--top N] [--threshold F]")?;
+    let store = open_component_store(&dir)?;
+    let comps: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    if !comps.iter().any(|c| c.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str())) {
+        return Err(format!("no component with id '{id}' (see `bsc ui list --raw`)"));
+    }
+    // #3584: fold each candidate's graph-USAGE (composes-inverse) into the row, so a "these two overlap"
+    // proposal arrives with which side is load-bearing — the optimizer folds the LESS-used into the more.
+    let idx = used_by_index(&comps);
+    let rows: Vec<serde_json::Value> = crate::similarity::rank_similar(&id, &comps, top, floor)
+        .into_iter()
+        .map(|mut r| {
+            let key = (r["kit"].as_str().unwrap_or("").to_string(), r["name"].as_str().unwrap_or("").to_string());
+            r["usedBy"] = serde_json::Value::from(idx.get(&key).map_or(0, Vec::len));
+            r
+        })
+        .collect();
+    if json {
+        let out = if pretty { serde_json::to_string_pretty(&rows) } else { serde_json::to_string(&rows) };
+        println!("{}", out.map_err(|e| e.to_string())?);
+        return Ok(());
+    }
+    if rows.is_empty() {
+        println!("no components similar to '{id}'.");
+        return Ok(());
+    }
+    println!("components similar to '{id}', most-similar first:");
+    for r in &rows {
+        println!(
+            "  {:>3.0}%  {} ({})  [name {:.2} · contract {:.2} · used-by {}]",
+            r["score"].as_f64().unwrap_or(0.0) * 100.0,
+            r["name"].as_str().unwrap_or(""),
+            r["kit"].as_str().unwrap_or(""),
+            r["name_similarity"].as_f64().unwrap_or(0.0),
+            r["contract_similarity"].as_f64().unwrap_or(0.0),
+            r["usedBy"].as_u64().unwrap_or(0),
+        );
+    }
+    Ok(())
+}
+
+/// The composes-INVERSE (#3584): for each `(kitId, name)`, the sorted+deduped names of same-kit components
+/// that list it in `composes`. The graph-internal USAGE signal — how load-bearing a component is within its
+/// kit — keyed by `(kit, name)` because `composes` resolves by NAME and a name can recur across kits (kits
+/// never cross, so a `Button` in kit A and one in kit B are distinct). Computed live from the records, so
+/// it is never a placeholder (unlike the codebase-usage `used` field).
+fn used_by_index(
+    components: &[serde_json::Value],
+) -> std::collections::BTreeMap<(String, String), Vec<String>> {
+    let mut idx: std::collections::BTreeMap<(String, String), Vec<String>> = std::collections::BTreeMap::new();
+    for c in components {
+        let kit = c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+        let Some(composer) = c.get("name").and_then(serde_json::Value::as_str).filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        for dep in c.get("composes").and_then(serde_json::Value::as_array).into_iter().flatten() {
+            if let Some(dep_name) = dep.as_str().filter(|s| !s.is_empty()) {
+                idx.entry((kit.clone(), dep_name.to_string())).or_default().push(composer.to_string());
+            }
+        }
+    }
+    for composers in idx.values_mut() {
+        composers.sort();
+        composers.dedup();
+    }
+    idx
+}
+
+/// `bsc ui used-by <id>` / `--all` (#3584) — the graph-usage read (composes-inverse). A READ verb, never
+/// scope-gated. Single form: one component's composers + count. `--all`: every component ranked by usage,
+/// most-used first (`--kit` scopes to one kit) — the whole-library "what is load-bearing" view.
+fn cmd_used_by(args: &[String]) -> Result<(), String> {
+    let (mut dir, mut json, mut pretty, mut all, mut kit_filter, mut id) =
+        (None::<String>, false, false, false, None::<String>, None::<String>);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dir" => dir = it.next().cloned(),
+            "--json" => json = true,
+            "--pretty" => pretty = true,
+            "--all" => all = true,
+            "--kit" => kit_filter = it.next().cloned(),
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other if id.is_none() => id = Some(other.to_string()),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+    }
+    let store = open_component_store(&dir)?;
+    let comps: Vec<serde_json::Value> =
+        store.list().iter().filter_map(|j| serde_json::from_str::<serde_json::Value>(j).ok()).collect();
+    let idx = used_by_index(&comps);
+    let count_of = |c: &serde_json::Value| -> usize {
+        let key = (
+            c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("").to_string(),
+            c.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string(),
+        );
+        idx.get(&key).map_or(0, Vec::len)
+    };
+
+    if all {
+        // Whole-library ranking, most-used first (id tiebreak for order-stability).
+        let mut rows: Vec<serde_json::Value> = comps
+            .iter()
+            .filter(|c| kit_filter.as_deref().is_none_or(|k| c.get("kitId").and_then(serde_json::Value::as_str) == Some(k)))
+            .map(|c| serde_json::json!({
+                "id": c.get("id").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "name": c.get("name").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "kit": c.get("kitId").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "count": count_of(c),
+            }))
+            .collect();
+        rows.sort_by(|a, b| {
+            b["count"].as_u64().cmp(&a["count"].as_u64()).then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
+        });
+        if json {
+            let out = if pretty { serde_json::to_string_pretty(&rows) } else { serde_json::to_string(&rows) };
+            println!("{}", out.map_err(|e| e.to_string())?);
+        } else {
+            println!("components by graph usage (composes-inverse), most-used first:");
+            for r in &rows {
+                println!("  {:>3}  {} ({})", r["count"].as_u64().unwrap_or(0), r["name"].as_str().unwrap_or(""), r["kit"].as_str().unwrap_or(""));
+            }
+        }
+        return Ok(());
+    }
+
+    let id = id.ok_or("usage: bsc ui used-by <id> [--json]  |  bsc ui used-by --all [--kit K]")?;
+    let target = comps
+        .iter()
+        .find(|c| c.get("id").and_then(serde_json::Value::as_str) == Some(id.as_str()))
+        .ok_or_else(|| format!("no component with id '{id}' (see `bsc ui list --raw`)"))?;
+    let key = (
+        target.get("kitId").and_then(serde_json::Value::as_str).unwrap_or("").to_string(),
+        target.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string(),
+    );
+    let composers = idx.get(&key).cloned().unwrap_or_default();
+    let out = serde_json::json!({
+        "id": id,
+        "name": key.1,
+        "kit": key.0,
+        "usedBy": composers,
+        "count": composers.len(),
+    });
+    if json {
+        let text = if pretty { serde_json::to_string_pretty(&out) } else { serde_json::to_string(&out) };
+        println!("{}", text.map_err(|e| e.to_string())?);
+    } else if composers.is_empty() {
+        println!("'{}' ({}) is composed by NOTHING in its kit — an orphan candidate (used-by 0).", key.1, key.0);
+    } else {
+        println!("'{}' ({}) is composed by {} component(s): {}", key.1, key.0, composers.len(), composers.join(", "));
+    }
+    Ok(())
+}
+
 /// The `doctor --fix` optimize action (#2679, #3089 merge) — the curator's mechanical, SAFE graph
 /// optimization as a COMMAND (epic #3087: 'keep the graph minimal' is a tool, not hand-organization).
 /// Two lossless steps, dry-run unless `apply`:
 ///   1. MERGE byte-identical duplicates (`graph_health::merge_plan`) — fold each group into the
 ///      most-`used` canonical, repointing composers; only byte-identical, never a same-`wraps` dup.
-///   2. PRUNE the safe dead roots (`graph_health::prunable`) — orphan/dead-root only, never a `used > 0`.
+///   2. PRUNE the GUARDED dead roots (`graph_health::prune_plan`) — orphan/dead-root only, never a
+///      `used > 0`, and never a `page` / packaged built-in / anything at all while the usage index is
+///      unpopulated (#3087). A guarded candidate is still reported, just never auto-removed.
 ///
 /// Cycles + same-`wraps` (differing-source) duplicates need the curator's SEMANTIC call, so they're only
 /// surfaced as a note — never auto-resolved here.
@@ -1135,19 +2349,38 @@ fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply:
     // Dead roots to prune, minus anything a merge already removes (never double-handle an id).
     let merged_ids: std::collections::BTreeSet<String> =
         plan.groups.iter().flat_map(|g| g.removed.iter().map(|(id, _)| id.clone())).collect();
-    let prunable: Vec<_> = crate::graph_health::prunable(comps)
-        .into_iter()
-        .filter(|p| !merged_ids.contains(&p.id))
-        .collect();
+    let prune_plan = crate::graph_health::prune_plan(comps);
+    let prunable: Vec<_> =
+        prune_plan.prune.into_iter().filter(|p| !merged_ids.contains(&p.id)).collect();
+    let skipped = prune_plan.skipped;
     let cycles = crate::graph_health::analyze(comps).iter().filter(|f| f.category == "cycle").count();
     let manual_note = || {
         if cycles > 0 {
             println!("  ({cycles} cycle(s) need a manual break; same-`wraps` duplicates need the curator's semantic call — see `bsc ui doctor`).");
         }
     };
+    // #3087: the guards are LOUD — a withheld candidate is named with the guard that saved it, so the
+    // report never silently shrinks and a genuine dead page/seed is still visible to the human.
+    let guard_note = || {
+        if skipped.is_empty() {
+            return;
+        }
+        println!(
+            "  {} dead-root finding(s) HELD BACK by the prune guards (#3087) — still reported by `bsc ui doctor`, never auto-removed:",
+            skipped.len()
+        );
+        for s in &skipped {
+            println!("    · {} ({}) — {}", s.name, s.id, s.guard);
+        }
+    };
 
     if plan.groups.is_empty() && prunable.is_empty() {
-        println!("✓ nothing to auto-optimize — no byte-identical duplicates and no dead roots.");
+        if skipped.is_empty() {
+            println!("✓ nothing to auto-optimize — no byte-identical duplicates and no dead roots.");
+        } else {
+            println!("✓ nothing SAFE to auto-optimize — no byte-identical duplicates, and every dead-root candidate is guarded.");
+        }
+        guard_note();
         manual_note();
         return Ok(());
     }
@@ -1169,6 +2402,7 @@ fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply:
                 println!("  - {} ({}) — {}", p.name, p.id, p.reason);
             }
         }
+        guard_note();
         manual_note();
         return Ok(());
     }
@@ -1195,6 +2429,7 @@ fn doctor_fix(store: &bsc_json_store::Store, comps: &[serde_json::Value], apply:
         pruned += 1;
     }
     println!("optimized: merged {merged} duplicate(s), pruned {pruned} dead node(s). Re-run `bsc ui doctor` — an optimization can surface more.");
+    guard_note();
     Ok(())
 }
 
@@ -1400,6 +2635,9 @@ fn cmd_preview_props(args: &[String]) -> Result<(), String> {
     }
     let store = open_component_store(&dir)?;
     let raw = store.get(&id)?.ok_or_else(|| format!("no component '{id}'"))?;
+    // #3545: inspecting a component's preview props FOCUSES it in the Design Studio (a `ui-focus`, so the
+    // preview follows Claude's working focus). A read → no re-hydrate. No-op off a designer session.
+    bsc_util::emit_ui_focus("component", &id);
     let rec: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
     let name = rec.get("name").and_then(serde_json::Value::as_str).unwrap_or(&id);
     let role = rec.get("role").and_then(serde_json::Value::as_str).unwrap_or("");
@@ -1439,10 +2677,19 @@ fn cmd_preview_errors(args: &[String]) -> Result<(), String> {
 /// `preview-error <id>` (#3165) — append a preview-error record (message read from stdin) to the durable
 /// log `preview-errors` tails. A diagnostic append, so NOT ui-scope gated.
 fn cmd_preview_error(args: &[String]) -> Result<(), String> {
+    // #3737: `preview-error clear <id>` clears a stale render-error directly (without re-writing the
+    // component), for when the recorded error no longer reflects the current source. Everything else is
+    // the RECORD form: `preview-error <id>` with the message on stdin.
+    if args.first().map(String::as_str) == Some("clear") {
+        let id = args.get(1).ok_or("usage: preview-error clear <id>")?;
+        crate::preview_errors::clear(id)?;
+        println!("{id}");
+        return Ok(());
+    }
     let id = args
         .iter()
         .find(|a| !a.starts_with("--"))
-        .ok_or("usage: preview-error <id>   # error message / stack trace on stdin")?;
+        .ok_or("usage: preview-error <id>   # error message / stack trace on stdin (or `clear <id>`)")?;
     let mut message = String::new();
     std::io::stdin().read_to_string(&mut message).map_err(|e| format!("cannot read stdin: {e}"))?;
     crate::preview_errors::record(id, message.trim())?;
@@ -2012,7 +3259,12 @@ fn replace_src(store: &bsc_json_store::Store, id: &str, src: &str) -> Result<(),
         .expect("load_component_object guarantees an object")
         .insert("srcText".to_string(), serde_json::Value::String(src.to_string()));
     validate_component_batch(std::slice::from_ref(&record))?;
-    stamped_set(store, id, record, &crate::record::resolve_writer(None))
+    stamped_set(store, id, record, &crate::record::resolve_writer(None))?;
+    // #3737: `set-src` invalidates the last render — clear any stale `render-error` so `bsc ui doctor`
+    // doesn't keep reporting the pre-edit throw (batch `set` already does this, #43; set-src/patch didn't,
+    // which is how the #11/#21 stale errors survived). Best-effort; a no-op unless this id has an error.
+    let _ = crate::preview_errors::clear(id);
+    Ok(())
 }
 
 /// Set `value` at `pointer` on component `id`'s record, then run the `set` syntax gate (#2928) — so a
@@ -2028,7 +3280,10 @@ fn apply_patch(
     let mut record = load_component_object(store, id)?;
     set_at_pointer(&mut record, &normalize_pointer(pointer)?, value)?;
     validate_component_batch(std::slice::from_ref(&record))?;
-    stamped_set(store, id, record, &crate::record::resolve_writer(None))
+    stamped_set(store, id, record, &crate::record::resolve_writer(None))?;
+    // #3737: a component patch invalidates the last render — clear any stale `render-error` (see `replace_src`).
+    let _ = crate::preview_errors::clear(id);
+    Ok(())
 }
 
 /// Render ONE resolved field value for `get --field` to the string to emit: `raw` unwraps a string (no
@@ -2084,16 +3339,27 @@ fn cmd_patch(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `get <id> --field <json-pointer> [--raw] [--dir D] [--pretty]` (#3162) — print ONE field resolved by
-/// JSON pointer. A read verb (never scope-gated); errors when the component OR the field is absent.
-fn cmd_get_field(args: &[String]) -> Result<(), String> {
-    let (mut id, mut dir, mut field) = (None::<String>, None::<String>, None::<String>);
+/// `get <id> [--field <json-pointer>] [--raw] [--dir D] [--pretty] [--out <name>]` — the read verbs this
+/// crate intercepts (the shared store CLI rejects the extra flags). Prints the whole record, or ONE
+/// `--field` resolved by JSON pointer (#3162), to stdout — OR, with `--out <name>`, writes the exact same
+/// bytes into `$BSC_SCRATCH/<name>` (#3713) and prints that path. A read verb (never scope-gated); errors
+/// when the component OR the `--field` is absent.
+///
+/// **Why `--out` exists:** a restricted studio session truncates large stdout (~30KB) and spills the
+/// remainder to a path OUTSIDE the confinement, which the FS hook then blocks Read/Grep from opening — so a
+/// large `srcText` (e.g. a 538-line page) can't be reviewed via stdout at all. `--out` lands it in the
+/// scratch dir, a confinement-allowed path the session Reads in full regardless of size.
+fn cmd_get(args: &[String]) -> Result<(), String> {
+    let (mut id, mut dir, mut field, mut out, mut kit) =
+        (None::<String>, None::<String>, None::<String>, None::<String>, None::<String>);
     let (mut raw, mut pretty) = (false, false);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--dir" => dir = it.next().cloned(),
             "--field" => field = it.next().cloned(),
+            "--out" => out = it.next().cloned(),
+            "--kit" => kit = it.next().cloned(),
             "--raw" => raw = true,
             "--pretty" => pretty = true,
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
@@ -2101,20 +3367,53 @@ fn cmd_get_field(args: &[String]) -> Result<(), String> {
             other => return Err(format!("unexpected argument '{other}'")),
         }
     }
-    let id = id.ok_or("usage: bsc ui get <id> --field <json-pointer> [--raw]")?;
-    let field = field.ok_or("--field needs a JSON pointer value (e.g. `/name`)")?;
+    let id = id.ok_or("usage: bsc ui get <id> [--field <json-pointer>] [--kit <kitId>] [--raw] [--out <name>]")?;
     let store = open_component_store(&dir)?;
     let record = load_component_object(&store, &id)?;
-    let value = record
-        .pointer(&normalize_pointer(&field)?)
-        .ok_or_else(|| format!("no field '{field}' in component '{id}'"))?;
-    let out = field_output(value, raw, pretty)?;
-    if raw {
-        // Compose with the shared #3166 raw printer so `--field --raw` behaves IDENTICALLY to the
-        // whole-record `--raw`: LF-only (CR-stripped), bytes-direct (no locale layer), one trailing LF.
-        bsc_cli_util::print_raw(&out);
-    } else {
-        println!("{out}");
+    // #3729: `--kit <kitId>` disambiguates. The store is keyed by id ALONE, so there is exactly ONE
+    // record per id — this asserts WHICH kit it belongs to (a designer who harvested a same-named
+    // component into another kit believed two coexisted). Errors, naming the ACTUAL kit, on a mismatch.
+    if let Some(want_kit) = &kit {
+        let actual = record.get("kitId").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if actual != want_kit {
+            return Err(format!(
+                "component '{id}' is in kit '{actual}', not '{want_kit}' — the store is keyed by id, so there is exactly one '{id}' (the last write wins)"
+            ));
+        }
+    }
+    // The value to render: one `--field`, else the whole record. `field_output` handles both a scalar
+    // field and a whole object uniformly (raw string-unwraps, else compact/pretty JSON).
+    let text = match &field {
+        Some(f) => {
+            let value = record
+                .pointer(&normalize_pointer(f)?)
+                .ok_or_else(|| format!("no field '{f}' in component '{id}'"))?;
+            field_output(value, raw, pretty)?
+        }
+        None => {
+            // A whole-record read follows Claude's working focus in the studio (#3545), matching the
+            // plain `get <id>`; a `--field` read does not (it's an inspection of one attribute).
+            bsc_util::emit_ui_focus("component", &id);
+            field_output(&record, raw, pretty)?
+        }
+    };
+    match out {
+        // Spill to the sealed scratch dir — same bytes stdout would carry: raw ⇒ the #3166 LF-only,
+        // CR-stripped, single-trailing-LF form; non-raw ⇒ the value + one newline (like `println!`).
+        Some(name) => {
+            let path = bsc_cli_util::resolve_scratch_out(&name)?;
+            let bytes = if raw { bsc_cli_util::raw_line(&text) } else { format!("{text}\n") };
+            std::fs::write(&path, bytes.as_bytes())
+                .map_err(|e| format!("cannot write --out {}: {e}", path.display()))?;
+            // Report the absolute path so the session knows exactly what to Read next.
+            println!("{}", path.display());
+        }
+        None if raw => {
+            // Compose with the shared #3166 raw printer so `--field --raw` behaves IDENTICALLY to the
+            // whole-record `--raw`: LF-only (CR-stripped), bytes-direct (no locale layer), one trailing LF.
+            bsc_cli_util::print_raw(&text);
+        }
+        None => println!("{text}"),
     }
     Ok(())
 }
@@ -2122,6 +3421,44 @@ fn cmd_get_field(args: &[String]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #3606 — export dumps the store to a folder tree nested by `group`, import loads it back, and the
+    /// round-trip is lossless; a kit BUNDLE ({components:[…]}, e.g. react-ui.json) is exploded on import.
+    #[test]
+    fn export_import_round_trips_a_folder_tree_and_explodes_a_bundle() {
+        let base = std::env::temp_dir().join(format!("bsc-comp-io-roundtrip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let store_dir = base.join("store");
+        let tree = base.join("tree");
+        std::fs::create_dir_all(&store_dir).unwrap();
+        let store = bsc_json_store::Store::new(store_dir.clone(), "component");
+        // One nested-by-group component, one ungrouped.
+        store.set("card", r#"{"id":"card","name":"Card","group":"ui/data","srcText":"export const Card=()=>null;"}"#).unwrap();
+        store.set("loose", r#"{"id":"loose","name":"Loose","srcText":"export const Loose=()=>null;"}"#).unwrap();
+
+        // export → files nest by the `group` folder path; ungrouped sits at the root.
+        cmd_export(&["--dir".into(), store_dir.to_string_lossy().into_owned(), tree.to_string_lossy().into_owned()]).unwrap();
+        assert!(tree.join("ui/data/card.json").exists(), "grouped component nests by its folder path");
+        assert!(tree.join("loose.json").exists(), "ungrouped component sits at the tree root");
+
+        // wipe the store, then import the tree back — lossless.
+        store.remove("card").unwrap();
+        store.remove("loose").unwrap();
+        assert_eq!(store.list().len(), 0, "store cleared before re-import");
+        cmd_import(&["--dir".into(), store_dir.to_string_lossy().into_owned(), tree.to_string_lossy().into_owned()]).unwrap();
+        let card: serde_json::Value = serde_json::from_str(&store.get("card").unwrap().unwrap()).unwrap();
+        assert_eq!(card["group"], "ui/data", "the grouped record imported back verbatim");
+        assert_eq!(card["srcText"], "export const Card=()=>null;");
+        assert!(store.get("loose").unwrap().is_some(), "the ungrouped record imported back too");
+
+        // a kit bundle file is exploded — every component inside it is imported.
+        std::fs::write(tree.join("bundle.json"), r#"{"id":"kit","components":[{"id":"x","name":"X"},{"id":"y","name":"Y"}]}"#).unwrap();
+        cmd_import(&["--dir".into(), store_dir.to_string_lossy().into_owned(), tree.to_string_lossy().into_owned()]).unwrap();
+        assert!(store.get("x").unwrap().is_some() && store.get("y").unwrap().is_some(), "the bundle's components were exploded in");
+        assert!(store.get("kit").unwrap().is_none(), "the bundle wrapper itself is NOT stored as a component");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn validate_component_batch_rejects_a_corrupt_module_srctext_but_passes_valid_ones() {
@@ -2135,14 +3472,161 @@ mod tests {
         assert!(err.contains("BarChart"), "names the component; got: {err}");
         assert!(err.contains("unterminated string literal"), "got: {err}");
 
-        // A valid module, a usage-snippet srcText (not a module → not gated), and a record with no
-        // srcText all pass — the whole batch is accepted.
+        // A valid module, a usage-snippet srcText (not a module → warned, then stored), and a record
+        // with no srcText all pass — the whole batch is accepted.
         let ok_batch = vec![
             serde_json::json!({ "id": "a", "name": "A", "srcText": "export function A(){ return null; }" }),
             serde_json::json!({ "id": "b", "name": "B", "srcText": "import { B } from \"@/x\";\n<B label={…} />" }),
             serde_json::json!({ "id": "c", "name": "C" }),
         ];
         assert!(validate_component_batch(&ok_batch).is_ok());
+    }
+
+    #[test]
+    fn validate_component_batch_never_rejects_over_a_jsx_text_escape() {
+        // #3709: a `·` in JSX-text position is a semantic-but-valid-JS defect — it must be WARNED
+        // (stderr, exercised by the graph_health scanner test), never rejected: the module compiles and
+        // stores. The whole batch — the leaky component + its correct `{"·"}` twin — passes.
+        let batch = vec![
+            serde_json::json!({ "id": "fleet", "name": "FleetPage",
+                "srcText": "export function FleetPage(){ return (<span>{count} workers \\u00b7 running</span>); }" }),
+            serde_json::json!({ "id": "fixed", "name": "FleetPageFixed",
+                "srcText": "export function FleetPageFixed(){ return (<span>{count} workers {\"\\u00b7\"} running</span>); }" }),
+        ];
+        assert!(validate_component_batch(&batch).is_ok(), "a JSX-text escape is advisory, never a rejection");
+    }
+
+    #[test]
+    fn suppress_writes_a_tombstone_and_unsuppress_removes_it() {
+        // #3725: `suppress` permanently removes a packaged builtin (a plain `remove` re-seeds); `unsuppress`
+        // clears the tombstone; `unsuppress` refuses a real record.
+        let dir = tmp_store_dir("suppress");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store.set("cost", r#"{"id":"cost","name":"CostEnergyView","kitId":"base-studio-code","builtin":true}"#).unwrap();
+
+        run(vec!["suppress".into(), "cost".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("cost").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["suppressed"], serde_json::Value::Bool(true), "suppress wrote a tombstone: {rec}");
+
+        run(vec!["unsuppress".into(), "cost".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+        assert!(store.get("cost").unwrap().is_none(), "unsuppress removed the tombstone");
+
+        // unsuppress REFUSES a non-tombstone — a real record must go through `remove`, never this.
+        store.set("real", r#"{"id":"real","name":"Real","kitId":"k"}"#).unwrap();
+        let err = run(vec!["unsuppress".into(), "real".into(), "--dir".into(), dir], "bsc ui").unwrap_err();
+        assert!(err.contains("not a suppression tombstone"), "{err}");
+    }
+
+    #[test]
+    fn kit_suppress_routes_through_the_kit_branch() {
+        // #3725: `bsc ui kit suppress <id>` writes a tombstone into the KIT store.
+        let dir = tmp_store_dir("kit-suppress");
+        let store = bsc_json_store::Store::new(dir.clone(), "kit");
+        store.set("fleet", r#"{"id":"fleet","name":"Fleet","builtin":true}"#).unwrap();
+        run(vec!["kit".into(), "suppress".into(), "fleet".into(), "--dir".into(), dir], "bsc ui").unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("fleet").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["suppressed"], serde_json::Value::Bool(true), "kit suppress wrote a tombstone: {rec}");
+    }
+
+    #[test]
+    fn cross_kit_collision_warns_when_an_id_is_written_under_a_different_kit() {
+        // #3729: the store is keyed by id alone, so promoting a same-named component into another kit
+        // OVERWRITES the existing one. Warn (naming both kits); a same-kit or new-id write is silent.
+        let dir = tmp_store_dir("collision");
+        let store = bsc_json_store::Store::new(dir, "component");
+        store.set("fleetpage", r#"{"id":"fleetpage","name":"FleetPage","kitId":"base-studio-code"}"#).unwrap();
+
+        let clobber = serde_json::json!({ "id": "fleetpage", "name": "FleetPage", "kitId": "harvested" });
+        let ws = cross_kit_collision_warnings(&store, std::slice::from_ref(&clobber));
+        assert_eq!(ws.len(), 1, "the cross-kit overwrite warns: {ws:?}");
+        assert!(ws[0].contains("base-studio-code") && ws[0].contains("harvested"), "names both kits: {}", ws[0]);
+
+        // Same kit → no warning; a brand-new id → no warning.
+        let same = serde_json::json!({ "id": "fleetpage", "name": "FleetPage", "kitId": "base-studio-code" });
+        assert!(cross_kit_collision_warnings(&store, std::slice::from_ref(&same)).is_empty(), "same kit is silent");
+        let fresh = serde_json::json!({ "id": "newpage", "name": "NewPage", "kitId": "harvested" });
+        assert!(cross_kit_collision_warnings(&store, std::slice::from_ref(&fresh)).is_empty(), "a new id is silent");
+    }
+
+    #[test]
+    fn get_kit_filter_disambiguates_by_kit() {
+        // #3729: `get <id> --kit <kitId>` returns the record only if its kitId matches, else errors naming
+        // the ACTUAL kit — the store is single-id-keyed, so this confirms which kit the one record is in.
+        let dir = tmp_store_dir("get-kit");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store.set("fleetpage", r#"{"id":"fleetpage","name":"FleetPage","kitId":"base-studio-code"}"#).unwrap();
+        // Matching kit → Ok.
+        assert!(
+            run(vec!["get".into(), "fleetpage".into(), "--kit".into(), "base-studio-code".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok(),
+            "the matching kit resolves",
+        );
+        // Wrong kit → error naming the ACTUAL kit.
+        let err = run(vec!["get".into(), "fleetpage".into(), "--kit".into(), "harvested".into(), "--dir".into(), dir], "bsc ui").unwrap_err();
+        assert!(err.contains("is in kit 'base-studio-code'") && err.contains("not 'harvested'"), "{err}");
+    }
+
+    #[test]
+    fn a_provides_component_with_at_imports_is_syntax_checked_not_warned_as_unbuildable() {
+        use serde_json::json;
+        // #43: a graph-source component (carries `provides`) has its `@/` imports resolved by the runtime
+        // loader — so the gate must NOT emit the false "unresolved first-party @/" advisory for it, and
+        // instead runs the real syntax check. A valid one passes.
+        let ok = json!({ "id":"box", "name":"Box", "provides":"@/shared/ui/layout/Box",
+            "srcText":"import { space } from \"@/shared/ui/layout/space\";\nexport function Box(){ return null; }" });
+        assert!(validate_component_batch(std::slice::from_ref(&ok)).is_ok(), "a valid provides-component with @/ imports passes");
+        // ...and a CORRUPT one is now caught (before #43 the `@/` import made `looks_buildable_module` false,
+        // which skipped syntax-checking entirely, so it stored silently).
+        let corrupt = json!({ "id":"box2", "name":"Box2", "provides":"@/shared/ui/layout/Box",
+            "srcText":"import { x } from \"@/x\";\nexport const s = [1,2].join(\"\n\");" });
+        let err = validate_component_batch(std::slice::from_ref(&corrupt)).unwrap_err();
+        assert!(err.contains("Box2"), "a corrupt provides-component is caught, not silently stored: {err}");
+    }
+
+    /// #3470 — the two edge rows of the issue's table. The gate used to be INVERTED at its edges: a
+    /// `srcText` that keeps its `@/` imports made `looks_buildable_module` false, which skipped the
+    /// syntax check ENTIRELY, so the source least like a module got the least validation and stored with
+    /// zero complaint. Both rows still STORE (a spec-only record is legitimate) — the fix is that the
+    /// outcome is now stated.
+    #[test]
+    fn a_srctext_that_is_not_a_buildable_module_is_reported_never_silently_skipped() {
+        use serde_json::json;
+
+        // ROW 3 — keeps its `@/` imports. Warned, with the reason NAMING the unresolved import and
+        // saying what was stored; still accepted.
+        let spec = json!({
+            "id": "card", "name": "Card",
+            "srcText": "import { Button } from \"@/shared/ui/controls/Button\";\nexport const Card = () => <Button />;",
+        });
+        let src = spec["srcText"].as_str().unwrap();
+        assert!(!crate::graph_health::looks_buildable_module(src), "row 3 is not a module…");
+        let warning = unbuildable_module_warning(&spec, src);
+        assert!(warning.contains("Card"), "names the component: {warning}");
+        assert!(warning.contains("@/shared/ui/controls/Button"), "names the unresolved import: {warning}");
+        assert!(warning.contains("SPEC"), "states what was stored: {warning}");
+        assert!(validate_component_batch(std::slice::from_ref(&spec)).is_ok(), "warn-only — it still stores");
+
+        // ROW 2 — a fragment with no imports IS treated as a module (it has an `export`), so it is NOT
+        // warned about and the syntax gate DOES run: a corrupt one is rejected outright.
+        let fragment = json!({ "id": "frag", "name": "Frag", "srcText": "export const F = () => <b>hi</b>;" });
+        let src = fragment["srcText"].as_str().unwrap();
+        assert!(crate::graph_health::looks_buildable_module(src), "a no-import fragment counts as a module");
+        assert!(validate_component_batch(std::slice::from_ref(&fragment)).is_ok());
+        let corrupt_fragment = json!({ "id": "frag", "name": "Frag", "srcText": "export const s = [1,2].join(\"\n\");" });
+        assert!(
+            validate_component_batch(std::slice::from_ref(&corrupt_fragment)).is_err(),
+            "the syntax gate still runs for a no-import fragment",
+        );
+
+        // A record with no srcText at all is neither warned about nor gated.
+        let bare = json!({ "id": "c", "name": "C" });
+        assert!(validate_component_batch(std::slice::from_ref(&bare)).is_ok());
+
+        // And the #3470 false positive: a component whose only `…` is UI copy is a real module — it must
+        // NOT be accused of being a sketch; it goes through the syntax gate like any other module.
+        let copy = json!({ "id": "sel", "name": "Select", "srcText": "export const S = () => <input placeholder=\"Select…\" />;" });
+        let src = copy["srcText"].as_str().unwrap();
+        assert!(crate::graph_health::looks_buildable_module(src), "an ellipsis in COPY is not an elision");
+        assert!(validate_component_batch(std::slice::from_ref(&copy)).is_ok());
     }
 
     #[test]
@@ -2201,6 +3685,18 @@ mod tests {
     /// real `~/.base-studio-code/components` store.
     fn tmp_store_dir(tag: &str) -> String {
         let d = std::env::temp_dir().join(format!("bsc-component-cli-test-{tag}-{}", std::process::id()));
+        // Start EMPTY (#3382). `process::id()` is unique among LIVE processes, not over time — the OS
+        // recycles pids — and this fixture never cleaned up, so a later run that drew a recycled pid
+        // inherited the previous run's store. That surfaced as `a fresh record's first write is rev 1`
+        // failing with rev 3: the record was already there at rev 2. Same shape as the env race this
+        // issue fixes (state outliving the test that wrote it), different channel — the filesystem.
+        // Every tag is used by exactly one test, so wiping here cannot disturb a sibling.
+        //
+        // BOTH paths must go. The SQLite backend keys off the SIBLING `<dir>.db`, not a file inside
+        // `<dir>` (`db_path_for` in bsc-json-store), so removing only the directory leaves the actual
+        // database — which is exactly why the first attempt at this fix changed nothing.
+        let _ = std::fs::remove_dir_all(&d);
+        let _ = std::fs::remove_file(format!("{}.db", d.to_string_lossy()));
         std::fs::create_dir_all(&d).unwrap();
         d.to_string_lossy().into_owned()
     }
@@ -2217,6 +3713,82 @@ mod tests {
         // The two collections live in DIFFERENT dirs (a component and a kit can share an id).
         assert_ne!(COMPONENT_SPEC.dir_segment, KIT_SPEC.dir_segment);
         assert_ne!(COMPONENT_SPEC.dir_env, KIT_SPEC.dir_env);
+    }
+
+    #[test]
+    fn regroup_rederives_group_from_src_and_skips_srcless_records() {
+        use serde_json::json;
+        let dir = tmp_store_dir("regroup");
+        let store = open_component_store(&Some(dir.clone())).unwrap();
+        // A stale FLAT group + a real src path → must become the folder path.
+        store
+            .set(
+                "button",
+                &json!({ "id": "button", "name": "Button", "kitId": "harvested", "role": "primitive",
+                         "group": "controls", "src": "src/shared/ui/controls/Button.tsx" })
+                .to_string(),
+            )
+            .unwrap();
+        // A group that ALREADY equals its derived path → left as-is (idempotent, not re-stamped).
+        store
+            .set(
+                "box",
+                &json!({ "id": "box", "name": "Box", "kitId": "harvested", "role": "layout",
+                         "group": "shared/ui/layout", "src": "src/shared/ui/layout/Box.tsx" })
+                .to_string(),
+            )
+            .unwrap();
+        // No usable `src` → untouched (never bucketed under "").
+        store
+            .set(
+                "stub",
+                &json!({ "id": "stub", "name": "Stub", "kitId": "harvested", "role": "primitive" }).to_string(),
+            )
+            .unwrap();
+
+        cmd_regroup(&["--dir".into(), dir.clone()]).unwrap();
+
+        let group_of = |id: &str| -> Option<String> {
+            let raw = store.get(id).unwrap().unwrap();
+            let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            v.get("group").and_then(serde_json::Value::as_str).map(str::to_owned)
+        };
+        assert_eq!(group_of("button").as_deref(), Some("shared/ui/controls"), "flat group → folder path");
+        assert_eq!(group_of("box").as_deref(), Some("shared/ui/layout"), "already-correct group unchanged");
+        assert_eq!(group_of("stub"), None, "a src-less record stays ungrouped");
+    }
+
+    #[test]
+    fn regroup_kit_flag_scopes_the_pass_to_one_kit() {
+        use serde_json::json;
+        let dir = tmp_store_dir("regroup-kit");
+        let store = open_component_store(&Some(dir.clone())).unwrap();
+        store
+            .set(
+                "a",
+                &json!({ "id": "a", "name": "A", "kitId": "harvested", "role": "primitive",
+                         "group": "old", "src": "src/shared/ui/controls/A.tsx" })
+                .to_string(),
+            )
+            .unwrap();
+        store
+            .set(
+                "b",
+                &json!({ "id": "b", "name": "B", "kitId": "react-d3", "role": "composite",
+                         "group": "old", "src": "shared/ui/d3/charts/B.tsx" })
+                .to_string(),
+            )
+            .unwrap();
+
+        cmd_regroup(&["--dir".into(), dir.clone(), "--kit".into(), "harvested".into()]).unwrap();
+
+        let group_of = |id: &str| -> String {
+            let raw = store.get(id).unwrap().unwrap();
+            let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            v["group"].as_str().unwrap().to_owned()
+        };
+        assert_eq!(group_of("a"), "shared/ui/controls", "the targeted kit is regrouped");
+        assert_eq!(group_of("b"), "old", "a component in another kit is untouched");
     }
 
     #[test]
@@ -2253,8 +3825,7 @@ mod tests {
         // Real source: newlines, single quotes (which shell-quoting could not survive) and braces.
         let payload = r#"{"id":"kevin/studio","name":"Studio UI","srcText":"export function B(){\n  return <b c='x'/>;\n}"}"#;
         std::fs::write(scratch.join("kit.json"), payload).unwrap();
-        std::env::set_var(bsc_cli_util::BSC_SCRATCH_ENV, &scratch);
-
+        bsc_cli_util::with_scratch(scratch.to_str(), || {
         let items = read_set_items("kit", Some("kit.json")).unwrap();
         assert_eq!(items.len(), 1, "one object yields one item, exactly as stdin does");
         assert_eq!(items[0]["id"], "kevin/studio");
@@ -2267,9 +3838,11 @@ mod tests {
         let err = read_set_items("kit", Some("../../../etc/passwd")).unwrap_err();
         assert!(err.contains("BARE FILENAME"), "a path is refused here too: {err}");
 
+        });
         // Fail closed: no scratch dir ⇒ the flag is refused rather than resolving against the cwd.
-        std::env::remove_var(bsc_cli_util::BSC_SCRATCH_ENV);
-        assert!(read_set_items("kit", Some("kit.json")).is_err(), "unset scratch refuses --file");
+        bsc_cli_util::with_scratch(None, || {
+            assert!(read_set_items("kit", Some("kit.json")).is_err(), "unset scratch refuses --file");
+        });
 
         let _ = std::fs::remove_dir_all(&base);
     }
@@ -2365,9 +3938,10 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "list", "shapes", "get", "log", "set", "remove", "kit", "eslint-preset", "usage",
-                "doctor", "define-animation", "list-animations", "remove-animation", "set-src", "patch",
-                "preview-props", "preview-errors", "preview-error"
+                "list", "shapes", "get", "log", "set", "remove", "suppress", "unsuppress", "export", "import",
+                "rename", "merge", "kit", "eslint-preset", "usage",
+                "doctor", "dupes", "similar", "used-by", "define-animation", "list-animations", "remove-animation",
+                "set-src", "patch", "regroup", "preview-props", "preview-errors", "preview-error"
             ]
         );
         for c in command_docs() {
@@ -2447,26 +4021,27 @@ mod tests {
     // ONE test owns the real $BSC_SCOPES env var (parallel test threads share the process env).
     #[test]
     fn mutating_verbs_refuse_under_a_read_ui_scope_before_touching_the_store() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
-        // `remove` errs at the scope gate — BEFORE any store dir is resolved or touched (no --dir
-        // is passed here on purpose: reaching the store would touch the real default location).
-        let err = run(vec!["remove".into(), "x".into()], "bsc component").unwrap_err();
-        assert!(err.contains("'ui'"), "refusal names the scope: {err}");
-        assert!(err.contains("BSC_SCOPES"), "refusal names the env doc: {err}");
-        let err = run(vec!["kit".into(), "set".into()], "bsc component").unwrap_err();
-        assert!(err.contains("read-only"), "kit set refuses too: {err}");
-        // Help stays reachable under the read scope (prints, returns Ok).
-        assert!(run(vec!["set".into(), "help".into()], "bsc component").is_ok());
-        // The #2475 shape picker is READ tier — both verbs work under the read-scoped session
-        // (the planner's `ui: read`), against a scratch --dir.
-        let dir = tmp_store_dir("read-scope");
-        assert!(run(vec!["shapes".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
-        assert!(run(vec!["shapes".into(), "graph".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
-        assert!(
-            run(vec!["list".into(), "--shape".into(), "table".into(), "--dir".into(), dir], "bsc ui").is_ok()
-        );
-        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        // #3382: the read-only scope is THREAD-LOCAL — no process env, so this refusal
+        // test cannot leak into any test running beside it.
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            // `remove` errs at the scope gate — BEFORE any store dir is resolved or touched (no --dir
+            // is passed here on purpose: reaching the store would touch the real default location).
+            let err = run(vec!["remove".into(), "x".into()], "bsc component").unwrap_err();
+            assert!(err.contains("'ui'"), "refusal names the scope: {err}");
+            assert!(err.contains("BSC_SCOPES"), "refusal names the env doc: {err}");
+            let err = run(vec!["kit".into(), "set".into()], "bsc component").unwrap_err();
+            assert!(err.contains("read-only"), "kit set refuses too: {err}");
+            // Help stays reachable under the read scope (prints, returns Ok).
+            assert!(run(vec!["set".into(), "help".into()], "bsc component").is_ok());
+            // The #2475 shape picker is READ tier — both verbs work under the read-scoped session
+            // (the planner's `ui: read`), against a scratch --dir.
+            let dir = tmp_store_dir("read-scope");
+            assert!(run(vec!["shapes".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+            assert!(run(vec!["shapes".into(), "graph".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
+            assert!(
+                run(vec!["list".into(), "--shape".into(), "table".into(), "--dir".into(), dir], "bsc ui").is_ok()
+            );
+        });
     }
 
     #[test]
@@ -2480,9 +4055,9 @@ mod tests {
     // ── the data-shape picker (#2475) ──────────────────────────────────────────────────────────
 
     #[test]
-    fn data_shapes_vocabulary_is_exactly_the_six_canonical_shapes() {
+    fn data_shapes_vocabulary_is_exactly_the_seven_canonical_shapes() {
         let names: Vec<&str> = DATA_SHAPES.iter().map(|(s, _)| *s).collect();
-        assert_eq!(names, vec!["list", "linked-list", "tree", "graph", "table", "key-value"]);
+        assert_eq!(names, vec!["list", "linked-list", "tree", "graph", "table", "key-value", "series"]);
         for (s, d) in DATA_SHAPES {
             assert!(!d.is_empty(), "{s} carries a description");
             assert!(require_shape(s).is_ok());
@@ -2490,7 +4065,7 @@ mod tests {
         // An off-vocabulary token errors, teaching the whole set.
         let err = require_shape("blob").unwrap_err();
         assert!(err.contains("unknown shape 'blob'"));
-        for s in ["list", "linked-list", "tree", "graph", "table", "key-value"] {
+        for s in ["list", "linked-list", "tree", "graph", "table", "key-value", "series"] {
             assert!(err.contains(s), "the error teaches {s}");
         }
     }
@@ -2553,7 +4128,7 @@ mod tests {
         .is_ok());
         // An off-vocabulary shape errors BEFORE any store is touched (no --dir needed), teaching the set.
         let err = run(vec!["shapes".into(), "blob".into()], "bsc ui").unwrap_err();
-        assert!(err.contains("unknown shape 'blob'") && err.contains("key-value"));
+        assert!(err.contains("unknown shape 'blob'") && err.contains("key-value") && err.contains("series"));
         let err = run(vec!["list".into(), "--shape".into(), "blob".into()], "bsc ui").unwrap_err();
         assert!(err.contains("unknown shape 'blob'"));
         // A bare `--shape` with no value is a usage error pointing at the vocabulary verb.
@@ -2566,7 +4141,7 @@ mod tests {
         let ov = bsc_cli_util::help_overview("bsc ui", TAGLINE, COMPONENT_COMMANDS);
         assert!(ov.contains("shapes"));
         let d = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "shapes");
-        assert!(d.contains("key-value") && d.contains("ideal"), "shapes detail teaches the vocabulary");
+        assert!(d.contains("key-value") && d.contains("series") && d.contains("ideal"), "shapes detail teaches the vocabulary");
         let list = bsc_cli_util::help_for("bsc ui", TAGLINE, COMPONENT_COMMANDS, "list");
         assert!(list.contains("--shape"), "list detail documents the --shape filter");
         // `shapes help` resolves to the doc (a read, reachable from any scope).
@@ -2579,8 +4154,11 @@ mod tests {
     fn component_and_kit_remove_emit_a_ui_touch_with_their_collection() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         // Unrestricted scope (a designer session or a hand shell): the mutation runs, and the emit
-        // fires because $BSC_UI_ACTIVITY_LOG is wired.
-        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        // fires because $BSC_UI_ACTIVITY_LOG is wired. This is the VICTIM side of the #3382 race — it
+        // used to `remove_var($BSC_SCOPES)` to protect its own mutations, which is precisely what broke
+        // the refusal tests running beside it. Declaring the unrestricted scope THREAD-LOCALLY says the
+        // same thing without touching state anyone else can see.
+        bsc_cli_util::with_scopes(None, || {
         let act = std::env::temp_dir().join(format!("bsc-component-uiact-{}.log", std::process::id()));
         let _ = std::fs::remove_file(&act);
         std::env::set_var("BSC_UI_ACTIVITY_LOG", &act);
@@ -2608,6 +4186,40 @@ mod tests {
         std::env::remove_var("BSC_UI_ACTIVITY_LOG");
         std::env::remove_var("BSC_AUDIT_PANE");
         let _ = std::fs::remove_file(&act);
+        });
+    }
+
+    #[test]
+    fn get_and_preview_props_emit_a_ui_focus_not_a_touch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        bsc_cli_util::with_scopes(None, || {
+            let act = std::env::temp_dir().join(format!("bsc-component-uifocus-{}.log", std::process::id()));
+            let _ = std::fs::remove_file(&act);
+            std::env::set_var("BSC_UI_ACTIVITY_LOG", &act);
+            std::env::set_var("BSC_AUDIT_PANE", "design-studio:designer");
+
+            let dir = tmp_store_dir("focus-comp");
+            bsc_json_store::Store::new(dir.clone(), "component")
+                .set("button", r#"{"id":"button","name":"Button"}"#)
+                .unwrap();
+
+            // #3545: a READ (get / preview-props) focuses the component with `ui-focus`, never `ui-touch`.
+            run(vec!["get".into(), "button".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+            run(vec!["preview-props".into(), "button".into(), "--dir".into(), dir], "bsc ui").unwrap();
+
+            // Presence, not absence: `$BSC_UI_ACTIVITY_LOG` is a process-global, so a CONCURRENT test's
+            // own `set` emit can land in this file too (#3382). `>= 2` proves BOTH reads emitted a
+            // ui-focus for `button`; that a ui-focus is NOT a ui-touch is pinned by the bsc-util test.
+            let text = std::fs::read_to_string(&act).unwrap();
+            assert!(
+                text.matches("\tui-focus\tcomponent\tbutton").count() >= 2,
+                "get + preview-props each emit a ui-focus for the component they read: {text:?}",
+            );
+
+            std::env::remove_var("BSC_UI_ACTIVITY_LOG");
+            std::env::remove_var("BSC_AUDIT_PANE");
+            let _ = std::fs::remove_file(&act);
+        });
     }
 
     // ── component animations (#2869) ─────────────────────────────────────────────────────────────
@@ -2809,6 +4421,49 @@ mod tests {
         assert_eq!(page["composes"], serde_json::json!(["Button"]), "the composer repointed Btn2 → Button");
     }
 
+    /// #3087 end-to-end: `--fix --yes` APPLIED against a store shaped like the live one must leave the
+    /// pages tier and the packaged viz seeds standing, while still pruning a genuine user orphan.
+    #[test]
+    fn doctor_fix_apply_never_removes_a_page_or_a_builtin_seed() {
+        let dir = tmp_store_dir("doctor-guards");
+        let store = bsc_json_store::Store::new(dir, "component");
+        let module = "export const C=()=>null;";
+        let set = |id: &str, rec: serde_json::Value| store.set(id, &rec.to_string()).unwrap();
+        // A used component so the usage index is POPULATED — guards 1+2 must stand on their own.
+        set("btn", serde_json::json!({ "id": "btn", "name": "Button", "kitId": "k", "role": "primitive", "used": 7, "composes": [], "srcText": "b", "source": module }));
+        // A page: a root by definition, composing its section component → "dangling-branch".
+        set("invoicespage", serde_json::json!({ "id": "invoicespage", "name": "InvoicesPage", "kitId": "k", "role": "page", "used": 0, "composes": ["DataTable"], "srcText": "p", "source": module }));
+        set("table", serde_json::json!({ "id": "table", "name": "DataTable", "kitId": "k", "role": "composite", "used": 0, "composes": [], "srcText": "t", "source": module }));
+        // A packaged viz seed: isolated ON PURPOSE (#3194/#3242) → "orphan".
+        set("algocells", serde_json::json!({ "id": "algocells", "name": "AlgoCells", "kitId": "k", "role": "primitive", "used": 0, "builtin": true, "composes": [], "srcText": "a", "source": module }));
+        // A genuine user orphan — the case `--fix` exists for.
+        set("ghost", serde_json::json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0, "composes": [], "srcText": "g", "source": module }));
+
+        let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+        doctor_fix(&store, &comps, true).unwrap();
+
+        assert!(store.get("invoicespage").unwrap().is_some(), "a page is a root by definition — never pruned");
+        assert!(store.get("algocells").unwrap().is_some(), "a packaged builtin seed is never pruned");
+        assert!(store.get("ghost").unwrap().is_none(), "a genuine user orphan still prunes");
+    }
+
+    /// #3087 guard 3: a store with NO usage signal at all (nothing carries `used > 0` — the shape of a
+    /// real install, since nothing increments the reuse count) prunes NOTHING.
+    #[test]
+    fn doctor_fix_apply_prunes_nothing_while_the_usage_index_is_unpopulated() {
+        let dir = tmp_store_dir("doctor-usage-unknown");
+        let store = bsc_json_store::Store::new(dir, "component");
+        let module = "export const C=()=>null;";
+        store.set("ghost", &serde_json::json!({ "id": "ghost", "name": "Ghost", "kitId": "k", "role": "primitive", "used": 0, "composes": [], "srcText": "g", "source": module }).to_string()).unwrap();
+
+        let comps: Vec<serde_json::Value> = store.list().iter().filter_map(|j| serde_json::from_str(j).ok()).collect();
+        // The orphan IS reported by the read-only analyzer …
+        assert!(crate::graph_health::analyze(&comps).iter().any(|f| f.category == "orphan"));
+        // … but `--fix --yes` leaves it alone: `used = 0` store-wide means UNKNOWN, not unused.
+        doctor_fix(&store, &comps, true).unwrap();
+        assert!(store.get("ghost").unwrap().is_some(), "no usage signal ⇒ no automatic removal");
+    }
+
     #[test]
     fn animation_verbs_error_on_an_unknown_component_or_animation() {
         let dir = tmp_store_dir("anim-missing");
@@ -2895,19 +4550,20 @@ mod tests {
         assert!(d.contains("stdin") && d.contains("keyframes"), "define-animation detail teaches the shape");
 
         // The writers refuse under `ui: read`, BEFORE touching the store (mirrors set/remove).
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
-        let err = run(vec!["remove-animation".into(), "card".into(), "x".into()], "bsc ui").unwrap_err();
-        assert!(err.contains("'ui'") && err.contains("read-only"), "read-scope refusal: {err}");
-        // list-animations is a READ tier — reachable under the read scope, against a scratch --dir.
-        let dir = tmp_store_dir("anim-read-scope");
-        bsc_json_store::Store::new(dir.clone(), "component")
-            .set("card", r#"{"id":"card","name":"Card"}"#)
-            .unwrap();
-        assert!(run(vec!["list-animations".into(), "card".into(), "--dir".into(), dir], "bsc ui").is_ok());
-        // Help stays reachable read-scoped.
-        assert!(run(vec!["define-animation".into(), "help".into()], "bsc ui").is_ok());
-        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        // #3382: the read-only scope is THREAD-LOCAL — no process env, so this refusal
+        // test cannot leak into any test running beside it.
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            let err = run(vec!["remove-animation".into(), "card".into(), "x".into()], "bsc ui").unwrap_err();
+            assert!(err.contains("'ui'") && err.contains("read-only"), "read-scope refusal: {err}");
+            // list-animations is a READ tier — reachable under the read scope, against a scratch --dir.
+            let dir = tmp_store_dir("anim-read-scope");
+            bsc_json_store::Store::new(dir.clone(), "component")
+                .set("card", r#"{"id":"card","name":"Card"}"#)
+                .unwrap();
+            assert!(run(vec!["list-animations".into(), "card".into(), "--dir".into(), dir], "bsc ui").is_ok());
+            // Help stays reachable read-scoped.
+            assert!(run(vec!["define-animation".into(), "help".into()], "bsc ui").is_ok());
+        });
     }
 
     // ── granular writes (#3162) ──────────────────────────────────────────────────────────────────
@@ -3076,30 +4732,67 @@ mod tests {
     }
 
     #[test]
+    fn get_out_spills_the_value_into_the_scratch_dir_untruncated() {
+        use serde_json::json;
+        // #3713: the motivating case — a srcText far larger than the ~30KB stdout truncation ceiling.
+        let dir = tmp_store_dir("get-out");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        let big = format!("export function FleetPage(){{ return <div>{}</div>; }}", "x".repeat(40_000));
+        store.set("fleetpage", &json!({ "id":"fleetpage", "name":"FleetPage", "srcText": big }).to_string()).unwrap();
+
+        let scratch = std::env::temp_dir().join(format!("bsc-comp-getout-scratch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(&scratch).unwrap();
+        let scratch_str = scratch.to_string_lossy().into_owned();
+
+        bsc_cli_util::with_scratch(Some(&scratch_str), || {
+            // The exact #20 command: `get <id> --field srcText --raw --out <name>` — writes the FULL
+            // srcText to a confinement-allowed scratch file instead of truncated stdout.
+            run(vec!["get".into(), "fleetpage".into(), "--field".into(), "srcText".into(), "--raw".into(),
+                     "--out".into(), "src.tsx".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+            let got = std::fs::read_to_string(scratch.join("src.tsx")).unwrap();
+            assert_eq!(got.trim_end_matches('\n'), big, "the full srcText landed untruncated");
+
+            // Whole-record `--out` (no --field) writes the record JSON.
+            run(vec!["get".into(), "fleetpage".into(), "--out".into(), "rec.json".into(), "--dir".into(), dir.clone()],
+                "bsc ui").unwrap();
+            assert!(std::fs::read_to_string(scratch.join("rec.json")).unwrap().contains("\"id\":\"fleetpage\""),
+                "the whole record landed too");
+
+            // The traversal defence refuses a non-bare --out name.
+            let err = run(vec!["get".into(), "fleetpage".into(), "--field".into(), "srcText".into(),
+                              "--out".into(), "../escape".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap_err();
+            assert!(err.contains("BARE FILENAME"), "a path traversal is refused: {err}");
+        });
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
     fn granular_writes_refuse_under_a_read_ui_scope_before_stdin_or_the_store() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
-        // set-src is a MUTATION: it refuses at the write-scope gate BEFORE reading stdin (so no --dir /
-        // stdin is passed — the gate fires first and the test can never block on stdin).
-        let err = run(vec!["set-src".into(), "x".into()], "bsc ui").unwrap_err();
-        assert!(err.contains("'ui'") && err.contains("read-only"), "set-src read-scope refusal: {err}");
-        // patch refuses the same way, before the store is touched.
-        let err = run(vec!["patch".into(), "x".into(), "/name".into(), "Button".into()], "bsc ui").unwrap_err();
-        assert!(err.contains("'ui'") && err.contains("read-only"), "patch read-scope refusal: {err}");
-        // `get --field` is a READ — reachable under the read scope (against a scratch --dir).
-        let dir = tmp_store_dir("granular-read-scope");
-        bsc_json_store::Store::new(dir.clone(), "component")
-            .set("card", r#"{"id":"card","name":"Card"}"#)
-            .unwrap();
-        assert!(run(
-            vec!["get".into(), "card".into(), "--field".into(), "/name".into(), "--raw".into(), "--dir".into(), dir],
-            "bsc ui"
-        )
-        .is_ok());
-        // Help stays reachable read-scoped for both writers.
-        assert!(run(vec!["set-src".into(), "help".into()], "bsc ui").is_ok());
-        assert!(run(vec!["patch".into(), "help".into()], "bsc ui").is_ok());
-        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        // #3382: the read-only scope is THREAD-LOCAL — no process env, so this refusal
+        // test cannot leak into any test running beside it.
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            // set-src is a MUTATION: it refuses at the write-scope gate BEFORE reading stdin (so no --dir /
+            // stdin is passed — the gate fires first and the test can never block on stdin).
+            let err = run(vec!["set-src".into(), "x".into()], "bsc ui").unwrap_err();
+            assert!(err.contains("'ui'") && err.contains("read-only"), "set-src read-scope refusal: {err}");
+            // patch refuses the same way, before the store is touched.
+            let err = run(vec!["patch".into(), "x".into(), "/name".into(), "Button".into()], "bsc ui").unwrap_err();
+            assert!(err.contains("'ui'") && err.contains("read-only"), "patch read-scope refusal: {err}");
+            // `get --field` is a READ — reachable under the read scope (against a scratch --dir).
+            let dir = tmp_store_dir("granular-read-scope");
+            bsc_json_store::Store::new(dir.clone(), "component")
+                .set("card", r#"{"id":"card","name":"Card"}"#)
+                .unwrap();
+            assert!(run(
+                vec!["get".into(), "card".into(), "--field".into(), "/name".into(), "--raw".into(), "--dir".into(), dir],
+                "bsc ui"
+            )
+            .is_ok());
+            // Help stays reachable read-scoped for both writers.
+            assert!(run(vec!["set-src".into(), "help".into()], "bsc ui").is_ok());
+            assert!(run(vec!["patch".into(), "help".into()], "bsc ui").is_ok());
+        });
     }
 
     #[test]
@@ -3135,7 +4828,7 @@ mod tests {
         let rec = serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui" });
 
         // First write of a brand-new record → rev 1, updatedBy = the writer, updatedAt an ISO stamp.
-        let ids = set_stamped(&store, std::slice::from_ref(&rec), None, "alice", "component").unwrap();
+        let ids = set_stamped(&store, std::slice::from_ref(&rec), None, "alice", "component", None).unwrap();
         assert_eq!(ids, vec!["button".to_string()]);
         let s = stored(&store, "button");
         assert_eq!(s["rev"], serde_json::json!(1), "a fresh record's first write is rev 1");
@@ -3146,7 +4839,7 @@ mod tests {
         assert_eq!(s["kitId"], "react-ui");
 
         // A second write of the same id bumps from the STORED rev (1 → 2), even though the payload carries none.
-        set_stamped(&store, std::slice::from_ref(&rec), None, "bob", "component").unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), None, "bob", "component", None).unwrap();
         let s = stored(&store, "button");
         assert_eq!(s["rev"], serde_json::json!(2), "the second write bumps to rev 2");
         assert_eq!(s["updatedBy"], "bob", "attribution follows the latest writer");
@@ -3156,20 +4849,20 @@ mod tests {
     fn set_stamped_if_version_rejects_a_stale_write_and_allows_a_current_one() {
         let store = tmp_component_store("stamp-ifver");
         let rec = serde_json::json!({ "id": "chip", "name": "Chip" });
-        set_stamped(&store, std::slice::from_ref(&rec), None, "x", "component").unwrap(); // → rev 1
+        set_stamped(&store, std::slice::from_ref(&rec), None, "x", "component", None).unwrap(); // → rev 1
 
         // --if-version 0 is STALE (current rev is 1): rejected with a clear message, nothing overwritten.
-        let err = set_stamped(&store, std::slice::from_ref(&rec), Some(0), "x", "component").unwrap_err();
+        let err = set_stamped(&store, std::slice::from_ref(&rec), Some(0), "x", "component", None).unwrap_err();
         assert!(err.contains("version conflict") && err.contains("rev is 1"), "clear conflict message: {err}");
         assert_eq!(stored(&store, "chip")["rev"], serde_json::json!(1), "the stale write did NOT clobber");
 
         // --if-version 1 matches the current rev → the write lands and bumps to 2.
-        set_stamped(&store, std::slice::from_ref(&rec), Some(1), "x", "component").unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), Some(1), "x", "component", None).unwrap();
         assert_eq!(stored(&store, "chip")["rev"], serde_json::json!(2));
 
         // --if-version guards a SINGLE record — a batch with a lone version number is a usage error.
         let batch = vec![serde_json::json!({ "id": "a" }), serde_json::json!({ "id": "b" })];
-        let err = set_stamped(&store, &batch, Some(1), "x", "component").unwrap_err();
+        let err = set_stamped(&store, &batch, Some(1), "x", "component", None).unwrap_err();
         assert!(err.contains("--if-version") && err.contains("single"), "batch + version rejected: {err}");
     }
 
@@ -3183,7 +4876,7 @@ mod tests {
 
         // So --if-version 0 succeeds against it (backward-compatible), stamping it forward to rev 1.
         let rec = serde_json::json!({ "id": "legacy", "name": "Legacy v2" });
-        set_stamped(&store, std::slice::from_ref(&rec), Some(0), "migrator", "component").unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), Some(0), "migrator", "component", None).unwrap();
         let s = stored(&store, "legacy");
         assert_eq!(s["rev"], serde_json::json!(1));
         assert_eq!(s["updatedBy"], "migrator");
@@ -3197,7 +4890,7 @@ mod tests {
         let rec = serde_json::json!({
             "id": "card", "name": "Card", "kitId": "react-ui", "role": "layout", "group": "pages", "shapes": ["list"]
         });
-        set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component").unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), None, "designer", "component", None).unwrap();
 
         // The lean projection is byte-for-byte the same — the stamp fields don't leak into it, the axes still project.
         let meta = bsc_json_store::cli::lean_meta(&store.get("card").unwrap().unwrap(), COMPONENT_SPEC.meta_fields);
@@ -3218,7 +4911,7 @@ mod tests {
         let store = tmp_component_store("stamp-log");
         let dir = store.dir().to_string_lossy().into_owned();
         let rec = serde_json::json!({ "id": "hero", "name": "Hero" });
-        set_stamped(&store, std::slice::from_ref(&rec), None, "ada", "component").unwrap();
+        set_stamped(&store, std::slice::from_ref(&rec), None, "ada", "component", None).unwrap();
 
         // `log <id>` reads Ok over the stamped record (compact + --pretty); `log` of an absent id errors.
         assert!(run(vec!["log".into(), "hero".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok());
@@ -3250,6 +4943,67 @@ mod tests {
     }
 
     #[test]
+    fn set_stamped_accumulates_a_change_history_with_notes_and_diffs() {
+        // #3568: every write through the stamp boundary appends a capped history entry that Claude can review.
+        let store = tmp_component_store("history");
+        let v1 = serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui" });
+        set_stamped(&store, std::slice::from_ref(&v1), None, "designer", "component", Some("initial draft")).unwrap();
+        // A second, real edit with a note — one field changes.
+        let v2 = serde_json::json!({ "id": "button", "name": "Primary Button", "kitId": "react-ui" });
+        set_stamped(&store, std::slice::from_ref(&v2), None, "alice", "component", Some("rename")).unwrap();
+
+        let s = stored(&store, "button");
+        let hist = s["history"].as_array().expect("history is recorded");
+        assert_eq!(hist.len(), 2, "one entry per write, newest-last");
+        assert_eq!(hist[0]["rev"], serde_json::json!(1));
+        assert_eq!(hist[0]["by"], "designer");
+        assert_eq!(hist[0]["note"], "initial draft");
+        assert_eq!(hist[0]["changed"], serde_json::json!(["created"]), "the first write is 'created'");
+        assert_eq!(hist[1]["rev"], serde_json::json!(2));
+        assert_eq!(hist[1]["by"], "alice");
+        assert_eq!(hist[1]["note"], "rename");
+        assert_eq!(hist[1]["changed"], serde_json::json!(["name"]), "only name diffed on the second write");
+
+        // The animation path (a different writer) also records history — the boundary catches every writer.
+        upsert_animation(&store, "button", &valid_anim("fade-in")).unwrap();
+        let hist = stored(&store, "button")["history"].as_array().unwrap().clone();
+        assert_eq!(hist.len(), 3, "the animation edit is logged too");
+        assert_eq!(hist[2]["changed"], serde_json::json!(["animations"]), "the animation write diffs `animations`");
+    }
+
+    #[test]
+    fn set_command_argv_records_by_and_note_in_history_end_to_end() {
+        // #3568: drive the REAL `run(["set", …])` dispatch (not just set_stamped) so the `--by` / `--note`
+        // flag parsing → stored history entry is covered end-to-end. `--file` carries the payload (the one
+        // allow-listable authoring channel), read from a scoped $BSC_SCRATCH.
+        let store = tmp_component_store("history-argv");
+        let dir = store.dir().to_string_lossy().into_owned();
+        let base = std::env::temp_dir().join(format!("bsc-scratch-note-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let scratch = base.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        std::fs::write(scratch.join("c.json"), r#"{"id":"btn","name":"Button","kitId":"react-ui"}"#).unwrap();
+
+        bsc_cli_util::with_scratch(scratch.to_str(), || {
+            run(
+                vec![
+                    "set".into(), "--file".into(), "c.json".into(),
+                    "--by".into(), "designer".into(), "--note".into(), "add error state".into(),
+                    "--dir".into(), dir.clone(),
+                ],
+                "bsc ui",
+            )
+            .expect("set --by --note lands");
+        });
+
+        let entry = stored(&store, "btn")["history"].as_array().unwrap()[0].clone();
+        assert_eq!(entry["by"], "designer", "--by flows to the history entry");
+        assert_eq!(entry["note"], "add error state", "--note flows to the history entry");
+        assert_eq!(entry["changed"], serde_json::json!(["created"]), "the first write is 'created'");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
     fn the_set_verb_is_registered_gated_and_help_reachable() {
         // `log` + `set` are in the catalog; `log` is a READ (never gated), `set` is a MUTATION.
         let names: Vec<&str> = COMPONENT_COMMANDS.iter().map(|c| c.name).collect();
@@ -3259,14 +5013,249 @@ mod tests {
         assert!(!is_scoped_mutation(&a(&["log", "button"])), "log is a read");
 
         // `set`/`kit set` refuse under a read `ui` scope BEFORE touching stdin or the store; help still prints.
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        std::env::set_var(bsc_cli_util::BSC_SCOPES_ENV, r#"{"ui":"read"}"#);
-        let err = run(vec!["set".into(), "--by".into(), "x".into()], "bsc ui").unwrap_err();
-        assert!(err.contains("'ui'") && err.contains("read-only"), "set refuses read-scoped: {err}");
-        let err = run(vec!["kit".into(), "set".into()], "bsc ui").unwrap_err();
-        assert!(err.contains("read-only"), "kit set refuses read-scoped: {err}");
-        assert!(run(vec!["set".into(), "help".into()], "bsc ui").is_ok(), "set help stays reachable read-scoped");
-        assert!(run(vec!["log".into(), "help".into()], "bsc ui").is_ok(), "log help stays reachable read-scoped");
-        std::env::remove_var(bsc_cli_util::BSC_SCOPES_ENV);
+        // #3382: the read-only scope is THREAD-LOCAL — no process env, so this refusal
+        // test cannot leak into any test running beside it.
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            let err = run(vec!["set".into(), "--by".into(), "x".into()], "bsc ui").unwrap_err();
+            assert!(err.contains("'ui'") && err.contains("read-only"), "set refuses read-scoped: {err}");
+            let err = run(vec!["kit".into(), "set".into()], "bsc ui").unwrap_err();
+            assert!(err.contains("read-only"), "kit set refuses read-scoped: {err}");
+            assert!(run(vec!["set".into(), "help".into()], "bsc ui").is_ok(), "set help stays reachable read-scoped");
+            assert!(run(vec!["log".into(), "help".into()], "bsc ui").is_ok(), "log help stays reachable read-scoped");
+        });
+    }
+
+    #[test]
+    fn used_by_index_is_the_kit_scoped_composes_inverse() {
+        // #3584: the graph-usage signal. Button is composed by Card + Panel (2) in react-ui; a SAME-NAMED
+        // Button in another kit is counted SEPARATELY (composes resolves by name WITHIN a kit).
+        let comps = vec![
+            serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui", "composes": [] }),
+            serde_json::json!({ "id": "card", "name": "Card", "kitId": "react-ui", "composes": ["Button", "Icon"] }),
+            serde_json::json!({ "id": "panel", "name": "Panel", "kitId": "react-ui", "composes": ["Button"] }),
+            serde_json::json!({ "id": "muibutton", "name": "Button", "kitId": "mui", "composes": [] }),
+            serde_json::json!({ "id": "toolbar", "name": "Toolbar", "kitId": "mui", "composes": ["Button"] }),
+        ];
+        let idx = used_by_index(&comps);
+        assert_eq!(
+            idx.get(&("react-ui".into(), "Button".into())),
+            Some(&vec!["Card".to_string(), "Panel".to_string()]),
+            "react-ui Button: composed by Card + Panel, sorted+deduped",
+        );
+        assert_eq!(idx.get(&("mui".into(), "Button".into())).map(Vec::len), Some(1), "the other kit's Button is separate");
+        assert!(!idx.contains_key(&("react-ui".into(), "Card".into())), "nothing composes Card ⇒ absent (an orphan/root)");
+        assert_eq!(idx.get(&("react-ui".into(), "Icon".into())).map(Vec::len), Some(1), "a composed NAME appears even with no own record");
+    }
+
+    #[test]
+    fn used_by_command_reads_single_and_all_and_is_never_gated() {
+        let store = tmp_component_store("usedby");
+        let dir = store.dir().to_string_lossy().into_owned();
+        for rec in [
+            serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui", "role": "primitive", "composes": [] }),
+            serde_json::json!({ "id": "card", "name": "Card", "kitId": "react-ui", "role": "composite", "composes": ["Button"] }),
+        ] {
+            store.set(rec["id"].as_str().unwrap(), &rec.to_string()).unwrap();
+        }
+        let d = |extra: &[&str]| {
+            extra.iter().map(|s| s.to_string()).chain(["--dir".to_string(), dir.clone()]).collect::<Vec<_>>()
+        };
+        assert!(run(d(&["used-by", "button", "--json"]), "bsc ui").is_ok(), "single form");
+        assert!(run(d(&["used-by", "--all"]), "bsc ui").is_ok(), "--all ranking");
+        assert!(run(d(&["used-by", "--all", "--kit", "react-ui", "--json"]), "bsc ui").is_ok(), "--all --kit --json");
+        assert!(run(vec!["used-by".into(), "help".into()], "bsc ui").is_ok(), "help reachable");
+        let err = run(d(&["used-by", "ghost"]), "bsc ui").unwrap_err();
+        assert!(err.contains("no component with id 'ghost'"), "{err}");
+
+        // A READ — in the catalog, never a scoped mutation, and runs under a read-only ui scope.
+        assert!(COMPONENT_COMMANDS.iter().any(|c| c.name == "used-by"));
+        assert!(!is_scoped_mutation(&["used-by".to_string(), "button".to_string()]), "used-by is a read");
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            assert!(run(d(&["used-by", "button"]), "bsc ui").is_ok(), "used-by works read-scoped");
+        });
+    }
+
+    #[test]
+    fn similar_folds_in_each_candidate_usage() {
+        // #3584: `similar` still ranks by name+contract, but each row now carries `usedBy` so a combine
+        // proposal shows which side is load-bearing. Card2 duplicates Card's contract; Card is composed by
+        // Page (used-by 1), Card2 by nothing (0) — so the optimizer folds Card2 → Card.
+        let comps = vec![
+            serde_json::json!({ "id": "card", "name": "Card", "kitId": "k", "role": "composite", "props": [{ "name": "title", "type": "string" }], "variants": [], "composes": [], "srcText": "<div/>" }),
+            serde_json::json!({ "id": "card2", "name": "CardView", "kitId": "k", "role": "composite", "props": [{ "name": "title", "type": "string" }], "variants": [], "composes": [], "srcText": "<div/>" }),
+            serde_json::json!({ "id": "page", "name": "Page", "kitId": "k", "role": "page", "composes": ["Card"] }),
+        ];
+        let idx = used_by_index(&comps);
+        // The fold is a lookup on this index (exercised live by `cmd_similar`): Card is load-bearing, CardView isn't.
+        assert_eq!(idx.get(&("k".into(), "Card".into())).map(Vec::len), Some(1));
+        assert!(!idx.contains_key(&("k".into(), "CardView".into())));
+        // And the command runs end-to-end.
+        let store = tmp_component_store("similar-usage");
+        let dir = store.dir().to_string_lossy().into_owned();
+        for c in &comps { store.set(c["id"].as_str().unwrap(), &c.to_string()).unwrap(); }
+        assert!(run(vec!["similar".into(), "card2".into(), "--json".into(), "--dir".into(), dir], "bsc ui").is_ok());
+    }
+
+    #[test]
+    fn rename_ident_replaces_whole_identifiers_only() {
+        // #3576: the boundary rule — `Button` → `PrimaryButton` rewrites the declaration and the JSX tag,
+        // but NEVER the substring inside `IconButton` / `ButtonGroup` / `notButton`.
+        assert_eq!(rename_ident("export function Button() {}", "Button", "PrimaryButton"), "export function PrimaryButton() {}");
+        assert_eq!(rename_ident("<Button label=\"x\" />", "Button", "PrimaryButton"), "<PrimaryButton label=\"x\" />");
+        assert_eq!(
+            rename_ident("import { IconButton } from x; <ButtonGroup/> notButton", "Button", "PrimaryButton"),
+            "import { IconButton } from x; <ButtonGroup/> notButton",
+            "substrings of a larger identifier are untouched",
+        );
+        assert_eq!(rename_ident("Button, Button.Item", "Button", "B2"), "B2, B2.Item", "punctuation is a boundary");
+        assert_eq!(rename_ident("nothing here", "Button", "B2"), "nothing here");
+    }
+
+    #[test]
+    fn is_component_name_ident_requires_pascal_case() {
+        for ok in ["Button", "Button2", "A", "PrimaryButton"] {
+            assert!(is_component_name_ident(ok), "{ok} is valid");
+        }
+        for bad in ["button", "", "My-Button", "2Button", "Foo Bar", "with_underscore"] {
+            assert!(!is_component_name_ident(bad), "{bad:?} is invalid");
+        }
+    }
+
+    #[test]
+    fn rename_moves_the_name_sweeps_references_and_freezes_the_id() {
+        let store = tmp_component_store("rename");
+        let dir = store.dir().to_string_lossy().into_owned();
+        // Button (target) · Card (composes Button + a rule using Button) · a SAME-NAMED Button in another kit.
+        for rec in [
+            serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui", "role": "primitive",
+                "srcText": "export function Button() { return <button/>; }" }),
+            serde_json::json!({ "id": "card", "name": "Card", "kitId": "react-ui", "role": "composite",
+                "composes": ["Button", "Icon"],
+                "rules": [{ "id": "r1", "kind": "forbid-element", "target": "button", "use": "Button" }] }),
+            serde_json::json!({ "id": "muibutton", "name": "Button", "kitId": "mui", "role": "primitive" }),
+        ] {
+            store.set(rec["id"].as_str().unwrap(), &rec.to_string()).unwrap();
+        }
+
+        run(vec!["rename".into(), "button".into(), "PrimaryButton".into(), "--by".into(), "designer".into(), "--dir".into(), dir.clone()], "bsc ui")
+            .expect("rename lands");
+
+        // id is FROZEN; name + srcText identifier moved; history stamped with the default note.
+        let b = stored(&store, "button");
+        assert_eq!(b["id"], "button", "the store key never moves");
+        assert_eq!(b["name"], "PrimaryButton");
+        assert!(b["srcText"].as_str().unwrap().contains("export function PrimaryButton"), "srcText: {}", b["srcText"]);
+        assert!(b["srcText"].as_str().unwrap().contains("<button/>"), "the intrinsic <button/> is NOT touched");
+        assert_eq!(b["history"].as_array().unwrap().last().unwrap()["note"], "renamed Button → PrimaryButton");
+
+        // Card's NAME-keyed references rewired; the intrinsic `target` + the unrelated `Icon` are not.
+        let c = stored(&store, "card");
+        assert_eq!(c["composes"], serde_json::json!(["PrimaryButton", "Icon"]));
+        assert_eq!(c["rules"][0]["use"], "PrimaryButton");
+        assert_eq!(c["rules"][0]["target"], "button", "the raw intrinsic is left alone");
+
+        // A same-named component in ANOTHER kit is never touched (kits never cross).
+        let o = stored(&store, "muibutton");
+        assert_eq!(o["name"], "Button");
+        assert!(o.get("history").is_none(), "the other kit's Button was not even written");
+    }
+
+    #[test]
+    fn rename_refuses_bad_name_collision_and_absent_without_mutating() {
+        let store = tmp_component_store("rename-refuse");
+        let dir = store.dir().to_string_lossy().into_owned();
+        store.set("button", &serde_json::json!({ "id": "button", "name": "Button", "kitId": "react-ui" }).to_string()).unwrap();
+        store.set("chip", &serde_json::json!({ "id": "chip", "name": "Chip", "kitId": "react-ui" }).to_string()).unwrap();
+
+        let refuse = |args: &[&str], needle: &str| {
+            let v: Vec<String> = args.iter().map(|s| s.to_string()).chain(["--dir".to_string(), dir.clone()]).collect();
+            let err = run(v, "bsc ui").unwrap_err();
+            assert!(err.contains(needle), "expected '{needle}' in: {err}");
+        };
+        refuse(&["rename", "button", "lowercase"], "PascalCase");
+        refuse(&["rename", "button", "Button"], "already named");
+        refuse(&["rename", "button", "Chip"], "already has a component named");
+        refuse(&["rename", "ghost", "NewName"], "no component 'ghost'");
+
+        // Not one refusal mutated the record.
+        assert_eq!(stored(&store, "button")["name"], "Button");
+        assert!(stored(&store, "button").get("history").is_none(), "no write happened");
+    }
+
+    #[test]
+    fn rename_is_registered_gated_and_help_reachable() {
+        assert!(COMPONENT_COMMANDS.iter().any(|c| c.name == "rename"));
+        let a = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(is_scoped_mutation(&a(&["rename", "button", "New"])), "rename is a mutation");
+        assert!(!is_scoped_mutation(&a(&["rename", "help"])), "rename help is not a mutation");
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            let err = run(vec!["rename".into(), "button".into(), "New".into()], "bsc ui").unwrap_err();
+            assert!(err.contains("read-only"), "rename refuses read-scoped: {err}");
+            assert!(run(vec!["rename".into(), "help".into()], "bsc ui").is_ok(), "rename help stays reachable read-scoped");
+        });
+    }
+
+    #[test]
+    fn merge_folds_from_into_survivor_repoints_dedups_and_removes() {
+        let store = tmp_component_store("merge");
+        let dir = store.dir().to_string_lossy().into_owned();
+        // Card (survivor) · CardView (dup) · Page composes BOTH + a rule using CardView · Card composes
+        // CardView (the self-ref the fold creates) · a same-named CardView in ANOTHER kit.
+        for rec in [
+            serde_json::json!({ "id": "card", "name": "Card", "kitId": "k", "role": "composite", "composes": ["CardView"] }),
+            serde_json::json!({ "id": "cardview", "name": "CardView", "kitId": "k", "role": "composite", "composes": [] }),
+            serde_json::json!({ "id": "page", "name": "Page", "kitId": "k", "role": "page",
+                "composes": ["Card", "CardView", "Icon"],
+                "rules": [{ "id": "r1", "kind": "forbid-element", "target": "div", "use": "CardView" }] }),
+            serde_json::json!({ "id": "muicardview", "name": "CardView", "kitId": "mui", "role": "composite" }),
+        ] {
+            store.set(rec["id"].as_str().unwrap(), &rec.to_string()).unwrap();
+        }
+
+        run(vec!["merge".into(), "cardview".into(), "card".into(), "--by".into(), "curator".into(), "--dir".into(), dir.clone()], "bsc ui")
+            .expect("merge lands");
+
+        // `from` is GONE; `into` survives.
+        assert!(store.get("cardview").unwrap().is_none(), "the merged-away component is removed");
+        // Page: CardView→Card, DEDUPED (had both Card + CardView ⇒ Card once); Icon kept; rule repointed; history stamped.
+        let p = stored(&store, "page");
+        assert_eq!(p["composes"], serde_json::json!(["Card", "Icon"]), "deduped composes; Icon untouched");
+        assert_eq!(p["rules"][0]["use"], "Card", "rules.use repointed");
+        assert_eq!(p["history"].as_array().unwrap().last().unwrap()["note"], "merged CardView → Card");
+        // Card composed CardView (== itself after the fold) ⇒ the self-reference is DROPPED.
+        assert_eq!(stored(&store, "card")["composes"], serde_json::json!([]), "no component composes itself");
+        // The other kit's CardView is never touched (kits never cross).
+        assert_eq!(stored(&store, "muicardview")["name"], "CardView");
+        assert!(stored(&store, "muicardview").get("history").is_none());
+    }
+
+    #[test]
+    fn merge_refuses_self_absent_and_cross_kit_without_removing() {
+        let store = tmp_component_store("merge-refuse");
+        let dir = store.dir().to_string_lossy().into_owned();
+        store.set("a", &serde_json::json!({ "id": "a", "name": "A", "kitId": "k1" }).to_string()).unwrap();
+        store.set("b", &serde_json::json!({ "id": "b", "name": "B", "kitId": "k2" }).to_string()).unwrap();
+        let refuse = |args: &[&str], needle: &str| {
+            let v: Vec<String> = args.iter().map(|s| s.to_string()).chain(["--dir".to_string(), dir.clone()]).collect();
+            let err = run(v, "bsc ui").unwrap_err();
+            assert!(err.contains(needle), "expected '{needle}' in: {err}");
+        };
+        refuse(&["merge", "a", "a"], "into itself");
+        refuse(&["merge", "ghost", "a"], "no component 'ghost'");
+        refuse(&["merge", "a", "b"], "cross-kit merge is unsafe");
+        assert!(store.get("a").unwrap().is_some() && store.get("b").unwrap().is_some(), "no refusal removed anything");
+    }
+
+    #[test]
+    fn merge_is_registered_gated_and_help_reachable() {
+        assert!(COMPONENT_COMMANDS.iter().any(|c| c.name == "merge"));
+        let a = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(is_scoped_mutation(&a(&["merge", "a", "b"])), "merge is a mutation");
+        assert!(!is_scoped_mutation(&a(&["merge", "help"])), "merge help is not a mutation");
+        bsc_cli_util::with_scopes(Some(r#"{"ui":"read"}"#), || {
+            let err = run(vec!["merge".into(), "a".into(), "b".into()], "bsc ui").unwrap_err();
+            assert!(err.contains("read-only"), "merge refuses read-scoped: {err}");
+            assert!(run(vec!["merge".into(), "help".into()], "bsc ui").is_ok(), "merge help reachable read-scoped");
+        });
     }
 }

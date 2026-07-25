@@ -1,0 +1,302 @@
+// The node — `{ type, props, children, binds, actions }` over the full primitive registry (#3485,
+// #3496, #3500; the keystone is #3484).
+//
+// This REPLACED a closed `KitNode` union of 8 hardcoded kinds (card/header/field/button/row/toggle/
+// tag/text) that could address only 8 of the ~67 primitives in the manifest, each with its own
+// hand-written branch in the renderer. #3500 deleted that vocabulary outright: a node now names a real
+// component, so the authorable surface IS the kit.
+//
+// THE VOCABULARY IS DERIVED, NOT DECLARED. Both the set of valid `type`s and the per-type prop rules
+// come from `UI_KIT` (`shared/ui/manifest.ts`), so adding a primitive there makes it authorable here
+// with no edit to this file. A hand-maintained mirror would drift, and a contract that drifts from the
+// code is worse than no contract — agents author against it.
+import { UI_KIT, type PrimitiveName, type PropSpec } from "../manifest";
+
+/** A node addressing any primitive in the manifest. `props` is open; the validator constrains it. */
+export interface GeneralNode {
+  type: PrimitiveName;
+  props?: Record<string, unknown>;
+  /**
+   * Children — nodes, or plain TEXT.
+   *
+   * Text is included because the manifest types `children` as `node`, and a `node` slot legitimately
+   * holds text — `<Text>hello</Text>` is the commonest node in the tree. An array-only type here would
+   * be NARROWER than what the validator accepts, and a type that disagrees with the contract it
+   * describes is worse than no type: the compiler would reject trees the runtime happily validates.
+   */
+  children?: GeneralNode[] | GeneralNode | string | number;
+  /**
+   * Handlers, as prop name → host ACTION NAME (#3496).
+   *
+   * The renderer otherwise learns which props are handlers from the manifest's declared
+   * `type: "function"` — deliberately, so it never infers meaning from a prop's NAME. But 9 primitives
+   * are `passthrough`: they forward arbitrary DOM props by design, so their handlers are *undeclared*
+   * and that inference has nothing to work from. `Button` does not declare `onClick`, which is the
+   * commonest handler in any UI.
+   *
+   * This map closes that without guessing: it states outright which props are handlers. It also
+   * generalises the legacy vocabulary, where a `button` node already carried a node-level `action`.
+   *
+   * PRECEDENCE: an entry here WINS over a declared `function` prop of the same name. The map is the
+   * more explicit statement, and letting the implicit path override an explicit one would be
+   * surprising in exactly the case where an author is trying to be unambiguous.
+   */
+  actions?: Record<string, string>;
+  /**
+   * Value bindings, as prop name → host STATE KEY (#3500).
+   *
+   * The mirror of {@link actions}: that map carries behaviour *out* of the tree, this brings state
+   * *in*. The renderer reads `values[key]` and passes it as the prop, so a control can show host state
+   * without the tree containing that state.
+   *
+   * WRITES GO THROUGH `actions`, deliberately. The legacy `toggle`/`field` kinds derived the writer
+   * automatically (`onBind(bind, !isOn)`), which required the renderer to know that `on` pairs with
+   * `onClick` and `value` with `onChange` — pairing the manifest does not declare, so deriving it means
+   * inferring from prop NAMES. This design has refused that three times; it refuses it here too. The
+   * host exposes an action instead, which also makes the state write visible in the host rather than
+   * invisible magic inside the renderer.
+   */
+  binds?: Record<string, string>;
+}
+
+/** Every primitive name the manifest defines — the closed `type` vocabulary. */
+export const PRIMITIVE_NAMES: readonly string[] = UI_KIT.map((p) => p.name);
+
+const BY_NAME = new Map(UI_KIT.map((p) => [p.name as string, p]));
+
+/**
+ * What the validator can and cannot enforce, stated exactly (#3485).
+ *
+ * `PropSpec.type` is a CLOSED 13-member union with an explicit `values` list for enums, so most props
+ * get real enforcement. The two genuine gaps are `array` and `object`, whose element/field shapes the
+ * manifest keeps in prose (`description`) rather than as a machine-readable schema — so the container
+ * type is checked and its CONTENTS are not.
+ *
+ * This is published rather than left implicit on purpose: `bsc ui validate` reporting "valid" while
+ * silently meaning "the names look right" is a half-truth that gets trusted and then bites. Anything
+ * that consumes this contract can read exactly where the guarantees stop.
+ */
+export const VALIDATION_COVERAGE: Readonly<Record<string, "checked" | "container-only">> = {
+  string: "checked",
+  number: "checked",
+  boolean: "checked",
+  enum: "checked",
+  node: "checked",
+  function: "checked",
+  color: "checked",
+  space: "checked",
+  fontSize: "checked",
+  tracks: "checked",
+  style: "container-only",
+  array: "container-only",
+  object: "container-only",
+};
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** A node-ish value — an object naming a primitive with `type`. */
+function isNodeLike(v: unknown): boolean {
+  return isPlainObject(v) && typeof v.type === "string";
+}
+
+/**
+ * Check one prop VALUE against its spec. Returns an error message, or null when acceptable.
+ *
+ * Note `function`: in a data tree a handler can never be a literal — it is the NAME of an action the
+ * host exposes (the `bind`/`action` seam). So requiring a string here is not a weaker check than a type
+ * check, it is a stricter and more meaningful one: a serialized function would be nonsense, and an
+ * inline arrow would mean the tree had stopped being data.
+ */
+function checkValue(spec: PropSpec, value: unknown): string | null {
+  switch (spec.type) {
+    case "string":
+      return typeof value === "string" ? null : `expected a string`;
+    case "number":
+      return typeof value === "number" ? null : `expected a number`;
+    case "boolean":
+      return typeof value === "boolean" ? null : `expected a boolean`;
+    case "enum": {
+      const allowed = spec.values ?? [];
+      if (allowed.length === 0) return null; // an enum with no declared set constrains nothing
+      return allowed.includes(value as string)
+        ? null
+        : `"${String(value)}" is not one of ${allowed.join(", ")}`;
+    }
+    case "node":
+      // A slot: a child node, a list of them, or plain text.
+      if (typeof value === "string" || typeof value === "number") return null;
+      if (Array.isArray(value)) return value.every(isNodeLike) ? null : `expected nodes or text`;
+      return isNodeLike(value) ? null : `expected a node, a list of nodes, or text`;
+    case "function":
+      return typeof value === "string"
+        ? null
+        : `expected an action NAME (a string) — a data tree binds handlers by name, it cannot carry a function`;
+    case "color":
+      return typeof value === "string" ? null : `expected a color string (token or CSS color)`;
+    case "space":
+    case "fontSize":
+      return typeof value === "number" || typeof value === "string"
+        ? null
+        : `expected a rung name or a number`;
+    case "tracks":
+      return typeof value === "number" || typeof value === "string"
+        ? null
+        : `expected a track count (number) or a template string`;
+    case "style":
+      return isPlainObject(value) ? null : `expected a style object`;
+    case "array":
+      // Contents deliberately unchecked — see VALIDATION_COVERAGE.
+      return Array.isArray(value) ? null : `expected an array`;
+    case "object":
+      return isPlainObject(value) ? null : `expected an object`;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Structurally validate a node tree against the manifest. Returns a flat list of human-readable errors
+ * (empty = valid), identical to what `bsc ui validate` prints for the same tree — the two validators
+ * are held to that by a shared fixture set (`node-validation.fixtures.json`).
+ *
+ * At every node: `type` present and a real primitive · every required prop present · no prop outside
+ * the primitive's declared set (UNLESS it declares `passthrough`, which legitimately accepts arbitrary
+ * DOM props) · every present prop's value acceptable for its declared `PropType` · recursion into
+ * `children` and into any node-valued prop.
+ *
+ * @param node - the value to validate (typically parsed from agent-emitted JSON)
+ * @param path - dotted path used to locate errors (defaults to "$")
+ */
+export function validateGeneralNode(node: unknown, path = "$"): string[] {
+  const errors: string[] = [];
+  walkGeneral(node, path, errors);
+  return errors;
+}
+
+function walkGeneral(node: unknown, path: string, errors: string[]): void {
+  if (!isPlainObject(node)) {
+    errors.push(`${path}: expected a node object`);
+    return;
+  }
+  const type = node.type;
+  if (typeof type !== "string") {
+    errors.push(`${path}: missing string "type"`);
+    return;
+  }
+  const spec = BY_NAME.get(type);
+  if (!spec) {
+    errors.push(`${path}: unknown primitive "${type}"`);
+    return;
+  }
+
+  const props = node.props;
+  if (props !== undefined && !isPlainObject(props)) {
+    errors.push(`${path}.props: expected an object`);
+    return;
+  }
+  // Node-level `children` is SUGAR for the `children` PROP. The manifest models children the way React
+  // does — a prop of type `node`, declared REQUIRED on containers (Stack/Row/Card/…) — but writing a
+  // tree as `props: { children: [...] }` at every level is miserable. Normalising here means both forms
+  // validate identically, and a bare `children` is not misread as "missing required prop".
+  const given: Record<string, unknown> = { ...((props ?? {}) as Record<string, unknown>) };
+  if (node.children !== undefined) given.children = node.children;
+  const byProp = new Map(spec.props.map((p) => [p.name, p]));
+
+  // Unknown props — skipped for a passthrough primitive, which forwards arbitrary DOM props
+  // (className/style/data-*/handlers) to its root by design. Flagging those would be a false positive.
+  if (!spec.passthrough) {
+    for (const key of Object.keys(given)) {
+      if (!byProp.has(key)) errors.push(`${path}.props.${key}: unknown prop for "${type}"`);
+    }
+  }
+
+  // A prop can be supplied THREE ways — `props`, `binds` (value from host state) or `actions` (a host
+  // handler) — so "required" must consider all of them. Checking only `props` would demand a literal
+  // for `Toggle.on` even when it is bound, and for a REQUIRED handler like `Dialog.onDismiss` even when
+  // it is wired through the actions map.
+  const suppliedByMap = new Set([
+    ...(isPlainObject(node.binds) ? Object.keys(node.binds) : []),
+    ...(isPlainObject(node.actions) ? Object.keys(node.actions) : []),
+  ]);
+
+  for (const p of spec.props) {
+    const v = given[p.name];
+    if (p.required && v == null && !suppliedByMap.has(p.name)) {
+      errors.push(`${path}.props.${p.name}: missing required prop for "${type}"`);
+      continue;
+    }
+    if (v == null) continue; // an absent optional prop takes the component's default
+    const err = checkValue(p, v);
+    if (err) errors.push(`${path}.props.${p.name}: ${err}`);
+  }
+
+  // The node-level actions map (#3496): prop name → host action name.
+  const actions = node.actions;
+  if (actions !== undefined) {
+    if (!isPlainObject(actions)) {
+      errors.push(`${path}.actions: expected an object of prop → action name`);
+    } else {
+      for (const [propName, actionName] of Object.entries(actions)) {
+        if (typeof actionName !== "string" || actionName === "") {
+          errors.push(`${path}.actions.${propName}: expected a non-empty action name (a string)`);
+        }
+        const declared = byProp.get(propName);
+        if (declared && declared.type !== "function") {
+          // Binding a handler onto a prop the component treats as data would produce a function where
+          // a value belongs — a mistake worth naming rather than rendering.
+          errors.push(
+            `${path}.actions.${propName}: "${propName}" is declared as ${declared.type}, not a handler, on "${type}"`,
+          );
+        }
+        // An UNDECLARED key is legitimate only where undeclared props are (a passthrough primitive):
+        // that is the whole reason this map exists. Elsewhere it is the same mistake as an unknown prop.
+        if (!declared && !spec.passthrough) {
+          errors.push(`${path}.actions.${propName}: unknown prop for "${type}"`);
+        }
+      }
+    }
+  }
+
+  // The node-level binds map (#3500): prop name → host state key. Same shape rules as `actions`,
+  // inverted in one respect — binding a VALUE onto a prop the manifest declares as a handler is the
+  // mistake here, where for `actions` it was binding a handler onto a data prop.
+  const binds = node.binds;
+  if (binds !== undefined) {
+    if (!isPlainObject(binds)) {
+      errors.push(`${path}.binds: expected an object of prop → state key`);
+    } else {
+      for (const [propName, stateKey] of Object.entries(binds)) {
+        if (typeof stateKey !== "string" || stateKey === "") {
+          errors.push(`${path}.binds.${propName}: expected a non-empty state key (a string)`);
+        }
+        const declared = byProp.get(propName);
+        if (declared && declared.type === "function") {
+          errors.push(
+            `${path}.binds.${propName}: "${propName}" is a handler on "${type}" — bind it with "actions", not "binds"`,
+          );
+        }
+        if (!declared && !spec.passthrough) {
+          errors.push(`${path}.binds.${propName}: unknown prop for "${type}"`);
+        }
+      }
+    }
+  }
+
+  // Recurse into every node-valued prop (a slot) — `children` included, since it was normalised above.
+  // The error path reports where the value was WRITTEN (`$.children[0]` vs `$.props.children[0]`) so a
+  // message points at the author's own source rather than at the normalised form.
+  const wroteChildrenAtNodeLevel = node.children !== undefined;
+  for (const [name, value] of Object.entries(given)) {
+    if (byProp.get(name)?.type !== "node") continue;
+    const where = name === "children" && wroteChildrenAtNodeLevel ? `${path}.children` : `${path}.props.${name}`;
+    if (Array.isArray(value)) {
+      value.forEach((child, i) => {
+        if (isNodeLike(child)) walkGeneral(child, `${where}[${i}]`, errors);
+      });
+    } else if (isNodeLike(value)) {
+      walkGeneral(value, where, errors);
+    }
+  }
+}

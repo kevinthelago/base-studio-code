@@ -134,8 +134,9 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(cats).not.toContain("unwired-prop");
   });
 
-  it("flags a user component importing a preview-unresolvable package as unresolvable-import (#2934)", () => {
-    // Imports d3-scale (NOT in the preview import-map) alongside react + lucide-react (both pinned).
+  it("notes a bare npm miss as stubbed-import, not an error (#3696)", () => {
+    // Imports d3-scale (NOT a curated external) alongside react + lucide-react (both pinned). A bare npm miss
+    // no longer FAILS — the preview bundles a local stub for it → a severity-1 `stubbed-import` note.
     const chart = comp("Chart", "composite", 2, [], {
       source: undefined,
       srcText:
@@ -143,12 +144,13 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
         "export function Chart(){ return React.createElement(Icon, null, scaleLinear); }",
     });
     const fs = analyzeGraphHealth([chart]);
-    const f = fs.find((x) => x.category === "unresolvable-import");
+    const f = fs.find((x) => x.category === "stubbed-import");
     expect(f).toBeTruthy();
-    expect(f!.severity).toBe(3);
-    expect(f!.why).toContain("d3-scale"); // not in the map → flagged
-    expect(f!.why).not.toContain("`react`"); // react is pinned → resolvable, not listed
-    expect(f!.why).not.toContain("`lucide-react`"); // pinned (#2934) → resolvable, not listed
+    expect(f!.severity).toBe(1);
+    expect(f!.why).toContain("d3-scale"); // not curated → stubbed
+    expect(f!.why).not.toContain("`react`"); // react is pinned → real, not listed
+    expect(f!.why).not.toContain("`lucide-react`"); // pinned → real, not listed
+    expect(fs.some((x) => x.category === "unresolvable-import")).toBe(false); // a bare npm miss is no longer an ERROR
   });
 
   it("does NOT flag unresolvable-import when every import resolves, or for a non-module snippet (#2934)", () => {
@@ -162,20 +164,22 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(cats).not.toContain("unresolvable-import");
   });
 
-  it("does NOT flag an absolute URL import (esm.sh) but still flags a bare miss (#2963)", () => {
+  it("keeps an absolute URL import clean and a bare miss only a stub note (#2963/#3696)", () => {
     // A full esm.sh URL resolves directly in the preview (the import-map's own values are esm.sh URLs).
     const urlImport = comp("Chart", "composite", 2, [], {
       source: undefined,
       srcText: 'import * as d3 from "https://esm.sh/d3@7";\nexport function Chart(){ return d3; }',
     });
-    // a genuine bare package missing from the map is STILL flagged.
+    // a genuine bare package missing from the curated externals is now a stub NOTE, not an error.
     const bareMiss = comp("Bad", "composite", 2, [], {
       source: undefined,
       srcText: 'import { scaleLinear } from "d3-scale";\nexport function Bad(){ return scaleLinear; }',
     });
-    const flagged = analyzeGraphHealth([urlImport, bareMiss]).filter((f) => f.category === "unresolvable-import");
-    expect(flagged.map((f) => f.nodeNames[0])).toEqual(["Bad"]); // only the bare miss
-    expect(flagged[0].why).toContain("d3-scale");
+    const fs = analyzeGraphHealth([urlImport, bareMiss]);
+    expect(fs.some((f) => f.category === "unresolvable-import")).toBe(false); // neither a URL nor a bare miss is an ERROR
+    const stubbed = fs.filter((f) => f.category === "stubbed-import");
+    expect(stubbed.map((f) => f.nodeNames[0])).toEqual(["Bad"]); // only the bare miss
+    expect(stubbed[0].why).toContain("d3-scale");
   });
 
   it("resolves @bsc/algorithms/fibonacci (not flagged) but flags @bsc/algorithms/<missing> (#3116)", () => {
@@ -329,6 +333,22 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(map.get("Card")).toBeUndefined();
   });
 
+  it("flags a component not wired to the theme as hardcoded-color (#3704)", () => {
+    // Hardcodes hex colors + NO `var(--…)` token → not wired to the theme (the mobile-studio-code case).
+    const unwired = comp("WorkerCard", "composite", 2, [], {
+      source: 'export function WorkerCard(){ const s = { color: "#e8ecf4", background: "#161b26", accent: "#7aa2ff" }; return s ? null : null; }',
+    });
+    // Uses a theme token → wired → NOT flagged, even though it also has one raw value.
+    const themed = comp("Btn", "primitive", 2, [], {
+      source: 'export function Btn(){ const s = { color: "var(--fg)", ring: "#000000" }; return s ? null : null; }',
+    });
+    const builtin = comp("Native", "primitive", 2, [], { builtin: true, source: 'export function Native(){ const s = { color: "#ffffff" }; return s ? null : null; }' });
+    const hc = analyzeGraphHealth([unwired, themed, builtin]).filter((f) => f.category === "hardcoded-color");
+    expect(hc.map((f) => f.nodeNames[0])).toEqual(["WorkerCard"]); // only the unwired one
+    expect(hc[0].severity).toBe(1);
+    expect(hc[0].why).toContain("#e8ecf4"); // names a sample literal
+  });
+
   it("flags a component that declares `composes` its source never renders as phantom-compose (#3111)", () => {
     // A user chart that DECLARES it composes ChartFrame/Axis but redraws them inline (renders neither) —
     // the graph would draw phantom edges AND the false in-edges would hide ChartFrame/Axis from orphan
@@ -369,8 +389,8 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     expect(cats).not.toContain("phantom-compose");
   });
 
-  it("flags a data component with no empty/loading state support (#3135)", () => {
-    // A chart with a data array that renders it raw — no EmptyState/empty-guard, no `loading` prop.
+  it("flags a data component with no empty/loading/error state support (#3135/#3555)", () => {
+    // A chart with a data array that renders it raw — no EmptyState/empty-guard, no `loading`/`error` prop.
     const chart = comp("BarChart", "composite", 2, [], {
       source: "export function BarChart({ data }){ return <svg>{data.map((d) => <rect key={d} />)}</svg>; }",
       props: [{ name: "data", type: "Datum[]", req: false, desc: "" }],
@@ -378,14 +398,15 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     const cats = analyzeGraphHealth([chart]).map((f) => f.category);
     expect(cats).toContain("no-empty-state");
     expect(cats).toContain("no-loading-state");
+    expect(cats).toContain("no-error-state");
     expect(analyzeGraphHealth([chart]).find((f) => f.category === "no-empty-state")?.severity).toBe(1);
   });
 
-  it("does NOT flag when a data component handles empty AND exposes a loading prop, or has no data prop (#3135)", () => {
-    // Handles empty (Array.isArray) + has a loading prop → supports both states.
+  it("does NOT flag when a data component handles empty AND exposes loading + error props, or has no data prop (#3135/#3555)", () => {
+    // Handles empty (Array.isArray) + has loading + error props → supports every state.
     const good = comp("Good", "composite", 2, [], {
-      source: "export function Good({ data, loading }){ if (loading) return <span>…</span>; return <svg>{Array.isArray(data) ? data.map((d) => <rect key={d} />) : null}</svg>; }",
-      props: [{ name: "data", type: "Datum[]", req: false, desc: "" }, { name: "loading", type: "boolean", req: false, desc: "" }],
+      source: "export function Good({ data, loading, error }){ if (error) return <span>!</span>; if (loading) return <span>…</span>; return <svg>{Array.isArray(data) ? data.map((d) => <rect key={d} />) : null}</svg>; }",
+      props: [{ name: "data", type: "Datum[]", req: false, desc: "" }, { name: "loading", type: "boolean", req: false, desc: "" }, { name: "error", type: "string", req: false, desc: "" }],
     });
     // No collection prop at all → not a data component → never flagged.
     const button = comp("Button", "primitive", 5, [], {
@@ -395,6 +416,7 @@ describe("analyzeGraphHealth (#2680, mirrors bsc ui doctor)", () => {
     const cats = analyzeGraphHealth([good, button]).map((f) => f.category);
     expect(cats).not.toContain("no-empty-state");
     expect(cats).not.toContain("no-loading-state");
+    expect(cats).not.toContain("no-error-state");
   });
 });
 

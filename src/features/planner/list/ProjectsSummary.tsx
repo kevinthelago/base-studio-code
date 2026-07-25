@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { useAppStore } from "@/store";
 import { StatTile } from "@/shared/ui/data/StatTile";
 import { Button } from "@/shared/ui/controls/Button";
@@ -7,38 +6,28 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Grid } from "@/shared/ui/layout/Grid";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import {
-  countOpenIssues,
-  countMilestonesDueSoon,
-  countLinkedRepos,
-  avgWeeklyClosed,
-} from "./projectsSummaryDerive";
-import { IterationBurnDown } from "./IterationBurnDown";
-import { CrossProjectActivity } from "./CrossProjectActivity";
+import { countLinkedRepos } from "./projectsSummaryDerive";
 import { useProjectsSummaryData } from "./summary/useProjectsSummaryData";
 import { AISummary } from "./summary/AISummary";
 import { ProjectAllocation } from "./summary/ProjectAllocation";
-import { VelocityCard } from "./summary/VelocityCard";
-import { UpcomingMilestones } from "./summary/UpcomingMilestones";
 import { RiskRegister } from "./summary/RiskRegister";
 import { ProjectsGrid } from "./summary/ProjectsGrid";
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
+// The Portfolio shows just the project data now (#3675) — the per-repo issue/milestone/velocity/
+// burndown cards fed a project-detail flow that no longer exists, at the cost of 4+ slow REST calls
+// per mount. Everything below derives from the single Projects-v2 GraphQL query.
 export function ProjectsSummary() {
-  const { setProjectsPageMode, setWorkspace } = useAppStore();
+  const { navigate } = useAppStore();
   // Hosted in the GitHub screen (#421) — "browse projects" jumps to the Projects tab.
-  const openProjects = () => { setWorkspace("projects"); setProjectsPageMode("projects"); };
-  const { loading, projects, events, repoMilestones, repoIssues, burndown } = useProjectsSummaryData();
+  const openProjects = () => navigate({ workspace: "projects", page: "projects" });
+  const { loading, projects } = useProjectsSummaryData();
 
   const activeProjects = projects.filter(p => !p.closed);
   const draftingCount = activeProjects.filter(p => p.items.totalCount === 0).length;
   const activeCount = activeProjects.filter(p => p.items.totalCount > 0).length;
   const shippedCount = projects.filter(p => p.closed).length;
-
-  const totalOpenIssues = useMemo(() => countOpenIssues(repoIssues), [repoIssues]);
-  const totalMilestones = useMemo(() => countMilestonesDueSoon(repoMilestones), [repoMilestones]);
-  const avgVelocity = useMemo(() => avgWeeklyClosed(repoIssues), [repoIssues]);
 
   return (
     <Box as="section" pad={[20, 24]} bg="var(--bg-canvas)" style={{ flex: 1, overflow: "auto", minWidth: 0}}>
@@ -57,21 +46,17 @@ export function ProjectsSummary() {
           <AISummary />
         </Box>
 
-        <Grid cols={6} gap={8} style={{ marginBottom: 14 }}>
+        <Grid cols={3} gap={8} style={{ marginBottom: 14 }}>
           {([
-            ["projects",    loading ? "…" : String(projects.length),    `${activeCount} active · ${draftingCount} drafting`,  "fg"    ],
-            ["open issues", loading ? "…" : String(totalOpenIssues),    "across project repos",              "accent" ],
-            ["active",      loading ? "…" : String(activeCount),        "in-progress projects",              "info"   ],
-            ["velocity",    loading ? "…" : `${avgVelocity}/wk`,        "avg issues closed",                 "muted"  ],
-            ["milestones",  loading ? "…" : String(totalMilestones),    "due in next 2 weeks",               "info"   ],
-            ["repos",       loading ? "…" : String(countLinkedRepos(projects)), "linked across projects", "muted"],
+            ["projects", loading ? "…" : String(projects.length),           `${activeCount} active · ${draftingCount} drafting`, "fg"   ],
+            ["active",   loading ? "…" : String(activeCount),                "in-progress projects",                              "info" ],
+            ["repos",    loading ? "…" : String(countLinkedRepos(projects)), "linked across projects",                            "muted"],
           ] as const).map(([k, v, sub, tone]) => (
             <StatTile
               key={k}
               k={k}
               v={v}
               sub={sub}
-              tone={tone === "accent" ? "accent" : undefined}
               vStyle={tone === "info" ? { color: "var(--info)" } : undefined}
             />
           ))}
@@ -79,14 +64,10 @@ export function ProjectsSummary() {
 
         <Grid cols="1.6fr 1fr" gap={14}>
           <Stack gap={14} style={{ minWidth: 0 }}>
-            <ProjectsGrid projects={projects} repoIssues={repoIssues} loading={loading} />
-            <IterationBurnDown data={burndown} loading={loading} />
-            <UpcomingMilestones repoMilestones={repoMilestones} loading={loading} />
-            <CrossProjectActivity events={events} projects={projects} loading={loading} />
+            <ProjectsGrid projects={projects} loading={loading} />
           </Stack>
           <Stack gap={14} style={{ minWidth: 0 }}>
             <ProjectAllocation projects={projects} />
-            <VelocityCard repoIssues={repoIssues} loading={loading} />
             <RiskRegister />
           </Stack>
         </Grid>

@@ -4,6 +4,8 @@ import { addDbProject } from "@/features/planner";
 import { markBoot, logStartupTrace } from "@/shared/lib/core/startupTrace";
 import { startPerfMonitor, recordStoreWrite } from "@/shared/lib/core/perf";
 import { log } from "@/shared/lib/core/log";
+import { safeInvoke } from "@/shared/lib/core/safeInvoke";
+import { worktreeChecks, reconcileMissingWorktrees } from "@/shared/lib/fleet/worktreeReconcile";
 import { useAppStore } from "@/store";
 import { accentVars } from "@/features/settings";
 import { applyThemeToRoot } from "@/shared/ui/kit/theme";
@@ -27,6 +29,7 @@ export function useAppBoot() {
   const setBscBaseDir = useAppStore((s) => s.setBscBaseDir);
   // Guards the one-time draft→DB migration (#2995) so it fires exactly once per app session.
   const draftsMigratedToDb = useRef(false);
+  const worktreeReconciled = useRef(false);
 
   // Apply the chosen accent to the design-token CSS vars at the document root,
   // live on change and after persisted state rehydrates. Inline vars on :root
@@ -73,6 +76,30 @@ export function useAppBoot() {
     for (const [key, d] of Object.entries(drafts)) {
       void addDbProject({ key, title: d.title, pitch: d.pitch, state: "drafted" });
     }
+  }, [hasHydrated]);
+
+  // Fleet worktree reconciliation (#3614): after hydrate, mark any persisted fleet worker whose worktree
+  // was reclaimed by the boot-GC (merged+clean = work landed) as ENDED — so its `<project> · build` tab
+  // renders a resting card instead of relaunching the worker into a deleted directory. That relaunch
+  // spawned a burst of doomed PTYs into missing cwds, jamming the backend event loop on EVERY boot. Gated
+  // on `hasHydrated` (persist is async), ref-guarded to run once. `dir_exists` defaults to `true` on any
+  // bridge/command miss, so a probe failure can never wrongly end a live worker.
+  useEffect(() => {
+    if (!hasHydrated || worktreeReconciled.current) return;
+    worktreeReconciled.current = true;
+    const s = useAppStore.getState();
+    const checks = worktreeChecks(s.fleetPaneStreams, s.endedPanes, s.disabledPanes, s.paneCwds);
+    if (checks.length === 0) return;
+    void reconcileMissingWorktrees(
+      checks,
+      (cwd) => safeInvoke<boolean>("dir_exists", { path: cwd }, true),
+      (paneId) => !!useAppStore.getState().endedPanes[paneId],
+      (paneId, info) => {
+        log.info(`worktree-reconcile: ${paneId} worktree gone → marking ended (${info.summary})`);
+        useAppStore.getState().markPaneEnded(paneId, info);
+      },
+      () => Date.now(),
+    );
   }, [hasHydrated]);
 
   // Fetch the app-managed base directory once so the rest of the UI can

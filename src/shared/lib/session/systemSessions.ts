@@ -25,6 +25,12 @@ export const SOUND_STUDIO_SESSION_ID = "sound-studio:sound-designer";
  *  hosted in its own OS window and toggled from Settings. */
 export const DEBUG_STUDIO_SESSION_ID = "debug-studio:debugger";
 
+/** The pane-id prefix shared by EVERY session in the debug studio: the standing debugger
+ *  (`debug-studio:debugger`) and each auto-spawned per-request session (`debug-studio:req-<id>`,
+ *  {@link poolPaneId}). Every one of them is the app's full-capability maintenance session in the
+ *  source tree, so the prefix — not the singleton id — is what `isFullCapabilitySession` keys on. */
+export const DEBUG_STUDIO_PANE_PREFIX = "debug-studio:";
+
 /** Every fixed, app-owned studio session pane id. */
 export const STUDIO_SESSION_PANE_IDS: readonly string[] = [
   DESIGN_STUDIO_SESSION_ID,
@@ -42,12 +48,18 @@ export function isStudioSessionPaneId(id: string): boolean {
 }
 
 /** Whether `id` is a FULL-CAPABILITY app-owned session that must ALWAYS launch bypass + role-less,
- *  regardless of the global permission posture (`bypassPermissions`) — the DEBUG session (#3326). Unlike a
- *  fleet/console pane, whose posture comes from the store (role/profile/flow + the global bypass toggle),
- *  the debug session is BY DEFINITION the unrestricted maintenance session in the base-studio-code source
- *  tree; `buildSessionSettings` forces `bypass:true` for it so migrating it onto the shared TerminalHost
- *  (off its old bespoke `useScreenSession` launch) preserves its hardcoded posture. Role-less is automatic
- *  — no `paneRoles` entry is set for it, so no role gate applies. */
+ *  regardless of the global permission posture (`bypassPermissions`) — ANY session in the debug studio
+ *  (#3326/#3520). Unlike a fleet/console pane, whose posture comes from the store (role/profile/flow + the
+ *  global bypass toggle), a debug-studio session is BY DEFINITION the unrestricted maintenance session in
+ *  the base-studio-code source tree; `buildSessionSettings` forces `bypass:true` for it. Role-less is
+ *  automatic — no `paneRoles` entry is set for these panes and `studioRoleForPaneId` matches only the four
+ *  fixed studios, so no role gate applies.
+ *
+ *  Matches the whole `debug-studio:` family, not just the singleton (#3520): the standing debugger AND each
+ *  auto-spawned per-request session (`debug-studio:req-<id>`, #3498). A req session is the same kind of
+ *  actor as the standing one — app-owned, in the source tree, working the request queue — and the control
+ *  gate is the human reviewing its PR, not a per-tool permission prompt. Keying on the singleton id left
+ *  the spawned sessions falling through to the global toggle, so they stopped to ask for every edit. */
 export function isFullCapabilitySession(id: string): boolean {
-  return id === DEBUG_STUDIO_SESSION_ID;
+  return id.startsWith(DEBUG_STUDIO_PANE_PREFIX);
 }

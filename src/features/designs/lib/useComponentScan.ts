@@ -14,8 +14,10 @@ import { useAppStore } from "@/store";
 import { bundleComponent } from "@/shared/lib/preview/componentBundle";
 import { probeComponentRuntime } from "@/shared/lib/preview/componentRuntimeProbe";
 import { collectAppCss } from "@/shared/lib/preview/collectAppCss";
-import { scannableComponents, pendingScans, scanComponents } from "./componentScan";
-import { type KitArtifact } from "./componentPreview";
+import { scannableComponents, pendingScans, scanComponents, durableLogSync } from "./componentScan";
+import { recordPreviewError } from "./componentBridge";
+import { type KitArtifact, type LibraryModuleResolver } from "./componentPreview";
+import { libraryModuleResolver } from "./libraryModules";
 import type { ComponentRecord } from "./model";
 
 /** The packaged kit artifact (built-in `source` + `runtime` closure), same import the single-component
@@ -37,7 +39,14 @@ const SCAN_CONCURRENCY = 3;
  * @param comps  the active kit's components (the scan is kit-scoped, mirroring the graph).
  * @param artifact the packaged kit artifact; defaults to the bundled react-ui one (overridable for tests).
  */
-export function useComponentScan(active: boolean, comps: ComponentRecord[], artifact: KitArtifact = ARTIFACT): void {
+export function useComponentScan(
+  active: boolean,
+  comps: ComponentRecord[],
+  artifact: KitArtifact = ARTIFACT,
+  // The library resolver the sweep builds with — the active blueprint's pinned sound kit (#3412) when the
+  // caller has project context. It is part of the build, so a kit switch re-queues the affected components.
+  libResolver: LibraryModuleResolver = libraryModuleResolver,
+): void {
   const setStatus = useAppStore((s) => s.setComponentBuildStatus);
   const setStateHealth = useAppStore((s) => s.setComponentStateHealth);
   // The signature we last recorded a result for, per component id — survives kit switches + revisits, so
@@ -46,7 +55,7 @@ export function useComponentScan(active: boolean, comps: ComponentRecord[], arti
 
   useEffect(() => {
     if (!active) return;
-    const scannable = scannableComponents(comps, artifact);
+    const scannable = scannableComponents(comps, artifact, libResolver);
     const pending = pendingScans(scannable, scannedSigs.current);
     if (pending.length === 0) return;
     const sigById = new Map(pending.map((p) => [p.id, p.sig]));
@@ -63,7 +72,13 @@ export function useComponentScan(active: boolean, comps: ComponentRecord[], arti
         // Mark the signature only once its result lands, so a cancelled build is re-queued next run
         // (never marked-but-unscanned).
         scannedSigs.current.set(id, sigById.get(id) ?? "");
+        // #3540: mirror the render result to the DURABLE log BEFORE overwriting the store status, so the
+        // prior status is still readable — `durableLogSync` records a runtime throw and clears a
+        // now-resolved error (fire-and-forget; a missing `bsc` no-ops it). This is what makes
+        // `bsc ui doctor` see the COMPLETE errored set, not only components a human opened.
+        const sync = durableLogSync(useAppStore.getState().componentBuildStatus[id], status);
         setStatus(id, status);
+        if (sync !== null) void recordPreviewError(id, sync);
         // Render-confirmed data-state blanks (#3191) — folded into the graph's health badges. Always write
         // (even `[]`) so a fixed component clears its prior blank badge on re-scan.
         setStateHealth(id, stateBlanks);
@@ -74,5 +89,5 @@ export function useComponentScan(active: boolean, comps: ComponentRecord[], arti
       (js) => probeComponentRuntime(js, appCss),
     );
     return () => { cancelled = true; };
-  }, [active, comps, artifact, setStatus, setStateHealth]);
+  }, [active, comps, artifact, libResolver, setStatus, setStateHealth]);
 }

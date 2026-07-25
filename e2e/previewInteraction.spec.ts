@@ -33,7 +33,7 @@ async function previewFrame(page: Page): Promise<Frame> {
 }
 
 /** Mount the fixture through the shipped bundle → srcdoc chain and hand back its frame. */
-async function mount(page: Page, opts: { zoomEngine?: boolean } = {}): Promise<Frame> {
+async function mount(page: Page, opts: { zoomEngine?: boolean; tall?: boolean } = {}): Promise<Frame> {
   await page.goto(HARNESS);
   await page.waitForFunction(() => !!window.__previewHarness);
   await page.evaluate((o) => window.__previewHarness!.mount(o), opts);
@@ -51,6 +51,17 @@ async function pan(frame: Frame): Promise<{ x: number; y: number }> {
   if (!m) return { x: 0, y: 0 }; // "none" — identity
   const parts = m[1].split(",").map((s) => Number(s.trim()));
   return { x: parts[4] ?? 0, y: parts[5] ?? 0 };
+}
+
+/** `#root`'s live scale, read from the COMPUTED transform matrix (`a`) — what the browser actually applied. */
+async function scaleOf(frame: Frame): Promise<number> {
+  const t = await frame.evaluate(() => {
+    const root = document.getElementById("root");
+    return root ? getComputedStyle(root).transform : "none";
+  });
+  const m = /matrix\(([^)]+)\)/.exec(t);
+  if (!m) return 1; // "none" — identity
+  return Number(m[1].split(",")[0]?.trim() ?? 1);
 }
 
 async function rectOf(frame: Frame, selector: string): Promise<Rect> {
@@ -200,5 +211,85 @@ test.describe("preview srcdoc — real interaction", () => {
     // `oklch()` is one of the things the issue calls out as unresolvable in jsdom — seeing the real
     // token value arrive is proof the harness is looking at a real cascade.
     expect(token).toContain("oklch");
+  });
+
+  test("opens FIT — the whole component is visible (#3551)", async ({ page }) => {
+    const frame = await mount(page, { zoomEngine: true });
+    // Fit runs after the deferred module mounts, so poll. It never upscales past 1:1 (crisp) …
+    await expect.poll(() => scaleOf(frame)).toBeLessThanOrEqual(1);
+    expect(await scaleOf(frame)).toBeGreaterThan(0);
+    // …and the LAST element (the image at the bottom of the fixture) sits within the viewport, so the
+    // whole component is shown rather than the top being cropped — the "full component rendered in" goal.
+    await expect
+      .poll(() =>
+        frame.evaluate(() => {
+          const last = document.getElementById("pic");
+          if (!last) return false;
+          return last.getBoundingClientRect().bottom <= (window.innerHeight || 1) + 1;
+        }),
+      )
+      .toBe(true);
+  });
+
+  test("renders the ENTIRE height — off-screen overflow is not clipped away (#3551)", async ({ page }) => {
+    // A component ~1900px tall in the 600px frame: it MUST scale down and show the whole thing, including
+    // the bottom edge that starts off-screen. The earlier bug clipped `#root`/the wrapper to the frame
+    // height, so scaling only shrank the clip window and the bottom never rendered.
+    const frame = await mount(page, { zoomEngine: true, tall: true });
+    // Fit fires after the deferred mount; poll until the tall component is scaled down to fit.
+    await expect.poll(() => scaleOf(frame)).toBeLessThan(1);
+
+    const bottom = await frame.evaluate(() => {
+      const el = document.getElementById("bottom");
+      if (!el) return { inView: false, painted: false };
+      const r = el.getBoundingClientRect();
+      const inView = r.top >= -1 && r.bottom <= (window.innerHeight || 1) + 1;
+      // elementFromPoint RESPECTS clipping: if #root/the wrapper clipped the bottom away, the point hits the
+      // clipper (or nothing), not the marker. So this is the discriminating check the layout-only test missed.
+      const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+      const painted = !!hit && (hit === el || el.contains(hit));
+      return { inView, painted };
+    });
+    expect(bottom.inView).toBe(true);  // fit brought the off-screen bottom into the frame
+    expect(bottom.painted).toBe(true); // …and it is actually rendered, not clipped
+  });
+
+  test("scroll wheel ZOOMS (up = in, down = out); drag is what pans (#3551)", async ({ page }) => {
+    const frame = await mount(page, { zoomEngine: true });
+    const box = (await page.locator("#preview").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+
+    const s0 = await scaleOf(frame);
+    await page.mouse.wheel(0, -300); // scroll UP → zoom IN
+    await expect.poll(() => scaleOf(frame)).toBeGreaterThan(s0);
+
+    const s1 = await scaleOf(frame);
+    await page.mouse.wheel(0, 600); // scroll DOWN → zoom OUT
+    await expect.poll(() => scaleOf(frame)).toBeLessThan(s1);
+
+    // The wheel did NOT pan (translation stays put beyond the zoom-about-cursor adjustment is fine, but a
+    // pure scroll must not run away horizontally the way the old wheel-pan did): a drag is what pans.
+    await dragBy(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, 120, 0);
+    expect((await pan(frame)).x).not.toBe(0);
+  });
+
+  test("a live theme change preserves the pan/zoom view — no rebuild/reset (#3556)", async ({ page }) => {
+    const frame = await mount(page, { zoomEngine: true });
+    // Pan somewhere non-trivial so a reset would be obvious.
+    const box = (await page.locator("#preview").boundingBox())!;
+    await dragBy(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, 140, 60);
+    const panned = await pan(frame);
+    expect(panned.x).not.toBe(0);
+
+    // Apply a theme change the way ComponentPreviewFrame does — a `__bsc_theme` message to the iframe.
+    await page.evaluate(() => {
+      const f = document.getElementById("preview") as HTMLIFrameElement;
+      f.contentWindow!.postMessage({ __bsc_theme: { base: "light", css: ":root{--x:1}" } }, "*");
+    });
+
+    // The theme applied (data-theme flipped) …
+    await expect.poll(() => frame.evaluate(() => document.documentElement.getAttribute("data-theme"))).toBe("light");
+    // … and the pan is EXACTLY as it was — the iframe was not rebuilt, the engine not re-fit.
+    expect(await pan(frame)).toEqual(panned);
   });
 });
