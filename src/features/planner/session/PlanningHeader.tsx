@@ -10,8 +10,8 @@ import { Chip } from "@/shared/ui/data/Chip";
 import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
-import { canLaunchTriage, triageLockReason } from "@/shared/lib/github/projectSync";
 import { clamp } from "@/shared/lib/core/math";
+import { canLaunchTriage, triageLockReason } from "@/shared/lib/github/projectSync";
 
 export interface PlanningHeaderProps {
   isExisting: boolean;
@@ -47,6 +47,11 @@ export interface PlanningHeaderProps {
   triaging: boolean;
   planReady: boolean;
   launchTriage: () => void;
+  /** Whether this project has been triaged (`triagedProjects[key]`, #2541) — the drafted→working
+   *  transition. Before triage the primary action is Triage; AFTER it, Generate Blueprint (#3785). */
+  triaged: boolean;
+  /** Promote the completed project's plan into a reusable blueprint (#3785) — the post-triage action. */
+  onGenerateBlueprint: () => void;
 }
 
 export function PlanningHeader({
@@ -56,6 +61,7 @@ export function PlanningHeader({
   autopilotRunning, autopilotProgressPct,
   handleRestart, restarting, onClearPlan, canSwitch, onSwitchBlueprint,
   isAuthoring, published, hasRepos, hasFleet, triaging, planReady, launchTriage,
+  triaged, onGenerateBlueprint,
 }: PlanningHeaderProps) {
   return (
     <Box style={{ padding: "14px 24px 14px 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
@@ -137,17 +143,21 @@ export function PlanningHeader({
           switch blueprint
         </Button>
       )}
-      {/* No execution side for an authoring blueprint (#923) — its deliverable is the published
-          blueprint gist, so there are no repos to triage / no fleet to launch. */}
-      {!isAuthoring && (() => {
+      {/* The primary action follows the lifecycle: plan → TRIAGE (build the project) → then, once
+          it's been triaged, GENERATE BLUEPRINT (promote the plan for reuse, #3785). Authoring
+          blueprints have no execution side, so no button. */}
+      {!isAuthoring && (triaged ? (
+        <Button
+          variant="primary"
+          onClick={onGenerateBlueprint}
+          disabled={!planReady}
+          title={planReady ? "Save this project's plan as a reusable blueprint" : "Complete the plan first"}
+        >
+          Generate Blueprint →
+        </Button>
+      ) : (() => {
         // Full gate (#444/#551): plan complete + published + repos + fleet, not starting.
-        const gate = {
-          published,
-          hasRepos,
-          hasFleet,
-          busy: triaging,
-          planReady,
-        };
+        const gate = { published, hasRepos, hasFleet, busy: triaging, planReady };
         return (
           <Button
             variant="primary"
@@ -158,7 +168,7 @@ export function PlanningHeader({
             {triaging ? "starting triage…" : "Triage →"}
           </Button>
         );
-      })()}
+      })())}
     </Box>
   );
 }
