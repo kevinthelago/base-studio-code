@@ -71,11 +71,14 @@ describe("StudioSessionMount (#3357)", () => {
     expect(s.paneStartupPromptText[pid]).toContain("bsc ui");
     // Resume the prior conversation rather than greeting a fresh one on every re-open.
     expect(s.paneContinue[pid]).toBe(true);
-    // Extensions pinned EMPTY: without these the generic path falls back to the GLOBAL sets, attaching
-    // every configured MCP server (extra tools) + global skills to a session confined to one store CLI.
+    // MCP/hooks pinned EMPTY: without these the generic path falls back to the GLOBAL sets, attaching
+    // every configured MCP server (extra tools) to a session confined to one store CLI.
     expect(s.paneMcpServers[pid]).toEqual([]);
     expect(s.paneHooks[pid]).toEqual([]);
-    expect(s.paneSkills[pid]).toEqual([]);
+    // Skills are the studio's CURATED default set (#3766) — the designer authors with a11y + compliance
+    // in mind by construction, NOT the global firehose.
+    expect(s.paneSkills[pid].map((sk) => sk.id).sort())
+      .toEqual(["author-accessible-components", "author-compliant-components"]);
   });
 
   it("registers the session on the mobile roster and deregisters it on unmount (#2497)", async () => {
