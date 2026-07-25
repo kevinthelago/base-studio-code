@@ -86,7 +86,8 @@ stream's baked line-wrapping lines up; input rides `ClientMsg::PaneInput`, **gat
   opaque, per-domain shape drift crosses the wire unguarded (the glance `status`→`health`/`activity` split
   + the security invented-shape both shipped green). `src/features/tunnel/lib/storeProjections.fixtures.ts`
   exports `PROJECTION_INPUTS` — canonical inputs, each block `satisfies` its real model (a rename in
-  `ProjectLite`/`AgentProfile`/`AuditRecord` is a compile error here). `storePayloads.fixtures.json` is
+  `ProjectLite`/`AgentProfile`/`AuditDisplayRow`/`ConsoleSession` is a compile error here).
+  `storePayloads.fixtures.json` is
   **generated** from the real `build*Payload`s over those inputs (byte-identical with mobile) — regenerate
   with `npm run fixtures:store`; the write is `UPDATE_STORE_FIXTURES`-gated so CI can't self-heal. Adding a
   domain ⇒ add its builder + a `PROJECTION_INPUTS` entry + regenerate. `plan` has no builder (planner-

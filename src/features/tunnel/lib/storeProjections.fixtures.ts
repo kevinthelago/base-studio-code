@@ -25,7 +25,7 @@ import type { KitThemeRecord } from "@/features/designs/lib/themes";
 import type { Automation } from "@/features/automations/lib/scheduler";
 import type { McpServer } from "@/features/mcp/lib/mcpServers";
 import type { Hook } from "@/features/mcp/lib/hooks";
-import type { AgentProfile, AuditRecord } from "@/features/security";
+import type { AgentProfile, ConsoleSession, AuditDisplayRow } from "@/features/security";
 import type { AlertEvent } from "./alerts";
 
 // ── glance ─────────────────────────────────────────────────────────────────────────────────────
@@ -137,21 +137,46 @@ const mcpServers = [
 ] satisfies McpServer[];
 
 // ── security ───────────────────────────────────────────────────────────────────────────────────
+// An application role (rendered first) — carries the app-role-only fields (surface/session/owns) a
+// plain profile lacks, plus a real `origin` chip. A plain assignable profile follows.
+const appRole = {
+  id: "sys_planner", name: "Project Planner", color: "#c792ea", category: "application", origin: "built-in",
+  desc: "plans projects; never writes code",
+  mode: "deny", commands: ["gh *"],
+  tools: { read: "allow", grep: "allow", glob: "allow", edit: "deny", write: "deny", bash: "ask", web: "allow", task: "deny" },
+  paths: { allow: [], deny: ["**"] },
+  net: { allow: ["api.github.com"] },
+  builtin: true,
+  surface: "Planner", surfaceGlyph: "◆", session: "planner", owns: "the plan",
+} satisfies AgentProfile;
+
 const profile = {
-  id: "pf_worker", name: "Worker", color: "#7aa2ff", category: "user", desc: "builds features under review",
-  mode: "ask", commands: ["git *"],
+  id: "pf_worker", name: "Worker", color: "#7aa2ff", category: "user", origin: "user-defined",
+  desc: "builds features under review",
+  mode: "ask", commands: ["cargo *"],
   tools: { read: "allow", grep: "allow", glob: "allow", edit: "ask", write: "ask", bash: "ask", web: "deny", task: "deny" },
   paths: { allow: ["src/**"], deny: [".env"] },
   net: { allow: ["api.github.com"] },
-  builtin: true,
+  builtin: false,
 } satisfies AgentProfile;
 
-// Real ISO-8601 timestamps (not `t0`) so a mobile `readIsoMs` never resolves them to null; distinct
-// panes/tools/targets so no row looks like a fallback.
-const audit = [
-  { ts: "2026-07-25T10:15:00.000Z", pane: "demo:auth", toolName: "Bash", target: "git push origin auth" },
-  { ts: "2026-07-25T10:16:30.000Z", pane: "demo:ui", toolName: "Edit", target: "src/ui/Login.tsx" },
-] satisfies AuditRecord[];
+// A live console with a real repo + allowlists (not the `—` fallback) so mobile renders "console / pane"
+// and resolves the effective allowlist locally.
+const secConsoles = [
+  {
+    id: "t0", name: "Build", repo: "acme/api", status: "running",
+    projectAllow: ["npm run build"], repoAllow: ["cargo test"],
+    panes: [{ id: "t0p0", agent: "worker", status: "idle", profileId: "pf_worker" }],
+  },
+] satisfies ConsoleSession[];
+
+// Display rows (what buildAuditRows produces in the projector) — real ISO-8601 timestamps (not `t0`)
+// so a mobile `readIsoMs` never resolves them to null; a real console name + profileId (not `—`); and
+// a real desktop-computed `decision` on each (allow AND block, so neither is a fallback).
+const auditRows = [
+  { ts: "2026-07-25T10:15:00.000Z", console: "Build", pane: "t0p0", profileId: "pf_worker", kind: "cmd", target: "git push origin auth", decision: "allow" },
+  { ts: "2026-07-25T10:16:30.000Z", console: "Build", pane: "t0p0", profileId: "pf_worker", kind: "tool", target: ".env", decision: "block" },
+] satisfies AuditDisplayRow[];
 
 // ── alerts ─────────────────────────────────────────────────────────────────────────────────────
 const inbox = [
@@ -177,7 +202,10 @@ export const PROJECTION_INPUTS = {
   themes: { themes: [theme], active: "soft" },
   automations: { automations: [automation], hooks: [hook] },
   mcp: { servers: mcpServers, installedIds: ["m1"] },
-  security: { profiles: [profile], paneRoles: { "demo:auth": "worker" }, paneProfiles: { "demo:auth": "pf_worker" }, audit },
+  security: {
+    appRoles: [appRole], profiles: [profile], consoles: secConsoles,
+    paneRoles: { t0p0: "worker" }, paneProfiles: { t0p0: "pf_worker" }, auditRows,
+  },
   alerts: inbox,
 };
 // NOT `as const`: the builders take MUTABLE arrays, and a `readonly` PROJECTION_INPUTS would fail every
