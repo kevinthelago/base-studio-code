@@ -13,12 +13,15 @@ export type Role = "primitive" | "composite" | "layout" | "page" | "service";
 
 export const ROLES: Role[] = ["primitive", "composite", "layout", "page", "service"];
 
-/** The data-shape vocabulary (#2475) — the six canonical shapes a feature's data can take. The
+/** The data-shape vocabulary (#2475) — the seven canonical shapes a feature's data can take. The
  *  planner derives its data's shape, then asks the kit for the ideal rendering
- *  (`bsc ui shapes <shape>` / `bsc ui list --shape <shape>`). */
-export type DataShape = "list" | "linked-list" | "tree" | "graph" | "table" | "key-value";
+ *  (`bsc ui shapes <shape>` / `bsc ui list --shape <shape>`). `series` (#3517) is an ordered label
+ *  axis + one or more ALIGNED numeric value series — a time-series over an ordered domain (exactly the
+ *  `{ labels, series }` shape `windowedTally` produces); distinct from `list` (homogeneous items, no
+ *  axis) and `table` (heterogeneous columns per row). */
+export type DataShape = "list" | "linked-list" | "tree" | "graph" | "table" | "key-value" | "series";
 
-export const DATA_SHAPES: DataShape[] = ["list", "linked-list", "tree", "graph", "table", "key-value"];
+export const DATA_SHAPES: DataShape[] = ["list", "linked-list", "tree", "graph", "table", "key-value", "series"];
 
 /** One public prop / API member of a component. */
 export interface PropSpec {

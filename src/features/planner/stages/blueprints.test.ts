@@ -96,8 +96,8 @@ describe("blueprints — seed library", () => {
       expect(text).toContain("bsc ui shapes");
       expect(text).toContain("bsc ui list --shape");
     }
-    // The whole six-shape vocabulary is named for the planner to derive against.
-    for (const shape of ["list", "linked-list", "tree", "graph", "table", "key-value"]) {
+    // The whole seven-shape vocabulary is named for the planner to derive against (#2475/#3517).
+    for (const shape of ["list", "linked-list", "tree", "graph", "table", "key-value", "series"]) {
       expect(def.prompt ?? "", `prompt names the ${shape} shape`).toContain(shape);
     }
   });

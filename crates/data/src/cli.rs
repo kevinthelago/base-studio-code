@@ -44,7 +44,7 @@ USAGE:
 Derives every entity's ideal DATA SHAPE from the canonical Data Model's structure — so a layout is
 picked mechanically instead of by judging the taxonomy by hand. With <entity>, prints just that one.
 
-Shapes are the six-shape vocabulary (#2475): list · linked-list · tree · graph · table · key-value.
+Shapes are the seven-shape vocabulary (#2475/#3517): list · linked-list · tree · graph · table · key-value · series.
 The slugs are byte-identical to the picker's, so the output feeds straight into it:
 
   bsc data shapes                      # what shape IS each entity's data
@@ -56,8 +56,9 @@ ref (a ref back to its own entity) is what distinguishes a hierarchy from a flat
 HEURISTICS: self-referencing ref → tree (graph when several self-refs admit multiple parents) ·
 a next/prev self-ref or a numeric sequence column → linked-list · a join table (nearly all refs, ≥2
 distinct targets) or a join-heavy entity (≥3 targets) → graph · a name column + a value column →
-key-value · otherwise a plain collection → table when column-dense, list when lean. Every entity
-also offers key-value as its single-record DETAIL view.
+key-value · a temporal axis (a date field) + a numeric measure → series · otherwise a plain
+collection → table when column-dense, list when lean. Every entity also offers key-value as its
+single-record DETAIL view.
 
 Each entity gets RANKED CANDIDATES (strongest first), each with a `confidence`
 (strong|likely|possible) and the `reason` it fired — never one guessed answer. The schema genuinely
@@ -610,7 +611,7 @@ mod tests {
         // `shapes` help teaches the hand-off to the #2475 picker and names the vocabulary.
         let s = bsc_cli_util::help_for("bsc data", TAGLINE, COMMANDS, "shapes");
         assert!(s.contains("bsc ui shapes"), "shapes help points at the component-side picker");
-        for shape in ["list", "linked-list", "tree", "graph", "table", "key-value"] {
+        for shape in ["list", "linked-list", "tree", "graph", "table", "key-value", "series"] {
             assert!(s.contains(shape), "shapes help names the `{shape}` vocabulary token");
         }
         // `connector help` shows the connector subcommands, not the whole menu.
