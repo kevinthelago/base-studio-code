@@ -158,6 +158,14 @@ export interface ComponentRecord {
    *  override (a normal graph component, imported only as a `@/components/<id>` sibling). Graph-first with a
    *  code fallback: an unmatched specifier stays external (→ the registry), exactly as before. */
   provides?: string;
+  /** Which THEME SYSTEM this component renders under (#3715). `"css"` (default, absent) — the component
+   *  consumes the theme through the CSS cascade (`--card-*` etc. resolved by `:root` / `<ThemeScope>`), as
+   *  every component does today. `"js"` — the component renders to a NON-CSS surface (canvas / WebGL / a
+   *  non-web runtime) that can't see the cascade, so the runtime loader wraps it in a `<ThemeProvider>` and
+   *  it reads the resolved token VALUES via `useResolvedTheme()`. Opt-in + inert like {@link provides}: an
+   *  absent / `"css"` value is byte-identical to today, and (like `group`/`provides`) an absent value must
+   *  stay absent — never defaulted to `"css"` — so a store copy keeps hashing to its `seedHash`. */
+  themeSystem?: "css" | "js";
   /** Author-declared lint rules this component contributes to its kit's preset (in addition to the
    *  ones derived from `wraps`). Absent ⇒ none. */
   rules?: KitRule[];
