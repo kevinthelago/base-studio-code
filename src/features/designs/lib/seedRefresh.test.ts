@@ -174,6 +174,40 @@ describe("reconcileSeed verdicts (#2483)", () => {
   });
 });
 
+describe("reconcileSeed — seedAuthoritative records (#3723): the seed always wins", () => {
+  // A page-spec record. The seed is AUTHORITATIVE for it (an import-based page the app renders through
+  // the registry at runtime, NOT designer-editable), which `reconcileComponents` keys on `role: "page"`.
+  const seedPage = stampSeedHash(comp({ id: "settingspage", name: "SettingsPage", role: "page" }));
+  const authoritative = (r: ComponentRecord) => r.role === "page";
+
+  it("FORCES a diverged page copy back to the seed, with a reset-to-seed notice (the #3658/#3723 bug)", () => {
+    // A designer self-contained the page (content no longer matches the seed) — a bug, not a user edit.
+    const selfContained = { ...seedPage, srcText: "// vendored self-contained for preview" };
+    const r = reconcileSeed([selfContained], [seedPage], "component", { seedAuthoritative: authoritative });
+    expect(r.records).toEqual([seedPage]); // the clean seed copy wins
+    expect(r.pushes).toEqual([seedPage]);  // and is written back to the store
+    expect(r.drops).toEqual([]);
+    expect(r.notices).toEqual([{ kind: "reset-to-seed", type: "component", id: "settingspage", name: "SettingsPage" }]);
+  });
+
+  it("leaves a page copy that already matches the seed untouched (no push, no notice)", () => {
+    const current = { ...seedPage, used: 3 }; // volatile drift only — content still matches the seed
+    const r = reconcileSeed([current], [seedPage], "component", { seedAuthoritative: authoritative });
+    expect(r.records).toEqual([current]);
+    expect(r.pushes).toEqual([]);
+    expect(r.notices).toEqual([]);
+  });
+
+  it("does NOT force records the predicate excludes — a normal edited component is still KEPT (store wins)", () => {
+    const seedNew = stampSeedHash(comp({ version: "2.0.0" }));
+    const edited = { ...stampSeedHash(comp({ version: "1.0.0" })), srcText: "my tweak" }; // role: primitive
+    const r = reconcileSeed([edited], [seedNew], "component", { seedAuthoritative: authoritative });
+    expect(r.records).toEqual([edited]); // predicate returns false for a non-page → normal verdict table
+    expect(r.pushes).toEqual([]);
+    expect(r.notices).toEqual([{ kind: "updated-upstream", type: "component", id: "button", name: "Button" }]);
+  });
+});
+
 describe("reconcileSeed on kit records (#2483) — the kit store rots the same way", () => {
   const seedKit = stampSeedHash(kit({ stack: "React 19 · TypeScript" }));
   const oldKit = stampSeedHash(kit({ stack: "React · TypeScript" }));
