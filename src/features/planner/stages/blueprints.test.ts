@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   makeBlueprints, mkStage, computeStatus, reorder, cloneStages, blueprintToStageConfig,
   stageStatus, incompleteStages, planStagesComplete, currentStage, confirmedSignal, skippedSignal,
-  isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, stageDone,
+  canChangeBlueprint, canSwitchBlueprint, stageDone,
   signatureTemplateVersion, blueprintTemplateChanged, shouldAutoOpenBlueprintModal,
   dedupeSections, resolveStagePrompt, stageSeed,
   STAGE_DEFS, type BlueprintStage, type Blueprint, type SectionDef,
@@ -21,18 +21,10 @@ describe("greenfield blueprints declare their consumer kit (#2810)", () => {
   const bps = makeBlueprints();
 
   it("greenfield built-ins auto-record kit=react-ui so the kit_usage edge fills at bind", () => {
-    // …every greenfield that actually SHIPS an app UI. The authoring lifecycle (#923,
-    // `deliverable: "blueprint"`) is filed under greenfield in the library because it creates something
-    // new, but what it creates is a blueprint published to a gist — it has no execution side and renders
-    // no UI, so tying it to the packaged kit filed a kit_usage edge that drew a spurious kit→project
-    // edge in the network and fanned UI-kit changes out to a project with no UI (#3411).
-    const greenfield = bps.filter((b) => b.category === "greenfield" && b.deliverable !== "blueprint");
+    // …every greenfield that actually SHIPS an app UI.
+    const greenfield = bps.filter((b) => b.category === "greenfield");
     expect(greenfield.length).toBeGreaterThan(0);
     expect(greenfield.every((b) => b.kit === "react-ui")).toBe(true);
-    // The authoring blueprint is the carve-out — it exists, and it is NOT a kit consumer.
-    const authoring = bps.filter((b) => b.deliverable === "blueprint");
-    expect(authoring.length).toBeGreaterThan(0);
-    expect(authoring.every((b) => b.kit === undefined)).toBe(true);
   });
 
   it("a non-greenfield (operate-on-existing / data / script) built-in isn't auto-tied to a shared kit", () => {
@@ -45,8 +37,6 @@ describe("blueprints — seed library", () => {
   it("seeds the starter blueprints with a 'default'", () => {
     const bps = makeBlueprints();
     expect(bps.find((b) => b.id === "default")).toBeTruthy();
-    // After the data-platform + transform blueprints were archived (v1.0.5 prep, 5def26b7) the
-    // built-in library is default + complete + blueprint-author.
     expect(bps.length).toBeGreaterThanOrEqual(3);
   });
 
@@ -187,22 +177,6 @@ describe("blueprints — seed library", () => {
     expect(greenfield.indexOf("complete")).toBe(greenfield.indexOf("default") + 1);
   });
 
-  it("includes a 'blueprint-author' authoring blueprint: deliverable=blueprint, 5 stages, no fleet/triage (#923/#2450)", () => {
-    const bp = makeBlueprints().find((b) => b.id === "blueprint-author");
-    expect(bp).toBeTruthy();
-    expect(isAuthoringBlueprint(bp)).toBe(true);
-    expect(bp!.deliverable).toBe("blueprint");
-    const keys = bp!.sections.map((s) => s.key);
-    expect(keys).toEqual(["purpose", "bp_stages", "bp_capabilities", "bp_team", "bp_review"]);
-    // capabilities + team (#2450) are the optional stages; no repos/structure/permissions (no execution).
-    expect(bp!.sections.find((s) => s.key === "bp_capabilities")!.optional).toBe(true);
-    expect(bp!.sections.find((s) => s.key === "bp_team")!.optional).toBe(true);
-    expect(keys).not.toContain("structure");
-    expect(keys).not.toContain("permissions");
-    // a normal blueprint is NOT an authoring one
-    expect(isAuthoringBlueprint(makeBlueprints().find((b) => b.id === "default"))).toBe(false);
-  });
-
   it("includes a 'feature-add' transform blueprint: operate mode, canonical stages, no legacy keys", () => {
     const bp = makeBlueprints().find((b) => b.id === "feature-add");
     expect(bp).toBeTruthy();
@@ -224,47 +198,22 @@ describe("blueprints — seed library", () => {
     expect(bp!.sections.find((s) => s.key === "ui")!.optional).toBe(true);
   });
 
-  it("canChangeBlueprint: any project blueprint can switch; only the blueprint-author lifecycle is locked (#1281)", () => {
+  it("canChangeBlueprint: any project blueprint can switch (#1281)", () => {
     const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
     expect(canChangeBlueprint(by("default"))).toBe(true);           // greenfield → switchable
     expect(canChangeBlueprint(by("complete"))).toBe(true);          // greenfield → switchable
-    expect(canChangeBlueprint(by("blueprint-author"))).toBe(false); // authoring → locked
+    expect(canChangeBlueprint(undefined)).toBe(false);              // unbound → nothing to switch
   });
 
-  it("canSwitchBlueprint: any project blueprint → any OTHER, except authoring + self (#1281)", () => {
+  it("canSwitchBlueprint: any project blueprint → any OTHER, except self (#1281)", () => {
     const by = (id: string) => makeBlueprints().find((b) => b.id === id)!;
     // any project blueprint → another is allowed
     expect(canSwitchBlueprint(by("default"), by("complete"))).toBe(true);        // → another greenfield
     expect(canSwitchBlueprint(by("complete"), by("default"))).toBe(true);        // → back
     // refused: switching to the SAME blueprint (a no-op)
     expect(canSwitchBlueprint(by("default"), by("default"))).toBe(false);
-    // refused: anything touching the authoring lifecycle
-    expect(canSwitchBlueprint(by("blueprint-author"), by("default"))).toBe(false);
-    expect(canSwitchBlueprint(by("default"), by("blueprint-author"))).toBe(false);
     // refused: unbound (no current) can't "switch"
     expect(canSwitchBlueprint(undefined, by("default"))).toBe(false);
-  });
-
-  it("authoringSignals: identity (name+pitch+tag), stages (≥2 + prompts), publishable (#923)", () => {
-    expect(authoringSignals(undefined)).toEqual({ bpName: false, bpStageCount: 0, bpStagesReady: false, bpValid: false });
-    // identity needs name + pitch + ≥1 tag — name alone isn't enough.
-    const named = { id: "x", name: "My BP", desc: "", sections: [] } as Blueprint;
-    expect(authoringSignals(named)).toMatchObject({ bpName: false, bpValid: false });
-    const identity = { id: "x", name: "My BP", desc: "", pitch: "ship it", tags: ["api"], sections: [] } as Blueprint;
-    // identity passes, but no stages → not ready / not publishable.
-    expect(authoringSignals(identity)).toMatchObject({ bpName: true, bpStagesReady: false, bpValid: false });
-    // ≥2 stages but a stage missing its prompt → stages gate fails.
-    const oneEmptyPrompt = {
-      ...identity,
-      sections: [{ ...mkStage("purpose"), prompt: "do x" }, { ...mkStage("bp_stages"), prompt: "" }],
-    } as Blueprint;
-    expect(authoringSignals(oneEmptyPrompt)).toMatchObject({ bpStageCount: 2, bpStagesReady: false, bpValid: false });
-    // identity + ≥2 stages all with prompts → ready + publishable.
-    const full = {
-      ...identity,
-      sections: [{ ...mkStage("purpose"), prompt: "do x" }, { ...mkStage("bp_stages"), prompt: "do y" }],
-    } as Blueprint;
-    expect(authoringSignals(full)).toMatchObject({ bpName: true, bpStageCount: 2, bpStagesReady: true, bpValid: true });
   });
 
 });

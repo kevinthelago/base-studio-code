@@ -15,7 +15,6 @@ mod tests {
     fn process_md() -> String { crate::platform::config::embedded_str("planner/process.md") }
     fn new_intro() -> String { crate::platform::config::embedded_str("planner/intro.new.md") }
     fn existing_intro() -> String { crate::platform::config::embedded_str("planner/intro.existing.md") }
-    fn blueprint_intro() -> String { crate::platform::config::embedded_str("planner/intro.blueprint.md") }
 
     #[test]
     fn build_active_stages_md_includes_enabled_excludes_disabled() {
@@ -172,23 +171,10 @@ mod tests {
     }
 
     #[test]
-    fn blueprint_author_intro_requires_deployment_and_streams_for_fleet() {
-        // A fleet-launching blueprint that omits a `streams` stage produces no fleet, so its projects
-        // can never launch (the bug that motivated this guard). #1914: the unified vocabulary means the
-        // author session must require a `deployment` stage (linked repos + shipping) + a `streams`
-        // stage (roadmap + fleet plan + per-agent permissions) for build/execution blueprints (#969).
-        let intro = blueprint_intro();
-        assert!(intro.contains("LAUNCHES A FLEET"), "author intro must call out fleet-launching blueprints");
-        assert!(intro.contains("`streams` stage"), "author intro must require a streams stage for fleets");
-        assert!(intro.contains("`deployment` stage"), "author intro must require a deployment stage for fleets");
-    }
-
-    #[test]
     fn planner_intro_prompt_selects_by_mode() {
         // mode → matching template; unknown ⇒ the new-project intro (default).
         assert_eq!(planner_intro_prompt("new".into()), planning_greeting_new());
         assert_eq!(planner_intro_prompt("existing".into()), planning_greeting_existing());
-        assert_eq!(planner_intro_prompt("blueprint".into()), planning_greeting_blueprint());
         assert_eq!(planner_intro_prompt("garbage".into()), planning_greeting_new());
     }
 
@@ -197,7 +183,7 @@ mod tests {
         // Every mode's intro must: open the session (introduce + reference the stage journey),
         // ask exactly one orienting question, and stop and wait — the #1240 conventions.
         for (mode, distinct) in
-            [("new", "idea"), ("existing", "existing repositories"), ("blueprint", "reusable")]
+            [("new", "idea"), ("existing", "existing repositories")]
         {
             let t = planner_intro_prompt(mode.into());
             assert!(t.contains("ONE orienting question"), "intro {mode} must ask one orienting question");

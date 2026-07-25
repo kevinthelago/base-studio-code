@@ -2,11 +2,10 @@ use super::prompts::*;
 
 /// The user-facing planner introduction kickoff for a session mode (#1240). Returned to the
 /// frontend, which bakes it into the planner's `claude` launch as a fresh-only startup prompt.
-/// `mode`: `"blueprint"` (authoring) | `"existing"` (existing repos) | anything else ⇒ new project.
+/// `mode`: `"existing"` (existing repos) | anything else ⇒ new project.
 #[tauri::command]
 pub(crate) fn planner_intro_prompt(mode: String) -> String {
     match mode.as_str() {
-        "blueprint" => planning_greeting_blueprint(),
         "existing" => planning_greeting_existing(),
         _ => planning_greeting_new(),
     }
@@ -128,7 +127,7 @@ mod tests {
         // #1914: the unified vocabulary collapsed repos+deploy → `deployment` and
         // structure+permissions → `streams`; the legacy `repos`/`structure`/`permissions` defs are gone.
         let migrated = ["discovery","deployment","ui","features",
-            "automations","skills","purpose","bp_stages","bp_capabilities","bp_review",
+            "automations","skills",
             "streams","source","market","transformations"];
         for id in migrated {
             let d = stage_directive(id);
@@ -346,8 +345,8 @@ mod tests {
             })
             .collect();
         let expected: BTreeSet<String> = ["discovery","deployment","ui","features","function_spec",
-            "automations","skills","purpose","bp_stages","bp_capabilities",
-            "bp_review","streams","source","test_ui","market","transformations"].iter().map(|s| s.to_string()).collect();
+            "automations","skills",
+            "streams","source","test_ui","market","transformations"].iter().map(|s| s.to_string()).collect();
         assert_eq!(with_directive, expected, "stage `directive` set drifted from the expected set");
     }
 }

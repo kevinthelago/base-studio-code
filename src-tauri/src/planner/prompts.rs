@@ -14,11 +14,6 @@ fn md(rel: &str) -> String {
 pub(crate) fn planning_new_intro() -> String { md("planner/intro.new.md") }
 pub(crate) fn planning_existing_intro() -> String { md("planner/intro.existing.md") }
 pub(crate) fn planning_process_md() -> String { md("planner/process.md") }
-// The blueprint-authoring lifecycle (#923) gets its OWN, self-contained intro — the planner is
-// designing a reusable blueprint (deliverable = a gist), not a software project — and does NOT get
-// the software-planning process block (repos / features / fleet / GitHub publish), which would only
-// mislead it. The `bsc plan blueprint set` spec + the four authoring stages live in this intro.
-pub(crate) fn planning_blueprint_intro() -> String { md("planner/intro.blueprint.md") }
 // Anti prompt-injection framing for the planner (#1107). The planner is the most input-exposed
 // session (it reviews repos + the web) AND a trust amplifier (its output seeds the fleet's trusted
 // kickoffs/profiles/issues). Distinct from the worker template (`injection-resistance.md`): the
@@ -46,4 +41,3 @@ pub(crate) fn github_repo_item() -> String { md("planner/github-repo-item.md") }
 
 pub(crate) fn planning_greeting_new() -> String { md("planner/greeting.new.md") }
 pub(crate) fn planning_greeting_existing() -> String { md("planner/greeting.existing.md") }
-pub(crate) fn planning_greeting_blueprint() -> String { md("planner/greeting.blueprint.md") }

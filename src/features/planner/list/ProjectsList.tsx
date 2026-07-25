@@ -13,7 +13,6 @@ import { Row } from "@/shared/ui/layout/Row";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
 import { Button } from "@/shared/ui/controls/Button";
-import { AUTHORING_BLUEPRINT_ID, type Blueprint } from "../stages/blueprints";
 import { buildDrafts, mergeDbDrafts, isOrphanScaffold, type DraftRow, type LocalProjectLite } from "./drafts";
 import { listDbProjects, removeDbProject, type DbProject } from "./projectsDbBridge";
 import { buildLocalPublished, type LocalPublishedRow } from "./localPublished";
@@ -35,8 +34,8 @@ export { ProjectRow };
 export function ProjectsList() {
   const {
     githubToken, activeWorkspace, setProjectsView, hiddenProjectIds, deleteLocalProject,
-    localDraftProjects, removeDraftProject, projectBlueprintId,
-    planAuthoredBlueprint, blueprints, setPlanningContext, setPlanningTitle, setPlanningSession,
+    localDraftProjects, removeDraftProject,
+    blueprints, setPlanningContext, setPlanningTitle, setPlanningSession,
     setActiveProjectMeta, githubState, setGithubState,
   } = useAppStore();
   const [projects, setProjects]   = useState<GhProject[]>([]);
@@ -283,18 +282,8 @@ export function ProjectsList() {
   // useMemo here trips its preserve-manual-memoization check).
   const orphans = localProjects.filter(lp => isOrphanScaffold(lp) && !allDrafts.some(d => d.key === lp.key));
 
-  // A draft bound to the blueprint-author lifecycle is an in-progress BLUEPRINT — it belongs in the
-  // Blueprints section, not the normal Drafts list (#923 / Projects-tab redesign).
-  const isAuthoringKey = useCallback((key: string) => projectBlueprintId[key] === AUTHORING_BLUEPRINT_ID, [projectBlueprintId]);
-  const normalDrafts = useMemo(() => allDrafts.filter(d => !isAuthoringKey(d.key)), [allDrafts, isAuthoringKey]);
-  const authoringDrafts = useMemo(() => allDrafts.filter(d => isAuthoringKey(d.key)), [allDrafts, isAuthoringKey]);
-
-  // ── Blueprints surfaced here: ALL blueprints — the built-in app templates AND the user's saved
-  // library — plus any in-progress authoring drafts not yet saved.
-  const blueprintItems = useMemo<BpItem[]>(
-    () => buildBlueprintItems(blueprints, authoringDrafts, planAuthoredBlueprint as Record<string, Blueprint>),
-    [blueprints, authoringDrafts, planAuthoredBlueprint],
-  );
+  // ── Blueprints surfaced here: ALL blueprints — the built-in app templates AND the user's saved library.
+  const blueprintItems = useMemo<BpItem[]>(() => buildBlueprintItems(blueprints), [blueprints]);
 
   // ── Search + sort over every list (#… redesign). ───────────────────────────────────────────────
   const q = query.trim().toLowerCase();
@@ -315,11 +304,11 @@ export function ProjectsList() {
   }, [visibleProjects, sort, q]);
 
   const fDrafts = useMemo(() => {
-    const arr = normalDrafts.filter(matchD);
+    const arr = allDrafts.filter(matchD);
     arr.sort((a, b) => sort === "name" ? a.title.toLowerCase().localeCompare(b.title.toLowerCase()) : b.sort - a.sort);
     return arr;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normalDrafts, sort, q]);
+  }, [allDrafts, sort, q]);
 
   // ── Local published inventory (#2445): published hubs not (yet) covered by a fetched GitHub
   // board — the whole published set while logged out, and the not-yet-overlaid remainder once the
@@ -349,7 +338,7 @@ export function ProjectsList() {
     return m;
   }, [dbProjects]);
 
-  const totalSummary = `${visibleProjects.length} published · ${normalDrafts.length} draft${normalDrafts.length !== 1 ? "s" : ""} · ${blueprintItems.length} blueprint${blueprintItems.length !== 1 ? "s" : ""} · ${repos.size} repo${repos.size !== 1 ? "s" : ""}`;
+  const totalSummary = `${visibleProjects.length} published · ${allDrafts.length} draft${allDrafts.length !== 1 ? "s" : ""} · ${blueprintItems.length} blueprint${blueprintItems.length !== 1 ? "s" : ""} · ${repos.size} repo${repos.size !== 1 ? "s" : ""}`;
 
   return (
     <Box as="section" style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", overflow: "hidden" }}>
@@ -389,8 +378,6 @@ export function ProjectsList() {
         query={query}
         menuOpenId={menuOpenId}
         setMenuOpenId={setMenuOpenId}
-        reopenDraft={reopenDraft}
-        setDraftDeleteTarget={setDraftDeleteTarget}
       />
 
       {/* Draft delete confirmation (#1216) — drafts destroy an on-disk folder, so an accidental ✕

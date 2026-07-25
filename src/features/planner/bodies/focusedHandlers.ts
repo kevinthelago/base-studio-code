@@ -1,13 +1,10 @@
 // Shared handler/types for the focused phase bodies (#1757, split from FocusedBodies.tsx).
 // These are imported by BOTH the per-body components AND the FocusedStageBody dispatcher, so they
-// live in their own React-free module to avoid a dispatcher↔body import cycle. FocusedBodies.tsx
-// re-exports them for back-compat (ProjectPane imports `AuthoringWiring` from there).
-import type { Flow, McpServer, ProjectPaneData } from "@/features/planner/pane/projectPaneData";
+// live in their own React-free module to avoid a dispatcher↔body import cycle.
+import type { Flow, McpServer } from "@/features/planner/pane/projectPaneData";
 import type { ModelId } from "@/app/console/lib/models";
 import type { Topology } from "@/features/planner/relationship/relationshipGraph";
 import type { DirectorDrive } from "@/features/planner/fleet/directorDrive";
-import type { BlueprintSkillItem } from "@/features/planner/blueprints/blueprintSkills";
-import type { McpLibraryItem } from "@/features/planner/blueprints/blueprintMcp";
 
 export type SyncState = "idle" | "running" | "done" | "error";
 
@@ -32,14 +29,4 @@ export interface McpHandlers {
   onBuild?: (s: McpServer) => void;
   onAdd?: (input: string) => void;
   onRemove?: (id: string) => void;
-}
-
-/** Authoring config (#923) threaded from Planning — the live blueprint edits flow back via onChange
- *  (kept in sync with the planner's <blueprint> tag), plus the pickable libraries + publish. */
-export interface AuthoringWiring {
-  onChange: (bp: NonNullable<ProjectPaneData["authoredBlueprint"]>) => void;
-  skillLibrary?: BlueprintSkillItem[];
-  mcpLibrary?: McpLibraryItem[];
-  onPublish: () => void;
-  published: boolean;
 }

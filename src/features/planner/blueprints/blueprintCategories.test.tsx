@@ -69,9 +69,9 @@ describe("blueprint categories (#645)", () => {
   it("tags every built-in blueprint origin=built-in (#658)", () => {
     const all = makeBlueprints();
     expect(all.every((b) => b.origin === "built-in")).toBe(true);
-    // The packaged set after the v1.0.5 consolidation: greenfield Default + Complete, plus the
-    // blueprint-authoring meta-blueprint. (The transform/harden/data blueprints were archived.)
-    for (const id of ["default", "complete", "blueprint-author"]) {
+    // The packaged set after the v1.0.5 consolidation: greenfield Default + Complete.
+    // (The transform/harden/data blueprints were archived.)
+    for (const id of ["default", "complete"]) {
       expect(all.find((b) => b.id === id)!.origin, id).toBe("built-in");
     }
   });

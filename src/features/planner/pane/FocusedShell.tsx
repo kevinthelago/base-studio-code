@@ -172,8 +172,8 @@ export function StageFooter({ stage, action, published, publishLabel, onBack, on
   action: { kind: FooterKind; enabled: boolean; canSkip?: boolean; skipEnabled?: boolean };
   /** The project already has a GitHub board — the publish action re-syncs it ("Update GitHub", #823). */
   published?: boolean;
-  /** Override the publish action's label (#923) — e.g. "Publish blueprint" for an authoring project,
-   *  whose deliverable is a gist, not a GitHub board. */
+  /** Override the publish action's label (#3280) — e.g. "Commit plan" when committing offline
+   *  (there's no GitHub board to update). */
   publishLabel?: string;
   onBack: () => void;
   onPrimary: () => void;

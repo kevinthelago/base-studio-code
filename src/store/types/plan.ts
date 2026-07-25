@@ -51,10 +51,6 @@ export interface PlanState {
   /** Add a confirmation to the store ONLY (no plan.db write-through) — the poll uses this to
    *  rehydrate the durable confirmed set (#2256) from plan.db on revisit without echoing it back. */
   markStageConfirmedLocal: (projectId: string, key: string) => void;
-  /** The in-progress blueprint an AUTHORING project (#923) is designing — emitted by the planner's
-   *  <blueprint> tag, rendered in the focused pane, and published to a gist at the Review stage. */
-  planAuthoredBlueprint: Record<string, Blueprint>;
-  setAuthoredBlueprint: (projectId: string, bp: Blueprint) => void;
   /** Per-project deployment & infrastructure config (#919) — edited by the planner's Deploy
    *  stage pane; the `deploymentDefined` gate signal derives from it. */
   planDeployConfig: Record<string, DeployConfig>;
