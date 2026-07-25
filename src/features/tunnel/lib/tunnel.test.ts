@@ -279,6 +279,16 @@ describe("contract v2 fixtures (#2497)", () => {
     expect(() => JSON.parse(serverToClient.store_state.json)).not.toThrow();
   });
 
+  it("store_state_chunk fragments an over-cap store_state domain for mobile reassembly (#3757)", () => {
+    const c = serverToClient.store_state_chunk;
+    expect(Object.keys(c).sort()).toEqual(["chunk", "domain", "rev", "seq", "total", "type"]);
+    expect(STORE_DOMAINS).toContain(c.domain);
+    expect(c.seq).toBeLessThan(c.total); // a real fragment index within the total
+    // A chunk is a RAW slice of the json — not necessarily valid JSON on its own; mobile concatenates
+    // seq 0..total (keyed by domain+rev) before parsing. The fixture pins that partial-ness.
+    expect(() => JSON.parse(c.chunk)).toThrow();
+  });
+
   it("pane_list panes carry an OPTIONAL kind (v1 descriptors still valid)", () => {
     const panes = serverToClient.pane_list.panes as Array<{ id: string; kind?: string }>;
     expect(panes.find((p) => p.id === "t0p0")?.kind).toBe("console");
