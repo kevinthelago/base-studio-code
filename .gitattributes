@@ -1,3 +1,10 @@
+# Normalize every text file to LF in the repo AND on checkout, on every platform (#3761 / D1 of
+# Mobile-Studio-Code#246). This makes the byte-comparison harnesses' `$comment` claims of
+# byte-identity with mobile-studio-code literally true on a Windows checkout — without it, a CRLF
+# working tree false-fails any hash/deepEqual comparison of the shared fixtures.
+* text=auto eol=lf
+*.fixtures.json text eol=lf
+
 # App-authored document templates are embedded verbatim via include_str! and
 # written out as session CLAUDE.md / protocol files. Pin them to LF on every
 # platform so the embedded content (and the generated files) are byte-identical
