@@ -41,7 +41,7 @@ export function StagesView({ bp, onChange, selectedUid, onSelectStage }: AuthorV
         const sel = s.uid === selectedUid;
         return (
           <Box key={s.uid}>
-            {/* eslint-disable-next-line no-restricted-syntax -- drag-reorder stage node (draggable + drag handlers) */}
+            {/* eslint-disable-next-line no-restricted-syntax, jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- drag-reorder + click-select stage node (blueprint author view); pointer-oriented, keyboard reorder is out of scope */}
             <div
               className={"stage" + (sel ? " is-sel" : "") + (locked ? " locked" : "") + (dragIdx === i ? " dragging" : "") + (overIdx === i && dragIdx !== null && dragIdx !== i ? " dragover" : "")}
               draggable

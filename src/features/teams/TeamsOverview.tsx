@@ -7,6 +7,7 @@ import { Box } from "@/shared/ui/layout/Box";
 import { Row } from "@/shared/ui/layout/Row";
 import { Text } from "@/shared/ui/typography/Text";
 import { IconBox } from "@/shared/ui/data/IconBox";
+import { onEnterOrSpace } from "@/shared/ui/a11y";
 import { teamsGrid, teamStats } from "./lib/teamsLayout";
 import type { Team } from "./lib/team";
 import type { Persona } from "@/features/personas";
@@ -30,7 +31,8 @@ export function TeamsOverview({ teams, personas, onEnter }: Props) {
         const s = teamStats(team, personas);
         return (
           // eslint-disable-next-line no-restricted-syntax -- data-node marks the card as owning its press (no background pan/deselect)
-          <div key={team.id} data-node={team.id} onPointerDown={(e) => e.stopPropagation()} onClick={() => onEnter(team.id)}
+          <div key={team.id} data-node={team.id} role="button" tabIndex={0}
+            onPointerDown={(e) => e.stopPropagation()} onClick={() => onEnter(team.id)} onKeyDown={onEnterOrSpace(() => onEnter(team.id))}
             style={{ position: "absolute", left: b.x, top: b.y, width: b.w, height: b.h, cursor: "pointer" }}>
             <Box className="teams-card" style={{ width: "100%", height: "100%", boxSizing: "border-box", padding: "13px 15px",
               display: "flex", flexDirection: "column", gap: 8, borderRadius: 14, background: "var(--bg-elev)",

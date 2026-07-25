@@ -22,6 +22,7 @@ export function ModalScrim({ children, onDismiss, align = "center", blur = false
   useModalDismiss(() => onDismiss?.(), { enabled: !!onDismiss });
   const cls = ["modal-scrim", align === "start" ? "start" : "", blur ? "blur" : "", className].filter(Boolean).join(" ");
   return (
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- modal backdrop mouse-dismiss; keyboard dismiss is Escape via useModalDismiss
     <div className={cls} onMouseDown={overlayDismiss(onDismiss)} style={style}>
       {children}
     </div>

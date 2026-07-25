@@ -163,6 +163,7 @@ export function Dropdown<T extends string = string>({
 
       {open && (
         <>
+          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- click-away backdrop; keyboard dismiss is Escape via the menu's onMenuKey */}
           <div className="dd-backdrop" onMouseDown={() => close(false)} />
           <div
             ref={menuRef}
@@ -174,6 +175,7 @@ export function Dropdown<T extends string = string>({
             style={{ position: "fixed", left: pos.left, top: pos.top, minWidth: pos.minWidth }}
           >
             {options.map((o, i) => (
+              // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/interactive-supports-focus -- WAI-ARIA listbox option: roving focus via aria-activedescendant, keyboard handled at the listbox (onMenuKey)
               <div
                 key={o.value}
                 id={optId(i)}
