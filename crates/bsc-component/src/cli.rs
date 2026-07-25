@@ -73,8 +73,8 @@ filter, `bsc ui list --shape <shape>`).",
         summary: "print one component (JSON, verbatim) or null — or ONE field with --field (#3162)",
         usage: "\
 USAGE:
-  bsc ui get <id> [--pretty] [--raw]
-  bsc ui get <id> --field <json-pointer> [--raw] [--pretty]
+  bsc ui get <id> [--pretty] [--raw] [--out <name>]
+  bsc ui get <id> --field <json-pointer> [--raw] [--pretty] [--out <name>]
 
 Prints the stored component JSON for <id> verbatim, or `null` if absent. --raw (#3166) writes the
 record as raw UTF-8 bytes, LF-only (CR-stripped), no locale layer — safe for `VALUE=$(bsc ui get <id>
@@ -82,7 +82,13 @@ record as raw UTF-8 bytes, LF-only (CR-stripped), no locale layer — safe for `
 (#3162), prints just the value at the RFC-6901 JSON pointer <json-pointer> (e.g. `/name`, `/props/0/req`,
 `/srcText`; a leading `/` is optional) — errors when the component OR the field is absent; --raw unwraps
 a string value (no quotes/escaping) via the SAME raw printer, so a shell `$(...)` capture is clean (a
-non-string value prints as compact JSON), and without --raw the value prints as JSON (--pretty indents).",
+non-string value prints as compact JSON), and without --raw the value prints as JSON (--pretty indents).
+
+--out <name> (#3713) writes the SAME bytes to a BARE-named file in the session's $BSC_SCRATCH dir instead
+of stdout, then prints that path. Use it to review a LARGE value (e.g. a big `srcText`) a restricted
+session would otherwise truncate on stdout — the scratch file is a confinement-allowed path, so Read/Grep
+open it in full. <name> must be bare (no '/', '\\', '..' or ':') and $BSC_SCRATCH must be set. With --out,
+a missing id/field ERRORS (there is nothing to write) rather than emitting an empty capture.",
     },
     CmdDoc {
         name: "log",
@@ -851,10 +857,11 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
             Ok(())
         }
-        // `get --field <json-pointer> [--raw]` (#3162) prints ONE field — intercepted here (the shared
-        // store CLI rejects unknown flags); a plain `get <id>` (incl. the whole-record `--raw`, #3166)
-        // still delegates unchanged. A read verb.
-        Some("get") if args.iter().any(|a| a == "--field") => cmd_get_field(&args[1..]),
+        // `get --field <json-pointer>` (#3162, ONE field) OR `get … --out <name>` (#3713, spill to the
+        // scratch dir) — both intercepted here (the shared store CLI rejects the extra flags), and both
+        // handled by `cmd_get` (which also emits the whole-record `ui-focus` the plain path does). A plain
+        // `get <id>` (incl. the whole-record `--raw`, #3166) still delegates unchanged. A read verb.
+        Some("get") if args.iter().any(|a| a == "--field" || a == "--out") => cmd_get(&args[1..]),
         // `log` (#3164) is a custom read — the record's history stamp (rev/updatedAt/updatedBy).
         Some("log") => {
             if args.get(1).map(String::as_str) == Some("help") {
@@ -3160,16 +3167,26 @@ fn cmd_patch(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `get <id> --field <json-pointer> [--raw] [--dir D] [--pretty]` (#3162) — print ONE field resolved by
-/// JSON pointer. A read verb (never scope-gated); errors when the component OR the field is absent.
-fn cmd_get_field(args: &[String]) -> Result<(), String> {
-    let (mut id, mut dir, mut field) = (None::<String>, None::<String>, None::<String>);
+/// `get <id> [--field <json-pointer>] [--raw] [--dir D] [--pretty] [--out <name>]` — the read verbs this
+/// crate intercepts (the shared store CLI rejects the extra flags). Prints the whole record, or ONE
+/// `--field` resolved by JSON pointer (#3162), to stdout — OR, with `--out <name>`, writes the exact same
+/// bytes into `$BSC_SCRATCH/<name>` (#3713) and prints that path. A read verb (never scope-gated); errors
+/// when the component OR the `--field` is absent.
+///
+/// **Why `--out` exists:** a restricted studio session truncates large stdout (~30KB) and spills the
+/// remainder to a path OUTSIDE the confinement, which the FS hook then blocks Read/Grep from opening — so a
+/// large `srcText` (e.g. a 538-line page) can't be reviewed via stdout at all. `--out` lands it in the
+/// scratch dir, a confinement-allowed path the session Reads in full regardless of size.
+fn cmd_get(args: &[String]) -> Result<(), String> {
+    let (mut id, mut dir, mut field, mut out) =
+        (None::<String>, None::<String>, None::<String>, None::<String>);
     let (mut raw, mut pretty) = (false, false);
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--dir" => dir = it.next().cloned(),
             "--field" => field = it.next().cloned(),
+            "--out" => out = it.next().cloned(),
             "--raw" => raw = true,
             "--pretty" => pretty = true,
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
@@ -3177,20 +3194,42 @@ fn cmd_get_field(args: &[String]) -> Result<(), String> {
             other => return Err(format!("unexpected argument '{other}'")),
         }
     }
-    let id = id.ok_or("usage: bsc ui get <id> --field <json-pointer> [--raw]")?;
-    let field = field.ok_or("--field needs a JSON pointer value (e.g. `/name`)")?;
+    let id = id.ok_or("usage: bsc ui get <id> [--field <json-pointer>] [--raw] [--out <name>]")?;
     let store = open_component_store(&dir)?;
     let record = load_component_object(&store, &id)?;
-    let value = record
-        .pointer(&normalize_pointer(&field)?)
-        .ok_or_else(|| format!("no field '{field}' in component '{id}'"))?;
-    let out = field_output(value, raw, pretty)?;
-    if raw {
-        // Compose with the shared #3166 raw printer so `--field --raw` behaves IDENTICALLY to the
-        // whole-record `--raw`: LF-only (CR-stripped), bytes-direct (no locale layer), one trailing LF.
-        bsc_cli_util::print_raw(&out);
-    } else {
-        println!("{out}");
+    // The value to render: one `--field`, else the whole record. `field_output` handles both a scalar
+    // field and a whole object uniformly (raw string-unwraps, else compact/pretty JSON).
+    let text = match &field {
+        Some(f) => {
+            let value = record
+                .pointer(&normalize_pointer(f)?)
+                .ok_or_else(|| format!("no field '{f}' in component '{id}'"))?;
+            field_output(value, raw, pretty)?
+        }
+        None => {
+            // A whole-record read follows Claude's working focus in the studio (#3545), matching the
+            // plain `get <id>`; a `--field` read does not (it's an inspection of one attribute).
+            bsc_util::emit_ui_focus("component", &id);
+            field_output(&record, raw, pretty)?
+        }
+    };
+    match out {
+        // Spill to the sealed scratch dir — same bytes stdout would carry: raw ⇒ the #3166 LF-only,
+        // CR-stripped, single-trailing-LF form; non-raw ⇒ the value + one newline (like `println!`).
+        Some(name) => {
+            let path = bsc_cli_util::resolve_scratch_out(&name)?;
+            let bytes = if raw { bsc_cli_util::raw_line(&text) } else { format!("{text}\n") };
+            std::fs::write(&path, bytes.as_bytes())
+                .map_err(|e| format!("cannot write --out {}: {e}", path.display()))?;
+            // Report the absolute path so the session knows exactly what to Read next.
+            println!("{}", path.display());
+        }
+        None if raw => {
+            // Compose with the shared #3166 raw printer so `--field --raw` behaves IDENTICALLY to the
+            // whole-record `--raw`: LF-only (CR-stripped), bytes-direct (no locale layer), one trailing LF.
+            bsc_cli_util::print_raw(&text);
+        }
+        None => println!("{text}"),
     }
     Ok(())
 }
@@ -4436,6 +4475,42 @@ mod tests {
         assert!(err.contains("nope") && err.contains("card"), "{err}");
         // A plain `get` (no --field) is NOT intercepted — it still delegates to the store CLI.
         assert!(run(vec!["get".into(), "card".into(), "--dir".into(), dir], "bsc ui").is_ok());
+    }
+
+    #[test]
+    fn get_out_spills_the_value_into_the_scratch_dir_untruncated() {
+        use serde_json::json;
+        // #3713: the motivating case — a srcText far larger than the ~30KB stdout truncation ceiling.
+        let dir = tmp_store_dir("get-out");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        let big = format!("export function FleetPage(){{ return <div>{}</div>; }}", "x".repeat(40_000));
+        store.set("fleetpage", &json!({ "id":"fleetpage", "name":"FleetPage", "srcText": big }).to_string()).unwrap();
+
+        let scratch = std::env::temp_dir().join(format!("bsc-comp-getout-scratch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(&scratch).unwrap();
+        let scratch_str = scratch.to_string_lossy().into_owned();
+
+        bsc_cli_util::with_scratch(Some(&scratch_str), || {
+            // The exact #20 command: `get <id> --field srcText --raw --out <name>` — writes the FULL
+            // srcText to a confinement-allowed scratch file instead of truncated stdout.
+            run(vec!["get".into(), "fleetpage".into(), "--field".into(), "srcText".into(), "--raw".into(),
+                     "--out".into(), "src.tsx".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+            let got = std::fs::read_to_string(scratch.join("src.tsx")).unwrap();
+            assert_eq!(got.trim_end_matches('\n'), big, "the full srcText landed untruncated");
+
+            // Whole-record `--out` (no --field) writes the record JSON.
+            run(vec!["get".into(), "fleetpage".into(), "--out".into(), "rec.json".into(), "--dir".into(), dir.clone()],
+                "bsc ui").unwrap();
+            assert!(std::fs::read_to_string(scratch.join("rec.json")).unwrap().contains("\"id\":\"fleetpage\""),
+                "the whole record landed too");
+
+            // The traversal defence refuses a non-bare --out name.
+            let err = run(vec!["get".into(), "fleetpage".into(), "--field".into(), "srcText".into(),
+                              "--out".into(), "../escape".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap_err();
+            assert!(err.contains("BARE FILENAME"), "a path traversal is refused: {err}");
+        });
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     #[test]
