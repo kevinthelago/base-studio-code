@@ -34,10 +34,14 @@ export { SecurityGraphHost } from "./SecurityGraphHost";
 export { ProfileSelect } from "./AssignmentsTab";
 export { appSessionTag, appSessionOpenLabel, appReachNote } from "./lib/appSession";
 
-// #1545: public API for cross-feature consumers (planner, app/console).
-export { type AgentProfile, type Tier, type ToolKey, PROFILES } from "./lib/agentProfiles";
+// #1545: public API for cross-feature consumers (planner, app/console, tunnel projector).
+export { type AgentProfile, type Tier, type ToolKey, type ConsoleSession, type ConsolePane, APP_ROLES, PROFILES } from "./lib/agentProfiles";
 export { resolveProfileSettings } from "./lib/profileEnforcement";
 export { parseAuditLog, type AuditRecord } from "./lib/auditLog";
+// #3754: the tunnel `security` projection derives its consoles + audit display rows the SAME way the
+// desktop Security page does — one source of truth for the pane→console join and the allow/ask/block verdict.
+export { deriveConsoles } from "./lib/consoleModel";
+export { buildAuditRows, type AuditDisplayRow } from "./lib/auditRows";
 
 export function SecurityWorkspace({ pageOverride }: { pageOverride?: string } = {}) {
   const [selectedId, setSelectedId] = useState("sys_planner");
