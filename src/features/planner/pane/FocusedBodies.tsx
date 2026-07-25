@@ -29,6 +29,8 @@ import type { FleetHandlers, McpHandlers } from "../bodies/focusedHandlers";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 // The Planner Components pane (#2314) — the body of the `test_ui` stage.
 import { PlannerComponentsPane } from "@/features/designs";
+import { PreviewPaneShell } from "../preview/PreviewPaneShell";
+import { useAppStore } from "@/store";
 
 // Re-export the shared body types so existing `from "./FocusedBodies"` imports keep resolving.
 export type { FleetHandlers, McpHandlers, SyncState } from "../bodies/focusedHandlers";
@@ -59,6 +61,9 @@ export function FocusedStageBody({ stage, data, projectId, onLinkRepo, onView, o
   onAddMcp?: (input: string) => void;
   onRemoveMcp?: (id: string) => void;
 }) {
+  // #3783: the UI stage renders one of two surfaces per the project's UI mode (planner-set at
+  // discovery; an unset project defaults to "custom" — the in-app designer preview).
+  const uiMode = useAppStore((s) => (projectId ? s.uiMode[projectId] : undefined) ?? "custom");
   // Assemble the repeated handler sets once (#1640) so the cases below spread them instead of
   // re-threading each handler by name. Same handlers, same values — purely cuts prop-chain noise.
   const fleetHandlers: FleetHandlers = { onFlow, onModel, onPersona, onTopology, onDirectorDrive };
@@ -87,10 +92,13 @@ export function FocusedStageBody({ stage, data, projectId, onLinkRepo, onView, o
       // modification rows from `bsc plan transformation` — tier by tier, confirm-only.
       return <TransformationsBody projectId={projectId} />;
     case "ui":
-      // The UI stage's drop-in-files surface (#604/#829): stage design assets into the
-      // project's `design/` dir for the planner to route. The pipeline-screen registry that
-      // hosted this was orphaned by the focused-pane refactor — render it directly here.
-      return <FileIntakePane projectKey={projectId ?? ""} />;
+      // #3783: the UI stage renders one of two surfaces depending on the project's UI mode.
+      // "custom" (default) = the in-app designer preview — the render-preview pipeline shows the
+      // navigable shell the designer commissions (PreviewPaneShell). "external" = the drop-in-files
+      // surface (#604/#829) that stages Claude-Design assets into `design/` for the planner to route.
+      return uiMode === "external"
+        ? <FileIntakePane projectKey={projectId ?? ""} />
+        : <PreviewPaneShell projectKey={projectId ?? ""} />;
     case "features":
       return <FeaturesBody features={data?.features} />;
     case "streams":

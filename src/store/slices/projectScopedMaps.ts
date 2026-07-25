@@ -45,6 +45,7 @@ const PROJECT_MAP_OPS: Partial<Record<keyof AppStore, ProjectMapOp[]>> = {
   // planStageConfig / projectBlueprintId are DROPPED by all three ops (delete/rekey/clearPlan).
   planStageConfig:         ["delete", "rekey", "clearPlan"],
   projectBlueprintId:      ["delete", "rekey", "clearPlan"],
+  uiMode:                  ["delete", "rekey", "clearPlan"],
   // Plan-config maps the plan.ts site resets; rekey also moves them, delete drops them via… no —
   // planSourceConfig is NOT in deleteLocalProject's set (only rekey + the plan.ts clearPlan reset).
   planSourceConfig:        ["rekey", "clearPlan"],

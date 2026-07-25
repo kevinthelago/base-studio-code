@@ -16,6 +16,7 @@ describe("project blueprint bind + plan-slice actions", () => {
       planStages: { p: { goal: "# Goal" } },
       planConfirmedStages: { p: ["goal"] },
       kitUsage: [], // #2277: isolate the consumer-index edges the bind auto-records
+      uiMode: {},
     });
   });
 
@@ -32,8 +33,8 @@ describe("project blueprint bind + plan-slice actions", () => {
   });
 
   it("records nothing for a kit-less blueprint, and stays idempotent across re-binds (#2277)", () => {
-    // The authoring blueprint declares no kit → no edge.
-    useAppStore.getState().setProjectBlueprintId("q", "blueprint-author");
+    // An unknown / kit-less blueprint id resolves to no kit → no edge filed.
+    useAppStore.getState().setProjectBlueprintId("q", "no-such-blueprint");
     expect(useAppStore.getState().kitUsage.some((u) => u.projectKey === "q")).toBe(false);
     // Re-binding the same kit-bearing blueprint keeps exactly one edge (idempotent by projectKey+kitId).
     useAppStore.getState().setProjectBlueprintId("r", "default");
@@ -64,5 +65,14 @@ describe("project blueprint bind + plan-slice actions", () => {
     useAppStore.getState().setStageEnabled("fresh", "features", true);
     useAppStore.getState().seedDiscoveryOnlyStages("fresh");
     expect(useAppStore.getState().planStageConfig["fresh"].enabled.features).toBe(true);
+  });
+
+  it("setUiMode records the project's UI surface; unset reads as custom (#3783)", () => {
+    // Unset → the store map has no entry; the FocusedBodies read site defaults it to "custom".
+    expect(useAppStore.getState().uiMode["p"]).toBeUndefined();
+    useAppStore.getState().setUiMode("p", "external");
+    expect(useAppStore.getState().uiMode["p"]).toBe("external");
+    useAppStore.getState().setUiMode("p", "custom");
+    expect(useAppStore.getState().uiMode["p"]).toBe("custom");
   });
 });
