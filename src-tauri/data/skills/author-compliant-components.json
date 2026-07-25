@@ -1,0 +1,11 @@
+{
+  "id": "author-compliant-components",
+  "name": "Author compliant components (privacy & compliance by construction)",
+  "kind": "workflow",
+  "source": "first-party",
+  "desc": "Build every component privacy- and compliance-safe from the start — data minimization, consent before non-essential, no dark patterns, secrets server-side — the author-time counterpart to the *-review skills.",
+  "body": "Author every component to be privacy- and compliance-safe BY CONSTRUCTION — the build-time counterpart to the `gdpr-review` / `hipaa-safeguards` / `pci-dss-review` / `soc2-readiness` review skills and the `audit-consent-scaffold` plumbing.\n1. Data minimization: a component collects only what its purpose needs. Never add a field 'because we might use it later'. Don't capture or display PII (name, email, health, payment, precise location) without a clear, stated purpose.\n2. Consent before non-essential: any component that captures data or triggers non-essential processing (analytics, marketing, tracking, third-party embeds) sits BEHIND the consent / preferences gate (see `audit-consent-scaffold`) — purpose-scoped, opt-in, withdrawable. Default to OFF.\n3. No dark patterns: don't pre-check consent, don't hide or de-emphasize the decline, don't nag. Give accept and decline equal visual weight. Honor Do-Not-Track and `prefers-reduced-motion`.\n4. Secrets & sensitive data stay server-side: never embed API keys, tokens, or secrets in a component; never log full PII / payment / health payloads client-side; mask sensitive fields (payment, SSN, secrets) in the UI.\n5. Regulated categories carry stricter handling — flag them, don't hand-roll: health data (HIPAA), payment (PCI-DSS — never put raw card data in the component; use a tokenized/hosted field), and identity/behavioral data (GDPR). Route these through the compliant surface.\n6. Auditability: a component that reads or mutates sensitive data surfaces through the audit-log choke-point (`audit-consent-scaffold`), never an ad-hoc write.\nWhen building something that touches a regulated category, run the matching review skill (`gdpr-review` / `hipaa-safeguards` / `pci-dss-review`) against the result to confirm.",
+  "tools": ["bsc ui", "edit", "repo_map"],
+  "profiles": ["build"],
+  "pinned": false
+}
