@@ -3,8 +3,8 @@
 // them out de-interleaves that region so usePlanGates becomes a clean, contiguous extraction next.
 // The gate `signals` memo (which stays in Planning) consumes this hook's `isAuthoring`/`authoringSig`.
 
-import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import { isAuthoringBlueprint, authoringSignals, canChangeBlueprint, canSwitchBlueprint, type Blueprint } from "../stages/blueprints";
+import { useMemo } from "react";
+import { isAuthoringBlueprint, authoringSignals, type Blueprint } from "../stages/blueprints";
 import { plannerTreatAsExisting } from "./plannerIntro";
 import { buildSkillLibrary } from "../blueprints/blueprintSkills";
 import { buildMcpLibrary } from "../blueprints/blueprintMcp";
@@ -24,10 +24,6 @@ export interface PlannerBlueprint {
   activeBlueprint: Blueprint | undefined;
   isAuthoring: boolean;
   treatAsExisting: boolean;
-  switchTargets: Blueprint[];
-  canSwitch: boolean;
-  switchOpen: boolean;
-  setSwitchOpen: Dispatch<SetStateAction<boolean>>;
   authoredBp: Blueprint | undefined;
   authoringSig: ReturnType<typeof authoringSignals>;
   authorSkillLib: ReturnType<typeof buildSkillLibrary>;
@@ -47,14 +43,6 @@ export function usePlannerBlueprint(deps: BlueprintDeps): PlannerBlueprint {
   // bare `isExisting` (saved-project) proxy would mis-greet it as a new greenfield project. Plain
   // `isExisting` stays for the drafting/expanding UI labels (genuinely about save-state).
   const treatAsExisting = plannerTreatAsExisting({ isSaved: isExisting, mode: activeBlueprint?.mode });
-  // Blueprint switching (#1281): any project blueprint may switch to any OTHER one — the
-  // reset/keep/export confirmation modal is the safety, not a category rule (only the blueprint-
-  // authoring lifecycle is excluded). Offer every other blueprint as a target.
-  const switchTargets = useMemo(
-    () => blueprints.filter(b => canSwitchBlueprint(activeBlueprint, b)),
-    [blueprints, activeBlueprint]);
-  const canSwitch = canChangeBlueprint(activeBlueprint) && switchTargets.length > 0;
-  const [switchOpen, setSwitchOpen] = useState(false);
   const authoredBp = planAuthoredBlueprint[effectiveProjectId];
   // Signals the authoring stages' gates read (name+category, stage count, validity).
   const authoringSig = useMemo(() => authoringSignals(authoredBp), [authoredBp]);
@@ -62,5 +50,5 @@ export function usePlannerBlueprint(deps: BlueprintDeps): PlannerBlueprint {
   const authorSkillLib = useMemo(() => buildSkillLibrary(skillDefs), [skillDefs]);
   const authorMcpLib = useMemo(() => buildMcpLibrary(mcpServers), [mcpServers]);
 
-  return { activeBlueprint, isAuthoring, treatAsExisting, switchTargets, canSwitch, switchOpen, setSwitchOpen, authoredBp, authoringSig, authorSkillLib, authorMcpLib };
+  return { activeBlueprint, isAuthoring, treatAsExisting, authoredBp, authoringSig, authorSkillLib, authorMcpLib };
 }

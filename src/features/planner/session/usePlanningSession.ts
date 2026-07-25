@@ -8,8 +8,6 @@
 //     WITHOUT wiping plan files or restarting into a destructive reconciliation (#827).
 //   • doClearPlan         — delete on-disk plan files FIRST (awaited), wipe the store, unlink repos,
 //     then restart with a blank slate (#664).
-//   • doSwitchBlueprint   — re-seed the project onto another blueprint, wipe the old on-disk plan
-//     files, then restart on the new blueprint (#1281).
 //
 // STRICTLY behaviour-preserving: the function bodies, the order of their awaited steps, and every
 // store/invoke call are moved unchanged — only the closed-over values become hook parameters.
@@ -43,7 +41,6 @@ export interface PlanningSessionDeps {
   refreshSetupSig: () => void;
   setShowBlueprintModal: Dispatch<SetStateAction<boolean>>;
   setShowClearConfirm: Dispatch<SetStateAction<boolean>>;
-  setSwitchOpen: Dispatch<SetStateAction<boolean>>;
 }
 
 export interface PlanningSession {
@@ -51,7 +48,6 @@ export interface PlanningSession {
   handleRestart: (opts?: { fresh?: boolean }) => Promise<void>;
   keepPlanFiles: () => Promise<void>;
   doClearPlan: () => Promise<void>;
-  doSwitchBlueprint: (targetId: string) => Promise<void>;
 }
 
 export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
@@ -59,7 +55,7 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
     termRef, bufRef, paneId, linkedRepos, treatAsExisting, isAuthoring,
     activeProjectName, activeProjectNumber, planningPitch, effectiveProjectId,
     stageIdsFor, refreshSetupSig,
-    setShowBlueprintModal, setShowClearConfirm, setSwitchOpen,
+    setShowBlueprintModal, setShowClearConfirm,
   } = deps;
 
   const [restarting, setRestarting] = useState(false);
@@ -99,8 +95,8 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
   // Relaunch the planner session (#2396). RESUME-CAPABLE by default — the launch mirrors the mount
   // path exactly (`claude --continue || claude` + the fresh-only intro guard + a resume request), so
   // a non-destructive relaunch (sandbox-toggle flip, reopening a project) continues the prior
-  // conversation instead of starting over. The destructive ops (clear-plan / switch-blueprint) pass
-  // `fresh: true` to launch a genuinely NEW session — plain `claude`, re-greeted with the intro even
+  // conversation instead of starting over. The destructive clear-plan op passes `fresh: true` to
+  // launch a genuinely NEW session — plain `claude`, re-greeted with the intro even
   // though history exists (#1240), since the plan that conversation referred to was just wiped.
   async function handleRestart(opts?: { fresh?: boolean }) {
     const fresh = opts?.fresh === true;
@@ -181,20 +177,5 @@ export function usePlanningSession(deps: PlanningSessionDeps): PlanningSession {
     void handleRestart({ fresh: true }); // destructive — the plan is gone, start a NEW session (#2396)
   }
 
-  // Switch the project to another blueprint (#1281 — any → any other project blueprint, confirmed via
-  // the switch modal; applyBlueprintToProject re-seeds the stage config + clears the old progress).
-  // Wipe the on-disk plan files for the old stages, then restart the planner on the new blueprint.
-  async function doSwitchBlueprint(targetId: string) {
-    setSwitchOpen(false);
-    const store = useAppStore.getState();
-    const before = store.projectBlueprintId[effectiveProjectId];
-    store.applyBlueprintToProject(effectiveProjectId, targetId);
-    if (store.projectBlueprintId[effectiveProjectId] === before) return; // switch was refused — leave as-is
-    await safeInvoke("clear_project_plan_files", { projectKey: effectiveProjectId }, undefined, console.error);
-    store.setActiveProjectRepos([]);
-    store.setPlanningContext(planningPitch, "");
-    void handleRestart({ fresh: true }); // destructive — new blueprint, start a NEW session (#2396)
-  }
-
-  return { restarting, handleRestart, keepPlanFiles, doClearPlan, doSwitchBlueprint };
+  return { restarting, handleRestart, keepPlanFiles, doClearPlan };
 }

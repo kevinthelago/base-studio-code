@@ -1,9 +1,9 @@
 // Planning page header, split out of Planning.tsx (decomposition pass).
 //
 // Pure presentation: the back button, the editable project title (published vs draft variants),
-// the drafting/expanding chip, the auto-planning progress line, and the restart / clear /
-// switch-blueprint / triage action buttons. No hooks, refs, or effects — every value and callback
-// is supplied by Planning.tsx, so extracting it does not change the parent's hook-call order.
+// the drafting/expanding chip, the auto-planning progress line, and the restart / clear / triage
+// action buttons. No hooks, refs, or effects — every value and callback is supplied by Planning.tsx,
+// so extracting it does not change the parent's hook-call order.
 import { BackButton } from "@/shared/ui/controls/BackButton";
 import { Button } from "@/shared/ui/controls/Button";
 import { Chip } from "@/shared/ui/data/Chip";
@@ -37,8 +37,6 @@ export interface PlanningHeaderProps {
   handleRestart: () => void;
   restarting: boolean;
   onClearPlan: () => void;
-  canSwitch: boolean;
-  onSwitchBlueprint: () => void;
   // Triage launch gate (#444/#551).
   isAuthoring: boolean;
   published: boolean;
@@ -59,7 +57,7 @@ export function PlanningHeader({
   titleEdit, setTitleEdit, renameErr, setRenameErr, commitRename,
   planningTitle, setPlanningTitle, draftTitleErr, setDraftTitleErr, commitDraftTitle,
   autopilotRunning, autopilotProgressPct,
-  handleRestart, restarting, onClearPlan, canSwitch, onSwitchBlueprint,
+  handleRestart, restarting, onClearPlan,
   isAuthoring, published, hasRepos, hasFleet, triaging, planReady, launchTriage,
   triaged, onGenerateBlueprint,
 }: PlanningHeaderProps) {
@@ -137,12 +135,6 @@ export function PlanningHeader({
       <Button variant="ghost" danger onClick={onClearPlan} title="Wipe this project's plan and restart the planner (#664)">
         clear plan
       </Button>
-      {/* Switch the project to a different blueprint (#923 / #1281 — any → any other). */}
-      {canSwitch && (
-        <Button variant="ghost" onClick={onSwitchBlueprint} title="Switch this project to a different blueprint">
-          switch blueprint
-        </Button>
-      )}
       {/* The primary action follows the lifecycle: plan → TRIAGE (build the project) → then, once
           it's been triaged, GENERATE BLUEPRINT (promote the plan for reuse, #3785). Authoring
           blueprints have no execution side, so no button. */}

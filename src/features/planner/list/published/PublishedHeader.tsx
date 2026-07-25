@@ -4,6 +4,7 @@ import { fireInvoke } from "@/shared/lib/core/safeInvoke";
 import { Search } from "lucide-react";
 import { useAppStore } from "@/store";
 import { projectSlug } from "@/shared/lib/core/projectPaths";
+import { FEATURES_KEY } from "@/features/planner/stages/planTopics";
 import { timeAgo } from "@/shared/lib/core/format";
 import { Dialog } from "@/shared/ui/overlay/Dialog";
 import { Button } from "@/shared/ui/controls/Button";
@@ -48,7 +49,7 @@ export function PublishedHeader({
 }: PublishedHeaderProps) {
   const {
     setProjectsView, setActiveProjectMeta, setPlanningContext, setPlanningTitle, setPlanningSession,
-    addDraftProject, setProjectBlueprintId, activeBlueprintId, blueprints,
+    addDraftProject, setProjectBlueprintId, setPlanStage, activeBlueprintId, blueprints,
   } = useAppStore();
   const [title, setTitle]         = useState("");
   const [newOpen, setNewOpen]     = useState(false);
@@ -96,6 +97,11 @@ export function PublishedHeader({
     // yet (which then leaked into the session skill-group name, GitHub structure, and tab labels).
     fireInvoke("set_project_title", { projectKey: draftKey, title: titleTrimmed });
     setProjectBlueprintId(draftKey, bpId);
+    // #3785: seed the blueprint's curated feature list into the new project's Features stage, so a
+    // project created from a goal blueprint (CRM/ERP/…) starts WITH those features to refine. The
+    // blueprint is locked at creation (no switching), so this seed happens once, here.
+    const bpFeatures = blueprints.find((b) => b.id === bpId)?.features;
+    if (bpFeatures) setPlanStage(draftKey, FEATURES_KEY, bpFeatures);
     setPlanningSession(draftKey);
     setNewOpen(false);
     setTitle("");
