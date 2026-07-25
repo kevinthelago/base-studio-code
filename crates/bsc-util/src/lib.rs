@@ -19,7 +19,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// ONE list shared by the agent's prompt block + the shell-helper drift guard) plus the `.mcp.json`
 /// command sentinels for the two bundled MCP servers (now `bsc mcp <sub>` subcommands, #1848/#1877).
 pub mod sidecars;
-pub use sidecars::{Sidecar, COMPLIANCE_MCP, RESEARCH_MCP, SIDECARS};
+pub use sidecars::{Sidecar, CHANNEL_MOCK_MCP, COMPLIANCE_MCP, RESEARCH_MCP, SIDECARS};
 
 /// The canonical observability log-stream registry (#1847) — ONE list shared by the app's env
 /// staging (`wire_bsc_env`) and the unified `bsc-logs` reader (`crates/logs`).

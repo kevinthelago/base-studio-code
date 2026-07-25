@@ -8,10 +8,11 @@ const mk = (over: Partial<McpServer>): McpServer => ({
   id: "e", name: over.id ?? "e", enabled: true, projects: [], transport: "stdio", ...over,
 });
 
-// Drop the always-present built-in servers (#1196 Research, #1005 Compliance) so the user-server
-// assertions stay focused.
+// Drop the bundled built-in servers (#1196 Research, #1005 Compliance, #3146 Channel-mock) so the
+// user-server assertions stay focused.
+const BUILTIN_IDS = new Set(["builtin-research", "builtin-compliance", "builtin-channel-mock"]);
 const noBuiltins = (servers: McpServer[]) =>
-  servers.map(e => e.id).filter(id => id !== "builtin-research" && id !== "builtin-compliance");
+  servers.map(e => e.id).filter(id => !BUILTIN_IDS.has(id));
 
 describe("resolveMcpServers", () => {
   it("includes enabled globals + this-project matches; drops disabled and other projects", () => {
@@ -36,9 +37,16 @@ describe("resolveMcpServers", () => {
   it("tolerates a nameless entry from malformed persisted state (#2515): it shadows no built-in", () => {
     const nameless = { id: "m1", enabled: true, projects: [], transport: "stdio" } as unknown as McpServer;
     const resolved = resolveMcpServers([nameless], "");
+    // Only the ENABLED built-ins are global; the disabled channel-mock is absent from the base.
     expect(resolved.map(e => e.id)).toEqual(["builtin-research", "builtin-compliance", "m1"]);
     // The stream resolver's name matching must not throw on it either.
     expect(() => resolveStreamMcp([nameless], ["Research"], "")).not.toThrow();
+  });
+
+  it("does NOT make a disabled built-in CHANNEL global — every session would otherwise get send_email (#3146)", () => {
+    const names = resolveMcpServers([], "P1").map(e => e.name);
+    expect(names).toContain("Research"); // enabled built-in → global
+    expect(names).not.toContain("Channel (mock)"); // disabled built-in → NOT global (per-stream only)
   });
 });
 
@@ -58,6 +66,11 @@ describe("resolveAllInstalledMcp", () => {
     const names = resolveAllInstalledMcp([]).map(e => e.name);
     expect(names).toContain("Research");
     expect(names).toContain("Compliance");
+  });
+
+  it("exposes the disabled bundled channel to the planner/director so it can be assigned (#3146)", () => {
+    const names = resolveAllInstalledMcp([]).map(e => e.name);
+    expect(names).toContain("Channel (mock)"); // disabled, but installed + runnable → assignable
   });
 });
 
@@ -81,6 +94,17 @@ describe("resolveStreamMcp", () => {
     const names = resolveStreamMcp(all, [], "P1").map(e => e.name);
     expect(names).toContain("Research");
     expect(names).toContain("Compliance");
+  });
+
+  it("assigns the bundled mock CHANNEL to only the stream that names it — the marketer, not the fleet (#3146)", () => {
+    // Unassigned: the channel is NOT on a stream (it's a disabled built-in, never global).
+    expect(resolveStreamMcp(all, [], "P1").map(e => e.name)).not.toContain("Channel (mock)");
+    // Assigned by name (the marketer stream's `streamMcp`): the channel's tools resolve onto it.
+    const marketer = resolveStreamMcp(all, ["Channel (mock)"], "P1");
+    expect(marketer.map(e => e.name)).toContain("Channel (mock)");
+    // And it carries a runnable stdio config (its send_email/post/schedule/get_metrics tools reach the session).
+    const chan = marketer.find(e => e.name === "Channel (mock)")!;
+    expect(toMcpPayload(chan)?.command).toBe("bsc-channel-mock-mcp");
   });
 });
 

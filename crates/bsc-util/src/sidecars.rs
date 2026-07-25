@@ -121,6 +121,9 @@ pub const SIDECARS: &[Sidecar] = &[
 pub const RESEARCH_MCP: &str = "bsc-research-mcp";
 /// The Compliance MCP server (#1005) — the `.mcp.json` command sentinel, rewritten to `bsc mcp compliance`.
 pub const COMPLIANCE_MCP: &str = "bsc-compliance-mcp";
+/// The mock marketing-channel MCP server (#3146) — the `.mcp.json` command sentinel, rewritten to
+/// `bsc mcp channel-mock`. The Marketer's first channel; records send_email/post/schedule (no real sends).
+pub const CHANNEL_MOCK_MCP: &str = "bsc-channel-mock-mcp";
 
 /// Every app-shipped binary's stem — now just the unified `bsc` umbrella plus the model-agnostic
 /// `bsc-agent` runtime (#1877). Every state CLI + the two MCP servers are subcommands of `bsc`, so
@@ -182,6 +185,7 @@ mod tests {
         // The MCP server markers stay registered as sentinels but are not bundled binaries any more.
         assert_eq!(RESEARCH_MCP, "bsc-research-mcp");
         assert_eq!(COMPLIANCE_MCP, "bsc-compliance-mcp");
-        assert!(!all.contains(&RESEARCH_MCP) && !all.contains(&COMPLIANCE_MCP));
+        assert_eq!(CHANNEL_MOCK_MCP, "bsc-channel-mock-mcp");
+        assert!(!all.contains(&RESEARCH_MCP) && !all.contains(&COMPLIANCE_MCP) && !all.contains(&CHANNEL_MOCK_MCP));
     }
 }

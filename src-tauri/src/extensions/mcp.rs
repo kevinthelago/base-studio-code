@@ -178,12 +178,14 @@ pub(crate) const RESEARCH_MCP_MARKER: &str = bsc_util::RESEARCH_MCP;
 /// The same sentinel for the built-in Compliance server (#1005) — rewritten to `<bsc> mcp compliance`
 /// at write time (#1877). From the registry (#1848).
 pub(crate) const COMPLIANCE_MCP_MARKER: &str = bsc_util::COMPLIANCE_MCP;
+/// The sentinel for the Marketer's mock marketing channel (#3146) — rewritten to `<bsc> mcp channel-mock`.
+pub(crate) const CHANNEL_MOCK_MCP_MARKER: &str = bsc_util::CHANNEL_MOCK_MCP;
 /// Resolve a stdio MCP command, substituting the bundled-binary absolute path for a built-in MCP
 /// marker (Research #1196, Compliance #1005). A non-marker command passes through unchanged; a
 /// marker falls back to the bare name when its bundled binary can't be located (e.g. a dev build
 /// without the sidecar).
 pub(crate) fn resolve_mcp_command(command: &str, bundled: Option<std::path::PathBuf>) -> String {
-    if command == RESEARCH_MCP_MARKER || command == COMPLIANCE_MCP_MARKER {
+    if command == RESEARCH_MCP_MARKER || command == COMPLIANCE_MCP_MARKER || command == CHANNEL_MOCK_MCP_MARKER {
         if let Some(p) = bundled {
             return p.to_string_lossy().to_string();
         }
@@ -197,6 +199,7 @@ fn mcp_marker_subargs(command: &str) -> &'static [&'static str] {
     match command {
         RESEARCH_MCP_MARKER => &["mcp", "research"],
         COMPLIANCE_MCP_MARKER => &["mcp", "compliance"],
+        CHANNEL_MOCK_MCP_MARKER => &["mcp", "channel-mock"],
         _ => &[],
     }
 }
@@ -251,6 +254,11 @@ mod relocated_tests {
         let comp = PathBuf::from("/opt/app/bsc-compliance-mcp");
         assert_eq!(resolve_mcp_command("bsc-compliance-mcp", Some(comp.clone())), comp.to_string_lossy());
         assert_eq!(resolve_mcp_command("bsc-compliance-mcp", None), "bsc-compliance-mcp");
+        // The Marketer's mock channel marker (#3146) resolves + subargs to `mcp channel-mock`.
+        let chan = PathBuf::from("/opt/app/bsc");
+        assert_eq!(resolve_mcp_command("bsc-channel-mock-mcp", Some(chan.clone())), chan.to_string_lossy());
+        assert_eq!(mcp_marker_subargs("bsc-channel-mock-mcp"), &["mcp", "channel-mock"]);
+        assert_eq!(mcp_marker_subargs("npx"), &[] as &[&str]); // a non-marker prepends nothing
     }
     #[test]
     fn mcp_install_dir_slugifies_and_stays_under_mcp_root() {

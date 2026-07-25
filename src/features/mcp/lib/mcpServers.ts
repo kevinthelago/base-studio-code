@@ -38,22 +38,29 @@ export interface McpServer {
 export const BUILTIN_MCP_SERVERS: McpServer[] = overlayFile("mcp/builtin-servers.json", builtinServersEmbedded as McpServer[]);
 
 /** Prepend the built-in servers, skipping any a user entry already shadows by name (case-insensitive).
- *  Tolerates a nameless entry (malformed persisted state, #2515) — it shadows nothing. */
-function withBuiltins(servers: McpServer[]): McpServer[] {
+ *  Tolerates a nameless entry (malformed persisted state, #2515) — it shadows nothing.
+ *  `onlyEnabled` limits the prepended built-ins to the enabled ones — the GLOBAL set every session
+ *  gets. A DISABLED built-in (a per-stream channel, #3146: `channel-mock`) is catalog-present but NOT
+ *  global; it reaches a session only by explicit stream assignment ({@link resolveStreamMcp}). */
+function withBuiltins(servers: McpServer[], onlyEnabled = false): McpServer[] {
   const taken = new Set(servers.map(s => s.name?.toLowerCase()).filter((n): n is string => !!n));
-  return [...BUILTIN_MCP_SERVERS.filter(b => !taken.has(b.name.toLowerCase())), ...servers];
+  const builtins = BUILTIN_MCP_SERVERS.filter(b => (!onlyEnabled || b.enabled) && !taken.has(b.name.toLowerCase()));
+  return [...builtins, ...servers];
 }
 
 /**
  * The enabled servers that apply to a session in `projectId`: a server applies when it is
  * enabled AND either global (`projects` empty) or scoped to this project. An empty
- * `projectId` (no project) yields only global servers. The built-in servers (#1196) are always
- * included (they're global + enabled by construction).
+ * `projectId` (no project) yields only global servers. ENABLED built-in servers (#1196 —
+ * research/compliance) are always included (global by construction); a DISABLED built-in (a marketing
+ * channel, #3146) is deliberately NOT global — it's per-stream-assignable only, so the whole fleet
+ * never gets `send_email`.
  */
 export function resolveMcpServers(all: McpServer[], projectId: string): McpServer[] {
-  return withBuiltins(all.filter(
-    e => e.enabled && (e.projects.length === 0 || (!!projectId && e.projects.includes(projectId))),
-  ));
+  return withBuiltins(
+    all.filter(e => e.enabled && (e.projects.length === 0 || (!!projectId && e.projects.includes(projectId)))),
+    true,
+  );
 }
 
 /**
@@ -82,7 +89,11 @@ export function resolveStreamMcp(all: McpServer[], streamMcp: string[] = [], pro
   const base = resolveMcpServers(all, projectId);
   const baseIds = new Set(base.map(e => e.id));
   const assigned = new Set(streamMcp.map(n => n.toLowerCase()));
-  const extra = all.filter(
+  // Assignable candidates = the store's servers PLUS the bundled built-ins — so a per-stream CHANNEL
+  // (a disabled built-in like `channel-mock`, #3146) can be handed to just the marketer stream, not
+  // the whole fleet, exactly as a downloaded server is. A name already in the base isn't re-added.
+  const candidates = [...BUILTIN_MCP_SERVERS, ...all];
+  const extra = candidates.filter(
     e => toMcpPayload(e) !== null && !!e.name && assigned.has(e.name.toLowerCase()) && !baseIds.has(e.id),
   );
   return [...base, ...extra];
