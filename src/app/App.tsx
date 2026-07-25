@@ -26,6 +26,7 @@ import { Achievements } from "@/app/Achievement";
 import { AppBanners } from "@/app/AppBanners";
 import { LiveRegion } from "@/shared/ui/feedback/LiveRegion";
 import { useCoordAnnouncer } from "@/app/a11y/useCoordAnnouncer";
+import { useCoordSpeaker } from "@/app/a11y/useCoordSpeaker";
 import { useWarden } from "@/shared/lib/fleet/useWarden";
 import { useWorkerAutoEnd } from "@/shared/lib/fleet/useWorkerAutoEnd";
 import { useNotificationSounds } from "@/features/sounds";
@@ -58,6 +59,7 @@ export default function App() {
   useTunnelHookTelemetry(); // project read-only hook-fire telemetry to a paired phone (#937)
   useTunnelCoordControl(); // route a paired phone's wake/approve into the coordinator (#935)
   useCoordAnnouncer(); // announce structured coord events to the screen reader via the live region (#3770)
+  useCoordSpeaker(); // and SPEAK them via app-owned TTS when opted in (#3804, Tier 1) — sits alongside
   useAppBoot();    // accent vars · startup trace · base-dir/crash/skills hydration · deferred perf monitor
   useNavHistory(); // mouse back/forward (X1/X2) → app-wide navigation history (workspace + Glance drill)
 
