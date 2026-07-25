@@ -17,6 +17,8 @@
   --success: oklch(0.74 0.13 145);
   --info: oklch(0.72 0.10 230);
   --danger: oklch(0.68 0.18 25);
+  --on-accent: #1a120a;
+  --on-success: oklch(0.20 0.04 145);
   --r-md: 6px;
   --r-lg: 10px;
   --dur-fast: 120ms;
@@ -44,7 +46,7 @@
   --btn-font-weight: 400;
   --btn-disabled-opacity: 0.4;
   --btn-primary-bg: var(--accent);
-  --btn-primary-fg: #1a120a;
+  --btn-primary-fg: var(--on-accent);
   --btn-primary-border: transparent;
   --btn-primary-font-weight: 600;
   --btn-primary-hover-brightness: 1.05;
