@@ -622,6 +622,28 @@ pub fn resolve_scratch_file(name: &str) -> Result<std::path::PathBuf, String> {
     Ok(std::path::Path::new(&dir).join(name))
 }
 
+/// Resolve `--out <name>` to an absolute path inside the session scratch dir — the WRITE-side twin of
+/// [`resolve_scratch_file`] (#3713). Same traversal defence ([`is_bare_filename`]) and same
+/// fail-closed-on-unset-`$BSC_SCRATCH`, worded for the output flag. Lets a READ verb spill a large value
+/// into a confinement-allowed path the session can then Read/Grep, instead of relying on stdout — which a
+/// restricted studio session truncates (and spills OUT of the confinement, unreadable) for large output.
+pub fn resolve_scratch_out(name: &str) -> Result<std::path::PathBuf, String> {
+    if !is_bare_filename(name) {
+        return Err(format!(
+            "--out takes a BARE FILENAME inside the session scratch dir, not a path: '{name}' is not \
+             allowed (no '/', '\\', '..' or ':'). Pass just a name, e.g. --out srcText.tsx"
+        ));
+    }
+    let dir = session_env(&SCRATCH_OVERRIDE, BSC_SCRATCH_ENV).unwrap_or_default();
+    if dir.trim().is_empty() {
+        return Err(format!(
+            "--out needs ${BSC_SCRATCH_ENV} to be set (this session has no scratch dir); drop --out to \
+             print to stdout instead"
+        ));
+    }
+    Ok(std::path::Path::new(&dir).join(name))
+}
+
 /// The payload for a write verb: the contents of `--file <name>` when given, else stdin.
 ///
 /// This is the ONE place the two channels converge, so every store's write verb accepts both with
@@ -923,6 +945,25 @@ mod tests {
             let err = resolve_scratch_file("../../etc/passwd").unwrap_err();
             assert!(err.contains("BARE FILENAME"), "refusal names the rule: {err}");
             assert!(err.contains("--file payload.json"), "refusal shows the correct form: {err}");
+        });
+    }
+
+    #[test]
+    fn resolve_scratch_out_mirrors_the_file_side_defences_for_the_output_flag() {
+        // #3713: the WRITE twin — same bare-name join, same traversal refusal, same fail-closed, worded
+        // for --out.
+        with_scratch(Some("/tmp/bsc-scratch-test"), || {
+            assert_eq!(
+                resolve_scratch_out("src.tsx").unwrap(),
+                std::path::Path::new("/tmp/bsc-scratch-test").join("src.tsx"),
+                "a bare name joins onto the scratch dir"
+            );
+            let err = resolve_scratch_out("../../etc/passwd").unwrap_err();
+            assert!(err.contains("BARE FILENAME") && err.contains("--out"), "refusal names the rule + flag: {err}");
+        });
+        with_scratch(None, || {
+            let err = resolve_scratch_out("src.tsx").unwrap_err();
+            assert!(err.contains(BSC_SCRATCH_ENV), "fails closed, naming the env var: {err}");
         });
     }
 
