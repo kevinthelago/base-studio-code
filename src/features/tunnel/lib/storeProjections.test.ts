@@ -16,7 +16,7 @@ import {
   buildAlertsPayload, AUTOMATION_RUNS_CAP,
   buildSecurityPayload, SECURITY_AUDIT_CAP,
 } from "./storeProjections";
-import type { AgentProfile } from "@/features/security";
+import type { AgentProfile, ConsoleSession, AuditDisplayRow } from "@/features/security";
 
 // ── fixtures ─────────────────────────────────────────────────────────────────────
 
@@ -271,40 +271,67 @@ describe("buildAlertsPayload", () => {
   });
 });
 
-describe("buildSecurityPayload (#2530)", () => {
+describe("buildSecurityPayload (#2530 / #3754)", () => {
   const profile: AgentProfile = {
-    id: "pf_worker", name: "Worker", color: "#fff", category: "user", desc: "builds",
+    id: "pf_worker", name: "Worker", color: "#fff", category: "user", origin: "user-defined", desc: "builds",
     mode: "ask", commands: ["git *"],
     tools: { read: "allow", grep: "allow", glob: "allow", edit: "ask", write: "ask", bash: "ask", web: "deny", task: "deny" },
     paths: { allow: ["src/**"], deny: [".env"] },
     net: { allow: ["api.github.com"] },
-    builtin: true,
+    builtin: false,
   };
+  const appRole: AgentProfile = {
+    ...profile, id: "sys_planner", name: "Project Planner", category: "application", origin: "built-in",
+    surface: "Planner", surfaceGlyph: "◆", session: "planner", owns: "the plan",
+  };
+  const consoles: ConsoleSession[] = [{
+    id: "t0", name: "Build", repo: "acme/api", status: "running",
+    projectAllow: ["npm run build"], repoAllow: ["cargo test"],
+    panes: [{ id: "t0p0", agent: "worker", status: "idle", profileId: "pf_worker" }],
+  }];
+  const row = (i: number): AuditDisplayRow => ({
+    ts: `2026-07-25T10:${String(i).padStart(2, "0")}:00.000Z`,
+    console: "Build", pane: "t0p0", profileId: "pf_worker", kind: "cmd", target: `cmd ${i}`, decision: "allow",
+  });
 
-  it("pares profiles to permission config, passes assignments through, and caps the audit", () => {
-    const audit = Array.from({ length: SECURITY_AUDIT_CAP + 5 }, (_, i) => ({ ts: `t${i}`, pane: "man:1", toolName: "Bash", target: `cmd ${i}` }));
+  it("maps profiles (with color + origin), lists app roles first, projects consoles + assignments, caps audit", () => {
+    const auditRows = Array.from({ length: SECURITY_AUDIT_CAP + 5 }, (_, i) => row(i));
     const out = buildSecurityPayload({
-      profiles: [profile],
-      paneRoles: { "demo:auth": "worker" },
-      paneProfiles: { "demo:auth": "pf_worker" },
-      audit,
+      appRoles: [appRole], profiles: [profile], consoles,
+      paneRoles: { t0p0: "worker" }, paneProfiles: { t0p0: "pf_worker" }, auditRows,
     });
+    // a plain profile card carries the config + swatch/origin; its undefined app-role fields are ignored by toEqual
     expect(out.profiles[0]).toEqual({
       id: "pf_worker", name: "Worker", category: "user", desc: "builds", mode: "ask",
       commands: ["git *"], tools: profile.tools,
-      paths: { allow: ["src/**"], deny: [".env"] }, net: ["api.github.com"], builtin: true,
+      paths: { allow: ["src/**"], deny: [".env"] }, net: ["api.github.com"], builtin: false,
+      color: "#fff", origin: "user-defined",
     });
-    expect(out.paneRoles).toEqual({ "demo:auth": "worker" });
-    expect(out.paneProfiles).toEqual({ "demo:auth": "pf_worker" });
-    expect(out.audit).toHaveLength(SECURITY_AUDIT_CAP); // capped
-    expect(out.audit[0].target).toBe("cmd 0");          // newest-first order preserved
+    // application roles are a separate list, first, carrying their app-role-only fields
+    expect(out.appRoles[0].id).toBe("sys_planner");
+    expect(out.appRoles[0].session).toBe("planner");
+    expect(out.appRoles[0].surface).toBe("Planner");
+    // console cards carry the allowlist inputs mobile unions locally
+    expect(out.consoles[0]).toEqual({
+      id: "t0", name: "Build", repo: "acme/api",
+      projectAllow: ["npm run build"], repoAllow: ["cargo test"],
+      panes: [{ id: "t0p0", profileId: "pf_worker" }],
+    });
+    expect(out.paneRoles).toEqual({ t0p0: "worker" });
+    expect(out.paneProfiles).toEqual({ t0p0: "pf_worker" });
+    expect(out.audit).toHaveLength(SECURITY_AUDIT_CAP);  // capped at 50
+    expect(out.audit[0].target).toBe("cmd 0");           // newest-first order preserved
+    expect(out.audit[0].decision).toBe("allow");         // the desktop-computed verdict crosses the wire
   });
 
-  it("crosses no secrets — the app-role-only fields (session/surface) stay off the wire; net is hosts only", () => {
-    const out = buildSecurityPayload({ profiles: [{ ...profile, session: "planner", surface: "Project Planner" }], paneRoles: {}, paneProfiles: {}, audit: [] });
+  it("crosses no secrets — net is a host allowlist, and a plain profile's app-role fields drop off the wire", () => {
+    const out = buildSecurityPayload({
+      appRoles: [], profiles: [profile], consoles: [], paneRoles: {}, paneProfiles: {}, auditRows: [],
+    });
     const json = JSON.stringify(out);
-    expect(json).not.toContain("session");
+    // a plain profile has no surface/session — undefined, so JSON.stringify drops them entirely
     expect(json).not.toContain("surface");
+    expect(json).not.toContain("session");
     expect(out.profiles[0].net).toEqual(["api.github.com"]); // a host allowlist, not credentials
   });
 });
