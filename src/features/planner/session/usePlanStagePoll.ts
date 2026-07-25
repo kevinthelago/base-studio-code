@@ -16,6 +16,7 @@ import { reconcileConfirmations, reconcileSkips, type ConfirmRow } from "../stag
 import { parseDependencyManifest, DEPENDENCIES_KEY } from "../issues/dependencies";
 import { parseDeployConfigTag } from "../lib/deployConfig";
 import { coerceMarketConfig } from "../lib/marketConfig";
+import { coerceClassifyConfig } from "../lib/classifyConfig";
 import { coerceTransformationRows } from "../lib/transformations";
 import { applyMcpAssign } from "../lib/planExtensions";
 import { catalogLink } from "@/features/mcp";
@@ -44,6 +45,7 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
   // gates the one-time legacy dependencies.json import; `mcpAppliedRef` the per-name MCP resolve.
   const deployAppliedRef = useRef<Record<string, string>>({});
   const marketAppliedRef = useRef<Record<string, string>>({});
+  const classifyAppliedRef = useRef<Record<string, string>>({});
   const transformationsAppliedRef = useRef<Record<string, string>>({});
   const depsAppliedRef = useRef<Record<string, string>>({});
   const depsImportedRef = useRef<Set<string>>(new Set());
@@ -154,6 +156,18 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
             apply: (db) => {
               const cfg = coerceMarketConfig(db);
               if (cfg) store.setPlanMarketConfig(effectiveProjectId, cfg);
+            },
+          },
+          // Classification (#3783/#3784) → the planner's discovery output. Slice 1 wires `uiMode` into the
+          // store map that drives the UI stage's surface (custom in-app preview vs external drop-files);
+          // the source/mcp/skills need-flags ride the same blob for the stage-visibility signals (slice 2).
+          {
+            args: ["plan", "classify", "get", "--json"], fetchFallback: null, requireTruthy: true,
+            applied: () => classifyAppliedRef.current[effectiveProjectId],
+            setApplied: (raw) => { classifyAppliedRef.current[effectiveProjectId] = raw; },
+            apply: (db) => {
+              const cfg = coerceClassifyConfig(db);
+              if (cfg?.uiMode) store.setUiMode(effectiveProjectId, cfg.uiMode);
             },
           },
           // Transformations (#2509) → coerced rows into planTransformations (the bottom-up confirm queue + gate).
