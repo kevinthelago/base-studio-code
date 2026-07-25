@@ -75,7 +75,7 @@ export const createProjectsSlice: StateCreator<AppStore, [], [], ProjectsSlice> 
       resetProjectData: () =>
         set({
           planStages: {}, planConfirmedStages: {}, planSkippedStages: {}, planDeployConfig: {}, planMarketConfig: {}, planTransformations: {},
-          planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, uiMode: {}, uiScreens: {}, uiApproved: {}, stageRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
+          planAutomations: {}, planStageConfig: {}, projectBlueprintId: {}, planClassification: {}, uiScreens: {}, uiApproved: {}, stageRuns: {}, stagePreview: {}, planFleet: {}, pinnedContext: {},
           projectLocalRepos: {}, localDraftProjects: {},
           issueLinks: {}, autoTriage: {}, glanceOff: {}, autoKitDispatch: {}, projectStartupPromptDoc: {},
           repoStartupPromptDoc: {}, repoTriagePromptDoc: {}, hiddenProjectIds: [],

@@ -30,16 +30,17 @@ describe("blueprint categories (#645)", () => {
     expect(deployment.enabled).toBe(true);
   });
 
-  it("the default blueprint's UI stage is optional; automations/skills moved to Complete (#676/#698/#700/#1003)", () => {
+  it("the default blueprint's UI stage is optional; source/mcps/automations/skills are present + required (#3785)", () => {
     const def = makeBlueprints().find((b) => b.id === "default")!;
+    // ui (and market) stay optional — hidden until the project needs them.
     expect(def.sections.find((s) => s.key === "ui")!.optional).toBe(true);
-    // #1003: the advanced stages were trimmed off Default for a foolproof starting point.
-    expect(def.sections.find((s) => s.key === "automations")).toBeUndefined();
-    expect(def.sections.find((s) => s.key === "skills")).toBeUndefined();
-    // …and they live (optional) on the Complete blueprint instead.
-    const complete = makeBlueprints().find((b) => b.id === "complete")!;
-    expect(complete.sections.find((s) => s.key === "automations")!.optional).toBe(true);
-    expect(complete.sections.find((s) => s.key === "skills")!.optional).toBe(true);
+    // #3785: Default absorbed Complete's advanced stages. source/mcps/automations/skills are now
+    // non-optional sections (hidden-by-default via appliesWhen signals, not the `optional` flag).
+    for (const key of ["source", "mcps", "automations", "skills"]) {
+      const sec = def.sections.find((s) => s.key === key);
+      expect(sec, `default has ${key}`).toBeTruthy();
+      expect(sec!.optional, `${key} is not optional`).not.toBe(true);
+    }
   });
 
   it("refreshBuiltIns updates stale persisted built-ins but keeps user blueprints (#677)", () => {
@@ -53,8 +54,8 @@ describe("blueprint categories (#645)", () => {
     // the user blueprint's content is preserved (refreshBuiltIns now canonicalizes section keys, #1914,
     // so it's a content-equal copy rather than the same reference)
     expect(out.find((b) => b.id === "mine")).toStrictEqual(mine);
-    // new built-ins (not in the stale set) are added
-    expect(out.some((b) => b.id === "complete")).toBe(true);
+    // #3785: `default` is the only built-in now — the built-in set stays exactly [default].
+    expect(out.filter((b) => b.origin === "built-in").map((b) => b.id)).toEqual(["default"]);
   });
 
   it("prunes persisted built-ins that no longer exist in code, keeps user blueprints (#923)", () => {
@@ -69,9 +70,9 @@ describe("blueprint categories (#645)", () => {
   it("tags every built-in blueprint origin=built-in (#658)", () => {
     const all = makeBlueprints();
     expect(all.every((b) => b.origin === "built-in")).toBe(true);
-    // The packaged set after the v1.0.5 consolidation: greenfield Default + Complete.
-    // (The transform/harden/data blueprints were archived.)
-    for (const id of ["default", "complete"]) {
+    // The packaged set after the #3785 consolidation: the single greenfield Default.
+    // (Complete + the transform/harden/data blueprints were merged in / archived.)
+    for (const id of ["default"]) {
       expect(all.find((b) => b.id === id)!.origin, id).toBe("built-in");
     }
   });
@@ -79,13 +80,14 @@ describe("blueprint categories (#645)", () => {
 
 describe("resolveProjectSeed — blueprint tracking for the reset prompt (#647 fix)", () => {
   it("a brand-new project (no config) seeds + records the active blueprint", () => {
-    expect(resolveProjectSeed(false, undefined, "complete")).toEqual({ seedConfig: true, setBlueprintId: "complete" });
+    expect(resolveProjectSeed(false, undefined, "default")).toEqual({ seedConfig: true, setBlueprintId: "default" });
   });
-  it("an existing project with NO recorded blueprint backfills to default (so a switch prompts)", () => {
-    expect(resolveProjectSeed(true, undefined, "complete")).toEqual({ seedConfig: false, setBlueprintId: "default" });
+  it("an existing project with NO recorded blueprint backfills to default (ignoring the active id)", () => {
+    // A non-default active proves the backfill goes to `default` regardless of what's active.
+    expect(resolveProjectSeed(true, undefined, "other")).toEqual({ seedConfig: false, setBlueprintId: "default" });
   });
   it("an existing project that already knows its blueprint changes nothing", () => {
-    expect(resolveProjectSeed(true, "complete", "default")).toEqual({ seedConfig: false });
+    expect(resolveProjectSeed(true, "other", "default")).toEqual({ seedConfig: false });
   });
 });
 

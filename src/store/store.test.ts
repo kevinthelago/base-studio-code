@@ -2006,8 +2006,9 @@ describe("blueprints library (#513/#514)", () => {
   });
 
   it("seeds the starter library with a default active", () => {
-    // default + complete after the data/transform blueprints were archived (5def26b7).
-    expect(useAppStore.getState().blueprints.length).toBeGreaterThanOrEqual(3);
+    // #3785: `default` is the single built-in superset blueprint (complete + the transform/data
+    // blueprints were merged in / archived).
+    expect(useAppStore.getState().blueprints.length).toBe(1);
     expect(useAppStore.getState().activeBlueprintId).toBe("default");
   });
 
@@ -2052,12 +2053,15 @@ describe("blueprints library (#513/#514)", () => {
   });
 
   it("setBlueprintStages persists the new sections for that blueprint only", () => {
+    // #3785: `default` is the only built-in, so duplicate it for an independent sibling to prove the
+    // edit is scoped to one blueprint.
+    const sibId = useAppStore.getState().duplicateBlueprint("default");
     const def = useAppStore.getState().blueprints.find((b) => b.id === "default")!;
     const flipped = def.sections.map((s) => (s.key === "discovery" ? { ...s, enabled: false } : s));
     useAppStore.getState().setBlueprintStages("default", flipped);
     expect(useAppStore.getState().blueprints.find((b) => b.id === "default")!.sections.find((s) => s.key === "discovery")!.enabled).toBe(false);
-    // a sibling blueprint is untouched
-    expect(useAppStore.getState().blueprints.find((b) => b.id === "complete")!.sections.find((s) => s.key === "discovery")!.enabled).toBe(true);
+    // the sibling blueprint is untouched
+    expect(useAppStore.getState().blueprints.find((b) => b.id === sibId)!.sections.find((s) => s.key === "discovery")!.enabled).toBe(true);
   });
 
   it("updateBlueprintMeta edits name/desc", () => {

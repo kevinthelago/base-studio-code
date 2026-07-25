@@ -79,6 +79,7 @@ export function Planning({ visible }: { visible: boolean }) {
     planStages, planConfirmedStages,
     planDeployConfig, setPlanDeployConfig,
     planMarketConfig,
+    planClassification,
     planTransformations,
     planSourceConfig,
     reposPublic, repoPublic,
@@ -111,6 +112,7 @@ export function Planning({ visible }: { visible: boolean }) {
     planStages: s.planStages, planConfirmedStages: s.planConfirmedStages,
     planDeployConfig: s.planDeployConfig, setPlanDeployConfig: s.setPlanDeployConfig,
     planMarketConfig: s.planMarketConfig,
+    planClassification: s.planClassification,
     planTransformations: s.planTransformations,
     planSourceConfig: s.planSourceConfig,
     reposPublic: s.reposPublic, repoPublic: s.repoPublic,
@@ -175,12 +177,15 @@ export function Planning({ visible }: { visible: boolean }) {
   // silently switched an existing project's blueprint just by opening it while a different one was
   // selected (#988). So resolve the project's OWN recorded blueprint, falling back to the DEFAULT (a
   // stable id, never the selection) when it isn't bound.
-  const effectiveBlueprintId = projectBlueprintId[effectiveProjectId] ?? DEFAULT_BLUEPRINT_ID;
-  // Backfill an EXISTING, unbound project to the DEFAULT (not the active selection) so the switch/
-  // reset prompt has a recorded baseline to compare against (#647). Brand-new projects are already
-  // bound at creation, so they never reach here unbound.
+  // #3785: `complete` was merged into `default` — grandfather a complete-bound project to default.
+  const rawBlueprintId = projectBlueprintId[effectiveProjectId] ?? DEFAULT_BLUEPRINT_ID;
+  const effectiveBlueprintId = rawBlueprintId === "complete" ? DEFAULT_BLUEPRINT_ID : rawBlueprintId;
+  // Backfill an EXISTING, unbound project to the DEFAULT so it keeps a stable stage set across version
+  // changes (#647); brand-new projects are bound at creation. Also migrate a legacy `complete` binding
+  // once (merged into default, #3785) so every reader — Glance, publish, the kit index — sees the live id.
   useEffect(() => {
-    if (effectiveProjectId && !projectBlueprintId[effectiveProjectId]) {
+    const bound = projectBlueprintId[effectiveProjectId];
+    if (effectiveProjectId && (!bound || bound === "complete")) {
       setProjectBlueprintId(effectiveProjectId, DEFAULT_BLUEPRINT_ID);
     }
   }, [effectiveProjectId, projectBlueprintId, setProjectBlueprintId]);
@@ -364,6 +369,12 @@ export function Planning({ visible }: { visible: boolean }) {
     () => planMarketConfig[effectiveProjectId] ?? null,
     [planMarketConfig, effectiveProjectId],
   );
+  // Classification (#3784): the planner's discovery output; drives the source/mcp/skills/automations
+  // visibility signals (all default OFF until the planner opts a project in).
+  const classifyCfg = useMemo(
+    () => planClassification[effectiveProjectId],
+    [planClassification, effectiveProjectId],
+  );
   // Transformations stage (#2509): the verb-shaped modification rows the planner records via
   // `bsc plan transformation add`; drive the `transformationsConfirmed` gate signal.
   const transformationRows = useMemo(
@@ -479,7 +490,7 @@ export function Planning({ visible }: { visible: boolean }) {
     sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
     confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
-    deployCfg, marketCfg, transformationRows,
+    deployCfg, marketCfg, transformationRows, classifyCfg, projectSkillCount: paneSkills.length,
   });
 
   // The focused-pane SELECTION + its derived footer/pill/prompts live in usePlanFocusedPane, called
@@ -582,7 +593,8 @@ export function Planning({ visible }: { visible: boolean }) {
     // Resolve the project's OWN blueprint (#647/#923), falling back to the DEFAULT (never the
     // transient active selection, #988) when it isn't bound — so an existing project keeps its
     // stage set across version / active-blueprint changes instead of adopting the library selection.
-    const bpId = st.projectBlueprintId[key] ?? DEFAULT_BLUEPRINT_ID;
+    const rawBpId = st.projectBlueprintId[key] ?? DEFAULT_BLUEPRINT_ID;
+    const bpId = rawBpId === "complete" ? DEFAULT_BLUEPRINT_ID : rawBpId; // #3785: complete merged into default
     const bp = st.blueprints.find(b => b.id === bpId);
     // Blueprint section keys ARE the canonical directive ids — pass them straight to setup_workspaces.
     if (bp) return bp.sections.filter(s => s.enabled).map(s => s.key);

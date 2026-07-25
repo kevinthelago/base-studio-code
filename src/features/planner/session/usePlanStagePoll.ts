@@ -158,16 +158,16 @@ export function usePlanStagePoll({ visible, projectId: effectiveProjectId, publi
               if (cfg) store.setPlanMarketConfig(effectiveProjectId, cfg);
             },
           },
-          // Classification (#3783/#3784) → the planner's discovery output. Slice 1 wires `uiMode` into the
-          // store map that drives the UI stage's surface (custom in-app preview vs external drop-files);
-          // the source/mcp/skills need-flags ride the same blob for the stage-visibility signals (slice 2).
+          // Classification (#3783/#3784) → the planner's discovery output: the UI mode (custom in-app
+          // preview vs external drop-files) AND the source/mcp/skills/automations need-flags. Stored whole
+          // into planClassification; FocusedBodies reads uiMode, usePlanGates derives the visibility signals.
           {
             args: ["plan", "classify", "get", "--json"], fetchFallback: null, requireTruthy: true,
             applied: () => classifyAppliedRef.current[effectiveProjectId],
             setApplied: (raw) => { classifyAppliedRef.current[effectiveProjectId] = raw; },
             apply: (db) => {
               const cfg = coerceClassifyConfig(db);
-              if (cfg?.uiMode) store.setUiMode(effectiveProjectId, cfg.uiMode);
+              if (cfg) store.setPlanClassification(effectiveProjectId, cfg);
             },
           },
           // Transformations (#2509) → coerced rows into planTransformations (the bottom-up confirm queue + gate).

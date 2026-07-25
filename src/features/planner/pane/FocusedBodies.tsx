@@ -63,7 +63,7 @@ export function FocusedStageBody({ stage, data, projectId, onLinkRepo, onView, o
 }) {
   // #3783: the UI stage renders one of two surfaces per the project's UI mode (planner-set at
   // discovery; an unset project defaults to "custom" — the in-app designer preview).
-  const uiMode = useAppStore((s) => (projectId ? s.uiMode[projectId] : undefined) ?? "custom");
+  const uiMode = useAppStore((s) => (projectId ? s.planClassification[projectId]?.uiMode : undefined) ?? "custom");
   // Assemble the repeated handler sets once (#1640) so the cases below spread them instead of
   // re-threading each handler by name. Same handlers, same values — purely cuts prop-chain noise.
   const fleetHandlers: FleetHandlers = { onFlow, onModel, onPersona, onTopology, onDirectorDrive };

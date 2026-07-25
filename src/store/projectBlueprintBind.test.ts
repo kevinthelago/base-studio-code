@@ -16,7 +16,7 @@ describe("project blueprint bind + plan-slice actions", () => {
       planStages: { p: { goal: "# Goal" } },
       planConfirmedStages: { p: ["goal"] },
       kitUsage: [], // #2277: isolate the consumer-index edges the bind auto-records
-      uiMode: {},
+      planClassification: {},
     });
   });
 
@@ -67,12 +67,13 @@ describe("project blueprint bind + plan-slice actions", () => {
     expect(useAppStore.getState().planStageConfig["fresh"].enabled.features).toBe(true);
   });
 
-  it("setUiMode records the project's UI surface; unset reads as custom (#3783)", () => {
-    // Unset → the store map has no entry; the FocusedBodies read site defaults it to "custom".
-    expect(useAppStore.getState().uiMode["p"]).toBeUndefined();
-    useAppStore.getState().setUiMode("p", "external");
-    expect(useAppStore.getState().uiMode["p"]).toBe("external");
-    useAppStore.getState().setUiMode("p", "custom");
-    expect(useAppStore.getState().uiMode["p"]).toBe("custom");
+  it("setPlanClassification records the project's classification (#3783/#3784)", () => {
+    // Unset → the store map has no entry; FocusedBodies defaults uiMode to "custom" and the
+    // visibility signals default false (source/mcp/skills/automations hidden).
+    expect(useAppStore.getState().planClassification["p"]).toBeUndefined();
+    useAppStore.getState().setPlanClassification("p", { uiMode: "external", needsSource: true });
+    expect(useAppStore.getState().planClassification["p"]).toEqual({ uiMode: "external", needsSource: true });
+    useAppStore.getState().setPlanClassification("p", { uiMode: "custom" });
+    expect(useAppStore.getState().planClassification["p"]).toEqual({ uiMode: "custom" });
   });
 });
