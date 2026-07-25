@@ -1194,24 +1194,16 @@ fn pane_descriptor_kind_is_optional_and_round_trips() {
 
 // ── TunnelState snapshot methods ────────────────────────────────────────────
 
-/// fleet_snapshot / automations_snapshot / mcp_snapshot return empty then update.
+/// automations_snapshot returns empty then reflects a pushed automation list.
+/// (The fleet + MCP snapshots were retired with `tunnel_set_fleet_state` /
+/// `tunnel_set_mcp_state` in #3748 — those domains now travel via `store_state`.)
 #[test]
 fn snapshot_methods_start_empty_and_update() {
     let st = TunnelState::new();
-    assert!(st.fleet_snapshot().is_empty());
     assert!(st.automations_snapshot().is_empty());
-    assert!(st.mcp_snapshot().is_empty());
 
     {
         let mut inner = st.inner.lock().unwrap();
-        inner.fleet_sessions.push(FleetSession {
-            session: "t0p0".into(),
-            status: "running".into(),
-            blocked_on: vec![],
-            wait_reason: None,
-            question: None,
-            at: 0,
-        });
         inner.automations.push(AutomationFrame {
             id: "a1".into(),
             name: "test".into(),
@@ -1221,16 +1213,6 @@ fn snapshot_methods_start_empty_and_update() {
             next_run_at: None,
             last_status: None,
         });
-        inner.mcp_extensions.push(McpExtFrame {
-            id: "m1".into(),
-            kind: "mcp".into(),
-            name: "Postgres".into(),
-            enabled: true,
-            transport: Some("stdio".into()),
-            url: None,
-        });
     }
-    assert_eq!(st.fleet_snapshot().len(), 1);
     assert_eq!(st.automations_snapshot().len(), 1);
-    assert_eq!(st.mcp_snapshot().len(), 1);
 }
