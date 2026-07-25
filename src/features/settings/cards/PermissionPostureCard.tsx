@@ -76,7 +76,7 @@ export function PermissionPostureCard() {
                     onClick={install}
                     disabled={installing}
                     style={{
-                      background: "var(--accent)", border: "none", color: "var(--accent-text, #1a120a)",
+                      background: "var(--accent)", border: "none", color: "var(--on-accent)",
                       cursor: installing ? "default" : "pointer", fontSize: 11, fontWeight: 600,
                       padding: "3px 10px", borderRadius: 4, opacity: installing ? 0.6 : 1,
                     }}

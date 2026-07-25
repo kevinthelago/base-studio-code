@@ -71,7 +71,7 @@ export function Toggle({ on, onClick, size = "md", tone = "accent", className, r
     >
       <span style={{
         width: 12, height: 12, borderRadius: "50%",
-        background: on ? (success ? "var(--success)" : "#1a120a") : "var(--fg-dim)",
+        background: on ? (success ? "var(--success)" : "var(--on-accent)") : "var(--fg-dim)",
         marginLeft: on ? "auto" : 2, marginRight: on ? 2 : "auto",
         transition: "margin 0.15s",
       }} />
