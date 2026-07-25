@@ -1,4 +1,5 @@
 import type { ReactNode, CSSProperties } from "react";
+import { clickable } from "@/shared/ui/a11y";
 import "./cardListRow.css";
 
 export interface CardListRowProps {
@@ -46,7 +47,7 @@ export function CardListRow({ lead, title, badge, titleAside, subtitle, body, tr
         (className ? ` ${className}` : "")
       }
       style={accent != null ? ({ ["--clr-accent" as string]: accent } as CSSProperties) : undefined}
-      onClick={onClick}
+      {...clickable(onClick)}
     >
       <div className="clr-lead">{lead}</div>
       <div className="clr-main">

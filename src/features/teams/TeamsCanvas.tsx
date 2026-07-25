@@ -241,7 +241,7 @@ export function TeamsCanvas(props: CanvasProps) {
         }
 
         return (
-          // eslint-disable-next-line no-restricted-syntax -- node needs the data-node marker + pointer-capture on the element for drag
+          // eslint-disable-next-line no-restricted-syntax, jsx-a11y/no-static-element-interactions -- node needs the data-node marker + pointer-capture on the element for drag; pointer-capture drag node, not a button
           <div key={pos.nodeId} data-node={pos.nodeId}
             onPointerDown={onNodeDown(pos.nodeId)} onPointerMove={onNodeMove} onPointerUp={onNodeUp(pos.nodeId)}
             onContextMenu={context({ type: "node", id: pos.nodeId })}

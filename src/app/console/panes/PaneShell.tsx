@@ -173,7 +173,7 @@ export function PaneShell({
   );
 
   return (
-    // eslint-disable-next-line no-restricted-syntax -- pane root needs a real DOM ref (focus + measure)
+    // eslint-disable-next-line no-restricted-syntax, jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- pane root needs a real DOM ref (focus + measure); onClick is focus-follows-click, the pane's controls are separately focusable
     <div
       ref={paneRef}
       className={focused ? "pane focused" : "pane"}

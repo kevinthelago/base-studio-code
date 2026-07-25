@@ -123,16 +123,18 @@ export default tseslint.config(
     plugins: { "jsx-a11y": jsxA11y },
     rules: {
       ...jsxA11y.flatConfigs.recommended.rules,
-      // Ratchet (#3773/#3775): the backlog is being cleared rule-by-rule. Re-erroring first the two
-      // MECHANICAL rules — `no-autofocus` (10 sites: dialog/inline-edit focus-on-open, the WAI-ARIA
-      // dialog pattern, each carrying an inline `-- intentional` disable) and `label-has-associated-control`
-      // (6 sites: 5 are `<label>` wrapping a custom `Checkbox`/`Toggle`, recognized via `controlComponents`;
-      // the 6th was a group caption, fixed). The remaining THREE stay `warn` (#3775 follow-up) because
-      // clearing them is a per-site role + keyboard-handler + runtime-focus sweep, not a mechanical pass —
-      // every OTHER jsx-a11y rule stays at its recommended `error`, so a NEW a11y mistake fails the gate.
-      "jsx-a11y/click-events-have-key-events": "warn",
-      "jsx-a11y/no-static-element-interactions": "warn",
-      "jsx-a11y/interactive-supports-focus": "warn",
+      // #3773/#3775 (epic #2725): the jsx-a11y backlog is CLEARED — every rule now `error`, so a NEW
+      // a11y mistake fails the gate. Interactive styled elements go through the `clickable()` /
+      // `onEnterOrSpace` helpers (`@/shared/ui/a11y`), which BUNDLE role + focusability + Enter/Space
+      // activation with the click so keyboard operability can never drift off a clickable div; genuine
+      // non-button surfaces (backdrops dismissed by Escape, drag-reorder strips, pan/zoom canvases,
+      // pointer-capture nodes, propagation-guard wrappers) each carry a documented per-site disable.
+      // `no-autofocus` (dialog/inline-edit focus-on-open) keeps its inline `-- intentional` disables;
+      // `label-has-associated-control` keeps `controlComponents` so a `<label>` wrapping a custom
+      // Checkbox/Toggle is recognized.
+      "jsx-a11y/click-events-have-key-events": "error",
+      "jsx-a11y/no-static-element-interactions": "error",
+      "jsx-a11y/interactive-supports-focus": "error",
       "jsx-a11y/no-autofocus": "error",
       "jsx-a11y/label-has-associated-control": ["error", { controlComponents: ["Checkbox", "Toggle"] }],
     },
