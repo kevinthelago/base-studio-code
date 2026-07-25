@@ -142,7 +142,31 @@ whole kit). `bsc ui regroup` re-derives it from `src` for the whole store; the h
 USAGE:
   bsc ui remove <id> [--pretty]
 
-Deletes the component keyed by <id>. A no-op (not an error) when it does not exist.",
+Deletes the component keyed by <id>. A no-op (not an error) when it does not exist. NOTE: a PACKAGED
+BUILTIN comes back on the next hydrate (the seed re-adds it) — use `suppress` to remove it permanently.",
+    },
+    CmdDoc {
+        name: "suppress",
+        summary: "PERMANENTLY remove a packaged builtin component — it won't re-seed (#3725)",
+        usage: "\
+USAGE:
+  bsc ui suppress <id> [--pretty]
+
+Writes a `{ id, suppressed: true }` TOMBSTONE for <id>, so the frontend seed-reconcile stops re-adding
+the packaged builtin (a plain `remove` re-seeds on the next hydrate). The library and the doctor both
+skip a tombstone. Use for a builtin you never want back; `unsuppress` restores it (re-seeds from source).
+A ui-scope MUTATION.",
+    },
+    CmdDoc {
+        name: "unsuppress",
+        summary: "remove a suppression tombstone so the builtin re-seeds (#3725)",
+        usage: "\
+USAGE:
+  bsc ui unsuppress <id> [--pretty]
+
+Removes the `{ id, suppressed: true }` tombstone written by `suppress`, so the next hydrate re-seeds the
+packaged builtin from its source. Errors if <id> is NOT a tombstone (use `remove` for a real component).
+A ui-scope MUTATION.",
     },
     CmdDoc {
         name: "export",
@@ -518,7 +542,17 @@ UTF-8, LF-only — byte-clean for `while read id` / `$( )`.",
     CmdDoc {
         name: "remove",
         summary: "delete a kit (no-op if absent)",
-        usage: "USAGE:\n  bsc ui kit remove <id> [--pretty]\n\nDeletes the kit keyed by <id>; a no-op when absent.",
+        usage: "USAGE:\n  bsc ui kit remove <id> [--pretty]\n\nDeletes the kit keyed by <id>; a no-op when absent. NOTE: a PACKAGED BUILTIN kit re-seeds on the next hydrate — use `bsc ui kit suppress` to remove it permanently.",
+    },
+    CmdDoc {
+        name: "suppress",
+        summary: "PERMANENTLY remove a packaged builtin kit — it won't re-seed (#3725)",
+        usage: "USAGE:\n  bsc ui kit suppress <id> [--pretty]\n\nWrites a `{ id, suppressed: true }` tombstone for the kit <id>, so the seed-reconcile stops re-adding the packaged builtin (a plain `kit remove` re-seeds it). `bsc ui kit unsuppress` restores it. A ui-scope MUTATION.",
+    },
+    CmdDoc {
+        name: "unsuppress",
+        summary: "remove a kit suppression tombstone so the builtin re-seeds (#3725)",
+        usage: "USAGE:\n  bsc ui kit unsuppress <id> [--pretty]\n\nRemoves the tombstone written by `kit suppress`, so the next hydrate re-seeds the packaged builtin kit. Errors if <id> is not a tombstone. A ui-scope MUTATION.",
     },
     CmdDoc {
         name: "define-animation",
@@ -637,8 +671,54 @@ fn is_scoped_mutation(args: &[String]) -> bool {
     };
     matches!(
         verb.map(String::as_str),
-        Some("set") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("regroup") | Some("import")
+        Some("set") | Some("remove") | Some("rename") | Some("merge") | Some("define-animation") | Some("remove-animation") | Some("regroup") | Some("import") | Some("suppress") | Some("unsuppress")
     ) && next.map(String::as_str) != Some("help")
+}
+
+/// `bsc ui suppress <id>` / `bsc ui kit suppress <id>` (#3725) — write a `{ id, suppressed: true }`
+/// TOMBSTONE into the collection's store, PERMANENTLY removing a packaged builtin: the frontend
+/// `reconcileSeed` sees the tombstone occupying the id and never re-seeds the builtin (a plain `remove`
+/// comes back on the next hydrate). A ui-scope MUTATION (gated by [`is_scoped_mutation`] before this runs).
+fn cmd_suppress(
+    args: &[String],
+    open: impl Fn(&Option<String>) -> Result<bsc_json_store::Store, String>,
+    noun: &str,
+) -> Result<(), String> {
+    let kit_prefix = if noun == "kit" { "kit " } else { "" };
+    let (pos, dir, _pretty) = parse_anim_args(args)?;
+    let id = pos.first().ok_or_else(|| format!("usage: bsc ui {kit_prefix}suppress <id>"))?;
+    let store = open(&dir)?;
+    let tombstone = serde_json::json!({ "id": id, "suppressed": true });
+    stamped_set(&store, id, tombstone, &crate::record::resolve_writer(None))?;
+    // A suppressed component carries no live preview — clear any stale render-error keyed to it (#3707).
+    if noun == "component" {
+        let _ = crate::preview_errors::clear(id);
+    }
+    println!("suppressed {noun} '{id}' — the packaged builtin will not re-seed (`unsuppress` to restore)");
+    Ok(())
+}
+
+/// `bsc ui unsuppress <id>` / `bsc ui kit unsuppress <id>` (#3725) — remove a suppression tombstone so the
+/// next hydrate re-seeds the packaged builtin from its source (no data loss). REFUSES on a non-tombstone
+/// id: a real record must go through `remove`, never this.
+fn cmd_unsuppress(
+    args: &[String],
+    open: impl Fn(&Option<String>) -> Result<bsc_json_store::Store, String>,
+    noun: &str,
+) -> Result<(), String> {
+    let kit_prefix = if noun == "kit" { "kit " } else { "" };
+    let (pos, dir, _pretty) = parse_anim_args(args)?;
+    let id = pos.first().ok_or_else(|| format!("usage: bsc ui {kit_prefix}unsuppress <id>"))?;
+    let store = open(&dir)?;
+    let existing = current_record(&store, id)?;
+    if existing.get("suppressed").and_then(serde_json::Value::as_bool) != Some(true) {
+        return Err(format!(
+            "'{id}' is not a suppression tombstone — nothing to unsuppress (use `remove` to delete a real {noun})"
+        ));
+    }
+    store.remove(id)?;
+    println!("unsuppressed {noun} '{id}' — it re-seeds on the next hydrate");
+    Ok(())
 }
 
 /// The component-verb entrypoint: `args` is everything after the mount point (`bsc ui`, or the
@@ -684,6 +764,18 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
                 // below (which fires the "kit" ui-touch on remove). Already ui-scope gated above.
                 Some("set") if args.get(2).map(String::as_str) != Some("help") => {
                     cmd_set(&args[2..], open_kit_store, warn_kit_axes, "kit")
+                }
+                // #3725: permanently remove a packaged builtin KIT (its shell survives a plain `kit
+                // remove`, re-seeded on hydrate). ui-scope gated above (the `kit` prefix → args[1] check).
+                Some("suppress") if args.get(2).map(String::as_str) != Some("help") => {
+                    cmd_suppress(&args[2..], open_kit_store, "kit")
+                }
+                Some("unsuppress") if args.get(2).map(String::as_str) != Some("help") => {
+                    cmd_unsuppress(&args[2..], open_kit_store, "kit")
+                }
+                Some(v @ ("suppress" | "unsuppress")) => {
+                    print!("{}", bsc_cli_util::help_for(&kit_prog, TAGLINE, KIT_COMMANDS, v));
+                    Ok(())
                 }
                 // Emit a `ui-touch` for the Design Studio's live-focus (#2525) after each kit set/remove
                 // write lands — WITH the "kit" collection context (bsc-json-store has none). A no-op for
@@ -893,6 +985,18 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
         Some("merge") if args.get(1).map(String::as_str) != Some("help") => cmd_merge(&args[1..]),
         Some("merge") => {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, "merge"));
+            Ok(())
+        }
+        // `suppress`/`unsuppress` (#3725) — permanently remove a packaged builtin component (a plain
+        // `remove` re-seeds on the next hydrate). Scope gate above applies.
+        Some("suppress") if args.get(1).map(String::as_str) != Some("help") => {
+            cmd_suppress(&args[1..], open_component_store, "component")
+        }
+        Some("unsuppress") if args.get(1).map(String::as_str) != Some("help") => {
+            cmd_unsuppress(&args[1..], open_component_store, "component")
+        }
+        Some(v @ ("suppress" | "unsuppress")) => {
+            print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
             Ok(())
         }
         // `list --shape <shape>` (#2475) filters to one shape's ideal components — intercepted here
@@ -3313,6 +3417,38 @@ mod tests {
     }
 
     #[test]
+    fn suppress_writes_a_tombstone_and_unsuppress_removes_it() {
+        // #3725: `suppress` permanently removes a packaged builtin (a plain `remove` re-seeds); `unsuppress`
+        // clears the tombstone; `unsuppress` refuses a real record.
+        let dir = tmp_store_dir("suppress");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store.set("cost", r#"{"id":"cost","name":"CostEnergyView","kitId":"base-studio-code","builtin":true}"#).unwrap();
+
+        run(vec!["suppress".into(), "cost".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("cost").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["suppressed"], serde_json::Value::Bool(true), "suppress wrote a tombstone: {rec}");
+
+        run(vec!["unsuppress".into(), "cost".into(), "--dir".into(), dir.clone()], "bsc ui").unwrap();
+        assert!(store.get("cost").unwrap().is_none(), "unsuppress removed the tombstone");
+
+        // unsuppress REFUSES a non-tombstone — a real record must go through `remove`, never this.
+        store.set("real", r#"{"id":"real","name":"Real","kitId":"k"}"#).unwrap();
+        let err = run(vec!["unsuppress".into(), "real".into(), "--dir".into(), dir], "bsc ui").unwrap_err();
+        assert!(err.contains("not a suppression tombstone"), "{err}");
+    }
+
+    #[test]
+    fn kit_suppress_routes_through_the_kit_branch() {
+        // #3725: `bsc ui kit suppress <id>` writes a tombstone into the KIT store.
+        let dir = tmp_store_dir("kit-suppress");
+        let store = bsc_json_store::Store::new(dir.clone(), "kit");
+        store.set("fleet", r#"{"id":"fleet","name":"Fleet","builtin":true}"#).unwrap();
+        run(vec!["kit".into(), "suppress".into(), "fleet".into(), "--dir".into(), dir], "bsc ui").unwrap();
+        let rec: serde_json::Value = serde_json::from_str(&store.get("fleet").unwrap().unwrap()).unwrap();
+        assert_eq!(rec["suppressed"], serde_json::Value::Bool(true), "kit suppress wrote a tombstone: {rec}");
+    }
+
+    #[test]
     fn a_provides_component_with_at_imports_is_syntax_checked_not_warned_as_unbuildable() {
         use serde_json::json;
         // #43: a graph-source component (carries `provides`) has its `@/` imports resolved by the runtime
@@ -3685,7 +3821,8 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "list", "shapes", "get", "log", "set", "remove", "rename", "merge", "kit", "eslint-preset", "usage",
+                "list", "shapes", "get", "log", "set", "remove", "suppress", "unsuppress", "export", "import",
+                "rename", "merge", "kit", "eslint-preset", "usage",
                 "doctor", "dupes", "similar", "used-by", "define-animation", "list-animations", "remove-animation",
                 "set-src", "patch", "regroup", "preview-props", "preview-errors", "preview-error"
             ]

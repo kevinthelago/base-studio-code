@@ -61,6 +61,10 @@ export interface Kit {
   animations?: KitAnimation[];
   /** A packaged built-in (re-seeded into the store on hydrate). Absent ⇒ user-authored. */
   builtin?: boolean;
+  /** A SUPPRESSION tombstone (#3725) — `true` marks this id as a PERMANENTLY removed packaged builtin, not
+   *  a real kit. `reconcileSeed` skips re-seeding it (the tombstone occupies the id) and the library
+   *  excludes it; `bsc ui kit suppress`/`unsuppress` write/clear it. Absent on every real record. */
+  suppressed?: boolean;
   /** Content hash of the seed copy this record came from (#2483, `seedRefresh.ts`) — stamped at
    *  seed-assembly time; lets hydrate tell a pristine built-in (refreshable) from a user-edited one
    *  (kept). Absent ⇒ user-authored or a legacy pre-#2483 copy. */
@@ -148,6 +152,11 @@ export interface ComponentRecord {
   source?: string;
   /** A packaged built-in (re-seeded into the store on hydrate). Absent ⇒ user-authored. */
   builtin?: boolean;
+  /** A SUPPRESSION tombstone (#3725) — `true` marks this id as a PERMANENTLY removed packaged builtin, not
+   *  a real component. `reconcileSeed` skips re-seeding it (the tombstone occupies the id) and the library
+   *  excludes it; the Rust doctor skips it; `bsc ui suppress`/`unsuppress` write/clear it. Absent on every
+   *  real record. */
+  suppressed?: boolean;
   /** The raw intrinsic this component REPLACES (`"button"`, `"input"`) — the authoring hint that
    *  derives the flagship anti-duplication lint rule ("use <Name> not a raw <wraps>"). Absent ⇒ none. */
   wraps?: string;
