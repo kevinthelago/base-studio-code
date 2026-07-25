@@ -1,0 +1,562 @@
+{
+  "$comment": "Canonical store_state PAYLOAD fixtures (#3761 / Mobile-Studio-Code#246), GENERATED from the real build*Payload functions over PROJECTION_INPUTS (storeProjections.fixtures.ts) — never hand-authored. Shared BYTE-IDENTICALLY with mobile-studio-code, whose selectors decode `domains.<d>` / `variants.<v>` and assert a non-degenerate view. INVARIANT: no field here equals a mobile selector's fallback (no `idle` health, real ISO-8601 audit timestamps, non-default enums), so the smoke layer can tell 'read correctly' from 'fell back' — a pure field DELETION still fails. Small on purpose (2-3 rows / collection); cap behaviour (SECURITY_AUDIT_CAP / AUTOMATION_RUNS_CAP) is asserted in storeProjections.test.ts, NOT by inflating this file. Regenerate: `npm run fixtures:store`. `plan` is absent — published by the planner, not projected here (UNPROJECTED_DOMAINS, #3760).",
+  "domains": {
+    "glance": {
+      "projects": [
+        {
+          "id": "demo",
+          "name": "Demo",
+          "role": "service",
+          "health": "error",
+          "activity": "building",
+          "reason": "payments timeout",
+          "faults": 3
+        },
+        {
+          "id": "reporting",
+          "name": "Reporting",
+          "role": "data",
+          "health": "warning",
+          "activity": "review"
+        }
+      ],
+      "links": [
+        {
+          "id": "demo>reporting:api",
+          "from": "demo",
+          "to": "reporting",
+          "kind": "api"
+        }
+      ],
+      "drill": "demo",
+      "fleets": {
+        "demo": {
+          "recommended": 2,
+          "reasoning": "two lanes",
+          "streams": [
+            {
+              "id": "auth",
+              "name": "Auth",
+              "repo": "acme/api",
+              "owns": [
+                "src/auth/**"
+              ],
+              "issues": [
+                "#1",
+                "#2"
+              ],
+              "dependsOn": [],
+              "persona": "backend-dev"
+            },
+            {
+              "id": "ui",
+              "name": "UI",
+              "repo": "acme/web",
+              "owns": [
+                "src/ui/**"
+              ],
+              "issues": [
+                "#3"
+              ],
+              "dependsOn": [
+                "auth"
+              ],
+              "persona": "frontend-dev"
+            }
+          ],
+          "director": {
+            "enabled": true
+          }
+        }
+      },
+      "drillFleet": {
+        "recommended": 2,
+        "reasoning": "two lanes",
+        "streams": [
+          {
+            "id": "auth",
+            "name": "Auth",
+            "repo": "acme/api",
+            "owns": [
+              "src/auth/**"
+            ],
+            "issues": [
+              "#1",
+              "#2"
+            ],
+            "dependsOn": [],
+            "persona": "backend-dev"
+          },
+          {
+            "id": "ui",
+            "name": "UI",
+            "repo": "acme/web",
+            "owns": [
+              "src/ui/**"
+            ],
+            "issues": [
+              "#3"
+            ],
+            "dependsOn": [
+              "auth"
+            ],
+            "persona": "frontend-dev"
+          }
+        ],
+        "director": {
+          "enabled": true
+        }
+      },
+      "personaRoles": {
+        "backend-dev": "worker",
+        "lead": "director"
+      },
+      "kitUsage": [
+        {
+          "projectKey": "demo",
+          "kitId": "react-ui"
+        }
+      ],
+      "kits": [
+        {
+          "id": "react-ui",
+          "name": "React UI"
+        }
+      ],
+      "libraryRefs": [
+        {
+          "kitId": "react-ui",
+          "graph": "algo",
+          "id": "dijkstra.ts",
+          "label": "dijkstra"
+        }
+      ]
+    },
+    "org": {
+      "orgs": [
+        {
+          "id": "o1",
+          "name": "Pipeline",
+          "positions": [
+            {
+              "nodeId": "n1",
+              "kind": "agent",
+              "personaId": "p1"
+            }
+          ],
+          "relationships": [
+            {
+              "id": "r1",
+              "archetype": "delegates",
+              "from": "n1",
+              "to": "n1"
+            }
+          ]
+        }
+      ],
+      "personas": [
+        {
+          "id": "p1",
+          "name": "Backend dev",
+          "blurb": "APIs",
+          "role": "worker",
+          "model": "sonnet",
+          "builtin": true
+        }
+      ]
+    },
+    "blueprints": {
+      "active": "default",
+      "library": [
+        {
+          "id": "default",
+          "name": "Default",
+          "desc": "greenfield seed",
+          "category": "greenfield",
+          "mode": "create",
+          "stageCount": 0,
+          "hasTeam": true,
+          "uiKit": {
+            "id": "bsc/react-ui",
+            "version": "1.2.0",
+            "themeId": "soft"
+          },
+          "soundKit": {
+            "id": "bsc/signal",
+            "version": "1.0.0"
+          }
+        },
+        {
+          "id": "migrate",
+          "name": "Migrate",
+          "desc": "restructure repos",
+          "category": "transform",
+          "stageCount": 0,
+          "hasTeam": false
+        }
+      ],
+      "activeTeam": {
+        "positions": [
+          {
+            "nodeId": "n1",
+            "kind": "agent",
+            "personaId": "p1"
+          }
+        ],
+        "relationships": []
+      }
+    },
+    "skills": {
+      "skills": [
+        {
+          "id": "s1",
+          "name": "Review checklist",
+          "kind": "review",
+          "source": "first-party",
+          "desc": "PR review",
+          "projects": [],
+          "enabled": true,
+          "pinned": true
+        }
+      ],
+      "groups": [
+        {
+          "id": "g1",
+          "name": "Backend",
+          "hue": "var(--accent)",
+          "skillIds": [
+            "s1"
+          ]
+        }
+      ],
+      "lessons": {
+        "project": "demo",
+        "pending": [
+          {
+            "id": "l1",
+            "mistake": "skipped a null check",
+            "cause": "rushed",
+            "rule": "guard nullable reads",
+            "provenance": "pane 1",
+            "status": "pending",
+            "seen": 2,
+            "createdAt": 1,
+            "updatedAt": 2
+          }
+        ]
+      }
+    },
+    "components": {
+      "kits": [
+        {
+          "id": "react-ui",
+          "name": "React UI",
+          "tech": "react",
+          "stack": "React · TS",
+          "dot": "#7aa2ff"
+        }
+      ],
+      "components": [
+        {
+          "id": "c1",
+          "name": "Button",
+          "kitId": "react-ui",
+          "role": "primitive",
+          "version": "1.0.0",
+          "used": 12,
+          "tags": [
+            "control"
+          ],
+          "variants": [
+            "ghost"
+          ],
+          "composes": []
+        }
+      ],
+      "usage": [
+        {
+          "projectKey": "demo",
+          "kitId": "react-ui"
+        }
+      ]
+    },
+    "themes": {
+      "themes": [
+        {
+          "id": "soft",
+          "tech": "react",
+          "label": "Soft",
+          "description": "rounder corners, softer shadows",
+          "vars": {
+            "--card-radius": "14px"
+          },
+          "builtin": true
+        }
+      ],
+      "active": "soft"
+    },
+    "automations": {
+      "automations": [
+        {
+          "id": "a1",
+          "name": "Nightly triage",
+          "armed": true,
+          "when": {
+            "kind": "simple",
+            "every": "day",
+            "at": "02:00"
+          },
+          "lastRunAt": 200,
+          "nextRunAt": 300,
+          "runs": [
+            {
+              "at": 200,
+              "status": "ok",
+              "note": "triaged 4 issues"
+            },
+            {
+              "at": 100,
+              "status": "skipped",
+              "note": "no new issues"
+            }
+          ]
+        }
+      ],
+      "hooks": [
+        {
+          "id": "h1",
+          "name": "deny-floor",
+          "enabled": true,
+          "event": "PreToolUse",
+          "projects": []
+        }
+      ]
+    },
+    "mcp": {
+      "servers": [
+        {
+          "id": "m1",
+          "name": "research",
+          "enabled": true,
+          "transport": "stdio",
+          "projects": [],
+          "installed": true
+        },
+        {
+          "id": "m2",
+          "name": "custom",
+          "enabled": false,
+          "transport": "http",
+          "projects": [
+            "demo"
+          ],
+          "url": "https://mcp.acme.dev",
+          "installed": false
+        }
+      ]
+    },
+    "alerts": {
+      "alerts": [
+        {
+          "id": "gate-ready:demo:1721900000000",
+          "kind": "gate-ready",
+          "text": "Plan ready to publish",
+          "at": 1721900000000,
+          "paneId": "demo:director",
+          "project": "demo"
+        }
+      ]
+    },
+    "security": {
+      "profiles": [
+        {
+          "id": "pf_worker",
+          "name": "Worker",
+          "category": "user",
+          "desc": "builds features under review",
+          "mode": "ask",
+          "commands": [
+            "git *"
+          ],
+          "tools": {
+            "read": "allow",
+            "grep": "allow",
+            "glob": "allow",
+            "edit": "ask",
+            "write": "ask",
+            "bash": "ask",
+            "web": "deny",
+            "task": "deny"
+          },
+          "paths": {
+            "allow": [
+              "src/**"
+            ],
+            "deny": [
+              ".env"
+            ]
+          },
+          "net": [
+            "api.github.com"
+          ],
+          "builtin": true
+        }
+      ],
+      "paneRoles": {
+        "demo:auth": "worker"
+      },
+      "paneProfiles": {
+        "demo:auth": "pf_worker"
+      },
+      "audit": [
+        {
+          "ts": "2026-07-25T10:15:00.000Z",
+          "pane": "demo:auth",
+          "toolName": "Bash",
+          "target": "git push origin auth"
+        },
+        {
+          "ts": "2026-07-25T10:16:30.000Z",
+          "pane": "demo:ui",
+          "toolName": "Edit",
+          "target": "src/ui/Login.tsx"
+        }
+      ]
+    }
+  },
+  "variants": {
+    "glance_l0": {
+      "projects": [
+        {
+          "id": "demo",
+          "name": "Demo",
+          "role": "service",
+          "health": "error",
+          "activity": "building",
+          "reason": "payments timeout",
+          "faults": 3
+        },
+        {
+          "id": "reporting",
+          "name": "Reporting",
+          "role": "data",
+          "health": "warning",
+          "activity": "review"
+        }
+      ],
+      "links": [
+        {
+          "id": "demo>reporting:api",
+          "from": "demo",
+          "to": "reporting",
+          "kind": "api"
+        }
+      ],
+      "drill": null,
+      "fleets": {
+        "demo": {
+          "recommended": 2,
+          "reasoning": "two lanes",
+          "streams": [
+            {
+              "id": "auth",
+              "name": "Auth",
+              "repo": "acme/api",
+              "owns": [
+                "src/auth/**"
+              ],
+              "issues": [
+                "#1",
+                "#2"
+              ],
+              "dependsOn": [],
+              "persona": "backend-dev"
+            },
+            {
+              "id": "ui",
+              "name": "UI",
+              "repo": "acme/web",
+              "owns": [
+                "src/ui/**"
+              ],
+              "issues": [
+                "#3"
+              ],
+              "dependsOn": [
+                "auth"
+              ],
+              "persona": "frontend-dev"
+            }
+          ],
+          "director": {
+            "enabled": true
+          }
+        }
+      },
+      "drillFleet": null,
+      "personaRoles": {
+        "backend-dev": "worker",
+        "lead": "director"
+      },
+      "kitUsage": [
+        {
+          "projectKey": "demo",
+          "kitId": "react-ui"
+        }
+      ],
+      "kits": [
+        {
+          "id": "react-ui",
+          "name": "React UI"
+        }
+      ],
+      "libraryRefs": [
+        {
+          "kitId": "react-ui",
+          "graph": "algo",
+          "id": "dijkstra.ts",
+          "label": "dijkstra"
+        }
+      ]
+    },
+    "skills_no_lessons": {
+      "skills": [
+        {
+          "id": "s1",
+          "name": "Review checklist",
+          "kind": "review",
+          "source": "first-party",
+          "desc": "PR review",
+          "projects": [],
+          "enabled": true,
+          "pinned": true
+        }
+      ],
+      "groups": [
+        {
+          "id": "g1",
+          "name": "Backend",
+          "hue": "var(--accent)",
+          "skillIds": [
+            "s1"
+          ]
+        }
+      ],
+      "lessons": null
+    },
+    "blueprints_no_team": {
+      "active": "migrate",
+      "library": [
+        {
+          "id": "migrate",
+          "name": "Migrate",
+          "desc": "restructure repos",
+          "category": "transform",
+          "stageCount": 0,
+          "hasTeam": false
+        }
+      ],
+      "activeTeam": null
+    }
+  }
+}
