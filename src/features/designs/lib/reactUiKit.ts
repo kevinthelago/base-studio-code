@@ -283,8 +283,12 @@ const GUIDANCE: Record<string, Guidance> = {
   },
 
   // ── charts (#2305 slice 3 remainder) ──
+  // shapes (#3517): the four charting components claim `series` — an ordered label axis + one or more
+  // ALIGNED numeric value series (the { labels, series } shape windowedTally produces). Bars/LineArea/
+  // Spark/StackedDayBars all bind exactly that; the ranking/donut/legend charts do not (a ranked list,
+  // a parts-of-whole proportion, and a color key are not a time-series).
   Bars: {
-    role: "composite", tags: ["chart", "data-viz"],
+    role: "composite", tags: ["chart", "data-viz"], shapes: ["series"],
     whenUse: ["Comparing a value across a small set of categories.", "A discrete, labelled distribution (per-day, per-stream counts)."],
     whenNot: ["A trend over continuous time — use LineArea/Spark.", "Parts of a whole — use Donut."],
   },
@@ -294,17 +298,17 @@ const GUIDANCE: Record<string, Guidance> = {
     whenNot: ["Many categories that scroll — use a table.", "A time series — use LineArea."],
   },
   StackedDayBars: {
-    role: "composite", tags: ["chart", "data-viz"],
+    role: "composite", tags: ["chart", "data-viz"], shapes: ["series"],
     whenUse: ["A per-day total split into composition segments (a stacked column per day).", "Daily volume with a status/category breakdown."],
     whenNot: ["A single continuous line — use LineArea.", "One category only — use Bars."],
   },
   Spark: {
-    role: "composite", tags: ["chart", "data-viz"],
+    role: "composite", tags: ["chart", "data-viz"], shapes: ["series"],
     whenUse: ["A tiny inline trend beside a metric (no axes).", "A dense row/tile where a full chart won't fit."],
     whenNot: ["A chart the user must read precisely — use LineArea with axes.", "Category comparison — use Bars."],
   },
   LineArea: {
-    role: "composite", tags: ["chart", "data-viz"],
+    role: "composite", tags: ["chart", "data-viz"], shapes: ["series"],
     whenUse: ["A trend over continuous time, with the area emphasizing magnitude.", "A single series where the shape matters more than exact points."],
     whenNot: ["Comparing discrete categories — use Bars.", "A tiny inline glyph — use Spark."],
   },

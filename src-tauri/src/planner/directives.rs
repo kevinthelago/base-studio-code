@@ -311,7 +311,7 @@ mod tests {
             );
             // The shape slugs are the shared vocabulary both CLIs accept — pin them so the prose
             // can't teach a token `bsc ui shapes` would reject.
-            for shape in ["list", "linked-list", "tree", "graph", "table", "key-value"] {
+            for shape in ["list", "linked-list", "tree", "graph", "table", "key-value", "series"] {
                 assert!(
                     both.contains(shape),
                     "stage '{id}' must name the `{shape}` vocabulary token"
