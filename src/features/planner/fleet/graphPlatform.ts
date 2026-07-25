@@ -1,7 +1,11 @@
 // The fleet feature's graph-platform surface (#3606, epic #3604) — the fleet-INTERNAL modules a graph-loaded
 // FleetPage imports but does NOT redraw: the `WorkerDetail` drill-in (a behavioural leaf kept as code per the
-// dashboard-only scope) and the `useFleetGithub` / `fleetCost` logic (injected for #3606; #3607 relocates the
-// logic into the algorithms graph). Registered HERE, inside the feature, because the shell must not reach a
+// dashboard-only scope) and the `useFleetGithub` / `fleetCost` logic (injected for #3606). The PURE dashboard
+// computations were harvested into the algorithms graph and these libs now DELEGATE to those nodes (#3607:
+// fleetCost→llmEnergy+groupTotals, fleetHealth→streamMerge, fleetGithub→windowedTally+orderByRank,
+// fleetLive→precedenceResolve); what's injected here is the thin typed store-glue the loader wires the real
+// store into — a React hook can't be a no-import graph node, so this injection IS "the loader injects the store".
+// Registered HERE, inside the feature, because the shell must not reach a
 // feature's internals (#1545) and eager-importing them from `app/` would de-lazy the whole planner at boot.
 // The fleet host calls this synchronously before the graph page loads, so the modules are present when the
 // compiled page's `require()` runs.
