@@ -26,9 +26,9 @@
 /* A primitive is a source descriptor (like the Algorithms primitives) — dashed violet. */
 .snd-node.snd-primitive {
   border-style: dashed;
-  border-color: var(--violet, #a78bfa);
-  background: color-mix(in srgb, var(--violet, #a78bfa) 8%, var(--bg-elev, var(--bg-soft)));
+  border-color: var(--violet);
+  background: color-mix(in srgb, var(--violet) 8%, var(--bg-elev, var(--bg-soft)));
 }
-.snd-node.snd-primitive:hover { border-color: var(--violet, #a78bfa); }
-.snd-node.snd-primitive.on { box-shadow: 0 0 0 2px var(--violet, #a78bfa); border-color: var(--violet, #a78bfa); }
-.snd-node.snd-primitive .snd-meta { color: color-mix(in srgb, var(--violet, #a78bfa) 65%, var(--fg-dim)); }
+.snd-node.snd-primitive:hover { border-color: var(--violet); }
+.snd-node.snd-primitive.on { box-shadow: 0 0 0 2px var(--violet); border-color: var(--violet); }
+.snd-node.snd-primitive .snd-meta { color: color-mix(in srgb, var(--violet) 65%, var(--fg-dim)); }
