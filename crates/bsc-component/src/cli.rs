@@ -1577,6 +1577,8 @@ fn validate_component_batch(items: &[serde_json::Value]) -> Result<(), String> {
         // #3065: non-blocking — runs for EVERY item, BEFORE the srcText early-continue below, so an
         // inline-animation warning surfaces even on a component whose `srcText` isn't a buildable module.
         warn_component_animations(item);
+        // #3709: same — a JSX-text unicode-escape leak surfaces on any item with source, even a spec.
+        warn_jsx_text_escapes(item);
 
         let src_text = item.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
         if src_text.trim().is_empty() {
@@ -1657,6 +1659,32 @@ fn warn_component_animations(item: &serde_json::Value) {
             );
         }
     }
+}
+
+/// Non-blocking write-time advisory (#3709) for a JS unicode/hex escape (`\uXXXX`, `\u{…}`, `\xHH`)
+/// sitting in JSX-TEXT / code position — OUTSIDE any string literal, template, or comment. JSX children
+/// text is not a JS string, so a bare escape typed directly between tags is never interpreted: the browser
+/// renders the literal `backslash-u-…` characters, not the glyph. It passes the syntax check (valid JS) and
+/// stores clean, so ONLY a screenshot catches it — a semantic-but-not-syntactic defect the build can't see.
+/// WARN (naming the leaked escapes + the fix — a real UTF-8 char, or a JS string like `{"·"}`), but
+/// NEVER reject: the record is valid JS. Purely advisory, like [`warn_component_animations`].
+fn warn_jsx_text_escapes(item: &serde_json::Value) {
+    let src_text = item.get("srcText").and_then(serde_json::Value::as_str).unwrap_or_default();
+    let leaks = crate::graph_health::jsx_text_escape_leaks(src_text);
+    if leaks.is_empty() {
+        return;
+    }
+    // Unique escapes, first-seen order, capped so a component riddled with them stays one readable line.
+    let mut seen = std::collections::BTreeSet::new();
+    let uniq: Vec<&str> =
+        leaks.iter().filter(|e| seen.insert(e.as_str())).map(String::as_str).collect();
+    let shown = uniq.iter().take(5).copied().collect::<Vec<_>>().join(", ");
+    let more = if uniq.len() > 5 { format!(", +{} more", uniq.len() - 5) } else { String::new() };
+    eprintln!(
+        "warning: component '{}' has {} unicode escape(s) in JSX-text position ({shown}{more}) — a JS escape typed directly between JSX tags renders as the literal backslash-text, NOT the glyph. Use a real UTF-8 character, or wrap it in a JS string like {{\"\\u00b7\"}}.",
+        item_label(item),
+        leaks.len(),
+    );
 }
 
 /// Resolve the COMPONENT store with the same flag → env (`BSC_COMPONENT_DIR`) → default
@@ -3229,6 +3257,20 @@ mod tests {
             serde_json::json!({ "id": "c", "name": "C" }),
         ];
         assert!(validate_component_batch(&ok_batch).is_ok());
+    }
+
+    #[test]
+    fn validate_component_batch_never_rejects_over_a_jsx_text_escape() {
+        // #3709: a `·` in JSX-text position is a semantic-but-valid-JS defect — it must be WARNED
+        // (stderr, exercised by the graph_health scanner test), never rejected: the module compiles and
+        // stores. The whole batch — the leaky component + its correct `{"·"}` twin — passes.
+        let batch = vec![
+            serde_json::json!({ "id": "fleet", "name": "FleetPage",
+                "srcText": "export function FleetPage(){ return (<span>{count} workers \\u00b7 running</span>); }" }),
+            serde_json::json!({ "id": "fixed", "name": "FleetPageFixed",
+                "srcText": "export function FleetPageFixed(){ return (<span>{count} workers {\"\\u00b7\"} running</span>); }" }),
+        ];
+        assert!(validate_component_batch(&batch).is_ok(), "a JSX-text escape is advisory, never a rejection");
     }
 
     #[test]
