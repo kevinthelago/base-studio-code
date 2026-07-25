@@ -292,11 +292,13 @@ describe("buildSessionSettings", () => {
     expect(out.denyToolRules).not.toContain("Task");
   });
 
-  it("installs the audit/confine/scope/taint hooks + worker Stop-bounce for a worker role", () => {
+  it("installs the audit/confine/scope/taint/supply hooks + worker Stop-bounce for a worker role", () => {
     const s = mkStore({ paneRoles: { p: "worker" }, paneFlows: { p: flow("none") } });
     const out = buildSessionSettings(s, "p");
     const c = cmds(out);
-    expect(c).toEqual(expect.arrayContaining(["bsc-audit", "bsc-mcp", "bsc-confine", "bsc-deny", "bsc-scope", "bsc-taint", "bsc-defer"]));
+    // bsc-supply (#3799) is a GATED hook — present on this agent pane, absent from the ungated pane
+    // asserted above (the supply-chain add gate targets agents, not the maintainer's manual console).
+    expect(c).toEqual(expect.arrayContaining(["bsc-audit", "bsc-mcp", "bsc-confine", "bsc-deny", "bsc-scope", "bsc-taint", "bsc-supply", "bsc-defer"]));
     // turn-activity hooks stay together (after bsc-defer) so a worker's Stop still records idle, and
     // the cost hooks (#3452) trail them — both must fire on Stop even though bsc-defer blocks the stop.
     expect(c.slice(-5)).toEqual([

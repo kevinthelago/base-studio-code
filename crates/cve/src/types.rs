@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 
 /// A package ecosystem — the ones the fleet installs, mapped 1:1 to OSV's ecosystem strings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Ecosystem {
     Npm,
@@ -194,6 +194,14 @@ impl Advisory {
             .unwrap_or_default();
         Advisory { id, summary, severity: severity_of(v), aliases, references }
     }
+
+    /// Whether this advisory is a MALICIOUS-PACKAGE report rather than a vulnerability in some version.
+    /// OSV sources malware feeds (ossf-malicious-packages, GitHub) under `MAL-YYYY-NNNN` ids — those
+    /// affect EVERY version of the package (the package itself is the payload), so a match blocks the
+    /// add regardless of the version requested. Detected by the `MAL-` id or alias prefix.
+    pub fn is_malicious(&self) -> bool {
+        self.id.starts_with("MAL-") || self.aliases.iter().any(|a| a.starts_with("MAL-"))
+    }
 }
 
 /// Pull the highest CVSS score out of an OSV `severity` array and band it; fall back to the
@@ -341,6 +349,16 @@ mod tests {
         assert_eq!(a.severity, Severity::High);
         assert_eq!(a.aliases, vec!["CVE-2020-8203".to_string()]);
         assert_eq!(a.references, vec!["https://example.test/a".to_string(), "https://example.test/b".to_string()]);
+    }
+
+    #[test]
+    fn is_malicious_detects_mal_ids_and_aliases() {
+        let mal = Advisory { id: "MAL-2024-1234".into(), summary: "".into(), severity: Severity::Unknown, aliases: vec![], references: vec![] };
+        assert!(mal.is_malicious());
+        let via_alias = Advisory { id: "GHSA-x".into(), summary: "".into(), severity: Severity::High, aliases: vec!["MAL-2024-9".into()], references: vec![] };
+        assert!(via_alias.is_malicious());
+        let plain = Advisory { id: "CVE-2020-1".into(), summary: "".into(), severity: Severity::High, aliases: vec!["GHSA-y".into()], references: vec![] };
+        assert!(!plain.is_malicious());
     }
 
     #[test]
