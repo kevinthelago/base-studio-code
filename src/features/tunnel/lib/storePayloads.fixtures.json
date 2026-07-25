@@ -1,5 +1,5 @@
 {
-  "$comment": "Canonical store_state PAYLOAD fixtures (#3761 / Mobile-Studio-Code#246), GENERATED from the real build*Payload functions over PROJECTION_INPUTS (storeProjections.fixtures.ts) — never hand-authored. Shared BYTE-IDENTICALLY with mobile-studio-code, whose selectors decode `domains.<d>` / `variants.<v>` and assert a non-degenerate view. INVARIANT: no field here equals a mobile selector's fallback (no `idle` health, real ISO-8601 audit timestamps, non-default enums), so the smoke layer can tell 'read correctly' from 'fell back' — a pure field DELETION still fails. Small on purpose (2-3 rows / collection); cap behaviour (SECURITY_AUDIT_CAP / AUTOMATION_RUNS_CAP) is asserted in storeProjections.test.ts, NOT by inflating this file. Regenerate: `npm run fixtures:store`. `plan` is absent — published by the planner, not projected here (UNPROJECTED_DOMAINS, #3760).",
+  "$comment": "Canonical store_state PAYLOAD fixtures (#3761 / Mobile-Studio-Code#246), GENERATED from the real build*Payload functions over PROJECTION_INPUTS (storeProjections.fixtures.ts) — never hand-authored. Shared BYTE-IDENTICALLY with mobile-studio-code, whose selectors decode `domains.<d>` / `variants.<v>` and assert a non-degenerate view. INVARIANT: no field here equals a mobile selector's fallback (no `idle` health, real ISO-8601 audit timestamps, non-default enums), so the smoke layer can tell 'read correctly' from 'fell back' — a pure field DELETION still fails. Small on purpose (2-3 rows / collection); cap behaviour (SECURITY_AUDIT_CAP / AUTOMATION_RUNS_CAP) is asserted in storeProjections.test.ts, NOT by inflating this file. Regenerate: `npm run fixtures:store`. All 11 registered domains are covered — `plan` (planner-published, built by buildPlanBoardPayload) was brought in by #3760.",
   "domains": {
     "glance": {
       "projects": [
@@ -487,6 +487,84 @@
           "decision": "block"
         }
       ]
+    },
+    "plan": {
+      "projectId": "demo",
+      "title": "Demo",
+      "currentStage": "features",
+      "statusLabel": "in_progress",
+      "gateReady": true,
+      "planComplete": false,
+      "stages": [
+        {
+          "key": "discovery",
+          "name": "Discovery",
+          "glyph": "◇",
+          "status": "complete",
+          "fraction": 1,
+          "unmet": []
+        },
+        {
+          "key": "features",
+          "name": "Features",
+          "glyph": "◆",
+          "status": "active",
+          "fraction": 0.5,
+          "optional": false,
+          "unmet": [
+            {
+              "label": "features defined",
+              "detail": "0 of 3 mapped"
+            }
+          ]
+        },
+        {
+          "key": "market",
+          "name": "Market",
+          "glyph": "◈",
+          "status": "upcoming",
+          "fraction": 0,
+          "optional": true,
+          "unmet": []
+        }
+      ],
+      "confirmed": [
+        "goal",
+        "scope"
+      ],
+      "skipped": [
+        "stack"
+      ],
+      "streams": [
+        {
+          "id": "auth",
+          "name": "Auth",
+          "repo": "acme/api",
+          "issues": 2,
+          "dependsOn": [],
+          "persona": "backend-dev"
+        },
+        {
+          "id": "ui",
+          "name": "UI",
+          "repo": "acme/web",
+          "issues": 1,
+          "dependsOn": [
+            "auth"
+          ],
+          "persona": "frontend-dev"
+        }
+      ],
+      "directorEnabled": true,
+      "deploy": {
+        "defined": false,
+        "services": []
+      },
+      "market": {
+        "defined": true,
+        "summary": "Strong niche: solo indie builders underserved by heavyweight suites.",
+        "recommendation": "go"
+      }
     }
   },
   "variants": {
