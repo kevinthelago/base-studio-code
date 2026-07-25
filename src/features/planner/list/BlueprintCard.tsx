@@ -44,7 +44,7 @@ export function BlueprintCard({ b, onUse, onOpen, onDelete, activeId, menuOpenId
             flex: "0 0 auto", fontSize: 9, color: hue, border: `1px solid color-mix(in oklch, ${hue}, transparent 78%)`,
           }}>{b.category}</Box>
         </Row>
-        {/* eslint-disable-next-line no-restricted-syntax -- click-outside menu needs a real DOM ref (Box isn't forwardRef) */}
+        {/* eslint-disable-next-line no-restricted-syntax, jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- click-outside menu needs a real DOM ref (Box isn't forwardRef); onClick only stops row-click propagation, not a control */}
         <div ref={menuRef} className="bp-rail-card-menu" style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
           <Button
             variant="ghost"

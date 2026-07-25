@@ -128,6 +128,7 @@ export function GraphCanvas({
         ) : null}
 
         {/* The pan/zoom viewport: a raw div for the native wheel listener + backdrop mousedown. */}
+        {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- pan/zoom canvas (pointer-driven); graph nodes are separately interactive */}
         <div ref={setVp} onMouseDown={onCanvasDown}
           onClick={onBackgroundClick ? (e) => {
             // A genuine backdrop click — ignore the end of a pan-drag and any node press.

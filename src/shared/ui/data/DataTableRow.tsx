@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { clickable } from "@/shared/ui/a11y";
 import "./dataTable.css";
 
 export interface DataTableHeaderProps {
@@ -50,7 +51,7 @@ export function DataTableRow({ template, children, index, selected, off, onClick
         (className ? ` ${className}` : "")
       }
       style={{ gridTemplateColumns: template, ...(height != null ? { height: `${height}px` } : {}) }}
-      onClick={onClick}
+      {...clickable(onClick)}
       {...attrs}
     >
       {children}
