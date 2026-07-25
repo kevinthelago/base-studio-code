@@ -1,4 +1,5 @@
 [
   { "id": "builtin-research", "name": "Research", "enabled": true, "projects": [], "transport": "stdio", "command": "bsc-research-mcp", "args": "" },
-  { "id": "builtin-compliance", "name": "Compliance", "enabled": true, "projects": [], "transport": "stdio", "command": "bsc-compliance-mcp", "args": "" }
+  { "id": "builtin-compliance", "name": "Compliance", "enabled": true, "projects": [], "transport": "stdio", "command": "bsc-compliance-mcp", "args": "" },
+  { "id": "builtin-channel-mock", "name": "Channel (mock)", "enabled": false, "projects": [], "transport": "stdio", "command": "bsc-channel-mock-mcp", "args": "" }
 ]
