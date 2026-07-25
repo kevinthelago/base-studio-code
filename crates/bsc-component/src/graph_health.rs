@@ -96,8 +96,12 @@ impl Finding {
 /// which is static-only, and the render error is a Rust/CLI-only signal fed from a log the frontend
 /// doesn't read. `cmd_doctor` appends these like `analyze_motion`, so the twin stays untouched.
 pub fn render_error_findings(components: &[Value], errors: &[(String, String)]) -> Vec<Finding> {
-    let by_id: BTreeMap<&str, &Value> =
-        components.iter().filter_map(|c| c.get("id").and_then(Value::as_str).map(|id| (id, c))).collect();
+    let by_id: BTreeMap<&str, &Value> = components
+        .iter()
+        // #3725: a suppression tombstone is not a component — drop its errors like a store-absent one.
+        .filter(|c| c.get("suppressed").and_then(Value::as_bool) != Some(true))
+        .filter_map(|c| c.get("id").and_then(Value::as_str).map(|id| (id, c)))
+        .collect();
     errors
         .iter()
         .filter_map(|(id, message)| {
@@ -182,6 +186,12 @@ fn s(v: &Value, key: &str) -> String {
 fn parse_node(v: &Value) -> Option<Node> {
     let id = v.get("id").and_then(Value::as_str)?.to_string();
     if id.is_empty() {
+        return None;
+    }
+    // #3725: a suppression tombstone (`{ id, suppressed: true }`) is not a component — it marks a
+    // permanently-removed packaged builtin. Skip it here so EVERY graph-health consumer (analyze,
+    // prunable, usage index) ignores it and it never shows a false `no-implementation` etc.
+    if v.get("suppressed").and_then(Value::as_bool) == Some(true) {
         return None;
     }
     Some(Node {
@@ -2913,6 +2923,20 @@ mod tests {
         assert!(!prune_ids.contains(&"algocells"), "a builtin seed is never auto-pruned: {prune_ids:?}");
         assert!(prune_ids.contains(&"ghost"), "a plain user orphan still prunes: {prune_ids:?}");
         assert!(plan.skipped.iter().any(|s| s.id == "algocells" && s.guard.contains("built-in")));
+    }
+
+    #[test]
+    fn a_suppression_tombstone_is_skipped_by_every_doctor_check() {
+        // #3725: a `{ id, suppressed: true }` tombstone is not a component — `parse_node` drops it, so it
+        // produces NO finding (a source-less record would otherwise be flagged `no-implementation`) and
+        // never appears in the prune plan.
+        let comps = [comp("Button", "primitive", 5, &[]), json!({ "id": "cost", "suppressed": true })];
+        let findings = analyze(&comps);
+        assert!(
+            !findings.iter().any(|f| f.node_ids.contains(&"cost".to_string())),
+            "the tombstone produces no finding: {findings:?}",
+        );
+        assert!(!prune_plan(&comps).prune.iter().any(|p| p.id == "cost"), "the tombstone is not prunable");
     }
 
     /// `used` is a reuse count nothing currently increments — the packaged kit ships every component at
