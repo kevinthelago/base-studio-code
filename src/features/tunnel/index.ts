@@ -22,5 +22,5 @@ export type { StoreDomain } from "./lib/tunnelClient";
 // the `plan` domain and contributes gate-ready / planner-waiting alerts through these.
 export { publishTunnelDomain } from "./lib/tunnelDomains";
 export { recordTunnelAlerts } from "./lib/alertHub";
-export { gateReadyAlert, plannerWaitingAlert } from "./lib/alerts";
+export { gateReadyAlert, plannerWaitingAlert, coordAlerts } from "./lib/alerts";
 export type { AlertEvent, AlertKind } from "./lib/alerts";

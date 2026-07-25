@@ -498,3 +498,15 @@ textarea.input{ height:auto; min-height:64px; padding:8px 10px; resize:vertical;
 .screen { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; position: relative; }
 .screen .screen-page { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .screen .screen-body { flex: 1; overflow: auto; min-width: 0; }
+
+/* Visually-hidden but exposed to assistive tech (#3770) — the standard sr-only clip. Used by the ARIA
+   live regions (shared/ui/feedback/LiveRegion) and any label a sighted user doesn't need to see. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
