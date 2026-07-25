@@ -605,9 +605,9 @@ export function GlanceWorkspace({ pageOverride }: { pageOverride?: string } = {}
           <Box style={{ flex: 1 }} />
           {drill
             ? (data.sample
-                ? <Chip color="var(--warn, #f2b155)">sample fleet · no plan.db fleet</Chip>
-                : <Chip color="#4fd6a0">real fleet · {model.nodes.length} agents</Chip>)
-            : (data.sample && <Chip color="var(--warn, #f2b155)">sample topology · preview</Chip>)}
+                ? <Chip color="var(--graph-health-warning)">sample fleet · no plan.db fleet</Chip>
+                : <Chip color="var(--graph-health-healthy)">real fleet · {model.nodes.length} agents</Chip>)
+            : (data.sample && <Chip color="var(--graph-health-warning)">sample topology · preview</Chip>)}
           {/* Project-level bulk kill (#3052): end EVERY live session for the drilled project at once —
               the fast recovery when a whole fleet is soft-locked. Shown only when it has live sessions. */}
           {drill && liveProjectPanes.length > 0 && (

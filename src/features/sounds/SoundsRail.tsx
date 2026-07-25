@@ -14,8 +14,8 @@ import { type SoundGraph, type SoundNode } from "./lib/soundGraph";
 
 const KIND_DOT: Record<SoundNode["kind"], string> = {
   cue: "var(--accent)",
-  voice: "var(--success, #4fd6a0)",
-  primitive: "var(--violet, #a78bfa)",
+  voice: "var(--success)",
+  primitive: "var(--violet)",
 };
 
 export function SoundsRail({ graph, selected, onSelect }: {
