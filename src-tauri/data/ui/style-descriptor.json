@@ -16,6 +16,8 @@
     { "name": "--success", "type": "color", "value": "oklch(0.74 0.13 145)", "governs": "success / positive state colour" },
     { "name": "--info", "type": "color", "value": "oklch(0.72 0.10 230)", "governs": "informational state colour" },
     { "name": "--danger", "type": "color", "value": "oklch(0.68 0.18 25)", "governs": "danger / destructive / error state colour" },
+    { "name": "--on-accent", "type": "color", "value": "#1a120a", "governs": "ink / foreground on an --accent fill (primary button text, filled toggle knobs)" },
+    { "name": "--on-success", "type": "color", "value": "oklch(0.20 0.04 145)", "governs": "ink / foreground on a --success fill" },
     { "name": "--r-md", "type": "dimension", "value": "6px", "governs": "medium corner radius" },
     { "name": "--r-lg", "type": "dimension", "value": "10px", "governs": "large corner radius" },
     { "name": "--dur-fast", "type": "duration", "value": "120ms", "governs": "fast motion — hovers & small state flips" },
@@ -60,7 +62,7 @@
           "governs": "the primary (accent) button",
           "tokens": [
             { "key": "bg", "name": "--btn-primary-bg", "type": "color", "default": "var(--accent)", "governs": "primary button background" },
-            { "key": "fg", "name": "--btn-primary-fg", "type": "color", "default": "#1a120a", "governs": "primary button text colour" },
+            { "key": "fg", "name": "--btn-primary-fg", "type": "color", "default": "var(--on-accent)", "governs": "primary button text colour" },
             { "key": "border", "name": "--btn-primary-border", "type": "color", "default": "transparent", "governs": "primary button border colour" },
             { "key": "font-weight", "name": "--btn-primary-font-weight", "type": "number", "default": "600", "governs": "primary button text weight" },
             { "key": "hover-brightness", "name": "--btn-primary-hover-brightness", "type": "number", "default": "1.05", "governs": "brightness multiplier applied to the primary button on hover" }
