@@ -73,8 +73,8 @@ filter, `bsc ui list --shape <shape>`).",
         summary: "print one component (JSON, verbatim) or null — or ONE field with --field (#3162)",
         usage: "\
 USAGE:
-  bsc ui get <id> [--pretty] [--raw] [--out <name>]
-  bsc ui get <id> --field <json-pointer> [--raw] [--pretty] [--out <name>]
+  bsc ui get <id> [--pretty] [--raw] [--out <name>] [--kit <kitId>]
+  bsc ui get <id> --field <json-pointer> [--raw] [--pretty] [--out <name>] [--kit <kitId>]
 
 Prints the stored component JSON for <id> verbatim, or `null` if absent. --raw (#3166) writes the
 record as raw UTF-8 bytes, LF-only (CR-stripped), no locale layer — safe for `VALUE=$(bsc ui get <id>
@@ -88,7 +88,11 @@ non-string value prints as compact JSON), and without --raw the value prints as 
 of stdout, then prints that path. Use it to review a LARGE value (e.g. a big `srcText`) a restricted
 session would otherwise truncate on stdout — the scratch file is a confinement-allowed path, so Read/Grep
 open it in full. <name> must be bare (no '/', '\\', '..' or ':') and $BSC_SCRATCH must be set. With --out,
-a missing id/field ERRORS (there is nothing to write) rather than emitting an empty capture.",
+a missing id/field ERRORS (there is nothing to write) rather than emitting an empty capture.
+
+--kit <kitId> (#3729) DISAMBIGUATES — the store is keyed by id ALONE, so there is exactly one record per
+id; this asserts WHICH kit it belongs to, erroring (naming the actual kit) on a mismatch. Note: writing a
+component whose id already lives under another kit OVERWRITES it — `bsc ui set` now warns about that.",
     },
     CmdDoc {
         name: "log",
@@ -949,11 +953,12 @@ pub fn run(args: Vec<String>, prog: &str) -> Result<(), String> {
             print!("{}", bsc_cli_util::help_for(prog, TAGLINE, COMPONENT_COMMANDS, v));
             Ok(())
         }
-        // `get --field <json-pointer>` (#3162, ONE field) OR `get … --out <name>` (#3713, spill to the
-        // scratch dir) — both intercepted here (the shared store CLI rejects the extra flags), and both
-        // handled by `cmd_get` (which also emits the whole-record `ui-focus` the plain path does). A plain
-        // `get <id>` (incl. the whole-record `--raw`, #3166) still delegates unchanged. A read verb.
-        Some("get") if args.iter().any(|a| a == "--field" || a == "--out") => cmd_get(&args[1..]),
+        // `get --field <json-pointer>` (#3162, ONE field), `get … --out <name>` (#3713, spill to the
+        // scratch dir), OR `get … --kit <kitId>` (#3729, disambiguate) — all intercepted here (the shared
+        // store CLI rejects the extra flags), and handled by `cmd_get` (which also emits the whole-record
+        // `ui-focus` the plain path does). A plain `get <id>` (incl. the whole-record `--raw`, #3166) still
+        // delegates unchanged. A read verb.
+        Some("get") if args.iter().any(|a| a == "--field" || a == "--out" || a == "--kit") => cmd_get(&args[1..]),
         // `log` (#3164) is a custom read — the record's history stamp (rev/updatedAt/updatedBy).
         Some("log") => {
             if args.get(1).map(String::as_str) == Some("help") {
@@ -1173,11 +1178,51 @@ fn cmd_set(
     let items = read_set_items(noun, file.as_deref())?;
     validate(&items)?;
     let store = open(&dir)?;
+    // #3729: a component store is keyed by id ALONE — writing an id that already lives under a DIFFERENT
+    // kit silently OVERWRITES it. Warn (never reject) so a promote-over-a-builtin clobber is visible.
+    if noun == "component" {
+        warn_cross_kit_collision(&store, &items);
+    }
     let writer = crate::record::resolve_writer(by.as_deref());
     let ids = set_stamped(&store, &items, if_version, &writer, noun, note.as_deref())?;
     let json = if pretty { serde_json::to_string_pretty(&ids) } else { serde_json::to_string(&ids) };
     println!("{}", json.map_err(|e| e.to_string())?);
     Ok(())
+}
+
+/// The cross-kit id-overwrite warnings for a `set` batch (#3729) — PURE so the decision is under test;
+/// the CLI prints each to stderr via [`warn_cross_kit_collision`]. The component store is keyed by id
+/// ALONE (not by `(kit, id)`), so writing `fleetpage` under kit `harvested` SILENTLY OVERWRITES a
+/// `fleetpage` already stored under `base-studio-code` — that bit a designer promoting a harvested page
+/// over a builtin of the same name (they believed the two coexisted). One message per colliding id.
+fn cross_kit_collision_warnings(store: &bsc_json_store::Store, items: &[serde_json::Value]) -> Vec<String> {
+    let mut out = Vec::new();
+    for item in items {
+        let (Some(id), Some(new_kit)) = (
+            item.get("id").and_then(serde_json::Value::as_str),
+            item.get("kitId").and_then(serde_json::Value::as_str),
+        ) else {
+            continue;
+        };
+        let prior = current_record(store, id).unwrap_or(serde_json::Value::Null);
+        let prior_kit = prior.get("kitId").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if !prior_kit.is_empty() && prior_kit != new_kit {
+            out.push(format!(
+                "warning: component '{id}' already exists under kit '{prior_kit}' — this write (kit '{new_kit}') \
+                 OVERWRITES it, because the store is keyed by id, NOT by (kit, id). Rename one of them if you \
+                 meant to keep both, or ignore this if the re-home is intended."
+            ));
+        }
+    }
+    out
+}
+
+/// Print each [`cross_kit_collision_warnings`] message to stderr. Non-blocking (never rejects) — a
+/// deliberate re-home is legitimate and the write still lands.
+fn warn_cross_kit_collision(store: &bsc_json_store::Store, items: &[serde_json::Value]) {
+    for w in cross_kit_collision_warnings(store, items) {
+        eprintln!("{w}");
+    }
 }
 
 /// A valid component NAME — a PascalCase identifier: an uppercase ASCII first char, then ASCII
@@ -3282,8 +3327,8 @@ fn cmd_patch(args: &[String]) -> Result<(), String> {
 /// large `srcText` (e.g. a 538-line page) can't be reviewed via stdout at all. `--out` lands it in the
 /// scratch dir, a confinement-allowed path the session Reads in full regardless of size.
 fn cmd_get(args: &[String]) -> Result<(), String> {
-    let (mut id, mut dir, mut field, mut out) =
-        (None::<String>, None::<String>, None::<String>, None::<String>);
+    let (mut id, mut dir, mut field, mut out, mut kit) =
+        (None::<String>, None::<String>, None::<String>, None::<String>, None::<String>);
     let (mut raw, mut pretty) = (false, false);
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -3291,6 +3336,7 @@ fn cmd_get(args: &[String]) -> Result<(), String> {
             "--dir" => dir = it.next().cloned(),
             "--field" => field = it.next().cloned(),
             "--out" => out = it.next().cloned(),
+            "--kit" => kit = it.next().cloned(),
             "--raw" => raw = true,
             "--pretty" => pretty = true,
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
@@ -3298,9 +3344,20 @@ fn cmd_get(args: &[String]) -> Result<(), String> {
             other => return Err(format!("unexpected argument '{other}'")),
         }
     }
-    let id = id.ok_or("usage: bsc ui get <id> [--field <json-pointer>] [--raw] [--out <name>]")?;
+    let id = id.ok_or("usage: bsc ui get <id> [--field <json-pointer>] [--kit <kitId>] [--raw] [--out <name>]")?;
     let store = open_component_store(&dir)?;
     let record = load_component_object(&store, &id)?;
+    // #3729: `--kit <kitId>` disambiguates. The store is keyed by id ALONE, so there is exactly ONE
+    // record per id — this asserts WHICH kit it belongs to (a designer who harvested a same-named
+    // component into another kit believed two coexisted). Errors, naming the ACTUAL kit, on a mismatch.
+    if let Some(want_kit) = &kit {
+        let actual = record.get("kitId").and_then(serde_json::Value::as_str).unwrap_or_default();
+        if actual != want_kit {
+            return Err(format!(
+                "component '{id}' is in kit '{actual}', not '{want_kit}' — the store is keyed by id, so there is exactly one '{id}' (the last write wins)"
+            ));
+        }
+    }
     // The value to render: one `--field`, else the whole record. `field_output` handles both a scalar
     // field and a whole object uniformly (raw string-unwraps, else compact/pretty JSON).
     let text = match &field {
@@ -3446,6 +3503,43 @@ mod tests {
         run(vec!["kit".into(), "suppress".into(), "fleet".into(), "--dir".into(), dir], "bsc ui").unwrap();
         let rec: serde_json::Value = serde_json::from_str(&store.get("fleet").unwrap().unwrap()).unwrap();
         assert_eq!(rec["suppressed"], serde_json::Value::Bool(true), "kit suppress wrote a tombstone: {rec}");
+    }
+
+    #[test]
+    fn cross_kit_collision_warns_when_an_id_is_written_under_a_different_kit() {
+        // #3729: the store is keyed by id alone, so promoting a same-named component into another kit
+        // OVERWRITES the existing one. Warn (naming both kits); a same-kit or new-id write is silent.
+        let dir = tmp_store_dir("collision");
+        let store = bsc_json_store::Store::new(dir, "component");
+        store.set("fleetpage", r#"{"id":"fleetpage","name":"FleetPage","kitId":"base-studio-code"}"#).unwrap();
+
+        let clobber = serde_json::json!({ "id": "fleetpage", "name": "FleetPage", "kitId": "harvested" });
+        let ws = cross_kit_collision_warnings(&store, std::slice::from_ref(&clobber));
+        assert_eq!(ws.len(), 1, "the cross-kit overwrite warns: {ws:?}");
+        assert!(ws[0].contains("base-studio-code") && ws[0].contains("harvested"), "names both kits: {}", ws[0]);
+
+        // Same kit → no warning; a brand-new id → no warning.
+        let same = serde_json::json!({ "id": "fleetpage", "name": "FleetPage", "kitId": "base-studio-code" });
+        assert!(cross_kit_collision_warnings(&store, std::slice::from_ref(&same)).is_empty(), "same kit is silent");
+        let fresh = serde_json::json!({ "id": "newpage", "name": "NewPage", "kitId": "harvested" });
+        assert!(cross_kit_collision_warnings(&store, std::slice::from_ref(&fresh)).is_empty(), "a new id is silent");
+    }
+
+    #[test]
+    fn get_kit_filter_disambiguates_by_kit() {
+        // #3729: `get <id> --kit <kitId>` returns the record only if its kitId matches, else errors naming
+        // the ACTUAL kit — the store is single-id-keyed, so this confirms which kit the one record is in.
+        let dir = tmp_store_dir("get-kit");
+        let store = bsc_json_store::Store::new(dir.clone(), "component");
+        store.set("fleetpage", r#"{"id":"fleetpage","name":"FleetPage","kitId":"base-studio-code"}"#).unwrap();
+        // Matching kit → Ok.
+        assert!(
+            run(vec!["get".into(), "fleetpage".into(), "--kit".into(), "base-studio-code".into(), "--dir".into(), dir.clone()], "bsc ui").is_ok(),
+            "the matching kit resolves",
+        );
+        // Wrong kit → error naming the ACTUAL kit.
+        let err = run(vec!["get".into(), "fleetpage".into(), "--kit".into(), "harvested".into(), "--dir".into(), dir], "bsc ui").unwrap_err();
+        assert!(err.contains("is in kit 'base-studio-code'") && err.contains("not 'harvested'"), "{err}");
     }
 
     #[test]
