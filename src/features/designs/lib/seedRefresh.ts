@@ -106,8 +106,11 @@ export type SeedNoticeType = "component" | "kit" | "theme";
 /** A reconcile outcome the user should see (the propagation-surface record, #2483). */
 export interface SeedNotice {
   /** `updated-upstream`: the packaged built-in changed but the user's customized copy was kept.
-   *  `orphaned`: the built-in left the seed but the user's customized copy was kept. */
-  kind: "updated-upstream" | "orphaned";
+   *  `orphaned`: the built-in left the seed but the user's customized copy was kept.
+   *  `reset-to-seed`: a SEED-AUTHORITATIVE record (an import-based page spec, #3723) had a diverged
+   *  store copy FORCED back to the packaged seed. The store never wins for these, so a divergence is a
+   *  bug (a designer self-contained it for the preview sandbox), not a user edit — surfaced, not silent. */
+  kind: "updated-upstream" | "orphaned" | "reset-to-seed";
   type: SeedNoticeType;
   id: string;
   name: string;
@@ -153,8 +156,17 @@ export interface SeedReconcile<T extends SeedRecord> {
  * @param loaded the store's records (from the bridge).
  * @param seed   the packaged built-ins, seedHash-stamped (`makeBuiltinKits`).
  * @param type   what the records are (for the notices).
+ * @param opts   `seedAuthoritative` (#3723) — records for which the SEED wins unconditionally (an
+ *               import-based page spec): a diverged store copy is a bug, not a user edit, so it is
+ *               FORCED back to the seed with a `reset-to-seed` notice instead of the customized-KEEP the
+ *               verdict table above would apply. Records it doesn't match keep the normal verdicts.
  */
-export function reconcileSeed<T extends SeedRecord>(loaded: T[], seed: T[], type: SeedNoticeType): SeedReconcile<T> {
+export function reconcileSeed<T extends SeedRecord>(
+  loaded: T[],
+  seed: T[],
+  type: SeedNoticeType,
+  opts?: { seedAuthoritative?: (rec: T) => boolean },
+): SeedReconcile<T> {
   const seedById = new Map(seed.map((s) => [s.id, s]));
   const records: T[] = [];
   const pushes: T[] = [];
@@ -177,6 +189,21 @@ export function reconcileSeed<T extends SeedRecord>(loaded: T[], seed: T[], type
     let modified = contentHash !== undefined && contentHash !== rec.seedHash;
     if (seeded) {
       const seedContentHash = seeded.seedHash ?? seedHashOf(seeded);
+      // Seed-authoritative records (#3723): the store NEVER wins. A store copy whose CONTENT differs
+      // from the seed is a divergence bug — e.g. a designer self-contained an import-based page spec so
+      // it would render in the preview sandbox, which then silently shadowed the real page (#3658 →
+      // #3723) — not a user edit. Force the seed copy back (push it), surfaced via a `reset-to-seed`
+      // notice so the override is never silent. A copy already matching the seed is left untouched.
+      if (opts?.seedAuthoritative?.(rec)) {
+        if (seedHashOf(rec) !== seedContentHash) {
+          records.push(seeded);
+          pushes.push(seeded);
+          notices.push({ kind: "reset-to-seed", type, id: rec.id, name: displayName(rec) });
+        } else {
+          records.push(rec); // already matches the seed
+        }
+        continue;
+      }
       // Tolerant re-stamp (#2514): content identical to the CURRENT seed ⇒ the recorded stamp is the
       // broken part, not the content — re-judge pristine (the refresh below adopts the seed copy,
       // which is the same content with the corrected stamp).
