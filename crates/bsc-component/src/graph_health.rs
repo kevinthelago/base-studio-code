@@ -910,6 +910,83 @@ fn uses_theme_token(text: &str) -> bool {
     text.contains("var(--")
 }
 
+/// The JS unicode/hex escapes in `src` that sit in CODE position — OUTSIDE any string literal, template,
+/// or comment (#3709). A `\uXXXX` / `\u{H+}` / `\xHH` here is almost always a JSX-**text** leak: JSX
+/// children text is not a JS string literal, so the escape is never interpreted — the browser renders the
+/// literal 6 characters `backslash-u-0-0-b-7`, not the `·` glyph. It passes the syntax check (valid JS)
+/// and stores clean, so only a screenshot catches it. String/comment-aware (mirrors `has_code_elision`'s
+/// scanner), so the CORRECT forms — a real `·` UTF-8 char, or the JSX `{"·"}` — are NOT flagged (the
+/// escape lives inside a string there, or there is no escape at all). Conservative: a lone `\u` in a regex
+/// literal is a rare false
+/// positive, tolerable for an advisory. Mirrors `jsxTextEscapeLeaks` (there is no TS twin — this is a
+/// write-time advisory, Rust-only).
+pub fn jsx_text_escape_leaks(src: &str) -> Vec<String> {
+    let b: Vec<char> = src.chars().collect();
+    let (mut i, n) = (0usize, b.len());
+    let mut out = Vec::new();
+    while i < n {
+        match b[i] {
+            '/' if i + 1 < n && b[i + 1] == '/' => {
+                while i < n && b[i] != '\n' {
+                    i += 1;
+                }
+            }
+            '/' if i + 1 < n && b[i + 1] == '*' => {
+                i += 2;
+                while i + 1 < n && !(b[i] == '*' && b[i + 1] == '/') {
+                    i += 1;
+                }
+                i = (i + 2).min(n);
+            }
+            quote @ ('"' | '\'' | '`') => {
+                i += 1;
+                while i < n && b[i] != quote {
+                    // A backslash escapes the next char — an escaped quote does not end the literal,
+                    // and a `·` INSIDE the string (the correct form) is consumed here, never flagged.
+                    i += if b[i] == '\\' { 2 } else { 1 };
+                }
+                i += 1;
+            }
+            '\\' if i + 1 < n && (b[i + 1] == 'u' || b[i + 1] == 'x') => {
+                let is_u = b[i + 1] == 'u';
+                let start = i;
+                let mut j = i + 2;
+                if is_u && j < n && b[j] == '{' {
+                    // `\u{H+}` — code-point escape.
+                    j += 1;
+                    while j < n && b[j].is_ascii_hexdigit() {
+                        j += 1;
+                    }
+                    if j < n && b[j] == '}' {
+                        j += 1;
+                    } else {
+                        // Malformed (no closing `}`) — not an escape, step past the backslash only.
+                        i += 1;
+                        continue;
+                    }
+                } else {
+                    // `\uHHHH` (4 hex) or `\xHH` (2 hex). Only a leak if the hex digits are actually there;
+                    // a bare `\u` with no digits is a syntax error the write gate rejects separately.
+                    let want = if is_u { 4 } else { 2 };
+                    let mut got = 0;
+                    while got < want && j < n && b[j].is_ascii_hexdigit() {
+                        j += 1;
+                        got += 1;
+                    }
+                    if got < want {
+                        i += 1;
+                        continue;
+                    }
+                }
+                out.push(b[start..j].iter().collect::<String>());
+                i = j;
+            }
+            _ => i += 1,
+        }
+    }
+    out
+}
+
 /// [`analyze_with`] against the packaged seeds — the unpinned default (see [`HealthOptions`]).
 pub fn analyze(components: &[Value]) -> Vec<Finding> {
     analyze_with(components, &HealthOptions::default())
@@ -2980,6 +3057,29 @@ mod tests {
             "a graph-source primitive importing an artifact util + a provides-sibling is buildable: {fs:?}");
         assert!(!fs.iter().any(|f| f.category == "unresolvable-import"),
             "its @/ imports resolve (artifact + provides), not unresolvable: {fs:?}");
+    }
+
+    #[test]
+    fn jsx_text_escape_leaks_flags_code_position_escapes_not_string_ones() {
+        // #3709: the exact designer bug. NOTE: every `\\u…` below is the literal 6-char escape TEXT
+        // `\u…` in the source string — NOT a real glyph — since that text between JSX tags is the leak.
+        // A `·` / `↻` typed between JSX tags (code position) is a leak.
+        let leaked = "export function FleetPage(){ return (<span>{count} workers \\u00b7 {count} running \\u21bb</span>); }";
+        let got = jsx_text_escape_leaks(leaked);
+        assert_eq!(got, vec!["\\u00b7".to_string(), "\\u21bb".to_string()], "both JSX-text escapes: {got:?}");
+
+        // Correct forms — the same escape inside a JS string / template / comment, or a real glyph — clean.
+        assert!(jsx_text_escape_leaks("const dot = \"\\u00b7\";").is_empty(), "escape in a string literal");
+        assert!(jsx_text_escape_leaks("return (<span>{\"\\u00b7\"}</span>);").is_empty(), "escape in a JSX string expr");
+        assert!(jsx_text_escape_leaks("// separator \\u00b7 between counts").is_empty(), "escape in a line comment");
+        assert!(jsx_text_escape_leaks("const t = `a \\u00b7 b`;").is_empty(), "escape in a template literal");
+        assert!(jsx_text_escape_leaks("return (<span>{count} · {count}</span>);").is_empty(), "a real UTF-8 glyph is fine");
+
+        // Both other escape shapes are caught in code position.
+        assert_eq!(jsx_text_escape_leaks("<b>\\u{1F600}</b>"), vec!["\\u{1F600}".to_string()], "the `\\u{{…}}` form");
+        assert_eq!(jsx_text_escape_leaks("<b>\\xb7</b>"), vec!["\\xb7".to_string()], "the `\\xHH` form");
+        // A bare `\u` with no hex digits is a syntax error the write gate rejects — not reported here.
+        assert!(jsx_text_escape_leaks("<b>\\u</b>").is_empty(), "an incomplete escape is not flagged");
     }
 
     #[test]
