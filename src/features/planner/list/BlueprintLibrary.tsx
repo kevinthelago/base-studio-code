@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { Layers, Download } from "lucide-react";
 import { useAppStore } from "@/store";
-import { projectSlug } from "@/shared/lib/core/projectPaths";
-import { AUTHORING_BLUEPRINT_ID, uid, type Blueprint, type BlueprintStage, type BlueprintDesign } from "../stages/blueprints";
+import { uid, type Blueprint, type BlueprintStage, type BlueprintDesign } from "../stages/blueprints";
 import { ImportModal, type PreviewBlueprint } from "../blueprints/BlueprintModals";
 import { BlueprintImportModal } from "../blueprints/BlueprintImportModal";
 import { DesignReconcileModal } from "@/features/designs";
@@ -17,8 +16,6 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Spacer } from "@/shared/ui/layout/Spacer";
 import { Box } from "@/shared/ui/layout/Box";
 import { Text } from "@/shared/ui/typography/Text";
-import type { DraftRow } from "./drafts";
-import { addDbProject } from "./projectsDbBridge";
 import { BlueprintCard } from "./BlueprintCard";
 import { buildBlueprintItems, type BpItem } from "./blueprintLibrary.helpers";
 
@@ -33,24 +30,17 @@ interface BlueprintLibraryProps {
   query: string;
   menuOpenId: string | null;
   setMenuOpenId: (id: string | null) => void;
-  /** Resume an authoring draft's planning session (shared with the Drafts chips). */
-  reopenDraft: (d: { key: string; title: string; pitch: string }) => void;
-  /** Arm the shared draft-delete confirmation (an authoring draft is a folder on disk). */
-  setDraftDeleteTarget: (d: DraftRow | null) => void;
 }
 
-/** The Blueprints rail — the lifecycle catalog (select / author / modify / delete) plus the
- *  import-from-gist surface. The composer owns the shared search/sort + menu state and the project
- *  scan; this component owns its local author/import UI and the blueprint + import handlers. */
-export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId, reopenDraft, setDraftDeleteTarget }: BlueprintLibraryProps) {
+/** The Blueprints rail — the lifecycle catalog (select / delete) plus the import-from-gist surface.
+ *  The composer owns the shared search/sort + menu state and the project scan; this component owns
+ *  its local import UI and the blueprint + import handlers. New blueprints are created by promoting a
+ *  completed project's plan (Generate Blueprint, #3785), not authored from scratch here. */
+export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId }: BlueprintLibraryProps) {
   const {
     blueprints, activeBlueprintId, setActiveBlueprint, removeBlueprint, setBlueprintStages, updateBlueprintMeta,
-    importBlueprint, installBundledSkills, githubToken, githubUser, setProjectBlueprintId, setAuthoredBlueprint,
-    setPlanningTitle, setPlanningContext, setActiveProjectMeta, addDraftProject, setPlanningSession, setProjectsView,
-    removeDesignContribution,
+    importBlueprint, installBundledSkills, githubToken, githubUser, removeDesignContribution,
   } = useAppStore();
-  const [bpNewOpen, setBpNewOpen] = useState(false);   // rail "+ author a blueprint" inline form
-  const [bpTitle, setBpTitle]     = useState("");
   const [importOpen, setImportOpen]   = useState(false); // manual "paste a gist URL / ID" modal
   const [catalogOpen, setCatalogOpen] = useState(false); // browse-my-gists catalog overlay
   // Blueprint-download reconciliation (#2658): when an imported blueprint introduces design categories
@@ -63,60 +53,11 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
 
   const q = query.trim().toLowerCase();
 
-  // "open & edit" a blueprint always lands in the project planning page (#…): an in-progress
-  // authoring draft resumes its session; a saved library blueprint re-opens an authoring session
-  // keyed by its name, seeded with the blueprint so the planner + focused pane edit it in place.
-  function openBlueprint(b: BpItem) {
-    if (b.kind === "draft" && b.draftKey) {
-      reopenDraft({ key: b.draftKey, title: b.draftTitle ?? b.name, pitch: b.draftPitch ?? "" });
-      return;
-    }
-    const full = blueprints.find(x => x.id === b.id);
-    // The authoring session keys off the blueprint's NAME — the same name-derived key rule as
-    // projects (#2409), so its draft/hub are derivable from the name alone.
-    const key = projectSlug(b.name);
-    setProjectBlueprintId(key, AUTHORING_BLUEPRINT_ID);
-    if (full) setAuthoredBlueprint(key, full);
-    setPlanningTitle(b.name);
-    setPlanningContext(b.pitch || "Design a reusable blueprint to publish as a gist.", "");
-    setActiveProjectMeta(null, "", "", 0);
-    addDraftProject(key, { title: b.name, pitch: b.pitch ?? "", createdAt: Date.now() });
-    // Durable dual-write (#2995): mirror the draft into the projects DB so it survives a restart even
-    // if the `localDraftProjects` cache misses. Fire-and-forget; degrades silently. KEEPS the store write.
-    void addDbProject({ key, title: b.name, pitch: b.pitch ?? "", blueprint: AUTHORING_BLUEPRINT_ID, category: full?.category ?? null, state: "drafted" });
-    setPlanningSession(key);
-    setProjectsView("planning");
-  }
   function deleteBlueprint(b: BpItem) {
-    // An in-progress authoring draft is a folder on disk — confirm before destroying it (#1216),
-    // same as a normal draft chip. A saved library blueprint is store-only, no confirm needed.
-    if (b.kind === "draft" && b.draftKey) {
-      setDraftDeleteTarget({ key: b.draftKey, title: b.draftTitle ?? b.name, pitch: b.draftPitch ?? "", sort: b.sort });
-    } else {
-      removeBlueprint(b.id);
-      // Drop any design overlay this blueprint contributed (#2658) — compose-don't-mutate: removing the
-      // blueprint recomputes the applied look without its tokens (a no-op if it never contributed one).
-      removeDesignContribution(b.id);
-    }
-  }
-
-  // The rail "+" authors a NEW blueprint: bind a fresh key to the authoring lifecycle and open the
-  // planner seeded for it (the blueprint-author lifecycle), which designs + publishes a gist.
-  function startNewBlueprint() {
-    const title = bpTitle.trim();
-    if (!title) return;
-    const key = projectSlug(title);
-    setProjectBlueprintId(key, AUTHORING_BLUEPRINT_ID);
-    setPlanningTitle(title);
-    setPlanningContext("Design a reusable blueprint to publish as a gist.", "");
-    setActiveProjectMeta(null, "", "", 0);
-    addDraftProject(key, { title, pitch: "Design a reusable blueprint.", createdAt: Date.now() });
-    // Durable dual-write (#2995): mirror into the projects DB (fire-and-forget; degrades silently).
-    void addDbProject({ key, title, pitch: "Design a reusable blueprint.", blueprint: AUTHORING_BLUEPRINT_ID, state: "drafted" });
-    setPlanningSession(key);
-    setBpNewOpen(false);
-    setBpTitle("");
-    setProjectsView("planning");
+    removeBlueprint(b.id);
+    // Drop any design overlay this blueprint contributed (#2658) — compose-don't-mutate: removing the
+    // blueprint recomputes the applied look without its tokens (a no-op if it never contributed one).
+    removeDesignContribution(b.id);
   }
 
   // ── Import a blueprint from a gist (#blueprints): the only piece kept from the removed
@@ -200,44 +141,17 @@ export function BlueprintLibrary({ fBlueprints, query, menuOpenId, setMenuOpenId
               onClick={() => setCatalogOpen(true)}
               style={{ height: 24, width: 24, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
             ><Download size={12} /></Button>
-            <Button
-              variant="ghost"
-              title="Author a new blueprint"
-              onClick={() => { setBpNewOpen(o => !o); setBpTitle(""); }}
-              style={{ height: 24, width: 24, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}
-            >+</Button>
           </Row>
-          {bpNewOpen && (
-            <Row gap={6} style={{ marginTop: 10 }}>
-              {/* eslint-disable-next-line no-restricted-syntax -- bespoke inline rail input (custom sizing/border, not a Field stack) */}
-              <input
-                // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional: focus the blueprint-name field when the inline form opens
-                autoFocus
-                value={bpTitle}
-                onChange={e => setBpTitle(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") startNewBlueprint(); if (e.key === "Escape") { setBpNewOpen(false); setBpTitle(""); } }}
-                placeholder="blueprint name…"
-                className="mono"
-                style={{ flex: 1, minWidth: 0, height: 26, padding: "0 8px", background: "var(--bg-canvas)", border: "1px solid var(--accent-dim)", borderRadius: 6, outline: "none", fontSize: 11, color: "var(--fg)" }}
-              />
-              <Button
-                variant="primary"
-                onClick={startNewBlueprint}
-                disabled={!bpTitle.trim()}
-                style={{ height: 26, fontSize: 10, whiteSpace: "nowrap", opacity: bpTitle.trim() ? 1 : 0.4 }}
-              >author →</Button>
-            </Row>
-          )}
           <Text as="div" mono size={9.5} tone="dim" style={{ marginTop: 9, lineHeight: 1.5 }}>reusable plan templates · published as gists</Text>
         </Box>
         <Stack gap={9} style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "14px 16px" }}>
           {fBlueprints.length === 0 ? (
             <Text as="div" mono size={10.5} tone="dim" style={{ lineHeight: 1.6, padding: "6px 2px" }}>
-              {q ? "No blueprints match your search." : <>No blueprints yet. Press <b style={{ color: "var(--fg-muted)" }}>+</b> to author one.</>}
+              {q ? "No blueprints match your search." : <>No blueprints yet. Generate one from a triaged project, or import from a gist.</>}
             </Text>
           ) : (
             fBlueprints.map(b => (
-              <BlueprintCard key={b.id} b={b} onUse={setActiveBlueprint} onOpen={openBlueprint} onDelete={deleteBlueprint} activeId={activeBlueprintId} menuOpenId={menuOpenId} setMenuOpenId={setMenuOpenId} />
+              <BlueprintCard key={b.id} b={b} onUse={setActiveBlueprint} onDelete={deleteBlueprint} activeId={activeBlueprintId} menuOpenId={menuOpenId} setMenuOpenId={setMenuOpenId} />
             ))
           )}
         </Stack>

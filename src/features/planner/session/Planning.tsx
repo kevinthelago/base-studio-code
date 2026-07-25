@@ -26,7 +26,7 @@ import { normalizeDeployConfig } from "../lib/deployConfig";
 // (#776). The progress bar reads the project's BLUEPRINT sections + their declarative gates,
 // not a hardcoded stage list.
 import { InjectionGateBanner } from "./InjectionGateBanner";
-import { mkStage, AUTHORING_BLUEPRINT_ID, DEFAULT_BLUEPRINT_ID, type BlueprintStage, type Blueprint } from "../stages/blueprints";
+import { mkStage, DEFAULT_BLUEPRINT_ID, type BlueprintStage } from "../stages/blueprints";
 import { clampIndex } from "../stages/focusedPlan";
 import { stagesToBackfill } from "../stages/confirmReconcile";
 import { featureSectionsToIssues } from "../issues/planFeatures";
@@ -77,7 +77,6 @@ export function Planning({ visible }: { visible: boolean }) {
     activeProjectRepos,
     projectLocalRepos,
     planStages, planConfirmedStages,
-    planAuthoredBlueprint, importBlueprint, setAuthoredBlueprint,
     planDeployConfig, setPlanDeployConfig,
     planMarketConfig,
     planTransformations,
@@ -110,8 +109,6 @@ export function Planning({ visible }: { visible: boolean }) {
     activeProjectRepos: s.activeProjectRepos,
     projectLocalRepos: s.projectLocalRepos,
     planStages: s.planStages, planConfirmedStages: s.planConfirmedStages,
-    planAuthoredBlueprint: s.planAuthoredBlueprint, importBlueprint: s.importBlueprint,
-    setAuthoredBlueprint: s.setAuthoredBlueprint,
     planDeployConfig: s.planDeployConfig, setPlanDeployConfig: s.setPlanDeployConfig,
     planMarketConfig: s.planMarketConfig,
     planTransformations: s.planTransformations,
@@ -172,26 +169,21 @@ export function Planning({ visible }: { visible: boolean }) {
       isNew: authored.has(s.id),
     }));
   }, [skillDefs, skillGroups, sessionGroupId, effectiveProjectId]);
-  // A project is bound to the blueprint it was CREATED with (#647/#923): `projectBlueprintId`
-  // records it, set at creation (handleStartPlanning) — NOT here on open. Opening a project must
-  // never adopt the transient global `activeBlueprintId` (the library selection the user changes
-  // freely): doing so silently switched an existing project's blueprint just by opening it while a
-  // different one was selected (#988). So resolve the project's OWN recorded blueprint, falling back
-  // to the DEFAULT (a stable id, never the selection) when it isn't bound.
-  // A project with a DESIGNED blueprint (blueprint.json / the <blueprint> tag) IS an authoring
-  // project — resolve it to the authoring lifecycle even if its recorded binding is stale (#923).
-  const isAuthoredProject = !!planAuthoredBlueprint[effectiveProjectId];
-  const effectiveBlueprintId = isAuthoredProject
-    ? AUTHORING_BLUEPRINT_ID
-    : (projectBlueprintId[effectiveProjectId] ?? DEFAULT_BLUEPRINT_ID);
+  // A project is bound to the blueprint it was CREATED with (#647): `projectBlueprintId` records it,
+  // set at creation (handleStartPlanning) — NOT here on open. Opening a project must never adopt the
+  // transient global `activeBlueprintId` (the library selection the user changes freely): doing so
+  // silently switched an existing project's blueprint just by opening it while a different one was
+  // selected (#988). So resolve the project's OWN recorded blueprint, falling back to the DEFAULT (a
+  // stable id, never the selection) when it isn't bound.
+  const effectiveBlueprintId = projectBlueprintId[effectiveProjectId] ?? DEFAULT_BLUEPRINT_ID;
   // Backfill an EXISTING, unbound project to the DEFAULT (not the active selection) so the switch/
   // reset prompt has a recorded baseline to compare against (#647). Brand-new projects are already
-  // bound at creation, so they never reach here unbound; authoring projects are bound by the poll.
+  // bound at creation, so they never reach here unbound.
   useEffect(() => {
-    if (effectiveProjectId && !projectBlueprintId[effectiveProjectId] && !isAuthoredProject) {
+    if (effectiveProjectId && !projectBlueprintId[effectiveProjectId]) {
       setProjectBlueprintId(effectiveProjectId, DEFAULT_BLUEPRINT_ID);
     }
-  }, [effectiveProjectId, projectBlueprintId, setProjectBlueprintId, isAuthoredProject]);
+  }, [effectiveProjectId, projectBlueprintId, setProjectBlueprintId]);
 
   // Per-project PTY slot — mirrors the sanitize_project_key() logic in lib.rs so
   // the pane ID and the planning directory always correspond to the same project.
@@ -259,9 +251,8 @@ export function Planning({ visible }: { visible: boolean }) {
   const sections = useMemo<Section[]>(() => {
     const keys = new Set<string>(ANCHOR_KEYS);
     for (const k of Object.keys(savedSections)) {
-      // `blueprint` is the authored-blueprint JSON (#923), not a discovery section — never a card.
       // `dependencies` is the locked manifest JSON (#1111) — gate-driving, not a prose card.
-      if (k !== SKIPPED_KEY && k !== FLEET_KEY && k !== FEATURES_KEY && k !== DEPENDENCIES_KEY && k !== "blueprint") keys.add(k);
+      if (k !== SKIPPED_KEY && k !== FLEET_KEY && k !== FEATURES_KEY && k !== DEPENDENCIES_KEY) keys.add(k);
     }
     const { project, repos } = groupTopics([...keys]);
     const ordered = [...project, ...repos.flatMap(r => r.keys)];
@@ -394,7 +385,6 @@ export function Planning({ visible }: { visible: boolean }) {
       repos:    publishRepos,
       sections,
       features: planFeatures,
-      authoredBlueprint: planAuthoredBlueprint[effectiveProjectId],
       deployConfig: deployCfg,
       dependencies: planDependencies,
       registries: depManifest.registries,
@@ -409,7 +399,7 @@ export function Planning({ visible }: { visible: boolean }) {
       // (the launch path additionally merges plan.db's per-project `ui` record on top).
       uiPairing: toWorkerUiPairing(null, blueprints.find(b => b.id === effectiveBlueprintId)?.uiKit),
     }),
-    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, personas, sections, publishRepos, pinnedContext, planFeatures, planAuthoredBlueprint, deployCfg, depManifest, planDependencies, mcpServers, paneSkills, mcpInstallState, blueprints, effectiveBlueprintId],
+    [planFleet, planFleetTopology, planFleetDirectorDrive, effectiveProjectId, agentProfiles, personas, sections, publishRepos, pinnedContext, planFeatures, deployCfg, depManifest, planDependencies, mcpServers, paneSkills, mcpInstallState, blueprints, effectiveBlueprintId],
   );
 
   // The planner MCP install lifecycle (#1474, usePlanMcpManagement). mcpInstallState stays here
@@ -476,14 +466,11 @@ export function Planning({ visible }: { visible: boolean }) {
   // Context manifest (#1019/#1028, useCtxRequired): the dynamic required-set polled from plan.db,
   // baseline-seeded once per project; the Context gate (`requiredContextConfirmed`) reads it.
   const ctxRequired = useCtxRequired(effectiveProjectId, planSecs);
-  // Blueprint/authoring lifecycle derivations (#1474, usePlannerBlueprint) — call before the gate
-  // hook so `usePlanGates` can read this hook's isAuthoring/authoringSig.
+  // Blueprint lifecycle derivations (#1474, usePlannerBlueprint) — the planner orientation + the
+  // switch-blueprint affordance.
   const {
-    isAuthoring, treatAsExisting, switchTargets, canSwitch,
-    switchOpen, setSwitchOpen, authoringSig, authorSkillLib, authorMcpLib,
-  } = usePlannerBlueprint({
-    blueprints, effectiveBlueprintId, isExisting, planAuthoredBlueprint, effectiveProjectId, skillDefs, mcpServers,
-  });
+    treatAsExisting, switchTargets, canSwitch, switchOpen, setSwitchOpen,
+  } = usePlannerBlueprint({ blueprints, effectiveBlueprintId, isExisting });
   // Gate/`signals` derivation (#1474, usePlanGates) — the live stageState snapshot, the lint/injection
   // gates, the skip/confirm signal bags, the flat `signals` bag, and the auto-derived focused-pane
   // stages. `planSecs` + the focused-pane SELECTION (`focusSel` below) stay in this component.
@@ -493,7 +480,7 @@ export function Planning({ visible }: { visible: boolean }) {
     sections, planSecs, ctxRequired, publishRepos, planFleet, planAutomations,
     featureIssues, effectiveProjectId, requiresUi, uiCounts, featureState, featureCycle,
     confirmedSet, skippedSet, planDependencies, sourceCfg, injectionHardGate, planInjectionAck,
-    deployCfg, marketCfg, transformationRows, isAuthoring, authoringSig,
+    deployCfg, marketCfg, transformationRows,
   });
 
   // The focused-pane SELECTION + its derived footer/pill/prompts live in usePlanFocusedPane, called
@@ -615,7 +602,7 @@ export function Planning({ visible }: { visible: boolean }) {
   // the isolated planning dir, re-fit when shown, and re-sync setup_workspaces when a repo resolves.
   // Owns the terminal; writes the resolved hub dir up via setPlanningDir.
   const { containerRef, termRef } = usePlannerTerminal({
-    paneId, visible, effectiveProjectId, linkedRepos, treatAsExisting, isAuthoring,
+    paneId, visible, effectiveProjectId, linkedRepos, treatAsExisting,
     activeProjectName, activeProjectNumber, planningPitch, stageIdsFor, refreshSetupSig,
     processChunk, commands, schedules, setPlanningDir,
   });
@@ -691,7 +678,7 @@ export function Planning({ visible }: { visible: boolean }) {
   // restart / "keep files" / clear-plan / switch-blueprint operations, moved verbatim. The
   // workspace mount/re-sync effects above stay here (they own the terminal + PTY).
   const { restarting, handleRestart, keepPlanFiles, doClearPlan, doSwitchBlueprint } = usePlanningSession({
-    termRef, bufRef, paneId, linkedRepos, treatAsExisting, isAuthoring,
+    termRef, bufRef, paneId, linkedRepos, treatAsExisting,
     activeProjectName, activeProjectNumber, planningPitch, effectiveProjectId,
     stageIdsFor, refreshSetupSig,
     setShowBlueprintModal, setShowClearConfirm, setSwitchOpen,
@@ -715,10 +702,10 @@ export function Planning({ visible }: { visible: boolean }) {
     triaging, triageError, triageNote, recoverable, recovering, publishPhase, setPublishPhase, ghStatus,
     quarantineDialog,
   } = usePlanPublish({
-    isAuthoring, githubToken, publishRepos, injectionGateState, sections, planningTitle,
+    githubToken, publishRepos, injectionGateState, sections, planningTitle,
     activeProjectName, planFleet, effectiveProjectId, activeProjectId, activeProjectNumber,
-    planFeatures, planDependencies, depManifest, repoPublic, reposPublic, planAuthoredBlueprint,
-    paneId, projectTitle, planReady, visible, addProjectRepo, fleetStartProject, importBlueprint,
+    planFeatures, planDependencies, depManifest, repoPublic, reposPublic,
+    projectTitle, planReady, visible, addProjectRepo, fleetStartProject,
   });
 
 
@@ -747,7 +734,6 @@ export function Planning({ visible }: { visible: boolean }) {
         onClearPlan={() => setShowClearConfirm(true)}
         canSwitch={canSwitch}
         onSwitchBlueprint={() => setSwitchOpen(true)}
-        isAuthoring={isAuthoring}
         published={!!activeProjectId}
         hasRepos={publishRepos.length > 0}
         hasFleet={!!planFleet[effectiveProjectId]?.streams.length}
@@ -834,14 +820,12 @@ export function Planning({ visible }: { visible: boolean }) {
                 // Once a board exists, the publish action reads as "Update GitHub" — a re-sync of
                 // the plan, not a first publish (handlePublish sets activeProjectId on create) (#823).
                 published: !!activeProjectId,
-                // An authoring project publishes a gist, not a GitHub board (#923). #3280 local-first:
-                // with no GitHub token the action COMMITS the plan to plan.db (no board to publish/update),
-                // so the label says so — "Commit plan" (first) / "Recommit plan" (re-materialize).
-                publishLabel: isAuthoring
-                  ? "⎙ Publish blueprint"
-                  : !githubToken
-                    ? (activeProjectId ? "✓ Recommit plan" : "✓ Commit plan")
-                    : undefined,
+                // #3280 local-first: with no GitHub token the action COMMITS the plan to plan.db (no
+                // board to publish/update), so the label says so — "Commit plan" (first) / "Recommit
+                // plan" (re-materialize).
+                publishLabel: !githubToken
+                  ? (activeProjectId ? "✓ Recommit plan" : "✓ Commit plan")
+                  : undefined,
                 // The user deliberately skips the active optional stage (#921); the gate resolves
                 // and the selection re-follows to the next live stage.
                 onSkip: () => { onSkipStage(); setFocusSel(null); },
@@ -860,17 +844,6 @@ export function Planning({ visible }: { visible: boolean }) {
                   }
                   setFocusSel(null); // re-follow the live stage
                 },
-                // Blueprint-authoring wiring (#923): the interactive editor views write edits back to
-                // the stored blueprint (kept in sync with the planner's <blueprint> tag) + publish.
-                authoring: isAuthoring ? {
-                  onChange: (bp: Blueprint) => setAuthoredBlueprint(effectiveProjectId, bp),
-                  skillLibrary: authorSkillLib,
-                  mcpLibrary: authorMcpLib,
-                  onPublish: () => { void handlePublish(); },
-                  // The focused pane only renders while idle; the publish-progress header takes over
-                  // once publishing starts, so "published" is always false within this view.
-                  published: false,
-                } : undefined,
               }}
             />
             ) : (

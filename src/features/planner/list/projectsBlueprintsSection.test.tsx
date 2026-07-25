@@ -3,11 +3,10 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { ProjectsList } from "./ProjectsList";
 import { useAppStore } from "@/store";
-import { AUTHORING_BLUEPRINT_ID, type Blueprint } from "../stages/blueprints";
+import { type Blueprint } from "../stages/blueprints";
 
-// The Projects-tab redesign adds a dedicated Blueprints section: the user's saved library
-// blueprints (built-ins excluded) plus in-progress authoring drafts, kept out of the normal
-// Drafts list.
+// The Projects-tab Blueprints section: the user's saved library blueprints plus the built-in
+// app templates, selectable for the next project.
 
 function bp(over: Partial<Blueprint>): Blueprint {
   return { id: "x", name: "X", desc: "", sections: [], category: "greenfield", ...over };
@@ -30,7 +29,6 @@ describe("ProjectsList — Blueprints section", () => {
       githubToken: "gho_test",
       localDraftProjects: {},
       projectBlueprintId: {},
-      planAuthoredBlueprint: {},
       blueprints: [],
     });
   });
@@ -46,23 +44,6 @@ describe("ProjectsList — Blueprints section", () => {
     await screen.findByText("Blueprints");
     expect(screen.getByText("My Greenfield")).toBeTruthy();
     expect(screen.getByText("Stock Built-in")).toBeTruthy(); // built-ins are surfaced here too now
-  });
-
-  it("routes an authoring draft into Blueprints (not Drafts) using its designed blueprint", async () => {
-    useAppStore.setState({
-      localDraftProjects: {
-        normal: { title: "Normal Project", pitch: "p", createdAt: 1 },
-        author1: { title: "Author Session", pitch: "", createdAt: 2 },
-      },
-      projectBlueprintId: { author1: AUTHORING_BLUEPRINT_ID },
-      planAuthoredBlueprint: { author1: bp({ id: "draft-bp", name: "Designed Blueprint", category: "transform", sections: [{} as never, {} as never] }) },
-    });
-    render(<ProjectsList />);
-    // Normal draft stays in the Drafts chips; the authoring draft surfaces in the Blueprints rail.
-    await screen.findByText("Normal Project");
-    expect(screen.getByText("Normal Project")).toBeTruthy();
-    expect(screen.getByText("Designed Blueprint")).toBeTruthy();
-    expect(screen.queryByText("Author Session")).toBeNull();
   });
 
   it("binds the SELECTED blueprint AT CREATION — not on a later open (#988)", async () => {
@@ -99,20 +80,5 @@ describe("ProjectsList — Blueprints section", () => {
     const s = useAppStore.getState();
     expect(s.activeBlueprintId).toBe("mine");        // selecting sets it active for the next project
     expect(s.projectsView).toBe("list");             // …without opening the planner
-  });
-
-  it("'modify in planner' (card menu) opens the planner authoring session (#blueprints)", async () => {
-    useAppStore.setState({
-      blueprints: [bp({ id: "mine", name: "My Greenfield", origin: "local", category: "greenfield" })],
-    });
-    render(<ProjectsList />);
-    await screen.findByText("Blueprints");
-    fireEvent.click(screen.getByTitle("More options"));     // open the card's menu
-    fireEvent.click(screen.getByText("modify in planner"));
-    const s = useAppStore.getState();
-    expect(s.projectsView).toBe("planning");                              // → planner
-    // #2409: the authoring session keys off `projectSlug(name)`, same rule as projects.
-    expect(s.projectBlueprintId["my-greenfield"]).toBe(AUTHORING_BLUEPRINT_ID);
-    expect(s.planAuthoredBlueprint["my-greenfield"]?.name).toBe("My Greenfield"); // seeded with the blueprint
   });
 });

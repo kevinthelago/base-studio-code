@@ -40,7 +40,6 @@ export interface PlanningHeaderProps {
   canSwitch: boolean;
   onSwitchBlueprint: () => void;
   // Triage launch gate (#444/#551).
-  isAuthoring: boolean;
   published: boolean;
   hasRepos: boolean;
   hasFleet: boolean;
@@ -60,7 +59,7 @@ export function PlanningHeader({
   planningTitle, setPlanningTitle, draftTitleErr, setDraftTitleErr, commitDraftTitle,
   autopilotRunning, autopilotProgressPct,
   handleRestart, restarting, onClearPlan, canSwitch, onSwitchBlueprint,
-  isAuthoring, published, hasRepos, hasFleet, triaging, planReady, launchTriage,
+  published, hasRepos, hasFleet, triaging, planReady, launchTriage,
   triaged, onGenerateBlueprint,
 }: PlanningHeaderProps) {
   return (
@@ -144,9 +143,8 @@ export function PlanningHeader({
         </Button>
       )}
       {/* The primary action follows the lifecycle: plan → TRIAGE (build the project) → then, once
-          it's been triaged, GENERATE BLUEPRINT (promote the plan for reuse, #3785). Authoring
-          blueprints have no execution side, so no button. */}
-      {!isAuthoring && (triaged ? (
+          it's been triaged, GENERATE BLUEPRINT (promote the plan for reuse, #3785). */}
+      {triaged ? (
         <Button
           variant="primary"
           onClick={onGenerateBlueprint}
@@ -168,7 +166,7 @@ export function PlanningHeader({
             {triaging ? "starting triage…" : "Triage →"}
           </Button>
         );
-      })())}
+      })()}
     </Box>
   );
 }

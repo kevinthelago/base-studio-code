@@ -347,16 +347,11 @@ export interface Blueprint {
   category?: BlueprintCategory;
   /** Create (from a pitch) vs operate (against existing repos). Absent ⇒ create. */
   mode?: BlueprintMode;
-  /** Authoring metadata (#923, blueprint-author design): a one-line catalog pitch, the audience it
-   *  serves, and the publish visibility. `tags` doubles as the design's "best for" catalog tags. */
+  /** Catalog metadata: a one-line catalog pitch, the audience it serves, and the share visibility
+   *  (used by the gist share/import flow). `tags` doubles as the "best for" catalog tags. */
   pitch?: string;
   audience?: string;
   visibility?: "local" | "private-gist" | "catalog";
-  /** Deliverable / output lifecycle (#923). Absent ⇒ the normal software deliverable: the planner
-   *  publishes repos + a project board + milestones + issues, then a fleet builds them. `"blueprint"`
-   *  marks an AUTHORING lifecycle — the planner designs a reusable blueprint and "publish" ships it
-   *  to a gist; there is no code, so no fleet and no triage (see `isAuthoringBlueprint`). */
-  deliverable?: "blueprint";
 }
 
 /** The JSON shape of a built-in blueprint definition (stages/blueprints/*.json): blueprint

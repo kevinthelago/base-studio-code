@@ -24,7 +24,7 @@ import type { StagePrompt } from "../session/plannerConductor";
 import type { DeployConfig } from "../lib/deployConfig";
 import { type Topology } from "../relationship/relationshipGraph";
 import { type DirectorDrive } from "../fleet/directorDrive";
-import { FocusedStageBody, type AuthoringWiring } from "./FocusedBodies";
+import { FocusedStageBody } from "./FocusedBodies";
 import { KindDot } from "./focusedPrimitives";
 export function ProjectPane({
   data,
@@ -66,11 +66,8 @@ export function ProjectPane({
     onSkip?: () => void;
     /** The project already has a GitHub board — the publish action reads as "Update GitHub" (#823). */
     published?: boolean;
-    /** Override the footer publish label (#923) — "Publish blueprint" for an authoring project. */
+    /** Override the footer publish label (#3280) — e.g. "Commit plan" when publishing offline. */
     publishLabel?: string;
-    /** Blueprint-authoring wiring (#923) — present only for an authoring project; drives the
-     *  interactive Purpose/Stages/Capabilities/Review editor views. */
-    authoring?: AuthoringWiring;
     /** The selected stage's injectable prompts + inject handler — drives the header "?" helper (#…),
      *  replacing the removed auto-injecting conductor. */
     promptHelp?: { prompt: StagePrompt; onInject: (text: string) => void };
@@ -147,7 +144,7 @@ export function ProjectPane({
         {isLocked && <FocusedLockBanner activeName={active?.name ?? ""} />}
         <FocusedStageGuidance stage={selected} pill={focus.pill} prompt={focus.promptHelp?.prompt} onInject={focus.promptHelp?.onInject} open={gateOpen} />
         <Box className="pp-scroll">
-          <FocusedStageBody stage={selected} data={data} projectId={projectId} authoring={focus.authoring} onLinkRepo={onLinkRepo} onView={setViewing}
+          <FocusedStageBody stage={selected} data={data} projectId={projectId} onLinkRepo={onLinkRepo} onView={setViewing}
             onFlow={onFlow} onModel={onModel} onPersona={onPersona} onTopology={onTopology} onDirectorDrive={onDirectorDrive}
             onToggleMcp={onToggleMcp} onBuildMcp={onBuildMcp} onAddMcp={onAddMcp} onRemoveMcp={onRemoveMcp} onDeployChange={onDeployChange} requiredContext={focus.requiredContext} onInject={onInject} />
         </Box>

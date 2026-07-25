@@ -24,22 +24,20 @@ import { AutomationsBody } from "../bodies/FocusedAutomationsBody";
 import { SkillsBody } from "../bodies/FocusedSkillsBody";
 import { McpsBody } from "../bodies/McpsBody";
 import { FeaturesBody } from "../bodies/FocusedFeaturesBody";
-import { AuthoringBody } from "../bodies/FocusedAuthoringBody";
 import { StreamsBody } from "../bodies/StreamsBody";
 import type { FleetHandlers, McpHandlers } from "../bodies/focusedHandlers";
 import { EmptyState } from "@/shared/ui/feedback/EmptyState";
 // The Planner Components pane (#2314) — the body of the `test_ui` stage.
 import { PlannerComponentsPane } from "@/features/designs";
 
-// Re-export the shared body types so existing `from "./FocusedBodies"` imports keep resolving
-// (ProjectPane imports `AuthoringWiring`).
-export type { FleetHandlers, McpHandlers, AuthoringWiring, SyncState } from "../bodies/focusedHandlers";
+// Re-export the shared body types so existing `from "./FocusedBodies"` imports keep resolving.
+export type { FleetHandlers, McpHandlers, SyncState } from "../bodies/focusedHandlers";
 
 /* =================================================================
    FocusedStageBody — maps a Stage to its body (#652 / #674)
    ================================================================= */
 
-export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo, onView, onFlow, onModel, onPersona, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext, onInject }: {
+export function FocusedStageBody({ stage, data, projectId, onLinkRepo, onView, onFlow, onModel, onPersona, onTopology, onDirectorDrive, onToggleMcp, onBuildMcp, onAddMcp, onRemoveMcp, onDeployChange, requiredContext, onInject }: {
   stage: Stage;
   data?: ProjectPaneData;
   projectId?: string;
@@ -47,8 +45,6 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
   requiredContext?: string[];
   /** Inject a prompt into the live planner terminal (#1986) — the Source body's declare affordance. */
   onInject?: (text: string) => void;
-  /** Authoring-lifecycle wiring (#923) — present only for a blueprint-authoring project. */
-  authoring?: import("../bodies/focusedHandlers").AuthoringWiring;
   onLinkRepo?: (r: string) => void;
   /** Deploy stage (#919): persist the edited deployment config. */
   onDeployChange?: (next: DeployConfig) => void;
@@ -115,13 +111,6 @@ export function FocusedStageBody({ stage, data, projectId, authoring, onLinkRepo
       // hand-offs, or the whole app assembled from the kit). Reads the global library from the store,
       // so it needs no stage data.
       return <PlannerComponentsPane />;
-    // Blueprint-authoring stages (#923): the interactive editor views over the in-progress blueprint.
-    case "purpose":
-    case "bp_stages":
-    case "bp_capabilities":
-    case "bp_team":
-    case "bp_review":
-      return <AuthoringBody bp={data?.authoredBlueprint} stageKey={stage.key} wiring={authoring} />;
     default:
       return <EmptyState iconVariant="dashed" icon="⋯" title="The planner documents this stage." />;
   }

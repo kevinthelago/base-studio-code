@@ -49,8 +49,8 @@ describe("blueprint-per-project + reset (#647)", () => {
   });
 
   it("records nothing for a kit-less blueprint, and stays idempotent across a switch (#2277)", () => {
-    // The authoring blueprint declares no kit → no edge.
-    useAppStore.getState().setProjectBlueprintId("q", "blueprint-author");
+    // A transform blueprint (feature-add) declares no kit → no edge.
+    useAppStore.getState().setProjectBlueprintId("q", "feature-add");
     expect(useAppStore.getState().kitUsage.some((u) => u.projectKey === "q")).toBe(false);
     // A greenfield project switched between two react-ui blueprints keeps exactly one edge (idempotent).
     useAppStore.getState().setProjectBlueprintId("r", "default");
@@ -76,17 +76,6 @@ describe("blueprint-per-project + reset (#647)", () => {
     const s = useAppStore.getState();
     expect(s.projectBlueprintId["p"]).toBeUndefined();
     expect(s.uiScreens["p"]).toBeTruthy(); // untouched
-  });
-
-  it("won't switch a project locked to the blueprint-author lifecycle (#923)", () => {
-    // bind the project to the authoring lifecycle, then try to switch it away
-    useAppStore.getState().setProjectBlueprintId("p", "blueprint-author");
-    useAppStore.getState().applyBlueprintToProject("p", "complete");
-    const s = useAppStore.getState();
-    // the switch is refused — the authoring blueprint overrides + locks the project
-    expect(s.projectBlueprintId["p"]).toBe("blueprint-author");
-    expect(s.uiScreens["p"]).toBeTruthy();          // progress NOT wiped
-    expect(s.planStages["p"]).toEqual({ goal: "# Goal" });
   });
 
   it("now allows any project blueprint → any other, re-seeding on switch (#1281)", () => {

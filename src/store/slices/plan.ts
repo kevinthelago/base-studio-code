@@ -45,7 +45,7 @@ function recordBlueprintKit(get: () => AppStore, projectId: string, blueprintId:
 }
 
 type PlanSlice = Pick<AppStore,
-  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "markStageConfirmedLocal" | "planAuthoredBlueprint" | "setAuthoredBlueprint" | "planDeployConfig" | "setPlanDeployConfig" | "planMarketConfig" | "setPlanMarketConfig" | "planTransformations" | "setPlanTransformations" | "planSourceConfig" | "setPlanSourceConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "markStageSkippedLocal" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "generateBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
+  "configProfiles" | "addConfigProfile" | "updateConfigProfile" | "removeConfigProfile" | "planStages" | "setPlanStage" | "planConfirmedStages" | "confirmPlanStage" | "unconfirmPlanStage" | "markStageConfirmedLocal" | "planDeployConfig" | "setPlanDeployConfig" | "planMarketConfig" | "setPlanMarketConfig" | "planTransformations" | "setPlanTransformations" | "planSourceConfig" | "setPlanSourceConfig" | "reposPublic" | "setReposPublic" | "repoPublic" | "setRepoPublic" | "planInjectionAck" | "acknowledgePlanInjections" | "planSkippedStages" | "skipPlanStage" | "unskipPlanStage" | "markStageSkippedLocal" | "canonicalizePlanStages" | "planAutomations" | "setPlanAutomations" | "clearPlanAutomations" | "planStageConfig" | "setStageEnabled" | "reorderStages" | "setProjectStageConfig" | "seedDiscoveryOnlyStages" | "blueprints" | "activeBlueprintId" | "setActiveBlueprint" | "projectBlueprintId" | "setProjectBlueprintId" | "applyBlueprintToProject" | "addBlueprint" | "generateBlueprint" | "duplicateBlueprint" | "updateBlueprintMeta" | "setBlueprintStages" | "removeBlueprint" | "importBlueprint" | "stageRuns" | "setStageRun" | "stagePreview" | "setStagePreview" | "uiScreens" | "addUiScreen" | "uiApproved" | "setUiScreenApproved" | "planFleet" | "pinnedContext" | "togglePinnedContext" | "setPlanFleet" | "planFleetTopology" | "setPlanFleetTopology" | "planFleetDirectorDrive" | "setPlanFleetDirectorDrive" | "addPlanAgentStream" | "removePlanAgentStream" | "setPlanAgentStreamProfile" | "setPlanAgentStreamFlow" | "setPlanAgentStreamModel" | "setPlanAgentStreamStrategy" | "setPlanAgentStreamPersona" | "setPlanFleetMeta" | "setPlanDirector" | "setPlanDirectorDrive" | "clearPlanFleet" | "clearPlan"
 >;
 
 // User blueprints (not the code-owned built-ins) are mirrored to ~/.base-studio-code/blueprints/
@@ -148,9 +148,6 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
           if (existing.includes(key)) return {};
           return { planConfirmedStages: setMapEntry(s.planConfirmedStages, projectId, [...existing, key]) };
         }),
-      planAuthoredBlueprint: {},
-      setAuthoredBlueprint: (projectId, bp) =>
-        set((s) => ({ planAuthoredBlueprint: setMapEntry(s.planAuthoredBlueprint, projectId, bp) })),
       planDeployConfig: {},
       setPlanDeployConfig: (projectId, cfg) =>
         set((s) => ({ planDeployConfig: setMapEntry(s.planDeployConfig, projectId, cfg) })),
@@ -289,8 +286,8 @@ export const createPlanSlice: StateCreator<AppStore, [], [], PlanSlice> = (set, 
       applyBlueprintToProject: (projectId, blueprintId) => {
         const bp = get().blueprints.find((b) => b.id === blueprintId);
         if (!bp) return;
-        // Only a greenfield project may switch, and only to a transform/harden lifecycle (#923);
-        // every other origin/target (incl. the locked blueprint-author) is refused.
+        // Any project blueprint may switch to any OTHER one (#1281); switching to the same blueprint,
+        // or from an unbound/unknown current, is refused.
         const current = get().blueprints.find((b) => b.id === get().projectBlueprintId[projectId]);
         if (!canSwitchBlueprint(current, bp)) return;
         // Full reset: wipe ALL of the project's planning state (everything the `applyBlueprint` op
