@@ -11,6 +11,7 @@ import type { AgentFlow } from "@/features/planner/fleet/agentFlow";
 import type { AgentProfile } from "@/features/security/lib/agentProfiles";
 import type { DirectorMode } from "@/features/planner/lib/integrationStrategy";
 import type { DirectorDrive } from "@/features/planner/fleet/directorDrive";
+import type { TtsVerbosity } from "@/shared/lib/a11y/speech";
 
 /** A worker the warden quarantined (#1102): why it tripped + when, for the user-facing surface. */
 export interface QuarantineInfo {
@@ -111,6 +112,17 @@ export interface ConsoleState {
   // success, failure → error, a worker pausing → notify).
   soundNotifications: boolean;
   setSoundNotifications: (on: boolean) => void;
+  // App-owned text-to-speech (#3804, a11y epic #2725 Tier 1; persisted, default OFF; Settings →
+  // Accessibility). When on, useCoordSpeaker() speaks NEW fleet coordination events via speechSynthesis
+  // (paused / question / landed / …), distinct from #3770's ARIA live region for the user's own reader.
+  ttsEnabled: boolean;
+  setTtsEnabled: (on: boolean) => void;
+  ttsRate: number;                       // speechSynthesis rate multiplier
+  setTtsRate: (rate: number) => void;
+  ttsVoice: string;                      // selected SpeechSynthesisVoice.voiceURI ("" = platform default)
+  setTtsVoice: (voiceURI: string) => void;
+  ttsVerbosity: TtsVerbosity;            // "terse" (needs-you only) | "verbose" (adds progress)
+  setTtsVerbosity: (v: TtsVerbosity) => void;
   // Custom keyboard shortcut overrides (#771): rebindable-shortcut id → chord
   // string (e.g. "Ctrl+Shift+KeyC"). Only overrides are stored; useHotkeys falls
   // back to DEFAULT_BINDINGS for any id absent here. Persisted; edited in

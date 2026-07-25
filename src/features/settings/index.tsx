@@ -4,6 +4,7 @@ import { Stack } from "@/shared/ui/layout/Stack";
 import { Text } from "@/shared/ui/typography/Text";
 import { MasterDetail } from "@/shared/ui/layouts/MasterDetail";
 import { GeneralPage } from "./pages/GeneralPage";
+import { AccessibilityPage } from "./pages/AccessibilityPage";
 import { GithubPage } from "./pages/GithubPage";
 import { SecurityPage } from "./pages/SecurityPage";
 import { PlannerPage } from "./pages/PlannerPage";
@@ -28,6 +29,7 @@ export {
 // Page (the L3 content the Settings Workspace shows one at a time; see docs/frontend-structure.md).
 const SECTIONS = [
   { k: "general",     label: "General",     Page: GeneralPage },
+  { k: "accessibility", label: "Accessibility", Page: AccessibilityPage },
   { k: "planner",     label: "Planner",     Page: PlannerPage },
   { k: "skills",      label: "Skills",      Page: SkillsSettingsPage },
   { k: "automations", label: "Automations", Page: AutomationsPage },
