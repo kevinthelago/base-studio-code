@@ -47,7 +47,7 @@ function PulseDigest({ kpis, churnAreas, ci, partialDiffs }: { kpis: PulseKpis; 
         <Row className="mono" justify="center" style={{
           flexShrink: 0, width: 28, height: 28, borderRadius: 7,
           background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
-          color: "#1a120a", fontWeight: 700, fontSize: 13,
+          color: "var(--on-accent)", fontWeight: 700, fontSize: 13,
         }}>G</Row>
         <Box style={{ flex: 1, fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" }}>
           <Row align="baseline" gap={8} style={{ marginBottom: 3 }}>
@@ -167,9 +167,9 @@ function FileChurn({ files }: { files: ChurnFile[] }) {
               fontSize: 9.5, lineHeight: 1.35,
               overflow: "hidden",
             }}>
-              <Box as="span" style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: dark ? "#1a120a" : "var(--fg)" }}>{f.p.split("/").pop()}</Box>
-              <Box as="span" style={{ fontSize: 8.5, color: dark ? "#1a120a" : "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.p.replace(/\/[^/]+$/, "") || "/"}</Box>
-              <Text as="span" size={9.5} weight={600} style={{ color: dark ? "#1a120a" : "var(--fg-muted)" }}>±{f.w}</Text>
+              <Box as="span" style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: dark ? "var(--on-accent)" : "var(--fg)" }}>{f.p.split("/").pop()}</Box>
+              <Box as="span" style={{ fontSize: 8.5, color: dark ? "var(--on-accent)" : "var(--fg-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.p.replace(/\/[^/]+$/, "") || "/"}</Box>
+              <Text as="span" size={9.5} weight={600} style={{ color: dark ? "var(--on-accent)" : "var(--fg-muted)" }}>±{f.w}</Text>
             </Stack>
           );
         })}

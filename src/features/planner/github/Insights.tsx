@@ -256,7 +256,7 @@ export function Insights() {
                         }}>?</Box>
                       ) : (
                         <Box as="span" className="mono" bg={avatarColor(a.login)} style={{
-                          width: 16, height: 16, borderRadius: "50%", color: "#1a120a",
+                          width: 16, height: 16, borderRadius: "50%", color: "var(--on-accent)",
                           fontWeight: 700, fontSize: 9,
                           display: "flex", alignItems: "center", justifyContent: "center",
                         }}>{a.login[0]?.toUpperCase()}</Box>

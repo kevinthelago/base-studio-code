@@ -17,7 +17,7 @@ export function AISummary() {
       <Row gap={12} align="stretch">
         <Box className="mono" bg="linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))" radius={7} style={{
           flexShrink: 0, width: 28, height: 28,
-          color: "#1a120a", fontWeight: 700, fontSize: 13,
+          color: "var(--on-accent)", fontWeight: 700, fontSize: 13,
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>C</Box>
         <Box style={{ flex: 1, fontSize: 12, lineHeight: 1.6, color: "var(--fg-muted)" }}>

@@ -91,7 +91,7 @@ export function DetailPanel({ issue, onClose }: { issue: FlatIssue; onClose: () 
             <Row className="mono" justify="center" style={{
               width: 20, height: 20, borderRadius: 5,
               background: "linear-gradient(135deg, var(--accent), oklch(0.62 0.14 50))",
-              color: "#1a120a", fontWeight: 700, fontSize: 11,
+              color: "var(--on-accent)", fontWeight: 700, fontSize: 11,
             }}>C</Row>
             <Text as="span" mono size={11} style={{ color: "var(--fg)" }}>Claude</Text>
             <Spacer />
