@@ -367,6 +367,7 @@
     },
     {
       "id": "llm-energy.ts",
+      "domain": "fleet",
       "tech": "typescript",
       "role": "algorithm",
       "name": "estimateEnergyWh",
@@ -378,6 +379,7 @@
     },
     {
       "id": "precedence-resolve.ts",
+      "domain": "fleet",
       "tech": "typescript",
       "role": "algorithm",
       "name": "resolveByPrecedence",
@@ -389,6 +391,7 @@
     },
     {
       "id": "windowed-tally.ts",
+      "domain": "fleet",
       "tech": "typescript",
       "role": "algorithm",
       "name": "windowedTally",
@@ -400,6 +403,7 @@
     },
     {
       "id": "stream-merge.ts",
+      "domain": "fleet",
       "tech": "typescript",
       "role": "algorithm",
       "name": "mergeFeeds",
@@ -411,6 +415,7 @@
     },
     {
       "id": "order-by-rank.ts",
+      "domain": "fleet",
       "tech": "typescript",
       "role": "algorithm",
       "name": "orderByRank",
@@ -422,6 +427,7 @@
     },
     {
       "id": "group-totals.ts",
+      "domain": "fleet",
       "tech": "typescript",
       "role": "algorithm",
       "name": "groupTotals",
