@@ -12,6 +12,9 @@ import type { ComponentBuildStatus, RuntimeStateCategory } from "./lib/component
 import type { PreviewState } from "./lib/componentPreview";
 import type { KitConsumer, KitChange, Dispatch } from "./lib/propagation";
 import type { SeedNotice } from "./lib/seedRefresh";
+import type { DesignDirective } from "./lib/designerQueue";
+import { DEFAULT_MAX_TURNS, DRIVER, DESIGNER } from "./lib/designerLoopDrive";
+import { bsc, bscRun } from "@/shared/lib/core/bsc";
 import { kitUsageId, makeChange, planPropagation, dispatchKey } from "./lib/propagation";
 import { SEED_COMPONENTS, SEED_KITS, reconcileComponents, reconcileKits } from "./lib/seed";
 import { SEED_THEMES, reconcileThemes, orderThemes, type KitThemeRecord } from "./lib/themes";
@@ -168,7 +171,56 @@ export interface ComponentsSlice {
   componentStateHealth: Record<string, RuntimeStateCategory[]>;
   /** Record one component's data-state blanks — the scan's per-result write (upsert by id; `[]` clears). */
   setComponentStateHealth: (id: string, categories: RuntimeStateCategory[]) => void;
+
+  /** The OVERNIGHT designer-loop run (#3304, epic #3260) — `null` when off, which is ALWAYS the boot
+   *  state: deliberately absent from `partialize`, so an autonomous token-spending run can never
+   *  auto-start or survive a restart. Only {@link startDesignerOvernight} (a user click) sets it. */
+  designerOvernight: DesignerOvernightRun | null;
+  /** Opt in: open a `driver ↔ designer` loop carrying the run's ceilings and enter queue mode. A no-op
+   *  when a run is already active, or when `bsc loop new` fails (the bridge/binary is absent) — a run
+   *  without a real loop behind it would drive nothing, so we stay OFF rather than pretend. */
+  startDesignerOvernight: (opts?: { maxTurns?: number; budget?: number }) => Promise<void>;
+  /** Ask the run to halt: flag it `stopping` (which stops the pump dispatching on its very next read)
+   *  and issue the out-of-band `bsc loop stop`. The local run state is NOT cleared here — the pump
+   *  clears it via {@link endDesignerOvernight} once the loop is observably gone, and re-issues the
+   *  stop each tick until then, so a swallowed CLI failure retries instead of stranding a live loop. */
+  stopDesignerOvernight: () => Promise<void>;
+  /** Leave overnight mode locally (the pump, once its loop is confirmed closed/absent). */
+  endDesignerOvernight: () => void;
+  /** Install the ranked directive queue built once at run start (`buildDesignerQueue`). */
+  setDesignerOvernightQueue: (queue: DesignDirective[]) => void;
+  /** Advance the queue cursor — one dispatched directive (the cursor IS the turn count). */
+  advanceDesignerOvernight: () => void;
 }
+
+/** A live overnight run's state. The ceilings are mirrored from the ones handed to `bsc loop new`, so
+ *  the pump stops dispatching at the same point the loop store would independently close the loop. */
+export interface DesignerOvernightRun {
+  /** The `bsc loop` this run drives — the pump ignores any other open loop. */
+  loopId: number;
+  /** Directive ceiling: the pump stops once `cursor` reaches it (see `decideOvernightAction`). */
+  maxTurns: number;
+  /** Cost ceiling in USD handed to `bsc loop --budget` (0 = unlimited). */
+  budget: number;
+  /** Directives dispatched so far — the queue cursor AND the turn count. */
+  cursor: number;
+  /** The ranked queue, built once at run start so `queue[cursor]` stays stable as findings are fixed. */
+  queue: DesignDirective[];
+  /** A halt has been requested — dispatch nothing; keep re-issuing `bsc loop stop` until it lands. */
+  stopping: boolean;
+  startedAt: number;
+}
+
+/** The default cost ceiling handed to `bsc loop --budget`. HONEST CAVEAT: the loop store sums the
+ *  per-turn `--cost` values, and only the designer can report what its own turn cost — so this bites
+ *  only when turns actually carry `--cost`. {@link DEFAULT_MAX_TURNS} is the ceiling that always
+ *  applies, which is why it is passed unconditionally. */
+export const DEFAULT_OVERNIGHT_BUDGET = 10;
+
+/** The seed the overnight loop opens with — the driver speaks first, so this is context, not a task. */
+const OVERNIGHT_SEED =
+  "Overnight design run: the driver dispatches one ranked directive per turn from the design system's own " +
+  "measured gaps. Make ONE change per turn via `bsc ui`, ground it with a fresh `bsc shot`, and record it.";
 
 export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSlice> = (set, get) => ({
   components: SEED_COMPONENTS,
@@ -359,4 +411,49 @@ export const createComponentsSlice: StateCreator<AppStore, [], [], ComponentsSli
 
   setComponentStateHealth: (id, categories) =>
     set((s) => ({ componentStateHealth: { ...s.componentStateHealth, [id]: categories } })),
+
+  designerOvernight: null,
+
+  startDesignerOvernight: async (opts) => {
+    if (get().designerOvernight) return; // never stack two runs onto one designer session
+    const maxTurns = Math.max(1, Math.trunc(opts?.maxTurns ?? DEFAULT_MAX_TURNS));
+    const budget = Math.max(0, opts?.budget ?? DEFAULT_OVERNIGHT_BUDGET);
+    // The ceilings go to the LOOP STORE too, which enforces them inside `say` — a DURABLE backstop that
+    // outlives this process: if the app is killed mid-run, the loop still closes itself once the ceiling
+    // is hit, and a closed loop rejects every further turn. The store-side turn cap is deliberately
+    // LOOSER than the pump's (`maxTurns` counts DIRECTIVES; the loop counts every turn, driver AND
+    // designer — so ~2 per directive), because the pump should be what stops a healthy run; the store
+    // ceiling is the net under it, not the thing that fires first.
+    const args = [
+      "loop", "new", DRIVER, DESIGNER,
+      "--seed", OVERNIGHT_SEED,
+      "--until", "false",
+      "--max-turns", String(maxTurns * 2 + 2),
+    ];
+    if (budget > 0) args.push("--budget", String(budget));
+    let loopId: number | null;
+    try {
+      const printed = (await bsc(null, args)).trim().match(/\d+/); // `bsc loop new` prints the new id
+      loopId = printed ? Number(printed[0]) : null;
+    } catch {
+      loopId = null; // bridge/binary absent
+    }
+    if (loopId === null || !Number.isFinite(loopId)) return; // stay OFF rather than fake a run
+    set({ designerOvernight: { loopId, maxTurns, budget, cursor: 0, queue: [], stopping: false, startedAt: Date.now() } });
+  },
+
+  stopDesignerOvernight: async () => {
+    const run = get().designerOvernight;
+    if (!run) return;
+    set({ designerOvernight: { ...run, stopping: true } }); // halts dispatch before the CLI round-trip
+    await bscRun(null, ["loop", "stop", String(run.loopId)]);
+  },
+
+  endDesignerOvernight: () => set({ designerOvernight: null }),
+
+  setDesignerOvernightQueue: (queue) =>
+    set((s) => (s.designerOvernight ? { designerOvernight: { ...s.designerOvernight, queue } } : {})),
+
+  advanceDesignerOvernight: () =>
+    set((s) => (s.designerOvernight ? { designerOvernight: { ...s.designerOvernight, cursor: s.designerOvernight.cursor + 1 } } : {})),
 });
