@@ -11,12 +11,15 @@ use std::io::Read;
 pub fn run(args: &[String]) -> Result<(), String> {
     match args.first().map(String::as_str).unwrap_or("") {
         "bash-deny" => bash_deny(),
+        "bash-supply" => bash_supply(),
         "" | "help" | "-h" | "--help" => {
             print!(
                 "bsc hook — internal PreToolUse deny hooks (#1916)\n\n\
                  USAGE:\n  \
-                 bsc hook bash-deny   # exit 2 if a Bash command hits the dangerous floor or a\n                       \
-                 # $BSC_DENY_BASH pattern (reads the tool JSON on stdin)\n"
+                 bsc hook bash-deny     # exit 2 if a Bash command hits the dangerous floor or a\n                         \
+                 # $BSC_DENY_BASH pattern (reads the tool JSON on stdin)\n  \
+                 bsc hook bash-supply   # exit 2 if a Bash command ADDS a malicious or known-vulnerable\n                         \
+                 # dependency (OSV via `bsc cve`; #3799). Fail-open (reads the tool JSON on stdin)\n"
             );
             Ok(())
         }
@@ -51,21 +54,105 @@ fn bash_deny() -> Result<(), String> {
     Ok(())
 }
 
+/// `bsc hook bash-supply` (#3799, supply-chain #2433): read the Bash tool JSON from stdin and exit 2 to
+/// BLOCK the call when it ADDS a malicious or known-vulnerable dependency — vetted against OSV via the
+/// `cve` engine (cache-first). **FAIL-OPEN**: a non-install command, an OSV outage, or any engine error
+/// ALLOWS the command (the #3795 scripts-off floor is the always-on protection); a fail-open is logged.
+fn bash_supply() -> Result<(), String> {
+    let cmd = stdin_command();
+    let adds = cve::install::parse_install_command(&cmd);
+    if adds.is_empty() {
+        return Ok(()); // fast path: not a dependency add — the overwhelming majority of commands
+    }
+    let engine = match cve::Engine::from_env() {
+        Ok(e) => e,
+        Err(e) => {
+            log_supply(&cmd, "failopen", &format!("cve engine unavailable: {e}"));
+            return Ok(());
+        }
+    };
+    let min = supply_min_severity();
+    for pkg in &adds {
+        match engine.check(pkg) {
+            Ok(report) => {
+                if let Some(reason) = supply_block_reason(&report, min) {
+                    log_supply(&cmd, "block", &reason);
+                    eprintln!("blocked: {reason} — #3799 supply-chain gate");
+                    std::process::exit(2);
+                }
+            }
+            // Offline / rate-limited / bad response: fail-open per package (log, don't block the fleet).
+            Err(e) => log_supply(&cmd, "failopen", &format!("OSV check failed for {}: {e}", pkg.name)),
+        }
+    }
+    Ok(())
+}
+
+/// Read the Bash `tool_input.command` from a hook's stdin JSON (empty on any read/parse failure).
+fn stdin_command() -> String {
+    let mut input = String::new();
+    if std::io::stdin().read_to_string(&mut input).is_err() {
+        return String::new();
+    }
+    serde_json::from_str::<serde_json::Value>(&input)
+        .ok()
+        .and_then(|v| {
+            v.get("tool_input").and_then(|t| t.get("command")).and_then(|c| c.as_str()).map(str::to_string)
+        })
+        .unwrap_or_default()
+}
+
+/// The block reason for a checked add, if any (pure — the testable core of [`bash_supply`]):
+/// (1) a MALICIOUS package (`MAL-…`) is blocked at ANY version; (2) a VERSION-PINNED add whose exact
+/// version carries a vulnerability at/above `min` is blocked (OSV's versioned query already scoped the
+/// advisories to that version, so every advisory here affects it); (3) a versionless non-malicious add
+/// is ALLOWED (the resolved version is unknown pre-install — `bsc cve scan` covers it after). `None` ⇒ allow.
+fn supply_block_reason(report: &cve::PackageReport, min: cve::Severity) -> Option<String> {
+    let name = &report.package.name;
+    if let Some(mal) = report.advisories.iter().find(|a| a.is_malicious()) {
+        return Some(format!("{name} is a known-MALICIOUS package ({})", mal.id));
+    }
+    if let Some(version) = report.package.version.as_deref() {
+        if let Some(v) = report.advisories.iter().filter(|a| a.severity >= min).max_by_key(|a| a.severity) {
+            return Some(format!("{name}@{version} has a known {} vulnerability ({})", v.severity.as_str(), v.id));
+        }
+    }
+    None
+}
+
+/// The version-pinned vulnerability gate: `$BSC_SUPPLY_MIN` (default `high`), matching `bsc cve scan`.
+fn supply_min_severity() -> cve::Severity {
+    supply_min_from(&std::env::var("BSC_SUPPLY_MIN").unwrap_or_default())
+}
+
+/// Pure: parse the min-severity token, defaulting to `high` (empty/unknown → high).
+fn supply_min_from(s: &str) -> cve::Severity {
+    cve::Severity::parse(s).unwrap_or(cve::Severity::High)
+}
+
+/// Append a `supply`-gate row (`ts·pane·supply·verdict·target·reason`) to `$BSC_PERM_LOG` — verdict
+/// `block` or `failopen` — so both a supply block and a fail-open are visible to `bsc logs perm`.
+fn log_supply(cmd: &str, verdict: &str, reason: &str) {
+    let pane = std::env::var("BSC_AUDIT_PANE").unwrap_or_else(|_| "?".into());
+    let ts = now_ms();
+    append_perm_log(&perm_log_line(ts, &pane, "supply", verdict, cmd, reason));
+}
+
 /// Append one pane-tagged denial row — `ts·pane·gate·verdict·target·reason` — to `$BSC_PERM_LOG`
 /// (#1607 slice 2), matching the shape the shell deny hooks write via `__bsc_perm`, so a bash-deny
-/// block is visible to `bsc logs perm`/`session`. Best-effort: any failure is swallowed so logging
-/// never changes the block. `gate` is `deny` (the bash deny-list); `target` is the blocked command.
+/// block is visible to `bsc logs perm`/`session`. Best-effort. `gate` is `deny`; `target` is the command.
 fn log_deny(cmd: &str, reason: &str) {
+    let pane = std::env::var("BSC_AUDIT_PANE").unwrap_or_else(|_| "?".into());
+    append_perm_log(&deny_log_line(now_ms(), &pane, cmd, reason));
+}
+
+/// The shared perm-log appender: create the parent dir + append `line` to `$BSC_PERM_LOG`. Best-effort —
+/// any failure (incl. an unset/empty `$BSC_PERM_LOG`) is swallowed so logging never changes a decision.
+fn append_perm_log(line: &str) {
     let path = std::env::var("BSC_PERM_LOG").unwrap_or_default();
     if path.is_empty() {
         return;
     }
-    let pane = std::env::var("BSC_AUDIT_PANE").unwrap_or_else(|_| "?".into());
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let line = deny_log_line(ts, &pane, cmd, reason);
     if let Some(dir) = std::path::Path::new(&path).parent() {
         let _ = std::fs::create_dir_all(dir);
     }
@@ -75,12 +162,24 @@ fn log_deny(cmd: &str, reason: &str) {
     }
 }
 
-/// Format one `perm.log` row (`ts·pane·gate·verdict·target·reason` + `\n`) for a bash-deny block.
-/// Pure — the free fields (`target`/`reason`) are stripped of tabs/newlines and capped so a single
-/// row can never break the TSV. `gate` is fixed `deny`, `verdict` fixed `block`.
-fn deny_log_line(ts: u128, pane: &str, cmd: &str, reason: &str) -> String {
+/// Epoch milliseconds (0 on a clock error).
+fn now_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+/// Format one `perm.log` row (`ts·pane·gate·verdict·target·reason` + `\n`). Pure — every free field is
+/// stripped of tabs/newlines and capped so a single row can never break the TSV.
+fn perm_log_line(ts: u128, pane: &str, gate: &str, verdict: &str, cmd: &str, reason: &str) -> String {
     let clean = |s: &str| s.replace(['\t', '\n'], " ").chars().take(160).collect::<String>();
-    format!("{ts}\t{pane}\tdeny\tblock\t{}\t{}\n", clean(cmd), clean(reason))
+    format!("{ts}\t{pane}\t{}\t{}\t{}\t{}\n", clean(gate), clean(verdict), clean(cmd), clean(reason))
+}
+
+/// The `deny`-gate row (`gate=deny`, `verdict=block`) — the bash-deny block's shape (unchanged).
+fn deny_log_line(ts: u128, pane: &str, cmd: &str, reason: &str) -> String {
+    perm_log_line(ts, pane, "deny", "block", cmd, reason)
 }
 
 /// The blocking reason for `cmd`, if any: the always-on dangerous floor (`bsc_util::dangerous`,
@@ -108,7 +207,12 @@ fn deny_reason(cmd: &str, env_denies: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{deny_log_line, deny_reason};
+    use super::{deny_log_line, deny_reason, perm_log_line, supply_block_reason, supply_min_from};
+    use cve::{Advisory, Ecosystem, Package, PackageReport, Severity};
+
+    fn adv(id: &str, sev: Severity) -> Advisory {
+        Advisory { id: id.into(), summary: String::new(), severity: sev, aliases: vec![], references: vec![] }
+    }
 
     #[test]
     fn deny_log_line_is_a_well_formed_perm_row() {
@@ -179,5 +283,50 @@ cp";
     #[test]
     fn empty_command_is_allowed() {
         assert!(deny_reason("", "git push").is_none());
+    }
+
+    #[test]
+    fn supply_blocks_malicious_packages_at_any_version() {
+        // A MAL- advisory blocks the add regardless of whether a version was requested — the package
+        // itself is the payload (the Shai-Hulud case).
+        let versionless = PackageReport { package: Package::new(Ecosystem::Npm, "evil", None), advisories: vec![adv("MAL-2024-1", Severity::Unknown)] };
+        let r = supply_block_reason(&versionless, Severity::High).unwrap();
+        assert!(r.contains("MALICIOUS") && r.contains("MAL-2024-1"), "{r}");
+    }
+
+    #[test]
+    fn supply_blocks_a_pinned_vuln_only_at_or_above_threshold() {
+        // Version-pinned + a high vuln, threshold high → blocked, naming the version + advisory.
+        let pinned = PackageReport { package: Package::new(Ecosystem::Npm, "lodash", Some("4.17.0".into())), advisories: vec![adv("GHSA-h", Severity::High)] };
+        let r = supply_block_reason(&pinned, Severity::High).unwrap();
+        assert!(r.contains("lodash@4.17.0") && r.contains("GHSA-h") && r.contains("high"), "{r}");
+        // Below threshold → allowed.
+        let low = PackageReport { package: Package::new(Ecosystem::Npm, "x", Some("1.0.0".into())), advisories: vec![adv("GHSA-l", Severity::Low)] };
+        assert!(supply_block_reason(&low, Severity::High).is_none());
+        // The SAME high vuln but VERSIONLESS + non-malicious → allowed (can't pin to the resolved version).
+        let versionless = PackageReport { package: Package::new(Ecosystem::Npm, "lodash", None), advisories: vec![adv("GHSA-h", Severity::High)] };
+        assert!(supply_block_reason(&versionless, Severity::High).is_none());
+        // Clean → allowed.
+        let clean = PackageReport { package: Package::new(Ecosystem::Npm, "safe", Some("1.0.0".into())), advisories: vec![] };
+        assert!(supply_block_reason(&clean, Severity::High).is_none());
+    }
+
+    #[test]
+    fn supply_min_defaults_to_high() {
+        assert_eq!(supply_min_from(""), Severity::High);
+        assert_eq!(supply_min_from("garbage"), Severity::High);
+        assert_eq!(supply_min_from("critical"), Severity::Critical);
+        assert_eq!(supply_min_from("moderate"), Severity::Medium);
+    }
+
+    #[test]
+    fn supply_log_line_is_a_well_formed_supply_row() {
+        let line = perm_log_line(1782468000000, "k:web", "supply", "block", "npm add evil", "evil is a known-MALICIOUS package (MAL-2024-1)");
+        let f: Vec<&str> = line.trim_end().split('\t').collect();
+        assert_eq!(f.len(), 6, "ts·pane·gate·verdict·target·reason");
+        assert_eq!((f[2], f[3]), ("supply", "block"));
+        assert_eq!(f[4], "npm add evil");
+        assert!(f[5].contains("MALICIOUS"));
+        assert!(line.ends_with('\n'));
     }
 }
