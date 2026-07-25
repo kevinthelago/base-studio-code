@@ -18,6 +18,12 @@ import type { AppStore } from "@/store/types";
 import type { Workspace } from "@/app/registry";
 import { dispatchPage } from "@/app/navigate";
 
+/** The preview DATA-STATES `--state` navigates to (#3717) — the navigable subset of the Design Studio's
+ *  state axis (`error` is a render OUTCOME, not something you request). Kept in lockstep with the Rust
+ *  `NAV_STATES` in `bsc-navigate`'s CLI. `as const` so the values narrow to a union assignable to the
+ *  store's `PreviewState` without a cross-feature type import. */
+const NAV_STATES = ["loaded", "empty", "loading"] as const;
+
 /** What `bsc navigate` asks for. Every field optional; absent ⇒ leave it alone. Mirrors Rust `NavRequest`. */
 export interface NavRequest {
   workspace?: string;
@@ -25,6 +31,7 @@ export interface NavRequest {
   kit?: string;
   component?: string;
   theme?: string;
+  state?: string;
 }
 
 /** What we send back to Rust. Mirrors Rust `NavAck`. */
@@ -36,6 +43,7 @@ export interface NavAck {
   kit?: string;
   component?: string;
   theme?: string;
+  state?: string;
 }
 
 /** The vocabulary the resolver validates against.
@@ -80,6 +88,9 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
   if (req.theme !== undefined && !s.kitThemes.some((t) => t.id === req.theme)) {
     return { error: `unknown theme '${req.theme}' — one of: ${s.kitThemes.map((t) => t.id).join(", ")}` };
   }
+  if (req.state !== undefined && !(NAV_STATES as readonly string[]).includes(req.state)) {
+    return { error: `unknown state '${req.state}' — one of: ${NAV_STATES.join(", ")}` };
+  }
   // A component is only meaningful inside a kit: resolve against the requested kit, else the current one.
   // Naming a component without a kit is ambiguous the moment two kits share a component name.
   let comp: { id: string; kitId: string } | undefined;
@@ -99,6 +110,9 @@ export function applyNavigate(req: NavRequest, vocab: NavVocab): NavAck {
 
   // ── Commit ────────────────────────────────────────────────────────────────────────────────────
   if (req.theme !== undefined) s.setKitTheme(req.theme);
+  // The preview DATA-STATE the Studio renders (#3717) — drives the same store value the state control
+  // sets, so a `--state` navigate captures the intended render. Validated above, so the cast is sound.
+  if (req.state !== undefined) s.setDesignsPreviewState(req.state as (typeof NAV_STATES)[number]);
   if (req.workspace !== undefined) s.setWorkspace(req.workspace as Workspace);
   // Dispatch the page through the SAME per-workspace mechanism the UI uses (#3602) instead of hard-coding
   // one workspace's setter. The page vocab is still PROJECT_MODES (validated above), so for the projects
@@ -135,5 +149,6 @@ function landed(read: () => AppStore): NavAck {
     kit: s.designsKitId || undefined,
     component: s.designsCompId ?? undefined,
     theme: s.kitTheme || undefined,
+    state: s.designsPreviewState || undefined,
   };
 }

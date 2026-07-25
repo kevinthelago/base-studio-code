@@ -114,8 +114,11 @@ export function DesignsWorkbench() {
   const setCompId = useAppStore((s) => s.setDesignsComp);
   const [tab, setTab] = useState<Tab>("overview");
   const [variant, setVariant] = useState(() => firstFor(kits[0]?.id ?? "")?.variants[0] ?? "default");
-  // The preview's DATA-STATE axis (#3135): loaded (demo) · empty (no data) · loading (skeleton).
-  const [previewState, setPreviewState] = useState<PreviewState>("loaded");
+  // The preview's DATA-STATE axis (#3135): loaded (demo) · empty (no data) · loading (skeleton). In the
+  // STORE (#3717), not local, so `bsc navigate component --state <s>` can drive the SAME value the
+  // SegmentedControl below sets — letting an external session capture a specific render via `bsc shot`.
+  const previewState = useAppStore((s) => s.designsPreviewState);
+  const setPreviewState = useAppStore((s) => s.setDesignsPreviewState);
   // The preview's THEME axis (#2488) — ONE control now (#2545): the selected theme drives both the
   // component retint (its `vars`, via <ThemeScope>) AND the sandbox SURFACE (its `base`, below). The
   // old hardcoded dark/light SegmentedControl is retired — light/dark is theme data served through
