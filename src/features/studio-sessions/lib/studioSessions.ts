@@ -45,6 +45,11 @@ export interface StudioSessionDef {
    *  (`detachedSections[pageKey]` containing `sectionId` ⇒ another WINDOW owns this studio's terminal). */
   pageKey: string;
   sectionId: string;
+  /** The studio's CURATED default skill ids — resolved from the library into `paneSkills` at launch
+   *  (#3766). Unlike the global-enabled firehose a normal session gets, a restricted studio session is
+   *  pinned to exactly this set (absent/empty ⇒ none, preserving the confinement boundary). This is how
+   *  a11y + compliance guidance rides with the designer by construction. */
+  defaultSkillIds?: string[];
 }
 
 export const STUDIO_SESSIONS: Record<StudioId, StudioSessionDef> = {
@@ -58,6 +63,9 @@ export const STUDIO_SESSIONS: Record<StudioId, StudioSessionDef> = {
     rosterName: "Design Studio",
     pageKey: "projects",
     sectionId: "designs",
+    // Build components accessible + compliant BY CONSTRUCTION (#3766) — the author-time skills, not
+    // the post-hoc *-audit/*-review ones the reviewer runs.
+    defaultSkillIds: ["author-accessible-components", "author-compliant-components"],
   },
   librarian: {
     id: "librarian",

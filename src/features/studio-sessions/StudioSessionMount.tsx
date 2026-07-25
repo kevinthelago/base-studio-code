@@ -47,10 +47,13 @@ export function studioStartPrompt(personaId: string): string {
  *                               detection). Omitted when the persona has no prompt, so `pty_create` gets
  *                               `undefined` rather than an empty initial message.
  *   • `paneContinue`          → `claude --continue`, so a relaunch resumes the prior conversation.
- *   • `paneMcpServers` / `paneHooks` / `paneSkills` → pinned EMPTY. Without these the generic path falls
- *     back to the GLOBAL sets, which would attach every configured MCP server (i.e. extra tools) and the
- *     global skills to a session deliberately confined to one store CLI. The bespoke launch passed none;
- *     pinning empty keeps that boundary.
+ *   • `paneMcpServers` / `paneHooks` → pinned EMPTY. Without these the generic path falls back to the
+ *     GLOBAL sets, which would attach every configured MCP server (i.e. extra tools) to a session
+ *     deliberately confined to one store CLI. The bespoke launch passed none; pinning empty keeps that
+ *     boundary.
+ *   • `paneSkills` → pinned to the studio's CURATED default skills (`def.defaultSkillIds`, #3766) —
+ *     a specific, relevant set (e.g. the designer's a11y + compliance AUTHORING skills), NOT the global
+ *     skill firehose. Empty when the studio declares no defaults, preserving the same confinement.
  * Exported for the unit test — the permission payload is the security-critical half of this migration.
  */
 export function seedStudioLaunchState(def: StudioSessionDef): void {
@@ -59,13 +62,17 @@ export function seedStudioLaunchState(def: StudioSessionDef): void {
     const startupPrompts = { ...st.paneStartupPromptText };
     if (prompt) startupPrompts[def.paneId] = prompt;
     else delete startupPrompts[def.paneId];
+    // The studio's CURATED default skills (#3766) — resolved from the library by id, enabled-only. NOT
+    // the global firehose; empty when the studio declares no `defaultSkillIds`, so the boundary holds.
+    const defaultIds = new Set(def.defaultSkillIds ?? []);
+    const defaultSkills = st.skills.filter((sk) => sk.enabled && defaultIds.has(sk.id));
     return {
       paneRoles:             { ...st.paneRoles, [def.paneId]: def.role },
       paneStartupPromptText: startupPrompts,
       paneContinue:          { ...st.paneContinue, [def.paneId]: true },
       paneMcpServers:        { ...st.paneMcpServers, [def.paneId]: [] },
       paneHooks:             { ...st.paneHooks, [def.paneId]: [] },
-      paneSkills:            { ...st.paneSkills, [def.paneId]: [] },
+      paneSkills:            { ...st.paneSkills, [def.paneId]: defaultSkills },
     };
   });
 }
